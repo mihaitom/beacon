@@ -76,6 +76,17 @@ async def _release_claims(target, session: SessionState) -> None:
 # see _apply_position_offset().
 MAX_PLAUSIBLE_POSITION_LEAD = 15.0
 
+# Rough guess applied immediately for devices with real position feedback
+# (Sonos/Chromecast/DLNA), before the actual per-device measurement below
+# has had a chance to complete — that can take a couple of seconds (the
+# polling loop only checks every 0.5s), and starting from "no delay" for
+# that whole gap is almost always more wrong than a reasonable guess, since
+# practically every cast protocol has *some* startup buffering. Splitting
+# the difference between "no delay" and AirPlay's own permanent fixed
+# estimate (2.0s, the one case with no better option than a guess like
+# this at all) — overwritten the moment a real measurement lands.
+PROVISIONAL_STARTUP_DELAY = 1.0
+
 
 async def _apply_position_offset(
     session: SessionState, target, generation: int
@@ -108,6 +119,20 @@ async def _apply_position_offset(
     candidate = next((d for d in deliveries if d.SUPPORTS_POSITION), None)
     if candidate is None:
         return
+
+    # Same guard the polling loop below uses — without it, a stale task
+    # (this generation already superseded by a newer /play or /seek before
+    # this task got to run at all) would stomp the *current* track's clock
+    # with a provisional guess meant for a track that isn't playing anymore.
+    if st.clock.play_generation != generation or not st.is_streaming:
+        return
+
+    st.clock.set_fixed_offset(-PROVISIONAL_STARTUP_DELAY)
+    logger.info(
+        f"[lyrics-sync] {candidate.target}: provisional position_offset="
+        f"{st.clock.position_offset:.2f}s (measuring...)"
+    )
+    await session.event_bus.broadcast(build_status_dict(session))
 
     deadline = time.time() + 10.0
     while time.time() < deadline:

@@ -37,11 +37,20 @@
     </v-main>
 
     <player-bar />
+    <!-- Not mounted at all until first opened (see queueDrawerEverOpened/
+     - lyricsDrawerEverOpened below) — v-navigation-drawer briefly showed
+     - its open position on the very first paint at app start even with
+     - model-value already false, before the closed transform took effect.
+     - Nothing to flash if it isn't in the DOM yet. Stays mounted for the
+     - rest of the session once opened, same "persistent, not temporary"
+     - behavior as before either way. -->
     <queue-drawer
+      v-if="queueDrawerEverOpened"
       :model-value="playbackStore.queueDrawerOpen"
       @update:model-value="playbackStore.queueDrawerOpen = $event"
     />
     <lyrics-drawer
+      v-if="lyricsDrawerEverOpened"
       :model-value="playbackStore.lyricsDrawerOpen"
       @update:model-value="playbackStore.lyricsDrawerOpen = $event"
     />
@@ -67,6 +76,10 @@ export default {
   data() {
     return {
       drawerOpen: true,
+      // Flips true the first time each drawer opens and never resets —
+      // see the queue-drawer/lyrics-drawer v-if above for why.
+      queueDrawerEverOpened: false,
+      lyricsDrawerEverOpened: false,
     }
   },
   computed: {
@@ -84,6 +97,14 @@ export default {
         { to: '/radio', icon: 'mdi-radio', title: this.$t('nav.radio') },
         { to: '/favorites', icon: 'mdi-heart', title: this.$t('nav.favorites') },
       ]
+    },
+  },
+  watch: {
+    'playbackStore.queueDrawerOpen'(open: boolean) {
+      if (open) this.queueDrawerEverOpened = true
+    },
+    'playbackStore.lyricsDrawerOpen'(open: boolean) {
+      if (open) this.lyricsDrawerEverOpened = true
     },
   },
 }

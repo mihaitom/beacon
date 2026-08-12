@@ -8,7 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 import { getAudioEngine } from '@/services/audioEngine'
 import { VisualizerEventSource } from '@/services/connect/visualizer'
 
-const BAR_COUNT = 32
+const BAR_COUNT = 56
 // Fraction of the canvas height bars settle to when there's no signal to
 // show (paused, or a 'cast' connection that hasn't produced a frame yet) —
 // a resting flat line rather than nothing, so it still reads as "this is a

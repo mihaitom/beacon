@@ -341,8 +341,6 @@ class AudioAnalyzer:
         decode side) is what keeps delivery smooth regardless of how far
         ahead of real time decode+FFT get. Also means pausing (elapsed_fn
         freezing) naturally stalls this too, nothing extra needed here."""
-        last_log = 0.0
-        loop = asyncio.get_event_loop()
         try:
             while True:
                 if not self._pending:
@@ -355,22 +353,6 @@ class AudioAnalyzer:
                 if remaining > 0:
                     await asyncio.sleep(min(remaining, 0.5))
                     continue
-                # Temporary diagnostic for a reported "visualizer looks a
-                # bit off, even well after the initial calibration window"
-                # complaint — `lag` is how far *past* this frame's own
-                # content_position we already are at release time (0 =
-                # released exactly on time; growing over a session would
-                # mean the pipeline can't keep up; a small but steady
-                # nonzero value would point at a fixed extra latency
-                # somewhere in the decode/FFT/SSE/frontend-smoothing chain
-                # that isn't accounted for in content_position itself).
-                # Throttled to ~1 line/2s — safe to leave in.
-                now = loop.time()
-                if now - last_log > 2.0:
-                    last_log = now
-                    logger.info(
-                        f"[audio-analysis] release lag={-remaining:.3f}s pending={len(self._pending)}"
-                    )
                 self._pending.popleft()
                 if self.frames.full():
                     self.frames.get_nowait()  # drop oldest — always show freshest
