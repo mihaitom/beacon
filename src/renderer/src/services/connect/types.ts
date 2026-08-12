@@ -81,6 +81,14 @@ export interface ConnectStatus {
   total_tracks: number
 }
 
+// One GET /visualizer frame — see connect/core/audio_analysis.py. Only ever
+// arrives while casting to a target that route's should_analyze() allows
+// (Sonos/DLNA/Chromecast, not AirPlay/radio); AudioVisualizer.vue's 'cast'
+// mode is the only consumer.
+export interface VisualizerFrame {
+  bands: number[]
+}
+
 export interface PlayResponse {
   status: 'playing'
   stream_url: string
@@ -89,4 +97,30 @@ export interface PlayResponse {
 export interface PairingStartResponse {
   device_provides_pin: boolean
   name: string
+}
+
+/** One /lyrics/search candidate — isSync is only ever known for lrclib.net/
+ * SimpMusic (NetEase's search API gives no such signal, so null there). */
+export interface LyricSearchResult {
+  artist: string
+  id: string
+  isSync: boolean | null
+  name: string
+  source: string
+  score: number
+  // Seconds, already normalized across sources (NetEase's own API gives
+  // milliseconds — converted backend-side). Absent if a source's API
+  // didn't return one for a given result.
+  duration: number | null
+}
+
+/** /lyrics/auto's best-match result — `lyrics` is one raw string, LRC-
+ * formatted when synced lyrics were found, otherwise plain text. Nothing on
+ * this response says which — see services/lyrics/parseLrc.ts. */
+export interface AutoLyricsResult {
+  artist: string
+  id: string
+  lyrics: string
+  name: string
+  source: string
 }

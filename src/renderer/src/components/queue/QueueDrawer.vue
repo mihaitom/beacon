@@ -1,8 +1,9 @@
 <template>
+  <!-- No `temporary` — persistent/docked, not an overlay: stays open across
+   - navigation and doesn't close on an outside click. -->
   <v-navigation-drawer
     :model-value="modelValue"
     location="right"
-    temporary
     width="380"
     @update:model-value="$emit('update:modelValue', $event)"
   >

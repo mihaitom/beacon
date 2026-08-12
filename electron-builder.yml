@@ -58,6 +58,14 @@ linux:
         - tar.xz
     category: AudioVideo;Audio;Player
     artifactName: ${productName}-${os}-${arch}.${ext}
+    # Without this, desktop environments can't reliably associate a running
+    # window with this .desktop entry (taskbar grouping/icon pinning) — the
+    # runtime WM_CLASS wouldn't match the shipped .desktop file's name
+    # (package.json's own top-level `desktopName`, not a linux.* option —
+    # see https://www.electron.build/linux#window-association-desktopname--syncdesktopname).
+    # This makes Electron itself report that exact name at runtime instead
+    # of falling back to a generic/mismatched one.
+    syncDesktopName: true
 
 # Auto-updates (see src/main/index.ts's checkForUpdates()) target this
 # repo's own GitHub releases — electron-updater reads this at runtime via

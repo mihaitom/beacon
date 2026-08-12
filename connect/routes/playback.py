@@ -435,6 +435,12 @@ async def stop_playback(session: SessionState = Depends(require_authenticated_se
     st = session.state
     if st.active_delivery:
         await st.active_delivery.stop()
+    # Playback is genuinely ending here (unlike a track just finishing
+    # normally, see routes/stream.py's finish_feeding()) — no reason to let
+    # a still-draining analyzer keep running for content that was stopped.
+    if session.audio_analyzer:
+        await session.audio_analyzer.stop()
+        session.audio_analyzer = None
     st.is_streaming = False
     st.clock.is_paused = False
     st.track_ended = False

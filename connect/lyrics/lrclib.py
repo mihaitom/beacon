@@ -78,6 +78,7 @@ async def get_search_results(params: dict[str, Any]) -> list[dict[str, Any]] | N
             "isSync": bool(song.get("syncedLyrics")),
             "name": song["name"],
             "source": "lrclib.net",
+            "duration": song.get("duration"),
         }
         for song in songs
     ]

@@ -70,6 +70,10 @@ async def get_search_results(params: dict[str, Any]) -> list[dict[str, Any]] | N
             "isSync": None,
             "name": song["name"],
             "source": "NetEase",
+            # NetEase's own duration is milliseconds, unlike the other two
+            # sources — normalized to seconds here so the frontend doesn't
+            # need to know which source it came from to display it.
+            "duration": song["duration"] / 1000 if song.get("duration") is not None else None,
         }
         for song in songs
     ]

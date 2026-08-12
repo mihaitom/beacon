@@ -22,9 +22,15 @@
     <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="mb-4">
       {{ libraryStore.error }}
     </v-alert>
-    <v-progress-circular v-if="libraryStore.loading" indeterminate class="mb-4" />
 
-    <div class="album-grid">
+    <div v-if="libraryStore.loading" class="album-grid">
+      <div v-for="n in skeletonCount" :key="n" class="album-card">
+        <v-skeleton-loader type="image" width="160" height="160" class="rounded album-card-cover" />
+        <v-skeleton-loader type="text" width="70%" height="20" class="mt-2" />
+        <v-skeleton-loader type="text" width="45%" height="16" />
+      </div>
+    </div>
+    <div v-else class="album-grid">
       <album-card v-for="album in visibleAlbums" :key="album.id" :album="album" />
     </div>
 
@@ -52,6 +58,11 @@ import InfiniteScrollTrigger from '@/components/InfiniteScrollTrigger.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
 
 const PAGE_SIZE = 60
+// Fills a few full rows of the 160px card grid on a typical window width —
+// there's no real count to key off yet (unlike TrackList's skeleton, which
+// caps at however many rows are actually about to load), so just enough to
+// read as "a grid is coming" without looking sparse.
+const SKELETON_COUNT = 18
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -74,6 +85,9 @@ export default {
   computed: {
     libraryStore() {
       return useLibraryStore()
+    },
+    skeletonCount() {
+      return SKELETON_COUNT
     },
     filteredAlbums() {
       const query = this.debouncedQuery.trim().toLowerCase()
@@ -109,5 +123,20 @@ export default {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
+}
+
+.album-card {
+  width: 160px;
+}
+
+/* v-skeleton-loader's width/height props only size the outer wrapper, not
+ * the bone itself (see the identical comment/technique in TrackList.vue) —
+ * forcing the bone to fill that wrapper is what makes each skeleton card
+ * match AlbumCard.vue's real 160x160 cover + two text lines exactly, so
+ * nothing shifts once real cards render in. */
+.album-card :deep(.v-skeleton-loader__bone) {
+  margin: 0;
+  width: 100%;
+  height: 100%;
 }
 </style>

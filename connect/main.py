@@ -29,6 +29,7 @@ from core.auth import TOKEN as _CONNECT_TOKEN  # noqa: E402
 from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED  # noqa: E402
 from core.session import reap_stale_sessions  # noqa: E402
 from core.state import PORT, ctx, get_local_ip  # noqa: E402
+from routes.debug import router as debug_router  # noqa: E402
 from routes.devices import router as devices_router  # noqa: E402
 from routes.discovery import discover_all  # noqa: E402
 from routes.discovery import router as discovery_router  # noqa: E402
@@ -292,6 +293,13 @@ app.include_router(volume_router)
 app.include_router(join_router)
 app.include_router(pairing_router)
 app.include_router(lyrics_router)
+# Diagnostic-only (routes/debug.py) — off by default alongside /docs etc.,
+# not something a real deployment needs exposed. Registered before
+# proxy_router deliberately: that one ends in a catch-all `/{path:path}`
+# route requiring require_token, which would otherwise shadow /debug/* —
+# Starlette matches routes in registration order, first match wins.
+if _DEBUG:
+    app.include_router(debug_router)
 app.include_router(proxy_router)
 
 

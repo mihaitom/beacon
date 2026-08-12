@@ -21,6 +21,7 @@ interface PlaybackState {
   radioStation: RadioStation | null
   initialized: boolean
   queueDrawerOpen: boolean
+  lyricsDrawerOpen: boolean
 }
 
 // Scrubbing backwards restarts the current track instead of jumping to the
@@ -51,6 +52,20 @@ let pendingLocalTrackChange: string | null = null
 // when the same track is played again later (a fresh startCurrent() resets
 // this to null first, see below).
 let scrobbledTrackId: string | null = null
+
+// Cast playback's position otherwise only ever moves in ~2s jumps (however
+// often the connect backend's SSE status ticks — see connect.$subscribe()
+// below), which reads as visibly stuttering on the seek bar and puts lyric
+// line highlighting up to ~2s behind the actual audio. These two track the
+// last real (server-authoritative, buffering-delay-calibrated — see
+// connect/routes/playback.py's _apply_position_offset) position report, so
+// the interval below can extrapolate smoothly forward from it every 200ms
+// in between, re-anchoring to the next real report as soon as it arrives
+// (small corrections, not visible jumps, the same way any client-side
+// clock reconciled against a server clock behaves). `null` until the first
+// real report — extrapolating before that would just be guessing.
+let lastServerElapsed: number | null = null
+let lastServerElapsedAt = 0
 
 // Subsonic/Last.fm convention: a play counts once listened past 50% of the
 // track or 4 minutes, whichever comes first.
@@ -134,6 +149,7 @@ export const usePlaybackStore = defineStore('playback', {
     radioStation: null,
     initialized: false,
     queueDrawerOpen: false,
+    lyricsDrawerOpen: false,
   }),
 
   getters: {
@@ -160,6 +176,13 @@ export const usePlaybackStore = defineStore('playback', {
     init(): void {
       if (this.initialized) return
       this.initialized = true
+
+      // Explicit, not just relying on state()'s own defaults — these were
+      // never meant to be restored across a restart (restoreFromStorage()
+      // below doesn't touch them), only toggled during the running
+      // session, so a fresh app start should always begin with both closed.
+      this.queueDrawerOpen = false
+      this.lyricsDrawerOpen = false
 
       this.restoreFromStorage()
 
@@ -194,6 +217,8 @@ export const usePlaybackStore = defineStore('playback', {
 
         this.isPlaying = status.streaming && !status.paused
         this.localPosition = status.elapsed
+        lastServerElapsed = status.elapsed
+        lastServerElapsedAt = performance.now()
         if (status.current_track) this.duration = status.current_track.duration
         this.checkScrobbleThreshold()
 
@@ -202,6 +227,17 @@ export const usePlaybackStore = defineStore('playback', {
         if (status.ended && !lastEnded) void this.advanceOnTrackEnd()
         lastEnded = status.ended
       })
+
+      // Smooths the ~2s-stepped position above into something that moves
+      // every 200ms instead — see lastServerElapsed's comment. A no-op
+      // whenever not actively cast-playing, so this is cheap to just leave
+      // running for the app's whole lifetime rather than starting/stopping
+      // it around every play/pause/cast-toggle.
+      setInterval(() => {
+        if (!this.isCasting || !this.isPlaying || lastServerElapsed === null) return
+        const extrapolated = lastServerElapsed + (performance.now() - lastServerElapsedAt) / 1000
+        this.localPosition = this.duration ? Math.min(extrapolated, this.duration) : extrapolated
+      }, 200)
 
       // Keeps the persisted snapshot fresh so a reload always has something
       // recent to resume from. Debounced — this fires on every playback
@@ -434,6 +470,14 @@ export const usePlaybackStore = defineStore('playback', {
       const connect = useConnectStore()
       this.localPosition = startPosition
       scrobbledTrackId = null // fresh play-through, even if it's the same track id as before
+      // Otherwise the extrapolation interval (see lastServerElapsed's
+      // comment above) would keep advancing *this* track's position from
+      // the *previous* track's last known elapsed until the next real SSE
+      // tick corrects it — a stale number that looks like live progress,
+      // worse than just sitting still. Cleared here regardless of cast
+      // state; harmless when not casting since the interval already no-ops
+      // then.
+      lastServerElapsed = null
 
       if (connect.isActive) {
         pendingLocalTrackChange = track.id
@@ -543,6 +587,12 @@ export const usePlaybackStore = defineStore('playback', {
       const connect = useConnectStore()
       if (connect.isActive) {
         await connectPlayback.seek(position)
+        // Re-anchors the extrapolation interval (see lastServerElapsed's
+        // comment) to the seeked-to position right away — otherwise it'd
+        // keep extrapolating from the pre-seek anchor for up to ~200ms and
+        // briefly overwrite this seek with a stale position.
+        lastServerElapsed = position
+        lastServerElapsedAt = performance.now()
       } else {
         getAudioEngine().seek(position)
       }
@@ -557,7 +607,9 @@ export const usePlaybackStore = defineStore('playback', {
     toggleShuffle(): void {
       this.shuffle = !this.shuffle
       const current = this.currentTrack
-      this.queue = this.shuffle ? shuffledExcept(this.originalQueue, current) : [...this.originalQueue]
+      this.queue = this.shuffle
+        ? shuffledExcept(this.originalQueue, current)
+        : [...this.originalQueue]
       if (current) {
         this.currentIndex = this.queue.findIndex((t) => t.id === current.id)
       }
@@ -582,9 +634,7 @@ export const usePlaybackStore = defineStore('playback', {
       }
       this.queue.splice(this.currentIndex + 1, 0, ...tracks)
       const current = this.currentTrack
-      const originalIndex = current
-        ? this.originalQueue.findIndex((t) => t.id === current.id)
-        : -1
+      const originalIndex = current ? this.originalQueue.findIndex((t) => t.id === current.id) : -1
       if (originalIndex >= 0) {
         this.originalQueue.splice(originalIndex + 1, 0, ...tracks)
       } else {
@@ -637,6 +687,10 @@ export const usePlaybackStore = defineStore('playback', {
 
     toggleQueueDrawer(): void {
       this.queueDrawerOpen = !this.queueDrawerOpen
+    },
+
+    toggleLyricsDrawer(): void {
+      this.lyricsDrawerOpen = !this.lyricsDrawerOpen
     },
 
     /** Hands the currently loaded local track/radio off to the given cast

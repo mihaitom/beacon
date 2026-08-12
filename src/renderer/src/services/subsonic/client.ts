@@ -5,12 +5,14 @@ import type {
   ArtistResponse,
   ArtistsResponse,
   InternetRadioStationsResponse,
+  LyricsBySongIdResponse,
   PlaylistResponse,
   PlaylistsResponse,
   RawSong,
   SearchResult3Response,
   SimilarSongs2Response,
   Starred2Response,
+  StructuredLyrics,
 } from './types'
 import { mapAlbum, mapArtist, mapPlaylist, mapRadioStation, mapSong } from './mappers'
 import type { Album, Artist, Playlist, RadioStation, Track } from '@/types/library'
@@ -134,6 +136,21 @@ export class SubsonicClient {
     return mapSong(data.song)
   }
 
+  /** Embedded/ID3-tag lyrics for one specific file (OpenSubsonic
+   * extension) — tried before connect's third-party lookups (see
+   * stores/lyrics.ts) since it matches this exact audio file rather than
+   * "some track with this name/artist" that may be a different edit.
+   * Empty array (not a throw) on servers that don't implement the
+   * extension, same as any other "nothing here" case. */
+  async getLyricsBySongId(id: string): Promise<StructuredLyrics[]> {
+    try {
+      const data = await this.get<LyricsBySongIdResponse>('getLyricsBySongId.view', { id })
+      return data.lyricsList?.structuredLyrics ?? []
+    } catch {
+      return []
+    }
+  }
+
   async getArtists(): Promise<Artist[]> {
     const data = await this.get<ArtistsResponse>('getArtists.view')
     return data.artists.index.flatMap((index) => index.artist.map(mapArtist))
@@ -160,11 +177,7 @@ export class SubsonicClient {
   }
 
   async addToPlaylist(playlistId: string, songIds: string[]): Promise<void> {
-    await this.getMulti(
-      'updatePlaylist.view',
-      { playlistId },
-      { songIdToAdd: songIds },
-    )
+    await this.getMulti('updatePlaylist.view', { playlistId }, { songIdToAdd: songIds })
   }
 
   async removeFromPlaylist(playlistId: string, songIndexes: number[]): Promise<void> {
@@ -251,7 +264,11 @@ export class SubsonicClient {
     return data.internetRadioStations.internetRadioStation.map(mapRadioStation)
   }
 
-  async createInternetRadioStation(name: string, streamUrl: string, homePageUrl = ''): Promise<void> {
+  async createInternetRadioStation(
+    name: string,
+    streamUrl: string,
+    homePageUrl = '',
+  ): Promise<void> {
     await this.get('createInternetRadioStation.view', { name, streamUrl, homepageUrl: homePageUrl })
   }
 

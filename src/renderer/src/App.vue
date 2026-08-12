@@ -12,6 +12,7 @@ import ReleaseNotes from '@/components/releaseNotes.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { useConnectStore } from '@/stores/connect'
+import { useLibraryStore } from '@/stores/library'
 
 export default {
   name: 'App',
@@ -40,6 +41,12 @@ export default {
           connectStore.subscribeEvents()
           connectStore.refreshDevices()
           usePlaybackStore().attemptLocalResumeAfterAuth()
+          // Loads the whole track catalog right away instead of waiting for
+          // TracksView to mount — fetchAllTracks() is idempotent/dedupes
+          // concurrent callers (see its own comment in stores/library.ts),
+          // so TracksView's own created() hook calling it again later is a
+          // cheap no-op once this has already resolved.
+          void useLibraryStore().fetchAllTracks()
         } else {
           connectStore.unsubscribeEvents()
           if (this.$route.name !== 'login') {

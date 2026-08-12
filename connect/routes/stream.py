@@ -1,4 +1,4 @@
-"""routes/stream.py — GET /stream/{session_id}, GET /status, GET /events"""
+"""routes/stream.py — GET /stream/{session_id}, GET /status, GET /events, GET /visualizer"""
 
 import asyncio
 import json
@@ -8,9 +8,12 @@ import time
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response, StreamingResponse
 
+from core.audio_analysis import AudioAnalyzer, should_analyze
 from core.auth import require_token
 from core.session import DEFAULT_SESSION_ID, SessionState, build_status_dict, get_session, registry
+from core.state import PORT, list_target_pairs
 from core.streamer import stream_tracks
+from routes.debug import TEST_TONE_TRACK_ID
 
 logger = logging.getLogger("connect.stream")
 router = APIRouter()
@@ -40,7 +43,15 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
         return StreamingResponse(iter([b""]), media_type="audio/mpeg", status_code=204)
 
     track = session.state.current_track
-    track_url = session.media.get_stream_url(track.id)
+    # Debug-only special case (see routes/debug.py) — the test tone isn't a
+    # real library track, so there's nothing for session.media to resolve.
+    # Loopback, not stream_url()'s LAN IP: ffmpeg fetches this from inside
+    # the same process/container, not from the cast device.
+    track_url = (
+        f"http://127.0.0.1:{PORT}/debug/test-tone.wav"
+        if track.id == TEST_TONE_TRACK_ID
+        else session.media.get_stream_url(track.id)
+    )
 
     # Captured now (for this connection's -ss), but *not* cleared yet — see
     # stream_with_completion(), which only clears it once this connection has
@@ -90,51 +101,86 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
     async def stream_with_completion():
         my_generation = session.state.clock.play_generation
         offset_consumed = False
-        try:
-            async for chunk in stream_tracks(
-                [track_url],
-                on_track_start=on_track_start,
-                start_offset=offset,
-                gain=session.state.current_track_gain,
-            ):
-                if not offset_consumed:
-                    offset_consumed = True
-                    # Only clear resume_offset once THIS connection has
-                    # actually started producing audio — and only if no newer
-                    # /play, /seek or /resume has since set a different one.
-                    if session.state.clock.play_generation == my_generation:
-                        session.state.clock.resume_offset = 0.0
-                yield chunk
-        except asyncio.CancelledError:
-            raise  # client disconnected mid-stream — not a natural end
-        except Exception:
-            # ffmpeg itself failed (missing binary, crash, decode error —
-            # already logged by stream_tracks()). Not a natural end either:
-            # falling through to the track-end broadcast below would make
-            # the frontend think this track finished playing and advance the
-            # queue, when actually nothing (or only a partial track) played.
-            if session.state.clock.play_generation == my_generation:
-                session.state.is_streaming = False
-                await session.event_bus.broadcast(build_status_dict(session))
-            return
 
-        # FFmpeg may stream faster than real-time because Sonos buffers aggressively.
-        # Schedule completion in an independent task so Sonos closing the connection
-        # after receiving all data doesn't cancel the track-end signal.
-        st = session.state
-        if (
-            st.is_streaming
-            and not st.clock.is_paused
-            and st.clock.play_generation == my_generation
-        ):
-            wait = 0.0
-            if st.current_track and st.clock.play_start_time:
-                wait = max(
-                    0.0,
-                    (st.clock.play_start_time + st.current_track.duration)
-                    - time.time(),
-                )
-            asyncio.create_task(_fire_track_end(my_generation, wait))
+        # AirPlay/radio never end up here with a live-analyzable target (see
+        # should_analyze()'s docstring) — analyzer stays None for them, and
+        # GET /visualizer below just has nothing to send.
+        analyzer: AudioAnalyzer | None = None
+        if should_analyze(list_target_pairs(session.state.active_delivery)):
+            # Paced against the same calibrated clock /status's `elapsed`
+            # uses — not a fixed bitrate timeline, which can't account for
+            # the device's own startup-buffering delay (see
+            # AudioAnalyzer's docstring). `offset` is where in the track
+            # this connection's first byte actually starts.
+            analyzer = AudioAnalyzer(
+                elapsed_fn=lambda: session.state.clock.elapsed(), start_offset=offset
+            )
+            await analyzer.start()
+            previous = session.audio_analyzer
+            session.audio_analyzer = analyzer
+            if previous:
+                await previous.stop()
+
+        try:
+            try:
+                async for chunk in stream_tracks(
+                    [track_url],
+                    on_track_start=on_track_start,
+                    start_offset=offset,
+                    gain=session.state.current_track_gain,
+                ):
+                    if not offset_consumed:
+                        offset_consumed = True
+                        # Only clear resume_offset once THIS connection has
+                        # actually started producing audio — and only if no newer
+                        # /play, /seek or /resume has since set a different one.
+                        if session.state.clock.play_generation == my_generation:
+                            session.state.clock.resume_offset = 0.0
+                    if analyzer:
+                        analyzer.feed(chunk)
+                    yield chunk
+            except asyncio.CancelledError:
+                raise  # client disconnected mid-stream — not a natural end
+            except Exception:
+                # ffmpeg itself failed (missing binary, crash, decode error —
+                # already logged by stream_tracks()). Not a natural end either:
+                # falling through to the track-end broadcast below would make
+                # the frontend think this track finished playing and advance the
+                # queue, when actually nothing (or only a partial track) played.
+                if session.state.clock.play_generation == my_generation:
+                    session.state.is_streaming = False
+                    await session.event_bus.broadcast(build_status_dict(session))
+                return
+
+            # FFmpeg may stream faster than real-time because Sonos buffers aggressively.
+            # Schedule completion in an independent task so Sonos closing the connection
+            # after receiving all data doesn't cancel the track-end signal.
+            st = session.state
+            if (
+                st.is_streaming
+                and not st.clock.is_paused
+                and st.clock.play_generation == my_generation
+            ):
+                wait = 0.0
+                if st.current_track and st.clock.play_start_time:
+                    wait = max(
+                        0.0,
+                        (st.clock.play_start_time + st.current_track.duration)
+                        - time.time(),
+                    )
+                asyncio.create_task(_fire_track_end(my_generation, wait))
+        finally:
+            # finish_feeding(), not stop() — ffmpeg finishing early (well
+            # before the track's actual duration, since it's CPU-bound
+            # transcoding rather than real-time-throttled) just means this
+            # generator itself is done; the analyzer keeps draining
+            # whatever it's already buffered at the normal real-time pace
+            # and exits on its own once that's genuinely exhausted. session.
+            # audio_analyzer deliberately stays pointed at it — GET
+            # /visualizer needs to keep reading from it while it drains.
+            # See routes/playback.py's /stop for the actual hard teardown.
+            if analyzer:
+                analyzer.finish_feeding()
 
     return StreamingResponse(
         stream_with_completion(),
@@ -168,6 +214,40 @@ async def status_events(session: SessionState = Depends(get_session)):
                         yield ": heartbeat\n\n"
         finally:
             session.event_bus.unsubscribe(queue)
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/visualizer", dependencies=[Depends(require_token)])
+async def visualizer_events(session: SessionState = Depends(get_session)):
+    """Frequency-band frames for the fullscreen visualizer's 'cast' mode
+    (AudioVisualizer.vue) — see core/audio_analysis.py. session.audio_analyzer
+    is re-read every iteration (not captured once) since stream_with_completion()
+    above replaces it on every track change, and is None whenever nothing
+    live-analyzable is currently playing (nothing streaming at all, or
+    streaming to AirPlay/radio) — those periods just heartbeat with no data,
+    same as this producing nothing is the frontend's own signal to render
+    nothing rather than a fake idle animation."""
+
+    async def generator():
+        try:
+            while True:
+                analyzer = session.audio_analyzer
+                if analyzer is None:
+                    await asyncio.sleep(0.5)
+                    yield ": idle\n\n"
+                    continue
+                try:
+                    bands = await asyncio.wait_for(analyzer.frames.get(), timeout=1.0)
+                    yield f"data: {json.dumps({'bands': bands})}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": heartbeat\n\n"
+        except asyncio.CancelledError:
+            pass
 
     return StreamingResponse(
         generator(),

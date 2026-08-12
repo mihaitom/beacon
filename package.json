@@ -1,10 +1,27 @@
 {
   "name": "beacon",
   "version": "0.0.0",
-  "description": "Multi-room casting music client",
-  "private": true,
+  "description": "A modern self-hosted music player with Multi-room casting support.",
+  "keywords": [
+    "subsonic",
+    "navidrome",
+    "jellyfin",
+    "react",
+    "electron"
+  ],
+  "homepage": "https://github.com/mihaitom/beacon",
+  "bugs": {
+    "url": "https://github.com/mihaitom/beacon/issues"
+  },
+  "license": "GPL-3.0",
   "type": "module",
   "main": "./out/main/index.js",
+  "desktopName": "beacon.desktop",
+  "author": {
+    "name": "Thomas Mihailovits",
+    "email": "beacon@users.noreply.github.com",
+    "url": "https://github.com/mihaitom/"
+  },
   "scripts": {
     "dev": "run-p dev:connect dev:electron",
     "dev:electron": "electron-vite dev",

@@ -19,9 +19,15 @@
               currentTrack?.title ?? playbackStore.radioStation?.name ?? $t('player.nothingPlaying')
             }}
           </div>
-          <div class="text-caption text-medium-emphasis text-truncate">
-            {{ currentTrack?.artist ?? '' }}
-          </div>
+          <router-link
+            v-if="currentTrack"
+            :to="`/artists/${currentTrack.artistId}`"
+            class="text-caption text-medium-emphasis text-truncate player-bar__artist-link"
+            @click.stop
+          >
+            {{ currentTrack.artist }}
+          </router-link>
+          <div v-else class="text-caption text-medium-emphasis text-truncate" />
         </div>
         <v-btn
           v-if="currentTrack"
@@ -78,15 +84,16 @@
         </div>
         <div class="d-flex align-center w-100" style="gap: 8px; max-width: 600px">
           <span class="text-caption text-medium-emphasis" style="width: 40px">{{
-            formatTime(playbackStore.localPosition)
+            formatTime(seekPreviewPosition ?? playbackStore.localPosition)
           }}</span>
           <v-slider
-            :model-value="playbackStore.localPosition"
+            :model-value="seekPreviewPosition ?? playbackStore.localPosition"
             :max="playbackStore.duration || 1"
             density="compact"
             hide-details
             :disabled="!hasPlayable || !!playbackStore.radioStation"
-            @update:model-value="playbackStore.seek($event)"
+            @update:model-value="seekPreviewPosition = $event"
+            @end="onSeekEnd"
           />
           <span class="text-caption text-medium-emphasis" style="width: 40px">{{
             formatTime(playbackStore.duration)
@@ -95,6 +102,14 @@
       </div>
 
       <div class="d-flex align-center" style="min-width: 320px; gap: 4px">
+        <v-btn
+          v-if="currentTrack"
+          icon="mdi-script-text-outline"
+          variant="text"
+          density="comfortable"
+          :title="$t('lyrics.title')"
+          @click="playbackStore.toggleLyricsDrawer()"
+        />
         <v-btn
           icon="mdi-playlist-music"
           variant="text"
@@ -151,6 +166,16 @@ export default {
       // channel for "someone changed it on the device itself/another
       // session" — polling is the only way this slider ever finds out.
       volumePollTimer: null as ReturnType<typeof setInterval> | null,
+      // Non-null only while actively dragging the seek slider — decouples
+      // the slider's live visual position from playbackStore.seek()
+      // itself, which used to fire on every drag tick via
+      // @update:model-value. During casting each of those was a real
+      // round-trip to the device (Sonos/Chromecast/etc.) — dozens of
+      // overlapping seek commands during one drag made the device
+      // audibly struggle to keep up and settle. Now @update:model-value
+      // only updates this (purely visual), and the actual seek() call
+      // fires once, from @end, when the drag finishes.
+      seekPreviewPosition: null as number | null,
     }
   },
   computed: {
@@ -230,6 +255,14 @@ export default {
       this.deviceVolume = rounded
       await this.connectStore.setDeviceVolume(target.type, target.name, rounded)
     },
+    async onSeekEnd(value: number) {
+      // Cleared only *after* seek() resolves (it sets localPosition to
+      // this same value once done) — clearing first would flash the
+      // slider back to the pre-seek position for whatever the round-trip
+      // takes.
+      await this.playbackStore.seek(value)
+      this.seekPreviewPosition = null
+    },
     async toggleStar() {
       if (!this.currentTrack || this.starringInFlight) return
       this.starringInFlight = true
@@ -255,6 +288,19 @@ export default {
 
 .player-bar__cover {
   flex-shrink: 0;
+}
+
+/* Block, not the anchor's default inline — text-truncate (overflow/
+ * white-space/ellipsis) needs a constrained box to truncate against,
+ * which an inline element sitting in normal block flow doesn't have here
+ * (this row isn't itself a flex item, see .min-width-0 above it). */
+.player-bar__artist-link {
+  display: block;
+  text-decoration: none;
+}
+
+.player-bar__artist-link:hover {
+  color: rgb(var(--v-theme-primary));
 }
 
 /* The center column (transport + seek slider) is the only flex-grow item

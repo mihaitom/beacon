@@ -5,6 +5,8 @@
  */
 export class AudioEngine {
   private readonly audio: HTMLAudioElement
+  private audioContext: AudioContext | null = null
+  private analyserNode: AnalyserNode | null = null
 
   onTimeUpdate: ((position: number) => void) | null = null
   onEnded: (() => void) | null = null
@@ -13,6 +15,11 @@ export class AudioEngine {
 
   constructor() {
     this.audio = new Audio()
+    // Without this, getAnalyser() below would tap a "tainted" source (even
+    // same-origin-looking requests can differ by port/scheme) and only
+    // ever read back silence — connect's CORSMiddleware (main.py) already
+    // allows the app's own origin, so this is safe to set unconditionally.
+    this.audio.crossOrigin = 'anonymous'
     this.audio.addEventListener('timeupdate', () => {
       this.onTimeUpdate?.(this.audio.currentTime)
     })
@@ -64,6 +71,35 @@ export class AudioEngine {
 
   get isPaused(): boolean {
     return this.audio.paused
+  }
+
+  /** Lazily wires a Web Audio analyser tapped off this element's output —
+   * used by the fullscreen visualizer (AudioVisualizer.vue). Created at
+   * most once per element (the Web Audio API throws if
+   * createMediaElementSource is called on the same element twice) and
+   * reused across every subsequent track, since this same <audio> element
+   * is reused for the app's whole lifetime too (see getAudioEngine()).
+   * Routes back through to `destination` — tapping the signal this way
+   * would otherwise silence actual playback, since the browser stops
+   * sending an element's audio straight to speakers once something reads
+   * from a MediaElementAudioSourceNode built on it. */
+  getAnalyser(): AnalyserNode {
+    if (!this.analyserNode) {
+      this.audioContext = new AudioContext()
+      const source = this.audioContext.createMediaElementSource(this.audio)
+      this.analyserNode = this.audioContext.createAnalyser()
+      this.analyserNode.fftSize = 128
+      this.analyserNode.smoothingTimeConstant = 0.8
+      source.connect(this.analyserNode)
+      this.analyserNode.connect(this.audioContext.destination)
+    }
+    // Autoplay policy can start a freshly-created context 'suspended' —
+    // harmless to call every time, resume() on an already-running context
+    // is a no-op.
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      void this.audioContext.resume()
+    }
+    return this.analyserNode
   }
 }
 

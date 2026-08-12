@@ -17,6 +17,7 @@ from fastapi import Header, HTTPException, Query
 from delivery import BaseDelivery, DeliveryManager
 from media import MediaClient, SubsonicClient
 
+from .audio_analysis import AudioAnalyzer
 from .claims import claims
 from .state import AppState, delivery_class_for, EventBus, list_target_pairs
 
@@ -34,6 +35,12 @@ class SessionState:
         # with either a Subsonic or Jellyfin client.
         self.media: MediaClient = SubsonicClient("")
         self.event_bus = EventBus()
+        # Owned by routes/stream.py's stream_with_completion(), which
+        # creates a fresh one per track and tears down the previous one —
+        # see core/audio_analysis.py. None whenever nothing is currently
+        # being live-analyzed (nothing streaming, or streaming to a target
+        # that can't be, e.g. AirPlay/radio).
+        self.audio_analyzer: AudioAnalyzer | None = None
         self.last_seen: float = time.time()
         # Set only once /config has verified the supplied credential actually
         # authenticates against the (optionally locked) media server — see

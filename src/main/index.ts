@@ -5,7 +5,15 @@ import { randomBytes } from 'crypto';
 import { BrowserWindow, app, ipcMain, safeStorage, shell } from 'electron';
 import { electronApp, is, optimizer } from '@electron-toolkit/utils';
 import { config as loadDotenv } from 'dotenv';
-import { autoUpdater } from 'electron-updater';
+// Not `import { autoUpdater } from 'electron-updater'` — electron-updater is
+// CommonJS, and Node's static named-export detection for it doesn't hold up
+// once this runs as real ESM in a packaged build (works fine unpackaged/in
+// dev, then throws "Named export 'autoUpdater' not found" at startup from
+// inside an AppImage/asar). Default import + destructure is the reliable
+// form across both.
+import electronUpdaterPkg from 'electron-updater';
+
+const { autoUpdater } = electronUpdaterPkg;
 
 // Without this, Chromium's OSCrypt backend auto-detection on Linux only
 // tries libsecret/kwallet when it recognizes the desktop environment (GNOME/

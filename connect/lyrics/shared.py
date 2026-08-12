@@ -15,7 +15,7 @@ CONNECT_VERSION = "0.7.0-dev.0"
 
 # Shared across providers — some (e.g. SimpMusic) reject requests without one.
 USER_AGENT = (
-    f"Feishin Connect/{CONNECT_VERSION} (https://github.com/mihaitom/feishin-connect)"
+    f"Beacon/{CONNECT_VERSION} (https://github.com/mihaitom/beacon)"
 )
 
 

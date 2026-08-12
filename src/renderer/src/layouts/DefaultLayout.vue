@@ -37,7 +37,14 @@
     </v-main>
 
     <player-bar />
-    <queue-drawer :model-value="playbackStore.queueDrawerOpen" @update:model-value="playbackStore.queueDrawerOpen = $event" />
+    <queue-drawer
+      :model-value="playbackStore.queueDrawerOpen"
+      @update:model-value="playbackStore.queueDrawerOpen = $event"
+    />
+    <lyrics-drawer
+      :model-value="playbackStore.lyricsDrawerOpen"
+      @update:model-value="playbackStore.lyricsDrawerOpen = $event"
+    />
     <cast-takeover-confirm-dialog />
   </v-app>
 </template>
@@ -45,6 +52,7 @@
 <script lang="ts">
 import PlayerBar from '@/components/player/PlayerBar.vue'
 import QueueDrawer from '@/components/queue/QueueDrawer.vue'
+import LyricsDrawer from '@/components/lyrics/LyricsDrawer.vue'
 import CastTakeoverConfirmDialog from '@/components/connect/CastTakeoverConfirmDialog.vue'
 import { usePlaybackStore } from '@/stores/playback'
 
@@ -53,6 +61,7 @@ export default {
   components: {
     PlayerBar,
     QueueDrawer,
+    LyricsDrawer,
     CastTakeoverConfirmDialog,
   },
   data() {

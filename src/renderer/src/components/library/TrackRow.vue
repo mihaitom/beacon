@@ -18,9 +18,14 @@
       </div>
       <div class="text-caption text-medium-emphasis text-truncate">{{ track.artist }}</div>
     </div>
-    <div v-if="showAlbum" class="track-album text-caption text-medium-emphasis text-truncate">
+    <router-link
+      v-if="showAlbum"
+      :to="`/albums/${track.albumId}`"
+      class="track-album text-caption text-medium-emphasis text-truncate"
+      @click.stop
+    >
       {{ track.album }}
-    </div>
+    </router-link>
     <div v-if="showGenre" class="track-genre text-caption text-medium-emphasis text-truncate">
       {{ track.genre || '—' }}
     </div>
@@ -258,6 +263,11 @@ export default {
 .track-album {
   flex: 2 1 120px;
   min-width: 0;
+  text-decoration: none;
+}
+
+.track-album:hover {
+  color: rgb(var(--v-theme-primary));
 }
 
 .track-genre {

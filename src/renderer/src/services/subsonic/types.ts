@@ -119,3 +119,25 @@ export interface InternetRadioStationsResponse {
 export interface SimilarSongs2Response {
   similarSongs2: { song?: RawSong[] }
 }
+
+// getLyricsBySongId.view (OpenSubsonic extension) — embedded/ID3-tag
+// lyrics for one specific file, as opposed to connect's third-party
+// lookups which match by name/artist and can land on a different edit of
+// the song. `line[].start` (ms) is only present when `synced` is true.
+export interface StructuredLyricLine {
+  start?: number
+  value: string
+}
+
+export interface StructuredLyrics {
+  lang: string
+  synced: boolean
+  line: StructuredLyricLine[]
+  displayArtist?: string
+  displayTitle?: string
+  offset?: number
+}
+
+export interface LyricsBySongIdResponse {
+  lyricsList: { structuredLyrics?: StructuredLyrics[] }
+}

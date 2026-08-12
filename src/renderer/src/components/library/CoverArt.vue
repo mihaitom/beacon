@@ -1,14 +1,21 @@
 <template>
   <v-avatar v-if="rounded" :size="size" rounded="0">
-    <v-img v-if="url" :src="url" :width="size" :height="size" cover eager @error="onError">
+    <v-img v-if="url" :src="url" width="100%" height="100%" cover eager @error="onError">
       <template #placeholder>
         <v-skeleton-loader type="image" class="cover-art-skeleton" />
       </template>
     </v-img>
     <v-icon v-else :size="size * 0.6" :icon="fallbackIcon" />
   </v-avatar>
+  <!-- v-img is sized as 100%/100% of this box, not its own copy of `size`
+   - in px — a second, independent explicit size wouldn't track a CSS
+   - transition put on this box's own width/height (e.g. NowPlayingView's
+   - artwork-shrinks-for-lyrics animation): the box would resize smoothly
+   - while the image inside it snapped instantly, since nothing here was
+   - telling *it* to animate too. Filling the parent means it always
+   - matches this box's current size, mid-transition or not. -->
   <div v-else class="cover-art" :style="{ width: `${size}px`, height: `${size}px` }">
-    <v-img v-if="url" :src="url" :width="size" :height="size" cover eager @error="onError">
+    <v-img v-if="url" :src="url" width="100%" height="100%" cover eager @error="onError">
       <template #placeholder>
         <v-skeleton-loader type="image" class="cover-art-skeleton" />
       </template>
