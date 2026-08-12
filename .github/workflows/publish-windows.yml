@@ -1,0 +1,66 @@
+name: Publish Windows (Manual)
+
+on: workflow_dispatch
+
+jobs:
+    # See publish.yml's ensure-release job for why this exists: electron-builder's
+    # lookup-then-create check for the release draft isn't atomic, so triggering
+    # this alongside another platform's publish workflow around the same time
+    # can otherwise create a duplicate draft holding only this platform's assets.
+    ensure-release:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        steps:
+            - name: Checkout git repo
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+            - name: Read version
+              id: version
+              run: echo "value=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+            - name: Ensure draft release exists
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  TAG="v${{ steps.version.outputs.value }}"
+                  gh release view "$TAG" --repo "${{ github.repository }}" \
+                      || gh release create "$TAG" --repo "${{ github.repository }}" \
+                          --title "${{ steps.version.outputs.value }}" --draft --notes ""
+
+    publish:
+        needs: ensure-release
+        runs-on: ${{ matrix.os }}
+
+        # Required so electron-builder's `--publish always` can create the release
+        permissions:
+            contents: write
+
+        strategy:
+            matrix:
+                os: [windows-latest]
+
+        steps:
+            - name: Checkout git repo
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+            - name: Install Node and PNPM
+              uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+            # Required for package:connect (`uv run connect/packaging/build-binary.py`).
+            # uv installs the required Python version itself.
+            - name: Install uv
+              uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+
+            - name: Install dependencies
+              run: pnpm install
+
+            - name: Build and Publish releases
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              uses: nick-invision/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.0
+              with:
+                  timeout_minutes: 30
+                  max_attempts: 3
+                  retry_on: error
+                  command: |
+                      pnpm run publish:win
+                  on_retry_command: pnpm cache delete

@@ -1,0 +1,393 @@
+<template>
+  <div>
+    <track-list-header
+      :class="{ 'track-list-header--sticky': stickyHeader }"
+      :show-cover="showCover"
+      :show-album="showAlbum"
+      :show-genre="showGenre"
+      :show-year="showYear"
+      :show-play-count="showPlayCount"
+      :show-format="showFormat"
+      :sort-key="sortKey"
+      :sort-direction="sortDirection"
+      @sort="onSort"
+    />
+    <template v-if="loading">
+      <div
+        v-for="n in skeletonRowCount"
+        :key="n"
+        class="track-row track-row--skeleton d-flex align-center px-2 py-1"
+      >
+        <div class="track-index" />
+        <v-skeleton-loader v-if="showCover" type="image" width="40" height="40" class="rounded" />
+        <div class="track-title min-width-0">
+          <v-skeleton-loader type="text" width="60%" height="20" />
+          <v-skeleton-loader type="text" width="38%" height="20" />
+        </div>
+        <div v-if="showAlbum" class="track-album">
+          <v-skeleton-loader type="text" width="70%" height="20" />
+        </div>
+        <div v-if="showGenre" class="track-genre">
+          <v-skeleton-loader type="text" width="60%" height="20" />
+        </div>
+        <div v-if="showYear" class="track-year">
+          <v-skeleton-loader type="text" width="28" height="20" class="ml-auto" />
+        </div>
+        <div v-if="showPlayCount" class="track-playcount">
+          <v-skeleton-loader type="text" width="20" height="20" class="ml-auto" />
+        </div>
+        <div v-if="showFormat" class="track-format">
+          <v-skeleton-loader type="text" width="60" height="20" class="ml-auto" />
+        </div>
+        <div class="track-duration">
+          <v-skeleton-loader type="text" width="30" height="20" class="ml-auto" />
+        </div>
+        <div class="track-actions" style="width: 200px" />
+      </div>
+    </template>
+    <template v-else>
+      <track-row
+        v-for="(track, index) in visibleTracks"
+        :key="`${track.id}-${index}`"
+        :track="track"
+        :index="rowIndexOffset + index"
+        :show-cover="showCover"
+        :show-album="showAlbum"
+        :show-genre="showGenre"
+        :show-year="showYear"
+        :show-play-count="showPlayCount"
+        :show-format="showFormat"
+        @play="playTrack"
+        @play-next="playNextTrack"
+        @track-radio="startTrackRadio"
+        @toggle-star="toggleStar"
+        @set-rating="setRating"
+        @add-to-queue="addToQueue"
+        @add-to-playlist="addToPlaylist"
+      />
+    </template>
+    <div v-if="!infiniteScroll && pageCount > 1" class="d-flex justify-center mt-3">
+      <v-pagination
+        v-model="currentPage"
+        :length="pageCount"
+        :total-visible="7"
+        density="comfortable"
+      />
+    </div>
+    <infinite-scroll-trigger
+      v-if="infiniteScroll && visibleCount < sortedTracks.length"
+      @trigger="loadMoreVisible"
+    />
+  </div>
+</template>
+
+<script lang="ts">
+import type { PropType } from 'vue'
+import { usePlaybackStore } from '@/stores/playback'
+import { useLibraryStore } from '@/stores/library'
+import TrackRow from './TrackRow.vue'
+import TrackListHeader from './TrackListHeader.vue'
+import InfiniteScrollTrigger from '@/components/InfiniteScrollTrigger.vue'
+import type { Track } from '@/types/library'
+
+type SortKey = 'title' | 'album' | 'genre' | 'year' | 'playCount' | 'format' | 'duration' | 'rating'
+
+const PAGE_SIZE = 100
+
+export default {
+  name: 'TrackList',
+  components: { TrackRow, TrackListHeader, InfiniteScrollTrigger },
+  props: {
+    // Pass the complete list this view has (not a pre-sliced page) —
+    // sorting and render-pagination both happen inside this component, in
+    // that order, so a column sort always spans everything given here, and
+    // "Mehr laden" only ever grows how much of the (already sorted) result
+    // is rendered.
+    tracks: {
+      type: Array as () => Track[],
+      required: true,
+    },
+    showCover: { type: Boolean, default: false },
+    showAlbum: { type: Boolean, default: false },
+    showGenre: { type: Boolean, default: false },
+    showYear: { type: Boolean, default: false },
+    showPlayCount: { type: Boolean, default: false },
+    showFormat: { type: Boolean, default: false },
+    // Overridable for views that hand over an already-meaningfully-ordered
+    // list — null means "leave it in the order the list was given in" (no
+    // column highlighted as active), used by album/playlist detail so
+    // track-number/playlist order is what actually plays, not an
+    // alphabetical-by-title reshuffle. ArtistDetailView's/HomeView's "most
+    // played" shelves instead pass 'playCount' (server-sorted desc).
+    // Everywhere else without an override defaults to title, so a plain
+    // library browse isn't just "whatever order the API happened to
+    // return".
+    defaultSortKey: { type: String as PropType<SortKey | null>, default: 'title' },
+    defaultSortDirection: { type: String as () => 'asc' | 'desc', default: 'asc' },
+    // Opt-in: replaces the v-pagination page-number nav with an
+    // auto-load-more-on-scroll sentinel instead. Off by default — the
+    // page-number nav is deliberate for most call sites (album/playlist/
+    // genre detail, search, favorites — all reasonably small lists), this
+    // is for the few top-level browse views with genuinely long lists
+    // (TracksView) where scrolling to the bottom and clicking through pages
+    // is more friction than it's worth.
+    infiniteScroll: { type: Boolean, default: false },
+    // Whether clicking a track queues the rest of this list too (true,
+    // default) or just that one track (false). Set to false for raw
+    // library-browse views whose list isn't a curated sequence and can run
+    // into the thousands (TracksView, GenreDetailView) — everywhere else
+    // (album/playlist/artist detail, favorites, search, home shelves) is a
+    // bounded, intentional list, so playing through it is the expected
+    // behavior, same as any other music player.
+    queueWholeList: { type: Boolean, default: true },
+    // Renders placeholder rows matching TrackRow's column layout instead of
+    // the real (still-loading) tracks — avoids the height jump of swapping
+    // a spinner for a full table once data arrives.
+    loading: { type: Boolean, default: false },
+    // Pins the column-label row so it stays visible while scrolling through
+    // a long list, right below whatever the page's own sticky title/filter
+    // block is (its height is passed in via the --sticky-header-offset CSS
+    // var, set on this component's root — see TracksView.vue). Off by
+    // default since it only makes sense for pages that actually have a
+    // sticky block above the list (currently just TracksView).
+    stickyHeader: { type: Boolean, default: false },
+  },
+  data() {
+    return {
+      sortKey: this.defaultSortKey as SortKey | null,
+      sortDirection: this.defaultSortDirection as 'asc' | 'desc',
+      currentPage: 1,
+      visibleCount: PAGE_SIZE,
+      // Guards toggleStar() against a rapid double-click flipping the same
+      // track twice concurrently, which (since both calls read `starred`
+      // before either resolves) can leave the local state one flip behind
+      // what the server actually recorded.
+      starringTrackIds: new Set<string>(),
+    }
+  },
+  computed: {
+    skeletonRowCount(): number {
+      return Math.min(this.tracks.length || 8, 8)
+    },
+    playbackStore() {
+      return usePlaybackStore()
+    },
+    libraryStore() {
+      return useLibraryStore()
+    },
+    sortedTracks(): Track[] {
+      if (!this.sortKey) return this.tracks
+      const key = this.sortKey
+      const dir = this.sortDirection === 'desc' ? -1 : 1
+      return [...this.tracks].sort((a, b) => {
+        const av = this.sortValue(a, key)
+        const bv = this.sortValue(b, key)
+        if (av < bv) return -1 * dir
+        if (av > bv) return 1 * dir
+        return 0
+      })
+    },
+    pageCount(): number {
+      return Math.max(1, Math.ceil(this.sortedTracks.length / PAGE_SIZE))
+    },
+    pageOffset(): number {
+      return (this.currentPage - 1) * PAGE_SIZE
+    },
+    visibleTracks(): Track[] {
+      if (this.infiniteScroll) {
+        return this.sortedTracks.slice(0, this.visibleCount)
+      }
+      return this.sortedTracks.slice(this.pageOffset, this.pageOffset + PAGE_SIZE)
+    },
+    rowIndexOffset(): number {
+      return this.infiniteScroll ? 0 : this.pageOffset
+    },
+  },
+  watch: {
+    // A new track list (different filter, different album, ...) or a new
+    // sort both invalidate which page was open / how much was revealed.
+    tracks() {
+      this.currentPage = 1
+      this.visibleCount = PAGE_SIZE
+    },
+    sortKey() {
+      this.currentPage = 1
+      this.visibleCount = PAGE_SIZE
+    },
+    // Lets a caller change the *effective* default after mount — used by
+    // TracksView to keep the list in stable arrival order (sortKey null,
+    // new tracks only ever append) while its background-paginated fetch is
+    // still streaming in more of the catalog, then switch to the real
+    // alphabetical default in one clean transition once that's done,
+    // instead of re-sorting (and visibly reshuffling already-visible rows)
+    // on every single page that arrives in between.
+    defaultSortKey(value: SortKey | null) {
+      this.sortKey = value
+    },
+  },
+  methods: {
+    loadMoreVisible() {
+      this.visibleCount += PAGE_SIZE
+    },
+    sortValue(track: Track, key: SortKey): string | number {
+      // Format has no single natural sort order of its own — bitrate is the
+      // meaningful "quality" ranking underneath that column.
+      if (key === 'format') return track.bitRate ?? 0
+      const value = track[key]
+      if (typeof value === 'string') return value.toLowerCase()
+      return value ?? 0
+    },
+    onSort(key: SortKey) {
+      if (this.sortKey === key) {
+        this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc'
+      } else {
+        this.sortKey = key
+        this.sortDirection = 'asc'
+      }
+    },
+    playTrack(track: Track, index: number | null) {
+      if (!this.queueWholeList) {
+        // Raw library browsing (Tracks/Genre views) — not a curated
+        // sequence, so only the clicked track goes into the queue, not the
+        // rest of a list that can run into the thousands. Use the context
+        // menu's "Play next" to queue more, or "Track Radio" to build a
+        // queue out of similar tracks.
+        void this.playbackStore.playTrackList([track], 0)
+        return
+      }
+      // A curated, bounded list (album/playlist/favorites/search/...) —
+      // clicking a track plays it and continues through the rest, same as
+      // any other music player. Uses the row's own absolute index (passed
+      // through from TrackRow) rather than re-deriving it by id — a
+      // findIndex-by-id would always resolve to the *first* occurrence,
+      // playing the wrong position when the same track appears twice in
+      // one list (e.g. concatenated from two playlists).
+      const position = index ?? this.sortedTracks.findIndex((t) => t.id === track.id)
+      void this.playbackStore.playTrackList(this.sortedTracks, Math.max(0, position))
+    },
+    playNextTrack(track: Track) {
+      this.playbackStore.queueNext([track])
+    },
+    async startTrackRadio(track: Track) {
+      try {
+        await this.playbackStore.startTrackRadio(track)
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('library.trackRadio'),
+          message: this.$t('library.trackRadioError'),
+        })
+        console.error('[track-radio]', error)
+      }
+    },
+    async toggleStar(track: Track) {
+      if (this.starringTrackIds.has(track.id)) return
+      this.starringTrackIds.add(track.id)
+      const wasStarred = track.starred
+      try {
+        await this.libraryStore.toggleStar({ id: track.id, starred: wasStarred })
+        track.starred = !wasStarred
+      } finally {
+        this.starringTrackIds.delete(track.id)
+      }
+    },
+    async setRating({ track, rating }: { track: Track; rating: number }) {
+      const previous = track.rating
+      track.rating = rating
+      try {
+        await this.libraryStore.setRating(track.id, rating)
+      } catch (error) {
+        track.rating = previous
+        console.error('[track-list] Failed to set rating:', error)
+      }
+    },
+    addToQueue(track: Track) {
+      this.playbackStore.addToQueue([track])
+    },
+    async addToPlaylist({ track, playlistId }: { track: Track; playlistId: string }) {
+      await this.libraryStore.addToPlaylist(playlistId, [track.id])
+    },
+  },
+}
+</script>
+
+<style scoped>
+/* Column widths/flex mirror TrackRow.vue's so a skeleton row lines up with
+ * the real rows that replace it once loading finishes. */
+.track-row {
+  gap: 12px;
+}
+
+.track-index {
+  flex: 0 0 28px;
+}
+
+.track-cover {
+  flex: 0 0 auto;
+}
+
+.track-title {
+  flex: 3 1 160px;
+}
+
+.track-album {
+  flex: 2 1 120px;
+  min-width: 0;
+}
+
+.track-genre {
+  flex: 1.5 1 90px;
+  min-width: 0;
+}
+
+.track-year,
+.track-playcount,
+.track-format,
+.track-duration {
+  flex: 0 0 44px;
+}
+
+.track-format {
+  flex-basis: 120px;
+}
+
+.track-actions {
+  flex: 0 0 200px;
+}
+
+/* v-skeleton-loader's "image"/"text" bones ignore the component's own
+ * width/height props (fixed CSS height + a 16px margin baked in) — those
+ * props only size the outer wrapper. Forcing the bone to fill that wrapper
+ * exactly is what makes each skeleton cell match TrackRow.vue's real
+ * dimensions (40px cover, 20px text lines) pixel for pixel, so the row
+ * height (48px, py-1 + the 40px cover/title-block) never shifts once real
+ * rows render in. */
+.track-row--skeleton :deep(.v-skeleton-loader__bone) {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.min-width-0 {
+  min-width: 0;
+}
+
+/* Pins the column-label row right below the page's own sticky title/filter
+ * block — --sticky-header-offset is set on this component's root by the
+ * consuming view (see TracksView.vue), and --v-layout-top is Vuetify's own
+ * app-bar-height variable, so this stays correct regardless of app-bar
+ * density or how tall the filter block above it happens to be. :deep()
+ * because the sticky class lands on TrackListHeader's own root element,
+ * outside this component's own scoped template. */
+:deep(.track-list-header--sticky) {
+  position: sticky;
+  top: calc(var(--v-layout-top, 0px) + var(--sticky-header-offset, 0px));
+  z-index: 2;
+  background: rgb(var(--v-theme-background));
+  /* Forces its own compositing layer — without this, Chromium sometimes
+   * renders position:sticky content with a faint 1px wobble while scrolling
+   * (the compositor and main thread disagree on the sub-pixel offset for a
+   * frame or two). */
+  transform: translateZ(0);
+}
+</style>

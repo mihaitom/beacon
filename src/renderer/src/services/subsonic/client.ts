@@ -1,0 +1,293 @@
+import md5 from 'blueimp-md5'
+import type {
+  AlbumList2Response,
+  AlbumResponse,
+  ArtistResponse,
+  ArtistsResponse,
+  InternetRadioStationsResponse,
+  PlaylistResponse,
+  PlaylistsResponse,
+  RawSong,
+  SearchResult3Response,
+  SimilarSongs2Response,
+  Starred2Response,
+} from './types'
+import { mapAlbum, mapArtist, mapPlaylist, mapRadioStation, mapSong } from './mappers'
+import type { Album, Artist, Playlist, RadioStation, Track } from '@/types/library'
+
+const API_VERSION = '1.16.1'
+const APP_NAME = 'beacon'
+
+/**
+ * Builds a Subsonic auth query string (u/t/s/v/c) from a username+password.
+ * This exact string is what connect/media/subsonic.py expects as `/config`'s
+ * `credential` field (it parses it back with parse_qs) — and it's reused
+ * as-is for Beacon's own Subsonic calls through the proxy, since the proxy
+ * is a stateless passthrough that does not know about `/config` at all.
+ */
+export function buildSubsonicCredential(username: string, password: string): string {
+  const salt = cryptoRandomSalt()
+  const token = md5(password + salt)
+  const params = new URLSearchParams({
+    u: username,
+    t: token,
+    s: salt,
+    v: API_VERSION,
+    c: APP_NAME,
+  })
+  return params.toString()
+}
+
+function cryptoRandomSalt(): string {
+  const bytes = new Uint8Array(6)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+export class SubsonicClient {
+  constructor(
+    private readonly proxyBaseUrl: string,
+    private readonly credential: string,
+    // The /rest/* proxy route requires X-Connect-Token/?token= just like every
+    // other connect endpoint (see connect/routes/proxy.py + core/auth.py) —
+    // it's a separate secret from the Subsonic credential above.
+    private readonly connectToken: string = '',
+  ) {}
+
+  private authParams(): URLSearchParams {
+    const params = new URLSearchParams(this.credential)
+    if (!params.has('f')) params.set('f', 'json')
+    return params
+  }
+
+  private async get<T>(endpoint: string, extra: Record<string, string> = {}): Promise<T> {
+    const params = this.authParams()
+    for (const [key, value] of Object.entries(extra)) params.set(key, value)
+
+    const response = await fetch(`${this.proxyBaseUrl}/rest/${endpoint}?${params.toString()}`, {
+      headers: { 'X-Connect-Token': this.connectToken },
+    })
+    if (!response.ok) {
+      throw new Error(`Subsonic request failed: ${response.status}`)
+    }
+    const data = await response.json()
+    const subsonic = data['subsonic-response']
+    if (subsonic?.status !== 'ok') {
+      throw new Error(`Subsonic error ${subsonic?.error?.code}: ${subsonic?.error?.message}`)
+    }
+    return subsonic as T
+  }
+
+  async ping(): Promise<boolean> {
+    try {
+      await this.get('ping.view')
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** streamUrl/coverArtUrl become raw <audio src>/<img src> values — the
+   * browser can't attach a custom X-Connect-Token header for those, so the
+   * token has to travel as a query param instead (require_token accepts
+   * both, see connect/core/auth.py). */
+  streamUrl(trackId: string): string {
+    const params = this.authParams()
+    params.set('id', trackId)
+    if (this.connectToken) params.set('token', this.connectToken)
+    return `${this.proxyBaseUrl}/rest/stream.view?${params.toString()}`
+  }
+
+  coverArtUrl(coverArtId: string, size = 300): string | null {
+    if (!coverArtId) return null
+    const params = this.authParams()
+    params.set('id', coverArtId)
+    params.set('size', String(size))
+    if (this.connectToken) params.set('token', this.connectToken)
+    return `${this.proxyBaseUrl}/rest/getCoverArt.view?${params.toString()}`
+  }
+
+  async getAlbumList2(
+    type: 'alphabeticalByName' | 'newest' | 'frequent' | 'recent' | 'random' = 'alphabeticalByName',
+    size = 100,
+    offset = 0,
+  ): Promise<Album[]> {
+    const data = await this.get<AlbumList2Response>('getAlbumList2.view', {
+      type,
+      size: String(size),
+      offset: String(offset),
+    })
+    return data.albumList2.album.map(mapAlbum)
+  }
+
+  async getAlbum(id: string): Promise<Album> {
+    const data = await this.get<AlbumResponse>('getAlbum.view', { id })
+    return mapAlbum(data.album)
+  }
+
+  /** Single-track lookup by id — used to rebuild a full Track from the
+   * connect backend's SSE status (which only gives id/title/artist/album/
+   * duration, see StatusTrack) after a page reload or a fresh SSE
+   * subscription finds playback already in progress. */
+  async getSong(id: string): Promise<Track> {
+    const data = await this.get<{ song: RawSong }>('getSong.view', { id })
+    return mapSong(data.song)
+  }
+
+  async getArtists(): Promise<Artist[]> {
+    const data = await this.get<ArtistsResponse>('getArtists.view')
+    return data.artists.index.flatMap((index) => index.artist.map(mapArtist))
+  }
+
+  async getArtist(id: string): Promise<Artist> {
+    const data = await this.get<ArtistResponse>('getArtist.view', { id })
+    return mapArtist(data.artist)
+  }
+
+  async getPlaylists(): Promise<Playlist[]> {
+    const data = await this.get<PlaylistsResponse>('getPlaylists.view')
+    return data.playlists.playlist.map(mapPlaylist)
+  }
+
+  async getPlaylist(id: string): Promise<Playlist> {
+    const data = await this.get<PlaylistResponse>('getPlaylist.view', { id })
+    return mapPlaylist(data.playlist)
+  }
+
+  async createPlaylist(name: string, songIds: string[] = []): Promise<void> {
+    const params: Record<string, string> = { name }
+    await this.getMulti('createPlaylist.view', params, { songId: songIds })
+  }
+
+  async addToPlaylist(playlistId: string, songIds: string[]): Promise<void> {
+    await this.getMulti(
+      'updatePlaylist.view',
+      { playlistId },
+      { songIdToAdd: songIds },
+    )
+  }
+
+  async removeFromPlaylist(playlistId: string, songIndexes: number[]): Promise<void> {
+    await this.getMulti(
+      'updatePlaylist.view',
+      { playlistId },
+      { songIndexToRemove: songIndexes.map(String) },
+    )
+  }
+
+  async deletePlaylist(id: string): Promise<void> {
+    await this.get('deletePlaylist.view', { id })
+  }
+
+  async search3(
+    query: string,
+    songCount = 25,
+    albumCount = 25,
+    artistCount = 25,
+    songOffset = 0,
+  ): Promise<{
+    artists: Artist[]
+    albums: Album[]
+    tracks: Track[]
+  }> {
+    const data = await this.get<SearchResult3Response>('search3.view', {
+      query,
+      songCount: String(songCount),
+      albumCount: String(albumCount),
+      artistCount: String(artistCount),
+      songOffset: String(songOffset),
+    })
+    return {
+      artists: (data.searchResult3.artist ?? []).map(mapArtist),
+      albums: (data.searchResult3.album ?? []).map(mapAlbum),
+      tracks: (data.searchResult3.song ?? []).map(mapSong),
+    }
+  }
+
+  async getStarred2(): Promise<{ artists: Artist[]; albums: Album[]; tracks: Track[] }> {
+    const data = await this.get<Starred2Response>('getStarred2.view')
+    return {
+      artists: (data.starred2.artist ?? []).map(mapArtist),
+      albums: (data.starred2.album ?? []).map(mapAlbum),
+      tracks: (data.starred2.song ?? []).map(mapSong),
+    }
+  }
+
+  async star(params: { id?: string; albumId?: string; artistId?: string }): Promise<void> {
+    await this.get('star.view', filterDefined(params))
+  }
+
+  async unstar(params: { id?: string; albumId?: string; artistId?: string }): Promise<void> {
+    await this.get('unstar.view', filterDefined(params))
+  }
+
+  /** Sets a song/album/artist's personal 1–5 star rating; 0 clears it.
+   * Distinct from star()/unstar(), which toggle a plain favorite flag. */
+  async setRating(id: string, rating: number): Promise<void> {
+    await this.get('setRating.view', { id, rating: String(rating) })
+  }
+
+  /** Track Radio — songs similar to `id` (a song, artist, or album id),
+   * per Navidrome's own recommendation engine. */
+  async getSimilarSongs2(id: string, count = 100): Promise<Track[]> {
+    const data = await this.get<SimilarSongs2Response>('getSimilarSongs2.view', {
+      id,
+      count: String(count),
+    })
+    return (data.similarSongs2.song ?? []).map(mapSong)
+  }
+
+  /** Registers a play with the media server — this is what actually drives
+   * getAlbumList2's "recent"/"frequent" sort types and song playCount;
+   * without it those lists never change no matter how much is played.
+   * submission=false is a "now playing" notification (no count/date
+   * update), submission=true is the real play registration. */
+  async scrobble(id: string, submission: boolean): Promise<void> {
+    await this.get('scrobble.view', { id, submission: String(submission) })
+  }
+
+  async getInternetRadioStations(): Promise<RadioStation[]> {
+    const data = await this.get<InternetRadioStationsResponse>('getInternetRadioStations.view')
+    return data.internetRadioStations.internetRadioStation.map(mapRadioStation)
+  }
+
+  async createInternetRadioStation(name: string, streamUrl: string, homePageUrl = ''): Promise<void> {
+    await this.get('createInternetRadioStation.view', { name, streamUrl, homepageUrl: homePageUrl })
+  }
+
+  async deleteInternetRadioStation(id: string): Promise<void> {
+    await this.get('deleteInternetRadioStation.view', { id })
+  }
+
+  /** Like get(), but also appends one or more repeated-key params (Subsonic's
+   * convention for list arguments, e.g. songId=1&songId=2&songId=3). */
+  private async getMulti(
+    endpoint: string,
+    extra: Record<string, string>,
+    repeated: Record<string, string[]>,
+  ): Promise<void> {
+    const params = this.authParams()
+    for (const [key, value] of Object.entries(extra)) params.set(key, value)
+    for (const [key, values] of Object.entries(repeated)) {
+      for (const value of values) params.append(key, value)
+    }
+    const response = await fetch(`${this.proxyBaseUrl}/rest/${endpoint}?${params.toString()}`, {
+      headers: { 'X-Connect-Token': this.connectToken },
+    })
+    if (!response.ok) {
+      throw new Error(`Subsonic request failed: ${response.status}`)
+    }
+    const data = await response.json()
+    const subsonic = data['subsonic-response']
+    if (subsonic?.status !== 'ok') {
+      throw new Error(`Subsonic error ${subsonic?.error?.code}: ${subsonic?.error?.message}`)
+    }
+  }
+}
+
+function filterDefined(obj: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as Record<
+    string,
+    string
+  >
+}

@@ -1,0 +1,69 @@
+appId: com.beacon.app
+productName: Beacon
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+files:
+    - 'out/**/*'
+    - 'package.json'
+npmRebuild: false
+
+# Bundled connect backend (see src/main/index.ts's startConnectServer()) —
+# built by `npm run package:connect` (connect/packaging/build-binary.py),
+# which must run before electron-builder does. Like any PyInstaller output,
+# this is platform/arch-specific — it has to be built *on* whatever
+# platform/arch you're packaging for, no cross-compiling.
+extraResources:
+    - from: connect/dist/connect-server
+      to: connect-server
+      filter:
+          - '**/*'
+
+# No icon set yet (build/icon.* is what electron-builder looks for by
+# default) — falls back to Electron's own default icon until one's added.
+
+win:
+    target:
+        - target: nsis
+          arch:
+              - x64
+              - arm64
+
+nsis:
+    allowToChangeInstallationDirectory: true
+    oneClick: false
+    shortcutName: ${productName}
+    uninstallDisplayName: ${productName}
+    createDesktopShortcut: always
+
+mac:
+    target:
+        # arm64 only: the bundled Connect backend binary is built by PyInstaller
+        # on the (Apple Silicon) CI runner and cannot cross-compile to x64.
+        - target: dmg
+          arch:
+              - arm64
+        - target: zip
+          arch:
+              - arm64
+    category: public.app-category.music
+    # Unsigned/local builds — no Apple Developer ID configured. Set `identity`
+    # to a real signing identity (and drop hardenedRuntime/notarize) once one
+    # exists; without that, macOS Gatekeeper will warn on install.
+    identity: null
+    hardenedRuntime: false
+
+linux:
+    target:
+        - AppImage
+        - deb
+        - tar.xz
+    category: AudioVideo;Audio;Player
+    artifactName: ${productName}-${os}-${arch}.${ext}
+
+# Auto-updates (see src/main/index.ts's checkForUpdates()) target this
+# repo's own GitHub releases — electron-updater reads this at runtime via
+# the app-update.yml electron-builder bakes into the packaged app.
+publish:
+    provider: github
+    owner: mihaitom
+    repo: beacon
+    channel: latest

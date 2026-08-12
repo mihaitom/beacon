@@ -1,0 +1,13 @@
+"use strict";
+
+// Read lazily at runtime by stores/auth.ts's loadConnectDefaults() (not at
+// module-eval time), so load order relative to the app bundle doesn't
+// matter — see src/renderer/index.html's comment on why this script tag is
+// safe to leave in unconditionally, even for the Electron build (which
+// never reads these).
+//
+// __CONNECT_TOKEN__ is deliberately not set here — nginx injects
+// X-Connect-Token itself on every proxied request (see ng.conf.template),
+// so the browser never needs to know the real value.
+window.__CONNECT_URL__ = "${CONNECT_URL}";
+window.__CONNECT_URL_BASE__ = "";

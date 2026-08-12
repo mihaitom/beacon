@@ -1,0 +1,55 @@
+"""delivery/base.py — BaseDelivery abstract class"""
+
+from abc import ABC, abstractmethod
+
+
+class BaseDelivery(ABC):
+    # Fixed startup-buffering delay (seconds) between the wall-clock position
+    # tracked by the server and what's actually audible on the device. Used
+    # for protocols that don't expose real playback position (e.g. AirPlay).
+    FIXED_OFFSET: float = 0.0
+
+    # True if get_position() returns a real device-side position.
+    SUPPORTS_POSITION: bool = False
+
+    def __init__(self, target: str):
+        self.target = target
+
+    @abstractmethod
+    async def play(
+        self,
+        stream_url: str,
+        title: str = "Connect",
+        artist: str = "",
+        album_art_url: str | None = None,
+        duration: float | None = None,
+        album: str = "",
+    ) -> None:
+        """Start stream playback. `duration` (seconds) is None for radio/URL
+        streams, which have no fixed length."""
+
+    @abstractmethod
+    async def stop(self) -> None:
+        """Stop playback."""
+
+    async def pause(self) -> None:
+        """Pause playback (optional, default: no-op)."""
+
+    async def resume(self) -> None:
+        """Resume playback (optional, default: no-op)."""
+
+    async def get_position(self) -> float | None:
+        """Return the device's actual playback position in seconds, or None
+        if the protocol doesn't expose one."""
+        return None
+
+    async def get_volume(self) -> float | None:
+        """Return the device's current volume (0-100), or None if the
+        protocol doesn't expose one."""
+        return None
+
+    async def set_volume(self, volume: float) -> None:
+        """Set the device's volume (0-100) (optional, default: no-op)."""
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.target})"

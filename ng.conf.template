@@ -1,0 +1,84 @@
+# Mirrors the "%(asctime)s [%(name)s] %(levelname)s %(message)s" format used
+# by the Connect backend's Python loggers, so nginx and backend log lines
+# look consistent in `docker logs`.
+log_format connect '$time_iso8601 [nginx] INFO $remote_addr - "$request" $status $body_bytes_sent';
+
+server {
+  listen ${WEB_PORT};
+  listen [::]:${WEB_PORT};
+  sendfile on;
+  default_type application/octet-stream;
+
+  # Gated behind DEBUG=true (see start.sh) — access logs are noisy and
+  # usually not needed outside of troubleshooting.
+  ${NGINX_ACCESS_LOG}
+
+  gzip on;
+  gzip_http_version 1.1;
+  gzip_disable      "MSIE [1-6]\.";
+  gzip_min_length   256;
+  gzip_vary         on;
+  gzip_proxied      expired no-cache no-store private auth;
+  gzip_types        text/plain text/css application/json application/javascript application/x-javascript text/xml application/xml application/xml+rss text/javascript;
+  gzip_comp_level   9;
+
+  location / {
+    root /usr/share/nginx/html;
+    try_files $uri $uri/ /index.html =404;
+  }
+
+  # index.html isn't content-hashed, so nginx sends no Cache-Control for it
+  # by default and the browser falls back to its own heuristic — meaning a
+  # stale copy can outlive a redeploy for a while, referencing asset hashes
+  # that no longer exist. A normal reload only re-fetches it if the browser
+  # bothers to revalidate — force that every time (still cheap: a 304 when
+  # unchanged).
+  location = /index.html {
+    add_header Cache-Control "no-cache";
+    root /usr/share/nginx/html;
+  }
+
+  location = /settings.js {
+    alias /etc/nginx/conf.d/settings.js;
+    add_header Cache-Control "no-store";
+  }
+
+  # Everything the connect backend exposes except the three proxy-shaped
+  # routes below (see connect/main.py's router list) — /config, /health,
+  # /play, /discover, /volume, /join, /claim, /pairing/*, /lyrics/*, /events,
+  # /status, ... all fall through to this one location. The trailing slash
+  # on both the location and proxy_pass URL is what makes nginx strip the
+  # "/api/" prefix down to the backend root (see connect/routes/proxy.py's
+  # own "nginx strips /api/" comment, which assumes exactly this).
+  location /api/ {
+    proxy_pass http://127.0.0.1:${PORT}/;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Connect-Token "${CONNECT_TOKEN}";
+  }
+
+  # Subsonic proxy — matches connect/routes/proxy.py's /rest/{path} route
+  # directly (unprefixed), same as Electron's direct connection would hit.
+  location /rest/ {
+    proxy_pass http://127.0.0.1:${PORT}/rest/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Connect-Token "${CONNECT_TOKEN}";
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+  }
+
+  location /auth/ {
+    proxy_pass http://127.0.0.1:${PORT}/auth/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Connect-Token "${CONNECT_TOKEN}";
+  }
+
+  location /stream {
+    proxy_pass http://127.0.0.1:${PORT}/stream;
+    proxy_set_header X-Connect-Token "${CONNECT_TOKEN}";
+  }
+}

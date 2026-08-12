@@ -1,0 +1,40 @@
+node_modules
+Dockerfile
+docker-compose.*
+.dockerignore
+
+connect/.venv
+connect/.env
+connect/.connect-token
+connect/airplay_credentials.json
+connect/tone.wav
+connect/dist
+connect/build
+connect/packaging
+connect/tests
+connect/**/__pycache__
+connect/.pytest_cache
+connect/.ruff_cache
+
+# Local build/packaging output — never needed to build the Docker image
+# itself.
+dist
+out
+
+# Electron-desktop-only packaging/config — the Docker image is web-only.
+electron-builder.yml
+electron.vite.config.ts
+dev-app-update.yml
+src/main
+src/preload
+
+# Editor/tooling state and caches, not part of the app
+.claude
+.git
+.vscode
+.eslintcache
+*.tsbuildinfo
+
+# Docs — not read at build or run time (CHANGELOG.md is NOT excluded here —
+# releaseNotes.vue reads it via a `?raw` import at build time)
+README.md
