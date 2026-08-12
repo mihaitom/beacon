@@ -10,6 +10,11 @@ interface AppConfigApi {
     getConnectDefaults(): Promise<{ connectToken: string; connectUrl: string }>;
 }
 
+interface AppLifecycleApi {
+    onBeforeQuit(handler: () => void): void;
+    beforeQuitDone(): void;
+}
+
 declare global {
     interface Window {
         // Absent in the web build (no Electron preload) — every access needs
@@ -18,6 +23,7 @@ declare global {
         api?: {
             secureStorage: SecureStorageApi;
             appConfig: AppConfigApi;
+            appLifecycle: AppLifecycleApi;
         };
         // Injected by the web/Docker build's settings.js (see
         // settings.js.template + ng.conf.template) — nginx's same-origin

@@ -23,6 +23,8 @@
     <track-list
       :tracks="album.tracks"
       :default-sort-key="null"
+      group-by-disc
+      disable-pagination
       show-genre
       show-year
       show-play-count

@@ -7,6 +7,14 @@ RUN corepack enable && corepack prepare pnpm@10 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
+# This stage only ever runs `pnpm run build:web` below (a Vite build) — it
+# never launches Electron itself, so the ~100MB Electron binary the
+# `electron` package's own postinstall otherwise downloads from GitHub
+# Releases is pure waste here: slower installs, and a real point of
+# failure in build environments with restricted/unreliable egress to
+# GitHub's CDN (seen as a "socket hang up" mid-download). Skipping it is
+# safe precisely because this stage has no other use for it.
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 RUN pnpm install
 
 # Only what `pnpm run build:web` actually touches — an unrelated repo change
@@ -53,6 +61,23 @@ RUN curl -fsSL -4 --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout
 
 WORKDIR /build/ffmpeg-8.1.2
 
+# core/audio_analysis.py's live FFT visualizer and core/waveform.py's
+# seek-bar peaks both decode to raw PCM via ffmpeg's "-f s16le" — which
+# needs BOTH the pcm_s16le *muxer* (the container/output-format) AND the
+# pcm_s16le *encoder* (ffmpeg still needs a registered encoder component to
+# write into that container, even though "encoding" raw PCM is really just
+# a passthrough) enabled below, or ffmpeg rejects it: missing the muxer is
+# "Unknown output format", missing the encoder is "Automatic encoder
+# selection failed ... probably disabled". Note the *configure-time* muxer
+# name has a pcm_ prefix the runtime `-f`/`-muxers` name doesn't —
+# `./configure --list-muxers` lists it as pcm_s16le, `ffmpeg -muxers` shows
+# the same thing as just "s16le" — and configure silently ignores an
+# unrecognized name instead of erroring, so getting this wrong doesn't fail
+# the build, it just quietly omits the muxer. Without both, both features
+# silently produce nothing in a build using this Dockerfile, even though
+# the same commands work fine against a system ffmpeg (which has every
+# muxer/encoder built in) — that's the whole reason this was easy to miss
+# locally and only show up once actually deployed.
 RUN ./configure \
     --disable-everything \
     --disable-doc \
@@ -64,8 +89,8 @@ RUN ./configure \
     --enable-demuxer=mp3,flac,ogg,wav,aac,mov,matroska,asf,ape,aiff \
     --enable-decoder=mp3,mp3float,flac,vorbis,opus,aac,aac_latm,pcm_s16le,pcm_s16be,pcm_u8,pcm_f32le,alac,wmav1,wmav2,ape \
     --enable-parser=mp3,aac,flac,opus,vorbis \
-    --enable-encoder=libmp3lame \
-    --enable-muxer=mp3 \
+    --enable-encoder=libmp3lame,pcm_s16le \
+    --enable-muxer=mp3,pcm_s16le \
     --enable-libmp3lame \
     --enable-swresample \
     --enable-filter=aresample,anull,aformat \

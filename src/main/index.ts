@@ -246,16 +246,79 @@ app.whenReady().then(() => {
     });
 });
 
+// True once the quit flow below has actually started — lets the second,
+// self-triggered 'before-quit' (fired by finishQuit()'s own app.quit() call)
+// tell itself apart from the very first quit request and just let it
+// through, instead of looping back into requestQuit() again.
+let quitting = false;
+
+function finishQuit(): void {
+    stopConnectServer();
+    app.quit();
+}
+
+// Casting doesn't stop on its own just because this app closes — the
+// backend keeps streaming to Sonos/Chromecast/DLNA/AirPlay until told
+// otherwise (or until its own session-idle reaper eventually kicks in, way
+// later than a user would expect). Only the renderer's connect store can
+// actually stop it correctly though: doing it here would need the same
+// per-login connect session id computeConnectSessionId() derives in the
+// renderer (services/connect/session-id.ts) from data (server URL, user
+// identity) this process has no access to — calling /stop with the wrong
+// session id would silently no-op against an unrelated session instead of
+// the one actually casting. So: ask the renderer, wait briefly for it to
+// confirm, then tear down for real either way.
+function requestQuit(): void {
+    if (quitting) return;
+    quitting = true;
+
+    const win = BrowserWindow.getAllWindows()[0];
+    if (!win) {
+        finishQuit();
+        return;
+    }
+
+    let settled = false;
+    const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        finishQuit();
+    };
+    ipcMain.once('app:before-quit-done', finish);
+    // The renderer might be slow (a device taking a moment to respond) or
+    // simply gone (crashed) — don't hang app quit on it indefinitely.
+    setTimeout(finish, 3000);
+    win.webContents.send('app:before-quit');
+}
+
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
-        stopConnectServer();
-        app.quit();
+        requestQuit();
     }
 });
 
 // Covers macOS, where window-all-closed above doesn't quit the app (it stays
-// resident, per OS convention) — before-quit still fires exactly once right
-// before the process actually exits there. Harmless to also fire on other
-// platforms (stopConnectServer() is idempotent); it's already been called
-// once by the time app.quit() above gets here.
-app.on('before-quit', stopConnectServer);
+// resident, per OS convention) — before-quit still fires here right before
+// the process actually exits. Also the second entry point once requestQuit()
+// itself is already running everywhere else (its finishQuit() calling
+// app.quit() re-fires this event) — the `quitting` guard lets that second
+// firing proceed instead of preventing default forever.
+app.on('before-quit', (event) => {
+    if (quitting) return;
+    event.preventDefault();
+    requestQuit();
+});
+
+// A raw OS signal (Ctrl+C in a dev-mode terminal, or `concurrently -k`
+// forwarding SIGTERM when the connect dev process exits first — see
+// package.json's `dev` script) kills this process immediately via Node's
+// default signal disposition. Electron's own 'before-quit'/'window-all-closed'
+// above are never reached that way — those only fire for app.quit() calls
+// and actual window closes, not raw signals — so without this, a dev-mode
+// Ctrl+C stopped this process but left casting running on the device
+// (Python does shut down cleanly on its own signal — this is specifically
+// about *this* process never asking it to stop streaming first). Registering
+// a handler here overrides Node's default "just die" behavior and routes
+// through the exact same clean-shutdown flow instead.
+process.on('SIGINT', requestQuit);
+process.on('SIGTERM', requestQuit);

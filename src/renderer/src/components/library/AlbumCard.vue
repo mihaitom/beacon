@@ -81,6 +81,8 @@ export default {
 .album-card:hover .album-card-star,
 .album-card-star--visible {
   opacity: 1;
+  color: rgb(var(--v-theme-primary)) !important;
+  background: transparent !important;
 }
 
 .album-card:hover .album-card-title {

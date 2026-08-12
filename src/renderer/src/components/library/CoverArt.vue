@@ -81,12 +81,20 @@ export default {
     },
   },
   watch: {
-    // A prop change (e.g. scrolling a list where components get reused)
-    // means the candidate list changed too — retry from the top.
-    imageUrl() {
-      this.failedCount = 0
-    },
-    coverArtId() {
+    // candidates() also depends on useLibraryStore().client(), which reads
+    // the *current* auth store state on every call — not just imageUrl/
+    // coverArtId. If this component's first render happens to race ahead of
+    // auth actually being ready (e.g. connectToken/credential still empty
+    // right at app boot — main.ts mounts before router.isReady() resolves,
+    // see App.vue's own comment on that), the very first URL 404s,
+    // failedCount advances past it, and candidates[failedCount] silently
+    // points past the end forever — even once auth catches up moments
+    // later and the *same* candidate index would now resolve to a working
+    // URL, since nothing here previously reset the count for that case.
+    // Watching the whole (always-freshly-built, see candidates() above)
+    // array catches every reason its contents could have changed, not just
+    // these two props specifically.
+    candidates() {
       this.failedCount = 0
     },
   },

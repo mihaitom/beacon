@@ -45,6 +45,33 @@
         <div class="track-actions" style="width: 200px" />
       </div>
     </template>
+    <template v-else-if="showDiscGroups">
+      <template v-for="group in discGroups" :key="group.discNumber">
+        <div class="disc-header text-caption text-medium-emphasis">
+          {{ $t('library.disc', { number: group.discNumber }) }}
+        </div>
+        <track-row
+          v-for="row in group.rows"
+          :key="`${row.track.id}-${row.index}`"
+          :track="row.track"
+          :index="row.index"
+          :display-number="row.track.trackNumber ?? row.index + 1"
+          :show-cover="showCover"
+          :show-album="showAlbum"
+          :show-genre="showGenre"
+          :show-year="showYear"
+          :show-play-count="showPlayCount"
+          :show-format="showFormat"
+          @play="playTrack"
+          @play-next="playNextTrack"
+          @track-radio="startTrackRadio"
+          @toggle-star="toggleStar"
+          @set-rating="setRating"
+          @add-to-queue="addToQueue"
+          @add-to-playlist="addToPlaylist"
+        />
+      </template>
+    </template>
     <template v-else>
       <track-row
         v-for="(track, index) in visibleTracks"
@@ -66,7 +93,7 @@
         @add-to-playlist="addToPlaylist"
       />
     </template>
-    <div v-if="!infiniteScroll && pageCount > 1" class="d-flex justify-center mt-3">
+    <div v-if="!disablePagination && !infiniteScroll && pageCount > 1" class="d-flex justify-center mt-3">
       <v-pagination
         v-model="currentPage"
         :length="pageCount"
@@ -151,6 +178,22 @@ export default {
     // default since it only makes sense for pages that actually have a
     // sticky block above the list (currently just TracksView).
     stickyHeader: { type: Boolean, default: false },
+    // Album detail's own opt-in — groups rows under a "Disc N" header per
+    // distinct discNumber instead of one flat sequence. Only actually
+    // takes effect while sorted in natural order (see showDiscGroups) and
+    // when the tracks given actually span more than one disc — a
+    // single-disc album (the common case) doesn't grow a redundant "Disc
+    // 1" heading. Not the default for every TrackList consumer since
+    // grouping by disc only means anything for a single album's own
+    // tracks — a playlist/search/queue list can mix tracks from many
+    // different albums, where "disc number" isn't a meaningful grouping.
+    groupByDisc: { type: Boolean, default: false },
+    // Album detail's own opt-in — an album (even a large box set) is a
+    // small, bounded list where paging through it is more friction than
+    // it's worth; just render every track. Also sidesteps disc groups
+    // (see groupByDisc) getting split across pages, since discGroups only
+    // ever sees the current page's worth of visibleTracks.
+    disablePagination: { type: Boolean, default: false },
   },
   data() {
     return {
@@ -194,13 +237,34 @@ export default {
       return (this.currentPage - 1) * PAGE_SIZE
     },
     visibleTracks(): Track[] {
+      if (this.disablePagination) {
+        return this.sortedTracks
+      }
       if (this.infiniteScroll) {
         return this.sortedTracks.slice(0, this.visibleCount)
       }
       return this.sortedTracks.slice(this.pageOffset, this.pageOffset + PAGE_SIZE)
     },
     rowIndexOffset(): number {
-      return this.infiniteScroll ? 0 : this.pageOffset
+      return this.disablePagination || this.infiniteScroll ? 0 : this.pageOffset
+    },
+    // Grouping only makes visual sense in the tracks' own natural order —
+    // sorting by title/duration/etc. would otherwise scatter one disc's
+    // rows across several disconnected "Disc N" sections.
+    showDiscGroups(): boolean {
+      return this.groupByDisc && !this.sortKey && this.discGroups.length > 1
+    },
+    discGroups(): { discNumber: number; rows: { track: Track; index: number }[] }[] {
+      const groups = new Map<number, { track: Track; index: number }[]>()
+      this.visibleTracks.forEach((track, i) => {
+        const disc = track.discNumber ?? 1
+        const rows = groups.get(disc) ?? []
+        rows.push({ track, index: this.rowIndexOffset + i })
+        groups.set(disc, rows)
+      })
+      return [...groups.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([discNumber, rows]) => ({ discNumber, rows }))
     },
   },
   watch: {
@@ -353,6 +417,11 @@ export default {
 
 .track-actions {
   flex: 0 0 200px;
+}
+
+.disc-header {
+  padding: 12px 8px 4px;
+  font-weight: 600;
 }
 
 /* v-skeleton-loader's "image"/"text" bones ignore the component's own

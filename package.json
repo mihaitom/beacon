@@ -23,7 +23,7 @@
     "url": "https://github.com/mihaitom/"
   },
   "scripts": {
-    "dev": "run-p dev:connect dev:electron",
+    "dev": "concurrently -k -n connect,electron \"pnpm:dev:connect\" \"pnpm:dev:electron\"",
     "dev:electron": "electron-vite dev",
     "dev:connect": "cd connect && uv run python main.py",
     "build": "electron-vite build",
@@ -67,6 +67,7 @@
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/eslint-config-typescript": "^14.9.0",
     "@vue/tsconfig": "^0.9.1",
+    "concurrently": "^10.0.4",
     "electron": "^38.6.0",
     "electron-builder": "^26.15.5",
     "electron-vite": "^4.0.1",

@@ -13,12 +13,12 @@ const BAR_COUNT = 56
 // show (paused, or a 'cast' connection that hasn't produced a frame yet) —
 // a resting flat line rather than nothing, so it still reads as "this is a
 // visualizer" at rest.
-const IDLE_HEIGHT = 0.035
+const IDLE_HEIGHT = 0
 // How far each bar moves toward its target height per rendered frame —
 // lower is smoother/laggier, higher tracks the signal more tightly.
 // Applied both rising into real data and falling back to IDLE_HEIGHT/0, so
 // pausing (or toggling off) settles the bars instead of snapping them.
-const SMOOTHING_LOCAL = 0.35
+const SMOOTHING_LOCAL = 0.5
 // 'local' gets a fresh real value every rendered frame (~60Hz, straight
 // off the Web Audio analyser) — SMOOTHING_LOCAL alone already looks tight
 // there. 'cast' only gets a new real value roughly every ~93ms (backend's
@@ -28,7 +28,7 @@ const SMOOTHING_LOCAL = 0.35
 // "always a bit behind" feel even though the backend's own release timing
 // checked out exactly on schedule. A stronger pull here means each bar
 // actually catches up to its target before the next SSE frame lands.
-const SMOOTHING_CAST = 0.35
+const SMOOTHING_CAST = 0.5
 
 export default {
   name: 'AudioVisualizer',

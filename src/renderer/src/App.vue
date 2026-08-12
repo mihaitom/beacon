@@ -58,6 +58,21 @@ export default {
   },
   created() {
     usePlaybackStore().init()
+    // window.api is absent in the web build (no Electron main process to
+    // ask this of) — casting there just keeps running until the backend's
+    // own session-idle reaper eventually cleans it up, same as it always
+    // has. See main/index.ts's requestQuit() for why this has to be the
+    // renderer's job rather than something main can do on its own.
+    window.api?.appLifecycle.onBeforeQuit(async () => {
+      try {
+        const connect = useConnectStore()
+        if (connect.isActive) await connect.stopAll()
+      } catch (error) {
+        console.error('[app] Failed to stop casting before quit:', error)
+      } finally {
+        window.api?.appLifecycle.beforeQuitDone()
+      }
+    })
   },
 }
 </script>

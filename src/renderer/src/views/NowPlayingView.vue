@@ -379,11 +379,11 @@ export default {
 .now-playing__visualizer {
   position: absolute;
   right: 0;
-  bottom: -5px;
+  bottom: -1px;
   left: 0;
   z-index: 1;
   height: 128px;
-  padding: 0 40px 0px;
+  padding: 0 5px 0px;
   pointer-events: none;
 }
 

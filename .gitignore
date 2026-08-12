@@ -25,6 +25,7 @@ connect/.ruff_cache
 connect/.pytest_cache
 connect/build
 connect/dist
+connect/airplay_credentials.json
 
 # docker-compose.yaml's persistent volume mount (AirPlay pairing credentials)
 /data

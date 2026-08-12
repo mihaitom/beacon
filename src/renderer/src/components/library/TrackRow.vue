@@ -9,7 +9,7 @@
   >
     <div class="track-index text-medium-emphasis text-caption">
       <v-icon v-if="isCurrentTrack" icon="mdi-volume-high" size="14" color="primary" />
-      <template v-else>{{ index != null ? index + 1 : '' }}</template>
+      <template v-else>{{ displayNumber ?? (index != null ? index + 1 : '') }}</template>
     </div>
     <cover-art v-if="showCover" :cover-art-id="track.coverArtId" :size="40" class="track-cover" />
     <div class="track-title min-width-0">
@@ -137,7 +137,18 @@ export default {
       type: Object,
       required: true,
     },
+    // Absolute position in the (sorted) list this row belongs to — used
+    // for queueing on play, and as the display fallback when
+    // displayNumber isn't given.
     index: {
+      type: Number,
+      default: null,
+    },
+    // Overrides the shown number with the track's real per-disc track
+    // number (see TrackList.vue's groupByDisc) — kept separate from
+    // `index` since that one must stay the absolute position for
+    // queueing regardless of how the number is displayed.
+    displayNumber: {
       type: Number,
       default: null,
     },

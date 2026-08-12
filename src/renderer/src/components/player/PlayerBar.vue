@@ -86,11 +86,9 @@
           <span class="text-caption text-medium-emphasis" style="width: 40px">{{
             formatTime(seekPreviewPosition ?? playbackStore.localPosition)
           }}</span>
-          <v-slider
+          <track-waveform
             :model-value="seekPreviewPosition ?? playbackStore.localPosition"
-            :max="playbackStore.duration || 1"
-            density="compact"
-            hide-details
+            :duration="playbackStore.duration"
             :disabled="!hasPlayable || !!playbackStore.radioStation"
             @update:model-value="seekPreviewPosition = $event"
             @end="onSeekEnd"
@@ -151,11 +149,12 @@ import { useLibraryStore } from '@/stores/library'
 import { useConnectStore } from '@/stores/connect'
 import CoverArt from '@/components/library/CoverArt.vue'
 import ConnectButton from '@/components/connect/ConnectButton.vue'
+import TrackWaveform from './TrackWaveform.vue'
 import type { ConnectDeviceRef } from '@/services/connect/types'
 
 export default {
   name: 'PlayerBar',
-  components: { CoverArt, ConnectButton },
+  components: { CoverArt, ConnectButton, TrackWaveform },
   data() {
     return {
       // null while unfetched/unsupported (e.g. DLNA renderer without volume
@@ -166,8 +165,8 @@ export default {
       // channel for "someone changed it on the device itself/another
       // session" — polling is the only way this slider ever finds out.
       volumePollTimer: null as ReturnType<typeof setInterval> | null,
-      // Non-null only while actively dragging the seek slider — decouples
-      // the slider's live visual position from playbackStore.seek()
+      // Non-null only while actively dragging the seek bar (TrackWaveform)
+      // — decouples its live visual position from playbackStore.seek()
       // itself, which used to fire on every drag tick via
       // @update:model-value. During casting each of those was a real
       // round-trip to the device (Sonos/Chromecast/etc.) — dozens of

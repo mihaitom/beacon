@@ -25,11 +25,15 @@ from collections.abc import Callable
 
 logger = logging.getLogger("connect.audio_analysis")
 
-# Mono PCM at a low rate — plenty for a bar-visualizer's worth of bands
-# (Nyquist 7.68kHz comfortably covers the musically dense range) and cheap
-# to decode/FFT many times a second. Paired with _FFT_SIZE below to land on
-# an exact update rate — see its comment.
-_SAMPLE_RATE = 15360
+# Mono PCM at the same rate the Web Audio API's AnalyserNode typically sees
+# in 'local' mode (the browser's default AudioContext sample rate) — Nyquist
+# 22.05kHz — so the 'cast' visualizer covers the same frequency range as
+# 'local' instead of a narrower slice of it. An earlier, much lower rate
+# here (15360Hz, Nyquist 7.68kHz) traded range for cheaper decode/FFT, but
+# read as visibly less responsive to high-frequency content (cymbals,
+# air/brightness) than 'local' mode's own analyser. Paired with _FFT_SIZE
+# below to land on a reasonable update rate — see its comment.
+_SAMPLE_RATE = 44100
 _DECODE_CMD = [
     "ffmpeg",
     "-hide_banner",
@@ -49,21 +53,21 @@ _DECODE_CMD = [
     "pipe:1",
 ]
 
-# Power-of-two FFT window — 512/15360 = exactly 1/30s of audio per frame,
-# i.e. a new real band frame every ~33ms (30Hz update rate). Originally
-# 1024 samples at 11025Hz (~93ms, ~11Hz) — plenty accurate (a real test
-# tone confirmed the *pacing* itself was exactly on schedule) but sparse
-# enough that the visualizer's own smoothing was still catching up to one
-# update when the next arrived, reading as a persistent, hard-to-pin-down
-# "slightly behind" softness. There's an inherent tradeoff here — shorter
-# frames mean coarser frequency resolution (bin width = _SAMPLE_RATE /
-# _FFT_SIZE, unavoidably 1 / frame duration) — but going from ~10.8Hz to
-# 30Hz-wide bins is immaterial for a _BAND_COUNT-bucket bar visualizer,
-# nowhere near the point of running out of bins to group from (still ~217
-# usable raw bins for 56 bands, see `usable` below). Also how far apart
-# consecutive frames' content_position values are (see
-# AudioAnalyzer._read_pcm()).
-_FFT_SIZE = 512
+# Power-of-two FFT window — 1024/44100 = ~23.2ms of audio per frame, i.e. a
+# new real band frame every ~23ms (~43Hz update rate, comfortably faster
+# than the previous 512/15360Hz combination's 30Hz — see _SAMPLE_RATE's
+# comment for why that rate went up). An earlier version at 1024 samples
+# but 11025Hz (~93ms, ~11Hz) was sparse enough that the visualizer's own
+# smoothing was still catching up to one update when the next arrived,
+# reading as a persistent, hard-to-pin-down "slightly behind" softness —
+# worth avoiding again here, hence keeping this on the faster side rather
+# than reaching for 2048 (which would land nearer 21Hz). Bin width
+# (_SAMPLE_RATE / _FFT_SIZE) works out to ~43Hz here — still far finer than
+# a _BAND_COUNT-bucket bar visualizer needs, nowhere near the point of
+# running out of bins to group from (still ~435 usable raw bins for 56
+# bands, see `usable` below). Also how far apart consecutive frames'
+# content_position values are (see AudioAnalyzer._read_pcm()).
+_FFT_SIZE = 1024
 # >= AudioVisualizer.vue's BAR_COUNT (56) — fewer bands than visual bars
 # meant several adjacent bars necessarily read the exact same value
 # (nearest-neighbor resampling duplicating each band across ~1.75 bars on
@@ -95,16 +99,51 @@ _MAX_DB = -30.0
 # than 'local' once the frontend's own smoothing was tightened enough to
 # stop masking it. Not 0.8 — that value assumes whatever (much higher)
 # internal rate the browser's own implementation re-evaluates it at, and
-# applied per update at this pipeline's ~30Hz would smooth away far more
-# real signal than intended; tuned for *this* update rate instead.
-_SMOOTHING_TIME_CONSTANT = 0.5
+# applied per update at this pipeline's rate would smooth away far more
+# real signal than intended; tuned for *this* update rate instead. Raised
+# from 0.5 when _FFT_SIZE/_SAMPLE_RATE moved the update rate from ~30Hz to
+# ~43Hz — same real-time smoothing needs a per-frame weight closer to 1 once
+# there are more frames per second contributing to it.
+_SMOOTHING_TIME_CONSTANT = 0.62
+# How much of a content_position lookahead must be sitting in `_pending`
+# before _release_frames() starts releasing anything at all. Both ffmpeg
+# processes in play here (the real encode feeding the device, and this
+# module's own decode-only one) take a moment to spin up, and MP3 decoding
+# itself needs a little buffered input before it starts producing output —
+# during that startup window `_pending` swings between empty (release finds
+# nothing to send) and suddenly holding several already-releasable frames at
+# once (which then go out back-to-back with no pacing between them, since
+# each already satisfies `remaining <= 0`), reading as a stuttery/staccato
+# start before decode settles into comfortably outrunning real time. Waiting
+# for this small a cushion first means decode already has its lead by the
+# time delivery begins, instead of visibly building it live.
+_PREBUFFER_SECONDS = 0.3
+# Caps how far ahead of real playback _read_pcm() is allowed to decode+FFT
+# before pausing (see its own use of this below). Without a cap, decode
+# happily races through an entire track in a matter of seconds (ffmpeg's
+# transcode is CPU-bound, not real-time — see the class docstring) — great
+# for `_pending` never running dry, but it means analyze_pcm()'s pure-Python
+# FFT (see _fft()'s own docstring) runs back-to-back at whatever rate decode
+# can sustain (measured around 500/s, not the ~43/s it was actually sized
+# for) for as long as that race lasts. That's synchronous, un-awaited CPU
+# work sitting directly in the event loop with nothing to yield on — for
+# however many seconds the race lasts, everything else sharing this loop
+# (notably GET /visualizer's own SSE delivery) gets starved of scheduling
+# time, which is what actually caused the "choppy for the first N seconds,
+# then suddenly smooth" symptom, not anything about delivery pacing itself
+# (release already paces correctly — see _release_frames()). A few seconds
+# of lookahead is more than enough cushion against real hiccups while
+# keeping the steady-state FFT rate close to the ~43/s it's sized for.
+_MAX_LOOKAHEAD_SECONDS = 3.0
 
 
 def _fft(samples: list[complex]) -> list[complex]:
     """Textbook recursive radix-2 Cooley-Tukey FFT — samples length must be
     a power of two. Pure Python (no numpy dependency) is plenty fast enough
-    at this size and this call rate (one _FFT_SIZE=512 call every ~33ms per
-    actively-analyzed stream, i.e. 30/s)."""
+    at the rate _read_pcm() actually calls this at now that it's paced by
+    _MAX_LOOKAHEAD_SECONDS (close to _FFT_SIZE/_SAMPLE_RATE's ~43/s) — not
+    fast enough to run unpaced at whatever rate decode itself can sustain
+    (measured around 500/s), which is exactly what that pacing prevents."""
     n = len(samples)
     if n <= 1:
         return samples
@@ -305,10 +344,10 @@ class AudioAnalyzer:
             logger.debug(f"[audio-analysis] writer stopped: {e}")
 
     async def _read_pcm(self) -> None:
-        """Decodes and FFTs as fast as the decoder produces PCM — frames
-        land in `_pending` (each tagged with its track position), not
-        `frames` directly; _release_frames() is what actually paces
-        delivery."""
+        """Decodes and FFTs as fast as the decoder produces PCM, up to
+        _MAX_LOOKAHEAD_SECONDS ahead of real playback — frames land in
+        `_pending` (each tagged with its track position), not `frames`
+        directly; _release_frames() is what actually paces delivery."""
         assert self._proc and self._proc.stdout
         frame_bytes = _FFT_SIZE * 2  # 16-bit samples
         try:
@@ -327,6 +366,15 @@ class AudioAnalyzer:
                     self._smoothed_bands = bands
                     self._pending.append((self._pcm_position, bands))
                     self._pcm_position += _FRAME_SECONDS
+                # Pause once far enough ahead — see _MAX_LOOKAHEAD_SECONDS.
+                # Not reading further just leaves bytes sitting in the
+                # decoder's own stdout pipe; once that (small, kernel-sized)
+                # buffer fills, ffmpeg's own write() blocks and it stops
+                # burning CPU too, rather than continuing to decode+FFT
+                # content nobody's close to needing yet.
+                lookahead = self._pcm_position - self._elapsed_fn()
+                if lookahead > _MAX_LOOKAHEAD_SECONDS:
+                    await asyncio.sleep(lookahead - _MAX_LOOKAHEAD_SECONDS)
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -342,6 +390,16 @@ class AudioAnalyzer:
         ahead of real time decode+FFT get. Also means pausing (elapsed_fn
         freezing) naturally stalls this too, nothing extra needed here."""
         try:
+            # Let decode build up a small lead before releasing the very
+            # first frame — see _PREBUFFER_SECONDS. Skipped once decoding's
+            # already finished (a short clip, or this task starting late)
+            # since there's nothing further to build a lead from anyway.
+            while not self._reading_done and (
+                not self._pending
+                or self._pending[-1][0] - self._pending[0][0] < _PREBUFFER_SECONDS
+            ):
+                await asyncio.sleep(0.05)
+
             while True:
                 if not self._pending:
                     if self._reading_done:

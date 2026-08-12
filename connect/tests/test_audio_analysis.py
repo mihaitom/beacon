@@ -21,6 +21,7 @@ from core.audio_analysis import (
     LIVE_ANALYSIS_TARGET_TYPES,
     _BAND_COUNT,
     _FFT_SIZE,
+    _PREBUFFER_SECONDS,
     _SAMPLE_RATE,
     AudioAnalyzer,
     _smooth_bands,
@@ -242,6 +243,10 @@ def _some_bands() -> list[float]:
 async def test_release_frames_sends_first_pending_frame_immediately():
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
     analyzer._pending.append((0.0, _some_bands()))
+    # Prebuffering (see test_release_frames_waits_for_prebuffer_*  below) is
+    # a separate concern from the pacing this test covers — mark decoding
+    # already finished so _release_frames() skips straight to pacing.
+    analyzer._reading_done = True
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.sleep(0.05)
@@ -259,6 +264,7 @@ async def test_release_frames_holds_back_frames_ahead_of_playback():
     analyzer = AudioAnalyzer(elapsed_fn=lambda: elapsed)
     analyzer._pending.append((0.0, _some_bands()))
     analyzer._pending.append((1.0, _some_bands()))
+    analyzer._reading_done = True  # bypass prebuffering — not this test's concern
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.sleep(0.05)
@@ -274,6 +280,7 @@ async def test_release_frames_releases_once_playback_catches_up():
     analyzer = AudioAnalyzer(elapsed_fn=lambda: elapsed)
     analyzer._pending.append((0.0, _some_bands()))
     analyzer._pending.append((1.0, _some_bands()))
+    analyzer._reading_done = True  # bypass prebuffering — not this test's concern
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.sleep(0.05)
@@ -297,6 +304,34 @@ async def test_release_frames_exits_once_drained_and_reading_done():
     finally:
         if not task.done():
             task.cancel()
+
+
+async def test_release_frames_withholds_everything_until_prebuffer_fills():
+    # A single frame at position 0 with decoding still in progress is
+    # exactly the "just started, decode hasn't built a lead yet" case
+    # _PREBUFFER_SECONDS exists for — nothing should go out yet.
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
+    analyzer._pending.append((0.0, _some_bands()))
+    task = asyncio.create_task(analyzer._release_frames())
+    try:
+        await asyncio.sleep(0.1)
+        assert analyzer.frames.qsize() == 0
+    finally:
+        task.cancel()
+
+
+async def test_release_frames_releases_once_prebuffer_fills():
+    # Once _pending's own span reaches _PREBUFFER_SECONDS, the earliest
+    # frame(s) should start going out even though decoding is still ongoing.
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
+    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._pending.append((_PREBUFFER_SECONDS, _some_bands()))
+    task = asyncio.create_task(analyzer._release_frames())
+    try:
+        await asyncio.sleep(0.1)
+        assert analyzer.frames.qsize() == 1
+    finally:
+        task.cancel()
 
 
 async def test_release_frames_waits_for_more_pending_if_not_reading_done():

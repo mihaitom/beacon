@@ -27,7 +27,7 @@ load_dotenv()
 
 from core.auth import TOKEN as _CONNECT_TOKEN  # noqa: E402
 from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED  # noqa: E402
-from core.session import reap_stale_sessions  # noqa: E402
+from core.session import reap_stale_sessions, registry  # noqa: E402
 from core.state import PORT, ctx, get_local_ip  # noqa: E402
 from routes.debug import router as debug_router  # noqa: E402
 from routes.devices import router as devices_router  # noqa: E402
@@ -40,6 +40,7 @@ from routes.playback import router as playback_router  # noqa: E402
 from routes.proxy import router as proxy_router  # noqa: E402
 from routes.stream import router as stream_router  # noqa: E402
 from routes.volume import router as volume_router  # noqa: E402
+from routes.waveform import router as waveform_router  # noqa: E402
 
 
 class _ShortNameFilter(logging.Filter):
@@ -252,6 +253,24 @@ async def lifespan(_: FastAPI):
     finally:
         discovery_task.cancel()
         reaper_task.cancel()
+        # Stop actively-casting devices before the process actually exits —
+        # Sonos/Chromecast/DLNA/AirPlay have no way to know this backend
+        # died, so they'd otherwise just keep playing whatever they were
+        # last streamed, regardless of *why* this process is shutting down
+        # (dev-mode Ctrl+C, the packaged Electron app quitting, a manual
+        # restart, ...). More reliable than only asking a still-connected
+        # frontend to call /stop itself first (see the Electron main
+        # process's requestQuit(), which does that for the normal "app
+        # window closes" case) — this backstops every shutdown path
+        # uniformly, including ones where nothing is left to ask.
+        for session in registry.all():
+            if session.state.active_delivery:
+                try:
+                    await session.state.active_delivery.stop()
+                except Exception:
+                    logger.exception(
+                        f"[shutdown] Failed to stop delivery for session {session.session_id}"
+                    )
 
 
 app = FastAPI(
@@ -293,6 +312,7 @@ app.include_router(volume_router)
 app.include_router(join_router)
 app.include_router(pairing_router)
 app.include_router(lyrics_router)
+app.include_router(waveform_router)
 # Diagnostic-only (routes/debug.py) — off by default alongside /docs etc.,
 # not something a real deployment needs exposed. Registered before
 # proxy_router deliberately: that one ends in a catch-all `/{path:path}`

@@ -128,6 +128,12 @@ let restoredWasPlaying = false
 // decideLocalResume()/attemptLocalResumeAfterAuth().
 let localResumeDecided = false
 
+// Tracks connect.isActive across SSE ticks so a live true→false transition
+// (user hit "Stop casting"/disconnected the last device mid-session) can be
+// told apart from merely observing "not casting" on app boot, which
+// decideLocalResume() already owns — see the $subscribe handler in init().
+let wasCastingActive = false
+
 /**
  * Casting is a built-in playback target here, not an external interception
  * layer — every action below checks `useConnectStore().isActive` itself and
@@ -213,7 +219,19 @@ export const usePlaybackStore = defineStore('playback', {
         if (state.status) this.decideLocalResume()
 
         const status = state.status
-        if (!status || !connect.isActive) return
+        const activeNow = connect.isActive
+        // A live end-of-cast transition (not "wasn't casting at boot",
+        // which decideLocalResume() above already handles) — this.isPlaying
+        // /this.localPosition below still hold the last real values reported
+        // while casting, since this same tick's early return (right below)
+        // skips overwriting them from a now-inactive status. Exactly what
+        // local playback should pick back up from.
+        if (localResumeDecided && wasCastingActive && !activeNow) {
+          void this.handOffToLocalPlayback()
+        }
+        wasCastingActive = activeNow
+
+        if (!status || !activeNow) return
 
         this.isPlaying = status.streaming && !status.paused
         this.localPosition = status.elapsed
@@ -287,7 +305,14 @@ export const usePlaybackStore = defineStore('playback', {
         repeatMode: this.repeatMode,
         volume: this.volume,
         localPosition: this.localPosition,
-        wasPlaying: this.isPlaying,
+        // Not just this.isPlaying — resumeLocalPlayback() (the only reader
+        // of this flag) uses it to decide whether to auto-play through the
+        // *local* <audio> element on next boot. Persisting it while casting
+        // would auto-start local speaker playback next launch even though
+        // local playback was never actually happening last session (only
+        // the cast device was audible) — this.isPlaying is true in both
+        // cases, so it alone can't tell the two apart.
+        wasPlaying: this.isPlaying && !this.isCasting,
       })
     },
 
@@ -333,6 +358,31 @@ export const usePlaybackStore = defineStore('playback', {
       if (restoredWasPlaying) {
         getAudioEngine().play(url, this.localPosition)
         this.isPlaying = true
+      } else {
+        getAudioEngine().load(url, this.localPosition)
+      }
+    },
+
+    /** The live-session counterpart to resumeLocalPlayback() — called when
+     * a cast session ends mid-session (see init()'s connect $subscribe
+     * handler) instead of at app boot. The local <audio> element is never
+     * kept in sync while casting (every track start/advance goes to the
+     * connect backend instead — see startCurrent()/switchToIndex()), so
+     * without this it's left pointing at stale or empty state once casting
+     * stops, and play/pause afterwards does nothing or plays the wrong
+     * track. Picks up from this.isPlaying/this.localPosition (this
+     * session's own live values) rather than resumeLocalPlayback()'s
+     * restored-from-storage snapshot. */
+    async handOffToLocalPlayback(): Promise<void> {
+      if (this.radioStation) {
+        if (this.isPlaying) getAudioEngine().play(this.radioStation.streamUrl)
+        return
+      }
+      const track = this.currentTrack
+      if (!track) return
+      const url = useLibraryStore().client().streamUrl(track.id)
+      if (this.isPlaying) {
+        getAudioEngine().play(url, this.localPosition)
       } else {
         getAudioEngine().load(url, this.localPosition)
       }
