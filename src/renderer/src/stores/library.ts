@@ -432,6 +432,21 @@ export const useLibraryStore = defineStore('library', {
       })
     },
 
+    async updatePlaylist(
+      id: string,
+      updates: { name?: string; public?: boolean },
+    ): Promise<void> {
+      await this.withLoading(async () => {
+        await this.client().updatePlaylist(id, updates)
+        const cached = this.playlists.find((p) => p.id === id)
+        if (cached) {
+          if (updates.name !== undefined) cached.name = updates.name
+          if (updates.public !== undefined) cached.public = updates.public
+          saveLibraryCacheField('playlists', this.playlists)
+        }
+      })
+    },
+
     async deletePlaylist(id: string): Promise<void> {
       await this.withLoading(async () => {
         await this.client().deletePlaylist(id)

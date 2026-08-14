@@ -79,6 +79,12 @@ export interface ConnectStatus {
   streaming: boolean
   targets: ConnectDeviceRef[]
   total_tracks: number
+  // True only on the single status tick right after a takeover displaced
+  // this session from its target — see connect/core/session.py's
+  // displace_target(). Tells playback.ts's cast-ended handler not to hand
+  // playback off to local speakers, since the user didn't ask to stop
+  // casting, another session just took the device.
+  displaced: boolean
 }
 
 // One GET /visualizer frame — see connect/core/audio_analysis.py. Only ever

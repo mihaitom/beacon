@@ -4,6 +4,7 @@ export default {
     close: 'Schließen',
     loading: 'Wird geladen',
     save: 'Speichern',
+    edit: 'Bearbeiten',
     add: 'Hinzufügen',
     create: 'Erstellen',
     done: 'Fertig',
@@ -184,6 +185,8 @@ export default {
     public: 'Öffentlich',
     personal: 'Meine Playlists',
     global: 'Globale Playlists',
+    editTitle: 'Playlist bearbeiten',
+    byOwner: 'von {owner}',
   },
   radio: {
     title: 'Radio',

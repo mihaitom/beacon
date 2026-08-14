@@ -10,7 +10,7 @@ from core.claims import claims
 from core.session import SessionState, registry, require_authenticated_session, track_label
 from core.state import ctx
 
-from delivery import discover_airplay, discover_chromecast, discover_dlna, discover_sonos
+from delivery import credentials, discover_airplay, discover_chromecast, discover_dlna, discover_sonos
 
 logger = logging.getLogger("connect.devices")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -98,19 +98,30 @@ def _annotate_claims(discovered: dict) -> dict:
     frontend decides "claimed by me" vs. "claimed by someone else" by
     comparing against its own session id."""
     annotated: dict = {}
+    # discover_airplay() sets needs_pairing purely from the device's
+    # advertised AirPlay protocol — it has no idea whether we've already
+    # paired with it (that lives in credentials.py's on-disk store), so a
+    # device paired in a previous session still came back with
+    # needs_pairing=True forever. Cross-referencing here, once per request,
+    # is cheaper than teaching the mDNS scan about credentials and keeps
+    # discover_airplay()'s job to just "what does the network say".
+    paired = set(credentials.list_paired())
     for group_type, devices in discovered.items():
         annotated[group_type] = []
         for device in devices:
             owner = claims.owner_of(group_type, device["name"])
             owner_session = registry.get(owner) if owner else None
-            annotated[group_type].append(
-                {
-                    **device,
-                    "in_use_by_name": owner_session.display_name if owner_session else None,
-                    "in_use_by_session_id": owner,
-                    "in_use_by_track": track_label(owner_session) if owner_session else None,
-                }
-            )
+            entry = {
+                **device,
+                "in_use_by_name": owner_session.display_name if owner_session else None,
+                "in_use_by_session_id": owner,
+                "in_use_by_track": track_label(owner_session) if owner_session else None,
+            }
+            if group_type == "airplay":
+                entry["needs_pairing"] = (
+                    device.get("needs_pairing", False) and device["name"] not in paired
+                )
+            annotated[group_type].append(entry)
     return annotated
 
 

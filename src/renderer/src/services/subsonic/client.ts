@@ -188,6 +188,13 @@ export class SubsonicClient {
     )
   }
 
+  async updatePlaylist(id: string, updates: { name?: string; public?: boolean }): Promise<void> {
+    const params: Record<string, string> = { playlistId: id }
+    if (updates.name !== undefined) params.name = updates.name
+    if (updates.public !== undefined) params.public = String(updates.public)
+    await this.get('updatePlaylist.view', params)
+  }
+
   async deletePlaylist(id: string): Promise<void> {
     await this.get('deletePlaylist.view', { id })
   }

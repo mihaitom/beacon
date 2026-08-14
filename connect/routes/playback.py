@@ -449,6 +449,17 @@ async def seek_playback(
             # See /resume's identical comment.
             logger.error(f"[seek] Delivery error: {e}", exc_info=True)
             return {"error": str(e)}
+        # The reconnect above starts a *fresh* stream (FFmpeg output restarts
+        # near 0 again), which re-incurs the device's startup-buffering delay
+        # — same as a brand new /play. Without recalibrating here,
+        # position_offset keeps whatever value was measured for the *previous*
+        # stream (or 0.0 right after a fresh /play), so elapsed() runs ahead
+        # of what's actually audible until the track ends. See
+        # _apply_position_offset()'s docstring and the identical calls from
+        # /play and /play-url above.
+        asyncio.create_task(
+            _apply_position_offset(session, st.active_delivery, st.clock.play_generation)
+        )
 
     logger.info(f"[seek] ⏩ {position:.1f}s")
     await session.event_bus.broadcast(build_status_dict(session))

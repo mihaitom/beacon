@@ -6,6 +6,7 @@ export default {
     close: 'Close',
     loading: 'Loading',
     save: 'Save',
+    edit: 'Edit',
     add: 'Add',
     create: 'Create',
     done: 'Done',
@@ -186,6 +187,8 @@ export default {
     public: 'Public',
     personal: 'My playlists',
     global: 'Global playlists',
+    editTitle: 'Edit playlist',
+    byOwner: 'by {owner}',
   },
   radio: {
     title: 'Radio',

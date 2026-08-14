@@ -134,8 +134,15 @@ def compute_position(session: SessionState) -> float:
     return elapsed
 
 
-def build_status_dict(session: SessionState) -> dict:
-    """Build the full status payload shared by /status and SSE /events."""
+def build_status_dict(session: SessionState, displaced: bool = False) -> dict:
+    """Build the full status payload shared by /status and SSE /events.
+
+    `displaced` is only ever True for the single broadcast displace_target()
+    fires right after a takeover steals this session's device — it tells the
+    frontend this particular streaming->false transition was a takeover, not
+    the user stopping playback themselves, so it should just go quiet
+    instead of picking playback back up over local speakers (see
+    playback.ts's connect.$subscribe handler)."""
     elapsed = compute_position(session)
     st = session.state
 
@@ -166,6 +173,7 @@ def build_status_dict(session: SessionState) -> dict:
         "streaming": st.is_streaming,
         "targets": targets,
         "total_tracks": 1 if st.current_track else 0,
+        "displaced": displaced,
     }
 
 
@@ -275,7 +283,7 @@ async def displace_target(owner_session: SessionState, target_type: str, name: s
     else:
         st.active_delivery = DeliveryManager.from_deliveries(remaining)
 
-    await owner_session.event_bus.broadcast(build_status_dict(owner_session))
+    await owner_session.event_bus.broadcast(build_status_dict(owner_session, displaced=True))
 
 
 # ── Session lifecycle ────────────────────────────────────────────────────────

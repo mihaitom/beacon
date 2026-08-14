@@ -42,13 +42,25 @@ export default {
       type: Object as () => Playlist,
       required: true,
     },
+    // Set for rows in the "global playlists" section — every playlist
+    // there belongs to someone else by definition (see PlaylistsView.vue's
+    // globalPlaylists filter), so the owner is worth showing there but not
+    // among the user's own playlists.
+    showOwner: {
+      type: Boolean,
+      default: false,
+    },
   },
   emits: ['play'],
   computed: {
     meta(): string {
       const count = this.$t('playlists.songCount', { count: this.playlist.songCount })
       const duration = this.formatDuration(this.playlist.duration)
-      return duration ? `${count} · ${duration}` : count
+      const parts = [count, duration].filter(Boolean)
+      if (this.showOwner && this.playlist.owner) {
+        parts.push(this.$t('playlists.byOwner', { owner: this.playlist.owner }) as string)
+      }
+      return parts.join(' · ')
     },
   },
   methods: {

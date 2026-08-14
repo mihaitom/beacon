@@ -48,6 +48,7 @@
           v-for="playlist in globalPlaylists"
           :key="playlist.id"
           :playlist="playlist"
+          show-owner
           @play="playPlaylist"
         />
       </div>

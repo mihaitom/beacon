@@ -227,7 +227,13 @@ export const usePlaybackStore = defineStore('playback', {
         // skips overwriting them from a now-inactive status. Exactly what
         // local playback should pick back up from.
         if (localResumeDecided && wasCastingActive && !activeNow) {
-          void this.handOffToLocalPlayback()
+          // A takeover displacing this session from its target is not the
+          // user asking to stop — picking playback back up over local
+          // speakers would be audibly wrong (nobody asked this machine to
+          // start making sound). Just go quiet instead; see ConnectStatus.
+          // displaced's comment and displace_target() in session.py.
+          if (status?.displaced) this.isPlaying = false
+          else void this.handOffToLocalPlayback()
         }
         wasCastingActive = activeNow
 
@@ -440,8 +446,20 @@ export const usePlaybackStore = defineStore('playback', {
     setQueue(tracks: Track[], startIndex = 0): void {
       this.radioStation = null
       this.originalQueue = [...tracks]
-      this.queue = this.shuffle ? shuffledExcept(tracks, tracks[startIndex]) : [...tracks]
-      this.currentIndex = this.queue.findIndex((t) => t.id === tracks[startIndex]?.id)
+      // Unshuffled, this.queue is `tracks` in the same order, so startIndex
+      // already *is* the right index — re-deriving it by id below would
+      // resolve to the first occurrence of that id instead, playing the
+      // wrong position whenever the same track appears twice in the list
+      // (e.g. a playlist with a duplicate, or two concatenated playlists).
+      // Shuffled, shuffledExcept() always places the kept track at index 0,
+      // so the id lookup there can only ever match that same instance.
+      if (this.shuffle) {
+        this.queue = shuffledExcept(tracks, tracks[startIndex])
+        this.currentIndex = this.queue.findIndex((t) => t.id === tracks[startIndex]?.id)
+      } else {
+        this.queue = [...tracks]
+        this.currentIndex = startIndex
+      }
     },
 
     /** Index math only (repeat-mode aware), no state mutation — returns the
@@ -780,7 +798,14 @@ export const usePlaybackStore = defineStore('playback', {
 })
 
 function shuffledExcept(tracks: Track[], keepFirst: Track | null | undefined): Track[] {
-  const rest = tracks.filter((t) => t.id !== keepFirst?.id)
+  // Removes only the one `keepFirst` instance, not every track sharing its
+  // id — a plain .filter() by id would drop *every* occurrence, silently
+  // shrinking the queue whenever the same track appears twice in it.
+  const rest = [...tracks]
+  if (keepFirst) {
+    const keepIndex = rest.findIndex((t) => t.id === keepFirst.id)
+    if (keepIndex >= 0) rest.splice(keepIndex, 1)
+  }
   for (let i = rest.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
     ;[rest[i], rest[j]] = [rest[j]!, rest[i]!]

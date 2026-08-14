@@ -154,11 +154,17 @@ export const useConnectStore = defineStore('connect', {
     async finishPairing(name: string, pin?: number): Promise<void> {
       await apiFinishPairing(name, pin)
       await this.refreshPaired()
+      // /discover's needs_pairing is now credential-aware (see routes/
+      // discovery.py's _annotate_claims) — without this, the device stays
+      // shown as unpaired until the next periodic/background rescan picks
+      // up the credential this pairing just saved.
+      await this.refreshDevices()
     },
 
     async unpair(name: string): Promise<void> {
       await apiUnpair(name)
       await this.refreshPaired()
+      await this.refreshDevices()
     },
 
     subscribeEvents(): void {
