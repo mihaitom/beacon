@@ -93,6 +93,26 @@ async function fetchAlbumPages(client: SubsonicClient, pageSize: number): Promis
   return all
 }
 
+/** Retries `fetcher` on failure, waiting `delayMs` between attempts — covers
+ * transient failures right at app start (server/network/local proxy not
+ * fully up yet), exactly the window cachedFetch()'s and fetchAllTracksNow()'s
+ * background refresh run in. Without this, a single early failure leaves
+ * whatever's already showing (stale cache, or nothing) stuck for the rest of
+ * the session, since neither of those callers gets another chance to retry
+ * on their own — see both functions below. */
+async function withRetry<T>(fetcher: () => Promise<T>, attempts = 3, delayMs = 2000): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      return await fetcher()
+    } catch (error) {
+      lastError = error
+      if (attempt < attempts - 1) await new Promise((resolve) => setTimeout(resolve, delayMs))
+    }
+  }
+  throw lastError
+}
+
 /** Shows a cached value instantly (if there is one) while `fetcher` always
  * runs to get the current data, updating both state (via `onResult`) and
  * the cache once it resolves — a no-op visually unless something actually
@@ -107,7 +127,7 @@ async function cachedFetch<K extends keyof LibraryCacheSnapshot>(
   const cached = loadLibraryCache()[field]
   if (cached) {
     onResult(cached as NonNullable<LibraryCacheSnapshot[K]>)
-    fetcher()
+    withRetry(fetcher)
       .then((fresh) => {
         onResult(fresh)
         saveLibraryCacheField(field, fresh)
@@ -208,6 +228,28 @@ export const useLibraryStore = defineStore('library', {
       } finally {
         this.loadingCount--
       }
+    },
+
+    /** Called once a triggered Navidrome library scan finishes (see
+     * SettingsView.vue) — a scan can add, remove, or re-tag tracks
+     * Beacon's own in-memory state has no way to hear about on its own.
+     * fetchAlbums()/fetchArtists()/fetchAllTracks() each skip re-fetching
+     * once their collection is non-empty (unlike fetchPlaylists(), which
+     * already stale-while-revalidates via cachedFetch() every call — left
+     * alone here), so clearing those specifically is what makes the next
+     * visit to each view actually pick up what the scan changed instead of
+     * serving Beacon's now-possibly-stale idea of the library until the
+     * app restarts. Per-item caches (albumCache/artistCache) go too, since
+     * a scan can change a specific album/artist's own track list without
+     * that id ever having been "missing" before. */
+    invalidateCache(): void {
+      clearLibraryCache()
+      this.artists = []
+      this.albums = []
+      this.allTracks = []
+      this.allTracksLoaded = false
+      this.albumCache = {}
+      this.artistCache = {}
     },
 
     /** Own request, own cache field — same stale-while-revalidate pattern as
@@ -359,7 +401,7 @@ export const useLibraryStore = defineStore('library', {
       if (cached) {
         this.allTracks = cached
         this.allTracksLoaded = true
-        fetchTrackPages(client, PAGE_SIZE)
+        withRetry(() => fetchTrackPages(client, PAGE_SIZE))
           .then((fresh) => {
             this.allTracks = fresh
             saveLibraryCacheField('tracks', fresh)
@@ -432,10 +474,7 @@ export const useLibraryStore = defineStore('library', {
       })
     },
 
-    async updatePlaylist(
-      id: string,
-      updates: { name?: string; public?: boolean },
-    ): Promise<void> {
+    async updatePlaylist(id: string, updates: { name?: string; public?: boolean }): Promise<void> {
       await this.withLoading(async () => {
         await this.client().updatePlaylist(id, updates)
         const cached = this.playlists.find((p) => p.id === id)
@@ -504,6 +543,18 @@ export const useLibraryStore = defineStore('library', {
     async saveRadioStation(name: string, streamUrl: string, homePageUrl = ''): Promise<void> {
       await this.withLoading(async () => {
         await this.client().createInternetRadioStation(name, streamUrl, homePageUrl)
+        await this.fetchRadioStations()
+      })
+    },
+
+    async updateRadioStation(
+      id: string,
+      name: string,
+      streamUrl: string,
+      homePageUrl = '',
+    ): Promise<void> {
+      await this.withLoading(async () => {
+        await this.client().updateInternetRadioStation(id, name, streamUrl, homePageUrl)
         await this.fetchRadioStations()
       })
     },

@@ -76,8 +76,8 @@ export const useAuthStore = defineStore('auth', {
   actions: {
     /** Runs the ping → /config → /health sequence using whatever's already
      * in `this.credential` — the caller is responsible for setting it first
-     * (login() builds a fresh one, restore()/updateConnectSettings() reuse
-     * the persisted one). Does not persist anything itself. Reusing the
+     * (login() builds a fresh one, restore() reuses the persisted one).
+     * Does not persist anything itself. Reusing the
      * same salt/token across app restarts, instead of regenerating a fresh
      * one every time, keeps every cover-art/artist-image URL stable so the
      * browser's own HTTP cache (Navidrome sends far-future max-age) actually
@@ -191,7 +191,8 @@ export const useAuthStore = defineStore('auth', {
       // Reuse the persisted credential as-is (see _authenticate()'s comment on
       // why) — except for data saved before this field existed, where falling
       // back to a freshly built one is the only option.
-      this.credential = stored.credential || buildSubsonicCredential(stored.username, stored.password)
+      this.credential =
+        stored.credential || buildSubsonicCredential(stored.username, stored.password)
 
       try {
         await this._authenticate()
@@ -201,29 +202,6 @@ export const useAuthStore = defineStore('auth', {
         this.authenticated = false
         this.loginError = error instanceof Error ? error.message : String(error)
         return false
-      }
-    },
-
-    /** Updates connect-backend settings (URL/token) without touching the
-     * Subsonic credential — used by SettingsView, which has no password
-     * field and would otherwise bust every cached image URL on every save.
-     * Electron-only, like login()'s equivalent field — the web build's
-     * values are always injected (see loadConnectDefaults()) and this
-     * section of Settings has nothing to actually change there. */
-    async updateConnectSettings(params: { connectUrl: string; connectToken: string }): Promise<void> {
-      if (!window.api) return
-      this.loginError = null
-      this.connectUrl = params.connectUrl.replace(/\/+$/, '')
-      this.apiUrl = this.connectUrl
-      this.connectToken = params.connectToken
-
-      try {
-        await this._authenticate()
-        await this.persist()
-      } catch (error) {
-        this.authenticated = false
-        this.loginError = error instanceof Error ? error.message : String(error)
-        throw error
       }
     },
 

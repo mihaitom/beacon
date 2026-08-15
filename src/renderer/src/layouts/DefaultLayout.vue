@@ -29,7 +29,7 @@
       <v-icon icon="mdi-lighthouse-on" color="primary" size="20" class="ml-4 mr-2 beacon-glow" />
       <v-app-bar-title class="app-title">Beacon</v-app-bar-title>
       <v-spacer />
-      <v-btn icon="mdi-magnify" to="/search" />
+      <top-bar-search />
     </v-app-bar>
 
     <v-main>
@@ -51,7 +51,7 @@
     />
     <lyrics-drawer
       v-if="lyricsDrawerEverOpened"
-      :model-value="playbackStore.lyricsDrawerOpen"
+      :model-value="onNowPlaying ? false : playbackStore.lyricsDrawerOpen"
       @update:model-value="playbackStore.lyricsDrawerOpen = $event"
     />
     <cast-takeover-confirm-dialog />
@@ -63,6 +63,7 @@ import PlayerBar from '@/components/player/PlayerBar.vue'
 import QueueDrawer from '@/components/queue/QueueDrawer.vue'
 import LyricsDrawer from '@/components/lyrics/LyricsDrawer.vue'
 import CastTakeoverConfirmDialog from '@/components/connect/CastTakeoverConfirmDialog.vue'
+import TopBarSearch from '@/components/TopBarSearch.vue'
 import { usePlaybackStore } from '@/stores/playback'
 
 export default {
@@ -72,6 +73,7 @@ export default {
     QueueDrawer,
     LyricsDrawer,
     CastTakeoverConfirmDialog,
+    TopBarSearch,
   },
   data() {
     return {
@@ -86,6 +88,14 @@ export default {
     playbackStore() {
       return usePlaybackStore()
     },
+    // NowPlayingView.vue renders lyrics inline (its own split-panel
+    // transition) whenever playbackStore.lyricsDrawerOpen is true, driven
+    // by the same PlayerBar button as this drawer — without this check
+    // both would show at once while on that route, one full-panel and one
+    // slid out on top of it.
+    onNowPlaying() {
+      return this.$route.name === 'now-playing'
+    },
     navItems() {
       return [
         { to: '/', icon: 'mdi-home', title: this.$t('nav.home') },
@@ -96,6 +106,7 @@ export default {
         { to: '/playlists', icon: 'mdi-playlist-play', title: this.$t('nav.playlists') },
         { to: '/radio', icon: 'mdi-radio', title: this.$t('nav.radio') },
         { to: '/favorites', icon: 'mdi-heart', title: this.$t('nav.favorites') },
+        { to: '/stats', icon: 'mdi-chart-box-outline', title: this.$t('nav.stats') },
       ]
     },
   },

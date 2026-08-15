@@ -21,6 +21,29 @@ services:
             # running a second instance at the same time:
             # - WEB_PORT=9180 # nginx / the Beacon web UI
             # - PORT=9181     # Connect API (Python backend)
+            #
+            # SERVER_URL is unrelated to SERVER_INTERNAL_URL above: it never
+            # goes through the proxy — SERVER_INTERNAL_URL is what the backend
+            # actually talks to Navidrome through (proxied /rest, /auth, and
+            # its own direct calls); SERVER_URL is the server's public-facing
+            # identity, only used for the login allowlist below and (when set)
+            # to prefill the login screen. Combined with SERVER_LOCK=true:
+            #  - /config only accepts a login whose server URL matches
+            #    SERVER_URL (or SERVER_INTERNAL_URL, if SERVER_URL isn't set)
+            #    — without this, anyone who has (or guesses) CONNECT_TOKEN
+            #    could point this deployment's /config at a *different* real
+            #    media server's valid credentials and still reach your LAN
+            #    devices through it.
+            #  - The login screen skips asking for a server URL or type
+            #    entirely (there's only one possible server, so nothing to
+            #    choose) — GET /health hands it SERVER_URL (or
+            #    SERVER_INTERNAL_URL as a fallback) and it's prefilled
+            #    automatically; only username/password are asked for.
+            # Optional and off by default — most single-user home setups don't
+            # need it, it matters more once CONNECT_TOKEN might be shared or
+            # exposed beyond your own devices:
+            # - SERVER_URL=https://navidrome.example.com
+            # - SERVER_LOCK=true
         # Keeps AirPlay 2 pairings across container recreations/updates.
         volumes:
             - ./data:/data

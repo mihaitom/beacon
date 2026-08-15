@@ -37,7 +37,9 @@ from routes.join import router as join_router  # noqa: E402
 from routes.lyrics import router as lyrics_router  # noqa: E402
 from routes.pairing import router as pairing_router  # noqa: E402
 from routes.playback import router as playback_router  # noqa: E402
+from routes.proxy import close as close_proxy_client  # noqa: E402
 from routes.proxy import router as proxy_router  # noqa: E402
+from routes.radio import router as radio_router  # noqa: E402
 from routes.stream import router as stream_router  # noqa: E402
 from routes.volume import router as volume_router  # noqa: E402
 from routes.waveform import router as waveform_router  # noqa: E402
@@ -253,6 +255,7 @@ async def lifespan(_: FastAPI):
     finally:
         discovery_task.cancel()
         reaper_task.cancel()
+        await close_proxy_client()
         # Stop actively-casting devices before the process actually exits —
         # Sonos/Chromecast/DLNA/AirPlay have no way to know this backend
         # died, so they'd otherwise just keep playing whatever they were
@@ -302,6 +305,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_origins=_ALLOWED_ORIGINS,
     allow_origin_regex=r"http://localhost(:[0-9]+)?",
+    # Response headers are hidden from JS on a CORS response unless
+    # explicitly exposed, even though they're already visible in the raw
+    # HTTP response — routes/radio.py's X-Has-Transparency is read by
+    # services/imageTransparency.ts via response.headers.get(), which would
+    # otherwise silently always come back null despite the header actually
+    # being there.
+    expose_headers=["X-Has-Transparency"],
 )
 
 app.include_router(stream_router)
@@ -313,6 +323,7 @@ app.include_router(join_router)
 app.include_router(pairing_router)
 app.include_router(lyrics_router)
 app.include_router(waveform_router)
+app.include_router(radio_router)
 # Diagnostic-only (routes/debug.py) — off by default alongside /docs etc.,
 # not something a real deployment needs exposed. Registered before
 # proxy_router deliberately: that one ends in a catch-all `/{path:path}`

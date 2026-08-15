@@ -189,8 +189,21 @@ def analyze_pcm(pcm: bytes) -> list[float]:
     for b in range(_BAND_COUNT):
         lo = int(b / _BAND_COUNT * len(usable))
         hi = max(lo + 1, int((b + 1) / _BAND_COUNT * len(usable)))
-        peak = max(usable[lo:hi], default=0.0)
-        ratio = peak / full_scale
+        bucket = usable[lo:hi]
+        # Mean, not max, of the raw bins this band covers. 'local' mode
+        # (AudioVisualizer.vue's sampleFrequencies()) sets the Web Audio
+        # AnalyserNode's fftSize small enough (128) that it has roughly one
+        # raw bin per bar already — effectively no aggregation. Here, each
+        # band spans several raw bins (_FFT_SIZE=1024 gives far more of
+        # them), and max() over that wider range reads systematically
+        # louder than any single one of them — including a noise floor bin
+        # occasionally spiking, which read as small bars appearing where
+        # 'local' (with nothing to aggregate away) still showed none. Mean
+        # tracks a single representative bin's magnitude much more closely
+        # while still reflecting the band's real energy, not just its
+        # single loudest bin.
+        energy = sum(bucket) / len(bucket) if bucket else 0.0
+        ratio = energy / full_scale
         db = 20 * math.log10(ratio) if ratio > 1e-6 else _MIN_DB
         scaled = (db - _MIN_DB) / (_MAX_DB - _MIN_DB)
         bands.append(min(1.0, max(0.0, scaled)))

@@ -5,7 +5,12 @@
       :cover-id="heroCoverId"
       :eyebrow="heroEyebrow"
       :title="heroTitle"
+      :title-to="heroTitleTo"
       :subtitle="heroSubtitle"
+      :artist-name="heroArtistName"
+      :artist-id="heroArtistId"
+      :album-name="heroAlbumName"
+      :album-id="heroAlbumId"
       :is-playing-this="heroIsPlaying"
       :has-content="heroHasContent"
       :loading="heroLoading"
@@ -121,11 +126,42 @@ export default {
       if (this.playbackStore.radioStation) return this.playbackStore.radioStation.name
       return this.recentAlbums[0]?.name ?? ''
     },
+    // Only the "nothing playing, here's your most recent album" fallback
+    // names an album in the title itself (a *track* title, the other two
+    // cases, has no page of its own to link to — see HeroBand.vue's
+    // titleTo prop comment).
+    heroTitleTo(): string | null {
+      if (this.playbackStore.currentTrack || this.playbackStore.radioStation) return null
+      const album = this.recentAlbums[0]
+      return album ? `/albums/${album.id}` : null
+    },
+    // Plain-text-only fallback (HeroBand.vue only falls back to this when
+    // heroArtistName is null, i.e. the radio case below).
     heroSubtitle() {
-      const track = this.playbackStore.currentTrack
-      if (track) return `${track.artist} · ${track.album}`
       if (this.playbackStore.radioStation) return this.$t('home.internetRadio')
-      return this.recentAlbums[0]?.artist ?? ''
+      return ''
+    },
+    heroArtistName(): string | null {
+      const track = this.playbackStore.currentTrack
+      if (track) return track.artist
+      if (this.playbackStore.radioStation) return null
+      return this.recentAlbums[0]?.artist ?? null
+    },
+    heroArtistId(): string | null {
+      const track = this.playbackStore.currentTrack
+      if (track) return track.artistId
+      if (this.playbackStore.radioStation) return null
+      return this.recentAlbums[0]?.artistId ?? null
+    },
+    // Only the currently-playing-track case has a distinct album to name
+    // alongside the artist (subtitle reads "Artist · Album") — the
+    // fallback case's subtitle is just the artist, since the album is
+    // already what the title itself names (and links to, see heroTitleTo).
+    heroAlbumName(): string | null {
+      return this.playbackStore.currentTrack?.album ?? null
+    },
+    heroAlbumId(): string | null {
+      return this.playbackStore.currentTrack?.albumId ?? null
     },
     heroIsPlaying() {
       return this.playbackStore.isPlaying

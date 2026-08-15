@@ -9,6 +9,7 @@ import type {
   PlaylistResponse,
   PlaylistsResponse,
   RawSong,
+  ScanStatusResponse,
   SearchResult3Response,
   SimilarSongs2Response,
   Starred2Response,
@@ -279,8 +280,44 @@ export class SubsonicClient {
     await this.get('createInternetRadioStation.view', { name, streamUrl, homepageUrl: homePageUrl })
   }
 
+  async updateInternetRadioStation(
+    id: string,
+    name: string,
+    streamUrl: string,
+    homePageUrl = '',
+  ): Promise<void> {
+    await this.get('updateInternetRadioStation.view', {
+      id,
+      name,
+      streamUrl,
+      homepageUrl: homePageUrl,
+    })
+  }
+
   async deleteInternetRadioStation(id: string): Promise<void> {
     await this.get('deleteInternetRadioStation.view', { id })
+  }
+
+  /** Triggers a Navidrome library scan (a Navidrome/OpenSubsonic extension
+   * — not in the base Subsonic API). `fullScan` forces a full re-read of
+   * every file's tags instead of Navidrome's default incremental scan
+   * (new/changed/removed files only) — much slower, only worth it after
+   * e.g. bulk-editing tags outside Navidrome. Returns the scan's own
+   * initial status, same shape as getScanStatus() below (Navidrome starts
+   * scanning synchronously with this call, so `count` here is already
+   * meaningful, not just a stub). */
+  async startScan(fullScan = false): Promise<{ scanning: boolean; count: number }> {
+    const data = await this.get<ScanStatusResponse>('startScan.view', {
+      fullScan: String(fullScan),
+    })
+    return { scanning: data.scanStatus.scanning, count: data.scanStatus.count ?? 0 }
+  }
+
+  /** Polled while a scan is in progress (see SettingsView.vue) — `scanning`
+   * flips back to false once Navidrome's done. */
+  async getScanStatus(): Promise<{ scanning: boolean; count: number }> {
+    const data = await this.get<ScanStatusResponse>('getScanStatus.view')
+    return { scanning: data.scanStatus.scanning, count: data.scanStatus.count ?? 0 }
   }
 
   /** Like get(), but also appends one or more repeated-key params (Subsonic's

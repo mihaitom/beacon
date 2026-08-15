@@ -20,6 +20,26 @@ export class AudioEngine {
     // ever read back silence — connect's CORSMiddleware (main.py) already
     // allows the app's own origin, so this is safe to set unconditionally.
     this.audio.crossOrigin = 'anonymous'
+    // Builds the analyser graph now, at app startup, rather than lazily on
+    // AudioVisualizer.vue's first frame (which used to live inside
+    // getAnalyser() below). createMediaElementSource() reroutes this
+    // element's output through the Web Audio graph the moment it's called —
+    // on Chromium that produces a brief but genuinely audible dropout, and
+    // doing it lazily meant it fired the first time NowPlayingView opened
+    // while a track was already audibly playing. Doing it here instead,
+    // before anything has ever played, means whatever glitch that rerouting
+    // causes happens against silence, not live playback.
+    //
+    // Wrapped in try/catch so an environment where Web Audio setup fails
+    // (unsupported, or some other browser policy) only ever loses the
+    // visualizer (getAnalyser() below throws, caught by
+    // AudioVisualizer.vue's sampleFrequencies()) instead of taking plain
+    // <audio> playback down with it.
+    try {
+      this.setupAnalyser()
+    } catch (error) {
+      console.error('[audio-engine] Failed to set up analyser:', error)
+    }
     this.audio.addEventListener('timeupdate', () => {
       this.onTimeUpdate?.(this.audio.currentTime)
     })
@@ -73,30 +93,33 @@ export class AudioEngine {
     return this.audio.paused
   }
 
-  /** Lazily wires a Web Audio analyser tapped off this element's output —
-   * used by the fullscreen visualizer (AudioVisualizer.vue). Created at
-   * most once per element (the Web Audio API throws if
-   * createMediaElementSource is called on the same element twice) and
-   * reused across every subsequent track, since this same <audio> element
-   * is reused for the app's whole lifetime too (see getAudioEngine()).
-   * Routes back through to `destination` — tapping the signal this way
-   * would otherwise silence actual playback, since the browser stops
-   * sending an element's audio straight to speakers once something reads
-   * from a MediaElementAudioSourceNode built on it. */
+  /** Wires a Web Audio analyser tapped off this element's output — see the
+   * constructor's comment for why this runs eagerly at construction instead
+   * of lazily on first use. Routes back through to `destination` — tapping
+   * the signal this way would otherwise silence actual playback, since the
+   * browser stops sending an element's audio straight to speakers once
+   * something reads from a MediaElementAudioSourceNode built on it. */
+  private setupAnalyser(): void {
+    this.audioContext = new AudioContext()
+    const source = this.audioContext.createMediaElementSource(this.audio)
+    this.analyserNode = this.audioContext.createAnalyser()
+    this.analyserNode.fftSize = 128
+    this.analyserNode.smoothingTimeConstant = 0.8
+    source.connect(this.analyserNode)
+    this.analyserNode.connect(this.audioContext.destination)
+  }
+
+  /** Used by the fullscreen visualizer (AudioVisualizer.vue). Throws if the
+   * constructor's setupAnalyser() failed — the caller already handles that
+   * (see sampleFrequencies()'s try/catch). */
   getAnalyser(): AnalyserNode {
-    if (!this.analyserNode) {
-      this.audioContext = new AudioContext()
-      const source = this.audioContext.createMediaElementSource(this.audio)
-      this.analyserNode = this.audioContext.createAnalyser()
-      this.analyserNode.fftSize = 128
-      this.analyserNode.smoothingTimeConstant = 0.8
-      source.connect(this.analyserNode)
-      this.analyserNode.connect(this.audioContext.destination)
+    if (!this.audioContext || !this.analyserNode) {
+      throw new Error('Web Audio analyser unavailable')
     }
     // Autoplay policy can start a freshly-created context 'suspended' —
     // harmless to call every time, resume() on an already-running context
     // is a no-op.
-    if (this.audioContext && this.audioContext.state === 'suspended') {
+    if (this.audioContext.state === 'suspended') {
       void this.audioContext.resume()
     }
     return this.analyserNode

@@ -1,6 +1,29 @@
 """Tests for POST /config."""
 
+import importlib
+
+import pytest
+
 from media import JellyfinClient, SubsonicClient
+
+
+def _reload_devices():
+    import routes.devices as devices_mod
+
+    importlib.reload(devices_mod)
+    return devices_mod
+
+
+@pytest.fixture
+def server_lock_env(monkeypatch):
+    """See test_health.py's identical fixture — reloads routes/devices.py's
+    module-level SERVER_LOCK state against whatever the test sets via
+    monkeypatch, then back to unset afterwards."""
+    yield
+    monkeypatch.delenv("SERVER_LOCK", raising=False)
+    monkeypatch.delenv("SERVER_URL", raising=False)
+    monkeypatch.delenv("SERVER_INTERNAL_URL", raising=False)
+    _reload_devices()
 
 
 def test_config_sets_subsonic_url(client, default_session):
@@ -80,3 +103,46 @@ def test_config_sets_display_name_from_username(client, default_session):
         json={"url": "http://nav:4533", "credential": "x", "username": "alice"},
     )
     assert default_session.display_name == "alice"
+
+
+# ── SERVER_LOCK ──────────────────────────────────────────────────────────────
+
+
+def test_config_rejects_mismatched_url_when_locked(
+    client, monkeypatch, server_lock_env
+):
+    monkeypatch.setenv("SERVER_LOCK", "true")
+    monkeypatch.setenv("SERVER_URL", "https://navidrome.example.com")
+    _reload_devices()
+
+    r = client.post(
+        "/config",
+        json={"url": "https://someone-elses-server.example.com", "credential": "x"},
+    )
+    assert r.status_code == 403
+
+
+def test_config_accepts_matching_url_when_locked(
+    client, default_session, monkeypatch, server_lock_env
+):
+    monkeypatch.setenv("SERVER_LOCK", "true")
+    monkeypatch.setenv("SERVER_URL", "https://navidrome.example.com")
+    _reload_devices()
+
+    r = client.post(
+        "/config", json={"url": "https://navidrome.example.com", "credential": "x"}
+    )
+    assert r.status_code == 200
+    assert default_session.media.base_url == "https://navidrome.example.com"
+
+
+def test_config_unenforced_when_lock_flag_unset(client, monkeypatch, server_lock_env):
+    # SERVER_URL alone (no SERVER_LOCK=true) must not restrict anything —
+    # see _LOCKED_LOGIN_URL's comment in routes/devices.py.
+    monkeypatch.setenv("SERVER_URL", "https://navidrome.example.com")
+    _reload_devices()
+
+    r = client.post(
+        "/config", json={"url": "http://anything-else:4533", "credential": "x"}
+    )
+    assert r.status_code == 200

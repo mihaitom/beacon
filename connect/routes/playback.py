@@ -223,6 +223,17 @@ class PlayRequest(BaseModel):
     # Take over any target already claimed by another session instead of
     # refusing (Phase 2 — the user confirmed a takeover dialog).
     force: bool = False
+    # Strictly increasing per-session dispatch counter — see SessionState.
+    # play_seq's comment. 0 (the default) opts out of the staleness check.
+    seq: int = 0
+
+
+def _is_stale_seq(session: SessionState, seq: int) -> bool:
+    """True if `seq` has already been superseded by a later dispatch this
+    session accepted — see SessionState.play_seq's comment. seq=0 (no
+    ordering info supplied) never counts as stale. Must only be called while
+    holding session.play_lock."""
+    return seq != 0 and seq < session.play_seq
 
 
 @router.post("/play")
@@ -239,71 +250,84 @@ async def play_tracks(
     if not req.track_ids:
         return {"error": "No track ID provided"}
 
-    track_id = req.track_ids[0]
-    try:
-        track = session.media.get_track(track_id)
-    except Exception as e:
-        logger.warning(f"[play] Track {track_id} not found: {e}")
-        return {"error": f"Track not found: {e}"}
+    async with session.play_lock:
+        # Checked (and, on acceptance, recorded) inside the lock so a
+        # slower-to-arrive-but-actually-older request can never sneak its
+        # target.play() dispatch in between a newer request's own check and
+        # its device call — see SessionState.play_lock's comment.
+        if _is_stale_seq(session, req.seq):
+            logger.info(
+                f"[play] Ignoring superseded request (seq={req.seq} < {session.play_seq})"
+            )
+            return {"status": "superseded"}
+        if req.seq:
+            session.play_seq = req.seq
 
-    target = resolve_target(
-        req.targets, req.target_name, req.target_type, previous=session.state.active_delivery
-    )
-    url = stream_url(session.session_id)
-    start_position = max(0.0, min(req.start_position, float(track.duration)))
-    logger.info(
-        f"[play] {track.artist} — {track.title} ({track.duration}s) → target={target}"
-        + (f" (start {start_position:.1f}s)" if start_position > 0.5 else "")
-    )
+        track_id = req.track_ids[0]
+        try:
+            track = session.media.get_track(track_id)
+        except Exception as e:
+            logger.warning(f"[play] Track {track_id} not found: {e}")
+            return {"error": f"Track not found: {e}"}
 
-    if target:
-        conflict = await _claim_or_takeover(target, session, req.force)
-        if conflict:
-            return conflict
+        target = resolve_target(
+            req.targets, req.target_name, req.target_type, previous=session.state.active_delivery
+        )
+        url = stream_url(session.session_id)
+        start_position = max(0.0, min(req.start_position, float(track.duration)))
+        logger.info(
+            f"[play] {track.artist} — {track.title} ({track.duration}s) → target={target}"
+            + (f" (start {start_position:.1f}s)" if start_position > 0.5 else "")
+        )
 
-    st = session.state
+        if target:
+            conflict = await _claim_or_takeover(target, session, req.force)
+            if conflict:
+                return conflict
 
-    if target:
-        # internal=True: fetched directly by the cast device, not the browser —
-        # see MediaClient.get_cover_art_url's docstring.
-        album_art_url = session.media.get_cover_art_url(track.cover_art_id, internal=True)
-        if not _is_duplicate_dispatch(st, f"play:{target}:{track_id}"):
-            try:
-                await target.play(
-                    url,
-                    track.title,
-                    track.artist,
-                    album_art_url,
-                    float(track.duration),
-                    track.album,
-                )
-            except Exception as e:
-                logger.error(f"[play] Delivery error: {e}", exc_info=True)
-                # Dispatch never actually reached the device — release the
-                # claim just granted above instead of leaving it locked to
-                # this session (device_in_use for everyone else) with
-                # nothing actually playing on it.
-                await _release_claims(target, session)
-                return {"error": str(e)}
+        st = session.state
 
-    st.current_track = track
-    st.current_track_gain = req.gain
-    st.is_streaming = True
-    st.radio_info = None
-    st.clock.start(start_position)
-    st.track_ended = False
-    st.active_delivery = target
+        if target:
+            # internal=True: fetched directly by the cast device, not the browser —
+            # see MediaClient.get_cover_art_url's docstring.
+            album_art_url = session.media.get_cover_art_url(track.cover_art_id, internal=True)
+            if not _is_duplicate_dispatch(st, f"play:{target}:{track_id}"):
+                try:
+                    await target.play(
+                        url,
+                        track.title,
+                        track.artist,
+                        album_art_url,
+                        float(track.duration),
+                        track.album,
+                    )
+                except Exception as e:
+                    logger.error(f"[play] Delivery error: {e}", exc_info=True)
+                    # Dispatch never actually reached the device — release the
+                    # claim just granted above instead of leaving it locked to
+                    # this session (device_in_use for everyone else) with
+                    # nothing actually playing on it.
+                    await _release_claims(target, session)
+                    return {"error": str(e)}
 
-    if not target:
-        logger.info(f"[play] No target — stream available at {url}")
+        st.current_track = track
+        st.current_track_gain = req.gain
+        st.is_streaming = True
+        st.radio_info = None
+        st.clock.start(start_position)
+        st.track_ended = False
+        st.active_delivery = target
+
+        if not target:
+            logger.info(f"[play] No target — stream available at {url}")
+            await session.event_bus.broadcast(build_status_dict(session))
+            return {"status": "playing", "stream_url": url}
+
+        asyncio.create_task(
+            _apply_position_offset(session, target, st.clock.play_generation)
+        )
         await session.event_bus.broadcast(build_status_dict(session))
         return {"status": "playing", "stream_url": url}
-
-    asyncio.create_task(
-        _apply_position_offset(session, target, st.clock.play_generation)
-    )
-    await session.event_bus.broadcast(build_status_dict(session))
-    return {"status": "playing", "stream_url": url}
 
 
 class PlayUrlRequest(BaseModel):
@@ -314,6 +338,8 @@ class PlayUrlRequest(BaseModel):
     target_type: str | None = None
     # See PlayRequest.force.
     force: bool = False
+    # See PlayRequest.seq.
+    seq: int = 0
 
 
 @router.post("/play-url")
@@ -334,40 +360,51 @@ async def play_url(
     if not target:
         return {"error": "No target configured"}
 
-    # Logged before the claim check, like /play — so a radio start attempt
-    # that gets refused with device_in_use still shows up, instead of only
-    # logging on success.
-    logger.info(f"[play-url] Radio '{req.title}' → {req.url[:80]}, target={target}")
+    async with session.play_lock:
+        # See /play's identical guard — shares the same seq counter/lock
+        # since play-url and play both decide "what's current" for a session.
+        if _is_stale_seq(session, req.seq):
+            logger.info(
+                f"[play-url] Ignoring superseded request (seq={req.seq} < {session.play_seq})"
+            )
+            return {"status": "superseded"}
+        if req.seq:
+            session.play_seq = req.seq
 
-    conflict = await _claim_or_takeover(target, session, req.force)
-    if conflict:
-        logger.info(f"[play-url] Refused: {conflict}")
-        return conflict
+        # Logged before the claim check, like /play — so a radio start attempt
+        # that gets refused with device_in_use still shows up, instead of only
+        # logging on success.
+        logger.info(f"[play-url] Radio '{req.title}' → {req.url[:80]}, target={target}")
 
-    st = session.state
+        conflict = await _claim_or_takeover(target, session, req.force)
+        if conflict:
+            logger.info(f"[play-url] Refused: {conflict}")
+            return conflict
 
-    if not _is_duplicate_dispatch(st, f"play-url:{target}:{req.url}"):
-        try:
-            await target.play(req.url, req.title)
-        except Exception as e:
-            logger.error(f"[play-url] Delivery error: {e}", exc_info=True)
-            # See /play's identical comment — don't leave the device locked
-            # to this session when nothing actually started playing on it.
-            await _release_claims(target, session)
-            return {"error": str(e)}
+        st = session.state
 
-    st.current_track = None
-    st.is_streaming = True
-    st.radio_info = {"title": req.title, "url": req.url}
-    st.clock.start()
-    st.track_ended = False
-    st.active_delivery = target
+        if not _is_duplicate_dispatch(st, f"play-url:{target}:{req.url}"):
+            try:
+                await target.play(req.url, req.title)
+            except Exception as e:
+                logger.error(f"[play-url] Delivery error: {e}", exc_info=True)
+                # See /play's identical comment — don't leave the device locked
+                # to this session when nothing actually started playing on it.
+                await _release_claims(target, session)
+                return {"error": str(e)}
 
-    asyncio.create_task(
-        _apply_position_offset(session, target, st.clock.play_generation)
-    )
-    await session.event_bus.broadcast(build_status_dict(session))
-    return {"status": "playing", "url": req.url}
+        st.current_track = None
+        st.is_streaming = True
+        st.radio_info = {"title": req.title, "url": req.url}
+        st.clock.start()
+        st.track_ended = False
+        st.active_delivery = target
+
+        asyncio.create_task(
+            _apply_position_offset(session, target, st.clock.play_generation)
+        )
+        await session.event_bus.broadcast(build_status_dict(session))
+        return {"status": "playing", "url": req.url}
 
 
 @router.post("/pause")
@@ -386,14 +423,15 @@ async def pause_playback(session: SessionState = Depends(require_authenticated_s
         return {
             "error": "Media server not configured — waiting for /config from Feishin"
         }
-    st = session.state
-    if st.active_delivery:
-        await st.active_delivery.pause()
-    elapsed = compute_position(session)
-    st.clock.pause(elapsed)
-    logger.info(f"[pause] ⏸ {elapsed:.1f}s into track")
-    await session.event_bus.broadcast(build_status_dict(session))
-    return {"paused": True}
+    async with session.play_lock:
+        st = session.state
+        if st.active_delivery:
+            await st.active_delivery.pause()
+        elapsed = compute_position(session)
+        st.clock.pause(elapsed)
+        logger.info(f"[pause] ⏸ {elapsed:.1f}s into track")
+        await session.event_bus.broadcast(build_status_dict(session))
+        return {"paused": True}
 
 
 @router.post("/resume")
@@ -406,25 +444,26 @@ async def resume_playback(session: SessionState = Depends(require_authenticated_
         return {
             "error": "Media server not configured — waiting for /config from Feishin"
         }
-    st = session.state
-    st.clock.resume()
+    async with session.play_lock:
+        st = session.state
+        st.clock.resume()
 
-    logger.info(f"[resume] ▶ Seeking to {st.clock.resume_offset:.1f}s")
+        logger.info(f"[resume] ▶ Seeking to {st.clock.resume_offset:.1f}s")
 
-    if st.active_delivery:
-        # Force a fresh /stream connection so FFmpeg applies the seek offset
-        # (radio reconnects to its own URL instead — see _current_reconnect_args).
-        try:
-            await st.active_delivery.play(*_current_reconnect_args(session))
-        except Exception as e:
-            # Match /play's contract: a JSON {"error": ...} body, not an
-            # unhandled exception surfacing as a 500 (the device may have
-            # gone unreachable while paused).
-            logger.error(f"[resume] Delivery error: {e}", exc_info=True)
-            return {"error": str(e)}
+        if st.active_delivery:
+            # Force a fresh /stream connection so FFmpeg applies the seek offset
+            # (radio reconnects to its own URL instead — see _current_reconnect_args).
+            try:
+                await st.active_delivery.play(*_current_reconnect_args(session))
+            except Exception as e:
+                # Match /play's contract: a JSON {"error": ...} body, not an
+                # unhandled exception surfacing as a 500 (the device may have
+                # gone unreachable while paused).
+                logger.error(f"[resume] Delivery error: {e}", exc_info=True)
+                return {"error": str(e)}
 
-    await session.event_bus.broadcast(build_status_dict(session))
-    return {"paused": False}
+        await session.event_bus.broadcast(build_status_dict(session))
+        return {"paused": False}
 
 
 class SeekRequest(BaseModel):
@@ -435,56 +474,58 @@ class SeekRequest(BaseModel):
 async def seek_playback(
     body: SeekRequest, session: SessionState = Depends(require_authenticated_session)
 ):
-    st = session.state
-    position = max(0.0, body.position)
-    if st.current_track:
-        position = min(position, st.current_track.duration)
+    async with session.play_lock:
+        st = session.state
+        position = max(0.0, body.position)
+        if st.current_track:
+            position = min(position, st.current_track.duration)
 
-    st.clock.seek_to(position)
+        st.clock.seek_to(position)
 
-    if not st.clock.is_paused and st.active_delivery:
-        try:
-            await st.active_delivery.play(*_current_reconnect_args(session))
-        except Exception as e:
-            # See /resume's identical comment.
-            logger.error(f"[seek] Delivery error: {e}", exc_info=True)
-            return {"error": str(e)}
-        # The reconnect above starts a *fresh* stream (FFmpeg output restarts
-        # near 0 again), which re-incurs the device's startup-buffering delay
-        # — same as a brand new /play. Without recalibrating here,
-        # position_offset keeps whatever value was measured for the *previous*
-        # stream (or 0.0 right after a fresh /play), so elapsed() runs ahead
-        # of what's actually audible until the track ends. See
-        # _apply_position_offset()'s docstring and the identical calls from
-        # /play and /play-url above.
-        asyncio.create_task(
-            _apply_position_offset(session, st.active_delivery, st.clock.play_generation)
-        )
+        if not st.clock.is_paused and st.active_delivery:
+            try:
+                await st.active_delivery.play(*_current_reconnect_args(session))
+            except Exception as e:
+                # See /resume's identical comment.
+                logger.error(f"[seek] Delivery error: {e}", exc_info=True)
+                return {"error": str(e)}
+            # The reconnect above starts a *fresh* stream (FFmpeg output restarts
+            # near 0 again), which re-incurs the device's startup-buffering delay
+            # — same as a brand new /play. Without recalibrating here,
+            # position_offset keeps whatever value was measured for the *previous*
+            # stream (or 0.0 right after a fresh /play), so elapsed() runs ahead
+            # of what's actually audible until the track ends. See
+            # _apply_position_offset()'s docstring and the identical calls from
+            # /play and /play-url above.
+            asyncio.create_task(
+                _apply_position_offset(session, st.active_delivery, st.clock.play_generation)
+            )
 
-    logger.info(f"[seek] ⏩ {position:.1f}s")
-    await session.event_bus.broadcast(build_status_dict(session))
-    return {"position": position}
+        logger.info(f"[seek] ⏩ {position:.1f}s")
+        await session.event_bus.broadcast(build_status_dict(session))
+        return {"position": position}
 
 
 @router.post("/stop")
 async def stop_playback(session: SessionState = Depends(require_authenticated_session)):
-    st = session.state
-    if st.active_delivery:
-        await st.active_delivery.stop()
-    # Playback is genuinely ending here (unlike a track just finishing
-    # normally, see routes/stream.py's finish_feeding()) — no reason to let
-    # a still-draining analyzer keep running for content that was stopped.
-    if session.audio_analyzer:
-        await session.audio_analyzer.stop()
-        session.audio_analyzer = None
-    st.is_streaming = False
-    st.clock.is_paused = False
-    st.track_ended = False
-    st.current_track = None
-    st.radio_info = None
-    st.active_delivery = None
-    st.last_dispatch_key = None
-    await claims.release_all_for_session(session.session_id)
-    logger.info("[stop] ⏹ Playback stopped")
-    await session.event_bus.broadcast(build_status_dict(session))
-    return {"status": "stopped"}
+    async with session.play_lock:
+        st = session.state
+        if st.active_delivery:
+            await st.active_delivery.stop()
+        # Playback is genuinely ending here (unlike a track just finishing
+        # normally, see routes/stream.py's finish_feeding()) — no reason to let
+        # a still-draining analyzer keep running for content that was stopped.
+        if session.audio_analyzer:
+            await session.audio_analyzer.stop()
+            session.audio_analyzer = None
+        st.is_streaming = False
+        st.clock.is_paused = False
+        st.track_ended = False
+        st.current_track = None
+        st.radio_info = None
+        st.active_delivery = None
+        st.last_dispatch_key = None
+        await claims.release_all_for_session(session.session_id)
+        logger.info("[stop] ⏹ Playback stopped")
+        await session.event_bus.broadcast(build_status_dict(session))
+        return {"status": "stopped"}

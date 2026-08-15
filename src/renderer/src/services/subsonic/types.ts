@@ -141,3 +141,13 @@ export interface StructuredLyrics {
 export interface LyricsBySongIdResponse {
   lyricsList: { structuredLyrics?: StructuredLyrics[] }
 }
+
+// startScan.view/getScanStatus.view (Navidrome extension) — count is the
+// running total of items scanned so far, meaningful only while scanning is
+// true (0/absent otherwise).
+export interface ScanStatusResponse {
+  scanStatus: {
+    scanning: boolean
+    count?: number
+  }
+}

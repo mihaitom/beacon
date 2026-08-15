@@ -17,6 +17,16 @@
         {{ totalTrackCount }}
         {{ totalTrackCount === 1 ? $t('library.track1') : $t('library.tracksN') }}
       </template>
+      <template #actions>
+        <v-btn
+          color="primary"
+          rounded="pill"
+          prepend-icon="mdi-radio-tower"
+          @click="startArtistRadio"
+        >
+          {{ $t('library.artistRadio') }}
+        </v-btn>
+      </template>
     </detail-header>
 
     <div class="album-grid">
@@ -49,6 +59,7 @@
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import { usePlaybackStore } from '@/stores/playback'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
 import TrackList from '@/components/library/TrackList.vue'
@@ -122,6 +133,19 @@ export default {
       } catch (error) {
         this.artist.rating = previous
         console.error('[artist-detail] Failed to set rating:', error)
+      }
+    },
+    async startArtistRadio() {
+      if (!this.artist) return
+      try {
+        await usePlaybackStore().startArtistRadio(this.artist)
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('library.artistRadio'),
+          message: this.$t('library.artistRadioError'),
+        })
+        console.error('[artist-radio]', error)
       }
     },
   },

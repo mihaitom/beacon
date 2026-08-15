@@ -14,9 +14,13 @@
       />
     </div>
     <div class="album-card-title text-body-2 mt-2 text-truncate">{{ album.name }}</div>
-    <div class="album-card-artist text-caption text-medium-emphasis text-truncate">
+    <router-link
+      :to="`/artists/${album.artistId}`"
+      class="album-card-artist text-caption text-medium-emphasis text-truncate"
+      @click.stop
+    >
       {{ album.artist }}
-    </div>
+    </router-link>
   </div>
 </template>
 
@@ -87,5 +91,20 @@ export default {
 
 .album-card:hover .album-card-title {
   color: rgb(var(--v-theme-primary));
+}
+
+.album-card-artist {
+  /* text-truncate (Vuetify's utility class, applied inline above) needs a
+   * block-level box with a bounded width to actually ellipsize against —
+   * an <a>'s default `inline` display doesn't respect that. */
+  display: block;
+  text-decoration: none;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.album-card-artist:hover {
+  color: rgb(var(--v-theme-primary));
+  text-decoration: underline;
 }
 </style>

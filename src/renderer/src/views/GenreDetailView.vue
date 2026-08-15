@@ -17,7 +17,7 @@
       </template>
     </detail-header>
 
-    <sticky-filter>
+    <sticky-filter :z-index="3" :fade="false" @resize="stickyHeaderHeight = $event">
       <v-text-field
         v-model="filterQuery"
         :label="$t('common.filter')"
@@ -38,6 +38,8 @@
       <track-list
         :tracks="filteredTracks"
         :queue-whole-list="false"
+        sticky-header
+        :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
         show-cover
         show-album
         show-year
@@ -58,6 +60,7 @@
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
+import { shuffled } from '@/services/shuffle'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import TrackList from '@/components/library/TrackList.vue'
 import PageLoader from '@/components/PageLoader.vue'
@@ -79,6 +82,11 @@ export default {
       // filtering doesn't run synchronously on every keystroke — see the
       // identical pattern (and its rationale) in TracksView.vue.
       debouncedQuery: '',
+      // Height of the sticky filter block, reported by StickyFilter's own
+      // @resize — TrackList's sticky column header (see its stickyHeader
+      // prop) needs this to stack correctly right below it instead of
+      // overlapping it. Same wiring as TracksView.vue.
+      stickyHeaderHeight: 0,
     }
   },
   computed: {
@@ -134,14 +142,5 @@ export default {
       await usePlaybackStore().playTrackList(sample, 0)
     },
   },
-}
-
-function shuffled(tracks: Track[]): Track[] {
-  const result = [...tracks]
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[result[i], result[j]] = [result[j]!, result[i]!]
-  }
-  return result
 }
 </script>

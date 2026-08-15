@@ -31,6 +31,27 @@ class SessionState:
         # "in use by {display_name}" for claimed devices.
         self.display_name: str = ""
         self.state = AppState()
+        # Serializes /play, /play-url, /pause, /resume, /seek, /stop for this
+        # session — without it, two concurrent dispatches (e.g. rapid
+        # next/next, or a click while a previous switch is still in flight)
+        # can run their `await target.play(...)` calls interleaved, and
+        # whichever's device I/O happens to finish last "wins" regardless of
+        # which the user actually issued last, leaving the wrong track
+        # audibly playing while session.state.current_track/the UI show the
+        # one the user actually asked for (or vice versa). See play_seq
+        # below for the other half of the fix (dropping a request that's
+        # already been superseded, instead of just serializing execution
+        # order).
+        self.play_lock = asyncio.Lock()
+        # Highest PlayRequest/PlayUrlRequest.seq accepted so far — see
+        # play_lock's comment. The frontend hands out a strictly increasing
+        # seq per dispatch (services/connect/playback.ts); a request whose
+        # seq is lower than this has already been superseded by one that
+        # (from the user's perspective) came after it, so it's dropped
+        # before ever reaching the target device, not just before
+        # overwriting session state. seq=0 (the default for any caller that
+        # doesn't send one, e.g. tests) opts out of the check entirely.
+        self.play_seq: int = 0
         # Default is an unconfigured Subsonic client — overwritten by /config
         # with either a Subsonic or Jellyfin client.
         self.media: MediaClient = SubsonicClient("")

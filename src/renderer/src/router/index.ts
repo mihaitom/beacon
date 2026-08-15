@@ -82,6 +82,11 @@ const router = createRouter({
       component: () => import('../views/FavoritesView.vue'),
     },
     {
+      path: '/stats',
+      name: 'stats',
+      component: () => import('../views/StatsView.vue'),
+    },
+    {
       path: '/now-playing',
       name: 'now-playing',
       component: () => import('../views/NowPlayingView.vue'),

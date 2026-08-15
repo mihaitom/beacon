@@ -9,87 +9,103 @@
       <div class="text-body-2 text-medium-emphasis mt-1">{{ $t('auth.chooseServer') }}</div>
     </div>
 
-    <!-- Only the Subsonic/Navidrome tile is actually selectable — Jellyfin
-     - and Plex are shown (real logos, real names) so the shape of what's
-     - coming is visible, but "locked" the same way an unlit lighthouse
-     - reads as "not this one yet", not "broken". -->
-    <div class="server-type-grid mb-6">
-      <button
-        v-for="option in serverTypeOptions"
-        :key="option.type"
-        type="button"
-        class="server-type-tile"
-        :class="{
-          'server-type-tile--selected': option.type === selectedServerType,
-          'server-type-tile--locked': option.locked,
-        }"
-        :aria-pressed="option.type === selectedServerType"
-        :aria-disabled="option.locked"
-        :title="option.locked ? $t('auth.comingSoon') : undefined"
-        @click="selectServerType(option)"
-      >
-        <span class="server-type-tile__icon">
-          <component :is="option.icon" />
-        </span>
-        <span class="server-type-tile__name">{{ option.name }}</span>
-        <v-icon
-          v-if="option.locked"
-          icon="mdi-lock-outline"
-          size="12"
-          class="server-type-tile__lock"
-        />
-      </button>
+    <div v-if="checkingLock" class="d-flex justify-center my-6">
+      <v-progress-circular indeterminate color="primary" />
     </div>
 
-    <v-card-text class="pa-0">
-      <v-form @submit.prevent="submit">
-        <v-text-field
-          v-model="serverUrl"
-          :label="$t('auth.serverUrl')"
-          placeholder="https://navidrome.example.com"
-          variant="solo-filled"
-          class="mb-2"
-        />
-        <v-text-field
-          v-model="username"
-          :label="$t('auth.username')"
-          variant="solo-filled"
-          class="mb-2"
-        />
-        <v-text-field
-          v-model="password"
-          :label="$t('auth.password')"
-          type="password"
-          variant="solo-filled"
-          class="mb-2"
-        />
+    <template v-else>
+      <!-- Only the Subsonic/Navidrome tile is actually selectable — Jellyfin
+       - and Plex are shown (real logos, real names) so the shape of what's
+       - coming is visible, but "locked" the same way an unlit lighthouse
+       - reads as "not this one yet", not "broken". Skipped entirely once
+       - this deployment is itself locked to one specific server (see
+       - `locked` below) — there's nothing left to choose either way. -->
+      <div v-if="!locked" class="server-type-grid mb-6">
+        <button
+          v-for="option in serverTypeOptions"
+          :key="option.type"
+          type="button"
+          class="server-type-tile"
+          :class="{
+            'server-type-tile--selected': option.type === selectedServerType,
+            'server-type-tile--locked': option.locked,
+          }"
+          :aria-pressed="option.type === selectedServerType"
+          :aria-disabled="option.locked"
+          :title="option.locked ? $t('auth.comingSoon') : undefined"
+          @click="selectServerType(option)"
+        >
+          <span class="server-type-tile__icon">
+            <component :is="option.icon" />
+          </span>
+          <span class="server-type-tile__name">{{ option.name }}</span>
+          <v-icon
+            v-if="option.locked"
+            icon="mdi-lock-outline"
+            size="12"
+            class="server-type-tile__lock"
+          />
+        </button>
+      </div>
 
-        <v-expansion-panels variant="accordion" class="mb-4">
-          <v-expansion-panel :title="$t('auth.advanced')">
-            <template #text>
-              <v-text-field
-                v-model="connectUrl"
-                :label="$t('auth.connectBackendUrl')"
-                variant="solo-filled"
-              />
-            </template>
-          </v-expansion-panel>
-        </v-expansion-panels>
+      <v-card-text class="pa-0">
+        <v-form @submit.prevent="submit">
+          <v-text-field
+            v-if="!locked"
+            v-model="serverUrl"
+            :label="$t('auth.serverUrl')"
+            placeholder="https://navidrome.example.com"
+            variant="solo-filled"
+            class="mb-2"
+          />
+          <!-- Read-only, not just hidden — still worth showing which server
+           - this actually is, same reasoning as SettingsView.vue's own
+           - read-only server display post-login. -->
+          <p v-else class="text-caption text-medium-emphasis mb-4">
+            {{ $t('auth.serverLocked', { url: serverUrl }) }}
+          </p>
+          <v-text-field
+            v-model="username"
+            :label="$t('auth.username')"
+            variant="solo-filled"
+            class="mb-2"
+          />
+          <v-text-field
+            v-model="password"
+            :label="$t('auth.password')"
+            type="password"
+            variant="solo-filled"
+            class="mb-2"
+          />
 
-        <v-alert v-if="authStore.loginError" type="error" variant="tonal" class="mb-4">
-          {{ authStore.loginError }}
-        </v-alert>
+          <v-expansion-panels variant="accordion" class="mb-4">
+            <v-expansion-panel :title="$t('auth.advanced')">
+              <template #text>
+                <v-text-field
+                  v-model="connectUrl"
+                  :label="$t('auth.connectBackendUrl')"
+                  variant="solo-filled"
+                />
+              </template>
+            </v-expansion-panel>
+          </v-expansion-panels>
 
-        <v-btn type="submit" color="primary" block :loading="submitting">
-          {{ $t('auth.login') }}
-        </v-btn>
-      </v-form>
-    </v-card-text>
+          <v-alert v-if="authStore.loginError" type="error" variant="tonal" class="mb-4">
+            {{ authStore.loginError }}
+          </v-alert>
+
+          <v-btn type="submit" color="primary" block :loading="submitting">
+            {{ $t('auth.login') }}
+          </v-btn>
+        </v-form>
+      </v-card-text>
+    </template>
   </v-card>
 </template>
 
 <script lang="ts">
 import { useAuthStore } from '@/stores/auth'
+import { getHealth } from '@/services/connect/config'
 import NavidromeIcon from '@/components/auth/NavidromeIcon.vue'
 import JellyfinIcon from '@/components/auth/JellyfinIcon.vue'
 import PlexIcon from '@/components/auth/PlexIcon.vue'
@@ -109,6 +125,14 @@ export default {
       // considerably bigger project (full parallel library-browsing
       // clients, not just login) — see the plan this screen came out of.
       selectedServerType: 'subsonic',
+      // Whether checkServerLock() below has resolved yet — the server-type
+      // grid/URL field stay hidden (a spinner shows instead) until we
+      // actually know whether there's a choice to make at all, rather than
+      // flashing the normal form for a moment and then hiding half of it.
+      checkingLock: true,
+      // Set once checkServerLock() gets a server_lock back from GET
+      // /health — see the `locked` computed below.
+      serverLock: null as { url: string; server_type: string } | null,
     }
   },
   computed: {
@@ -134,16 +158,46 @@ export default {
         { type: 'plex', name: this.$t('auth.serverTypePlex'), icon: PlexIcon, locked: true },
       ]
     },
+    // This deployment only ever has one possible server (see
+    // connect/routes/devices.py's SERVER_LOCK) — nothing to ask the user
+    // to choose, so the URL field/server-type grid don't show at all.
+    locked() {
+      return this.serverLock !== null
+    },
   },
-  created() {
+  async created() {
     this.serverUrl = this.authStore.serverUrl
     this.username = this.authStore.username
     this.connectUrl = this.authStore.connectUrl
+    await this.checkServerLock()
   },
   methods: {
     selectServerType(option: { type: string; locked: boolean }) {
       if (option.locked) return
       this.selectedServerType = option.type
+    },
+    async checkServerLock() {
+      try {
+        // Needed before GET /health can even be reached — normally
+        // resolved as part of login() itself, but that's too late here
+        // since this runs *before* the form (which needs to already know
+        // whether to show a URL field at all) is shown.
+        await this.authStore.loadConnectDefaults()
+        const health = await getHealth()
+        if (health.server_lock) {
+          this.serverLock = health.server_lock
+          this.serverUrl = health.server_lock.url
+          this.selectedServerType = health.server_lock.server_type
+        }
+      } catch (error) {
+        // Connect backend not reachable yet, or some other transient
+        // failure — falls back to the normal unlocked form rather than
+        // blocking login entirely on a check that's a nice-to-have, not a
+        // requirement.
+        console.error('[login] Failed to check server lock:', error)
+      } finally {
+        this.checkingLock = false
+      }
     },
     async submit() {
       this.submitting = true

@@ -1,14 +1,24 @@
 <template>
   <div
     class="track-row d-flex align-center px-2 py-1"
-    :class="{ 'track-row--current': isCurrentTrack }"
+    :class="{ 'track-row--current': isCurrentTrack, 'track-row--selected': selected }"
+    @click="selectionMode && $emit('toggle-select', track)"
     @dblclick="$emit('play', track, index)"
     @contextmenu.prevent="openMenu($event)"
     @mouseenter="isHovered = true"
     @mouseleave="isHovered = false"
   >
     <div class="track-index text-medium-emphasis text-caption">
-      <v-icon v-if="isCurrentTrack" icon="mdi-volume-high" size="14" color="primary" />
+      <v-checkbox-btn
+        v-if="selectionMode || isHovered"
+        :model-value="selected"
+        density="compact"
+        class="track-select-checkbox"
+        @click.stop="$emit('toggle-select', track)"
+      />
+      <template v-else-if="isCurrentTrack">
+        <v-icon icon="mdi-volume-high" size="14" color="primary" />
+      </template>
       <template v-else>{{ displayNumber ?? (index != null ? index + 1 : '') }}</template>
     </div>
     <cover-art v-if="showCover" :cover-art-id="track.coverArtId" :size="40" class="track-cover" />
@@ -176,6 +186,20 @@ export default {
       type: Boolean,
       default: false,
     },
+    // True once at least one row in the list is selected — see
+    // TrackList.vue's selectionMode getter. Reveals every row's checkbox
+    // (not just the hovered one) so the rest of a multi-track selection can
+    // be built up without needing to hover each row individually, and
+    // turns a plain click anywhere on a row into a toggle instead of a
+    // no-op.
+    selectionMode: {
+      type: Boolean,
+      default: false,
+    },
+    selected: {
+      type: Boolean,
+      default: false,
+    },
   },
   emits: [
     'play',
@@ -185,6 +209,7 @@ export default {
     'set-rating',
     'add-to-queue',
     'add-to-playlist',
+    'toggle-select',
   ],
   data() {
     return {
@@ -256,8 +281,23 @@ export default {
   background: rgba(var(--v-theme-primary), 0.12);
 }
 
+.track-row--selected {
+  background: rgba(var(--v-theme-primary), 0.14);
+}
+
+.track-row--selected:hover {
+  background: rgba(var(--v-theme-primary), 0.18);
+}
+
 /* Widths/flex-grow here must mirror TrackListHeader.vue's exactly, column
  * for column, or the header labels drift out of alignment with the rows. */
+.track-select-checkbox {
+  /* Overrides v-checkbox-btn's default hit-area padding, which is sized
+   * for a standalone checkbox, not a 28px-wide index column — without
+   * this it visually pushes into the next column. */
+  margin: 0 -8px;
+}
+
 .track-index {
   flex: 0 0 28px;
   text-align: right;

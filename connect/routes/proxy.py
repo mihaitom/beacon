@@ -18,14 +18,43 @@ from core.auth import require_token
 
 router = APIRouter(dependencies=[Depends(require_token)])
 
-_INTERNAL_URL = (
-    os.getenv("SERVER_INTERNAL_URL") or os.getenv("NAVIDROME_INTERNAL_URL", "")
-).rstrip("/")
+_INTERNAL_URL = os.getenv("SERVER_INTERNAL_URL", "").rstrip("/")
 
 _SKIP_REQ = {"host", "connection", "transfer-encoding"}
 _SKIP_RESP = {"transfer-encoding", "connection", "content-encoding"}
 
 _ALL_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"]
+
+# Shared across every proxied request — created lazily (see _get_client())
+# and closed once at app shutdown (see close(), called from main.py's
+# lifespan). This used to be a fresh httpx.AsyncClient per request, which
+# meant no connection reuse at all: every single proxied Subsonic/Navidrome
+# API call (getAlbum, getCoverArt, ...) paid for a brand new TCP (+TLS, if
+# Navidrome is behind https) handshake on top of its own request latency —
+# on the single most frequently hit route in this backend, since literally
+# every Navidrome API call goes through here. Reusing one client (and its
+# connection pool) across requests is httpx's own documented recommendation
+# for exactly this reason, and is what a browser or any other real HTTP
+# client already does via keep-alive.
+_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(follow_redirects=True, timeout=60)
+    return _client
+
+
+async def close() -> None:
+    """Closes the shared client — called once from main.py's lifespan on
+    app shutdown. A no-op if _get_client() was never actually called (e.g.
+    a test run that only ever exercises the "not configured" 503 branch
+    below, or a deployment that never got a proxied request at all)."""
+    global _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None
 
 
 def _is_forward_auth_header(name: str) -> bool:
@@ -41,19 +70,21 @@ def _is_forward_auth_header(name: str) -> bool:
     error, even for an admin account, because Navidrome never actually
     authenticates as that account at all)."""
     lowered = name.lower()
-    return lowered.startswith((
-        "x-authentik-",
-        "x-auth-request-",  # oauth2-proxy behind nginx's auth_request module
-        "x-forwarded-user",  # oauth2-proxy acting as its own reverse proxy
-        "x-forwarded-email",
-        "x-forwarded-groups",
-        "x-forwarded-preferred-username",
-        "x-forwarded-access-token",
-        "remote-user",
-        "remote-groups",
-        "remote-email",
-        "remote-name",
-    ))
+    return lowered.startswith(
+        (
+            "x-authentik-",
+            "x-auth-request-",  # oauth2-proxy behind nginx's auth_request module
+            "x-forwarded-user",  # oauth2-proxy acting as its own reverse proxy
+            "x-forwarded-email",
+            "x-forwarded-groups",
+            "x-forwarded-preferred-username",
+            "x-forwarded-access-token",
+            "remote-user",
+            "remote-groups",
+            "remote-email",
+            "remote-name",
+        )
+    )
 
 
 async def _proxy(request: Request, target: str) -> StreamingResponse | JSONResponse:
@@ -70,7 +101,7 @@ async def _proxy(request: Request, target: str) -> StreamingResponse | JSONRespo
     # No gzip from Navidrome: httpx would decompress but forward the original
     # Content-Length → mismatch. Identity prevents this issue.
     fwd_headers["accept-encoding"] = "identity"
-    client = httpx.AsyncClient(follow_redirects=True, timeout=60)
+    client = _get_client()
     try:
         req = client.build_request(
             method=request.method,
@@ -87,22 +118,19 @@ async def _proxy(request: Request, target: str) -> StreamingResponse | JSONRespo
         # Without this, it surfaces as an unhandled-exception traceback at
         # ERROR level on every occurrence, even though it's an expected,
         # benign network condition, not a real backend fault.
-        await client.aclose()
         return JSONResponse({"error": "client disconnected"}, status_code=499)
     except httpx.ConnectError as e:
-        await client.aclose()
         return JSONResponse({"error": f"Navidrome not reachable: {e}"}, status_code=502)
     except httpx.TimeoutException as e:
-        await client.aclose()
         return JSONResponse({"error": f"Navidrome Timeout: {e}"}, status_code=504)
     except Exception as e:
-        # Catch-all so `client` (and its connection pool) always gets closed
-        # — httpx can raise several other exceptions here (RemoteProtocolError,
-        # ProtocolError, PoolTimeout, UnsupportedProtocol, ...) that aren't
-        # worth enumerating individually but would otherwise leak the client
-        # on every occurrence, on the single most frequently hit route in
-        # the backend (every proxied Navidrome API call goes through here).
-        await client.aclose()
+        # Catch-all — httpx can raise several other exceptions here
+        # (RemoteProtocolError, ProtocolError, PoolTimeout,
+        # UnsupportedProtocol, ...) that aren't worth enumerating
+        # individually. Doesn't close `client` (see _get_client()'s
+        # comment) — it's the shared, module-level client now, reused by
+        # every other in-flight and future request, not something this one
+        # failed request owns.
         return JSONResponse({"error": f"Proxy error: {e}"}, status_code=502)
 
     # If the origin sent a compressed body, httpx already decompressed it, so the
@@ -117,12 +145,14 @@ async def _proxy(request: Request, target: str) -> StreamingResponse | JSONRespo
     }
 
     async def streamed():
+        # Closes this specific response (releasing its connection back to
+        # the shared client's pool for reuse) — not the client itself,
+        # which stays open across requests. See _get_client()'s comment.
         try:
             async for chunk in response.aiter_bytes():
                 yield chunk
         finally:
             await response.aclose()
-            await client.aclose()
 
     return StreamingResponse(
         streamed(),

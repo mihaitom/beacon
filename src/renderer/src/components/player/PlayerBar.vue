@@ -12,7 +12,13 @@
           :size="48"
           class="player-bar__cover mr-3"
         />
-        <v-icon v-else-if="playbackStore.radioStation" icon="mdi-radio" size="32" class="mr-3" />
+        <cover-art
+          v-else-if="playbackStore.radioStation"
+          :image-url="radioFaviconSrc"
+          :size="48"
+          fallback-icon="mdi-radio"
+          class="player-bar__cover mr-3"
+        />
         <div class="min-width-0">
           <div class="text-body-2 text-truncate">
             {{
@@ -147,6 +153,8 @@
 import { usePlaybackStore } from '@/stores/playback'
 import { useLibraryStore } from '@/stores/library'
 import { useConnectStore } from '@/stores/connect'
+import { useAuthStore } from '@/stores/auth'
+import { radioFaviconUrl } from '@/services/connect/radio'
 import CoverArt from '@/components/library/CoverArt.vue'
 import ConnectButton from '@/components/connect/ConnectButton.vue'
 import TrackWaveform from './TrackWaveform.vue'
@@ -186,6 +194,16 @@ export default {
     },
     currentTrack() {
       return this.playbackStore.currentTrack
+    },
+    // 96, not 48 (the box's actual CSS size) — a favicon this small still
+    // benefits from headroom on a high-DPI display, and the source is
+    // free to just be smaller than that if that's all the station's
+    // homepage actually declares (see routes/radio.py's _select()).
+    radioFaviconSrc(): string | null {
+      const homePageUrl = this.playbackStore.radioStation?.homePageUrl
+      if (!homePageUrl) return null
+      const auth = useAuthStore()
+      return radioFaviconUrl(auth.apiUrl, auth.connectToken, homePageUrl, 96)
     },
     hasPlayable() {
       return this.currentTrack != null || this.playbackStore.radioStation != null

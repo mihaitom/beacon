@@ -4,7 +4,7 @@ import { useLibraryStore } from './library'
 import { useConnectStore } from './connect'
 import * as connectPlayback from '@/services/connect/playback'
 import type { ConnectDeviceRef, ConnectStatus } from '@/services/connect/types'
-import type { RadioStation, Track } from '@/types/library'
+import type { Artist, RadioStation, Track } from '@/types/library'
 
 type RepeatMode = 'off' | 'all' | 'one'
 
@@ -37,6 +37,24 @@ let lastEnded = false
 // Guards reconcileFromStatus()'s getSong() lookup against firing again for
 // every ~2s SSE tick while the fetch for the same track is still in flight.
 let reconcilingTrackId: string | null = null
+
+// Bumped at the top of every switchToIndex() call — lets its catch block
+// tell whether it's still the *latest* switch attempt before rolling
+// currentIndex back on failure. Without this, a slow-to-fail older call
+// (e.g. the first of two rapid Next clicks) can resolve its catch after a
+// second, successful switchToIndex() has already moved currentIndex on,
+// stomping it back to the wrong track. Module-level for the same reason as
+// lastEnded above — this needs to survive across calls, not live in
+// per-invocation local state.
+let switchToIndexSeq = 0
+
+// Bumped at the top of every startCurrent() call — lets its own tail (the
+// isPlaying=true flip and "now playing" scrobble) tell whether a newer
+// startCurrent() has since superseded it before applying those, the same
+// class of race switchToIndexSeq guards against above. Kept separate from
+// switchToIndexSeq since startCurrent() also runs outside switchToIndex()
+// (playTrackList(), advanceOnTrackEnd()'s repeat-one branch).
+let startCurrentSeq = 0
 
 // Set while our own startCurrent() has told the connect backend to switch
 // to a track but hasn't heard back yet — an SSE status tick can land in
@@ -491,11 +509,18 @@ export const usePlaybackStore = defineStore('playback', {
     async switchToIndex(index: number): Promise<void> {
       const previous = this.currentIndex
       this.currentIndex = index
+      const seq = ++switchToIndexSeq
       try {
         await this.startCurrent()
       } catch (error) {
-        this.currentIndex = previous
-        this.isPlaying = false
+        // Only roll back if nothing newer (another switchToIndex call) has
+        // already taken over — otherwise this stale failure would stomp
+        // currentIndex back over a since-successful switch. See
+        // switchToIndexSeq's comment.
+        if (seq === switchToIndexSeq) {
+          this.currentIndex = previous
+          this.isPlaying = false
+        }
         console.error('[playback] Failed to switch tracks:', error)
       }
     },
@@ -511,6 +536,17 @@ export const usePlaybackStore = defineStore('playback', {
     async startTrackRadio(track: Track): Promise<void> {
       const similar = await useLibraryStore().client().getSimilarSongs2(track.id)
       const tracks = [track, ...similar.filter((t) => t.id !== track.id)]
+      await this.playTrackList(tracks, 0)
+    },
+
+    /** Artist Radio — same getSimilarSongs2 endpoint as Track Radio, but
+     * `id` here is the artist's own id rather than a song's; Navidrome's
+     * recommendation engine accepts either (see SubsonicClient.
+     * getSimilarSongs2's docstring). No single "seed" track to pin first
+     * like Track Radio does — the whole point here is a mix across the
+     * artist's catalog, not one particular song. */
+    async startArtistRadio(artist: Artist): Promise<void> {
+      const tracks = await useLibraryStore().client().getSimilarSongs2(artist.id)
       await this.playTrackList(tracks, 0)
     },
 
@@ -535,6 +571,7 @@ export const usePlaybackStore = defineStore('playback', {
     async startCurrent(startPosition = 0): Promise<void> {
       const track = this.currentTrack
       if (!track) return
+      const seq = ++startCurrentSeq
       const connect = useConnectStore()
       this.localPosition = startPosition
       scrobbledTrackId = null // fresh play-through, even if it's the same track id as before
@@ -558,6 +595,11 @@ export const usePlaybackStore = defineStore('playback', {
         const url = useLibraryStore().client().streamUrl(track.id)
         getAudioEngine().play(url, startPosition)
       }
+      // A newer startCurrent() already took over while the above awaited —
+      // applying isPlaying/scrobble here would be reporting "now playing"
+      // for a track that isn't the current one anymore. See
+      // startCurrentSeq's comment.
+      if (seq !== startCurrentSeq) return
       this.isPlaying = true
       void useLibraryStore()
         .client()

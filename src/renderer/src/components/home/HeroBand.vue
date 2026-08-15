@@ -29,8 +29,31 @@
         />
         <div class="hero-info min-width-0">
           <div class="eyebrow-label mb-1">{{ eyebrow }}</div>
-          <h1 class="detail-title hero-title text-truncate">{{ title }}</h1>
-          <div class="hero-subtitle text-truncate">{{ subtitle }}</div>
+          <h1 class="detail-title hero-title text-truncate">
+            <router-link v-if="titleTo" :to="titleTo" class="hero-title-link">{{
+              title
+            }}</router-link>
+            <template v-else>{{ title }}</template>
+          </h1>
+          <div class="hero-subtitle text-truncate">
+            <template v-if="artistName">
+              <router-link v-if="artistId" :to="`/artists/${artistId}`" class="hero-subtitle-link">{{
+                artistName
+              }}</router-link>
+              <span v-else>{{ artistName }}</span>
+              <template v-if="albumName">
+                ·
+                <router-link
+                  v-if="albumId"
+                  :to="`/albums/${albumId}`"
+                  class="hero-subtitle-link"
+                  >{{ albumName }}</router-link
+                >
+                <span v-else>{{ albumName }}</span>
+              </template>
+            </template>
+            <template v-else>{{ subtitle }}</template>
+          </div>
           <v-btn
             class="mt-4"
             color="primary"
@@ -66,7 +89,24 @@ export default {
     imageUrl: { type: String as PropType<string | null>, default: null },
     eyebrow: { type: String, default: '' },
     title: { type: String, default: '' },
+    // Route for the title itself — only meaningful when `title` names an
+    // album (the "nothing playing, here's your most recent album" fallback
+    // state; see HomeView.vue's heroTitle/heroTitleTo). When a track is
+    // playing, `title` is the *track's* name instead, which has no page of
+    // its own in this app to link to.
+    titleTo: { type: String as PropType<string | null>, default: null },
+    // Plain-text-only fallback subtitle (radio's "Internet Radio" label) —
+    // used only when neither artistName nor albumName is given below.
     subtitle: { type: String, default: '' },
+    // Split out from a single formatted "Artist · Album" string (the
+    // previous shape of `subtitle`) so each half can link to its own page,
+    // same as everywhere else in the library (AlbumCard.vue, DetailHeader
+    // consumers, ...) — a null *Id with a non-null name still renders the
+    // name as plain text instead of silently dropping it.
+    artistName: { type: String as PropType<string | null>, default: null },
+    artistId: { type: String as PropType<string | null>, default: null },
+    albumName: { type: String as PropType<string | null>, default: null },
+    albumId: { type: String as PropType<string | null>, default: null },
     isPlayingThis: { type: Boolean, default: false },
     hasContent: { type: Boolean, default: false },
     loading: { type: Boolean, default: false },
@@ -136,6 +176,18 @@ export default {
 .hero-subtitle {
   color: rgba(255, 255, 255, 0.65);
   margin-top: 4px;
+}
+
+.hero-title-link,
+.hero-subtitle-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.hero-title-link:hover,
+.hero-subtitle-link:hover {
+  color: rgb(var(--v-theme-primary));
+  text-decoration: underline;
 }
 
 .min-width-0 {

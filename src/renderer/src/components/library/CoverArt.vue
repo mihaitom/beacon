@@ -1,11 +1,11 @@
 <template>
-  <v-avatar v-if="rounded" :size="size" rounded="0">
+  <v-avatar v-if="rounded" :size="sizeCss" rounded="0">
     <v-img v-if="url" :src="url" width="100%" height="100%" cover eager @error="onError">
       <template #placeholder>
         <v-skeleton-loader type="image" class="cover-art-skeleton" />
       </template>
     </v-img>
-    <v-icon v-else :size="size * 0.6" :icon="fallbackIcon" />
+    <v-icon v-else :size="iconSizeCss(0.6)" :icon="fallbackIcon" />
   </v-avatar>
   <!-- v-img is sized as 100%/100% of this box, not its own copy of `size`
    - in px — a second, independent explicit size wouldn't track a CSS
@@ -14,14 +14,14 @@
    - while the image inside it snapped instantly, since nothing here was
    - telling *it* to animate too. Filling the parent means it always
    - matches this box's current size, mid-transition or not. -->
-  <div v-else class="cover-art" :style="{ width: `${size}px`, height: `${size}px` }">
+  <div v-else class="cover-art" :style="{ width: sizeCss, height: sizeCss }">
     <v-img v-if="url" :src="url" width="100%" height="100%" cover eager @error="onError">
       <template #placeholder>
         <v-skeleton-loader type="image" class="cover-art-skeleton" />
       </template>
     </v-img>
     <div v-else class="cover-art-fallback">
-      <v-icon :size="size * 0.5" :icon="fallbackIcon" />
+      <v-icon :size="iconSizeCss(0.5)" :icon="fallbackIcon" />
     </div>
   </div>
 </template>
@@ -46,8 +46,16 @@ export default {
       type: String as PropType<string | null>,
       default: null,
     },
+    // A plain number is pixels (unchanged behavior everywhere else); a
+    // string is used as-is as a raw CSS size (e.g. NowPlayingView.vue's
+    // own "70vh" — sizing its big artwork off the viewport instead of a
+    // fixed pixel figure that reads too small on a tall window and too
+    // large on a short one). See sizeCss/fetchSize/iconSizeCss below for
+    // how each of this component's three actual uses of `size` (its own
+    // CSS box, the resolution requested from the media server, and the
+    // fallback icon's proportional size) handle either shape.
     size: {
-      type: Number,
+      type: [Number, String] as PropType<number | string>,
       default: 160,
     },
     rounded: {
@@ -70,9 +78,24 @@ export default {
     }
   },
   computed: {
+    // This component's own CSS box (width/height, both branches) — a
+    // number needs "px" appended, a string (already a full CSS value) is
+    // used as-is.
+    sizeCss(): string {
+      return typeof this.size === 'number' ? `${this.size}px` : this.size
+    },
+    // What resolution to actually request from the media server — needs a
+    // real pixel number regardless of how this ends up displayed. A
+    // numeric `size` doubles as both (unchanged behavior); a CSS size
+    // string (e.g. "70vh") has no pixel figure to derive this from, so
+    // this falls back to a fixed resolution generous enough for that
+    // caller's biggest realistic on-screen size.
+    fetchSize(): number {
+      return typeof this.size === 'number' ? this.size : 640
+    },
     candidates(): string[] {
       const coverArtUrl = this.coverArtId
-        ? useLibraryStore().client().coverArtUrl(this.coverArtId, this.size)
+        ? useLibraryStore().client().coverArtUrl(this.coverArtId, this.fetchSize)
         : null
       return [this.imageUrl, coverArtUrl].filter((u): u is string => !!u)
     },
@@ -101,6 +124,15 @@ export default {
   methods: {
     onError() {
       this.failedCount += 1
+    },
+    // Fallback icon's proportional size (0.6 for the rounded avatar
+    // variant, 0.5 for the plain box — see the template). CSS calc(),
+    // not arithmetic on `size` directly, so this still works when `size`
+    // is a viewport-relative string rather than a plain pixel number.
+    iconSizeCss(fraction: number): string {
+      return typeof this.size === 'number'
+        ? `${this.size * fraction}px`
+        : `calc(${this.size} * ${fraction})`
     },
   },
 }

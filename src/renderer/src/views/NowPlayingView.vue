@@ -1,6 +1,16 @@
 <template>
   <div class="now-playing fill-height d-flex align-center justify-center">
-    <div class="now-playing__backdrop" :style="backdropStyle" />
+    <!-- Full-bleed blurred artwork behind everything — same backdrop
+     - language as DetailHeader.vue's hero cards (blur + scrim over the
+     - item's own art). Two stacked layers so a track change crossfades
+     - between cover arts — see backdropLayers' comment. -->
+    <div
+      v-for="(url, i) in backdropLayers"
+      :key="i"
+      class="now-playing__backdrop"
+      :class="{ 'now-playing__backdrop--active': i === activeBackdropLayer }"
+      :style="url ? { backgroundImage: `url(${url})` } : {}"
+    />
     <div class="now-playing__scrim" :style="ambientStyle" />
 
     <div v-if="hasPlayable" class="now-playing__toolbar">
@@ -9,13 +19,6 @@
         variant="text"
         :title="$t('nowPlaying.toggleVisualizer')"
         @click="showVisualizer = !showVisualizer"
-      />
-      <v-btn
-        v-if="currentTrack"
-        :icon="showLyrics ? 'mdi-image-outline' : 'mdi-script-text-outline'"
-        variant="text"
-        :title="$t('lyrics.title')"
-        @click="showLyrics = !showLyrics"
       />
     </div>
 
@@ -30,10 +33,21 @@
           <cover-art
             v-if="currentTrack"
             :cover-art-id="currentTrack.coverArtId"
-            :size="showLyrics ? 320 : 540"
+            :size="artSize"
             class="cover-shadow"
           />
-          <v-icon v-else icon="mdi-radio" size="260" class="now-playing__radio-icon" />
+          <!-- No cover-shadow/card background for a transparent icon (see
+           - radioIconIsTransparent) — a real card treatment around a logo
+           - that's just floating on transparency looks like a broken
+           - image (this app's own dark background showing through the
+           - "card" as a faint muddy tint) rather than a clean logo. -->
+          <cover-art
+            v-else
+            :image-url="radioFaviconSrc"
+            :size="artSize"
+            fallback-icon="mdi-radio"
+            :class="radioIconIsTransparent ? 'radio-cover-art--transparent' : 'cover-shadow'"
+          />
         </div>
 
         <div class="now-playing__info">
@@ -86,10 +100,13 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useLibraryStore } from '@/stores/library'
 import { useLyricsStore } from '@/stores/lyrics'
 import { useConnectStore } from '@/stores/connect'
+import { useAuthStore } from '@/stores/auth'
+import { radioFaviconUrl } from '@/services/connect/radio'
 import CoverArt from '@/components/library/CoverArt.vue'
 import LyricsPanel from '@/components/lyrics/LyricsPanel.vue'
 import AudioVisualizer from '@/components/player/AudioVisualizer.vue'
 import { extractDominantColor } from '@/services/colorExtractor'
+import { hasTransparency } from '@/services/imageTransparency'
 
 // Warm amber — the same signal color the app is named after (see main.ts's
 // 'beacon' theme) — used whenever there's nothing to extract a color from
@@ -122,8 +139,23 @@ export default {
       // "r, g, b" — kept as a CSS-ready string so the two computed styles
       // below don't each redo the same join().
       extractedColor: null as string | null,
+      // Set by the radioFaviconSrc watcher below, once hasTransparency() has
+      // actually sampled the image — false (normal card treatment) until
+      // then, so there's no flash of the transparent-icon styling before
+      // the icon itself has even loaded.
+      radioIconIsTransparent: false,
+      // Two stacked layers so a track change can crossfade between cover
+      // arts instead of popping — a plain CSS `transition` on
+      // background-image doesn't actually interpolate between two url()s
+      // (there's nothing for the browser to blend between two arbitrary
+      // images), it just swaps at the halfway point, which reads as a hard
+      // cut despite the transition being there. Alternating which layer is
+      // "active" (opacity: 1, see the template/style below) and setting the
+      // new image on the other one lets a plain opacity transition do the
+      // actual crossfade instead. See setBackdrop().
+      backdropLayers: [null, null] as (string | null)[],
+      activeBackdropLayer: 0,
       showVisualizer: readShowVisualizer(),
-      showLyrics: false,
       // Whether <audio-visualizer> is actually in the DOM — trails
       // visualizerActive by visualizerHideDelayMs on the way down so its
       // fall-to-0 animation (see its `active` prop) has time to play
@@ -144,6 +176,38 @@ export default {
     },
     hasPlayable() {
       return this.currentTrack != null || this.playbackStore.radioStation != null
+    },
+    // Scales with the window instead of a fixed pixel figure that read too
+    // small on a tall monitor and too large on a short one — clamped so it
+    // still has a sane floor/ceiling on an unusually short or tall window
+    // rather than shrinking to nothing or blowing past what the layout
+    // around it (.now-playing__info, the split-mode row's own width cap)
+    // was actually sized for. CoverArt.vue accepts this directly (see its
+    // `size` prop) — a plain number there means px, any other string is
+    // used as a raw CSS size as-is.
+    artSize(): string {
+      return 'clamp(280px, 60vh, 700px)'
+    },
+    // Backed by the same store flag PlayerBar's lyrics button drives
+    // (playbackStore.lyricsDrawerOpen) instead of its own local state —
+    // there used to be two independent lyrics toggles (this view's own
+    // toolbar button, and PlayerBar's), which was confusing since they
+    // controlled two different-looking presentations (this view's inline
+    // split panel vs. LyricsDrawer.vue's slide-out) of the same lyrics.
+    // Now there's one flag and one button (PlayerBar's, always visible —
+    // see DefaultLayout.vue); this view just renders it inline instead of
+    // as a drawer while it's the active route (see DefaultLayout.vue's own
+    // now-playing check, which keeps LyricsDrawer closed here so the two
+    // presentations don't both show at once). The setter is still needed
+    // for the currentTrack watcher below, which turns lyrics back off when
+    // switching to radio.
+    showLyrics: {
+      get(): boolean {
+        return this.playbackStore.lyricsDrawerOpen
+      },
+      set(value: boolean) {
+        this.playbackStore.lyricsDrawerOpen = value
+      },
     },
     // AirPlay downloads a whole track into memory *ahead* of pushing it to
     // the device (see connect/delivery/airplay.py), and radio's raw
@@ -169,12 +233,15 @@ export default {
       const id = this.currentTrack?.coverArtId
       return id ? useLibraryStore().client().coverArtUrl(id, 400) : null
     },
-    // Full-bleed blurred artwork behind everything — same backdrop language
-    // as DetailHeader.vue's hero cards (blur + scrim over the item's own
-    // art). Empty for radio (no artwork), which just falls back to the
-    // plain ambient wash below.
-    backdropStyle() {
-      return this.coverArtUrl ? { backgroundImage: `url(${this.coverArtUrl})` } : {}
+    // The biggest single spot in the whole app for one of these — 512 asks
+    // for whatever's largest a station's homepage actually declares (see
+    // routes/radio.py's _select()), same reasoning as PlayerBar's own
+    // radioFaviconSrc but with more headroom given how large this renders.
+    radioFaviconSrc(): string | null {
+      const homePageUrl = this.playbackStore.radioStation?.homePageUrl
+      if (!homePageUrl) return null
+      const auth = useAuthStore()
+      return radioFaviconUrl(auth.apiUrl, auth.connectToken, homePageUrl, 512)
     },
     colorTriplet(): string {
       return this.extractedColor ?? FALLBACK_COLOR
@@ -202,6 +269,18 @@ export default {
       handler(url: string | null) {
         this.extractedColor = null
         if (url) this.loadColor(url)
+        this.setBackdrop(url)
+      },
+    },
+    radioFaviconSrc: {
+      immediate: true,
+      async handler(url: string | null) {
+        this.radioIconIsTransparent = false
+        if (!url) return
+        const transparent = await hasTransparency(url)
+        // The station may have changed again while this sampled the image
+        // — don't let a stale result overwrite whatever's current now.
+        if (url === this.radioFaviconSrc) this.radioIconIsTransparent = transparent
       },
     },
     // Loads on entering lyrics mode, and again on every track change while
@@ -260,6 +339,17 @@ export default {
       if (url !== this.coverArtUrl) return
       this.extractedColor = color ? color.join(', ') : null
     },
+    // Puts `url` on the currently-*inactive* layer and flips which one is
+    // active — the opacity transition on now-playing__backdrop--active (see
+    // <style> below) is what actually crossfades from whatever the other
+    // layer still shows to this one. See backdropLayers' comment for why
+    // this exists instead of just binding the image straight to a single
+    // element's style.
+    setBackdrop(url: string | null) {
+      const next = this.activeBackdropLayer === 0 ? 1 : 0
+      this.backdropLayers[next] = url
+      this.activeBackdropLayer = next
+    },
   },
 }
 </script>
@@ -284,7 +374,19 @@ export default {
   background-position: center;
   filter: blur(50px) saturate(1.3) brightness(0.5);
   transform: scale(1.15);
-  transition: background-image 0.6s ease;
+  /* Two stacked instances of this (see backdropLayers), only one of which
+   * is --active (opacity: 1) at a time — this opacity transition is what
+   * actually crossfades between them on a track change. A plain
+   * `transition: background-image` on a single element (the previous
+   * approach) doesn't work: there's no browser-defined interpolation
+   * between two url()s, so it just swaps at the halfway point instead of
+   * blending. */
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.now-playing__backdrop--active {
+  opacity: 1;
 }
 
 .now-playing__scrim {
@@ -300,7 +402,11 @@ export default {
  * lyrics are hidden) so toggling lyrics never flips flex-direction itself
  * — that can't be transitioned. Instead .now-playing__lyrics animates its
  * own width from 0 up, and since this row stays centered throughout, the
- * artwork column drifts left on its own as the row grows to fit both. */
+ * artwork column drifts to the side on its own as the row grows to fit
+ * both — see .now-playing__content--split's much wider cap below, which is
+ * what actually gives it room to do that instead of also having to shrink
+ * the artwork itself (see the cover-art size prop above, now fixed
+ * regardless of showLyrics). */
 .now-playing__content {
   position: relative;
   z-index: 1;
@@ -317,8 +423,8 @@ export default {
 }
 
 .now-playing__content--split {
-  max-width: 1100px;
-  width: 90%;
+  max-width: 1800px;
+  width: 96vw;
   gap: 56px;
 }
 
@@ -357,8 +463,7 @@ export default {
 @media (prefers-reduced-motion: reduce) {
   .now-playing__content,
   .now-playing-lyrics-enter-active,
-  .now-playing-lyrics-leave-active,
-  .now-playing__art-wrap :deep(.cover-art) {
+  .now-playing-lyrics-leave-active {
     transition: none;
   }
 }
@@ -404,21 +509,44 @@ export default {
 .now-playing__art-wrap :deep(.cover-art) {
   position: relative;
   z-index: 1;
-  /* Matches the lyrics-panel width transition's timing so the artwork
-   * shrinking and the lyrics column growing read as one motion. */
-  transition:
-    width 0.45s ease,
-    height 0.45s ease;
 }
 
-.now-playing__radio-icon {
-  position: relative;
-  z-index: 1;
+/* Applied instead of cover-shadow once hasTransparency()
+ * (services/imageTransparency.ts) has actually sampled the loaded favicon
+ * and found it meaningfully transparent — drops CoverArt.vue's own default
+ * card background (a faint white tint meant for genuinely art-less
+ * placeholders) too, so a logo that's just floating on transparency shows
+ * as exactly that instead of getting boxed in a card whose background
+ * shows through the transparent parts as a muddy tint, with a drop shadow
+ * around an edge that was never actually there.
+ *
+ * .radio-cover-art--transparent.cover-art (compound, not just the one
+ * class) is deliberate — CoverArt.vue's own scoped background rule targets
+ * .cover-art alone, so at equal specificity the one that happens to be
+ * later in the built CSS wins, not necessarily this one. Matching both
+ * classes outranks it regardless of build order. */
+.radio-cover-art--transparent.cover-art {
+  background: transparent;
+}
+
+.now-playing__info {
+  /* .now-playing__primary is flex-shrink: 0 (deliberately — it keeps its
+   * own natural size while the lyrics panel grows/shrinks next to it, see
+   * .now-playing__content--split), which also means it never shrinks *its
+   * own* content down to fit either — an unbroken long title/artist name
+   * would otherwise just keep the whole row growing past
+   * .now-playing__content's max-width instead of wrapping. Capping this to
+   * the artwork's own width (see the artSize computed the cover-art's own
+   * :size is bound to — kept in sync with it here since a plain CSS value
+   * can't read a component's computed prop) gives long text something
+   * concrete to actually wrap against. */
+  max-width: min(clamp(280px, 60vh, 700px), 50vw);
 }
 
 .now-playing__title {
   font-size: 2.5rem;
   line-height: 1.15;
+  overflow-wrap: break-word;
 }
 
 .now-playing__artist-link {
@@ -428,10 +556,12 @@ export default {
    * plain <div> this replaced. */
   display: block;
   text-decoration: none;
+  overflow-wrap: break-word;
 }
 
 .now-playing__album-link {
   text-decoration: none;
+  overflow-wrap: break-word;
 }
 
 .now-playing__artist-link:hover,

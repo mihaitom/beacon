@@ -42,16 +42,27 @@ router = APIRouter(dependencies=[Depends(require_token)])
 # server's valid credentials and still reach this deployment's LAN devices.
 # Left unenforced if SERVER_URL isn't set, so it can't accidentally lock
 # everyone out on a deployment that hasn't been given one.
-_SERVER_LOCK = os.getenv("SERVER_LOCK", "").strip().lower() in ("1", "true", "yes", "on")
+_SERVER_LOCK = os.getenv("SERVER_LOCK", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 _LOCKED_URLS = {
     u.rstrip("/")
-    for u in (
-        os.getenv("SERVER_URL", ""),
-        os.getenv("SERVER_INTERNAL_URL", ""),
-        os.getenv("NAVIDROME_INTERNAL_URL", ""),
-    )
+    for u in (os.getenv("SERVER_URL", ""), os.getenv("SERVER_INTERNAL_URL", ""))
     if u
 }
+# What /health hands the login screen to skip asking for a server URL at all
+# once SERVER_LOCK is on (see ServerLoginView.vue) — SERVER_URL is the
+# deployment's own public identity for the server, preferred when set;
+# SERVER_INTERNAL_URL (the LAN-only address the proxy/backend actually talk
+# to Navidrome through, not reachable from the browser directly in most
+# deployments) is a reasonable fallback over showing the user nothing at
+# all. Only real Subsonic (Navidrome) login is implemented client-side
+# right now (see ServerLoginView.vue's own comment on why Jellyfin/Plex are
+# shown locked) — nothing to derive a server_type from yet.
+_LOCKED_LOGIN_URL = os.getenv("SERVER_URL") or os.getenv("SERVER_INTERNAL_URL", "")
 
 
 class ConfigRequest(BaseModel):
@@ -68,13 +79,13 @@ class ConfigRequest(BaseModel):
 
 @router.post("/config")
 async def configure(req: ConfigRequest, session: SessionState = Depends(get_session)):
-    internal_url = os.getenv("SERVER_INTERNAL_URL") or os.getenv(
-        "NAVIDROME_INTERNAL_URL", ""
-    )
+    internal_url = os.getenv("SERVER_INTERNAL_URL", "")
     server_type = req.server_type.lower()
 
     if _SERVER_LOCK and _LOCKED_URLS and req.url.rstrip("/") not in _LOCKED_URLS:
-        logger.warning(f"[config] Rejected — url outside SERVER_LOCK allow-list: {req.url}")
+        logger.warning(
+            f"[config] Rejected — url outside SERVER_LOCK allow-list: {req.url}"
+        )
         raise HTTPException(
             status_code=403,
             detail="Server URL does not match the locked server for this deployment",
@@ -130,6 +141,15 @@ async def health(session: SessionState = Depends(get_session)):
     return {
         "ffmpeg": bool(shutil.which("ffmpeg")),
         "navidrome_configured": bool(session.media.base_url),
+        # Reachable pre-login (get_session doesn't require authenticated=True)
+        # — ServerLoginView.vue checks this before rendering, so a
+        # SERVER_LOCK=true deployment never shows a URL field for a server
+        # the user isn't actually free to change anyway.
+        "server_lock": (
+            {"url": _LOCKED_LOGIN_URL, "server_type": "subsonic"}
+            if _SERVER_LOCK and _LOCKED_LOGIN_URL
+            else None
+        ),
     }
 
 
@@ -155,7 +175,11 @@ async def stop_device(
         type_cls = AirPlayDelivery
     active = session.state.active_delivery
     candidates = (
-        active.deliveries if isinstance(active, DeliveryManager) else [active] if active else []
+        active.deliveries
+        if isinstance(active, DeliveryManager)
+        else [active]
+        if active
+        else []
     )
     # The actual live instance being stopped, if found — AirPlay in
     # particular needs this: its RAOP stream task/connection live on the
@@ -245,7 +269,11 @@ async def stop_device(
         st.active_delivery = new_delivery
 
         if need_restart and st.is_streaming:
-            url = st.radio_info["url"] if st.radio_info else stream_url(session.session_id)
+            url = (
+                st.radio_info["url"]
+                if st.radio_info
+                else stream_url(session.session_id)
+            )
             title = st.radio_info["title"] if st.radio_info else "Connect"
             logger.info(f"[device-stop] Restarting stream: {url}")
             try:

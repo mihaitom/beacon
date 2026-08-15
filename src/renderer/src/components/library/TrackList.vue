@@ -62,6 +62,8 @@
           :show-year="showYear"
           :show-play-count="showPlayCount"
           :show-format="showFormat"
+          :selection-mode="selectionMode"
+          :selected="selectedTrackIds.has(row.track.id)"
           @play="playTrack"
           @play-next="playNextTrack"
           @track-radio="startTrackRadio"
@@ -69,6 +71,7 @@
           @set-rating="setRating"
           @add-to-queue="addToQueue"
           @add-to-playlist="addToPlaylist"
+          @toggle-select="toggleSelect"
         />
       </template>
     </template>
@@ -84,6 +87,8 @@
         :show-year="showYear"
         :show-play-count="showPlayCount"
         :show-format="showFormat"
+        :selection-mode="selectionMode"
+        :selected="selectedTrackIds.has(track.id)"
         @play="playTrack"
         @play-next="playNextTrack"
         @track-radio="startTrackRadio"
@@ -91,6 +96,7 @@
         @set-rating="setRating"
         @add-to-queue="addToQueue"
         @add-to-playlist="addToPlaylist"
+        @toggle-select="toggleSelect"
       />
     </template>
     <div v-if="!disablePagination && !infiniteScroll && pageCount > 1" class="d-flex justify-center mt-3">
@@ -105,6 +111,43 @@
       v-if="infiniteScroll && visibleCount < sortedTracks.length"
       @trigger="loadMoreVisible"
     />
+
+    <!-- Floating, not part of document flow (position: fixed, see <style>
+     - below) — TrackList gets embedded in all sorts of different page
+     - layouts, so anchoring this to the list itself would mean re-deriving
+     - "is this actually still on screen" per context. Fixed to the
+     - viewport bottom (offset above PlayerBar) works the same everywhere
+     - it's used. -->
+    <v-slide-y-reverse-transition>
+      <div v-if="selectionMode" class="selection-bar">
+        <span class="text-body-2">
+          {{ selectedTrackIds.size }}
+          {{ selectedTrackIds.size === 1 ? $t('library.track1') : $t('library.tracksN') }}
+          {{ $t('library.selected') }}
+        </span>
+        <v-btn variant="text" prepend-icon="mdi-skip-next-outline" @click="bulkPlayNext">
+          {{ $t('library.playNext') }}
+        </v-btn>
+        <v-btn variant="text" prepend-icon="mdi-playlist-plus" @click="bulkAddToQueue">
+          {{ $t('common.addToQueue') }}
+        </v-btn>
+        <!-- No "Add to Playlist" button here — a selected row's own "..."
+         - menu (TrackRow.vue) already has one, and applies it to the whole
+         - selection instead of just that row once it's part of one (see
+         - selectedOrSingle() below). Keeping a second, separate playlist
+         - submenu here just to duplicate that would only be one more
+         - place for its own quirks (its height-limited scrolling, its own
+         - "no playlists yet" state, ...) to drift out of sync with the
+         - original. -->
+        <v-btn
+          icon="mdi-close"
+          variant="text"
+          density="comfortable"
+          :title="$t('library.clearSelection')"
+          @click="clearSelection"
+        />
+      </div>
+    </v-slide-y-reverse-transition>
   </div>
 </template>
 
@@ -206,6 +249,12 @@ export default {
       // before either resolves) can leave the local state one flip behind
       // what the server actually recorded.
       starringTrackIds: new Set<string>(),
+      // Ids, not Track objects — a track can appear more than once across
+      // paginated/sorted views of the same underlying list, and ids are
+      // what TrackRow's toggle-select events and the checkbox lookups
+      // below actually key off. See selectedTracks for resolving these
+      // back to real Track objects when a bulk action needs them.
+      selectedTrackIds: new Set<string>(),
     }
   },
   computed: {
@@ -217,6 +266,18 @@ export default {
     },
     libraryStore() {
       return useLibraryStore()
+    },
+    // Selecting even one row switches every row into "selection mode" (see
+    // TrackRow.vue's own selectionMode prop) — showing every checkbox, not
+    // just the currently-hovered row's, so the rest of a multi-track
+    // selection can be built up without hunting for each row individually.
+    selectionMode(): boolean {
+      return this.selectedTrackIds.size > 0
+    },
+    // Resolved in list order (not selection order) so "Add to Queue"
+    // queues tracks the same way clicking through the list would.
+    selectedTracks(): Track[] {
+      return this.sortedTracks.filter((track) => this.selectedTrackIds.has(track.id))
     },
     sortedTracks(): Track[] {
       if (!this.sortKey) return this.tracks
@@ -330,7 +391,7 @@ export default {
       void this.playbackStore.playTrackList(this.sortedTracks, Math.max(0, position))
     },
     playNextTrack(track: Track) {
-      this.playbackStore.queueNext([track])
+      this.playbackStore.queueNext(this.selectedOrSingle(track))
     },
     async startTrackRadio(track: Track) {
       try {
@@ -366,10 +427,54 @@ export default {
       }
     },
     addToQueue(track: Track) {
-      this.playbackStore.addToQueue([track])
+      this.playbackStore.addToQueue(this.selectedOrSingle(track))
     },
     async addToPlaylist({ track, playlistId }: { track: Track; playlistId: string }) {
-      await this.libraryStore.addToPlaylist(playlistId, [track.id])
+      const tracks = this.selectedOrSingle(track)
+      await this.libraryStore.addToPlaylist(
+        playlistId,
+        tracks.map((t) => t.id),
+      )
+    },
+    // A row's own actions (play-next/add-to-queue/add-to-playlist, all via
+    // TrackRow.vue's "..." menu) apply to the *whole* current selection
+    // once the row they were triggered from is part of one — the same
+    // "act on the selection, not just what you clicked" convention as a
+    // file manager's right-click menu. Acting on a row that isn't
+    // selected (or when nothing's selected at all) still just means that
+    // one track, same as before multiselect existed.
+    selectedOrSingle(track: Track): Track[] {
+      return this.selectionMode && this.selectedTrackIds.has(track.id)
+        ? this.selectedTracks
+        : [track]
+    },
+    toggleSelect(track: Track) {
+      if (this.selectedTrackIds.has(track.id)) {
+        this.selectedTrackIds.delete(track.id)
+      } else {
+        this.selectedTrackIds.add(track.id)
+        // Same "fetch eagerly once selection starts" reasoning as
+        // TrackRow's own openMenu() — the playlist submenu below shouldn't
+        // open empty on the very first use just because nothing had
+        // fetched it yet.
+        if (this.libraryStore.playlists.length === 0) {
+          void this.libraryStore.fetchPlaylists()
+        }
+      }
+    },
+    // Deliberately doesn't clear the selection afterwards — either bulk
+    // action can be followed by the other (e.g. queue a batch, then also
+    // file it into a playlist via a selected row's own "..." menu, see
+    // selectedOrSingle()) without having to reselect the same tracks. Only
+    // the bar's own close button (clearSelection) ends a selection.
+    bulkAddToQueue() {
+      this.playbackStore.addToQueue(this.selectedTracks)
+    },
+    bulkPlayNext() {
+      this.playbackStore.queueNext(this.selectedTracks)
+    },
+    clearSelection() {
+      this.selectedTrackIds.clear()
     },
   },
 }
@@ -458,5 +563,28 @@ export default {
    * (the compositor and main thread disagree on the sub-pixel offset for a
    * frame or two). */
   transform: translateZ(0);
+}
+
+/* Fixed to the viewport, not this component's own layout — TrackList gets
+ * embedded at all sorts of scroll depths across different pages, so this
+ * always ends up in the same comfortable spot regardless. Offset above
+ * PlayerBar.vue's own fixed 88px height (see its :height prop) plus a
+ * small gap, so it never sits on top of the transport controls; same
+ * z-index as toast.vue's stack (the only other fixed-to-viewport UI here)
+ * for consistency, comfortably above ordinary page content either way. */
+.selection-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 104px;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  background: #1a1d27;
+  border: 1px solid var(--beacon-hairline);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 </style>

@@ -1,14 +1,6 @@
 <template>
   <v-container fluid>
-    <v-text-field
-      v-model="query"
-      :label="$t('search.label')"
-      prepend-inner-icon="mdi-magnify"
-      variant="solo-filled"
-      class="mb-4"
-      clearable
-      @update:model-value="onQueryChange"
-    />
+    <h1 v-if="query" class="page-title mb-4">{{ $t('search.resultsFor', { query }) }}</h1>
 
     <template v-if="libraryStore.searchResults.artists.length">
       <h2 class="section-title mb-2">{{ $t('search.artists') }}</h2>
@@ -63,8 +55,6 @@ import CoverArt from '@/components/library/CoverArt.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
 import TrackList from '@/components/library/TrackList.vue'
 
-let debounceTimer: ReturnType<typeof setTimeout> | undefined
-
 export default {
   name: 'SearchView',
   components: { CoverArt, AlbumCard, TrackList },
@@ -83,16 +73,25 @@ export default {
     },
   },
   created() {
-    if (typeof this.$route.query.q === 'string') {
-      this.query = this.$route.query.q
-      this.libraryStore.search(this.query)
-    }
+    this.syncFromRoute()
+  },
+  watch: {
+    // This view has no search field of its own anymore — TopBarSearch.vue
+    // (the app bar's search icon) is the only entry point, and it always
+    // arrives here via a route navigation (?q=...). A *new* search
+    // submitted while already on this page still lands on the exact same
+    // route component (same path, only the query differs), which Vue
+    // Router reuses rather than remounting — so created() alone (the
+    // previous approach, before the field's live-typing v-model drove
+    // search() directly) would only ever pick up the very first query,
+    // silently doing nothing for every search after that.
+    '$route.query.q': 'syncFromRoute',
   },
   methods: {
-    onQueryChange(value: string) {
-      this.$router.replace({ query: { q: value || undefined } })
-      clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => this.libraryStore.search(value ?? ''), 300)
+    syncFromRoute() {
+      if (typeof this.$route.query.q !== 'string') return
+      this.query = this.$route.query.q
+      this.libraryStore.search(this.query)
     },
   },
 }

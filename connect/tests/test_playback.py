@@ -107,6 +107,79 @@ def test_play_clamps_start_position_to_track_duration(client, default_session):
     assert default_session.state.clock.resume_offset == 180.0
 
 
+# ── seq ordering (out-of-order dispatch protection) ─────────────────────────
+# See SessionState.play_seq/play_lock's comments and playback.ts's
+# dispatchSeq — the frontend hands out a strictly increasing seq per
+# /play(-url) dispatch so a request that's already been superseded (e.g. the
+# first of two rapid Next clicks, if its response happens to land after the
+# second's) never overwrites state or reaches the target device with a
+# now-stale command.
+
+
+def test_play_drops_request_with_stale_seq(client, default_session):
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track_a = Track(id="a", title="A", artist="Artist", duration=180, cover_art_id="cover-a")
+    track_b = Track(id="b", title="B", artist="Artist", duration=180, cover_art_id="cover-b")
+
+    def get_track(track_id):
+        return track_a if track_id == "a" else track_b
+
+    with patch.object(default_session.media, "get_track", side_effect=get_track):
+        # seq=2 arrives (and is accepted) first — as if it were dispatched
+        # after seq=1 but its response/processing simply got there sooner.
+        r2 = client.post("/play", json={"track_ids": ["b"], "seq": 2})
+        assert r2.json()["status"] == "playing"
+        assert default_session.state.current_track.id == "b"
+
+        # seq=1 arrives after — it's older than what's already been
+        # accepted, so it must not overwrite the newer track.
+        r1 = client.post("/play", json={"track_ids": ["a"], "seq": 1})
+        assert r1.json()["status"] == "superseded"
+        assert default_session.state.current_track.id == "b"
+
+
+def test_play_without_seq_is_never_treated_as_stale(client, default_session):
+    # seq=0 (the default — any caller not sending one, e.g. other tests
+    # above) always opts out of the staleness check, regardless of
+    # session.play_seq's current value.
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Test Song", artist="Test Artist", duration=180, cover_art_id="c")
+    with patch.object(default_session.media, "get_track", return_value=track):
+        client.post("/play", json={"track_ids": ["1"], "seq": 5})
+        r = client.post("/play", json={"track_ids": ["1"]})
+    assert r.json()["status"] == "playing"
+
+
+def test_play_url_drops_request_with_stale_seq(client, default_session):
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
+        r2 = client.post(
+            "/play-url",
+            json={
+                "target_name": "TV",
+                "target_type": "chromecast",
+                "title": "Station B",
+                "url": "https://example.com/b.mp3",
+                "seq": 2,
+            },
+        )
+        assert r2.json()["status"] == "playing"
+
+        r1 = client.post(
+            "/play-url",
+            json={
+                "target_name": "TV",
+                "target_type": "chromecast",
+                "title": "Station A",
+                "url": "https://example.com/a.mp3",
+                "seq": 1,
+            },
+        )
+    assert r1.json()["status"] == "superseded"
+    assert default_session.state.radio_info["title"] == "Station B"
+    # The stale dispatch must never have reached the device at all.
+    play.assert_awaited_once()
+
+
 def test_play_returns_error_for_unfetchable_track(client, default_session):
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
 

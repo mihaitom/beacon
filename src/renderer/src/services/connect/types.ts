@@ -50,6 +50,11 @@ export function isDeviceInUseError(value: unknown): value is DeviceInUseError {
 export interface HealthResponse {
   ffmpeg: boolean
   navidrome_configured: boolean
+  // Set only when this deployment is locked to one specific server (see
+  // connect/routes/devices.py's SERVER_LOCK/SERVER_URL) — ServerLoginView.vue
+  // uses this to skip asking for a server URL/type at all, since there's
+  // only ever one possible answer.
+  server_lock: { url: string; server_type: string } | null
 }
 
 export interface ConfigRequest {
@@ -96,8 +101,13 @@ export interface VisualizerFrame {
 }
 
 export interface PlayResponse {
-  status: 'playing'
-  stream_url: string
+  // 'superseded': the backend dropped this dispatch because a later one
+  // (higher seq) already won — see routes/playback.py's play_lock/play_seq
+  // and playback.ts's dispatchSeq. No stream_url in that case; callers don't
+  // need to act on it, since whatever superseded this one already updated
+  // state correctly.
+  status: 'playing' | 'superseded'
+  stream_url?: string
 }
 
 export interface PairingStartResponse {

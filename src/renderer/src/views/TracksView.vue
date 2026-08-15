@@ -5,6 +5,17 @@
         {{ filteredTracks.length }}
         {{ filteredTracks.length === 1 ? $t('library.track1') : $t('library.tracksN') }}
       </template>
+      <template #actions>
+        <v-btn
+          color="primary"
+          rounded="pill"
+          prepend-icon="mdi-shuffle-variant"
+          :disabled="!libraryStore.allTracks.length"
+          @click="playRandom"
+        >
+          {{ $t('library.playRandom') }}
+        </v-btn>
+      </template>
     </detail-header>
 
     <sticky-filter :z-index="3" :fade="false" @resize="stickyHeaderHeight = $event">
@@ -54,9 +65,13 @@
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import { usePlaybackStore } from '@/stores/playback'
+import { shuffled } from '@/services/shuffle'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import TrackList from '@/components/library/TrackList.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
+
+const RANDOM_PLAY_COUNT = 100
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -112,6 +127,16 @@ export default {
   },
   created() {
     this.libraryStore.fetchAllTracks()
+  },
+  methods: {
+    // Samples from the full unfiltered catalog, same as GenreDetailView's
+    // identical playRandom() — an active filter narrows what's browsable,
+    // not what "random" draws from.
+    async playRandom() {
+      if (!this.libraryStore.allTracks.length) return
+      const sample = shuffled(this.libraryStore.allTracks).slice(0, RANDOM_PLAY_COUNT)
+      await usePlaybackStore().playTrackList(sample, 0)
+    },
   },
 }
 </script>
