@@ -23,6 +23,7 @@ def server_lock_env(monkeypatch):
     monkeypatch.delenv("SERVER_LOCK", raising=False)
     monkeypatch.delenv("SERVER_URL", raising=False)
     monkeypatch.delenv("SERVER_INTERNAL_URL", raising=False)
+    monkeypatch.delenv("SERVER_TYPE", raising=False)
     _reload_devices()
 
 
@@ -103,6 +104,47 @@ def test_config_sets_display_name_from_username(client, default_session):
         json={"url": "http://nav:4533", "credential": "x", "username": "alice"},
     )
     assert default_session.display_name == "alice"
+
+
+# ── internal_url resolution ──────────────────────────────────────────────────
+
+
+def test_config_subsonic_uses_server_internal_url(
+    client, default_session, monkeypatch, server_lock_env
+):
+    monkeypatch.setenv("SERVER_INTERNAL_URL", "http://nav-internal:4533")
+    _reload_devices()
+
+    client.post(
+        "/config",
+        json={"url": "https://nav.example.com", "credential": "x", "server_type": "subsonic"},
+    )
+    assert default_session.media.internal_url == "http://nav-internal:4533"
+
+
+def test_config_jellyfin_always_uses_the_submitted_url_not_server_internal_url(
+    client, default_session, monkeypatch, server_lock_env
+):
+    # Regression test: /config used to always read SERVER_INTERNAL_URL
+    # regardless of server_type, so a Jellyfin session would silently ping
+    # whatever Navidrome server SERVER_INTERNAL_URL pointed at instead of
+    # the actual Jellyfin server — always rejecting the login, since
+    # Navidrome has no /Users/Me endpoint for JellyfinClient.ping() to hit.
+    # Jellyfin has no internal-URL env var of its own (unlike Navidrome) —
+    # its address always comes from whatever the login screen submitted.
+    monkeypatch.setenv("SERVER_INTERNAL_URL", "https://navidrome.example.com")
+    _reload_devices()
+
+    client.post(
+        "/config",
+        json={
+            "url": "https://jf.example.com",
+            "credential": "tok",
+            "server_type": "jellyfin",
+            "user_id": "u1",
+        },
+    )
+    assert default_session.media.internal_url == "https://jf.example.com"
 
 
 # ── SERVER_LOCK ──────────────────────────────────────────────────────────────

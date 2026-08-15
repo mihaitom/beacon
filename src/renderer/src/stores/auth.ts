@@ -1,10 +1,15 @@
 import { defineStore } from 'pinia'
-import { buildSubsonicCredential, SubsonicClient } from '@/services/subsonic/client'
+import { buildSubsonicCredential } from '@/services/subsonic/client'
 import { computeConnectSessionId } from '@/services/connect/session-id'
 import { postConfig, getHealth } from '@/services/connect/config'
-import { i18n } from '@/i18n'
+import {
+  postJellyfinLogin,
+  postJellyfinQuickConnectInitiate,
+  postJellyfinQuickConnectStatus,
+} from '@/services/connect/jellyfin'
 import { clearPersistedPlayback, usePlaybackStore } from './playback'
 import { clearLibraryCache } from './library'
+import { capabilitiesFor, type ServerCapabilities } from '@/services/capabilities'
 import type { HealthResponse } from '@/services/connect/types'
 
 const STORAGE_KEY = 'beacon.auth'
@@ -34,12 +39,22 @@ interface StoredCredentials {
   connectUrl: string
   apiUrl: string
   connectToken: string
+  serverType: 'subsonic' | 'jellyfin'
+  userId: string
 }
 
 interface AuthState {
   serverUrl: string
   username: string
   password: string
+  // 'subsonic' (covers Navidrome) or 'jellyfin' — picked on ServerLoginView's
+  // tile grid (or filled from server_lock for a locked deployment). Drives
+  // both the login flow below and services/capabilities.ts's UI gating.
+  serverType: 'subsonic' | 'jellyfin'
+  // Jellyfin user GUID, returned by postJellyfinLogin() — required for
+  // Jellyfin's own item-lookup endpoints (see connect/media/jellyfin.py).
+  // Unused/empty for Subsonic.
+  userId: string
   // Base for Subsonic-proxy calls (/rest, /auth, stream.view/getCoverArt.view
   // URLs — see services/subsonic/client.ts). Electron talks to the connect
   // backend directly, so this and apiUrl below are always equal there; the
@@ -63,6 +78,8 @@ export const useAuthStore = defineStore('auth', {
     serverUrl: '',
     username: '',
     password: '',
+    serverType: 'subsonic',
+    userId: '',
     connectUrl: 'http://localhost:9181',
     apiUrl: 'http://localhost:9181',
     connectToken: '',
@@ -72,6 +89,15 @@ export const useAuthStore = defineStore('auth', {
     health: null,
     loginError: null,
   }),
+
+  getters: {
+    /** What the connected server can actually do — see
+     * services/capabilities.ts. Views should check this instead of
+     * comparing serverType directly. */
+    capabilities(state): ServerCapabilities {
+      return capabilitiesFor(state.serverType)
+    },
+  },
 
   actions: {
     /** Runs the ping → /config → /health sequence using whatever's already
@@ -85,21 +111,26 @@ export const useAuthStore = defineStore('auth', {
     async _authenticate(): Promise<void> {
       this.sessionId = computeConnectSessionId({
         url: this.serverUrl,
-        serverType: 'subsonic',
-        userId: '',
+        serverType: this.serverType,
+        userId: this.userId,
         username: this.username,
       })
 
-      const subsonic = new SubsonicClient(this.connectUrl, this.credential, this.connectToken)
-      const reachable = await subsonic.ping()
-      if (!reachable) {
-        throw new Error(i18n.global.t('auth.navidromeRejected'))
-      }
-
+      // No separate client-side ping.view pre-flight here for Subsonic —
+      // /config's own server-side media.ping() (see routes/devices.py)
+      // already verifies the credential against exactly the URL just
+      // submitted, and a 401 there now surfaces its real reason via
+      // loginError (see services/connect/http.ts's extractDetail()). A
+      // client-side pre-flight through routes/proxy.py's /rest/ping.view
+      // used to run before any session existed, which meant it could only
+      // ever reach a fixed SERVER_INTERNAL_URL — not necessarily the
+      // server the user just typed in — same reasoning as why Jellyfin
+      // never had one of these either.
       await postConfig({
         credential: this.credential,
         url: this.serverUrl,
-        server_type: 'subsonic',
+        server_type: this.serverType,
+        user_id: this.userId,
         username: this.username,
       })
 
@@ -136,12 +167,14 @@ export const useAuthStore = defineStore('auth', {
       username: string
       password: string
       connectUrl?: string
+      serverType?: 'subsonic' | 'jellyfin'
     }): Promise<void> {
       this.loginError = null
       await this.loadConnectDefaults()
       this.serverUrl = params.serverUrl.replace(/\/+$/, '')
       this.username = params.username
       this.password = params.password
+      this.serverType = params.serverType ?? 'subsonic'
       // Only meaningful in Electron — the web build's connectUrl/apiUrl are
       // always injected above and never user-editable (there's only ever
       // one possible backend: this same origin). ServerLoginView.vue's
@@ -151,9 +184,70 @@ export const useAuthStore = defineStore('auth', {
         this.connectUrl = params.connectUrl.replace(/\/+$/, '')
         this.apiUrl = this.connectUrl
       }
-      // A genuinely new login (form submission with a password) is the only
-      // place the credential should be rebuilt — see _authenticate()'s comment.
-      this.credential = buildSubsonicCredential(this.username, this.password)
+      try {
+        // A genuinely new login (form submission with a password) is the
+        // only place the credential should be rebuilt — see
+        // _authenticate()'s comment.
+        if (this.serverType === 'jellyfin') {
+          const { token, user_id: userId } = await postJellyfinLogin({
+            url: this.serverUrl,
+            username: this.username,
+            password: this.password,
+          })
+          this.credential = token
+          this.userId = userId
+        } else {
+          this.credential = buildSubsonicCredential(this.username, this.password)
+          this.userId = ''
+        }
+
+        await this._authenticate()
+        await this.persist()
+      } catch (error) {
+        this.authenticated = false
+        this.loginError = error instanceof Error ? error.message : String(error)
+        throw error
+      }
+    },
+
+    /** Starts a Jellyfin Quick Connect login — sets up serverUrl/connectUrl
+     * exactly like login() does, then requests a code the user approves on
+     * another already-authenticated device (or Jellyfin's own web UI).
+     * Returns the code to show and the secret to poll with (see
+     * pollJellyfinQuickConnect()) — doesn't touch `authenticated`/persist
+     * anything itself, since nothing is actually logged in yet at this
+     * point. */
+    async startJellyfinQuickConnect(params: {
+      serverUrl: string
+      connectUrl?: string
+    }): Promise<{ code: string; secret: string }> {
+      this.loginError = null
+      await this.loadConnectDefaults()
+      this.serverUrl = params.serverUrl.replace(/\/+$/, '')
+      this.serverType = 'jellyfin'
+      if (window.api && params.connectUrl) {
+        this.connectUrl = params.connectUrl.replace(/\/+$/, '')
+        this.apiUrl = this.connectUrl
+      }
+      const { code, secret } = await postJellyfinQuickConnectInitiate({ url: this.serverUrl })
+      return { code, secret }
+    },
+
+    /** Polled every couple of seconds by ServerLoginView.vue while a Quick
+     * Connect code is showing. Returns false while the user hasn't
+     * approved it elsewhere yet; once approved, finishes the login the
+     * same way login() does (credential/userId/username, _authenticate(),
+     * persist()) and returns true. Throws only on a real error (server
+     * unreachable, secret expired/rejected) — a plain "not yet approved"
+     * is a normal false, not an error, so the caller's polling loop can
+     * keep going without special-casing it. */
+    async pollJellyfinQuickConnect(secret: string): Promise<boolean> {
+      const status = await postJellyfinQuickConnectStatus({ url: this.serverUrl, secret })
+      if (!status.authenticated || !status.token || !status.user_id) return false
+
+      this.credential = status.token
+      this.userId = status.user_id
+      this.username = status.username ?? ''
 
       try {
         await this._authenticate()
@@ -163,6 +257,7 @@ export const useAuthStore = defineStore('auth', {
         this.loginError = error instanceof Error ? error.message : String(error)
         throw error
       }
+      return true
     },
 
     /** Silent re-auth on app boot using saved credentials. Returns false
@@ -180,6 +275,9 @@ export const useAuthStore = defineStore('auth', {
       this.serverUrl = stored.serverUrl
       this.username = stored.username
       this.password = stored.password
+      // Falls back to 'subsonic' for data saved before this field existed.
+      this.serverType = stored.serverType || 'subsonic'
+      this.userId = stored.userId || ''
       if (stored.connectUrl && stored.connectToken) {
         this.connectUrl = stored.connectUrl
         // Falls back to connectUrl for data saved before this field existed.
@@ -188,11 +286,18 @@ export const useAuthStore = defineStore('auth', {
       } else {
         await this.loadConnectDefaults()
       }
-      // Reuse the persisted credential as-is (see _authenticate()'s comment on
-      // why) — except for data saved before this field existed, where falling
-      // back to a freshly built one is the only option.
+      // Reuse the persisted credential as-is (see _authenticate()'s comment
+      // on why — this replays the previously-issued Jellyfin AccessToken
+      // through /config rather than re-doing username/password login on
+      // every boot, same as Subsonic) — except for data saved before this
+      // field existed, where falling back to a freshly built one is the
+      // only option (Subsonic-only, since Jellyfin has no client-side way
+      // to derive a token from a stored password).
       this.credential =
-        stored.credential || buildSubsonicCredential(stored.username, stored.password)
+        stored.credential ||
+        (this.serverType === 'subsonic'
+          ? buildSubsonicCredential(stored.username, stored.password)
+          : '')
 
       try {
         await this._authenticate()
@@ -259,6 +364,8 @@ export const useAuthStore = defineStore('auth', {
         connectUrl: this.connectUrl,
         apiUrl: this.apiUrl,
         connectToken: this.connectToken,
+        serverType: this.serverType,
+        userId: this.userId,
       }
       await secureStorage.set(STORAGE_KEY, JSON.stringify(stored))
     },
@@ -270,6 +377,7 @@ export const useAuthStore = defineStore('auth', {
       usePlaybackStore().resetForLogout()
       this.authenticated = false
       this.password = ''
+      this.userId = ''
       this.credential = ''
       this.sessionId = ''
       this.health = null

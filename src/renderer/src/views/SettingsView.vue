@@ -7,7 +7,7 @@
       <v-card-text>
         <v-text-field
           v-model="serverUrl"
-          :label="$t('auth.serverUrl')"
+          :label="serverUrlLabel"
           variant="solo-filled"
           class="mb-2"
           readonly
@@ -53,7 +53,7 @@
       </v-card-text>
     </v-card>
 
-    <v-card class="mb-4">
+    <v-card v-if="authStore.capabilities.libraryScan" class="mb-4">
       <v-card-title>{{ $t('settings.libraryTitle') }}</v-card-title>
       <v-card-text>
         <p class="text-body-2 text-medium-emphasis mb-4">
@@ -70,6 +70,38 @@
             scanning ? $t('settings.scanning', { count: scanCount }) : $t('settings.rescanLibrary')
           }}
         </v-btn>
+      </v-card-text>
+    </v-card>
+
+    <!-- Jellyfin has no server-side scan-trigger of its own (see
+     - capabilities.libraryScan) — this instead forces Beacon's own cached
+     - view of the library to refetch now, rather than waiting for
+     - CACHE_TTL_MS. Shows real progress since a large Jellyfin library can
+     - take a couple of minutes (see stores/library.ts's refreshLibrary()). -->
+    <v-card v-else-if="authStore.serverType === 'jellyfin'" class="mb-4">
+      <v-card-title>{{ $t('settings.libraryTitle') }}</v-card-title>
+      <v-card-text>
+        <p class="text-body-2 text-medium-emphasis mb-4">
+          {{ $t('settings.libraryRefreshHint') }}
+        </p>
+        <v-btn
+          color="primary"
+          prepend-icon="mdi-refresh"
+          :loading="refreshingLibrary"
+          :disabled="refreshingLibrary"
+          @click="refreshLibrary"
+        >
+          {{ refreshingLibrary ? refreshProgressLabel : $t('settings.refreshLibrary') }}
+        </v-btn>
+        <v-progress-linear
+          v-if="refreshingLibrary"
+          class="mt-3"
+          :indeterminate="refreshProgressPercent === null"
+          :model-value="refreshProgressPercent ?? undefined"
+          color="primary"
+          height="6"
+          rounded
+        />
       </v-card-text>
     </v-card>
 
@@ -116,11 +148,34 @@ export default {
     libraryStore() {
       return useLibraryStore()
     },
+    serverUrlLabel() {
+      if (this.authStore.serverType === 'jellyfin') return this.$t('auth.serverUrlJellyfin')
+      if (this.authStore.serverType === 'subsonic') return this.$t('auth.serverUrlSubsonic')
+      return this.$t('auth.serverUrl')
+    },
     localeOptions() {
       return [
         { title: 'Deutsch', value: 'de' },
         { title: 'English', value: 'en' },
       ]
+    },
+    refreshingLibrary() {
+      return this.libraryStore.trackScanProgress !== null
+    },
+    refreshProgressPercent() {
+      const progress = this.libraryStore.trackScanProgress
+      if (!progress || !progress.total) return null
+      return Math.min(100, Math.round((progress.loaded / progress.total) * 100))
+    },
+    refreshProgressLabel() {
+      const progress = this.libraryStore.trackScanProgress
+      if (!progress) return ''
+      return progress.total
+        ? this.$t('settings.refreshingLibraryWithTotal', {
+            loaded: progress.loaded,
+            total: progress.total,
+          })
+        : this.$t('settings.refreshingLibrary', { loaded: progress.loaded })
     },
   },
   created() {
@@ -189,6 +244,23 @@ export default {
         title: this.$t('settings.rescanLibrary'),
         message: this.$t('settings.scanComplete', { count: this.scanCount }),
       })
+    },
+    async refreshLibrary() {
+      try {
+        await this.libraryStore.refreshLibrary()
+        this.$emitter.emit('toast', {
+          level: 'success',
+          title: this.$t('settings.refreshLibrary'),
+          message: this.$t('settings.libraryRefreshed', { count: this.libraryStore.allTracks.length }),
+        })
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('settings.refreshLibrary'),
+          message: this.$t('settings.refreshLibraryFailed'),
+        })
+        console.error('[settings] Failed to refresh library:', error)
+      }
     },
   },
 }

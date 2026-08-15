@@ -54,7 +54,7 @@
     <div class="track-actions d-flex align-center">
       <transition name="rating-fade" style="margin-right: 1rem">
         <v-rating
-          v-if="track.rating > 0 || isHovered"
+          v-if="authStore.capabilities.personalRating && (track.rating > 0 || isHovered)"
           :model-value="track.rating"
           length="5"
           size="small"
@@ -97,7 +97,7 @@
           <template #prepend><v-icon icon="mdi-skip-next-outline" size="small" /></template>
           <v-list-item-title>{{ $t('library.playNext') }}</v-list-item-title>
         </v-list-item>
-        <v-list-item @click="$emit('track-radio', track)">
+        <v-list-item v-if="authStore.capabilities.trackRadio" @click="$emit('track-radio', track)">
           <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
           <v-list-item-title>{{ $t('library.trackRadio') }}</v-list-item-title>
         </v-list-item>
@@ -138,6 +138,7 @@
 import CoverArt from './CoverArt.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
+import { useAuthStore } from '@/stores/auth'
 
 export default {
   name: 'TrackRow',
@@ -224,6 +225,9 @@ export default {
     },
     playbackStore() {
       return usePlaybackStore()
+    },
+    authStore() {
+      return useAuthStore()
     },
     isCurrentTrack() {
       return this.playbackStore.currentTrack?.id === this.track.id

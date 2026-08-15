@@ -25,6 +25,7 @@ def server_lock_env(monkeypatch):
     monkeypatch.delenv("SERVER_LOCK", raising=False)
     monkeypatch.delenv("SERVER_URL", raising=False)
     monkeypatch.delenv("SERVER_INTERNAL_URL", raising=False)
+    monkeypatch.delenv("SERVER_TYPE", raising=False)
     _reload_devices()
 
 
@@ -126,3 +127,50 @@ def test_health_server_url_alone_without_lock_flag_reports_no_lock(
 
     r = client.get("/health")
     assert r.json()["server_lock"] is None
+
+
+def test_health_server_lock_reports_jellyfin_server_type(
+    client, monkeypatch, server_lock_env
+):
+    monkeypatch.setenv("SERVER_LOCK", "true")
+    monkeypatch.setenv("SERVER_URL", "https://jellyfin.example.com")
+    monkeypatch.setenv("SERVER_TYPE", "jellyfin")
+    _reload_devices()
+
+    r = client.get("/health")
+    assert r.json()["server_lock"] == {
+        "url": "https://jellyfin.example.com",
+        "server_type": "jellyfin",
+    }
+
+
+# ── session_server_type ─────────────────────────────────────────────────────
+# What the *currently authenticated* session is actually talking to — unlike
+# server_lock above, set (or not) regardless of SERVER_LOCK, since an
+# unlocked multi-server deployment still needs to gate Navidrome/Jellyfin-
+# specific UI once someone's actually logged in.
+
+
+def test_health_session_server_type_none_before_login(client):
+    r = client.get("/health")
+    assert r.json()["session_server_type"] is None
+
+
+def test_health_session_server_type_subsonic_after_config(client):
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    r = client.get("/health")
+    assert r.json()["session_server_type"] == "subsonic"
+
+
+def test_health_session_server_type_jellyfin_after_config(client):
+    client.post(
+        "/config",
+        json={
+            "url": "http://jf:8096",
+            "credential": "tok",
+            "server_type": "jellyfin",
+            "user_id": "u1",
+        },
+    )
+    r = client.get("/health")
+    assert r.json()["session_server_type"] == "jellyfin"

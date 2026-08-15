@@ -1,12 +1,15 @@
 """media/subsonic.py — Navidrome / Subsonic API Client"""
 
 import hashlib
+import logging
 import secrets
 from urllib.parse import parse_qs, urlencode
 
 import httpx
 
 from .base import Track
+
+logger = logging.getLogger("connect.subsonic")
 
 
 class SubsonicClient:
@@ -94,5 +97,11 @@ class SubsonicClient:
         try:
             self._get("ping.view")
             return True
-        except Exception:
+        except Exception as e:
+            # /config only surfaces a generic "credential rejected" to the
+            # frontend (see routes/devices.py) — this is the only place the
+            # actual reason (wrong URL, unreachable server, bad credential,
+            # ...) is visible at all, so it's worth a real log line rather
+            # than being silently swallowed.
+            logger.warning(f"[ping] {self.internal_url}/rest/ping.view failed: {e}")
             return False

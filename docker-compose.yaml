@@ -4,11 +4,22 @@ services:
         build: .
         restart: unless-stopped
         environment:
-            # Required — the connect backend proxies /rest, /auth and library
-            # requests through to Navidrome (see connect/routes/proxy.py) and
-            # needs its own address to reach it; replace with your server's
-            # actual LAN address/port.
-            - SERVER_INTERNAL_URL=http://navidrome:4533
+            # Optional — an alternate address for reaching Navidrome that's
+            # faster/more direct than whatever public URL you log in with,
+            # used only for the proxied /rest, /auth, and cover-art/stream
+            # calls (see connect/routes/proxy.py). Since this container uses
+            # network_mode: host (below) rather than a Docker bridge
+            # network, a Docker Compose service name like "navidrome" does
+            # NOT resolve here — that only works with bridge networking.
+            # What actually applies: if Navidrome runs on this same host
+            # (bound to localhost and/or a LAN IP, with a reverse proxy
+            # handling the public-facing domain), point this at that
+            # directly-reachable address instead of round-tripping every
+            # single request through the reverse proxy + public DNS:
+            # - SERVER_INTERNAL_URL=http://localhost:4533
+            # Leave unset entirely if there's no such shortcut available —
+            # Beacon then just uses whatever URL you log in with, same as
+            # it already does for Jellyfin (which has no equivalent variable).
             # CONNECT_TOKEN secures the Connect API (casting control). Leave it
             # unset — a random one is generated on each container start, which
             # is enough since the browser never needs to know it (nginx injects
@@ -44,7 +55,15 @@ services:
             # exposed beyond your own devices:
             # - SERVER_URL=https://navidrome.example.com
             # - SERVER_LOCK=true
-        # Keeps AirPlay 2 pairings across container recreations/updates.
+            # SERVER_TYPE says what kind of server SERVER_URL/SERVER_LOCK above
+            # point at — "subsonic" (covers Navidrome, the default) or
+            # "jellyfin". Only meaningful together with SERVER_LOCK=true; the
+            # login screen uses it to skip the server-type picker too, not just
+            # the URL field:
+            # - SERVER_TYPE=subsonic
+        # Keeps AirPlay 2 pairings and (for Jellyfin sessions only — see
+        # connect/core/radio_stations.py) user-managed internet radio
+        # stations across container recreations/updates.
         volumes:
             - ./data:/data
         # Required for Sonos/AirPlay/Chromecast mDNS discovery on the LAN.

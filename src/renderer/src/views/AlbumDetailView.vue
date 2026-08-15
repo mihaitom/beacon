@@ -6,7 +6,7 @@
       :eyebrow="$t('library.album')"
       :title="album.name"
       :starred="album.starred"
-      :rating="album.rating"
+      :rating="authStore.capabilities.personalRating ? album.rating : null"
       @toggle-star="toggleStar"
       @set-rating="setRating"
     >
@@ -41,6 +41,7 @@
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import { useAuthStore } from '@/stores/auth'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import TrackList from '@/components/library/TrackList.vue'
 import PageLoader from '@/components/PageLoader.vue'
@@ -56,6 +57,9 @@ export default {
   computed: {
     libraryStore() {
       return useLibraryStore()
+    },
+    authStore() {
+      return useAuthStore()
     },
   },
   created() {

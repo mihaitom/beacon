@@ -65,6 +65,7 @@ import LyricsDrawer from '@/components/lyrics/LyricsDrawer.vue'
 import CastTakeoverConfirmDialog from '@/components/connect/CastTakeoverConfirmDialog.vue'
 import TopBarSearch from '@/components/TopBarSearch.vue'
 import { usePlaybackStore } from '@/stores/playback'
+import { useAuthStore } from '@/stores/auth'
 
 export default {
   name: 'DefaultLayout',
@@ -88,6 +89,9 @@ export default {
     playbackStore() {
       return usePlaybackStore()
     },
+    authStore() {
+      return useAuthStore()
+    },
     // NowPlayingView.vue renders lyrics inline (its own split-panel
     // transition) whenever playbackStore.lyricsDrawerOpen is true, driven
     // by the same PlayerBar button as this drawer — without this check
@@ -97,6 +101,7 @@ export default {
       return this.$route.name === 'now-playing'
     },
     navItems() {
+      const capabilities = this.authStore.capabilities
       return [
         { to: '/', icon: 'mdi-home', title: this.$t('nav.home') },
         { to: '/albums', icon: 'mdi-album', title: this.$t('nav.albums') },
@@ -104,10 +109,14 @@ export default {
         { to: '/tracks', icon: 'mdi-music-note', title: this.$t('nav.tracks') },
         { to: '/genres', icon: 'mdi-tag-multiple', title: this.$t('nav.genres') },
         { to: '/playlists', icon: 'mdi-playlist-play', title: this.$t('nav.playlists') },
-        { to: '/radio', icon: 'mdi-radio', title: this.$t('nav.radio') },
+        capabilities.internetRadio
+          ? { to: '/radio', icon: 'mdi-radio', title: this.$t('nav.radio') }
+          : null,
         { to: '/favorites', icon: 'mdi-heart', title: this.$t('nav.favorites') },
-        { to: '/stats', icon: 'mdi-chart-box-outline', title: this.$t('nav.stats') },
-      ]
+        capabilities.playHistoryStats
+          ? { to: '/stats', icon: 'mdi-chart-box-outline', title: this.$t('nav.stats') }
+          : null,
+      ].filter((item): item is { to: string; icon: string; title: string } => item !== null)
     },
   },
   watch: {

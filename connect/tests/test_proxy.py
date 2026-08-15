@@ -67,6 +67,7 @@ def _mock_httpx_client():
 
     def build_request(**kwargs):
         captured["headers"] = kwargs["headers"]
+        captured["url"] = kwargs["url"]
         return MagicMock()
 
     mock_client.build_request = build_request
@@ -77,7 +78,13 @@ def _mock_httpx_client():
     return mock_client_cls, captured
 
 
-def test_proxy_strips_authentik_headers_before_forwarding(client):
+def test_proxy_strips_authentik_headers_before_forwarding(client, default_session):
+    # /rest/{path}'s target is session-derived (see routes/proxy.py's
+    # proxy_subsonic) — default_session's media must actually point at the
+    # URL this test expects to be hit.
+    from media import SubsonicClient
+
+    default_session.media = SubsonicClient("http://navidrome.internal:4533")
     proxy_mod = _reload_proxy("http://navidrome.internal:4533")
     mock_client_cls, captured = _mock_httpx_client()
 
@@ -107,9 +114,12 @@ def test_proxy_strips_authentik_headers_before_forwarding(client):
 # though it's an expected, benign network condition — not a real backend fault.
 
 
-def test_proxy_returns_499_on_client_disconnect(client, monkeypatch):
+def test_proxy_returns_499_on_client_disconnect(client, default_session, monkeypatch):
     from starlette.requests import ClientDisconnect, Request
 
+    from media import SubsonicClient
+
+    default_session.media = SubsonicClient("http://navidrome.internal:4533")
     _reload_proxy("http://navidrome.internal:4533")
 
     async def raise_disconnect(self):
@@ -126,15 +136,32 @@ def test_proxy_returns_499_on_client_disconnect(client, monkeypatch):
 # ── /rest/{path} ─────────────────────────────────────────────────────────────
 
 
-def test_proxy_rest_returns_503_when_no_url_configured(client, monkeypatch):
-    monkeypatch.setenv("SERVER_INTERNAL_URL", "")
-    import routes.proxy as proxy_mod
-
-    importlib.reload(proxy_mod)
-
+def test_proxy_rest_returns_503_for_unconfigured_session(client, default_session):
+    # default_session's media defaults to SubsonicClient("") (see
+    # conftest.py) — nobody has called /config for it yet, so there's
+    # nothing to forward to regardless of SERVER_INTERNAL_URL.
     r = client.get("/rest/ping.view?u=user&t=token&s=salt&v=1.16.1&c=test&f=json")
     assert r.status_code == 503
     assert "error" in r.json()
+
+
+def test_proxy_rest_uses_session_url_not_server_internal_url(
+    client, default_session, monkeypatch
+):
+    # Regression test: /rest/{path} used to always forward to the fixed
+    # SERVER_INTERNAL_URL env var, completely ignoring which server the
+    # session actually authenticated against (see proxy_subsonic's own
+    # comment) — deliberately mismatched here to prove the session wins.
+    from media import SubsonicClient
+
+    default_session.media = SubsonicClient("http://session-server:4533")
+    proxy_mod = _reload_proxy("http://env-var-server:4533")
+    mock_client_cls, captured = _mock_httpx_client()
+
+    with patch.object(proxy_mod.httpx, "AsyncClient", mock_client_cls):
+        client.get("/rest/ping.view?u=user&t=token&s=salt&v=1.16.1&c=test&f=json")
+
+    assert captured["url"].startswith("http://session-server:4533")
 
 
 def test_proxy_auth_returns_503_when_no_url_configured(client, monkeypatch):

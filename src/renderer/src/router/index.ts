@@ -110,11 +110,26 @@ const router = createRouter({
 // navigation gets a fresh try instead.
 let restorePromise: Promise<boolean> | null = null
 
+// Routes whose entire page only makes sense for a capability a server might
+// not have (see services/capabilities.ts) — DefaultLayout.vue already hides
+// their nav entries, this is the backstop for a direct URL/bookmark/back-
+// button navigation landing here anyway on a server that can't support it.
+const CAPABILITY_ROUTES: Partial<Record<string, keyof ReturnType<typeof useAuthStore>['capabilities']>> = {
+  radio: 'internetRadio',
+  stats: 'playHistoryStats',
+}
+
 router.beforeEach(async (to) => {
   if (to.name === 'login') return true
 
   const authStore = useAuthStore()
-  if (authStore.authenticated) return true
+  if (authStore.authenticated) {
+    const requiredCapability = typeof to.name === 'string' ? CAPABILITY_ROUTES[to.name] : undefined
+    if (requiredCapability && !authStore.capabilities[requiredCapability]) {
+      return { name: 'home' }
+    }
+    return true
+  }
 
   if (!restorePromise) {
     restorePromise = authStore.restore().finally(() => {

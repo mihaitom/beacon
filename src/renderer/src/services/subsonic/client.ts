@@ -55,6 +55,13 @@ export class SubsonicClient {
     // other connect endpoint (see connect/routes/proxy.py + core/auth.py) —
     // it's a separate secret from the Subsonic credential above.
     private readonly connectToken: string = '',
+    // Which connect session's SessionState.media to bridge through for a
+    // Jellyfin-backed login (see connect/media/jellyfin_bridge.py) — inert
+    // for a Subsonic session, since routes/proxy.py's passthrough branch
+    // doesn't look at it, but required for Jellyfin: without it every /rest
+    // request here would resolve to the unconfigured DEFAULT_SESSION_ID
+    // instead of the session /config actually set up.
+    private readonly sessionId: string = '',
   ) {}
 
   private authParams(): URLSearchParams {
@@ -63,12 +70,18 @@ export class SubsonicClient {
     return params
   }
 
+  private requestHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'X-Connect-Token': this.connectToken }
+    if (this.sessionId) headers['X-Connect-Session'] = this.sessionId
+    return headers
+  }
+
   private async get<T>(endpoint: string, extra: Record<string, string> = {}): Promise<T> {
     const params = this.authParams()
     for (const [key, value] of Object.entries(extra)) params.set(key, value)
 
     const response = await fetch(`${this.proxyBaseUrl}/rest/${endpoint}?${params.toString()}`, {
-      headers: { 'X-Connect-Token': this.connectToken },
+      headers: this.requestHeaders(),
     })
     if (!response.ok) {
       throw new Error(`Subsonic request failed: ${response.status}`)
@@ -91,13 +104,15 @@ export class SubsonicClient {
   }
 
   /** streamUrl/coverArtUrl become raw <audio src>/<img src> values — the
-   * browser can't attach a custom X-Connect-Token header for those, so the
-   * token has to travel as a query param instead (require_token accepts
-   * both, see connect/core/auth.py). */
+   * browser can't attach custom headers for those, so both the connect
+   * token and the session id (see the constructor's sessionId comment)
+   * have to travel as query params instead (require_token/get_session both
+   * accept query-param fallbacks, see connect/core/auth.py + session.py). */
   streamUrl(trackId: string): string {
     const params = this.authParams()
     params.set('id', trackId)
     if (this.connectToken) params.set('token', this.connectToken)
+    if (this.sessionId) params.set('session', this.sessionId)
     return `${this.proxyBaseUrl}/rest/stream.view?${params.toString()}`
   }
 
@@ -107,6 +122,7 @@ export class SubsonicClient {
     params.set('id', coverArtId)
     params.set('size', String(size))
     if (this.connectToken) params.set('token', this.connectToken)
+    if (this.sessionId) params.set('session', this.sessionId)
     return `${this.proxyBaseUrl}/rest/getCoverArt.view?${params.toString()}`
   }
 
@@ -210,6 +226,11 @@ export class SubsonicClient {
     artists: Artist[]
     albums: Album[]
     tracks: Track[]
+    // Only ever present when a Jellyfin bridge answered (see
+    // SearchResult3Response's comment) — null/undefined for a real
+    // Subsonic/Navidrome server, which has no equivalent concept for a
+    // search3.view response.
+    totalRecordCount: number | null
   }> {
     const data = await this.get<SearchResult3Response>('search3.view', {
       query,
@@ -222,6 +243,7 @@ export class SubsonicClient {
       artists: (data.searchResult3.artist ?? []).map(mapArtist),
       albums: (data.searchResult3.album ?? []).map(mapAlbum),
       tracks: (data.searchResult3.song ?? []).map(mapSong),
+      totalRecordCount: data.searchResult3.totalRecordCount ?? null,
     }
   }
 
@@ -333,7 +355,7 @@ export class SubsonicClient {
       for (const value of values) params.append(key, value)
     }
     const response = await fetch(`${this.proxyBaseUrl}/rest/${endpoint}?${params.toString()}`, {
-      headers: { 'X-Connect-Token': this.connectToken },
+      headers: this.requestHeaders(),
     })
     if (!response.ok) {
       throw new Error(`Subsonic request failed: ${response.status}`)

@@ -30,7 +30,7 @@ from delivery import (
     DlnaDelivery,
     SonosDelivery,
 )
-from media import JellyfinClient, SubsonicClient
+from media import JellyfinClient, SubsonicClient, server_type_name
 
 logger = logging.getLogger("connect.devices")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -59,10 +59,14 @@ _LOCKED_URLS = {
 # SERVER_INTERNAL_URL (the LAN-only address the proxy/backend actually talk
 # to Navidrome through, not reachable from the browser directly in most
 # deployments) is a reasonable fallback over showing the user nothing at
-# all. Only real Subsonic (Navidrome) login is implemented client-side
-# right now (see ServerLoginView.vue's own comment on why Jellyfin/Plex are
-# shown locked) — nothing to derive a server_type from yet.
+# all. For a locked Jellyfin deployment, set SERVER_URL — Jellyfin has no
+# internal-URL variable of its own (see configure()'s internal_url comment).
 _LOCKED_LOGIN_URL = os.getenv("SERVER_URL") or os.getenv("SERVER_INTERNAL_URL", "")
+# What kind of server SERVER_LOCK points at — only meaningful together with
+# _LOCKED_LOGIN_URL above. Defaults to "subsonic" for backwards compatibility
+# with deployments that lock a server without setting this (all of them,
+# before Jellyfin support existed).
+_LOCKED_SERVER_TYPE = os.getenv("SERVER_TYPE", "subsonic").strip().lower()
 
 
 class ConfigRequest(BaseModel):
@@ -79,8 +83,18 @@ class ConfigRequest(BaseModel):
 
 @router.post("/config")
 async def configure(req: ConfigRequest, session: SessionState = Depends(get_session)):
-    internal_url = os.getenv("SERVER_INTERNAL_URL", "")
     server_type = req.server_type.lower()
+    # SERVER_INTERNAL_URL is specifically Navidrome's own LAN-internal
+    # address — applying it to a Jellyfin session too (as this used to, before
+    # a real Jellyfin server was ever tested against it) meant Jellyfin's
+    # ping() call would hit Navidrome's URL instead, always failing since
+    # Navidrome has no /Users/Me endpoint. Jellyfin has no equivalent env var:
+    # its internal_url always comes from whatever URL the login screen sent
+    # (req.url) — JellyfinClient already falls back to that when internal_url
+    # is empty, and unlike Navidrome there's no separate always-on proxy
+    # route reading a fixed backend URL for it (see media/jellyfin_bridge.py,
+    # which is session-scoped, not env-var-scoped).
+    internal_url = os.getenv("SERVER_INTERNAL_URL", "") if server_type != "jellyfin" else ""
 
     if _SERVER_LOCK and _LOCKED_URLS and req.url.rstrip("/") not in _LOCKED_URLS:
         logger.warning(
@@ -143,12 +157,20 @@ async def health(session: SessionState = Depends(get_session)):
         "navidrome_configured": bool(session.media.base_url),
         # Reachable pre-login (get_session doesn't require authenticated=True)
         # — ServerLoginView.vue checks this before rendering, so a
-        # SERVER_LOCK=true deployment never shows a URL field for a server
-        # the user isn't actually free to change anyway.
+        # SERVER_LOCK=true deployment never shows a URL field/server-type
+        # picker for a server the user isn't actually free to change anyway.
         "server_lock": (
-            {"url": _LOCKED_LOGIN_URL, "server_type": "subsonic"}
+            {"url": _LOCKED_LOGIN_URL, "server_type": _LOCKED_SERVER_TYPE}
             if _SERVER_LOCK and _LOCKED_LOGIN_URL
             else None
+        ),
+        # What the *currently authenticated* session is actually talking to
+        # — distinct from server_lock above (a login-screen hint that exists
+        # even pre-auth, and only set at all for a locked deployment). Lets
+        # the frontend gate Navidrome/Jellyfin-specific UI correctly even in
+        # an unlocked, multi-server deployment (see services/capabilities.ts).
+        "session_server_type": (
+            server_type_name(session.media) if session.authenticated else None
         ),
     }
 

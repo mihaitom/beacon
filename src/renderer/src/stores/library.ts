@@ -17,12 +17,24 @@ let fetchAllTracksPromise: Promise<void> | null = null
 // lives under one beacon.library-cache entry.
 const LIBRARY_CACHE_KEY = 'beacon.library-cache'
 
+type LibraryCacheField = 'tracks' | 'artists' | 'albums' | 'playlists'
+
 interface LibraryCacheSnapshot {
   tracks?: Track[]
   artists?: Artist[]
   albums?: Album[]
   playlists?: Playlist[]
+  // When each field was last actually fetched (not just read from cache) —
+  // drives the TTL check below, so a cached value that's still fresh
+  // doesn't trigger a redundant background refetch of the whole thing on
+  // every single app session. Cheap for Subsonic; on a Jellyfin server with
+  // a large library, refetching the full track catalog is a multi-minute
+  // scan (see fetchAllTracksNow()'s own comment) — this is what stops that
+  // from silently re-running every time the app opens.
+  fetchedAt?: Partial<Record<LibraryCacheField, number>>
 }
+
+const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
 
 function loadLibraryCache(): LibraryCacheSnapshot {
   try {
@@ -33,13 +45,19 @@ function loadLibraryCache(): LibraryCacheSnapshot {
   }
 }
 
-function saveLibraryCacheField<K extends keyof LibraryCacheSnapshot>(
+function isCacheFresh(field: LibraryCacheField): boolean {
+  const fetchedAt = loadLibraryCache().fetchedAt?.[field]
+  return fetchedAt != null && Date.now() - fetchedAt < CACHE_TTL_MS
+}
+
+function saveLibraryCacheField<K extends LibraryCacheField>(
   field: K,
-  value: LibraryCacheSnapshot[K],
+  value: NonNullable<LibraryCacheSnapshot[K]>,
 ): void {
   try {
     const current = loadLibraryCache()
     current[field] = value
+    current.fetchedAt = { ...current.fetchedAt, [field]: Date.now() }
     localStorage.setItem(LIBRARY_CACHE_KEY, JSON.stringify(current))
   } catch {
     // Quota exceeded (a large library's full track catalog can run several
@@ -61,14 +79,25 @@ export function clearLibraryCache(): void {
 /** Fetches every page of the flat track catalog (search3 with an empty
  * query) and returns it as one array — used for the cache-refresh path in
  * fetchAllTracks(), where nothing should touch reactive state until the
- * whole thing is done (see that method's comment for why). */
-async function fetchTrackPages(client: SubsonicClient, pageSize: number): Promise<Track[]> {
+ * whole thing is done (see that method's comment for why). `onProgress`,
+ * given, fires after each page — only refreshLibrary()'s manual "rescan"
+ * trigger actually uses it (to drive a progress bar); the routine
+ * background refresh ignores it, same as it ignores loaded/total either
+ * way. `totalRecordCount` is only ever non-null when a Jellyfin bridge
+ * answered (see SubsonicClient.search3()'s comment) — a real Subsonic/
+ * Navidrome server leaves total unknown throughout. */
+async function fetchTrackPages(
+  client: SubsonicClient,
+  pageSize: number,
+  onProgress?: (progress: { loaded: number; total: number | null }) => void,
+): Promise<Track[]> {
   let all: Track[] = []
   let offset = 0
   while (true) {
     const page = await client.search3('', pageSize, 0, 0, offset)
     if (page.tracks.length === 0) break
     all = all.concat(page.tracks)
+    onProgress?.({ loaded: all.length, total: page.totalRecordCount })
     if (page.tracks.length < pageSize) break
     offset += pageSize
   }
@@ -113,12 +142,15 @@ async function withRetry<T>(fetcher: () => Promise<T>, attempts = 3, delayMs = 2
   throw lastError
 }
 
-/** Shows a cached value instantly (if there is one) while `fetcher` always
- * runs to get the current data, updating both state (via `onResult`) and
- * the cache once it resolves — a no-op visually unless something actually
- * changed since. Falls back to a plain withLoading()-wrapped fetch (drives
- * the caller's usual loading spinner/skeleton) when there's no cache yet. */
-async function cachedFetch<K extends keyof LibraryCacheSnapshot>(
+/** Shows a cached value instantly (if there is one) while `fetcher` refreshes
+ * it in the background — unless the cache is still within CACHE_TTL_MS, in
+ * which case it's shown as-is with no refetch at all (see
+ * LibraryCacheSnapshot.fetchedAt's comment for why this matters). Updates
+ * both state (via `onResult`) and the cache once a refresh actually runs —
+ * a no-op visually unless something actually changed since. Falls back to a
+ * plain withLoading()-wrapped fetch (drives the caller's usual loading
+ * spinner/skeleton) when there's no cache yet. */
+async function cachedFetch<K extends LibraryCacheField>(
   store: { withLoading<R>(fn: () => Promise<R>): Promise<R> },
   field: K,
   fetcher: () => Promise<NonNullable<LibraryCacheSnapshot[K]>>,
@@ -127,6 +159,7 @@ async function cachedFetch<K extends keyof LibraryCacheSnapshot>(
   const cached = loadLibraryCache()[field]
   if (cached) {
     onResult(cached as NonNullable<LibraryCacheSnapshot[K]>)
+    if (isCacheFresh(field)) return
     withRetry(fetcher)
       .then((fresh) => {
         onResult(fresh)
@@ -149,6 +182,12 @@ interface LibraryState {
   albums: Album[]
   allTracks: Track[]
   allTracksLoaded: boolean
+  // Non-null only while refreshLibrary()'s manual "rescan" is actively
+  // paging through the track catalog — drives SettingsView's progress bar.
+  // `total` stays null on a real Subsonic/Navidrome server (no such
+  // concept there — see SubsonicClient.search3()), so the UI falls back to
+  // an indeterminate bar in that case.
+  trackScanProgress: { loaded: number; total: number | null } | null
   playlists: Playlist[]
   radioStations: RadioStation[]
   starred: { artists: Artist[]; albums: Album[]; tracks: Track[] }
@@ -173,6 +212,7 @@ export const useLibraryStore = defineStore('library', {
     albums: [],
     allTracks: [],
     allTracksLoaded: false,
+    trackScanProgress: null,
     playlists: [],
     radioStations: [],
     starred: { artists: [], albums: [], tracks: [] },
@@ -214,7 +254,7 @@ export const useLibraryStore = defineStore('library', {
   actions: {
     client(): SubsonicClient {
       const auth = useAuthStore()
-      return new SubsonicClient(auth.connectUrl, auth.credential, auth.connectToken)
+      return new SubsonicClient(auth.connectUrl, auth.credential, auth.connectToken, auth.sessionId)
     },
 
     async withLoading<T>(fn: () => Promise<T>): Promise<T> {
@@ -257,9 +297,18 @@ export const useLibraryStore = defineStore('library', {
      * page via getAlbumList2 (see fetchAlbumPages()). Deliberately NOT
      * derived from allTracks: that would force AlbumsView to wait on the
      * entire track catalog just to render a grid of album cards. */
-    async fetchAlbums(): Promise<void> {
-      if (this.albums.length > 0) return
-      const ALBUM_PAGE_SIZE = 500
+    async fetchAlbums(force = false): Promise<void> {
+      if (!force && this.albums.length > 0) return
+      // Same reasoning as fetchAllTracksNow()'s PAGE_SIZE — smaller pages
+      // for Jellyfin mean a faster first paint.
+      const ALBUM_PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 200 : 500
+      if (force) {
+        await this.withLoading(async () => {
+          this.albums = await fetchAlbumPages(this.client(), ALBUM_PAGE_SIZE)
+          saveLibraryCacheField('albums', this.albums)
+        })
+        return
+      }
       await cachedFetch(
         this,
         'albums',
@@ -281,8 +330,15 @@ export const useLibraryStore = defineStore('library', {
       })
     },
 
-    async fetchArtists(): Promise<void> {
-      if (this.artists.length > 0) return
+    async fetchArtists(force = false): Promise<void> {
+      if (!force && this.artists.length > 0) return
+      if (force) {
+        await this.withLoading(async () => {
+          this.artists = await this.client().getArtists()
+          saveLibraryCacheField('artists', this.artists)
+        })
+        return
+      }
       await cachedFetch(
         this,
         'artists',
@@ -394,13 +450,23 @@ export const useLibraryStore = defineStore('library', {
     },
 
     async fetchAllTracksNow(): Promise<void> {
-      const PAGE_SIZE = 3000
+      // Jellyfin's recursive Items query (what search3.view is bridged to —
+      // see connect/media/jellyfin_bridge.py) scales roughly linearly with
+      // page size on at least one real server tested (~9ms/item), making a
+      // 3000-item page take 25-35s there vs. under a second for Subsonic/
+      // Navidrome. A much smaller page means the first real data shows up
+      // in ~2s instead of ~30s — the rest still streams in progressively via
+      // the .push() loop below either way, so total time to fully load a
+      // very large library is about the same, just no longer spent staring
+      // at an empty screen.
+      const PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 200 : 3000
       const client = this.client()
 
       const cached = loadLibraryCache().tracks
       if (cached) {
         this.allTracks = cached
         this.allTracksLoaded = true
+        if (isCacheFresh('tracks')) return
         withRetry(() => fetchTrackPages(client, PAGE_SIZE))
           .then((fresh) => {
             this.allTracks = fresh
@@ -436,6 +502,33 @@ export const useLibraryStore = defineStore('library', {
         // being stuck with a silently incomplete catalog forever.
         console.error('[library] Failed to load the rest of the track catalog:', error)
       }
+    },
+
+    /** Manual "rescan library" trigger (see SettingsView.vue) — unlike the
+     * automatic paths above, always actually refetches regardless of
+     * CACHE_TTL_MS, and reports progress via trackScanProgress so the UI
+     * can show a real bar instead of an indeterminate spinner. Mainly
+     * useful for Jellyfin: the automatic background refresh already keeps
+     * data eventually current, but only notices new music after
+     * CACHE_TTL_MS (or the next full cold load) — this is for "I just
+     * added an album and want Beacon to see it now." Albums/artists are
+     * refetched too (force=true), just without their own progress bar —
+     * on any server tested so far they're fast enough not to need one. */
+    async refreshLibrary(): Promise<void> {
+      const client = this.client()
+      const PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 200 : 3000
+      this.trackScanProgress = { loaded: 0, total: null }
+      try {
+        const fresh = await fetchTrackPages(client, PAGE_SIZE, (progress) => {
+          this.trackScanProgress = progress
+        })
+        this.allTracks = fresh
+        this.allTracksLoaded = true
+        saveLibraryCacheField('tracks', fresh)
+      } finally {
+        this.trackScanProgress = null
+      }
+      await Promise.all([this.fetchAlbums(true), this.fetchArtists(true)])
     },
 
     /** `force` skips the cache entirely — used right after a mutation

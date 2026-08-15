@@ -55,12 +55,51 @@ export interface HealthResponse {
   // uses this to skip asking for a server URL/type at all, since there's
   // only ever one possible answer.
   server_lock: { url: string; server_type: string } | null
+  // What the *currently authenticated* session is actually talking to —
+  // 'subsonic' | 'jellyfin', or null pre-login. Distinct from server_lock
+  // above (only set for a locked deployment, even pre-auth) — this is what
+  // an unlocked, multi-server deployment uses to gate Navidrome/Jellyfin-
+  // specific UI (see services/capabilities.ts).
+  session_server_type: string | null
 }
 
 export interface ConfigRequest {
   credential: string
   url: string
   server_type: 'subsonic' | 'jellyfin'
+  user_id?: string
+  username?: string
+}
+
+export interface JellyfinLoginRequest {
+  url: string
+  username: string
+  password: string
+}
+
+export interface JellyfinLoginResponse {
+  token: string
+  user_id: string
+}
+
+export interface JellyfinQuickConnectInitiateRequest {
+  url: string
+}
+
+export interface JellyfinQuickConnectInitiateResponse {
+  secret: string
+  code: string
+}
+
+export interface JellyfinQuickConnectConnectRequest {
+  url: string
+  secret: string
+}
+
+export interface JellyfinQuickConnectConnectResponse {
+  authenticated: boolean
+  // Only present once authenticated is true.
+  token?: string
   user_id?: string
   username?: string
 }

@@ -14,12 +14,12 @@
     </div>
 
     <template v-else>
-      <!-- Only the Subsonic/Navidrome tile is actually selectable — Jellyfin
-       - and Plex are shown (real logos, real names) so the shape of what's
-       - coming is visible, but "locked" the same way an unlit lighthouse
-       - reads as "not this one yet", not "broken". Skipped entirely once
-       - this deployment is itself locked to one specific server (see
-       - `locked` below) — there's nothing left to choose either way. -->
+      <!-- Subsonic/Navidrome and Jellyfin are both actually selectable —
+       - Plex is shown (real logo, real name) so the shape of what's coming
+       - is visible, but "locked" the same way an unlit lighthouse reads as
+       - "not this one yet", not "broken". Skipped entirely once this
+       - deployment is itself locked to one specific server (see `locked`
+       - below) — there's nothing left to choose either way. -->
       <div v-if="!locked" class="server-type-grid mb-6">
         <button
           v-for="option in serverTypeOptions"
@@ -53,8 +53,8 @@
           <v-text-field
             v-if="!locked"
             v-model="serverUrl"
-            :label="$t('auth.serverUrl')"
-            placeholder="https://navidrome.example.com"
+            :label="serverUrlLabel"
+            :placeholder="serverUrlPlaceholder"
             variant="solo-filled"
             class="mb-2"
           />
@@ -64,19 +64,57 @@
           <p v-else class="text-caption text-medium-emphasis mb-4">
             {{ $t('auth.serverLocked', { url: serverUrl }) }}
           </p>
-          <v-text-field
-            v-model="username"
-            :label="$t('auth.username')"
-            variant="solo-filled"
-            class="mb-2"
-          />
-          <v-text-field
-            v-model="password"
-            :label="$t('auth.password')"
-            type="password"
-            variant="solo-filled"
-            class="mb-2"
-          />
+
+          <!-- Jellyfin only — Subsonic/Navidrome has no equivalent concept.
+           - Switching away cancels any in-flight Quick Connect request
+           - (see setAuthMode()) so a stray poll never outlives the mode
+           - it was started in. -->
+          <div v-if="selectedServerType === 'jellyfin'" class="auth-mode-toggle mb-4">
+            <button
+              type="button"
+              class="auth-mode-tab"
+              :class="{ 'auth-mode-tab--active': authMode === 'password' }"
+              @click="setAuthMode('password')"
+            >
+              {{ $t('auth.password') }}
+            </button>
+            <button
+              type="button"
+              class="auth-mode-tab"
+              :class="{ 'auth-mode-tab--active': authMode === 'quickconnect' }"
+              @click="setAuthMode('quickconnect')"
+            >
+              Quick Connect
+            </button>
+          </div>
+
+          <template v-if="selectedServerType === 'jellyfin' && authMode === 'quickconnect'">
+            <p v-if="!quickConnectCode" class="text-body-2 text-medium-emphasis mb-4">
+              {{ $t('auth.quickConnectHint') }}
+            </p>
+            <div v-else class="quick-connect-panel mb-4">
+              <p class="text-body-2 text-medium-emphasis mb-2">
+                {{ $t('auth.quickConnectApproveHint') }}
+              </p>
+              <div class="quick-connect-code">{{ quickConnectCode }}</div>
+              <v-progress-linear indeterminate color="primary" height="4" rounded class="mt-4" />
+            </div>
+          </template>
+          <template v-else>
+            <v-text-field
+              v-model="username"
+              :label="$t('auth.username')"
+              variant="solo-filled"
+              class="mb-2"
+            />
+            <v-text-field
+              v-model="password"
+              :label="$t('auth.password')"
+              type="password"
+              variant="solo-filled"
+              class="mb-2"
+            />
+          </template>
 
           <v-expansion-panels variant="accordion" class="mb-4">
             <v-expansion-panel :title="$t('auth.advanced')">
@@ -94,8 +132,17 @@
             {{ authStore.loginError }}
           </v-alert>
 
-          <v-btn type="submit" color="primary" block :loading="submitting">
-            {{ $t('auth.login') }}
+          <v-btn
+            v-if="!(quickConnectMode && quickConnectCode)"
+            type="submit"
+            color="primary"
+            block
+            :loading="submitting"
+          >
+            {{ submitLabel }}
+          </v-btn>
+          <v-btn v-else variant="text" block @click="cancelQuickConnect">
+            {{ $t('common.cancel') }}
           </v-btn>
         </v-form>
       </v-card-text>
@@ -110,6 +157,12 @@ import NavidromeIcon from '@/components/auth/NavidromeIcon.vue'
 import JellyfinIcon from '@/components/auth/JellyfinIcon.vue'
 import PlexIcon from '@/components/auth/PlexIcon.vue'
 
+// How often pollJellyfinQuickConnect() is polled while a code is showing —
+// frequent enough to feel responsive once approved, not so frequent it
+// hammers Jellyfin for no benefit (approving it is a manual, unhurried
+// step on another device).
+const QUICK_CONNECT_POLL_INTERVAL_MS = 2000
+
 export default {
   name: 'ServerLoginView',
   data() {
@@ -119,12 +172,10 @@ export default {
       password: '',
       connectUrl: 'http://localhost:9181',
       submitting: false,
-      // Purely a visual choice for now — only 'subsonic' ever actually
-      // submits (see submit() below), so this never needs to reach
-      // stores/auth.ts. Real Jellyfin/Plex support is a separate,
-      // considerably bigger project (full parallel library-browsing
-      // clients, not just login) — see the plan this screen came out of.
-      selectedServerType: 'subsonic',
+      // 'subsonic' or 'jellyfin' — passed to authStore.login() on submit().
+      // Plex stays locked (see serverTypeOptions below), so this never
+      // actually resolves to 'plex' in practice.
+      selectedServerType: 'subsonic' as 'subsonic' | 'jellyfin',
       // Whether checkServerLock() below has resolved yet — the server-type
       // grid/URL field stay hidden (a spinner shows instead) until we
       // actually know whether there's a choice to make at all, rather than
@@ -133,6 +184,13 @@ export default {
       // Set once checkServerLock() gets a server_lock back from GET
       // /health — see the `locked` computed below.
       serverLock: null as { url: string; server_type: string } | null,
+      // Jellyfin only — 'password' is the default/fallback for every other
+      // server type, so switching selectedServerType away from 'jellyfin'
+      // resets this too (see selectServerType()).
+      authMode: 'password' as 'password' | 'quickconnect',
+      quickConnectCode: null as string | null,
+      quickConnectSecret: null as string | null,
+      quickConnectTimer: null as ReturnType<typeof setTimeout> | null,
     }
   },
   computed: {
@@ -153,7 +211,7 @@ export default {
           type: 'jellyfin',
           name: this.$t('auth.serverTypeJellyfin'),
           icon: JellyfinIcon,
-          locked: true,
+          locked: false,
         },
         { type: 'plex', name: this.$t('auth.serverTypePlex'), icon: PlexIcon, locked: true },
       ]
@@ -164,6 +222,23 @@ export default {
     locked() {
       return this.serverLock !== null
     },
+    serverUrlLabel() {
+      if (this.selectedServerType === 'jellyfin') return this.$t('auth.serverUrlJellyfin')
+      if (this.selectedServerType === 'subsonic') return this.$t('auth.serverUrlSubsonic')
+      return this.$t('auth.serverUrl')
+    },
+    serverUrlPlaceholder() {
+      return this.selectedServerType === 'jellyfin'
+        ? 'https://jellyfin.example.com'
+        : 'https://navidrome.example.com'
+    },
+    quickConnectMode(): boolean {
+      return this.selectedServerType === 'jellyfin' && this.authMode === 'quickconnect'
+    },
+    submitLabel() {
+      if (this.quickConnectMode) return this.$t('auth.quickConnectRequestCode')
+      return this.$t('auth.login')
+    },
   },
   async created() {
     this.serverUrl = this.authStore.serverUrl
@@ -171,10 +246,22 @@ export default {
     this.connectUrl = this.authStore.connectUrl
     await this.checkServerLock()
   },
+  beforeUnmount() {
+    this.stopQuickConnectPolling()
+  },
   methods: {
     selectServerType(option: { type: string; locked: boolean }) {
       if (option.locked) return
-      this.selectedServerType = option.type
+      this.selectedServerType = option.type as 'subsonic' | 'jellyfin'
+      // Quick Connect only exists for Jellyfin — switching away leaves no
+      // valid mode for it to keep running in.
+      if (option.type !== 'jellyfin') this.setAuthMode('password')
+    },
+    setAuthMode(mode: 'password' | 'quickconnect') {
+      if (this.authMode === mode) return
+      this.cancelQuickConnect()
+      this.authMode = mode
+      this.authStore.loginError = null
     },
     async checkServerLock() {
       try {
@@ -187,7 +274,7 @@ export default {
         if (health.server_lock) {
           this.serverLock = health.server_lock
           this.serverUrl = health.server_lock.url
-          this.selectedServerType = health.server_lock.server_type
+          this.selectedServerType = health.server_lock.server_type as 'subsonic' | 'jellyfin'
         }
       } catch (error) {
         // Connect backend not reachable yet, or some other transient
@@ -200,6 +287,10 @@ export default {
       }
     },
     async submit() {
+      if (this.quickConnectMode) {
+        await this.startQuickConnect()
+        return
+      }
       this.submitting = true
       try {
         // login() resolves connectToken itself (see stores/auth.ts's
@@ -209,14 +300,73 @@ export default {
           username: this.username,
           password: this.password,
           connectUrl: this.connectUrl,
+          serverType: this.selectedServerType,
         })
-        const redirect = this.$route.query.redirect
-        this.$router.push(typeof redirect === 'string' ? redirect : '/')
+        this.goToRedirect()
       } catch {
         // authStore.loginError already holds the message, shown in the template.
       } finally {
         this.submitting = false
       }
+    },
+    goToRedirect() {
+      const redirect = this.$route.query.redirect
+      this.$router.push(typeof redirect === 'string' ? redirect : '/')
+    },
+    async startQuickConnect() {
+      this.submitting = true
+      this.authStore.loginError = null
+      try {
+        const { code, secret } = await this.authStore.startJellyfinQuickConnect({
+          serverUrl: this.serverUrl,
+          connectUrl: this.connectUrl,
+        })
+        this.quickConnectCode = code
+        this.quickConnectSecret = secret
+        this.pollQuickConnect()
+      } catch (error) {
+        this.authStore.loginError = error instanceof Error ? error.message : String(error)
+      } finally {
+        this.submitting = false
+      }
+    },
+    async pollQuickConnect() {
+      if (!this.quickConnectSecret) return
+      const secret = this.quickConnectSecret
+      let done: boolean
+      try {
+        done = await this.authStore.pollJellyfinQuickConnect(secret)
+      } catch (error) {
+        // authStore.loginError is already set by pollJellyfinQuickConnect —
+        // just fall back to the code-request screen instead of leaving a
+        // now-broken code showing with no way to retry.
+        console.error('[login] Quick Connect failed:', error)
+        this.quickConnectCode = null
+        this.quickConnectSecret = null
+        return
+      }
+      if (done) {
+        this.goToRedirect()
+        return
+      }
+      // Still waiting for approval on another device — the secret this
+      // closure captured is checked again in case cancelQuickConnect() ran
+      // while the request above was in flight, so a stale poll can't keep
+      // scheduling itself after the user backed out.
+      if (this.quickConnectSecret !== secret) return
+      this.quickConnectTimer = setTimeout(
+        () => this.pollQuickConnect(),
+        QUICK_CONNECT_POLL_INTERVAL_MS,
+      )
+    },
+    stopQuickConnectPolling() {
+      if (this.quickConnectTimer) clearTimeout(this.quickConnectTimer)
+      this.quickConnectTimer = null
+    },
+    cancelQuickConnect() {
+      this.stopQuickConnectPolling()
+      this.quickConnectCode = null
+      this.quickConnectSecret = null
     },
   },
 }
@@ -375,5 +525,56 @@ export default {
   top: 6px;
   right: 6px;
   color: rgba(255, 255, 255, 0.3);
+}
+
+.auth-mode-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.auth-mode-tab {
+  flex: 1;
+  padding: 8px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.auth-mode-tab:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: 2px;
+}
+
+.auth-mode-tab--active {
+  background: rgba(245, 169, 78, 0.12);
+  color: #fdf6ec;
+  font-weight: 600;
+}
+
+.quick-connect-panel {
+  text-align: center;
+}
+
+.quick-connect-code {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  /* Optically balances the letter-spacing above, which otherwise reads as
+   * off-center (trailing whitespace after the last digit, none before the
+   * first). */
+  padding-left: 0.3em;
+  color: #fdf6ec;
 }
 </style>

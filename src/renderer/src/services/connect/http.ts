@@ -13,6 +13,21 @@ export class ConnectApiError extends Error {
 
 export class ConnectUnauthorizedError extends ConnectApiError {}
 
+/** FastAPI's HTTPException(detail=...) responses are `{"detail": "..."}` —
+ * pulls that out so error messages surfaced to the user (e.g. the login
+ * screen's error banner) show the actual backend reason ("Media server
+ * rejected the supplied credential") instead of a generic fallback that's
+ * the same for every possible cause. Returns null for a non-JSON or
+ * differently-shaped body, so callers can fall back to their own default. */
+function extractDetail(text: string): string | null {
+  try {
+    const parsed = JSON.parse(text)
+    return typeof parsed?.detail === 'string' ? parsed.detail : null
+  } catch {
+    return null
+  }
+}
+
 interface FetchConnectOptions {
   method?: string
   body?: unknown
@@ -71,11 +86,18 @@ export async function fetchConnect<T>(
     }
     auth.authenticated = false
     const text = await response.text()
-    throw new ConnectUnauthorizedError('Connect session not authenticated', text)
+    throw new ConnectUnauthorizedError(
+      extractDetail(text) ?? 'Connect session not authenticated',
+      text,
+    )
   }
   if (!response.ok) {
     const text = await response.text()
-    throw new ConnectApiError(`Connect request failed: ${response.status} ${text}`, text)
+    const detail = extractDetail(text)
+    throw new ConnectApiError(
+      detail ? `Connect request failed: ${detail}` : `Connect request failed: ${response.status} ${text}`,
+      text,
+    )
   }
 
   const data = (await response.json()) as T

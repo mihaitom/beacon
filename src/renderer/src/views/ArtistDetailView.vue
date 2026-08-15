@@ -7,7 +7,7 @@
       :eyebrow="$t('library.artist')"
       :title="artist.name"
       :starred="artist.starred"
-      :rating="artist.rating"
+      :rating="authStore.capabilities.personalRating ? artist.rating : null"
       @toggle-star="toggleStar"
       @set-rating="setRating"
     >
@@ -17,7 +17,7 @@
         {{ totalTrackCount }}
         {{ totalTrackCount === 1 ? $t('library.track1') : $t('library.tracksN') }}
       </template>
-      <template #actions>
+      <template v-if="authStore.capabilities.trackRadio" #actions>
         <v-btn
           color="primary"
           rounded="pill"
@@ -60,6 +60,7 @@
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
+import { useAuthStore } from '@/stores/auth'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
 import TrackList from '@/components/library/TrackList.vue'
@@ -79,6 +80,9 @@ export default {
   computed: {
     libraryStore() {
       return useLibraryStore()
+    },
+    authStore() {
+      return useAuthStore()
     },
     totalTrackCount() {
       return this.artist?.albums.reduce((sum, album) => sum + album.songCount, 0) ?? 0

@@ -101,6 +101,10 @@ export interface SearchResult3Response {
     artist?: RawArtist[]
     album?: RawAlbum[]
     song?: RawSong[]
+    // Jellyfin-bridge-only extra field (see connect/media/jellyfin_bridge.py)
+    // — a real Subsonic/Navidrome server never sends this. Lets a paginated
+    // bulk load show real progress instead of an indeterminate spinner.
+    totalRecordCount?: number | null
   }
 }
 

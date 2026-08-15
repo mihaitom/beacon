@@ -33,6 +33,8 @@ from routes.debug import router as debug_router  # noqa: E402
 from routes.devices import router as devices_router  # noqa: E402
 from routes.discovery import discover_all  # noqa: E402
 from routes.discovery import router as discovery_router  # noqa: E402
+from media import jellyfin_bridge  # noqa: E402
+from routes.jellyfin_auth import router as jellyfin_auth_router  # noqa: E402
 from routes.join import router as join_router  # noqa: E402
 from routes.lyrics import router as lyrics_router  # noqa: E402
 from routes.pairing import router as pairing_router  # noqa: E402
@@ -256,6 +258,7 @@ async def lifespan(_: FastAPI):
         discovery_task.cancel()
         reaper_task.cancel()
         await close_proxy_client()
+        await jellyfin_bridge.close()
         # Stop actively-casting devices before the process actually exits —
         # Sonos/Chromecast/DLNA/AirPlay have no way to know this backend
         # died, so they'd otherwise just keep playing whatever they were
@@ -317,6 +320,7 @@ app.add_middleware(
 app.include_router(stream_router)
 app.include_router(playback_router)
 app.include_router(devices_router)
+app.include_router(jellyfin_auth_router)
 app.include_router(discovery_router)
 app.include_router(volume_router)
 app.include_router(join_router)

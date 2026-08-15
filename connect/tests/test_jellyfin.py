@@ -4,6 +4,12 @@ import httpx
 import pytest
 
 from media import JellyfinClient
+from media.jellyfin import (
+    authenticate_by_name,
+    authenticate_with_quick_connect,
+    check_quick_connect_authenticated,
+    initiate_quick_connect,
+)
 
 # Captured at import time, before conftest's autouse _stub_media_ping
 # monkeypatches JellyfinClient.ping for the duration of each test — lets
@@ -160,3 +166,126 @@ def test_ping_returns_false_on_invalid_token(monkeypatch):
     monkeypatch.setattr(JellyfinClient, "ping", _REAL_PING)
     monkeypatch.setattr(httpx, "get", fake_get)
     assert _client(token="wrong").ping() is False
+
+
+# ── authenticate_by_name ───────────────────────────────────────────────────
+
+
+def test_authenticate_by_name_returns_token_and_user_id(monkeypatch):
+    def fake_post(url, json=None, headers=None, timeout=None):
+        assert url == "http://jf:8096/Users/AuthenticateByName"
+        assert json == {"Username": "alice", "Pw": "secret"}
+        assert headers["Authorization"].startswith("MediaBrowser ")
+        assert 'Client="Beacon"' in headers["Authorization"]
+        return httpx.Response(
+            200,
+            json={"AccessToken": "tok-abc", "User": {"Id": "user-guid-1"}},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    result = authenticate_by_name("http://jf:8096/", "alice", "secret")
+    assert result == {"token": "tok-abc", "user_id": "user-guid-1"}
+
+
+def test_authenticate_by_name_raises_on_rejected_credentials(monkeypatch):
+    def fake_post(url, **kwargs):
+        return httpx.Response(401, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    with pytest.raises(httpx.HTTPStatusError):
+        authenticate_by_name("http://jf:8096", "alice", "wrong")
+
+
+def test_authenticate_by_name_device_id_stable_across_calls(monkeypatch, tmp_path):
+    import media.jellyfin as jf_mod
+
+    monkeypatch.setattr(jf_mod, "_DEVICE_ID_FILE", tmp_path / ".jellyfin-device-id")
+
+    captured = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.append(headers["Authorization"])
+        return httpx.Response(
+            200,
+            json={"AccessToken": "t", "User": {"Id": "u"}},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    authenticate_by_name("http://jf:8096", "a", "b")
+    authenticate_by_name("http://jf:8096", "a", "b")
+    assert captured[0] == captured[1]
+
+
+# ── Quick Connect ────────────────────────────────────────────────────────────
+
+
+def test_initiate_quick_connect_returns_secret_and_code(monkeypatch):
+    def fake_post(url, headers=None, timeout=None):
+        assert url == "http://jf:8096/QuickConnect/Initiate"
+        assert headers["Authorization"].startswith("MediaBrowser ")
+        return httpx.Response(
+            200,
+            json={"Secret": "sec-1", "Code": "123456", "Authenticated": False},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    result = initiate_quick_connect("http://jf:8096/")
+    assert result == {"secret": "sec-1", "code": "123456"}
+
+
+def test_initiate_quick_connect_raises_when_disabled(monkeypatch):
+    def fake_post(url, **kwargs):
+        return httpx.Response(400, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    with pytest.raises(httpx.HTTPStatusError):
+        initiate_quick_connect("http://jf:8096")
+
+
+def test_check_quick_connect_authenticated_true(monkeypatch):
+    def fake_get(url, params=None, headers=None, timeout=None):
+        assert url == "http://jf:8096/QuickConnect/Connect"
+        assert params == {"secret": "sec-1"}
+        return httpx.Response(
+            200, json={"Authenticated": True}, request=httpx.Request("GET", url)
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    assert check_quick_connect_authenticated("http://jf:8096", "sec-1") is True
+
+
+def test_check_quick_connect_authenticated_false(monkeypatch):
+    def fake_get(url, **kwargs):
+        return httpx.Response(
+            200, json={"Authenticated": False}, request=httpx.Request("GET", url)
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    assert check_quick_connect_authenticated("http://jf:8096", "sec-1") is False
+
+
+def test_authenticate_with_quick_connect_returns_token_user_id_and_username(monkeypatch):
+    def fake_post(url, json=None, headers=None, timeout=None):
+        assert url == "http://jf:8096/Users/AuthenticateWithQuickConnect"
+        assert json == {"Secret": "sec-1"}
+        return httpx.Response(
+            200,
+            json={"AccessToken": "tok-xyz", "User": {"Id": "u1", "Name": "alice"}},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    result = authenticate_with_quick_connect("http://jf:8096", "sec-1")
+    assert result == {"token": "tok-xyz", "user_id": "u1", "username": "alice"}
+
+
+def test_authenticate_with_quick_connect_raises_when_not_yet_approved(monkeypatch):
+    def fake_post(url, **kwargs):
+        return httpx.Response(401, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    with pytest.raises(httpx.HTTPStatusError):
+        authenticate_with_quick_connect("http://jf:8096", "sec-1")

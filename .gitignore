@@ -18,6 +18,9 @@ coverage
 # Python backend
 connect/.env
 connect/.connect-token
+connect/.jellyfin-device-id
+connect/radio_stations.json
+connect/airplay_credentials.json
 connect/.venv
 connect/__pycache__
 connect/**/__pycache__

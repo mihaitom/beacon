@@ -1,10 +1,18 @@
-"""routes/proxy.py — transparent proxy for Navidrome API calls
+"""routes/proxy.py — transparent proxy for Navidrome/Jellyfin API calls
 
-Proxied paths (all routed internally to SERVER_INTERNAL_URL):
-  /rest/{path}   → Subsonic API  (navidrome/rest/{path})
-  /auth/{path}   → Navidrome Auth (navidrome/auth/{path})
-  /{path}        → Navidrome REST API via /api/ nginx prefix (navidrome/api/{path})
-                   (nginx strips /api/ before forwarding to the backend)
+Proxied paths:
+  /rest/{path}   → Subsonic API (session.media.internal_url/rest/{path}) for a
+                   Subsonic session, or media/jellyfin_bridge.py for a
+                   Jellyfin one — see proxy_subsonic. session.media.internal_url
+                   is whatever URL was submitted at login, optionally
+                   overridden by SERVER_INTERNAL_URL (Subsonic only — see
+                   routes/devices.py's configure()).
+  /auth/{path}   → Navidrome Auth (SERVER_INTERNAL_URL/auth/{path}) — dead
+                   code path, nothing in this frontend calls it, kept for
+                   completeness/third-party API consumers.
+  /{path}        → Navidrome REST API via /api/ nginx prefix
+                   (SERVER_INTERNAL_URL/api/{path}) — same, unused by this
+                   frontend (nginx strips /api/ before forwarding here)
 """
 
 import os
@@ -15,6 +23,8 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.requests import ClientDisconnect
 
 from core.auth import require_token
+from core.session import SessionState, get_session
+from media import JellyfinClient, jellyfin_bridge
 
 router = APIRouter(dependencies=[Depends(require_token)])
 
@@ -88,11 +98,11 @@ def _is_forward_auth_header(name: str) -> bool:
 
 
 async def _proxy(request: Request, target: str) -> StreamingResponse | JSONResponse:
-    if not _INTERNAL_URL:
-        return JSONResponse(
-            {"error": "SERVER_INTERNAL_URL not configured"}, status_code=503
-        )
-
+    """Forwards `request` to `target` — callers are responsible for deciding
+    what `target` is and rejecting an unconfigured/empty one themselves (see
+    proxy_subsonic's session-derived internal_url vs proxy_auth/
+    proxy_navidrome_api's fixed SERVER_INTERNAL_URL), since "configured"
+    means something different for each."""
     fwd_headers = {
         k: v
         for k, v in request.headers.items()
@@ -163,12 +173,42 @@ async def _proxy(request: Request, target: str) -> StreamingResponse | JSONRespo
 
 
 @router.api_route("/rest/{path:path}", methods=_ALL_METHODS)
-async def proxy_subsonic(path: str, request: Request):
-    return await _proxy(request, f"{_INTERNAL_URL}/rest/{path}")
+async def proxy_subsonic(
+    path: str, request: Request, session: SessionState = Depends(get_session)
+):
+    # get_session (not require_authenticated_session): nothing calls this
+    # for an unconfigured session in practice (stores/auth.ts's
+    # _authenticate() relies entirely on /config's own server-side
+    # media.ping() check now, no separate client-side pre-flight — see its
+    # comment) — kept as get_session anyway so a stray pre-/config request
+    # 503s cleanly below instead of 401ing confusingly.
+    if isinstance(session.media, JellyfinClient):
+        return await jellyfin_bridge.handle(path, request, session.media)
+    # Session-derived, not the fixed SERVER_INTERNAL_URL env var: this is
+    # whatever URL was actually submitted at login (session.media.base_url),
+    # with SERVER_INTERNAL_URL only ever applying as an *optional* override
+    # on top of it (see routes/devices.py's configure() — SubsonicClient
+    # itself falls back to base_url when no override was given). Using the
+    # env var directly here, independently of the session, used to mean
+    # browsing/streaming/cover-art traffic silently went wherever
+    # SERVER_INTERNAL_URL pointed regardless of which server the user
+    # actually authenticated against — correct only by coincidence when the
+    # two happened to be the same value.
+    internal_url = session.media.internal_url
+    if not internal_url:
+        return JSONResponse(
+            {"error": "No media server configured for this session — call /config first"},
+            status_code=503,
+        )
+    return await _proxy(request, f"{internal_url}/rest/{path}")
 
 
 @router.api_route("/auth/{path:path}", methods=_ALL_METHODS)
 async def proxy_auth(path: str, request: Request):
+    if not _INTERNAL_URL:
+        return JSONResponse(
+            {"error": "SERVER_INTERNAL_URL not configured"}, status_code=503
+        )
     return await _proxy(request, f"{_INTERNAL_URL}/auth/{path}")
 
 
@@ -177,4 +217,8 @@ async def proxy_auth(path: str, request: Request):
 # Register LAST so that specific Connect routes take precedence.
 @router.api_route("/{path:path}", methods=_ALL_METHODS)
 async def proxy_navidrome_api(path: str, request: Request):
+    if not _INTERNAL_URL:
+        return JSONResponse(
+            {"error": "SERVER_INTERNAL_URL not configured"}, status_code=503
+        )
     return await _proxy(request, f"{_INTERNAL_URL}/api/{path}")
