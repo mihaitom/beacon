@@ -561,6 +561,75 @@ def test_delete_internet_radio_station(client, jellyfin_session):
         assert radio_stations.list_stations() == []
 
 
+# ── Track/Artist Radio (InstantMix) ─────────────────────────────────────────
+
+
+def test_get_similar_songs2_maps_instant_mix_results(client, jellyfin_session, monkeypatch):
+    fake_client, calls = _fake_jf_client(
+        {
+            "/Items/song-1/InstantMix": {
+                "Items": [
+                    {"Id": "s2", "Name": "Similar Song", "RunTimeTicks": 0},
+                ]
+            }
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getSimilarSongs2.view?id=song-1&count=50")
+    assert r.status_code == 200
+    body = r.json()["subsonic-response"]["similarSongs2"]
+    assert [s["id"] for s in body["song"]] == ["s2"]
+    params = calls[0][2]
+    assert params["userId"] == "u1"
+    assert params["Limit"] == "50"
+
+
+def test_get_similar_songs2_requires_id(client, jellyfin_session):
+    r = client.get("/rest/getSimilarSongs2.view")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+# ── scrobble / play tracking ─────────────────────────────────────────────────
+
+
+def test_scrobble_submission_true_marks_item_played(client, jellyfin_session, monkeypatch):
+    fake_client, calls = _fake_jf_client()
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/scrobble.view?id=song-1&submission=true")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "ok"
+    # DELETE-then-POST — /PlayedItems only bumps PlayCount/LastPlayedDate on
+    # the false→true transition (confirmed against a real server), so a
+    # replay of an already-played track needs the DELETE first to force
+    # that transition again; see scrobble()'s comment.
+    assert len(calls) == 2
+    method, url, _params, _json = calls[0]
+    assert method == "DELETE"
+    assert url.endswith("/Users/u1/PlayedItems/song-1")
+    method, url, _params, _json = calls[1]
+    assert method == "POST"
+    assert url.endswith("/Users/u1/PlayedItems/song-1")
+
+
+def test_scrobble_submission_false_is_a_noop(client, jellyfin_session, monkeypatch):
+    fake_client, calls = _fake_jf_client()
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/scrobble.view?id=song-1&submission=false")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "ok"
+    assert calls == []
+
+
+def test_scrobble_requires_id_on_submission(client, jellyfin_session):
+    r = client.get("/rest/scrobble.view?submission=true")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "failed"
+
+
 # ── Binary passthrough (getCoverArt.view / stream.view) ─────────────────────
 
 

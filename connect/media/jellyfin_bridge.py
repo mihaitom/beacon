@@ -550,6 +550,57 @@ async def delete_playlist(params: dict, media: JellyfinClient) -> dict:
     return {}
 
 
+# ── Track/Artist Radio + play tracking ───────────────────────────────────────
+
+
+async def get_similar_songs2(params: dict, media: JellyfinClient) -> dict:
+    # Jellyfin's InstantMix accepts a song/album/*or* artist id exactly like
+    # Subsonic's getSimilarSongs2.view does — verified directly against a
+    # real server (curl): all three id kinds return a real, fast (<0.5s)
+    # mix regardless of library size, unlike the Recursive=true bulk-scan
+    # endpoints elsewhere in this file.
+    item_id = params.get("id", "")
+    if not item_id:
+        raise ValueError("getSimilarSongs2.view requires id")
+    count = params.get("count", "50")
+    data = await _jf_get(
+        media, f"/Items/{item_id}/InstantMix", userId=media.user_id, Limit=count
+    )
+    return {"similarSongs2": {"song": _map_all(_map_song, data.get("Items", []))}}
+
+
+async def scrobble(params: dict, media: JellyfinClient) -> dict:
+    # submission=false is Subsonic's "now playing" notification — Beacon
+    # doesn't read back Jellyfin's own now-playing state anywhere, so
+    # there's no real endpoint worth calling for it; treated as a no-op
+    # success rather than wiring up Jellyfin's session-based
+    # /Sessions/Playing flow for no actual benefit.
+    if params.get("submission", "false").lower() != "true":
+        return {}
+    track_id = params.get("id", "")
+    if not track_id:
+        raise ValueError("scrobble.view requires id")
+    # POST /Users/{id}/PlayedItems/{id} sets Played=true and only bumps
+    # UserData.PlayCount on the actual false→true transition (confirmed
+    # directly against a real server, curl) — a boolean "mark as played"
+    # toggle, not an incrementing counter. Calling POST again on an
+    # already-played track is a silent no-op: PlayCount and LastPlayedDate
+    # both stay frozen, which is exactly why replays previously showed no
+    # change at all. DELETE first to force the transition back to false, so
+    # the following POST always re-triggers it — this reliably refreshes
+    # LastPlayedDate on every listen (confirmed), even though PlayCount
+    # itself still can't exceed 1 through this endpoint. A real accumulating
+    # per-play counter would need Jellyfin's session-based
+    # /Sessions/Playing + /Sessions/Playing/Stopped reporting instead, which
+    # — also confirmed directly against a real server — silently no-ops for
+    # a bare API-token caller like this backend: NowPlayingItem never
+    # updates without an actual live (WebSocket-backed) client session, so
+    # it's not a viable replacement here.
+    await _jf_request("DELETE", media, f"/Users/{media.user_id}/PlayedItems/{track_id}")
+    await _jf_request("POST", media, f"/Users/{media.user_id}/PlayedItems/{track_id}")
+    return {}
+
+
 # ── Internet radio stations (self-hosted — see core/radio_stations.py) ──────
 # Not a Jellyfin API translation like everything else above: Jellyfin has no
 # station-management concept at all, so these four read/write connect's own
@@ -615,6 +666,8 @@ _HANDLERS: dict[str, Callable[[dict, JellyfinClient], Awaitable[dict]]] = {
     "createPlaylist.view": create_playlist,
     "updatePlaylist.view": update_playlist,
     "deletePlaylist.view": delete_playlist,
+    "getSimilarSongs2.view": get_similar_songs2,
+    "scrobble.view": scrobble,
     "getInternetRadioStations.view": get_internet_radio_stations,
     "createInternetRadioStation.view": create_internet_radio_station,
     "updateInternetRadioStation.view": update_internet_radio_station,

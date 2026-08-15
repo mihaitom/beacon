@@ -22,11 +22,16 @@ export interface ServerCapabilities {
   /** Triggering a library rescan from Settings — Navidrome-specific
    * (startScan.view/getScanStatus.view), not bridged for Jellyfin. */
   libraryScan: boolean
-  /** Track/Artist Radio (getSimilarSongs2.view) — Navidrome's own
-   * recommendation engine, not bridged for Jellyfin. */
+  /** Track/Artist Radio — Navidrome's getSimilarSongs2.view is bridged to
+   * Jellyfin's InstantMix (see jellyfin_bridge.py's get_similar_songs2),
+   * true for both server types. */
   trackRadio: boolean
-  /** The Stats/"Wrapped" page's playCount-based sections — not bridged for
-   * Jellyfin (see jellyfin_bridge.py's module docstring). */
+  /** The Stats/"Wrapped" page's playCount-based sections. Relies on
+   * scrobble.view actually reaching the server — bridged for Jellyfin via
+   * PlayedItems (see jellyfin_bridge.py's scrobble). Still shown for
+   * Jellyfin even though its playCount per track is effectively capped at
+   * 1 (played/unplayed, not a running count — see scrobble()'s comment):
+   * "played at all" is still meaningfully better than nothing. */
   playHistoryStats: boolean
 }
 
@@ -42,8 +47,8 @@ const JELLYFIN_CAPABILITIES: ServerCapabilities = {
   personalRating: false,
   internetRadio: true,
   libraryScan: false,
-  trackRadio: false,
-  playHistoryStats: false,
+  trackRadio: true,
+  playHistoryStats: true,
 }
 
 export function capabilitiesFor(serverType: string): ServerCapabilities {
