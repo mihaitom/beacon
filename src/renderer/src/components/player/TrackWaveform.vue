@@ -103,9 +103,7 @@ export default {
         // fires this fetch alongside a burst of other startup work
         // (library fetch, device discovery, the connect SSE stream, the
         // actual audio stream itself, ...), any of which could delay or
-        // trip up this one too (see waveform.ts's getWaveform(), which
-        // deliberately doesn't cache an empty result so retries here can
-        // actually succeed). Growing delay, bounded attempts — a track
+        // trip up this one too. Growing delay, bounded attempts — a track
         // that genuinely has no waveform shouldn't retry forever.
         const delay = 2000 * (attempt + 1)
         setTimeout(() => {

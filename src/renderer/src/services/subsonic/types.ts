@@ -1,5 +1,14 @@
 /** Raw Subsonic/OpenSubsonic JSON shapes (subset actually used by Beacon). */
 
+export interface RawReplayGain {
+  trackGain?: number
+  albumGain?: number
+  trackPeak?: number
+  albumPeak?: number
+  baseGain?: number
+  fallbackGain?: number
+}
+
 export interface RawSong {
   id: string
   title: string
@@ -18,6 +27,7 @@ export interface RawSong {
   playCount?: number
   suffix?: string
   bitRate?: number
+  replayGain?: RawReplayGain
 }
 
 export interface RawAlbum {

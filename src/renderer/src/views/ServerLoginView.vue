@@ -110,23 +110,13 @@
             <v-text-field
               v-model="password"
               :label="$t('auth.password')"
-              type="password"
+              :type="showPassword ? 'text' : 'password'"
+              :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
               variant="solo-filled"
               class="mb-2"
+              @click:append-inner="showPassword = !showPassword"
             />
           </template>
-
-          <v-expansion-panels variant="accordion" class="mb-4">
-            <v-expansion-panel :title="$t('auth.advanced')">
-              <template #text>
-                <v-text-field
-                  v-model="connectUrl"
-                  :label="$t('auth.connectBackendUrl')"
-                  variant="solo-filled"
-                />
-              </template>
-            </v-expansion-panel>
-          </v-expansion-panels>
 
           <v-alert v-if="authStore.loginError" type="error" variant="tonal" class="mb-4">
             {{ authStore.loginError }}
@@ -170,7 +160,7 @@ export default {
       serverUrl: '',
       username: '',
       password: '',
-      connectUrl: 'http://localhost:9181',
+      showPassword: false,
       submitting: false,
       // 'subsonic' or 'jellyfin' — passed to authStore.login() on submit().
       // Plex stays locked (see serverTypeOptions below), so this never
@@ -243,7 +233,6 @@ export default {
   async created() {
     this.serverUrl = this.authStore.serverUrl
     this.username = this.authStore.username
-    this.connectUrl = this.authStore.connectUrl
     await this.checkServerLock()
   },
   beforeUnmount() {
@@ -299,7 +288,6 @@ export default {
           serverUrl: this.serverUrl,
           username: this.username,
           password: this.password,
-          connectUrl: this.connectUrl,
           serverType: this.selectedServerType,
         })
         this.goToRedirect()
@@ -319,7 +307,6 @@ export default {
       try {
         const { code, secret } = await this.authStore.startJellyfinQuickConnect({
           serverUrl: this.serverUrl,
-          connectUrl: this.connectUrl,
         })
         this.quickConnectCode = code
         this.quickConnectSecret = secret

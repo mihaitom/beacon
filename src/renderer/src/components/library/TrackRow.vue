@@ -271,6 +271,10 @@ export default {
   cursor: default;
   border-radius: 4px;
   gap: 12px;
+  /* Otherwise a double-click to play (see @dblclick above) also selects
+   * the title/artist text underneath it, like any other double-click on
+   * plain text would. */
+  user-select: none;
 }
 
 .track-row:hover {

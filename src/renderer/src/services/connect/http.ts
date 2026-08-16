@@ -94,8 +94,17 @@ export async function fetchConnect<T>(
   if (!response.ok) {
     const text = await response.text()
     const detail = extractDetail(text)
+    // Always includes the actual URL hit — a bare "404" with an empty body
+    // and no `detail` (FastAPI's own 404s always carry a JSON `detail`)
+    // means the request never reached the connect backend's app at all —
+    // e.g. auth.apiUrl resolved to something else entirely (this app's own
+    // dev server, a stray reverse proxy, ...) rather than the backend
+    // rejecting a real, matched route. Seeing the URL turns "why a 404?"
+    // from a guessing game into an immediately obvious wrong-target bug.
     throw new ConnectApiError(
-      detail ? `Connect request failed: ${detail}` : `Connect request failed: ${response.status} ${text}`,
+      detail
+        ? `Connect request failed: ${detail}`
+        : `Connect request failed: ${response.status} ${text || '(empty response)'} — ${auth.apiUrl}${path}`,
       text,
     )
   }

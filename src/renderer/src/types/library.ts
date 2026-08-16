@@ -20,6 +20,16 @@ export interface Track {
   playCount: number
   format: string | null
   bitRate: number | null
+  /** ReplayGain dB values + true-peak (linear, 0–1) from the source, when
+   * present — null when the file/server has none at all. Peaks are used to
+   * clip the computed gain so a quiet, heavily-gained master can't push
+   * past 0dBFS and audibly distort. See utils/replayGain.ts. */
+  replayGain: {
+    trackGain?: number
+    albumGain?: number
+    trackPeak?: number
+    albumPeak?: number
+  } | null
 }
 
 export interface Album {

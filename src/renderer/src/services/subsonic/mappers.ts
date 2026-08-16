@@ -26,6 +26,14 @@ export function mapSong(raw: RawSong): Track {
     playCount: raw.playCount ?? 0,
     format: raw.suffix ?? null,
     bitRate: raw.bitRate ?? null,
+    replayGain: raw.replayGain
+      ? {
+          trackGain: raw.replayGain.trackGain,
+          albumGain: raw.replayGain.albumGain,
+          trackPeak: raw.replayGain.trackPeak,
+          albumPeak: raw.replayGain.albumPeak,
+        }
+      : null,
   }
 }
 

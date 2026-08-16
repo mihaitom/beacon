@@ -40,8 +40,6 @@ export default {
     serverLocked: 'Server: {url}',
     username: 'Benutzername',
     password: 'Passwort',
-    advanced: 'Erweitert',
-    connectBackendUrl: 'Connect-Backend-URL',
     login: 'Anmelden',
     quickConnectHint:
       'Fordere einen Code an und gib ihn auf einem anderen, bereits angemeldeten Gerät ein (oder in Jellyfins Weboberfläche unter Profil → Quick Connect), um dich hier anzumelden.',
@@ -170,16 +168,7 @@ export default {
   },
   settings: {
     title: 'Settings',
-    connection: 'Verbindung',
-    ffmpegFound: 'gefunden',
-    ffmpegMissing: 'fehlt',
-    healthLine: 'ffmpeg: {ffmpeg} · Navidrome konfiguriert: {navidrome}',
-    yes: 'ja',
-    no: 'nein',
-    internalUrlWarning:
-      'Das Connect-Backend braucht zusätzlich SERVER_INTERNAL_URL als Umgebungsvariable beim Start — das lässt sich nicht von hier aus konfigurieren, sonst funktioniert das Bibliotheks-Browsing über den Proxy nicht.',
-    changeConnectionHint:
-      'Server, Connect-Backend und Zugangsdaten werden beim Login festgelegt — für eine Änderung einfach ab- und mit den neuen Angaben wieder anmelden.',
+    account: 'Konto',
     logout: 'Abmelden',
     language: 'Sprache',
     libraryTitle: 'Bibliothek',
@@ -196,8 +185,28 @@ export default {
     refreshingLibraryWithTotal: 'Wird aktualisiert … ({loaded} / {total})',
     libraryRefreshed: 'Bibliothek aktualisiert — {count} Titel geladen.',
     refreshLibraryFailed: 'Bibliothek konnte nicht aktualisiert werden.',
+    storageTitle: 'Speicher',
+    clearCacheHint:
+      'Lokal zwischengespeicherte Bibliotheksdaten und Songtexte verwerfen — bei Bedarf wird alles beim nächsten Aufruf neu geladen. Löst keinen Bibliotheks-Scan aus.',
+    clearCache: 'Zwischenspeicher leeren',
+    cacheCleared: 'Zwischenspeicher geleert.',
+    resetAirplayHint:
+      'Gespeicherte AirPlay-Kopplungen (HomePod, Apple TV, …) vergessen — hilfreich, wenn sich ein Gerät nicht mehr verbinden lässt. Jedes Gerät muss danach neu gekoppelt werden.',
+    resetAirplay: 'AirPlay-Kopplungen zurücksetzen',
+    airplayReset: 'AirPlay-Kopplungen zurückgesetzt.',
+    airplayResetFailed: 'AirPlay-Kopplungen konnten nicht zurückgesetzt werden.',
+    playbackTitle: 'Wiedergabe',
+    replayGain: 'ReplayGain',
+    replayGainOff: 'Aus',
+    replayGainTrack: 'Titel',
+    replayGainAlbum: 'Album',
+    replayGainHint:
+      'Gleicht die Lautstärke unterschiedlich lauter Aufnahmen an — „Titel“ normalisiert jeden Song einzeln, „Album“ behält die Lautstärkeunterschiede innerhalb eines Albums bei. Gilt für lokale Wiedergabe und Casting; bei laufendem Casting wirkt eine Änderung erst ab dem nächsten Titel.',
     about: 'Über Beacon',
     whatsNew: 'Was ist neu?',
+    ffmpegFound: 'ffmpeg gefunden',
+    ffmpegMissing: 'ffmpeg fehlt — Casting funktioniert nicht ohne.',
+    version: 'Version {version}',
   },
   playlists: {
     title: 'Playlists',

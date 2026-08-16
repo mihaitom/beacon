@@ -2,6 +2,7 @@ import { join } from 'path';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { type ChildProcess, spawn } from 'child_process';
 import { randomBytes } from 'crypto';
+import { createServer } from 'net';
 import { BrowserWindow, app, ipcMain, safeStorage, shell } from 'electron';
 import { electronApp, is, optimizer } from '@electron-toolkit/utils';
 import { config as loadDotenv } from 'dotenv';
@@ -34,6 +35,14 @@ function createWindow(): void {
         show: false,
         webPreferences: {
             preload: join(__dirname, '../preload/index.mjs'),
+            // Electron's sandboxed preload loader can't run an ES module
+            // preload script (this one is .mjs — package.json's "type":
+            // "module" makes electron-vite build it that way) — contextBridge
+            // never fires, window.api/window.electron end up undefined, and
+            // nothing throws or logs anywhere visible. Standard electron-vite/
+            // electron-toolkit fix: disable the sandbox for this window so the
+            // preload's synchronous ESM import graph can actually execute.
+            sandbox: false,
         },
     });
 
@@ -126,13 +135,32 @@ ipcMain.handle('secure-storage:delete', (_event, key: string): void => {
 // such separately-started process to rely on, so Electron spawns the bundled
 // binary itself instead (see electron-builder.yml's `extraResources`, built
 // by `connect/packaging/build-binary.py`).
-const PACKAGED_CONNECT_PORT = 9181;
+//
+// The port is resolved fresh per launch via findFreePort() below (asking the
+// OS for one, rather than hardcoding 9181) so a second Beacon instance, or
+// anything else already bound to 9181, can't stop this one's bundled backend
+// from starting — nothing outside this process needs the port to be
+// predictable, since readConnectDefaults() is the only way the renderer ever
+// learns it.
+let packagedConnectPort = 9181;
 // Generated fresh per launch — unlike connect/.connect-token (used by the
 // dev flow, where the backend runs independently and needs a stable value
 // across restarts), a bundled/spawned backend only ever needs to agree with
 // *this* process, which already knows the value it generated.
 const packagedConnectToken = randomBytes(32).toString('hex');
 let connectProcess: ChildProcess | null = null;
+
+function findFreePort(): Promise<number> {
+    return new Promise((resolve, reject) => {
+        const srv = createServer();
+        srv.unref();
+        srv.on('error', reject);
+        srv.listen(0, '127.0.0.1', () => {
+            const { port } = srv.address() as { port: number };
+            srv.close(() => resolve(port));
+        });
+    });
+}
 
 function startConnectServer(): void {
     const binaryName = process.platform === 'win32' ? 'connect-server.exe' : 'connect-server';
@@ -146,7 +174,7 @@ function startConnectServer(): void {
         env: {
             ...process.env,
             CONNECT_TOKEN: packagedConnectToken,
-            PORT: String(PACKAGED_CONNECT_PORT),
+            PORT: String(packagedConnectPort),
             // Persistent AirPlay pairing credentials (see connect/delivery/
             // credentials.py) — userData survives app updates, unlike the
             // packaged binary's own resources folder, which gets replaced
@@ -203,7 +231,7 @@ function readConnectDefaults(): { connectToken: string; connectUrl: string } {
     if (app.isPackaged) {
         return {
             connectToken: packagedConnectToken,
-            connectUrl: `http://localhost:${PACKAGED_CONNECT_PORT}`,
+            connectUrl: `http://localhost:${packagedConnectPort}`,
         };
     }
 
@@ -244,14 +272,17 @@ function checkForUpdates(): void {
     });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
     electronApp.setAppUserModelId('com.beacon.app');
 
     app.on('browser-window-created', (_, window) => {
         optimizer.watchWindowShortcuts(window);
     });
 
-    if (app.isPackaged) startConnectServer();
+    if (app.isPackaged) {
+        packagedConnectPort = await findFreePort();
+        startConnectServer();
+    }
     createWindow();
     checkForUpdates();
 

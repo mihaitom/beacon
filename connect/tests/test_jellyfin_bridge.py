@@ -102,6 +102,32 @@ def test_map_song_omits_starred_when_not_favorite():
     assert "starred" not in song
 
 
+def test_map_song_replay_gain_from_normalization_gain():
+    item = {
+        "Id": "s",
+        "Name": "T",
+        "RunTimeTicks": 0,
+        "NormalizationGain": -3.5,
+        "AlbumNormalizationGain": -2.1,
+    }
+    song = jellyfin_bridge._map_song(item)
+    assert song["replayGain"] == {"trackGain": -3.5, "albumGain": -2.1}
+
+
+def test_map_song_replay_gain_falls_back_to_lufs():
+    # -18 LUFS reference target, same conversion as feishin-connect's
+    # jellyfin-normalize.ts — a file scanned at -20 LUFS reads as +2dB gain.
+    item = {"Id": "s", "Name": "T", "RunTimeTicks": 0, "LUFS": -20}
+    song = jellyfin_bridge._map_song(item)
+    assert song["replayGain"] == {"trackGain": 2}
+
+
+def test_map_song_omits_replay_gain_when_absent():
+    item = {"Id": "s", "Name": "T", "RunTimeTicks": 0}
+    song = jellyfin_bridge._map_song(item)
+    assert "replayGain" not in song
+
+
 def test_map_album_and_artist_favorite_presence():
     fav_album = jellyfin_bridge._map_album(
         {"Id": "a1", "Name": "Album", "UserData": {"IsFavorite": True}}
@@ -594,34 +620,39 @@ def test_get_similar_songs2_requires_id(client, jellyfin_session):
 # ── scrobble / play tracking ─────────────────────────────────────────────────
 
 
-def test_scrobble_submission_true_marks_item_played(client, jellyfin_session, monkeypatch):
-    fake_client, calls = _fake_jf_client()
+def test_scrobble_submission_true_reports_playback_stopped(client, jellyfin_session, monkeypatch):
+    fake_client, calls = _fake_jf_client({"/Users/u1/Items/song-1": {"RunTimeTicks": 1_800_000_000}})
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
     r = client.get("/rest/scrobble.view?id=song-1&submission=true")
     assert r.status_code == 200
     assert r.json()["subsonic-response"]["status"] == "ok"
-    # DELETE-then-POST — /PlayedItems only bumps PlayCount/LastPlayedDate on
-    # the false→true transition (confirmed against a real server), so a
-    # replay of an already-played track needs the DELETE first to force
-    # that transition again; see scrobble()'s comment.
-    assert len(calls) == 2
-    method, url, _params, _json = calls[0]
-    assert method == "DELETE"
-    assert url.endswith("/Users/u1/PlayedItems/song-1")
-    method, url, _params, _json = calls[1]
-    assert method == "POST"
-    assert url.endswith("/Users/u1/PlayedItems/song-1")
+    # Mirrors feishin-connect: submission=true reports Jellyfin's own
+    # session-based playback-stopped event, with PositionTicks set to the
+    # track's full duration (Subsonic gives no real position) so it reads
+    # as a completed listen — see scrobble()'s comment.
+    get_calls = [c for c in calls if c[0] == "GET"]
+    assert len(get_calls) == 1
+    assert get_calls[0][1].endswith("/Users/u1/Items/song-1")
+    post_calls = [c for c in calls if c[0] == "POST"]
+    assert len(post_calls) == 1
+    method, url, _params, json_body = post_calls[0]
+    assert url.endswith("/Sessions/Playing/Stopped")
+    assert json_body == {"ItemId": "song-1", "PositionTicks": 1_800_000_000, "IsPaused": True}
 
 
-def test_scrobble_submission_false_is_a_noop(client, jellyfin_session, monkeypatch):
+def test_scrobble_submission_false_reports_now_playing(client, jellyfin_session, monkeypatch):
     fake_client, calls = _fake_jf_client()
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
     r = client.get("/rest/scrobble.view?id=song-1&submission=false")
     assert r.status_code == 200
     assert r.json()["subsonic-response"]["status"] == "ok"
-    assert calls == []
+    assert len(calls) == 1
+    method, url, _params, json_body = calls[0]
+    assert method == "POST"
+    assert url.endswith("/Sessions/Playing")
+    assert json_body == {"ItemId": "song-1"}
 
 
 def test_scrobble_requires_id_on_submission(client, jellyfin_session):

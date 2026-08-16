@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { getAudioEngine } from '@/services/audioEngine'
+import { calculateReplayGain, type ReplayGainMode } from '@/services/replayGain'
 import { useLibraryStore } from './library'
 import { useConnectStore } from './connect'
 import * as connectPlayback from '@/services/connect/playback'
@@ -18,6 +19,7 @@ interface PlaybackState {
   volume: number
   shuffle: boolean
   repeatMode: RepeatMode
+  replayGainMode: ReplayGainMode
   radioStation: RadioStation | null
   initialized: boolean
   queueDrawerOpen: boolean
@@ -104,6 +106,7 @@ interface PersistedPlaybackState {
   shuffle: boolean
   repeatMode: RepeatMode
   volume: number
+  replayGainMode: ReplayGainMode
   localPosition: number
   wasPlaying: boolean
 }
@@ -170,6 +173,9 @@ export const usePlaybackStore = defineStore('playback', {
     volume: 1,
     shuffle: false,
     repeatMode: 'off',
+    // 'off' by default — ReplayGain changes playback volume, which
+    // shouldn't happen for existing users without them opting in first.
+    replayGainMode: 'off',
     radioStation: null,
     initialized: false,
     queueDrawerOpen: false,
@@ -189,6 +195,16 @@ export const usePlaybackStore = defineStore('playback', {
     },
     isCasting(): boolean {
       return useConnectStore().isActive
+    },
+    /** The linear ReplayGain multiplier for `currentTrack` under the user's
+     * replayGainMode — 1 (no change) once there's no current track (radio
+     * has no ReplayGain concept either way). Passed to
+     * AudioEngine.play()/load() for local playback, and as connect/playback.ts's
+     * `gain` option when starting/handing off a cast — same multiplier,
+     * different consumer (a Web Audio GainNode vs. ffmpeg's `volume` filter,
+     * see core/streamer.py). */
+    replayGainMultiplier(): number {
+      return this.currentTrack ? calculateReplayGain(this.currentTrack, this.replayGainMode) : 1
     },
   },
 
@@ -315,6 +331,8 @@ export const usePlaybackStore = defineStore('playback', {
       this.shuffle = saved.shuffle
       this.repeatMode = saved.repeatMode
       this.volume = saved.volume
+      // Falls back to 'off' for data saved before this field existed.
+      this.replayGainMode = saved.replayGainMode ?? 'off'
       this.localPosition = saved.localPosition
       restoredWasPlaying = saved.wasPlaying
     },
@@ -328,6 +346,7 @@ export const usePlaybackStore = defineStore('playback', {
         shuffle: this.shuffle,
         repeatMode: this.repeatMode,
         volume: this.volume,
+        replayGainMode: this.replayGainMode,
         localPosition: this.localPosition,
         // Not just this.isPlaying — resumeLocalPlayback() (the only reader
         // of this flag) uses it to decide whether to auto-play through the
@@ -379,11 +398,12 @@ export const usePlaybackStore = defineStore('playback', {
       const track = this.currentTrack
       if (!track) return
       const url = useLibraryStore().client().streamUrl(track.id)
+      const gain = this.replayGainMultiplier
       if (restoredWasPlaying) {
-        getAudioEngine().play(url, this.localPosition)
+        getAudioEngine().play(url, this.localPosition, gain)
         this.isPlaying = true
       } else {
-        getAudioEngine().load(url, this.localPosition)
+        getAudioEngine().load(url, this.localPosition, gain)
       }
     },
 
@@ -405,10 +425,11 @@ export const usePlaybackStore = defineStore('playback', {
       const track = this.currentTrack
       if (!track) return
       const url = useLibraryStore().client().streamUrl(track.id)
+      const gain = this.replayGainMultiplier
       if (this.isPlaying) {
-        getAudioEngine().play(url, this.localPosition)
+        getAudioEngine().play(url, this.localPosition, gain)
       } else {
-        getAudioEngine().load(url, this.localPosition)
+        getAudioEngine().load(url, this.localPosition, gain)
       }
     },
 
@@ -587,13 +608,17 @@ export const usePlaybackStore = defineStore('playback', {
       if (connect.isActive) {
         pendingLocalTrackChange = track.id
         try {
-          await connectPlayback.play(track.id, { targets: connect.activeTargets, startPosition })
+          await connectPlayback.play(track.id, {
+            targets: connect.activeTargets,
+            startPosition,
+            gain: this.replayGainMultiplier,
+          })
         } finally {
           if (pendingLocalTrackChange === track.id) pendingLocalTrackChange = null
         }
       } else {
         const url = useLibraryStore().client().streamUrl(track.id)
-        getAudioEngine().play(url, startPosition)
+        getAudioEngine().play(url, startPosition, this.replayGainMultiplier)
       }
       // A newer startCurrent() already took over while the above awaited —
       // applying isPlaying/scrobble here would be reporting "now playing"
@@ -714,6 +739,19 @@ export const usePlaybackStore = defineStore('playback', {
       getAudioEngine().setVolume(volume)
     },
 
+    /** Settings-driven — applies immediately to local playback (a live Web
+     * Audio GainNode, see AudioEngine.setReplayGain()), so switching modes
+     * doesn't need a skip to take effect there. Casting can't be updated
+     * live the same way — connect/playback.ts's `gain` is baked into
+     * ffmpeg's `volume` filter argument when the stream starts (see
+     * core/streamer.py), not a value the running stream can be told to
+     * change — so a mode switch while casting only takes effect from the
+     * next track start onward, same as any other cast-side setting would. */
+    setReplayGainMode(mode: ReplayGainMode): void {
+      this.replayGainMode = mode
+      if (!this.isCasting) getAudioEngine().setReplayGain(this.replayGainMultiplier)
+    },
+
     toggleShuffle(): void {
       this.shuffle = !this.shuffle
       const current = this.currentTrack
@@ -827,9 +865,10 @@ export const usePlaybackStore = defineStore('playback', {
       } else if (this.currentTrack) {
         const track = this.currentTrack
         const startPosition = this.localPosition
+        const gain = this.replayGainMultiplier
         const play = async (f: boolean) => {
           if (this.isPlaying) getAudioEngine().pause() // local pauses, connect takes over
-          await connectPlayback.play(track.id, { targets, startPosition, force: f })
+          await connectPlayback.play(track.id, { targets, startPosition, force: f, gain })
           this.isPlaying = true
         }
         if (force) await play(true)

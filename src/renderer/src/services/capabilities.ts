@@ -28,10 +28,9 @@ export interface ServerCapabilities {
   trackRadio: boolean
   /** The Stats/"Wrapped" page's playCount-based sections. Relies on
    * scrobble.view actually reaching the server — bridged for Jellyfin via
-   * PlayedItems (see jellyfin_bridge.py's scrobble). Still shown for
-   * Jellyfin even though its playCount per track is effectively capped at
-   * 1 (played/unplayed, not a running count — see scrobble()'s comment):
-   * "played at all" is still meaningfully better than nothing. */
+   * its session-based /Sessions/Playing + /Sessions/Playing/Stopped
+   * reporting (see jellyfin_bridge.py's scrobble), mirroring
+   * feishin-connect's approach for a real accumulating per-play count. */
   playHistoryStats: boolean
 }
 

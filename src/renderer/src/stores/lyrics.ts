@@ -103,6 +103,19 @@ function isExpiredNegative(entry: CachedNegative): boolean {
   return Date.now() - entry.cachedAt > NEGATIVE_TTL_MS
 }
 
+/** Called from SettingsView.vue's "clear caches" action. Only the fetched-
+ * lyrics cache — deliberately leaves OFFSETS_KEY (per-track sync-offset
+ * corrections, see readStoredOffset() below) alone, since that's the user's
+ * own manual work, not a re-fetchable cache. */
+export function clearLyricsCache(): void {
+  persistedCache = {}
+  try {
+    localStorage.removeItem(CACHE_KEY)
+  } catch {
+    // Nothing to clean up if storage isn't available in the first place.
+  }
+}
+
 const OFFSETS_KEY = 'beacon.lyricsOffsets'
 
 function readStoredOffset(trackId: string): number {

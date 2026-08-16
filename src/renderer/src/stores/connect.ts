@@ -88,6 +88,12 @@ export const useConnectStore = defineStore('connect', {
       try {
         await pending.retry()
         this.errors.message = null
+        // Without this, the device list still shows the pre-takeover
+        // owner/track until something else happens to trigger a refresh
+        // (opening the picker again, the next background rescan) — the
+        // whole point of a takeover is that it's now claimed by *this*
+        // session, so that should be reflected immediately.
+        await this.refreshDevices()
       } catch (error) {
         // CastTakeoverConfirmDialog.vue calls this from a bare @click with
         // no await/catch of its own, so this must handle its own failure —
@@ -167,6 +173,17 @@ export const useConnectStore = defineStore('connect', {
       await this.refreshDevices()
     },
 
+    /** Bulk counterpart to unpair() — used by SettingsView.vue's "reset
+     * AirPlay pairings" action. Refreshes first since nothing proactively
+     * loads `paired` before this or the device picker asks for it, so it
+     * could still be stale/empty at this point. */
+    async unpairAll(): Promise<void> {
+      await this.refreshPaired()
+      await Promise.all(this.paired.map((name) => apiUnpair(name)))
+      await this.refreshPaired()
+      await this.refreshDevices()
+    },
+
     subscribeEvents(): void {
       if (eventSource) return
       const auth = useAuthStore()
@@ -190,6 +207,21 @@ export const useConnectStore = defineStore('connect', {
       eventSource = null
       this.status = null
       this.connected = false
+    },
+
+    /** Called from authStore.logout() — App.vue's authenticated watcher
+     * already calls unsubscribeEvents() separately (clearing status/
+     * connected), but devices/paired/errors/pendingTakeover would otherwise
+     * linger from the just-ended session. Concretely: `devices` entries
+     * carry in_use_by_session_id from *this* session's own now-cleared
+     * authStore.sessionId — without a reset, a device this session was
+     * just casting to would misleadingly read as "claimed by someone
+     * else" (comparing against sessionId === '') until the next natural
+     * refresh. Doesn't stop an active cast — a physical speaker doesn't
+     * care which account is signed into this window, same reasoning as
+     * playbackStore.resetForLogout(). */
+    resetForLogout(): void {
+      this.$reset()
     },
   },
 })

@@ -9,6 +9,7 @@ import {
 } from '@/services/connect/jellyfin'
 import { clearPersistedPlayback, usePlaybackStore } from './playback'
 import { useLibraryStore } from './library'
+import { useConnectStore } from './connect'
 import { capabilitiesFor, type ServerCapabilities } from '@/services/capabilities'
 import type { HealthResponse } from '@/services/connect/types'
 
@@ -166,7 +167,6 @@ export const useAuthStore = defineStore('auth', {
       serverUrl: string
       username: string
       password: string
-      connectUrl?: string
       serverType?: 'subsonic' | 'jellyfin'
     }): Promise<void> {
       this.loginError = null
@@ -175,15 +175,6 @@ export const useAuthStore = defineStore('auth', {
       this.username = params.username
       this.password = params.password
       this.serverType = params.serverType ?? 'subsonic'
-      // Only meaningful in Electron — the web build's connectUrl/apiUrl are
-      // always injected above and never user-editable (there's only ever
-      // one possible backend: this same origin). ServerLoginView.vue's
-      // "Advanced" field exists for picking a remote/local backend, which
-      // only makes sense when there's no such same-origin default.
-      if (window.api && params.connectUrl) {
-        this.connectUrl = params.connectUrl.replace(/\/+$/, '')
-        this.apiUrl = this.connectUrl
-      }
       try {
         // A genuinely new login (form submission with a password) is the
         // only place the credential should be rebuilt — see
@@ -219,16 +210,11 @@ export const useAuthStore = defineStore('auth', {
      * point. */
     async startJellyfinQuickConnect(params: {
       serverUrl: string
-      connectUrl?: string
     }): Promise<{ code: string; secret: string }> {
       this.loginError = null
       await this.loadConnectDefaults()
       this.serverUrl = params.serverUrl.replace(/\/+$/, '')
       this.serverType = 'jellyfin'
-      if (window.api && params.connectUrl) {
-        this.connectUrl = params.connectUrl.replace(/\/+$/, '')
-        this.apiUrl = this.connectUrl
-      }
       const { code, secret } = await postJellyfinQuickConnectInitiate({ url: this.serverUrl })
       return { code, secret }
     },
@@ -375,6 +361,7 @@ export const useAuthStore = defineStore('auth', {
       clearPersistedPlayback()
       useLibraryStore().resetForLogout()
       usePlaybackStore().resetForLogout()
+      useConnectStore().resetForLogout()
       this.authenticated = false
       this.password = ''
       this.userId = ''

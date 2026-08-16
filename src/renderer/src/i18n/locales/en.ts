@@ -42,8 +42,6 @@ export default {
     serverLocked: 'Server: {url}',
     username: 'Username',
     password: 'Password',
-    advanced: 'Advanced',
-    connectBackendUrl: 'Connect backend URL',
     login: 'Log in',
     quickConnectHint:
       "Request a code and enter it on another device you're already signed in on (or in Jellyfin's own web UI, under Profile → Quick Connect) to log in here.",
@@ -172,16 +170,7 @@ export default {
   },
   settings: {
     title: 'Settings',
-    connection: 'Connection',
-    ffmpegFound: 'found',
-    ffmpegMissing: 'missing',
-    healthLine: 'ffmpeg: {ffmpeg} · Navidrome configured: {navidrome}',
-    yes: 'yes',
-    no: 'no',
-    internalUrlWarning:
-      "The Connect backend also needs SERVER_INTERNAL_URL as an environment variable at startup — this can't be configured from here, otherwise library browsing through the proxy won't work.",
-    changeConnectionHint:
-      'Server, Connect backend, and credentials are all set at login — to change any of them, log out and sign back in with the new details.',
+    account: 'Account',
     logout: 'Log out',
     language: 'Language',
     libraryTitle: 'Library',
@@ -196,8 +185,28 @@ export default {
     refreshingLibraryWithTotal: 'Refreshing … ({loaded} / {total})',
     libraryRefreshed: 'Library refreshed — {count} tracks loaded.',
     refreshLibraryFailed: "Couldn't refresh the library.",
+    storageTitle: 'Storage',
+    clearCacheHint:
+      "Discard locally cached library data and lyrics — everything reloads fresh the next time it's needed. Doesn't trigger a library scan.",
+    clearCache: 'Clear cache',
+    cacheCleared: 'Cache cleared.',
+    resetAirplayHint:
+      'Forget saved AirPlay pairings (HomePod, Apple TV, …) — useful when a device stops connecting. Each device needs pairing again afterward.',
+    resetAirplay: 'Reset AirPlay pairings',
+    airplayReset: 'AirPlay pairings reset.',
+    airplayResetFailed: "Couldn't reset AirPlay pairings.",
+    playbackTitle: 'Playback',
+    replayGain: 'ReplayGain',
+    replayGainOff: 'Off',
+    replayGainTrack: 'Track',
+    replayGainAlbum: 'Album',
+    replayGainHint:
+      'Evens out the volume of differently mastered recordings — "Track" normalizes each song individually, "Album" preserves the volume differences within an album. Applies to both local playback and casting; while already casting, a change only takes effect from the next track.',
     about: 'About Beacon',
     whatsNew: "What's new?",
+    ffmpegFound: 'ffmpeg found',
+    ffmpegMissing: "ffmpeg missing — casting won't work without it.",
+    version: 'Version {version}',
   },
   playlists: {
     title: 'Playlists',

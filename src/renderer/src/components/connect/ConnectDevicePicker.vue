@@ -115,6 +115,7 @@ export default {
       connecting: false,
       pairingOpen: false,
       pairingDeviceName: '',
+      devicesPollTimer: null as ReturnType<typeof setInterval> | null,
     }
   },
   computed: {
@@ -146,6 +147,19 @@ export default {
     allDevices(): DeviceEntry[] {
       return this.deviceGroups.flatMap((group) => group.entries)
     },
+  },
+  mounted() {
+    // Keeps in_use_by_name/in_use_by_track fresh while the picker is open —
+    // someone else's cast session changing tracks, or a device becoming
+    // free again, should show up without the user having to hit "Scan
+    // again". Cheap: this omits fresh=true, so the backend just re-derives
+    // claim/track annotations for the already-cached device list (see
+    // routes/discovery.py's _annotate_claims()) rather than doing a real
+    // mDNS/SSDP rescan — same 4s cadence as DeviceListItem.vue's volume poll.
+    this.devicesPollTimer = setInterval(() => this.connectStore.refreshDevices(), 4000)
+  },
+  beforeUnmount() {
+    if (this.devicesPollTimer) clearInterval(this.devicesPollTimer)
   },
   methods: {
     toggleSelected(entry: DeviceEntry, value: boolean) {

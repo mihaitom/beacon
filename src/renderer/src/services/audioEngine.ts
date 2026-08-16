@@ -7,6 +7,7 @@ export class AudioEngine {
   private readonly audio: HTMLAudioElement
   private audioContext: AudioContext | null = null
   private analyserNode: AnalyserNode | null = null
+  private gainNode: GainNode | null = null
 
   onTimeUpdate: ((position: number) => void) | null = null
   onEnded: (() => void) | null = null
@@ -56,15 +57,31 @@ export class AudioEngine {
 
   /** Loads `url` at `startPosition` without starting playback — used to
    * restore a paused track after a reload, so hitting play afterwards has
-   * something to resume rather than an empty element. */
-  load(url: string, startPosition = 0): void {
+   * something to resume rather than an empty element. `gain` is the linear
+   * ReplayGain multiplier for this track (1 = no change, see
+   * services/replayGain.ts) — defaults to 1 so callers with nothing to
+   * normalize (radio streams) don't need to pass it explicitly, and so it's
+   * always set explicitly rather than silently carrying over the previous
+   * track's value. */
+  load(url: string, startPosition = 0, gain = 1): void {
     this.audio.src = url
     this.audio.currentTime = startPosition
+    this.setReplayGain(gain)
   }
 
-  play(url: string, startPosition = 0): void {
-    this.load(url, startPosition)
+  play(url: string, startPosition = 0, gain = 1): void {
+    this.load(url, startPosition, gain)
     void this.audio.play()
+  }
+
+  /** Sets the Web Audio gain applied on top of the element's own volume
+   * (see setVolume()) — the two multiply together, exactly matching
+   * ReplayGain's "gain on top of whatever level you already set" semantics.
+   * A no-op if setupAnalyser() below failed (see its comment): losing
+   * ReplayGain then is an acceptable degradation, same as losing the
+   * visualizer. */
+  setReplayGain(multiplier: number): void {
+    if (this.gainNode) this.gainNode.gain.value = multiplier
   }
 
   pause(): void {
@@ -105,8 +122,13 @@ export class AudioEngine {
     this.analyserNode = this.audioContext.createAnalyser()
     this.analyserNode.fftSize = 128
     this.analyserNode.smoothingTimeConstant = 0.8
+    // Tapped post-analyser so the visualizer always reflects the track's
+    // raw energy, unaffected by whatever ReplayGain happens to be doing to
+    // the actual output level.
+    this.gainNode = this.audioContext.createGain()
     source.connect(this.analyserNode)
-    this.analyserNode.connect(this.audioContext.destination)
+    this.analyserNode.connect(this.gainNode)
+    this.gainNode.connect(this.audioContext.destination)
   }
 
   /** Used by the fullscreen visualizer (AudioVisualizer.vue). Throws if the

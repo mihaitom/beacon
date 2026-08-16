@@ -134,7 +134,35 @@ def _map_song(item: dict) -> dict:
     # — omitted entirely when not favorited, never sent as false.
     if _is_favorite(item):
         song["starred"] = "true"
+    replay_gain = _map_replay_gain(item)
+    if replay_gain:
+        song["replayGain"] = replay_gain
     return song
+
+
+def _map_replay_gain(item: dict) -> dict | None:
+    """Jellyfin exposes loudness-normalization data directly on the item
+    (NormalizationGain/AlbumNormalizationGain, dB — populated from the
+    file's own embedded ReplayGain tags when present) rather than nesting it
+    the way OpenSubsonic's `replayGain` object does — reshaped into that
+    same {trackGain, albumGain} shape here so the frontend only ever deals
+    with one format. LUFS is Jellyfin's own loudness-scan fallback for files
+    with no embedded ReplayGain tag, converted to a dB gain against
+    ReplayGain's -18 LUFS reference target — same mapping feishin-connect
+    uses (~/code/feishin-connect's jellyfin-normalize.ts), the client this
+    bridge's Jellyfin support is otherwise modeled on."""
+    track_gain = item.get("NormalizationGain")
+    if track_gain is None and item.get("LUFS") is not None:
+        track_gain = -18 - item["LUFS"]
+    album_gain = item.get("AlbumNormalizationGain")
+    if track_gain is None and album_gain is None:
+        return None
+    gain: dict = {}
+    if track_gain is not None:
+        gain["trackGain"] = track_gain
+    if album_gain is not None:
+        gain["albumGain"] = album_gain
+    return gain
 
 
 def _map_album(item: dict) -> dict:
@@ -592,36 +620,47 @@ async def get_similar_songs2(params: dict, media: JellyfinClient) -> dict:
 
 
 async def scrobble(params: dict, media: JellyfinClient) -> dict:
-    # submission=false is Subsonic's "now playing" notification — Beacon
-    # doesn't read back Jellyfin's own now-playing state anywhere, so
-    # there's no real endpoint worth calling for it; treated as a no-op
-    # success rather than wiring up Jellyfin's session-based
-    # /Sessions/Playing flow for no actual benefit.
-    if params.get("submission", "false").lower() != "true":
-        return {}
     track_id = params.get("id", "")
     if not track_id:
         raise ValueError("scrobble.view requires id")
-    # POST /Users/{id}/PlayedItems/{id} sets Played=true and only bumps
-    # UserData.PlayCount on the actual false→true transition (confirmed
-    # directly against a real server, curl) — a boolean "mark as played"
-    # toggle, not an incrementing counter. Calling POST again on an
-    # already-played track is a silent no-op: PlayCount and LastPlayedDate
-    # both stay frozen, which is exactly why replays previously showed no
-    # change at all. DELETE first to force the transition back to false, so
-    # the following POST always re-triggers it — this reliably refreshes
-    # LastPlayedDate on every listen (confirmed), even though PlayCount
-    # itself still can't exceed 1 through this endpoint. A real accumulating
-    # per-play counter would need Jellyfin's session-based
-    # /Sessions/Playing + /Sessions/Playing/Stopped reporting instead, which
-    # — also confirmed directly against a real server — silently no-ops for
-    # a bare API-token caller like this backend: NowPlayingItem never
-    # updates without an actual live (WebSocket-backed) client session, so
-    # it's not a viable replacement here.
+
+    # Mirrors feishin-connect's jellyfin-controller.ts scrobble handler
+    # (~/code/feishin-connect), a shipping client that gets real
+    # per-play PlayCount increments out of Jellyfin via this exact
+    # two-call shape. The earlier attempt here only ever POSTed
+    # /Sessions/Playing/Stopped in isolation, with no preceding
+    # /Sessions/Playing to seed the session's NowPlayingItem — that's
+    # almost certainly why it looked like a silent no-op. Subsonic's own
+    # submission=false/true pair lines up with Jellyfin's start/stop pair
+    # directly, so no artificial "now playing" phase needs inventing.
+    if params.get("submission", "false").lower() != "true":
+        # submission=false: Subsonic's "now playing" notification, fired
+        # once at playback start. POST /Sessions/Playing sets
+        # NowPlayingItem on this device's session so the later Stopped
+        # call below has something to transition from.
+        await _jf_request(
+            "POST",
+            media,
+            "/Sessions/Playing",
+            json_body={"ItemId": track_id},
+        )
+        return {}
+
+    # submission=true: fired once the frontend's own scrobble threshold
+    # (checkScrobbleThreshold() in stores/playback.ts — 50% of duration,
+    # capped at 240s) has been crossed. Subsonic gives no real playback
+    # position, so PositionTicks is set to the track's full duration —
+    # from Jellyfin's perspective this reads the same as a listen that
+    # ran to completion, which is enough to cross its own play/no-play
+    # ratio check and bump UserData.PlayCount + LastPlayedDate.
+    item = await _jf_get(media, f"/Users/{media.user_id}/Items/{_quote_id(track_id)}")
+    position_ticks = item.get("RunTimeTicks") or 0
     await _jf_request(
-        "DELETE", media, f"/Users/{media.user_id}/PlayedItems/{_quote_id(track_id)}"
+        "POST",
+        media,
+        "/Sessions/Playing/Stopped",
+        json_body={"ItemId": track_id, "PositionTicks": position_ticks, "IsPaused": True},
     )
-    await _jf_request("POST", media, f"/Users/{media.user_id}/PlayedItems/{_quote_id(track_id)}")
     return {}
 
 

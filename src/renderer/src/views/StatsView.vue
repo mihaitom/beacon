@@ -177,15 +177,9 @@ export default {
     // not a log of actual listens (a play counts once past the scrobble
     // threshold — see connect's checkScrobbleThreshold() — not necessarily start to
     // finish), but it's the closest thing to "hours listened" the data
-    // actually supports. For Jellyfin specifically, playCount per track is
-    // effectively capped at 1 (played / not played) rather than a true
-    // running count — confirmed directly against a real server that
-    // Jellyfin's only reliably-callable play-tracking endpoint
-    // (/Users/{id}/PlayedItems/{id}) is a played/unplayed toggle, not an
-    // incrementing counter; a real per-play count would need Jellyfin's
-    // session-based /Sessions/Playing reporting, which requires a live
-    // client session this headless backend doesn't maintain — see
-    // scrobble()'s comment.
+    // actually supports. For Jellyfin specifically, playCount is reported
+    // via its session-based /Sessions/Playing + /Sessions/Playing/Stopped
+    // flow (mirroring feishin-connect) — see scrobble()'s comment.
     listeningTime(): number {
       return this.tracks.reduce((sum, t) => sum + (t.duration || 0) * (t.playCount || 0), 0)
     },
