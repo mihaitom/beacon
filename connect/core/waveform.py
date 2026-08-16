@@ -106,6 +106,16 @@ async def get_waveform(track_id: str, url: str) -> list[float]:
     except asyncio.TimeoutError:
         logger.warning(f"[waveform] Decode timed out for {track_id}")
         proc.kill()
+        # communicate()'s own reader tasks were cancelled mid-read by the
+        # timeout above — without this, the process can linger as a zombie
+        # and its stdout/stderr pipes stay open until GC'd, since nothing
+        # else drains or reaps it. Bounded wait: kill() should make this
+        # resolve almost immediately, but this must never itself hang the
+        # request if it somehow doesn't.
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.warning(f"[waveform] Process for {track_id} didn't exit after kill()")
         return []
 
     if proc.returncode != 0:

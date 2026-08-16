@@ -28,6 +28,7 @@ safety net, not the primary mechanism.
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from urllib.parse import quote
 
 import httpx
 from fastapi import Request
@@ -204,6 +205,19 @@ def _map_all(mapper: Callable[[dict], dict], items: list[dict]) -> list[dict]:
 # ── Jellyfin HTTP helper ─────────────────────────────────────────────────────
 
 
+def _quote_id(value: str) -> str:
+    """Percent-encodes an id (song/album/artist/playlist id, or any other
+    client-supplied value) before it's spliced into a Jellyfin URL *path*
+    segment via an f-string below. Every id handled here ultimately comes
+    from the incoming Subsonic-shaped request (params["id"] and friends),
+    unvalidated — without this, a value like "../Users" would let a caller
+    holding only the shared CONNECT_TOKEN reach arbitrary Jellyfin API paths
+    outside the _HANDLERS whitelist this module exists to enforce. `params`
+    passed separately to _jf_request()/_jf_get() don't need this — httpx
+    encodes those itself."""
+    return quote(str(value), safe="")
+
+
 async def _jf_request(
     method: str,
     media: JellyfinClient,
@@ -281,7 +295,7 @@ async def get_album_list2(params: dict, media: JellyfinClient) -> dict:
 
 async def get_album(params: dict, media: JellyfinClient) -> dict:
     album_id = params["id"]
-    item = await _jf_get(media, f"/Users/{media.user_id}/Items/{album_id}")
+    item = await _jf_get(media, f"/Users/{media.user_id}/Items/{_quote_id(album_id)}")
     songs = await _jf_get(
         media,
         f"/Users/{media.user_id}/Items",
@@ -296,7 +310,7 @@ async def get_album(params: dict, media: JellyfinClient) -> dict:
 
 
 async def get_song(params: dict, media: JellyfinClient) -> dict:
-    item = await _jf_get(media, f"/Users/{media.user_id}/Items/{params['id']}")
+    item = await _jf_get(media, f"/Users/{media.user_id}/Items/{_quote_id(params['id'])}")
     return {"song": _map_song(item)}
 
 
@@ -321,7 +335,7 @@ async def get_artists(_params: dict, media: JellyfinClient) -> dict:
 
 async def get_artist(params: dict, media: JellyfinClient) -> dict:
     artist_id = params["id"]
-    item = await _jf_get(media, f"/Users/{media.user_id}/Items/{artist_id}")
+    item = await _jf_get(media, f"/Users/{media.user_id}/Items/{_quote_id(artist_id)}")
     albums = await _jf_get(
         media,
         f"/Users/{media.user_id}/Items",
@@ -456,14 +470,18 @@ def _favorite_item_id(params: dict) -> str:
 
 async def star(params: dict, media: JellyfinClient) -> dict:
     await _jf_request(
-        "POST", media, f"/Users/{media.user_id}/FavoriteItems/{_favorite_item_id(params)}"
+        "POST",
+        media,
+        f"/Users/{media.user_id}/FavoriteItems/{_quote_id(_favorite_item_id(params))}",
     )
     return {}
 
 
 async def unstar(params: dict, media: JellyfinClient) -> dict:
     await _jf_request(
-        "DELETE", media, f"/Users/{media.user_id}/FavoriteItems/{_favorite_item_id(params)}"
+        "DELETE",
+        media,
+        f"/Users/{media.user_id}/FavoriteItems/{_quote_id(_favorite_item_id(params))}",
     )
     return {}
 
@@ -480,8 +498,10 @@ async def get_playlists(_params: dict, media: JellyfinClient) -> dict:
 
 async def get_playlist(params: dict, media: JellyfinClient) -> dict:
     playlist_id = params["id"]
-    item = await _jf_get(media, f"/Users/{media.user_id}/Items/{playlist_id}")
-    songs = await _jf_get(media, f"/Playlists/{playlist_id}/Items", userId=media.user_id)
+    item = await _jf_get(media, f"/Users/{media.user_id}/Items/{_quote_id(playlist_id)}")
+    songs = await _jf_get(
+        media, f"/Playlists/{_quote_id(playlist_id)}/Items", userId=media.user_id
+    )
     playlist = _map_playlist(item)
     playlist["entry"] = _map_all(_map_song, songs.get("Items", []))
     return {"playlist": playlist}
@@ -500,7 +520,7 @@ async def _add_to_playlist(playlist_id: str, song_ids: list[str], media: Jellyfi
     await _jf_request(
         "POST",
         media,
-        f"/Playlists/{playlist_id}/Items",
+        f"/Playlists/{_quote_id(playlist_id)}/Items",
         params={"Ids": ",".join(song_ids), "UserId": media.user_id},
     )
 
@@ -513,7 +533,9 @@ async def _remove_from_playlist(
     # obtainable only by listing the playlist first — a narrow race window
     # exists if the playlist changes between this list and the delete below,
     # same as any read-then-act sequence without a lock.
-    items = await _jf_get(media, f"/Playlists/{playlist_id}/Items", userId=media.user_id)
+    items = await _jf_get(
+        media, f"/Playlists/{_quote_id(playlist_id)}/Items", userId=media.user_id
+    )
     entries = items.get("Items", [])
     entry_ids = [
         entries[i]["PlaylistItemId"]
@@ -524,7 +546,7 @@ async def _remove_from_playlist(
         await _jf_request(
             "DELETE",
             media,
-            f"/Playlists/{playlist_id}/Items",
+            f"/Playlists/{_quote_id(playlist_id)}/Items",
             params={"EntryIds": ",".join(entry_ids)},
         )
 
@@ -546,7 +568,7 @@ async def update_playlist(params, media: JellyfinClient) -> dict:
 
 
 async def delete_playlist(params: dict, media: JellyfinClient) -> dict:
-    await _jf_request("DELETE", media, f"/Items/{params['id']}")
+    await _jf_request("DELETE", media, f"/Items/{_quote_id(params['id'])}")
     return {}
 
 
@@ -564,7 +586,7 @@ async def get_similar_songs2(params: dict, media: JellyfinClient) -> dict:
         raise ValueError("getSimilarSongs2.view requires id")
     count = params.get("count", "50")
     data = await _jf_get(
-        media, f"/Items/{item_id}/InstantMix", userId=media.user_id, Limit=count
+        media, f"/Items/{_quote_id(item_id)}/InstantMix", userId=media.user_id, Limit=count
     )
     return {"similarSongs2": {"song": _map_all(_map_song, data.get("Items", []))}}
 
@@ -596,8 +618,10 @@ async def scrobble(params: dict, media: JellyfinClient) -> dict:
     # a bare API-token caller like this backend: NowPlayingItem never
     # updates without an actual live (WebSocket-backed) client session, so
     # it's not a viable replacement here.
-    await _jf_request("DELETE", media, f"/Users/{media.user_id}/PlayedItems/{track_id}")
-    await _jf_request("POST", media, f"/Users/{media.user_id}/PlayedItems/{track_id}")
+    await _jf_request(
+        "DELETE", media, f"/Users/{media.user_id}/PlayedItems/{_quote_id(track_id)}"
+    )
+    await _jf_request("POST", media, f"/Users/{media.user_id}/PlayedItems/{_quote_id(track_id)}")
     return {}
 
 
@@ -722,7 +746,10 @@ async def _handle_binary(
         if not cover_id:
             return _subsonic_error(70, "No cover art id supplied")
         size = params.get("size", "300")
-        url = f"{media.internal_url}/Items/{cover_id}/Images/Primary?maxHeight={size}"
+        url = (
+            f"{media.internal_url}/Items/{_quote_id(cover_id)}/Images/Primary"
+            f"?maxHeight={quote(size, safe='')}"
+        )
     else:  # stream.view
         track_id = params.get("id", "")
         if not track_id:
@@ -738,7 +765,16 @@ async def handle(
     path: str, request: Request, media: JellyfinClient
 ) -> JSONResponse | StreamingResponse:
     if path in _BINARY_PATHS:
-        return await _handle_binary(path, request, media)
+        try:
+            return await _handle_binary(path, request, media)
+        except Exception as e:
+            # Unlike every JSON handler below, _handle_binary()/_stream_binary()
+            # had no try/except of their own — a Jellyfin connectivity blip
+            # (server restart, timeout) mid cover-art-load or mid-stream used
+            # to propagate as a raw FastAPI 500 with a stack trace instead of
+            # degrading like every other endpoint here.
+            logger.warning(f"[jellyfin-bridge] {path} failed: {e}")
+            return _subsonic_error(0, str(e))
 
     handler = _HANDLERS.get(path)
     if handler is None:

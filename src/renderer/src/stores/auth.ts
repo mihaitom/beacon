@@ -8,7 +8,7 @@ import {
   postJellyfinQuickConnectStatus,
 } from '@/services/connect/jellyfin'
 import { clearPersistedPlayback, usePlaybackStore } from './playback'
-import { clearLibraryCache } from './library'
+import { useLibraryStore } from './library'
 import { capabilitiesFor, type ServerCapabilities } from '@/services/capabilities'
 import type { HealthResponse } from '@/services/connect/types'
 
@@ -373,7 +373,7 @@ export const useAuthStore = defineStore('auth', {
     async logout(): Promise<void> {
       await secureStorage.delete(STORAGE_KEY)
       clearPersistedPlayback()
-      clearLibraryCache()
+      useLibraryStore().resetForLogout()
       usePlaybackStore().resetForLogout()
       this.authenticated = false
       this.password = ''

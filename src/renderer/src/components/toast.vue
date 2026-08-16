@@ -1,24 +1,22 @@
 <template>
-  <transition-group name="fade" tag="div" class="toast-stack">
+  <transition-group name="toast-fade" tag="div" class="toast-stack">
     <div
       v-for="(toast, index) in toasts"
       :key="toast.id"
       class="toast"
       :class="[toast.level, { clickable: toast.clickable }]"
-      :style="{ zIndex: 1000 + index }"
+      :style="{ zIndex: 9999 + index }"
       @click="handleToastClick(toast)"
     >
-      <div class="toast-icon-container">
-        <v-icon class="icon" left>{{ getIcon(toast.level) }}</v-icon>
+      <div class="toast-icon">
+        <v-icon size="16">{{ getIcon(toast.level) }}</v-icon>
       </div>
-      <div class="text-container">
-        <div class="title">{{ toast.title }}</div>
-        <div class="text">
-          {{ toast.message }}
-        </div>
+      <div class="toast-body">
+        <div class="toast-title">{{ toast.title }}</div>
+        <div class="toast-message">{{ toast.message }}</div>
       </div>
-      <button class="toast-icon-container-close" @click="removeToast(toast.id)">
-        <v-icon class="icon" left>mdi-close</v-icon>
+      <button class="toast-close" @click.stop="removeToast(toast.id)">
+        <v-icon size="14">mdi-close</v-icon>
       </button>
     </div>
   </transition-group>
@@ -109,148 +107,157 @@ export default defineComponent({
 </script>
 
 <style scoped>
+/* Fixed to the viewport, centered above the transport bar — same "float
+ * above PlayerBar" convention as TrackList.vue's .selection-bar (88px
+ * PlayerBar height + 16px gap = 104px), and the same z-index that
+ * comment references back to this file, so the two never fight for
+ * stacking order if they're ever both on screen. */
 .toast-stack {
   position: fixed;
-  width: 500px;
-  bottom: 16px;
-  left: calc(50% - 250px);
+  width: min(360px, calc(100vw - 32px));
+  bottom: 104px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.625rem;
   z-index: 9999;
 }
 
 .toast {
   position: relative;
   display: flex;
-  align-items: center;
-  color: white;
-  padding: 14px 16px;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 0.75rem 0.75rem 1rem;
   border-radius: 12px;
-  min-width: 320px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
-  top: 0;
-  transform: scale(1);
-  border-left: 5px solid rgba(255, 255, 255, 0.35);
-  backdrop-filter: blur(8px);
+  background: #1a1d27;
+  box-shadow:
+    inset 0 0 0 1px var(--beacon-hairline),
+    0 12px 28px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(10px);
+}
+
+/* Same "lit edge" language as .section-title/.beacon-rail's active
+ * indicator elsewhere in the app — a thin glowing bar in the level's own
+ * color reads as this app's version of a colored toast, instead of the
+ * generic filled-gradient-card Material pattern. */
+.toast::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--toast-accent);
+  box-shadow: 0 0 8px 1px color-mix(in srgb, var(--toast-accent) 60%, transparent);
+}
+
+.toast.information {
+  --toast-accent: rgb(var(--v-theme-info));
+}
+
+.toast.success {
+  --toast-accent: rgb(var(--v-theme-success));
+}
+
+.toast.error {
+  --toast-accent: rgb(var(--v-theme-error));
 }
 
 .toast.clickable {
   cursor: pointer;
   transition:
-    transform 0.2s ease-in-out,
-    box-shadow 0.2s ease;
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .toast.clickable:hover {
-  transform: translateY(-2px) scale(1.01);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 0 0 1px var(--toast-accent),
+    0 16px 32px rgba(0, 0, 0, 0.45);
 }
 
-.toast.information {
-  background: linear-gradient(
-    135deg,
-    rgb(var(--v-theme-info)),
-    color-mix(in srgb, rgb(var(--v-theme-info)) 80%, black)
-  );
-}
-
-.toast.error {
-  background: linear-gradient(
-    135deg,
-    rgb(var(--v-theme-error)),
-    color-mix(in srgb, rgb(var(--v-theme-error)) 80%, black)
-  );
-}
-
-.toast.success {
-  background: linear-gradient(
-    135deg,
-    rgb(var(--v-theme-success)),
-    color-mix(in srgb, rgb(var(--v-theme-success)) 80%, black)
-  );
-}
-
-.toast-icon-container {
+.toast-icon {
+  flex: none;
   display: flex;
-  text-align: center;
   align-items: center;
   justify-content: center;
-  font-size: 45px;
-  width: 60px;
-  color: white;
+  width: 28px;
+  height: 28px;
+  margin-top: 1px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--toast-accent) 16%, #1a1d27);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--toast-accent) 30%, transparent);
+  color: var(--toast-accent);
 }
 
-.text-container {
-  display: flex;
-  flex-direction: column;
-  width: 350px;
-  padding: 5px 15px;
-  max-height: min(min-content, 200px);
+.toast-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-top: 1px;
 }
 
-.title {
-  font-size: 20px;
-  font-weight: bold;
-  padding-bottom: 4px;
-  color: white;
+.toast-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: rgb(var(--v-theme-on-surface));
 }
 
-.text {
-  font-size: 16px;
-  font-weight: normal;
-  width: 100%;
+.toast-message {
+  margin-top: 2px;
+  font-size: 0.8rem;
+  line-height: 1.45;
   word-break: break-word;
-  color: white;
+  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 68%, transparent);
 }
 
-.toast-icon-container-close {
-  text-align: center;
+.toast-close {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
-  width: 50px;
-  transition: scale 0.3s ease-in-out;
-  color: white;
-  background-color: transparent;
+  width: 24px;
+  height: 24px;
+  margin: -2px -2px -2px 0;
   border: none;
-}
-
-.toast-icon-container-close {
-  cursor: pointer;
-}
-
-.close-btn {
+  border-radius: 6px;
   background: transparent;
-  border: none;
-  color: white;
+  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 55%, transparent);
   cursor: pointer;
-  margin-left: auto;
-  background-color: transparent;
-}
-
-.fade-move,
-.fade-enter-active {
   transition:
-    top 0.5s cubic-bezier(0.8, -0.5, 0.4, 1.5),
-    transform 0.5s cubic-bezier(0.8, -0.8, 0.4, 1.5);
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
-.fade-enter-from {
-  transform: translateY(120%);
+.toast-close:hover {
+  background: var(--beacon-hover);
+  color: rgb(var(--v-theme-on-surface));
 }
 
-.fade-leave-active {
+.toast-fade-move,
+.toast-fade-enter-active,
+.toast-fade-leave-active {
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s cubic-bezier(0.2, 0.8, 0.4, 1);
+}
+
+.toast-fade-enter-from {
+  opacity: 0;
+  transform: translateY(16px) scale(0.98);
+}
+
+.toast-fade-leave-active {
   position: absolute;
-  top: 0;
-  transition:
-    top 0.5s cubic-bezier(0.8, -0.5, 0.4, 1.5),
-    transform 0.5s cubic-bezier(0.8, -0.8, 0.4, 1.5);
+  width: 100%;
 }
 
-.fade-leave-to {
-  transform: translateY(-120%);
-  transform: scale(0.6);
+.toast-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
 }
 </style>

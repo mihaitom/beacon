@@ -36,7 +36,11 @@ async def get_lyrics_by_song_id(song_id: str) -> str | None:
         return None
 
     data = r.json()
-    return data.get("lrc", {}).get("lyric") or None
+    # `.get("lrc", {})` only substitutes the default when the key is
+    # *missing* — NetEase returns "lrc": null (not an absent key) for songs
+    # with no lyrics, which would otherwise reach .get("lyric") as None and
+    # raise AttributeError.
+    return (data.get("lrc") or {}).get("lyric") or None
 
 
 async def get_search_results(params: dict[str, Any]) -> list[dict[str, Any]] | None:

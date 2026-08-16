@@ -34,7 +34,6 @@ function createWindow(): void {
         show: false,
         webPreferences: {
             preload: join(__dirname, '../preload/index.mjs'),
-            sandbox: false,
         },
     });
 
@@ -43,7 +42,22 @@ function createWindow(): void {
     });
 
     mainWindow.webContents.setWindowOpenHandler((details) => {
-        shell.openExternal(details.url);
+        // Only hand http(s) URLs to the OS's default handler. `details.url`
+        // can originate from data served by a user-configured (and
+        // potentially compromised) Navidrome/Subsonic/Jellyfin server — e.g.
+        // a radio station's homePageUrl — so a crafted non-http scheme
+        // (file:, or a third-party protocol handler) must not reach
+        // shell.openExternal, which is the exact pattern behind several
+        // real Electron protocol-handler-exploitation CVEs.
+        try {
+            const url = new URL(details.url);
+            if (url.protocol === 'http:' || url.protocol === 'https:') {
+                shell.openExternal(details.url);
+            }
+        } catch {
+            // Not a parseable URL — do nothing rather than risk handing a
+            // malformed string to the OS shell.
+        }
         return { action: 'deny' };
     });
 

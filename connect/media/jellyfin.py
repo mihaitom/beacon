@@ -7,6 +7,7 @@ transcoding) — robust for FFmpeg re-streaming to Sonos / AirPlay / Chromecast.
 import logging
 import secrets
 from pathlib import Path
+from urllib.parse import quote, urlencode
 
 import httpx
 
@@ -180,14 +181,20 @@ class JellyfinClient:
 
     def get_stream_url(self, track_id: str) -> str:
         # `/Items/{id}/Download` returns the original file unchanged — FFmpeg
-        # handles container/codec conversion downstream.
-        return f"{self.internal_url}/Items/{track_id}/Download?api_key={self.token}"
+        # handles container/codec conversion downstream. quote() on the id
+        # (not a naive f-string join) so a malformed/adversarial track_id
+        # can't escape the /Items/{id}/ path segment — see get_cover_art_url
+        # below and jellyfin_bridge.py's _quote_id for the same reasoning.
+        return (
+            f"{self.internal_url}/Items/{quote(track_id, safe='')}/Download"
+            f"?{urlencode({'api_key': self.token})}"
+        )
 
     def get_cover_art_url(self, cover_art_id: str, internal: bool = False) -> str | None:
         if not cover_art_id or not self.base_url:
             return None
         base = self.internal_url if internal else self.base_url
-        return f"{base}/Items/{cover_art_id}/Images/Primary?maxHeight=300"
+        return f"{base}/Items/{quote(cover_art_id, safe='')}/Images/Primary?maxHeight=300"
 
     def ping(self) -> bool:
         """Verifies the token actually authenticates — hits an endpoint that

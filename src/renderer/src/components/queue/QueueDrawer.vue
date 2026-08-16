@@ -28,12 +28,12 @@
         >
           <queue-row
             v-for="(track, index) in playbackStore.queue"
-            :key="track.id"
+            :key="queueRowKey(track)"
             :track="track"
             :index="index"
             :drag-over="dragOverIndex === index && dragIndex !== index"
             :dragging="dragIndex === index"
-            :landed="track.id === landedTrackId"
+            :landed="queueRowKey(track) === landedKey"
             @dragstart="onDragStart(index, $event)"
             @dragover="onDragOver(index)"
             @dragleave="onDragLeave(index)"
@@ -51,12 +51,12 @@
         >
           <template #default="{ item: track, index }">
             <queue-row
-              :key="`${track.id}-${index}`"
+              :key="queueRowKey(track)"
               :track="track"
               :index="index"
               :drag-over="dragOverIndex === index && dragIndex !== index"
               :dragging="dragIndex === index"
-              :landed="track.id === landedTrackId"
+              :landed="queueRowKey(track) === landedKey"
               @dragstart="onDragStart(index, $event)"
               @dragover="onDragOver(index)"
               @dragleave="onDragLeave(index)"
@@ -77,6 +77,26 @@
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
 import QueueRow from './QueueRow.vue'
+import type { Track } from '@/types/library'
+
+// Per-row identity for :key and the "landed" flash, keyed off the Track
+// *object* rather than its id — the queue can legitimately hold the same
+// track more than once (see playbackStore's dedupeForQueue()), and an
+// id-keyed Set/Map would make both occurrences resolve to the same key,
+// producing a Vue duplicate-key warning and mixing up which row the FLIP
+// move animation / landed pulse actually targets. A WeakMap survives
+// reorderQueue() unaffected since that moves the same object reference to a
+// new array index rather than replacing it.
+let queueRowKeySeq = 0
+const queueRowKeys = new WeakMap<Track, string>()
+function queueRowKey(track: Track): string {
+  let key = queueRowKeys.get(track)
+  if (key === undefined) {
+    key = `qrow-${queueRowKeySeq++}`
+    queueRowKeys.set(track, key)
+  }
+  return key
+}
 
 // Past this many tracks, switch from an animated plain v-for to
 // v-virtual-scroll instead — comfortably above any realistic queue built
@@ -104,10 +124,10 @@ export default {
       // virtualized path.
       dragIndex: null as number | null,
       dragOverIndex: null as number | null,
-      // Briefly set to the moved track's id right after a drop, so it gets
-      // a "landed here" pulse on top of the slide animation (or, in the
-      // virtualized path with no slide, as the only landing feedback).
-      landedTrackId: null as string | null,
+      // Briefly set to the moved row's queueRowKey() right after a drop, so
+      // it gets a "landed here" pulse on top of the slide animation (or, in
+      // the virtualized path with no slide, as the only landing feedback).
+      landedKey: null as string | null,
     }
   },
   computed: {
@@ -119,6 +139,7 @@ export default {
     },
   },
   methods: {
+    queueRowKey,
     onDragStart(index: number, event: DragEvent) {
       this.dragIndex = index
       if (event.dataTransfer) {
@@ -137,15 +158,15 @@ export default {
       if (this.dragIndex !== null && this.dragIndex !== index) {
         const moved = this.playbackStore.queue[this.dragIndex]
         this.playbackStore.reorderQueue(this.dragIndex, index)
-        if (moved) this.flashLanded(moved.id)
+        if (moved) this.flashLanded(this.queueRowKey(moved))
       }
       this.dragIndex = null
       this.dragOverIndex = null
     },
-    flashLanded(trackId: string) {
-      this.landedTrackId = trackId
+    flashLanded(key: string) {
+      this.landedKey = key
       setTimeout(() => {
-        if (this.landedTrackId === trackId) this.landedTrackId = null
+        if (this.landedKey === key) this.landedKey = null
       }, 500)
     },
     onDragEnd() {

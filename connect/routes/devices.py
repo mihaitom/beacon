@@ -195,113 +195,120 @@ async def stop_device(
         type_cls = DlnaDelivery
     else:
         type_cls = AirPlayDelivery
-    active = session.state.active_delivery
-    candidates = (
-        active.deliveries
-        if isinstance(active, DeliveryManager)
-        else [active]
-        if active
-        else []
-    )
-    # The actual live instance being stopped, if found — AirPlay in
-    # particular needs this: its RAOP stream task/connection live on the
-    # instance itself (see delivery/airplay.py), so stopping a freshly
-    # constructed AirPlayDelivery(name) below would be a no-op that never
-    # touches the real stream, leaving it playing forever.
-    matched = next(
-        (d for d in candidates if isinstance(d, type_cls) and d.target == name), None
-    )
-    remaining: list[BaseDelivery] = [d for d in candidates if d is not matched]
 
-    logger.info(
-        f"[device-stop] {device_type}:{name} — remaining: "
-        f"{[d.target for d in remaining] or 'none'}"
-    )
-
-    need_restart = False
-    try:
-        if device_type == "sonos":
-            import soco as _soco
-
-            all_soco = await asyncio.to_thread(lambda: list(_soco.discover() or []))
-            target_dev = next(
-                (d for d in all_soco if d.player_name.lower() == name.lower()), None
-            )
-            if target_dev:
-                is_coord = await asyncio.to_thread(lambda: target_dev.is_coordinator)
-                logger.debug(f"[device-stop] {name} ist_koordinator={is_coord}")
-
-                if is_coord and remaining:
-                    logger.info(
-                        f"[device-stop] Ungrouping {len(remaining)} follower(s) …"
-                    )
-                    for rem in remaining:
-                        if isinstance(rem, SonosDelivery):
-                            rem_dev = next(
-                                (
-                                    d
-                                    for d in all_soco
-                                    if d.player_name.lower() == rem.target.lower()
-                                ),
-                                None,
-                            )
-                            if rem_dev:
-                                try:
-                                    await asyncio.to_thread(rem_dev.unjoin)
-                                    logger.debug(
-                                        f"[device-stop] {rem.target} ungrouped"
-                                    )
-                                except Exception as ex:
-                                    logger.warning(
-                                        f"[device-stop] unjoin {rem.target}: {ex}"
-                                    )
-                    await asyncio.sleep(0.3)
-                    need_restart = True
-                elif not is_coord:
-                    await asyncio.to_thread(target_dev.unjoin)
-                    await asyncio.sleep(0.1)
-
-                await asyncio.to_thread(target_dev.stop)
-                logger.info(f"[device-stop] {name} stopped")
-            else:
-                logger.warning(f"[device-stop] Sonos '{name}' not found on network")
-        elif device_type == "chromecast":
-            await ChromecastDelivery(name).stop()
-        elif device_type == "dlna":
-            await DlnaDelivery(name).stop()
-        else:
-            await (matched or AirPlayDelivery(name)).stop()
-
-    except Exception as e:
-        logger.error(f"[device-stop] {name}: {e}", exc_info=True)
-        return {"error": str(e)}
-
-    await claims.release(device_type, name, session.session_id)
-
-    st = session.state
-    if not remaining:
-        st.is_streaming = False
-        st.active_delivery = None
-    else:
-        new_delivery: BaseDelivery | DeliveryManager = (
-            remaining[0]
-            if len(remaining) == 1
-            else DeliveryManager.from_deliveries(remaining)
+    # Serialized under session.play_lock, same as /play, /pause, /seek etc.
+    # (see that field's docstring) — without it, a concurrent /play reading
+    # session.state.active_delivery mid-way through this handler could
+    # overwrite the active_delivery this function computes below, or vice
+    # versa, leaving tracked state out of sync with what's actually playing.
+    async with session.play_lock:
+        active = session.state.active_delivery
+        candidates = (
+            active.deliveries
+            if isinstance(active, DeliveryManager)
+            else [active]
+            if active
+            else []
         )
-        st.active_delivery = new_delivery
+        # The actual live instance being stopped, if found — AirPlay in
+        # particular needs this: its RAOP stream task/connection live on the
+        # instance itself (see delivery/airplay.py), so stopping a freshly
+        # constructed AirPlayDelivery(name) below would be a no-op that never
+        # touches the real stream, leaving it playing forever.
+        matched = next(
+            (d for d in candidates if isinstance(d, type_cls) and d.target == name), None
+        )
+        remaining: list[BaseDelivery] = [d for d in candidates if d is not matched]
 
-        if need_restart and st.is_streaming:
-            url = (
-                st.radio_info["url"]
-                if st.radio_info
-                else stream_url(session.session_id)
+        logger.info(
+            f"[device-stop] {device_type}:{name} — remaining: "
+            f"{[d.target for d in remaining] or 'none'}"
+        )
+
+        need_restart = False
+        try:
+            if device_type == "sonos":
+                import soco as _soco
+
+                all_soco = await asyncio.to_thread(lambda: list(_soco.discover() or []))
+                target_dev = next(
+                    (d for d in all_soco if d.player_name.lower() == name.lower()), None
+                )
+                if target_dev:
+                    is_coord = await asyncio.to_thread(lambda: target_dev.is_coordinator)
+                    logger.debug(f"[device-stop] {name} ist_koordinator={is_coord}")
+
+                    if is_coord and remaining:
+                        logger.info(
+                            f"[device-stop] Ungrouping {len(remaining)} follower(s) …"
+                        )
+                        for rem in remaining:
+                            if isinstance(rem, SonosDelivery):
+                                rem_dev = next(
+                                    (
+                                        d
+                                        for d in all_soco
+                                        if d.player_name.lower() == rem.target.lower()
+                                    ),
+                                    None,
+                                )
+                                if rem_dev:
+                                    try:
+                                        await asyncio.to_thread(rem_dev.unjoin)
+                                        logger.debug(
+                                            f"[device-stop] {rem.target} ungrouped"
+                                        )
+                                    except Exception as ex:
+                                        logger.warning(
+                                            f"[device-stop] unjoin {rem.target}: {ex}"
+                                        )
+                        await asyncio.sleep(0.3)
+                        need_restart = True
+                    elif not is_coord:
+                        await asyncio.to_thread(target_dev.unjoin)
+                        await asyncio.sleep(0.1)
+
+                    await asyncio.to_thread(target_dev.stop)
+                    logger.info(f"[device-stop] {name} stopped")
+                else:
+                    logger.warning(f"[device-stop] Sonos '{name}' not found on network")
+            elif device_type == "chromecast":
+                await ChromecastDelivery(name).stop()
+            elif device_type == "dlna":
+                await DlnaDelivery(name).stop()
+            else:
+                await (matched or AirPlayDelivery(name)).stop()
+
+        except Exception as e:
+            logger.error(f"[device-stop] {name}: {e}", exc_info=True)
+            return {"error": str(e)}
+
+        await claims.release(device_type, name, session.session_id)
+
+        st = session.state
+        if not remaining:
+            st.is_streaming = False
+            st.active_delivery = None
+        else:
+            new_delivery: BaseDelivery | DeliveryManager = (
+                remaining[0]
+                if len(remaining) == 1
+                else DeliveryManager.from_deliveries(remaining)
             )
-            title = st.radio_info["title"] if st.radio_info else "Connect"
-            logger.info(f"[device-stop] Restarting stream: {url}")
-            try:
-                await new_delivery.play(url, title)
-            except Exception as e:
-                logger.error(f"[device-stop] Restart error: {e}", exc_info=True)
+            st.active_delivery = new_delivery
+
+            if need_restart and st.is_streaming:
+                url = (
+                    st.radio_info["url"]
+                    if st.radio_info
+                    else stream_url(session.session_id)
+                )
+                title = st.radio_info["title"] if st.radio_info else "Connect"
+                logger.info(f"[device-stop] Restarting stream: {url}")
+                try:
+                    await new_delivery.play(url, title)
+                except Exception as e:
+                    logger.error(f"[device-stop] Restart error: {e}", exc_info=True)
 
     await session.event_bus.broadcast(build_status_dict(session))
     return {"status": "stopped", "device": name}

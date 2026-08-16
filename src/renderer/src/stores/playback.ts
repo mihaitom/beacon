@@ -731,8 +731,9 @@ export const usePlaybackStore = defineStore('playback', {
     },
 
     addToQueue(tracks: Track[]): void {
-      this.originalQueue.push(...tracks)
-      this.queue.push(...tracks)
+      const toAdd = dedupeForQueue(tracks, this.queue)
+      this.originalQueue.push(...toAdd)
+      this.queue.push(...toAdd)
     },
 
     /** Inserts `tracks` right after the currently playing one — "Play next",
@@ -742,13 +743,14 @@ export const usePlaybackStore = defineStore('playback', {
         this.addToQueue(tracks)
         return
       }
-      this.queue.splice(this.currentIndex + 1, 0, ...tracks)
+      const toInsert = dedupeForQueue(tracks, this.queue)
+      this.queue.splice(this.currentIndex + 1, 0, ...toInsert)
       const current = this.currentTrack
       const originalIndex = current ? this.originalQueue.findIndex((t) => t.id === current.id) : -1
       if (originalIndex >= 0) {
-        this.originalQueue.splice(originalIndex + 1, 0, ...tracks)
+        this.originalQueue.splice(originalIndex + 1, 0, ...toInsert)
       } else {
-        this.originalQueue.push(...tracks)
+        this.originalQueue.push(...toInsert)
       }
     },
 
@@ -838,6 +840,24 @@ export const usePlaybackStore = defineStore('playback', {
     },
   },
 })
+
+/** Clones any track in `tracks` that's already the same object reference as
+ * something in `existingQueue` (or repeated within `tracks` itself), so
+ * addToQueue()/queueNext() never push the literal same Track object into
+ * the queue twice. Two queue slots sharing one object reference is what let
+ * QueueDrawer.vue's per-row identity (keyed off the object, not `id` —
+ * needed since the same *track* can legitimately be queued more than once)
+ * collide between unrelated rows. Only clones on an actual collision — the
+ * overwhelmingly common case (no repeats) still pushes the original
+ * reference unchanged, same as before this existed. */
+function dedupeForQueue(tracks: Track[], existingQueue: Track[]): Track[] {
+  const seen = new Set<Track>(existingQueue)
+  return tracks.map((t) => {
+    if (seen.has(t)) return { ...t }
+    seen.add(t)
+    return t
+  })
+}
 
 function shuffledExcept(tracks: Track[], keepFirst: Track | null | undefined): Track[] {
   // Removes only the one `keepFirst` instance, not every track sharing its

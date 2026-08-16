@@ -2,7 +2,7 @@
   <div
     class="track-row d-flex align-center px-2 py-1"
     :class="{ 'track-row--current': isCurrentTrack, 'track-row--selected': selected }"
-    @click="selectionMode && $emit('toggle-select', track)"
+    @click="selectionMode && $emit('toggle-select', track, index)"
     @dblclick="$emit('play', track, index)"
     @contextmenu.prevent="openMenu($event)"
     @mouseenter="isHovered = true"
@@ -14,7 +14,7 @@
         :model-value="selected"
         density="compact"
         class="track-select-checkbox"
-        @click.stop="$emit('toggle-select', track)"
+        @click.stop="$emit('toggle-select', track, index)"
       />
       <template v-else-if="isCurrentTrack">
         <v-icon icon="mdi-volume-high" size="14" color="primary" />
@@ -93,7 +93,7 @@
           <template #prepend><v-icon icon="mdi-play" size="small" /></template>
           <v-list-item-title>{{ $t('library.play') }}</v-list-item-title>
         </v-list-item>
-        <v-list-item @click="$emit('play-next', track)">
+        <v-list-item @click="$emit('play-next', track, index)">
           <template #prepend><v-icon icon="mdi-skip-next-outline" size="small" /></template>
           <v-list-item-title>{{ $t('library.playNext') }}</v-list-item-title>
         </v-list-item>
@@ -102,7 +102,7 @@
           <v-list-item-title>{{ $t('library.trackRadio') }}</v-list-item-title>
         </v-list-item>
         <v-divider />
-        <v-list-item @click="$emit('add-to-queue', track)">
+        <v-list-item @click="$emit('add-to-queue', track, index)">
           <template #prepend><v-icon icon="mdi-playlist-plus" size="small" /></template>
           <v-list-item-title>{{ $t('common.addToQueue') }}</v-list-item-title>
         </v-list-item>
@@ -123,7 +123,7 @@
             <v-list-item
               v-for="playlist in libraryStore.playlists"
               :key="playlist.id"
-              @click="$emit('add-to-playlist', { track, playlistId: playlist.id })"
+              @click="$emit('add-to-playlist', { track, playlistId: playlist.id, index })"
             >
               <v-list-item-title>{{ playlist.name }}</v-list-item-title>
             </v-list-item>

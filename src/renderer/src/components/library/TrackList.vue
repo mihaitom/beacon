@@ -63,7 +63,7 @@
           :show-play-count="showPlayCount"
           :show-format="showFormat"
           :selection-mode="selectionMode"
-          :selected="selectedTrackIds.has(row.track.id)"
+          :selected="selectedRowKeys.has(row.index)"
           @play="playTrack"
           @play-next="playNextTrack"
           @track-radio="startTrackRadio"
@@ -88,7 +88,7 @@
         :show-play-count="showPlayCount"
         :show-format="showFormat"
         :selection-mode="selectionMode"
-        :selected="selectedTrackIds.has(track.id)"
+        :selected="selectedRowKeys.has(rowIndexOffset + index)"
         @play="playTrack"
         @play-next="playNextTrack"
         @track-radio="startTrackRadio"
@@ -121,8 +121,8 @@
     <v-slide-y-reverse-transition>
       <div v-if="selectionMode" class="selection-bar">
         <span class="text-body-2">
-          {{ selectedTrackIds.size }}
-          {{ selectedTrackIds.size === 1 ? $t('library.track1') : $t('library.tracksN') }}
+          {{ selectedRowKeys.size }}
+          {{ selectedRowKeys.size === 1 ? $t('library.track1') : $t('library.tracksN') }}
           {{ $t('library.selected') }}
         </span>
         <v-btn variant="text" prepend-icon="mdi-skip-next-outline" @click="bulkPlayNext">
@@ -249,12 +249,13 @@ export default {
       // before either resolves) can leave the local state one flip behind
       // what the server actually recorded.
       starringTrackIds: new Set<string>(),
-      // Ids, not Track objects — a track can appear more than once across
-      // paginated/sorted views of the same underlying list, and ids are
-      // what TrackRow's toggle-select events and the checkbox lookups
-      // below actually key off. See selectedTracks for resolving these
-      // back to real Track objects when a bulk action needs them.
-      selectedTrackIds: new Set<string>(),
+      // Row positions (index within sortedTracks), not track ids — a track
+      // can appear more than once in the same list (e.g. a playlist with a
+      // song added twice), and an id-keyed Set would make toggling one
+      // occurrence's checkbox also mark every other row sharing that id as
+      // selected. See selectedTracks for resolving these back to real
+      // Track objects when a bulk action needs them.
+      selectedRowKeys: new Set<number>(),
     }
   },
   computed: {
@@ -272,12 +273,12 @@ export default {
     // just the currently-hovered row's, so the rest of a multi-track
     // selection can be built up without hunting for each row individually.
     selectionMode(): boolean {
-      return this.selectedTrackIds.size > 0
+      return this.selectedRowKeys.size > 0
     },
     // Resolved in list order (not selection order) so "Add to Queue"
     // queues tracks the same way clicking through the list would.
     selectedTracks(): Track[] {
-      return this.sortedTracks.filter((track) => this.selectedTrackIds.has(track.id))
+      return this.sortedTracks.filter((_track, index) => this.selectedRowKeys.has(index))
     },
     sortedTracks(): Track[] {
       if (!this.sortKey) return this.tracks
@@ -330,14 +331,22 @@ export default {
   },
   watch: {
     // A new track list (different filter, different album, ...) or a new
-    // sort both invalidate which page was open / how much was revealed.
+    // sort both invalidate which page was open / how much was revealed —
+    // and, since selectedRowKeys is keyed by position within sortedTracks
+    // (see its own comment), also invalidate any existing selection: the
+    // same indices would now silently point at different tracks.
     tracks() {
       this.currentPage = 1
       this.visibleCount = PAGE_SIZE
+      this.clearSelection()
     },
     sortKey() {
       this.currentPage = 1
       this.visibleCount = PAGE_SIZE
+      this.clearSelection()
+    },
+    sortDirection() {
+      this.clearSelection()
     },
     // Lets a caller change the *effective* default after mount — used by
     // TracksView to keep the list in stable arrival order (sortKey null,
@@ -390,8 +399,8 @@ export default {
       const position = index ?? this.sortedTracks.findIndex((t) => t.id === track.id)
       void this.playbackStore.playTrackList(this.sortedTracks, Math.max(0, position))
     },
-    playNextTrack(track: Track) {
-      this.playbackStore.queueNext(this.selectedOrSingle(track))
+    playNextTrack(track: Track, index?: number) {
+      this.playbackStore.queueNext(this.selectedOrSingle(track, index))
     },
     async startTrackRadio(track: Track) {
       try {
@@ -426,11 +435,19 @@ export default {
         console.error('[track-list] Failed to set rating:', error)
       }
     },
-    addToQueue(track: Track) {
-      this.playbackStore.addToQueue(this.selectedOrSingle(track))
+    addToQueue(track: Track, index?: number) {
+      this.playbackStore.addToQueue(this.selectedOrSingle(track, index))
     },
-    async addToPlaylist({ track, playlistId }: { track: Track; playlistId: string }) {
-      const tracks = this.selectedOrSingle(track)
+    async addToPlaylist({
+      track,
+      playlistId,
+      index,
+    }: {
+      track: Track
+      playlistId: string
+      index?: number
+    }) {
+      const tracks = this.selectedOrSingle(track, index)
       await this.libraryStore.addToPlaylist(
         playlistId,
         tracks.map((t) => t.id),
@@ -443,16 +460,16 @@ export default {
     // file manager's right-click menu. Acting on a row that isn't
     // selected (or when nothing's selected at all) still just means that
     // one track, same as before multiselect existed.
-    selectedOrSingle(track: Track): Track[] {
-      return this.selectionMode && this.selectedTrackIds.has(track.id)
+    selectedOrSingle(track: Track, index?: number): Track[] {
+      return this.selectionMode && index != null && this.selectedRowKeys.has(index)
         ? this.selectedTracks
         : [track]
     },
-    toggleSelect(track: Track) {
-      if (this.selectedTrackIds.has(track.id)) {
-        this.selectedTrackIds.delete(track.id)
+    toggleSelect(_track: Track, index: number) {
+      if (this.selectedRowKeys.has(index)) {
+        this.selectedRowKeys.delete(index)
       } else {
-        this.selectedTrackIds.add(track.id)
+        this.selectedRowKeys.add(index)
         // Same "fetch eagerly once selection starts" reasoning as
         // TrackRow's own openMenu() — the playlist submenu below shouldn't
         // open empty on the very first use just because nothing had
@@ -474,7 +491,7 @@ export default {
       this.playbackStore.queueNext(this.selectedTracks)
     },
     clearSelection() {
-      this.selectedTrackIds.clear()
+      this.selectedRowKeys.clear()
     },
   },
 }

@@ -20,7 +20,7 @@ image="$REGISTRY/$NAMESPACE/$IMAGE_NAME"
 echo "Building: $image:$version (context: $CONTEXT_DIR)"
 
 # === BUILD ===
-docker build --network=host -t "$image:$version" "$CONTEXT_DIR" --no-cache
+docker build --network=host -t "$image:$version" "$CONTEXT_DIR"
 
 # === TAG LOGIC ===
 if [[ "$version" == *dev* || "$version" == *alpha* || "$version" == *beta* || "$version" == *rc* ]]; then

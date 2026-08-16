@@ -56,51 +56,60 @@ async def join_stream(
         type_cls = AirPlayDelivery
     new_d: BaseDelivery = type_cls(req.target_name)
 
-    error, displaced = await check_claims(new_d, session, force=req.force)
-    if error:
-        return error
-    for target_type, name, owner in displaced:
-        owner_session = registry.get(owner)
-        if owner_session:
-            await displace_target(owner_session, target_type, name)
+    # Serialized under session.play_lock — same lock /play, /pause, /seek
+    # etc. use to guard active_delivery/is_streaming (see its docstring).
+    # Without this, a concurrent /play on this same session can read
+    # st.active_delivery before this join's append lands and then
+    # unconditionally overwrite it once its own device call finishes,
+    # silently dropping the just-joined device from tracked state (it
+    # keeps physically playing, but becomes invisible to /status and
+    # unreachable by /stop/pause).
+    async with session.play_lock:
+        error, displaced = await check_claims(new_d, session, force=req.force)
+        if error:
+            return error
+        for target_type, name, owner in displaced:
+            owner_session = registry.get(owner)
+            if owner_session:
+                await displace_target(owner_session, target_type, name)
 
-    # Radio has no track loaded (session.state.current_track stays None for
-    # it — see /play-url), so it must join on its own raw URL rather than the
-    # FFmpeg /stream proxy, which 204s with no track loaded.
-    url = st.radio_info["url"] if st.radio_info else stream_url(session.session_id)
-    title = st.radio_info["title"] if st.radio_info else "Connect"
-    logger.info(f"[join] {req.target_type}:{req.target_name} → {url}")
+        # Radio has no track loaded (session.state.current_track stays None
+        # for it — see /play-url), so it must join on its own raw URL rather
+        # than the FFmpeg /stream proxy, which 204s with no track loaded.
+        url = st.radio_info["url"] if st.radio_info else stream_url(session.session_id)
+        title = st.radio_info["title"] if st.radio_info else "Connect"
+        logger.info(f"[join] {req.target_type}:{req.target_name} → {url}")
 
-    if req.target_type == "sonos":
-        existing_sonos = find_sonos(st.active_delivery)
-        if existing_sonos:
-            try:
-                coordinator = await asyncio.to_thread(existing_sonos[0]._get_device)
-                joiner = await asyncio.to_thread(new_d._get_device)
-                await asyncio.to_thread(joiner.join, coordinator)
-                logger.info(
-                    f"[join] {req.target_name} joining group of {existing_sonos[0].target}"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"[join] Group join failed ({e}), falling back to individual stream"
-                )
+        if req.target_type == "sonos":
+            existing_sonos = find_sonos(st.active_delivery)
+            if existing_sonos:
+                try:
+                    coordinator = await asyncio.to_thread(existing_sonos[0]._get_device)
+                    joiner = await asyncio.to_thread(new_d._get_device)
+                    await asyncio.to_thread(joiner.join, coordinator)
+                    logger.info(
+                        f"[join] {req.target_name} joining group of {existing_sonos[0].target}"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"[join] Group join failed ({e}), falling back to individual stream"
+                    )
+                    await new_d.play(url, title)
+            else:
                 await new_d.play(url, title)
         else:
             await new_d.play(url, title)
-    else:
-        await new_d.play(url, title)
 
-    if isinstance(st.active_delivery, DeliveryManager):
-        existing = {d.target for d in st.active_delivery.deliveries}
-        if req.target_name not in existing:
-            st.active_delivery.deliveries.append(new_d)
-    elif st.active_delivery:
-        st.active_delivery = DeliveryManager.from_deliveries(
-            [st.active_delivery, new_d]
-        )
-    else:
-        st.active_delivery = new_d
+        if isinstance(st.active_delivery, DeliveryManager):
+            existing = {d.target for d in st.active_delivery.deliveries}
+            if req.target_name not in existing:
+                st.active_delivery.deliveries.append(new_d)
+        elif st.active_delivery:
+            st.active_delivery = DeliveryManager.from_deliveries(
+                [st.active_delivery, new_d]
+            )
+        else:
+            st.active_delivery = new_d
 
     await session.event_bus.broadcast(build_status_dict(session))
     return {"status": "joined", "device": req.target_name}
@@ -130,14 +139,17 @@ async def claim_device(
     if not target:
         return {"error": "No target configured"}
 
-    error, displaced = await check_claims(target, session, force=req.force)
-    if error:
-        return error
-    for target_type, name, owner in displaced:
-        owner_session = registry.get(owner)
-        if owner_session:
-            await displace_target(owner_session, target_type, name)
+    # Same play_lock reasoning as /join above — this write to
+    # active_delivery must be serialized against /play, /pause, /seek etc.
+    async with session.play_lock:
+        error, displaced = await check_claims(target, session, force=req.force)
+        if error:
+            return error
+        for target_type, name, owner in displaced:
+            owner_session = registry.get(owner)
+            if owner_session:
+                await displace_target(owner_session, target_type, name)
 
-    session.state.active_delivery = target
+        session.state.active_delivery = target
     await session.event_bus.broadcast(build_status_dict(session))
     return {"status": "claimed"}

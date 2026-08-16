@@ -9,6 +9,7 @@ DEFAULT_SESSION_ID, reproducing the old single-session behavior unchanged.
 """
 
 import asyncio
+import logging
 import os
 import time
 
@@ -20,6 +21,8 @@ from media import MediaClient, SubsonicClient
 from .audio_analysis import AudioAnalyzer
 from .claims import claims
 from .state import AppState, delivery_class_for, EventBus, list_target_pairs
+
+logger = logging.getLogger("connect.session")
 
 DEFAULT_SESSION_ID = "default"
 
@@ -271,38 +274,73 @@ async def displace_target(owner_session: SessionState, target_type: str, name: s
 
     Broadcasts on owner_session's own event_bus afterwards, so its existing
     SSE connection naturally reflects the loss — no separate push mechanism
-    needed (see use-connect-session.ts's "external stop" effect)."""
-    st = owner_session.state
-    active = st.active_delivery
-    cls = delivery_class_for(target_type)
-    if active is None or cls is None:
-        return
+    needed (see use-connect-session.ts's "external stop" effect).
 
-    if isinstance(active, DeliveryManager):
-        lost = next(
-            (d for d in active.deliveries if isinstance(d, cls) and d.target == name), None
+    Mutates active_delivery/is_streaming under owner_session's own
+    play_lock, same as /play, /pause, /seek etc. (see that field's
+    docstring) — otherwise one of those handlers running concurrently on
+    the victim session can finish just after this function reads/writes
+    that state and clobber it (e.g. overwrite the "displaced" broadcast
+    below with its own default displaced=False once it resumes and
+    broadcasts its own status). Bounded by a timeout rather than awaited
+    unconditionally: the caller here (_claim_or_takeover) is itself
+    already holding *its own* session's play_lock, so an unbounded wait
+    would risk a cross-session deadlock if two sessions force-takeover
+    each other's devices in the same instant. On timeout, falls back to
+    the old best-effort (racy but non-blocking) behavior rather than
+    hanging the request."""
+
+    def _apply(st) -> BaseDelivery | None:
+        """Re-reads st.active_delivery (rather than trusting a value
+        captured before the lock) since it may have changed while this
+        function was waiting to acquire the lock — e.g. the victim's own
+        /stop already cleared it. Returns the stopped delivery, or None if
+        there's nothing left to stop."""
+        active = st.active_delivery
+        cls = delivery_class_for(target_type)
+        if active is None or cls is None:
+            return None
+        if isinstance(active, DeliveryManager):
+            lost = next(
+                (d for d in active.deliveries if isinstance(d, cls) and d.target == name), None
+            )
+            if lost is None:
+                return None
+            remaining = [d for d in active.deliveries if d is not lost]
+        elif isinstance(active, cls) and active.target == name:
+            lost = active
+            remaining = []
+        else:
+            return None
+
+        if not remaining:
+            st.is_streaming = False
+            st.active_delivery = None
+        elif len(remaining) == 1:
+            st.active_delivery = remaining[0]
+        else:
+            st.active_delivery = DeliveryManager.from_deliveries(remaining)
+        return lost
+
+    st = owner_session.state
+    try:
+        async with asyncio.timeout(2.0):
+            async with owner_session.play_lock:
+                lost = _apply(st)
+    except TimeoutError:
+        logger.warning(
+            f"[displace] Timed out waiting for {owner_session.session_id}'s play_lock; "
+            "applying displacement without it"
         )
-        if lost is None:
-            return
-        remaining = [d for d in active.deliveries if d is not lost]
-    elif isinstance(active, cls) and active.target == name:
-        lost = active
-        remaining = []
-    else:
+        lost = _apply(st)
+
+    if lost is None:
         return
 
     try:
         await lost.stop()
     except Exception:
         pass
-
-    if not remaining:
-        st.is_streaming = False
-        st.active_delivery = None
-    elif len(remaining) == 1:
-        st.active_delivery = remaining[0]
-    else:
-        st.active_delivery = DeliveryManager.from_deliveries(remaining)
 
     await owner_session.event_bus.broadcast(build_status_dict(owner_session, displaced=True))
 

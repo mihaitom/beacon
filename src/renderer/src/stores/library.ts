@@ -292,6 +292,18 @@ export const useLibraryStore = defineStore('library', {
       this.artistCache = {}
     },
 
+    /** Called from authStore.logout() — without this, a different account
+     * signing in afterwards would see the previous account's playlists,
+     * radio stations, starred items, and search results, not just its
+     * artists/albums/tracks (which invalidateCache() above already
+     * handles for the narrower "same-account rescan" case). This store is
+     * a singleton for the app's whole lifetime, so nothing else clears it
+     * between accounts. */
+    resetForLogout(): void {
+      clearLibraryCache()
+      this.$reset()
+    },
+
     /** Own request, own cache field — same stale-while-revalidate pattern as
      * fetchArtists()/fetchPlaylists(), fetching the whole catalog page by
      * page via getAlbumList2 (see fetchAlbumPages()). Deliberately NOT
