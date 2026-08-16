@@ -3,6 +3,7 @@
     <div class="album-card-cover">
       <cover-art :cover-art-id="album.coverArtId" :size="160" />
       <v-btn
+        v-if="authStore.capabilities.favorites"
         :icon="album.starred ? 'mdi-heart' : 'mdi-heart-outline'"
         :color="album.starred ? 'primary' : undefined"
         size="small"
@@ -27,6 +28,7 @@
 <script lang="ts">
 import CoverArt from './CoverArt.vue'
 import { useLibraryStore } from '@/stores/library'
+import { useAuthStore } from '@/stores/auth'
 import type { Album } from '@/types/library'
 
 export default {
@@ -36,6 +38,11 @@ export default {
     album: {
       type: Object as () => Album,
       required: true,
+    },
+  },
+  computed: {
+    authStore() {
+      return useAuthStore()
     },
   },
   methods: {

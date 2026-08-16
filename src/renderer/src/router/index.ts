@@ -117,6 +117,7 @@ let restorePromise: Promise<boolean> | null = null
 const CAPABILITY_ROUTES: Partial<Record<string, keyof ReturnType<typeof useAuthStore>['capabilities']>> = {
   radio: 'internetRadio',
   stats: 'playHistoryStats',
+  favorites: 'favorites',
 }
 
 router.beforeEach(async (to) => {

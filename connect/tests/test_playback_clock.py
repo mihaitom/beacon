@@ -172,6 +172,39 @@ def test_seek_to_clamps_raw_position_to_zero():
     assert clock.resume_offset == 0.0
 
 
+def test_seek_to_while_playing_updates_track_start_position():
+    """Regression test: /seek reconnects to a *fresh* stream (FFmpeg output
+    restarts near 0 again, same as start()) — without re-zeroing
+    track_start_position to the seek's own raw_position, a later
+    elapsed_since_stream_start() call (the calibration task's own
+    device_pos-vs-wall_elapsed comparison) drifts by the full seek
+    distance and never lands within a plausible range, spamming "ignoring
+    implausible device position" for the whole calibration window instead
+    of ever calibrating. Same bug class the module docstring says was
+    already fixed for start() — see
+    test_calibrate_mid_track_start_is_not_corrupted_by_start_position."""
+    clock = PlaybackClock()
+    clock.start(0.0)
+
+    clock.seek_to(27.0)
+
+    assert clock.track_start_position == clock.resume_offset
+    assert abs(clock.elapsed_since_stream_start()) < 0.5
+
+
+def test_seek_to_while_paused_does_not_update_track_start_position():
+    # No stream reconnect happens while paused (deferred to /resume) — see
+    # seek_to()'s own is_paused branch — so re-zeroing here would be
+    # premature, not just unnecessary.
+    clock = PlaybackClock()
+    clock.pause(10.0)
+    track_start_before = clock.track_start_position
+
+    clock.seek_to(75.0)
+
+    assert clock.track_start_position == track_start_before
+
+
 # ── calibrate ─────────────────────────────────────────────────────────────────
 
 

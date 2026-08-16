@@ -1,17 +1,18 @@
-"""routes/proxy.py — transparent proxy for Navidrome/Jellyfin API calls
+"""routes/proxy.py — transparent proxy for Navidrome/Jellyfin/Plex API calls
 
 Proxied paths:
   /rest/{path}   → Subsonic API (session.media.internal_url/rest/{path}) for a
-                   Subsonic session, or media/jellyfin_bridge.py for a
-                   Jellyfin one — see proxy_subsonic. session.media.internal_url
-                   is whatever URL was submitted at login, optionally
-                   overridden by SERVER_INTERNAL_URL (Subsonic only — see
+                   Subsonic session, or media/jellyfin_bridge.py /
+                   media/plex_bridge.py for a Jellyfin/Plex one — see
+                   proxy_subsonic. session.media.internal_url is whatever
+                   URL was submitted at login, optionally overridden by
+                   NAVIDROME_INTERNAL_URL (Subsonic only — see
                    routes/devices.py's configure()).
-  /auth/{path}   → Navidrome Auth (SERVER_INTERNAL_URL/auth/{path}) — dead
+  /auth/{path}   → Navidrome Auth (NAVIDROME_INTERNAL_URL/auth/{path}) — dead
                    code path, nothing in this frontend calls it, kept for
                    completeness/third-party API consumers.
   /{path}        → Navidrome REST API via /api/ nginx prefix
-                   (SERVER_INTERNAL_URL/api/{path}) — same, unused by this
+                   (NAVIDROME_INTERNAL_URL/api/{path}) — same, unused by this
                    frontend (nginx strips /api/ before forwarding here)
 """
 
@@ -24,11 +25,11 @@ from starlette.requests import ClientDisconnect
 
 from core.auth import require_token
 from core.session import SessionState, get_session
-from media import JellyfinClient, jellyfin_bridge
+from media import JellyfinClient, PlexClient, jellyfin_bridge, plex_bridge
 
 router = APIRouter(dependencies=[Depends(require_token)])
 
-_INTERNAL_URL = os.getenv("SERVER_INTERNAL_URL", "").rstrip("/")
+_NAVIDROME_INTERNAL_URL = os.getenv("NAVIDROME_INTERNAL_URL", "").rstrip("/")
 
 _SKIP_REQ = {"host", "connection", "transfer-encoding"}
 _SKIP_RESP = {"transfer-encoding", "connection", "content-encoding"}
@@ -101,7 +102,7 @@ async def _proxy(request: Request, target: str) -> StreamingResponse | JSONRespo
     """Forwards `request` to `target` — callers are responsible for deciding
     what `target` is and rejecting an unconfigured/empty one themselves (see
     proxy_subsonic's session-derived internal_url vs proxy_auth/
-    proxy_navidrome_api's fixed SERVER_INTERNAL_URL), since "configured"
+    proxy_navidrome_api's fixed NAVIDROME_INTERNAL_URL), since "configured"
     means something different for each."""
     fwd_headers = {
         k: v
@@ -184,14 +185,16 @@ async def proxy_subsonic(
     # 503s cleanly below instead of 401ing confusingly.
     if isinstance(session.media, JellyfinClient):
         return await jellyfin_bridge.handle(path, request, session.media)
-    # Session-derived, not the fixed SERVER_INTERNAL_URL env var: this is
+    if isinstance(session.media, PlexClient):
+        return await plex_bridge.handle(path, request, session.media)
+    # Session-derived, not the fixed NAVIDROME_INTERNAL_URL env var: this is
     # whatever URL was actually submitted at login (session.media.base_url),
-    # with SERVER_INTERNAL_URL only ever applying as an *optional* override
+    # with NAVIDROME_INTERNAL_URL only ever applying as an *optional* override
     # on top of it (see routes/devices.py's configure() — SubsonicClient
     # itself falls back to base_url when no override was given). Using the
     # env var directly here, independently of the session, used to mean
     # browsing/streaming/cover-art traffic silently went wherever
-    # SERVER_INTERNAL_URL pointed regardless of which server the user
+    # NAVIDROME_INTERNAL_URL pointed regardless of which server the user
     # actually authenticated against — correct only by coincidence when the
     # two happened to be the same value.
     internal_url = session.media.internal_url
@@ -205,11 +208,11 @@ async def proxy_subsonic(
 
 @router.api_route("/auth/{path:path}", methods=_ALL_METHODS)
 async def proxy_auth(path: str, request: Request):
-    if not _INTERNAL_URL:
+    if not _NAVIDROME_INTERNAL_URL:
         return JSONResponse(
-            {"error": "SERVER_INTERNAL_URL not configured"}, status_code=503
+            {"error": "NAVIDROME_INTERNAL_URL not configured"}, status_code=503
         )
-    return await _proxy(request, f"{_INTERNAL_URL}/auth/{path}")
+    return await _proxy(request, f"{_NAVIDROME_INTERNAL_URL}/auth/{path}")
 
 
 # Catch-all: nginx strips "/api/" before forwarding, so, for example,
@@ -217,8 +220,8 @@ async def proxy_auth(path: str, request: Request):
 # Register LAST so that specific Connect routes take precedence.
 @router.api_route("/{path:path}", methods=_ALL_METHODS)
 async def proxy_navidrome_api(path: str, request: Request):
-    if not _INTERNAL_URL:
+    if not _NAVIDROME_INTERNAL_URL:
         return JSONResponse(
-            {"error": "SERVER_INTERNAL_URL not configured"}, status_code=503
+            {"error": "NAVIDROME_INTERNAL_URL not configured"}, status_code=503
         )
-    return await _proxy(request, f"{_INTERNAL_URL}/api/{path}")
+    return await _proxy(request, f"{_NAVIDROME_INTERNAL_URL}/api/{path}")

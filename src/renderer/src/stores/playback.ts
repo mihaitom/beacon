@@ -648,6 +648,14 @@ export const usePlaybackStore = defineStore('playback', {
       void useLibraryStore()
         .client()
         .scrobble(track.id, true)
+        .then(() => {
+          // Optimistic, not re-fetched from the server — the count shown
+          // anywhere this same Track object is rendered (queue, track
+          // lists, Stats) would otherwise stay stale until something else
+          // happened to reload it, even though the scrobble itself
+          // genuinely succeeded server-side.
+          track.playCount = (track.playCount ?? 0) + 1
+        })
         .catch((error) => console.error('[scrobble] submission failed:', error))
     },
 

@@ -36,7 +36,7 @@
           <div v-else class="text-caption text-medium-emphasis text-truncate" />
         </div>
         <v-btn
-          v-if="currentTrack"
+          v-if="currentTrack && authStore.capabilities.favorites"
           :icon="currentTrack.starred ? 'mdi-heart' : 'mdi-heart-outline'"
           :color="currentTrack.starred ? 'primary' : undefined"
           :disabled="starringInFlight"
@@ -191,6 +191,9 @@ export default {
     },
     connectStore() {
       return useConnectStore()
+    },
+    authStore() {
+      return useAuthStore()
     },
     currentTrack() {
       return this.playbackStore.currentTrack

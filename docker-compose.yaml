@@ -4,73 +4,20 @@ services:
         build: .
         restart: unless-stopped
         environment:
-            # Optional — an alternate address for reaching Navidrome that's
-            # faster/more direct than whatever public URL you log in with,
-            # used only for the proxied /rest, /auth, and cover-art/stream
-            # calls (see connect/routes/proxy.py). Since this container uses
-            # network_mode: host (below) rather than a Docker bridge
-            # network, a Docker Compose service name like "navidrome" does
-            # NOT resolve here — that only works with bridge networking.
-            # What actually applies: if Navidrome runs on this same host
-            # (bound to localhost and/or a LAN IP, with a reverse proxy
-            # handling the public-facing domain), point this at that
-            # directly-reachable address instead of round-tripping every
-            # single request through the reverse proxy + public DNS:
-            # - SERVER_INTERNAL_URL=http://localhost:4533
-            # Leave unset entirely if there's no such shortcut available —
-            # Beacon then just uses whatever URL you log in with, same as
-            # it already does for Jellyfin (which has no equivalent variable).
-            # CONNECT_TOKEN secures the Connect API (casting control). Leave it
-            # unset — a random one is generated on each container start, which
-            # is enough since the browser never needs to know it (nginx injects
-            # it server-side). Only set this if something needs to call the API
-            # directly, bypassing nginx, with a token that survives restarts:
-            # - CONNECT_TOKEN=SzArltWiDYl44aguM2qy5qQJAD15WV3MOIzsKGnvdXeGIn4kS5JHgVBrgfiUm6y5
-            # - DEBUG=true # Verbose playback logs for AirPlay + Sonos
-            # - TARGETS=sonos:Living Room,airplay:Kitchen # Pre-configure fixed devices without going through Beacon's UI
-            # Only needed if 9180/9181 are already taken on the host — e.g.
-            # running a second instance at the same time:
-            # - WEB_PORT=9180 # nginx / the Beacon web UI
-            # - PORT=9181     # Connect API (Python backend)
-            #
-            # SERVER_URL is unrelated to SERVER_INTERNAL_URL above: it never
-            # goes through the proxy — SERVER_INTERNAL_URL is what the backend
-            # actually talks to Navidrome through (proxied /rest, /auth, and
-            # its own direct calls); SERVER_URL is the server's public-facing
-            # identity, only used for the login allowlist below and (when set)
-            # to prefill the login screen. Combined with SERVER_LOCK=true:
-            #  - /config only accepts a login whose server URL matches
-            #    SERVER_URL (or SERVER_INTERNAL_URL, if SERVER_URL isn't set)
-            #    — without this, anyone who has (or guesses) CONNECT_TOKEN
-            #    could point this deployment's /config at a *different* real
-            #    media server's valid credentials and still reach your LAN
-            #    devices through it.
-            #  - The login screen skips asking for a server URL or type
-            #    entirely (there's only one possible server, so nothing to
-            #    choose) — GET /health hands it SERVER_URL (or
-            #    SERVER_INTERNAL_URL as a fallback) and it's prefilled
-            #    automatically; only username/password are asked for.
-            # Optional and off by default — most single-user home setups don't
-            # need it, it matters more once CONNECT_TOKEN might be shared or
-            # exposed beyond your own devices:
+            # See README.md's "Environment variables" section for what each
+            # of these does and when you'd need them.
+            # - NAVIDROME_INTERNAL_URL=http://localhost:4533
+            # - JELLYFIN_INTERNAL_URL=http://localhost:8096
+            # - CONNECT_TOKEN=change-me
             # - SERVER_URL=https://navidrome.example.com
             # - SERVER_LOCK=true
-            # SERVER_TYPE says what kind of server SERVER_URL/SERVER_LOCK above
-            # point at — "subsonic" (covers Navidrome, the default) or
-            # "jellyfin". Only meaningful together with SERVER_LOCK=true; the
-            # login screen uses it to skip the server-type picker too, not just
-            # the URL field:
             # - SERVER_TYPE=subsonic
-        # Keeps AirPlay 2 pairings and (for Jellyfin sessions only — see
-        # connect/core/radio_stations.py) user-managed internet radio
+            # - WEB_PORT=9180
+            # - PORT=9181
+            # - DEBUG=true
+        # Keeps AirPlay 2 pairings and (Jellyfin/Plex only) internet radio
         # stations across container recreations/updates.
         volumes:
             - ./data:/data
         # Required for Sonos/AirPlay/Chromecast mDNS discovery on the LAN.
         network_mode: host
-        # With host networking the ports below are bound directly — no
-        # mapping needed, kept here for documentation only: nginx on 9180,
-        # connect API on 9181.
-        # ports:
-        #     - 9180:9180
-        #     - 9181:9181

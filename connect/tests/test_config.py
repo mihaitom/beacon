@@ -4,7 +4,7 @@ import importlib
 
 import pytest
 
-from media import JellyfinClient, SubsonicClient
+from media import JellyfinClient, PlexClient, SubsonicClient
 
 
 def _reload_devices():
@@ -22,7 +22,8 @@ def server_lock_env(monkeypatch):
     yield
     monkeypatch.delenv("SERVER_LOCK", raising=False)
     monkeypatch.delenv("SERVER_URL", raising=False)
-    monkeypatch.delenv("SERVER_INTERNAL_URL", raising=False)
+    monkeypatch.delenv("NAVIDROME_INTERNAL_URL", raising=False)
+    monkeypatch.delenv("JELLYFIN_INTERNAL_URL", raising=False)
     monkeypatch.delenv("SERVER_TYPE", raising=False)
     _reload_devices()
 
@@ -80,6 +81,24 @@ def test_config_jellyfin_type_creates_jellyfin_client(client, default_session):
     assert default_session.media.user_id == "user-guid-abc"
 
 
+def test_config_plex_type_creates_plex_client(client, default_session):
+    r = client.post(
+        "/config",
+        json={
+            "url": "http://plex:32400",
+            "credential": "plex-server-token",
+            "server_type": "plex",
+            "machine_identifier": "machine-abc",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+    assert isinstance(default_session.media, PlexClient)
+    assert default_session.media.base_url == "http://plex:32400"
+    assert default_session.media.token == "plex-server-token"
+    assert default_session.media.machine_identifier == "machine-abc"
+
+
 def test_config_switches_between_server_types(client, default_session):
     client.post(
         "/config",
@@ -109,10 +128,10 @@ def test_config_sets_display_name_from_username(client, default_session):
 # ── internal_url resolution ──────────────────────────────────────────────────
 
 
-def test_config_subsonic_uses_server_internal_url(
+def test_config_subsonic_uses_navidrome_internal_url(
     client, default_session, monkeypatch, server_lock_env
 ):
-    monkeypatch.setenv("SERVER_INTERNAL_URL", "http://nav-internal:4533")
+    monkeypatch.setenv("NAVIDROME_INTERNAL_URL", "http://nav-internal:4533")
     _reload_devices()
 
     client.post(
@@ -122,17 +141,17 @@ def test_config_subsonic_uses_server_internal_url(
     assert default_session.media.internal_url == "http://nav-internal:4533"
 
 
-def test_config_jellyfin_always_uses_the_submitted_url_not_server_internal_url(
+def test_config_jellyfin_ignores_navidrome_internal_url(
     client, default_session, monkeypatch, server_lock_env
 ):
-    # Regression test: /config used to always read SERVER_INTERNAL_URL
+    # Regression test: /config used to always read NAVIDROME_INTERNAL_URL
     # regardless of server_type, so a Jellyfin session would silently ping
-    # whatever Navidrome server SERVER_INTERNAL_URL pointed at instead of
+    # whatever Navidrome server NAVIDROME_INTERNAL_URL pointed at instead of
     # the actual Jellyfin server — always rejecting the login, since
     # Navidrome has no /Users/Me endpoint for JellyfinClient.ping() to hit.
-    # Jellyfin has no internal-URL env var of its own (unlike Navidrome) —
-    # its address always comes from whatever the login screen submitted.
-    monkeypatch.setenv("SERVER_INTERNAL_URL", "https://navidrome.example.com")
+    # Jellyfin has its own JELLYFIN_INTERNAL_URL var now (see the test
+    # below) — NAVIDROME_INTERNAL_URL specifically must stay Navidrome-only.
+    monkeypatch.setenv("NAVIDROME_INTERNAL_URL", "https://navidrome.example.com")
     _reload_devices()
 
     client.post(
@@ -145,6 +164,43 @@ def test_config_jellyfin_always_uses_the_submitted_url_not_server_internal_url(
         },
     )
     assert default_session.media.internal_url == "https://jf.example.com"
+
+
+def test_config_jellyfin_uses_jellyfin_internal_url(
+    client, default_session, monkeypatch, server_lock_env
+):
+    monkeypatch.setenv("JELLYFIN_INTERNAL_URL", "http://jf-internal:8096")
+    _reload_devices()
+
+    client.post(
+        "/config",
+        json={
+            "url": "https://jf.example.com",
+            "credential": "tok",
+            "server_type": "jellyfin",
+            "user_id": "u1",
+        },
+    )
+    assert default_session.media.internal_url == "http://jf-internal:8096"
+
+
+def test_config_plex_ignores_navidrome_internal_url(
+    client, default_session, monkeypatch, server_lock_env
+):
+    # Plex has no internal-URL env var at all (see routes/devices.py's
+    # comment) — its address always comes from the login/server-picker URL.
+    monkeypatch.setenv("NAVIDROME_INTERNAL_URL", "https://navidrome.example.com")
+    _reload_devices()
+
+    client.post(
+        "/config",
+        json={
+            "url": "https://plex.example.com",
+            "credential": "tok",
+            "server_type": "plex",
+        },
+    )
+    assert default_session.media.internal_url == "https://plex.example.com"
 
 
 # ── SERVER_LOCK ──────────────────────────────────────────────────────────────

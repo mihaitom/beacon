@@ -19,6 +19,7 @@ from core.session import (
     require_authenticated_session,
 )
 from core.state import AppState, list_target_pairs, resolve_target, stream_url
+from core.streamer import FALLBACK_FORMAT, resolve_output_format
 
 logger = logging.getLogger("connect.playback")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -194,18 +195,29 @@ def _current_track_play_args(
 
 def _current_reconnect_args(
     session: SessionState,
-) -> tuple[str, str, str, str | None, float | None, str]:
-    """Return (url, title, artist, album_art_url, duration, album) to hand
-    back to target.play() when reconnecting to whatever's currently loaded —
-    used by /resume and /seek. A queued track goes back through the FFmpeg
-    /stream proxy; radio has no track loaded (session.state.current_track is
-    None for it — see /play-url) and must reconnect to its own raw URL
-    instead, or the device gets a 204 from /stream and silently stops."""
+) -> tuple[str, str, str, str | None, float | None, str, str]:
+    """Return (url, title, artist, album_art_url, duration, album,
+    content_type) to hand back to target.play() when reconnecting to
+    whatever's currently loaded — used by /resume and /seek. A queued track
+    goes back through the FFmpeg /stream proxy; radio has no track loaded
+    (session.state.current_track is None for it — see /play-url) and must
+    reconnect to its own raw URL instead, or the device gets a 204 from
+    /stream and silently stops. content_type reuses whatever /play already
+    resolved for current_track (see core/streamer.py's resolve_output_format())
+    — the track hasn't changed, so there's no need to probe again."""
     st = session.state
     if st.radio_info:
-        return st.radio_info["url"], st.radio_info["title"], "", None, None, ""
+        return st.radio_info["url"], st.radio_info["title"], "", None, None, "", "audio/mpeg"
     title, artist, album_art_url, duration, album = _current_track_play_args(session)
-    return stream_url(session.session_id), title, artist, album_art_url, duration, album
+    return (
+        stream_url(session.session_id),
+        title,
+        artist,
+        album_art_url,
+        duration,
+        album,
+        st.current_output_format.content_type,
+    )
 
 
 class PlayRequest(BaseModel):
@@ -245,7 +257,7 @@ async def play_tracks(
             "[play] Rejected: media server not configured (waiting for /config)"
         )
         return {
-            "error": "Media server not configured — waiting for /config from Feishin"
+            "error": "Media server not configured — waiting for /config"
         }
     if not req.track_ids:
         return {"error": "No track ID provided"}
@@ -280,6 +292,15 @@ async def play_tracks(
             + (f" (start {start_position:.1f}s)" if start_position > 0.5 else "")
         )
 
+        # Resolved once here and cached on session.state — /stream reads it
+        # for its own Content-Type header instead of probing again (see
+        # core/streamer.py's resolve_output_format()). to_thread: get_stream_url()
+        # is instant for Subsonic/Jellyfin but Plex's needs a real network
+        # lookup first (see media/plex.py's docstring); resolve_output_format()
+        # itself shells out to ffmpeg, also blocking.
+        track_url = await asyncio.to_thread(session.media.get_stream_url, track.id)
+        output_format = await resolve_output_format(track_url)
+
         if target:
             conflict = await _claim_or_takeover(target, session, req.force)
             if conflict:
@@ -300,6 +321,7 @@ async def play_tracks(
                         album_art_url,
                         float(track.duration),
                         track.album,
+                        output_format.content_type,
                     )
                 except Exception as e:
                     logger.error(f"[play] Delivery error: {e}", exc_info=True)
@@ -312,6 +334,7 @@ async def play_tracks(
 
         st.current_track = track
         st.current_track_gain = req.gain
+        st.current_output_format = output_format
         st.is_streaming = True
         st.radio_info = None
         st.clock.start(start_position)
@@ -394,6 +417,7 @@ async def play_url(
                 return {"error": str(e)}
 
         st.current_track = None
+        st.current_output_format = FALLBACK_FORMAT
         st.is_streaming = True
         st.radio_info = {"title": req.title, "url": req.url}
         st.clock.start()
@@ -421,7 +445,7 @@ async def pause_playback(session: SessionState = Depends(require_authenticated_s
             "[pause] Rejected: media server not configured (waiting for /config)"
         )
         return {
-            "error": "Media server not configured — waiting for /config from Feishin"
+            "error": "Media server not configured — waiting for /config"
         }
     async with session.play_lock:
         st = session.state
@@ -442,7 +466,7 @@ async def resume_playback(session: SessionState = Depends(require_authenticated_
             "[resume] Rejected: media server not configured (waiting for /config)"
         )
         return {
-            "error": "Media server not configured — waiting for /config from Feishin"
+            "error": "Media server not configured — waiting for /config"
         }
     async with session.play_lock:
         st = session.state
@@ -522,6 +546,7 @@ async def stop_playback(session: SessionState = Depends(require_authenticated_se
         st.clock.is_paused = False
         st.track_ended = False
         st.current_track = None
+        st.current_output_format = FALLBACK_FORMAT
         st.radio_info = None
         st.active_delivery = None
         st.last_dispatch_key = None

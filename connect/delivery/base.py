@@ -24,9 +24,14 @@ class BaseDelivery(ABC):
         album_art_url: str | None = None,
         duration: float | None = None,
         album: str = "",
+        content_type: str = "audio/mpeg",
     ) -> None:
         """Start stream playback. `duration` (seconds) is None for radio/URL
-        streams, which have no fixed length."""
+        streams, which have no fixed length. `content_type` is the real
+        MIME type of what `stream_url` will actually serve — see
+        core/streamer.py's resolve_output_format() — so device-facing
+        metadata (DIDL protocolInfo, Cast content_type) matches what's sent
+        instead of always claiming audio/mpeg."""
 
     @abstractmethod
     async def stop(self) -> None:

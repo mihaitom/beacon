@@ -99,6 +99,7 @@ class ChromecastDelivery(BaseDelivery):
         album_art_url: str | None = None,
         duration: float | None = None,
         album: str = "",
+        content_type: str = "audio/mpeg",
     ) -> None:
         # duration accepted for interface parity with BaseDelivery.play() but
         # not yet wired up here — not part of the DLNA missing-duration fix
@@ -114,7 +115,7 @@ class ChromecastDelivery(BaseDelivery):
         await asyncio.to_thread(
             mc.play_media,
             stream_url,
-            "audio/mpeg",
+            content_type,
             title=title,
             thumb=album_art_url,
             metadata=metadata,

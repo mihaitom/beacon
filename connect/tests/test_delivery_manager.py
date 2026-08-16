@@ -1,4 +1,4 @@
-"""Tests for DeliveryManager — parsing, factories and fan-out."""
+"""Tests for DeliveryManager — construction, factories and fan-out."""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -12,72 +12,10 @@ from delivery import (
 )
 
 
-# ── _parse ────────────────────────────────────────────────────────────────────
-
-
-def test_parse_empty_returns_no_deliveries():
-    assert DeliveryManager("").deliveries == []
-    assert DeliveryManager("   ").deliveries == []
-
-
-def test_parse_single_sonos():
-    m = DeliveryManager("sonos:Küche")
-    assert len(m.deliveries) == 1
-    assert isinstance(m.deliveries[0], SonosDelivery)
-    assert m.deliveries[0].target == "Küche"
-
-
-def test_parse_single_airplay():
-    m = DeliveryManager("airplay:HomePod")
-    assert isinstance(m.deliveries[0], AirPlayDelivery)
-    assert m.deliveries[0].target == "HomePod"
-
-
-def test_parse_single_chromecast():
-    m = DeliveryManager("chromecast:LivingRoom TV")
-    assert isinstance(m.deliveries[0], ChromecastDelivery)
-    assert m.deliveries[0].target == "LivingRoom TV"
-
-
-def test_parse_single_dlna():
-    m = DeliveryManager("dlna:Receiver")
-    assert isinstance(m.deliveries[0], DlnaDelivery)
-    assert m.deliveries[0].target == "Receiver"
-
-
-def test_parse_mixed_all_four_types():
-    m = DeliveryManager("sonos:Küche,airplay:HomePod,chromecast:TV,dlna:Receiver")
-    assert len(m.deliveries) == 4
-    assert isinstance(m.deliveries[0], SonosDelivery)
-    assert isinstance(m.deliveries[1], AirPlayDelivery)
-    assert isinstance(m.deliveries[2], ChromecastDelivery)
-    assert isinstance(m.deliveries[3], DlnaDelivery)
-
-
-def test_parse_skips_unknown_type():
-    m = DeliveryManager("sonos:Küche,bluetooth:Speaker")
-    assert len(m.deliveries) == 1
-    assert isinstance(m.deliveries[0], SonosDelivery)
-
-
-def test_parse_skips_malformed_entry():
-    m = DeliveryManager("sonos:Küche,no-colon-here,airplay:HomePod")
-    assert len(m.deliveries) == 2
-    assert isinstance(m.deliveries[0], SonosDelivery)
-    assert isinstance(m.deliveries[1], AirPlayDelivery)
-
-
-def test_parse_trims_whitespace_and_lowercases_type():
-    m = DeliveryManager(" SONOS : Küche , Chromecast : TV ")
-    assert len(m.deliveries) == 2
-    assert m.deliveries[0].target == "Küche"
-    assert m.deliveries[1].target == "TV"
-
-
 # ── from_deliveries / list_targets ────────────────────────────────────────────
 
 
-def test_from_deliveries_creates_manager_without_parsing():
+def test_from_deliveries_creates_manager():
     s = SonosDelivery("Küche")
     a = AirPlayDelivery("HomePod")
     c = ChromecastDelivery("TV")
@@ -115,8 +53,8 @@ def test_manager_play_calls_every_delivery():
 
     asyncio.run(m.play("http://stream", "Title"))
 
-    a.play.assert_awaited_once_with("http://stream", "Title", "", None, None, "")
-    c.play.assert_awaited_once_with("http://stream", "Title", "", None, None, "")
+    a.play.assert_awaited_once_with("http://stream", "Title", "", None, None, "", "audio/mpeg")
+    c.play.assert_awaited_once_with("http://stream", "Title", "", None, None, "", "audio/mpeg")
 
 
 def test_manager_stop_swallows_exceptions():

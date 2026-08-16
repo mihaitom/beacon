@@ -4,6 +4,7 @@ import time
 from unittest.mock import AsyncMock, patch
 
 from core.session import compute_position
+from core.streamer import FALLBACK_FORMAT, OutputFormat
 from delivery import AirPlayDelivery, ChromecastDelivery, SonosDelivery
 from media import SubsonicClient, Track
 from routes.playback import _apply_position_offset
@@ -189,6 +190,102 @@ def test_play_returns_error_for_unfetchable_track(client, default_session):
         r = client.post("/play", json={"track_ids": ["bad"]})
 
     assert "error" in r.json()
+
+
+# ── Format detection threading (resolve_output_format) ─────────────────────
+# conftest.py's autouse _stub_output_format fixture makes /play resolve the
+# plain mp3 fallback by default; these tests override it to exercise the
+# actual threading of a non-fallback decision through to the delivery call
+# and session.state — see core/streamer.py's resolve_output_format().
+
+
+def test_play_passes_resolved_content_type_to_target_and_caches_it(
+    client, default_session
+):
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+    flac_copy = OutputFormat(
+        ffmpeg_args=["-acodec", "copy", "-f", "flac"], content_type="audio/flac"
+    )
+
+    with (
+        patch.object(default_session.media, "get_track", return_value=track),
+        patch("routes.playback.resolve_output_format", AsyncMock(return_value=flac_copy)),
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play_mock,
+    ):
+        r = client.post(
+            "/play",
+            json={"track_ids": ["1"], "target_name": "TV", "target_type": "chromecast"},
+        )
+
+    assert r.json()["status"] == "playing"
+    assert play_mock.call_args.args[-1] == "audio/flac"
+    assert default_session.state.current_output_format is flac_copy
+
+
+def test_resume_reuses_cached_content_type_without_reprobing(client, default_session):
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+    aac_copy = OutputFormat(
+        ffmpeg_args=["-acodec", "copy", "-f", "adts"], content_type="audio/aac"
+    )
+
+    with (
+        patch.object(default_session.media, "get_track", return_value=track),
+        patch("routes.playback.resolve_output_format", AsyncMock(return_value=aac_copy)),
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+    ):
+        client.post(
+            "/play",
+            json={"track_ids": ["1"], "target_name": "TV", "target_type": "chromecast"},
+        )
+
+    default_session.state.clock.is_paused = True
+
+    with (
+        patch(
+            "routes.playback.resolve_output_format", AsyncMock(side_effect=AssertionError(
+                "resume must not re-probe — it should reuse the cached format"
+            ))
+        ),
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as resume_play,
+    ):
+        r = client.post("/resume")
+
+    assert r.status_code == 200
+    assert resume_play.call_args.args[-1] == "audio/aac"
+
+
+def test_play_url_resets_cached_format_to_fallback(client, default_session):
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+    flac_copy = OutputFormat(
+        ffmpeg_args=["-acodec", "copy", "-f", "flac"], content_type="audio/flac"
+    )
+
+    with (
+        patch.object(default_session.media, "get_track", return_value=track),
+        patch("routes.playback.resolve_output_format", AsyncMock(return_value=flac_copy)),
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+    ):
+        client.post(
+            "/play",
+            json={"track_ids": ["1"], "target_name": "TV", "target_type": "chromecast"},
+        )
+    assert default_session.state.current_output_format is flac_copy
+
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()):
+        client.post(
+            "/play-url",
+            json={
+                "target_name": "TV",
+                "target_type": "chromecast",
+                "title": "Radio",
+                "url": "http://example.com/radio.mp3",
+            },
+        )
+
+    assert default_session.state.current_output_format is FALLBACK_FORMAT
 
 
 # ── /play-url URL scheme ─────────────────────────────────────────────────────
@@ -540,7 +637,9 @@ def test_resume_reconnects_to_radio_url_not_stream_proxy(client, default_session
         r = client.post("/resume")
 
     assert r.status_code == 200
-    play.assert_awaited_once_with("http://stream/radio", "Radio FM", "", None, None, "")
+    play.assert_awaited_once_with(
+        "http://stream/radio", "Radio FM", "", None, None, "", "audio/mpeg"
+    )
 
 
 def test_seek_while_playing_reconnects_to_radio_url(client, default_session):
@@ -552,7 +651,9 @@ def test_seek_while_playing_reconnects_to_radio_url(client, default_session):
     with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
         client.post("/seek", json={"position": 0})
 
-    play.assert_awaited_once_with("http://stream/radio", "Radio FM", "", None, None, "")
+    play.assert_awaited_once_with(
+        "http://stream/radio", "Radio FM", "", None, None, "", "audio/mpeg"
+    )
 
 
 def test_resume_still_uses_stream_proxy_for_a_regular_track(client, default_session):

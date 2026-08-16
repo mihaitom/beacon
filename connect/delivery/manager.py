@@ -4,10 +4,9 @@ import asyncio
 import logging
 import os
 
-from .airplay import AirPlayDelivery
 from .base import BaseDelivery
-from .chromecast import ChromecastDelivery, _ensure_cast_browser, _wait_for_discovery
-from .dlna import DlnaDelivery, UnsupportedDlnaDevice, _create_dmr_device, _location_cache
+from .chromecast import _ensure_cast_browser, _wait_for_discovery
+from .dlna import UnsupportedDlnaDevice, _create_dmr_device, _location_cache
 from .sonos import SonosDelivery
 
 logger = logging.getLogger("delivery")
@@ -24,52 +23,18 @@ _DEBUG = os.getenv("DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 class DeliveryManager:
-    """
-    Manages multiple delivery targets simultaneously.
+    """Groups multiple delivery targets so they can be played/paused/stopped
+    together — e.g. a Sonos multiroom group, or several independent targets
+    fanned out from one /play call. Always built via from_deliveries(); there
+    is no standalone/config-driven construction path."""
 
-    Configuration via TARGETS env var:
-      TARGETS=sonos:Arbeitszimmer,airplay:HomePod Küche,sonos:Wohnzimmer
-    """
-
-    def __init__(self, targets_config: str):
-        self.deliveries = self._parse(targets_config)
-        if self.deliveries:
-            logger.info(f"Delivery Targets: {self.deliveries}")
-        else:
-            logger.warning("No TARGETS configured — only /stream endpoint available")
+    def __init__(self, deliveries: list[BaseDelivery]) -> None:
+        self.deliveries = deliveries
 
     @classmethod
     def from_deliveries(cls, deliveries: list[BaseDelivery]) -> "DeliveryManager":
         """Create a manager from an explicit list of delivery objects (e.g. for multiroom)."""
-        instance = cls.__new__(cls)
-        instance.deliveries = deliveries
-        return instance
-
-    def _parse(self, config: str) -> list[BaseDelivery]:
-        if not config or not config.strip():
-            return []
-        result = []
-        for entry in config.split(","):
-            entry = entry.strip()
-            if ":" not in entry:
-                logger.warning(f"Invalid target entry (format: 'type:name'): {entry}")
-                continue
-            typ, name = entry.split(":", 1)
-            typ = typ.strip().lower()
-            name = name.strip()
-            if typ == "sonos":
-                result.append(SonosDelivery(name))
-            elif typ == "airplay":
-                result.append(AirPlayDelivery(name))
-            elif typ == "chromecast":
-                result.append(ChromecastDelivery(name))
-            elif typ == "dlna":
-                result.append(DlnaDelivery(name))
-            else:
-                logger.warning(
-                    f"Unknown delivery type: '{typ}' (known: sonos, airplay, chromecast, dlna)"
-                )
-        return result
+        return cls(deliveries)
 
     async def play(
         self,
@@ -79,6 +44,7 @@ class DeliveryManager:
         album_art_url: str | None = None,
         duration: float | None = None,
         album: str = "",
+        content_type: str = "audio/mpeg",
     ) -> None:
         if not self.deliveries:
             return
@@ -89,15 +55,17 @@ class DeliveryManager:
         if len(sonos) > 1:
             tasks.append(
                 self._play_grouped_sonos(
-                    sonos, stream_url, title, artist, album_art_url, duration, album
+                    sonos, stream_url, title, artist, album_art_url, duration, album, content_type
                 )
             )
         elif sonos:
             tasks.append(
-                sonos[0].play(stream_url, title, artist, album_art_url, duration, album)
+                sonos[0].play(
+                    stream_url, title, artist, album_art_url, duration, album, content_type
+                )
             )
         tasks.extend(
-            d.play(stream_url, title, artist, album_art_url, duration, album)
+            d.play(stream_url, title, artist, album_art_url, duration, album, content_type)
             for d in others
         )
 
@@ -115,6 +83,7 @@ class DeliveryManager:
         album_art_url: str | None = None,
         duration: float | None = None,
         album: str = "",
+        content_type: str = "audio/mpeg",
     ) -> None:
         """Group Sonos devices so they play in sync (coordinator + followers)."""
         devices = await asyncio.gather(
@@ -138,7 +107,9 @@ class DeliveryManager:
 
         await asyncio.sleep(0.5)
 
-        await deliveries[0].play(stream_url, title, artist, album_art_url, duration, album)
+        await deliveries[0].play(
+            stream_url, title, artist, album_art_url, duration, album, content_type
+        )
 
     async def pause(self) -> None:
         await asyncio.gather(

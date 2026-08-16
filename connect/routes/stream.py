@@ -23,8 +23,9 @@ router = APIRouter()
 @router.head("/stream/{session_id}")
 async def audio_stream_head(session_id: str = DEFAULT_SESSION_ID):
     """ffmpeg probes the URL with HEAD before streaming — answer without starting ffmpeg."""
+    session = await registry.get_or_create(session_id)
     return Response(
-        media_type="audio/mpeg",
+        media_type=session.state.current_output_format.content_type,
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
@@ -40,17 +41,25 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
 
     if not session.state.current_track:
         logger.warning("[stream] No track loaded — returning 204")
-        return StreamingResponse(iter([b""]), media_type="audio/mpeg", status_code=204)
+        return StreamingResponse(
+            iter([b""]), media_type=session.state.current_output_format.content_type,
+            status_code=204,
+        )
 
     track = session.state.current_track
+    output_format = session.state.current_output_format
     # Debug-only special case (see routes/debug.py) — the test tone isn't a
     # real library track, so there's nothing for session.media to resolve.
     # Loopback, not stream_url()'s LAN IP: ffmpeg fetches this from inside
     # the same process/container, not from the cast device.
+    # to_thread: get_stream_url() is a pure, instant string builder for
+    # Subsonic/Jellyfin, but Plex's needs a real network lookup first (see
+    # media/plex.py's docstring) — without this, that lookup would block
+    # the whole event loop, not just this one request/session.
     track_url = (
         f"http://127.0.0.1:{PORT}/debug/test-tone.wav"
         if track.id == TEST_TONE_TRACK_ID
-        else session.media.get_stream_url(track.id)
+        else await asyncio.to_thread(session.media.get_stream_url, track.id)
     )
 
     # Captured now (for this connection's -ss), but *not* cleared yet — see
@@ -128,6 +137,7 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
                     on_track_start=on_track_start,
                     start_offset=offset,
                     gain=session.state.current_track_gain,
+                    output_format=output_format,
                 ):
                     if not offset_consumed:
                         offset_consumed = True
@@ -184,7 +194,7 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
 
     return StreamingResponse(
         stream_with_completion(),
-        media_type="audio/mpeg",
+        media_type=output_format.content_type,
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 

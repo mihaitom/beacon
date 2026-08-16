@@ -15,7 +15,8 @@ so they're bridged as binary passthroughs instead (see _handle_binary).
 Internet radio stations are the one exception to "translates real Jellyfin
 API calls": Jellyfin has no concept of user-managed stations at all, so
 those four endpoints are instead backed by connect's own local station list
-(see core/radio_stations.py) — self-hosted, not a Jellyfin API translation.
+(see media/base.py, which is where they actually live — shared with
+plex_bridge.py, since the logic is identical regardless of backend).
 
 Endpoints with no sensible Jellyfin (or self-hosted) equivalent —
 Navidrome's startScan/getScanStatus, personal 1-5 star ratings — are
@@ -34,13 +35,17 @@ import httpx
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from core import radio_stations
-
+from .base import (
+    create_internet_radio_station,
+    delete_internet_radio_station,
+    get_internet_radio_stations,
+    subsonic_envelope,
+    subsonic_error,
+    update_internet_radio_station,
+)
 from .jellyfin import TICKS_PER_SECOND, JellyfinClient
 
 logger = logging.getLogger("connect.jellyfin_bridge")
-
-_SUBSONIC_API_VERSION = "1.16.1"
 
 # Shared across every bridged request — same reasoning as routes/proxy.py's
 # own _client (see that module's comment): reuse the connection pool instead
@@ -62,27 +67,6 @@ async def close() -> None:
     if _client is not None:
         await _client.aclose()
         _client = None
-
-
-# ── Subsonic envelope helpers ────────────────────────────────────────────────
-
-
-def _subsonic_envelope(result: dict) -> JSONResponse:
-    return JSONResponse(
-        {"subsonic-response": {"status": "ok", "version": _SUBSONIC_API_VERSION, **result}}
-    )
-
-
-def _subsonic_error(code: int, message: str) -> JSONResponse:
-    return JSONResponse(
-        {
-            "subsonic-response": {
-                "status": "failed",
-                "version": _SUBSONIC_API_VERSION,
-                "error": {"code": code, "message": message},
-            }
-        }
-    )
 
 
 # ── Jellyfin field mapping ───────────────────────────────────────────────────
@@ -148,9 +132,7 @@ def _map_replay_gain(item: dict) -> dict | None:
     same {trackGain, albumGain} shape here so the frontend only ever deals
     with one format. LUFS is Jellyfin's own loudness-scan fallback for files
     with no embedded ReplayGain tag, converted to a dB gain against
-    ReplayGain's -18 LUFS reference target — same mapping feishin-connect
-    uses (~/code/feishin-connect's jellyfin-normalize.ts), the client this
-    bridge's Jellyfin support is otherwise modeled on."""
+    ReplayGain's -18 LUFS reference target."""
     track_gain = item.get("NormalizationGain")
     if track_gain is None and item.get("LUFS") is not None:
         track_gain = -18 - item["LUFS"]
@@ -624,9 +606,7 @@ async def scrobble(params: dict, media: JellyfinClient) -> dict:
     if not track_id:
         raise ValueError("scrobble.view requires id")
 
-    # Mirrors feishin-connect's jellyfin-controller.ts scrobble handler
-    # (~/code/feishin-connect), a shipping client that gets real
-    # per-play PlayCount increments out of Jellyfin via this exact
+    # Real per-play PlayCount increments out of Jellyfin need this exact
     # two-call shape. The earlier attempt here only ever POSTed
     # /Sessions/Playing/Stopped in isolation, with no preceding
     # /Sessions/Playing to seed the session's NowPlayingItem — that's
@@ -664,56 +644,6 @@ async def scrobble(params: dict, media: JellyfinClient) -> dict:
     return {}
 
 
-# ── Internet radio stations (self-hosted — see core/radio_stations.py) ──────
-# Not a Jellyfin API translation like everything else above: Jellyfin has no
-# station-management concept at all, so these four read/write connect's own
-# local station list instead. `media` is unused but kept in the signature
-# for a uniform dispatch-table type.
-
-
-async def get_internet_radio_stations(_params: dict, _media: JellyfinClient) -> dict:
-    stations = radio_stations.list_stations()
-    return {
-        "internetRadioStations": {
-            "internetRadioStation": [
-                {
-                    "id": s["id"],
-                    "name": s["name"],
-                    "streamUrl": s["streamUrl"],
-                    "homePageUrl": s.get("homePageUrl", ""),
-                }
-                for s in stations
-            ]
-        }
-    }
-
-
-async def create_internet_radio_station(params: dict, _media: JellyfinClient) -> dict:
-    # client.ts sends the Subsonic-conventional "homepageUrl" (lowercase p)
-    # query param — distinct from the raw response's "homePageUrl" above.
-    radio_stations.create(
-        params.get("name", ""), params.get("streamUrl", ""), params.get("homepageUrl", "")
-    )
-    return {}
-
-
-async def update_internet_radio_station(params: dict, _media: JellyfinClient) -> dict:
-    station_id = params["id"]
-    updated = radio_stations.update(
-        station_id, params.get("name", ""), params.get("streamUrl", ""), params.get("homepageUrl", "")
-    )
-    if not updated:
-        raise ValueError(f"No such radio station: {station_id}")
-    return {}
-
-
-async def delete_internet_radio_station(params: dict, _media: JellyfinClient) -> dict:
-    station_id = params["id"]
-    if not radio_stations.delete(station_id):
-        raise ValueError(f"No such radio station: {station_id}")
-    return {}
-
-
 _HANDLERS: dict[str, Callable[[dict, JellyfinClient], Awaitable[dict]]] = {
     "getAlbumList2.view": get_album_list2,
     "getAlbum.view": get_album,
@@ -743,10 +673,18 @@ _HANDLERS: dict[str, Callable[[dict, JellyfinClient], Awaitable[dict]]] = {
 # SubsonicClient.get()'s JSON envelope — see services/subsonic/client.ts's
 # coverArtUrl()/streamUrl(). Streamed through connect the same way
 # routes/proxy.py's own _proxy() streams Subsonic responses, just targeting
-# a Jellyfin URL instead of a fixed SERVER_INTERNAL_URL base.
+# a Jellyfin URL instead of a fixed NAVIDROME_INTERNAL_URL base.
 
 _BINARY_PATHS = {"getCoverArt.view", "stream.view"}
-_SKIP_RESP_HEADERS = {"transfer-encoding", "connection", "content-encoding"}
+# content-length included: blindly forwarding the upstream value can crash
+# uvicorn ("Response content longer than Content-Length") if the actual
+# streamed byte count doesn't match it exactly — found live (2026-08-17)
+# against Plex's thumb endpoint (see plex_bridge.py's identical fix);
+# applied here too since this is the same latent risk, not something
+# proven safe for Jellyfin specifically, just not yet hit. Dropping it lets
+# StreamingResponse fall back to chunked transfer encoding, which makes no
+# such promise to violate.
+_SKIP_RESP_HEADERS = {"transfer-encoding", "connection", "content-encoding", "content-length"}
 
 
 async def _stream_binary(request: Request, url: str, media: JellyfinClient) -> StreamingResponse:
@@ -783,7 +721,7 @@ async def _handle_binary(
     if path == "getCoverArt.view":
         cover_id = params.get("id", "")
         if not cover_id:
-            return _subsonic_error(70, "No cover art id supplied")
+            return subsonic_error(70, "No cover art id supplied")
         size = params.get("size", "300")
         url = (
             f"{media.internal_url}/Items/{_quote_id(cover_id)}/Images/Primary"
@@ -792,7 +730,7 @@ async def _handle_binary(
     else:  # stream.view
         track_id = params.get("id", "")
         if not track_id:
-            return _subsonic_error(70, "No track id supplied")
+            return subsonic_error(70, "No track id supplied")
         url = media.get_stream_url(track_id)
     return await _stream_binary(request, url, media)
 
@@ -813,14 +751,14 @@ async def handle(
             # to propagate as a raw FastAPI 500 with a stack trace instead of
             # degrading like every other endpoint here.
             logger.warning(f"[jellyfin-bridge] {path} failed: {e}")
-            return _subsonic_error(0, str(e))
+            return subsonic_error(0, str(e))
 
     handler = _HANDLERS.get(path)
     if handler is None:
         # Also the fallback for endpoints deliberately never bridged (see
         # module docstring) — the frontend hides the UI for those before
         # they'd ever be called, this is just the safety net.
-        return _subsonic_error(70, f"{path} is not supported on Jellyfin")
+        return subsonic_error(70, f"{path} is not supported on Jellyfin")
     try:
         # request.query_params (not dict(...)) — a plain dict() conversion
         # collapses repeated keys (songId=1&songId=2&...), which
@@ -830,5 +768,5 @@ async def handle(
         result = await handler(request.query_params, media)
     except Exception as e:
         logger.warning(f"[jellyfin-bridge] {path} failed: {e}")
-        return _subsonic_error(0, str(e))
-    return _subsonic_envelope(result)
+        return subsonic_error(0, str(e))
+    return subsonic_envelope(result)

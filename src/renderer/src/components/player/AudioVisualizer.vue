@@ -8,7 +8,14 @@ import { useAuthStore } from '@/stores/auth'
 import { getAudioEngine } from '@/services/audioEngine'
 import { VisualizerEventSource } from '@/services/connect/visualizer'
 
-const BAR_COUNT = 56
+// 60 bars, logarithmically spaced from 20Hz to 22050Hz — works out to
+// roughly 1/6-octave bands (log2(22050/20)/60 ≈ 0.168 octaves/bar, close
+// enough to true 1/6-octave that the difference isn't perceptible). See
+// connect/core/audio_analysis.py's identical band mapping for 'cast'
+// mode, which this must visually match.
+const BAR_COUNT = 60
+const MIN_FREQ_HZ = 20
+const MAX_FREQ_HZ = 22050
 // Fraction of the canvas height bars settle to when there's no signal to
 // show (paused, or a 'cast' connection that hasn't produced a frame yet) —
 // a resting flat line rather than nothing, so it still reads as "this is a
@@ -18,17 +25,23 @@ const IDLE_HEIGHT = 0
 // lower is smoother/laggier, higher tracks the signal more tightly.
 // Applied both rising into real data and falling back to IDLE_HEIGHT/0, so
 // pausing (or toggling off) settles the bars instead of snapping them.
-const SMOOTHING_LOCAL = 0.5
+// Lowered from 0.5 (in both modes, see SMOOTHING_CAST below) — that read
+// as visibly jittery, chasing every small frame-to-frame fluctuation in
+// the underlying FFT data almost fully within a single rendered frame
+// instead of settling into a steadier motion.
+const SMOOTHING_LOCAL = 0.3
 // 'local' gets a fresh real value every rendered frame (~60Hz, straight
 // off the Web Audio analyser) — SMOOTHING_LOCAL alone already looks tight
-// there. 'cast' only gets a new real value roughly every ~93ms (backend's
-// own FFT frame size, see audio_analysis.py's _FRAME_SECONDS) — with the
-// same low constant, each bar was still chasing the *previous* target when
-// the next one arrived, compounding into a persistent, hard-to-pin-down
+// there. 'cast' only gets a new real value roughly every ~23ms (backend's
+// own hop size, see audio_analysis.py's _FRAME_SECONDS) — with too low a
+// constant, each bar was still chasing the *previous* target when the
+// next one arrived, compounding into a persistent, hard-to-pin-down
 // "always a bit behind" feel even though the backend's own release timing
-// checked out exactly on schedule. A stronger pull here means each bar
-// actually catches up to its target before the next SSE frame lands.
-const SMOOTHING_CAST = 0.5
+// checked out exactly on schedule. Kept equal to SMOOTHING_LOCAL rather
+// than higher, though: at this update rate (close to the render rate) a
+// stronger pull here just traded that laggy feel for the same jitteriness
+// SMOOTHING_LOCAL's own drop was fixing.
+const SMOOTHING_CAST = 0.3
 
 export default {
   name: 'AudioVisualizer',
@@ -151,10 +164,16 @@ export default {
 
       this.paint(ctx, canvas.width, canvas.height)
     },
-    // Byte frequency data isn't evenly perceptually distributed — most of
-    // a typical track's energy sits in the lower bins, with the top of
-    // the range usually near-silent. Sampling only the lower ~85% avoids
-    // spending a third of the bar row on bins that would just sit flat.
+    // Raw FFT bins are linearly spaced in frequency, but pitch/perceived
+    // "spread" of musical content is logarithmic — a linear bin mapping
+    // devotes the same number of bars to the octave between 11 and 22kHz
+    // (usually near-silent) as to the one between 20 and 40Hz (a single
+    // bass note's entire range), leaving most of the low end crammed into
+    // one or two bars. Each bar instead covers its own logarithmically-
+    // spaced frequency slice (MIN_FREQ_HZ..MAX_FREQ_HZ) and averages
+    // whatever raw bins fall inside it — same approach as
+    // connect/core/audio_analysis.py's analyze_pcm() for 'cast' mode, so
+    // both modes read the same regardless of which is active.
     sampleFrequencies(): number[] | null {
       let analyser: AnalyserNode
       try {
@@ -167,11 +186,18 @@ export default {
         this.frequencyData = new Uint8Array(analyser.frequencyBinCount)
       }
       analyser.getByteFrequencyData(this.frequencyData)
-      const usableBins = Math.floor(analyser.frequencyBinCount * 0.85)
+      const binHz = analyser.context.sampleRate / analyser.fftSize
+      const bins = this.frequencyData
+      const ratio = MAX_FREQ_HZ / MIN_FREQ_HZ
       const heights = new Array<number>(BAR_COUNT)
       for (let i = 0; i < BAR_COUNT; i++) {
-        const bin = Math.floor((i / BAR_COUNT) * usableBins)
-        heights[i] = (this.frequencyData[bin] ?? 0) / 255
+        const loFreq = MIN_FREQ_HZ * ratio ** (i / BAR_COUNT)
+        const hiFreq = MIN_FREQ_HZ * ratio ** ((i + 1) / BAR_COUNT)
+        const loBin = Math.max(0, Math.floor(loFreq / binHz))
+        const hiBin = Math.min(bins.length, Math.max(loBin + 1, Math.ceil(hiFreq / binHz)))
+        let sum = 0
+        for (let bin = loBin; bin < hiBin; bin++) sum += bins[bin] ?? 0
+        heights[i] = sum / (hiBin - loBin) / 255
       }
       return heights
     },

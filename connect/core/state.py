@@ -1,6 +1,6 @@
-"""core/state.py — Session-agnostic runtime state: delivery resolution, global
-(operator-configured) targets, and the AppState/EventBus building blocks used
-by core/session.py's per-session SessionState.
+"""core/state.py — Session-agnostic runtime state: delivery resolution and
+the AppState/EventBus building blocks used by core/session.py's per-session
+SessionState.
 """
 
 import asyncio
@@ -18,9 +18,9 @@ from delivery import (
 from media import Track
 
 from .playback_clock import PlaybackClock
+from .streamer import FALLBACK_FORMAT, OutputFormat
 
 PORT = int(os.getenv("PORT", "9181"))
-TARGETS = os.getenv("TARGETS", "")
 
 
 class AppState:
@@ -45,6 +45,13 @@ class AppState:
         # each call stops and restarts the device before it can buffer audio.
         self.last_dispatch_key: str | None = None
         self.last_dispatch_at: float = 0.0
+        # Format resolved for current_track by routes/playback.py at dispatch
+        # time (/play, /resume, /seek) — see core/streamer.py's
+        # resolve_output_format(). /stream reads this instead of probing
+        # again, so HEAD/GET and the actual ffmpeg invocation always agree
+        # on what's being sent. Resets to the fallback for radio (/play-url
+        # never goes through our own /stream proxy, so it's irrelevant there).
+        self.current_output_format: OutputFormat = FALLBACK_FORMAT
 
 
 class EventBus:
@@ -75,13 +82,11 @@ class EventBus:
 
 class Context:
     """Holds process-wide state that isn't specific to any one user's
-    playback: `delivery` is the operator-configured (env `TARGETS`) fixed
-    hardware, and `discovered` is the last device-discovery scan — properties
-    of the deployment/network, not of a session. See core/session.py for the
+    playback: `discovered` is the last device-discovery scan — a property of
+    the deployment/network, not of a session. See core/session.py for the
     per-user SessionState/SessionRegistry this used to also hold."""
 
     def __init__(self):
-        self.delivery = DeliveryManager(TARGETS)
         # Last successful discovery results — returned immediately on
         # subsequent /discover calls. Shared across sessions: the set of
         # devices on the network doesn't depend on who's asking (who's
@@ -164,20 +169,16 @@ def resolve_target(
     if target_type and target_name:
         cls = _DELIVERY_TYPES.get(target_type, AirPlayDelivery)
         return _reuse(cls, target_name) or cls(target_name)
-    if ctx.delivery.deliveries:
-        return ctx.delivery
     return None
 
 
 def find_sonos(active: BaseDelivery | DeliveryManager | None) -> list[SonosDelivery]:
-    """Return all SonosDelivery objects in the active delivery, or from config."""
+    """Return all SonosDelivery objects in the active delivery."""
     if isinstance(active, SonosDelivery):
         return [active]
     if isinstance(active, DeliveryManager):
-        found = [d for d in active.deliveries if isinstance(d, SonosDelivery)]
-        if found:
-            return found
-    return [d for d in ctx.delivery.deliveries if isinstance(d, SonosDelivery)]
+        return [d for d in active.deliveries if isinstance(d, SonosDelivery)]
+    return []
 
 
 def list_target_pairs(

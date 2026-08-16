@@ -7,11 +7,12 @@ import {
   postJellyfinQuickConnectInitiate,
   postJellyfinQuickConnectStatus,
 } from '@/services/connect/jellyfin'
+import { postPlexPinCheck, postPlexPinInitiate, postPlexResources } from '@/services/connect/plex'
 import { clearPersistedPlayback, usePlaybackStore } from './playback'
 import { useLibraryStore } from './library'
 import { useConnectStore } from './connect'
 import { capabilitiesFor, type ServerCapabilities } from '@/services/capabilities'
-import type { HealthResponse } from '@/services/connect/types'
+import type { HealthResponse, PlexServer } from '@/services/connect/types'
 
 const STORAGE_KEY = 'beacon.auth'
 
@@ -40,22 +41,28 @@ interface StoredCredentials {
   connectUrl: string
   apiUrl: string
   connectToken: string
-  serverType: 'subsonic' | 'jellyfin'
+  serverType: 'subsonic' | 'jellyfin' | 'plex'
   userId: string
+  machineIdentifier: string
 }
 
 interface AuthState {
   serverUrl: string
   username: string
   password: string
-  // 'subsonic' (covers Navidrome) or 'jellyfin' — picked on ServerLoginView's
-  // tile grid (or filled from server_lock for a locked deployment). Drives
-  // both the login flow below and services/capabilities.ts's UI gating.
-  serverType: 'subsonic' | 'jellyfin'
+  // 'subsonic' (covers Navidrome), 'jellyfin', or 'plex' — picked on
+  // ServerLoginView's tile grid (or filled from server_lock for a locked
+  // deployment). Drives both the login flow below and
+  // services/capabilities.ts's UI gating.
+  serverType: 'subsonic' | 'jellyfin' | 'plex'
   // Jellyfin user GUID, returned by postJellyfinLogin() — required for
   // Jellyfin's own item-lookup endpoints (see connect/media/jellyfin.py).
-  // Unused/empty for Subsonic.
+  // Unused/empty for Subsonic and Plex.
   userId: string
+  // Plex only — the *server's* clientIdentifier (PlexServer.machine_identifier),
+  // needed for playlist writes (see connect/media/plex_bridge.py's
+  // _playlist_item_uri()). Unused/empty for Subsonic and Jellyfin.
+  machineIdentifier: string
   // Base for Subsonic-proxy calls (/rest, /auth, stream.view/getCoverArt.view
   // URLs — see services/subsonic/client.ts). Electron talks to the connect
   // backend directly, so this and apiUrl below are always equal there; the
@@ -81,6 +88,7 @@ export const useAuthStore = defineStore('auth', {
     password: '',
     serverType: 'subsonic',
     userId: '',
+    machineIdentifier: '',
     connectUrl: 'http://localhost:9181',
     apiUrl: 'http://localhost:9181',
     connectToken: '',
@@ -124,7 +132,7 @@ export const useAuthStore = defineStore('auth', {
       // loginError (see services/connect/http.ts's extractDetail()). A
       // client-side pre-flight through routes/proxy.py's /rest/ping.view
       // used to run before any session existed, which meant it could only
-      // ever reach a fixed SERVER_INTERNAL_URL — not necessarily the
+      // ever reach a fixed NAVIDROME_INTERNAL_URL — not necessarily the
       // server the user just typed in — same reasoning as why Jellyfin
       // never had one of these either.
       await postConfig({
@@ -132,6 +140,7 @@ export const useAuthStore = defineStore('auth', {
         url: this.serverUrl,
         server_type: this.serverType,
         user_id: this.userId,
+        machine_identifier: this.machineIdentifier,
         username: this.username,
       })
 
@@ -175,6 +184,7 @@ export const useAuthStore = defineStore('auth', {
       this.username = params.username
       this.password = params.password
       this.serverType = params.serverType ?? 'subsonic'
+      this.machineIdentifier = ''
       try {
         // A genuinely new login (form submission with a password) is the
         // only place the credential should be rebuilt — see
@@ -215,6 +225,7 @@ export const useAuthStore = defineStore('auth', {
       await this.loadConnectDefaults()
       this.serverUrl = params.serverUrl.replace(/\/+$/, '')
       this.serverType = 'jellyfin'
+      this.machineIdentifier = ''
       const { code, secret } = await postJellyfinQuickConnectInitiate({ url: this.serverUrl })
       return { code, secret }
     },
@@ -246,6 +257,61 @@ export const useAuthStore = defineStore('auth', {
       return true
     },
 
+    /** Starts a Plex PIN-linking login — unlike Jellyfin's Quick Connect,
+     * there's no server URL to set yet at this point: Plex authenticates
+     * an *account* via plex.tv, not a specific server (see
+     * PLEX_PLAN.md). Returns the code/link to show (ServerLoginView.vue
+     * opens authUrl in the system browser) and the PIN id to poll with
+     * (see pollPlexAuth()). */
+    async startPlexAuth(): Promise<{ code: string; authUrl: string; pinId: number }> {
+      this.loginError = null
+      await this.loadConnectDefaults()
+      this.serverType = 'plex'
+      const { id, code, auth_url: authUrl } = await postPlexPinInitiate()
+      return { code, authUrl, pinId: id }
+    },
+
+    /** Polled every couple of seconds while the "waiting for approval"
+     * screen shows. Returns null while the user hasn't approved the PIN in
+     * the browser tab yet; once approved, returns the Plex *account*
+     * token (plus a display name, best-effort — see
+     * connect/routes/plex_auth.py) — not a finished login by itself, a
+     * server still needs picking (see
+     * fetchPlexServers()/selectPlexServer()). */
+    async pollPlexAuth(pinId: number): Promise<{ accountToken: string; username: string } | null> {
+      const status = await postPlexPinCheck({ id: pinId })
+      if (!status.authenticated || !status.account_token) return null
+      return { accountToken: status.account_token, username: status.username ?? '' }
+    },
+
+    /** Lists the Plex Media Servers the just-linked account can reach. */
+    async fetchPlexServers(accountToken: string): Promise<PlexServer[]> {
+      const { servers } = await postPlexResources({ account_token: accountToken })
+      return servers
+    },
+
+    /** Finishes the Plex login once a server's been picked (by the user,
+     * or automatically when fetchPlexServers() found exactly one) — sets
+     * serverUrl/credential and authenticates exactly like every other
+     * server type, same tail as pollJellyfinQuickConnect(). `username`
+     * comes from pollPlexAuth()'s best-effort lookup — may be an empty
+     * string if that lookup failed, same as Jellyfin already tolerates. */
+    async selectPlexServer(server: PlexServer, username = ''): Promise<void> {
+      this.serverUrl = server.url.replace(/\/+$/, '')
+      this.credential = server.token
+      this.userId = ''
+      this.machineIdentifier = server.machine_identifier
+      this.username = username
+      try {
+        await this._authenticate()
+        await this.persist()
+      } catch (error) {
+        this.authenticated = false
+        this.loginError = error instanceof Error ? error.message : String(error)
+        throw error
+      }
+    },
+
     /** Silent re-auth on app boot using saved credentials. Returns false
      * (without throwing) when there's nothing saved or re-auth fails, so
      * the router guard can fall back to /login without an unhandled error.
@@ -264,6 +330,7 @@ export const useAuthStore = defineStore('auth', {
       // Falls back to 'subsonic' for data saved before this field existed.
       this.serverType = stored.serverType || 'subsonic'
       this.userId = stored.userId || ''
+      this.machineIdentifier = stored.machineIdentifier || ''
       if (stored.connectUrl && stored.connectToken) {
         this.connectUrl = stored.connectUrl
         // Falls back to connectUrl for data saved before this field existed.
@@ -352,6 +419,7 @@ export const useAuthStore = defineStore('auth', {
         connectToken: this.connectToken,
         serverType: this.serverType,
         userId: this.userId,
+        machineIdentifier: this.machineIdentifier,
       }
       await secureStorage.set(STORAGE_KEY, JSON.stringify(stored))
     },
@@ -365,6 +433,7 @@ export const useAuthStore = defineStore('auth', {
       this.authenticated = false
       this.password = ''
       this.userId = ''
+      this.machineIdentifier = ''
       this.credential = ''
       this.sessionId = ''
       this.health = null

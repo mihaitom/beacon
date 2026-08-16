@@ -1,4 +1,4 @@
-"""delivery — Audio delivery layer for Feishin Connect.
+"""delivery — Audio delivery layer for Beacon Connect.
 
 Sub-modules:
   base        BaseDelivery abstract class

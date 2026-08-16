@@ -1,0 +1,645 @@
+"""Tests for media/plex_bridge.py and routes/proxy.py's dispatch to it."""
+
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from core.session import DEFAULT_SESSION_ID, SessionState
+from core.session import registry as session_registry
+from media import PlexClient, plex_bridge
+
+
+@pytest.fixture
+def plex_session(reset_state) -> SessionState:
+    """Direct equivalent of test_jellyfin_bridge.py's jellyfin_session, but
+    with a PlexClient."""
+    session = SessionState(DEFAULT_SESSION_ID)
+    session.media = PlexClient(
+        "http://plex:32400", token="tok", internal_url="http://plex:32400"
+    )
+    session.authenticated = True
+    session_registry._sessions[DEFAULT_SESSION_ID] = session
+    return session
+
+
+def _fake_px_client(json_by_path: dict[str, dict] | None = None):
+    """Mocks plex_bridge._get_client() so _px_request() resolves against a
+    canned {path: json} table instead of a real Plex server — same shape
+    as test_jellyfin_bridge.py's own _fake_jf_client()."""
+    json_by_path = json_by_path or {}
+    calls: list[tuple] = []
+
+    async def fake_request(method, url, headers=None, params=None):
+        calls.append((method, url, params))
+        for path, payload in json_by_path.items():
+            # A key may carry a literal "?type=N" suffix to disambiguate
+            # two calls hitting the exact same path with a different
+            # `type` param (get_artists() does this: one call for
+            # artists, one for albums, both against .../all) — the real
+            # URL passed here never carries query params itself (see
+            # _px_request, which sends them separately), so this has to
+            # match against the params dict instead.
+            base_path, _, type_suffix = path.partition("?type=")
+            if not url.endswith(base_path):
+                continue
+            if type_suffix and (params or {}).get("type") != type_suffix:
+                continue
+            response = MagicMock()
+            response.raise_for_status = MagicMock()
+            response.content = b"1"
+            response.json = MagicMock(return_value=payload)
+            return response
+        response = MagicMock()
+        response.raise_for_status = MagicMock()
+        response.content = b""
+        return response
+
+    mock_client = MagicMock()
+    mock_client.request = fake_request
+    return mock_client, calls
+
+
+# ── Field mapping (pure functions, no I/O) ──────────────────────────────────
+
+
+def test_map_song_basic_fields():
+    item = {
+        "ratingKey": "1001",
+        "title": "Track Title",
+        "grandparentTitle": "Artist A",
+        "parentTitle": "The Album",
+        "parentRatingKey": "2001",
+        "grandparentRatingKey": "3001",
+        "duration": 200_000,
+        "index": 3,
+        "parentIndex": 1,
+        "year": 2020,
+        "Genre": [{"tag": "Rock"}],
+        "Media": [{"container": "flac", "bitrate": 900}],
+        "viewCount": 5,
+    }
+    song = plex_bridge._map_song(item)
+    assert song["id"] == "1001"
+    assert song["title"] == "Track Title"
+    assert song["artist"] == "Artist A"
+    assert song["album"] == "The Album"
+    assert song["duration"] == 200
+    assert song["track"] == 3
+    assert song["discNumber"] == 1
+    assert song["year"] == 2020
+    assert song["genre"] == "Rock"
+    assert song["albumId"] == "2001"
+    assert song["artistId"] == "3001"
+    assert song["coverArt"] == "2001"  # falls back to the album's id
+    assert song["suffix"] == "flac"
+    assert song["bitRate"] == 900
+    assert song["playCount"] == 5
+
+
+def test_map_song_cover_art_falls_back_to_own_id_without_album():
+    item = {"ratingKey": "1001", "title": "T", "duration": 0}
+    song = plex_bridge._map_song(item)
+    assert song["coverArt"] == "1001"
+
+
+def test_map_album_basic_fields():
+    item = {
+        "ratingKey": "2001",
+        "title": "The Album",
+        "parentTitle": "Artist A",
+        "parentRatingKey": "3001",
+        "leafCount": 12,
+        "duration": 2_400_000,
+        "year": 2019,
+        "Genre": [{"tag": "Jazz"}],
+    }
+    album = plex_bridge._map_album(item)
+    assert album["id"] == "2001"
+    assert album["name"] == "The Album"
+    assert album["artist"] == "Artist A"
+    assert album["artistId"] == "3001"
+    assert album["songCount"] == 12
+    assert album["duration"] == 2400
+    assert album["year"] == 2019
+    assert album["genre"] == "Jazz"
+
+
+def test_map_artist_basic_fields():
+    item = {"ratingKey": "3001", "title": "Artist A", "childCount": 4}
+    artist = plex_bridge._map_artist(item)
+    assert artist == {
+        "id": "3001",
+        "name": "Artist A",
+        "coverArt": "3001",
+        "albumCount": 4,
+    }
+
+
+def test_map_song_includes_user_rating_converted_from_plex_scale():
+    # Plex stores 0-10 (2 units/star); Subsonic's userRating is plain 1-5.
+    item = {"ratingKey": "1001", "title": "T", "duration": 0, "userRating": 8}
+    assert plex_bridge._map_song(item)["userRating"] == 4
+
+
+def test_map_song_omits_user_rating_when_unset():
+    item = {"ratingKey": "1001", "title": "T", "duration": 0}
+    assert "userRating" not in plex_bridge._map_song(item)
+
+
+# ── JSON handlers ─────────────────────────────────────────────────────────────
+
+
+def test_get_album_uses_album_id_for_track_cover_art(client, plex_session, monkeypatch):
+    # Regression test: /children's per-track Metadata entries don't
+    # reliably carry parentRatingKey (confirmed live 2026-08-17) — without
+    # this, _map_song()'s own fallback lands on the track's own ratingKey,
+    # which has no thumb of its own, so cover art silently went missing
+    # for every track in an album's song list.
+    fake_client, _calls = _fake_px_client(
+        {
+            "/library/metadata/2001": {
+                "MediaContainer": {"Metadata": [{"ratingKey": "2001", "title": "Album A"}]}
+            },
+            "/library/metadata/2001/children": {
+                "MediaContainer": {
+                    "Metadata": [{"ratingKey": "9001", "title": "Track 1", "duration": 0}]
+                }
+            },
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getAlbum.view?id=2001")
+    assert r.status_code == 200
+    song = r.json()["subsonic-response"]["album"]["song"][0]
+    assert song["coverArt"] == "2001"
+    assert song["albumId"] == "2001"
+
+
+def test_get_album_list2_returns_mapped_albums(client, plex_session, monkeypatch):
+    fake_client, calls = _fake_px_client(
+        {
+            "/library/sections": {
+                "MediaContainer": {"Directory": [{"key": "5", "type": "artist"}]}
+            },
+            "/library/sections/5/all": {
+                "MediaContainer": {
+                    "Metadata": [{"ratingKey": "2001", "title": "Album A", "parentTitle": "Artist A"}]
+                }
+            },
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getAlbumList2.view")
+    assert r.status_code == 200
+    body = r.json()["subsonic-response"]
+    assert body["status"] == "ok"
+    assert body["albumList2"]["album"] == [
+        {
+            "id": "2001",
+            "name": "Album A",
+            "artist": "Artist A",
+            "coverArt": "2001",
+            "songCount": 0,
+            "duration": 0,
+        }
+    ]
+    # Music section resolved once and reused — not re-fetched.
+    assert sum(1 for _method, url, _params in calls if url.endswith("/library/sections")) == 1
+
+
+def test_get_artist_derives_counts_instead_of_trusting_summary_fields(
+    client, plex_session, monkeypatch
+):
+    # Regression test: Plex's own childCount/leafCount summary fields came
+    # back unreliable in practice (every artist showed "0 albums · 0
+    # tracks" despite a real library) — album count and each album's song
+    # count must be derived from data actually fetched, not from those
+    # fields, even when the raw response *does* include them (as here,
+    # deliberately wrong, to prove they're ignored).
+    fake_client, _calls = _fake_px_client(
+        {
+            "/library/metadata/3001": {
+                "MediaContainer": {
+                    "Metadata": [{"ratingKey": "3001", "title": "Artist A", "childCount": 99}]
+                }
+            },
+            "/library/metadata/3001/children": {
+                "MediaContainer": {
+                    "Metadata": [
+                        {"ratingKey": "2001", "title": "Album A", "leafCount": 99},
+                        {"ratingKey": "2002", "title": "Album B", "leafCount": 99},
+                    ]
+                }
+            },
+            "/library/metadata/3001/allLeaves": {
+                "MediaContainer": {
+                    "Metadata": [
+                        {"ratingKey": "1", "parentRatingKey": "2001"},
+                        {"ratingKey": "2", "parentRatingKey": "2001"},
+                        {"ratingKey": "3", "parentRatingKey": "2002"},
+                    ]
+                }
+            },
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getArtist.view?id=3001")
+    assert r.status_code == 200
+    artist = r.json()["subsonic-response"]["artist"]
+    assert artist["albumCount"] == 2
+    albums = {a["id"]: a for a in artist["album"]}
+    assert albums["2001"]["songCount"] == 2
+    assert albums["2002"]["songCount"] == 1
+
+
+def test_get_artists_buckets_by_first_letter(client, plex_session, monkeypatch):
+    fake_client, _calls = _fake_px_client(
+        {
+            "/library/sections": {
+                "MediaContainer": {"Directory": [{"key": "5", "type": "artist"}]}
+            },
+            "/library/sections/5/all?type=8": {
+                "MediaContainer": {
+                    "Metadata": [
+                        # childCount deliberately wrong/high — must be
+                        # ignored (see test_get_artists_derives_album_count
+                        # below for the actual regression coverage).
+                        {"ratingKey": "1", "title": "Beatles", "childCount": 99},
+                        {"ratingKey": "2", "title": "ABBA", "childCount": 99},
+                    ]
+                }
+            },
+            "/library/sections/5/all?type=9": {"MediaContainer": {"Metadata": []}},
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getArtists.view")
+    assert r.status_code == 200
+    index = r.json()["subsonic-response"]["artists"]["index"]
+    assert [entry["name"] for entry in index] == ["A", "B"]
+    assert index[0]["artist"][0]["name"] == "ABBA"
+    assert index[1]["artist"][0]["name"] == "Beatles"
+
+
+def test_get_artists_derives_album_count_from_bulk_album_listing(
+    client, plex_session, monkeypatch
+):
+    # Regression test: Plex's own childCount came back unreliable in
+    # practice (every artist card showed "0 albums" — confirmed live
+    # 2026-08-17) — album count must come from a real tally over the
+    # bulk album listing instead.
+    fake_client, calls = _fake_px_client(
+        {
+            "/library/sections": {
+                "MediaContainer": {"Directory": [{"key": "5", "type": "artist"}]}
+            },
+            "/library/sections/5/all?type=8": {
+                "MediaContainer": {
+                    "Metadata": [{"ratingKey": "3001", "title": "Artist A", "childCount": 0}]
+                }
+            },
+            "/library/sections/5/all?type=9": {
+                "MediaContainer": {
+                    "Metadata": [
+                        {"ratingKey": "2001", "title": "Album A", "parentRatingKey": "3001"},
+                        {"ratingKey": "2002", "title": "Album B", "parentRatingKey": "3001"},
+                        {"ratingKey": "2003", "title": "Other Artist's Album", "parentRatingKey": "9999"},
+                    ]
+                }
+            },
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getArtists.view")
+    assert r.status_code == 200
+    index = r.json()["subsonic-response"]["artists"]["index"]
+    assert index[0]["artist"][0]["albumCount"] == 2
+    # Both the artist (type=8) and album (type=9) listings were fetched,
+    # against the same section, one call each — not one call per artist.
+    all_calls = [c for c in calls if c[1].endswith("/library/sections/5/all")]
+    assert len(all_calls) == 2
+
+
+def test_search3_empty_query_omits_title_filter(client, plex_session, monkeypatch):
+    fake_client, calls = _fake_px_client(
+        {
+            "/library/sections": {
+                "MediaContainer": {"Directory": [{"key": "5", "type": "artist"}]}
+            },
+            "/library/sections/5/all": {"MediaContainer": {"Metadata": []}},
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/search3.view?songCount=10&albumCount=0&artistCount=0")
+    assert r.status_code == 200
+    all_calls = [c for c in calls if c[1].endswith("/library/sections/5/all")]
+    assert len(all_calls) == 1
+    assert "title" not in (all_calls[0][2] or {})
+
+
+def test_search3_with_query_sets_title_filter(client, plex_session, monkeypatch):
+    fake_client, calls = _fake_px_client(
+        {
+            "/library/sections": {
+                "MediaContainer": {"Directory": [{"key": "5", "type": "artist"}]}
+            },
+            "/library/sections/5/all": {"MediaContainer": {"Metadata": []}},
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/search3.view?query=beatles&songCount=10&albumCount=0&artistCount=0")
+    assert r.status_code == 200
+    all_calls = [c for c in calls if c[1].endswith("/library/sections/5/all")]
+    assert all_calls[0][2]["title"] == "beatles"
+
+
+# ── Ratings ───────────────────────────────────────────────────────────────────
+
+
+def test_set_rating_converts_star_scale_to_plex_scale(client, plex_session, monkeypatch):
+    fake_client, calls = _fake_px_client()
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/setRating.view?id=1001&rating=4")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "ok"
+    method, url, params = calls[0]
+    assert method == "PUT"
+    assert url.endswith("/:/rate")
+    assert params == {"key": "1001", "identifier": "com.plexapp.plugins.library", "rating": "8"}
+
+
+def test_set_rating_zero_clears_rating(client, plex_session, monkeypatch):
+    fake_client, calls = _fake_px_client()
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/setRating.view?id=1001&rating=0")
+    assert r.status_code == 200
+    assert calls[0][2]["rating"] == "-1"
+
+
+def test_set_rating_requires_id(client, plex_session):
+    r = client.get("/rest/setRating.view?rating=3")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+def test_set_rating_rejects_out_of_range(client, plex_session):
+    r = client.get("/rest/setRating.view?id=1001&rating=9")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+# ── Play tracking ────────────────────────────────────────────────────────────
+
+
+def test_scrobble_submission_true_marks_played(client, plex_session, monkeypatch):
+    fake_client, calls = _fake_px_client()
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/scrobble.view?id=9001&submission=true")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "ok"
+    method, url, params = calls[0]
+    assert method == "PUT"
+    assert url.endswith("/:/scrobble")
+    assert params == {"key": "9001", "identifier": "com.plexapp.plugins.library"}
+
+
+def test_scrobble_submission_false_is_a_noop(client, plex_session, monkeypatch):
+    fake_client, calls = _fake_px_client()
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/scrobble.view?id=9001&submission=false")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "ok"
+    assert calls == []
+
+
+def test_scrobble_requires_id(client, plex_session):
+    r = client.get("/rest/scrobble.view?submission=true")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+# ── Playlists ─────────────────────────────────────────────────────────────────
+
+
+def test_get_playlists_returns_mapped_list(client, plex_session, monkeypatch):
+    fake_client, _calls = _fake_px_client(
+        {
+            "/playlists": {
+                "MediaContainer": {
+                    "Metadata": [{"ratingKey": "5001", "title": "Road Trip", "leafCount": 10}]
+                }
+            }
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getPlaylists.view")
+    assert r.status_code == 200
+    playlist = r.json()["subsonic-response"]["playlists"]["playlist"][0]
+    assert playlist["id"] == "5001"
+    assert playlist["name"] == "Road Trip"
+    assert playlist["songCount"] == 10
+
+
+def test_get_playlist_includes_entries(client, plex_session, monkeypatch):
+    fake_client, _calls = _fake_px_client(
+        {
+            "/playlists/5001": {
+                "MediaContainer": {"Metadata": [{"ratingKey": "5001", "title": "Road Trip"}]}
+            },
+            "/playlists/5001/items": {
+                "MediaContainer": {
+                    "Metadata": [{"ratingKey": "9001", "title": "Track 1", "duration": 0}]
+                }
+            },
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getPlaylist.view?id=5001")
+    assert r.status_code == 200
+    playlist = r.json()["subsonic-response"]["playlist"]
+    assert playlist["id"] == "5001"
+    assert playlist["entry"][0]["id"] == "9001"
+
+
+def test_create_playlist_builds_server_uri(client, plex_session, monkeypatch):
+    plex_session.media.machine_identifier = "machine-abc"
+    fake_client, calls = _fake_px_client()
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/createPlaylist.view?name=Road+Trip&songId=1&songId=2")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "ok"
+    method, url, params = calls[0]
+    assert method == "POST"
+    assert url.endswith("/playlists")
+    assert params["title"] == "Road Trip"
+    assert params["uri"] == (
+        "server://machine-abc/com.plexapp.plugins.library/library/metadata/1,2"
+    )
+
+
+def test_create_playlist_requires_at_least_one_song(client, plex_session):
+    r = client.get("/rest/createPlaylist.view?name=Empty")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+def test_create_playlist_requires_machine_identifier(client, plex_session, monkeypatch):
+    plex_session.media.machine_identifier = ""
+    fake_client, _calls = _fake_px_client()
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/createPlaylist.view?name=X&songId=1")
+    assert r.status_code == 200
+    body = r.json()["subsonic-response"]
+    assert body["status"] == "failed"
+    assert "identifier" in body["error"]["message"]
+
+
+def test_update_playlist_adds_songs(client, plex_session, monkeypatch):
+    plex_session.media.machine_identifier = "machine-abc"
+    fake_client, calls = _fake_px_client()
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/updatePlaylist.view?playlistId=5001&songIdToAdd=1")
+    assert r.status_code == 200
+    method, url, params = calls[0]
+    assert method == "PUT"
+    assert url.endswith("/playlists/5001/items")
+    assert "metadata/1" in params["uri"]
+
+
+def test_update_playlist_removes_by_index(client, plex_session, monkeypatch):
+    fake_client, calls = _fake_px_client(
+        {
+            "/playlists/5001/items": {
+                "MediaContainer": {
+                    "Metadata": [
+                        {"ratingKey": "9001", "playlistItemID": 111},
+                        {"ratingKey": "9002", "playlistItemID": 112},
+                    ]
+                }
+            }
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/updatePlaylist.view?playlistId=5001&songIndexToRemove=1")
+    assert r.status_code == 200
+    delete_calls = [c for c in calls if c[0] == "DELETE"]
+    assert len(delete_calls) == 1
+    assert delete_calls[0][1].endswith("/playlists/5001/items/112")
+
+
+def test_update_playlist_renames(client, plex_session, monkeypatch):
+    fake_client, calls = _fake_px_client()
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/updatePlaylist.view?playlistId=5001&name=New+Name")
+    assert r.status_code == 200
+    method, url, params = calls[0]
+    assert method == "PUT"
+    assert url.endswith("/playlists/5001")
+    assert params["title"] == "New Name"
+
+
+def test_update_playlist_requires_some_change(client, plex_session):
+    r = client.get("/rest/updatePlaylist.view?playlistId=5001")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+def test_delete_playlist(client, plex_session, monkeypatch):
+    fake_client, calls = _fake_px_client()
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/deletePlaylist.view?id=5001")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "ok"
+    assert calls[0] == ("DELETE", "http://plex:32400/playlists/5001", {})
+
+
+def test_unhandled_path_returns_not_supported_envelope(client, plex_session):
+    r = client.get("/rest/star.view?id=1")
+    assert r.status_code == 200
+    body = r.json()["subsonic-response"]
+    assert body["status"] == "failed"
+    assert "not supported on Plex yet" in body["error"]["message"]
+
+
+def test_stream_view_streams_binary(client, plex_session, monkeypatch):
+    monkeypatch.setattr(
+        plex_session.media,
+        "get_stream_url",
+        lambda track_id: "http://plex:32400/library/parts/999/file.mp3?X-Plex-Token=tok",
+    )
+    mock_client, captured = _mock_binary_httpx_client()
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: mock_client)
+
+    r = client.get("/rest/stream.view?id=9001")
+    assert r.status_code == 200
+    assert r.content == b"abc"
+    assert captured["url"] == "http://plex:32400/library/parts/999/file.mp3?X-Plex-Token=tok"
+
+
+def test_stream_view_requires_id(client, plex_session):
+    r = client.get("/rest/stream.view")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+# ── Binary passthrough (getCoverArt.view) ────────────────────────────────────
+
+
+def _mock_binary_httpx_client():
+    captured: dict = {}
+    fake_response = MagicMock()
+    fake_response.status_code = 200
+    fake_response.headers = {"content-type": "image/jpeg"}
+
+    async def aiter_bytes():
+        yield b"abc"
+
+    fake_response.aiter_bytes = aiter_bytes
+    fake_response.aclose = AsyncMock()
+
+    mock_client = MagicMock()
+
+    def build_request(method, url, headers=None):
+        captured["method"] = method
+        captured["url"] = url
+        captured["headers"] = headers
+        return MagicMock()
+
+    mock_client.build_request = build_request
+    mock_client.send = AsyncMock(return_value=fake_response)
+    return mock_client, captured
+
+
+def test_get_cover_art_streams_binary(client, plex_session, monkeypatch):
+    mock_client, captured = _mock_binary_httpx_client()
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: mock_client)
+
+    r = client.get("/rest/getCoverArt.view?id=2001")
+    assert r.status_code == 200
+    assert r.content == b"abc"
+    assert "/library/metadata/2001/thumb" in captured["url"]
+
+
+def test_get_cover_art_requires_id(client, plex_session):
+    r = client.get("/rest/getCoverArt.view")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "failed"

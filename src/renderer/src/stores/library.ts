@@ -576,6 +576,10 @@ export const useLibraryStore = defineStore('library', {
     async addToPlaylist(playlistId: string, songIds: string[]): Promise<void> {
       await this.withLoading(async () => {
         await this.client().addToPlaylist(playlistId, songIds)
+        // Without this, PlaylistsView's list (and its cached songCount)
+        // silently goes stale until something else happens to force a
+        // refetch — same reasoning as createPlaylist()'s identical call.
+        await this.fetchPlaylists(true)
       })
     },
 

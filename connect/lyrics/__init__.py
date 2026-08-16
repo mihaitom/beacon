@@ -1,4 +1,4 @@
-"""lyrics — Remote lyrics providers for Feishin Connect.
+"""lyrics — Remote lyrics providers for Beacon Connect.
 
 Port of src/main/features/core/lyrics/* (Electron main process) for the web/
 Docker build, which has no main process to run those IPC handlers. Only

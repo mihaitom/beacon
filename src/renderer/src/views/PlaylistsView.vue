@@ -5,7 +5,7 @@
       :eyebrow="$t('library.playlist')"
       :title="$t('playlists.title')"
     >
-      <template #actions>
+      <template v-if="authStore.capabilities.emptyPlaylistCreation" #actions>
         <v-btn prepend-icon="mdi-plus" variant="tonal" @click="createDialog = true">{{
           $t('playlists.newPlaylist')
         }}</v-btn>

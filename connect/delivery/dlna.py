@@ -19,8 +19,9 @@ logger = logging.getLogger("delivery")
 # DLNA has no persistent discovery browser to query for a device's current
 # location (unlike Sonos' soco.discover() or Chromecast's CastBrowser cache),
 # so we keep our own: name -> description-XML URL, populated by discover_dlna()
-# and consulted by _get_device() when a delivery is constructed directly
-# (e.g. from the TARGETS env var) rather than from a fresh /discover call.
+# and consulted by _get_device() when a delivery is constructed directly from
+# a known (type, name) pair (see core/state.py's resolve_target()) rather
+# than from a fresh /discover call.
 _location_cache: dict[str, str] = {}
 _device_cache: dict = {}
 
@@ -85,10 +86,11 @@ def _build_metadata(
     album_art_url: str | None = None,
     duration: float | None = None,
     album: str = "",
+    content_type: str = "audio/mpeg",
 ) -> str:
     resource = Resource(
         uri=stream_url,
-        protocol_info="http-get:*:audio/mpeg:*",
+        protocol_info=f"http-get:*:{content_type}:*",
         duration=_format_didl_duration(duration) if duration else None,
     )
     props: dict[str, str] = {}
@@ -149,8 +151,9 @@ class DlnaDelivery(BaseDelivery):
 
         location = _location_cache.get(self.target.lower())
         if not location:
-            # No cached location (e.g. delivery built straight from TARGETS) —
-            # do a fresh scan to resolve one. Imported locally: discover_dlna
+            # No cached location (e.g. delivery built directly from a
+            # (type, name) pair — see core/state.py's resolve_target()) — do
+            # a fresh scan to resolve one. Imported locally: discover_dlna
             # lives in manager.py, which itself imports from this module.
             from .manager import discover_dlna
 
@@ -181,6 +184,7 @@ class DlnaDelivery(BaseDelivery):
         album_art_url: str | None = None,
         duration: float | None = None,
         album: str = "",
+        content_type: str = "audio/mpeg",
     ) -> None:
         device = await self._get_device_or_evict()
         # Built ourselves rather than via DmrDevice.construct_play_media_metadata()
@@ -192,7 +196,7 @@ class DlnaDelivery(BaseDelivery):
         # doesn't expose duration at all). async_set_transport_uri() passes a
         # string meta_data straight through instead of auto-building it.
         xml_meta_data = _build_metadata(
-            stream_url, title, artist, album_art_url, duration, album
+            stream_url, title, artist, album_art_url, duration, album, content_type
         )
         logger.info(f"[DLNA:{self.target}] → play: {stream_url}")
         try:

@@ -10,6 +10,7 @@ correct position.
 
 from unittest.mock import patch
 
+from core.streamer import OutputFormat
 from media import Track
 
 
@@ -88,3 +89,43 @@ def test_stale_connection_does_not_clear_a_newer_generations_offset(
         client.get("/stream")
 
     assert default_session.state.clock.resume_offset == 99.0
+
+
+# ── Content-Type reflects the cached format decision ────────────────────────
+# See core/streamer.py's resolve_output_format() — routes/playback.py resolves
+# the real source format once at /play and caches it on session.state; /stream
+# must read that instead of always claiming audio/mpeg, so HEAD/GET and the
+# actual ffmpeg invocation never disagree with what's on the wire.
+
+
+def test_get_stream_content_type_matches_cached_flac_format(client, default_session):
+    _configure_and_set_track(client, default_session)
+    default_session.state.current_output_format = OutputFormat(
+        ffmpeg_args=["-acodec", "copy", "-f", "flac"], content_type="audio/flac"
+    )
+
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked:
+        r = client.get("/stream")
+
+    assert r.headers["content-type"].startswith("audio/flac")
+    assert mocked.call_args.kwargs["output_format"].content_type == "audio/flac"
+
+
+def test_get_stream_content_type_defaults_to_mp3(client, default_session):
+    _configure_and_set_track(client, default_session)
+
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream):
+        r = client.get("/stream")
+
+    assert r.headers["content-type"].startswith("audio/mpeg")
+
+
+def test_head_stream_content_type_matches_cached_format(client, default_session):
+    _configure_and_set_track(client, default_session)
+    default_session.state.current_output_format = OutputFormat(
+        ffmpeg_args=["-acodec", "copy", "-f", "ogg"], content_type="audio/ogg"
+    )
+
+    r = client.head("/stream")
+
+    assert r.headers["content-type"].startswith("audio/ogg")

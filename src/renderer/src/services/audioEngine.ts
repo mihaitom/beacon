@@ -120,8 +120,35 @@ export class AudioEngine {
     this.audioContext = new AudioContext()
     const source = this.audioContext.createMediaElementSource(this.audio)
     this.analyserNode = this.audioContext.createAnalyser()
-    this.analyserNode.fftSize = 128
-    this.analyserNode.smoothingTimeConstant = 0.8
+    // A much finer FFT than this used to run (see AudioVisualizer.vue's
+    // sampleFrequencies(), which maps the resulting bins into real
+    // 1/6-octave log bands over 20-22050Hz) — that coarser one was fine
+    // for the old plain linear-bin sampling, but a real log/octave mapping
+    // needs enough raw bins to actually resolve distinct low-frequency
+    // bands instead of several of them collapsing onto the same handful
+    // of bins. Not bigger still (e.g. 16384): an FFT's own window length
+    // IS the time slice each read's spectrum represents (4096/44100 ≈
+    // 93ms here) — 16384's ~372ms was measurably less dynamic-looking,
+    // since short transients (a kick drum, a hi-hat) get smeared across
+    // that whole window regardless of smoothingTimeConstant below. This
+    // is the same size connect/core/audio_analysis.py's 'cast'-mode
+    // window uses, for the same reasoning — see its own comment.
+    this.analyserNode.fftSize = 4096
+    // Slightly higher than the FFT-size/dB-range tuning pass first landed
+    // on (0.6) — that read as a bit too jumpy once actually tried. Not a
+    // big correction: this value only damps the analyser's own bin-to-bin
+    // read, a separate, much smaller effect than the visual per-rendered-
+    // frame easing AudioVisualizer.vue's SMOOTHING_LOCAL already applies
+    // on top.
+    this.analyserNode.smoothingTimeConstant = 0.7
+    // Web Audio's own default range (-100/-30dB) compresses typical
+    // program material into a narrower slice of the 0-1 output than this
+    // — widened here so normal-volume music actually swings across more
+    // of a bar's height instead of hovering low. Matches 'cast' mode's
+    // own _MIN_DB/_MAX_DB (see audio_analysis.py) so both read at the
+    // same visual scale.
+    this.analyserNode.minDecibels = -85
+    this.analyserNode.maxDecibels = -25
     // Tapped post-analyser so the visualizer always reflects the track's
     // raw energy, unaffected by whatever ReplayGain happens to be doing to
     // the actual output level.

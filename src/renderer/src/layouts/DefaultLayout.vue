@@ -112,7 +112,9 @@ export default {
         capabilities.internetRadio
           ? { to: '/radio', icon: 'mdi-radio', title: this.$t('nav.radio') }
           : null,
-        { to: '/favorites', icon: 'mdi-heart', title: this.$t('nav.favorites') },
+        capabilities.favorites
+          ? { to: '/favorites', icon: 'mdi-heart', title: this.$t('nav.favorites') }
+          : null,
         capabilities.playHistoryStats
           ? { to: '/stats', icon: 'mdi-chart-box-outline', title: this.$t('nav.stats') }
           : null,

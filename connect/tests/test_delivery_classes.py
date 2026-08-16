@@ -69,6 +69,26 @@ def test_sonos_play_omits_album_when_not_given():
     assert "<upnp:album>" not in call_kwargs["CurrentURIMetaData"]
 
 
+def test_sonos_play_defaults_protocol_info_to_audio_mpeg():
+    dev = _mock_sonos_device()
+    d = SonosDelivery("Küche")
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        asyncio.run(d.play("http://stream", "Title"))
+    xml = dict(dev.avTransport.SetAVTransportURI.call_args.args[0])["CurrentURIMetaData"]
+    assert 'protocolInfo="http-get:*:audio/mpeg:*"' in xml
+
+
+def test_sonos_play_uses_passed_content_type_in_protocol_info():
+    dev = _mock_sonos_device()
+    d = SonosDelivery("Küche")
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        asyncio.run(
+            d.play("http://stream", "Title", "", None, None, "", "audio/flac")
+        )
+    xml = dict(dev.avTransport.SetAVTransportURI.call_args.args[0])["CurrentURIMetaData"]
+    assert 'protocolInfo="http-get:*:audio/flac:*"' in xml
+
+
 def test_sonos_pause_resume_stop_delegate_to_device():
     dev = MagicMock()
     d = SonosDelivery("Küche")
@@ -255,6 +275,22 @@ def test_chromecast_play_calls_media_controller():
     cast.media_controller.block_until_active.assert_called_once_with(10)
 
 
+def test_chromecast_play_uses_passed_content_type():
+    cast = _mock_cast()
+    d = ChromecastDelivery("TV")
+    with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
+        asyncio.run(
+            d.play("http://stream", "Title", "", None, None, "", "audio/aac")
+        )
+    cast.media_controller.play_media.assert_called_once_with(
+        "http://stream",
+        "audio/aac",
+        title="Title",
+        thumb=None,
+        metadata={"metadataType": 3, "title": "Title", "artist": ""},
+    )
+
+
 def test_chromecast_pause_resume_stop_delegate_to_controller():
     cast = _mock_cast()
     d = ChromecastDelivery("TV")
@@ -302,6 +338,26 @@ def test_dlna_play_sets_transport_uri_then_plays():
     assert call_args[1] == "Title"
     assert "<upnp:artist>Artist</upnp:artist>" in call_args[2]
     device.async_play.assert_called_once()
+
+
+def test_dlna_play_defaults_protocol_info_to_audio_mpeg():
+    device = _mock_dmr_device()
+    d = DlnaDelivery("Receiver")
+    with patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)):
+        asyncio.run(d.play("http://stream", "Title"))
+    xml = device.async_set_transport_uri.call_args.args[2]
+    assert 'protocolInfo="http-get:*:audio/mpeg:*"' in xml
+
+
+def test_dlna_play_uses_passed_content_type_in_protocol_info():
+    device = _mock_dmr_device()
+    d = DlnaDelivery("Receiver")
+    with patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)):
+        asyncio.run(
+            d.play("http://stream", "Title", "", None, None, "", "audio/flac")
+        )
+    xml = device.async_set_transport_uri.call_args.args[2]
+    assert 'protocolInfo="http-get:*:audio/flac:*"' in xml
 
 
 def test_dlna_play_without_artist_sends_no_artist_or_album_art():
@@ -353,6 +409,16 @@ def test_build_metadata_includes_title_artist_creator_and_forces_music_track():
     # the older dc:creator (this was reported as "{Artist} | null" showing on
     # a real renderer before dc:creator was added).
     assert "<dc:creator>My Artist</dc:creator>" in xml
+
+
+def test_build_metadata_defaults_protocol_info_to_audio_mpeg():
+    xml = _dlna_mod._build_metadata("http://stream", "Title")
+    assert 'protocolInfo="http-get:*:audio/mpeg:*"' in xml
+
+
+def test_build_metadata_uses_passed_content_type():
+    xml = _dlna_mod._build_metadata("http://stream", "Title", content_type="audio/ogg")
+    assert 'protocolInfo="http-get:*:audio/ogg:*"' in xml
 
 
 def test_build_metadata_omits_optional_fields_when_not_given():

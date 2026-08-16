@@ -115,8 +115,8 @@ def test_map_song_replay_gain_from_normalization_gain():
 
 
 def test_map_song_replay_gain_falls_back_to_lufs():
-    # -18 LUFS reference target, same conversion as feishin-connect's
-    # jellyfin-normalize.ts — a file scanned at -20 LUFS reads as +2dB gain.
+    # -18 LUFS reference target — a file scanned at -20 LUFS reads as +2dB
+    # gain.
     item = {"Id": "s", "Name": "T", "RunTimeTicks": 0, "LUFS": -20}
     song = jellyfin_bridge._map_song(item)
     assert song["replayGain"] == {"trackGain": 2}
@@ -170,7 +170,7 @@ def test_proxy_dispatches_subsonic_session_to_passthrough(
     client, default_session, monkeypatch
 ):
     # default_session (conftest.py) is a SubsonicClient. Force
-    # SERVER_INTERNAL_URL empty and reload routes/proxy.py (same pattern as
+    # NAVIDROME_INTERNAL_URL empty and reload routes/proxy.py (same pattern as
     # test_proxy.py's _reload_proxy) so the passthrough branch's behavior is
     # deterministic regardless of the ambient dev .env — this only needs to
     # prove the *other* branch ran (the passthrough's own "not configured"
@@ -179,7 +179,7 @@ def test_proxy_dispatches_subsonic_session_to_passthrough(
 
     import routes.proxy as proxy_mod
 
-    monkeypatch.setenv("SERVER_INTERNAL_URL", "")
+    monkeypatch.setenv("NAVIDROME_INTERNAL_URL", "")
     importlib.reload(proxy_mod)
 
     assert isinstance(default_session.media, SubsonicClient)
@@ -187,7 +187,7 @@ def test_proxy_dispatches_subsonic_session_to_passthrough(
     assert r.status_code == 503
     assert "subsonic-response" not in r.json()
 
-    monkeypatch.delenv("SERVER_INTERNAL_URL", raising=False)
+    monkeypatch.delenv("NAVIDROME_INTERNAL_URL", raising=False)
     importlib.reload(proxy_mod)
 
 
@@ -627,10 +627,10 @@ def test_scrobble_submission_true_reports_playback_stopped(client, jellyfin_sess
     r = client.get("/rest/scrobble.view?id=song-1&submission=true")
     assert r.status_code == 200
     assert r.json()["subsonic-response"]["status"] == "ok"
-    # Mirrors feishin-connect: submission=true reports Jellyfin's own
-    # session-based playback-stopped event, with PositionTicks set to the
-    # track's full duration (Subsonic gives no real position) so it reads
-    # as a completed listen — see scrobble()'s comment.
+    # submission=true reports Jellyfin's own session-based
+    # playback-stopped event, with PositionTicks set to the track's full
+    # duration (Subsonic gives no real position) so it reads as a
+    # completed listen — see scrobble()'s comment.
     get_calls = [c for c in calls if c[0] == "GET"]
     assert len(get_calls) == 1
     assert get_calls[0][1].endswith("/Users/u1/Items/song-1")

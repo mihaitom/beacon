@@ -71,6 +71,7 @@
           @set-rating="setRating"
           @add-to-queue="addToQueue"
           @add-to-playlist="addToPlaylist"
+          @create-playlist="openCreatePlaylistDialog"
           @toggle-select="toggleSelect"
         />
       </template>
@@ -96,6 +97,7 @@
         @set-rating="setRating"
         @add-to-queue="addToQueue"
         @add-to-playlist="addToPlaylist"
+        @create-playlist="openCreatePlaylistDialog"
         @toggle-select="toggleSelect"
       />
     </template>
@@ -148,6 +150,34 @@
         />
       </div>
     </v-slide-y-reverse-transition>
+
+    <!-- Reached from a row's own "..." menu -> "Add to playlist" ->
+     - "Create new playlist" (TrackRow.vue) — pre-seeds the new playlist
+     - with whatever track(s) triggered it instead of creating an empty
+     - one, which some backends can't even do at all (Plex's playlist
+     - endpoint requires at least one starting item; see
+     - media/plex_bridge.py's create_playlist()). -->
+    <v-dialog v-model="createPlaylistDialog" max-width="400">
+      <v-card>
+        <v-card-title>{{ $t('playlists.createTitle') }}</v-card-title>
+        <v-card-text>
+          <v-text-field
+            v-model="createPlaylistName"
+            :label="$t('common.name')"
+            variant="solo-filled"
+            autofocus
+            @keyup.enter="confirmCreatePlaylist"
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="createPlaylistDialog = false">{{
+            $t('common.cancel')
+          }}</v-btn>
+          <v-btn color="primary" @click="confirmCreatePlaylist">{{ $t('common.create') }}</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -244,6 +274,16 @@ export default {
       sortDirection: this.defaultSortDirection as 'asc' | 'desc',
       currentPage: 1,
       visibleCount: PAGE_SIZE,
+      // Set by onSort() the moment the user picks a column themselves —
+      // from then on the defaultSortKey watcher below must leave sortKey
+      // alone. Without this, sorting a still-loading TracksView by
+      // anything other than the eventual default (e.g. clicking "Album"
+      // while fetchAllTracks() is still streaming in pages) got silently
+      // discarded the instant loading finished and defaultSortKey flipped
+      // from null to 'title' — the view snapped back to title-sort with
+      // no visible cause, looking like "sorting only ever covered
+      // whatever had loaded so far".
+      userChangedSort: false,
       // Guards toggleStar() against a rapid double-click flipping the same
       // track twice concurrently, which (since both calls read `starred`
       // before either resolves) can leave the local state one flip behind
@@ -256,6 +296,12 @@ export default {
       // selected. See selectedTracks for resolving these back to real
       // Track objects when a bulk action needs them.
       selectedRowKeys: new Set<number>(),
+      createPlaylistDialog: false,
+      createPlaylistName: '',
+      // Set by openCreatePlaylistDialog() — the track(s) (selection-aware,
+      // same as addToPlaylist()) to seed the new playlist with once
+      // confirmCreatePlaylist() actually creates it.
+      createPlaylistTracks: [] as Track[],
     }
   },
   computed: {
@@ -356,6 +402,10 @@ export default {
     // instead of re-sorting (and visibly reshuffling already-visible rows)
     // on every single page that arrives in between.
     defaultSortKey(value: SortKey | null) {
+      // See userChangedSort's own comment — a prop-driven default change
+      // (loading finishing, a route swapping which list is shown) only
+      // applies while the user hasn't taken the wheel themselves.
+      if (this.userChangedSort) return
       this.sortKey = value
     },
   },
@@ -372,6 +422,7 @@ export default {
       return value ?? 0
     },
     onSort(key: SortKey) {
+      this.userChangedSort = true
       if (this.sortKey === key) {
         this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc'
       } else {
@@ -452,6 +503,28 @@ export default {
         playlistId,
         tracks.map((t) => t.id),
       )
+    },
+    openCreatePlaylistDialog({ track, index }: { track: Track; index?: number }) {
+      this.createPlaylistTracks = this.selectedOrSingle(track, index)
+      this.createPlaylistName = ''
+      this.createPlaylistDialog = true
+    },
+    async confirmCreatePlaylist() {
+      if (!this.createPlaylistName.trim()) return
+      try {
+        await this.libraryStore.createPlaylist(
+          this.createPlaylistName,
+          this.createPlaylistTracks.map((t) => t.id),
+        )
+        this.createPlaylistDialog = false
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('playlists.createTitle'),
+          message: error instanceof Error ? error.message : String(error),
+        })
+        console.error('[track-list] Failed to create playlist:', error)
+      }
     },
     // A row's own actions (play-next/add-to-queue/add-to-playlist, all via
     // TrackRow.vue's "..." menu) apply to the *whole* current selection

@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec for the Feishin Connect backend.
+PyInstaller spec for the Beacon Connect backend.
 
 Source paths below (main.py, pathex) are relative to this file's own
 directory (packaging/), which is how PyInstaller resolves them regardless of

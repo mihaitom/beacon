@@ -9,7 +9,7 @@ from core import session as session_module
 from core import state
 from core.session import DEFAULT_SESSION_ID, SessionState
 from main import app
-from media import JellyfinClient, SubsonicClient
+from media import JellyfinClient, PlexClient, SubsonicClient
 
 
 @pytest.fixture
@@ -33,14 +33,32 @@ def _stub_media_ping(monkeypatch):
     """/config now calls media.ping() to verify the supplied credential
     actually authenticates before accepting it (see routes/devices.py) — but
     most tests exercise it with fake URLs (e.g. http://nav:4533) that don't
-    resolve to a real server. Stub just the two ping() methods (not the
+    resolve to a real server. Stub just the three ping() methods (not the
     underlying httpx.get, which get_track()/get_cover_art_url() etc. also
     use and tests mock separately) to succeed by default; tests that
     specifically exercise ping()'s own behavior (test_subsonic.py,
-    test_jellyfin.py) or /config rejection override this with their own
-    monkeypatch.setattr call."""
+    test_jellyfin.py, test_plex.py) or /config rejection override this with
+    their own monkeypatch.setattr call."""
     monkeypatch.setattr(SubsonicClient, "ping", lambda self: True)
     monkeypatch.setattr(JellyfinClient, "ping", lambda self: True)
+    monkeypatch.setattr(PlexClient, "ping", lambda self: True)
+
+
+@pytest.fixture(autouse=True)
+def _stub_output_format(monkeypatch):
+    """/play resolves the real output format for the track it's about to
+    dispatch (see core/streamer.py's resolve_output_format()), which shells
+    out to a real ffmpeg subprocess against the track's source URL — not
+    something the rest of the playback test suite should have to account
+    for. Stub it to return the existing mp3 fallback instantly; tests that
+    specifically exercise format detection (test_streamer.py) override this
+    themselves."""
+    from core.streamer import FALLBACK_FORMAT
+
+    async def _fake_resolve(url):
+        return FALLBACK_FORMAT
+
+    monkeypatch.setattr("routes.playback.resolve_output_format", _fake_resolve)
 
 
 @pytest.fixture(autouse=True)

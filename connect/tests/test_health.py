@@ -24,7 +24,7 @@ def server_lock_env(monkeypatch):
     yield
     monkeypatch.delenv("SERVER_LOCK", raising=False)
     monkeypatch.delenv("SERVER_URL", raising=False)
-    monkeypatch.delenv("SERVER_INTERNAL_URL", raising=False)
+    monkeypatch.delenv("NAVIDROME_INTERNAL_URL", raising=False)
     monkeypatch.delenv("SERVER_TYPE", raising=False)
     _reload_devices()
 
@@ -83,7 +83,7 @@ def test_health_server_lock_falls_back_to_internal_url(
     client, monkeypatch, server_lock_env
 ):
     monkeypatch.setenv("SERVER_LOCK", "true")
-    monkeypatch.setenv("SERVER_INTERNAL_URL", "http://navidrome:4533")
+    monkeypatch.setenv("NAVIDROME_INTERNAL_URL", "http://navidrome:4533")
     _reload_devices()
 
     r = client.get("/health")
@@ -95,7 +95,7 @@ def test_health_prefers_server_url_over_internal_url(
 ):
     monkeypatch.setenv("SERVER_LOCK", "true")
     monkeypatch.setenv("SERVER_URL", "https://navidrome.example.com")
-    monkeypatch.setenv("SERVER_INTERNAL_URL", "http://navidrome:4533")
+    monkeypatch.setenv("NAVIDROME_INTERNAL_URL", "http://navidrome:4533")
     _reload_devices()
 
     r = client.get("/health")
@@ -103,14 +103,14 @@ def test_health_prefers_server_url_over_internal_url(
 
 
 def test_health_no_server_lock_without_any_url(client, monkeypatch, server_lock_env):
-    # SERVER_LOCK=true alone, no SERVER_URL/SERVER_INTERNAL_URL to lock to —
+    # SERVER_LOCK=true alone, no SERVER_URL/NAVIDROME_INTERNAL_URL to lock to —
     # nothing meaningful to report, same as not being locked at all. Both
     # explicitly unset (not just "not set by this test") since a real dev
-    # .env can already have SERVER_INTERNAL_URL set for the actual backend
+    # .env can already have NAVIDROME_INTERNAL_URL set for the actual backend
     # to run against.
     monkeypatch.setenv("SERVER_LOCK", "true")
     monkeypatch.delenv("SERVER_URL", raising=False)
-    monkeypatch.delenv("SERVER_INTERNAL_URL", raising=False)
+    monkeypatch.delenv("NAVIDROME_INTERNAL_URL", raising=False)
     _reload_devices()
 
     r = client.get("/health")

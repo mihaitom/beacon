@@ -6,7 +6,7 @@
       :size="160"
       :eyebrow="$t('library.artist')"
       :title="artist.name"
-      :starred="artist.starred"
+      :starred="authStore.capabilities.favorites ? artist.starred : null"
       :rating="authStore.capabilities.personalRating ? artist.rating : null"
       @toggle-star="toggleStar"
       @set-rating="setRating"

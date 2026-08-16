@@ -30,7 +30,7 @@ from delivery import (
     DlnaDelivery,
     SonosDelivery,
 )
-from media import JellyfinClient, SubsonicClient, server_type_name
+from media import JellyfinClient, PlexClient, SubsonicClient, server_type_name
 
 logger = logging.getLogger("connect.devices")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -50,18 +50,18 @@ _SERVER_LOCK = os.getenv("SERVER_LOCK", "").strip().lower() in (
 )
 _LOCKED_URLS = {
     u.rstrip("/")
-    for u in (os.getenv("SERVER_URL", ""), os.getenv("SERVER_INTERNAL_URL", ""))
+    for u in (os.getenv("SERVER_URL", ""), os.getenv("NAVIDROME_INTERNAL_URL", ""))
     if u
 }
 # What /health hands the login screen to skip asking for a server URL at all
 # once SERVER_LOCK is on (see ServerLoginView.vue) — SERVER_URL is the
 # deployment's own public identity for the server, preferred when set;
-# SERVER_INTERNAL_URL (the LAN-only address the proxy/backend actually talk
+# NAVIDROME_INTERNAL_URL (the LAN-only address the proxy/backend actually talk
 # to Navidrome through, not reachable from the browser directly in most
 # deployments) is a reasonable fallback over showing the user nothing at
 # all. For a locked Jellyfin deployment, set SERVER_URL — Jellyfin has no
 # internal-URL variable of its own (see configure()'s internal_url comment).
-_LOCKED_LOGIN_URL = os.getenv("SERVER_URL") or os.getenv("SERVER_INTERNAL_URL", "")
+_LOCKED_LOGIN_URL = os.getenv("SERVER_URL") or os.getenv("NAVIDROME_INTERNAL_URL", "")
 # What kind of server SERVER_LOCK points at — only meaningful together with
 # _LOCKED_LOGIN_URL above. Defaults to "subsonic" for backwards compatibility
 # with deployments that lock a server without setting this (all of them,
@@ -73,10 +73,15 @@ class ConfigRequest(BaseModel):
     credential: str
     url: str
     # "subsonic" (covers Navidrome) or "jellyfin". Defaults to subsonic for
-    # backwards compatibility with older Feishin builds that don't send a type.
+    # backwards compatibility with older clients that don't send a type.
     server_type: str = "subsonic"
     # Jellyfin requires the user GUID for item lookups; ignored for Subsonic.
     user_id: str = ""
+    # Plex's playlist writes need the *server's* clientIdentifier (from
+    # list_resources()/the server picker, not the account) to build a
+    # server://{machineIdentifier}/... item URI — see media/plex_bridge.py's
+    # _playlist_item_uri(). Ignored for Subsonic/Jellyfin.
+    machine_identifier: str = ""
     # Shown to other sessions as "in use by {username}" for claimed devices.
     username: str = ""
 
@@ -84,17 +89,23 @@ class ConfigRequest(BaseModel):
 @router.post("/config")
 async def configure(req: ConfigRequest, session: SessionState = Depends(get_session)):
     server_type = req.server_type.lower()
-    # SERVER_INTERNAL_URL is specifically Navidrome's own LAN-internal
-    # address — applying it to a Jellyfin session too (as this used to, before
-    # a real Jellyfin server was ever tested against it) meant Jellyfin's
-    # ping() call would hit Navidrome's URL instead, always failing since
-    # Navidrome has no /Users/Me endpoint. Jellyfin has no equivalent env var:
-    # its internal_url always comes from whatever URL the login screen sent
-    # (req.url) — JellyfinClient already falls back to that when internal_url
-    # is empty, and unlike Navidrome there's no separate always-on proxy
-    # route reading a fixed backend URL for it (see media/jellyfin_bridge.py,
-    # which is session-scoped, not env-var-scoped).
-    internal_url = os.getenv("SERVER_INTERNAL_URL", "") if server_type != "jellyfin" else ""
+    # NAVIDROME_INTERNAL_URL and JELLYFIN_INTERNAL_URL are deliberately separate
+    # env vars, not one shared between server types — that used to be a
+    # single NAVIDROME_INTERNAL_URL applied regardless of server_type, which
+    # meant a Jellyfin session's ping() call was hit with Navidrome's own
+    # LAN address instead, always failing since Navidrome has no /Users/Me
+    # endpoint. Plex has no equivalent var at all: its server address comes
+    # from Plex's own account-based discovery (list_resources()), which
+    # already prefers a local, LAN-reachable connection over a remote one
+    # when it finds one — there's no manually-typed URL for an override to
+    # even apply to. All three clients fall back to req.url (the login URL)
+    # when their own internal_url is empty either way.
+    if server_type == "jellyfin":
+        internal_url = os.getenv("JELLYFIN_INTERNAL_URL", "")
+    elif server_type == "plex":
+        internal_url = ""
+    else:
+        internal_url = os.getenv("NAVIDROME_INTERNAL_URL", "")
 
     if _SERVER_LOCK and _LOCKED_URLS and req.url.rstrip("/") not in _LOCKED_URLS:
         logger.warning(
@@ -105,13 +116,20 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
             detail="Server URL does not match the locked server for this deployment",
         )
 
-    media: JellyfinClient | SubsonicClient
+    media: JellyfinClient | PlexClient | SubsonicClient
     if server_type == "jellyfin":
         media = JellyfinClient(
             req.url,
             token=req.credential,
             user_id=req.user_id,
             internal_url=internal_url,
+        )
+    elif server_type == "plex":
+        media = PlexClient(
+            req.url,
+            token=req.credential,
+            internal_url=internal_url,
+            machine_identifier=req.machine_identifier,
         )
     else:
         media = SubsonicClient(
@@ -140,6 +158,8 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
             f"[config] Jellyfin configured & verified: {req.url} "
             f"(internal: {internal_url or 'same'}, user_id: {req.user_id or 'missing'})"
         )
+    elif server_type == "plex":
+        logger.info(f"[config] Plex configured & verified: {req.url}")
     else:
         logger.info(
             f"[config] Subsonic configured & verified: {req.url} "

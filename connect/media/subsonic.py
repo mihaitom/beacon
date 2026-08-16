@@ -25,9 +25,7 @@ class SubsonicClient:
         self.internal_url = (internal_url or url).rstrip("/")
         self.user = user
         self.password = password
-        self._credential = (
-            credential  # pre-built Subsonic auth query string from Feishin
-        )
+        self._credential = credential  # pre-built Subsonic auth query string
         self.app_name = "navispot"
         self.api_version = "1.16.1"
 

@@ -8,6 +8,7 @@
       <div class="account-strip">
         <div class="account-badge">
           <NavidromeIcon v-if="authStore.serverType === 'subsonic'" />
+          <PlexIcon v-else-if="authStore.serverType === 'plex'" />
           <JellyfinIcon v-else />
         </div>
         <div class="account-info">
@@ -149,6 +150,7 @@ import { getLocale, setLocale, type SupportedLocale } from '@/i18n'
 import type { ReplayGainMode } from '@/services/replayGain'
 import NavidromeIcon from '@/components/auth/NavidromeIcon.vue'
 import JellyfinIcon from '@/components/auth/JellyfinIcon.vue'
+import PlexIcon from '@/components/auth/PlexIcon.vue'
 import packageJson from '../../../../package.json'
 
 // How often getScanStatus.view is polled while a scan is running — frequent
@@ -159,7 +161,7 @@ const SCAN_POLL_INTERVAL_MS = 2000
 
 export default {
   name: 'SettingsView',
-  components: { NavidromeIcon, JellyfinIcon },
+  components: { NavidromeIcon, JellyfinIcon, PlexIcon },
   data() {
     return {
       serverUrl: '',

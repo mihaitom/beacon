@@ -61,8 +61,7 @@ import { useLibraryStore } from '@/stores/library'
  * blurred, tinted wash of the item's own art behind the title, the same
  * language HeroBand.vue/NowPlayingView.vue already use elsewhere. Exists
  * specifically to replace the plain "square cover + text beside it" row
- * every detail view used before, which (unintentionally) matched Feishin's
- * own LibraryHeader layout almost exactly.
+ * every detail view used before.
  */
 export default {
   name: 'DetailHeader',

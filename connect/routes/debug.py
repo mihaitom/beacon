@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, Response
 
 from core.session import SessionState, build_status_dict, require_authenticated_session
 from core.state import stream_url
+from core.streamer import FALLBACK_FORMAT
 from media.base import Track
 
 from .playback import _apply_position_offset
@@ -101,6 +102,11 @@ async def play_test_tone(session: SessionState = Depends(require_authenticated_s
         duration=_DURATION_S,
     )
     st.current_track_gain = 1.0
+    # Always the plain mp3 fallback here, regardless of whatever a previous
+    # real track resolved — the synthesized WAV can't be stream-copied into
+    # a leftover FLAC/AAC/OGG decision from before (see core/streamer.py's
+    # resolve_output_format()), and this debug beep has no reason to be lossless.
+    st.current_output_format = FALLBACK_FORMAT
     st.is_streaming = True
     st.radio_info = None
     st.clock.start(0.0)

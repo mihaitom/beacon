@@ -5,7 +5,7 @@
       :size="200"
       :eyebrow="$t('library.album')"
       :title="album.name"
-      :starred="album.starred"
+      :starred="authStore.capabilities.favorites ? album.starred : null"
       :rating="authStore.capabilities.personalRating ? album.rating : null"
       @toggle-star="toggleStar"
       @set-rating="setRating"

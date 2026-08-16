@@ -11,7 +11,7 @@ def _reload_proxy(internal_url: str):
     """Proxy module with a given environment variable."""
     import routes.proxy as proxy_mod
 
-    with patch.dict("os.environ", {"SERVER_INTERNAL_URL": internal_url}):
+    with patch.dict("os.environ", {"NAVIDROME_INTERNAL_URL": internal_url}):
         importlib.reload(proxy_mod)
     return proxy_mod
 
@@ -139,17 +139,17 @@ def test_proxy_returns_499_on_client_disconnect(client, default_session, monkeyp
 def test_proxy_rest_returns_503_for_unconfigured_session(client, default_session):
     # default_session's media defaults to SubsonicClient("") (see
     # conftest.py) — nobody has called /config for it yet, so there's
-    # nothing to forward to regardless of SERVER_INTERNAL_URL.
+    # nothing to forward to regardless of NAVIDROME_INTERNAL_URL.
     r = client.get("/rest/ping.view?u=user&t=token&s=salt&v=1.16.1&c=test&f=json")
     assert r.status_code == 503
     assert "error" in r.json()
 
 
-def test_proxy_rest_uses_session_url_not_server_internal_url(
+def test_proxy_rest_uses_session_url_not_navidrome_internal_url(
     client, default_session, monkeypatch
 ):
     # Regression test: /rest/{path} used to always forward to the fixed
-    # SERVER_INTERNAL_URL env var, completely ignoring which server the
+    # NAVIDROME_INTERNAL_URL env var, completely ignoring which server the
     # session actually authenticated against (see proxy_subsonic's own
     # comment) — deliberately mismatched here to prove the session wins.
     from media import SubsonicClient
@@ -165,7 +165,7 @@ def test_proxy_rest_uses_session_url_not_server_internal_url(
 
 
 def test_proxy_auth_returns_503_when_no_url_configured(client, monkeypatch):
-    monkeypatch.setenv("SERVER_INTERNAL_URL", "")
+    monkeypatch.setenv("NAVIDROME_INTERNAL_URL", "")
     import routes.proxy as proxy_mod
 
     importlib.reload(proxy_mod)
@@ -175,7 +175,7 @@ def test_proxy_auth_returns_503_when_no_url_configured(client, monkeypatch):
 
 
 def test_proxy_navidrome_api_returns_503_when_no_url_configured(client, monkeypatch):
-    monkeypatch.setenv("SERVER_INTERNAL_URL", "")
+    monkeypatch.setenv("NAVIDROME_INTERNAL_URL", "")
     import routes.proxy as proxy_mod
 
     importlib.reload(proxy_mod)

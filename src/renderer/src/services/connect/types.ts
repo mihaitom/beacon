@@ -66,8 +66,11 @@ export interface HealthResponse {
 export interface ConfigRequest {
   credential: string
   url: string
-  server_type: 'subsonic' | 'jellyfin'
+  server_type: 'subsonic' | 'jellyfin' | 'plex'
   user_id?: string
+  // Plex only — the server's own clientIdentifier (PlexServer.machine_identifier
+  // below), needed for playlist writes. Ignored for Subsonic/Jellyfin.
+  machine_identifier?: string
   username?: string
 }
 
@@ -102,6 +105,48 @@ export interface JellyfinQuickConnectConnectResponse {
   token?: string
   user_id?: string
   username?: string
+}
+
+export interface PlexPinInitiateResponse {
+  id: number
+  code: string
+  // Ready-built app.plex.tv/auth link — opened in the system browser (see
+  // ServerLoginView.vue), not something the frontend needs to construct
+  // itself.
+  auth_url: string
+}
+
+export interface PlexPinCheckRequest {
+  id: number
+}
+
+export interface PlexPinCheckResponse {
+  authenticated: boolean
+  // Both only present once authenticated is true. account_token is the
+  // Plex *account* token, not yet a server-scoped one (see
+  // PlexServer.token below). username is best-effort — a lookup failure
+  // server-side leaves it as an empty string rather than failing the
+  // whole login (see connect/routes/plex_auth.py).
+  account_token?: string
+  username?: string
+}
+
+export interface PlexResourcesRequest {
+  account_token: string
+}
+
+export interface PlexServer {
+  name: string
+  machine_identifier: string
+  url: string
+  // Server-scoped token, distinct from the account token that listed it —
+  // this is what gets sent to /config, same trust level as Jellyfin's own
+  // AccessToken already flowing to the renderer.
+  token: string
+}
+
+export interface PlexResourcesResponse {
+  servers: PlexServer[]
 }
 
 export interface StatusTrack {

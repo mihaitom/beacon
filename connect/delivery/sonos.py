@@ -37,6 +37,7 @@ class SonosDelivery(BaseDelivery):
         album_art_url: str | None = None,
         duration: float | None = None,
         album: str = "",
+        content_type: str = "audio/mpeg",
     ) -> None:
         # duration accepted for interface parity with BaseDelivery.play() but
         # not yet wired up here — not part of the DLNA missing-duration fix
@@ -75,7 +76,7 @@ class SonosDelivery(BaseDelivery):
             f"{album_tag}"
             f"{album_art_tag}"
             "<upnp:class>object.item.audioItem.audioBroadcast</upnp:class>"
-            f'<res protocolInfo="http-get:*:audio/mpeg:*">{escape(stream_url)}</res>'
+            f'<res protocolInfo="http-get:*:{escape(content_type)}:*">{escape(stream_url)}</res>'
             "</item>"
             "</DIDL-Lite>"
         )

@@ -1,4 +1,4 @@
-"""main.py — Feishin Connect: streams Navidrome tracks to Sonos / AirPlay
+"""main.py — Beacon Connect: streams Navidrome tracks to Sonos / AirPlay
 
 Startup:
   uv run python main.py
@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Must run before any core.*/routes.* import below — several of them read
-# their config (CONNECT_TOKEN, SERVER_INTERNAL_URL, ...) from os.environ at
+# their config (CONNECT_TOKEN, NAVIDROME_INTERNAL_URL, ...) from os.environ at
 # *module import time*, not lazily. Loading .env after those imports meant
 # it was silently ignored — only working when the same variables happened
 # to already be set as real shell/process env vars (e.g. via docker-compose,
@@ -28,17 +28,18 @@ load_dotenv()
 from core.auth import TOKEN as _CONNECT_TOKEN  # noqa: E402
 from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED  # noqa: E402
 from core.session import reap_stale_sessions, registry  # noqa: E402
-from core.state import PORT, ctx, get_local_ip  # noqa: E402
+from core.state import PORT, get_local_ip  # noqa: E402
 from routes.debug import router as debug_router  # noqa: E402
 from routes.devices import router as devices_router  # noqa: E402
 from routes.discovery import discover_all  # noqa: E402
 from routes.discovery import router as discovery_router  # noqa: E402
-from media import jellyfin_bridge  # noqa: E402
+from media import jellyfin_bridge, plex_bridge  # noqa: E402
 from routes.jellyfin_auth import router as jellyfin_auth_router  # noqa: E402
 from routes.join import router as join_router  # noqa: E402
 from routes.lyrics import router as lyrics_router  # noqa: E402
 from routes.pairing import router as pairing_router  # noqa: E402
 from routes.playback import router as playback_router  # noqa: E402
+from routes.plex_auth import router as plex_auth_router  # noqa: E402
 from routes.proxy import close as close_proxy_client  # noqa: E402
 from routes.proxy import router as proxy_router  # noqa: E402
 from routes.radio import router as radio_router  # noqa: E402
@@ -226,15 +227,6 @@ async def lifespan(_: FastAPI):
     else:
         logger.error("❌ ffmpeg NOT FOUND — streaming will fail!")
 
-    if ctx.delivery.deliveries:
-        logger.info(
-            "ℹ️  Standalone mode (TARGETS env set) — streaming to fixed devices:"
-        )
-        for t in ctx.delivery.list_targets():
-            logger.info(f"🔊 Target: {t['type']}:{t['name']}")
-    else:
-        logger.info("ℹ️  No TARGETS env — devices are controlled via Feishin's /play")
-
     if not _CONNECT_TOKEN:
         logger.warning(
             "⚠️  CONNECT_TOKEN explicitly set to empty — the Connect API has no auth!"
@@ -248,7 +240,7 @@ async def lifespan(_: FastAPI):
         )
     else:
         logger.info("🔒 Token auth enabled (custom CONNECT_TOKEN set)")
-    logger.info("⏳ Waiting for Feishin /config (media server credentials)")
+    logger.info("⏳ Waiting for /config (media server credentials)")
 
     discovery_task = asyncio.create_task(_periodic_discovery())
     reaper_task = asyncio.create_task(reap_stale_sessions())
@@ -259,6 +251,7 @@ async def lifespan(_: FastAPI):
         reaper_task.cancel()
         await close_proxy_client()
         await jellyfin_bridge.close()
+        await plex_bridge.close()
         # Stop actively-casting devices before the process actually exits —
         # Sonos/Chromecast/DLNA/AirPlay have no way to know this backend
         # died, so they'd otherwise just keep playing whatever they were
@@ -280,7 +273,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="Feishin Connect",
+    title="Beacon Connect",
     lifespan=lifespan,
     # Swagger UI / ReDoc / the raw OpenAPI schema are unauthenticated by
     # FastAPI's own design (they live outside any router, so require_token
@@ -321,6 +314,7 @@ app.include_router(stream_router)
 app.include_router(playback_router)
 app.include_router(devices_router)
 app.include_router(jellyfin_auth_router)
+app.include_router(plex_auth_router)
 app.include_router(discovery_router)
 app.include_router(volume_router)
 app.include_router(join_router)

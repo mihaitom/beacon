@@ -68,6 +68,7 @@
         />
       </transition>
       <v-btn
+        v-if="authStore.capabilities.favorites"
         :icon="track.starred ? 'mdi-heart' : 'mdi-heart-outline'"
         :color="track.starred ? 'primary' : undefined"
         variant="text"
@@ -115,18 +116,20 @@
             </v-list-item>
           </template>
           <v-list density="compact" class="playlist-submenu">
-            <v-list-item v-if="libraryStore.playlists.length === 0" disabled>
-              <v-list-item-title class="text-medium-emphasis">{{
-                $t('common.noPlaylists')
-              }}</v-list-item-title>
+            <v-list-item @click="$emit('create-playlist', { track, index })">
+              <template #prepend><v-icon icon="mdi-plus" size="small" /></template>
+              <v-list-item-title>{{ $t('common.createNewPlaylist') }}</v-list-item-title>
             </v-list-item>
-            <v-list-item
-              v-for="playlist in libraryStore.playlists"
-              :key="playlist.id"
-              @click="$emit('add-to-playlist', { track, playlistId: playlist.id, index })"
-            >
-              <v-list-item-title>{{ playlist.name }}</v-list-item-title>
-            </v-list-item>
+            <template v-if="libraryStore.playlists.length">
+              <v-divider />
+              <v-list-item
+                v-for="playlist in libraryStore.playlists"
+                :key="playlist.id"
+                @click="$emit('add-to-playlist', { track, playlistId: playlist.id, index })"
+              >
+                <v-list-item-title>{{ playlist.name }}</v-list-item-title>
+              </v-list-item>
+            </template>
           </v-list>
         </v-menu>
       </v-list>
@@ -210,6 +213,7 @@ export default {
     'set-rating',
     'add-to-queue',
     'add-to-playlist',
+    'create-playlist',
     'toggle-select',
   ],
   data() {

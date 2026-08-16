@@ -92,6 +92,18 @@ class PlaybackClock:
         if self.is_paused:
             self.paused_elapsed = position
         else:
+            # Same "mid-track start_position" bug start() already guards
+            # against (see the module docstring) — /seek's route handler
+            # reconnects to a *fresh* stream here (FFmpeg output restarts
+            # near 0 again, same as a new /play), so elapsed_since_stream_
+            # start() needs re-zeroing to this seek's own raw_position, not
+            # left pointing at wherever the track's original stream began.
+            # Without this, the calibration task's device_pos vs. wall_elapsed
+            # comparison drifts by the full seek distance and never lands
+            # within MAX_PLAUSIBLE_POSITION_LEAD, spamming "ignoring
+            # implausible device position" for the whole 10s window instead
+            # of calibrating.
+            self.track_start_position = raw_position
             self.play_generation += 1
 
     def calibrate(self, device_pos: float) -> float:

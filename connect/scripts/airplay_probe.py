@@ -2,16 +2,16 @@
 """airplay_probe.py — standalone AirPlay scan / pair / stream probe.
 
 Reproduces the delivery.py AirPlay path (scan → set RAOP credentials →
-stream_file) WITHOUT the FastAPI app or Feishin UI, so an AirPlay 2 receiver
-such as shairport-sync (see docker-compose.airplay-sim.yaml) can be exercised
-in isolation with full pyatv debug logging.
+stream_file) WITHOUT the FastAPI app or Beacon's own UI, so an AirPlay 2
+receiver such as shairport-sync (see docker-compose.airplay-sim.yaml) can be
+exercised in isolation with full pyatv debug logging.
 
   cd connect
   uv run python scripts/airplay_probe.py --name "AirPlay2 Test" --pair
   uv run python scripts/airplay_probe.py --name "AirPlay2 Test" --file tone.wav
 
 Credentials are shared with the app (credentials.py / airplay_credentials.json),
-so a device paired here also works in Feishin and vice versa.
+so a device paired here also works in Beacon and vice versa.
 """
 
 import argparse

@@ -1,8 +1,8 @@
 name: Frontend Tests
 
-# No pnpm run test here (unlike upstream feishin-connect) — beacon has no
-# vitest suite yet. type-check + lint are what actually catch regressions
-# today; swap/add a real test step here once one exists.
+# No pnpm run test here — beacon has no vitest suite yet. type-check + lint
+# are what actually catch regressions today; swap/add a real test step here
+# once one exists.
 on:
     workflow_dispatch:
     push:

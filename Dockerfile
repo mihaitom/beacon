@@ -78,6 +78,18 @@ WORKDIR /build/ffmpeg-8.1.2
 # the same commands work fine against a system ffmpeg (which has every
 # muxer/encoder built in) — that's the whole reason this was easy to miss
 # locally and only show up once actually deployed.
+# core/streamer.py's resolve_output_format() prefers stream-copying a
+# track's source codec straight through over always re-encoding to MP3 —
+# flac/mp3/aac/vorbis sources each need their matching *muxer* below (copy
+# needs an output container, not an encoder). Opus is deliberately NOT in
+# that copy tier despite ffmpeg supporting an opus-in-ogg copy — a real
+# Sonos speaker accepts the URI but produces no audio for it (Sonos' own
+# published format list has no Opus entry, only Ogg Vorbis) — so the ogg
+# muxer below exists for Vorbis only. flac is also the universal re-encode
+# target for other lossless sources (alac, WAV/AIFF PCM, ape), which — same
+# pcm_s16le gotcha as above — needs both the flac muxer AND the flac
+# encoder, not just one. adts (AAC) and ogg (Vorbis) are copy-only here, so
+# they need only their muxer, no encoder.
 RUN ./configure \
     --disable-everything \
     --disable-doc \
@@ -89,8 +101,8 @@ RUN ./configure \
     --enable-demuxer=mp3,flac,ogg,wav,aac,mov,matroska,asf,ape,aiff \
     --enable-decoder=mp3,mp3float,flac,vorbis,opus,aac,aac_latm,pcm_s16le,pcm_s16be,pcm_u8,pcm_f32le,alac,wmav1,wmav2,ape \
     --enable-parser=mp3,aac,flac,opus,vorbis \
-    --enable-encoder=libmp3lame,pcm_s16le \
-    --enable-muxer=mp3,pcm_s16le \
+    --enable-encoder=libmp3lame,pcm_s16le,flac \
+    --enable-muxer=mp3,pcm_s16le,flac,adts,ogg \
     --enable-libmp3lame \
     --enable-swresample \
     --enable-filter=aresample,anull,aformat \

@@ -14,12 +14,9 @@
     </div>
 
     <template v-else>
-      <!-- Subsonic/Navidrome and Jellyfin are both actually selectable —
-       - Plex is shown (real logo, real name) so the shape of what's coming
-       - is visible, but "locked" the same way an unlit lighthouse reads as
-       - "not this one yet", not "broken". Skipped entirely once this
-       - deployment is itself locked to one specific server (see `locked`
-       - below) — there's nothing left to choose either way. -->
+      <!-- All three server types are selectable. Skipped entirely once
+       - this deployment is itself locked to one specific server (see
+       - `locked` below) — there's nothing left to choose either way. -->
       <div v-if="!locked" class="server-type-grid mb-6">
         <button
           v-for="option in serverTypeOptions"
@@ -51,7 +48,7 @@
       <v-card-text class="pa-0">
         <v-form @submit.prevent="submit">
           <v-text-field
-            v-if="!locked"
+            v-if="!locked && selectedServerType !== 'plex'"
             v-model="serverUrl"
             :label="serverUrlLabel"
             :placeholder="serverUrlPlaceholder"
@@ -61,14 +58,14 @@
           <!-- Read-only, not just hidden — still worth showing which server
            - this actually is, same reasoning as SettingsView.vue's own
            - read-only server display post-login. -->
-          <p v-else class="text-caption text-medium-emphasis mb-4">
+          <p v-else-if="locked" class="text-caption text-medium-emphasis mb-4">
             {{ $t('auth.serverLocked', { url: serverUrl }) }}
           </p>
 
-          <!-- Jellyfin only — Subsonic/Navidrome has no equivalent concept.
-           - Switching away cancels any in-flight Quick Connect request
-           - (see setAuthMode()) so a stray poll never outlives the mode
-           - it was started in. -->
+          <!-- Jellyfin only — Subsonic/Navidrome and Plex have no
+           - equivalent concept. Switching away cancels any in-flight Quick
+           - Connect request (see setAuthMode()) so a stray poll never
+           - outlives the mode it was started in. -->
           <div v-if="selectedServerType === 'jellyfin'" class="auth-mode-toggle mb-4">
             <button
               type="button"
@@ -88,7 +85,35 @@
             </button>
           </div>
 
-          <template v-if="selectedServerType === 'jellyfin' && authMode === 'quickconnect'">
+          <!-- Plex authenticates a plex.tv *account*, not a per-server
+           - password — no username/password fields at all, and a server
+           - picker once the account's linked (see PLEX_PLAN.md). -->
+          <template v-if="selectedServerType === 'plex'">
+            <p v-if="!plexWaiting && !plexPickingServer" class="text-body-2 text-medium-emphasis mb-4">
+              {{ $t('auth.plexHint') }}
+            </p>
+            <template v-else-if="plexPickingServer">
+              <p class="text-body-2 text-medium-emphasis mb-3">
+                {{ $t('auth.plexChooseServer') }}
+              </p>
+              <button
+                v-for="server in plexServers"
+                :key="server.machine_identifier"
+                type="button"
+                class="plex-server-row mb-2"
+                @click="choosePlexServer(server)"
+              >
+                {{ server.name }}
+              </button>
+            </template>
+            <div v-else class="quick-connect-panel mb-4">
+              <p class="text-body-2 text-medium-emphasis mb-2">
+                {{ $t('auth.plexWaitingHint') }}
+              </p>
+              <v-progress-linear indeterminate color="primary" height="4" rounded class="mt-4" />
+            </div>
+          </template>
+          <template v-else-if="quickConnectMode">
             <p v-if="!quickConnectCode" class="text-body-2 text-medium-emphasis mb-4">
               {{ $t('auth.quickConnectHint') }}
             </p>
@@ -122,14 +147,11 @@
             {{ authStore.loginError }}
           </v-alert>
 
-          <v-btn
-            v-if="!(quickConnectMode && quickConnectCode)"
-            type="submit"
-            color="primary"
-            block
-            :loading="submitting"
-          >
+          <v-btn v-if="showSubmitButton" type="submit" color="primary" block :loading="submitting">
             {{ submitLabel }}
+          </v-btn>
+          <v-btn v-else-if="plexMode" variant="text" block @click="cancelPlexLogin">
+            {{ $t('common.cancel') }}
           </v-btn>
           <v-btn v-else variant="text" block @click="cancelQuickConnect">
             {{ $t('common.cancel') }}
@@ -146,6 +168,7 @@ import { getHealth } from '@/services/connect/config'
 import NavidromeIcon from '@/components/auth/NavidromeIcon.vue'
 import JellyfinIcon from '@/components/auth/JellyfinIcon.vue'
 import PlexIcon from '@/components/auth/PlexIcon.vue'
+import type { PlexServer } from '@/services/connect/types'
 
 // How often pollJellyfinQuickConnect() is polled while a code is showing —
 // frequent enough to feel responsive once approved, not so frequent it
@@ -162,10 +185,10 @@ export default {
       password: '',
       showPassword: false,
       submitting: false,
-      // 'subsonic' or 'jellyfin' — passed to authStore.login() on submit().
-      // Plex stays locked (see serverTypeOptions below), so this never
-      // actually resolves to 'plex' in practice.
-      selectedServerType: 'subsonic' as 'subsonic' | 'jellyfin',
+      // Passed to authStore.login() on submit() (subsonic/jellyfin) — Plex
+      // goes through its own startPlexAuth()/selectPlexServer() flow
+      // instead (see the plex* fields/methods below).
+      selectedServerType: 'subsonic' as 'subsonic' | 'jellyfin' | 'plex',
       // Whether checkServerLock() below has resolved yet — the server-type
       // grid/URL field stay hidden (a spinner shows instead) until we
       // actually know whether there's a choice to make at all, rather than
@@ -181,6 +204,21 @@ export default {
       quickConnectCode: null as string | null,
       quickConnectSecret: null as string | null,
       quickConnectTimer: null as ReturnType<typeof setTimeout> | null,
+      // Plex PIN-linking flow — see startPlexLogin()/pollPlexLogin(). Three
+      // states: idle (none of these set), waiting (plexWaiting, PIN issued
+      // and the browser tab opened, polling for approval), picking a
+      // server (plexPickingServer, approved and plexServers has >1 entry —
+      // a single-server account skips straight through, see
+      // pollPlexLogin()).
+      plexCode: null as string | null,
+      plexPinId: null as number | null,
+      plexWaiting: false,
+      plexPickingServer: false,
+      plexServers: [] as PlexServer[],
+      // Set once the PIN's approved (see pollPlexLogin()) — carried
+      // through to selectPlexServer() once a server's picked.
+      plexUsername: '',
+      plexTimer: null as ReturnType<typeof setTimeout> | null,
     }
   },
   computed: {
@@ -203,7 +241,7 @@ export default {
           icon: JellyfinIcon,
           locked: false,
         },
-        { type: 'plex', name: this.$t('auth.serverTypePlex'), icon: PlexIcon, locked: true },
+        { type: 'plex', name: this.$t('auth.serverTypePlex'), icon: PlexIcon, locked: false },
       ]
     },
     // This deployment only ever has one possible server (see
@@ -225,7 +263,19 @@ export default {
     quickConnectMode(): boolean {
       return this.selectedServerType === 'jellyfin' && this.authMode === 'quickconnect'
     },
+    plexMode(): boolean {
+      return this.selectedServerType === 'plex'
+    },
+    // The primary submit button hides once there's nothing left for it to
+    // do — a Quick Connect/Plex code is already showing, or a Plex server
+    // list is (the row itself is the action then) — leaving only the
+    // cancel button (see the template's v-else-if chain).
+    showSubmitButton(): boolean {
+      if (this.plexMode) return !this.plexWaiting && !this.plexPickingServer
+      return !(this.quickConnectMode && this.quickConnectCode)
+    },
     submitLabel() {
+      if (this.plexMode) return this.$t('auth.plexSignIn')
       if (this.quickConnectMode) return this.$t('auth.quickConnectRequestCode')
       return this.$t('auth.login')
     },
@@ -237,14 +287,18 @@ export default {
   },
   beforeUnmount() {
     this.stopQuickConnectPolling()
+    this.stopPlexPolling()
   },
   methods: {
     selectServerType(option: { type: string; locked: boolean }) {
       if (option.locked) return
-      this.selectedServerType = option.type as 'subsonic' | 'jellyfin'
+      this.selectedServerType = option.type as 'subsonic' | 'jellyfin' | 'plex'
       // Quick Connect only exists for Jellyfin — switching away leaves no
       // valid mode for it to keep running in.
       if (option.type !== 'jellyfin') this.setAuthMode('password')
+      // Same reasoning for the Plex PIN flow — a stray poll shouldn't
+      // outlive the tile it was started under.
+      if (option.type !== 'plex') this.cancelPlexLogin()
     },
     setAuthMode(mode: 'password' | 'quickconnect') {
       if (this.authMode === mode) return
@@ -263,7 +317,10 @@ export default {
         if (health.server_lock) {
           this.serverLock = health.server_lock
           this.serverUrl = health.server_lock.url
-          this.selectedServerType = health.server_lock.server_type as 'subsonic' | 'jellyfin'
+          this.selectedServerType = health.server_lock.server_type as
+            | 'subsonic'
+            | 'jellyfin'
+            | 'plex'
         }
       } catch (error) {
         // Connect backend not reachable yet, or some other transient
@@ -276,6 +333,10 @@ export default {
       }
     },
     async submit() {
+      if (this.plexMode) {
+        await this.startPlexLogin()
+        return
+      }
       if (this.quickConnectMode) {
         await this.startQuickConnect()
         return
@@ -283,12 +344,13 @@ export default {
       this.submitting = true
       try {
         // login() resolves connectToken itself (see stores/auth.ts's
-        // loadConnectDefaults) — the user never enters it.
+        // loadConnectDefaults) — the user never enters it. Plex already
+        // returned above, so this is always 'subsonic'/'jellyfin' here.
         await this.authStore.login({
           serverUrl: this.serverUrl,
           username: this.username,
           password: this.password,
-          serverType: this.selectedServerType,
+          serverType: this.selectedServerType as 'subsonic' | 'jellyfin',
         })
         this.goToRedirect()
       } catch {
@@ -354,6 +416,92 @@ export default {
       this.stopQuickConnectPolling()
       this.quickConnectCode = null
       this.quickConnectSecret = null
+    },
+    async startPlexLogin() {
+      this.submitting = true
+      this.authStore.loginError = null
+      try {
+        const { code, authUrl, pinId } = await this.authStore.startPlexAuth()
+        this.plexCode = code
+        this.plexPinId = pinId
+        this.plexWaiting = true
+        // Intercepted by main/index.ts's setWindowOpenHandler and routed
+        // to shell.openExternal — opens the system browser, not a second
+        // app window.
+        window.open(authUrl, '_blank')
+        this.pollPlexLogin()
+      } catch (error) {
+        this.authStore.loginError = error instanceof Error ? error.message : String(error)
+      } finally {
+        this.submitting = false
+      }
+    },
+    async pollPlexLogin() {
+      if (this.plexPinId === null) return
+      const pinId = this.plexPinId
+      let approved: { accountToken: string; username: string } | null
+      try {
+        approved = await this.authStore.pollPlexAuth(pinId)
+      } catch (error) {
+        console.error('[login] Plex PIN check failed:', error)
+        this.authStore.loginError = error instanceof Error ? error.message : String(error)
+        this.cancelPlexLogin()
+        return
+      }
+      // cancelPlexLogin()/selectServerType() ran while the above awaited —
+      // same guard as pollQuickConnect()'s.
+      if (this.plexPinId !== pinId) return
+
+      if (!approved) {
+        this.plexTimer = setTimeout(() => this.pollPlexLogin(), QUICK_CONNECT_POLL_INTERVAL_MS)
+        return
+      }
+
+      this.plexWaiting = false
+      this.plexUsername = approved.username
+      try {
+        const servers = await this.authStore.fetchPlexServers(approved.accountToken)
+        if (this.plexPinId !== pinId) return
+        if (servers.length === 0) {
+          this.authStore.loginError = this.$t('auth.plexNoServers')
+          this.plexPinId = null
+          return
+        }
+        const [only] = servers
+        if (only && servers.length === 1) {
+          await this.choosePlexServer(only)
+          return
+        }
+        this.plexServers = servers
+        this.plexPickingServer = true
+      } catch (error) {
+        this.authStore.loginError = error instanceof Error ? error.message : String(error)
+        this.plexPinId = null
+      }
+    },
+    async choosePlexServer(server: PlexServer) {
+      this.submitting = true
+      try {
+        await this.authStore.selectPlexServer(server, this.plexUsername)
+        this.goToRedirect()
+      } catch {
+        // authStore.loginError already holds the message, shown in the template.
+      } finally {
+        this.submitting = false
+      }
+    },
+    stopPlexPolling() {
+      if (this.plexTimer) clearTimeout(this.plexTimer)
+      this.plexTimer = null
+    },
+    cancelPlexLogin() {
+      this.stopPlexPolling()
+      this.plexCode = null
+      this.plexPinId = null
+      this.plexWaiting = false
+      this.plexPickingServer = false
+      this.plexServers = []
+      this.plexUsername = ''
     },
   },
 }
@@ -563,5 +711,33 @@ export default {
    * first). */
   padding-left: 0.3em;
   color: #fdf6ec;
+}
+
+.plex-server-row {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  font: inherit;
+  font-size: 0.9rem;
+  color: #fdf6ec;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.plex-server-row:hover,
+.plex-server-row:focus-visible {
+  border-color: rgba(245, 169, 78, 0.4);
+  background: rgba(245, 169, 78, 0.08);
+}
+
+.plex-server-row:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: 2px;
 }
 </style>

@@ -179,7 +179,7 @@ export default {
     // finish), but it's the closest thing to "hours listened" the data
     // actually supports. For Jellyfin specifically, playCount is reported
     // via its session-based /Sessions/Playing + /Sessions/Playing/Stopped
-    // flow (mirroring feishin-connect) — see scrobble()'s comment.
+    // flow — see scrobble()'s comment.
     listeningTime(): number {
       return this.tracks.reduce((sum, t) => sum + (t.duration || 0) * (t.playCount || 0), 0)
     },

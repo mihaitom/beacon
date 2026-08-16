@@ -15,7 +15,7 @@ export default {
     name: 'Name',
     addToQueue: 'Add to queue',
     addToPlaylistMenu: 'Add to playlist',
-    noPlaylists: 'No playlists yet',
+    createNewPlaylist: 'Create new playlist…',
   },
   nav: {
     home: 'Home',
@@ -47,6 +47,12 @@ export default {
       "Request a code and enter it on another device you're already signed in on (or in Jellyfin's own web UI, under Profile → Quick Connect) to log in here.",
     quickConnectApproveHint: 'Enter this code on another device to log in:',
     quickConnectRequestCode: 'Request code',
+    plexHint:
+      'Signs you in through your Plex account — a browser tab opens where you sign in to Plex and approve the request.',
+    plexSignIn: 'Sign in with Plex',
+    plexWaitingHint: 'Approve the sign-in in the browser tab that just opened.',
+    plexChooseServer: 'Choose your Plex server:',
+    plexNoServers: 'No servers found for this Plex account.',
   },
   home: {
     greetingNight: 'Quiet night, {name}',

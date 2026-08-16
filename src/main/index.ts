@@ -22,7 +22,7 @@ const { autoUpdater } = electronUpdaterPkg;
 // ...) it silently falls back to no encryption at all even if a Secret
 // Service daemon is running and reachable. Forcing the switch explicitly
 // makes safeStorage try libsecret regardless of desktop environment. Must
-// run before app.whenReady(). Same fix as the upstream Feishin fork uses.
+// run before app.whenReady().
 if (process.platform === 'linux' && !process.argv.some((arg) => arg.startsWith('--password-store='))) {
     app.commandLine.appendSwitch('password-store', 'gnome-libsecret');
 }
@@ -214,10 +214,9 @@ function stopConnectServer(): void {
 
 // Learns CONNECT_TOKEN the same way the Python backend resolves it (see
 // connect/core/auth.py), so the renderer never has to ask the user to type
-// it in — mirrors how the upstream Feishin fork's nginx config injects
-// X-Connect-Token itself for the web/Docker build (see ng.conf.template): a
-// trusted layer the user never sees knows the secret, instead of the login
-// form asking for it.
+// it in — same idea as the web/Docker build's nginx config injecting
+// X-Connect-Token itself (see ng.conf.template): a trusted layer the user
+// never sees knows the secret, instead of the login form asking for it.
 //
 // Packaged builds bypass the file-based resolution entirely: startConnectServer()
 // above already generated packagedConnectToken and knows exactly which port

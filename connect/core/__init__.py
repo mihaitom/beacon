@@ -1,4 +1,4 @@
-"""core — Shared app-wide infrastructure for Feishin Connect.
+"""core — Shared app-wide infrastructure for Beacon Connect.
 
 Sub-modules:
   auth      Token-based auth for the Connect API
