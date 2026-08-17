@@ -29,6 +29,18 @@
       <v-icon icon="mdi-lighthouse-on" color="primary" size="20" class="ml-4 mr-2 beacon-glow" />
       <v-app-bar-title class="app-title">Beacon</v-app-bar-title>
       <v-spacer />
+      <v-tooltip v-if="remoteControlStore.enabled" :text="$t('remoteControl.activeHint')" location="bottom">
+        <template #activator="{ props }">
+          <v-icon
+            v-bind="props"
+            icon="mdi-cellphone-wireless"
+            color="primary"
+            size="20"
+            class="mr-3 remote-control-indicator"
+            @click="$router.push('/settings')"
+          />
+        </template>
+      </v-tooltip>
       <top-bar-search />
     </v-app-bar>
 
@@ -66,6 +78,7 @@ import CastTakeoverConfirmDialog from '@/components/connect/CastTakeoverConfirmD
 import TopBarSearch from '@/components/TopBarSearch.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
+import { useRemoteControlStore } from '@/stores/remoteControl'
 
 export default {
   name: 'DefaultLayout',
@@ -91,6 +104,9 @@ export default {
     },
     authStore() {
       return useAuthStore()
+    },
+    remoteControlStore() {
+      return useRemoteControlStore()
     },
     // NowPlayingView.vue renders lyrics inline (its own split-panel
     // transition) whenever playbackStore.lyricsDrawerOpen is true, driven
@@ -144,6 +160,10 @@ export default {
 
 .beacon-glow {
   filter: drop-shadow(0 0 6px rgba(245, 169, 78, 0.55));
+}
+
+.remote-control-indicator {
+  cursor: pointer;
 }
 
 .beacon-rail {

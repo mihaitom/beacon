@@ -1,5 +1,5 @@
 <template>
-  <div class="now-playing fill-height d-flex align-center justify-center">
+  <div class="now-playing" :class="{ 'now-playing--compact': compact }">
     <!-- Full-bleed blurred artwork behind everything — same backdrop
      - language as DetailHeader.vue's hero cards (blur + scrim over the
      - item's own art). Two stacked layers so a track change crossfades
@@ -22,64 +22,78 @@
       />
     </div>
 
-    <div
-      v-if="hasPlayable"
-      class="now-playing__content"
-      :class="{ 'now-playing__content--split': showLyrics }"
-    >
-      <div class="now-playing__primary">
-        <div class="now-playing__art-wrap">
-          <div class="now-playing__art-glow" :style="{ background: glowColor }" />
-          <cover-art
-            v-if="currentTrack"
-            :cover-art-id="currentTrack.coverArtId"
-            :size="artSize"
-            class="cover-shadow"
-          />
-          <!-- No cover-shadow/card background for a transparent icon (see
-           - radioIconIsTransparent) — a real card treatment around a logo
-           - that's just floating on transparency looks like a broken
-           - image (this app's own dark background showing through the
-           - "card" as a faint muddy tint) rather than a clean logo. -->
-          <cover-art
-            v-else
-            :image-url="radioFaviconSrc"
-            :size="artSize"
-            fallback-icon="mdi-radio"
-            :class="radioIconIsTransparent ? 'radio-cover-art--transparent' : 'cover-shadow'"
-          />
-        </div>
+    <!-- The container-query host — see artSize's own comment. .now-playing's
+     - own grid (see <style>, grid-template-rows: minmax(0, 1fr) auto) is
+     - what makes this take up exactly whatever's left after the visualizer
+     - row, and container-type: size is what lets artSize/.now-playing__content--split
+     - etc. measure *that* real, already-chrome-aware space (cqh/cqw)
+     - instead of the raw viewport (vh/vw), which had no idea how much of
+     - itself the app-bar/PlayerBar/visualizer row had already taken.
+     - A separate element from .now-playing__content on purpose — an
+     - element can't size *itself* using its own cqh/cqw units (circular,
+     - the browser just ignores it), so this one only ever gets plain flex
+     - sizing, and .now-playing__content (and everything inside it)
+     - measures against this ancestor instead. -->
+    <div class="now-playing__stage">
+      <div
+        class="now-playing__content"
+        :class="{ 'now-playing__content--split': hasPlayable && showLyrics }"
+      >
+        <template v-if="hasPlayable">
+          <div class="now-playing__primary">
+            <div class="now-playing__art-wrap">
+              <div class="now-playing__art-glow" :style="{ background: glowColor }" />
+              <cover-art
+                v-if="currentTrack"
+                :cover-art-id="currentTrack.coverArtId"
+                :size="artSize"
+                class="cover-shadow"
+              />
+              <!-- No cover-shadow/card background for a transparent icon
+               - (see radioIconIsTransparent) — a real card treatment
+               - around a logo that's just floating on transparency looks
+               - like a broken image (this app's own dark background
+               - showing through the "card" as a faint muddy tint) rather
+               - than a clean logo. -->
+              <cover-art
+                v-else
+                :image-url="radioFaviconSrc"
+                :size="artSize"
+                fallback-icon="mdi-radio"
+                :class="radioIconIsTransparent ? 'radio-cover-art--transparent' : 'cover-shadow'"
+              />
+            </div>
 
-        <div class="now-playing__info">
-          <div class="eyebrow-label mb-2">{{ eyebrow }}</div>
-          <h1 class="detail-title now-playing__title mb-2">
-            {{ currentTrack?.title ?? playbackStore.radioStation?.name }}
-          </h1>
-          <router-link
-            v-if="currentTrack"
-            :to="`/artists/${currentTrack.artistId}`"
-            class="text-h6 text-medium-emphasis now-playing__artist-link mb-2"
-          >
-            {{ currentTrack.artist }}
-          </router-link>
-          <div v-else class="text-h6 text-medium-emphasis mb-2" />
-          <router-link
-            v-if="currentTrack"
-            :to="`/albums/${currentTrack.albumId}`"
-            class="text-body-2 text-medium-emphasis now-playing__album-link"
-          >
-            {{ currentTrack.album }}
-          </router-link>
-        </div>
+            <div class="now-playing__info">
+              <div class="eyebrow-label mb-2">{{ eyebrow }}</div>
+              <h1 class="detail-title now-playing__title mb-2">
+                {{ currentTrack?.title ?? playbackStore.radioStation?.name }}
+              </h1>
+              <router-link
+                v-if="currentTrack"
+                :to="`/artists/${currentTrack.artistId}`"
+                class="text-h6 text-medium-emphasis now-playing__artist-link mb-2"
+              >
+                {{ currentTrack.artist }}
+              </router-link>
+              <div v-else class="text-h6 text-medium-emphasis mb-2" />
+              <router-link
+                v-if="currentTrack"
+                :to="`/albums/${currentTrack.albumId}`"
+                class="text-body-2 text-medium-emphasis now-playing__album-link"
+              >
+                {{ currentTrack.album }}
+              </router-link>
+            </div>
+          </div>
+
+          <transition name="now-playing-lyrics">
+            <lyrics-panel v-if="showLyrics" variant="immersive" class="now-playing__lyrics" />
+          </transition>
+        </template>
+
+        <span v-else class="text-medium-emphasis">{{ $t('nowPlaying.nothingPlaying') }}</span>
       </div>
-
-      <transition name="now-playing-lyrics">
-        <lyrics-panel v-if="showLyrics" variant="immersive" class="now-playing__lyrics" />
-      </transition>
-    </div>
-
-    <div v-else class="now-playing__content">
-      <span class="text-medium-emphasis">{{ $t('nowPlaying.nothingPlaying') }}</span>
     </div>
 
     <!-- Real audio-reactive either way: a local Web Audio analyser during
@@ -88,8 +102,12 @@
      - actually run against — see visualizerAvailable for which can't.
      - Stays mounted a moment past visualizerActive going false so the
      - `active` prop below can let it settle to 0 first instead of just
-     - vanishing — see the visualizerActive watcher. -->
-    <div v-if="visualizerMounted" class="now-playing__visualizer">
+     - vanishing — see the visualizerActive watcher. A real flex row now
+     - (see .now-playing__visualizer-row), not an absolutely-positioned
+     - overlay — .now-playing__stage above shrinks to make room for it
+     - through normal flex arithmetic instead of a guessed padding-bottom
+     - that had to double as this row's reserved height. -->
+    <div v-if="visualizerMounted" class="now-playing__visualizer-row">
       <audio-visualizer :active="visualizerActive" />
     </div>
   </div>
@@ -134,6 +152,19 @@ const VISUALIZER_HIDE_DELAY_MS = 400
 export default {
   name: 'NowPlayingView',
   components: { CoverArt, LyricsPanel, AudioVisualizer },
+  props: {
+    // Set by MobileNowPlayingView.vue — this view's own sizing (artSize
+    // below, plus the .now-playing--compact overrides in <style>) assumes
+    // the near-full-viewport height it gets on desktop (between the app-bar
+    // and PlayerBar.vue); squeezed under a mobile transport-controls block
+    // and tab bar instead, that same sizing overflowed badly. Everything
+    // else about this view (backdrop, glow, lyrics-split, visualizer) stays
+    // shared — only sizing changes.
+    compact: {
+      type: Boolean,
+      default: false,
+    },
+  },
   data() {
     return {
       // "r, g, b" — kept as a CSS-ready string so the two computed styles
@@ -177,16 +208,28 @@ export default {
     hasPlayable() {
       return this.currentTrack != null || this.playbackStore.radioStation != null
     },
-    // Scales with the window instead of a fixed pixel figure that read too
-    // small on a tall monitor and too large on a short one — clamped so it
-    // still has a sane floor/ceiling on an unusually short or tall window
-    // rather than shrinking to nothing or blowing past what the layout
-    // around it (.now-playing__info, the split-mode row's own width cap)
-    // was actually sized for. CoverArt.vue accepts this directly (see its
-    // `size` prop) — a plain number there means px, any other string is
-    // used as a raw CSS size as-is.
+    // cqh/cqw (container query units), not vh/vw — .now-playing__stage is a
+    // `container-type: size` host (see <style>) sized by .now-playing's own
+    // grid (minmax(0, 1fr), after the app-bar/PlayerBar outside this
+    // component and the visualizer row below it have already taken their
+    // share), so cqh/cqw here measure the space actually left for the
+    // artwork specifically. vh/vw measure the *raw* viewport instead, with
+    // no idea how much of it any of that chrome eats — on a short window
+    // that read as "too big, has to scroll to see the visualizer"; on a
+    // 4K one, capped at a fixed 700px ceiling that never grew with all the
+    // extra room actually available, it read as "lost". Both are just this
+    // same wrong-measurement bug at opposite ends.
+    //
+    // Still clamped (a floor so it doesn't shrink to nothing on a tiny
+    // container, a ceiling — now much higher — so it doesn't blow up
+    // absurdly large on a huge one) and still min()'d against both a
+    // height and a width fraction, same reasoning as before: a *short*
+    // container and a *narrow* one are both real ways to run out of room,
+    // independently.
     artSize(): string {
-      return 'clamp(280px, 60vh, 700px)'
+      return this.compact
+        ? 'clamp(120px, min(55cqh, 60cqw), 320px)'
+        : 'clamp(180px, min(60cqh, 45cqw), 900px)'
     },
     // Backed by the same store flag PlayerBar's lyrics button drives
     // (playbackStore.lyricsDrawerOpen) instead of its own local state —
@@ -357,7 +400,33 @@ export default {
 <style scoped>
 .now-playing {
   width: 100%;
+  /* NOT height: 100% — Vuetify's own .v-main is `flex: 1 0 auto` (flex-
+   * shrink: 0) inside .v-application__wrap, which itself is only
+   * `min-height: 100dvh`, never a hard max. Nothing between here and the
+   * actual <html> ever caps router-view's height against the viewport —
+   * "100%" of an ancestor chain that's really "auto, whatever my own
+   * content needs" isn't a cap at all, just height: auto by another name.
+   * Computed directly from the real viewport instead, the same pattern
+   * Vuetify's own docs use for "fill the space between the app-bar and
+   * whatever's docked at the bottom" — --v-layout-top/--v-layout-bottom
+   * are the exact live pixel heights Vuetify's layout system already
+   * tracks for every registered app-bar/footer (see composables/layout.js),
+   * set as inherited CSS custom properties, not something this file has to
+   * duplicate or guess. */
+  height: calc(100dvh - var(--v-layout-top, 0px) - var(--v-layout-bottom, 0px));
   position: relative;
+  /* Grid, not flex — two rows, .now-playing__stage and
+   * .now-playing__visualizer-row, sharing this element's (now definite,
+   * see height above) height. minmax(0, 1fr) is grid's own "take whatever's
+   * left, but you're allowed to shrink below your content's natural size"
+   * — the exact thing flex needed a separate min-height: 0 escape hatch
+   * for, here it's just how 1fr already behaves. auto for the visualizer
+   * row sizes it to the visualizer's own content (128px when mounted,
+   * collapses to 0 on its own when it isn't — no manual toggling needed).
+   * justify-items: center centers both rows horizontally. */
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  justify-items: center;
   overflow: hidden;
   /* Opaque fallback behind the two layers below — matters for radio, where
    * .now-playing__backdrop has no image to show. */
@@ -398,6 +467,37 @@ export default {
   transition: background 1.2s ease;
 }
 
+.now-playing__toolbar {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+}
+
+/* Row 1 of .now-playing's grid (minmax(0, 1fr), see above) — takes up
+ * exactly "whatever's left" after the visualizer row has taken its share,
+ * shrinkable below its own content's natural size like any minmax(0, ...)
+ * grid track. width/height: 100% is what turns this into the measurement
+ * basis for artSize's cqh/cqw units below via container-type: size — a
+ * *real* available-space measurement, unlike vh/vw which had no idea how
+ * much of the raw viewport the app-bar/PlayerBar/visualizer row had
+ * already taken. */
+.now-playing__stage {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  container-type: size;
+  container-name: now-playing-stage;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
 /* Always a row (even with just one child, .now-playing__primary, when
  * lyrics are hidden) so toggling lyrics never flips flex-direction itself
  * — that can't be transitioned. Instead .now-playing__lyrics animates its
@@ -408,8 +508,6 @@ export default {
  * the artwork itself (see the cover-art size prop above, now fixed
  * regardless of showLyrics). */
 .now-playing__content {
-  position: relative;
-  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -424,8 +522,18 @@ export default {
 
 .now-playing__content--split {
   max-width: 1800px;
-  width: 96vw;
-  gap: 56px;
+  width: 96cqw;
+  gap: 40px;
+  /* Safety net for narrow containers: .now-playing__primary and
+   * .now-playing__lyrics are both flex-shrink: 0 by design (see each's own
+   * comment) — their combined natural width can still exceed this row's
+   * own box on a narrow enough container despite artSize's own cqw-aware
+   * clamp above. Wrapping to two centered rows there beats the alternative
+   * (this row's content silently bleeding past .now-playing__stage's own
+   * overflow: hidden, clipping straight through the middle of the artwork
+   * or the lyrics text) — rare in practice once artSize is already
+   * width-aware, but a real fallback rather than an unhandled edge case. */
+  flex-wrap: wrap;
 }
 
 .now-playing__primary {
@@ -439,11 +547,13 @@ export default {
 /* Tall, bounded reading area — LyricsPanel scrolls within whatever height
  * it's given. A fixed target width (not flex: 1) so the enter/leave
  * transition below has a concrete value to animate from/to; overflow
- * hidden clips its contents while that width is mid-animation. */
+ * hidden clips its contents while that width is mid-animation. cqw/cqh
+ * (not vw/vh) for the same reason as artSize above — measured against the
+ * real available stage, not the raw viewport. */
 .now-playing__lyrics {
   flex-shrink: 0;
-  width: min(44vw, 600px);
-  height: 70vh;
+  width: min(38cqw, 560px);
+  height: 85cqh;
   overflow: hidden;
 }
 
@@ -468,27 +578,23 @@ export default {
   }
 }
 
-.now-playing__toolbar {
-  position: absolute;
-  top: 24px;
-  right: 24px;
-  z-index: 2;
-  display: flex;
-  gap: 4px;
-}
-
 /* Padding lives here, not on the canvas — a canvas's own CSS padding
  * would desync from its drawing buffer (sized off getBoundingClientRect,
  * which includes padding), pushing the bars off-center from where the
- * bitmap actually paints. */
-.now-playing__visualizer {
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
+ * bitmap actually paints. A real flex row (fixed height, see .now-playing's
+ * own flex-direction: column) rather than the absolutely-positioned overlay
+ * this used to be — .now-playing__stage shrinks to make room for it through
+ * normal flex arithmetic, so nothing here needs a guessed padding-bottom on
+ * the content above it to avoid overlapping. */
+.now-playing__visualizer-row {
+  position: relative;
   z-index: 1;
+  /* Row 2 of .now-playing's grid is `auto` (see above) — sizes to this
+   * element's own explicit height, same 128px as before, just declared
+   * directly instead of through a flex-basis. */
   height: 128px;
-  padding: 0 5px 0px;
+  width: 100%;
+  padding: 0 5px;
   pointer-events: none;
 }
 
@@ -540,16 +646,38 @@ export default {
    * :size is bound to — kept in sync with it here since a plain CSS value
    * can't read a component's computed prop) gives long text something
    * concrete to actually wrap against. */
-  max-width: min(clamp(280px, 60vh, 700px), 50vw);
+  max-width: min(clamp(180px, min(60cqh, 45cqw), 900px), 50cqw);
 }
 
+/* Scoped to .now-playing__info, not the bare global class — .eyebrow-label
+ * is used all over the app (DetailHeader.vue, HomeView.vue's hero, ...)
+ * with its own fixed size; this only overrides it here, and only for
+ * responsive sizing (letter-spacing/weight/color stay whatever the global
+ * class already sets). */
+.now-playing__info .eyebrow-label {
+  font-size: clamp(0.65rem, min(1.6cqw, 2cqh), 0.85rem);
+}
+
+/* cqw/cqh (see artSize's own comment for the underlying mechanism) — a
+ * fixed 2.5rem used to look proportionally huge next to a small, correctly-
+ * shrunk container (wrapping to 3-4 lines, see the screenshots this was
+ * reported against) and proportionally tiny on a large one, since it never
+ * scaled with the same container the artwork already does. min() against
+ * both a width and a height fraction so a *short* container shrinks text
+ * just as much as a *narrow* one does. */
 .now-playing__title {
-  font-size: 2.5rem;
+  font-size: clamp(1.1rem, min(2cqw, 8cqh), 2.75rem);
   line-height: 1.15;
   overflow-wrap: break-word;
 }
 
-.now-playing__artist-link {
+/* .now-playing__info .now-playing__artist-link (compound), not the class
+ * alone — Vuetify's own .text-h6 utility (also on this element, see the
+ * template) is a single class at the same specificity, so without a
+ * compound selector to outrank it, whichever of the two happens to be
+ * later in the built stylesheet wins, not necessarily this one. */
+.now-playing__info .now-playing__artist-link {
+  font-size: clamp(0.9rem, min(3cqw, 4cqh), 1.5rem);
   /* Block, not the anchor's default inline — inline elements ignore
    * vertical margin (mb-2 here would otherwise silently do nothing) and
    * this also keeps the centered text-align behaving exactly like the
@@ -559,7 +687,8 @@ export default {
   overflow-wrap: break-word;
 }
 
-.now-playing__album-link {
+.now-playing__info .now-playing__album-link {
+  font-size: clamp(0.75rem, min(2.2cqw, 3cqh), 1rem);
   text-decoration: none;
   overflow-wrap: break-word;
 }
@@ -567,5 +696,31 @@ export default {
 .now-playing__artist-link:hover,
 .now-playing__album-link:hover {
   color: rgb(var(--v-theme-primary));
+}
+
+/* Mobile (see the `compact` prop) — same view, much less room to work with:
+ * squeezed under MobileTransportControls.vue and the tab bar instead of the
+ * near-full-viewport height this gets on desktop. Everything not overridden
+ * here (backdrop, glow, lyrics-split, visualizer positioning) stays as-is. */
+.now-playing--compact .now-playing__content {
+  padding: 12px 16px;
+  max-width: 100%;
+}
+
+.now-playing--compact .now-playing__art-wrap {
+  margin-bottom: 16px;
+}
+
+.now-playing--compact .now-playing__info {
+  max-width: 88cqw;
+}
+
+.now-playing--compact .now-playing__toolbar {
+  top: 8px;
+  right: 8px;
+}
+
+.now-playing--compact .now-playing__visualizer-row {
+  height: 64px;
 }
 </style>

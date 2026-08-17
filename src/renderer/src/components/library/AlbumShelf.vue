@@ -2,6 +2,17 @@
   <section class="album-shelf">
     <div class="album-shelf-head">
       <h2 class="section-title">{{ title }}</h2>
+      <v-btn
+        v-if="albums.length"
+        icon="mdi-play-circle-outline"
+        variant="text"
+        size="small"
+        density="comfortable"
+        :loading="playAllLoading"
+        :disabled="playAllLoading"
+        :title="$t('home.playAll')"
+        @click="$emit('play-all')"
+      />
       <slot name="action" />
       <v-spacer />
       <div v-if="albums.length && !fitToScreen" class="album-shelf-nav">
@@ -34,7 +45,12 @@
       class="album-shelf-row"
       :class="{ 'album-shelf-row--fit': fitToScreen }"
     >
-      <album-card v-for="album in displayedAlbums" :key="album.id" :album="album" />
+      <album-card
+        v-for="album in displayedAlbums"
+        :key="album.id"
+        :album="album"
+        :play-on-click="playOnClick"
+      />
     </div>
     <div v-else class="text-caption text-medium-emphasis">{{ $t('home.nothingToShow') }}</div>
   </section>
@@ -64,6 +80,14 @@ export default {
       type: Boolean,
       default: false,
     },
+    // Parent-owned — fetching every shelf album's full track list (see
+    // HomeView.vue's playAllAlbums()) is a real network round-trip per
+    // album, worth showing feedback for rather than a silent multi-second
+    // pause after the click.
+    playAllLoading: {
+      type: Boolean,
+      default: false,
+    },
     // When true: no horizontal scroll/chevrons — just show as many albums as
     // fit in one row (measured live, so resizing the window adjusts it).
     // Used for shelves like Discover that already have their own way to get
@@ -73,7 +97,15 @@ export default {
       type: Boolean,
       default: false,
     },
+    // Forwarded to every AlbumCard — see its own prop comment. Off by
+    // default (this component is also used for plain browse grids
+    // elsewhere), HomeView.vue's shelves turn it on.
+    playOnClick: {
+      type: Boolean,
+      default: false,
+    },
   },
+  emits: ['play-all'],
   data() {
     return {
       visibleCount: 6,

@@ -20,7 +20,9 @@ a = Analysis(
     ['../main.py'],
     pathex=['..'],
     binaries=[],
-    datas=[],
+    # Phone-facing static web client for Remote Control (routes/remote.py's
+    # /remote/app/*) — no build step, shipped as plain files.
+    datas=[('../static', 'static')],
     hiddenimports=[
         # uvicorn internals that are imported dynamically
         'uvicorn.lifespan.on',

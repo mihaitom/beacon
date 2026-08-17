@@ -35,24 +35,31 @@ logger = logging.getLogger("connect.audio_analysis")
 # air/brightness) than 'local' mode's own analyser. Paired with _FFT_SIZE
 # below to land on a reasonable update rate — see its comment.
 _SAMPLE_RATE = 44100
-_DECODE_CMD = [
-    "ffmpeg",
-    "-hide_banner",
-    "-loglevel",
-    "error",
-    "-f",
-    "mp3",
-    "-i",
-    "pipe:0",
-    "-vn",
-    "-ac",
-    "1",
-    "-ar",
-    str(_SAMPLE_RATE),
-    "-f",
-    "s16le",
-    "pipe:1",
-]
+
+
+def _decode_cmd(input_format: str) -> list[str]:
+    """`input_format` is an ffmpeg *demuxer* name (see core/streamer.py's
+    demuxer_for()) matching whatever stream_with_completion() actually feeds
+    this via feed() — not always "mp3": a track's resolved OutputFormat can
+    just as well be flac/aac/ogg copy-through, or a lossless flac re-encode."""
+    return [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        input_format,
+        "-i",
+        "pipe:0",
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        str(_SAMPLE_RATE),
+        "-f",
+        "s16le",
+        "pipe:1",
+    ]
 
 # Analysis window — same size as 'local' mode's Web Audio AnalyserNode
 # (see audioEngine.ts's setupAnalyser()). An FFT's window length IS the
@@ -262,13 +269,23 @@ class AudioAnalyzer:
     timeline, since a device's own startup buffering needs accounting for
     too. `start_offset` is the track position (seconds) this stream's very
     first byte represents — 0.0 unless this connection is a seek/resume
-    rather than starting a track from the beginning."""
+    rather than starting a track from the beginning. `input_format` is the
+    ffmpeg demuxer name matching the actual bytes feed() will receive (see
+    core/streamer.py's demuxer_for()) — defaults to "mp3" only because that
+    happens to be this class's own fallback-tier assumption, not because
+    it's a safe default for any other caller to skip passing the real one."""
 
     # Sentinel telling _write_input() "no more real chunks are coming, close
     # the decoder's stdin once the queue's empty" — see finish_feeding().
     _END = object()
 
-    def __init__(self, elapsed_fn: Callable[[], float], start_offset: float = 0.0) -> None:
+    def __init__(
+        self,
+        elapsed_fn: Callable[[], float],
+        start_offset: float = 0.0,
+        input_format: str = "mp3",
+    ) -> None:
+        self._input_format = input_format
         self.frames: asyncio.Queue[list[float]] = asyncio.Queue(maxsize=8)
         # Deliberately unbounded — feed() must never block (see its own
         # docstring), and since ffmpeg's transcode can run well ahead of
@@ -299,7 +316,7 @@ class AudioAnalyzer:
     async def start(self) -> None:
         try:
             self._proc = await asyncio.create_subprocess_exec(
-                *_DECODE_CMD,
+                *_decode_cmd(self._input_format),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,

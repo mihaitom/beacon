@@ -125,12 +125,22 @@ function aggregateByPlays(
   tracks: Track[],
   keyFn: (track: Track) => string | null,
   labelFn: (track: Track) => string,
-): Map<string, { label: string; plays: number; trackCount: number }> {
-  const groups = new Map<string, { label: string; plays: number; trackCount: number }>()
+): Map<string, { label: string; plays: number; trackCount: number; coverArtId: string | null }> {
+  const groups = new Map<
+    string,
+    { label: string; plays: number; trackCount: number; coverArtId: string | null }
+  >()
   for (const track of tracks) {
     const key = keyFn(track)
     if (!key) continue
-    const entry = groups.get(key) ?? { label: labelFn(track), plays: 0, trackCount: 0 }
+    const entry = groups.get(key) ?? {
+      label: labelFn(track),
+      plays: 0,
+      trackCount: 0,
+      // From the first track seen for this group — every track on the same
+      // album shares the same cover, so it doesn't matter which one "wins".
+      coverArtId: track.coverArtId,
+    }
     entry.plays += track.playCount || 0
     entry.trackCount += 1
     groups.set(key, entry)
@@ -205,6 +215,7 @@ export default {
           // No standalone track page in this app to link to — album is
           // the closest real destination.
           to: `/albums/${t.albumId}`,
+          coverArtId: t.coverArtId,
         }))
     },
     topArtists(): RankedItem[] {
@@ -213,6 +224,11 @@ export default {
         (t) => t.artistId || null,
         (t) => t.artist,
       )
+      // No coverArtId here — a track's cover is its *album's* art, not the
+      // artist's own photo (which Navidrome only exposes via a separate,
+      // per-artist request this page doesn't otherwise need to make).
+      // Showing a random track's album cover next to an artist's name would
+      // just be misleading.
       return this.topFromGroups(groups, (id) => `/artists/${id}`)
     },
     topAlbums(): RankedItem[] {
@@ -221,7 +237,7 @@ export default {
         (t) => t.albumId || null,
         (t) => t.album,
       )
-      return this.topFromGroups(groups, (id) => `/albums/${id}`)
+      return this.topFromGroups(groups, (id) => `/albums/${id}`, true)
     },
     topGenres(): RankedItem[] {
       const groups = aggregateByPlays(
@@ -278,8 +294,9 @@ export default {
   },
   methods: {
     topFromGroups(
-      groups: Map<string, { label: string; plays: number; trackCount: number }>,
+      groups: Map<string, { label: string; plays: number; trackCount: number; coverArtId: string | null }>,
       toFn: (id: string) => string,
+      includeCoverArt = false,
     ): RankedItem[] {
       return [...groups.entries()]
         .filter(([, v]) => v.plays > 0)
@@ -291,6 +308,7 @@ export default {
           value: v.plays,
           valueLabel: this.$t('stats.plays', { count: v.plays }),
           to: toFn(id),
+          coverArtId: includeCoverArt ? v.coverArtId : undefined,
         }))
     },
     formatNumber(value: number): string {

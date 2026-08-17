@@ -1,5 +1,5 @@
 <template>
-  <v-card min-width="440" max-width="480" class="login-card pa-6">
+  <v-card width="440" max-width="calc(100vw - 32px)" class="login-card pa-6">
     <div class="login-header mb-6">
       <div class="login-icon-badge">
         <v-icon icon="mdi-lighthouse-on" size="26" color="primary" />
@@ -54,6 +54,12 @@
             :placeholder="serverUrlPlaceholder"
             variant="solo-filled"
             class="mb-2"
+            name="url"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            autocomplete="url"
+            inputmode="url"
           />
           <!-- Read-only, not just hidden — still worth showing which server
            - this actually is, same reasoning as SettingsView.vue's own
@@ -131,6 +137,11 @@
               :label="$t('auth.username')"
               variant="solo-filled"
               class="mb-2"
+              name="username"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
+              autocomplete="username"
             />
             <v-text-field
               v-model="password"
@@ -139,6 +150,8 @@
               :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
               variant="solo-filled"
               class="mb-2"
+              name="password"
+              autocomplete="current-password"
               @click:append-inner="showPassword = !showPassword"
             />
           </template>

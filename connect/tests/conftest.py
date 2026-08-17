@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from core import auth
 from core import claims as claims_module
+from core import remote as remote_module
 from core import session as session_module
 from core import state
 from core.session import DEFAULT_SESSION_ID, SessionState
@@ -64,11 +65,15 @@ def _stub_output_format(monkeypatch):
 @pytest.fixture(autouse=True)
 def reset_state():
     """Wipe all runtime state before each test so tests are isolated: the
-    session registry (all per-user playback state), the claim registry, and
-    the global device-discovery cache."""
+    session registry (all per-user playback state), the claim registry, the
+    global device-discovery cache, and Remote Control state."""
     session_module.registry._sessions.clear()
     claims_module.claims._claims.clear()
     state.ctx.discovered = {"airplay": [], "chromecast": [], "dlna": [], "sonos": []}
+    remote_module.remote.disable()
+    remote_module.remote._attempts.clear()
+    remote_module.remote._lockout_until.clear()
+    remote_module.remote._lockout_strikes.clear()
     yield
 
 

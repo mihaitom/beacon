@@ -1,14 +1,35 @@
 <template>
-  <!-- No `temporary` — persistent/docked, not an overlay: stays open across
-   - navigation and doesn't close on an outside click. -->
+  <!-- `temporary` so this floats over the main content instead of pushing/
+   - resizing it (Vuetify's default non-temporary drawer reserves layout
+   - space, which reflowed every view underneath every time this opened/
+   - closed) — `persistent` keeps it open across navigation and on an
+   - outside click regardless, and `scrim="false"` drops the darkening
+   - backdrop `temporary` would otherwise add, since the point is to keep
+   - browsing the rest of the app comfortably while this stays open. -->
   <v-navigation-drawer
     :model-value="modelValue"
     location="right"
     width="380"
+    temporary
+    persistent
+    :scrim="false"
+    color="#0B0D13"
+    class="beacon-drawer"
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <div class="d-flex flex-column fill-height">
-      <v-toolbar density="compact" :title="$t('queue.title')" />
+      <v-toolbar density="compact" color="#0B0D13" class="beacon-drawer__toolbar" :title="$t('queue.title')">
+        <template #append>
+          <v-btn
+            v-if="playbackStore.queue.length > 1"
+            icon="mdi-notification-clear-all"
+            variant="text"
+            size="small"
+            :title="$t('queue.clear')"
+            @click="playbackStore.clearQueue()"
+          />
+        </template>
+      </v-toolbar>
 
       <template v-if="playbackStore.queue.length">
         <!-- Real Vue move animation (TransitionGroup's FLIP-based .move class)
@@ -178,6 +199,18 @@ export default {
 </script>
 
 <style scoped>
+/* Matches the app's own dark chrome (PlayerBar.vue/DefaultLayout.vue's
+ * app-bar/rail) rather than Vuetify's default surface color — now that this
+ * floats over content as its own panel (see `temporary` above), it reads
+ * more like a bolted-on default dialog without this. */
+.beacon-drawer {
+  border-left: 1px solid var(--beacon-hairline);
+}
+
+.beacon-drawer__toolbar {
+  border-bottom: 1px solid var(--beacon-hairline);
+}
+
 .queue-scroll {
   display: block;
   position: relative;

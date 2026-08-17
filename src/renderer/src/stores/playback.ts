@@ -819,6 +819,25 @@ export const usePlaybackStore = defineStore('playback', {
       else if (from > this.currentIndex && to <= this.currentIndex) this.currentIndex += 1
     },
 
+    /** Drops everything from the queue except whatever's currently playing
+     * — same "can't remove what's playing" rule removeFromQueue() already
+     * enforces per-row, just applied to the whole queue at once. Radio has
+     * no queue to clear (this.queue is already empty then; QueueDrawer.vue
+     * only shows the button at all once there's more than the current
+     * track to drop, see its own guard). */
+    clearQueue(): void {
+      const current = this.currentTrack
+      if (!current) {
+        this.originalQueue = []
+        this.queue = []
+        this.currentIndex = -1
+        return
+      }
+      this.originalQueue = [current]
+      this.queue = [current]
+      this.currentIndex = 0
+    },
+
     async stop(): Promise<void> {
       const connect = useConnectStore()
       if (connect.isActive) {

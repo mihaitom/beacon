@@ -21,12 +21,27 @@
       </template>
       <template v-else>{{ displayNumber ?? (index != null ? index + 1 : '') }}</template>
     </div>
-    <cover-art v-if="showCover" :cover-art-id="track.coverArtId" :size="40" class="track-cover" />
+    <!-- Single click plays (or, mid-selection, toggles select like the rest
+     - of the row) — previously non-interactive, just a static thumbnail,
+     - unlike dblclick-anywhere-on-the-row which already played. -->
+    <cover-art
+      v-if="showCover"
+      :cover-art-id="track.coverArtId"
+      :size="40"
+      class="track-cover"
+      @click.stop="onCoverClick"
+    />
     <div class="track-title min-width-0">
       <div class="text-body-2 text-truncate" :class="{ 'text-primary': isCurrentTrack }">
         {{ track.title }}
       </div>
-      <div class="text-caption text-medium-emphasis text-truncate">{{ track.artist }}</div>
+      <router-link
+        :to="`/artists/${track.artistId}`"
+        class="track-artist-link text-caption text-medium-emphasis text-truncate"
+        @click.stop
+      >
+        {{ track.artist }}
+      </router-link>
     </div>
     <router-link
       v-if="showAlbum"
@@ -250,6 +265,10 @@ export default {
     },
   },
   methods: {
+    onCoverClick() {
+      if (this.selectionMode) this.$emit('toggle-select', this.track, this.index)
+      else this.$emit('play', this.track, this.index)
+    },
     openMenu(event: MouseEvent) {
       this.menuTarget = [event.clientX, event.clientY]
       this.menuOpen = true
@@ -317,6 +336,7 @@ export default {
 
 .track-cover {
   flex: 0 0 auto;
+  cursor: pointer;
 }
 
 .track-title {
@@ -330,6 +350,15 @@ export default {
 }
 
 .track-album:hover {
+  color: rgb(var(--v-theme-primary));
+}
+
+.track-artist-link {
+  display: block;
+  text-decoration: none;
+}
+
+.track-artist-link:hover {
   color: rgb(var(--v-theme-primary));
 }
 

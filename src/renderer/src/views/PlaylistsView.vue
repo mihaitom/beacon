@@ -1,10 +1,6 @@
 <template>
   <v-container fluid>
-    <detail-header
-      fallback-icon="mdi-playlist-music"
-      :eyebrow="$t('library.playlist')"
-      :title="$t('playlists.title')"
-    >
+    <detail-header fallback-icon="mdi-playlist-music" :title="$t('playlists.title')">
       <template v-if="authStore.capabilities.emptyPlaylistCreation" #actions>
         <v-btn prepend-icon="mdi-plus" variant="tonal" @click="createDialog = true">{{
           $t('playlists.newPlaylist')

@@ -35,7 +35,7 @@
         class="detail-header__cover cover-shadow"
       />
       <div class="detail-header__info min-width-0">
-        <div class="eyebrow-label mb-1">{{ eyebrow }}</div>
+        <div v-if="eyebrow" class="eyebrow-label mb-1">{{ eyebrow }}</div>
         <h1 class="detail-title detail-header__title text-truncate">{{ title }}</h1>
         <div v-if="$slots.subtitle" class="detail-header__subtitle text-truncate">
           <slot name="subtitle" />
@@ -70,7 +70,12 @@ export default {
     coverArtId: { type: String as PropType<string | null>, default: null },
     imageUrl: { type: String as PropType<string | null>, default: null },
     size: { type: Number, default: 180 },
-    eyebrow: { type: String, required: true },
+    // Optional — omitted on plain browse/list pages (AlbumsView.vue etc.)
+    // where the only candidate text was the same word as `title`, just
+    // singular ("Album" over "Albums") — pure noise, not information.
+    // Still required-in-spirit for detail pages (AlbumDetailView.vue etc.),
+    // which pass a real category label above the item's own name.
+    eyebrow: { type: String, default: '' },
     title: { type: String, required: true },
     fallbackIcon: { type: String, default: 'mdi-album' },
     rounded: { type: Boolean, default: false },

@@ -1,0 +1,52 @@
+/* mdi.css — minimal @mdi/font subset for the Remote Control phone app.
+ * Only the woff2 + the specific glyphs actually used here are shipped
+ * (the full @mdi/font CSS covers ~7000 icons and the font file itself is
+ * shared regardless, but there's no reason to ship its whole stylesheet) —
+ * codepoints copied from node_modules/@mdi/font/css/materialdesignicons.css
+ * (v7.4.47) so these render identically to the desktop app's own MDI icons. */
+
+@font-face {
+  font-family: "Material Design Icons";
+  src: url("./materialdesignicons-webfont.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+}
+
+.mdi {
+  font-family: "Material Design Icons";
+  font-style: normal;
+  font-weight: normal;
+  line-height: 1;
+  display: inline-block;
+  text-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mdi-play::before { content: "\F040A"; }
+.mdi-pause::before { content: "\F03E4"; }
+.mdi-skip-previous::before { content: "\F04AE"; }
+.mdi-skip-next::before { content: "\F04AD"; }
+.mdi-shuffle::before { content: "\F049D"; }
+.mdi-repeat::before { content: "\F0456"; }
+.mdi-repeat-once::before { content: "\F0458"; }
+.mdi-volume-high::before { content: "\F057E"; }
+.mdi-playlist-music::before { content: "\F0CB8"; }
+.mdi-radio::before { content: "\F0439"; }
+.mdi-magnify::before { content: "\F0349"; }
+.mdi-format-list-bulleted::before { content: "\F0279"; }
+.mdi-dots-vertical::before { content: "\F01D9"; }
+.mdi-drag::before { content: "\F01DB"; }
+.mdi-close::before { content: "\F0156"; }
+.mdi-cast::before { content: "\F0118"; }
+.mdi-cast-connected::before { content: "\F0119"; }
+.mdi-speaker::before { content: "\F04C3"; }
+.mdi-chevron-left::before { content: "\F0141"; }
+.mdi-music-note::before { content: "\F0387"; }
+.mdi-check::before { content: "\F012C"; }
+.mdi-plus::before { content: "\F0415"; }
+.mdi-playlist-plus::before { content: "\F0412"; }
+.mdi-antenna::before { content: "\F1119"; }
+.mdi-cast-audio::before { content: "\F101E"; }
+.mdi-television-classic::before { content: "\F07F4"; }
+.mdi-speaker-wireless::before { content: "\F071F"; }
+.mdi-lock-outline::before { content: "\F0341"; }

@@ -30,6 +30,61 @@
       />
     </section>
 
+    <!-- Electron-only: this pairs a phone against *this* already-running
+     - desktop window over the LAN (see stores/remoteControl.ts). In a
+     - Docker/web deployment there's no separate desktop instance to pair
+     - against — the browser tab itself already is the player, and the new
+     - mobile web view (composables/useIsMobileWeb.ts) covers that use case
+     - directly, without PIN pairing. -->
+    <section v-if="isElectron" class="mb-10">
+      <h2 class="section-title mb-4">{{ $t('remoteControl.title') }}</h2>
+      <p class="text-body-2 text-medium-emphasis mb-4">
+        {{ $t('remoteControl.hint') }}
+      </p>
+      <v-switch
+        :model-value="remoteControlStore.enabled"
+        :loading="remoteControlBusy"
+        :disabled="remoteControlBusy"
+        color="primary"
+        density="compact"
+        hide-details
+        :label="$t('remoteControl.enable')"
+        @update:model-value="onRemoteControlToggle"
+      />
+      <v-btn
+        v-if="remoteControlStore.enabled"
+        variant="tonal"
+        prepend-icon="mdi-qrcode"
+        class="mt-3"
+        @click="showPairingDialog = true"
+      >
+        {{ $t('remoteControl.showCode') }}
+      </v-btn>
+      <remote-control-pairing-dialog v-model="showPairingDialog" />
+    </section>
+
+    <section class="mb-10">
+      <h2 class="section-title mb-4">{{ $t('settings.playbackTitle') }}</h2>
+      <p class="text-body-2 font-weight-medium mb-2">{{ $t('settings.replayGain') }}</p>
+      <div class="segmented-control" role="radiogroup" :aria-label="$t('settings.replayGain')">
+        <button
+          v-for="option in replayGainOptions"
+          :key="option.value"
+          type="button"
+          role="radio"
+          class="segmented-control__option"
+          :class="{ 'segmented-control__option--active': replayGainMode === option.value }"
+          :aria-checked="replayGainMode === option.value"
+          @click="replayGainMode = option.value"
+        >
+          {{ option.title }}
+        </button>
+      </div>
+      <p class="text-caption text-medium-emphasis mt-3">
+        {{ $t('settings.replayGainHint') }}
+      </p>
+    </section>
+
     <section v-if="authStore.capabilities.libraryScan" class="mb-10">
       <h2 class="section-title mb-4">{{ $t('settings.libraryTitle') }}</h2>
       <p class="text-body-2 text-medium-emphasis mb-4">
@@ -100,28 +155,6 @@
       </v-btn>
     </section>
 
-    <section class="mb-10">
-      <h2 class="section-title mb-4">{{ $t('settings.playbackTitle') }}</h2>
-      <p class="text-body-2 font-weight-medium mb-2">{{ $t('settings.replayGain') }}</p>
-      <div class="segmented-control" role="radiogroup" :aria-label="$t('settings.replayGain')">
-        <button
-          v-for="option in replayGainOptions"
-          :key="option.value"
-          type="button"
-          role="radio"
-          class="segmented-control__option"
-          :class="{ 'segmented-control__option--active': replayGainMode === option.value }"
-          :aria-checked="replayGainMode === option.value"
-          @click="replayGainMode = option.value"
-        >
-          {{ option.title }}
-        </button>
-      </div>
-      <p class="text-caption text-medium-emphasis mt-3">
-        {{ $t('settings.replayGainHint') }}
-      </p>
-    </section>
-
     <section>
       <h2 class="section-title mb-4">{{ $t('settings.about') }}</h2>
       <v-btn variant="tonal" prepend-icon="mdi-star-circle-outline" @click="showReleaseNotes">
@@ -145,12 +178,14 @@ import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useConnectStore } from '@/stores/connect'
+import { useRemoteControlStore } from '@/stores/remoteControl'
 import { clearLyricsCache } from '@/stores/lyrics'
 import { getLocale, setLocale, type SupportedLocale } from '@/i18n'
 import type { ReplayGainMode } from '@/services/replayGain'
 import NavidromeIcon from '@/components/auth/NavidromeIcon.vue'
 import JellyfinIcon from '@/components/auth/JellyfinIcon.vue'
 import PlexIcon from '@/components/auth/PlexIcon.vue'
+import RemoteControlPairingDialog from '@/components/settings/RemoteControlPairingDialog.vue'
 import packageJson from '../../../../package.json'
 
 // How often getScanStatus.view is polled while a scan is running — frequent
@@ -161,7 +196,7 @@ const SCAN_POLL_INTERVAL_MS = 2000
 
 export default {
   name: 'SettingsView',
-  components: { NavidromeIcon, JellyfinIcon, PlexIcon },
+  components: { NavidromeIcon, JellyfinIcon, PlexIcon, RemoteControlPairingDialog },
   data() {
     return {
       serverUrl: '',
@@ -174,6 +209,8 @@ export default {
       scanCount: 0,
       scanTimer: null as ReturnType<typeof setTimeout> | null,
       resettingAirplay: false,
+      remoteControlBusy: false,
+      showPairingDialog: false,
     }
   },
   computed: {
@@ -183,11 +220,17 @@ export default {
     connectStore() {
       return useConnectStore()
     },
+    remoteControlStore() {
+      return useRemoteControlStore()
+    },
     libraryStore() {
       return useLibraryStore()
     },
     playbackStore() {
       return usePlaybackStore()
+    },
+    isElectron(): boolean {
+      return !!window.api
     },
     // Defaults to true (no warning dot) while health hasn't loaded yet —
     // ffmpeg being genuinely missing is rare enough that a false negative
@@ -359,6 +402,28 @@ export default {
         console.error('[settings] Failed to reset AirPlay pairings:', error)
       } finally {
         this.resettingAirplay = false
+      }
+    },
+    async onRemoteControlToggle(value: boolean | null) {
+      this.remoteControlBusy = true
+      try {
+        if (value) {
+          await this.remoteControlStore.enable()
+          this.showPairingDialog = true
+        } else {
+          await this.remoteControlStore.disable()
+        }
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('remoteControl.title'),
+          message: value
+            ? this.$t('remoteControl.enableFailed')
+            : this.$t('remoteControl.disableFailed'),
+        })
+        console.error('[settings] Failed to toggle remote control:', error)
+      } finally {
+        this.remoteControlBusy = false
       }
     },
   },

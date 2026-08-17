@@ -11,6 +11,7 @@ from core.streamer import (
     FALLBACK_FORMAT,
     OutputFormat,
     _probe_source_codec,
+    demuxer_for,
     resolve_output_format,
     stream_tracks,
 )
@@ -116,6 +117,42 @@ def test_resolve_output_format_falls_back_for_opus():
     with patch("core.streamer._probe_source_codec", AsyncMock(return_value="opus")):
         fmt = asyncio.run(resolve_output_format("http://nav/stream"))
     assert fmt is FALLBACK_FORMAT
+
+
+# ── demuxer_for() ─────────────────────────────────────────────────────────────
+# Regression tests: core/audio_analysis.py's AudioAnalyzer used to hardcode
+# "-f mp3" for its own decode-only ffmpeg process regardless of what
+# resolve_output_format() actually chose — GET /visualizer silently never
+# produced a single real frame for any track that resolved to flac/aac/ogg
+# copy-through or the lossless-reencode-to-flac tier (confirmed live: mp3
+# worked, flac didn't). demuxer_for() is what routes/stream.py now feeds
+# AudioAnalyzer instead of assuming mp3.
+
+
+@pytest.mark.parametrize(
+    "muxer,expected_demuxer",
+    [
+        ("mp3", "mp3"),
+        ("flac", "flac"),
+        ("ogg", "ogg"),
+        # The one name that *isn't* symmetric: ffmpeg's muxer for raw ADTS
+        # AAC is "adts", but it has no "adts" demuxer — reading it back
+        # needs "aac" instead.
+        ("adts", "aac"),
+    ],
+)
+def test_demuxer_for_known_muxers(muxer, expected_demuxer):
+    fmt = OutputFormat(ffmpeg_args=["-acodec", "copy", "-f", muxer], content_type="x", label="x")
+    assert demuxer_for(fmt) == expected_demuxer
+
+
+def test_demuxer_for_unknown_muxer_falls_back_to_mp3():
+    fmt = OutputFormat(ffmpeg_args=["-acodec", "copy", "-f", "wav"], content_type="x", label="x")
+    assert demuxer_for(fmt) == "mp3"
+
+
+def test_demuxer_for_fallback_format_is_mp3():
+    assert demuxer_for(FALLBACK_FORMAT) == "mp3"
 
 
 # ── stream_tracks() command building ─────────────────────────────────────────

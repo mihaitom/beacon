@@ -24,6 +24,7 @@ from core.audio_analysis import (
     _PREBUFFER_SECONDS,
     _SAMPLE_RATE,
     AudioAnalyzer,
+    _decode_cmd,
     _smooth_bands,
     analyze_pcm,
     should_analyze,
@@ -35,6 +36,36 @@ def _tone_pcm(freq: float, n: int, sample_rate: int = _SAMPLE_RATE, amplitude: f
         int(amplitude * 32767 * math.sin(2 * math.pi * freq * i / sample_rate)) for i in range(n)
     ]
     return struct.pack(f"<{n}h", *samples)
+
+
+# ── _decode_cmd ──────────────────────────────────────────────────────────────
+# Regression tests: this used to be a fixed command hardcoding "-f mp3" —
+# see core/streamer.py's demuxer_for() for the full story (GET /visualizer
+# silently never produced frames for a flac/aac/ogg-sourced track cast to
+# Sonos/DLNA/Chromecast). The subprocess itself isn't exercised here (see
+# this module's own docstring), just that the input_format actually lands
+# in the built command where ffmpeg expects an input format flag.
+
+
+def test_decode_cmd_uses_given_input_format():
+    cmd = _decode_cmd("flac")
+    assert cmd[cmd.index("-f") + 1] == "flac"
+
+
+def test_decode_cmd_reads_from_stdin_and_writes_pcm_to_stdout():
+    cmd = _decode_cmd("mp3")
+    assert cmd[cmd.index("-i") + 1] == "pipe:0"
+    assert cmd[-3:] == ["-f", "s16le", "pipe:1"]
+
+
+def test_audio_analyzer_defaults_input_format_to_mp3():
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
+    assert analyzer._input_format == "mp3"
+
+
+def test_audio_analyzer_stores_given_input_format():
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, input_format="flac")
+    assert analyzer._input_format == "flac"
 
 
 # ── analyze_pcm ──────────────────────────────────────────────────────────────

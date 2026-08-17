@@ -12,6 +12,7 @@ export default {
     done: 'Done',
     retry: 'Retry',
     filter: 'Filter',
+    loadMore: 'Load more',
     name: 'Name',
     addToQueue: 'Add to queue',
     addToPlaylistMenu: 'Add to playlist',
@@ -65,6 +66,7 @@ export default {
     recentlyPlayed: 'Recently played',
     discover: 'Discover',
     reroll: 'Shuffle again',
+    playAll: 'Play all',
     readyToPlay: 'Ready to play something?',
     nothingHeardYet: "You haven't listened to anything yet — start anywhere.",
     nowPlaying: 'Now playing',
@@ -119,6 +121,7 @@ export default {
   },
   player: {
     nothingPlaying: 'Nothing playing',
+    mute: 'Mute',
   },
   nowPlaying: {
     nothingPlaying: 'Nothing is playing right now.',
@@ -173,6 +176,22 @@ export default {
   queue: {
     title: 'Queue',
     empty: 'Queue is empty.',
+    clear: 'Clear queue',
+  },
+  remoteControl: {
+    title: 'Remote Control',
+    hint: 'Let a phone on your network control playback — Now Playing, Queue, Playlists, Tracks, and Radio.',
+    enable: 'Enable Remote Control',
+    enableFailed: "Couldn't enable Remote Control.",
+    disableFailed: "Couldn't disable Remote Control.",
+    showCode: 'Show pairing code',
+    pairTitle: 'Pair a phone',
+    pairHint: 'Scan this code with your phone\'s camera, or open the address below and enter the PIN.',
+    address: 'Address',
+    regenerate: 'Regenerate code',
+    needsRegenerate:
+      'The pairing code from last time is no longer available. Regenerate a new one to pair a phone — this disconnects any phone paired earlier.',
+    activeHint: 'Remote Control is active — a phone can control playback. Click to open Settings.',
   },
   settings: {
     title: 'Settings',
@@ -287,5 +306,12 @@ export default {
     days: '{days}d {hours}h',
     hours: '{hours}h {minutes}m',
     minutes: '{minutes}m',
+  },
+  mobile: {
+    tabNowPlaying: 'Now Playing',
+    tabQueue: 'Queue',
+    playOn: 'Play on',
+    thisDevice: 'This device',
+    needsPairing: 'Needs pairing in the Beacon app first',
   },
 } satisfies typeof de

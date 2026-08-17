@@ -1,0 +1,345 @@
+:root {
+  color-scheme: dark;
+  --bg: #121214;
+  --surface: #1c1c1f;
+  --surface-2: #26262a;
+  --text: #f2f2f4;
+  --text-muted: #9a9aa2;
+  --accent: #6c8cff;
+  --error: #ff6b6b;
+  --border: #303035;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hidden { display: none !important; }
+.muted { color: var(--text-muted); }
+.error { color: var(--error); }
+
+button {
+  font-family: inherit;
+  border: none;
+  cursor: pointer;
+}
+
+input {
+  font-family: inherit;
+}
+
+/* ── Login ── */
+
+.screen { min-height: 100dvh; display: flex; flex-direction: column; }
+
+#login-screen { align-items: center; justify-content: center; padding: 24px; }
+
+.login-card { width: 100%; max-width: 320px; text-align: center; }
+.login-card h1 { font-size: 1.4rem; margin-bottom: 4px; }
+.login-card p { margin-top: 0; }
+
+.pin-input {
+  width: 100%;
+  font-size: 2rem;
+  letter-spacing: 0.4em;
+  text-align: center;
+  padding: 14px 0;
+  margin: 20px 0 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+}
+
+.btn {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-secondary { background: var(--surface-2); color: var(--text); }
+
+/* ── App shell ── */
+
+#app-screen { display: flex; flex-direction: column; height: 100dvh; }
+
+#view-root {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+}
+
+.tabbar {
+  display: flex;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.tabbar a {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 0 6px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.68rem;
+}
+
+.tabbar a.active { color: var(--accent); }
+.tabbar .icon { font-size: 1.2rem; }
+
+.banner {
+  position: fixed;
+  top: env(safe-area-inset-top);
+  left: 0;
+  right: 0;
+  text-align: center;
+  padding: 8px;
+  background: var(--error);
+  color: #fff;
+  font-size: 0.85rem;
+  z-index: 100;
+}
+
+/* ── Now Playing ── */
+
+.now-playing { display: flex; flex-direction: column; align-items: center; gap: 16px; padding-top: 8px; }
+
+.cover-art {
+  width: min(70vw, 280px);
+  height: min(70vw, 280px);
+  border-radius: 16px;
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 3rem;
+}
+
+.track-title { font-size: 1.1rem; font-weight: 600; text-align: center; }
+.track-artist { color: var(--text-muted); text-align: center; }
+
+.seek-row { width: 100%; }
+.seek-row input[type="range"] { width: 100%; }
+.time-row { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); }
+
+.transport-row { display: flex; align-items: center; justify-content: center; gap: 24px; }
+.transport-row button { background: none; color: var(--text); font-size: 1.6rem; padding: 8px; }
+.transport-row .play-pause { font-size: 2.4rem; }
+
+.toggle-row { display: flex; gap: 12px; }
+.toggle-row button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 40px;
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 10px;
+  font-size: 1.15rem;
+}
+.toggle-row button.active { color: var(--accent); background: var(--surface-2); }
+
+.volume-row { width: 100%; display: flex; align-items: center; gap: 10px; }
+.volume-row input[type="range"] { flex: 1; }
+input[type="range"]:disabled { opacity: 0.35; }
+
+/* ── Lists ── */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  /* Long-pressing the drag handle (or anywhere in a row, on some browsers)
+   * would otherwise trigger native text selection / iOS's copy-paste
+   * callout before a drag gesture gets a chance to start — none of these
+   * rows are text to select, this is a touch-first app shell. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.row-art {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 1.15rem;
+}
+
+/* Real <img> elements, not CSS background-image (see track-row.js/queue.js/
+ * radio.js/now-playing.js) — matches the desktop app's own CoverArt.vue,
+ * which always renders through a real <img> (Vuetify's v-img) rather than
+ * a background-image div. An SVG favicon in particular can render
+ * differently (or lose fill colors entirely) as a CSS background vs. an
+ * actual <img> — this is what was behind some radio stations' icons
+ * showing up colorless here. object-fit: cover matches the old
+ * background:center/cover sizing exactly. */
+.row-art img,
+.cover-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.row-main { flex: 1; min-width: 0; }
+.row-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-subtitle { color: var(--text-muted); font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.row-action {
+  background: none;
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  padding: 6px 8px;
+  flex-shrink: 0;
+}
+
+.row.playing .row-title { color: var(--accent); }
+
+.drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 1.35rem;
+  width: 40px;
+  height: 40px;
+  margin: -8px -4px -8px 0;
+  flex-shrink: 0;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.row.dragging { opacity: 0.5; }
+
+h2.section-title { font-size: 1.1rem; margin: 4px 0 10px; }
+
+.search-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.load-more { width: 100%; margin-top: 12px; padding: 10px; border-radius: 10px; background: var(--surface); color: var(--text); }
+
+.empty-state { color: var(--text-muted); text-align: center; padding: 40px 0; }
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 12px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.back-link i { font-size: 1.1rem; margin-right: 2px; }
+
+/* ── Action sheet ── */
+
+.sheet-backdrop {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 200;
+}
+
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 201;
+  background: var(--surface); border-radius: 16px 16px 0 0;
+  padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+}
+
+.sheet button {
+  display: flex;
+  align-items: center;
+  width: 100%; text-align: left; padding: 14px 20px;
+  background: none; color: var(--text); font-size: 1rem;
+}
+
+.sheet button:active { background: var(--surface-2); }
+
+.sheet-icon { font-size: 1.2rem; margin-right: 14px; color: var(--text-muted); }
+
+.sheet-header {
+  padding: 10px 20px 4px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.device-list { display: flex; flex-direction: column; max-height: 50vh; overflow-y: auto; }
+
+.device-list button i:first-child { font-size: 1.2rem; margin-right: 14px; color: var(--text-muted); flex-shrink: 0; }
+.device-row-check { margin-left: auto; color: var(--accent) !important; font-size: 1.1rem !important; flex-shrink: 0; }
+
+.device-row-disabled { opacity: 0.45; cursor: default; }
+.device-row-disabled .device-row-check { color: var(--text-muted) !important; }
+.device-row-hint { font-size: 0.72rem; }
+
+.device-volume-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px 14px 54px;
+  color: var(--text-muted);
+}
+.device-volume-row i { font-size: 1rem; flex-shrink: 0; }
+.device-volume-row input[type="range"] { flex: 1; }
+
+.sheet-loading { padding: 20px; color: var(--text-muted); text-align: center; }
+
+.sheet-footer { display: flex; justify-content: flex-end; padding: 10px 20px 4px; }
+
+/* Scoped through .sheet-footer (not just .btn-sheet-action alone) so this
+ * actually outranks the generic ".sheet button" rule above — that one's
+ * element+class specificity otherwise wins over a single class, silently
+ * forcing this button back to width:100%/background:none/color:var(--text)
+ * regardless of what's written here (confirmed live: the button rendered
+ * full-width with no accent color ever showing, exactly what that
+ * specificity loss looks like). */
+.sheet-footer button.btn-sheet-action {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 22px;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.sheet-footer button.btn-sheet-action.btn-sheet-action--active { background: var(--accent); color: #fff; }

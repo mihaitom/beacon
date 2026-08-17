@@ -235,6 +235,81 @@ def test_radio_favicon_returns_404_for_oversized_response(client):
     assert r.status_code == 404
 
 
+# ── Inline `data:` URI favicons (RFC 2397) ───────────────────────────────────
+# Regression tests: some sites declare a favicon directly as a data: URI
+# instead of linking to a separate file — the old code handed that straight
+# to httpx.get(), which fails ("missing a protocol") since there's nothing
+# to fetch; the bytes are already right there in the URI.
+
+
+def test_radio_favicon_decodes_percent_encoded_data_uri_svg(client):
+    svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'></svg>"
+    html = (
+        b'<html><head><link rel="icon" href="data:image/svg+xml,'
+        + svg.replace("<", "%3C").replace(">", "%3E").encode()
+        + b'"></head></html>'
+    )
+    mock_get = AsyncMock()  # must never be called — nothing to fetch
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com"})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/svg+xml"
+    assert r.content.decode() == svg
+    mock_get.assert_not_called()
+
+
+def test_radio_favicon_decodes_base64_data_uri_png(client):
+    import base64
+
+    png_bytes = _png_bytes("RGB")
+    encoded = base64.b64encode(png_bytes).decode()
+    html = (
+        b'<html><head><link rel="icon" href="data:image/png;base64,'
+        + encoded.encode()
+        + b'"></head></html>'
+    )
+    mock_get = AsyncMock()
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com"})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+    assert r.content == png_bytes
+    mock_get.assert_not_called()
+
+
+def test_radio_favicon_falls_through_to_favicon_ico_on_malformed_data_uri(client):
+    # No comma at all — nothing separates the header from a (nonexistent) payload.
+    html = b'<html><head><link rel="icon" href="data:image/png;base64"></head></html>'
+    mock_get = AsyncMock(return_value=_fake_get_response())
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com"})
+    assert r.status_code == 200
+    mock_get.assert_awaited_once_with("https://example.com/favicon.ico")
+
+
+def test_decode_data_uri_returns_none_without_comma():
+    assert radio_mod._decode_data_uri("data:image/png;base64") is None
+
+
+def test_decode_data_uri_returns_none_for_invalid_base64():
+    assert radio_mod._decode_data_uri("data:image/png;base64,not-valid-base64!!!") is None
+
+
+def test_decode_data_uri_defaults_content_type_when_missing():
+    content, content_type = radio_mod._decode_data_uri("data:,hello")
+    assert content == b"hello"
+    assert content_type == "application/octet-stream"
+
+
 def test_radio_favicon_returns_image_bytes_and_cache_header_on_success(client):
     fake = _fake_get_response(content=b"\x00\x01icon", content_type="image/x-icon")
     with (

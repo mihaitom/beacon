@@ -1,7 +1,13 @@
 <template>
-  <div class="album-card" @click="$router.push(`/albums/${album.id}`)">
-    <div class="album-card-cover">
+  <div class="album-card" @click="!playOnClick && $router.push(`/albums/${album.id}`)">
+    <div class="album-card-cover" @click="playOnClick && onCoverClick()">
       <cover-art :cover-art-id="album.coverArtId" :size="160" />
+      <!-- Only the cover plays on click (see playOnClick) — this visual
+       - affordance is what tells you that, instead of it being a silent
+       - behavior change from every other album card in the app. -->
+      <div v-if="playOnClick" class="album-card-play-overlay">
+        <v-icon icon="mdi-play-circle" size="40" />
+      </div>
       <v-btn
         v-if="authStore.capabilities.favorites"
         :icon="album.starred ? 'mdi-heart' : 'mdi-heart-outline'"
@@ -14,7 +20,19 @@
         @click.stop="toggleStar"
       />
     </div>
-    <div class="album-card-title text-body-2 mt-2 text-truncate">{{ album.name }}</div>
+    <!-- Title stays a real link to the album page in playOnClick mode —
+     - the cover took over "click to play", so this is still how you reach
+     - the album itself (browsing), same destination the whole card used to
+     - go to. -->
+    <router-link
+      v-if="playOnClick"
+      :to="`/albums/${album.id}`"
+      class="album-card-title text-body-2 mt-2 text-truncate"
+      @click.stop
+    >
+      {{ album.name }}
+    </router-link>
+    <div v-else class="album-card-title text-body-2 mt-2 text-truncate">{{ album.name }}</div>
     <router-link
       :to="`/artists/${album.artistId}`"
       class="album-card-artist text-caption text-medium-emphasis text-truncate"
@@ -28,6 +46,7 @@
 <script lang="ts">
 import CoverArt from './CoverArt.vue'
 import { useLibraryStore } from '@/stores/library'
+import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import type { Album } from '@/types/library'
 
@@ -39,6 +58,16 @@ export default {
       type: Object as () => Album,
       required: true,
     },
+    // Opt-in, not the default — every other place this card appears
+    // (AlbumsView.vue, ArtistDetailView.vue, GenreDetailView.vue, ...) is a
+    // browse context where clicking an album card is expected to open it,
+    // same as clicking any other library row. HomeView.vue's shelves are
+    // the one place clicking an *album you'd actually want to listen to
+    // right now* makes more sense as "play this" — see its own comment.
+    playOnClick: {
+      type: Boolean,
+      default: false,
+    },
   },
   computed: {
     authStore() {
@@ -46,6 +75,10 @@ export default {
     },
   },
   methods: {
+    async onCoverClick() {
+      const full = await useLibraryStore().fetchAlbum(this.album.id)
+      await usePlaybackStore().playTrackList(full.tracks, 0)
+    },
     async toggleStar() {
       await useLibraryStore().toggleStar({ albumId: this.album.id, starred: this.album.starred })
       // Prop mutation is intentional here — the store's own toggleStar()
@@ -80,6 +113,23 @@ export default {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
 }
 
+.album-card-play-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  background: rgba(11, 13, 19, 0.35);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.album-card:hover .album-card-play-overlay {
+  opacity: 1;
+}
+
 .album-card-star {
   position: absolute;
   top: 6px;
@@ -98,6 +148,16 @@ export default {
 
 .album-card:hover .album-card-title {
   color: rgb(var(--v-theme-primary));
+}
+
+/* Only actually needed once .album-card-title is a router-link (playOnClick
+ * mode) — a plain <div> (the non-playOnClick case) never needed a color/
+ * decoration reset or a display override, it's already block. Harmless to
+ * apply unconditionally either way. */
+.album-card-title {
+  display: block;
+  color: inherit;
+  text-decoration: none;
 }
 
 .album-card-artist {

@@ -573,9 +573,19 @@ export default {
 
 /* Immersive (fullscreen Now Playing) — centered, much larger. Same
  * headroom math as compact above, for a 1.25× active scale: capped at
- * 1/1.25 = 80% of the panel, kept at 78% for a small safety margin. */
+ * 1/1.25 = 80% of the panel, kept at 78% for a small safety margin.
+ *
+ * cqw/cqh, not a fixed rem — this renders inside NowPlayingView.vue's
+ * .now-playing__stage (a container-type: size host, see its own comment),
+ * the same measurement basis the artwork/title there already scale
+ * against. A fixed size here read proportionally huge on a small window
+ * and small on a large one, exactly the bug the title had before it got
+ * the same treatment. cqw is scaled down from .now-playing__lyrics' own
+ * ~38cqw box width (container query units measure against the *stage*,
+ * not this narrower column, so the multiplier has to account for that
+ * gap) rather than assuming the full stage width. */
 .lyrics-panel--immersive .lyrics-panel__line {
-  font-size: 1.75rem;
+  font-size: clamp(1.1rem, min(2.2cqw, 3.5cqh), 1.9rem);
   padding: 12px 32px;
   max-width: 78%;
 }
@@ -585,7 +595,7 @@ export default {
 }
 
 .lyrics-panel--immersive .lyrics-panel__line--plain {
-  font-size: 1.35rem;
+  font-size: clamp(0.95rem, min(1.8cqw, 2.8cqh), 1.5rem);
   max-width: 640px;
   margin: 0 auto;
 }
@@ -661,9 +671,15 @@ export default {
  * present (nothing loaded yet has no source to show, but still offers
  * the picker). */
 .lyrics-panel__pick-btn {
+  /* No custom font-size here anymore — v-btn's own x-small/compact sizing
+   * already picks a proportional min-height/padding for its *own* default
+   * font-size; overriding just the font-size (smaller, in this case)
+   * without touching those left the fixed-height button box shorter than
+   * the label needed, so the text visibly spilled outside it. height: auto
+   * lets it grow to fit its content regardless. */
   flex-shrink: 0;
+  height: auto !important;
   margin-left: auto;
-  font-size: 0.7rem;
   color: rgba(255, 255, 255, 0.55);
 }
 

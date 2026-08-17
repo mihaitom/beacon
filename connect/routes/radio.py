@@ -9,12 +9,14 @@ fetch would also leak the browsing user's own IP to every radio station's host o
 every single radio list render, not just once from here).
 """
 
+import base64
+import binascii
 import io
 import logging
 import time
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote_to_bytes, urljoin, urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, Query
@@ -194,6 +196,40 @@ def _has_transparency(content: bytes) -> bool:
         return False
 
 
+def _decode_data_uri(uri: str) -> tuple[bytes, str] | None:
+    """Decodes a `data:` URI favicon (RFC 2397) declared directly in a
+    station's homepage HTML — some sites embed a small SVG/PNG icon inline
+    instead of linking to a separate file. There's nothing to *fetch* for
+    one of these (the bytes are already in the URI itself), which the main
+    loop below used to not account for at all: handing a data: URI to
+    httpx.get() just fails ("missing a protocol"), logged and skipped like
+    any other dead candidate — silently never finding what was actually
+    sitting right there in the HTML. Returns None for anything malformed
+    (no comma separating the header from the payload, bad base64/percent-
+    encoding), same "just skip this candidate" contract as a failed fetch."""
+    header, sep, data = uri[len("data:") :].partition(",")
+    if not sep:
+        return None
+    is_base64 = header.endswith(";base64")
+    media_type = (header[: -len(";base64")] if is_base64 else header).split(";")[0]
+    try:
+        content = base64.b64decode(data) if is_base64 else unquote_to_bytes(data)
+    except (binascii.Error, ValueError):
+        return None
+    return content, media_type or "application/octet-stream"
+
+
+def _favicon_response(content: bytes, content_type: str) -> Response:
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={
+            "Cache-Control": _CACHE_CONTROL,
+            "X-Has-Transparency": "true" if _has_transparency(content) else "false",
+        },
+    )
+
+
 def _select(candidates: list[_Candidate], min_size: int) -> list[_Candidate]:
     """Orders candidates best-first for the requested min_size: the
     smallest one that still meets it (no point downloading a 512px icon
@@ -228,6 +264,16 @@ async def radio_favicon(
     # response, ...) shouldn't sink the whole lookup when there's another
     # perfectly good candidate right behind it.
     for candidate in _select(candidates, min_size):
+        if candidate.url.startswith("data:"):
+            # Nothing to fetch — see _decode_data_uri()'s own comment.
+            decoded = _decode_data_uri(candidate.url)
+            if decoded is None:
+                continue
+            content, content_type = decoded
+            if len(content) > _MAX_BYTES or not content_type.startswith("image/"):
+                continue
+            return _favicon_response(content, content_type)
+
         try:
             resp = await _client.get(candidate.url)
         except httpx.HTTPError as e:
@@ -242,15 +288,6 @@ async def radio_favicon(
         ):
             continue
 
-        return Response(
-            content=resp.content,
-            media_type=content_type,
-            headers={
-                "Cache-Control": _CACHE_CONTROL,
-                "X-Has-Transparency": "true"
-                if _has_transparency(resp.content)
-                else "false",
-            },
-        )
+        return _favicon_response(resp.content, content_type)
 
     return Response(status_code=404)

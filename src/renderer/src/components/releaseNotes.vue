@@ -50,6 +50,7 @@
 import { defineComponent } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { emitter } from '@/emitter'
+import { useAuthStore } from '@/stores/auth'
 import changelogRaw from '../../../../CHANGELOG.md?raw'
 import packageJson from '../../../../package.json'
 
@@ -129,11 +130,30 @@ export default defineComponent({
     storageKey(): string {
       return `${STORAGE_PREFIX}:${this.appVersion}`
     },
+    authStore() {
+      return useAuthStore()
+    },
+  },
+  watch: {
+    // Auto-open only once logged in — this used to fire unconditionally on
+    // mount (App.vue mounts this globally regardless of route), popping up
+    // right on top of the login screen before anyone had even signed in.
+    // immediate: true here is safe (unlike App.vue's own authenticated
+    // watcher, which deliberately omits it to avoid racing the router
+    // guard's restore() with a forced /login redirect) — this only ever
+    // *shows* a dialog, never navigates, so there's nothing to race.
+    // showAutoIfNeeded() is itself idempotent (see its own comment), so
+    // this firing again on a later real login after a logout is harmless.
+    'authStore.authenticated': {
+      immediate: true,
+      handler(authenticated: boolean) {
+        if (authenticated) this.showAutoIfNeeded()
+      },
+    },
   },
   mounted() {
     this.listener = () => this.openDialog(true)
     emitter.on('openReleaseNotes', this.listener)
-    this.showAutoIfNeeded()
     setTimeout(() => {
       this.iconAnimation = true
     }, 50)
@@ -317,18 +337,57 @@ export default defineComponent({
 
 @media (max-width: 600px) {
   .release-hero {
-    grid-template-columns: 1fr;
+    grid-template-columns: auto 1fr;
+    gap: 0.75rem;
+    padding: 1rem 1rem 0.75rem;
   }
 
   .release-hero__icon-wrap {
-    width: 64px;
-    height: 64px;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+  }
+
+  .release-icon {
+    font-size: 1.8rem;
+  }
+
+  .release-kicker {
+    font-size: 0.65rem;
+  }
+
+  .release-hero h2 {
+    font-size: 1.05rem;
+  }
+
+  .release-hero p {
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+  }
+
+  .release-body {
+    padding: 0.85rem 1rem 0.5rem;
+    max-height: 58vh;
+  }
+
+  /* Select-then-chip used to just wrap onto a second line at this width,
+   * leaving an odd half-empty row — a clean vertical stack reads better
+   * than letting flex-wrap decide where the break falls. */
+  .release-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
   }
 
   .version-select {
     max-width: 100%;
     min-width: 0;
     width: 100%;
+  }
+
+  .release-actions {
+    padding: 0.5rem 0.75rem 0.75rem;
   }
 }
 </style>

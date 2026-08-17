@@ -94,7 +94,7 @@
           style="flex: 1"
           @update:model-value="onVolumeChange"
         />
-        <span class="text-caption text-medium-emphasis volume-value">{{ volume ?? '–' }}</span>
+        <span class="text-caption text-medium-emphasis volume-value">{{ volume != null ? `${volume}%` : '–' }}</span>
       </div>
     </div>
   </div>
@@ -239,6 +239,7 @@ export default {
 
 <style scoped>
 .device-row {
+  position: relative;
   border-radius: 4px;
   margin-bottom: 4px;
   transition: background 0.1s;
@@ -258,6 +259,27 @@ export default {
 
 .device-row--active:hover {
   background: rgba(var(--v-theme-primary), 0.12);
+}
+
+/* Same lit-edge language as DefaultLayout.vue's nav rail (.beacon-rail
+ * :deep(.v-list-item--active)::before) — a beam picking this row out
+ * instead of a flat Material tint being the only signal that it's the
+ * active cast target. */
+.device-row--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: rgb(var(--v-theme-primary));
+  box-shadow: 0 0 10px 1px rgba(245, 169, 78, 0.55);
+}
+
+.device-row--active .v-icon,
+.device-row--active .device-row__type-icon {
+  filter: drop-shadow(0 0 5px rgba(245, 169, 78, 0.4));
 }
 
 .device-row__main {
@@ -330,7 +352,7 @@ export default {
 }
 
 .volume-value {
-  width: 28px;
+  width: 32px;
   text-align: right;
 }
 

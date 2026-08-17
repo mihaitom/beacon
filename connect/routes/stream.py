@@ -12,7 +12,7 @@ from core.audio_analysis import AudioAnalyzer, should_analyze
 from core.auth import require_token
 from core.session import DEFAULT_SESSION_ID, SessionState, build_status_dict, get_session, registry
 from core.state import PORT, list_target_pairs
-from core.streamer import stream_tracks
+from core.streamer import demuxer_for, stream_tracks
 from routes.debug import TEST_TONE_TRACK_ID
 
 logger = logging.getLogger("connect.stream")
@@ -115,20 +115,33 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
         # should_analyze()'s docstring) — analyzer stays None for them, and
         # GET /visualizer below just has nothing to send.
         analyzer: AudioAnalyzer | None = None
-        if should_analyze(list_target_pairs(session.state.active_delivery)):
+        target_pairs = list_target_pairs(session.state.active_delivery)
+        if should_analyze(target_pairs):
+            logger.info(f"[stream] Live analysis enabled — targets={target_pairs}")
             # Paced against the same calibrated clock /status's `elapsed`
             # uses — not a fixed bitrate timeline, which can't account for
             # the device's own startup-buffering delay (see
             # AudioAnalyzer's docstring). `offset` is where in the track
             # this connection's first byte actually starts.
             analyzer = AudioAnalyzer(
-                elapsed_fn=lambda: session.state.clock.elapsed(), start_offset=offset
+                elapsed_fn=lambda: session.state.clock.elapsed(),
+                start_offset=offset,
+                input_format=demuxer_for(output_format),
             )
             await analyzer.start()
             previous = session.audio_analyzer
             session.audio_analyzer = analyzer
             if previous:
                 await previous.stop()
+        else:
+            # Diagnostic for exactly this "visualizer only ever shows
+            # heartbeats" symptom — tells apart "no live-analyzable target at
+            # all" (targets=[], or all-AirPlay) from a case where a
+            # sonos/dlna/chromecast target genuinely should have qualified.
+            logger.info(
+                f"[stream] Live analysis skipped — targets={target_pairs}, "
+                f"active_delivery={session.state.active_delivery!r}"
+            )
 
         try:
             try:

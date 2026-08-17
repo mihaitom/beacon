@@ -1,6 +1,7 @@
 """routes/playback.py — /play, /play-url, /pause, /resume, /stop"""
 
 import asyncio
+import copy
 import logging
 import time
 
@@ -172,6 +173,110 @@ async def _apply_position_offset(
         return
 
 
+# How often to re-check the device's own reported position against our
+# wall-clock model for the rest of a track's playback — _apply_position_offset()
+# above deliberately only measures once, right at the start (see its own
+# docstring: "re-buffering mid-track is not accounted for"). This is what
+# actually accounts for it, and also catches the case that one-shot
+# calibration structurally can't: a seek initiated on the device's own
+# remote/app instead of through Beacon, which our wall-clock model has no
+# other way of ever finding out about. Not as tight an interval as e.g. the
+# device-volume slider's 4s poll (services/connect/volume.ts's equivalent)
+# — this runs for a whole session's entire track length, continuously, not
+# just while a UI happens to have a picker open.
+POSITION_RESYNC_INTERVAL = 8.0
+
+# A device/wall-clock discrepancy under this is ordinary jitter (network
+# round-trip time measuring the device, sub-second clock rounding) rather
+# than something a user actually did — recalibrating (and broadcasting SSE)
+# for every sub-second wobble would be noisy for no benefit. Bigger than
+# MAX_PLAUSIBLE_POSITION_LEAD's 15s on purpose: that guard exists to reject
+# *stale* readings a device can report milliseconds into a brand new stream
+# (left over from whatever it was playing before); several seconds into an
+# established stream, a real device genuinely is only ever off by a couple
+# of seconds unless something (an external seek, a rebuffer) actually
+# changed — small enough to catch a "skip 10s" tap, large enough that
+# ordinary polling jitter never crosses it.
+POSITION_RESYNC_THRESHOLD = 2.5
+
+
+async def _resync_position_once(session: SessionState, candidate) -> None:
+    """One resync check/correction against `candidate` — split out from
+    _resync_position_periodically() below purely so it's directly testable
+    without needing to unwind an infinite loop (see that function for the
+    guards deciding whether/when this gets called at all, and the docstring
+    explaining what this is actually for)."""
+    try:
+        device_pos = await candidate.get_position()
+    except Exception:
+        return
+    if device_pos is None or device_pos < 0:
+        return
+    st = session.state
+    # A device clearly reporting well past the track's own duration is a
+    # bogus/glitched reading (or has already rolled onto whatever comes
+    # after, which our own session doesn't know about yet either way) —
+    # not something to recalibrate against.
+    if st.current_track and device_pos > st.current_track.duration + POSITION_RESYNC_THRESHOLD:
+        return
+
+    wall_elapsed = st.clock.elapsed_since_stream_start()
+    if abs(device_pos - wall_elapsed) < POSITION_RESYNC_THRESHOLD:
+        return
+
+    offset = st.clock.calibrate(device_pos)
+    logger.info(
+        f"[position-resync] {candidate.target}: external position change detected — "
+        f"device={device_pos:.2f}s wall={wall_elapsed:.2f}s, new offset={offset:.2f}s"
+    )
+    await session.event_bus.broadcast(build_status_dict(session))
+
+
+async def _resync_position_periodically(
+    session: SessionState, target, generation: int
+) -> None:
+    """Keeps position_offset accurate for as long as this track keeps
+    playing, by re-measuring the device's actual position every
+    POSITION_RESYNC_INTERVAL and recalibrating (_resync_position_once above)
+    if it's drifted from the wall-clock model by more than
+    POSITION_RESYNC_THRESHOLD — see the constants above and
+    _apply_position_offset()'s docstring for why this exists as a
+    *separate*, ongoing function rather than just running that one for
+    longer. Self-terminates the same way that one does: checking
+    play_generation/is_streaming at the top of every iteration rather than
+    needing an explicit cancellation from /stop or a superseding /play —
+    /stop in particular has no reference to this task to cancel even if it
+    wanted to, same as it has none for _apply_position_offset()'s task.
+
+    Only ever meaningful for SUPPORTS_POSITION deliveries (Sonos/Chromecast/
+    DLNA) — AirPlay's FIXED_OFFSET estimate has no position feedback to
+    resync against, same restriction _apply_position_offset() has.
+
+    Unlike that one-shot calibration's MAX_PLAUSIBLE_POSITION_LEAD guard
+    (device position *ahead* of the wall clock is treated as a stale
+    leftover reading, since nothing legitimate should outrun a stream that
+    just started), a device position ahead of the wall-clock model here is
+    exactly the "someone skipped forward on the device itself" case this
+    function exists to catch — once a stream is well-established, deviation
+    in *either* direction is plausible, so both get treated the same way
+    (past a small threshold, not asymmetrically) — see
+    _resync_position_once()'s own comment.
+    """
+    st = session.state
+    deliveries = getattr(target, "deliveries", [target])
+    candidate = next((d for d in deliveries if d.SUPPORTS_POSITION), None)
+    if candidate is None:
+        return
+
+    while True:
+        await asyncio.sleep(POSITION_RESYNC_INTERVAL)
+        if st.clock.play_generation != generation or not st.is_streaming:
+            return
+        if st.clock.is_paused:
+            continue
+        await _resync_position_once(session, candidate)
+
+
 def _current_track_play_args(
     session: SessionState,
 ) -> tuple[str, str, str | None, float | None, str]:
@@ -308,6 +413,36 @@ async def play_tracks(
 
         st = session.state
 
+        # Set *before* dispatching to the device, not after — a fast-
+        # responding device (observed with Sonos) can open its own GET
+        # /stream/{session_id} connection back to us before target.play()
+        # below even returns, and audio_stream() 204s ("No track loaded")
+        # if session.state.current_track isn't set yet at that moment,
+        # which the device doesn't retry — the track then just never plays.
+        # Snapshotted first so a *failed* dispatch can put everything back
+        # exactly as it was, instead of leaving a track/delivery marked
+        # "current" (and reflected in the next periodic /events tick) when
+        # nothing actually started playing on the device — see the except
+        # branch below. copy.copy() is enough for clock: PlaybackClock is a
+        # flat dataclass of primitives, no nested mutable state to worry about.
+        previous_track = st.current_track
+        previous_gain = st.current_track_gain
+        previous_output_format = st.current_output_format
+        previous_is_streaming = st.is_streaming
+        previous_radio_info = st.radio_info
+        previous_track_ended = st.track_ended
+        previous_active_delivery = st.active_delivery
+        previous_clock = copy.copy(st.clock)
+
+        st.current_track = track
+        st.current_track_gain = req.gain
+        st.current_output_format = output_format
+        st.is_streaming = True
+        st.radio_info = None
+        st.clock.start(start_position)
+        st.track_ended = False
+        st.active_delivery = target
+
         if target:
             # internal=True: fetched directly by the cast device, not the browser —
             # see MediaClient.get_cover_art_url's docstring.
@@ -325,21 +460,20 @@ async def play_tracks(
                     )
                 except Exception as e:
                     logger.error(f"[play] Delivery error: {e}", exc_info=True)
+                    st.current_track = previous_track
+                    st.current_track_gain = previous_gain
+                    st.current_output_format = previous_output_format
+                    st.is_streaming = previous_is_streaming
+                    st.radio_info = previous_radio_info
+                    st.track_ended = previous_track_ended
+                    st.active_delivery = previous_active_delivery
+                    st.clock = previous_clock
                     # Dispatch never actually reached the device — release the
                     # claim just granted above instead of leaving it locked to
                     # this session (device_in_use for everyone else) with
                     # nothing actually playing on it.
                     await _release_claims(target, session)
                     return {"error": str(e)}
-
-        st.current_track = track
-        st.current_track_gain = req.gain
-        st.current_output_format = output_format
-        st.is_streaming = True
-        st.radio_info = None
-        st.clock.start(start_position)
-        st.track_ended = False
-        st.active_delivery = target
 
         if not target:
             logger.info(f"[play] No target — stream available at {url}")
@@ -348,6 +482,9 @@ async def play_tracks(
 
         asyncio.create_task(
             _apply_position_offset(session, target, st.clock.play_generation)
+        )
+        asyncio.create_task(
+            _resync_position_periodically(session, target, st.clock.play_generation)
         )
         await session.event_bus.broadcast(build_status_dict(session))
         return {"status": "playing", "stream_url": url}
@@ -427,6 +564,9 @@ async def play_url(
         asyncio.create_task(
             _apply_position_offset(session, target, st.clock.play_generation)
         )
+        asyncio.create_task(
+            _resync_position_periodically(session, target, st.clock.play_generation)
+        )
         await session.event_bus.broadcast(build_status_dict(session))
         return {"status": "playing", "url": req.url}
 
@@ -486,6 +626,18 @@ async def resume_playback(session: SessionState = Depends(require_authenticated_
                 logger.error(f"[resume] Delivery error: {e}", exc_info=True)
                 return {"error": str(e)}
 
+            # clock.resume() above bumped play_generation, same as seek_to()
+            # does — any _resync_position_periodically() task still running
+            # from before the pause sees that mismatch on its next wake and
+            # quietly exits (see that function's own docstring), so without
+            # this, periodic resync would silently stop working for good
+            # after the *first* pause/resume of any given track.
+            asyncio.create_task(
+                _resync_position_periodically(
+                    session, st.active_delivery, st.clock.play_generation
+                )
+            )
+
         await session.event_bus.broadcast(build_status_dict(session))
         return {"paused": False}
 
@@ -523,6 +675,11 @@ async def seek_playback(
             # /play and /play-url above.
             asyncio.create_task(
                 _apply_position_offset(session, st.active_delivery, st.clock.play_generation)
+            )
+            asyncio.create_task(
+                _resync_position_periodically(
+                    session, st.active_delivery, st.clock.play_generation
+                )
             )
 
         logger.info(f"[seek] ⏩ {position:.1f}s")

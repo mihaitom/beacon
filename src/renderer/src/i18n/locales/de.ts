@@ -10,6 +10,7 @@ export default {
     done: 'Fertig',
     retry: 'Erneut versuchen',
     filter: 'Filtern',
+    loadMore: 'Mehr laden',
     name: 'Name',
     addToQueue: 'Zur Queue hinzufügen',
     addToPlaylistMenu: 'Zu Playlist hinzufügen',
@@ -63,6 +64,7 @@ export default {
     recentlyPlayed: 'Zuletzt gehört',
     discover: 'Entdecken',
     reroll: 'Neu mischen',
+    playAll: 'Alle abspielen',
     readyToPlay: 'Bereit zum Auflegen?',
     nothingHeardYet: 'Noch nichts gehört — leg irgendwo los.',
     nowPlaying: 'Läuft gerade',
@@ -117,6 +119,7 @@ export default {
   },
   player: {
     nothingPlaying: 'Nichts spielt',
+    mute: 'Stummschalten',
   },
   nowPlaying: {
     nothingPlaying: 'Nichts spielt gerade.',
@@ -171,6 +174,22 @@ export default {
   queue: {
     title: 'Queue',
     empty: 'Queue ist leer.',
+    clear: 'Queue leeren',
+  },
+  remoteControl: {
+    title: 'Fernsteuerung',
+    hint: 'Erlaubt einem Handy im selben Netzwerk, die Wiedergabe zu steuern — Wiedergabe, Warteschlange, Playlists, Titel und Radio.',
+    enable: 'Fernsteuerung aktivieren',
+    enableFailed: 'Fernsteuerung konnte nicht aktiviert werden.',
+    disableFailed: 'Fernsteuerung konnte nicht deaktiviert werden.',
+    showCode: 'Pairing-Code anzeigen',
+    pairTitle: 'Handy koppeln',
+    pairHint: 'Diesen Code mit der Handykamera scannen, oder die Adresse unten öffnen und die PIN eingeben.',
+    address: 'Adresse',
+    regenerate: 'Code neu erzeugen',
+    needsRegenerate:
+      'Der vorherige Pairing-Code ist nicht mehr verfügbar. Erzeuge einen neuen, um ein Handy zu koppeln — bereits gekoppelte Handys werden dabei getrennt.',
+    activeHint: 'Fernsteuerung ist aktiv — ein Handy kann die Wiedergabe steuern. Klicken für Einstellungen.',
   },
   settings: {
     title: 'Settings',
@@ -287,5 +306,12 @@ export default {
     days: '{days} Tage {hours} Std',
     hours: '{hours} Std {minutes} Min',
     minutes: '{minutes} Min',
+  },
+  mobile: {
+    tabNowPlaying: 'Jetzt läuft',
+    tabQueue: 'Queue',
+    playOn: 'Wiedergeben auf',
+    thisDevice: 'Dieses Gerät',
+    needsPairing: 'Muss zuerst in der Beacon-App gepairt werden',
   },
 }

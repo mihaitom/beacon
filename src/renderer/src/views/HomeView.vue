@@ -21,10 +21,24 @@
       :title="$t('home.frequentlyPlayed')"
       :albums="frequentAlbums"
       :loading="loadingFrequent"
+      :play-all-loading="playingAllShelf === 'frequent'"
+      play-on-click
+      @play-all="playAllAlbums(frequentAlbums, 'frequent')"
     />
 
     <section v-if="topTracks.length || loadingTopTracks" class="mb-10">
-      <h2 class="section-title mb-4">{{ $t('home.topTracks') }}</h2>
+      <div class="d-flex align-center mb-4">
+        <h2 class="section-title">{{ $t('home.topTracks') }}</h2>
+        <v-btn
+          v-if="topTracks.length"
+          icon="mdi-play-circle-outline"
+          variant="text"
+          size="small"
+          density="comfortable"
+          :title="$t('home.playAll')"
+          @click="playTrackList(topTracks)"
+        />
+      </div>
       <track-list
         :tracks="topTracks"
         :loading="loadingTopTracks"
@@ -40,18 +54,27 @@
       :title="$t('home.recentlyAdded')"
       :albums="newestAlbums"
       :loading="loadingNewest"
+      :play-all-loading="playingAllShelf === 'newest'"
+      play-on-click
+      @play-all="playAllAlbums(newestAlbums, 'newest')"
     />
     <album-shelf
       :title="$t('home.recentlyPlayed')"
       :albums="recentAlbums"
       :loading="loadingRecent"
+      :play-all-loading="playingAllShelf === 'recent'"
+      play-on-click
+      @play-all="playAllAlbums(recentAlbums, 'recent')"
     />
 
     <album-shelf
       :title="$t('home.discover')"
       :albums="randomAlbums"
       :loading="loadingRandom"
+      :play-all-loading="playingAllShelf === 'random'"
       fit-to-screen
+      play-on-click
+      @play-all="playAllAlbums(randomAlbums, 'random')"
     >
       <template #action>
         <v-btn
@@ -90,6 +113,10 @@ export default {
       loadingRecent: false,
       loadingRandom: false,
       loadingTopTracks: false,
+      // Which shelf's "play all" is currently fetching album track lists —
+      // a single field (not one boolean per shelf) since only one of these
+      // can realistically be in flight at a time (each is a user click).
+      playingAllShelf: null as string | null,
     }
   },
   computed: {
@@ -126,14 +153,16 @@ export default {
       if (this.playbackStore.radioStation) return this.playbackStore.radioStation.name
       return this.recentAlbums[0]?.name ?? ''
     },
-    // Only the "nothing playing, here's your most recent album" fallback
-    // names an album in the title itself (a *track* title, the other two
-    // cases, has no page of its own to link to — see HeroBand.vue's
-    // titleTo prop comment).
+    // Always null — this used to link the "nothing playing, here's your
+    // most recent album" fallback title to the album page, but that title
+    // sits right next to the hero's own dedicated play button (which
+    // already correctly starts that same album, see onHeroPlay()), so a
+    // click there read as "play this" and instead navigated away. The
+    // artist/album *subtitle* links (see HeroBand.vue) still navigate —
+    // just not the big heading, which is the one thing already doubling as
+    // "the thing the play button plays".
     heroTitleTo(): string | null {
-      if (this.playbackStore.currentTrack || this.playbackStore.radioStation) return null
-      const album = this.recentAlbums[0]
-      return album ? `/albums/${album.id}` : null
+      return null
     },
     // Plain-text-only fallback (HeroBand.vue only falls back to this when
     // heroArtistName is null, i.e. the radio case below).
@@ -226,6 +255,25 @@ export default {
       if (!album) return
       const full = await this.libraryStore.fetchAlbum(album.id)
       await this.playbackStore.playTrackList(full.tracks, 0)
+    },
+    async playTrackList(tracks: Track[]) {
+      if (!tracks.length) return
+      await this.playbackStore.playTrackList(tracks, 0)
+    },
+    // AlbumShelf.vue's album cards only ever carry list-level Album data
+    // (no track list — see fetchAlbum()'s own comment), so "play all" for a
+    // shelf means fetching each album's full track list first. Concatenated
+    // in shelf order, album by album, rather than interleaved — that's the
+    // order the shelf itself already reads in.
+    async playAllAlbums(albums: Album[], shelfKey: string) {
+      if (!albums.length || this.playingAllShelf) return
+      this.playingAllShelf = shelfKey
+      try {
+        const fullAlbums = await Promise.all(albums.map((album) => this.libraryStore.fetchAlbum(album.id)))
+        await this.playTrackList(fullAlbums.flatMap((album) => album.tracks))
+      } finally {
+        this.playingAllShelf = null
+      }
     },
   },
 }

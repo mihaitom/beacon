@@ -1,6 +1,6 @@
 <template>
   <v-container fluid>
-    <detail-header fallback-icon="mdi-music-note" :eyebrow="$t('library.track1')" :title="$t('library.tracks')">
+    <detail-header fallback-icon="mdi-music-note" :title="$t('library.tracks')">
       <template v-if="filteredTracks.length" #meta>
         {{ filteredTracks.length }}
         {{ filteredTracks.length === 1 ? $t('library.track1') : $t('library.tracksN') }}

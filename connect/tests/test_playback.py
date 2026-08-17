@@ -1,5 +1,7 @@
 """Tests for playback endpoints: /play, /stop, /pause, /resume, /status."""
 
+import asyncio
+import contextlib
 import time
 from unittest.mock import AsyncMock, patch
 
@@ -7,7 +9,12 @@ from core.session import compute_position
 from core.streamer import FALLBACK_FORMAT, OutputFormat
 from delivery import AirPlayDelivery, ChromecastDelivery, SonosDelivery
 from media import SubsonicClient, Track
-from routes.playback import _apply_position_offset
+from routes.playback import (
+    POSITION_RESYNC_THRESHOLD,
+    _apply_position_offset,
+    _resync_position_once,
+    _resync_position_periodically,
+)
 
 
 # ── /status ──────────────────────────────────────────────────────────────────
@@ -221,6 +228,67 @@ def test_play_passes_resolved_content_type_to_target_and_caches_it(
     assert r.json()["status"] == "playing"
     assert play_mock.call_args.args[-1] == "audio/flac"
     assert default_session.state.current_output_format is flac_copy
+
+
+def test_play_sets_current_track_before_dispatching_to_target(client, default_session):
+    """Regression test: a fast-responding device can open its own GET
+    /stream/{session_id} connection back to us before target.play() below
+    even returns — audio_stream() must already see the new track by then
+    (session.state.current_track set before the dispatch, not after), or
+    the device gets a 204 "No track loaded" and just never plays it
+    (observed live with Sonos)."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+    seen_current_track_ids = []
+
+    async def fake_play(*_args, **_kwargs):
+        current = default_session.state.current_track
+        seen_current_track_ids.append(current.id if current else None)
+
+    with (
+        patch.object(default_session.media, "get_track", return_value=track),
+        patch.object(ChromecastDelivery, "play", new=AsyncMock(side_effect=fake_play)),
+    ):
+        r = client.post(
+            "/play",
+            json={"track_ids": ["1"], "target_name": "TV", "target_type": "chromecast"},
+        )
+
+    assert r.json()["status"] == "playing"
+    assert seen_current_track_ids == ["1"]
+
+
+def test_play_rolls_back_state_when_delivery_dispatch_fails(client, default_session):
+    """The state-before-dispatch reordering above (see the previous test)
+    must not leave a track/delivery marked "current" when target.play()
+    actually fails — otherwise the next periodic /events tick would report
+    the new (never-started) track as playing instead of the old one."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    old_track = Track(id="old", title="Old", artist="Artist", duration=180, cover_art_id="c")
+    new_track = Track(id="new", title="New", artist="Artist", duration=200, cover_art_id="c")
+
+    with (
+        patch.object(default_session.media, "get_track", return_value=old_track),
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+    ):
+        client.post(
+            "/play", json={"track_ids": ["old"], "target_name": "TV", "target_type": "chromecast"}
+        )
+    assert default_session.state.current_track.id == "old"
+
+    with (
+        patch.object(default_session.media, "get_track", return_value=new_track),
+        patch.object(
+            ChromecastDelivery, "play", new=AsyncMock(side_effect=RuntimeError("unreachable"))
+        ),
+    ):
+        r = client.post(
+            "/play", json={"track_ids": ["new"], "target_name": "TV", "target_type": "chromecast"}
+        )
+
+    assert "error" in r.json()
+    assert default_session.state.current_track.id == "old"
+    assert default_session.state.is_streaming is True
 
 
 def test_resume_reuses_cached_content_type_without_reprobing(client, default_session):
@@ -764,3 +832,154 @@ def test_apply_position_offset_abandons_on_track_change(default_session):
         asyncio.run(_apply_position_offset(default_session, target, generation=1))
 
     assert default_session.state.clock.position_offset == 0.0
+
+
+# ── _resync_position_once / _resync_position_periodically ───────────────────
+# Regression coverage for "let me poll the device's own position so an
+# external seek — scrubbing on the device's own remote/app instead of
+# through Beacon — doesn't leave the displayed position stuck on the old
+# wall-clock model" (_apply_position_offset above deliberately only
+# calibrates once, at track start — see its own docstring).
+
+
+def test_resync_position_once_ignores_small_drift(default_session):
+    default_session.state.clock.play_start_time = time.time() - 10.0
+    default_session.state.clock.position_offset = 0.0
+    target = SonosDelivery("Küche")
+    import asyncio
+
+    with patch.object(target, "get_position", new=AsyncMock(return_value=10.2)):
+        asyncio.run(_resync_position_once(default_session, target))
+
+    # 0.2s off wall-clock is ordinary jitter, not a real change — must not
+    # have recalibrated at all.
+    assert default_session.state.clock.position_offset == 0.0
+
+
+def test_resync_position_once_recalibrates_on_forward_seek(default_session):
+    """A device position well *ahead* of the wall-clock model must still be
+    trusted here — unlike _apply_position_offset's startup-only guard, this
+    is exactly the "skipped forward on the device itself" case this exists
+    to catch, not a stale reading to reject."""
+    default_session.state.clock.play_start_time = time.time() - 10.0
+    default_session.state.clock.position_offset = 0.0
+    target = SonosDelivery("Küche")
+    import asyncio
+
+    with patch.object(target, "get_position", new=AsyncMock(return_value=40.0)):
+        asyncio.run(_resync_position_once(default_session, target))
+
+    assert default_session.state.clock.position_offset > POSITION_RESYNC_THRESHOLD
+
+
+def test_resync_position_once_recalibrates_on_backward_seek(default_session):
+    default_session.state.clock.play_start_time = time.time() - 40.0
+    default_session.state.clock.position_offset = 0.0
+    target = SonosDelivery("Küche")
+    import asyncio
+
+    with patch.object(target, "get_position", new=AsyncMock(return_value=10.0)):
+        asyncio.run(_resync_position_once(default_session, target))
+
+    assert default_session.state.clock.position_offset < -POSITION_RESYNC_THRESHOLD
+
+
+def test_resync_position_once_ignores_reading_past_track_duration(default_session):
+    default_session.state.current_track = Track("1", "Song", "Artist", 180, "")
+    default_session.state.clock.play_start_time = time.time() - 10.0
+    default_session.state.clock.position_offset = 0.0
+    target = SonosDelivery("Küche")
+    import asyncio
+
+    with patch.object(target, "get_position", new=AsyncMock(return_value=500.0)):
+        asyncio.run(_resync_position_once(default_session, target))
+
+    assert default_session.state.clock.position_offset == 0.0
+
+
+def test_resync_position_once_ignores_negative_reading(default_session):
+    default_session.state.clock.play_start_time = time.time() - 10.0
+    default_session.state.clock.position_offset = 0.0
+    target = SonosDelivery("Küche")
+    import asyncio
+
+    with patch.object(target, "get_position", new=AsyncMock(return_value=-1.0)):
+        asyncio.run(_resync_position_once(default_session, target))
+
+    assert default_session.state.clock.position_offset == 0.0
+
+
+def test_resync_position_once_ignores_get_position_failure(default_session):
+    default_session.state.clock.play_start_time = time.time() - 10.0
+    default_session.state.clock.position_offset = 0.0
+    target = SonosDelivery("Küche")
+    import asyncio
+
+    with patch.object(target, "get_position", new=AsyncMock(side_effect=OSError("unreachable"))):
+        asyncio.run(_resync_position_once(default_session, target))
+
+    assert default_session.state.clock.position_offset == 0.0
+
+
+def test_resync_position_periodically_returns_immediately_for_airplay(default_session):
+    """No SUPPORTS_POSITION delivery at all -> must return before ever
+    sleeping/polling, not loop forever waiting for a reading that can never
+    come (AirPlay has no position feedback — see FIXED_OFFSET instead)."""
+    default_session.state.is_streaming = True
+    target = AirPlayDelivery("HomePod")
+    import asyncio
+
+    asyncio.run(
+        asyncio.wait_for(
+            _resync_position_periodically(default_session, target, generation=1), timeout=1.0
+        )
+    )
+
+
+def test_resync_position_periodically_stops_on_generation_mismatch(default_session, monkeypatch):
+    monkeypatch.setattr("routes.playback.POSITION_RESYNC_INTERVAL", 0.01)
+    default_session.state.is_streaming = True
+    # A new /play (or /seek, or /resume) already bumped the generation by
+    # the time this task gets to run its first check.
+    default_session.state.clock.play_generation = 2
+    target = SonosDelivery("Küche")
+    import asyncio
+
+    with patch.object(target, "get_position", new=AsyncMock(return_value=5.0)) as get_position:
+        asyncio.run(
+            asyncio.wait_for(
+                _resync_position_periodically(default_session, target, generation=1), timeout=1.0
+            )
+        )
+    get_position.assert_not_called()
+
+
+async def _run_briefly(coro) -> None:
+    """Runs `coro` (expected to loop forever) for a short bounded window,
+    then cancels it — used below to assert on behavior *during* a few loop
+    iterations of _resync_position_periodically(), which otherwise never
+    returns on its own within a single test."""
+    task = asyncio.ensure_future(coro)
+    try:
+        await asyncio.wait_for(asyncio.shield(task), timeout=0.05)
+    except asyncio.TimeoutError:
+        pass
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+def test_resync_position_periodically_skips_polling_while_paused(default_session, monkeypatch):
+    monkeypatch.setattr("routes.playback.POSITION_RESYNC_INTERVAL", 0.01)
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_generation = 1
+    default_session.state.clock.is_paused = True
+    target = SonosDelivery("Küche")
+    import asyncio
+
+    with patch.object(target, "get_position", new=AsyncMock(return_value=5.0)) as get_position:
+        asyncio.run(
+            _run_briefly(_resync_position_periodically(default_session, target, generation=1))
+        )
+    get_position.assert_not_called()

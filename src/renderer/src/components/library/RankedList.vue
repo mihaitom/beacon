@@ -8,6 +8,12 @@
       class="ranked-list__row"
     >
       <span class="ranked-list__rank text-medium-emphasis">{{ index + 1 }}</span>
+      <cover-art
+        v-if="item.coverArtId !== undefined"
+        :cover-art-id="item.coverArtId"
+        :size="32"
+        class="ranked-list__cover"
+      />
       <div class="ranked-list__info">
         <div class="text-body-2 text-truncate">{{ item.label }}</div>
         <div v-if="item.sublabel" class="text-caption text-medium-emphasis text-truncate">
@@ -26,6 +32,7 @@
 
 <script lang="ts">
 import type { PropType } from 'vue'
+import CoverArt from './CoverArt.vue'
 
 export interface RankedItem {
   id: string
@@ -38,6 +45,12 @@ export interface RankedItem {
   value: number
   valueLabel: string
   to?: string | null
+  // undefined (the field simply omitted) hides the art column entirely for
+  // that whole list — StatsView.vue's format/decade breakdowns and top
+  // artists have no meaningful per-item cover to show. null is still a
+  // real "no art for *this* item" case within a list that otherwise has
+  // it, same as CoverArt.vue's own coverArtId prop.
+  coverArtId?: string | null
 }
 
 // Single-hue magnitude encoding (one ranked series at a time — never
@@ -47,6 +60,7 @@ export interface RankedItem {
 // second one.
 export default {
   name: 'RankedList',
+  components: { CoverArt },
   props: {
     items: {
       type: Array as PropType<RankedItem[]>,
@@ -100,6 +114,10 @@ a.ranked-list__row:hover {
   flex: 0 0 20px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.ranked-list__cover {
+  flex-shrink: 0;
 }
 
 /* flex-grow so every row's info column ends up the exact same width

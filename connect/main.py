@@ -27,6 +27,7 @@ load_dotenv()
 
 from core.auth import TOKEN as _CONNECT_TOKEN  # noqa: E402
 from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED  # noqa: E402
+from core.remote import reap_stale_remote, remote  # noqa: E402
 from core.session import reap_stale_sessions, registry  # noqa: E402
 from core.state import PORT, get_local_ip  # noqa: E402
 from routes.debug import router as debug_router  # noqa: E402
@@ -43,6 +44,7 @@ from routes.plex_auth import router as plex_auth_router  # noqa: E402
 from routes.proxy import close as close_proxy_client  # noqa: E402
 from routes.proxy import router as proxy_router  # noqa: E402
 from routes.radio import router as radio_router  # noqa: E402
+from routes.remote import router as remote_router  # noqa: E402
 from routes.stream import router as stream_router  # noqa: E402
 from routes.volume import router as volume_router  # noqa: E402
 from routes.waveform import router as waveform_router  # noqa: E402
@@ -244,11 +246,19 @@ async def lifespan(_: FastAPI):
 
     discovery_task = asyncio.create_task(_periodic_discovery())
     reaper_task = asyncio.create_task(reap_stale_sessions())
+    remote_reaper_task = asyncio.create_task(reap_stale_remote())
     try:
         yield
     finally:
         discovery_task.cancel()
         reaper_task.cancel()
+        remote_reaper_task.cancel()
+        # A killed process (dev-mode Ctrl+C, packaged app quitting) can't run
+        # the Electron before-quit round-trip that normally disables Remote
+        # Control (see App.vue) — disable it here too so a still-running
+        # `connect` from a previous launch (the dev flow) never inherits a
+        # stale enabled state for the next one.
+        remote.disable()
         await close_proxy_client()
         await jellyfin_bridge.close()
         await plex_bridge.close()
@@ -329,6 +339,10 @@ app.include_router(radio_router)
 # Starlette matches routes in registration order, first match wins.
 if _DEBUG:
     app.include_router(debug_router)
+# Same ordering reason as debug_router above: /remote/* (including its own
+# /remote/app/{path:path} static-file catch-all) must be registered before
+# proxy_router's broader /{path:path}.
+app.include_router(remote_router)
 app.include_router(proxy_router)
 
 

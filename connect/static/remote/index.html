@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Beacon Remote</title>
+  <meta name="theme-color" content="#121214" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Beacon" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon-192.png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="stylesheet" href="fonts/mdi.css" />
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <div id="login-screen" class="screen hidden">
+    <div class="login-card">
+      <h1>Beacon Remote</h1>
+      <p class="muted">Enter the 6-digit code shown in Beacon's Settings.</p>
+      <form id="login-form">
+        <input id="pin-input" class="pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+               autocomplete="one-time-code" placeholder="000000" />
+        <button type="submit" class="btn btn-primary">Connect</button>
+      </form>
+      <p id="login-error" class="error hidden"></p>
+    </div>
+  </div>
+
+  <div id="app-screen" class="screen hidden">
+    <main id="view-root"></main>
+    <nav class="tabbar">
+      <a href="#/now-playing" data-tab="now-playing">
+        <i class="mdi mdi-music-note icon"></i><span>Playing</span>
+      </a>
+      <a href="#/queue" data-tab="queue">
+        <i class="mdi mdi-format-list-bulleted icon"></i><span>Queue</span>
+      </a>
+      <a href="#/playlists" data-tab="playlists">
+        <i class="mdi mdi-playlist-music icon"></i><span>Playlists</span>
+      </a>
+      <a href="#/tracks" data-tab="tracks">
+        <i class="mdi mdi-magnify icon"></i><span>Tracks</span>
+      </a>
+      <a href="#/radio" data-tab="radio">
+        <i class="mdi mdi-radio icon"></i><span>Radio</span>
+      </a>
+    </nav>
+  </div>
+
+  <div id="disconnected-banner" class="banner hidden">Connection lost — retrying…</div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

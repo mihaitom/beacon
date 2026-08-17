@@ -21,11 +21,16 @@
         </div>
       </div>
       <div v-else-if="hasContent" class="hero-body">
+        <!-- Same "click the artwork to play" affordance as AlbumCard.vue's
+         - playOnClick and TrackRow.vue's cover — this one already has a
+         - dedicated play button next to it, so this is a shortcut for that,
+         - not the only way to trigger it. -->
         <cover-art
           :cover-art-id="coverId"
           :image-url="imageUrl"
           :size="132"
-          class="hero-cover cover-shadow"
+          class="hero-cover cover-shadow hero-cover--clickable"
+          @click="$emit('play')"
         />
         <div class="hero-info min-width-0">
           <div class="eyebrow-label mb-1">{{ eyebrow }}</div>
@@ -171,6 +176,10 @@ export default {
 
 .hero-cover {
   flex-shrink: 0;
+}
+
+.hero-cover--clickable {
+  cursor: pointer;
 }
 
 .hero-subtitle {

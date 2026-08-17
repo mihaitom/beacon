@@ -1,0 +1,17 @@
+{
+  "name": "Beacon Remote",
+  "short_name": "Beacon",
+  "description": "Remote control for Beacon playback",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#12141C",
+  "theme_color": "#12141C",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

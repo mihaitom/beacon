@@ -121,7 +121,15 @@
           @click="playbackStore.toggleQueueDrawer()"
         />
         <connect-button />
-        <v-icon icon="mdi-volume-high" size="small" class="mr-1" />
+        <v-btn
+          :icon="volumeIcon"
+          :disabled="muteDisabled"
+          variant="text"
+          density="comfortable"
+          size="small"
+          :title="$t('player.mute')"
+          @click="toggleMute"
+        />
         <v-slider
           v-if="singleActiveTarget"
           :model-value="deviceVolume ?? 0"
@@ -183,6 +191,12 @@ export default {
       // only updates this (purely visual), and the actual seek() call
       // fires once, from @end, when the drag finishes.
       seekPreviewPosition: null as number | null,
+      // What to restore to on un-mute — captured right before muting, same
+      // pattern as DeviceListItem.vue's own onToggleMute(). Two separate
+      // fields since local volume (0-1) and device volume (0-100) are on
+      // different scales and muted independently of one another.
+      volumeBeforeMute: 1,
+      deviceVolumeBeforeMute: 50,
     }
   },
   computed: {
@@ -231,11 +245,24 @@ export default {
       const target = this.singleActiveTarget
       return target ? `${target.type}:${target.name}` : null
     },
+    // Always a "%" now, whichever source it's reading from — this used to
+    // show a bare number while casting to a single device (0-100 scale)
+    // but "42%" during local playback (0-1 scale rounded), inconsistent for
+    // no reason other than the two branches never having been reconciled.
     volumePercentLabel() {
       if (this.singleActiveTarget) {
-        return this.deviceVolume == null ? '—' : `${this.deviceVolume}`
+        return this.deviceVolume == null ? '—' : `${this.deviceVolume}%`
       }
       return `${Math.round(this.playbackStore.volume * 100)}%`
+    },
+    // Mirrors DeviceListItem.vue's own two-state volumeIcon (mute vs. not) —
+    // same simple mute/not-mute distinction, not a third "medium" state.
+    volumeIcon() {
+      const muted = this.singleActiveTarget ? this.deviceVolume === 0 : this.playbackStore.volume === 0
+      return muted ? 'mdi-volume-mute' : 'mdi-volume-high'
+    },
+    muteDisabled() {
+      return this.singleActiveTarget ? this.deviceVolume == null : this.playbackStore.isCasting
     },
   },
   watch: {
@@ -274,6 +301,23 @@ export default {
       const rounded = Math.round(value)
       this.deviceVolume = rounded
       await this.connectStore.setDeviceVolume(target.type, target.name, rounded)
+    },
+    toggleMute() {
+      if (this.singleActiveTarget) {
+        if (this.deviceVolume === 0) {
+          void this.onDeviceVolumeChange(this.deviceVolumeBeforeMute || 50)
+        } else {
+          this.deviceVolumeBeforeMute = this.deviceVolume ?? 50
+          void this.onDeviceVolumeChange(0)
+        }
+        return
+      }
+      if (this.playbackStore.volume === 0) {
+        this.playbackStore.setVolume(this.volumeBeforeMute || 1)
+      } else {
+        this.volumeBeforeMute = this.playbackStore.volume
+        this.playbackStore.setVolume(0)
+      }
     },
     async onSeekEnd(value: number) {
       // Cleared only *after* seek() resolves (it sets localPosition to

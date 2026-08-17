@@ -1,6 +1,21 @@
 <template>
-  <v-card min-width="380" max-width="420">
-    <v-toolbar density="compact" :title="$t('connect.title')" />
+  <v-card min-width="380" max-width="420" class="connect-picker">
+    <v-toolbar
+      density="compact"
+      color="#0B0D13"
+      class="connect-picker__toolbar"
+      :title="$t('connect.title')"
+    >
+      <template #append>
+        <v-icon
+          v-if="connectStore.isActive"
+          icon="mdi-cast-connected"
+          color="primary"
+          size="18"
+          class="mr-3 connect-picker__active-glow"
+        />
+      </template>
+    </v-toolbar>
     <v-card-text>
       <connect-error-banner
         v-if="connectStore.errors.apiUnreachable"
@@ -42,7 +57,7 @@
         />
       </template>
     </v-card-text>
-    <v-card-actions>
+    <v-card-actions class="connect-picker__actions">
       <v-btn size="small" variant="text" @click="connectStore.refreshDevices(true)">
         {{ $t('connect.rescan') }}
       </v-btn>
@@ -204,6 +219,28 @@ export default {
 </script>
 
 <style scoped>
+/* Same dark-chrome system as QueueDrawer.vue/LyricsDrawer.vue's own
+ * .beacon-drawer/.beacon-drawer__toolbar (Vue scoped styles don't share
+ * across components just by reusing a class name, so this redeclares it
+ * rather than actually reusing theirs) — this floats the same way those
+ * do (a v-menu popover, not docked), so the same "reads as part of the
+ * app's own chrome, not a generic Material card" treatment applies. */
+.connect-picker {
+  border: 1px solid var(--beacon-hairline);
+}
+
+.connect-picker__toolbar {
+  border-bottom: 1px solid var(--beacon-hairline);
+}
+
+.connect-picker__active-glow {
+  filter: drop-shadow(0 0 5px rgba(245, 169, 78, 0.5));
+}
+
+.connect-picker__actions {
+  border-top: 1px solid var(--beacon-hairline);
+}
+
 .device-group-heading {
   padding: 8px 12px 4px;
 }
