@@ -81,7 +81,7 @@ class SonosDelivery(BaseDelivery):
             "</DIDL-Lite>"
         )
 
-        logger.info(f"[Sonos:{self.target}] → play: {stream_url}")
+        logger.debug(f"[Sonos:{self.target}] → play: {stream_url}")
         await asyncio.to_thread(
             device.avTransport.SetAVTransportURI,
             [

@@ -118,6 +118,15 @@ export const useAuthStore = defineStore('auth', {
      * browser's own HTTP cache (Navidrome sends far-future max-age) actually
      * gets used instead of invalidating on every login. */
     async _authenticate(): Promise<void> {
+      // Guards against services/connect/http.ts's 401-retry path firing
+      // this before the router guard's restore() has populated serverUrl/
+      // credential (e.g. a Remote-Control status poll racing ahead of
+      // restore() at cold boot) — without this, that race POSTs /config
+      // with an empty url, which connect logs as a scary-looking (but
+      // harmless) "ping failed" + "Rejected" pair on every single launch.
+      if (!this.serverUrl || !this.credential) {
+        throw new Error('_authenticate() called before serverUrl/credential are set')
+      }
       this.sessionId = computeConnectSessionId({
         url: this.serverUrl,
         serverType: this.serverType,

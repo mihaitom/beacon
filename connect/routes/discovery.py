@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 
 from fastapi import APIRouter, Depends
 
@@ -56,11 +57,22 @@ async def _scan_devices(verbose: bool = False) -> dict:
         "dlna": dlna,
         "sonos": sonos,
     }
+    global _last_scan_completed
+    _last_scan_completed = time.monotonic()
     return ctx.discovered
 
 
 _discover_lock = asyncio.Lock()
 _discover_task: asyncio.Task | None = None
+_last_scan_completed: float = 0.0
+# ConnectDevicePicker.vue polls GET /discover every 4s while the popover is
+# open — without a floor, /discover's own "rescan in the background on every
+# call" (below) would fire a full SSDP/mDNS scan (several seconds of network
+# traffic, per _scan_devices()) every single one of those polls instead of
+# only occasionally in the background. Well above the poll interval, well
+# below main.py's hourly periodic scan — just enough to make an open
+# popover eventually notice a device that just appeared.
+_BACKGROUND_RESCAN_MIN_INTERVAL = 30.0
 
 
 async def discover_all(verbose: bool = False) -> dict:
@@ -136,9 +148,13 @@ async def discover(
 
     # fresh=true (explicit "Scan again") awaits a full rescan so the client can
     # show real progress. Otherwise serve cache instantly and rescan in the
-    # background for snappy popover opens.
+    # background for snappy popover opens — but only if the cache is actually
+    # stale (see _BACKGROUND_RESCAN_MIN_INTERVAL's comment); the device
+    # picker's 4s poll would otherwise turn "rescan in the background" into a
+    # full SSDP/mDNS scan every 4 seconds for as long as the popover stays open.
     if has_cache and not fresh:
-        asyncio.create_task(discover_all())
+        if time.monotonic() - _last_scan_completed > _BACKGROUND_RESCAN_MIN_INTERVAL:
+            asyncio.create_task(discover_all())
         return _annotate_claims(cached)
 
     return _annotate_claims(await discover_all(verbose=True))

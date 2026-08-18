@@ -75,6 +75,7 @@ export default {
     radioEyebrow: 'Radio',
     internetRadio: 'Internet radio',
     nothingToShow: 'Nothing to show.',
+    newArtistsTitle: 'New to explore',
   },
   library: {
     album: 'Album',
@@ -186,7 +187,8 @@ export default {
     disableFailed: "Couldn't disable Remote Control.",
     showCode: 'Show pairing code',
     pairTitle: 'Pair a phone',
-    pairHint: 'Scan this code with your phone\'s camera, or open the address below and enter the PIN.',
+    pairHint:
+      "Scan this code with your phone's camera, or open the address below and enter the PIN.",
     address: 'Address',
     regenerate: 'Regenerate code',
     needsRegenerate:
@@ -204,7 +206,8 @@ export default {
     scanning: 'Scanning … ({count})',
     scanComplete: 'Scan complete — {count} tracks processed.',
     scanFailed: "Couldn't start the scan.",
-    libraryRefreshHint: "Reload Beacon's own library view now, instead of waiting for the automatic refresh.",
+    libraryRefreshHint:
+      "Reload Beacon's own library view now, instead of waiting for the automatic refresh.",
     refreshLibrary: 'Refresh library',
     refreshingLibrary: 'Refreshing … ({loaded})',
     refreshingLibraryWithTotal: 'Refreshing … ({loaded} / {total})',
@@ -220,6 +223,19 @@ export default {
     resetAirplay: 'Reset AirPlay pairings',
     airplayReset: 'AirPlay pairings reset.',
     airplayResetFailed: "Couldn't reset AirPlay pairings.",
+    advancedTitle: 'Advanced',
+    logLevel: 'Log level',
+    logLevelHint:
+      'How much detail the Connect backend writes to its own log — also affects what shows up in Docker/container logs. Takes effect immediately, no restart needed.',
+    logLevelDebug: 'Debug',
+    logLevelInfo: 'Info',
+    logLevelWarning: 'Warning',
+    logLevelError: 'Error',
+    logLevelChanged: 'Log level updated.',
+    logLevelChangeFailed: "Couldn't update the log level.",
+    recommendations: 'Personalized recommendations',
+    recommendationsHint:
+      'Discover on Home uses artists similar to what you actually listen to, resolved via MusicBrainz and ListenBrainz — this shares a library artist name or two with those services. Off falls back to random albums.',
     playbackTitle: 'Playback',
     replayGain: 'ReplayGain',
     replayGainOff: 'Off',
@@ -232,6 +248,8 @@ export default {
     ffmpegFound: 'ffmpeg found',
     ffmpegMissing: "ffmpeg missing — casting won't work without it.",
     version: 'Version {version}',
+    updateAvailable: 'Version {version} is available.',
+    updateAvailableLink: 'View release',
   },
   playlists: {
     title: 'Playlists',
@@ -294,7 +312,7 @@ export default {
     favoriteTracks: 'Favorite tracks',
     favoriteAlbums: 'Favorite albums',
     favoriteArtists: 'Favorite artists',
-    noPlaysYet: "No plays recorded yet — this fills in once you start listening.",
+    noPlaysYet: 'No plays recorded yet — this fills in once you start listening.',
     topTracks: 'Most played tracks',
     topArtists: 'Most played artists',
     topAlbums: 'Most played albums',
@@ -313,5 +331,12 @@ export default {
     playOn: 'Play on',
     thisDevice: 'This device',
     needsPairing: 'Needs pairing in the Beacon app first',
+  },
+  updateToast: {
+    title: 'Update available',
+    electronMessage:
+      'Version {version} is downloading in the background and will install automatically the next time you restart Beacon.',
+    webMessage: 'Version {version} is available.',
+    remindLater: 'Remind me later',
   },
 } satisfies typeof de

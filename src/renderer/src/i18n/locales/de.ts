@@ -73,6 +73,7 @@ export default {
     radioEyebrow: 'Radio',
     internetRadio: 'Internetradio',
     nothingToShow: 'Nichts zu zeigen.',
+    newArtistsTitle: 'Neu zu entdecken',
   },
   library: {
     album: 'Album',
@@ -184,12 +185,14 @@ export default {
     disableFailed: 'Fernsteuerung konnte nicht deaktiviert werden.',
     showCode: 'Pairing-Code anzeigen',
     pairTitle: 'Handy koppeln',
-    pairHint: 'Diesen Code mit der Handykamera scannen, oder die Adresse unten öffnen und die PIN eingeben.',
+    pairHint:
+      'Diesen Code mit der Handykamera scannen, oder die Adresse unten öffnen und die PIN eingeben.',
     address: 'Adresse',
     regenerate: 'Code neu erzeugen',
     needsRegenerate:
       'Der vorherige Pairing-Code ist nicht mehr verfügbar. Erzeuge einen neuen, um ein Handy zu koppeln — bereits gekoppelte Handys werden dabei getrennt.',
-    activeHint: 'Fernsteuerung ist aktiv — ein Handy kann die Wiedergabe steuern. Klicken für Einstellungen.',
+    activeHint:
+      'Fernsteuerung ist aktiv — ein Handy kann die Wiedergabe steuern. Klicken für Einstellungen.',
   },
   settings: {
     title: 'Settings',
@@ -197,8 +200,7 @@ export default {
     logout: 'Abmelden',
     language: 'Sprache',
     libraryTitle: 'Bibliothek',
-    libraryScanHint:
-      'Navidrome nach neuen, geänderten oder entfernten Dateien durchsuchen lassen.',
+    libraryScanHint: 'Navidrome nach neuen, geänderten oder entfernten Dateien durchsuchen lassen.',
     rescanLibrary: 'Bibliothek neu scannen',
     scanning: 'Scan läuft … ({count})',
     scanComplete: 'Scan abgeschlossen — {count} Titel verarbeitet.',
@@ -220,6 +222,19 @@ export default {
     resetAirplay: 'AirPlay-Kopplungen zurücksetzen',
     airplayReset: 'AirPlay-Kopplungen zurückgesetzt.',
     airplayResetFailed: 'AirPlay-Kopplungen konnten nicht zurückgesetzt werden.',
+    advancedTitle: 'Erweitert',
+    logLevel: 'Log-Level',
+    logLevelHint:
+      'Wie detailliert das Connect-Backend protokolliert — wirkt sich auch auf die Docker-/Container-Logs aus. Tritt sofort in Kraft, kein Neustart nötig.',
+    logLevelDebug: 'Debug',
+    logLevelInfo: 'Info',
+    logLevelWarning: 'Warnung',
+    logLevelError: 'Fehler',
+    logLevelChanged: 'Log-Level aktualisiert.',
+    logLevelChangeFailed: 'Log-Level konnte nicht aktualisiert werden.',
+    recommendations: 'Personalisierte Empfehlungen',
+    recommendationsHint:
+      'Discover auf der Startseite nutzt Artists, die deinem tatsächlichen Hörverhalten ähnlich sind, aufgelöst über MusicBrainz und ListenBrainz — dabei werden ein, zwei Artist-Namen aus der Bibliothek an diese Dienste übermittelt. Aus fällt zurück auf zufällige Alben.',
     playbackTitle: 'Wiedergabe',
     replayGain: 'ReplayGain',
     replayGainOff: 'Aus',
@@ -232,6 +247,8 @@ export default {
     ffmpegFound: 'ffmpeg gefunden',
     ffmpegMissing: 'ffmpeg fehlt — Casting funktioniert nicht ohne.',
     version: 'Version {version}',
+    updateAvailable: 'Version {version} ist verfügbar.',
+    updateAvailableLink: 'Release ansehen',
   },
   playlists: {
     title: 'Playlists',
@@ -313,5 +330,12 @@ export default {
     playOn: 'Wiedergeben auf',
     thisDevice: 'Dieses Gerät',
     needsPairing: 'Muss zuerst in der Beacon-App gepairt werden',
+  },
+  updateToast: {
+    title: 'Update verfügbar',
+    electronMessage:
+      'Version {version} wird im Hintergrund heruntergeladen und beim nächsten Neustart automatisch installiert.',
+    webMessage: 'Version {version} ist verfügbar.',
+    remindLater: 'Später erinnern',
   },
 }

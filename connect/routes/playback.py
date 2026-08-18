@@ -112,7 +112,7 @@ async def _apply_position_offset(
     fixed = max((d.FIXED_OFFSET for d in deliveries), default=0.0)
     if fixed:
         st.clock.set_fixed_offset(-fixed)
-        logger.info(
+        logger.debug(
             f"[lyrics-sync] fixed position_offset={st.clock.position_offset:.2f}s"
         )
         await session.event_bus.broadcast(build_status_dict(session))
@@ -130,7 +130,7 @@ async def _apply_position_offset(
         return
 
     st.clock.set_fixed_offset(-PROVISIONAL_STARTUP_DELAY)
-    logger.info(
+    logger.debug(
         f"[lyrics-sync] {candidate.target}: provisional position_offset="
         f"{st.clock.position_offset:.2f}s (measuring...)"
     )
@@ -165,7 +165,7 @@ async def _apply_position_offset(
             )
             continue
         offset = st.clock.calibrate(device_pos)
-        logger.info(
+        logger.debug(
             f"[lyrics-sync] {candidate.target}: calibrated position_offset="
             f"{offset:.2f}s (device {device_pos:.2f}s vs. wall {wall_elapsed:.2f}s)"
         )
@@ -433,6 +433,8 @@ async def play_tracks(
         previous_track_ended = st.track_ended
         previous_active_delivery = st.active_delivery
         previous_clock = copy.copy(st.clock)
+        previous_queue = st.queue
+        previous_queue_index = st.queue_index
 
         st.current_track = track
         st.current_track_gain = req.gain
@@ -442,6 +444,14 @@ async def play_tracks(
         st.clock.start(start_position)
         st.track_ended = False
         st.active_delivery = target
+        # The whole remaining queue, not just this one track — see
+        # AppState.queue's comment. Reset to a matching single-item queue
+        # even when the frontend hasn't been updated to send more than one
+        # id yet (today's behavior): queue_index+1 >= len(queue) then always
+        # falls straight through to _advance_or_end()'s existing "mark
+        # ended" branch, identical to before this existed.
+        st.queue = req.track_ids
+        st.queue_index = 0
 
         if target:
             # internal=True: fetched directly by the cast device, not the browser —
@@ -468,6 +478,8 @@ async def play_tracks(
                     st.track_ended = previous_track_ended
                     st.active_delivery = previous_active_delivery
                     st.clock = previous_clock
+                    st.queue = previous_queue
+                    st.queue_index = previous_queue_index
                     # Dispatch never actually reached the device — release the
                     # claim just granted above instead of leaving it locked to
                     # this session (device_in_use for everyone else) with
@@ -560,6 +572,12 @@ async def play_url(
         st.clock.start()
         st.track_ended = False
         st.active_delivery = target
+        # Radio has no queue to auto-advance through — see AppState.queue's
+        # comment. Stale ids from a previous /play left in place here would
+        # be harmless in practice (radio's own track-end never fires) but
+        # confusing to find set while radio_info is also set.
+        st.queue = []
+        st.queue_index = 0
 
         asyncio.create_task(
             _apply_position_offset(session, target, st.clock.play_generation)
@@ -707,6 +725,8 @@ async def stop_playback(session: SessionState = Depends(require_authenticated_se
         st.radio_info = None
         st.active_delivery = None
         st.last_dispatch_key = None
+        st.queue = []
+        st.queue_index = 0
         await claims.release_all_for_session(session.session_id)
         logger.info("[stop] ⏹ Playback stopped")
         await session.event_bus.broadcast(build_status_dict(session))

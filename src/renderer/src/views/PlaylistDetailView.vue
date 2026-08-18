@@ -46,6 +46,7 @@
             v-model="editName"
             :label="$t('common.name')"
             variant="solo-filled"
+            clearable
             @keyup.enter="saveEdit"
           />
           <v-switch
@@ -98,7 +99,9 @@ export default {
   components: { DetailHeader, TrackList, PageLoader },
   data() {
     return {
-      playlist: null as Awaited<ReturnType<ReturnType<typeof useLibraryStore>['fetchPlaylist']>> | null,
+      playlist: null as Awaited<
+        ReturnType<ReturnType<typeof useLibraryStore>['fetchPlaylist']>
+      > | null,
       editDialog: false,
       editName: '',
       editPublic: false,

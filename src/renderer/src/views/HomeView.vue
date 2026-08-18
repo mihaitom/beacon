@@ -82,10 +82,12 @@
           variant="text"
           size="small"
           :title="$t('home.reroll')"
-          @click="rerollDiscover"
+          @click="rerollDiscover()"
         />
       </template>
     </album-shelf>
+
+    <similar-artists-shelf :title="$t('home.newArtistsTitle')" :artists="newArtistDiscoveries" />
   </v-container>
 </template>
 
@@ -93,20 +95,46 @@
 import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
+import { useRecommendationsStore } from '@/stores/recommendations'
+import {
+  getSimilarArtists,
+  getArtistImages,
+  type SimilarArtist,
+} from '@/services/connect/recommendations'
+import type { SimilarArtistDisplay } from '@/components/library/SimilarArtistsShelf.vue'
 import HeroBand from '@/components/home/HeroBand.vue'
 import AlbumShelf from '@/components/library/AlbumShelf.vue'
+import SimilarArtistsShelf from '@/components/library/SimilarArtistsShelf.vue'
 import TrackList from '@/components/library/TrackList.vue'
 import type { Album, Track } from '@/types/library'
 
+// Below this many distinct seed artists, a similar-artist lookup isn't
+// worth the round trip (and the very-first-launch/near-empty-library case
+// would just seed from 1-2 artists, producing a "discover" shelf that's
+// really just "more of the one thing you have") — falls back to the
+// original random-albums behavior instead, same as the Settings toggle
+// being off does.
+const MIN_SEED_ARTISTS = 3
+const MAX_SEED_ARTISTS = 5
+const DISCOVER_SHELF_SIZE = 15
+// Below this many owned matches, padding the shelf out with random albums
+// reads better than a visibly sparse "discover" row.
+const MIN_OWNED_MATCHES = 8
+
 export default {
   name: 'HomeView',
-  components: { HeroBand, AlbumShelf, TrackList },
+  components: { HeroBand, AlbumShelf, SimilarArtistsShelf, TrackList },
   data() {
     return {
       frequentAlbums: [] as Album[],
       newestAlbums: [] as Album[],
       recentAlbums: [] as Album[],
       randomAlbums: [] as Album[],
+      // Similar artists ListenBrainz suggested that aren't in the library
+      // — see rerollDiscover(). Empty whenever the toggle's off, there
+      // weren't enough seed artists, or the lookup itself failed; the
+      // SimilarArtistsShelf component hides itself in all of those cases.
+      newArtistDiscoveries: [] as SimilarArtistDisplay[],
       topTracks: [] as Track[],
       loadingFrequent: false,
       loadingNewest: false,
@@ -128,6 +156,9 @@ export default {
     },
     playbackStore() {
       return usePlaybackStore()
+    },
+    recommendationsStore() {
+      return useRecommendationsStore()
     },
     greeting() {
       const hour = new Date().getHours()
@@ -212,8 +243,8 @@ export default {
   },
   created() {
     this.loadingFrequent = true
-    this.libraryStore
-      .fetchFrequentAlbums(30)
+    const frequentPromise = this.libraryStore.fetchFrequentAlbums(30)
+    frequentPromise
       .then((albums) => (this.frequentAlbums = albums))
       .finally(() => (this.loadingFrequent = false))
 
@@ -230,7 +261,15 @@ export default {
       .then((albums) => (this.recentAlbums = albums))
       .finally(() => (this.loadingRecent = false))
 
-    this.rerollDiscover()
+    // fetchArtists() only to check which similar-artist suggestions are
+    // already owned (see rerollDiscover()) — own cached request, a no-op
+    // if some earlier view already populated it (matches StatsView.vue's
+    // identical reasoning for its own topArtists artwork).
+    this.libraryStore.fetchArtists()
+    // Reuses frequentPromise's own result to seed rerollDiscover() instead
+    // of each firing its own fetchFrequentAlbums() call — see that
+    // method's own `seedAlbums` param.
+    frequentPromise.then((albums) => this.rerollDiscover(albums))
 
     this.loadingTopTracks = true
     this.libraryStore
@@ -239,12 +278,112 @@ export default {
       .finally(() => (this.loadingTopTracks = false))
   },
   methods: {
-    rerollDiscover() {
+    // Up to MAX_SEED_ARTISTS distinct artist names from `albums`, in the
+    // order they appear — the frontend-side half of "seed from what's
+    // actually been played", the backend half being
+    // core/recommendations.py's get_similar_artists() not knowing or
+    // caring where its seed names came from.
+    pickSeedArtistNames(albums: Album[]): string[] {
+      const seen = new Set<string>()
+      const names: string[] = []
+      for (const album of albums) {
+        const key = album.artist.toLowerCase()
+        if (seen.has(key)) continue
+        seen.add(key)
+        names.push(album.artist)
+        if (names.length >= MAX_SEED_ARTISTS) break
+      }
+      return names
+    },
+    /** Discover shelf — real similar-artist suggestions (ListenBrainz, via
+     * connect) when there's enough to seed from and the user hasn't opted
+     * out (see stores/recommendations.ts), falling back to today's plain
+     * random albums otherwise (too few seed artists, the toggle's off, or
+     * the lookup itself failed — connect being unreachable shouldn't break
+     * Home). `seedAlbums`, given (only by created()'s own initial call),
+     * reuses frequentAlbums' already-in-flight fetch instead of this
+     * re-requesting it — the manual reroll button (template's own
+     * @click="rerollDiscover") calls this with no argument, falling back
+     * to this.frequentAlbums, which is already populated by then. */
+    async rerollDiscover(seedAlbums?: Album[]): Promise<void> {
       this.loadingRandom = true
-      this.libraryStore
-        .fetchRandomAlbums(15)
-        .then((albums) => (this.randomAlbums = albums))
-        .finally(() => (this.loadingRandom = false))
+      try {
+        const albums = seedAlbums ?? this.frequentAlbums
+        const seedNames = this.pickSeedArtistNames(albums)
+        if (this.recommendationsStore.enabled && seedNames.length >= MIN_SEED_ARTISTS) {
+          try {
+            await this.discoverFromSimilarArtists(seedNames)
+            return
+          } catch (error) {
+            console.error('[home] Similar-artist discover failed, falling back to random:', error)
+          }
+        }
+        this.newArtistDiscoveries = []
+        this.randomAlbums = await this.libraryStore.fetchRandomAlbums(DISCOVER_SHELF_SIZE)
+      } finally {
+        this.loadingRandom = false
+      }
+    },
+    /** The actual ListenBrainz-backed half of rerollDiscover() — split out
+     * so that method's own try/catch has one call to wrap, instead of this
+     * whole multi-step pipeline living inline inside it. Partitions the
+     * result into albums to actually show (an owned artist's own album,
+     * fetched via fetchArtist() since the list-level Artist entries
+     * fetchArtists() already loaded never carry a full album list — same
+     * "list vs. detail" split as fetchAlbum()'s own comment) and
+     * newArtistDiscoveries (everything not in the library at all). */
+    async discoverFromSimilarArtists(seedNames: string[]): Promise<void> {
+      await this.libraryStore.fetchArtists()
+      // No explicit limit — relies on getSimilarArtists()'s own default
+      // (100, matching the backend's), not a smaller number picked here.
+      // A broad library already owns most of the top-scoring matches, so
+      // the pool has to start wide for enough to survive the "not owned"
+      // partition below.
+      const similar = await getSimilarArtists(seedNames)
+
+      const owned: Album[] = []
+      const notOwned: SimilarArtist[] = []
+      for (const artist of similar) {
+        const match = this.libraryStore.artists.find(
+          (a) => a.name.toLowerCase() === artist.name.toLowerCase(),
+        )
+        if (!match) {
+          notOwned.push(artist)
+          continue
+        }
+        const full = await this.libraryStore.fetchArtist(match.id)
+        if (full.albums.length) {
+          owned.push(full.albums[Math.floor(Math.random() * full.albums.length)]!)
+        }
+      }
+
+      const notOwnedCapped = notOwned.slice(0, 20)
+      // Deezer photo + a real artist page (falls back to the MusicBrainz
+      // link already on hand when Deezer has no exact-name match — see
+      // getArtistImages()) — best-effort, a lookup failure here shouldn't
+      // blank out the whole shelf, just leave it image-less.
+      let images: Awaited<ReturnType<typeof getArtistImages>> = {}
+      try {
+        images = await getArtistImages(notOwnedCapped.map((a) => a.name))
+      } catch (error) {
+        console.error('[home] Artist image lookup failed:', error)
+      }
+      this.newArtistDiscoveries = notOwnedCapped.map((artist) => {
+        const enrichment = images[artist.name]
+        return {
+          ...artist,
+          imageUrl: enrichment?.image ?? null,
+          link: enrichment?.link ?? `https://musicbrainz.org/artist/${artist.mbid}`,
+        }
+      })
+      const capped = owned.slice(0, DISCOVER_SHELF_SIZE)
+      this.randomAlbums =
+        capped.length >= MIN_OWNED_MATCHES
+          ? capped
+          : [
+              ...capped,
+              ...(await this.libraryStore.fetchRandomAlbums(DISCOVER_SHELF_SIZE - capped.length)),
+            ]
     },
     async onHeroPlay() {
       if (this.playbackStore.currentTrack) {
@@ -269,7 +408,9 @@ export default {
       if (!albums.length || this.playingAllShelf) return
       this.playingAllShelf = shelfKey
       try {
-        const fullAlbums = await Promise.all(albums.map((album) => this.libraryStore.fetchAlbum(album.id)))
+        const fullAlbums = await Promise.all(
+          albums.map((album) => this.libraryStore.fetchAlbum(album.id)),
+        )
         await this.playTrackList(fullAlbums.flatMap((album) => album.tracks))
       } finally {
         this.playingAllShelf = null

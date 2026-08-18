@@ -17,6 +17,7 @@
             :label="$t('connect.pin')"
             type="number"
             variant="solo-filled"
+            clearable
             @keyup.enter="finish"
           />
           <p v-else class="mb-2">{{ $t('connect.pairConfirmPrompt') }}</p>

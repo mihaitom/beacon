@@ -52,6 +52,17 @@ class AppState:
         # on what's being sent. Resets to the fallback for radio (/play-url
         # never goes through our own /stream proxy, so it's irrelevant there).
         self.current_output_format: OutputFormat = FALLBACK_FORMAT
+        # Track ids for the current dispatch and whatever the frontend
+        # already knows comes after it (queue[queue_index] == current_track)
+        # — set by /play from the full PlayRequest.track_ids, not derived
+        # from anything else. Lets routes/stream.py's _fire_track_end()
+        # auto-advance casting playback to the next queued track entirely
+        # server-side when one exists, instead of only ever marking
+        # track_ended and waiting for the frontend to notice and re-dispatch
+        # — which never happens if the renderer is asleep (locked screen).
+        # Reset to empty by /stop and /play-url (radio has no queue).
+        self.queue: list[str] = []
+        self.queue_index: int = 0
 
 
 class EventBus:

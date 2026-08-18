@@ -108,14 +108,28 @@ async function fetchTrackPages(
  * request, deliberately not derived from allTracks. Deriving would mean
  * AlbumsView (a plain browse grid) has to wait for the entire track catalog
  * just to show album cards, which is a needless latency regression for
- * something getAlbumList2 already answers directly and quickly. */
-async function fetchAlbumPages(client: SubsonicClient, pageSize: number): Promise<Album[]> {
+ * something getAlbumList2 already answers directly and quickly.
+ *
+ * `onPage`, given, fires after each page arrives — fetchAlbums() uses it to
+ * render (and drop its loading skeleton for) the first page as soon as it's
+ * in, instead of blocking on the whole catalog first. getAlbumList2 has no
+ * total-count field to fan pages out in parallel, so this stays sequential
+ * — on a large library (say 6000 albums / 12 pages at Subsonic's 500-item
+ * page size), that used to mean the grid sat on a skeleton for as long as
+ * *all twelve* round trips combined took, even though only the first page's
+ * worth is needed to show anything at all. */
+async function fetchAlbumPages(
+  client: SubsonicClient,
+  pageSize: number,
+  onPage?: (page: Album[]) => void,
+): Promise<Album[]> {
   let all: Album[] = []
   let offset = 0
   while (true) {
     const page = await client.getAlbumList2('alphabeticalByName', pageSize, offset)
     if (page.length === 0) break
     all = all.concat(page)
+    onPage?.(page)
     if (page.length < pageSize) break
     offset += pageSize
   }
@@ -308,7 +322,11 @@ export const useLibraryStore = defineStore('library', {
      * fetchArtists()/fetchPlaylists(), fetching the whole catalog page by
      * page via getAlbumList2 (see fetchAlbumPages()). Deliberately NOT
      * derived from allTracks: that would force AlbumsView to wait on the
-     * entire track catalog just to render a grid of album cards. */
+     * entire track catalog just to render a grid of album cards.
+     *
+     * The true first-ever-launch case (no cache at all yet) bypasses
+     * cachedFetch()'s generic all-or-nothing withLoading() wrapper below —
+     * see that branch's own comment for why. */
     async fetchAlbums(force = false): Promise<void> {
       if (!force && this.albums.length > 0) return
       // Same reasoning as fetchAllTracksNow()'s PAGE_SIZE — smaller pages
@@ -316,17 +334,55 @@ export const useLibraryStore = defineStore('library', {
       const ALBUM_PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 200 : 500
       if (force) {
         await this.withLoading(async () => {
-          this.albums = await fetchAlbumPages(this.client(), ALBUM_PAGE_SIZE)
+          this.albums = []
+          await fetchAlbumPages(this.client(), ALBUM_PAGE_SIZE, (page) => {
+            this.albums = this.albums.concat(page)
+          })
           saveLibraryCacheField('albums', this.albums)
         })
         return
       }
-      await cachedFetch(
-        this,
-        'albums',
-        () => fetchAlbumPages(this.client(), ALBUM_PAGE_SIZE),
-        (albums) => (this.albums = albums),
-      )
+      if (loadLibraryCache().albums) {
+        await cachedFetch(
+          this,
+          'albums',
+          () => fetchAlbumPages(this.client(), ALBUM_PAGE_SIZE),
+          (albums) => (this.albums = albums),
+        )
+        return
+      }
+      // No cache at all — a large library can mean several sequential
+      // getAlbumList2 round trips (see fetchAlbumPages()'s comment, e.g. 12
+      // for a 6000-album Subsonic library at 500/page); waiting on all of
+      // them the way cachedFetch()'s withLoading() wrapper would leaves
+      // AlbumsView's skeleton up for that whole combined time even though
+      // one page is already enough to render something. Drops the loading
+      // flag as soon as the first page is in instead; the rest fills in
+      // reactively behind it, same as scrolling would load more anyway.
+      let firstPageSeen = false
+      this.loadingCount++
+      this.error = null
+      try {
+        const fresh = await fetchAlbumPages(this.client(), ALBUM_PAGE_SIZE, (page) => {
+          this.albums = firstPageSeen ? this.albums.concat(page) : page
+          if (!firstPageSeen) {
+            firstPageSeen = true
+            this.loadingCount--
+          }
+        })
+        saveLibraryCacheField('albums', fresh)
+      } catch (error) {
+        if (!firstPageSeen) {
+          this.error = error instanceof Error ? error.message : String(error)
+          throw error
+        }
+        // Something's already rendered (earlier pages succeeded) — same
+        // "log it, don't blow away what's showing" treatment cachedFetch()
+        // gives a failed background refresh.
+        console.error('[library] Album page fetch failed partway through:', error)
+      } finally {
+        if (!firstPageSeen) this.loadingCount--
+      }
     },
 
     /** List-level Album entries (from fetchAlbums()) never carry a full

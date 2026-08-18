@@ -113,7 +113,7 @@
 import { useLibraryStore } from '@/stores/library'
 import PageLoader from '@/components/PageLoader.vue'
 import RankedList, { type RankedItem } from '@/components/library/RankedList.vue'
-import type { Track } from '@/types/library'
+import type { Artist, Track } from '@/types/library'
 
 const TOP_N = 5
 
@@ -218,18 +218,29 @@ export default {
           coverArtId: t.coverArtId,
         }))
     },
+    // Lookup for topArtists' own artist.coverArtId/imageUrl below — a
+    // track's cover is its *album's* art, so showing a random track's album
+    // cover next to an artist's name would be misleading; this instead
+    // draws from libraryStore.artists (fetchArtists(), see created()),
+    // which aggregateByPlays()'s per-track groups have no way to.
+    artistsById(): Map<string, Artist> {
+      return new Map(this.libraryStore.artists.map((a) => [a.id, a]))
+    },
     topArtists(): RankedItem[] {
       const groups = aggregateByPlays(
         this.tracks,
         (t) => t.artistId || null,
         (t) => t.artist,
       )
-      // No coverArtId here — a track's cover is its *album's* art, not the
-      // artist's own photo (which Navidrome only exposes via a separate,
-      // per-artist request this page doesn't otherwise need to make).
-      // Showing a random track's album cover next to an artist's name would
-      // just be misleading.
-      return this.topFromGroups(groups, (id) => `/artists/${id}`)
+      return this.topFromGroups(groups, (id) => `/artists/${id}`).map((item) => {
+        const artist = this.artistsById.get(item.id)
+        // artist undefined for as long as fetchArtists() (fired alongside
+        // fetchAllTracks() in created(), see its own comment) is still in
+        // flight — coverArtId stays defined either way (null, not
+        // undefined) so RankedList.vue still reserves the art column
+        // instead of the whole row visibly reflowing once artists arrives.
+        return { ...item, coverArtId: artist?.coverArtId ?? null, imageUrl: artist?.imageUrl ?? null }
+      })
     },
     topAlbums(): RankedItem[] {
       const groups = aggregateByPlays(
@@ -291,6 +302,10 @@ export default {
   created() {
     this.libraryStore.fetchAllTracks()
     this.libraryStore.fetchStarred()
+    // Only reason to load the full artist list here — see topArtists'
+    // coverArtId/imageUrl comment. Own cached request; a no-op if some
+    // earlier view (e.g. ArtistsView) already populated it.
+    this.libraryStore.fetchArtists()
   },
   methods: {
     topFromGroups(

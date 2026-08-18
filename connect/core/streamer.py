@@ -205,7 +205,7 @@ async def stream_tracks(
         if gain != 1.0:
             i_pos = cmd.index("-vn")
             cmd = cmd[:i_pos] + ["-af", f"volume={gain}"] + cmd[i_pos:]
-        logger.info(
+        logger.debug(
             f"[ffmpeg] Track {i + 1}/{len(track_urls)} ({fmt.label}): {url[:80]}"
         )
         logger.debug(f"[ffmpeg] Command: {' '.join(cmd)}")

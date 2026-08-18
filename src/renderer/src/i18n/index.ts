@@ -1,8 +1,11 @@
 import { createI18n } from 'vue-i18n'
 import de from './locales/de'
 import en from './locales/en'
+import es from './locales/es'
+import fr from './locales/fr'
+import it from './locales/it'
 
-export const SUPPORTED_LOCALES = ['de', 'en'] as const
+export const SUPPORTED_LOCALES = ['de', 'en', 'es', 'fr', 'it'] as const
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number]
 
 const STORAGE_KEY = 'beacon.locale'
@@ -23,7 +26,7 @@ export const i18n = createI18n({
   globalInjection: true,
   locale: detectLocale(),
   fallbackLocale: 'en',
-  messages: { de, en },
+  messages: { de, en, es, fr, it },
 })
 
 export function setLocale(locale: SupportedLocale): void {

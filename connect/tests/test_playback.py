@@ -289,6 +289,29 @@ def test_play_rolls_back_state_when_delivery_dispatch_fails(client, default_sess
     assert "error" in r.json()
     assert default_session.state.current_track.id == "old"
     assert default_session.state.is_streaming is True
+    # The failed dispatch's queue (["new"]) must not have overwritten the
+    # still-actually-playing "old" track's own queue.
+    assert default_session.state.queue == ["old"]
+    assert default_session.state.queue_index == 0
+
+
+# ── Queue auto-advance seeding (see routes/stream.py's _advance_or_end()) ──────
+
+
+def test_play_seeds_queue_from_track_ids(client, default_session):
+    """/play's track_ids becomes session.state.queue verbatim — the whole
+    remaining queue, not just the track actually dispatched — so
+    routes/stream.py's _advance_or_end() can auto-advance through it
+    without needing the frontend to re-dispatch each track itself."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+
+    with patch.object(default_session.media, "get_track", return_value=track):
+        r = client.post("/play", json={"track_ids": ["1", "2", "3"]})
+
+    assert r.json()["status"] == "playing"
+    assert default_session.state.queue == ["1", "2", "3"]
+    assert default_session.state.queue_index == 0
 
 
 def test_resume_reuses_cached_content_type_without_reprobing(client, default_session):
@@ -583,6 +606,16 @@ def test_stop_resets_state(client, default_session):
     assert r.json()["status"] == "stopped"
     assert default_session.state.is_streaming is False
     assert default_session.state.current_track is None
+
+
+def test_stop_clears_queue(client, default_session):
+    default_session.state.queue = ["1", "2", "3"]
+    default_session.state.queue_index = 1
+
+    client.post("/stop")
+
+    assert default_session.state.queue == []
+    assert default_session.state.queue_index == 0
 
 
 def test_stop_is_idempotent(client, default_session):

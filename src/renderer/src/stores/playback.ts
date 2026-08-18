@@ -206,6 +206,19 @@ export const usePlaybackStore = defineStore('playback', {
     replayGainMultiplier(): number {
       return this.currentTrack ? calculateReplayGain(this.currentTrack, this.replayGainMode) : 1
     },
+    /** Track ids after `currentTrack`, for connectPlayback.play()'s `queue`
+     * option — lets connect auto-advance casting on its own instead of
+     * needing this renderer awake for every single track (see
+     * services/connect/playback.ts's own comment). Empty under repeat-one:
+     * connect would otherwise auto-advance straight past the very track the
+     * user asked to loop, which only this renderer's own repeat-mode logic
+     * (advanceOnTrackEnd() below) knows to keep replaying instead. Repeat-
+     * all's wraparound past the end of this list is a similar renderer-only
+     * case, left alone here — see this store's own advanceOnTrackEnd(). */
+    upcomingQueueIds(state): string[] {
+      if (state.repeatMode === 'one') return []
+      return state.queue.slice(state.currentIndex + 1).map((t) => t.id)
+    },
   },
 
   actions: {
@@ -612,6 +625,7 @@ export const usePlaybackStore = defineStore('playback', {
             targets: connect.activeTargets,
             startPosition,
             gain: this.replayGainMultiplier,
+            queue: this.upcomingQueueIds,
           })
         } finally {
           if (pendingLocalTrackChange === track.id) pendingLocalTrackChange = null
@@ -893,9 +907,10 @@ export const usePlaybackStore = defineStore('playback', {
         const track = this.currentTrack
         const startPosition = this.localPosition
         const gain = this.replayGainMultiplier
+        const queue = this.upcomingQueueIds
         const play = async (f: boolean) => {
           if (this.isPlaying) getAudioEngine().pause() // local pauses, connect takes over
-          await connectPlayback.play(track.id, { targets, startPosition, force: f, gain })
+          await connectPlayback.play(track.id, { targets, startPosition, force: f, gain, queue })
           this.isPlaying = true
         }
         if (force) await play(true)

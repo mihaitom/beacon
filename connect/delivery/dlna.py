@@ -198,7 +198,7 @@ class DlnaDelivery(BaseDelivery):
         xml_meta_data = _build_metadata(
             stream_url, title, artist, album_art_url, duration, album, content_type
         )
-        logger.info(f"[DLNA:{self.target}] → play: {stream_url}")
+        logger.debug(f"[DLNA:{self.target}] → play: {stream_url}")
         try:
             await device.async_set_transport_uri(stream_url, title, xml_meta_data)
             await device.async_play()

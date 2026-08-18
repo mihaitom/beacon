@@ -101,7 +101,10 @@
         @toggle-select="toggleSelect"
       />
     </template>
-    <div v-if="!disablePagination && !infiniteScroll && pageCount > 1" class="d-flex justify-center mt-3">
+    <div
+      v-if="!disablePagination && !infiniteScroll && pageCount > 1"
+      class="d-flex justify-center mt-3"
+    >
       <v-pagination
         v-model="currentPage"
         :length="pageCount"
@@ -166,6 +169,7 @@
             :label="$t('common.name')"
             variant="solo-filled"
             autofocus
+            clearable
             @keyup.enter="confirmCreatePlaylist"
           />
         </v-card-text>

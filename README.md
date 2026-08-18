@@ -1,6 +1,12 @@
+<p align="center">
+  <img src="src/renderer/public/favicon.ico" width="72" height="72" alt="Beacon icon: a lighthouse">
+</p>
+
 # Beacon
 
 > A self-hosted music client for Navidrome, Subsonic / OpenSubsonic, and (experimentally) Jellyfin and Plex — with built-in casting to Sonos, AirPlay, Chromecast, and DLNA/UPnP devices.
+
+<p align="center"><sub>Yes, that's just <code>mdi-lighthouse-on</code> tinted amber. I write backend code for a living, not logos. This is as good as the branding gets.</sub></p>
 
 <p align="center">
   <a href="https://github.com/mihaitom/beacon/actions/workflows/test-python.yml">
@@ -33,16 +39,16 @@
   <br><em>Library</em>
 </p>
 
-*(Drop PNGs into `docs/screenshots/` under these filenames and they'll show up here.)*
+_(Drop PNGs into `docs/screenshots/` under these filenames and they'll show up here.)_
 
 ---
 
 ## Why Beacon?
 
-Beacon grew out of [Feishin Connect](https://github.com/mihaitom/feishin-connect), my own fork of [jeffvli/feishin](https://github.com/jeffvli/feishin) — a general-purpose Electron/React music player — that added a Python casting backend (`connect/`) as a feature bolted onto it (a button in the player bar). That backend, a real self-contained FastAPI service discovering cast devices, streaming to them, and tracking playback state on its own, turned out to be the part worth building on. But building on top of it meant building *around* Feishin: every change had to fit inside an app and a codebase designed for a different purpose, and that got harder, not easier, the more `connect` grew into its own thing.
+Beacon grew out of [Feishin Connect](https://github.com/mihaitom/feishin-connect), my own fork of [jeffvli/feishin](https://github.com/jeffvli/feishin) — a general-purpose Electron/React music player — that added a Python casting backend (`connect/`) as a feature bolted onto it (a button in the player bar). That backend, a real self-contained FastAPI service discovering cast devices, streaming to them, and tracking playback state on its own, turned out to be the part worth building on. But building on top of it meant building _around_ Feishin: every change had to fit inside an app and a codebase designed for a different purpose, and that got harder, not easier, the more `connect` grew into its own thing.
 
 Beacon is `connect` as the actual foundation instead of an add-on — a frontend built spec
-ifically for it, not retrofitted onto one. Every playback action (local *and* cast) goes
+ifically for it, not retrofitted onto one. Every playback action (local _and_ cast) goes
 through the same session, the same clock, the same auth token, instead of two loosely-con
 nected halves of an app. The frontend is a from-scratch Vue 3 rebuild rather than carryin
 g along Feishin's inherited React codebase and its full general-purpose feature surface.
@@ -84,13 +90,13 @@ Jellyfin and Plex can both be selected as a server type at login. Neither has a 
 
 ```yaml
 services:
-    beacon:
-        container_name: beacon
-        image: ghcr.io/mihaitom/beacon:latest # or `build: .` from a local checkout
-        restart: unless-stopped
-        network_mode: host
-        volumes:
-            - ./data:/data
+  beacon:
+    container_name: beacon
+    image: ghcr.io/mihaitom/beacon:latest # or `build: .` from a local checkout
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./data:/data
 ```
 
 That's it — Beacon asks for your server URL, username, and password on first launch; nothing needs to be pre-configured. See the environment variables below for optional locking, LAN optimization, and SSO scenarios.
@@ -99,19 +105,19 @@ That's it — Beacon asks for your server URL, username, and password on first l
 
 ### Environment variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WEB_PORT` | `9180` | Port nginx (the Beacon web UI) listens on. Change if `9180` is already taken on the host. |
-| `PORT` | `9181` | Port the Connect API (Python backend) listens on. Change if `9181` is already in use — nginx still proxies `/api/` to whatever `PORT` is set to, no other change needed. |
-| `CONNECT_TOKEN` | *(random per start)* | Secret token protecting the Connect API. If unset, a random one is generated each start — nginx adds it to every internal request automatically, so the browser never handles it directly. Only set this explicitly if something needs to call the API directly, bypassing nginx, with a token that survives restarts. |
-| `CONNECT_DATA_DIR` | `/data` in Docker | Directory persistent backend files are stored in — AirPlay 2 pairing credentials, and (Jellyfin/Plex sessions only) internet radio stations. Docker already defaults this to `/data`; just mount a volume there. |
-| `NAVIDROME_INTERNAL_URL` | — | An alternate, more directly reachable address for Navidrome than whatever URL you log in with. **Navidrome/Subsonic only** — see `JELLYFIN_INTERNAL_URL` below for the Jellyfin equivalent; Plex has none (its server address comes from Plex's own account-based discovery, not a URL you type in). Only matters for **casting**: audio always streams through Beacon's own `/stream` endpoint regardless of server type, but cast devices (Sonos/Chromecast/AirPlay/DLNA) fetch *cover art* directly from the media server, not through Beacon. If you ever log in from a different network than your cast devices are on (e.g. a public URL from your phone while out, then casting to a speaker at home), this gives those devices a fixed, LAN-reachable address for that cover art instead of round-tripping through the public URL. Not needed if you always log in from the same network your devices are on — see the note below. |
-| `JELLYFIN_INTERNAL_URL` | — | Same idea as `NAVIDROME_INTERNAL_URL` above, for Jellyfin sessions. A separate variable rather than reusing `NAVIDROME_INTERNAL_URL` for both — a Jellyfin session checked against a Navidrome-shaped internal address always failed (Navidrome has no `/Users/Me` endpoint for Jellyfin's own login check to hit). |
-| `SERVER_URL` | — | The server's public-facing identity. Used only for the `SERVER_LOCK` allow-list and to prefill the login screen — never proxied. |
-| `SERVER_LOCK` | `false` | When `true`, the login screen shows only username/password — server URL and type are fixed to `SERVER_URL` (or `NAVIDROME_INTERNAL_URL` as a fallback) and `SERVER_TYPE`. |
-| `SERVER_TYPE` | `subsonic` | What kind of server `SERVER_URL`/`SERVER_LOCK` point at — `subsonic` (covers Navidrome), `jellyfin`, or `plex`. Only meaningful together with `SERVER_LOCK=true`. |
-| `ALLOWED_ORIGINS` | — | Extra CORS origins for the Connect API, comma-separated. Not needed in standard Docker deployments — browser and API share the same domain via nginx, so requests are same-origin and CORS never applies. Only relevant if the backend is reached from a different origin than the page. |
-| `DEBUG` | `false` | Logs everything — AirPlay, Sonos, the internal streamer, `httpx`/`uvicorn.access`, nginx access logs — plus serves the Connect API's docs at `/api/docs`. A lot of output; leave `false` for normal operation. |
+| Variable                 | Default              | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `WEB_PORT`               | `9180`               | Port nginx (the Beacon web UI) listens on. Change if `9180` is already taken on the host.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `PORT`                   | `9181`               | Port the Connect API (Python backend) listens on. Change if `9181` is already in use — nginx still proxies `/api/` to whatever `PORT` is set to, no other change needed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `CONNECT_TOKEN`          | _(random per start)_ | Secret token protecting the Connect API. If unset, a random one is generated each start — nginx adds it to every internal request automatically, so the browser never handles it directly. Only set this explicitly if something needs to call the API directly, bypassing nginx, with a token that survives restarts.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `CONNECT_DATA_DIR`       | `/data` in Docker    | Directory persistent backend files are stored in — AirPlay 2 pairing credentials, and (Jellyfin/Plex sessions only) internet radio stations. Docker already defaults this to `/data`; just mount a volume there.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `NAVIDROME_INTERNAL_URL` | —                    | An alternate, more directly reachable address for Navidrome than whatever URL you log in with. **Navidrome/Subsonic only** — see `JELLYFIN_INTERNAL_URL` below for the Jellyfin equivalent; Plex has none (its server address comes from Plex's own account-based discovery, not a URL you type in). Only matters for **casting**: audio always streams through Beacon's own `/stream` endpoint regardless of server type, but cast devices (Sonos/Chromecast/AirPlay/DLNA) fetch _cover art_ directly from the media server, not through Beacon. If you ever log in from a different network than your cast devices are on (e.g. a public URL from your phone while out, then casting to a speaker at home), this gives those devices a fixed, LAN-reachable address for that cover art instead of round-tripping through the public URL. Not needed if you always log in from the same network your devices are on — see the note below. |
+| `JELLYFIN_INTERNAL_URL`  | —                    | Same idea as `NAVIDROME_INTERNAL_URL` above, for Jellyfin sessions. A separate variable rather than reusing `NAVIDROME_INTERNAL_URL` for both — a Jellyfin session checked against a Navidrome-shaped internal address always failed (Navidrome has no `/Users/Me` endpoint for Jellyfin's own login check to hit).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `SERVER_URL`             | —                    | The server's public-facing identity. Used only for the `SERVER_LOCK` allow-list and to prefill the login screen — never proxied.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `SERVER_LOCK`            | `false`              | When `true`, the login screen shows only username/password — server URL and type are fixed to `SERVER_URL` (or `NAVIDROME_INTERNAL_URL` as a fallback) and `SERVER_TYPE`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `SERVER_TYPE`            | `subsonic`           | What kind of server `SERVER_URL`/`SERVER_LOCK` point at — `subsonic` (covers Navidrome), `jellyfin`, or `plex`. Only meaningful together with `SERVER_LOCK=true`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `ALLOWED_ORIGINS`        | —                    | Extra CORS origins for the Connect API, comma-separated. Not needed in standard Docker deployments — browser and API share the same domain via nginx, so requests are same-origin and CORS never applies. Only relevant if the backend is reached from a different origin than the page.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `DEBUG`                  | `false`              | Logs everything — AirPlay, Sonos, the internal streamer, `httpx`/`uvicorn.access`, nginx access logs — plus serves the Connect API's docs at `/api/docs`. A lot of output; leave `false` for normal operation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 > `NAVIDROME_INTERNAL_URL` doesn't need a Docker Compose service name (e.g. `http://navidrome:4533`) — with `network_mode: host` there's no Docker bridge network for that to resolve on. If Navidrome runs on the same host, point this at its directly-reachable address instead, e.g. `http://localhost:4533`.
 
@@ -145,11 +151,11 @@ Users need **ffmpeg** installed on their system (`apt install ffmpeg` / `brew in
 
 **Persistent backend data** (AirPlay 2 pairing credentials, Jellyfin/Plex internet radio stations) lives in Electron's standard per-user data directory, which survives app updates:
 
-| Platform | Path |
-|----------|------|
-| Windows | `%APPDATA%\Beacon` |
-| macOS | `~/Library/Application Support/Beacon` |
-| Linux | `~/.config/Beacon` |
+| Platform | Path                                   |
+| -------- | -------------------------------------- |
+| Windows  | `%APPDATA%\Beacon`                     |
+| macOS    | `~/Library/Application Support/Beacon` |
+| Linux    | `~/.config/Beacon`                     |
 
 ### Web build (no Electron)
 
@@ -165,7 +171,7 @@ The bare web build talks to a separately-running Connect backend (`cd connect &&
 
 **Not Plex.** Plex doesn't use a URL you type in at all — the server address comes from Plex's own account-based discovery (`list_resources()`), which already prefers a local, LAN-reachable connection over a remote one when it finds one. An SSO-style internal-URL override wouldn't have anything to plug into there.
 
-The browser itself is never the problem: it always talks to Beacon's own Connect backend (`services/subsonic/client.ts` proxies every request), never to the media server directly, regardless of SSO. The actual issue is the *Connect backend's own* outbound requests — if your Navidrome or Jellyfin is protected by an SSO layer (e.g. Authentik forward auth via Traefik/nginx), Connect's requests get intercepted and redirected to the SSO login page too, same as a browser's would be, since Connect only authenticates with your real Navidrome/Jellyfin credentials, not the SSO layer. `NAVIDROME_INTERNAL_URL`/`JELLYFIN_INTERNAL_URL` gives Connect (and, for Navidrome, cast devices fetching cover art directly too — see that row) a second, SSO-free address to reach the media server on, separate from the public URL used for login/identity.
+The browser itself is never the problem: it always talks to Beacon's own Connect backend (`services/subsonic/client.ts` proxies every request), never to the media server directly, regardless of SSO. The actual issue is the _Connect backend's own_ outbound requests — if your Navidrome or Jellyfin is protected by an SSO layer (e.g. Authentik forward auth via Traefik/nginx), Connect's requests get intercepted and redirected to the SSO login page too, same as a browser's would be, since Connect only authenticates with your real Navidrome/Jellyfin credentials, not the SSO layer. `NAVIDROME_INTERNAL_URL`/`JELLYFIN_INTERNAL_URL` gives Connect (and, for Navidrome, cast devices fetching cover art directly too — see that row) a second, SSO-free address to reach the media server on, separate from the public URL used for login/identity.
 
 **Setup:**
 
@@ -184,7 +190,11 @@ The browser itself is never the problem: it always talks to Beacon's own Connect
 
 ### ffmpeg required
 
-Beacon uses **ffmpeg** to transcode the audio stream into a continuous MP3 stream for **Sonos, Chromecast, and DLNA**, which pull it over HTTP. (AirPlay doesn't use ffmpeg — the track is downloaded directly from the media server and streamed via pyatv.) It's already included in the Docker image; see Electron above for desktop installs. If ffmpeg is missing, the connect log prints a warning on startup, and casting to Sonos/Chromecast/DLNA fails.
+Beacon uses **ffmpeg** to prepare the audio stream for **Sonos, Chromecast, and DLNA**, which pull it over HTTP. Whenever the source is already in a format these devices support directly (FLAC, MP3, AAC, or Ogg Vorbis), ffmpeg just stream-copies it — no re-encoding, no quality loss. Other lossless sources (ALAC, WAV/AIFF, APE) get losslessly re-encoded to FLAC instead; anything else (Opus, WMA, ...) falls back to a 192kbps MP3 re-encode. (AirPlay doesn't use ffmpeg — the track is downloaded directly from the media server and streamed via pyatv.) It's already included in the Docker image; see Electron above for desktop installs. If ffmpeg is missing, the connect log prints a warning on startup, and casting to Sonos/Chromecast/DLNA fails.
+
+### Why can Beacon feel slower with Jellyfin?
+
+Navidrome/Subsonic is the primary, most-exercised backend. Jellyfin has no Subsonic-compatible API of its own, so `connect` translates every request on the fly into real Jellyfin API calls (see `connect/media/jellyfin_bridge.py`) — and Jellyfin's own API just isn't as optimized for this access pattern as Navidrome's. That combination means library loads and scans can take noticeably longer, especially on a large library (a full track-catalog fetch can take minutes rather than seconds). This is inherent to Jellyfin/the bridge, not something Beacon's UI does differently per backend — see "Jellyfin and Plex support (experimental)" above.
 
 ### No devices found
 
@@ -196,7 +206,11 @@ That's intentional. Sonos speakers advertise AirPlay 2 but require MFi hardware 
 
 ### Troubleshooting casting
 
-Set `DEBUG=true` (see Environment variables above) — it logs everything, so expect a lot of output.
+Set the log level to Debug in Settings (or `DEBUG=true`, see Environment variables above, if the app never comes up far enough to reach Settings) — it logs everything, so expect a lot of output.
+
+### Why does local playback stop on mobile when I lock the screen?
+
+This is a mobile browser/PWA limitation, not something Beacon controls. On iOS, Safari (and Beacon installed as a PWA) suspend audio playback as soon as the screen locks. Android's behavior here is less clear and may differ. **Casting is unaffected** — Sonos/Chromecast/AirPlay/DLNA playback is driven entirely by the `connect` backend, independent of whether a browser tab or phone screen is even open, so locking the screen (or closing the tab) doesn't interrupt a cast already in progress.
 
 ---
 

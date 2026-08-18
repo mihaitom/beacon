@@ -100,15 +100,23 @@
      - local playback, or the backend's own real-time analysis (see
      - connect/core/audio_analysis.py) while casting to a target it can
      - actually run against — see visualizerAvailable for which can't.
-     - Stays mounted a moment past visualizerActive going false so the
-     - `active` prop below can let it settle to 0 first instead of just
-     - vanishing — see the visualizerActive watcher. A real flex row now
-     - (see .now-playing__visualizer-row), not an absolutely-positioned
-     - overlay — .now-playing__stage above shrinks to make room for it
-     - through normal flex arithmetic instead of a guessed padding-bottom
-     - that had to double as this row's reserved height. -->
-    <div v-if="visualizerMounted" class="now-playing__visualizer-row">
-      <audio-visualizer :active="visualizerActive" />
+     - Always in the DOM (unlike <audio-visualizer> itself, still v-if'd
+     - below) so its height can *transition* between 0 and its real height
+     - instead of the row just appearing/disappearing — .now-playing__stage
+     - above is a grid `auto` sibling, so animating this row's height is
+     - what makes the artwork's cqh-driven size (see artSize) resize
+     - smoothly along with it instead of snapping the instant this mounts/
+     - unmounts, which is what a bare v-if here used to do. <audio-visualizer>
+     - itself stays mounted a moment past visualizerActive going false so its
+     - `active` prop can let the bars settle to 0 first instead of just
+     - vanishing — see the visualizerActive watcher; that settle plays out
+     - over the same VISUALIZER_HIDE_DELAY_MS this row's own height
+     - transition takes, so both finish together. -->
+    <div
+      class="now-playing__visualizer-row"
+      :class="{ 'now-playing__visualizer-row--visible': visualizerMounted }"
+    >
+      <audio-visualizer v-if="visualizerMounted" :active="visualizerActive" />
     </div>
   </div>
 </template>
@@ -573,7 +581,8 @@ export default {
 @media (prefers-reduced-motion: reduce) {
   .now-playing__content,
   .now-playing-lyrics-enter-active,
-  .now-playing-lyrics-leave-active {
+  .now-playing-lyrics-leave-active,
+  .now-playing__visualizer-row {
     transition: none;
   }
 }
@@ -590,13 +599,21 @@ export default {
   position: relative;
   z-index: 1;
   /* Row 2 of .now-playing's grid is `auto` (see above) — sizes to this
-   * element's own explicit height, same 128px as before, just declared
-   * directly instead of through a flex-basis. */
-  height: 128px;
+   * element's own actual height, which is what makes the transition below
+   * animate .now-playing__stage's own share of the grid smoothly instead of
+   * snapping. 0 at rest; .now-playing__visualizer-row--visible (toggled
+   * alongside visualizerMounted, see the template) sets the real height. */
+  height: 0;
   width: 100%;
   padding: 0 5px;
   margin-bottom: -1px;
   pointer-events: none;
+  overflow: hidden;
+  transition: height 0.4s ease;
+}
+
+.now-playing__visualizer-row--visible {
+  height: 128px;
 }
 
 .now-playing__art-wrap {
@@ -742,7 +759,7 @@ export default {
   right: 8px;
 }
 
-.now-playing--compact .now-playing__visualizer-row {
+.now-playing--compact .now-playing__visualizer-row--visible {
   height: 64px;
 }
 </style>

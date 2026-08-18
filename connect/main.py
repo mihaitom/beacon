@@ -27,6 +27,8 @@ load_dotenv()
 
 from core.auth import TOKEN as _CONNECT_TOKEN  # noqa: E402
 from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED  # noqa: E402
+from core.log_level import apply as _apply_log_level  # noqa: E402
+from core.log_level import initial_level as _initial_log_level  # noqa: E402
 from core.remote import reap_stale_remote, remote  # noqa: E402
 from core.session import reap_stale_sessions, registry  # noqa: E402
 from core.state import PORT, get_local_ip  # noqa: E402
@@ -37,6 +39,7 @@ from routes.discovery import router as discovery_router  # noqa: E402
 from media import jellyfin_bridge, plex_bridge  # noqa: E402
 from routes.jellyfin_auth import router as jellyfin_auth_router  # noqa: E402
 from routes.join import router as join_router  # noqa: E402
+from routes.log_level import router as log_level_router  # noqa: E402
 from routes.lyrics import router as lyrics_router  # noqa: E402
 from routes.pairing import router as pairing_router  # noqa: E402
 from routes.playback import router as playback_router  # noqa: E402
@@ -44,6 +47,7 @@ from routes.plex_auth import router as plex_auth_router  # noqa: E402
 from routes.proxy import close as close_proxy_client  # noqa: E402
 from routes.proxy import router as proxy_router  # noqa: E402
 from routes.radio import router as radio_router  # noqa: E402
+from routes.recommendations import router as recommendations_router  # noqa: E402
 from routes.remote import router as remote_router  # noqa: E402
 from routes.stream import router as stream_router  # noqa: E402
 from routes.volume import router as volume_router  # noqa: E402
@@ -124,6 +128,14 @@ logger = logging.getLogger("connect")
 
 _DEBUG = os.getenv("DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
 
+# The level Settings' log-level dropdown last persisted, falling back to
+# DEBUG=true above only when nothing's been persisted yet — see
+# core/log_level.py. Deliberately independent of _DEBUG from here on: that
+# var keeps gating the API docs/debug-router attack-surface decisions below
+# (unrelated to verbosity), while this drives everything log-level-related,
+# including at runtime via routes/log_level.py.
+_INITIAL_LOG_LEVEL = _initial_log_level()
+
 # Reformat uvicorn's own loggers (startup/error/access) to match the format
 # used above, so every log line — ours and uvicorn's — looks the same.
 # uvicorn.access logs every incoming request and is only useful for
@@ -167,30 +179,20 @@ UVICORN_LOG_CONFIG = {
         "uvicorn.error": {"level": "INFO"},
         "uvicorn.access": {
             "handlers": ["access"],
-            "level": "INFO" if _DEBUG else "WARNING",
+            "level": "INFO" if _INITIAL_LOG_LEVEL == "DEBUG" else "WARNING",
             "propagate": False,
         },
     },
 }
 
-# Verbose playback diagnostics. Set DEBUG=true to surface full protocol/playback
-# logs across every renderer at once: AirPlay (pyatv), Sonos (SoCo) and the
-# app's own delivery/streamer/playback loggers.
-#   connect → also covers children connect.streamer / connect.playback
-_DEBUG_LOGGERS = ("connect", "delivery", "sonos", "pyatv", "soco")
-
-# httpx/httpcore log every outgoing request at INFO, which is only useful for
-# DEBUG=true troubleshooting — keep them quiet otherwise.
-_HTTP_CLIENT_LOGGERS = ("httpx", "httpcore")
-
-if _DEBUG:
-    for _name in _DEBUG_LOGGERS:
-        logging.getLogger(_name).setLevel(logging.DEBUG)
-    for _name in _HTTP_CLIENT_LOGGERS:
-        logging.getLogger(_name).setLevel(logging.DEBUG)
-else:
-    for _name in _HTTP_CLIENT_LOGGERS:
-        logging.getLogger(_name).setLevel(logging.WARNING)
+# Applies _INITIAL_LOG_LEVEL to our own logger tree (connect → also covers
+# children connect.streamer / connect.playback / ...), httpx/httpcore and
+# uvicorn.access — see core/log_level.py. persist=False: this value just
+# came from disk (or the DEBUG env var fallback) — writing it straight back
+# would be a no-op at best and could stomp a deliberate DEBUG=true override
+# with a stale persisted INFO at worst. routes/log_level.py's POST persists
+# for real, once the user actually changes it from Settings.
+_apply_log_level(_INITIAL_LOG_LEVEL, persist=False)
 
 
 def _asyncio_exception_handler(loop, context):
@@ -328,10 +330,12 @@ app.include_router(plex_auth_router)
 app.include_router(discovery_router)
 app.include_router(volume_router)
 app.include_router(join_router)
+app.include_router(log_level_router)
 app.include_router(pairing_router)
 app.include_router(lyrics_router)
 app.include_router(waveform_router)
 app.include_router(radio_router)
+app.include_router(recommendations_router)
 # Diagnostic-only (routes/debug.py) — off by default alongside /docs etc.,
 # not something a real deployment needs exposed. Registered before
 # proxy_router deliberately: that one ends in a catch-all `/{path:path}`

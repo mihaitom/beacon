@@ -70,6 +70,7 @@
             v-model="newPlaylistName"
             :label="$t('common.name')"
             variant="solo-filled"
+            clearable
             @keyup.enter="createPlaylist"
           />
         </v-card-text>

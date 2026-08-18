@@ -111,7 +111,7 @@ class ChromecastDelivery(BaseDelivery):
             metadata["images"] = [{"url": album_art_url}]
         if album:
             metadata["albumName"] = album
-        logger.info(f"[Chromecast:{self.target}] → play: {stream_url}")
+        logger.debug(f"[Chromecast:{self.target}] → play: {stream_url}")
         await asyncio.to_thread(
             mc.play_media,
             stream_url,

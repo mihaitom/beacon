@@ -2,6 +2,7 @@
   <component :is="layout" />
   <toast-snackbar />
   <release-notes />
+  <update-toast />
 </template>
 
 <script lang="ts">
@@ -10,16 +11,18 @@ import AuthLayout from '@/layouts/AuthLayout.vue'
 import MobileLayout from '@/layouts/MobileLayout.vue'
 import ToastSnackbar from '@/components/toast.vue'
 import ReleaseNotes from '@/components/releaseNotes.vue'
+import UpdateToast from '@/components/UpdateToast.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { useConnectStore } from '@/stores/connect'
 import { useLibraryStore } from '@/stores/library'
 import { useRemoteControlStore } from '@/stores/remoteControl'
+import { useUpdateStore } from '@/stores/update'
 import { useIsMobileWeb } from '@/composables/useIsMobileWeb'
 
 export default {
   name: 'App',
-  components: { ToastSnackbar, ReleaseNotes },
+  components: { ToastSnackbar, ReleaseNotes, UpdateToast },
   // Composition API escape hatch just for useIsMobileWeb() — everything else
   // here stays Options API, matching the rest of the renderer. Refs returned
   // from setup() auto-unwrap when read via `this` below (isMobileWeb, not
@@ -72,6 +75,11 @@ export default {
   },
   created() {
     usePlaybackStore().init()
+    // Not gated on media-server auth — same reasoning as the Remote Control
+    // status refresh below, just checking GitHub instead of connect. Not
+    // awaited: UpdateToast.vue/SettingsView.vue both read the store
+    // reactively and just show nothing until this resolves.
+    void useUpdateStore().check()
     // loadConnectDefaults() resolves connectUrl/apiUrl/connectToken for this
     // build/deployment — normally a side effect of the router guard's own
     // restore()/login() calls, which this doesn't wait on. Without awaiting

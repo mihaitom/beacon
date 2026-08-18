@@ -48,6 +48,14 @@ def test_pair_list_requires_token(unauthed):
     assert unauthed.get("/pair/airplay").status_code == 401
 
 
+def test_similar_artists_requires_token(unauthed):
+    assert unauthed.get("/recommendations/similar-artists?seed=Radiohead").status_code == 401
+
+
+def test_artist_images_requires_token(unauthed):
+    assert unauthed.get("/recommendations/artist-images?name=Radiohead").status_code == 401
+
+
 # ── Protected endpoints — wrong token → 401 ──────────────────────────────────
 
 

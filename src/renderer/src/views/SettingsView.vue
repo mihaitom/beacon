@@ -155,6 +155,35 @@
       </v-btn>
     </section>
 
+    <section class="mb-10">
+      <h2 class="section-title mb-4">{{ $t('settings.advancedTitle') }}</h2>
+      <p class="text-body-2 text-medium-emphasis mb-4">
+        {{ $t('settings.logLevelHint') }}
+      </p>
+      <v-select
+        v-model="logLevel"
+        :items="logLevelOptions"
+        :label="$t('settings.logLevel')"
+        :loading="logLevelBusy"
+        :disabled="logLevelBusy || logLevel === null"
+        variant="solo-filled"
+        @update:model-value="onLogLevelChange"
+      />
+
+      <v-switch
+        :model-value="recommendationsStore.enabled"
+        color="primary"
+        density="compact"
+        hide-details
+        class="mt-4"
+        :label="$t('settings.recommendations')"
+        @update:model-value="recommendationsStore.setEnabled(!!$event)"
+      />
+      <p class="text-caption text-medium-emphasis mt-2">
+        {{ $t('settings.recommendationsHint') }}
+      </p>
+    </section>
+
     <section>
       <h2 class="section-title mb-4">{{ $t('settings.about') }}</h2>
       <v-btn variant="tonal" prepend-icon="mdi-star-circle-outline" @click="showReleaseNotes">
@@ -169,6 +198,24 @@
       <p class="text-caption text-medium-emphasis mt-1">
         {{ $t('settings.version', { version: appVersion }) }}
       </p>
+      <v-alert
+        v-if="updateStore.available"
+        type="info"
+        variant="tonal"
+        density="compact"
+        class="mt-3"
+      >
+        {{ $t('settings.updateAvailable', { version: updateStore.latestVersion }) }}
+        <a
+          v-if="updateStore.releaseUrl"
+          :href="updateStore.releaseUrl"
+          target="_blank"
+          rel="noopener"
+          class="update-link"
+        >
+          {{ $t('settings.updateAvailableLink') }}
+        </a>
+      </v-alert>
     </section>
   </v-container>
 </template>
@@ -181,6 +228,9 @@ import { useConnectStore } from '@/stores/connect'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 import { clearLyricsCache } from '@/stores/lyrics'
 import { getLocale, setLocale, type SupportedLocale } from '@/i18n'
+import { getLogLevel, setLogLevel, type LogLevel } from '@/services/connect/logLevel'
+import { useRecommendationsStore } from '@/stores/recommendations'
+import { useUpdateStore } from '@/stores/update'
 import type { ReplayGainMode } from '@/services/replayGain'
 import NavidromeIcon from '@/components/auth/NavidromeIcon.vue'
 import JellyfinIcon from '@/components/auth/JellyfinIcon.vue'
@@ -211,6 +261,11 @@ export default {
       resettingAirplay: false,
       remoteControlBusy: false,
       showPairingDialog: false,
+      // null until loadLogLevel() (created() below) resolves — the
+      // v-select stays disabled/loading until then rather than guessing a
+      // default that might not match what's actually configured backend-side.
+      logLevel: null as LogLevel | null,
+      logLevelBusy: false,
     }
   },
   computed: {
@@ -228,6 +283,12 @@ export default {
     },
     playbackStore() {
       return usePlaybackStore()
+    },
+    updateStore() {
+      return useUpdateStore()
+    },
+    recommendationsStore() {
+      return useRecommendationsStore()
     },
     isElectron(): boolean {
       return !!window.api
@@ -257,6 +318,17 @@ export default {
       return [
         { title: 'Deutsch', value: 'de' },
         { title: 'English', value: 'en' },
+        { title: 'Español', value: 'es' },
+        { title: 'Français', value: 'fr' },
+        { title: 'Italiano', value: 'it' },
+      ]
+    },
+    logLevelOptions() {
+      return [
+        { title: this.$t('settings.logLevelDebug'), value: 'DEBUG' },
+        { title: this.$t('settings.logLevelInfo'), value: 'INFO' },
+        { title: this.$t('settings.logLevelWarning'), value: 'WARNING' },
+        { title: this.$t('settings.logLevelError'), value: 'ERROR' },
       ]
     },
     refreshingLibrary() {
@@ -281,6 +353,7 @@ export default {
   created() {
     this.serverUrl = this.authStore.serverUrl
     this.username = this.authStore.username
+    void this.loadLogLevel()
   },
   beforeUnmount() {
     if (this.scanTimer) clearTimeout(this.scanTimer)
@@ -288,6 +361,39 @@ export default {
   methods: {
     onLocaleChange(value: SupportedLocale) {
       setLocale(value)
+    },
+    // Reads back whatever's actually configured backend-side (Settings'
+    // own last choice, or the DEBUG env var fallback on a deployment that's
+    // never touched this before — see core/log_level.py) rather than
+    // guessing a default that could silently disagree with it.
+    async loadLogLevel() {
+      try {
+        const { level } = await getLogLevel()
+        this.logLevel = level
+      } catch (error) {
+        console.error('[settings] Failed to load log level:', error)
+      }
+    },
+    async onLogLevelChange(value: LogLevel) {
+      this.logLevelBusy = true
+      try {
+        await setLogLevel(value)
+        this.$emitter.emit('toast', {
+          level: 'success',
+          title: this.$t('settings.logLevel'),
+          message: this.$t('settings.logLevelChanged'),
+        })
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('settings.logLevel'),
+          message: this.$t('settings.logLevelChangeFailed'),
+        })
+        console.error('[settings] Failed to set log level:', error)
+        void this.loadLogLevel() // re-sync the dropdown with what's actually active
+      } finally {
+        this.logLevelBusy = false
+      }
     },
     async logout() {
       await this.authStore.logout()
@@ -351,7 +457,9 @@ export default {
         this.$emitter.emit('toast', {
           level: 'success',
           title: this.$t('settings.refreshLibrary'),
-          message: this.$t('settings.libraryRefreshed', { count: this.libraryStore.allTracks.length }),
+          message: this.$t('settings.libraryRefreshed', {
+            count: this.libraryStore.allTracks.length,
+          }),
         })
       } catch (error) {
         this.$emitter.emit('toast', {
@@ -537,5 +645,13 @@ export default {
 .status-dot--warn {
   background: rgb(var(--v-theme-warning));
   box-shadow: 0 0 6px 1px rgba(242, 169, 59, 0.5);
+}
+
+.update-link {
+  margin-left: 0.4em;
+  font-weight: 600;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 </style>

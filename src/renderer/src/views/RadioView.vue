@@ -56,6 +56,7 @@
             v-model="formName"
             :label="$t('common.name')"
             variant="solo-filled"
+            clearable
             class="mb-2"
           />
           <v-text-field
@@ -63,6 +64,7 @@
             :label="$t('radio.streamUrl')"
             placeholder="https://..."
             variant="solo-filled"
+            clearable
             class="mb-2"
           />
           <v-text-field
@@ -70,6 +72,7 @@
             :label="$t('radio.homePageUrl')"
             placeholder="https://..."
             variant="solo-filled"
+            clearable
           />
         </v-card-text>
         <v-card-actions>
@@ -88,6 +91,7 @@
             v-model="formName"
             :label="$t('common.name')"
             variant="solo-filled"
+            clearable
             class="mb-2"
           />
           <v-text-field
@@ -95,6 +99,7 @@
             :label="$t('radio.streamUrl')"
             placeholder="https://..."
             variant="solo-filled"
+            clearable
             class="mb-2"
           />
           <v-text-field
@@ -102,6 +107,7 @@
             :label="$t('radio.homePageUrl')"
             placeholder="https://..."
             variant="solo-filled"
+            clearable
           />
         </v-card-text>
         <v-card-actions>

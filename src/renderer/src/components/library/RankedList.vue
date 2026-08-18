@@ -11,6 +11,7 @@
       <cover-art
         v-if="item.coverArtId !== undefined"
         :cover-art-id="item.coverArtId"
+        :image-url="item.imageUrl"
         :size="32"
         class="ranked-list__cover"
       />
@@ -46,11 +47,18 @@ export interface RankedItem {
   valueLabel: string
   to?: string | null
   // undefined (the field simply omitted) hides the art column entirely for
-  // that whole list — StatsView.vue's format/decade breakdowns and top
-  // artists have no meaningful per-item cover to show. null is still a
-  // real "no art for *this* item" case within a list that otherwise has
-  // it, same as CoverArt.vue's own coverArtId prop.
+  // that whole list — StatsView.vue's format/decade breakdowns have no
+  // meaningful per-item cover to show. null is still a real "no art for
+  // *this* item" case within a list that otherwise has it (e.g. an artist
+  // Navidrome has no photo for), same as CoverArt.vue's own coverArtId prop.
   coverArtId?: string | null
+  // Real artist photo (e.g. Navidrome's artistImageUrl), preferred over
+  // coverArtId when both are given — see CoverArt.vue's own imageUrl prop.
+  // Only ever set alongside a defined coverArtId (StatsView.vue's top
+  // artists, looked up from libraryStore.artists rather than derived from
+  // any one track — a track's own cover is its *album's* art, not the
+  // artist's); every other caller leaves this undefined.
+  imageUrl?: string | null
 }
 
 // Single-hue magnitude encoding (one ranked series at a time — never
