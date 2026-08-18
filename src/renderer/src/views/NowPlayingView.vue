@@ -701,7 +701,28 @@ export default {
 /* Mobile (see the `compact` prop) — same view, much less room to work with:
  * squeezed under MobileTransportControls.vue and the tab bar instead of the
  * near-full-viewport height this gets on desktop. Everything not overridden
- * here (backdrop, glow, lyrics-split, visualizer positioning) stays as-is. */
+ * here (backdrop, glow, lyrics-split, visualizer positioning) stays as-is.
+ *
+ * .now-playing.now-playing--compact (compound, not just the modifier class
+ * alone) is deliberate — needs to outrank the base .now-playing rule's own
+ * height regardless of source order, same reasoning as
+ * .sheet-footer button.btn-sheet-action elsewhere in this app. */
+.now-playing.now-playing--compact {
+  /* NOT the base rule's calc(100dvh - ...) — that's the right height for
+   * .now-playing when it's the *entire* routed view (desktop), but here
+   * it's nested inside MobileNowPlayingView.vue's own grid, sharing that
+   * same total viewport height with MobileTransportControls.vue below it.
+   * Claiming the full viewport-minus-chrome amount for itself *too* made
+   * it overflow its own grid cell there (.mobile-now-playing__art, sized
+   * by minmax(0, 1fr) to *already* exclude the transport controls' own
+   * share) — the excess got clipped by that cell's overflow: hidden, and
+   * since this element's own internal grid lays out top-to-bottom (art
+   * stage, then the visualizer row), the clipped part was the bottom: the
+   * visualizer, pushed below the visible area entirely. 100% instead just
+   * fills whatever height that already-correctly-sized grid cell gives it. */
+  height: 100%;
+}
+
 .now-playing--compact .now-playing__content {
   padding: 12px 16px;
   max-width: 100%;
