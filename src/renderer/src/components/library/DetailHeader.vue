@@ -155,6 +155,13 @@ export default {
   margin-bottom: 6px;
 }
 
+/* No link-hover styling here (color-shift + underline) — this wraps
+ * whatever the #subtitle slot is given, and that's plain non-interactive
+ * text at one call site (PlaylistDetailView.vue's "by {owner}") and a real
+ * router-link at another (AlbumDetailView.vue's artist name). A hover
+ * effect here applied to *both* alike, making the plain-text case look
+ * clickable when it isn't. Link styling belongs on the link itself — see
+ * AlbumDetailView.vue's own .detail-header__subtitle-link. */
 .detail-header__subtitle {
   color: rgba(255, 255, 255, 0.75);
   margin-bottom: 4px;

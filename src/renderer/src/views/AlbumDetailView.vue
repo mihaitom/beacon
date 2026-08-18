@@ -11,7 +11,10 @@
       @set-rating="setRating"
     >
       <template #subtitle>
-        <router-link :to="`/artists/${album.artistId}`" class="text-subtitle-1">
+        <router-link
+          :to="`/artists/${album.artistId}`"
+          class="text-subtitle-1 detail-header__subtitle-link"
+        >
           {{ album.artist }}
         </router-link>
       </template>
@@ -101,3 +104,20 @@ export default {
   },
 }
 </script>
+
+<style scoped>
+/* Link styling lives here, on the actual link, not on DetailHeader.vue's
+ * generic .detail-header__subtitle wrapper — that wrapper is shared with
+ * PlaylistDetailView.vue's non-interactive "by {owner}" text, which a
+ * hover-to-underline effect on the wrapper itself would have misleadingly
+ * applied to as well. */
+.detail-header__subtitle-link {
+  color: rgba(255, 255, 255, 0.75);
+  text-decoration: none;
+}
+
+.detail-header__subtitle-link:hover {
+  color: rgb(var(--v-theme-primary));
+  text-decoration: underline;
+}
+</style>
