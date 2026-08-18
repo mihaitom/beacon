@@ -95,7 +95,7 @@ Two different answers to "control Beacon from my phone", depending on how you ru
 services:
   beacon:
     container_name: beacon
-    image: ghcr.io/mihaitom/beacon:latest # or `build: .` from a local checkout
+    image: ghcr.io/mihaitom/beacon:latest
     restart: unless-stopped
     network_mode: host
     volumes:

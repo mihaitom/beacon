@@ -59,7 +59,7 @@ export default {
   },
   data() {
     return {
-      heights: new Array(BAR_COUNT).fill(IDLE_HEIGHT) as number[],
+      heights: Array.from({ length: BAR_COUNT }, () => IDLE_HEIGHT) as number[],
       rafId: null as number | null,
       resizeObserver: null as ResizeObserver | null,
       frequencyData: null as Uint8Array<ArrayBuffer> | null,
@@ -189,7 +189,7 @@ export default {
       const binHz = analyser.context.sampleRate / analyser.fftSize
       const bins = this.frequencyData
       const ratio = MAX_FREQ_HZ / MIN_FREQ_HZ
-      const heights = new Array<number>(BAR_COUNT)
+      const heights = Array.from<number>({ length: BAR_COUNT })
       for (let i = 0; i < BAR_COUNT; i++) {
         const loFreq = MIN_FREQ_HZ * ratio ** (i / BAR_COUNT)
         const hiFreq = MIN_FREQ_HZ * ratio ** ((i + 1) / BAR_COUNT)
@@ -211,8 +211,8 @@ export default {
     resampleCastBands(): number[] | null {
       const bands = this.castBands
       if (!bands || bands.length === 0) return null
-      if (bands.length === 1) return new Array(BAR_COUNT).fill(bands[0])
-      const heights = new Array<number>(BAR_COUNT)
+      if (bands.length === 1) return Array.from({ length: BAR_COUNT }, () => bands[0]!)
+      const heights = Array.from<number>({ length: BAR_COUNT })
       for (let i = 0; i < BAR_COUNT; i++) {
         const position = (i / (BAR_COUNT - 1)) * (bands.length - 1)
         const lower = Math.floor(position)
