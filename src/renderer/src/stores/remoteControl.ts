@@ -260,5 +260,18 @@ export const useRemoteControlStore = defineStore('remoteControl', {
       void poll()
       deviceVolumePollTimer = setInterval(() => void poll(), DEVICE_VOLUME_POLL_INTERVAL_MS)
     },
+
+    /** Called right after commands.ts successfully applies a phone-initiated
+     * device volume change — updates the cache immediately instead of
+     * leaving it to startDeviceVolumePoll()'s next tick (up to
+     * DEVICE_VOLUME_POLL_INTERVAL_MS away). Without this, the phone's own
+     * slider (which stops overriding local drag state the instant it sends
+     * the command, see now-playing.js) would get the next pushed snapshot
+     * with the *old* cached value and visibly snap back before the poll
+     * eventually caught up — the "jitter" this exists to avoid. */
+    reportDeviceVolume(volume: number): void {
+      deviceVolumeCache = volume
+      schedulePushSnapshot?.()
+    },
   },
 })

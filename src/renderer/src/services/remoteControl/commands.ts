@@ -127,22 +127,27 @@ export async function handleRemoteCommand(
       // set-device-volume below for per-device control instead.
       const targets = connect.activeTargets
       if (targets.length === 1) {
-        await connect.setDeviceVolume(
-          targets[0]!.type,
-          targets[0]!.name,
-          Math.round(Number(payload.volume) * 100),
-        )
+        const rounded = Math.round(Number(payload.volume) * 100)
+        await connect.setDeviceVolume(targets[0]!.type, targets[0]!.name, rounded)
+        // Updates remoteControl's device_volume cache immediately instead of
+        // leaving the phone's slider showing the pre-change value until
+        // startDeviceVolumePoll()'s next tick — see reportDeviceVolume()'s
+        // own comment.
+        useRemoteControlStore().reportDeviceVolume(rounded)
       } else if (targets.length === 0) {
         playback.setVolume(Number(payload.volume))
       }
       return
     }
     case 'set-device-volume': {
-      await connect.setDeviceVolume(
-        payload.deviceType as DeviceType,
-        String(payload.name),
-        Number(payload.volume),
-      )
+      const deviceType = payload.deviceType as DeviceType
+      const name = String(payload.name)
+      const rounded = Number(payload.volume)
+      await connect.setDeviceVolume(deviceType, name, rounded)
+      const targets = connect.activeTargets
+      if (targets.length === 1 && targets[0]!.type === deviceType && targets[0]!.name === name) {
+        useRemoteControlStore().reportDeviceVolume(rounded)
+      }
       return
     }
     case 'shuffle':

@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - Fixed the casting device menu jittering slightly every few seconds while open: its background refresh was briefly flashing a loading indicator on every tick, nudging the list
+- Fixed the volume slider on a paired phone's Remote Control screen briefly snapping back after releasing it while casting to a single device
 
 ## [0.1.1] - 2026-08-16
 
