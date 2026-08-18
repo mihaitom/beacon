@@ -57,7 +57,11 @@ export default {
         if (authenticated) {
           connectStore.subscribeEvents()
           connectStore.refreshDevices()
-          usePlaybackStore().attemptLocalResumeAfterAuth()
+          // Local-playback auto-resume itself lives in authStore.restore()
+          // now, not here — this handler also fires after a genuine fresh
+          // login (typing credentials, Quick Connect, Plex), where blasting
+          // out whatever was persisted from a previous session/account made
+          // no sense (see restore()'s own comment on attemptLocalResumeAfterAuth()).
           // Loads the whole song catalog right away instead of waiting for
           // SongsView to mount — fetchAllSongs() is idempotent/dedupes
           // concurrent callers (see its own comment in stores/library.ts),

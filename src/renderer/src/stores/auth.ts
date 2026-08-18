@@ -359,6 +359,17 @@ export const useAuthStore = defineStore('auth', {
 
       try {
         await this._authenticate()
+        // Only here, not in App.vue's `authStore.authenticated` watcher —
+        // that watcher also fires after a genuine fresh login (typing
+        // credentials, Quick Connect, Plex), and blasting out whatever
+        // localStorage snapshot happened to be sitting there (possibly from
+        // a different account/server, since it isn't scoped to one — see
+        // PERSIST_KEY's comment) the instant that login succeeds is
+        // surprising, not helpful. This restore() path is specifically "the
+        // app reloaded/restarted mid-session," which is the one case
+        // "continue where I left off, including auto-playing" is actually
+        // wanted.
+        usePlaybackStore().attemptLocalResumeAfterAuth()
         return true
       } catch (error) {
         console.error('[auth] Silent restore failed:', error)

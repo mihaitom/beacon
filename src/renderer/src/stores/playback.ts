@@ -372,8 +372,11 @@ export const usePlaybackStore = defineStore('playback', {
       })
     },
 
-    /** Called once auth is confirmed (App.vue's watcher, right where it
-     * also subscribes to connect SSE) — starts a short fallback timer for
+    /** Called from authStore.restore() once a silent re-auth on app boot
+     * succeeds — deliberately not from App.vue's generic `authenticated`
+     * watcher, since that also fires after a genuine fresh login, where
+     * auto-resuming whatever was persisted from a previous session would be
+     * surprising rather than helpful. Starts a short fallback timer for
      * decideLocalResume() in case the connect backend never answers at all
      * (unreachable, or this build has no casting support), so a restored
      * queue doesn't just sit there forever waiting to learn whether a cast
