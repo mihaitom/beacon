@@ -227,9 +227,17 @@ function startConnectServer(): void {
       if (line.trim()) console.log(`[connect] ${line.trimEnd()}`)
     }
   })
+  // Not console.error — connect/main.py's own root logger is a plain
+  // logging.StreamHandler(), which defaults to stderr regardless of level
+  // (standard Python convention, not an error signal). Routing it through
+  // console.error tagged every single INFO line from the backend as
+  // "[error]" in setupFileLogging()'s file — misleading, since the line's
+  // *actual* level is already right there as visible text ("INFO ..."). A
+  // real backend crash/traceback still shows up just as clearly via
+  // console.log, just without a doubly-misleading wrapper on top of it.
   connectProcess.stderr?.on('data', (data: Buffer) => {
     for (const line of data.toString().split('\n')) {
-      if (line.trim()) console.error(`[connect] ${line.trimEnd()}`)
+      if (line.trim()) console.log(`[connect] ${line.trimEnd()}`)
     }
   })
   connectProcess.on('error', (error) => {

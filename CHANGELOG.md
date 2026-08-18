@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed the app log file (see 0.1.3) tagging every line from the backend as an error, even completely normal status messages - the backend logs everything to the same output stream regardless of severity, same as most command-line programs, and the log file was mistaking that stream choice for severity
+
 ## [0.1.3] - 2026-08-16
 
 ### Added
