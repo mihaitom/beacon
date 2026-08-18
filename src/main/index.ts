@@ -2,7 +2,7 @@ import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { type ChildProcess, spawn } from 'child_process'
 import { randomBytes } from 'crypto'
-import { createServer } from 'net'
+import { createConnection, createServer } from 'net'
 import { BrowserWindow, app, ipcMain, safeStorage, shell } from 'electron'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { config as loadDotenv } from 'dotenv'
@@ -206,6 +206,38 @@ function startConnectServer(): void {
   })
 }
 
+// spawn() above only means the OS has started the process — the bundled
+// PyInstaller binary still needs real wall-clock time (interpreter startup,
+// importing FastAPI/uvicorn/media libs) before it's actually listening.
+// Without waiting for that here, createWindow() below used to load the
+// renderer immediately after spawn(), which could fire its very first
+// /config request before anything was listening on packagedConnectPort yet
+// — a genuine (if usually self-resolving a moment later) "Connect backend
+// unreachable" error on an otherwise-correct port. A single TCP connect
+// succeeding is enough to know the port is bound and accepting connections;
+// it doesn't need to be a real HTTP/authenticated request.
+function waitForConnectReady(port: number, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  return new Promise((resolve) => {
+    const attempt = (): void => {
+      const socket = createConnection({ host: '127.0.0.1', port }, () => {
+        socket.destroy()
+        resolve()
+      })
+      socket.on('error', () => {
+        socket.destroy()
+        if (Date.now() >= deadline) {
+          console.error(`[connect] Backend still not reachable on port ${port} after ${timeoutMs}ms — continuing anyway`)
+          resolve()
+          return
+        }
+        setTimeout(attempt, 100)
+      })
+    }
+    attempt()
+  })
+}
+
 function stopConnectServer(): void {
   // Default kill() sends SIGTERM, which uvicorn (see connect/main.py)
   // already shuts down on gracefully — no separate "please stop" request
@@ -284,6 +316,7 @@ app.whenReady().then(async () => {
   if (app.isPackaged) {
     packagedConnectPort = await findFreePort()
     startConnectServer()
+    await waitForConnectReady(packagedConnectPort)
   }
   createWindow()
   checkForUpdates()

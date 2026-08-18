@@ -44,10 +44,12 @@ let eventSource: ConnectEventSource | null = null
 
 // eventSource lives outside Pinia's reactive state, so Vite's partial HMR
 // doesn't reset/preserve it consistently on a live edit — see playback.ts's
-// identical decline() for the full story (this SSE stream is exactly what
-// feeds playback.ts's status.ended detection while casting).
+// identical accept()+invalidate() for the full story (this SSE stream is
+// exactly what feeds playback.ts's status.ended detection while casting).
 if (import.meta.hot) {
-  import.meta.hot.decline()
+  import.meta.hot.accept(() => {
+    import.meta.hot!.invalidate('stores/connect.ts holds singleton state that cannot be safely hot-reloaded')
+  })
 }
 
 export const useConnectStore = defineStore('connect', {

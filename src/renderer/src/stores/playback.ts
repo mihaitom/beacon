@@ -162,11 +162,16 @@ let wasCastingActive = false
 // instance's fresh `lastEnded = false` etc. racing against timers/
 // subscriptions still running from the *old* one, which reads as
 // impossible playback bugs (UI stuck on a track connect already advanced
-// past, see the 2026-08-18 "stuck on Tinlicker" debugging session). Decline
-// hot updates here so any edit to this file forces a full reload instead —
-// slower, but guarantees a clean, single-instance start every time.
+// past, see the 2026-08-18 "stuck on Tinlicker" debugging session).
+// hot.decline() used to be the direct way to opt a module out of HMR, but
+// Vite removed it — self-accepting and immediately invalidating is the
+// current replacement, forcing a full reload on any edit to this file
+// instead of a partial hot-swap. Slower, but guarantees a clean,
+// single-instance start every time.
 if (import.meta.hot) {
-  import.meta.hot.decline()
+  import.meta.hot.accept(() => {
+    import.meta.hot!.invalidate('stores/playback.ts holds singleton state that cannot be safely hot-reloaded')
+  })
 }
 
 /**

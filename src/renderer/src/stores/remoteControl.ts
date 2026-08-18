@@ -55,10 +55,12 @@ let deviceVolumeCache: number | null = null
 
 // All of the above (timers, the agent SSE connection, deviceVolumeCache,
 // ...) lives outside Pinia's reactive state — see playback.ts's identical
-// decline() for the full story on why that's unsafe under Vite's partial
-// HMR.
+// accept()+invalidate() for the full story on why that's unsafe under
+// Vite's partial HMR.
 if (import.meta.hot) {
-  import.meta.hot.decline()
+  import.meta.hot.accept(() => {
+    import.meta.hot!.invalidate('stores/remoteControl.ts holds singleton state that cannot be safely hot-reloaded')
+  })
 }
 
 export const useRemoteControlStore = defineStore('remoteControl', {

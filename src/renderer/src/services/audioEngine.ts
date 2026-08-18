@@ -196,8 +196,11 @@ export function getAudioEngine(): AudioEngine {
 // audibly-playing <audio> element and AudioContext) running unreferenced
 // while a fresh getAudioEngine() call elsewhere creates a *second* one, e.g.
 // stores/playback.ts's own callers now pointing at a silent new instance
-// instead of the one actually making sound. Decline hot updates so an edit
-// here always forces a full reload instead.
+// instead of the one actually making sound. hot.decline() used to be the
+// direct way to opt out of HMR, but Vite removed it — self-accepting and
+// immediately invalidating forces a full reload on any edit here instead.
 if (import.meta.hot) {
-  import.meta.hot.decline()
+  import.meta.hot.accept(() => {
+    import.meta.hot!.invalidate('services/audioEngine.ts holds a singleton instance that cannot be safely hot-reloaded')
+  })
 }

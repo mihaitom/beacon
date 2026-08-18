@@ -1,0 +1,35 @@
+version: 2
+updates:
+  # Frontend/Electron deps (pnpm-managed, see package.json's packageManager)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Connect backend deps (uv-managed, see connect/pyproject.toml + uv.lock)
+  - package-ecosystem: "uv"
+    directory: "/connect"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Dockerfile base images
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # GitHub Actions workflows (see .github/workflows/)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
