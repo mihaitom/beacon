@@ -6,4 +6,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [0.0.0] - unreleased
 
-First release — no previous version to compare against yet, so there's nothing to list here. See the README for what Beacon can do.
+First release - no previous version to compare against yet, so there's nothing to list here. See the README for what Beacon can do.
