@@ -58,6 +58,17 @@ class PlaybackClock:
             return self.paused_elapsed
         return max(0.0, time.time() - self.play_start_time + self.position_offset)
 
+    def seconds_until(self, duration: float) -> float:
+        """Wall-clock seconds from now until elapsed() would reach `duration`
+        — the inverse of elapsed(), solving `elapsed(t) == duration` for t.
+        Used to schedule the auto-advance/track-end signal so it fires when
+        the device has *actually* finished playing (position_offset-
+        corrected), not when the raw, uncorrected wall clock reaches the
+        track's nominal duration — which fires early by exactly
+        position_offset otherwise. Assumes playback is ongoing (not
+        paused); callers already only use this while actively streaming."""
+        return max(0.0, self.play_start_time + duration - self.position_offset - time.time())
+
     def elapsed_since_stream_start(self) -> float:
         """Wall-clock seconds since start()/resume()/seek_to() was called,
         *excluding* track_start_position. This is the reference frame a

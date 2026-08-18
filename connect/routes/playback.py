@@ -145,7 +145,16 @@ async def _apply_position_offset(
             device_pos = await candidate.get_position()
         except Exception:
             continue
-        if not device_pos:
+        # is None: no reading yet, keep polling. A real 0.0 (very common
+        # right at track start, which is exactly what this loop is trying to
+        # calibrate against) must NOT be treated the same way — `if not
+        # device_pos` used to do that, silently skipping every legitimate
+        # zero reading until either a nonzero one arrived or the 10s
+        # deadline gave up and left position_offset at the crude
+        # PROVISIONAL_STARTUP_DELAY guess for the whole track. A negative
+        # reading is a bogus one (matches _resync_position_once()'s own
+        # guard below) — not a real position either.
+        if device_pos is None or device_pos < 0:
             continue
         wall_elapsed = st.clock.elapsed_since_stream_start()
         # A genuine startup-buffering delay makes the device *lag* the wall

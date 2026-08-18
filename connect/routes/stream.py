@@ -288,11 +288,7 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
             ):
                 wait = 0.0
                 if st.current_track and st.clock.play_start_time:
-                    wait = max(
-                        0.0,
-                        (st.clock.play_start_time + st.current_track.duration)
-                        - time.time(),
-                    )
+                    wait = st.clock.seconds_until(st.current_track.duration)
                 asyncio.create_task(_fire_track_end(my_generation, wait))
         finally:
             # finish_feeding(), not stop() — ffmpeg finishing early (well

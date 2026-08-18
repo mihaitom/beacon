@@ -72,6 +72,32 @@ def test_elapsed_clamps_to_zero():
     assert clock.elapsed() == 0.0
 
 
+# ── seconds_until ─────────────────────────────────────────────────────────────
+
+
+def test_seconds_until_with_no_offset():
+    clock = PlaybackClock()
+    clock.play_start_time = time.time() - 30
+    assert abs(clock.seconds_until(180.0) - 150.0) < 1.0
+
+
+def test_seconds_until_applies_position_offset():
+    # A device lagging the wall clock (the normal startup-buffering case,
+    # position_offset negative) needs *longer* to reach the track's
+    # duration than the uncorrected wall clock alone would suggest — this
+    # is exactly the correction the auto-advance timing bug was missing.
+    clock = PlaybackClock()
+    clock.play_start_time = time.time() - 30
+    clock.position_offset = -2.0
+    assert abs(clock.seconds_until(180.0) - 152.0) < 1.0
+
+
+def test_seconds_until_clamps_to_zero():
+    clock = PlaybackClock()
+    clock.play_start_time = time.time() - 200
+    assert clock.seconds_until(180.0) == 0.0
+
+
 # ── pause / resume ────────────────────────────────────────────────────────────
 
 
