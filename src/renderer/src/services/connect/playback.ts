@@ -17,23 +17,36 @@ interface PlayOptions {
 // startCurrent()) can never end up as the one audibly playing just because
 // its response happened to land last.
 //
-// Persisted in localStorage, not just an in-memory module variable — the
-// backend's own play_seq lives on the session, which survives a frontend
-// reload (HMR, window reload, ...) untouched. A bare `let dispatchSeq = 0`
-// here would restart from 1 every reload while the backend still remembers
-// wherever it left off, so every dispatch below that point got silently
-// dropped as "superseded" until the reloaded counter climbed back past it
-// — from the user's perspective, playback just stopped responding until
-// enough clicks happened to catch back up. A single global counter (not
-// scoped per session/server) is fine: it only ever needs to stay
-// monotonically non-decreasing, and a value that's "too high" for the
-// session currently in play is harmless — only "lower than what this
-// session already saw" gets rejected.
+// Date.now() (wall-clock ms), not a simple per-device incrementing integer —
+// this connect session can now be shared live by more than one device at
+// once (a phone and the desktop app logged into the same account/server
+// compute the same session id, see computeConnectSessionId()), each with
+// its own independent localStorage. A phone logging in for the first time
+// starts its own counter at 0/1 regardless of how far the desktop's had
+// already climbed for that same session — its very first, genuinely-newest
+// dispatch then read as "stale" (seq too low) purely from the mismatched
+// starting point, not any real out-of-order arrival — exactly what got
+// reported as "Ignoring superseded request (seq=7 < 33)" logging a phone's
+// play tap being silently dropped. A real timestamp is directly comparable
+// across independent devices (their clocks are, in the overwhelming common
+// case, both roughly synced to real time) without needing to coordinate a
+// shared counter between them at all.
+//
+// Still persisted in localStorage, for the same reason as before: the
+// backend's own play_seq lives on the session and survives a frontend
+// reload (HMR, window reload, ...) untouched, so this needs to pick back up
+// from at least where it left off rather than restarting.
 const DISPATCH_SEQ_KEY = 'beacon.dispatchSeq'
 let dispatchSeq = Number(localStorage.getItem(DISPATCH_SEQ_KEY)) || 0
 
 function nextSeq(): number {
-  dispatchSeq += 1
+  // max(), not a bare Date.now() — two dispatches from *this* device
+  // landing in the same millisecond (back-to-back calls, no network delay
+  // between them) still need to come out strictly increasing relative to
+  // each other, same as the old counter guaranteed. Falls back to ticking
+  // up by 1 only in that same-millisecond case; otherwise this is just the
+  // current timestamp.
+  dispatchSeq = Math.max(Date.now(), dispatchSeq + 1)
   localStorage.setItem(DISPATCH_SEQ_KEY, String(dispatchSeq))
   return dispatchSeq
 }
