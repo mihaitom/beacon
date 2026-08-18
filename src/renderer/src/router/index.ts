@@ -53,9 +53,9 @@ const router = createRouter({
       component: () => import('../views/GenreDetailView.vue'),
     },
     {
-      path: '/tracks',
-      name: 'tracks',
-      component: () => import('../views/TracksView.vue'),
+      path: '/songs',
+      name: 'songs',
+      component: () => import('../views/SongsView.vue'),
     },
     {
       path: '/playlists',
@@ -101,7 +101,7 @@ const router = createRouter({
     // desktop routes above rather than replacing them, so MobileLayout.vue's
     // router-view can pick its own touch-optimized child views without every
     // existing desktop view needing to branch internally. Reachable
-    // regardless of viewport/build (a desktop browser can load /m/tracks
+    // regardless of viewport/build (a desktop browser can load /m/songs
     // directly), but App.vue's `layout` computed only ever *lands* someone
     // here automatically when isMobileWeb is true — see the 'home' redirect
     // in the guard below.
@@ -126,9 +126,9 @@ const router = createRouter({
       component: () => import('../views/mobile/MobilePlaylistDetailView.vue'),
     },
     {
-      path: '/m/tracks',
-      name: 'm-tracks',
-      component: () => import('../views/mobile/MobileTracksView.vue'),
+      path: '/m/songs',
+      name: 'm-songs',
+      component: () => import('../views/mobile/MobileSongsView.vue'),
     },
     {
       path: '/m/radio',
@@ -153,7 +153,9 @@ let restorePromise: Promise<boolean> | null = null
 // not have (see services/capabilities.ts) — DefaultLayout.vue already hides
 // their nav entries, this is the backstop for a direct URL/bookmark/back-
 // button navigation landing here anyway on a server that can't support it.
-const CAPABILITY_ROUTES: Partial<Record<string, keyof ReturnType<typeof useAuthStore>['capabilities']>> = {
+const CAPABILITY_ROUTES: Partial<
+  Record<string, keyof ReturnType<typeof useAuthStore>['capabilities']>
+> = {
   radio: 'internetRadio',
   'm-radio': 'internetRadio',
   stats: 'playHistoryStats',

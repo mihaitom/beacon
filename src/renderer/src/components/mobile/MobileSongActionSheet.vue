@@ -1,11 +1,14 @@
 <template>
-  <v-bottom-sheet :model-value="modelValue" @update:model-value="$emit('update:modelValue', $event)">
-    <v-card v-if="track">
-      <div class="mobile-track-actions__header d-flex align-center">
-        <cover-art :cover-art-id="track.coverArtId" :size="40" class="mr-3" />
+  <v-bottom-sheet
+    :model-value="modelValue"
+    @update:model-value="$emit('update:modelValue', $event)"
+  >
+    <v-card v-if="song">
+      <div class="mobile-song-actions__header d-flex align-center">
+        <cover-art :cover-art-id="song.coverArtId" :size="40" class="mr-3" />
         <div class="min-width-0">
-          <div class="text-body-2 text-truncate">{{ track.title }}</div>
-          <div class="text-caption text-medium-emphasis text-truncate">{{ track.artist }}</div>
+          <div class="text-body-2 text-truncate">{{ song.title }}</div>
+          <div class="text-caption text-medium-emphasis text-truncate">{{ song.artist }}</div>
         </div>
       </div>
       <v-list v-if="!playlistPicker" density="compact">
@@ -17,9 +20,9 @@
           <template #prepend><v-icon icon="mdi-skip-next-outline" /></template>
           <v-list-item-title>{{ $t('library.playNext') }}</v-list-item-title>
         </v-list-item>
-        <v-list-item v-if="authStore.capabilities.trackRadio" @click="startTrackRadio">
+        <v-list-item v-if="authStore.capabilities.songRadio" @click="startSongRadio">
           <template #prepend><v-icon icon="mdi-radio-tower" /></template>
-          <v-list-item-title>{{ $t('library.trackRadio') }}</v-list-item-title>
+          <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
         </v-list-item>
         <v-divider />
         <v-list-item @click="addToQueue">
@@ -32,8 +35,8 @@
           <template #append><v-icon icon="mdi-menu-right" /></template>
         </v-list-item>
       </v-list>
-      <v-list v-else density="compact" class="mobile-track-actions__playlists">
-        <v-list-item @click="createPlaylistWithTrack">
+      <v-list v-else density="compact" class="mobile-song-actions__playlists">
+        <v-list-item @click="createPlaylistWithSong">
           <template #prepend><v-icon icon="mdi-plus" /></template>
           <v-list-item-title>{{ $t('common.createNewPlaylist') }}</v-list-item-title>
         </v-list-item>
@@ -57,18 +60,18 @@ import CoverArt from '@/components/library/CoverArt.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
-import type { Track } from '@/types/library'
+import type { Song } from '@/types/library'
 
 export default {
-  name: 'MobileTrackActionSheet',
+  name: 'MobileSongActionSheet',
   components: { CoverArt },
   props: {
     modelValue: {
       type: Boolean,
       default: false,
     },
-    track: {
-      type: Object as () => Track | null,
+    song: {
+      type: Object as () => Song | null,
       default: null,
     },
   },
@@ -106,45 +109,45 @@ export default {
       this.close()
     },
     playNow() {
-      const track = this.track
-      if (!track) return
-      this.act(() => this.playbackStore.playTrackList([track], 0))
+      const song = this.song
+      if (!song) return
+      this.act(() => this.playbackStore.playSongList([song], 0))
     },
     playNext() {
-      const track = this.track
-      if (!track) return
-      this.act(() => this.playbackStore.queueNext([track]))
+      const song = this.song
+      if (!song) return
+      this.act(() => this.playbackStore.queueNext([song]))
     },
-    startTrackRadio() {
-      const track = this.track
-      if (!track) return
-      this.act(() => this.playbackStore.startTrackRadio(track))
+    startSongRadio() {
+      const song = this.song
+      if (!song) return
+      this.act(() => this.playbackStore.startSongRadio(song))
     },
     addToQueue() {
-      const track = this.track
-      if (!track) return
-      this.act(() => this.playbackStore.addToQueue([track]))
+      const song = this.song
+      if (!song) return
+      this.act(() => this.playbackStore.addToQueue([song]))
     },
     addToPlaylist(playlistId: string) {
-      const track = this.track
-      if (!track) return
-      this.act(() => this.libraryStore.addToPlaylist(playlistId, [track.id]))
+      const song = this.song
+      if (!song) return
+      this.act(() => this.libraryStore.addToPlaylist(playlistId, [song.id]))
     },
-    createPlaylistWithTrack() {
-      const track = this.track
-      if (!track) return
-      this.act(() => this.libraryStore.createPlaylist(track.title, [track.id]))
+    createPlaylistWithSong() {
+      const song = this.song
+      if (!song) return
+      this.act(() => this.libraryStore.createPlaylist(song.title, [song.id]))
     },
   },
 }
 </script>
 
 <style scoped>
-.mobile-track-actions__header {
+.mobile-song-actions__header {
   padding: 16px 16px 8px;
 }
 
-.mobile-track-actions__playlists {
+.mobile-song-actions__playlists {
   max-height: 50vh;
   overflow-y: auto;
 }

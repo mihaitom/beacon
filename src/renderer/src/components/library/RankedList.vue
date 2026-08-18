@@ -20,7 +20,7 @@
         <div v-if="item.sublabel" class="text-caption text-medium-emphasis text-truncate">
           {{ item.sublabel }}
         </div>
-        <div class="ranked-list__bar-track">
+        <div class="ranked-list__bar-song">
           <div class="ranked-list__bar-fill" :style="{ width: `${barWidth(item)}%` }" />
         </div>
       </div>
@@ -42,7 +42,7 @@ export interface RankedItem {
   // What the bar length is proportional to — the display text (valueLabel)
   // is separate since it's often a different unit/rounding than what
   // ranking should actually go by (e.g. StatsView.vue's format breakdown
-  // ranks by raw track count but displays a rounded percentage).
+  // ranks by raw song count but displays a rounded percentage).
   value: number
   valueLabel: string
   to?: string | null
@@ -56,7 +56,7 @@ export interface RankedItem {
   // coverArtId when both are given — see CoverArt.vue's own imageUrl prop.
   // Only ever set alongside a defined coverArtId (StatsView.vue's top
   // artists, looked up from libraryStore.artists rather than derived from
-  // any one track — a track's own cover is its *album's* art, not the
+  // any one song — a song's own cover is its *album's* art, not the
   // artist's); every other caller leaves this undefined.
   imageUrl?: string | null
 }
@@ -112,7 +112,7 @@ export default {
 }
 
 /* Only router-link rows are actually clickable (plain <div> rows — top
- * tracks, format breakdown — have nothing to link to) — no hover tint on
+ * songs, format breakdown — have nothing to link to) — no hover tint on
  * those so they don't read as interactive when they aren't. */
 a.ranked-list__row:hover {
   background: var(--beacon-hover);
@@ -140,7 +140,7 @@ a.ranked-list__row:hover {
   min-width: 0;
 }
 
-.ranked-list__bar-track {
+.ranked-list__bar-song {
   margin-top: 6px;
   height: 4px;
   border-radius: 2px;

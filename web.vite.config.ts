@@ -18,7 +18,7 @@ function readConnectDevDefaults(): { token: string; port: string } {
     const connectDir = resolve('connect');
     const envPath = resolve(connectDir, '.env');
     const parsed = existsSync(envPath) ? (loadDotenv({ path: envPath }).parsed ?? {}) : {};
-    const port = parsed.PORT || '9181';
+    const port = parsed.PORT || '7071';
 
     let token = parsed.CONNECT_TOKEN ?? '';
     if (!token) {

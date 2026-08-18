@@ -26,22 +26,22 @@
       @play-all="playAllAlbums(frequentAlbums, 'frequent')"
     />
 
-    <section v-if="topTracks.length || loadingTopTracks" class="mb-10">
+    <section v-if="topSongs.length || loadingTopSongs" class="mb-10">
       <div class="d-flex align-center mb-4">
-        <h2 class="section-title">{{ $t('home.topTracks') }}</h2>
+        <h2 class="section-title">{{ $t('home.topSongs') }}</h2>
         <v-btn
-          v-if="topTracks.length"
+          v-if="topSongs.length"
           icon="mdi-play-circle-outline"
           variant="text"
           size="small"
           density="comfortable"
           :title="$t('home.playAll')"
-          @click="playTrackList(topTracks)"
+          @click="playSongList(topSongs)"
         />
       </div>
-      <track-list
-        :tracks="topTracks"
-        :loading="loadingTopTracks"
+      <song-table
+        :songs="topSongs"
+        :loading="loadingTopSongs"
         default-sort-key="playCount"
         default-sort-direction="desc"
         show-cover
@@ -105,8 +105,8 @@ import type { SimilarArtistDisplay } from '@/components/library/SimilarArtistsSh
 import HeroBand from '@/components/home/HeroBand.vue'
 import AlbumShelf from '@/components/library/AlbumShelf.vue'
 import SimilarArtistsShelf from '@/components/library/SimilarArtistsShelf.vue'
-import TrackList from '@/components/library/TrackList.vue'
-import type { Album, Track } from '@/types/library'
+import SongTable from '@/components/library/SongTable.vue'
+import type { Album, Song } from '@/types/library'
 
 // Below this many distinct seed artists, a similar-artist lookup isn't
 // worth the round trip (and the very-first-launch/near-empty-library case
@@ -123,7 +123,7 @@ const MIN_OWNED_MATCHES = 8
 
 export default {
   name: 'HomeView',
-  components: { HeroBand, AlbumShelf, SimilarArtistsShelf, TrackList },
+  components: { HeroBand, AlbumShelf, SimilarArtistsShelf, SongTable },
   data() {
     return {
       frequentAlbums: [] as Album[],
@@ -135,13 +135,13 @@ export default {
       // weren't enough seed artists, or the lookup itself failed; the
       // SimilarArtistsShelf component hides itself in all of those cases.
       newArtistDiscoveries: [] as SimilarArtistDisplay[],
-      topTracks: [] as Track[],
+      topSongs: [] as Song[],
       loadingFrequent: false,
       loadingNewest: false,
       loadingRecent: false,
       loadingRandom: false,
-      loadingTopTracks: false,
-      // Which shelf's "play all" is currently fetching album track lists —
+      loadingTopSongs: false,
+      // Which shelf's "play all" is currently fetching album song lists —
       // a single field (not one boolean per shelf) since only one of these
       // can realistically be in flight at a time (each is a user click).
       playingAllShelf: null as string | null,
@@ -169,18 +169,18 @@ export default {
       return this.$t('home.greetingEvening', { name })
     },
     heroCoverId() {
-      if (this.playbackStore.currentTrack) return this.playbackStore.currentTrack.coverArtId
+      if (this.playbackStore.currentSong) return this.playbackStore.currentSong.coverArtId
       return this.recentAlbums[0]?.coverArtId ?? null
     },
     heroEyebrow() {
-      if (this.playbackStore.currentTrack) {
+      if (this.playbackStore.currentSong) {
         return this.playbackStore.isPlaying ? this.$t('home.nowPlaying') : this.$t('home.paused')
       }
       if (this.playbackStore.radioStation) return this.$t('home.radioEyebrow')
       return this.recentAlbums[0] ? this.$t('home.recentlyPlayed') : ''
     },
     heroTitle() {
-      if (this.playbackStore.currentTrack) return this.playbackStore.currentTrack.title
+      if (this.playbackStore.currentSong) return this.playbackStore.currentSong.title
       if (this.playbackStore.radioStation) return this.playbackStore.radioStation.name
       return this.recentAlbums[0]?.name ?? ''
     },
@@ -202,33 +202,33 @@ export default {
       return ''
     },
     heroArtistName(): string | null {
-      const track = this.playbackStore.currentTrack
-      if (track) return track.artist
+      const song = this.playbackStore.currentSong
+      if (song) return song.artist
       if (this.playbackStore.radioStation) return null
       return this.recentAlbums[0]?.artist ?? null
     },
     heroArtistId(): string | null {
-      const track = this.playbackStore.currentTrack
-      if (track) return track.artistId
+      const song = this.playbackStore.currentSong
+      if (song) return song.artistId
       if (this.playbackStore.radioStation) return null
       return this.recentAlbums[0]?.artistId ?? null
     },
-    // Only the currently-playing-track case has a distinct album to name
+    // Only the currently-playing-song case has a distinct album to name
     // alongside the artist (subtitle reads "Artist · Album") — the
     // fallback case's subtitle is just the artist, since the album is
     // already what the title itself names (and links to, see heroTitleTo).
     heroAlbumName(): string | null {
-      return this.playbackStore.currentTrack?.album ?? null
+      return this.playbackStore.currentSong?.album ?? null
     },
     heroAlbumId(): string | null {
-      return this.playbackStore.currentTrack?.albumId ?? null
+      return this.playbackStore.currentSong?.albumId ?? null
     },
     heroIsPlaying() {
       return this.playbackStore.isPlaying
     },
     heroHasContent() {
       return !!(
-        this.playbackStore.currentTrack ||
+        this.playbackStore.currentSong ||
         this.playbackStore.radioStation ||
         this.recentAlbums[0]
       )
@@ -237,7 +237,7 @@ export default {
     // recentAlbums fetch, and only when there isn't already something
     // playing (which the hero can show immediately, no fetch needed).
     heroLoading() {
-      if (this.playbackStore.currentTrack || this.playbackStore.radioStation) return false
+      if (this.playbackStore.currentSong || this.playbackStore.radioStation) return false
       return this.loadingRecent
     },
   },
@@ -271,11 +271,11 @@ export default {
     // method's own `seedAlbums` param.
     frequentPromise.then((albums) => this.rerollDiscover(albums))
 
-    this.loadingTopTracks = true
+    this.loadingTopSongs = true
     this.libraryStore
-      .fetchTopTracks(10)
-      .then((tracks) => (this.topTracks = tracks))
-      .finally(() => (this.loadingTopTracks = false))
+      .fetchTopSongs(10)
+      .then((songs) => (this.topSongs = songs))
+      .finally(() => (this.loadingTopSongs = false))
   },
   methods: {
     // Up to MAX_SEED_ARTISTS distinct artist names from `albums`, in the
@@ -386,22 +386,22 @@ export default {
             ]
     },
     async onHeroPlay() {
-      if (this.playbackStore.currentTrack) {
+      if (this.playbackStore.currentSong) {
         await this.playbackStore.togglePlay()
         return
       }
       const album = this.recentAlbums[0]
       if (!album) return
       const full = await this.libraryStore.fetchAlbum(album.id)
-      await this.playbackStore.playTrackList(full.tracks, 0)
+      await this.playbackStore.playSongList(full.songs, 0)
     },
-    async playTrackList(tracks: Track[]) {
-      if (!tracks.length) return
-      await this.playbackStore.playTrackList(tracks, 0)
+    async playSongList(songs: Song[]) {
+      if (!songs.length) return
+      await this.playbackStore.playSongList(songs, 0)
     },
     // AlbumShelf.vue's album cards only ever carry list-level Album data
-    // (no track list — see fetchAlbum()'s own comment), so "play all" for a
-    // shelf means fetching each album's full track list first. Concatenated
+    // (no song list — see fetchAlbum()'s own comment), so "play all" for a
+    // shelf means fetching each album's full song list first. Concatenated
     // in shelf order, album by album, rather than interleaved — that's the
     // order the shelf itself already reads in.
     async playAllAlbums(albums: Album[], shelfKey: string) {
@@ -411,7 +411,7 @@ export default {
         const fullAlbums = await Promise.all(
           albums.map((album) => this.libraryStore.fetchAlbum(album.id)),
         )
-        await this.playTrackList(fullAlbums.flatMap((album) => album.tracks))
+        await this.playSongList(fullAlbums.flatMap((album) => album.songs))
       } finally {
         this.playingAllShelf = null
       }

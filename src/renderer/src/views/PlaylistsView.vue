@@ -105,7 +105,7 @@ export default {
       filterQuery: '',
       // filteredPlaylists reads this instead of filterQuery directly, so
       // filtering doesn't run synchronously on every keystroke — see the
-      // identical pattern (and its rationale) in TracksView.vue.
+      // identical pattern (and its rationale) in SongsView.vue.
       debouncedQuery: '',
     }
   },
@@ -146,10 +146,10 @@ export default {
   methods: {
     async playPlaylist(playlist: Playlist) {
       // getPlaylists.view (the list this view renders) doesn't include each
-      // playlist's tracks — only getPlaylist.view for a single id does —
-      // so the full track list has to be fetched before it can be queued.
+      // playlist's songs — only getPlaylist.view for a single id does —
+      // so the full song list has to be fetched before it can be queued.
       const full = await this.libraryStore.fetchPlaylist(playlist.id)
-      await usePlaybackStore().playTrackList(full.tracks, 0)
+      await usePlaybackStore().playSongList(full.songs, 0)
     },
     async createPlaylist() {
       if (!this.newPlaylistName.trim()) return

@@ -67,7 +67,7 @@
 
       <!-- The matched lyrics are often a slightly different edit/version
        - than this exact audio file — this is the escape hatch for "close
-       - but consistently early/late", not something most tracks need. -->
+       - but consistently early/late", not something most songs need. -->
       <div v-if="lyricsStore.synced" class="lyrics-panel__sync">
         <v-btn
           icon="mdi-target"
@@ -109,7 +109,7 @@
         <span v-if="sourceLabel" class="lyrics-panel__source">{{
           $t('lyrics.source', { source: sourceLabel })
         }}</span>
-        <!-- The auto-matched lyrics can be for the wrong edit of a track
+        <!-- The auto-matched lyrics can be for the wrong edit of a song
          - entirely (not just mistimed) — this is the escape hatch for that,
          - also the main way to find lyrics at all when nothing auto-matched. -->
         <v-menu
@@ -171,7 +171,7 @@
                         color="primary"
                         :title="$t('lyrics.currentMatch')"
                       />
-                      <!-- A duration far off the actual track's own length
+                      <!-- A duration far off the actual song's own length
                        - is a strong "wrong edit" signal (radio cut vs.
                        - album version, live take, ...) — flagged in red so
                        - it's visible without doing the subtraction by eye. -->
@@ -216,7 +216,7 @@ const MANUAL_SCROLL_PAUSE_MS = 4000
 const SKELETON_WIDTHS = ['70%', '45%', '85%', '55%', '65%', '40%']
 
 // A candidate whose duration is off by more than this is almost certainly
-// a different edit of the track (radio cut, live take, ...) rather than a
+// a different edit of the song (radio cut, live take, ...) rather than a
 // timing quirk — flagged in the picker, see isDurationMismatch() below.
 const DURATION_MISMATCH_THRESHOLD_S = 5
 
@@ -232,7 +232,7 @@ export default {
     return {
       autoscrollPaused: false,
       resumeTimer: null as ReturnType<typeof setTimeout> | null,
-      // First placement after a track's lyrics (re)load jumps instantly
+      // First placement after a song's lyrics (re)load jumps instantly
       // instead of animating up from wherever the scroll happened to be.
       skipNextScrollAnimation: true,
       // Armed by the target button — while true, the *next* line click
@@ -278,8 +278,8 @@ export default {
         ? this.$t('lyrics.laterBy', { seconds })
         : this.$t('lyrics.earlierBy', { seconds })
     },
-    currentTrack() {
-      return this.playbackStore.currentTrack
+    currentSong() {
+      return this.playbackStore.currentSong
     },
     sourceLabel() {
       const source = this.lyricsStore.source
@@ -301,11 +301,11 @@ export default {
     },
   },
   watch: {
-    // A new track's lyrics replacing the old ones — reset scroll to the top
-    // immediately (this component instance persists across track changes,
+    // A new song's lyrics replacing the old ones — reset scroll to the top
+    // immediately (this component instance persists across song changes,
     // its scroll position doesn't reset on its own) and let the next
     // activeIndex placement below jump instantly rather than animate.
-    'lyricsStore.trackId'() {
+    'lyricsStore.songId'() {
       this.skipNextScrollAnimation = true
       this.calibrating = false
       this.lyricsStore.clearCandidates()
@@ -375,12 +375,12 @@ export default {
     // ensureLoaded() itself not being eager: don't hit three third-party
     // search APIs for a picker nobody opened.
     onPickerToggle(open: boolean) {
-      if (open && this.currentTrack) void this.lyricsStore.loadCandidates(this.currentTrack)
+      if (open && this.currentSong) void this.lyricsStore.loadCandidates(this.currentSong)
       else this.lyricsStore.clearCandidates()
     },
     onSelectCandidate(source: string, candidate: LyricSearchResult) {
-      if (this.currentTrack) {
-        void this.lyricsStore.selectCandidate(this.currentTrack, source, candidate.id)
+      if (this.currentSong) {
+        void this.lyricsStore.selectCandidate(this.currentSong, source, candidate.id)
       }
     },
     // `score` is a distance (0 = identical, larger = worse — see
@@ -397,9 +397,9 @@ export default {
       return `${minutes}:${String(secs).padStart(2, '0')}`
     },
     isDurationMismatch(candidate: LyricSearchResult): boolean {
-      const trackDuration = this.currentTrack?.duration
-      if (candidate.duration == null || trackDuration == null) return false
-      return Math.abs(candidate.duration - trackDuration) > DURATION_MISMATCH_THRESHOLD_S
+      const songDuration = this.currentSong?.duration
+      if (candidate.duration == null || songDuration == null) return false
+      return Math.abs(candidate.duration - songDuration) > DURATION_MISMATCH_THRESHOLD_S
     },
     // isSync is a real tri-state, not a boolean — NetEase's search API
     // gives no signal either way (see connect/lyrics/netease.py), which is
@@ -465,7 +465,7 @@ export default {
   width: 6px;
 }
 
-.lyrics-panel__scroll--plain::-webkit-scrollbar-track {
+.lyrics-panel__scroll--plain::-webkit-scrollbar-song {
   background: transparent;
 }
 

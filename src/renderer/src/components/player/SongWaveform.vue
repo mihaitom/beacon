@@ -1,8 +1,8 @@
 <template>
   <canvas
     ref="canvasEl"
-    class="track-waveform"
-    :class="{ 'track-waveform--disabled': disabled }"
+    class="song-waveform"
+    :class="{ 'song-waveform--disabled': disabled }"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
@@ -20,7 +20,7 @@ const UNPLAYED_COLOR = 'rgba(255, 255, 255, 0.22)'
 const MARKER_COLOR = 'rgba(255, 255, 255, 0.9)'
 
 export default {
-  name: 'TrackWaveform',
+  name: 'SongWaveform',
   props: {
     // Mirrors v-slider's own prop/event contract (model-value + @end) so
     // this is a drop-in replacement — see PlayerBar.vue, whose
@@ -35,9 +35,9 @@ export default {
       peaks: [] as number[],
       resizeObserver: null as ResizeObserver | null,
       dragging: false,
-      // Guards a rapid track change from racing two fetches — same pattern
-      // as stores/lyrics.ts's inFlightTrackId.
-      fetchedTrackId: null as string | null,
+      // Guards a rapid song change from racing two fetches — same pattern
+      // as stores/lyrics.ts's inFlightSongId.
+      fetchedSongId: null as string | null,
     }
   },
   computed: {
@@ -47,12 +47,12 @@ export default {
     // Not the seek-value contract's concern, so read directly off the store
     // rather than as a prop — same reasoning as AudioVisualizer.vue reading
     // its own stores for `mode`. Radio has no stable id/seekable position.
-    trackId(): string | null {
-      return this.playbackStore.radioStation ? null : (this.playbackStore.currentTrack?.id ?? null)
+    songId(): string | null {
+      return this.playbackStore.radioStation ? null : (this.playbackStore.currentSong?.id ?? null)
     },
   },
   watch: {
-    trackId: {
+    songId: {
       immediate: true,
       handler(id: string | null) {
         this.loadPeaks(id)
@@ -77,13 +77,13 @@ export default {
     async loadPeaks(id: string | null, attempt = 0) {
       if (!id) {
         this.peaks = []
-        this.fetchedTrackId = null
+        this.fetchedSongId = null
         this.paint()
         return
       }
       if (attempt === 0) {
-        if (this.fetchedTrackId === id) return
-        this.fetchedTrackId = id
+        if (this.fetchedSongId === id) return
+        this.fetchedSongId = id
         this.peaks = []
         this.paint()
       }
@@ -91,23 +91,23 @@ export default {
       try {
         peaks = await getWaveform(id)
       } catch (error) {
-        console.error('[track-waveform] Failed to load waveform:', error)
+        console.error('[song-waveform] Failed to load waveform:', error)
       }
-      // The track may have changed again while this was in flight.
-      if (this.trackId !== id) return
+      // The song may have changed again while this was in flight.
+      if (this.songId !== id) return
 
       const MAX_ATTEMPTS = 3
       if (peaks.length === 0 && attempt < MAX_ATTEMPTS - 1) {
-        // Most likely a transient failure tied to app boot — a track
+        // Most likely a transient failure tied to app boot — a song
         // restored (at its saved, non-zero position) from localStorage
         // fires this fetch alongside a burst of other startup work
         // (library fetch, device discovery, the connect SSE stream, the
         // actual audio stream itself, ...), any of which could delay or
-        // trip up this one too. Growing delay, bounded attempts — a track
+        // trip up this one too. Growing delay, bounded attempts — a song
         // that genuinely has no waveform shouldn't retry forever.
         const delay = 2000 * (attempt + 1)
         setTimeout(() => {
-          if (this.trackId === id) void this.loadPeaks(id, attempt + 1)
+          if (this.songId === id) void this.loadPeaks(id, attempt + 1)
         }, delay)
         return
       }
@@ -123,7 +123,7 @@ export default {
       canvas.height = Math.max(1, Math.round(rect.height * ratio))
       this.paint()
     },
-    // Track-relative seconds for a pointer event's x position, clamped to
+    // Song-relative seconds for a pointer event's x position, clamped to
     // [0, duration].
     positionFromEvent(e: PointerEvent): number {
       const canvas = this.$refs.canvasEl as HTMLCanvasElement
@@ -165,7 +165,7 @@ export default {
       const baseline = height - bottomPadding
 
       if (this.peaks.length === 0) {
-        // Loading, or nothing to show (disabled/no track) — a flat
+        // Loading, or nothing to show (disabled/no song) — a flat
         // baseline still reads as "this is a seek bar" rather than nothing.
         ctx.fillStyle = UNPLAYED_COLOR
         ctx.fillRect(0, baseline - 2, width, 2)
@@ -197,7 +197,7 @@ export default {
 </script>
 
 <style scoped>
-.track-waveform {
+.song-waveform {
   display: block;
   width: 100%;
   height: 24px;
@@ -205,7 +205,7 @@ export default {
   touch-action: none;
 }
 
-.track-waveform--disabled {
+.song-waveform--disabled {
   cursor: default;
   opacity: 0.4;
 }

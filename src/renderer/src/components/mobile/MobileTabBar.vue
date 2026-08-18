@@ -24,10 +24,14 @@ export default {
     },
     items() {
       return [
-        { to: '/m/now-playing', icon: 'mdi-play-circle-outline', label: this.$t('mobile.tabNowPlaying') },
+        {
+          to: '/m/now-playing',
+          icon: 'mdi-play-circle-outline',
+          label: this.$t('mobile.tabNowPlaying'),
+        },
         { to: '/m/queue', icon: 'mdi-playlist-music', label: this.$t('mobile.tabQueue') },
         { to: '/m/playlists', icon: 'mdi-playlist-play', label: this.$t('nav.playlists') },
-        { to: '/m/tracks', icon: 'mdi-music-note', label: this.$t('nav.tracks') },
+        { to: '/m/songs', icon: 'mdi-music-note', label: this.$t('nav.songs') },
         this.authStore.capabilities.internetRadio
           ? { to: '/m/radio', icon: 'mdi-radio', label: this.$t('nav.radio') }
           : null,

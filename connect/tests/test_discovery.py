@@ -12,7 +12,7 @@ def _unclaimed(device: dict) -> dict:
         **device,
         "in_use_by_name": None,
         "in_use_by_session_id": None,
-        "in_use_by_track": None,
+        "in_use_by_song": None,
     }
 
 
@@ -225,7 +225,7 @@ def test_discover_reports_claim_owner(client, default_session):
     device = r.json()["sonos"][0]
     assert device["in_use_by_session_id"] == "owner-session"
     assert device["in_use_by_name"] == "alice"
-    assert device["in_use_by_track"] == "Artist Name - Song Title"
+    assert device["in_use_by_song"] == "Artist Name - Song Title"
 
 
 def test_discover_reports_radio_title_as_track_for_claim_owner(client, default_session):
@@ -252,4 +252,4 @@ def test_discover_reports_radio_title_as_track_for_claim_owner(client, default_s
     ):
         r = client.get("/discover")
 
-    assert r.json()["sonos"][0]["in_use_by_track"] == "Radio FM"
+    assert r.json()["sonos"][0]["in_use_by_song"] == "Radio FM"

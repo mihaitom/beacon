@@ -22,8 +22,8 @@ export interface ServerCapabilities {
    * "New Playlist" dialog) — true for Subsonic and Jellyfin; false for
    * Plex, whose playlist-creation endpoint always needs a starting `uri`
    * of at least one item (see media/plex_bridge.py's create_playlist()).
-   * TrackRow.vue's own "Create new playlist" entry (right-click -> Add to
-   * playlist) always seeds at least one track and stays available
+   * SongRow.vue's own "Create new playlist" entry (right-click -> Add to
+   * playlist) always seeds at least one song and stays available
    * regardless of this flag — this only gates the name-only dialog. */
   emptyPlaylistCreation: boolean
   /** 1–5 star personal rating (setRating.view) — Jellyfin only has a
@@ -37,10 +37,10 @@ export interface ServerCapabilities {
   /** Triggering a library rescan from Settings — Navidrome-specific
    * (startScan.view/getScanStatus.view), not bridged for Jellyfin. */
   libraryScan: boolean
-  /** Track/Artist Radio — Navidrome's getSimilarSongs2.view is bridged to
+  /** Song/Artist Radio — Navidrome's getSimilarSongs2.view is bridged to
    * Jellyfin's InstantMix (see jellyfin_bridge.py's get_similar_songs2),
    * true for both server types. */
-  trackRadio: boolean
+  songRadio: boolean
   /** The Stats/"Wrapped" page's playCount-based sections. Relies on
    * scrobble.view actually reaching the server — bridged for Jellyfin via
    * its session-based /Sessions/Playing + /Sessions/Playing/Stopped
@@ -55,7 +55,7 @@ const SUBSONIC_CAPABILITIES: ServerCapabilities = {
   personalRating: true,
   internetRadio: true,
   libraryScan: true,
-  trackRadio: true,
+  songRadio: true,
   playHistoryStats: true,
 }
 
@@ -65,12 +65,12 @@ const JELLYFIN_CAPABILITIES: ServerCapabilities = {
   personalRating: false,
   internetRadio: true,
   libraryScan: false,
-  trackRadio: true,
+  songRadio: true,
   playHistoryStats: true,
 }
 
 // Plex Phase B (see PLEX_PLAN.md) bridges read-only browsing — artists/
-// albums/tracks/search/cover art — plus internet radio stations (self-
+// albums/songs/search/cover art — plus internet radio stations (self-
 // hosted, identical logic to Jellyfin's, see media/base.py) and playback.
 // Phase C added personal ratings (setRating.view -> Plex's own PUT
 // /:/rate, its one native personal-marking mechanism for music) and
@@ -81,7 +81,7 @@ const JELLYFIN_CAPABILITIES: ServerCapabilities = {
 // Favorites nav item/page hide accordingly instead of leading to a
 // dead-end control. playHistoryStats is true: scrobble.view maps onto
 // Plex's own PUT /:/scrobble, confirmed live against a real server. A real
-// InstantMix-equivalent for track radio still needs its own bridge work,
+// InstantMix-equivalent for song radio still needs its own bridge work,
 // so that one stays false until verified for real, same as Jellyfin's own
 // values above were.
 const PLEX_CAPABILITIES: ServerCapabilities = {
@@ -90,7 +90,7 @@ const PLEX_CAPABILITIES: ServerCapabilities = {
   personalRating: true,
   internetRadio: true,
   libraryScan: false,
-  trackRadio: false,
+  songRadio: false,
   playHistoryStats: true,
 }
 

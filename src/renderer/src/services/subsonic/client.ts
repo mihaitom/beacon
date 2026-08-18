@@ -16,7 +16,7 @@ import type {
   StructuredLyrics,
 } from './types'
 import { mapAlbum, mapArtist, mapPlaylist, mapRadioStation, mapSong } from './mappers'
-import type { Album, Artist, Playlist, RadioStation, Track } from '@/types/library'
+import type { Album, Artist, Playlist, RadioStation, Song } from '@/types/library'
 
 const API_VERSION = '1.16.1'
 const APP_NAME = 'beacon'
@@ -108,9 +108,9 @@ export class SubsonicClient {
    * token and the session id (see the constructor's sessionId comment)
    * have to travel as query params instead (require_token/get_session both
    * accept query-param fallbacks, see connect/core/auth.py + session.py). */
-  streamUrl(trackId: string): string {
+  streamUrl(songId: string): string {
     const params = this.authParams()
-    params.set('id', trackId)
+    params.set('id', songId)
     if (this.connectToken) params.set('token', this.connectToken)
     if (this.sessionId) params.set('session', this.sessionId)
     return `${this.proxyBaseUrl}/rest/stream.view?${params.toString()}`
@@ -144,11 +144,11 @@ export class SubsonicClient {
     return mapAlbum(data.album)
   }
 
-  /** Single-track lookup by id — used to rebuild a full Track from the
+  /** Single-song lookup by id — used to rebuild a full Song from the
    * connect backend's SSE status (which only gives id/title/artist/album/
-   * duration, see StatusTrack) after a page reload or a fresh SSE
+   * duration, see StatusSong) after a page reload or a fresh SSE
    * subscription finds playback already in progress. */
-  async getSong(id: string): Promise<Track> {
+  async getSong(id: string): Promise<Song> {
     const data = await this.get<{ song: RawSong }>('getSong.view', { id })
     return mapSong(data.song)
   }
@@ -156,7 +156,7 @@ export class SubsonicClient {
   /** Embedded/ID3-tag lyrics for one specific file (OpenSubsonic
    * extension) — tried before connect's third-party lookups (see
    * stores/lyrics.ts) since it matches this exact audio file rather than
-   * "some track with this name/artist" that may be a different edit.
+   * "some song with this name/artist" that may be a different edit.
    * Empty array (not a throw) on servers that don't implement the
    * extension, same as any other "nothing here" case. */
   async getLyricsBySongId(id: string): Promise<StructuredLyrics[]> {
@@ -225,7 +225,7 @@ export class SubsonicClient {
   ): Promise<{
     artists: Artist[]
     albums: Album[]
-    tracks: Track[]
+    songs: Song[]
     // Only ever present when a Jellyfin bridge answered (see
     // SearchResult3Response's comment) — null/undefined for a real
     // Subsonic/Navidrome server, which has no equivalent concept for a
@@ -242,17 +242,17 @@ export class SubsonicClient {
     return {
       artists: (data.searchResult3.artist ?? []).map(mapArtist),
       albums: (data.searchResult3.album ?? []).map(mapAlbum),
-      tracks: (data.searchResult3.song ?? []).map(mapSong),
+      songs: (data.searchResult3.song ?? []).map(mapSong),
       totalRecordCount: data.searchResult3.totalRecordCount ?? null,
     }
   }
 
-  async getStarred2(): Promise<{ artists: Artist[]; albums: Album[]; tracks: Track[] }> {
+  async getStarred2(): Promise<{ artists: Artist[]; albums: Album[]; songs: Song[] }> {
     const data = await this.get<Starred2Response>('getStarred2.view')
     return {
       artists: (data.starred2.artist ?? []).map(mapArtist),
       albums: (data.starred2.album ?? []).map(mapAlbum),
-      tracks: (data.starred2.song ?? []).map(mapSong),
+      songs: (data.starred2.song ?? []).map(mapSong),
     }
   }
 
@@ -270,9 +270,9 @@ export class SubsonicClient {
     await this.get('setRating.view', { id, rating: String(rating) })
   }
 
-  /** Track Radio — songs similar to `id` (a song, artist, or album id),
+  /** Song Radio — songs similar to `id` (a song, artist, or album id),
    * per Navidrome's own recommendation engine. */
-  async getSimilarSongs2(id: string, count = 100): Promise<Track[]> {
+  async getSimilarSongs2(id: string, count = 100): Promise<Song[]> {
     const data = await this.get<SimilarSongs2Response>('getSimilarSongs2.view', {
       id,
       count: String(count),

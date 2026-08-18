@@ -59,7 +59,7 @@ import StickyFilter from '@/components/StickyFilter.vue'
 
 const PAGE_SIZE = 60
 // Fills a few full rows of the 160px card grid on a typical window width —
-// there's no real count to key off yet (unlike TrackList's skeleton, which
+// there's no real count to key off yet (unlike SongTable's skeleton, which
 // caps at however many rows are actually about to load), so just enough to
 // read as "a grid is coming" without looking sparse.
 const SKELETON_COUNT = 18
@@ -130,7 +130,7 @@ export default {
 }
 
 /* v-skeleton-loader's width/height props only size the outer wrapper, not
- * the bone itself (see the identical comment/technique in TrackList.vue) —
+ * the bone itself (see the identical comment/technique in SongTable.vue) —
  * forcing the bone to fill that wrapper is what makes each skeleton card
  * match AlbumCard.vue's real 160x160 cover + two text lines exactly, so
  * nothing shifts once real cards render in. */

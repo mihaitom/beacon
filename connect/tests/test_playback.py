@@ -27,8 +27,8 @@ def test_status_initial(client):
     assert body["streaming"] is False
     assert body["paused"] is False
     assert body["targets"] == []
-    assert body["current_track"] is None
-    assert body["total_tracks"] == 0
+    assert body["current_song"] is None
+    assert body["total_songs"] == 0
 
 
 def test_status_reflects_state(client, default_session):
@@ -46,13 +46,13 @@ def test_status_reflects_state(client, default_session):
 def test_play_rejects_when_never_configured(client):
     # No /config call ever happened for this session, so it's not
     # authenticated yet — see core/session.py's require_authenticated_session.
-    r = client.post("/play", json={"track_ids": ["abc"]})
+    r = client.post("/play", json={"song_ids": ["abc"]})
     assert r.status_code == 401
 
 
 def test_play_rejects_empty_track_list(client):
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
-    r = client.post("/play", json={"track_ids": []})
+    r = client.post("/play", json={"song_ids": []})
     assert "error" in r.json()
 
 
@@ -67,7 +67,7 @@ def test_play_fetches_track_and_sets_state(client, default_session):
         cover_art_id="cover-1",
     )
     with patch.object(default_session.media, "get_track", return_value=track):
-        r = client.post("/play", json={"track_ids": ["1"]})
+        r = client.post("/play", json={"song_ids": ["1"]})
 
     assert r.status_code == 200
     body = r.json()
@@ -90,7 +90,7 @@ def test_play_with_start_position_seeds_resume_offset_and_elapsed(
         cover_art_id="cover-1",
     )
     with patch.object(default_session.media, "get_track", return_value=track):
-        r = client.post("/play", json={"track_ids": ["1"], "start_position": 42.0})
+        r = client.post("/play", json={"song_ids": ["1"], "start_position": 42.0})
 
     assert r.status_code == 200
     assert default_session.state.clock.resume_offset == 42.0
@@ -109,7 +109,7 @@ def test_play_clamps_start_position_to_track_duration(client, default_session):
         cover_art_id="cover-1",
     )
     with patch.object(default_session.media, "get_track", return_value=track):
-        r = client.post("/play", json={"track_ids": ["1"], "start_position": 999.0})
+        r = client.post("/play", json={"song_ids": ["1"], "start_position": 999.0})
 
     assert r.status_code == 200
     assert default_session.state.clock.resume_offset == 180.0
@@ -135,13 +135,13 @@ def test_play_drops_request_with_stale_seq(client, default_session):
     with patch.object(default_session.media, "get_track", side_effect=get_track):
         # seq=2 arrives (and is accepted) first — as if it were dispatched
         # after seq=1 but its response/processing simply got there sooner.
-        r2 = client.post("/play", json={"track_ids": ["b"], "seq": 2})
+        r2 = client.post("/play", json={"song_ids": ["b"], "seq": 2})
         assert r2.json()["status"] == "playing"
         assert default_session.state.current_track.id == "b"
 
         # seq=1 arrives after — it's older than what's already been
         # accepted, so it must not overwrite the newer track.
-        r1 = client.post("/play", json={"track_ids": ["a"], "seq": 1})
+        r1 = client.post("/play", json={"song_ids": ["a"], "seq": 1})
         assert r1.json()["status"] == "superseded"
         assert default_session.state.current_track.id == "b"
 
@@ -153,8 +153,8 @@ def test_play_without_seq_is_never_treated_as_stale(client, default_session):
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
     track = Track(id="1", title="Test Song", artist="Test Artist", duration=180, cover_art_id="c")
     with patch.object(default_session.media, "get_track", return_value=track):
-        client.post("/play", json={"track_ids": ["1"], "seq": 5})
-        r = client.post("/play", json={"track_ids": ["1"]})
+        client.post("/play", json={"song_ids": ["1"], "seq": 5})
+        r = client.post("/play", json={"song_ids": ["1"]})
     assert r.json()["status"] == "playing"
 
 
@@ -194,7 +194,7 @@ def test_play_returns_error_for_unfetchable_track(client, default_session):
     with patch.object(
         default_session.media, "get_track", side_effect=RuntimeError("not found")
     ):
-        r = client.post("/play", json={"track_ids": ["bad"]})
+        r = client.post("/play", json={"song_ids": ["bad"]})
 
     assert "error" in r.json()
 
@@ -222,7 +222,7 @@ def test_play_passes_resolved_content_type_to_target_and_caches_it(
     ):
         r = client.post(
             "/play",
-            json={"track_ids": ["1"], "target_name": "TV", "target_type": "chromecast"},
+            json={"song_ids": ["1"], "target_name": "TV", "target_type": "chromecast"},
         )
 
     assert r.json()["status"] == "playing"
@@ -251,7 +251,7 @@ def test_play_sets_current_track_before_dispatching_to_target(client, default_se
     ):
         r = client.post(
             "/play",
-            json={"track_ids": ["1"], "target_name": "TV", "target_type": "chromecast"},
+            json={"song_ids": ["1"], "target_name": "TV", "target_type": "chromecast"},
         )
 
     assert r.json()["status"] == "playing"
@@ -272,7 +272,7 @@ def test_play_rolls_back_state_when_delivery_dispatch_fails(client, default_sess
         patch.object(ChromecastDelivery, "play", new=AsyncMock()),
     ):
         client.post(
-            "/play", json={"track_ids": ["old"], "target_name": "TV", "target_type": "chromecast"}
+            "/play", json={"song_ids": ["old"], "target_name": "TV", "target_type": "chromecast"}
         )
     assert default_session.state.current_track.id == "old"
 
@@ -283,7 +283,7 @@ def test_play_rolls_back_state_when_delivery_dispatch_fails(client, default_sess
         ),
     ):
         r = client.post(
-            "/play", json={"track_ids": ["new"], "target_name": "TV", "target_type": "chromecast"}
+            "/play", json={"song_ids": ["new"], "target_name": "TV", "target_type": "chromecast"}
         )
 
     assert "error" in r.json()
@@ -298,8 +298,8 @@ def test_play_rolls_back_state_when_delivery_dispatch_fails(client, default_sess
 # ── Queue auto-advance seeding (see routes/stream.py's _advance_or_end()) ──────
 
 
-def test_play_seeds_queue_from_track_ids(client, default_session):
-    """/play's track_ids becomes session.state.queue verbatim — the whole
+def test_play_seeds_queue_from_song_ids(client, default_session):
+    """/play's song_ids becomes session.state.queue verbatim — the whole
     remaining queue, not just the track actually dispatched — so
     routes/stream.py's _advance_or_end() can auto-advance through it
     without needing the frontend to re-dispatch each track itself."""
@@ -307,7 +307,7 @@ def test_play_seeds_queue_from_track_ids(client, default_session):
     track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
 
     with patch.object(default_session.media, "get_track", return_value=track):
-        r = client.post("/play", json={"track_ids": ["1", "2", "3"]})
+        r = client.post("/play", json={"song_ids": ["1", "2", "3"]})
 
     assert r.json()["status"] == "playing"
     assert default_session.state.queue == ["1", "2", "3"]
@@ -328,7 +328,7 @@ def test_resume_reuses_cached_content_type_without_reprobing(client, default_ses
     ):
         client.post(
             "/play",
-            json={"track_ids": ["1"], "target_name": "TV", "target_type": "chromecast"},
+            json={"song_ids": ["1"], "target_name": "TV", "target_type": "chromecast"},
         )
 
     default_session.state.clock.is_paused = True
@@ -361,7 +361,7 @@ def test_play_url_resets_cached_format_to_fallback(client, default_session):
     ):
         client.post(
             "/play",
-            json={"track_ids": ["1"], "target_name": "TV", "target_type": "chromecast"},
+            json={"song_ids": ["1"], "target_name": "TV", "target_type": "chromecast"},
         )
     assert default_session.state.current_output_format is flac_copy
 
@@ -559,7 +559,7 @@ def test_play_does_not_redispatch_same_target_and_track_within_cooldown(
     body = {
         "target_name": "TV",
         "target_type": "chromecast",
-        "track_ids": ["1"],
+        "song_ids": ["1"],
     }
     with (
         patch.object(default_session.media, "get_track", return_value=track),

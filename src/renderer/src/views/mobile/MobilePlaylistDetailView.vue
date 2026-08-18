@@ -1,7 +1,12 @@
 <template>
   <v-container v-if="playlist" fluid>
     <div class="d-flex align-center mb-4">
-      <cover-art :cover-art-id="playlist.coverArtId" :size="72" fallback-icon="mdi-playlist-music" class="mr-3" />
+      <cover-art
+        :cover-art-id="playlist.coverArtId"
+        :size="72"
+        fallback-icon="mdi-playlist-music"
+        class="mr-3"
+      />
       <div class="min-width-0 flex-grow-1">
         <h1 class="page-title text-truncate">{{ playlist.name }}</h1>
         <div class="text-caption text-medium-emphasis">
@@ -13,29 +18,31 @@
         color="primary"
         size="large"
         variant="text"
-        :disabled="!playlist.tracks.length"
+        :disabled="!playlist.songs.length"
         @click="playAll"
       />
     </div>
 
     <div class="mobile-playlist-detail__list">
-      <mobile-track-row
-        v-for="(track, index) in playlist.tracks"
-        :key="track.id"
-        :track="track"
+      <mobile-song-row
+        v-for="(song, index) in playlist.songs"
+        :key="song.id"
+        :song="song"
         @play="play(index)"
-        @toggle-star="toggleStar(track)"
-        @open-actions="openActions(track)"
+        @toggle-star="toggleStar(song)"
+        @open-actions="openActions(song)"
       />
     </div>
 
-    <mobile-track-action-sheet v-model="actionsOpen" :track="activeTrack" />
+    <mobile-song-action-sheet v-model="actionsOpen" :song="activeSong" />
   </v-container>
   <v-container v-else>
     <div v-if="libraryStore.loading" class="d-flex justify-center pa-6">
       <v-progress-circular indeterminate color="primary" />
     </div>
-    <v-alert v-else-if="libraryStore.error" type="error" variant="tonal">{{ libraryStore.error }}</v-alert>
+    <v-alert v-else-if="libraryStore.error" type="error" variant="tonal">{{
+      libraryStore.error
+    }}</v-alert>
   </v-container>
 </template>
 
@@ -43,18 +50,20 @@
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import CoverArt from '@/components/library/CoverArt.vue'
-import MobileTrackRow from '@/components/mobile/MobileTrackRow.vue'
-import MobileTrackActionSheet from '@/components/mobile/MobileTrackActionSheet.vue'
-import type { Track } from '@/types/library'
+import MobileSongRow from '@/components/mobile/MobileSongRow.vue'
+import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
+import type { Song } from '@/types/library'
 
 export default {
   name: 'MobilePlaylistDetailView',
-  components: { CoverArt, MobileTrackRow, MobileTrackActionSheet },
+  components: { CoverArt, MobileSongRow, MobileSongActionSheet },
   data() {
     return {
-      playlist: null as Awaited<ReturnType<ReturnType<typeof useLibraryStore>['fetchPlaylist']>> | null,
+      playlist: null as Awaited<
+        ReturnType<ReturnType<typeof useLibraryStore>['fetchPlaylist']>
+      > | null,
       actionsOpen: false,
-      activeTrack: null as Track | null,
+      activeSong: null as Song | null,
     }
   },
   computed: {
@@ -80,19 +89,19 @@ export default {
       }
     },
     async playAll() {
-      if (!this.playlist?.tracks.length) return
-      await usePlaybackStore().playTrackList(this.playlist.tracks, 0)
+      if (!this.playlist?.songs.length) return
+      await usePlaybackStore().playSongList(this.playlist.songs, 0)
     },
     async play(index: number) {
       if (!this.playlist) return
-      await usePlaybackStore().playTrackList(this.playlist.tracks, index)
+      await usePlaybackStore().playSongList(this.playlist.songs, index)
     },
-    async toggleStar(track: Track) {
-      await this.libraryStore.toggleStar({ id: track.id, starred: track.starred })
-      track.starred = !track.starred
+    async toggleStar(song: Song) {
+      await this.libraryStore.toggleStar({ id: song.id, starred: song.starred })
+      song.starred = !song.starred
     },
-    openActions(track: Track) {
-      this.activeTrack = track
+    openActions(song: Song) {
+      this.activeSong = song
       this.actionsOpen = true
     },
   },

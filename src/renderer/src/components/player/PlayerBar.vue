@@ -2,13 +2,13 @@
   <v-footer app inset height="88" color="#0B0D13" class="player-bar px-4">
     <div class="d-flex align-center w-100" style="gap: 16px">
       <div
-        class="track-info d-flex align-center"
+        class="song-info d-flex align-center"
         style="width: 220px; cursor: pointer"
         @click="hasPlayable && $router.push('/now-playing')"
       >
         <cover-art
-          v-if="currentTrack"
-          :cover-art-id="currentTrack.coverArtId"
+          v-if="currentSong"
+          :cover-art-id="currentSong.coverArtId"
           :size="48"
           class="player-bar__cover mr-3"
         />
@@ -22,23 +22,23 @@
         <div class="min-width-0">
           <div class="text-body-2 text-truncate">
             {{
-              currentTrack?.title ?? playbackStore.radioStation?.name ?? $t('player.nothingPlaying')
+              currentSong?.title ?? playbackStore.radioStation?.name ?? $t('player.nothingPlaying')
             }}
           </div>
           <router-link
-            v-if="currentTrack"
-            :to="`/artists/${currentTrack.artistId}`"
+            v-if="currentSong"
+            :to="`/artists/${currentSong.artistId}`"
             class="text-caption text-medium-emphasis text-truncate player-bar__artist-link"
             @click.stop
           >
-            {{ currentTrack.artist }}
+            {{ currentSong.artist }}
           </router-link>
           <div v-else class="text-caption text-medium-emphasis text-truncate" />
         </div>
         <v-btn
-          v-if="currentTrack && authStore.capabilities.favorites"
-          :icon="currentTrack.starred ? 'mdi-heart' : 'mdi-heart-outline'"
-          :color="currentTrack.starred ? 'primary' : undefined"
+          v-if="currentSong && authStore.capabilities.favorites"
+          :icon="currentSong.starred ? 'mdi-heart' : 'mdi-heart-outline'"
+          :color="currentSong.starred ? 'primary' : undefined"
           :disabled="starringInFlight"
           variant="text"
           density="comfortable"
@@ -92,7 +92,7 @@
           <span class="text-caption text-medium-emphasis" style="width: 40px">{{
             formatTime(seekPreviewPosition ?? playbackStore.localPosition)
           }}</span>
-          <track-waveform
+          <song-waveform
             :model-value="seekPreviewPosition ?? playbackStore.localPosition"
             :duration="playbackStore.duration"
             :disabled="!hasPlayable || !!playbackStore.radioStation"
@@ -107,7 +107,7 @@
 
       <div class="d-flex align-center" style="min-width: 320px; gap: 4px">
         <v-btn
-          v-if="currentTrack"
+          v-if="currentSong"
           icon="mdi-script-text-outline"
           variant="text"
           density="comfortable"
@@ -165,12 +165,12 @@ import { useAuthStore } from '@/stores/auth'
 import { radioFaviconUrl } from '@/services/connect/radio'
 import CoverArt from '@/components/library/CoverArt.vue'
 import ConnectButton from '@/components/connect/ConnectButton.vue'
-import TrackWaveform from './TrackWaveform.vue'
+import SongWaveform from './SongWaveform.vue'
 import type { ConnectDeviceRef } from '@/services/connect/types'
 
 export default {
   name: 'PlayerBar',
-  components: { CoverArt, ConnectButton, TrackWaveform },
+  components: { CoverArt, ConnectButton, SongWaveform },
   data() {
     return {
       // null while unfetched/unsupported (e.g. DLNA renderer without volume
@@ -181,7 +181,7 @@ export default {
       // channel for "someone changed it on the device itself/another
       // session" — polling is the only way this slider ever finds out.
       volumePollTimer: null as ReturnType<typeof setInterval> | null,
-      // Non-null only while actively dragging the seek bar (TrackWaveform)
+      // Non-null only while actively dragging the seek bar (SongWaveform)
       // — decouples its live visual position from playbackStore.seek()
       // itself, which used to fire on every drag tick via
       // @update:model-value. During casting each of those was a real
@@ -209,8 +209,8 @@ export default {
     authStore() {
       return useAuthStore()
     },
-    currentTrack() {
-      return this.playbackStore.currentTrack
+    currentSong() {
+      return this.playbackStore.currentSong
     },
     // 96, not 48 (the box's actual CSS size) — a favicon this small still
     // benefits from headroom on a high-DPI display, and the source is
@@ -223,7 +223,7 @@ export default {
       return radioFaviconUrl(auth.apiUrl, auth.connectToken, homePageUrl, 96)
     },
     hasPlayable() {
-      return this.currentTrack != null || this.playbackStore.radioStation != null
+      return this.currentSong != null || this.playbackStore.radioStation != null
     },
     repeatIcon() {
       return this.playbackStore.repeatMode === 'one' ? 'mdi-repeat-once' : 'mdi-repeat'
@@ -258,7 +258,9 @@ export default {
     // Mirrors DeviceListItem.vue's own two-state volumeIcon (mute vs. not) —
     // same simple mute/not-mute distinction, not a third "medium" state.
     volumeIcon() {
-      const muted = this.singleActiveTarget ? this.deviceVolume === 0 : this.playbackStore.volume === 0
+      const muted = this.singleActiveTarget
+        ? this.deviceVolume === 0
+        : this.playbackStore.volume === 0
       return muted ? 'mdi-volume-mute' : 'mdi-volume-high'
     },
     muteDisabled() {
@@ -328,15 +330,15 @@ export default {
       this.seekPreviewPosition = null
     },
     async toggleStar() {
-      if (!this.currentTrack || this.starringInFlight) return
+      if (!this.currentSong || this.starringInFlight) return
       this.starringInFlight = true
-      const track = this.currentTrack
-      const wasStarred = track.starred
+      const song = this.currentSong
+      const wasStarred = song.starred
       try {
-        await useLibraryStore().toggleStar({ id: track.id, starred: wasStarred })
-        // Flip the captured track, not this.currentTrack — the track that
+        await useLibraryStore().toggleStar({ id: song.id, starred: wasStarred })
+        // Flip the captured song, not this.currentSong — the song that
         // was actually playing might have advanced during the round-trip.
-        track.starred = !wasStarred
+        song.starred = !wasStarred
       } finally {
         this.starringInFlight = false
       }

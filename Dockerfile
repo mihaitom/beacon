@@ -157,12 +157,12 @@ COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
 ENV SERVER_INTERNAL_URL="" CONNECT_TOKEN="" CONNECT_URL=/api
-ENV WEB_PORT=9180 PORT=9181
+ENV WEB_PORT=7070 PORT=7071
 
-EXPOSE 9180
+EXPOSE 7070
 
 # Goes through nginx to /api/health, so it fails if either nginx or the
-# Python backend is down/unresponsive. Uses $WEB_PORT (not the 9180 default
+# Python backend is down/unresponsive. Uses $WEB_PORT (not the 7070 default
 # baked into EXPOSE above, which is only documentation) so the healthcheck
 # still hits the right port when it's overridden — see start.sh.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

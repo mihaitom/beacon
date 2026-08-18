@@ -1,14 +1,14 @@
 import { defineStore } from 'pinia'
 import { useAuthStore } from './auth'
 import { SubsonicClient } from '@/services/subsonic/client'
-import type { Album, Artist, Genre, Playlist, RadioStation, Track } from '@/types/library'
+import type { Album, Artist, Genre, Playlist, RadioStation, Song } from '@/types/library'
 
-// Dedupes concurrent fetchAllTracks() calls — fetchAlbum()'s derived path
+// Dedupes concurrent fetchAllSongs() calls — fetchAlbum()'s derived path
 // (and things that fan out into many fetchAlbum() calls at once, like
-// fetchTopTracksForArtist()'s Promise.all) can all end up awaiting this at
-// the same moment; without this they'd each see allTracksLoaded still false
+// fetchTopSongsForArtist()'s Promise.all) can all end up awaiting this at
+// the same moment; without this they'd each see allSongsLoaded still false
 // and kick off their own redundant parallel fetch of the whole catalog.
-let fetchAllTracksPromise: Promise<void> | null = null
+let fetchAllSongsPromise: Promise<void> | null = null
 
 // Single localStorage cache for library data that's expensive to fetch in
 // full but rarely changes between app launches — one shared blob (not a key
@@ -17,10 +17,10 @@ let fetchAllTracksPromise: Promise<void> | null = null
 // lives under one beacon.library-cache entry.
 const LIBRARY_CACHE_KEY = 'beacon.library-cache'
 
-type LibraryCacheField = 'tracks' | 'artists' | 'albums' | 'playlists'
+type LibraryCacheField = 'songs' | 'artists' | 'albums' | 'playlists'
 
 interface LibraryCacheSnapshot {
-  tracks?: Track[]
+  songs?: Song[]
   artists?: Artist[]
   albums?: Album[]
   playlists?: Playlist[]
@@ -28,8 +28,8 @@ interface LibraryCacheSnapshot {
   // drives the TTL check below, so a cached value that's still fresh
   // doesn't trigger a redundant background refetch of the whole thing on
   // every single app session. Cheap for Subsonic; on a Jellyfin server with
-  // a large library, refetching the full track catalog is a multi-minute
-  // scan (see fetchAllTracksNow()'s own comment) — this is what stops that
+  // a large library, refetching the full song catalog is a multi-minute
+  // scan (see fetchAllSongsNow()'s own comment) — this is what stops that
   // from silently re-running every time the app opens.
   fetchedAt?: Partial<Record<LibraryCacheField, number>>
 }
@@ -60,7 +60,7 @@ function saveLibraryCacheField<K extends LibraryCacheField>(
     current.fetchedAt = { ...current.fetchedAt, [field]: Date.now() }
     localStorage.setItem(LIBRARY_CACHE_KEY, JSON.stringify(current))
   } catch {
-    // Quota exceeded (a large library's full track catalog can run several
+    // Quota exceeded (a large library's full song catalog can run several
     // MB) or storage unavailable — falling back to fetching fresh every
     // time is an acceptable degradation, not worth surfacing to the user.
   }
@@ -76,9 +76,9 @@ export function clearLibraryCache(): void {
   }
 }
 
-/** Fetches every page of the flat track catalog (search3 with an empty
+/** Fetches every page of the flat song catalog (search3 with an empty
  * query) and returns it as one array — used for the cache-refresh path in
- * fetchAllTracks(), where nothing should touch reactive state until the
+ * fetchAllSongs(), where nothing should touch reactive state until the
  * whole thing is done (see that method's comment for why). `onProgress`,
  * given, fires after each page — only refreshLibrary()'s manual "rescan"
  * trigger actually uses it (to drive a progress bar); the routine
@@ -86,27 +86,27 @@ export function clearLibraryCache(): void {
  * way. `totalRecordCount` is only ever non-null when a Jellyfin bridge
  * answered (see SubsonicClient.search3()'s comment) — a real Subsonic/
  * Navidrome server leaves total unknown throughout. */
-async function fetchTrackPages(
+async function fetchSongPages(
   client: SubsonicClient,
   pageSize: number,
   onProgress?: (progress: { loaded: number; total: number | null }) => void,
-): Promise<Track[]> {
-  let all: Track[] = []
+): Promise<Song[]> {
+  let all: Song[] = []
   let offset = 0
   while (true) {
     const page = await client.search3('', pageSize, 0, 0, offset)
-    if (page.tracks.length === 0) break
-    all = all.concat(page.tracks)
+    if (page.songs.length === 0) break
+    all = all.concat(page.songs)
     onProgress?.({ loaded: all.length, total: page.totalRecordCount })
-    if (page.tracks.length < pageSize) break
+    if (page.songs.length < pageSize) break
     offset += pageSize
   }
   return all
 }
 
 /** Fetches the full album catalog page by page via getAlbumList2 — its own
- * request, deliberately not derived from allTracks. Deriving would mean
- * AlbumsView (a plain browse grid) has to wait for the entire track catalog
+ * request, deliberately not derived from allSongs. Deriving would mean
+ * AlbumsView (a plain browse grid) has to wait for the entire song catalog
  * just to show album cards, which is a needless latency regression for
  * something getAlbumList2 already answers directly and quickly.
  *
@@ -138,7 +138,7 @@ async function fetchAlbumPages(
 
 /** Retries `fetcher` on failure, waiting `delayMs` between attempts — covers
  * transient failures right at app start (server/network/local proxy not
- * fully up yet), exactly the window cachedFetch()'s and fetchAllTracksNow()'s
+ * fully up yet), exactly the window cachedFetch()'s and fetchAllSongsNow()'s
  * background refresh run in. Without this, a single early failure leaves
  * whatever's already showing (stale cache, or nothing) stuck for the rest of
  * the session, since neither of those callers gets another chance to retry
@@ -194,20 +194,20 @@ async function cachedFetch<K extends LibraryCacheField>(
 interface LibraryState {
   artists: Artist[]
   albums: Album[]
-  allTracks: Track[]
-  allTracksLoaded: boolean
+  allSongs: Song[]
+  allSongsLoaded: boolean
   // Non-null only while refreshLibrary()'s manual "rescan" is actively
-  // paging through the track catalog — drives SettingsView's progress bar.
+  // paging through the song catalog — drives SettingsView's progress bar.
   // `total` stays null on a real Subsonic/Navidrome server (no such
   // concept there — see SubsonicClient.search3()), so the UI falls back to
   // an indeterminate bar in that case.
-  trackScanProgress: { loaded: number; total: number | null } | null
+  songScanProgress: { loaded: number; total: number | null } | null
   playlists: Playlist[]
   radioStations: RadioStation[]
-  starred: { artists: Artist[]; albums: Album[]; tracks: Track[] }
-  searchResults: { artists: Artist[]; albums: Album[]; tracks: Track[] }
+  starred: { artists: Artist[]; albums: Album[]; songs: Song[] }
+  searchResults: { artists: Artist[]; albums: Album[]; songs: Song[] }
   // Per-album cache for fetchAlbum() — list-level Album entries (from
-  // fetchAlbums()/getAlbumList2) don't carry a full track list, so opening
+  // fetchAlbums()/getAlbumList2) don't carry a full song list, so opening
   // a single album always needs its own getAlbum(id) call regardless.
   albumCache: Record<string, Album>
   artistCache: Record<string, Artist>
@@ -224,13 +224,13 @@ export const useLibraryStore = defineStore('library', {
   state: (): LibraryState => ({
     artists: [],
     albums: [],
-    allTracks: [],
-    allTracksLoaded: false,
-    trackScanProgress: null,
+    allSongs: [],
+    allSongsLoaded: false,
+    songScanProgress: null,
     playlists: [],
     radioStations: [],
-    starred: { artists: [], albums: [], tracks: [] },
-    searchResults: { artists: [], albums: [], tracks: [] },
+    starred: { artists: [], albums: [], songs: [] },
+    searchResults: { artists: [], albums: [], songs: [] },
     albumCache: {},
     artistCache: {},
     loadingCount: 0,
@@ -239,22 +239,22 @@ export const useLibraryStore = defineStore('library', {
 
   getters: {
     loading: (state): boolean => state.loadingCount > 0,
-    /** Derived from allTracks rather than its own fetch — every field a
+    /** Derived from allSongs rather than its own fetch — every field a
      * Genre needs (name, songCount, distinct albumCount) is already right
-     * there on each track, so a whole separate getGenres.view round trip
+     * there on each song, so a whole separate getGenres.view round trip
      * (and cache entry) would just be duplicating data we're loading
-     * anyway. See fetchGenres(), which just makes sure allTracks is
+     * anyway. See fetchGenres(), which just makes sure allSongs is
      * populated first. */
     genres(state): Genre[] {
       const byName = new Map<string, { albumIds: Set<string>; songCount: number }>()
-      for (const track of state.allTracks) {
-        if (!track.genre) continue
-        let entry = byName.get(track.genre)
+      for (const song of state.allSongs) {
+        if (!song.genre) continue
+        let entry = byName.get(song.genre)
         if (!entry) {
           entry = { albumIds: new Set(), songCount: 0 }
-          byName.set(track.genre, entry)
+          byName.set(song.genre, entry)
         }
-        entry.albumIds.add(track.albumId)
+        entry.albumIds.add(song.albumId)
         entry.songCount++
       }
       return Array.from(byName.entries()).map(([name, { albumIds, songCount }]) => ({
@@ -285,23 +285,23 @@ export const useLibraryStore = defineStore('library', {
     },
 
     /** Called once a triggered Navidrome library scan finishes (see
-     * SettingsView.vue) — a scan can add, remove, or re-tag tracks
+     * SettingsView.vue) — a scan can add, remove, or re-tag songs
      * Beacon's own in-memory state has no way to hear about on its own.
-     * fetchAlbums()/fetchArtists()/fetchAllTracks() each skip re-fetching
+     * fetchAlbums()/fetchArtists()/fetchAllSongs() each skip re-fetching
      * once their collection is non-empty (unlike fetchPlaylists(), which
      * already stale-while-revalidates via cachedFetch() every call — left
      * alone here), so clearing those specifically is what makes the next
      * visit to each view actually pick up what the scan changed instead of
      * serving Beacon's now-possibly-stale idea of the library until the
      * app restarts. Per-item caches (albumCache/artistCache) go too, since
-     * a scan can change a specific album/artist's own track list without
+     * a scan can change a specific album/artist's own song list without
      * that id ever having been "missing" before. */
     invalidateCache(): void {
       clearLibraryCache()
       this.artists = []
       this.albums = []
-      this.allTracks = []
-      this.allTracksLoaded = false
+      this.allSongs = []
+      this.allSongsLoaded = false
       this.albumCache = {}
       this.artistCache = {}
     },
@@ -309,7 +309,7 @@ export const useLibraryStore = defineStore('library', {
     /** Called from authStore.logout() — without this, a different account
      * signing in afterwards would see the previous account's playlists,
      * radio stations, starred items, and search results, not just its
-     * artists/albums/tracks (which invalidateCache() above already
+     * artists/albums/songs (which invalidateCache() above already
      * handles for the narrower "same-account rescan" case). This store is
      * a singleton for the app's whole lifetime, so nothing else clears it
      * between accounts. */
@@ -321,15 +321,15 @@ export const useLibraryStore = defineStore('library', {
     /** Own request, own cache field — same stale-while-revalidate pattern as
      * fetchArtists()/fetchPlaylists(), fetching the whole catalog page by
      * page via getAlbumList2 (see fetchAlbumPages()). Deliberately NOT
-     * derived from allTracks: that would force AlbumsView to wait on the
-     * entire track catalog just to render a grid of album cards.
+     * derived from allSongs: that would force AlbumsView to wait on the
+     * entire song catalog just to render a grid of album cards.
      *
      * The true first-ever-launch case (no cache at all yet) bypasses
      * cachedFetch()'s generic all-or-nothing withLoading() wrapper below —
      * see that branch's own comment for why. */
     async fetchAlbums(force = false): Promise<void> {
       if (!force && this.albums.length > 0) return
-      // Same reasoning as fetchAllTracksNow()'s PAGE_SIZE — smaller pages
+      // Same reasoning as fetchAllSongsNow()'s PAGE_SIZE — smaller pages
       // for Jellyfin mean a faster first paint.
       const ALBUM_PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 200 : 500
       if (force) {
@@ -386,7 +386,7 @@ export const useLibraryStore = defineStore('library', {
     },
 
     /** List-level Album entries (from fetchAlbums()) never carry a full
-     * track list, so opening a single album always needs its own
+     * song list, so opening a single album always needs its own
      * getAlbum(id) request — cached in albumCache so revisiting the same
      * album (e.g. via back/forward navigation) doesn't re-fetch. */
     async fetchAlbum(id: string): Promise<Album> {
@@ -424,14 +424,14 @@ export const useLibraryStore = defineStore('library', {
       })
     },
 
-    /** Top tracks for an artist by local playCount, sorted descending. There's
+    /** Top songs for an artist by local playCount, sorted descending. There's
      * no direct Subsonic endpoint for this (getArtist.view's albums don't
      * include song lists, only album-level metadata) — fetches each album's
-     * full track list (via the same cache as fetchAlbum()) and aggregates. */
-    async fetchTopTracksForArtist(artist: Artist, limit = 10): Promise<Track[]> {
+     * full song list (via the same cache as fetchAlbum()) and aggregates. */
+    async fetchTopSongsForArtist(artist: Artist, limit = 10): Promise<Song[]> {
       const albums = await Promise.all(artist.albums.map((album) => this.fetchAlbum(album.id)))
       return albums
-        .flatMap((album) => album.tracks)
+        .flatMap((album) => album.songs)
         .sort((a, b) => b.playCount - a.playCount)
         .slice(0, limit)
     },
@@ -449,42 +449,42 @@ export const useLibraryStore = defineStore('library', {
       return this.withLoading(() => this.client().getAlbumList2('random', size))
     },
 
-    /** Top tracks across the whole library by local playCount. There's no
+    /** Top songs across the whole library by local playCount. There's no
      * "most played songs" Subsonic endpoint, so this samples from the
      * frequently-played albums (already a playCount-sorted list) and
-     * aggregates their tracks — cheap (a handful of albums, using the same
+     * aggregates their songs — cheap (a handful of albums, using the same
      * fetchAlbum cache) compared to sorting the entire catalog for a
      * homepage widget. */
-    async fetchTopTracks(limit = 10): Promise<Track[]> {
+    async fetchTopSongs(limit = 10): Promise<Song[]> {
       return this.withLoading(async () => {
         const frequentAlbums = await this.client().getAlbumList2('frequent', 20)
         const albums = await Promise.all(frequentAlbums.map((album) => this.fetchAlbum(album.id)))
         return albums
-          .flatMap((album) => album.tracks)
+          .flatMap((album) => album.songs)
           .sort((a, b) => b.playCount - a.playCount)
           .slice(0, limit)
       })
     },
 
-    /** genres is derived from allTracks (see the getter above) — this just
+    /** genres is derived from allSongs (see the getter above) — this just
      * makes sure that's actually loaded. */
     async fetchGenres(): Promise<void> {
-      await this.fetchAllTracks()
+      await this.fetchAllSongs()
     },
 
-    /** Derived from allTracks, same as the genres getter above — deliberately
+    /** Derived from allSongs, same as the genres getter above — deliberately
      * NOT getSongsByGenre.view, which Navidrome silently caps at 500 and,
      * worse, keeps re-returning the last page instead of an empty one once
      * `offset` runs past the genre's real song count instead of stopping
      * (navidrome/navidrome#1640). That combination turns any genre over 500
      * songs into an infinite pagination loop that hammers the server until
      * it (or the proxy in front of it) falls over with a 502. */
-    async fetchSongsByGenre(genre: string): Promise<Track[]> {
-      await this.fetchAllTracks()
-      return this.allTracks.filter((track) => track.genre === genre)
+    async fetchSongsByGenre(genre: string): Promise<Song[]> {
+      await this.fetchAllSongs()
+      return this.allSongs.filter((song) => song.genre === genre)
     },
 
-    /** The complete track catalog — used by TracksView so filtering/sorting
+    /** The complete song catalog — used by SongsView so filtering/sorting
      * (e.g. "most played") works across the whole library, not just
      * whatever page happened to be loaded. search3 with an empty query is
      * the pragmatic flat-song-browse stand-in (no dedicated endpoint
@@ -494,30 +494,30 @@ export const useLibraryStore = defineStore('library', {
      *
      * Two paths, because a 20k+-song library rarely changes between app
      * launches but takes several sequential requests to fetch in full:
-     *  - Warm cache (localStorage, see loadTracksCache()): shown instantly,
+     *  - Warm cache (localStorage, see loadSongsCache()): shown instantly,
      *    then quietly re-fetched in full underneath and swapped in one
      *    atomic replace once done — a no-op visually unless the library
      *    actually changed, so it never reshuffles what's already on screen.
      *  - Cold cache (first-ever load): fetched page by page instead, each
      *    page appended as it arrives — the first page runs inside
-     *    withLoading() (drives TracksView's skeleton), the rest streams in
+     *    withLoading() (drives SongsView's skeleton), the rest streams in
      *    quietly, so the view is usable almost immediately instead of
-     *    blocking on the entire catalog. TrackList keeps this stretch in
+     *    blocking on the entire catalog. SongTable keeps this stretch in
      *    stable arrival order (see its defaultSortKey watcher) so rows
      *    don't jump around while more of it streams in. */
-    async fetchAllTracks(): Promise<void> {
-      if (this.allTracksLoaded) return
-      // Dedupe concurrent callers (see fetchAllTracksPromise's comment) —
+    async fetchAllSongs(): Promise<void> {
+      if (this.allSongsLoaded) return
+      // Dedupe concurrent callers (see fetchAllSongsPromise's comment) —
       // they all await the same in-flight fetch instead of each starting
       // their own.
-      if (fetchAllTracksPromise) return fetchAllTracksPromise
-      fetchAllTracksPromise = this.fetchAllTracksNow().finally(() => {
-        fetchAllTracksPromise = null
+      if (fetchAllSongsPromise) return fetchAllSongsPromise
+      fetchAllSongsPromise = this.fetchAllSongsNow().finally(() => {
+        fetchAllSongsPromise = null
       })
-      return fetchAllTracksPromise
+      return fetchAllSongsPromise
     },
 
-    async fetchAllTracksNow(): Promise<void> {
+    async fetchAllSongsNow(): Promise<void> {
       // Jellyfin's recursive Items query (what search3.view is bridged to —
       // see connect/media/jellyfin_bridge.py) scales roughly linearly with
       // page size on at least one real server tested (~9ms/item), making a
@@ -530,51 +530,51 @@ export const useLibraryStore = defineStore('library', {
       const PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 200 : 3000
       const client = this.client()
 
-      const cached = loadLibraryCache().tracks
+      const cached = loadLibraryCache().songs
       if (cached) {
-        this.allTracks = cached
-        this.allTracksLoaded = true
-        if (isCacheFresh('tracks')) return
-        withRetry(() => fetchTrackPages(client, PAGE_SIZE))
+        this.allSongs = cached
+        this.allSongsLoaded = true
+        if (isCacheFresh('songs')) return
+        withRetry(() => fetchSongPages(client, PAGE_SIZE))
           .then((fresh) => {
-            this.allTracks = fresh
-            saveLibraryCacheField('tracks', fresh)
+            this.allSongs = fresh
+            saveLibraryCacheField('songs', fresh)
           })
           .catch((error) => {
-            console.error('[library] Background track catalog refresh failed:', error)
+            console.error('[library] Background song catalog refresh failed:', error)
           })
         return
       }
 
       const first = await this.withLoading(() => client.search3('', PAGE_SIZE, 0, 0, 0))
-      this.allTracks = first.tracks
-      if (first.tracks.length < PAGE_SIZE) {
-        this.allTracksLoaded = true
-        saveLibraryCacheField('tracks', this.allTracks)
+      this.allSongs = first.songs
+      if (first.songs.length < PAGE_SIZE) {
+        this.allSongsLoaded = true
+        saveLibraryCacheField('songs', this.allSongs)
         return
       }
       try {
         let offset = PAGE_SIZE
         while (true) {
           const page = await client.search3('', PAGE_SIZE, 0, 0, offset)
-          if (page.tracks.length === 0) break
-          this.allTracks.push(...page.tracks)
-          if (page.tracks.length < PAGE_SIZE) break
+          if (page.songs.length === 0) break
+          this.allSongs.push(...page.songs)
+          if (page.songs.length < PAGE_SIZE) break
           offset += PAGE_SIZE
         }
-        this.allTracksLoaded = true
-        saveLibraryCacheField('tracks', this.allTracks)
+        this.allSongsLoaded = true
+        saveLibraryCacheField('songs', this.allSongs)
       } catch (error) {
-        // Whatever loaded so far stays usable — allTracksLoaded stays false
-        // so leaving and revisiting /tracks retries from scratch instead of
+        // Whatever loaded so far stays usable — allSongsLoaded stays false
+        // so leaving and revisiting /songs retries from scratch instead of
         // being stuck with a silently incomplete catalog forever.
-        console.error('[library] Failed to load the rest of the track catalog:', error)
+        console.error('[library] Failed to load the rest of the song catalog:', error)
       }
     },
 
     /** Manual "rescan library" trigger (see SettingsView.vue) — unlike the
      * automatic paths above, always actually refetches regardless of
-     * CACHE_TTL_MS, and reports progress via trackScanProgress so the UI
+     * CACHE_TTL_MS, and reports progress via songScanProgress so the UI
      * can show a real bar instead of an indeterminate spinner. Mainly
      * useful for Jellyfin: the automatic background refresh already keeps
      * data eventually current, but only notices new music after
@@ -585,16 +585,16 @@ export const useLibraryStore = defineStore('library', {
     async refreshLibrary(): Promise<void> {
       const client = this.client()
       const PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 200 : 3000
-      this.trackScanProgress = { loaded: 0, total: null }
+      this.songScanProgress = { loaded: 0, total: null }
       try {
-        const fresh = await fetchTrackPages(client, PAGE_SIZE, (progress) => {
-          this.trackScanProgress = progress
+        const fresh = await fetchSongPages(client, PAGE_SIZE, (progress) => {
+          this.songScanProgress = progress
         })
-        this.allTracks = fresh
-        this.allTracksLoaded = true
-        saveLibraryCacheField('tracks', fresh)
+        this.allSongs = fresh
+        this.allSongsLoaded = true
+        saveLibraryCacheField('songs', fresh)
       } finally {
-        this.trackScanProgress = null
+        this.songScanProgress = null
       }
       await Promise.all([this.fetchAlbums(true), this.fetchArtists(true)])
     },
@@ -660,7 +660,7 @@ export const useLibraryStore = defineStore('library', {
 
     async search(query: string): Promise<void> {
       if (!query.trim()) {
-        this.searchResults = { artists: [], albums: [], tracks: [] }
+        this.searchResults = { artists: [], albums: [], songs: [] }
         return
       }
       await this.withLoading(async () => {
@@ -693,7 +693,7 @@ export const useLibraryStore = defineStore('library', {
 
     /** Sets a song/album/artist's 1–5 star rating (0 clears it) — the
      * caller owns optimistic local state (same pattern as toggleStar's
-     * callers), since this can target a Track, Album, or Artist and there's
+     * callers), since this can target a Song, Album, or Artist and there's
      * no single place in state to reconcile all three against. */
     async setRating(id: string, rating: number): Promise<void> {
       await this.client().setRating(id, rating)

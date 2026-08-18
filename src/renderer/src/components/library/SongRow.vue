@@ -1,22 +1,22 @@
 <template>
   <div
-    class="track-row d-flex align-center px-2 py-1"
-    :class="{ 'track-row--current': isCurrentTrack, 'track-row--selected': selected }"
-    @click="selectionMode && $emit('toggle-select', track, index)"
-    @dblclick="$emit('play', track, index)"
+    class="song-row d-flex align-center px-2 py-1"
+    :class="{ 'song-row--current': isCurrentSong, 'song-row--selected': selected }"
+    @click="selectionMode && $emit('toggle-select', song, index)"
+    @dblclick="$emit('play', song, index)"
     @contextmenu.prevent="openMenu($event)"
     @mouseenter="isHovered = true"
     @mouseleave="isHovered = false"
   >
-    <div class="track-index text-medium-emphasis text-caption">
+    <div class="song-index text-medium-emphasis text-caption">
       <v-checkbox-btn
         v-if="selectionMode || isHovered"
         :model-value="selected"
         density="compact"
-        class="track-select-checkbox"
-        @click.stop="$emit('toggle-select', track, index)"
+        class="song-select-checkbox"
+        @click.stop="$emit('toggle-select', song, index)"
       />
-      <template v-else-if="isCurrentTrack">
+      <template v-else-if="isCurrentSong">
         <v-icon icon="mdi-volume-high" size="14" color="primary" />
       </template>
       <template v-else>{{ displayNumber ?? (index != null ? index + 1 : '') }}</template>
@@ -26,70 +26,71 @@
      - unlike dblclick-anywhere-on-the-row which already played. -->
     <cover-art
       v-if="showCover"
-      :cover-art-id="track.coverArtId"
+      :cover-art-id="song.coverArtId"
       :size="40"
-      class="track-cover"
+      class="song-cover"
       @click.stop="onCoverClick"
     />
-    <div class="track-title min-width-0">
-      <div class="text-body-2 text-truncate" :class="{ 'text-primary': isCurrentTrack }">
-        {{ track.title }}
+    <div class="song-title min-width-0">
+      <div class="text-body-2 text-truncate" :class="{ 'text-primary': isCurrentSong }">
+        {{ song.title }}
       </div>
       <router-link
-        :to="`/artists/${track.artistId}`"
-        class="track-artist-link text-caption text-medium-emphasis text-truncate"
+        :to="`/artists/${song.artistId}`"
+        class="song-artist-link text-caption text-medium-emphasis text-truncate"
         @click.stop
       >
-        {{ track.artist }}
+        {{ song.artist }}
       </router-link>
     </div>
-    <router-link
-      v-if="showAlbum"
-      :to="`/albums/${track.albumId}`"
-      class="track-album text-caption text-medium-emphasis text-truncate"
-      @click.stop
-    >
-      {{ track.album }}
-    </router-link>
-    <div v-if="showGenre" class="track-genre text-caption text-medium-emphasis text-truncate">
-      {{ track.genre || '—' }}
+    <div v-if="showAlbum" class="song-album">
+      <router-link
+        :to="`/albums/${song.albumId}`"
+        class="song-album-link text-caption text-medium-emphasis text-truncate"
+        @click.stop
+      >
+        {{ song.album }}
+      </router-link>
     </div>
-    <div v-if="showYear" class="track-year text-caption text-medium-emphasis">
-      {{ track.year || '—' }}
+    <div v-if="showGenre" class="song-genre text-caption text-medium-emphasis text-truncate">
+      {{ song.genre || '—' }}
     </div>
-    <div v-if="showPlayCount" class="track-playcount text-caption text-medium-emphasis">
-      {{ track.playCount }}
+    <div v-if="showYear" class="song-year text-caption text-medium-emphasis">
+      {{ song.year || '—' }}
     </div>
-    <div v-if="showFormat" class="track-format text-caption text-medium-emphasis text-truncate">
+    <div v-if="showPlayCount" class="song-playcount text-caption text-medium-emphasis">
+      {{ song.playCount }}
+    </div>
+    <div v-if="showFormat" class="song-format text-caption text-medium-emphasis text-truncate">
       {{ formattedFormat }}
     </div>
-    <div class="track-duration text-caption text-medium-emphasis">
+    <div class="song-duration text-caption text-medium-emphasis">
       {{ formattedDuration }}
     </div>
-    <div class="track-actions d-flex align-center">
+    <div class="song-actions d-flex align-center">
       <transition name="rating-fade" style="margin-right: 1rem">
         <v-rating
-          v-if="authStore.capabilities.personalRating && (track.rating > 0 || isHovered)"
-          :model-value="track.rating"
+          v-if="authStore.capabilities.personalRating && (song.rating > 0 || isHovered)"
+          :model-value="song.rating"
           length="5"
           size="small"
           density="compact"
           active-color="primary"
           hover
           clearable
-          class="track-rating"
+          class="song-rating"
           @click.stop
-          @update:model-value="$emit('set-rating', { track, rating: $event })"
+          @update:model-value="$emit('set-rating', { song, rating: $event })"
         />
       </transition>
       <v-btn
         v-if="authStore.capabilities.favorites"
-        :icon="track.starred ? 'mdi-heart' : 'mdi-heart-outline'"
-        :color="track.starred ? 'primary' : undefined"
+        :icon="song.starred ? 'mdi-heart' : 'mdi-heart-outline'"
+        :color="song.starred ? 'primary' : undefined"
         variant="text"
         density="comfortable"
         size="small"
-        @click.stop="$emit('toggle-star', track)"
+        @click.stop="$emit('toggle-star', song)"
       />
       <v-btn
         icon="mdi-dots-vertical"
@@ -105,20 +106,20 @@
      - coordinates (right-click), so the same menu serves both. -->
     <v-menu v-model="menuOpen" :target="menuTarget">
       <v-list density="compact">
-        <v-list-item @click="$emit('play', track, index)">
+        <v-list-item @click="$emit('play', song, index)">
           <template #prepend><v-icon icon="mdi-play" size="small" /></template>
           <v-list-item-title>{{ $t('library.play') }}</v-list-item-title>
         </v-list-item>
-        <v-list-item @click="$emit('play-next', track, index)">
+        <v-list-item @click="$emit('play-next', song, index)">
           <template #prepend><v-icon icon="mdi-skip-next-outline" size="small" /></template>
           <v-list-item-title>{{ $t('library.playNext') }}</v-list-item-title>
         </v-list-item>
-        <v-list-item v-if="authStore.capabilities.trackRadio" @click="$emit('track-radio', track)">
+        <v-list-item v-if="authStore.capabilities.songRadio" @click="$emit('song-radio', song)">
           <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
-          <v-list-item-title>{{ $t('library.trackRadio') }}</v-list-item-title>
+          <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
         </v-list-item>
         <v-divider />
-        <v-list-item @click="$emit('add-to-queue', track, index)">
+        <v-list-item @click="$emit('add-to-queue', song, index)">
           <template #prepend><v-icon icon="mdi-playlist-plus" size="small" /></template>
           <v-list-item-title>{{ $t('common.addToQueue') }}</v-list-item-title>
         </v-list-item>
@@ -131,7 +132,7 @@
             </v-list-item>
           </template>
           <v-list density="compact" class="playlist-submenu">
-            <v-list-item @click="$emit('create-playlist', { track, index })">
+            <v-list-item @click="$emit('create-playlist', { song, index })">
               <template #prepend><v-icon icon="mdi-plus" size="small" /></template>
               <v-list-item-title>{{ $t('common.createNewPlaylist') }}</v-list-item-title>
             </v-list-item>
@@ -140,7 +141,7 @@
               <v-list-item
                 v-for="playlist in libraryStore.playlists"
                 :key="playlist.id"
-                @click="$emit('add-to-playlist', { track, playlistId: playlist.id, index })"
+                @click="$emit('add-to-playlist', { song, playlistId: playlist.id, index })"
               >
                 <v-list-item-title>{{ playlist.name }}</v-list-item-title>
               </v-list-item>
@@ -159,10 +160,10 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 
 export default {
-  name: 'TrackRow',
+  name: 'SongRow',
   components: { CoverArt },
   props: {
-    track: {
+    song: {
       type: Object,
       required: true,
     },
@@ -173,8 +174,8 @@ export default {
       type: Number,
       default: null,
     },
-    // Overrides the shown number with the track's real per-disc track
-    // number (see TrackList.vue's groupByDisc) — kept separate from
+    // Overrides the shown number with the song's real per-disc song
+    // number (see SongTable.vue's groupByDisc) — kept separate from
     // `index` since that one must stay the absolute position for
     // queueing regardless of how the number is displayed.
     displayNumber: {
@@ -206,8 +207,8 @@ export default {
       default: false,
     },
     // True once at least one row in the list is selected — see
-    // TrackList.vue's selectionMode getter. Reveals every row's checkbox
-    // (not just the hovered one) so the rest of a multi-track selection can
+    // SongTable.vue's selectionMode getter. Reveals every row's checkbox
+    // (not just the hovered one) so the rest of a multi-song selection can
     // be built up without needing to hover each row individually, and
     // turns a plain click anywhere on a row into a toggle instead of a
     // no-op.
@@ -223,7 +224,7 @@ export default {
   emits: [
     'play',
     'play-next',
-    'track-radio',
+    'song-radio',
     'toggle-star',
     'set-rating',
     'add-to-queue',
@@ -248,26 +249,26 @@ export default {
     authStore() {
       return useAuthStore()
     },
-    isCurrentTrack() {
-      return this.playbackStore.currentTrack?.id === this.track.id
+    isCurrentSong() {
+      return this.playbackStore.currentSong?.id === this.song.id
     },
     formattedDuration() {
-      const total = Math.round(this.track.duration ?? 0)
+      const total = Math.round(this.song.duration ?? 0)
       const minutes = Math.floor(total / 60)
       const seconds = total % 60
       return `${minutes}:${String(seconds).padStart(2, '0')}`
     },
     formattedFormat() {
-      const format = this.track.format ? this.track.format.toUpperCase() : null
-      const bitRate = this.track.bitRate ? `${this.track.bitRate} kbps` : null
+      const format = this.song.format ? this.song.format.toUpperCase() : null
+      const bitRate = this.song.bitRate ? `${this.song.bitRate} kbps` : null
       if (format && bitRate) return `${format} · ${bitRate}`
       return format || bitRate || '—'
     },
   },
   methods: {
     onCoverClick() {
-      if (this.selectionMode) this.$emit('toggle-select', this.track, this.index)
-      else this.$emit('play', this.track, this.index)
+      if (this.selectionMode) this.$emit('toggle-select', this.song, this.index)
+      else this.$emit('play', this.song, this.index)
     },
     openMenu(event: MouseEvent) {
       this.menuTarget = [event.clientX, event.clientY]
@@ -290,7 +291,7 @@ export default {
   overflow-y: auto;
 }
 
-.track-row {
+.song-row {
   cursor: default;
   border-radius: 4px;
   gap: 12px;
@@ -300,99 +301,121 @@ export default {
   user-select: none;
 }
 
-.track-row:hover {
+.song-row:hover {
   background: var(--beacon-hover);
 }
 
-.track-row--current {
+.song-row--current {
   background: rgba(var(--v-theme-primary), 0.08);
 }
 
-.track-row--current:hover {
+.song-row--current:hover {
   background: rgba(var(--v-theme-primary), 0.12);
 }
 
-.track-row--selected {
+.song-row--selected {
   background: rgba(var(--v-theme-primary), 0.14);
 }
 
-.track-row--selected:hover {
+.song-row--selected:hover {
   background: rgba(var(--v-theme-primary), 0.18);
 }
 
-/* Widths/flex-grow here must mirror TrackListHeader.vue's exactly, column
+/* Widths/flex-grow here must mirror SongTableHeader.vue's exactly, column
  * for column, or the header labels drift out of alignment with the rows. */
-.track-select-checkbox {
+.song-select-checkbox {
   /* Overrides v-checkbox-btn's default hit-area padding, which is sized
    * for a standalone checkbox, not a 28px-wide index column — without
    * this it visually pushes into the next column. */
   margin: 0 -8px;
 }
 
-.track-index {
+.song-index {
   flex: 0 0 28px;
   text-align: right;
 }
 
-.track-cover {
+.song-cover {
   flex: 0 0 auto;
   cursor: pointer;
 }
 
-.track-title {
+.song-title {
   flex: 3 1 160px;
 }
 
-.track-album {
+.song-album {
   flex: 2 1 120px;
   min-width: 0;
-  text-decoration: none;
 }
 
-.track-album:hover {
-  color: rgb(var(--v-theme-primary));
-}
-
-.track-artist-link {
+/* Same width: fit-content reasoning as .song-artist-link — .song-album
+ * itself stays full-column-width (a flex item, must keep matching
+ * SongTableHeader.vue's own .song-album sizing for column alignment), but
+ * the actual link inside it is sized to the album name text, not the
+ * whole column, so a double-click landing in the empty space next to a
+ * short album name doesn't misfire as "go to album page". */
+.song-album-link {
   display: block;
   text-decoration: none;
+  width: fit-content;
+  max-width: 100%;
 }
 
-.track-artist-link:hover {
+.song-album-link:hover {
   color: rgb(var(--v-theme-primary));
 }
 
-.track-genre {
+.song-artist-link {
+  /* text-truncate (Vuetify's utility class, applied inline above) needs a
+   * block-level box with a bounded width to actually ellipsize against —
+   * an <a>'s default `inline` display doesn't respect that. width:
+   * fit-content keeps the actual click/hit area sized to the artist name
+   * itself instead of stretching block-level across the rest of the
+   * row (which made a double-click-to-play landing anywhere in that
+   * empty space misfire as "go to artist page" instead — see
+   * AlbumCard.vue's own .album-card-artist for the same fix). */
+  display: block;
+  text-decoration: none;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.song-artist-link:hover {
+  color: rgb(var(--v-theme-primary));
+}
+
+.song-genre {
   flex: 1.5 1 90px;
   min-width: 0;
 }
 
-.track-year {
+.song-year {
   flex: 0 0 44px;
   text-align: right;
 }
 
-.track-playcount {
+.song-playcount {
   flex: 0 0 44px;
   text-align: right;
 }
 
-.track-format {
+.song-format {
   flex: 0 0 120px;
   text-align: right;
 }
 
-.track-duration {
+.song-duration {
   flex: 0 0 44px;
   text-align: right;
 }
 
-.track-actions {
+.song-actions {
   flex: 0 0 200px;
   justify-content: flex-end;
 }
 
-.track-rating :deep(.v-icon) {
+.song-rating :deep(.v-icon) {
   font-size: 16px;
 }
 

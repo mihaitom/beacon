@@ -23,8 +23,8 @@
       </template>
     </detail-header>
 
-    <track-list
-      :tracks="album.tracks"
+    <song-table
+      :songs="album.songs"
       :default-sort-key="null"
       group-by-disc
       disable-pagination
@@ -46,12 +46,12 @@
 import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
 import DetailHeader from '@/components/library/DetailHeader.vue'
-import TrackList from '@/components/library/TrackList.vue'
+import SongTable from '@/components/library/SongTable.vue'
 import PageLoader from '@/components/PageLoader.vue'
 
 export default {
   name: 'AlbumDetailView',
-  components: { DetailHeader, TrackList, PageLoader },
+  components: { DetailHeader, SongTable, PageLoader },
   data() {
     return {
       album: null as Awaited<ReturnType<ReturnType<typeof useLibraryStore>['fetchAlbum']>> | null,

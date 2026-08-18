@@ -36,7 +36,7 @@ async function request(path, options = {}) {
     // wrong password from this client's point of view. Dispatched globally
     // rather than left to each call site's own .catch(), since a stale
     // password can surface from any of the several independent API calls
-    // views make (fetchTracks, sendCommand, ...), and they should all funnel
+    // views make (fetchSongs, sendCommand, ...), and they should all funnel
     // into the same "go back to login" handling in app.js.
     window.dispatchEvent(new CustomEvent('beacon-remote-unauthorized'));
     throw new UnauthorizedError('Not authorized');
@@ -70,9 +70,9 @@ export function sendCommand(type, payload = {}) {
   return request('/remote/command', { method: 'POST', body: { type, payload } });
 }
 
-export function fetchTracks(search, offset, limit) {
+export function fetchSongs(search, offset, limit) {
   const params = new URLSearchParams({ search, offset: String(offset), limit: String(limit) });
-  return request(`/remote/tracks?${params}`);
+  return request(`/remote/songs?${params}`);
 }
 
 export function fetchPlaylists() {

@@ -37,7 +37,10 @@
 
       <v-progress-linear v-if="connectStore.isScanning" indeterminate class="mb-2" />
 
-      <div v-if="allDevices.length === 0 && !connectStore.isScanning" class="text-body-2 text-medium-emphasis pa-2">
+      <div
+        v-if="allDevices.length === 0 && !connectStore.isScanning"
+        class="text-body-2 text-medium-emphasis pa-2"
+      >
         {{ $t('connect.noDevicesFound') }}
       </div>
 
@@ -164,11 +167,11 @@ export default {
     },
   },
   mounted() {
-    // Keeps in_use_by_name/in_use_by_track fresh while the picker is open —
-    // someone else's cast session changing tracks, or a device becoming
+    // Keeps in_use_by_name/in_use_by_song fresh while the picker is open —
+    // someone else's cast session changing songs, or a device becoming
     // free again, should show up without the user having to hit "Scan
     // again". Cheap: this omits fresh=true, so the backend just re-derives
-    // claim/track annotations for the already-cached device list (see
+    // claim/song annotations for the already-cached device list (see
     // routes/discovery.py's _annotate_claims()) rather than doing a real
     // mDNS/SSDP rescan — same 4s cadence as DeviceListItem.vue's volume poll.
     this.devicesPollTimer = setInterval(() => this.connectStore.refreshDevices(), 4000)
@@ -211,7 +214,15 @@ export default {
       this.pairingDeviceName = name
       this.pairingOpen = true
     },
-    async onVolumeChange({ type, device, volume }: { type: DeviceType; device: DiscoveredDevice; volume: number }) {
+    async onVolumeChange({
+      type,
+      device,
+      volume,
+    }: {
+      type: DeviceType
+      device: DiscoveredDevice
+      volume: number
+    }) {
       await this.connectStore.setDeviceVolume(type, device.name, volume)
     },
   },

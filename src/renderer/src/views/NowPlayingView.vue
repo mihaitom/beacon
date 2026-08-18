@@ -2,7 +2,7 @@
   <div class="now-playing" :class="{ 'now-playing--compact': compact }">
     <!-- Full-bleed blurred artwork behind everything — same backdrop
      - language as DetailHeader.vue's hero cards (blur + scrim over the
-     - item's own art). Two stacked layers so a track change crossfades
+     - item's own art). Two stacked layers so a song change crossfades
      - between cover arts — see backdropLayers' comment. -->
     <div
       v-for="(url, i) in backdropLayers"
@@ -44,8 +44,8 @@
             <div class="now-playing__art-wrap">
               <div class="now-playing__art-glow" :style="{ background: glowColor }" />
               <cover-art
-                v-if="currentTrack"
-                :cover-art-id="currentTrack.coverArtId"
+                v-if="currentSong"
+                :cover-art-id="currentSong.coverArtId"
                 :size="artSize"
                 class="cover-shadow"
               />
@@ -67,22 +67,22 @@
             <div class="now-playing__info">
               <div class="eyebrow-label mb-2">{{ eyebrow }}</div>
               <h1 class="detail-title now-playing__title mb-2">
-                {{ currentTrack?.title ?? playbackStore.radioStation?.name }}
+                {{ currentSong?.title ?? playbackStore.radioStation?.name }}
               </h1>
               <router-link
-                v-if="currentTrack"
-                :to="`/artists/${currentTrack.artistId}`"
+                v-if="currentSong"
+                :to="`/artists/${currentSong.artistId}`"
                 class="text-h6 text-medium-emphasis now-playing__artist-link mb-2"
               >
-                {{ currentTrack.artist }}
+                {{ currentSong.artist }}
               </router-link>
               <div v-else class="text-h6 text-medium-emphasis mb-2" />
               <router-link
-                v-if="currentTrack"
-                :to="`/albums/${currentTrack.albumId}`"
+                v-if="currentSong"
+                :to="`/albums/${currentSong.albumId}`"
                 class="text-body-2 text-medium-emphasis now-playing__album-link"
               >
-                {{ currentTrack.album }}
+                {{ currentSong.album }}
               </router-link>
             </div>
           </div>
@@ -183,7 +183,7 @@ export default {
       // then, so there's no flash of the transparent-icon styling before
       // the icon itself has even loaded.
       radioIconIsTransparent: false,
-      // Two stacked layers so a track change can crossfade between cover
+      // Two stacked layers so a song change can crossfade between cover
       // arts instead of popping — a plain CSS `transition` on
       // background-image doesn't actually interpolate between two url()s
       // (there's nothing for the browser to blend between two arbitrary
@@ -210,11 +210,11 @@ export default {
     connectStore() {
       return useConnectStore()
     },
-    currentTrack() {
-      return this.playbackStore.currentTrack
+    currentSong() {
+      return this.playbackStore.currentSong
     },
     hasPlayable() {
-      return this.currentTrack != null || this.playbackStore.radioStation != null
+      return this.currentSong != null || this.playbackStore.radioStation != null
     },
     // cqh/cqw (container query units), not vh/vw — .now-playing__stage is a
     // `container-type: size` host (see <style>) sized by .now-playing's own
@@ -250,7 +250,7 @@ export default {
     // as a drawer while it's the active route (see DefaultLayout.vue's own
     // now-playing check, which keeps LyricsDrawer closed here so the two
     // presentations don't both show at once). The setter is still needed
-    // for the currentTrack watcher below, which turns lyrics back off when
+    // for the currentSong watcher below, which turns lyrics back off when
     // switching to radio.
     showLyrics: {
       get(): boolean {
@@ -260,7 +260,7 @@ export default {
         this.playbackStore.lyricsDrawerOpen = value
       },
     },
-    // AirPlay downloads a whole track into memory *ahead* of pushing it to
+    // AirPlay downloads a whole song into memory *ahead* of pushing it to
     // the device (see connect/delivery/airplay.py), and radio's raw
     // station URL bypasses connect's streaming pipeline entirely — neither
     // has real audio data for the backend to analyze (see
@@ -268,20 +268,20 @@ export default {
     // nothing honest to show for them rather than a fake animation.
     visualizerAvailable() {
       if (!this.playbackStore.isCasting) return true
-      if (!this.currentTrack) return false // casting radio
+      if (!this.currentSong) return false // casting radio
       return this.connectStore.activeTargets.some((target) => target.type !== 'airplay')
     },
     visualizerActive() {
       return this.hasPlayable && this.showVisualizer && this.visualizerAvailable
     },
     eyebrow() {
-      if (this.currentTrack)
+      if (this.currentSong)
         return this.playbackStore.isPlaying ? this.$t('home.nowPlaying') : this.$t('home.paused')
       if (this.playbackStore.radioStation) return this.$t('home.radioEyebrow')
       return ''
     },
     coverArtUrl(): string | null {
-      const id = this.currentTrack?.coverArtId
+      const id = this.currentSong?.coverArtId
       return id ? useLibraryStore().client().coverArtUrl(id, 400) : null
     },
     // The biggest single spot in the whole app for one of these — 512 asks
@@ -334,20 +334,20 @@ export default {
         if (url === this.radioFaviconSrc) this.radioIconIsTransparent = transparent
       },
     },
-    // Loads on entering lyrics mode, and again on every track change while
+    // Loads on entering lyrics mode, and again on every song change while
     // already in it — see LyricsDrawer.vue's identical pair of watchers for
     // why this is consumer-triggered rather than eager in the store itself.
     showLyrics(show: boolean) {
-      if (show && this.currentTrack) useLyricsStore().ensureLoaded(this.currentTrack)
+      if (show && this.currentSong) useLyricsStore().ensureLoaded(this.currentSong)
     },
-    currentTrack(track) {
+    currentSong(song) {
       // Radio has no lyrics concept — fall back to the normal artwork view
       // instead of being stuck showing lyrics for nothing.
-      if (!track) {
+      if (!song) {
         this.showLyrics = false
         return
       }
-      if (this.showLyrics) useLyricsStore().ensureLoaded(track)
+      if (this.showLyrics) useLyricsStore().ensureLoaded(song)
     },
     showVisualizer(value: boolean) {
       try {
@@ -385,7 +385,7 @@ export default {
   methods: {
     async loadColor(url: string) {
       const color = await extractDominantColor(url)
-      // The track may have changed again while the image was loading —
+      // The song may have changed again while the image was loading —
       // don't let a stale extraction overwrite whatever's current now.
       if (url !== this.coverArtUrl) return
       this.extractedColor = color ? color.join(', ') : null
@@ -418,7 +418,7 @@ export default {
    * Vuetify's own docs use for "fill the space between the app-bar and
    * whatever's docked at the bottom" — --v-layout-top/--v-layout-bottom
    * are the exact live pixel heights Vuetify's layout system already
-   * tracks for every registered app-bar/footer (see composables/layout.js),
+   * songs for every registered app-bar/footer (see composables/layout.js),
    * set as inherited CSS custom properties, not something this file has to
    * duplicate or guess. */
   height: calc(100dvh - var(--v-layout-top, 0px) - var(--v-layout-bottom, 0px));
@@ -453,7 +453,7 @@ export default {
   transform: scale(1.15);
   /* Two stacked instances of this (see backdropLayers), only one of which
    * is --active (opacity: 1) at a time — this opacity transition is what
-   * actually crossfades between them on a track change. A plain
+   * actually crossfades between them on a song change. A plain
    * `transition: background-image` on a single element (the previous
    * approach) doesn't work: there's no browser-defined interpolation
    * between two url()s, so it just swaps at the halfway point instead of
@@ -469,9 +469,9 @@ export default {
 .now-playing__scrim {
   position: absolute;
   inset: 0;
-  /* Ambient color is set inline (:style) since it depends on the track;
+  /* Ambient color is set inline (:style) since it depends on the song;
    * the transition is what makes it change *into* the new color smoothly
-   * on a track change instead of snapping. */
+   * on a song change instead of snapping. */
   transition: background 1.2s ease;
 }
 
@@ -487,7 +487,7 @@ export default {
 /* Row 1 of .now-playing's grid (minmax(0, 1fr), see above) — takes up
  * exactly "whatever's left" after the visualizer row has taken its share,
  * shrinkable below its own content's natural size like any minmax(0, ...)
- * grid track. width/height: 100% is what turns this into the measurement
+ * grid song. width/height: 100% is what turns this into the measurement
  * basis for artSize's cqh/cqw units below via container-type: size — a
  * *real* available-space measurement, unlike vh/vw which had no idea how
  * much of the raw viewport the app-bar/PlayerBar/visualizer row had

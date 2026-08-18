@@ -37,11 +37,8 @@
                 : $t('connect.inUseByUnknown')
             }}
           </div>
-          <div
-            v-if="device.in_use_by_track"
-            class="text-caption text-medium-emphasis text-truncate"
-          >
-            {{ device.in_use_by_track }}
+          <div v-if="device.in_use_by_song" class="text-caption text-medium-emphasis text-truncate">
+            {{ device.in_use_by_song }}
           </div>
         </template>
       </div>
@@ -94,7 +91,9 @@
           style="flex: 1"
           @update:model-value="onVolumeChange"
         />
-        <span class="text-caption text-medium-emphasis volume-value">{{ volume != null ? `${volume}%` : '–' }}</span>
+        <span class="text-caption text-medium-emphasis volume-value">{{
+          volume != null ? `${volume}%` : '–'
+        }}</span>
       </div>
     </div>
   </div>

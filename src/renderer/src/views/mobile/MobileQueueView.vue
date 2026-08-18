@@ -15,9 +15,9 @@
 
     <div v-if="playbackStore.queue.length" ref="listEl" class="mobile-queue__list">
       <mobile-queue-row
-        v-for="(track, index) in playbackStore.queue"
-        :key="rowKey(track)"
-        :track="track"
+        v-for="(song, index) in playbackStore.queue"
+        :key="rowKey(song)"
+        :song="song"
         :index="index"
         :is-current="index === playbackStore.currentIndex"
         :drag-over="overIndex === index && dragIndex !== index"
@@ -35,19 +35,19 @@
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
 import MobileQueueRow from '@/components/mobile/MobileQueueRow.vue'
-import type { Track } from '@/types/library'
+import type { Song } from '@/types/library'
 
-// Per-row identity keyed off the Track *object*, not its id — the queue can
-// legitimately hold the same track more than once (see playbackStore's own
+// Per-row identity keyed off the Song *object*, not its id — the queue can
+// legitimately hold the same song more than once (see playbackStore's own
 // dedupeForQueue()); an id-keyed map would collide both occurrences onto the
 // same :key. Same approach as QueueDrawer.vue's queueRowKey().
 let rowKeySeq = 0
-const rowKeys = new WeakMap<Track, string>()
-function rowKey(track: Track): string {
-  let key = rowKeys.get(track)
+const rowKeys = new WeakMap<Song, string>()
+function rowKey(song: Song): string {
+  let key = rowKeys.get(song)
   if (key === undefined) {
     key = `mqrow-${rowKeySeq++}`
-    rowKeys.set(track, key)
+    rowKeys.set(song, key)
   }
   return key
 }

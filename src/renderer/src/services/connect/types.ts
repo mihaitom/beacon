@@ -17,7 +17,7 @@ export interface DiscoveredDevice {
   ip?: string
   in_use_by_session_id?: string | null
   in_use_by_name?: string | null
-  in_use_by_track?: string | null
+  in_use_by_song?: string | null
 }
 
 export interface DiscoverResponse {
@@ -149,7 +149,7 @@ export interface PlexResourcesResponse {
   servers: PlexServer[]
 }
 
-export interface StatusTrack {
+export interface StatusSong {
   id: string
   artist: string
   album: string
@@ -159,15 +159,15 @@ export interface StatusTrack {
 }
 
 export interface ConnectStatus {
-  current_track: StatusTrack | null
-  current_track_index: number
+  current_song: StatusSong | null
+  current_song_index: number
   elapsed: number
   ended: boolean
   paused: boolean
   radio: { title: string; url: string } | null
   streaming: boolean
   targets: ConnectDeviceRef[]
-  total_tracks: number
+  total_songs: number
   // True only on the single status tick right after a takeover displaced
   // this session from its target — see connect/core/session.py's
   // displace_target(). Tells playback.ts's cast-ended handler not to hand

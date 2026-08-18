@@ -5,13 +5,13 @@ import { useLibraryStore } from './library'
 import { useConnectStore } from './connect'
 import * as connectPlayback from '@/services/connect/playback'
 import type { ConnectDeviceRef, ConnectStatus } from '@/services/connect/types'
-import type { Artist, RadioStation, Track } from '@/types/library'
+import type { Artist, RadioStation, Song } from '@/types/library'
 
 type RepeatMode = 'off' | 'all' | 'one'
 
 interface PlaybackState {
-  originalQueue: Track[]
-  queue: Track[]
+  originalQueue: Song[]
+  queue: Song[]
   currentIndex: number
   isPlaying: boolean
   localPosition: number
@@ -26,7 +26,7 @@ interface PlaybackState {
   lyricsDrawerOpen: boolean
 }
 
-// Scrubbing backwards restarts the current track instead of jumping to the
+// Scrubbing backwards restarts the current song instead of jumping to the
 // previous one once you're more than this far in — matches how every other
 // music player's "previous" button behaves.
 const RESTART_THRESHOLD_SECONDS = 3
@@ -37,15 +37,15 @@ const RESTART_THRESHOLD_SECONDS = 3
 let lastEnded = false
 
 // Guards reconcileFromStatus()'s getSong() lookup against firing again for
-// every ~2s SSE tick while the fetch for the same track is still in flight.
-let reconcilingTrackId: string | null = null
+// every ~2s SSE tick while the fetch for the same song is still in flight.
+let reconcilingSongId: string | null = null
 
 // Bumped at the top of every switchToIndex() call — lets its catch block
 // tell whether it's still the *latest* switch attempt before rolling
 // currentIndex back on failure. Without this, a slow-to-fail older call
 // (e.g. the first of two rapid Next clicks) can resolve its catch after a
 // second, successful switchToIndex() has already moved currentIndex on,
-// stomping it back to the wrong track. Module-level for the same reason as
+// stomping it back to the wrong song. Module-level for the same reason as
 // lastEnded above — this needs to survive across calls, not live in
 // per-invocation local state.
 let switchToIndexSeq = 0
@@ -55,28 +55,28 @@ let switchToIndexSeq = 0
 // startCurrent() has since superseded it before applying those, the same
 // class of race switchToIndexSeq guards against above. Kept separate from
 // switchToIndexSeq since startCurrent() also runs outside switchToIndex()
-// (playTrackList(), advanceOnTrackEnd()'s repeat-one branch).
+// (playSongList(), advanceOnSongEnd()'s repeat-one branch).
 let startCurrentSeq = 0
 
 // Set while our own startCurrent() has told the connect backend to switch
-// to a track but hasn't heard back yet — an SSE status tick can land in
-// that gap still reporting the *previous* track (the backend hasn't
+// to a song but hasn't heard back yet — an SSE status tick can land in
+// that gap still reporting the *previous* song (the backend hasn't
 // processed our command yet), which reconcileFromStatus() would otherwise
 // read as "a queue it doesn't recognize" and blow away the whole queue down
-// to that one stale track. See reconcileFromStatus()'s early return below.
-let pendingLocalTrackChange: string | null = null
+// to that one stale song. See reconcileFromStatus()'s early return below.
+let pendingLocalSongChange: string | null = null
 
-// The track id already registered as "played" (scrobble submission=true)
+// The song id already registered as "played" (scrobble submission=true)
 // during the current play-through — guards checkScrobbleThreshold() against
 // submitting more than once per play, and naturally allows a re-scrobble
-// when the same track is played again later (a fresh startCurrent() resets
+// when the same song is played again later (a fresh startCurrent() resets
 // this to null first, see below).
-let scrobbledTrackId: string | null = null
+let scrobbledSongId: string | null = null
 
 // Cast playback's position otherwise only ever moves in ~2s jumps (however
 // often the connect backend's SSE status ticks — see connect.$subscribe()
 // below), which reads as visibly stuttering on the seek bar and puts lyric
-// line highlighting up to ~2s behind the actual audio. These two track the
+// line highlighting up to ~2s behind the actual audio. These two song the
 // last real (server-authoritative, buffering-delay-calibrated — see
 // connect/routes/playback.py's _apply_position_offset) position report, so
 // the interval below can extrapolate smoothly forward from it every 200ms
@@ -88,7 +88,7 @@ let lastServerElapsed: number | null = null
 let lastServerElapsedAt = 0
 
 // Subsonic/Last.fm convention: a play counts once listened past 50% of the
-// track or 4 minutes, whichever comes first.
+// song or 4 minutes, whichever comes first.
 const SCROBBLE_PERCENT = 0.5
 const SCROBBLE_MAX_SECONDS = 240
 
@@ -99,8 +99,8 @@ const SCROBBLE_MAX_SECONDS = 240
 const PERSIST_KEY = 'beacon.playback'
 
 interface PersistedPlaybackState {
-  queue: Track[]
-  originalQueue: Track[]
+  queue: Song[]
+  originalQueue: Song[]
   currentIndex: number
   radioStation: RadioStation | null
   shuffle: boolean
@@ -183,7 +183,7 @@ export const usePlaybackStore = defineStore('playback', {
   }),
 
   getters: {
-    currentTrack(state): Track | null {
+    currentSong(state): Song | null {
       return state.currentIndex >= 0 ? (state.queue[state.currentIndex] ?? null) : null
     },
     hasNext(state): boolean {
@@ -196,25 +196,25 @@ export const usePlaybackStore = defineStore('playback', {
     isCasting(): boolean {
       return useConnectStore().isActive
     },
-    /** The linear ReplayGain multiplier for `currentTrack` under the user's
-     * replayGainMode — 1 (no change) once there's no current track (radio
+    /** The linear ReplayGain multiplier for `currentSong` under the user's
+     * replayGainMode — 1 (no change) once there's no current song (radio
      * has no ReplayGain concept either way). Passed to
      * AudioEngine.play()/load() for local playback, and as connect/playback.ts's
      * `gain` option when starting/handing off a cast — same multiplier,
      * different consumer (a Web Audio GainNode vs. ffmpeg's `volume` filter,
      * see core/streamer.py). */
     replayGainMultiplier(): number {
-      return this.currentTrack ? calculateReplayGain(this.currentTrack, this.replayGainMode) : 1
+      return this.currentSong ? calculateReplayGain(this.currentSong, this.replayGainMode) : 1
     },
-    /** Track ids after `currentTrack`, for connectPlayback.play()'s `queue`
+    /** Song ids after `currentSong`, for connectPlayback.play()'s `queue`
      * option — lets connect auto-advance casting on its own instead of
-     * needing this renderer awake for every single track (see
+     * needing this renderer awake for every single song (see
      * services/connect/playback.ts's own comment). Empty under repeat-one:
-     * connect would otherwise auto-advance straight past the very track the
+     * connect would otherwise auto-advance straight past the very song the
      * user asked to loop, which only this renderer's own repeat-mode logic
-     * (advanceOnTrackEnd() below) knows to keep replaying instead. Repeat-
+     * (advanceOnSongEnd() below) knows to keep replaying instead. Repeat-
      * all's wraparound past the end of this list is a similar renderer-only
-     * case, left alone here — see this store's own advanceOnTrackEnd(). */
+     * case, left alone here — see this store's own advanceOnSongEnd(). */
     upcomingQueueIds(state): string[] {
       if (state.repeatMode === 'one') return []
       return state.queue.slice(state.currentIndex + 1).map((t) => t.id)
@@ -225,7 +225,7 @@ export const usePlaybackStore = defineStore('playback', {
     /** Wires the shared AudioEngine for local playback, restores the last
      * session's queue/position (see restoreFromStorage()), and subscribes
      * to connect SSE status to mirror cast playback state + auto-advance
-     * the queue on track-end. Call once (App.vue). */
+     * the queue on song-end. Call once (App.vue). */
     init(): void {
       if (this.initialized) return
       this.initialized = true
@@ -251,7 +251,7 @@ export const usePlaybackStore = defineStore('playback', {
         if (!this.isCasting) this.duration = duration
       }
       engine.onEnded = () => {
-        if (!this.isCasting) void this.advanceOnTrackEnd()
+        if (!this.isCasting) void this.advanceOnSongEnd()
       }
       engine.onError = (message) => {
         console.error('[playback]', message)
@@ -290,12 +290,12 @@ export const usePlaybackStore = defineStore('playback', {
         this.localPosition = status.elapsed
         lastServerElapsed = status.elapsed
         lastServerElapsedAt = performance.now()
-        if (status.current_track) this.duration = status.current_track.duration
+        if (status.current_song) this.duration = status.current_song.duration
         this.checkScrobbleThreshold()
 
         void this.reconcileFromStatus(status)
 
-        if (status.ended && !lastEnded) void this.advanceOnTrackEnd()
+        if (status.ended && !lastEnded) void this.advanceOnSongEnd()
         lastEnded = status.ended
       })
 
@@ -396,7 +396,7 @@ export const usePlaybackStore = defineStore('playback', {
      * snapshot restoreFromStorage() put into state — only called once we
      * know a cast session isn't already handling it (see
      * decideLocalResume()). Resumes playing if it was mid-playback before
-     * the reload; otherwise just loads the track/position so hitting play
+     * the reload; otherwise just loads the song/position so hitting play
      * afterwards has something to resume instead of an empty element. */
     async resumeLocalPlayback(): Promise<void> {
       if (this.radioStation) {
@@ -408,9 +408,9 @@ export const usePlaybackStore = defineStore('playback', {
         }
         return
       }
-      const track = this.currentTrack
-      if (!track) return
-      const url = useLibraryStore().client().streamUrl(track.id)
+      const song = this.currentSong
+      if (!song) return
+      const url = useLibraryStore().client().streamUrl(song.id)
       const gain = this.replayGainMultiplier
       if (restoredWasPlaying) {
         getAudioEngine().play(url, this.localPosition, gain)
@@ -423,11 +423,11 @@ export const usePlaybackStore = defineStore('playback', {
     /** The live-session counterpart to resumeLocalPlayback() — called when
      * a cast session ends mid-session (see init()'s connect $subscribe
      * handler) instead of at app boot. The local <audio> element is never
-     * kept in sync while casting (every track start/advance goes to the
+     * kept in sync while casting (every song start/advance goes to the
      * connect backend instead — see startCurrent()/switchToIndex()), so
      * without this it's left pointing at stale or empty state once casting
      * stops, and play/pause afterwards does nothing or plays the wrong
-     * track. Picks up from this.isPlaying/this.localPosition (this
+     * song. Picks up from this.isPlaying/this.localPosition (this
      * session's own live values) rather than resumeLocalPlayback()'s
      * restored-from-storage snapshot. */
     async handOffToLocalPlayback(): Promise<void> {
@@ -435,9 +435,9 @@ export const usePlaybackStore = defineStore('playback', {
         if (this.isPlaying) getAudioEngine().play(this.radioStation.streamUrl)
         return
       }
-      const track = this.currentTrack
-      if (!track) return
-      const url = useLibraryStore().client().streamUrl(track.id)
+      const song = this.currentSong
+      if (!song) return
+      const url = useLibraryStore().client().streamUrl(song.id)
       const gain = this.replayGainMultiplier
       if (this.isPlaying) {
         getAudioEngine().play(url, this.localPosition, gain)
@@ -449,9 +449,9 @@ export const usePlaybackStore = defineStore('playback', {
     /** Rebuilds local queue/radioStation from the connect backend's status
      * when they're out of sync with what it reports playing — the normal
      * case right after a page reload (Pinia state resets to empty, but the
-     * backend/cast device is still mid-track) or a fresh SSE subscription
+     * backend/cast device is still mid-song) or a fresh SSE subscription
      * discovering playback already in progress. Without this,
-     * `currentTrack` stays null forever even though something is audibly
+     * `currentSong` stays null forever even though something is audibly
      * playing, so the PlayerBar and the "now playing" row highlight both
      * go blank. A no-op once local state already matches. */
     async reconcileFromStatus(status: ConnectStatus): Promise<void> {
@@ -470,46 +470,46 @@ export const usePlaybackStore = defineStore('playback', {
         return
       }
 
-      const remote = status.current_track
+      const remote = status.current_song
       if (!remote) return
-      if (this.currentTrack?.id === remote.id) return
-      if (pendingLocalTrackChange) return // our own track switch hasn't been confirmed yet — see above
-      if (reconcilingTrackId === remote.id) return // fetch already in flight
+      if (this.currentSong?.id === remote.id) return
+      if (pendingLocalSongChange) return // our own song switch hasn't been confirmed yet — see above
+      if (reconcilingSongId === remote.id) return // fetch already in flight
 
-      reconcilingTrackId = remote.id
+      reconcilingSongId = remote.id
       try {
-        const track = await useLibraryStore().client().getSong(remote.id)
+        const song = await useLibraryStore().client().getSong(remote.id)
         // Re-check after the await — the real thing (a user action, another
         // SSE tick resolving first) may have already moved state on.
-        if (this.currentTrack?.id !== track.id) {
+        if (this.currentSong?.id !== song.id) {
           this.radioStation = null
-          this.originalQueue = [track]
-          this.queue = [track]
+          this.originalQueue = [song]
+          this.queue = [song]
           this.currentIndex = 0
         }
       } catch (error) {
-        console.error('[playback] Failed to reconcile current track from status:', error)
+        console.error('[playback] Failed to reconcile current song from status:', error)
       } finally {
-        if (reconcilingTrackId === remote.id) reconcilingTrackId = null
+        if (reconcilingSongId === remote.id) reconcilingSongId = null
       }
     },
 
     /** Sets up queue + currentIndex only — no playback side effect. */
-    setQueue(tracks: Track[], startIndex = 0): void {
+    setQueue(songs: Song[], startIndex = 0): void {
       this.radioStation = null
-      this.originalQueue = [...tracks]
-      // Unshuffled, this.queue is `tracks` in the same order, so startIndex
+      this.originalQueue = [...songs]
+      // Unshuffled, this.queue is `songs` in the same order, so startIndex
       // already *is* the right index — re-deriving it by id below would
       // resolve to the first occurrence of that id instead, playing the
-      // wrong position whenever the same track appears twice in the list
+      // wrong position whenever the same song appears twice in the list
       // (e.g. a playlist with a duplicate, or two concatenated playlists).
-      // Shuffled, shuffledExcept() always places the kept track at index 0,
+      // Shuffled, shuffledExcept() always places the kept song at index 0,
       // so the id lookup there can only ever match that same instance.
       if (this.shuffle) {
-        this.queue = shuffledExcept(tracks, tracks[startIndex])
-        this.currentIndex = this.queue.findIndex((t) => t.id === tracks[startIndex]?.id)
+        this.queue = shuffledExcept(songs, songs[startIndex])
+        this.currentIndex = this.queue.findIndex((t) => t.id === songs[startIndex]?.id)
       } else {
-        this.queue = [...tracks]
+        this.queue = [...songs]
         this.currentIndex = startIndex
       }
     },
@@ -518,10 +518,10 @@ export const usePlaybackStore = defineStore('playback', {
      * index playNext()/playPrevious() should switch to, or null if there's
      * nowhere to go. Deliberately doesn't touch currentIndex itself: it used
      * to, but that let the UI (queue highlight, PlayerBar) jump to the next
-     * track before the connect dispatch that's supposed to actually start it
+     * song before the connect dispatch that's supposed to actually start it
      * had even resolved. If that dispatch then failed (device briefly
      * unreachable, claim race, ...), nothing rolled the index back — Beacon
-     * kept showing "now playing" whatever track it had optimistically
+     * kept showing "now playing" whatever song it had optimistically
      * advanced to, while the connect target was still audibly on the
      * previous one. See switchToIndex(), which now owns committing the
      * index change only once startCurrent() actually succeeds. */
@@ -539,7 +539,7 @@ export const usePlaybackStore = defineStore('playback', {
     /** Switches to `index` and starts it — rolls currentIndex back to
      * whatever it was before if the dispatch fails, so a transient error
      * (cast target briefly unreachable, claim conflict, ...) can't leave the
-     * UI pointing at a track that never actually started playing. */
+     * UI pointing at a song that never actually started playing. */
     async switchToIndex(index: number): Promise<void> {
       const previous = this.currentIndex
       this.currentIndex = index
@@ -555,33 +555,33 @@ export const usePlaybackStore = defineStore('playback', {
           this.currentIndex = previous
           this.isPlaying = false
         }
-        console.error('[playback] Failed to switch tracks:', error)
+        console.error('[playback] Failed to switch songs:', error)
       }
     },
 
-    async playTrackList(tracks: Track[], startIndex = 0): Promise<void> {
-      this.setQueue(tracks, startIndex)
+    async playSongList(songs: Song[], startIndex = 0): Promise<void> {
+      this.setQueue(songs, startIndex)
       await this.startCurrent()
     },
 
-    /** Track Radio — fetches songs similar to `track` from the media server
-     * and starts a fresh queue with `track` first, so picking it always
-     * plays the track you actually clicked, not an arbitrary similar one. */
-    async startTrackRadio(track: Track): Promise<void> {
-      const similar = await useLibraryStore().client().getSimilarSongs2(track.id)
-      const tracks = [track, ...similar.filter((t) => t.id !== track.id)]
-      await this.playTrackList(tracks, 0)
+    /** Song Radio — fetches songs similar to `song` from the media server
+     * and starts a fresh queue with `song` first, so picking it always
+     * plays the song you actually clicked, not an arbitrary similar one. */
+    async startSongRadio(song: Song): Promise<void> {
+      const similar = await useLibraryStore().client().getSimilarSongs2(song.id)
+      const songs = [song, ...similar.filter((t) => t.id !== song.id)]
+      await this.playSongList(songs, 0)
     },
 
-    /** Artist Radio — same getSimilarSongs2 endpoint as Track Radio, but
+    /** Artist Radio — same getSimilarSongs2 endpoint as Song Radio, but
      * `id` here is the artist's own id rather than a song's; Navidrome's
      * recommendation engine accepts either (see SubsonicClient.
-     * getSimilarSongs2's docstring). No single "seed" track to pin first
-     * like Track Radio does — the whole point here is a mix across the
+     * getSimilarSongs2's docstring). No single "seed" song to pin first
+     * like Song Radio does — the whole point here is a mix across the
      * artist's catalog, not one particular song. */
     async startArtistRadio(artist: Artist): Promise<void> {
-      const tracks = await useLibraryStore().client().getSimilarSongs2(artist.id)
-      await this.playTrackList(tracks, 0)
+      const songs = await useLibraryStore().client().getSimilarSongs2(artist.id)
+      await this.playSongList(songs, 0)
     },
 
     async playRadioStation(station: RadioStation): Promise<void> {
@@ -603,15 +603,15 @@ export const usePlaybackStore = defineStore('playback', {
     },
 
     async startCurrent(startPosition = 0): Promise<void> {
-      const track = this.currentTrack
-      if (!track) return
+      const song = this.currentSong
+      if (!song) return
       const seq = ++startCurrentSeq
       const connect = useConnectStore()
       this.localPosition = startPosition
-      scrobbledTrackId = null // fresh play-through, even if it's the same track id as before
+      scrobbledSongId = null // fresh play-through, even if it's the same song id as before
       // Otherwise the extrapolation interval (see lastServerElapsed's
-      // comment above) would keep advancing *this* track's position from
-      // the *previous* track's last known elapsed until the next real SSE
+      // comment above) would keep advancing *this* song's position from
+      // the *previous* song's last known elapsed until the next real SSE
       // tick corrects it — a stale number that looks like live progress,
       // worse than just sitting still. Cleared here regardless of cast
       // state; harmless when not casting since the interval already no-ops
@@ -619,56 +619,56 @@ export const usePlaybackStore = defineStore('playback', {
       lastServerElapsed = null
 
       if (connect.isActive) {
-        pendingLocalTrackChange = track.id
+        pendingLocalSongChange = song.id
         try {
-          await connectPlayback.play(track.id, {
+          await connectPlayback.play(song.id, {
             targets: connect.activeTargets,
             startPosition,
             gain: this.replayGainMultiplier,
             queue: this.upcomingQueueIds,
           })
         } finally {
-          if (pendingLocalTrackChange === track.id) pendingLocalTrackChange = null
+          if (pendingLocalSongChange === song.id) pendingLocalSongChange = null
         }
       } else {
-        const url = useLibraryStore().client().streamUrl(track.id)
+        const url = useLibraryStore().client().streamUrl(song.id)
         getAudioEngine().play(url, startPosition, this.replayGainMultiplier)
       }
       // A newer startCurrent() already took over while the above awaited —
       // applying isPlaying/scrobble here would be reporting "now playing"
-      // for a track that isn't the current one anymore. See
+      // for a song that isn't the current one anymore. See
       // startCurrentSeq's comment.
       if (seq !== startCurrentSeq) return
       this.isPlaying = true
       void useLibraryStore()
         .client()
-        .scrobble(track.id, false)
+        .scrobble(song.id, false)
         .catch((error) => console.error('[scrobble] now-playing failed:', error))
     },
 
-    /** Registers the current track as "played" with the media server once
+    /** Registers the current song as "played" with the media server once
      * enough of it has actually been listened to — this is what drives
      * Navidrome's "recently played"/"frequent" album shelves and song play
      * counts. Called on every position update (local and cast), cheap no-op
-     * once already submitted for this play-through (see scrobbledTrackId). */
+     * once already submitted for this play-through (see scrobbledSongId). */
     checkScrobbleThreshold(): void {
-      const track = this.currentTrack
-      if (!track || this.radioStation || scrobbledTrackId === track.id) return
-      const duration = this.duration || track.duration
+      const song = this.currentSong
+      if (!song || this.radioStation || scrobbledSongId === song.id) return
+      const duration = this.duration || song.duration
       if (!duration) return
       const threshold = Math.min(duration * SCROBBLE_PERCENT, SCROBBLE_MAX_SECONDS)
       if (this.localPosition < threshold) return
-      scrobbledTrackId = track.id
+      scrobbledSongId = song.id
       void useLibraryStore()
         .client()
-        .scrobble(track.id, true)
+        .scrobble(song.id, true)
         .then(() => {
           // Optimistic, not re-fetched from the server — the count shown
-          // anywhere this same Track object is rendered (queue, track
+          // anywhere this same Song object is rendered (queue, song
           // lists, Stats) would otherwise stay stale until something else
           // happened to reload it, even though the scrobble itself
           // genuinely succeeded server-side.
-          track.playCount = (track.playCount ?? 0) + 1
+          song.playCount = (song.playCount ?? 0) + 1
         })
         .catch((error) => console.error('[scrobble] submission failed:', error))
     },
@@ -691,8 +691,8 @@ export const usePlaybackStore = defineStore('playback', {
     },
 
     /** Manual "skip forward" (PlayerBar's Next button) — always advances to
-     * the next track, even with repeat-one active. Repeat-one only replays
-     * the current track when it ends naturally, see advanceOnTrackEnd();
+     * the next song, even with repeat-one active. Repeat-one only replays
+     * the current song when it ends naturally, see advanceOnSongEnd();
      * a manual skip is an explicit "I'm done with this one", same as every
      * other player. */
     async playNext(): Promise<void> {
@@ -705,18 +705,18 @@ export const usePlaybackStore = defineStore('playback', {
       await this.switchToIndex(index)
     },
 
-    /** Called when a track finishes on its own (local <audio> 'ended', or
+    /** Called when a song finishes on its own (local <audio> 'ended', or
      * the connect backend's status.ended transition) — unlike playNext(),
-     * this is where repeat-one actually applies (replays the current track
+     * this is where repeat-one actually applies (replays the current song
      * instead of advancing). */
-    async advanceOnTrackEnd(): Promise<void> {
+    async advanceOnSongEnd(): Promise<void> {
       if (this.radioStation) return
       if (this.repeatMode === 'one') {
         try {
           await this.startCurrent()
         } catch (error) {
           this.isPlaying = false
-          console.error('[playback] Failed to replay track:', error)
+          console.error('[playback] Failed to replay song:', error)
         }
         return
       }
@@ -730,7 +730,7 @@ export const usePlaybackStore = defineStore('playback', {
         return
       }
       // nextIndex(-1) returning null means "no previous" (start of a
-      // non-repeating queue) — restart the current track instead, same as
+      // non-repeating queue) — restart the current song instead, same as
       // hitting previous within RESTART_THRESHOLD_SECONDS above.
       await this.switchToIndex(this.nextIndex(-1) ?? this.currentIndex)
     },
@@ -768,7 +768,7 @@ export const usePlaybackStore = defineStore('playback', {
      * ffmpeg's `volume` filter argument when the stream starts (see
      * core/streamer.py), not a value the running stream can be told to
      * change — so a mode switch while casting only takes effect from the
-     * next track start onward, same as any other cast-side setting would. */
+     * next song start onward, same as any other cast-side setting would. */
     setReplayGainMode(mode: ReplayGainMode): void {
       this.replayGainMode = mode
       if (!this.isCasting) getAudioEngine().setReplayGain(this.replayGainMultiplier)
@@ -776,7 +776,7 @@ export const usePlaybackStore = defineStore('playback', {
 
     toggleShuffle(): void {
       this.shuffle = !this.shuffle
-      const current = this.currentTrack
+      const current = this.currentSong
       this.queue = this.shuffle
         ? shuffledExcept(this.originalQueue, current)
         : [...this.originalQueue]
@@ -790,22 +790,22 @@ export const usePlaybackStore = defineStore('playback', {
       this.repeatMode = order[(order.indexOf(this.repeatMode) + 1) % order.length]!
     },
 
-    addToQueue(tracks: Track[]): void {
-      const toAdd = dedupeForQueue(tracks, this.queue)
+    addToQueue(songs: Song[]): void {
+      const toAdd = dedupeForQueue(songs, this.queue)
       this.originalQueue.push(...toAdd)
       this.queue.push(...toAdd)
     },
 
-    /** Inserts `tracks` right after the currently playing one — "Play next",
+    /** Inserts `songs` right after the currently playing one — "Play next",
      * as opposed to addToQueue() which appends at the end. */
-    queueNext(tracks: Track[]): void {
+    queueNext(songs: Song[]): void {
       if (this.currentIndex < 0) {
-        this.addToQueue(tracks)
+        this.addToQueue(songs)
         return
       }
-      const toInsert = dedupeForQueue(tracks, this.queue)
+      const toInsert = dedupeForQueue(songs, this.queue)
       this.queue.splice(this.currentIndex + 1, 0, ...toInsert)
-      const current = this.currentTrack
+      const current = this.currentSong
       const originalIndex = current ? this.originalQueue.findIndex((t) => t.id === current.id) : -1
       if (originalIndex >= 0) {
         this.originalQueue.splice(originalIndex + 1, 0, ...toInsert)
@@ -838,9 +838,9 @@ export const usePlaybackStore = defineStore('playback', {
      * enforces per-row, just applied to the whole queue at once. Radio has
      * no queue to clear (this.queue is already empty then; QueueDrawer.vue
      * only shows the button at all once there's more than the current
-     * track to drop, see its own guard). */
+     * song to drop, see its own guard). */
     clearQueue(): void {
-      const current = this.currentTrack
+      const current = this.currentSong
       if (!current) {
         this.originalQueue = []
         this.queue = []
@@ -863,11 +863,11 @@ export const usePlaybackStore = defineStore('playback', {
       this.localPosition = 0
     },
 
-    /** Called from authStore.logout() — without this, the queue/currentTrack
+    /** Called from authStore.logout() — without this, the queue/currentSong
      * from the account signing out stay in memory (this store is a
      * singleton for the app's whole lifetime, its init() only ever runs
      * once), so a different account logging in afterwards would see the
-     * previous one's "now playing" and could try to stream a track id that
+     * previous one's "now playing" and could try to stream a song id that
      * doesn't belong to them. Only stops local playback — leaves an active
      * cast target alone, since a physical speaker doesn't care which
      * account is signed into this window. */
@@ -884,7 +884,7 @@ export const usePlaybackStore = defineStore('playback', {
       this.lyricsDrawerOpen = !this.lyricsDrawerOpen
     },
 
-    /** Hands the currently loaded local track/radio off to the given cast
+    /** Hands the currently loaded local song/radio off to the given cast
      * targets, or just claims them ahead of playback if nothing is loaded
      * yet — called by ConnectDevicePicker's "Connect"/"Add" action. Routed
      * through connect.withTakeoverHandling() (like claimDevices() already
@@ -903,14 +903,14 @@ export const usePlaybackStore = defineStore('playback', {
         }
         if (force) await play(true)
         else await connect.withTakeoverHandling(play)
-      } else if (this.currentTrack) {
-        const track = this.currentTrack
+      } else if (this.currentSong) {
+        const song = this.currentSong
         const startPosition = this.localPosition
         const gain = this.replayGainMultiplier
         const queue = this.upcomingQueueIds
         const play = async (f: boolean) => {
           if (this.isPlaying) getAudioEngine().pause() // local pauses, connect takes over
-          await connectPlayback.play(track.id, { targets, startPosition, force: f, gain, queue })
+          await connectPlayback.play(song.id, { targets, startPosition, force: f, gain, queue })
           this.isPlaying = true
         }
         if (force) await play(true)
@@ -922,29 +922,29 @@ export const usePlaybackStore = defineStore('playback', {
   },
 })
 
-/** Clones any track in `tracks` that's already the same object reference as
- * something in `existingQueue` (or repeated within `tracks` itself), so
- * addToQueue()/queueNext() never push the literal same Track object into
+/** Clones any song in `songs` that's already the same object reference as
+ * something in `existingQueue` (or repeated within `songs` itself), so
+ * addToQueue()/queueNext() never push the literal same Song object into
  * the queue twice. Two queue slots sharing one object reference is what let
  * QueueDrawer.vue's per-row identity (keyed off the object, not `id` —
- * needed since the same *track* can legitimately be queued more than once)
+ * needed since the same *song* can legitimately be queued more than once)
  * collide between unrelated rows. Only clones on an actual collision — the
  * overwhelmingly common case (no repeats) still pushes the original
  * reference unchanged, same as before this existed. */
-function dedupeForQueue(tracks: Track[], existingQueue: Track[]): Track[] {
-  const seen = new Set<Track>(existingQueue)
-  return tracks.map((t) => {
+function dedupeForQueue(songs: Song[], existingQueue: Song[]): Song[] {
+  const seen = new Set<Song>(existingQueue)
+  return songs.map((t) => {
     if (seen.has(t)) return { ...t }
     seen.add(t)
     return t
   })
 }
 
-function shuffledExcept(tracks: Track[], keepFirst: Track | null | undefined): Track[] {
-  // Removes only the one `keepFirst` instance, not every track sharing its
+function shuffledExcept(songs: Song[], keepFirst: Song | null | undefined): Song[] {
+  // Removes only the one `keepFirst` instance, not every song sharing its
   // id — a plain .filter() by id would drop *every* occurrence, silently
-  // shrinking the queue whenever the same track appears twice in it.
-  const rest = [...tracks]
+  // shrinking the queue whenever the same song appears twice in it.
+  const rest = [...songs]
   if (keepFirst) {
     const keepIndex = rest.findIndex((t) => t.id === keepFirst.id)
     if (keepIndex >= 0) rest.splice(keepIndex, 1)

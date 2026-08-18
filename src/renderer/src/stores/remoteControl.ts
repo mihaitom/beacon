@@ -11,7 +11,7 @@ import { RemoteAgentEventSource } from '@/services/remoteControl/agent'
 import {
   handleRemoteCommand,
   resolveRemoteQuery,
-  toRemoteTrack,
+  toRemoteSong,
   remoteRadioFaviconUrl,
 } from '@/services/remoteControl/commands'
 import { usePlaybackStore } from './playback'
@@ -187,7 +187,7 @@ export const useRemoteControlStore = defineStore('remoteControl', {
           volume: playback.volume,
           shuffle: playback.shuffle,
           repeat: playback.repeatMode,
-          current_track: playback.currentTrack ? toRemoteTrack(playback.currentTrack) : null,
+          current_song: playback.currentSong ? toRemoteSong(playback.currentSong) : null,
           radio: playback.radioStation
             ? {
                 name: playback.radioStation.name,
@@ -195,7 +195,7 @@ export const useRemoteControlStore = defineStore('remoteControl', {
                 favicon_url: remoteRadioFaviconUrl(playback.radioStation.homePageUrl, 120),
               }
             : null,
-          queue: playback.queue.map(toRemoteTrack),
+          queue: playback.queue.map(toRemoteSong),
           queue_index: playback.currentIndex,
           casting: connect.activeTargets,
           // Separate from `volume` (always local) rather than overloading

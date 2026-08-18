@@ -5,8 +5,8 @@ export CONNECT_URL="${CONNECT_URL:-/api}"
 # WEB_PORT is nginx's own listen port (the Beacon web UI); PORT is the
 # Python backend's. Only need changing if the defaults are already taken on
 # the host — e.g. running a second instance at the same time.
-export WEB_PORT="${WEB_PORT:-9180}"
-export PORT="${PORT:-9181}"
+export WEB_PORT="${WEB_PORT:-7070}"
+export PORT="${PORT:-7071}"
 
 # No CONNECT_TOKEN set — generate a random one for this container run rather
 # than falling back to a fixed value (a hardcoded default would be public,

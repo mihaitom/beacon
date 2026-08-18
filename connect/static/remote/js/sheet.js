@@ -1,5 +1,5 @@
-// sheet.js — bottom action sheet used for per-track actions (Play, Play
-// Next, Add to Queue, Start Track Radio).
+// sheet.js — bottom action sheet used for per-song actions (Play, Play
+// Next, Add to Queue, Start Song Radio).
 
 export function openActionSheet(actions) {
   const backdrop = document.createElement('div');

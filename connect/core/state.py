@@ -20,7 +20,7 @@ from media import Track
 from .playback_clock import PlaybackClock
 from .streamer import FALLBACK_FORMAT, OutputFormat
 
-PORT = int(os.getenv("PORT", "9181"))
+PORT = int(os.getenv("PORT", "7071"))
 
 
 class AppState:

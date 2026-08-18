@@ -9,8 +9,8 @@
     @click="$router.push('/m/now-playing')"
   >
     <cover-art
-      v-if="currentTrack"
-      :cover-art-id="currentTrack.coverArtId"
+      v-if="currentSong"
+      :cover-art-id="currentSong.coverArtId"
       :size="40"
       class="mr-3 flex-shrink-0"
     />
@@ -23,9 +23,11 @@
     />
     <div class="min-width-0 flex-grow-1">
       <div class="text-body-2 text-truncate">
-        {{ currentTrack?.title ?? playbackStore.radioStation?.name }}
+        {{ currentSong?.title ?? playbackStore.radioStation?.name }}
       </div>
-      <div class="text-caption text-medium-emphasis text-truncate">{{ currentTrack?.artist ?? '' }}</div>
+      <div class="text-caption text-medium-emphasis text-truncate">
+        {{ currentSong?.artist ?? '' }}
+      </div>
     </div>
     <v-btn
       :icon="playbackStore.isPlaying ? 'mdi-pause' : 'mdi-play'"
@@ -55,11 +57,11 @@ export default {
     playbackStore() {
       return usePlaybackStore()
     },
-    currentTrack() {
-      return this.playbackStore.currentTrack
+    currentSong() {
+      return this.playbackStore.currentSong
     },
     hasPlayable() {
-      return this.currentTrack != null || this.playbackStore.radioStation != null
+      return this.currentSong != null || this.playbackStore.radioStation != null
     },
     radioFaviconSrc(): string | null {
       const homePageUrl = this.playbackStore.radioStation?.homePageUrl

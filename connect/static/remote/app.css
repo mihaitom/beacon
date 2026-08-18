@@ -132,8 +132,8 @@ input {
   font-size: 3rem;
 }
 
-.track-title { font-size: 1.1rem; font-weight: 600; text-align: center; }
-.track-artist { color: var(--text-muted); text-align: center; }
+.song-title { font-size: 1.1rem; font-weight: 600; text-align: center; }
+.song-artist { color: var(--text-muted); text-align: center; }
 
 .seek-row { width: 100%; }
 .seek-row input[type="range"] { width: 100%; }
@@ -197,7 +197,7 @@ input[type="range"]:disabled { opacity: 0.35; }
   font-size: 1.15rem;
 }
 
-/* Real <img> elements, not CSS background-image (see track-row.js/queue.js/
+/* Real <img> elements, not CSS background-image (see song-row.js/queue.js/
  * radio.js/now-playing.js) — matches the desktop app's own CoverArt.vue,
  * which always renders through a real <img> (Vuetify's v-img) rather than
  * a background-image div. An SVG favicon in particular can render

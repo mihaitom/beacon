@@ -25,14 +25,16 @@
       <v-icon v-if="isCurrent" icon="mdi-volume-high" size="14" color="primary" />
       <template v-else>{{ index + 1 }}</template>
     </div>
-    <cover-art :cover-art-id="track.coverArtId" :size="36" class="queue-row__cover mx-2" />
+    <cover-art :cover-art-id="song.coverArtId" :size="36" class="queue-row__cover mx-2" />
     <div class="queue-row__info min-width-0 flex-grow-1">
       <div class="text-body-2 text-truncate" :class="{ 'text-primary': isCurrent }">
-        {{ track.title }}
+        {{ song.title }}
       </div>
-      <div class="text-caption text-medium-emphasis text-truncate">{{ track.artist }}</div>
+      <div class="text-caption text-medium-emphasis text-truncate">{{ song.artist }}</div>
     </div>
-    <span class="text-caption text-medium-emphasis queue-row__duration">{{ formattedDuration }}</span>
+    <span class="text-caption text-medium-emphasis queue-row__duration">{{
+      formattedDuration
+    }}</span>
     <v-btn
       icon="mdi-close"
       size="small"
@@ -46,14 +48,14 @@
 <script lang="ts">
 import CoverArt from '@/components/library/CoverArt.vue'
 import { usePlaybackStore } from '@/stores/playback'
-import type { Track } from '@/types/library'
+import type { Song } from '@/types/library'
 
 export default {
   name: 'QueueRow',
   components: { CoverArt },
   props: {
-    track: {
-      type: Object as () => Track,
+    song: {
+      type: Object as () => Song,
       required: true,
     },
     index: {
@@ -82,7 +84,7 @@ export default {
       return this.index === this.playbackStore.currentIndex
     },
     formattedDuration() {
-      const total = Math.round(this.track.duration ?? 0)
+      const total = Math.round(this.song.duration ?? 0)
       const minutes = Math.floor(total / 60)
       const secs = total % 60
       return `${minutes}:${String(secs).padStart(2, '0')}`

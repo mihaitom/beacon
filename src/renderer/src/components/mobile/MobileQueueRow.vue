@@ -13,14 +13,20 @@
       <v-icon v-if="isCurrent" icon="mdi-volume-high" size="14" color="primary" />
       <template v-else>{{ index + 1 }}</template>
     </div>
-    <cover-art :cover-art-id="track.coverArtId" :size="40" class="mx-2 flex-shrink-0" />
+    <cover-art :cover-art-id="song.coverArtId" :size="40" class="mx-2 flex-shrink-0" />
     <div class="min-width-0 flex-grow-1">
       <div class="text-body-2 text-truncate" :class="{ 'text-primary': isCurrent }">
-        {{ track.title }}
+        {{ song.title }}
       </div>
-      <div class="text-caption text-medium-emphasis text-truncate">{{ track.artist }}</div>
+      <div class="text-caption text-medium-emphasis text-truncate">{{ song.artist }}</div>
     </div>
-    <v-btn icon="mdi-close" size="small" variant="text" :disabled="isCurrent" @click.stop="$emit('remove')" />
+    <v-btn
+      icon="mdi-close"
+      size="small"
+      variant="text"
+      :disabled="isCurrent"
+      @click.stop="$emit('remove')"
+    />
     <v-icon
       icon="mdi-drag-vertical"
       size="22"
@@ -32,14 +38,14 @@
 
 <script lang="ts">
 import CoverArt from '@/components/library/CoverArt.vue'
-import type { Track } from '@/types/library'
+import type { Song } from '@/types/library'
 
 export default {
   name: 'MobileQueueRow',
   components: { CoverArt },
   props: {
-    track: {
-      type: Object as () => Track,
+    song: {
+      type: Object as () => Song,
       required: true,
     },
     index: {

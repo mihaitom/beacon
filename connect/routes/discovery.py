@@ -103,7 +103,7 @@ async def discover_all(verbose: bool = False) -> dict:
 
 
 def _annotate_claims(discovered: dict) -> dict:
-    """Attach in_use_by_session_id/in_use_by_name/in_use_by_track to each
+    """Attach in_use_by_session_id/in_use_by_name/in_use_by_song to each
     device in a fresh /discover response — computed per-request (not cached,
     unlike the device list itself) since claims change far more often than
     the device list. Reports the raw owner regardless of who's asking; the
@@ -127,7 +127,7 @@ def _annotate_claims(discovered: dict) -> dict:
                 **device,
                 "in_use_by_name": owner_session.display_name if owner_session else None,
                 "in_use_by_session_id": owner,
-                "in_use_by_track": track_label(owner_session) if owner_session else None,
+                "in_use_by_song": track_label(owner_session) if owner_session else None,
             }
             if group_type == "airplay":
                 entry["needs_pairing"] = (

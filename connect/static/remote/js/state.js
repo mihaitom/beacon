@@ -11,7 +11,7 @@ export const state = {
     volume: 1,
     shuffle: false,
     repeat: 'off',
-    current_track: null,
+    current_song: null,
     radio: null,
     queue: [],
     queue_index: -1,

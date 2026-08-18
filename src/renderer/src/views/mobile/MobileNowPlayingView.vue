@@ -30,9 +30,9 @@ export default {
  * Vuetify's .v-main is flex-shrink: 0 inside a .v-application__wrap that's
  * only min-height (never a hard max), so "100%" of that chain was never a
  * real cap, just auto-by-another-name. --v-layout-top/--v-layout-bottom are
- * the live pixel heights Vuetify's own layout system already tracks for
+ * the live pixel heights Vuetify's own layout system already songs for
  * the app-bar/tab-bar/mini-player-bar registered around this. Clipping via
- * overflow: hidden is the safe outcome either way — unlike Queue/Tracks/
+ * overflow: hidden is the safe outcome either way — unlike Queue/Songs/
  * Playlists, Now Playing was never meant to scroll at all. */
 .mobile-now-playing {
   height: calc(100dvh - var(--v-layout-top, 0px) - var(--v-layout-bottom, 0px));

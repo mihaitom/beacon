@@ -22,7 +22,7 @@
       </div>
       <div v-else-if="hasContent" class="hero-body">
         <!-- Same "click the artwork to play" affordance as AlbumCard.vue's
-         - playOnClick and TrackRow.vue's cover — this one already has a
+         - playOnClick and SongRow.vue's cover — this one already has a
          - dedicated play button next to it, so this is a shortcut for that,
          - not the only way to trigger it. -->
         <cover-art
@@ -42,18 +42,18 @@
           </h1>
           <div class="hero-subtitle text-truncate">
             <template v-if="artistName">
-              <router-link v-if="artistId" :to="`/artists/${artistId}`" class="hero-subtitle-link">{{
-                artistName
-              }}</router-link>
+              <router-link
+                v-if="artistId"
+                :to="`/artists/${artistId}`"
+                class="hero-subtitle-link"
+                >{{ artistName }}</router-link
+              >
               <span v-else>{{ artistName }}</span>
               <template v-if="albumName">
                 ·
-                <router-link
-                  v-if="albumId"
-                  :to="`/albums/${albumId}`"
-                  class="hero-subtitle-link"
-                  >{{ albumName }}</router-link
-                >
+                <router-link v-if="albumId" :to="`/albums/${albumId}`" class="hero-subtitle-link">{{
+                  albumName
+                }}</router-link>
                 <span v-else>{{ albumName }}</span>
               </template>
             </template>
@@ -96,8 +96,8 @@ export default {
     title: { type: String, default: '' },
     // Route for the title itself — only meaningful when `title` names an
     // album (the "nothing playing, here's your most recent album" fallback
-    // state; see HomeView.vue's heroTitle/heroTitleTo). When a track is
-    // playing, `title` is the *track's* name instead, which has no page of
+    // state; see HomeView.vue's heroTitle/heroTitleTo). When a song is
+    // playing, `title` is the *song's* name instead, which has no page of
     // its own in this app to link to.
     titleTo: { type: String as PropType<string | null>, default: null },
     // Plain-text-only fallback subtitle (radio's "Internet Radio" label) —
@@ -151,7 +151,12 @@ export default {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(120deg, rgba(18, 20, 28, 0.94) 0%, rgba(18, 20, 28, 0.72) 45%, rgba(245, 169, 78, 0.22) 100%),
+    linear-gradient(
+      120deg,
+      rgba(18, 20, 28, 0.94) 0%,
+      rgba(18, 20, 28, 0.72) 45%,
+      rgba(245, 169, 78, 0.22) 100%
+    ),
     linear-gradient(to top, rgba(18, 20, 28, 0.6), transparent 60%);
 }
 

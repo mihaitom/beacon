@@ -27,7 +27,7 @@ export class AudioEngine {
     // element's output through the Web Audio graph the moment it's called —
     // on Chromium that produces a brief but genuinely audible dropout, and
     // doing it lazily meant it fired the first time NowPlayingView opened
-    // while a track was already audibly playing. Doing it here instead,
+    // while a song was already audibly playing. Doing it here instead,
     // before anything has ever played, means whatever glitch that rerouting
     // causes happens against silence, not live playback.
     //
@@ -56,13 +56,13 @@ export class AudioEngine {
   }
 
   /** Loads `url` at `startPosition` without starting playback — used to
-   * restore a paused track after a reload, so hitting play afterwards has
+   * restore a paused song after a reload, so hitting play afterwards has
    * something to resume rather than an empty element. `gain` is the linear
-   * ReplayGain multiplier for this track (1 = no change, see
+   * ReplayGain multiplier for this song (1 = no change, see
    * services/replayGain.ts) — defaults to 1 so callers with nothing to
    * normalize (radio streams) don't need to pass it explicitly, and so it's
    * always set explicitly rather than silently carrying over the previous
-   * track's value. */
+   * song's value. */
   load(url: string, startPosition = 0, gain = 1): void {
     this.audio.src = url
     this.audio.currentTime = startPosition
@@ -149,7 +149,7 @@ export class AudioEngine {
     // same visual scale.
     this.analyserNode.minDecibels = -85
     this.analyserNode.maxDecibels = -25
-    // Tapped post-analyser so the visualizer always reflects the track's
+    // Tapped post-analyser so the visualizer always reflects the song's
     // raw energy, unaffected by whatever ReplayGain happens to be doing to
     // the actual output level.
     this.gainNode = this.audioContext.createGain()

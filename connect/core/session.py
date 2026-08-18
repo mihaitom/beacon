@@ -188,15 +188,15 @@ def build_status_dict(session: SessionState, displaced: bool = False) -> dict:
     ]
 
     return {
-        "current_track": current_track,
-        "current_track_index": 0,
+        "current_song": current_track,
+        "current_song_index": 0,
         "elapsed": elapsed,
         "ended": st.track_ended,
         "paused": st.clock.is_paused,
         "radio": st.radio_info,
         "streaming": st.is_streaming,
         "targets": targets,
-        "total_tracks": 1 if st.current_track else 0,
+        "total_songs": 1 if st.current_track else 0,
         "displaced": displaced,
     }
 

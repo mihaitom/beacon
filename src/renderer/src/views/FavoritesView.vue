@@ -5,18 +5,14 @@
     <template v-if="libraryStore.starred.albums.length">
       <h2 class="section-title mb-2">{{ $t('favorites.albums') }}</h2>
       <div class="album-grid mb-4">
-        <album-card
-          v-for="album in libraryStore.starred.albums"
-          :key="album.id"
-          :album="album"
-        />
+        <album-card v-for="album in libraryStore.starred.albums" :key="album.id" :album="album" />
       </div>
     </template>
 
-    <template v-if="libraryStore.starred.tracks.length">
-      <h2 class="section-title mb-2">{{ $t('favorites.tracks') }}</h2>
-      <track-list
-        :tracks="libraryStore.starred.tracks"
+    <template v-if="libraryStore.starred.songs.length">
+      <h2 class="section-title mb-2">{{ $t('favorites.songs') }}</h2>
+      <song-table
+        :songs="libraryStore.starred.songs"
         show-cover
         show-album
         show-genre
@@ -27,7 +23,11 @@
     </template>
 
     <v-alert
-      v-if="!libraryStore.loading && !libraryStore.starred.albums.length && !libraryStore.starred.tracks.length"
+      v-if="
+        !libraryStore.loading &&
+        !libraryStore.starred.albums.length &&
+        !libraryStore.starred.songs.length
+      "
       type="info"
       variant="tonal"
     >
@@ -39,11 +39,11 @@
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
 import AlbumCard from '@/components/library/AlbumCard.vue'
-import TrackList from '@/components/library/TrackList.vue'
+import SongTable from '@/components/library/SongTable.vue'
 
 export default {
   name: 'FavoritesView',
-  components: { AlbumCard, TrackList },
+  components: { AlbumCard, SongTable },
   computed: {
     libraryStore() {
       return useLibraryStore()

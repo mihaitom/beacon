@@ -190,11 +190,11 @@ def test_command_accepted_when_renderer_connected(client):
     assert resp.status_code == 202
 
 
-def test_tracks_query_504_on_timeout(client, monkeypatch):
+def test_songs_query_504_on_timeout(client, monkeypatch):
     monkeypatch.setattr(remote_routes, "QUERY_TIMEOUT", 0.05)
     client.post("/remote/enable")
     remote.renderer_connected = True
-    resp = client.get("/remote/tracks", headers={"X-Remote-Password": remote.password})
+    resp = client.get("/remote/songs", headers={"X-Remote-Password": remote.password})
     assert resp.status_code == 504
 
 

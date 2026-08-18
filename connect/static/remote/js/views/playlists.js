@@ -1,5 +1,5 @@
 import { sendCommand, fetchPlaylists, fetchPlaylist } from '../api.js';
-import { renderTrackRow } from '../track-row.js';
+import { renderSongRow } from '../song-row.js';
 import { navigate, registerRoute } from '../router.js';
 
 export function renderPlaylists(root) {
@@ -17,7 +17,7 @@ export function renderPlaylists(root) {
         const row = document.createElement('div');
         row.className = 'row';
         row.innerHTML = `<div class="row-main"><div class="row-title">${escapeHtml(playlist.name)}</div>
-          <div class="row-subtitle">${playlist.track_count ?? ''} tracks</div></div>`;
+          <div class="row-subtitle">${playlist.song_count ?? ''} songs</div></div>`;
         row.addEventListener('click', () => navigate(`/playlists/${encodeURIComponent(playlist.id)}`));
         list.appendChild(row);
       }
@@ -33,7 +33,7 @@ export function renderPlaylistDetail(root, params) {
   const container = root.querySelector('#playlist-detail');
 
   fetchPlaylist(params.id)
-    .then(({ playlist, tracks }) => {
+    .then(({ playlist, songs }) => {
       container.innerHTML = '';
       const header = document.createElement('div');
       header.innerHTML = `<h2 class="section-title">${escapeHtml(playlist.name)}</h2>`;
@@ -47,9 +47,9 @@ export function renderPlaylistDetail(root, params) {
 
       const list = document.createElement('div');
       list.className = 'list';
-      tracks.forEach((track, index) => {
+      songs.forEach((song, index) => {
         list.appendChild(
-          renderTrackRow(track, {
+          renderSongRow(song, {
             onPlay: () => sendCommand('play-playlist', { playlistId: playlist.id, startIndex: index }),
           }),
         );

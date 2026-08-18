@@ -16,8 +16,8 @@ export function renderNowPlaying(root) {
     <div class="now-playing">
       <div class="cover-art" id="np-art"></div>
       <div>
-        <div class="track-title" id="np-title">Nothing playing</div>
-        <div class="track-artist" id="np-artist"></div>
+        <div class="song-title" id="np-title">Nothing playing</div>
+        <div class="song-artist" id="np-artist"></div>
       </div>
       <div class="seek-row">
         <input type="range" id="np-seek" min="0" max="100" step="1" value="0" />
@@ -58,20 +58,20 @@ export function renderNowPlaying(root) {
   // playing (position updates). Re-creating the <img> on every single one
   // of those (see art.js's setArt()) would reload/flicker it for no reason
   // — only touch the DOM when the artwork (or which fallback icon it'd get,
-  // e.g. switching from a track to radio while neither has art) changed.
+  // e.g. switching from a song to radio while neither has art) changed.
   let lastArtKey;
 
   function render(s) {
     const snapshot = s.snapshot;
-    const track = snapshot.current_track;
-    const artUrl = track?.cover_art_url || snapshot.radio?.favicon_url || null;
+    const song = snapshot.current_song;
+    const artUrl = song?.cover_art_url || snapshot.radio?.favicon_url || null;
     const artKey = `${artUrl ?? ''}|${snapshot.radio ? 1 : 0}`;
     if (artKey !== lastArtKey) {
       lastArtKey = artKey;
       setArt(art, artUrl, snapshot.radio ? 'mdi-radio' : null);
     }
-    title.textContent = track ? track.title : snapshot.radio ? snapshot.radio.name : 'Nothing playing';
-    artist.textContent = track ? track.artist || '' : snapshot.radio ? 'Radio' : '';
+    title.textContent = song ? song.title : snapshot.radio ? snapshot.radio.name : 'Nothing playing';
+    artist.textContent = song ? song.artist || '' : snapshot.radio ? 'Radio' : '';
     playBtn.innerHTML = snapshot.playing
       ? '<i class="mdi mdi-pause"></i>'
       : '<i class="mdi mdi-play"></i>';

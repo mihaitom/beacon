@@ -1,18 +1,18 @@
-import { fetchTracks } from '../api.js';
+import { fetchSongs } from '../api.js';
 import { registerRoute } from '../router.js';
-import { renderTrackRow } from '../track-row.js';
+import { renderSongRow } from '../song-row.js';
 
 const PAGE_SIZE = 50;
 
-export function renderTracks(root) {
+export function renderSongs(root) {
   root.innerHTML = `
-    <input type="search" class="search-input" id="track-search" placeholder="Search tracks…" />
-    <div class="list" id="track-list"></div>
+    <input type="search" class="search-input" id="song-search" placeholder="Search songs…" />
+    <div class="list" id="song-list"></div>
     <button class="load-more hidden" id="load-more">Load more</button>
   `;
 
-  const searchInput = root.querySelector('#track-search');
-  const list = root.querySelector('#track-list');
+  const searchInput = root.querySelector('#song-search');
+  const list = root.querySelector('#song-list');
   const loadMoreBtn = root.querySelector('#load-more');
 
   let search = '';
@@ -28,18 +28,18 @@ export function renderTracks(root) {
     }
     const token = ++requestToken;
     try {
-      const { items, total: newTotal } = await fetchTracks(search, offset, PAGE_SIZE);
+      const { items, total: newTotal } = await fetchSongs(search, offset, PAGE_SIZE);
       if (token !== requestToken) return;
       total = newTotal;
       if (reset) list.innerHTML = '';
       if (reset && !items.length) {
-        list.innerHTML = '<div class="empty-state">No tracks found</div>';
+        list.innerHTML = '<div class="empty-state">No songs found</div>';
       }
-      for (const track of items) list.appendChild(renderTrackRow(track));
+      for (const song of items) list.appendChild(renderSongRow(song));
       offset += items.length;
       loadMoreBtn.classList.toggle('hidden', offset >= total || items.length === 0);
     } catch {
-      if (reset) list.innerHTML = '<div class="empty-state">Couldn’t load tracks</div>';
+      if (reset) list.innerHTML = '<div class="empty-state">Couldn’t load songs</div>';
     }
   }
 
@@ -58,4 +58,4 @@ export function renderTracks(root) {
   return () => clearTimeout(debounceTimer);
 }
 
-registerRoute('/tracks', renderTracks);
+registerRoute('/songs', renderSongs);

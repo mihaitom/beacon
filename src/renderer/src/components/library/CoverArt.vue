@@ -63,7 +63,7 @@ export default {
       default: false,
     },
     /** Icon shown when there's no cover (and no imageUrl fallback either) —
-     * albums/tracks want the generic record icon, but other kinds of
+     * albums/songs want the generic record icon, but other kinds of
      * covers (playlists, ...) read oddly with that, so it's overridable. */
     fallbackIcon: {
       type: String,
@@ -155,7 +155,7 @@ export default {
 }
 
 /* Shown via v-img's own #placeholder slot for as long as the actual image
- * file is still loading (fetched separately from the album/track data
+ * file is still loading (fetched separately from the album/song data
  * itself) — without this, the cover briefly renders empty/transparent
  * between "data arrived" and "image file arrived". .v-img__placeholder is
  * already position:absolute + 100%/100%, so this just needs to fill that;

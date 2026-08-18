@@ -18,9 +18,14 @@
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <div class="d-flex flex-column fill-height">
-      <v-toolbar density="compact" color="#0B0D13" class="beacon-drawer__toolbar" :title="$t('lyrics.title')" />
+      <v-toolbar
+        density="compact"
+        color="#0B0D13"
+        class="beacon-drawer__toolbar"
+        :title="$t('lyrics.title')"
+      />
 
-      <lyrics-panel v-if="currentTrack" variant="compact" class="flex-grow-1" />
+      <lyrics-panel v-if="currentSong" variant="compact" class="flex-grow-1" />
       <v-list-item v-else>
         <span class="text-medium-emphasis text-body-2">{{ $t('nowPlaying.nothingPlaying') }}</span>
       </v-list-item>
@@ -47,21 +52,21 @@ export default {
     playbackStore() {
       return usePlaybackStore()
     },
-    currentTrack() {
-      return this.playbackStore.currentTrack
+    currentSong() {
+      return this.playbackStore.currentSong
     },
   },
   watch: {
-    // Loads on open, and again on every track change while the drawer's
+    // Loads on open, and again on every song change while the drawer's
     // already open — see stores/lyrics.ts's ensureLoaded() for why this
     // isn't triggered eagerly from the playback store itself instead
-    // (avoids hitting three uncached third-party APIs for tracks nobody's
+    // (avoids hitting three uncached third-party APIs for songs nobody's
     // actually looking at lyrics for).
     modelValue(open: boolean) {
-      if (open && this.currentTrack) useLyricsStore().ensureLoaded(this.currentTrack)
+      if (open && this.currentSong) useLyricsStore().ensureLoaded(this.currentSong)
     },
-    currentTrack(track) {
-      if (this.modelValue && track) useLyricsStore().ensureLoaded(track)
+    currentSong(song) {
+      if (this.modelValue && song) useLyricsStore().ensureLoaded(song)
     },
   },
 }

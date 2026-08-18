@@ -34,17 +34,17 @@ export function renderQueue(root) {
       list.innerHTML = '<div class="empty-state">Queue is empty</div>';
       return;
     }
-    queue.forEach((track, index) => {
+    queue.forEach((song, index) => {
       const row = document.createElement('div');
       row.className = 'row' + (index === currentIndex ? ' playing' : '');
       row.dataset.index = String(index);
 
-      row.appendChild(createArt(track.cover_art_url, null));
+      row.appendChild(createArt(song.cover_art_url, null));
 
       const main = document.createElement('div');
       main.className = 'row-main';
       main.addEventListener('click', () => sendCommand('queue-jump', { index }));
-      main.innerHTML = `<div class="row-title">${escapeHtml(track.title)}</div><div class="row-subtitle">${escapeHtml(track.artist || '')}</div>`;
+      main.innerHTML = `<div class="row-title">${escapeHtml(song.title)}</div><div class="row-subtitle">${escapeHtml(song.artist || '')}</div>`;
       row.appendChild(main);
 
       const removeBtn = document.createElement('button');

@@ -29,7 +29,11 @@
       <v-icon icon="mdi-lighthouse-on" color="primary" size="20" class="ml-4 mr-2 beacon-glow" />
       <v-app-bar-title class="app-title">Beacon</v-app-bar-title>
       <v-spacer />
-      <v-tooltip v-if="remoteControlStore.enabled" :text="$t('remoteControl.activeHint')" location="bottom">
+      <v-tooltip
+        v-if="remoteControlStore.enabled"
+        :text="$t('remoteControl.activeHint')"
+        location="bottom"
+      >
         <template #activator="{ props }">
           <v-icon
             v-bind="props"
@@ -122,7 +126,7 @@ export default {
         { to: '/', icon: 'mdi-home', title: this.$t('nav.home') },
         { to: '/albums', icon: 'mdi-album', title: this.$t('nav.albums') },
         { to: '/artists', icon: 'mdi-account-music', title: this.$t('nav.artists') },
-        { to: '/tracks', icon: 'mdi-music-note', title: this.$t('nav.tracks') },
+        { to: '/songs', icon: 'mdi-music-note', title: this.$t('nav.songs') },
         { to: '/genres', icon: 'mdi-tag-multiple', title: this.$t('nav.genres') },
         { to: '/playlists', icon: 'mdi-playlist-play', title: this.$t('nav.playlists') },
         capabilities.internetRadio

@@ -44,7 +44,7 @@
       <span class="text-caption text-medium-emphasis mobile-transport__time">{{
         formatTime(seekPreviewPosition ?? playbackStore.localPosition)
       }}</span>
-      <track-waveform
+      <song-waveform
         :model-value="seekPreviewPosition ?? playbackStore.localPosition"
         :duration="playbackStore.duration"
         :disabled="!hasPlayable || !!playbackStore.radioStation"
@@ -103,13 +103,13 @@
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
 import { useConnectStore } from '@/stores/connect'
-import TrackWaveform from '@/components/player/TrackWaveform.vue'
+import SongWaveform from '@/components/player/SongWaveform.vue'
 import MobileDevicePicker from './MobileDevicePicker.vue'
 import type { ConnectDeviceRef } from '@/services/connect/types'
 
 export default {
   name: 'MobileTransportControls',
-  components: { TrackWaveform, MobileDevicePicker },
+  components: { SongWaveform, MobileDevicePicker },
   data() {
     return {
       devicePickerOpen: false,
@@ -119,7 +119,7 @@ export default {
       // drag position vs. the actual seek() round-trip, fired once on
       // release rather than on every drag tick.
       seekPreviewPosition: null as number | null,
-      // What to restore to on un-mute — same pair PlayerBar.vue tracks, see
+      // What to restore to on un-mute — same pair PlayerBar.vue songs, see
       // its own comment.
       volumeBeforeMute: 1,
       deviceVolumeBeforeMute: 50,
@@ -133,7 +133,7 @@ export default {
       return useConnectStore()
     },
     hasPlayable() {
-      return this.playbackStore.currentTrack != null || this.playbackStore.radioStation != null
+      return this.playbackStore.currentSong != null || this.playbackStore.radioStation != null
     },
     repeatIcon() {
       return this.playbackStore.repeatMode === 'one' ? 'mdi-repeat-once' : 'mdi-repeat'
@@ -153,7 +153,9 @@ export default {
       return `${Math.round(this.playbackStore.volume * 100)}%`
     },
     volumeIcon() {
-      const muted = this.singleActiveTarget ? this.deviceVolume === 0 : this.playbackStore.volume === 0
+      const muted = this.singleActiveTarget
+        ? this.deviceVolume === 0
+        : this.playbackStore.volume === 0
       return muted ? 'mdi-volume-mute' : 'mdi-volume-high'
     },
     muteDisabled() {

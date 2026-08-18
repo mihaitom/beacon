@@ -1,6 +1,6 @@
 /** App-level library models — views/stores/components never touch raw Subsonic field names. */
 
-export interface Track {
+export interface Song {
   id: string
   title: string
   artist: string
@@ -45,7 +45,7 @@ export interface Album {
   starred: boolean
   /** User's own 1–5 star rating, 0 when unrated. */
   rating: number
-  tracks: Track[]
+  songs: Song[]
 }
 
 export interface Artist {
@@ -76,7 +76,7 @@ export interface Playlist {
   coverArtId: string | null
   public: boolean
   owner: string
-  tracks: Track[]
+  songs: Song[]
 }
 
 export interface RadioStation {

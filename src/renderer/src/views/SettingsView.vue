@@ -310,7 +310,7 @@ export default {
     replayGainOptions(): { title: string; value: ReplayGainMode }[] {
       return [
         { title: this.$t('settings.replayGainOff'), value: 'off' },
-        { title: this.$t('settings.replayGainTrack'), value: 'track' },
+        { title: this.$t('settings.replayGainTrack'), value: 'song' },
         { title: this.$t('settings.replayGainAlbum'), value: 'album' },
       ]
     },
@@ -332,15 +332,15 @@ export default {
       ]
     },
     refreshingLibrary() {
-      return this.libraryStore.trackScanProgress !== null
+      return this.libraryStore.songScanProgress !== null
     },
     refreshProgressPercent() {
-      const progress = this.libraryStore.trackScanProgress
+      const progress = this.libraryStore.songScanProgress
       if (!progress || !progress.total) return null
       return Math.min(100, Math.round((progress.loaded / progress.total) * 100))
     },
     refreshProgressLabel() {
-      const progress = this.libraryStore.trackScanProgress
+      const progress = this.libraryStore.songScanProgress
       if (!progress) return ''
       return progress.total
         ? this.$t('settings.refreshingLibraryWithTotal', {
@@ -440,9 +440,9 @@ export default {
         return
       }
       this.scanning = false
-      // A scan can add, remove, or re-tag tracks — without this, Beacon
+      // A scan can add, remove, or re-tag songs — without this, Beacon
       // would keep showing whatever it already had cached in memory until
-      // the app restarts, same "missing tracks never appear" complaint
+      // the app restarts, same "missing songs never appear" complaint
       // that prompted this feature in the first place.
       this.libraryStore.invalidateCache()
       this.$emitter.emit('toast', {
@@ -458,7 +458,7 @@ export default {
           level: 'success',
           title: this.$t('settings.refreshLibrary'),
           message: this.$t('settings.libraryRefreshed', {
-            count: this.libraryStore.allTracks.length,
+            count: this.libraryStore.allSongs.length,
           }),
         })
       } catch (error) {

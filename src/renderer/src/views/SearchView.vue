@@ -29,10 +29,10 @@
       </div>
     </template>
 
-    <template v-if="libraryStore.searchResults.tracks.length">
-      <h2 class="section-title mb-2">{{ $t('search.tracks') }}</h2>
-      <track-list
-        :tracks="libraryStore.searchResults.tracks"
+    <template v-if="libraryStore.searchResults.songs.length">
+      <h2 class="section-title mb-2">{{ $t('search.songs') }}</h2>
+      <song-table
+        :songs="libraryStore.searchResults.songs"
         show-cover
         show-album
         show-genre
@@ -53,11 +53,11 @@
 import { useLibraryStore } from '@/stores/library'
 import CoverArt from '@/components/library/CoverArt.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
-import TrackList from '@/components/library/TrackList.vue'
+import SongTable from '@/components/library/SongTable.vue'
 
 export default {
   name: 'SearchView',
-  components: { CoverArt, AlbumCard, TrackList },
+  components: { CoverArt, AlbumCard, SongTable },
   data() {
     return {
       query: '',
@@ -69,7 +69,7 @@ export default {
     },
     hasResults() {
       const r = this.libraryStore.searchResults
-      return r.artists.length > 0 || r.albums.length > 0 || r.tracks.length > 0
+      return r.artists.length > 0 || r.albums.length > 0 || r.songs.length > 0
     },
   },
   created() {

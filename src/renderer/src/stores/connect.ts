@@ -89,7 +89,7 @@ export const useConnectStore = defineStore('connect', {
         await pending.retry()
         this.errors.message = null
         // Without this, the device list still shows the pre-takeover
-        // owner/track until something else happens to trigger a refresh
+        // owner/song until something else happens to trigger a refresh
         // (opening the picker again, the next background rescan) — the
         // whole point of a takeover is that it's now claimed by *this*
         // session, so that should be reflected immediately.

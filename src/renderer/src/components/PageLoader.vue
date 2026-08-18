@@ -16,7 +16,7 @@
  * a bare spinner or a skeleton with no real shape to show yet. Used for
  * whole-page loads where nothing meaningful exists on screen until the
  * fetch resolves (album/artist/playlist/genre detail) — not for populating
- * structure that's already visible (that's what TrackList's own
+ * structure that's already visible (that's what SongTable's own
  * :loading skeleton, AlbumShelf's skeleton, etc. are for).
  */
 export default {

@@ -106,7 +106,7 @@ export default {
   methods: {
     async play(playlist: Playlist) {
       const full = await this.libraryStore.fetchPlaylist(playlist.id)
-      await usePlaybackStore().playTrackList(full.tracks, 0)
+      await usePlaybackStore().playSongList(full.songs, 0)
     },
   },
 }

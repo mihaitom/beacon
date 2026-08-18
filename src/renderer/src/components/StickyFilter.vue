@@ -1,6 +1,11 @@
 <template>
   <div ref="sentinel" class="sticky-filter-sentinel" />
-  <div ref="box" class="sticky-filter" :class="{ 'sticky-filter--fade': fade && isStuck }" :style="{ zIndex }">
+  <div
+    ref="box"
+    class="sticky-filter"
+    :class="{ 'sticky-filter--fade': fade && isStuck }"
+    :style="{ zIndex }"
+  >
     <slot />
   </div>
 </template>
@@ -20,11 +25,11 @@
 export default {
   name: 'StickyFilter',
   props: {
-    // TracksView passes 3 so it stacks above TrackList's own sticky column
-    // header (z-index 2, see TrackList.vue) — everywhere else the filter
+    // SongsView passes 3 so it stacks above SongTable's own sticky column
+    // header (z-index 2, see SongTable.vue) — everywhere else the filter
     // has nothing sticky below it to out-stack, so the default is enough.
     zIndex: { type: Number, default: 2 },
-    // Off for TracksView: TrackList's own sticky column header sits
+    // Off for SongsView: SongTable's own sticky column header sits
     // immediately below with its own opaque background, not scrolling
     // content, so there's nothing that would need to fade out underneath.
     fade: { type: Boolean, default: true },
@@ -45,7 +50,7 @@ export default {
 
     // getBoundingClientRect() (not the entry's own contentRect, which
     // excludes padding) so consumers needing the box's full footprint
-    // (TracksView, stacking TrackList's column header right below it) get
+    // (SongsView, stacking SongTable's column header right below it) get
     // padding included, not just the inner content's height.
     this.resizeObserver = new ResizeObserver((entries) => {
       this.$emit('resize', entries[0]?.target.getBoundingClientRect().height ?? 0)

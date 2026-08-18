@@ -1,13 +1,7 @@
-import type {
-  RawAlbum,
-  RawArtist,
-  RawPlaylist,
-  RawRadioStation,
-  RawSong,
-} from './types'
-import type { Album, Artist, Playlist, RadioStation, Track } from '@/types/library'
+import type { RawAlbum, RawArtist, RawPlaylist, RawRadioStation, RawSong } from './types'
+import type { Album, Artist, Playlist, RadioStation, Song } from '@/types/library'
 
-export function mapSong(raw: RawSong): Track {
+export function mapSong(raw: RawSong): Song {
   return {
     id: raw.id,
     title: raw.title,
@@ -50,7 +44,7 @@ export function mapAlbum(raw: RawAlbum): Album {
     genre: raw.genre ?? null,
     starred: raw.starred != null,
     rating: raw.userRating ?? 0,
-    tracks: (raw.song ?? []).map(mapSong),
+    songs: (raw.song ?? []).map(mapSong),
   }
 }
 
@@ -76,7 +70,7 @@ export function mapPlaylist(raw: RawPlaylist): Playlist {
     coverArtId: raw.coverArt ?? null,
     public: raw.public ?? false,
     owner: raw.owner ?? '',
-    tracks: (raw.entry ?? []).map(mapSong),
+    songs: (raw.entry ?? []).map(mapSong),
   }
 }
 

@@ -77,7 +77,7 @@ export default {
   methods: {
     async onCoverClick() {
       const full = await useLibraryStore().fetchAlbum(this.album.id)
-      await usePlaybackStore().playTrackList(full.tracks, 0)
+      await usePlaybackStore().playSongList(full.songs, 0)
     },
     async toggleStar() {
       await useLibraryStore().toggleStar({ albumId: this.album.id, starred: this.album.starred })

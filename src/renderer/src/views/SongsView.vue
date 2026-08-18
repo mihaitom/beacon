@@ -1,16 +1,16 @@
 <template>
   <v-container fluid>
-    <detail-header fallback-icon="mdi-music-note" :title="$t('library.tracks')">
-      <template v-if="filteredTracks.length" #meta>
-        {{ filteredTracks.length }}
-        {{ filteredTracks.length === 1 ? $t('library.track1') : $t('library.tracksN') }}
+    <detail-header fallback-icon="mdi-music-note" :title="$t('library.songs')">
+      <template v-if="filteredSongs.length" #meta>
+        {{ filteredSongs.length }}
+        {{ filteredSongs.length === 1 ? $t('library.song1') : $t('library.songsN') }}
       </template>
       <template #actions>
         <v-btn
           color="primary"
           rounded="pill"
           prepend-icon="mdi-shuffle-variant"
-          :disabled="!libraryStore.allTracks.length"
+          :disabled="!libraryStore.allSongs.length"
           @click="playRandom"
         >
           {{ $t('library.playRandom') }}
@@ -33,10 +33,10 @@
     <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="mb-4">
       {{ libraryStore.error }}
     </v-alert>
-    <track-list
-      :tracks="filteredTracks"
+    <song-table
+      :songs="filteredSongs"
       :loading="libraryStore.loading"
-      :default-sort-key="libraryStore.allTracksLoaded ? 'title' : null"
+      :default-sort-key="libraryStore.allSongsLoaded ? 'title' : null"
       infinite-scroll
       sticky-header
       :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
@@ -49,15 +49,11 @@
       show-format
     />
 
-    <v-alert
-      v-if="!libraryStore.loading && filteredTracks.length === 0"
-      type="info"
-      variant="tonal"
-    >
+    <v-alert v-if="!libraryStore.loading && filteredSongs.length === 0" type="info" variant="tonal">
       {{
         filterQuery
-          ? $t('library.noTracksForQuery', { query: filterQuery })
-          : $t('library.noTracksFound')
+          ? $t('library.noSongsForQuery', { query: filterQuery })
+          : $t('library.noSongsFound')
       }}
     </v-alert>
   </v-container>
@@ -68,7 +64,7 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { shuffled } from '@/services/shuffle'
 import DetailHeader from '@/components/library/DetailHeader.vue'
-import TrackList from '@/components/library/TrackList.vue'
+import SongTable from '@/components/library/SongTable.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
 
 const RANDOM_PLAY_COUNT = 100
@@ -76,21 +72,21 @@ const RANDOM_PLAY_COUNT = 100
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
-  name: 'TracksView',
-  components: { DetailHeader, TrackList, StickyFilter },
+  name: 'SongsView',
+  components: { DetailHeader, SongTable, StickyFilter },
   data() {
     return {
       filterQuery: '',
-      // filteredTracks reads this instead of filterQuery directly —
-      // filtering (and TrackList's own re-sort) runs a full scan over
-      // potentially tens of thousands of tracks, which if it ran
+      // filteredSongs reads this instead of filterQuery directly —
+      // filtering (and SongTable's own re-sort) runs a full scan over
+      // potentially tens of thousands of songs, which if it ran
       // synchronously on every keystroke would block the very render pass
       // that's supposed to show the character just typed, making the input
       // itself feel laggy. filterQuery still updates instantly (it's just
       // the input's own text); only the actual filtering waits a beat.
       debouncedQuery: '',
       // Height of the sticky filter block, reported by StickyFilter's own
-      // @resize — TrackList's sticky column header (see its stickyHeader
+      // @resize — SongTable's sticky column header (see its stickyHeader
       // prop) needs this to stack correctly right below it instead of
       // overlapping it.
       stickyHeaderHeight: 0,
@@ -100,17 +96,17 @@ export default {
     libraryStore() {
       return useLibraryStore()
     },
-    // The full catalog is fetched once (fetchAllTracks) so filtering and
-    // TrackList's column-sort both work across the whole library — TrackList
+    // The full catalog is fetched once (fetchAllSongs) so filtering and
+    // SongTable's column-sort both work across the whole library — SongTable
     // itself paginates the render, this just needs to hand over everything.
-    filteredTracks() {
+    filteredSongs() {
       const query = this.debouncedQuery.trim().toLowerCase()
-      if (!query) return this.libraryStore.allTracks
-      return this.libraryStore.allTracks.filter(
-        (track: { title: string; artist: string; album: string }) =>
-          track.title.toLowerCase().includes(query) ||
-          track.artist.toLowerCase().includes(query) ||
-          track.album.toLowerCase().includes(query),
+      if (!query) return this.libraryStore.allSongs
+      return this.libraryStore.allSongs.filter(
+        (song: { title: string; artist: string; album: string }) =>
+          song.title.toLowerCase().includes(query) ||
+          song.artist.toLowerCase().includes(query) ||
+          song.album.toLowerCase().includes(query),
       )
     },
   },
@@ -126,16 +122,16 @@ export default {
     },
   },
   created() {
-    this.libraryStore.fetchAllTracks()
+    this.libraryStore.fetchAllSongs()
   },
   methods: {
     // Samples from the full unfiltered catalog, same as GenreDetailView's
     // identical playRandom() — an active filter narrows what's browsable,
     // not what "random" draws from.
     async playRandom() {
-      if (!this.libraryStore.allTracks.length) return
-      const sample = shuffled(this.libraryStore.allTracks).slice(0, RANDOM_PLAY_COUNT)
-      await usePlaybackStore().playTrackList(sample, 0)
+      if (!this.libraryStore.allSongs.length) return
+      const sample = shuffled(this.libraryStore.allSongs).slice(0, RANDOM_PLAY_COUNT)
+      await usePlaybackStore().playSongList(sample, 0)
     },
   },
 }

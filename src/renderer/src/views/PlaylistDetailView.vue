@@ -20,7 +20,7 @@
           color="primary"
           rounded="pill"
           prepend-icon="mdi-play"
-          :disabled="!playlist.tracks.length"
+          :disabled="!playlist.songs.length"
           @click="playAll"
         >
           {{ $t('library.play') }}
@@ -66,8 +66,8 @@
       </v-card>
     </v-dialog>
 
-    <track-list
-      :tracks="playlist.tracks"
+    <song-table
+      :songs="playlist.songs"
       :queue-whole-list="false"
       :default-sort-key="null"
       show-cover
@@ -91,12 +91,12 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import DetailHeader from '@/components/library/DetailHeader.vue'
-import TrackList from '@/components/library/TrackList.vue'
+import SongTable from '@/components/library/SongTable.vue'
 import PageLoader from '@/components/PageLoader.vue'
 
 export default {
   name: 'PlaylistDetailView',
-  components: { DetailHeader, TrackList, PageLoader },
+  components: { DetailHeader, SongTable, PageLoader },
   data() {
     return {
       playlist: null as Awaited<
@@ -167,8 +167,8 @@ export default {
       this.editDialog = false
     },
     async playAll() {
-      if (!this.playlist?.tracks.length) return
-      await usePlaybackStore().playTrackList(this.playlist.tracks, 0)
+      if (!this.playlist?.songs.length) return
+      await usePlaybackStore().playSongList(this.playlist.songs, 0)
     },
   },
 }

@@ -6,9 +6,9 @@ interface PlayOptions {
   gain?: number
   startPosition?: number
   force?: boolean
-  /** Upcoming track ids, NOT including `trackId` itself — connect stores
+  /** Upcoming song ids, NOT including `songId` itself — connect stores
    * the combined list (see connect/core/state.py's AppState.queue) and
-   * auto-advances through it on its own when each track ends, so casting
+   * auto-advances through it on its own when each song ends, so casting
    * keeps going even if the renderer that dispatched it is asleep/suspended
    * (see connect/routes/stream.py's _advance_or_end()). Omit (or pass [])
    * to opt out — e.g. repeat-one, where advancing at all would be wrong. */
@@ -58,11 +58,11 @@ function nextSeq(): number {
   return dispatchSeq
 }
 
-export async function play(trackId: string, options: PlayOptions = {}): Promise<PlayResponse> {
+export async function play(songId: string, options: PlayOptions = {}): Promise<PlayResponse> {
   return fetchConnect<PlayResponse>('/play', {
     method: 'POST',
     body: {
-      track_ids: [trackId, ...(options.queue ?? [])],
+      song_ids: [songId, ...(options.queue ?? [])],
       targets: options.targets?.map((t) => ({ name: t.name, type: t.type })),
       gain: options.gain ?? 1.0,
       start_position: options.startPosition ?? 0,

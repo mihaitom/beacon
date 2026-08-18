@@ -326,7 +326,7 @@ def _current_reconnect_args(
 
 
 class PlayRequest(BaseModel):
-    track_ids: list[str]
+    song_ids: list[str]
     targets: list[dict] | None = None
     target_name: str | None = None
     target_type: str | None = None
@@ -364,7 +364,7 @@ async def play_tracks(
         return {
             "error": "Media server not configured — waiting for /config"
         }
-    if not req.track_ids:
+    if not req.song_ids:
         return {"error": "No track ID provided"}
 
     async with session.play_lock:
@@ -380,7 +380,7 @@ async def play_tracks(
         if req.seq:
             session.play_seq = req.seq
 
-        track_id = req.track_ids[0]
+        track_id = req.song_ids[0]
         try:
             track = session.media.get_track(track_id)
         except Exception as e:
@@ -450,7 +450,7 @@ async def play_tracks(
         # id yet (today's behavior): queue_index+1 >= len(queue) then always
         # falls straight through to _advance_or_end()'s existing "mark
         # ended" branch, identical to before this existed.
-        st.queue = req.track_ids
+        st.queue = req.song_ids
         st.queue_index = 0
 
         if target:

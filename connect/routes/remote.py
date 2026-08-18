@@ -244,9 +244,9 @@ async def _query(query_type: str, payload: dict) -> dict:
         remote.drop_pending(request_id)
 
 
-@router.get("/tracks", dependencies=[Depends(require_remote_password)])
-async def list_tracks(search: str = "", offset: int = 0, limit: int = 50):
-    return await _query("tracks-request", {"search": search, "offset": offset, "limit": limit})
+@router.get("/songs", dependencies=[Depends(require_remote_password)])
+async def list_songs(search: str = "", offset: int = 0, limit: int = 50):
+    return await _query("songs-request", {"search": search, "offset": offset, "limit": limit})
 
 
 @router.get("/playlists", dependencies=[Depends(require_remote_password)])

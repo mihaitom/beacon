@@ -1,29 +1,29 @@
-// track-row.js — shared row renderer for track lists (Tracks view, Playlist
+// song-row.js — shared row renderer for song lists (Songs view, Playlist
 // detail), with a "…" action sheet (Play, Play Next, Add to Queue, Start
-// Track Radio).
+// Song Radio).
 
 import { sendCommand } from './api.js';
 import { openActionSheet } from './sheet.js';
 import { createArt } from './art.js';
 
-export function renderTrackRow(track, { onPlay } = {}) {
+export function renderSongRow(song, { onPlay } = {}) {
   const row = document.createElement('div');
   row.className = 'row';
 
-  row.appendChild(createArt(track.cover_art_url, null));
+  row.appendChild(createArt(song.cover_art_url, null));
 
   const main = document.createElement('div');
   main.className = 'row-main';
-  main.addEventListener('click', () => (onPlay ? onPlay() : sendCommand('play-track', { trackId: track.id })));
+  main.addEventListener('click', () => (onPlay ? onPlay() : sendCommand('play-song', { songId: song.id })));
 
   const title = document.createElement('div');
   title.className = 'row-title';
-  title.textContent = track.title;
+  title.textContent = song.title;
   main.appendChild(title);
 
   const subtitle = document.createElement('div');
   subtitle.className = 'row-subtitle';
-  subtitle.textContent = track.artist || '';
+  subtitle.textContent = song.artist || '';
   main.appendChild(subtitle);
 
   row.appendChild(main);
@@ -34,21 +34,21 @@ export function renderTrackRow(track, { onPlay } = {}) {
   actionBtn.addEventListener('click', (event) => {
     event.stopPropagation();
     openActionSheet([
-      { label: 'Play', icon: 'mdi-play', onSelect: () => sendCommand('play-track', { trackId: track.id }) },
+      { label: 'Play', icon: 'mdi-play', onSelect: () => sendCommand('play-song', { songId: song.id }) },
       {
         label: 'Play Next',
         icon: 'mdi-playlist-plus',
-        onSelect: () => sendCommand('queue-next', { trackId: track.id }),
+        onSelect: () => sendCommand('queue-next', { songId: song.id }),
       },
       {
         label: 'Add to Queue',
         icon: 'mdi-plus',
-        onSelect: () => sendCommand('queue-add', { trackId: track.id }),
+        onSelect: () => sendCommand('queue-add', { songId: song.id }),
       },
       {
-        label: 'Start Track Radio',
+        label: 'Start Song Radio',
         icon: 'mdi-antenna',
-        onSelect: () => sendCommand('play-track-radio', { trackId: track.id }),
+        onSelect: () => sendCommand('play-song-radio', { songId: song.id }),
       },
     ]);
   });

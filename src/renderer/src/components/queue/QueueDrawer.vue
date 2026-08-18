@@ -18,7 +18,12 @@
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <div class="d-flex flex-column fill-height">
-      <v-toolbar density="compact" color="#0B0D13" class="beacon-drawer__toolbar" :title="$t('queue.title')">
+      <v-toolbar
+        density="compact"
+        color="#0B0D13"
+        class="beacon-drawer__toolbar"
+        :title="$t('queue.title')"
+      >
         <template #append>
           <v-btn
             v-if="playbackStore.queue.length > 1"
@@ -48,13 +53,13 @@
           class="flex-grow-1 queue-scroll"
         >
           <queue-row
-            v-for="(track, index) in playbackStore.queue"
-            :key="queueRowKey(track)"
-            :track="track"
+            v-for="(song, index) in playbackStore.queue"
+            :key="queueRowKey(song)"
+            :song="song"
             :index="index"
             :drag-over="dragOverIndex === index && dragIndex !== index"
             :dragging="dragIndex === index"
-            :landed="queueRowKey(track) === landedKey"
+            :landed="queueRowKey(song) === landedKey"
             @dragstart="onDragStart(index, $event)"
             @dragover="onDragOver(index)"
             @dragleave="onDragLeave(index)"
@@ -70,14 +75,14 @@
           class="flex-grow-1"
           style="min-height: 0"
         >
-          <template #default="{ item: track, index }">
+          <template #default="{ item: song, index }">
             <queue-row
-              :key="queueRowKey(track)"
-              :track="track"
+              :key="queueRowKey(song)"
+              :song="song"
               :index="index"
               :drag-over="dragOverIndex === index && dragIndex !== index"
               :dragging="dragIndex === index"
-              :landed="queueRowKey(track) === landedKey"
+              :landed="queueRowKey(song) === landedKey"
               @dragstart="onDragStart(index, $event)"
               @dragover="onDragOver(index)"
               @dragleave="onDragLeave(index)"
@@ -98,31 +103,31 @@
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
 import QueueRow from './QueueRow.vue'
-import type { Track } from '@/types/library'
+import type { Song } from '@/types/library'
 
-// Per-row identity for :key and the "landed" flash, keyed off the Track
+// Per-row identity for :key and the "landed" flash, keyed off the Song
 // *object* rather than its id — the queue can legitimately hold the same
-// track more than once (see playbackStore's dedupeForQueue()), and an
+// song more than once (see playbackStore's dedupeForQueue()), and an
 // id-keyed Set/Map would make both occurrences resolve to the same key,
 // producing a Vue duplicate-key warning and mixing up which row the FLIP
 // move animation / landed pulse actually targets. A WeakMap survives
 // reorderQueue() unaffected since that moves the same object reference to a
 // new array index rather than replacing it.
 let queueRowKeySeq = 0
-const queueRowKeys = new WeakMap<Track, string>()
-function queueRowKey(track: Track): string {
-  let key = queueRowKeys.get(track)
+const queueRowKeys = new WeakMap<Song, string>()
+function queueRowKey(song: Song): string {
+  let key = queueRowKeys.get(song)
   if (key === undefined) {
     key = `qrow-${queueRowKeySeq++}`
-    queueRowKeys.set(track, key)
+    queueRowKeys.set(song, key)
   }
   return key
 }
 
-// Past this many tracks, switch from an animated plain v-for to
+// Past this many songs, switch from an animated plain v-for to
 // v-virtual-scroll instead — comfortably above any realistic queue built
-// from actual queueing actions (Track Radio caps at 100, "Play next"/"Add
-// to queue" add one track at a time), but well under what actually risks
+// from actual queueing actions (Song Radio caps at 100, "Play next"/"Add
+// to queue" add one song at a time), but well under what actually risks
 // freezing the renderer (that took ~20,000 — see git history / the
 // v-virtual-scroll comment below for the incident this guards against).
 const QUEUE_VIRTUALIZE_THRESHOLD = 500

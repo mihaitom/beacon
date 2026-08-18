@@ -135,7 +135,7 @@ def test_head_stream_content_type_matches_cached_format(client, default_session)
 
 # ── Queue auto-advance (_advance_or_end / _dispatch_queued_track) ───────────
 # See core/state.py's AppState.queue comment — connect auto-advances casting
-# playback through a queue the frontend seeded via /play's track_ids,
+# playback through a queue the frontend seeded via /play's song_ids,
 # instead of only ever marking track_ended and waiting for the (possibly
 # asleep) renderer to notice and re-dispatch.
 

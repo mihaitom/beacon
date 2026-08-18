@@ -54,7 +54,7 @@ export function parseLyrics(raw: string): ParsedLyrics {
 /** Converts OpenSubsonic's getLyricsBySongId.view shape (already split
  * into lines with millisecond timestamps) into the same ParsedLyrics
  * shape parseLyrics() produces from raw LRC text, so the rest of the app
- * doesn't need to care which source a track's lyrics came from. */
+ * doesn't need to care which source a song's lyrics came from. */
 export function fromStructuredLyrics(lyrics: StructuredLyrics): ParsedLyrics {
   if (lyrics.synced) {
     const lines = lyrics.line

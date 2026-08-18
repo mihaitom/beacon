@@ -8,10 +8,10 @@ import { useLibraryStore } from '@/stores/library'
 import { useConnectStore } from '@/stores/connect'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useAuthStore } from '@/stores/auth'
-import type { Track } from '@/types/library'
+import type { Song } from '@/types/library'
 import type { DeviceType, DiscoveredDevice } from '@/services/connect/types'
 
-export interface RemoteTrack {
+export interface RemoteSong {
   id: string
   title: string
   artist: string
@@ -31,7 +31,10 @@ function remoteMediaBase(): { origin: string; password: string } | null {
   if (!remoteControl.password) return null
   if (window.api) {
     if (!remoteControl.lanIp || !remoteControl.port) return null
-    return { origin: `http://${remoteControl.lanIp}:${remoteControl.port}`, password: remoteControl.password }
+    return {
+      origin: `http://${remoteControl.lanIp}:${remoteControl.port}`,
+      password: remoteControl.password,
+    }
   }
   return { origin: window.location.origin, password: remoteControl.password }
 }
@@ -67,30 +70,33 @@ export function remoteRadioFaviconUrl(homePageUrl: string | null, minSize = 0): 
   return `${base.origin}/remote/radio-favicon?${params.toString()}`
 }
 
-export function toRemoteTrack(track: Track): RemoteTrack {
+export function toRemoteSong(song: Song): RemoteSong {
   return {
-    id: track.id,
-    title: track.title,
-    artist: track.artist,
-    album: track.album,
-    cover_art_url: remoteCoverArtUrl(track.coverArtId),
-    duration: track.duration,
+    id: song.id,
+    title: song.title,
+    artist: song.artist,
+    album: song.album,
+    cover_art_url: remoteCoverArtUrl(song.coverArtId),
+    duration: song.duration,
   }
 }
 
-async function resolveTrack(trackId: string): Promise<Track | null> {
+async function resolveSong(songId: string): Promise<Song | null> {
   const library = useLibraryStore()
-  const cached = library.allTracks.find((t) => t.id === trackId)
+  const cached = library.allSongs.find((t) => t.id === songId)
   if (cached) return cached
   try {
-    return await library.client().getSong(trackId)
+    return await library.client().getSong(songId)
   } catch (error) {
-    console.error('[remoteControl] Failed to resolve track', trackId, error)
+    console.error('[remoteControl] Failed to resolve song', songId, error)
     return null
   }
 }
 
-export async function handleRemoteCommand(type: string, payload: Record<string, unknown>): Promise<void> {
+export async function handleRemoteCommand(
+  type: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
   const playback = usePlaybackStore()
   const library = useLibraryStore()
   const connect = useConnectStore()
@@ -121,7 +127,11 @@ export async function handleRemoteCommand(type: string, payload: Record<string, 
       // set-device-volume below for per-device control instead.
       const targets = connect.activeTargets
       if (targets.length === 1) {
-        await connect.setDeviceVolume(targets[0]!.type, targets[0]!.name, Math.round(Number(payload.volume) * 100))
+        await connect.setDeviceVolume(
+          targets[0]!.type,
+          targets[0]!.name,
+          Math.round(Number(payload.volume) * 100),
+        )
       } else if (targets.length === 0) {
         playback.setVolume(Number(payload.volume))
       }
@@ -150,24 +160,24 @@ export async function handleRemoteCommand(type: string, payload: Record<string, 
     case 'queue-reorder':
       playback.reorderQueue(Number(payload.from), Number(payload.to))
       return
-    case 'play-track': {
-      const track = await resolveTrack(String(payload.trackId))
-      if (track) await playback.playTrackList([track])
+    case 'play-song': {
+      const song = await resolveSong(String(payload.songId))
+      if (song) await playback.playSongList([song])
       return
     }
     case 'queue-add': {
-      const track = await resolveTrack(String(payload.trackId))
-      if (track) playback.addToQueue([track])
+      const song = await resolveSong(String(payload.songId))
+      if (song) playback.addToQueue([song])
       return
     }
     case 'queue-next': {
-      const track = await resolveTrack(String(payload.trackId))
-      if (track) playback.queueNext([track])
+      const song = await resolveSong(String(payload.songId))
+      if (song) playback.queueNext([song])
       return
     }
-    case 'play-track-radio': {
-      const track = await resolveTrack(String(payload.trackId))
-      if (track) await playback.startTrackRadio(track)
+    case 'play-song-radio': {
+      const song = await resolveSong(String(payload.songId))
+      if (song) await playback.startSongRadio(song)
       return
     }
     case 'play-artist-radio': {
@@ -182,7 +192,7 @@ export async function handleRemoteCommand(type: string, payload: Record<string, 
     case 'play-playlist': {
       const playlist = await library.fetchPlaylist(String(payload.playlistId))
       const startIndex = typeof payload.startIndex === 'number' ? payload.startIndex : 0
-      await playback.playTrackList(playlist.tracks, startIndex)
+      await playback.playSongList(playlist.songs, startIndex)
       return
     }
     case 'play-radio-station': {
@@ -231,36 +241,42 @@ export async function handleRemoteCommand(type: string, payload: Record<string, 
   }
 }
 
-export async function resolveRemoteQuery(type: string, payload: Record<string, unknown>): Promise<unknown> {
+export async function resolveRemoteQuery(
+  type: string,
+  payload: Record<string, unknown>,
+): Promise<unknown> {
   const library = useLibraryStore()
 
   switch (type) {
-    case 'tracks-request': {
-      if (!library.allTracksLoaded) await library.fetchAllTracks()
-      const search = String(payload.search ?? '').trim().toLowerCase()
+    case 'songs-request': {
+      if (!library.allSongsLoaded) await library.fetchAllSongs()
+      const search = String(payload.search ?? '')
+        .trim()
+        .toLowerCase()
       const filtered = search
-        ? library.allTracks.filter(
-            (t) => t.title.toLowerCase().includes(search) || t.artist.toLowerCase().includes(search),
+        ? library.allSongs.filter(
+            (t) =>
+              t.title.toLowerCase().includes(search) || t.artist.toLowerCase().includes(search),
           )
-        : library.allTracks
+        : library.allSongs
       const offset = Number(payload.offset ?? 0)
       const limit = Number(payload.limit ?? 50)
       return {
-        items: filtered.slice(offset, offset + limit).map(toRemoteTrack),
+        items: filtered.slice(offset, offset + limit).map(toRemoteSong),
         total: filtered.length,
       }
     }
     case 'playlists-request': {
       await library.fetchPlaylists()
       return {
-        items: library.playlists.map((p) => ({ id: p.id, name: p.name, track_count: p.songCount })),
+        items: library.playlists.map((p) => ({ id: p.id, name: p.name, song_count: p.songCount })),
       }
     }
     case 'playlist-request': {
       const playlist = await library.fetchPlaylist(String(payload.playlistId))
       return {
         playlist: { id: playlist.id, name: playlist.name },
-        tracks: playlist.tracks.map(toRemoteTrack),
+        songs: playlist.songs.map(toRemoteSong),
       }
     }
     case 'radio-request': {
@@ -327,7 +343,10 @@ export async function resolveRemoteQuery(type: string, payload: Record<string, u
     }
     case 'device-volume-request': {
       const connect = useConnectStore()
-      const volume = await connect.getDeviceVolume(payload.deviceType as DeviceType, String(payload.name))
+      const volume = await connect.getDeviceVolume(
+        payload.deviceType as DeviceType,
+        String(payload.name),
+      )
       return { volume }
     }
     default:

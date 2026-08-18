@@ -1,6 +1,6 @@
 // sw.js — app-shell cache for the Remote Control PWA. Only ever touches
 // /remote/app/* (the static shell) — every API call (/remote/state,
-// /remote/events, /remote/tracks, …) is intentionally left to hit the
+// /remote/events, /remote/songs, …) is intentionally left to hit the
 // network directly, both because that data is live/real-time and because
 // this scope match makes that exclusion automatic rather than a maintained
 // list of paths to skip.
@@ -20,11 +20,11 @@ const SHELL_PATHS = [
   './js/state.js',
   './js/router.js',
   './js/sheet.js',
-  './js/track-row.js',
+  './js/song-row.js',
   './js/views/now-playing.js',
   './js/views/queue.js',
   './js/views/playlists.js',
-  './js/views/tracks.js',
+  './js/views/songs.js',
   './js/views/radio.js',
 ];
 

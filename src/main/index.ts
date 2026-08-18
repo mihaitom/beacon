@@ -1,20 +1,20 @@
-import { join } from 'path';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { type ChildProcess, spawn } from 'child_process';
-import { randomBytes } from 'crypto';
-import { createServer } from 'net';
-import { BrowserWindow, app, ipcMain, safeStorage, shell } from 'electron';
-import { electronApp, is, optimizer } from '@electron-toolkit/utils';
-import { config as loadDotenv } from 'dotenv';
+import { join } from 'path'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { type ChildProcess, spawn } from 'child_process'
+import { randomBytes } from 'crypto'
+import { createServer } from 'net'
+import { BrowserWindow, app, ipcMain, safeStorage, shell } from 'electron'
+import { electronApp, is, optimizer } from '@electron-toolkit/utils'
+import { config as loadDotenv } from 'dotenv'
 // Not `import { autoUpdater } from 'electron-updater'` — electron-updater is
 // CommonJS, and Node's static named-export detection for it doesn't hold up
 // once this runs as real ESM in a packaged build (works fine unpackaged/in
 // dev, then throws "Named export 'autoUpdater' not found" at startup from
 // inside an AppImage/asar). Default import + destructure is the reliable
 // form across both.
-import electronUpdaterPkg from 'electron-updater';
+import electronUpdaterPkg from 'electron-updater'
 
-const { autoUpdater } = electronUpdaterPkg;
+const { autoUpdater } = electronUpdaterPkg
 
 // Without this, Chromium's OSCrypt backend auto-detection on Linux only
 // tries libsecret/kwallet when it recognizes the desktop environment (GNOME/
@@ -23,58 +23,61 @@ const { autoUpdater } = electronUpdaterPkg;
 // Service daemon is running and reachable. Forcing the switch explicitly
 // makes safeStorage try libsecret regardless of desktop environment. Must
 // run before app.whenReady().
-if (process.platform === 'linux' && !process.argv.some((arg) => arg.startsWith('--password-store='))) {
-    app.commandLine.appendSwitch('password-store', 'gnome-libsecret');
+if (
+  process.platform === 'linux' &&
+  !process.argv.some((arg) => arg.startsWith('--password-store='))
+) {
+  app.commandLine.appendSwitch('password-store', 'gnome-libsecret')
 }
 
 function createWindow(): void {
-    const mainWindow = new BrowserWindow({
-        width: 1200,
-        height: 800,
-        autoHideMenuBar: true,
-        show: false,
-        webPreferences: {
-            preload: join(__dirname, '../preload/index.mjs'),
-            // Electron's sandboxed preload loader can't run an ES module
-            // preload script (this one is .mjs — package.json's "type":
-            // "module" makes electron-vite build it that way) — contextBridge
-            // never fires, window.api/window.electron end up undefined, and
-            // nothing throws or logs anywhere visible. Standard electron-vite/
-            // electron-toolkit fix: disable the sandbox for this window so the
-            // preload's synchronous ESM import graph can actually execute.
-            sandbox: false,
-        },
-    });
+  const mainWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.mjs'),
+      // Electron's sandboxed preload loader can't run an ES module
+      // preload script (this one is .mjs — package.json's "type":
+      // "module" makes electron-vite build it that way) — contextBridge
+      // never fires, window.api/window.electron end up undefined, and
+      // nothing throws or logs anywhere visible. Standard electron-vite/
+      // electron-toolkit fix: disable the sandbox for this window so the
+      // preload's synchronous ESM import graph can actually execute.
+      sandbox: false,
+    },
+  })
 
-    mainWindow.on('ready-to-show', () => {
-        mainWindow.show();
-    });
+  mainWindow.on('ready-to-show', () => {
+    mainWindow.show()
+  })
 
-    mainWindow.webContents.setWindowOpenHandler((details) => {
-        // Only hand http(s) URLs to the OS's default handler. `details.url`
-        // can originate from data served by a user-configured (and
-        // potentially compromised) Navidrome/Subsonic/Jellyfin server — e.g.
-        // a radio station's homePageUrl — so a crafted non-http scheme
-        // (file:, or a third-party protocol handler) must not reach
-        // shell.openExternal, which is the exact pattern behind several
-        // real Electron protocol-handler-exploitation CVEs.
-        try {
-            const url = new URL(details.url);
-            if (url.protocol === 'http:' || url.protocol === 'https:') {
-                shell.openExternal(details.url);
-            }
-        } catch {
-            // Not a parseable URL — do nothing rather than risk handing a
-            // malformed string to the OS shell.
-        }
-        return { action: 'deny' };
-    });
-
-    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-        mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL']);
-    } else {
-        mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+  mainWindow.webContents.setWindowOpenHandler((details) => {
+    // Only hand http(s) URLs to the OS's default handler. `details.url`
+    // can originate from data served by a user-configured (and
+    // potentially compromised) Navidrome/Subsonic/Jellyfin server — e.g.
+    // a radio station's homePageUrl — so a crafted non-http scheme
+    // (file:, or a third-party protocol handler) must not reach
+    // shell.openExternal, which is the exact pattern behind several
+    // real Electron protocol-handler-exploitation CVEs.
+    try {
+      const url = new URL(details.url)
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        shell.openExternal(details.url)
+      }
+    } catch {
+      // Not a parseable URL — do nothing rather than risk handing a
+      // malformed string to the OS shell.
     }
+    return { action: 'deny' }
+  })
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  } else {
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
 }
 
 // Backs the renderer's secure-storage IPC calls (see preload/index.ts and
@@ -84,46 +87,46 @@ function createWindow(): void {
 // avoids raw plaintext) on setups without a usable OS credential store —
 // safeStorage.encryptString() throws in that case rather than failing softly.
 interface StoredEntry {
-    mode: 'enc' | 'plain';
-    data: string;
+  mode: 'enc' | 'plain'
+  data: string
 }
 
 function secureStorageFilePath(): string {
-    return join(app.getPath('userData'), 'secure-storage.json');
+  return join(app.getPath('userData'), 'secure-storage.json')
 }
 
 function readSecureStore(): Record<string, StoredEntry> {
-    try {
-        return JSON.parse(readFileSync(secureStorageFilePath(), 'utf-8'));
-    } catch {
-        return {};
-    }
+  try {
+    return JSON.parse(readFileSync(secureStorageFilePath(), 'utf-8'))
+  } catch {
+    return {}
+  }
 }
 
 function writeSecureStore(store: Record<string, StoredEntry>): void {
-    writeFileSync(secureStorageFilePath(), JSON.stringify(store));
+  writeFileSync(secureStorageFilePath(), JSON.stringify(store))
 }
 
 ipcMain.handle('secure-storage:get', (_event, key: string): string | null => {
-    const entry = readSecureStore()[key];
-    if (!entry) return null;
-    const buffer = Buffer.from(entry.data, 'base64');
-    return entry.mode === 'enc' ? safeStorage.decryptString(buffer) : buffer.toString('utf-8');
-});
+  const entry = readSecureStore()[key]
+  if (!entry) return null
+  const buffer = Buffer.from(entry.data, 'base64')
+  return entry.mode === 'enc' ? safeStorage.decryptString(buffer) : buffer.toString('utf-8')
+})
 
 ipcMain.handle('secure-storage:set', (_event, key: string, value: string): void => {
-    const store = readSecureStore();
-    store[key] = safeStorage.isEncryptionAvailable()
-        ? { mode: 'enc', data: safeStorage.encryptString(value).toString('base64') }
-        : { mode: 'plain', data: Buffer.from(value, 'utf-8').toString('base64') };
-    writeSecureStore(store);
-});
+  const store = readSecureStore()
+  store[key] = safeStorage.isEncryptionAvailable()
+    ? { mode: 'enc', data: safeStorage.encryptString(value).toString('base64') }
+    : { mode: 'plain', data: Buffer.from(value, 'utf-8').toString('base64') }
+  writeSecureStore(store)
+})
 
 ipcMain.handle('secure-storage:delete', (_event, key: string): void => {
-    const store = readSecureStore();
-    delete store[key];
-    writeSecureStore(store);
-});
+  const store = readSecureStore()
+  delete store[key]
+  writeSecureStore(store)
+})
 
 // ── Bundled connect backend (packaged builds only) ──────────────────────────
 //
@@ -137,79 +140,79 @@ ipcMain.handle('secure-storage:delete', (_event, key: string): void => {
 // by `connect/packaging/build-binary.py`).
 //
 // The port is resolved fresh per launch via findFreePort() below (asking the
-// OS for one, rather than hardcoding 9181) so a second Beacon instance, or
-// anything else already bound to 9181, can't stop this one's bundled backend
+// OS for one, rather than hardcoding 7071) so a second Beacon instance, or
+// anything else already bound to 7071, can't stop this one's bundled backend
 // from starting — nothing outside this process needs the port to be
 // predictable, since readConnectDefaults() is the only way the renderer ever
 // learns it.
-let packagedConnectPort = 9181;
+let packagedConnectPort = 7071
 // Generated fresh per launch — unlike connect/.connect-token (used by the
 // dev flow, where the backend runs independently and needs a stable value
 // across restarts), a bundled/spawned backend only ever needs to agree with
 // *this* process, which already knows the value it generated.
-const packagedConnectToken = randomBytes(32).toString('hex');
-let connectProcess: ChildProcess | null = null;
+const packagedConnectToken = randomBytes(32).toString('hex')
+let connectProcess: ChildProcess | null = null
 
 function findFreePort(): Promise<number> {
-    return new Promise((resolve, reject) => {
-        const srv = createServer();
-        srv.unref();
-        srv.on('error', reject);
-        srv.listen(0, '127.0.0.1', () => {
-            const { port } = srv.address() as { port: number };
-            srv.close(() => resolve(port));
-        });
-    });
+  return new Promise((resolve, reject) => {
+    const srv = createServer()
+    srv.unref()
+    srv.on('error', reject)
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address() as { port: number }
+      srv.close(() => resolve(port))
+    })
+  })
 }
 
 function startConnectServer(): void {
-    const binaryName = process.platform === 'win32' ? 'connect-server.exe' : 'connect-server';
-    const binaryPath = join(process.resourcesPath, 'connect-server', binaryName);
-    if (!existsSync(binaryPath)) {
-        console.error(`[connect] Bundled binary not found: ${binaryPath}`);
-        return;
+  const binaryName = process.platform === 'win32' ? 'connect-server.exe' : 'connect-server'
+  const binaryPath = join(process.resourcesPath, 'connect-server', binaryName)
+  if (!existsSync(binaryPath)) {
+    console.error(`[connect] Bundled binary not found: ${binaryPath}`)
+    return
+  }
+
+  connectProcess = spawn(binaryPath, [], {
+    env: {
+      ...process.env,
+      CONNECT_TOKEN: packagedConnectToken,
+      PORT: String(packagedConnectPort),
+      // Persistent AirPlay pairing credentials (see connect/delivery/
+      // credentials.py) — userData survives app updates, unlike the
+      // packaged binary's own resources folder, which gets replaced
+      // wholesale on every update.
+      CONNECT_DATA_DIR: app.getPath('userData'),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+
+  connectProcess.stdout?.on('data', (data: Buffer) => {
+    for (const line of data.toString().split('\n')) {
+      if (line.trim()) console.log(`[connect] ${line.trimEnd()}`)
     }
-
-    connectProcess = spawn(binaryPath, [], {
-        env: {
-            ...process.env,
-            CONNECT_TOKEN: packagedConnectToken,
-            PORT: String(packagedConnectPort),
-            // Persistent AirPlay pairing credentials (see connect/delivery/
-            // credentials.py) — userData survives app updates, unlike the
-            // packaged binary's own resources folder, which gets replaced
-            // wholesale on every update.
-            CONNECT_DATA_DIR: app.getPath('userData'),
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    connectProcess.stdout?.on('data', (data: Buffer) => {
-        for (const line of data.toString().split('\n')) {
-            if (line.trim()) console.log(`[connect] ${line.trimEnd()}`);
-        }
-    });
-    connectProcess.stderr?.on('data', (data: Buffer) => {
-        for (const line of data.toString().split('\n')) {
-            if (line.trim()) console.error(`[connect] ${line.trimEnd()}`);
-        }
-    });
-    connectProcess.on('error', (error) => {
-        console.error('[connect] Failed to start bundled backend:', error);
-    });
-    connectProcess.on('exit', (code, signal) => {
-        console.log(`[connect] Bundled backend exited (code=${code}, signal=${signal})`);
-        connectProcess = null;
-    });
+  })
+  connectProcess.stderr?.on('data', (data: Buffer) => {
+    for (const line of data.toString().split('\n')) {
+      if (line.trim()) console.error(`[connect] ${line.trimEnd()}`)
+    }
+  })
+  connectProcess.on('error', (error) => {
+    console.error('[connect] Failed to start bundled backend:', error)
+  })
+  connectProcess.on('exit', (code, signal) => {
+    console.log(`[connect] Bundled backend exited (code=${code}, signal=${signal})`)
+    connectProcess = null
+  })
 }
 
 function stopConnectServer(): void {
-    // Default kill() sends SIGTERM, which uvicorn (see connect/main.py)
-    // already shuts down on gracefully — no separate "please stop" request
-    // needed first. Idempotent — safe to call from more than one shutdown
-    // hook (see the app.on() handlers below).
-    connectProcess?.kill();
-    connectProcess = null;
+  // Default kill() sends SIGTERM, which uvicorn (see connect/main.py)
+  // already shuts down on gracefully — no separate "please stop" request
+  // needed first. Idempotent — safe to call from more than one shutdown
+  // hook (see the app.on() handlers below).
+  connectProcess?.kill()
+  connectProcess = null
 }
 
 // Learns CONNECT_TOKEN the same way the Python backend resolves it (see
@@ -227,33 +230,33 @@ function stopConnectServer(): void {
 //      stable across restarts (never a hardcoded/checked-in value, and
 //      never regenerated out from under this file on every launch)
 function readConnectDefaults(): { connectToken: string; connectUrl: string } {
-    if (app.isPackaged) {
-        return {
-            connectToken: packagedConnectToken,
-            connectUrl: `http://localhost:${packagedConnectPort}`,
-        };
-    }
-
-    const connectDir = join(__dirname, '../../connect');
-    const envPath = join(connectDir, '.env');
-    const parsed = existsSync(envPath) ? (loadDotenv({ path: envPath }).parsed ?? {}) : {};
-    const port = parsed.PORT || '9181';
-
-    let connectToken = parsed.CONNECT_TOKEN ?? '';
-    if (!connectToken) {
-        const tokenFile = join(connectDir, '.connect-token');
-        if (existsSync(tokenFile)) {
-            connectToken = readFileSync(tokenFile, 'utf-8').trim();
-        }
-    }
-
+  if (app.isPackaged) {
     return {
-        connectToken,
-        connectUrl: `http://localhost:${port}`,
-    };
+      connectToken: packagedConnectToken,
+      connectUrl: `http://localhost:${packagedConnectPort}`,
+    }
+  }
+
+  const connectDir = join(__dirname, '../../connect')
+  const envPath = join(connectDir, '.env')
+  const parsed = existsSync(envPath) ? (loadDotenv({ path: envPath }).parsed ?? {}) : {}
+  const port = parsed.PORT || '7071'
+
+  let connectToken = parsed.CONNECT_TOKEN ?? ''
+  if (!connectToken) {
+    const tokenFile = join(connectDir, '.connect-token')
+    if (existsSync(tokenFile)) {
+      connectToken = readFileSync(tokenFile, 'utf-8').trim()
+    }
+  }
+
+  return {
+    connectToken,
+    connectUrl: `http://localhost:${port}`,
+  }
 }
 
-ipcMain.handle('app-config:get-connect-defaults', () => readConnectDefaults());
+ipcMain.handle('app-config:get-connect-defaults', () => readConnectDefaults())
 
 // Checks GitHub Releases for this repo (see electron-builder.yml's `publish`
 // block, which is what electron-updater reads by default) and, if a newer
@@ -264,41 +267,41 @@ ipcMain.handle('app-config:get-connect-defaults', () => readConnectDefaults());
 // opt-out-able via DISABLE_AUTO_UPDATES for self-hosters who don't want the
 // app phoning out to GitHub at all.
 function checkForUpdates(): void {
-    if (!app.isPackaged || process.env['DISABLE_AUTO_UPDATES']) return;
-    autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.checkForUpdatesAndNotify().catch((error) => {
-        console.error('[updater] Check for updates failed:', error);
-    });
+  if (!app.isPackaged || process.env['DISABLE_AUTO_UPDATES']) return
+  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.checkForUpdatesAndNotify().catch((error) => {
+    console.error('[updater] Check for updates failed:', error)
+  })
 }
 
 app.whenReady().then(async () => {
-    electronApp.setAppUserModelId('com.beacon.app');
+  electronApp.setAppUserModelId('com.beacon.app')
 
-    app.on('browser-window-created', (_, window) => {
-        optimizer.watchWindowShortcuts(window);
-    });
+  app.on('browser-window-created', (_, window) => {
+    optimizer.watchWindowShortcuts(window)
+  })
 
-    if (app.isPackaged) {
-        packagedConnectPort = await findFreePort();
-        startConnectServer();
-    }
-    createWindow();
-    checkForUpdates();
+  if (app.isPackaged) {
+    packagedConnectPort = await findFreePort()
+    startConnectServer()
+  }
+  createWindow()
+  checkForUpdates()
 
-    app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) createWindow();
-    });
-});
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
 
 // True once the quit flow below has actually started — lets the second,
 // self-triggered 'before-quit' (fired by finishQuit()'s own app.quit() call)
 // tell itself apart from the very first quit request and just let it
 // through, instead of looping back into requestQuit() again.
-let quitting = false;
+let quitting = false
 
 function finishQuit(): void {
-    stopConnectServer();
-    app.quit();
+  stopConnectServer()
+  app.quit()
 }
 
 // Casting doesn't stop on its own just because this app closes — the
@@ -313,33 +316,33 @@ function finishQuit(): void {
 // the one actually casting. So: ask the renderer, wait briefly for it to
 // confirm, then tear down for real either way.
 function requestQuit(): void {
-    if (quitting) return;
-    quitting = true;
+  if (quitting) return
+  quitting = true
 
-    const win = BrowserWindow.getAllWindows()[0];
-    if (!win) {
-        finishQuit();
-        return;
-    }
+  const win = BrowserWindow.getAllWindows()[0]
+  if (!win) {
+    finishQuit()
+    return
+  }
 
-    let settled = false;
-    const finish = (): void => {
-        if (settled) return;
-        settled = true;
-        finishQuit();
-    };
-    ipcMain.once('app:before-quit-done', finish);
-    // The renderer might be slow (a device taking a moment to respond) or
-    // simply gone (crashed) — don't hang app quit on it indefinitely.
-    setTimeout(finish, 3000);
-    win.webContents.send('app:before-quit');
+  let settled = false
+  const finish = (): void => {
+    if (settled) return
+    settled = true
+    finishQuit()
+  }
+  ipcMain.once('app:before-quit-done', finish)
+  // The renderer might be slow (a device taking a moment to respond) or
+  // simply gone (crashed) — don't hang app quit on it indefinitely.
+  setTimeout(finish, 3000)
+  win.webContents.send('app:before-quit')
 }
 
 app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-        requestQuit();
-    }
-});
+  if (process.platform !== 'darwin') {
+    requestQuit()
+  }
+})
 
 // Covers macOS, where window-all-closed above doesn't quit the app (it stays
 // resident, per OS convention) — before-quit still fires here right before
@@ -348,10 +351,10 @@ app.on('window-all-closed', () => {
 // app.quit() re-fires this event) — the `quitting` guard lets that second
 // firing proceed instead of preventing default forever.
 app.on('before-quit', (event) => {
-    if (quitting) return;
-    event.preventDefault();
-    requestQuit();
-});
+  if (quitting) return
+  event.preventDefault()
+  requestQuit()
+})
 
 // A raw OS signal (Ctrl+C in a dev-mode terminal, or `concurrently -k`
 // forwarding SIGTERM when the connect dev process exits first — see
@@ -364,5 +367,5 @@ app.on('before-quit', (event) => {
 // about *this* process never asking it to stop streaming first). Registering
 // a handler here overrides Node's default "just die" behavior and routes
 // through the exact same clean-shutdown flow instead.
-process.on('SIGINT', requestQuit);
-process.on('SIGTERM', requestQuit);
+process.on('SIGINT', requestQuit)
+process.on('SIGTERM', requestQuit)

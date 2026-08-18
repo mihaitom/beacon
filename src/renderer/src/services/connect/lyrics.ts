@@ -17,7 +17,7 @@ function buildParams(query: LyricsQuery, extra: Record<string, string> = {}): UR
   return params
 }
 
-/** Best-match lyrics for a track (connect/routes/lyrics.py's /lyrics/auto)
+/** Best-match lyrics for a song (connect/routes/lyrics.py's /lyrics/auto)
  * — what the playback UI actually uses, see stores/lyrics.ts. Null when
  * nothing matched well enough (MATCH_THRESHOLD on the backend). */
 export async function autoLyrics(query: LyricsQuery): Promise<AutoLyricsResult | null> {

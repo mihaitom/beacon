@@ -108,7 +108,7 @@ export default defineComponent({
 
 <style scoped>
 /* Fixed to the viewport, centered above the transport bar — same "float
- * above PlayerBar" convention as TrackList.vue's .selection-bar (88px
+ * above PlayerBar" convention as SongTable.vue's .selection-bar (88px
  * PlayerBar height + 16px gap = 104px), and the same z-index that
  * comment references back to this file, so the two never fight for
  * stacking order if they're ever both on screen. */

@@ -3,9 +3,9 @@ import { autoLyrics, getLyricsByRemoteId, searchLyrics } from '@/services/connec
 import type { LyricSearchResult } from '@/services/connect/types'
 import { fromStructuredLyrics, parseLyrics, type LyricLine } from '@/services/lyrics/parseLrc'
 import { useLibraryStore } from '@/stores/library'
-import type { Track } from '@/types/library'
+import type { Song } from '@/types/library'
 
-// Source id for a track's own embedded/ID3-tag lyrics (getLyricsBySongId.view)
+// Source id for a song's own embedded/ID3-tag lyrics (getLyricsBySongId.view)
 // — kept alongside the three connect.LyricSource values ('lrclib.net',
 // 'SimpMusic', 'NetEase') as the value of CachedLyrics.source /
 // LyricsState.source, distinguished by not being a valid search-candidate
@@ -13,7 +13,7 @@ import type { Track } from '@/types/library'
 export const FILE_SOURCE = 'file'
 
 interface LyricsState {
-  trackId: string | null
+  songId: string | null
   synced: boolean
   lines: LyricLine[]
   loading: boolean
@@ -31,9 +31,9 @@ interface LyricsState {
   // selectCandidate() below.
   candidates: Record<string, LyricSearchResult[]> | null
   candidatesLoading: boolean
-  // Seconds to shift this track's line timestamps by before comparing
+  // Seconds to shift this song's line timestamps by before comparing
   // against playback position — positive delays the lyrics (use when they
-  // fire too early), negative advances them. Per-track because the mismatch
+  // fire too early), negative advances them. Per-song because the mismatch
   // comes from the *matched lyrics source* being a slightly different
   // edit/version than *this* audio file, not from anything global.
   offset: number
@@ -54,25 +54,25 @@ interface CachedNegative {
 type CacheEntry = CachedPositive | CachedNegative
 
 // How long a confirmed "nothing found anywhere" result blocks a refetch —
-// long enough that normal replays of a track don't keep re-hitting three
+// long enough that normal replays of a song don't keep re-hitting three
 // uncached third-party APIs for something that isn't there, short enough
-// that a source adding the track later (or a metadata fix) isn't stuck
+// that a source adding the song later (or a metadata fix) isn't stuck
 // forever.
 const NEGATIVE_TTL_MS = 24 * 60 * 60 * 1000
 
 // Persisted across restarts, unlike the old session-only cache this
 // replaces — "save every lyrics lookup we've ever made" was the explicit
 // ask, not just "avoid refetching within one run." One JSON blob keyed by
-// track id, same convention as OFFSETS_KEY below. A positive entry never
-// expires (a track's lyrics don't change); a negative one expires after
+// song id, same convention as OFFSETS_KEY below. A positive entry never
+// expires (a song's lyrics don't change); a negative one expires after
 // NEGATIVE_TTL_MS, see isExpired().
 const CACHE_KEY = 'beacon.lyricsCache'
 
 // Loaded once per app run and kept in sync by writeCacheEntry() — avoids
 // re-parsing the whole persisted blob (one full lyrics text per cached
-// track, potentially a lot of them) on every single ensureLoaded() call.
+// song, potentially a lot of them) on every single ensureLoaded() call.
 let persistedCache: Record<string, CacheEntry> | null = null
-let inFlightTrackId: string | null = null
+let inFlightSongId: string | null = null
 
 function loadPersistedCache(): Record<string, CacheEntry> {
   if (!persistedCache) {
@@ -88,9 +88,9 @@ function loadPersistedCache(): Record<string, CacheEntry> {
   return persistedCache
 }
 
-function writeCacheEntry(trackId: string, entry: CacheEntry): void {
+function writeCacheEntry(songId: string, entry: CacheEntry): void {
   const all = loadPersistedCache()
-  all[trackId] = entry
+  all[songId] = entry
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify(all))
   } catch {
@@ -104,7 +104,7 @@ function isExpiredNegative(entry: CachedNegative): boolean {
 }
 
 /** Called from SettingsView.vue's "clear caches" action. Only the fetched-
- * lyrics cache — deliberately leaves OFFSETS_KEY (per-track sync-offset
+ * lyrics cache — deliberately leaves OFFSETS_KEY (per-song sync-offset
  * corrections, see readStoredOffset() below) alone, since that's the user's
  * own manual work, not a re-fetchable cache. */
 export function clearLyricsCache(): void {
@@ -118,20 +118,20 @@ export function clearLyricsCache(): void {
 
 const OFFSETS_KEY = 'beacon.lyricsOffsets'
 
-function readStoredOffset(trackId: string): number {
+function readStoredOffset(songId: string): number {
   try {
     const all = JSON.parse(localStorage.getItem(OFFSETS_KEY) ?? '{}') as Record<string, number>
-    return all[trackId] ?? 0
+    return all[songId] ?? 0
   } catch {
     return 0
   }
 }
 
-function writeStoredOffset(trackId: string, offset: number): void {
+function writeStoredOffset(songId: string, offset: number): void {
   try {
     const all = JSON.parse(localStorage.getItem(OFFSETS_KEY) ?? '{}') as Record<string, number>
-    if (offset === 0) delete all[trackId]
-    else all[trackId] = offset
+    if (offset === 0) delete all[songId]
+    else all[songId] = offset
     localStorage.setItem(OFFSETS_KEY, JSON.stringify(all))
   } catch {
     // Losing a saved offset on write failure (e.g. storage full/disabled)
@@ -139,13 +139,13 @@ function writeStoredOffset(trackId: string, offset: number): void {
   }
 }
 
-/** The track's own embedded/ID3-tag lyrics, if its server exposes them —
+/** The song's own embedded/ID3-tag lyrics, if its server exposes them —
  * tried before the third-party lookup below since it matches this exact
- * file rather than "some track with this name/artist" that may be a
+ * file rather than "some song with this name/artist" that may be a
  * different edit. Null (not an error) on any server that doesn't support
  * the OpenSubsonic extension, same as a genuine "no lyrics tagged". */
-async function fetchFileLyrics(track: Track): Promise<CachedPositive | null> {
-  const candidates = await useLibraryStore().client().getLyricsBySongId(track.id)
+async function fetchFileLyrics(song: Song): Promise<CachedPositive | null> {
+  const candidates = await useLibraryStore().client().getLyricsBySongId(song.id)
   const best = candidates.find((c) => c.synced) ?? candidates[0]
   if (!best || best.line.length === 0) return null
   const parsed = fromStructuredLyrics(best)
@@ -155,7 +155,7 @@ async function fetchFileLyrics(track: Track): Promise<CachedPositive | null> {
 
 export const useLyricsStore = defineStore('lyrics', {
   state: (): LyricsState => ({
-    trackId: null,
+    songId: null,
     synced: false,
     lines: [],
     loading: false,
@@ -168,17 +168,17 @@ export const useLyricsStore = defineStore('lyrics', {
   }),
 
   actions: {
-    /** Fetches (or reuses the persisted cache for) `track`'s lyrics. Not
-     * called eagerly on every track change — only when a lyrics surface
+    /** Fetches (or reuses the persisted cache for) `song`'s lyrics. Not
+     * called eagerly on every song change — only when a lyrics surface
      * (the drawer, or Now Playing's immersive lyrics mode) is actually
      * visible, see LyricsPanel.vue's consumers (LyricsDrawer.vue,
      * NowPlayingView.vue). */
-    async ensureLoaded(track: Track): Promise<void> {
-      this.offset = readStoredOffset(track.id)
+    async ensureLoaded(song: Song): Promise<void> {
+      this.offset = readStoredOffset(song.id)
 
-      const cached = loadPersistedCache()[track.id]
+      const cached = loadPersistedCache()[song.id]
       if (cached && !('negative' in cached && isExpiredNegative(cached))) {
-        this.trackId = track.id
+        this.songId = song.id
         this.loading = false
         this.error = false
         if ('negative' in cached) {
@@ -194,24 +194,24 @@ export const useLyricsStore = defineStore('lyrics', {
         }
         return
       }
-      if (inFlightTrackId === track.id) return // already fetching this one
+      if (inFlightSongId === song.id) return // already fetching this one
 
-      this.trackId = track.id
+      this.songId = song.id
       this.loading = true
       this.error = false
       this.synced = false
       this.lines = []
       this.source = null
       this.remoteId = null
-      inFlightTrackId = track.id
+      inFlightSongId = song.id
       try {
-        let positive = await fetchFileLyrics(track)
+        let positive = await fetchFileLyrics(song)
         if (!positive) {
           const result = await autoLyrics({
-            name: track.title,
-            artist: track.artist,
-            album: track.album,
-            duration: track.duration,
+            name: song.title,
+            artist: song.artist,
+            album: song.album,
+            duration: song.duration,
           })
           if (result) {
             const parsed = parseLyrics(result.lyrics)
@@ -223,10 +223,10 @@ export const useLyricsStore = defineStore('lyrics', {
             }
           }
         }
-        writeCacheEntry(track.id, positive ?? { negative: true, cachedAt: Date.now() })
-        // A newer track may have started while this was in flight — don't
+        writeCacheEntry(song.id, positive ?? { negative: true, cachedAt: Date.now() })
+        // A newer song may have started while this was in flight — don't
         // let a slower, stale response overwrite what's actually playing now.
-        if (this.trackId !== track.id) return
+        if (this.songId !== song.id) return
         this.synced = positive?.synced ?? false
         this.lines = positive?.lines ?? []
         this.source = positive?.source ?? null
@@ -234,29 +234,29 @@ export const useLyricsStore = defineStore('lyrics', {
       } catch (error) {
         // Deliberately not cached (unlike a genuine "no match" above) — a
         // request failure is more likely transient than a stable fact
-        // about the track, so the next ensureLoaded() call retries instead
+        // about the song, so the next ensureLoaded() call retries instead
         // of being stuck with a permanent false negative.
         console.error('[lyrics] Failed to fetch lyrics:', error)
-        if (this.trackId === track.id) this.error = true
+        if (this.songId === song.id) this.error = true
       } finally {
-        if (inFlightTrackId === track.id) inFlightTrackId = null
-        if (this.trackId === track.id) this.loading = false
+        if (inFlightSongId === song.id) inFlightSongId = null
+        if (this.songId === song.id) this.loading = false
       }
     },
 
-    /** Fetches every third-party candidate for `track`, grouped by source
+    /** Fetches every third-party candidate for `song`, grouped by source
      * — backing the "pick a different match" affordance in LyricsPanel.vue
      * for when the automatic best match isn't the right one. Does not
-     * touch the track's own file lyrics (there's nothing to "pick" there,
+     * touch the song's own file lyrics (there's nothing to "pick" there,
      * it's either tagged or it isn't). */
-    async loadCandidates(track: Track): Promise<void> {
+    async loadCandidates(song: Song): Promise<void> {
       this.candidatesLoading = true
       try {
         this.candidates = await searchLyrics({
-          name: track.title,
-          artist: track.artist,
-          album: track.album,
-          duration: track.duration,
+          name: song.title,
+          artist: song.artist,
+          album: song.album,
+          duration: song.duration,
         })
       } catch (error) {
         console.error('[lyrics] Failed to search lyrics candidates:', error)
@@ -270,10 +270,10 @@ export const useLyricsStore = defineStore('lyrics', {
       this.candidates = null
     },
 
-    /** Applies one specific candidate from loadCandidates() as `track`'s
+    /** Applies one specific candidate from loadCandidates() as `song`'s
      * lyrics, overwriting whatever was cached/shown before — the explicit
      * override for when the automatic best match was wrong. */
-    async selectCandidate(track: Track, source: string, id: string): Promise<void> {
+    async selectCandidate(song: Song, source: string, id: string): Promise<void> {
       this.candidates = null
       this.loading = true
       this.error = false
@@ -283,33 +283,33 @@ export const useLyricsStore = defineStore('lyrics', {
         const positive: CachedPositive | null = parsed
           ? { synced: parsed.synced, lines: parsed.lines, source, remoteId: id }
           : null
-        writeCacheEntry(track.id, positive ?? { negative: true, cachedAt: Date.now() })
-        if (this.trackId !== track.id) return
+        writeCacheEntry(song.id, positive ?? { negative: true, cachedAt: Date.now() })
+        if (this.songId !== song.id) return
         this.synced = positive?.synced ?? false
         this.lines = positive?.lines ?? []
         this.source = positive?.source ?? null
         this.remoteId = positive?.remoteId ?? null
       } catch (error) {
         console.error('[lyrics] Failed to load selected lyrics candidate:', error)
-        if (this.trackId === track.id) this.error = true
+        if (this.songId === song.id) this.error = true
       } finally {
-        if (this.trackId === track.id) this.loading = false
+        if (this.songId === song.id) this.loading = false
       }
     },
 
-    /** Sets the current track's timing offset to an absolute value (unlike
+    /** Sets the current song's timing offset to an absolute value (unlike
      * adjustOffset below, not relative to whatever it already was) and
      * persists it. Used by the "click the line being sung" calibration
      * flow in LyricsPanel.vue, which computes the exact offset needed in
      * one shot rather than nudging toward it. No-op with nothing loaded. */
     setOffset(offsetSeconds: number): void {
-      if (!this.trackId) return
+      if (!this.songId) return
       // Rounded to avoid float noise, same as adjustOffset below.
       this.offset = Math.round(offsetSeconds * 10) / 10
-      writeStoredOffset(this.trackId, this.offset)
+      writeStoredOffset(this.songId, this.offset)
     },
 
-    /** Nudges the current track's timing offset by `deltaSeconds` (typically
+    /** Nudges the current song's timing offset by `deltaSeconds` (typically
      * ±0.1) and persists it — see LyricsState.offset's comment on sign
      * convention. No-op with nothing loaded (nothing to offset). */
     adjustOffset(deltaSeconds: number): void {

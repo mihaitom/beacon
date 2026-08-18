@@ -26,7 +26,10 @@
       >
         <span class="genre-tile__name">{{ entry.genre.name }}</span>
         <span class="genre-tile__meta">{{
-          $t('library.albumsAndSongs', { albums: entry.genre.albumCount, songs: entry.genre.songCount })
+          $t('library.albumsAndSongs', {
+            albums: entry.genre.albumCount,
+            songs: entry.genre.songCount,
+          })
         }}</span>
       </router-link>
     </div>
@@ -64,7 +67,7 @@ export default {
       filterQuery: '',
       // filteredGenres reads this instead of filterQuery directly, so
       // filtering doesn't run synchronously on every keystroke — see the
-      // identical pattern (and its rationale) in TracksView.vue.
+      // identical pattern (and its rationale) in SongsView.vue.
       debouncedQuery: '',
     }
   },
@@ -95,7 +98,13 @@ export default {
     tieredGenres(): { genre: Genre; tier: Tier }[] {
       return this.filteredGenres.map((genre, index) => ({
         genre,
-        tier: this.isFiltering ? 'standard' : index === 0 ? 'spotlight' : index < 5 ? 'featured' : 'standard',
+        tier: this.isFiltering
+          ? 'standard'
+          : index === 0
+            ? 'spotlight'
+            : index < 5
+              ? 'featured'
+              : 'standard',
       }))
     },
   },
@@ -176,14 +185,22 @@ export default {
   grid-row: span 2;
   grid-column: span 2;
   padding: 24px;
-  background: radial-gradient(circle at 28% 24%, rgba(245, 169, 78, 0.3), rgba(26, 29, 39, 0.92) 68%);
+  background: radial-gradient(
+    circle at 28% 24%,
+    rgba(245, 169, 78, 0.3),
+    rgba(26, 29, 39, 0.92) 68%
+  );
   box-shadow:
     0 0 0 1px var(--beacon-hairline),
     0 20px 40px rgba(0, 0, 0, 0.35);
 }
 
 .genre-tile--spotlight:hover {
-  background: radial-gradient(circle at 28% 24%, rgba(245, 169, 78, 0.4), rgba(26, 29, 39, 0.92) 68%);
+  background: radial-gradient(
+    circle at 28% 24%,
+    rgba(245, 169, 78, 0.4),
+    rgba(26, 29, 39, 0.92) 68%
+  );
 }
 
 .genre-tile--spotlight .genre-tile__name {

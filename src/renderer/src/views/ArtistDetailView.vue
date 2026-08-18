@@ -14,10 +14,10 @@
       <template #meta>
         {{ artist.albumCount }}
         {{ artist.albumCount === 1 ? $t('library.album1') : $t('library.albumsN') }} ·
-        {{ totalTrackCount }}
-        {{ totalTrackCount === 1 ? $t('library.track1') : $t('library.tracksN') }}
+        {{ totalSongCount }}
+        {{ totalSongCount === 1 ? $t('library.song1') : $t('library.songsN') }}
       </template>
-      <template v-if="authStore.capabilities.trackRadio" #actions>
+      <template v-if="authStore.capabilities.songRadio" #actions>
         <v-btn
           color="primary"
           rounded="pill"
@@ -33,11 +33,11 @@
       <album-card v-for="album in artist.albums" :key="album.id" :album="album" />
     </div>
 
-    <template v-if="topTracks.length || loadingTopTracks">
+    <template v-if="topSongs.length || loadingTopSongs">
       <h2 class="section-title mt-8 mb-2">{{ $t('library.mostPlayed') }}</h2>
-      <track-list
-        :tracks="topTracks"
-        :loading="loadingTopTracks"
+      <song-table
+        :songs="topSongs"
+        :loading="loadingTopSongs"
         default-sort-key="playCount"
         default-sort-direction="desc"
         show-cover
@@ -63,18 +63,18 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
-import TrackList from '@/components/library/TrackList.vue'
+import SongTable from '@/components/library/SongTable.vue'
 import PageLoader from '@/components/PageLoader.vue'
-import type { Track } from '@/types/library'
+import type { Song } from '@/types/library'
 
 export default {
   name: 'ArtistDetailView',
-  components: { DetailHeader, AlbumCard, TrackList, PageLoader },
+  components: { DetailHeader, AlbumCard, SongTable, PageLoader },
   data() {
     return {
       artist: null as Awaited<ReturnType<ReturnType<typeof useLibraryStore>['fetchArtist']>> | null,
-      topTracks: [] as Track[],
-      loadingTopTracks: false,
+      topSongs: [] as Song[],
+      loadingTopSongs: false,
     }
   },
   computed: {
@@ -84,7 +84,7 @@ export default {
     authStore() {
       return useAuthStore()
     },
-    totalTrackCount() {
+    totalSongCount() {
       return this.artist?.albums.reduce((sum, album) => sum + album.songCount, 0) ?? 0
     },
   },
@@ -97,7 +97,7 @@ export default {
   methods: {
     async loadArtist() {
       const id = this.$route.params.id as string
-      this.topTracks = []
+      this.topSongs = []
       // A newer navigation may resolve before this one, or move the route
       // on while a fetch is still in flight — the `$route.params.id === id`
       // checks below make sure a slower, now-stale response can't overwrite
@@ -113,14 +113,15 @@ export default {
       if (this.$route.params.id !== id) return
       this.artist = artist
 
-      this.loadingTopTracks = true
+      this.loadingTopSongs = true
       try {
-        const topTracks = await this.libraryStore.fetchTopTracksForArtist(artist)
-        if (this.$route.params.id === id) this.topTracks = topTracks
+        const topSongs = await this.libraryStore.fetchTopSongsForArtist(artist)
+        if (this.$route.params.id === id) this.topSongs = topSongs
       } catch (error) {
-        if (this.$route.params.id === id) console.error('[artist-detail] Failed to load top tracks:', error)
+        if (this.$route.params.id === id)
+          console.error('[artist-detail] Failed to load top songs:', error)
       } finally {
-        if (this.$route.params.id === id) this.loadingTopTracks = false
+        if (this.$route.params.id === id) this.loadingTopSongs = false
       }
     },
     async toggleStar() {

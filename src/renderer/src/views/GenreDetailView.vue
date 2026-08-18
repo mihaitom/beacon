@@ -1,15 +1,15 @@
 <template>
   <v-container fluid>
     <detail-header fallback-icon="mdi-music-note" :eyebrow="$t('library.genre')" :title="genreName">
-      <template v-if="tracks.length" #meta>
-        {{ $t('library.albumsAndSongs', { albums: albumCount, songs: tracks.length }) }}
+      <template v-if="songs.length" #meta>
+        {{ $t('library.albumsAndSongs', { albums: albumCount, songs: songs.length }) }}
       </template>
       <template #actions>
         <v-btn
           color="primary"
           rounded="pill"
           prepend-icon="mdi-shuffle-variant"
-          :disabled="!tracks.length"
+          :disabled="!songs.length"
           @click="playRandom"
         >
           {{ $t('library.playRandom') }}
@@ -35,8 +35,8 @@
       {{ libraryStore.error }}
     </v-alert>
     <template v-else>
-      <track-list
-        :tracks="filteredTracks"
+      <song-table
+        :songs="filteredSongs"
         :queue-whole-list="false"
         sticky-header
         :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
@@ -46,11 +46,11 @@
         show-play-count
         show-format
       />
-      <v-alert v-if="filteredTracks.length === 0" type="info" variant="tonal">
+      <v-alert v-if="filteredSongs.length === 0" type="info" variant="tonal">
         {{
           filterQuery
-            ? $t('library.noTracksForQuery', { query: filterQuery })
-            : $t('library.noTracksFound')
+            ? $t('library.noSongsForQuery', { query: filterQuery })
+            : $t('library.noSongsFound')
         }}
       </v-alert>
     </template>
@@ -62,10 +62,10 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { shuffled } from '@/services/shuffle'
 import DetailHeader from '@/components/library/DetailHeader.vue'
-import TrackList from '@/components/library/TrackList.vue'
+import SongTable from '@/components/library/SongTable.vue'
 import PageLoader from '@/components/PageLoader.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
-import type { Track } from '@/types/library'
+import type { Song } from '@/types/library'
 
 const RANDOM_PLAY_COUNT = 100
 
@@ -73,19 +73,19 @@ let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'GenreDetailView',
-  components: { DetailHeader, TrackList, PageLoader, StickyFilter },
+  components: { DetailHeader, SongTable, PageLoader, StickyFilter },
   data() {
     return {
-      tracks: [] as Track[],
+      songs: [] as Song[],
       filterQuery: '',
-      // filteredTracks reads this instead of filterQuery directly, so
+      // filteredSongs reads this instead of filterQuery directly, so
       // filtering doesn't run synchronously on every keystroke — see the
-      // identical pattern (and its rationale) in TracksView.vue.
+      // identical pattern (and its rationale) in SongsView.vue.
       debouncedQuery: '',
       // Height of the sticky filter block, reported by StickyFilter's own
-      // @resize — TrackList's sticky column header (see its stickyHeader
+      // @resize — SongTable's sticky column header (see its stickyHeader
       // prop) needs this to stack correctly right below it instead of
-      // overlapping it. Same wiring as TracksView.vue.
+      // overlapping it. Same wiring as SongsView.vue.
       stickyHeaderHeight: 0,
     }
   },
@@ -97,16 +97,16 @@ export default {
       return decodeURIComponent(this.$route.params.name as string)
     },
     albumCount(): number {
-      return new Set(this.tracks.map((track) => track.albumId)).size
+      return new Set(this.songs.map((song) => song.albumId)).size
     },
-    filteredTracks(): Track[] {
+    filteredSongs(): Song[] {
       const query = this.debouncedQuery.trim().toLowerCase()
-      if (!query) return this.tracks
-      return this.tracks.filter(
-        (track) =>
-          track.title.toLowerCase().includes(query) ||
-          track.artist.toLowerCase().includes(query) ||
-          track.album.toLowerCase().includes(query),
+      if (!query) return this.songs
+      return this.songs.filter(
+        (song) =>
+          song.title.toLowerCase().includes(query) ||
+          song.artist.toLowerCase().includes(query) ||
+          song.album.toLowerCase().includes(query),
       )
     },
   },
@@ -117,29 +117,29 @@ export default {
         this.debouncedQuery = value ?? ''
       }, 200)
     },
-    '$route.params.name': 'loadTracks',
+    '$route.params.name': 'loadSongs',
   },
   created() {
-    this.loadTracks()
+    this.loadSongs()
   },
   methods: {
-    async loadTracks() {
+    async loadSongs() {
       const name = this.genreName
       try {
-        const tracks = await this.libraryStore.fetchSongsByGenre(name)
+        const songs = await this.libraryStore.fetchSongsByGenre(name)
         // A newer navigation may have already resolved and moved the route
         // on while this fetch was in flight — don't let a slower, stale
         // response overwrite what's actually being viewed now.
-        if (this.genreName === name) this.tracks = tracks
+        if (this.genreName === name) this.songs = songs
       } catch (error) {
         if (this.genreName !== name) return
-        console.error('[genre-detail] Failed to load tracks:', error)
+        console.error('[genre-detail] Failed to load songs:', error)
       }
     },
     async playRandom() {
-      if (!this.tracks.length) return
-      const sample = shuffled(this.tracks).slice(0, RANDOM_PLAY_COUNT)
-      await usePlaybackStore().playTrackList(sample, 0)
+      if (!this.songs.length) return
+      const sample = shuffled(this.songs).slice(0, RANDOM_PLAY_COUNT)
+      await usePlaybackStore().playSongList(sample, 0)
     },
   },
 }

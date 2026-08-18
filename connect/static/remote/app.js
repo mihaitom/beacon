@@ -5,7 +5,7 @@ import { startRouter } from './js/router.js';
 import './js/views/now-playing.js';
 import './js/views/queue.js';
 import './js/views/playlists.js';
-import './js/views/tracks.js';
+import './js/views/songs.js';
 import './js/views/radio.js';
 
 // Registering this is what actually makes Chrome/Android offer "Add to Home

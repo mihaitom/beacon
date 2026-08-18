@@ -12,8 +12,8 @@ services:
             # - SERVER_URL=https://navidrome.example.com
             # - SERVER_LOCK=true
             # - SERVER_TYPE=subsonic
-            # - WEB_PORT=9180
-            # - PORT=9181
+            # - WEB_PORT=7070
+            # - PORT=7071
             # - DEBUG=true
         # Keeps AirPlay 2 pairings and (Jellyfin/Plex only) internet radio
         # stations across container recreations/updates.
