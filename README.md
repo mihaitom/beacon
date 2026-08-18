@@ -12,9 +12,6 @@
   <a href="https://github.com/mihaitom/beacon/actions/workflows/test-python.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/mihaitom/beacon/test-python.yml?branch=development&style=flat-square&label=backend%20tests" alt="Backend tests">
   </a>
-  <a href="https://github.com/mihaitom/beacon/actions/workflows/test-frontend.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/mihaitom/beacon/test-frontend.yml?branch=development&style=flat-square&label=frontend%20tests" alt="Frontend tests">
-  </a>
   <a href="https://github.com/mihaitom/beacon/commits/development">
     <img src="https://img.shields.io/github/last-commit/mihaitom/beacon?style=flat-square&color=blue" alt="Last commit">
   </a>
