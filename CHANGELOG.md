@@ -6,11 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added a log file for the Electron app (`logs/main.log` in its data directory, next to the previous session's `main.log.old`) — previously nothing was recorded at all outside of a terminal, making it hard to diagnose an issue after the fact
+
 ### Fixed
 
 - Fixed a follow-up cause of the "Connect backend unreachable" startup error (see 0.1.1): the app window could start loading before the bundled backend process had actually finished starting up and begun listening — Electron now waits for it to be reachable first
 - Fixed the packaged app icon (see 0.1.2) not actually rendering correctly on Windows/Linux — now built from a proper multi-resolution icon file instead of relying on an automatic single-image conversion
 - Fixed casting device discovery and Remote Control pairing potentially failing silently on macOS 14+ due to a missing local-network-access permission description
+- Fixed the queue collapsing to just the currently-playing song while casting: whenever the cast target auto-advanced to a song the app already had queued, it was rebuilding the whole queue from scratch around that one song instead of just following along
 
 ## [0.1.2] - 2026-08-16
 

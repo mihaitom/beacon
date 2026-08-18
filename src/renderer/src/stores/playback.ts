@@ -468,14 +468,18 @@ export const usePlaybackStore = defineStore('playback', {
       }
     },
 
-    /** Rebuilds local queue/radioStation from the connect backend's status
-     * when they're out of sync with what it reports playing — the normal
-     * case right after a page reload (Pinia state resets to empty, but the
-     * backend/cast device is still mid-song) or a fresh SSE subscription
-     * discovering playback already in progress. Without this,
-     * `currentSong` stays null forever even though something is audibly
-     * playing, so the PlayerBar and the "now playing" row highlight both
-     * go blank. A no-op once local state already matches. */
+    /** Keeps currentIndex following the connect backend's reported
+     * current_song whenever it's out of sync with local state — the common
+     * case is connect auto-advancing its own queue (see the top-level
+     * Casting-Autoadvance design), where the song is already somewhere in
+     * `this.queue` and this just needs to move the pointer. Falls back to
+     * fetching and adopting a single-song queue only when the reported song
+     * isn't in the known queue at all — right after a page reload (Pinia
+     * state resets to empty, but the backend/cast device is still mid-song)
+     * or a fresh SSE subscription discovering playback already in progress.
+     * Without this, `currentSong` stays null forever even though something
+     * is audibly playing, so the PlayerBar and the "now playing" row
+     * highlight both go blank. A no-op once local state already matches. */
     async reconcileFromStatus(status: ConnectStatus): Promise<void> {
       if (status.radio) {
         if (this.radioStation?.streamUrl !== status.radio.url) {
@@ -496,6 +500,20 @@ export const usePlaybackStore = defineStore('playback', {
       if (!remote) return
       if (this.currentSong?.id === remote.id) return
       if (pendingLocalSongChange) return // our own song switch hasn't been confirmed yet — see above
+
+      // The common case: connect auto-advanced within a queue the renderer
+      // already has in full (see the top-level Casting-Autoadvance design —
+      // connect keeps playing through its own queue independently of
+      // whether this renderer is even awake). Just follow the pointer to
+      // where that song already lives instead of falling through to the
+      // fetch-and-replace path below, which used to blow away the entire
+      // known queue down to this one song on *every single* advance.
+      const existingIndex = this.queue.findIndex((song) => song.id === remote.id)
+      if (existingIndex !== -1) {
+        this.currentIndex = existingIndex
+        return
+      }
+
       if (reconcilingSongId === remote.id) return // fetch already in flight
 
       reconcilingSongId = remote.id

@@ -1,8 +1,9 @@
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { type ChildProcess, spawn } from 'child_process'
 import { randomBytes } from 'crypto'
 import { createConnection, createServer } from 'net'
+import { format } from 'util'
 import { BrowserWindow, app, ipcMain, safeStorage, shell } from 'electron'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { config as loadDotenv } from 'dotenv'
@@ -15,6 +16,40 @@ import { config as loadDotenv } from 'dotenv'
 import electronUpdaterPkg from 'electron-updater'
 
 const { autoUpdater } = electronUpdaterPkg
+
+// Without this, a packaged/installed build has nowhere for console.log/
+// error to go at all — there's no terminal attached, so it's silently
+// discarded (the reason a real support session ends up needing this file
+// instead of just asking someone to run it from a terminal). Wraps
+// console.* rather than replacing every call site with a dedicated logger,
+// so this also captures startConnectServer()'s piped connect-server
+// stdout/stderr below for free — that's the backend's own log output,
+// exactly what's most useful for diagnosing a live playback/casting issue.
+// Keeps exactly one previous session's file instead of growing forever —
+// good enough for "what happened last time" without needing real rotation
+// for an app this size.
+function setupFileLogging(): void {
+  const logDir = join(app.getPath('userData'), 'logs')
+  mkdirSync(logDir, { recursive: true })
+  const logFile = join(logDir, 'main.log')
+  if (existsSync(logFile)) {
+    try {
+      renameSync(logFile, join(logDir, 'main.log.old'))
+    } catch (error) {
+      console.error('[logging] Failed to rotate previous log file:', error)
+    }
+  }
+  const stream = createWriteStream(logFile, { flags: 'a' })
+  for (const method of ['log', 'warn', 'error'] as const) {
+    const original = console[method].bind(console)
+    console[method] = (...args: unknown[]) => {
+      original(...args)
+      stream.write(`${new Date().toISOString()} [${method}] ${format(...args)}\n`)
+    }
+  }
+  console.log(`[logging] Writing to ${logFile}`)
+}
+setupFileLogging()
 
 // Without this, Chromium's OSCrypt backend auto-detection on Linux only
 // tries libsecret/kwallet when it recognizes the desktop environment (GNOME/
