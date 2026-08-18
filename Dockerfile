@@ -35,7 +35,7 @@ RUN pnpm run build:web
 # Building just what's needed — decode for common library formats, HTTPS
 # input, MP3 encode — gets that down to ~8MB with zero runtime dependencies
 # (fully static binary, just COPY it into the final stage below).
-FROM alpine:3.22 AS ffmpeg-builder
+FROM alpine:3.24 AS ffmpeg-builder
 
 RUN apk add --no-cache \
     build-base \
