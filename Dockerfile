@@ -1,9 +1,12 @@
 # --- Build frontend
-FROM node:24-alpine AS frontend-builder
+FROM node:26-alpine AS frontend-builder
 
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@11.5.0 --activate
+# corepack is no longer bundled with the Node image as of node:26 (it built
+# and ran fine on node:24) — installing it explicitly via npm works
+# regardless of whether the base image happens to ship it.
+RUN npm install -g corepack && corepack enable && corepack prepare pnpm@11.5.0 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
