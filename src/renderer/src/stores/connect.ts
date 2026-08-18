@@ -109,7 +109,13 @@ export const useConnectStore = defineStore('connect', {
     },
 
     async refreshDevices(fresh = false): Promise<void> {
-      this.isScanning = true
+      // Only a real rescan (fresh=true, the picker's "Scan again" button)
+      // flips this — it drives the picker's progress bar. The cheap
+      // fresh=false refreshes (ConnectDevicePicker.vue's 4s background
+      // poll, confirmTakeover() above) just re-annotate the already-cached
+      // list and shouldn't flash a "scanning" indicator on every tick; that
+      // used to make the whole device list visibly jitter every 4s.
+      if (fresh) this.isScanning = true
       try {
         this.devices = await getDiscover(fresh)
         this.errors.apiUnreachable = false
@@ -117,7 +123,7 @@ export const useConnectStore = defineStore('connect', {
         this.errors.apiUnreachable = true
         this.errors.message = error instanceof Error ? error.message : String(error)
       } finally {
-        this.isScanning = false
+        if (fresh) this.isScanning = false
       }
     },
 
