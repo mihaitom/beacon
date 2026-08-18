@@ -155,6 +155,20 @@ let localResumeDecided = false
 // decideLocalResume() already owns — see the $subscribe handler in init().
 let wasCastingActive = false
 
+// All the singleton bookkeeping above (lastEnded, the seq counters,
+// persistTimer, ...) lives outside Pinia's own reactive state, so Vite's
+// partial HMR doesn't know to reset or preserve it consistently — a live
+// edit to this file while a song's playing can leave a *new* module
+// instance's fresh `lastEnded = false` etc. racing against timers/
+// subscriptions still running from the *old* one, which reads as
+// impossible playback bugs (UI stuck on a track connect already advanced
+// past, see the 2026-08-18 "stuck on Tinlicker" debugging session). Decline
+// hot updates here so any edit to this file forces a full reload instead —
+// slower, but guarantees a clean, single-instance start every time.
+if (import.meta.hot) {
+  import.meta.hot.decline()
+}
+
 /**
  * Casting is a built-in playback target here, not an external interception
  * layer — every action below checks `useConnectStore().isActive` itself and

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added the app icon (desktop entry, browser tab, installers) — previously only showed Electron's generic default icon there; still the same lighthouse mark used throughout the app itself
+
 ### Fixed
 
 - Fixed the casting device menu jittering slightly every few seconds while open: its background refresh was briefly flashing a loading indicator on every tick, nudging the list

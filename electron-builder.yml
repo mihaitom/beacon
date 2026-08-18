@@ -17,8 +17,12 @@ extraResources:
       filter:
           - '**/*'
 
-# No icon set yet (build/icon.* is what electron-builder looks for by
-# default) — falls back to Electron's own default icon until one's added.
+# build/icon.png (1024x1024, the mdi-lighthouse-on glyph rendered straight
+# from @mdi/font's own TTF in the app's primary theme color — same source
+# as the DefaultLayout.vue/MobileLayout.vue app-bar icon and the web
+# favicon, just at full resolution instead of downscaled) is
+# electron-builder's default lookup for all platforms; it derives the
+# per-platform .icns/.ico from this automatically.
 
 win:
     target:

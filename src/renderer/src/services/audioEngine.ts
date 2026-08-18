@@ -190,3 +190,14 @@ export function getAudioEngine(): AudioEngine {
   if (!instance) instance = new AudioEngine()
   return instance
 }
+
+// `instance` lives outside any framework-managed state — a partial Vite HMR
+// swap of this file would leave the *old* instance (still holding the real,
+// audibly-playing <audio> element and AudioContext) running unreferenced
+// while a fresh getAudioEngine() call elsewhere creates a *second* one, e.g.
+// stores/playback.ts's own callers now pointing at a silent new instance
+// instead of the one actually making sound. Decline hot updates so an edit
+// here always forces a full reload instead.
+if (import.meta.hot) {
+  import.meta.hot.decline()
+}

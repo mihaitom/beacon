@@ -42,6 +42,14 @@ interface ConnectState {
 
 let eventSource: ConnectEventSource | null = null
 
+// eventSource lives outside Pinia's reactive state, so Vite's partial HMR
+// doesn't reset/preserve it consistently on a live edit — see playback.ts's
+// identical decline() for the full story (this SSE stream is exactly what
+// feeds playback.ts's status.ended detection while casting).
+if (import.meta.hot) {
+  import.meta.hot.decline()
+}
+
 export const useConnectStore = defineStore('connect', {
   state: (): ConnectState => ({
     devices: { airplay: [], chromecast: [], dlna: [], sonos: [] },
