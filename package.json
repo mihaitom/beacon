@@ -1,6 +1,6 @@
 {
   "name": "beacon",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "packageManager": "pnpm@11.5.0",
   "description": "A modern self-hosted music player with Multi-room casting support.",
   "keywords": [
@@ -42,6 +42,8 @@
     "publish:win": "npm run package:connect && electron-vite build && electron-builder --publish always --win --x64",
     "publish:win-arm64": "npm run package:connect && electron-vite build && electron-builder --publish always --win --arm64",
     "type-check": "vue-tsc --build",
+    "bump-version": "pnpm version --no-git-tag-version --no-git-checks",
+    "postversion": "node ./scripts/sync-connect-version.mjs",
     "lint": "run-s \"lint:*\"",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
