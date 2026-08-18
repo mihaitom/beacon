@@ -110,6 +110,15 @@ export class AudioEngine {
     return this.audio.paused
   }
 
+  /** True once the loaded track has played through to the end. Resuming an
+   * already-ended element with a bare play() is unreliable (browser/stream
+   * dependent whether it actually restarts and keeps firing timeupdate) —
+   * callers should do a full play()/load() instead of resume() when this is
+   * true. */
+  get hasEnded(): boolean {
+    return this.audio.ended
+  }
+
   /** Wires a Web Audio analyser tapped off this element's output — see the
    * constructor's comment for why this runs eagerly at construction instead
    * of lazily on first use. Routes back through to `destination` — tapping

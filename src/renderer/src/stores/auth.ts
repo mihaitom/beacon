@@ -324,11 +324,14 @@ export const useAuthStore = defineStore('auth', {
     /** Silent re-auth on app boot using saved credentials. Returns false
      * (without throwing) when there's nothing saved or re-auth fails, so
      * the router guard can fall back to /login without an unhandled error.
-     * Reuses whatever connectUrl/connectToken were resolved at the last
-     * login rather than re-querying the main process — if CONNECT_TOKEN
-     * ever changes between restarts, auth fails cleanly (401 → /login),
-     * which re-resolves fresh defaults; falling back to a live lookup here
-     * only for old/missing data (saved before this field existed). */
+     * Always re-resolves connectUrl/apiUrl/connectToken fresh via
+     * loadConnectDefaults() rather than reusing whatever was persisted at
+     * the last login — a packaged Electron build's bundled backend gets a
+     * new random port *and* token on every single launch (see main/index.ts's
+     * findFreePort()/packagedConnectToken), so the persisted values are
+     * already stale by the very next start. Reusing them meant every restore
+     * on a packaged build tried to reach last session's now-dead port before
+     * failing over to a full re-login. */
     async restore(): Promise<boolean> {
       const stored = await this.readStored()
       if (!stored) return false
@@ -340,14 +343,7 @@ export const useAuthStore = defineStore('auth', {
       this.serverType = stored.serverType || 'subsonic'
       this.userId = stored.userId || ''
       this.machineIdentifier = stored.machineIdentifier || ''
-      if (stored.connectUrl && stored.connectToken) {
-        this.connectUrl = stored.connectUrl
-        // Falls back to connectUrl for data saved before this field existed.
-        this.apiUrl = stored.apiUrl || stored.connectUrl
-        this.connectToken = stored.connectToken
-      } else {
-        await this.loadConnectDefaults()
-      }
+      await this.loadConnectDefaults()
       // Reuse the persisted credential as-is (see _authenticate()'s comment
       // on why — this replays the previously-issued Jellyfin AccessToken
       // through /config rather than re-doing username/password login on

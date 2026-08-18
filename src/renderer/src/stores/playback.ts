@@ -684,6 +684,12 @@ export const usePlaybackStore = defineStore('playback', {
       if (this.isPlaying) {
         engine.pause()
         this.isPlaying = false
+      } else if (engine.hasEnded) {
+        // The loaded track already played through to the end (e.g. the last
+        // song of a non-repeating queue) — a bare resume() on an ended
+        // <audio> element doesn't reliably restart it, so do a proper
+        // restart instead, same as switchToIndex()/startCurrent() elsewhere.
+        await this.startCurrent()
       } else {
         engine.resume()
         this.isPlaying = true
