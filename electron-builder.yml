@@ -20,11 +20,17 @@ extraResources:
 # build/icon.png (1024x1024, the mdi-lighthouse-on glyph rendered straight
 # from @mdi/font's own TTF in the app's primary theme color — same source
 # as the DefaultLayout.vue/MobileLayout.vue app-bar icon and the web
-# favicon, just at full resolution instead of downscaled) is
-# electron-builder's default lookup for all platforms; it derives the
-# per-platform .icns/.ico from this automatically.
+# favicon, just at full resolution instead of downscaled) is the source for
+# all three icons below — build/icons/icon.ico is a real multi-resolution
+# ICO generated from it (16 through 256px, so Windows/AppImage/rofi-style
+# launchers always pick a crisp embedded size instead of one scaled on the
+# fly). win/mac/linux each reference their icon explicitly instead of
+# relying on electron-builder's own default-path lookup + on-the-fly
+# conversion, so what actually gets embedded is exactly this file, not
+# whatever electron-builder's internal converter happens to produce.
 
 win:
+    icon: build/icons/icon.ico
     target:
         - target: nsis
           arch:
@@ -39,6 +45,7 @@ nsis:
     createDesktopShortcut: always
 
 mac:
+    icon: build/icon.png
     target:
         # arm64 only: the bundled Connect backend binary is built by PyInstaller
         # on the (Apple Silicon) CI runner and cannot cross-compile to x64.
@@ -54,8 +61,17 @@ mac:
     # exists; without that, macOS Gatekeeper will warn on install.
     identity: null
     hardenedRuntime: false
+    # Required on macOS 14+ (Sonoma) for the local-network-access permission
+    # prompt to work at all — without it, macOS can't show a proper prompt
+    # for what this app actually needs local network for, and discovery can
+    # silently fail. Beacon genuinely needs this for both casting (mDNS/SSDP
+    # discovery of Sonos/Chromecast/DLNA/AirPlay targets) and Remote Control
+    # (LAN-pairing a phone against this desktop instance).
+    extendInfo:
+        NSLocalNetworkUsageDescription: 'Local network access is required to discover casting devices (Sonos, Chromecast, DLNA, AirPlay) and to pair Remote Control with your phone.'
 
 linux:
+    icon: build/icon.png
     target:
         - AppImage
         - deb

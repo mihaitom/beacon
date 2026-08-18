@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - Fixed a follow-up cause of the "Connect backend unreachable" startup error (see 0.1.1): the app window could start loading before the bundled backend process had actually finished starting up and begun listening — Electron now waits for it to be reachable first
+- Fixed the packaged app icon (see 0.1.2) not actually rendering correctly on Windows/Linux — now built from a proper multi-resolution icon file instead of relying on an automatic single-image conversion
+- Fixed casting device discovery and Remote Control pairing potentially failing silently on macOS 14+ due to a missing local-network-access permission description
 
 ## [0.1.2] - 2026-08-16
 
