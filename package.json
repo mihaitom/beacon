@@ -43,7 +43,7 @@
     "publish:win-arm64": "npm run package:connect && electron-vite build && electron-builder --publish always --win --arm64",
     "type-check": "vue-tsc --build",
     "bump-version": "pnpm version --no-git-tag-version --no-git-checks",
-    "postversion": "node ./scripts/sync-connect-version.mjs",
+    "postversion": "node ./scripts/sync-connect-version.mjs && node ./scripts/finalize-changelog.mjs",
     "lint": "run-s \"lint:*\"",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
