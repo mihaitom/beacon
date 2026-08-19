@@ -91,5 +91,16 @@ server {
   location /stream {
     proxy_pass http://127.0.0.1:${PORT}/stream;
     proxy_set_header X-Connect-Token "${CONNECT_TOKEN}";
+    # Same reasoning as /api/'s identical two lines above: without
+    # proxy_http_version 1.1, nginx speaks HTTP/1.0 to the backend, which
+    # has no chunked transfer encoding, so a response with no known
+    # Content-Length (this live ffmpeg-fed audio stream) gets buffered
+    # internally instead of forwarded chunk-by-chunk as it arrives — the
+    # backend's own X-Accel-Buffering: no header alone isn't reliably
+    # enough to prevent that. Matters even more here than for /api/: a cast
+    # device pulling this in real time needs the data flowing continuously,
+    # not held back by nginx and then released in an unpredictable burst.
+    proxy_http_version 1.1;
+    proxy_buffering off;
   }
 }

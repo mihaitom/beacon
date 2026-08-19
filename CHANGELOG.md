@@ -17,6 +17,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Fixed picking a cast target while local playback was paused starting playback on that device right away instead of staying paused
 - Fixed the Previous/Next buttons resuming playback immediately even if it was paused - navigating now stays paused, matching what selecting a cast target already did
 - Fixed the "now playing" display occasionally showing a different song than what was actually playing when two devices controlled the same cast session and both changed something around the same time
+- Fixed shuffle not actually shuffling the first song when playing a whole playlist/album from the top - it always started on track 1 in its original order, with shuffle only kicking in from the second song onward
+- Fixed the mobile web view carrying over a tab's scroll position into whichever tab you switched to next, instead of each tab keeping (and restoring) its own
+- Fixed the Docker/web deployment's audio stream to cast devices being vulnerable to nginx buffering it all at once instead of forwarding it continuously in real time - could turn a brief network hiccup mid-song into a multi-minute stall stuck at 0:00 instead of recovering
 
 ### Security
 
