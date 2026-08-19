@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { nextTick } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { isMobileWebNow } from '@/composables/useIsMobileWeb'
 
@@ -8,8 +9,28 @@ declare module 'vue-router' {
   }
 }
 
+// Per-route scroll memory, keyed by path (not fullPath — a route's scroll
+// state shouldn't depend on which query params it happened to carry this
+// time). Vue Router's own scrollBehavior `savedPosition` argument is only
+// ever populated for real browser back/forward navigation — a plain
+// router.push() (every in-app navigation here, including MobileTabBar.vue's
+// tab switches) always gets `null` there, so without this a tab switch just
+// left the window at whatever scroll position the *previous* tab happened
+// to be at instead of either starting fresh or restoring its own.
+const scrollPositions = new Map<string, number>()
+
 const router = createRouter({
   history: createWebHashHistory(),
+  scrollBehavior(to) {
+    // Waits a tick for the new route's component to actually be in the DOM
+    // — scrolling immediately can land on the *previous* page's content
+    // still being there, especially once the new page's real height (often
+    // taller/shorter than the last) is what should decide whether the
+    // saved offset is even reachable.
+    return new Promise((resolve) => {
+      void nextTick(() => resolve({ top: scrollPositions.get(to.path) ?? 0 }))
+    })
+  },
   routes: [
     {
       path: '/login',
@@ -189,6 +210,15 @@ function authStoreCapabilityOk(
 ): boolean {
   return useAuthStore().capabilities[capability]
 }
+
+// Separate from the auth guard below — pure bookkeeping, doesn't affect
+// navigation outcome, so it doesn't need to share that guard's redirect
+// logic. Captures the *outgoing* route's scroll position before its
+// component gets torn down — by the time scrollBehavior above runs for the
+// new route, this page's own scroll is long gone.
+router.beforeEach((_to, from) => {
+  scrollPositions.set(from.path, window.scrollY)
+})
 
 router.beforeEach(async (to) => {
   if (to.name === 'login') return true

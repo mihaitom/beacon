@@ -393,11 +393,13 @@ export default {
       const album = this.recentAlbums[0]
       if (!album) return
       const full = await this.libraryStore.fetchAlbum(album.id)
-      await this.playbackStore.playSongList(full.songs, 0)
+      // pinFirst: false — see PlaylistDetailView.vue's identical comment.
+      await this.playbackStore.playSongList(full.songs, 0, false)
     },
     async playSongList(songs: Song[]) {
       if (!songs.length) return
-      await this.playbackStore.playSongList(songs, 0)
+      // pinFirst: false — see PlaylistDetailView.vue's identical comment.
+      await this.playbackStore.playSongList(songs, 0, false)
     },
     // AlbumShelf.vue's album cards only ever carry list-level Album data
     // (no song list — see fetchAlbum()'s own comment), so "play all" for a

@@ -77,7 +77,8 @@ export default {
   methods: {
     async onCoverClick() {
       const full = await useLibraryStore().fetchAlbum(this.album.id)
-      await usePlaybackStore().playSongList(full.songs, 0)
+      // pinFirst: false — see PlaylistDetailView.vue's identical comment.
+      await usePlaybackStore().playSongList(full.songs, 0, false)
     },
     async toggleStar() {
       await useLibraryStore().toggleStar({ albumId: this.album.id, starred: this.album.starred })

@@ -605,8 +605,19 @@ export const usePlaybackStore = defineStore('playback', {
       }
     },
 
-    /** Sets up queue + currentIndex only — no playback side effect. */
-    setQueue(songs: Song[], startIndex = 0): void {
+    /** Sets up queue + currentIndex only — no playback side effect.
+     *
+     * `pinFirst`: whether `songs[startIndex]` was something the user
+     * actually picked (a specific row clicked in a list) as opposed to just
+     * where a generic "Play"/"Play random" action happens to start counting
+     * from (always 0, no real selection behind it). True keeps that song
+     * first even under shuffle — "you picked this one, shuffle only decides
+     * what comes after" (also what Song/Artist Radio wants, see
+     * startSongRadio()). False lets shuffle include the very first song
+     * too — without this, hitting "Play" on a shuffled playlist/album
+     * always started on track 1 in its original, unshuffled position,
+     * shuffle only kicking in from the second song onward. */
+    setQueue(songs: Song[], startIndex = 0, pinFirst = true): void {
       this.radioStation = null
       this.originalQueue = [...songs]
       // Unshuffled, this.queue is `songs` in the same order, so startIndex
@@ -617,8 +628,9 @@ export const usePlaybackStore = defineStore('playback', {
       // Shuffled, shuffledExcept() always places the kept song at index 0,
       // so the id lookup there can only ever match that same instance.
       if (this.shuffle) {
-        this.queue = shuffledExcept(songs, songs[startIndex])
-        this.currentIndex = this.queue.findIndex((t) => t.id === songs[startIndex]?.id)
+        const keep = pinFirst ? songs[startIndex] : null
+        this.queue = shuffledExcept(songs, keep)
+        this.currentIndex = keep ? this.queue.findIndex((t) => t.id === keep.id) : 0
       } else {
         this.queue = [...songs]
         this.currentIndex = startIndex
@@ -698,8 +710,8 @@ export const usePlaybackStore = defineStore('playback', {
       }
     },
 
-    async playSongList(songs: Song[], startIndex = 0): Promise<void> {
-      this.setQueue(songs, startIndex)
+    async playSongList(songs: Song[], startIndex = 0, pinFirst = true): Promise<void> {
+      this.setQueue(songs, startIndex, pinFirst)
       await this.startCurrent()
     },
 

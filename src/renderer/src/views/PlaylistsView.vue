@@ -149,7 +149,8 @@ export default {
       // playlist's songs — only getPlaylist.view for a single id does —
       // so the full song list has to be fetched before it can be queued.
       const full = await this.libraryStore.fetchPlaylist(playlist.id)
-      await usePlaybackStore().playSongList(full.songs, 0)
+      // pinFirst: false — see PlaylistDetailView.vue's identical comment.
+      await usePlaybackStore().playSongList(full.songs, 0, false)
     },
     async createPlaylist() {
       if (!this.newPlaylistName.trim()) return

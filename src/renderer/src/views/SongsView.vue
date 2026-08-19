@@ -131,7 +131,8 @@ export default {
     async playRandom() {
       if (!this.libraryStore.allSongs.length) return
       const sample = shuffled(this.libraryStore.allSongs).slice(0, RANDOM_PLAY_COUNT)
-      await usePlaybackStore().playSongList(sample, 0)
+      // pinFirst: false — see PlaylistDetailView.vue's identical comment.
+      await usePlaybackStore().playSongList(sample, 0, false)
     },
   },
 }

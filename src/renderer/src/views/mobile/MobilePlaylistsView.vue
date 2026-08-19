@@ -106,7 +106,8 @@ export default {
   methods: {
     async play(playlist: Playlist) {
       const full = await this.libraryStore.fetchPlaylist(playlist.id)
-      await usePlaybackStore().playSongList(full.songs, 0)
+      // pinFirst: false — see desktop PlaylistDetailView.vue's identical comment.
+      await usePlaybackStore().playSongList(full.songs, 0, false)
     },
   },
 }

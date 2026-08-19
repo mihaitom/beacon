@@ -90,7 +90,8 @@ export default {
     },
     async playAll() {
       if (!this.playlist?.songs.length) return
-      await usePlaybackStore().playSongList(this.playlist.songs, 0)
+      // pinFirst: false — see desktop PlaylistDetailView.vue's identical comment.
+      await usePlaybackStore().playSongList(this.playlist.songs, 0, false)
     },
     async play(index: number) {
       if (!this.playlist) return
