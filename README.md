@@ -36,8 +36,8 @@
   <br><em>Library</em>
 </p>
 <p align="center">
-  <img src="docs/screenshots/remote.jpg" width="260" alt="Remote Control: controlling Beacon's local playback from a phone">
-  <img src="docs/screenshots/mobile-web.jpg" width="260" alt="The Docker/web build's responsive mobile UI, open directly on a phone's browser">
+  <img src="docs/screenshots/remote.png" width="260" alt="Remote Control: controlling Beacon's local playback from a phone">
+  <img src="docs/screenshots/mobile-web.png" width="260" alt="The Docker/web build's responsive mobile UI, open directly on a phone's browser">
   <br><em>Remote Control (Electron) and the responsive mobile web UI (Docker/web)</em>
 </p>
 
