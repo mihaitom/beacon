@@ -829,17 +829,23 @@ export const usePlaybackStore = defineStore('playback', {
       if (current) {
         this.currentIndex = this.queue.findIndex((t) => t.id === current.id)
       }
+      this.syncCastQueue()
     },
 
     cycleRepeatMode(): void {
       const order: RepeatMode[] = ['off', 'all', 'one']
       this.repeatMode = order[(order.indexOf(this.repeatMode) + 1) % order.length]!
+      // upcomingQueueIds is [] under repeat-one (see its own comment) —
+      // switching into or out of that mode changes what connect should be
+      // auto-advancing through even though this.queue itself didn't change.
+      this.syncCastQueue()
     },
 
     addToQueue(songs: Song[]): void {
       const toAdd = dedupeForQueue(songs, this.queue)
       this.originalQueue.push(...toAdd)
       this.queue.push(...toAdd)
+      this.syncCastQueue()
     },
 
     /** Inserts `songs` right after the currently playing one — "Play next",
@@ -858,6 +864,7 @@ export const usePlaybackStore = defineStore('playback', {
       } else {
         this.originalQueue.push(...toInsert)
       }
+      this.syncCastQueue()
     },
 
     removeFromQueue(index: number): void {
@@ -868,6 +875,7 @@ export const usePlaybackStore = defineStore('playback', {
         const originalIndex = this.originalQueue.findIndex((t) => t.id === removed.id)
         if (originalIndex >= 0) this.originalQueue.splice(originalIndex, 1)
       }
+      this.syncCastQueue()
     },
 
     reorderQueue(from: number, to: number): void {
@@ -877,6 +885,24 @@ export const usePlaybackStore = defineStore('playback', {
       if (from === this.currentIndex) this.currentIndex = to
       else if (from < this.currentIndex && to >= this.currentIndex) this.currentIndex -= 1
       else if (from > this.currentIndex && to <= this.currentIndex) this.currentIndex += 1
+      this.syncCastQueue()
+    },
+
+    /** Pushes the upcoming queue to the connect backend whenever it's
+     * casting — otherwise connect's own auto-advance (_advance_or_end() in
+     * routes/stream.py, see AppState.queue's comment and
+     * services/connect/playback.ts's `queue` option) keeps stepping through
+     * whichever queue was last sent at startCurrent() time, ignoring any
+     * reorder/add/remove/shuffle made on the renderer since — invisible
+     * right up until connect auto-advances on its own to the wrong song
+     * (e.g. the controlling phone's screen locks before a manual skip would
+     * have caught it). No-op once nothing's actually playing yet
+     * (currentIndex < 0) — startCurrent() sends the initial queue itself. */
+    syncCastQueue(): void {
+      if (!this.isCasting || this.currentIndex < 0) return
+      void connectPlayback.updateQueue(this.upcomingQueueIds).catch((error) => {
+        console.error('[playback] Failed to sync queue to connect:', error)
+      })
     },
 
     /** Drops everything from the queue except whatever's currently playing

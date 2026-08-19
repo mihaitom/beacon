@@ -714,6 +714,36 @@ async def seek_playback(
         return {"position": position}
 
 
+class QueueRequest(BaseModel):
+    song_ids: list[str]
+
+
+@router.post("/queue")
+async def update_queue(
+    req: QueueRequest, session: SessionState = Depends(require_authenticated_session)
+):
+    """Keeps session.state.queue (routes/stream.py's _advance_or_end() reads
+    this to auto-advance casting on its own — see AppState.queue's comment)
+    in sync with queue edits the renderer makes *after* the current track
+    already started playing — reorder/add/remove/shuffle all mutate the
+    renderer's own queue live, but /play only ever seeds session.state.queue
+    once, at dispatch time. Without this, those edits stay invisible to
+    connect: it keeps auto-advancing through the stale list from the last
+    /play call once the renderer isn't around to manually dispatch each next
+    track itself (e.g. the controlling phone's screen locks), audibly
+    ignoring whatever the queue was just reordered to.
+
+    `song_ids` is the *upcoming* queue only, mirroring PlayRequest.song_ids[1:]
+    — same convention as connectPlayback.play()'s `queue` option (see that
+    docstring) — the current track (already at queue[queue_index]) and
+    everything before it are left untouched."""
+    async with session.play_lock:
+        st = session.state
+        if st.queue:
+            st.queue = st.queue[: st.queue_index + 1] + req.song_ids
+        return {"success": True}
+
+
 @router.post("/stop")
 async def stop_playback(session: SessionState = Depends(require_authenticated_session)):
     async with session.play_lock:

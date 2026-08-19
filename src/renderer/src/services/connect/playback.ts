@@ -104,3 +104,12 @@ export async function seek(position: number): Promise<void> {
 export async function stop(): Promise<void> {
   await fetchConnect('/stop', { method: 'POST' })
 }
+
+/** Re-sends the upcoming queue (same convention as play()'s `queue` option —
+ * NOT including the current song) after a queue edit made mid-play, so
+ * connect's own auto-advance (routes/stream.py's _advance_or_end()) keeps
+ * following it even once the renderer that dispatched it goes to sleep.
+ * See stores/playback.ts's syncCastQueue(). */
+export async function updateQueue(songIds: string[]): Promise<void> {
+  await fetchConnect('/queue', { method: 'POST', body: { song_ids: songIds } })
+}

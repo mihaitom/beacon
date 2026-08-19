@@ -314,6 +314,35 @@ def test_play_seeds_queue_from_song_ids(client, default_session):
     assert default_session.state.queue_index == 0
 
 
+def test_update_queue_replaces_upcoming_tail(client, default_session):
+    """POST /queue re-syncs the *upcoming* part of session.state.queue after
+    a renderer-side reorder/add/remove — without this, _advance_or_end()
+    would keep auto-advancing through whatever /play originally seeded."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+
+    with patch.object(default_session.media, "get_track", return_value=track):
+        client.post("/play", json={"song_ids": ["1", "2", "3"]})
+
+    r = client.post("/queue", json={"song_ids": ["3", "2"]})
+
+    assert r.json()["success"] is True
+    # queue_index (0, still pointing at "1") and everything up to and
+    # including it are untouched — only the upcoming tail was replaced.
+    assert default_session.state.queue == ["1", "3", "2"]
+    assert default_session.state.queue_index == 0
+
+
+def test_update_queue_is_noop_without_an_active_queue(client, default_session):
+    """Nothing playing yet (session.state.queue still empty, e.g. before the
+    first /play) — silently does nothing rather than seeding a queue with no
+    current track at its head."""
+    r = client.post("/queue", json={"song_ids": ["1", "2"]})
+
+    assert r.json()["success"] is True
+    assert default_session.state.queue == []
+
+
 def test_resume_reuses_cached_content_type_without_reprobing(client, default_session):
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
     track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
