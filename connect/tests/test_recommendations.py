@@ -103,6 +103,40 @@ async def test_resolve_mbid_caches_negative_result_when_not_found():
         assert cache["mbid_by_name"]["definitely not a real artist"] is None
 
 
+async def test_resolve_mbid_does_not_cache_transient_http_failure():
+    """The actual bug — confirmed live: a burst of MusicBrainz 503s got
+    cached as a *permanent* negative result, indistinguishable from a name
+    MusicBrainz genuinely has no artist for. A failed call must leave
+    nothing behind, so the next lookup for the same name gets a real
+    retry instead of being stuck with a false negative forever."""
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+
+            def fail(url, params=None):
+                raise httpx.ConnectError("unreachable", request=httpx.Request("GET", url))
+
+            client.get = AsyncMock(side_effect=fail)
+
+            result = await recommendations.resolve_mbid("Radiohead")
+            assert result is None
+            # _load_cache(), not raw open() — nothing was ever written on a
+            # failed call, so the cache file may not even exist yet, which
+            # _load_cache() already treats the same as "empty".
+            assert "radiohead" not in recommendations._load_cache().get("mbid_by_name", {})
+
+            # Recovers on the very next call — not cached, so no stale
+            # negative to override.
+            client.get = AsyncMock(
+                side_effect=lambda url, params=None: _mb_response(url, "mbid-1")
+            )
+            result = await recommendations.resolve_mbid("Radiohead")
+            assert result == "mbid-1"
+
+
 # ── get_similar_artists ──────────────────────────────────────────────────
 
 
@@ -540,6 +574,47 @@ async def test_get_artist_links_keeps_musicbrainz_link_when_url_rels_call_fails(
             result = await recommendations.get_artist_links(["Radiohead"])
 
     assert result == {"Radiohead": {"musicbrainz": "https://musicbrainz.org/artist/mbid-1"}}
+
+
+async def test_get_artist_links_does_not_cache_transient_url_rels_failure():
+    """The actual bug — confirmed live: a burst of MusicBrainz 503s got
+    cached as this mbid's *permanent* answer (just the musicbrainz
+    self-link, Spotify/Apple Music/TIDAL/YouTube/Discogs silently missing
+    forever after, long after MusicBrainz itself had recovered). A failed
+    url-rels call must leave nothing in links_by_mbid, so the next lookup
+    for the same mbid gets a real retry."""
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+
+            def fail(url, params=None):
+                raise httpx.ConnectError("unreachable", request=httpx.Request("GET", url))
+
+            client.get = AsyncMock(side_effect=fail)
+            result = await recommendations.get_artist_links_by_mbid(["mbid-1"])
+            assert result == {"mbid-1": {"musicbrainz": "https://musicbrainz.org/artist/mbid-1"}}
+            # _load_cache(), not raw open() — nothing was ever written on a
+            # failed call, so the cache file may not even exist yet, which
+            # _load_cache() already treats the same as "empty".
+            assert "mbid-1" not in recommendations._load_cache().get("links_by_mbid", {})
+
+            # Recovers on the very next call — not cached, so no stale,
+            # incomplete answer to override.
+            client.get = AsyncMock(
+                side_effect=lambda url, params=None: _mb_url_rels_response(
+                    url, [_url_rel("youtube", "https://www.youtube.com/channel/abc")]
+                )
+            )
+            result = await recommendations.get_artist_links_by_mbid(["mbid-1"])
+            assert result == {
+                "mbid-1": {
+                    "musicbrainz": "https://musicbrainz.org/artist/mbid-1",
+                    "youtube": "https://www.youtube.com/channel/abc",
+                }
+            }
 
 
 # ── get_artist_links_by_mbid ─────────────────────────────────────────────

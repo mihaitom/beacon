@@ -82,7 +82,7 @@
           variant="text"
           size="small"
           :title="$t('home.reroll')"
-          @click="rerollDiscover()"
+          @click="rerollDiscover(undefined, true)"
         />
       </template>
     </album-shelf>
@@ -122,6 +122,44 @@ const DISCOVER_SHELF_SIZE = 15
 // Below this many owned matches, padding the shelf out with random albums
 // reads better than a visibly sparse "discover" row.
 const MIN_OWNED_MATCHES = 8
+
+// Persists pickSeedArtistNames()'s last random pick (see its own comment)
+// — localStorage, not just component state, since the whole point is
+// surviving a fresh mount (navigating away from Home and back, an app
+// restart), not just a reroll within one still-open session.
+const SEED_CACHE_KEY = 'beacon.discover-seed-cache'
+
+interface SeedCache {
+  // Sorted, lowercased distinct artist names the pick was drawn from —
+  // compared against the *current* pool to decide whether to reuse
+  // `seeds` as-is or pick fresh ones, order-insensitive on purpose (a
+  // frequent-albums re-ranking that doesn't change *which* artists are in
+  // the pool shouldn't by itself count as "genuinely new data").
+  pool: string[]
+  seeds: string[]
+}
+
+function loadSeedCache(): SeedCache | null {
+  try {
+    const raw = localStorage.getItem(SEED_CACHE_KEY)
+    return raw ? (JSON.parse(raw) as SeedCache) : null
+  } catch {
+    return null
+  }
+}
+
+function saveSeedCache(cache: SeedCache): void {
+  try {
+    localStorage.setItem(SEED_CACHE_KEY, JSON.stringify(cache))
+  } catch {
+    // Non-critical — worst case just re-randomizes next load instead of
+    // reusing this pick.
+  }
+}
+
+function sameArtistPool(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((name, i) => name === b[i])
+}
 
 export default {
   name: 'HomeView',
@@ -286,10 +324,16 @@ export default {
     // get_similar_artists() not knowing or caring where its seed names
     // came from. Randomized (a shuffle-then-take, not just always the
     // first N by frequent-album order, which is what this used to do) so
-    // the Reroll button actually rerolls into something different instead
-    // of deterministically landing on the exact same seeds — and therefore
-    // the exact same (cached) similar-artists result — every time.
-    pickSeedArtistNames(albums: Album[]): string[] {
+    // the Reroll button can actually reroll into something different —
+    // but only a *new* random pick when `force` is set (an explicit Reroll
+    // click) or the underlying pool has genuinely changed since the last
+    // one (see SeedCache). Without that guard, every plain component
+    // mount (navigating away from Home and back, an app restart) picked
+    // its own fresh random seeds too, which defeated get_similar_artists()'s
+    // own 24h cache almost entirely — different seeds each time meant a
+    // real MusicBrainz/ListenBrainz round trip nearly every time, observed
+    // live as a burst of MusicBrainz 503s under that load.
+    pickSeedArtistNames(albums: Album[], force = false): string[] {
       const seen = new Set<string>()
       const names: string[] = []
       for (const album of albums) {
@@ -298,11 +342,20 @@ export default {
         seen.add(key)
         names.push(album.artist)
       }
+      const pool = [...seen].sort()
+
+      if (!force) {
+        const cached = loadSeedCache()
+        if (cached && sameArtistPool(cached.pool, pool)) return cached.seeds
+      }
+
       for (let i = names.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1))
         ;[names[i], names[j]] = [names[j]!, names[i]!]
       }
-      return names.slice(0, MAX_SEED_ARTISTS)
+      const seeds = names.slice(0, MAX_SEED_ARTISTS)
+      saveSeedCache({ pool, seeds })
+      return seeds
     },
     /** Discover shelf — real similar-artist suggestions (ListenBrainz, via
      * connect) when there's enough to seed from and the user hasn't opted
@@ -312,13 +365,16 @@ export default {
      * Home). `seedAlbums`, given (only by created()'s own initial call),
      * reuses frequentAlbums' already-in-flight fetch instead of this
      * re-requesting it — the manual reroll button (template's own
-     * @click="rerollDiscover") calls this with no argument, falling back
-     * to this.frequentAlbums, which is already populated by then. */
-    async rerollDiscover(seedAlbums?: Album[]): Promise<void> {
+     * @click="rerollDiscover(undefined, true)") calls this with no
+     * seedAlbums, falling back to this.frequentAlbums (already populated
+     * by then), and `force: true` so it actually picks something new
+     * instead of reusing the cached seeds from before — see
+     * pickSeedArtistNames()'s own comment. */
+    async rerollDiscover(seedAlbums?: Album[], force = false): Promise<void> {
       this.loadingRandom = true
       try {
         const albums = seedAlbums ?? this.frequentAlbums
-        const seedNames = this.pickSeedArtistNames(albums)
+        const seedNames = this.pickSeedArtistNames(albums, force)
         if (this.recommendationsStore.enabled && seedNames.length >= MIN_SEED_ARTISTS) {
           try {
             await this.discoverFromSimilarArtists(seedNames)

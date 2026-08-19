@@ -174,16 +174,22 @@ export default {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 6px;
+  gap: 3px;
   margin-top: 6px;
 }
 
+/* Sized so all seven possible services (see externalArtistLinks.ts) fit on
+ * one row within the card's own 160px — 7 * (18px circle + 3px gap) =
+ * 147px, comfortable margin without wrapping to a second row in the
+ * common case. flex-wrap above stays as a safety net regardless (a future
+ * eighth service, or a genuinely narrower card elsewhere), not depended on
+ * for the normal case. */
 .similar-artists-card-link {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   opacity: 0.7;
   transition:
@@ -197,8 +203,8 @@ export default {
 }
 
 .similar-artists-card-link-icon {
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
   object-fit: contain;
 }
 

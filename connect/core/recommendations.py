@@ -133,7 +133,14 @@ async def resolve_mbid(name: str) -> str | None:
     """Artist name -> MusicBrainz ID, cache-first (see this module's own
     docstring). Caches a negative (None) result too — a mistagged/obscure
     local artist name that doesn't resolve shouldn't cost a fresh,
-    rate-limited MusicBrainz call on every single Home refresh."""
+    rate-limited MusicBrainz call on every single Home refresh. That's a
+    *genuine* negative only — a real search response with zero matches —
+    not a network/HTTP failure: those return None too but are deliberately
+    never written to the cache (see the early return below), so a
+    transient MusicBrainz outage isn't indistinguishable from "this name
+    really has no MBID" forever after. Confirmed live as a real, not just
+    theoretical, bug: a burst of MusicBrainz 503s permanently poisoned
+    several artists' entries this way before this guard existed."""
     cache = _load_cache()
     mbid_by_name = cache.setdefault("mbid_by_name", {})
     key = name.strip().lower()
@@ -153,22 +160,23 @@ async def resolve_mbid(name: str) -> str | None:
             data = r.json()
         except httpx.HTTPError as e:
             logger.warning(f"[recommendations] MusicBrainz search failed for {name!r}: {e}")
-            data = None
+            return None
         finally:
             _mb_last_call = time.monotonic()
 
-    mbid = None
-    if data:
-        artists = data.get("artists") or []
-        if artists:
-            mbid = artists[0].get("id")
+    artists = data.get("artists") or []
+    mbid = artists[0].get("id") if artists else None
 
     mbid_by_name[key] = mbid
     _save_cache(cache)
     return mbid
 
 
-async def _fetch_artist_links(mbid: str) -> dict[str, str]:
+def _musicbrainz_artist_url(mbid: str) -> str:
+    return f"https://musicbrainz.org/artist/{mbid}"
+
+
+async def _fetch_artist_links(mbid: str) -> dict[str, str] | None:
     """One MusicBrainz url-rels lookup for `mbid` — a second, separate call
     from resolve_mbid()'s own search request, since MusicBrainz's search
     endpoint doesn't support inc=url-rels, only a direct lookup-by-id does.
@@ -176,16 +184,17 @@ async def _fetch_artist_links(mbid: str) -> dict[str, str]:
     musicbrainz.org, one shared budget, not a fresh one each.
 
     See _LINK_HOSTS' own comment for why matching is host-based rather than
-    trusting MusicBrainz's own relation `type`."""
-    # MusicBrainz's own artist page — not from url-rels (an artist has no
-    # relation *to itself*), just the same MBID this whole lookup already
-    # required, same URL shape HomeView.vue's own fallback link already
-    # builds client-side for artists not yet in the library. Built before
-    # the network call below, and kept even if that call fails — an MBID
-    # that resolved at all is enough for this one, unlike the five services
-    # below it, which genuinely depend on the url-rels response.
-    links: dict[str, str] = {"musicbrainz": f"https://musicbrainz.org/artist/{mbid}"}
+    trusting MusicBrainz's own relation `type`.
 
+    Returns None on a network/HTTP failure specifically — not a dict, even
+    an incomplete one — so _get_links_for_mbid() below can tell "MusicBrainz
+    is genuinely down/rate-limiting right now" apart from "a successful
+    response that just doesn't have any of these five services on file",
+    and only cache the latter. See resolve_mbid()'s identical fix for the
+    same class of bug, confirmed live: a burst of 503s here previously got
+    cached as this mbid's *permanent* answer (just the musicbrainz
+    self-link, everything else silently missing forever after), long after
+    MusicBrainz itself had recovered."""
     global _mb_last_call
     async with _mb_lock:
         wait = _MB_MIN_INTERVAL - (time.monotonic() - _mb_last_call)
@@ -199,10 +208,17 @@ async def _fetch_artist_links(mbid: str) -> dict[str, str]:
             data = r.json()
         except httpx.HTTPError as e:
             logger.warning(f"[recommendations] MusicBrainz url-rels lookup failed for {mbid}: {e}")
-            return links
+            return None
         finally:
             _mb_last_call = time.monotonic()
 
+    # MusicBrainz's own artist page — not from url-rels (an artist has no
+    # relation *to itself*), just the same MBID this whole lookup already
+    # required, same URL shape HomeView.vue's own fallback link already
+    # builds client-side for artists not yet in the library. Always
+    # present in a *successful* response, regardless of whether any of the
+    # five services below matched.
+    links: dict[str, str] = {"musicbrainz": _musicbrainz_artist_url(mbid)}
     for rel in data.get("relations", []):
         url = (rel.get("url") or {}).get("resource")
         if not url:
@@ -232,12 +248,20 @@ async def _get_links_for_mbid(mbid: str) -> dict[str, str]:
     calls would go stale the moment resolve_mbid() persists a newly-
     resolved MBID mid-loop, and this function's own eventual save would
     silently overwrite that with its own now-outdated snapshot — undoing
-    the very lookup that just happened."""
+    the very lookup that just happened.
+
+    A None from _fetch_artist_links() (a transient failure, see its own
+    comment) is deliberately never written to the cache — this returns a
+    one-off musicbrainz-only result for *this* call so the page still shows
+    something, but the next lookup for the same mbid gets a real retry
+    instead of being stuck with that incomplete answer forever."""
     cache = _load_cache()
     links_by_mbid = cache.setdefault("links_by_mbid", {})
     if mbid in links_by_mbid:
         return links_by_mbid[mbid]
     links = await _fetch_artist_links(mbid)
+    if links is None:
+        return {"musicbrainz": _musicbrainz_artist_url(mbid)}
     links_by_mbid[mbid] = links
     _save_cache(cache)
     return links

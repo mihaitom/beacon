@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Added a fullscreen toggle to the Now Playing view (top right) - hides the rest of the app's chrome around it for a more immersive view; a lyrics button appears alongside it while fullscreen is active, since the usual one (in the player bar) is part of that now-hidden chrome
 - Added a flip animation for lyrics on portrait/narrow monitors - the artwork now turns over to reveal lyrics on its back instead of squeezing both side by side or stacking them; also brings lyrics to the mobile web UI for the first time, via a new toolbar button, using the same flip since phones are always portrait too
 - Added a Trace log level, one step past Debug - Debug now covers Beacon's own backend code only, Trace also turns on the third-party libraries underneath it (Sonos/AirPlay, HTTP clients) for full SOAP/HTTP-level detail when actually troubleshooting one of those. A new `LOG_LEVEL` environment variable sets the starting level the same way the Settings dropdown does, for a deployment that never comes up far enough to reach Settings
+- Added links to Spotify, Apple Music, TIDAL, YouTube, Deezer, Discogs, and MusicBrainz on artist pages, and on the Home "New to explore" shelf - the shelf previously only linked out to Deezer itself (or MusicBrainz as a fallback), and an artist page for someone already in your library had no external links at all
 
 ### Changed
 
@@ -33,6 +34,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Fixed synced lyrics opened mid-song showing the very first line instead of scrolling straight to wherever playback actually is - it caught up on its own once the next line's timestamp passed, but sat at the wrong spot until then
 - Fixed dragging a track to swap it with the very next one in the queue landing it one position further than intended - the drop target only accounted for which row you dropped on, not which half of it, so a drag moving down past a row's own boundary silently pulled in the row after it too
 - Fixed pressing Play again after a cast session's queue finished playing (no repeat, last song ended): position stayed frozen at 0:00 and the audio visualizer/synced lyrics never got going, since resuming just asked the already-finished stream to continue instead of properly restarting it - the same bug fixed for local playback in 0.1.1, which never covered casting
+- Fixed the Home "Discover" shelf's Reroll button rarely changing anything - which artists its suggestions were seeded from was picked the same way every time (always your top few most-played, in the same order) rather than varying, so a reroll usually landed right back on the same result; suggestions also now refresh daily instead of monthly
+- Fixed a temporary MusicBrainz outage or rate-limit response permanently blanking out an artist's info (recommendations, external links) instead of just that one attempt - a failed lookup was being cached the exact same way as a genuine "nothing found" result, so it never got retried later once MusicBrainz recovered
 
 ### Removed
 
