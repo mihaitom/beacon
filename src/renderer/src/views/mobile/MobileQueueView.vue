@@ -20,7 +20,7 @@
         :song="song"
         :index="index"
         :is-current="index === playbackStore.currentIndex"
-        :drag-over="overIndex === index && dragIndex !== index"
+        :drag-over-position="dragIndex !== index ? dragOverPosition(index) : null"
         :dragging="dragIndex === index"
         @play="playbackStore.playAtIndex(index)"
         @remove="playbackStore.removeFromQueue(index)"
@@ -66,6 +66,14 @@ export default {
       // reorderQueue() call only fires once, on release.
       dragIndex: null as number | null,
       overIndex: null as number | null,
+      // Which half of overIndex's own row the pointer is over — see
+      // insertBeforeIndex()'s own comment for why this matters: without it,
+      // hovering anywhere within a row's bounding box always meant "insert
+      // before this row's original index", correct only for dragging
+      // *up*. Dragging down past even a single adjacent row landed one
+      // further than intended (a "swap with the very next track" drag
+      // reliably overshot to the track after that).
+      overHalf: null as 'before' | 'after' | null,
     }
   },
   computed: {
@@ -78,9 +86,13 @@ export default {
   },
   methods: {
     rowKey,
+    dragOverPosition(index: number): 'before' | 'after' | null {
+      return this.overIndex === index ? this.overHalf : null
+    },
     onDragStart(index: number, event: PointerEvent) {
       this.dragIndex = index
       this.overIndex = index
+      this.overHalf = 'before'
       window.addEventListener('pointermove', this.onPointerMove)
       window.addEventListener('pointerup', this.onPointerUp)
       window.addEventListener('pointercancel', this.onPointerUp)
@@ -94,17 +106,25 @@ export default {
         const rect = row.getBoundingClientRect()
         if (event.clientY < rect.top || event.clientY > rect.bottom) continue
         const index = Number((row as HTMLElement).dataset.index)
-        if (!Number.isNaN(index)) this.overIndex = index
+        if (!Number.isNaN(index)) {
+          this.overIndex = index
+          this.overHalf = event.clientY > rect.top + rect.height / 2 ? 'after' : 'before'
+        }
         break
       }
     },
     onPointerUp() {
       this.detachPointerListeners()
-      if (this.dragIndex !== null && this.overIndex !== null && this.overIndex !== this.dragIndex) {
-        this.playbackStore.reorderQueue(this.dragIndex, this.overIndex)
+      if (this.dragIndex !== null && this.overIndex !== null && this.overHalf !== null) {
+        // See QueueDrawer.vue's insertBeforeIndex()/dropIndex() for the
+        // identical original-index -> post-removal-index conversion.
+        const insertBefore = this.overHalf === 'after' ? this.overIndex + 1 : this.overIndex
+        const to = insertBefore > this.dragIndex ? insertBefore - 1 : insertBefore
+        if (to !== this.dragIndex) this.playbackStore.reorderQueue(this.dragIndex, to)
       }
       this.dragIndex = null
       this.overIndex = null
+      this.overHalf = null
     },
     detachPointerListeners() {
       window.removeEventListener('pointermove', this.onPointerMove)

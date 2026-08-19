@@ -50,3 +50,7 @@
 .mdi-television-classic::before { content: "\F07F4"; }
 .mdi-speaker-wireless::before { content: "\F071F"; }
 .mdi-lock-outline::before { content: "\F0341"; }
+.mdi-lighthouse-on::before { content: "\F0A00"; }
+.mdi-play-circle-outline::before { content: "\F040D"; }
+.mdi-playlist-play::before { content: "\F0411"; }
+.mdi-volume-mute::before { content: "\F075F"; }

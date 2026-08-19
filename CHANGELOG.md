@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - Added live sync of the queue, shuffle, and repeat state across every device controlling the same cast session - reordering, adding, or removing a song, or toggling shuffle/repeat, on one device now shows up on every other connected device too (previously only which song was playing and its position stayed in sync; the queue itself was independent per device)
+- Added playlist artwork to the Electron Remote Control PWA's playlist list - it only ever showed a plain title/song count before
+
+### Changed
+
+- Changed the Electron Remote Control PWA's look to match the mobile web UI - same amber/navy color palette, lighthouse app bar, tab bar icons/labels, Now Playing layout (single row of transport controls, filled play button, cast toggle next to the volume slider), and themed seek/volume sliders instead of its own separate blue-accented style with plain browser-default sliders
+- Various small mobile web UI sizing/spacing tweaks based on actually using it on a phone screen
 
 ### Fixed
 
@@ -20,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Fixed shuffle not actually shuffling the first song when playing a whole playlist/album from the top - it always started on track 1 in its original order, with shuffle only kicking in from the second song onward
 - Fixed the mobile web view carrying over a tab's scroll position into whichever tab you switched to next, instead of each tab keeping (and restoring) its own
 - Fixed the Docker/web deployment's audio stream to cast devices being vulnerable to nginx buffering it all at once instead of forwarding it continuously in real time - could turn a brief network hiccup mid-song into a multi-minute stall stuck at 0:00 instead of recovering
+- Fixed dragging a track to swap it with the very next one in the queue landing it one position further than intended - the drop target only accounted for which row you dropped on, not which half of it, so a drag moving down past a row's own boundary silently pulled in the row after it too
 
 ### Security
 

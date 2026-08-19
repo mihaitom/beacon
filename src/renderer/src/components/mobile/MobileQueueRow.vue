@@ -4,7 +4,8 @@
     :data-index="index"
     :class="{
       'mobile-queue-row--current': isCurrent,
-      'mobile-queue-row--drag-over': dragOver,
+      'mobile-queue-row--drag-over-before': dragOverPosition === 'before',
+      'mobile-queue-row--drag-over-after': dragOverPosition === 'after',
       'mobile-queue-row--dragging': dragging,
     }"
     @click="!dragging && $emit('play')"
@@ -56,9 +57,12 @@ export default {
       type: Boolean,
       default: false,
     },
-    dragOver: {
-      type: Boolean,
-      default: false,
+    // Which side of *this* row the dragged item would land on if dropped
+    // right now — see MobileQueueView.vue's insertBeforeIndex() for why a
+    // single boolean isn't enough to represent that.
+    dragOverPosition: {
+      type: String as () => 'before' | 'after' | null,
+      default: null,
     },
     dragging: {
       type: Boolean,
@@ -81,8 +85,12 @@ export default {
   background: rgba(var(--v-theme-primary), 0.08);
 }
 
-.mobile-queue-row--drag-over {
+.mobile-queue-row--drag-over-before {
   border-top-color: rgb(var(--v-theme-primary));
+}
+
+.mobile-queue-row--drag-over-after {
+  border-bottom: 2px solid rgb(var(--v-theme-primary));
 }
 
 .mobile-queue-row--dragging {

@@ -17,6 +17,7 @@ const SHELL_PATHS = [
   './js/api.js',
   './js/art.js',
   './js/devices.js',
+  './js/range.js',
   './js/state.js',
   './js/router.js',
   './js/sheet.js',

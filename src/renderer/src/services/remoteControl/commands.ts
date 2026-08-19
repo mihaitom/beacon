@@ -274,13 +274,22 @@ export async function resolveRemoteQuery(
     case 'playlists-request': {
       await library.fetchPlaylists()
       return {
-        items: library.playlists.map((p) => ({ id: p.id, name: p.name, song_count: p.songCount })),
+        items: library.playlists.map((p) => ({
+          id: p.id,
+          name: p.name,
+          song_count: p.songCount,
+          cover_art_url: remoteCoverArtUrl(p.coverArtId),
+        })),
       }
     }
     case 'playlist-request': {
       const playlist = await library.fetchPlaylist(String(payload.playlistId))
       return {
-        playlist: { id: playlist.id, name: playlist.name },
+        playlist: {
+          id: playlist.id,
+          name: playlist.name,
+          cover_art_url: remoteCoverArtUrl(playlist.coverArtId),
+        },
         songs: playlist.songs.map(toRemoteSong),
       }
     }

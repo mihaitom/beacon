@@ -57,13 +57,13 @@
             :key="queueRowKey(song)"
             :song="song"
             :index="index"
-            :drag-over="dragOverIndex === index && dragIndex !== index"
+            :drag-over-position="dragIndex !== index ? dragOverPosition(index) : null"
             :dragging="dragIndex === index"
             :landed="queueRowKey(song) === landedKey"
             @dragstart="onDragStart(index, $event)"
-            @dragover="onDragOver(index)"
+            @dragover="onDragOver(index, $event)"
             @dragleave="onDragLeave(index)"
-            @drop="onDrop(index)"
+            @drop="onDrop(index, $event)"
             @dragend="onDragEnd"
           />
         </transition-group>
@@ -80,13 +80,13 @@
               :key="queueRowKey(song)"
               :song="song"
               :index="index"
-              :drag-over="dragOverIndex === index && dragIndex !== index"
+              :drag-over-position="dragIndex !== index ? dragOverPosition(index) : null"
               :dragging="dragIndex === index"
               :landed="queueRowKey(song) === landedKey"
               @dragstart="onDragStart(index, $event)"
-              @dragover="onDragOver(index)"
+              @dragover="onDragOver(index, $event)"
               @dragleave="onDragLeave(index)"
-              @drop="onDrop(index)"
+              @drop="onDrop(index, $event)"
               @dragend="onDragEnd"
             />
           </template>
@@ -150,6 +150,15 @@ export default {
       // virtualized path.
       dragIndex: null as number | null,
       dragOverIndex: null as number | null,
+      // Which half of dragOverIndex's own row the pointer is currently
+      // over — see insertBeforeIndex()'s own comment for why this matters:
+      // without it, dropping anywhere within a row's bounding box always
+      // meant "insert before this row's original index", which only
+      // produces the expected result for a drag moving *up*. Moving down
+      // past even a single adjacent row landed one further than intended
+      // (a "swap with the very next track" drag reliably overshot to the
+      // track after that).
+      dragOverHalf: null as 'before' | 'after' | null,
       // Briefly set to the moved row's queueRowKey() right after a drop, so
       // it gets a "landed here" pulse on top of the slide animation (or, in
       // the virtualized path with no slide, as the only landing feedback).
@@ -166,6 +175,9 @@ export default {
   },
   methods: {
     queueRowKey,
+    dragOverPosition(index: number): 'before' | 'after' | null {
+      return this.dragOverIndex === index ? this.dragOverHalf : null
+    },
     onDragStart(index: number, event: DragEvent) {
       this.dragIndex = index
       if (event.dataTransfer) {
@@ -174,20 +186,48 @@ export default {
         event.dataTransfer.setData('text/plain', String(index))
       }
     },
-    onDragOver(index: number) {
+    // The *original* array index to insert the dragged item before, given
+    // which half of `index`'s own row the pointer is over — top half means
+    // "right here, before this row" (index itself), bottom half means
+    // "right after this row" (index + 1). reorderQueue()'s own `to` is a
+    // post-removal splice index, not this original-array one — dropIndex()
+    // below converts between the two, since removing the dragged item
+    // first shifts every *later* original index left by one (see its own
+    // comment).
+    insertBeforeIndex(index: number, event: DragEvent): number {
+      const row = event.currentTarget as HTMLElement
+      const rect = row.getBoundingClientRect()
+      const isBottomHalf = event.clientY > rect.top + rect.height / 2
+      return isBottomHalf ? index + 1 : index
+    },
+    // Converts insertBeforeIndex()'s original-array target into the
+    // post-removal index reorderQueue(from, to) actually expects.
+    dropIndex(index: number, event: DragEvent): number {
+      const insertBefore = this.insertBeforeIndex(index, event)
+      return insertBefore > (this.dragIndex ?? 0) ? insertBefore - 1 : insertBefore
+    },
+    onDragOver(index: number, event: DragEvent) {
       this.dragOverIndex = index
+      this.dragOverHalf = this.insertBeforeIndex(index, event) > index ? 'after' : 'before'
     },
     onDragLeave(index: number) {
-      if (this.dragOverIndex === index) this.dragOverIndex = null
+      if (this.dragOverIndex === index) {
+        this.dragOverIndex = null
+        this.dragOverHalf = null
+      }
     },
-    onDrop(index: number) {
-      if (this.dragIndex !== null && this.dragIndex !== index) {
-        const moved = this.playbackStore.queue[this.dragIndex]
-        this.playbackStore.reorderQueue(this.dragIndex, index)
-        if (moved) this.flashLanded(this.queueRowKey(moved))
+    onDrop(index: number, event: DragEvent) {
+      if (this.dragIndex !== null) {
+        const to = this.dropIndex(index, event)
+        if (to !== this.dragIndex) {
+          const moved = this.playbackStore.queue[this.dragIndex]
+          this.playbackStore.reorderQueue(this.dragIndex, to)
+          if (moved) this.flashLanded(this.queueRowKey(moved))
+        }
       }
       this.dragIndex = null
       this.dragOverIndex = null
+      this.dragOverHalf = null
     },
     flashLanded(key: string) {
       this.landedKey = key
@@ -198,6 +238,7 @@ export default {
     onDragEnd() {
       this.dragIndex = null
       this.dragOverIndex = null
+      this.dragOverHalf = null
     },
   },
 }

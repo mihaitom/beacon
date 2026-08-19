@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Beacon Remote</title>
-  <meta name="theme-color" content="#121214" />
+  <meta name="theme-color" content="#12141c" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -30,19 +30,27 @@
   </div>
 
   <div id="app-screen" class="screen hidden">
+    <!-- Same lighthouse mark + wordmark as
+     - src/renderer/src/layouts/MobileLayout.vue's <v-app-bar> — see
+     - app.css's .app-bar. -->
+    <header class="app-bar">
+      <i class="mdi mdi-lighthouse-on app-bar__icon"></i>
+      <span class="app-bar__title">Beacon</span>
+    </header>
     <main id="view-root"></main>
+    <!-- Icons/labels/order match MobileTabBar.vue's own `items` exactly. -->
     <nav class="tabbar">
       <a href="#/now-playing" data-tab="now-playing">
-        <i class="mdi mdi-music-note icon"></i><span>Playing</span>
+        <i class="mdi mdi-play-circle-outline icon"></i><span>Now Playing</span>
       </a>
       <a href="#/queue" data-tab="queue">
-        <i class="mdi mdi-format-list-bulleted icon"></i><span>Queue</span>
+        <i class="mdi mdi-playlist-music icon"></i><span>Queue</span>
       </a>
       <a href="#/playlists" data-tab="playlists">
-        <i class="mdi mdi-playlist-music icon"></i><span>Playlists</span>
+        <i class="mdi mdi-playlist-play icon"></i><span>Playlists</span>
       </a>
       <a href="#/songs" data-tab="songs">
-        <i class="mdi mdi-magnify icon"></i><span>Songs</span>
+        <i class="mdi mdi-music-note icon"></i><span>Songs</span>
       </a>
       <a href="#/radio" data-tab="radio">
         <i class="mdi mdi-radio icon"></i><span>Radio</span>

@@ -1,6 +1,7 @@
 import { sendCommand, fetchPlaylists, fetchPlaylist } from '../api.js';
 import { renderSongRow } from '../song-row.js';
 import { navigate, registerRoute } from '../router.js';
+import { createArt } from '../art.js';
 
 export function renderPlaylists(root) {
   root.innerHTML = '<h2 class="section-title">Playlists</h2><div class="list" id="playlist-list">Loading…</div>';
@@ -16,8 +17,12 @@ export function renderPlaylists(root) {
       for (const playlist of items) {
         const row = document.createElement('div');
         row.className = 'row';
-        row.innerHTML = `<div class="row-main"><div class="row-title">${escapeHtml(playlist.name)}</div>
-          <div class="row-subtitle">${playlist.song_count ?? ''} songs</div></div>`;
+        row.appendChild(createArt(playlist.cover_art_url, 'mdi-playlist-music'));
+        row.insertAdjacentHTML(
+          'beforeend',
+          `<div class="row-main"><div class="row-title">${escapeHtml(playlist.name)}</div>
+          <div class="row-subtitle">${playlist.song_count ?? ''} songs</div></div>`,
+        );
         row.addEventListener('click', () => navigate(`/playlists/${encodeURIComponent(playlist.id)}`));
         list.appendChild(row);
       }

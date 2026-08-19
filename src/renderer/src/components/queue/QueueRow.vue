@@ -3,13 +3,14 @@
     class="queue-row d-flex align-center px-2"
     :class="{
       'queue-row--current': isCurrent,
-      'queue-row--drag-over': dragOver,
+      'queue-row--drag-over-before': dragOverPosition === 'before',
+      'queue-row--drag-over-after': dragOverPosition === 'after',
       'queue-row--dragging': dragging,
       'queue-row--landed': landed,
     }"
-    @dragover.prevent="$emit('dragover')"
+    @dragover.prevent="$emit('dragover', $event)"
     @dragleave="$emit('dragleave')"
-    @drop="$emit('drop')"
+    @drop="$emit('drop', $event)"
     @click="playbackStore.playAtIndex(index)"
   >
     <v-icon
@@ -62,9 +63,16 @@ export default {
       type: Number,
       required: true,
     },
-    dragOver: {
-      type: Boolean,
-      default: false,
+    // Which side of *this* row the dragged item would land on if dropped
+    // right now — 'before' shows a line above the row, 'after' below.
+    // Two distinct positions (not just one boolean) because a single
+    // "drag-over" indicator can't tell the user which side of a boundary
+    // row they're actually about to land on, and picking the wrong side is
+    // exactly what made "swap with the very next track" so easy to
+    // overshoot by one — see QueueDrawer.vue's insertBeforeIndex().
+    dragOverPosition: {
+      type: String as () => 'before' | 'after' | null,
+      default: null,
     },
     dragging: {
       type: Boolean,
@@ -113,8 +121,12 @@ export default {
   background: rgba(var(--v-theme-primary), 0.08);
 }
 
-.queue-row--drag-over {
+.queue-row--drag-over-before {
   border-top-color: rgb(var(--v-theme-primary));
+}
+
+.queue-row--drag-over-after {
+  border-bottom: 2px solid rgb(var(--v-theme-primary));
 }
 
 .queue-row--dragging {

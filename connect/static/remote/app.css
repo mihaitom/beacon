@@ -1,13 +1,21 @@
+/* Mirrors the "Beacon" Vuetify theme (src/renderer/src/main.ts) and
+ * src/renderer/src/assets/base.css's --beacon-* tokens — this is a
+ * separately-served static app (connect/static/remote), not built through
+ * the same Vue/Vuetify pipeline, so the palette is hand-copied here rather
+ * than shared at build time. Keep in sync if either changes. */
 :root {
   color-scheme: dark;
-  --bg: #121214;
-  --surface: #1c1c1f;
-  --surface-2: #26262a;
+  --bg: #12141c;
+  --chrome: #0b0d13;
+  --surface: #1a1d27;
+  --surface-2: #232733;
   --text: #f2f2f4;
   --text-muted: #9a9aa2;
-  --accent: #6c8cff;
-  --error: #ff6b6b;
-  --border: #303035;
+  --accent: #f5a94e;
+  --accent-on: #12141c;
+  --error: #e5484d;
+  --border: rgba(245, 169, 78, 0.14);
+  --hover: rgba(245, 169, 78, 0.07);
 }
 
 * { box-sizing: border-box; }
@@ -66,7 +74,7 @@ input {
   font-weight: 600;
 }
 
-.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary { background: var(--accent); color: var(--accent-on); }
 .btn-secondary { background: var(--surface-2); color: var(--text); }
 
 /* ── App shell ── */
@@ -114,6 +122,35 @@ input {
   z-index: 100;
 }
 
+/* ── App bar ── */
+/* Mirrors src/renderer/src/layouts/MobileLayout.vue's own <v-app-bar> —
+ * same lighthouse mark + wordmark, same chrome/hairline tokens, so this
+ * reads as the same app rather than a generic web page wrapped around it. */
+
+.app-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  flex-shrink: 0;
+  padding: 0 14px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-bar__icon {
+  color: var(--accent);
+  font-size: 16px;
+  /* Same beacon-glow language as the mobile app bar's icon and every
+   * section-title's lit mark — see base.css's .beacon-glow/.section-title. */
+  filter: drop-shadow(0 0 6px rgba(245, 169, 78, 0.55));
+}
+
+.app-bar__title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
 /* ── Now Playing ── */
 
 .now-playing { display: flex; flex-direction: column; align-items: center; gap: 16px; padding-top: 8px; }
@@ -132,34 +169,152 @@ input {
   font-size: 3rem;
 }
 
-.song-title { font-size: 1.1rem; font-weight: 600; text-align: center; }
+/* Same "eyebrow" language as the desktop/mobile Now Playing view's own
+ * .eyebrow-label (base.css) — amber, small-caps-by-letterspacing, sits
+ * right above the title. Text itself ("Now playing" / "Pause") is set in
+ * now-playing.js, matching NowPlayingView.vue's identical playing/paused
+ * distinction rather than a static label. */
+.now-playing__eyebrow {
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+/* Same serif "display" voice as .detail-title (base.css) — reserved there
+ * for exactly this, the Now Playing title — a system font stack, no font
+ * file to bundle here. */
+.song-title {
+  font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  font-weight: 600;
+  font-size: 1.35rem;
+  line-height: 1.2;
+  text-align: center;
+}
 .song-artist { color: var(--text-muted); text-align: center; }
 
 .seek-row { width: 100%; }
 .seek-row input[type="range"] { width: 100%; }
 .time-row { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); }
 
-.transport-row { display: flex; align-items: center; justify-content: center; gap: 24px; }
-.transport-row button { background: none; color: var(--text); font-size: 1.6rem; padding: 8px; }
-.transport-row .play-pause { font-size: 2.4rem; }
-
-.toggle-row { display: flex; gap: 12px; }
-.toggle-row button {
+/* One row — shuffle, previous, play/pause, next, repeat — matching
+ * MobileTransportControls.vue's own single-row layout instead of splitting
+ * shuffle/repeat into a separate row below. */
+.transport-row { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.transport-row button {
+  background: none;
+  color: var(--text);
+  font-size: 1.5rem;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 40px;
-  background: var(--surface);
-  color: var(--text-muted);
-  border-radius: 10px;
-  font-size: 1.15rem;
 }
-.toggle-row button.active { color: var(--accent); background: var(--surface-2); }
+.transport-row button.active { color: var(--accent); }
+.transport-row button:disabled { color: var(--text-muted); opacity: 0.4; }
 
+/* Filled amber circle with a dark icon — same treatment as
+ * MobileTransportControls.vue's own .mobile-transport__play-btn
+ * (variant="flat" color="primary", icon colored off the theme's
+ * `background` token for contrast). */
+.transport-row .play-pause {
+  width: 56px;
+  height: 56px;
+  margin: 0 4px;
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: 1.7rem;
+}
+
+/* Cast + volume live in one row (see now-playing.js) — matches
+ * MobileTransportControls.vue putting the cast toggle directly beside the
+ * volume slider rather than grouped with shuffle/repeat. */
 .volume-row { width: 100%; display: flex; align-items: center; gap: 10px; }
+.volume-row button {
+  background: none;
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  padding: 6px;
+  flex-shrink: 0;
+  display: flex;
+}
+.volume-row button.active { color: var(--accent); }
 .volume-row input[type="range"] { flex: 1; }
-input[type="range"]:disabled { opacity: 0.35; }
+
+/* Themed range sliders (seek, volume, per-device volume) — matches
+ * Vuetify's own v-slider look: a thin amber-filled track up to the current
+ * value, plain surface-2 after it, white thumb. The "filled" portion is
+ * painted two different ways because the two engines expose it
+ * differently: Firefox natively supports ::-moz-range-progress (styled
+ * below, static CSS only); WebKit (what this PWA actually runs under on
+ * iOS/Android — no equivalent pseudo-element at all) needs it painted as a
+ * background gradient on the input itself instead — see range.js's
+ * paintRange(), called after every value change. ::-webkit-slider-runnable-
+ * track stays transparent so that gradient is what actually shows through. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-2);
+  outline: none;
+  margin: 0;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-2);
+}
+
+input[type="range"]::-moz-range-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+input[type="range"]:disabled {
+  opacity: 0.35;
+}
+
+input[type="range"]:disabled::-webkit-slider-thumb,
+input[type="range"]:disabled::-moz-range-thumb {
+  background: var(--text-muted);
+  box-shadow: none;
+}
 
 /* ── Lists ── */
 
@@ -181,6 +336,13 @@ input[type="range"]:disabled { opacity: 0.35; }
   gap: 12px;
   padding: 10px 0;
   border-bottom: 1px solid var(--border);
+}
+
+/* :active, not :hover — a touch app shell, same reasoning as .list's own
+ * user-select:none comment. Same warm amber tint as base.css's
+ * .beacon-list .v-list-item:hover. */
+.row:active {
+  background: var(--hover);
 }
 
 .row-art {
@@ -342,4 +504,4 @@ h2.section-title { font-size: 1.1rem; margin: 4px 0 10px; }
   color: var(--text-muted);
   transition: background 0.15s ease, color 0.15s ease;
 }
-.sheet-footer button.btn-sheet-action.btn-sheet-action--active { background: var(--accent); color: #fff; }
+.sheet-footer button.btn-sheet-action.btn-sheet-action--active { background: var(--accent); color: var(--accent-on); }

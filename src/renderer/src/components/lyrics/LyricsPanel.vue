@@ -635,6 +635,7 @@ export default {
   text-align: center;
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.45);
+  padding-inline: 8px;
 }
 
 .lyrics-panel__sync-label--resettable {

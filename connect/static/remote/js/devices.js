@@ -10,6 +10,7 @@
 
 import { sendCommand, fetchDevices, fetchDeviceVolume } from './api.js';
 import { state } from './state.js';
+import { paintRange } from './range.js';
 
 const TYPE_ICONS = {
   sonos: 'mdi-speaker-wireless',
@@ -154,13 +155,16 @@ export async function openDevicePicker() {
       list.appendChild(volumeRow);
 
       const slider = volumeRow.querySelector('input');
+      paintRange(slider);
       fetchDeviceVolume(device.type, device.name)
         .then(({ volume }) => {
           if (volume == null) return; // stays disabled — e.g. a DLNA renderer without volume support
           slider.value = String(volume);
           slider.disabled = false;
+          paintRange(slider);
         })
         .catch(() => {});
+      slider.addEventListener('input', () => paintRange(slider));
       slider.addEventListener('change', () => {
         sendCommand('set-device-volume', { deviceType: device.type, name: device.name, volume: Number(slider.value) });
       });

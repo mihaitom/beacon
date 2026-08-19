@@ -762,4 +762,21 @@ export default {
 .now-playing--compact .now-playing__visualizer-row--visible {
   height: 64px;
 }
+
+/* Title/artist/album otherwise inherit the desktop clamp()s above verbatim
+ * — reasonable there, but on the compact container's much narrower/shorter
+ * cqw/cqh this landed with artist/album reading oversized next to a title
+ * that, by comparison, could afford to be a touch bigger itself. Same
+ * compound-selector-over-Vuetify-utility reasoning as the base rules above. */
+.now-playing--compact .now-playing__title {
+  font-size: clamp(1.2rem, min(2.4cqw, 9cqh), 2.75rem);
+}
+
+.now-playing--compact .now-playing__info .now-playing__artist-link {
+  font-size: clamp(0.8rem, min(2.4cqw, 3.2cqh), 1.5rem);
+}
+
+.now-playing--compact .now-playing__info .now-playing__album-link {
+  font-size: clamp(0.68rem, min(1.8cqw, 2.4cqh), 1rem);
+}
 </style>
