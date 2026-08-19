@@ -3,27 +3,38 @@
     <div class="detail-header__backdrop" :style="backdropStyle" />
     <div class="detail-header__scrim" />
     <div v-if="starred !== null || $slots['top-right']" class="detail-header__top-right">
-      <v-rating
-        v-if="rating !== null"
-        :model-value="rating"
-        length="5"
-        size="large"
-        density="compact"
-        active-color="primary"
-        hover
-        clearable
-        class="detail-header__rating"
-        @update:model-value="$emit('set-rating', $event)"
-      />
-      <v-btn
-        v-if="starred !== null"
-        :icon="starred ? 'mdi-heart' : 'mdi-heart-outline'"
-        :color="starred ? 'primary' : undefined"
-        variant="text"
-        :title="$t(starred ? 'library.unstar' : 'library.star')"
-        @click="$emit('toggle-star')"
-      />
-      <slot name="top-right" />
+      <!-- Its own row, separate from the #top-right slot below — rating/
+       - heart are icon-sized controls that always belong together on one
+       - line; slot content (an artist page's external-link icons, a
+       - playlist's edit/delete buttons) is a different, often wider group
+       - that reads better stacked under them than crammed onto the same
+       - line. v-if guards it so an empty row (e.g. a playlist, which has
+       - neither) doesn't reserve a gap for nothing. -->
+      <div v-if="rating !== null || starred !== null" class="detail-header__top-right-row">
+        <v-rating
+          v-if="rating !== null"
+          :model-value="rating"
+          length="5"
+          size="large"
+          density="compact"
+          active-color="primary"
+          hover
+          clearable
+          class="detail-header__rating"
+          @update:model-value="$emit('set-rating', $event)"
+        />
+        <v-btn
+          v-if="starred !== null"
+          :icon="starred ? 'mdi-heart' : 'mdi-heart-outline'"
+          :color="starred ? 'primary' : undefined"
+          variant="text"
+          :title="$t(starred ? 'library.unstar' : 'library.star')"
+          @click="$emit('toggle-star')"
+        />
+      </div>
+      <div v-if="$slots['top-right']" class="detail-header__top-right-row">
+        <slot name="top-right" />
+      </div>
     </div>
     <div class="detail-header__content">
       <cover-art
@@ -136,6 +147,14 @@ export default {
   right: 16px;
   z-index: 2;
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.detail-header__top-right-row {
+  display: flex;
+  align-items: center;
   gap: 4px;
 }
 

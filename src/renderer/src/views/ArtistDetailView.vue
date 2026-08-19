@@ -11,6 +11,35 @@
       @toggle-star="toggleStar"
       @set-rating="setRating"
     >
+      <!-- v-if on the template tag itself, not just the buttons inside —
+       - DetailHeader.vue only renders its #top-right wrapper (and its own
+       - row for this slot specifically, see that component's own comment)
+       - when $slots['top-right'] is truthy, which providing this slot
+       - always would regardless of externalLinks, even with nothing
+       - visible inside it (a v-for over an empty array still counts as
+       - slot content). This way, no links yet (still loading, or nothing
+       - found) means the slot isn't provided at all, same as before any of
+       - this existed. -->
+      <template v-if="externalLinks.length" #top-right>
+        <v-btn
+          v-for="link in externalLinks"
+          :key="link.key"
+          icon
+          size="small"
+          variant="text"
+          :href="link.url"
+          target="_blank"
+          rel="noopener"
+          :title="$t('library.viewOnService', { service: link.name })"
+        >
+          <img
+            :src="link.icon"
+            :alt="link.name"
+            class="external-link-icon"
+            :class="{ 'external-link-icon--invert': link.invert }"
+          />
+        </v-btn>
+      </template>
       <template #meta>
         {{ artist.albumCount }}
         {{ artist.albumCount === 1 ? $t('library.album1') : $t('library.albumsN') }} ·
@@ -65,6 +94,11 @@ import DetailHeader from '@/components/library/DetailHeader.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
 import SongTable from '@/components/library/SongTable.vue'
 import PageLoader from '@/components/PageLoader.vue'
+import { getArtistImages, getArtistLinks } from '@/services/connect/recommendations'
+import {
+  toExternalLinkList,
+  type ExternalLinkKey,
+} from '@/components/library/externalArtistLinks'
 import type { Song } from '@/types/library'
 
 export default {
@@ -75,6 +109,13 @@ export default {
       artist: null as Awaited<ReturnType<ReturnType<typeof useLibraryStore>['fetchArtist']>> | null,
       topSongs: [] as Song[],
       loadingTopSongs: false,
+      // Keyed by externalArtistLinks.ts's own keys — Deezer's url comes
+      // from a different endpoint (getArtistImages(), shared with
+      // HomeView.vue's own lookup) than the other six (getArtistLinks(),
+      // MusicBrainz's own url-rels), merged into one map here since the
+      // template only cares "is there a url for this key", not which
+      // endpoint it came from.
+      externalLinkUrls: {} as Partial<Record<ExternalLinkKey, string>>,
     }
   },
   computed: {
@@ -87,6 +128,9 @@ export default {
     totalSongCount() {
       return this.artist?.albums.reduce((sum, album) => sum + album.songCount, 0) ?? 0
     },
+    externalLinks() {
+      return toExternalLinkList(this.externalLinkUrls)
+    },
   },
   created() {
     this.loadArtist()
@@ -98,6 +142,7 @@ export default {
     async loadArtist() {
       const id = this.$route.params.id as string
       this.topSongs = []
+      this.externalLinkUrls = {}
       // A newer navigation may resolve before this one, or move the route
       // on while a fetch is still in flight — the `$route.params.id === id`
       // checks below make sure a slower, now-stale response can't overwrite
@@ -112,6 +157,7 @@ export default {
       }
       if (this.$route.params.id !== id) return
       this.artist = artist
+      void this.loadExternalLinks(artist.name, id)
 
       this.loadingTopSongs = true
       try {
@@ -123,6 +169,39 @@ export default {
       } finally {
         if (this.$route.params.id === id) this.loadingTopSongs = false
       }
+    },
+    // Fired-and-forgotten by loadArtist() rather than awaited inline — these
+    // are nice-to-have icon buttons, not something the rest of the page
+    // should wait on, and a lookup failure (or nothing found) should just
+    // leave them hidden rather than surface an error the user can't do
+    // anything about. Independent of the recommendations Settings toggle:
+    // that one exists to avoid *unasked-for* background lookups for artists
+    // nobody's looking at (HomeView.vue's shelves); this is a single,
+    // on-demand lookup for the one artist page actually open right now, not
+    // a new category of thing being sent out. Promise.allSettled, not
+    // Promise.all — the Deezer and MusicBrainz-links lookups are
+    // independent endpoints; one failing shouldn't hide the other's
+    // results too.
+    async loadExternalLinks(name: string, id: string) {
+      const [images, links] = await Promise.allSettled([
+        getArtistImages([name]),
+        getArtistLinks([name]),
+      ])
+      if (this.$route.params.id !== id) return
+
+      const urls: Partial<Record<ExternalLinkKey, string>> = {}
+      if (images.status === 'fulfilled') {
+        const deezerLink = images.value[name]?.link
+        if (deezerLink) urls.deezer = deezerLink
+      } else {
+        console.error('[artist-detail] Deezer link lookup failed:', images.reason)
+      }
+      if (links.status === 'fulfilled') {
+        Object.assign(urls, links.value[name])
+      } else {
+        console.error('[artist-detail] Artist links lookup failed:', links.reason)
+      }
+      this.externalLinkUrls = urls
     },
     async toggleStar() {
       if (!this.artist) return
@@ -162,5 +241,15 @@ export default {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
+}
+
+.external-link-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.external-link-icon--invert {
+  filter: invert(1);
 }
 </style>

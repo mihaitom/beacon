@@ -384,7 +384,242 @@ async def test_get_artist_images_fetches_multiple_names_concurrently():
     }
 
 
-# ── GET /recommendations/similar-artists, /artist-images ────────────────
+# ── get_artist_links ──────────────────────────────────────────────────────
+
+
+def _mb_url_rels_response(url: str, relations: list[dict]) -> httpx.Response:
+    return httpx.Response(
+        200, json={"relations": relations}, request=httpx.Request("GET", url)
+    )
+
+
+def _url_rel(rel_type: str, url: str) -> dict:
+    return {"type": rel_type, "url": {"resource": url}}
+
+
+async def test_get_artist_links_cache_hit_skips_network():
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "mbid_by_name": {"radiohead": "mbid-1"},
+                    "links_by_mbid": {"mbid-1": {"spotify": "https://open.spotify.com/artist/x"}},
+                },
+                f,
+            )
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+            result = await recommendations.get_artist_links(["Radiohead"])
+
+    assert result == {"Radiohead": {"spotify": "https://open.spotify.com/artist/x"}}
+    client.get.assert_not_called()
+
+
+async def test_get_artist_links_no_mbid_skips_url_rels_call():
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"mbid_by_name": {"obscure act": None}}, f)
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+            result = await recommendations.get_artist_links(["Obscure Act"])
+
+    assert result == {"Obscure Act": {}}
+    client.get.assert_not_called()
+
+
+async def test_get_artist_links_distinguishes_hosts_sharing_a_musicbrainz_type():
+    """The actual bug this exists to avoid — confirmed live against
+    Radiohead's real MusicBrainz entry: "free streaming" covers both
+    Spotify and Deezer, "streaming" covers Apple Music and TIDAL together.
+    Only the URL host tells them apart."""
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+
+            def fake_get(url, params=None):
+                if params and "inc" in params:
+                    return _mb_url_rels_response(
+                        url,
+                        [
+                            _url_rel("free streaming", "https://open.spotify.com/artist/spot1"),
+                            _url_rel("free streaming", "https://www.deezer.com/artist/123"),
+                            _url_rel("streaming", "https://music.apple.com/gb/artist/657515"),
+                            _url_rel("streaming", "https://tidal.com/artist/64518"),
+                            _url_rel("youtube", "https://www.youtube.com/channel/abc"),
+                            _url_rel("discogs", "https://www.discogs.com/artist/3840"),
+                            _url_rel("official homepage", "http://www.radiohead.com/"),
+                        ],
+                    )
+                return _mb_response(url, "mbid-1")
+
+            client.get = AsyncMock(side_effect=fake_get)
+            result = await recommendations.get_artist_links(["Radiohead"])
+
+    assert result == {
+        "Radiohead": {
+            "musicbrainz": "https://musicbrainz.org/artist/mbid-1",
+            "spotify": "https://open.spotify.com/artist/spot1",
+            "apple_music": "https://music.apple.com/gb/artist/657515",
+            "tidal": "https://tidal.com/artist/64518",
+            "youtube": "https://www.youtube.com/channel/abc",
+            "discogs": "https://www.discogs.com/artist/3840",
+        }
+    }
+
+
+async def test_get_artist_links_caches_result_by_mbid():
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+
+            def fake_get(url, params=None):
+                if params and "inc" in params:
+                    return _mb_url_rels_response(
+                        url, [_url_rel("youtube", "https://www.youtube.com/channel/abc")]
+                    )
+                return _mb_response(url, "mbid-1")
+
+            client.get = AsyncMock(side_effect=fake_get)
+            await recommendations.get_artist_links(["Radiohead"])
+
+        with open(path, encoding="utf-8") as f:
+            cache = json.load(f)
+        assert cache["links_by_mbid"]["mbid-1"] == {
+            "musicbrainz": "https://musicbrainz.org/artist/mbid-1",
+            "youtube": "https://www.youtube.com/channel/abc",
+        }
+
+
+async def test_get_artist_links_no_matching_hosts_returns_just_musicbrainz():
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+
+            def fake_get(url, params=None):
+                if params and "inc" in params:
+                    return _mb_url_rels_response(
+                        url, [_url_rel("official homepage", "http://www.radiohead.com/")]
+                    )
+                return _mb_response(url, "mbid-1")
+
+            client.get = AsyncMock(side_effect=fake_get)
+            result = await recommendations.get_artist_links(["Radiohead"])
+
+    assert result == {"Radiohead": {"musicbrainz": "https://musicbrainz.org/artist/mbid-1"}}
+
+
+async def test_get_artist_links_keeps_musicbrainz_link_when_url_rels_call_fails():
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+
+            def fake_get(url, params=None):
+                if params and "inc" in params:
+                    raise httpx.ConnectError("unreachable", request=httpx.Request("GET", url))
+                return _mb_response(url, "mbid-1")
+
+            client.get = AsyncMock(side_effect=fake_get)
+            result = await recommendations.get_artist_links(["Radiohead"])
+
+    assert result == {"Radiohead": {"musicbrainz": "https://musicbrainz.org/artist/mbid-1"}}
+
+
+# ── get_artist_links_by_mbid ─────────────────────────────────────────────
+
+
+async def test_get_artist_links_by_mbid_skips_resolve_mbid_entirely():
+    """The whole point — a caller with a trusted MBID already on hand
+    (HomeView.vue's shelf, from ListenBrainz Labs) shouldn't pay for a
+    redundant name-search round trip resolve_mbid() would otherwise need."""
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+            patch.object(recommendations, "resolve_mbid") as resolve_mbid,
+        ):
+            client.get = AsyncMock(
+                side_effect=lambda url, params=None: _mb_url_rels_response(
+                    url, [_url_rel("youtube", "https://www.youtube.com/channel/abc")]
+                )
+            )
+            result = await recommendations.get_artist_links_by_mbid(["mbid-1"])
+
+    resolve_mbid.assert_not_called()
+    assert result == {
+        "mbid-1": {
+            "musicbrainz": "https://musicbrainz.org/artist/mbid-1",
+            "youtube": "https://www.youtube.com/channel/abc",
+        }
+    }
+
+
+async def test_get_artist_links_by_mbid_cache_hit_skips_network():
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(
+                {"links_by_mbid": {"mbid-1": {"spotify": "https://open.spotify.com/artist/x"}}},
+                f,
+            )
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+            result = await recommendations.get_artist_links_by_mbid(["mbid-1"])
+
+    assert result == {"mbid-1": {"spotify": "https://open.spotify.com/artist/x"}}
+    client.get.assert_not_called()
+
+
+async def test_get_artist_links_by_mbid_multiple_mbids():
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+
+            def fake_get(url, params=None):
+                mbid = url.rsplit("/", 1)[-1]
+                return _mb_url_rels_response(
+                    url, [_url_rel("youtube", f"https://www.youtube.com/channel/{mbid}")]
+                )
+
+            client.get = AsyncMock(side_effect=fake_get)
+            result = await recommendations.get_artist_links_by_mbid(["mbid-1", "mbid-2"])
+
+    assert result == {
+        "mbid-1": {
+            "musicbrainz": "https://musicbrainz.org/artist/mbid-1",
+            "youtube": "https://www.youtube.com/channel/mbid-1",
+        },
+        "mbid-2": {
+            "musicbrainz": "https://musicbrainz.org/artist/mbid-2",
+            "youtube": "https://www.youtube.com/channel/mbid-2",
+        },
+    }
+
+
+# ── GET /recommendations/similar-artists, /artist-images, /artist-links ──
 
 
 def test_similar_artists_endpoint(client):
@@ -407,3 +642,23 @@ def test_artist_images_endpoint(client):
     assert r.status_code == 200
     assert r.json() == {"images": {"Portishead": {"image": "img", "link": "link"}}}
     fake.assert_awaited_once_with(["Portishead"])
+
+
+def test_artist_links_endpoint(client):
+    fake = AsyncMock(return_value={"Radiohead": {"spotify": "https://open.spotify.com/artist/x"}})
+    with patch("routes.recommendations.get_artist_links", fake):
+        r = client.get("/recommendations/artist-links?name=Radiohead")
+
+    assert r.status_code == 200
+    assert r.json() == {"links": {"Radiohead": {"spotify": "https://open.spotify.com/artist/x"}}}
+    fake.assert_awaited_once_with(["Radiohead"])
+
+
+def test_artist_links_by_mbid_endpoint(client):
+    fake = AsyncMock(return_value={"mbid-1": {"spotify": "https://open.spotify.com/artist/x"}})
+    with patch("routes.recommendations.get_artist_links_by_mbid", fake):
+        r = client.get("/recommendations/artist-links-by-mbid?mbid=mbid-1")
+
+    assert r.status_code == 200
+    assert r.json() == {"links": {"mbid-1": {"spotify": "https://open.spotify.com/artist/x"}}}
+    fake.assert_awaited_once_with(["mbid-1"])

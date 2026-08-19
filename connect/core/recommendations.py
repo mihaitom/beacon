@@ -22,12 +22,22 @@ metadata page: Deezer's public search API (api.deezer.com/search/artist),
 also no API key. MusicBrainz stays as the fallback link (via the mbid
 get_similar_artists() already returned) for whatever Deezer doesn't have.
 
-All three are cached to disk (see _load_cache()/_save_cache(), persisted
+A fourth (get_artist_links()) is unrelated to any of the above and doesn't
+care whether an artist is in the library at all — it reuses resolve_mbid()
+to pull the artist's own MusicBrainz page plus whichever of Spotify/Apple
+Music/TIDAL/YouTube/Discogs it has on file, out of MusicBrainz's own
+url-rels relations, for an artist page ArtistDetailView.vue is already
+showing, via a second MusicBrainz call beyond the name search (see
+_fetch_artist_links()).
+
+All four are cached to disk (see _load_cache()/_save_cache(), persisted
 the same CONNECT_DATA_DIR way as delivery/credentials.py/
 core/radio_stations.py) — an artist's MBID never changes, and neither
-similarity nor a Deezer artist photo shifts meaningfully faster than
-_SIMILAR_TTL_SECONDS. Without this, every single Home refresh would
-re-resolve and re-fetch the same handful of artists from scratch.
+similarity, a Deezer artist photo, nor these streaming links shift
+meaningfully faster than _SIMILAR_TTL_SECONDS would matter for (they aren't
+even time-checked — cached once, kept until the cache file itself is
+cleared). Without this, every single Home refresh would re-resolve and
+re-fetch the same handful of artists from scratch.
 
 MusicBrainz's own documented etiquette caps clients at roughly 1
 request/second, identified by User-Agent — _mb_lock/_mb_last_call enforce
@@ -41,6 +51,7 @@ import json
 import logging
 import os
 import time
+from urllib.parse import urlparse
 
 import httpx
 
@@ -56,6 +67,22 @@ _PATH = os.path.join(_DATA_DIR, "recommendations_cache.json")
 _MB_SEARCH_URL = "https://musicbrainz.org/ws/2/artist/"
 _LB_SIMILAR_URL = "https://labs.api.listenbrainz.org/similar-artists/json"
 _DEEZER_SEARCH_URL = "https://api.deezer.com/search/artist"
+
+# Host -> our own short service key, for get_artist_links() below.
+# MusicBrainz's own relation `type` doesn't reliably distinguish these —
+# confirmed live against a real artist (Radiohead's MBID): "free streaming"
+# covers both Spotify and Deezer, "streaming" covers Apple Music/Amazon/
+# TIDAL/Qobuz together, and Apple Music can *also* show up a second time
+# under "purchase for download". The URL's own host is the only thing that
+# actually tells them apart. www. is stripped before matching (see
+# _fetch_artist_links()), so listing both forms here isn't needed.
+_LINK_HOSTS = {
+    "open.spotify.com": "spotify",
+    "music.apple.com": "apple_music",
+    "tidal.com": "tidal",
+    "youtube.com": "youtube",
+    "discogs.com": "discogs",
+}
 # One of a fixed enum ListenBrainz Labs validates against — confirmed live
 # (the API 400s and lists every valid value otherwise; not something to
 # guess from memory, and not documented anywhere obvious). The longest
@@ -67,7 +94,12 @@ _LB_ALGORITHM = (
     "limit_100_filter_True_skip_30"
 )
 
-_SIMILAR_TTL_SECONDS = 30 * 24 * 60 * 60  # 30 days
+# Was 30 days — HomeView.vue's own seed selection is now randomized (see
+# pickSeedArtistNames()'s comment), so "Reroll" already varies the *seeds*
+# each time; a day-long TTL here means the *similarity results themselves*
+# stay reasonably fresh too, without re-hitting ListenBrainz Labs on every
+# single Home load for seeds that keep recurring.
+_SIMILAR_TTL_SECONDS = 24 * 60 * 60  # 24 hours
 _TIMEOUT = 15.0
 
 _client = httpx.AsyncClient(timeout=_TIMEOUT, headers={"User-Agent": USER_AGENT})
@@ -134,6 +166,114 @@ async def resolve_mbid(name: str) -> str | None:
     mbid_by_name[key] = mbid
     _save_cache(cache)
     return mbid
+
+
+async def _fetch_artist_links(mbid: str) -> dict[str, str]:
+    """One MusicBrainz url-rels lookup for `mbid` — a second, separate call
+    from resolve_mbid()'s own search request, since MusicBrainz's search
+    endpoint doesn't support inc=url-rels, only a direct lookup-by-id does.
+    Shares resolve_mbid()'s _mb_lock/_mb_last_call rate limiting — both hit
+    musicbrainz.org, one shared budget, not a fresh one each.
+
+    See _LINK_HOSTS' own comment for why matching is host-based rather than
+    trusting MusicBrainz's own relation `type`."""
+    # MusicBrainz's own artist page — not from url-rels (an artist has no
+    # relation *to itself*), just the same MBID this whole lookup already
+    # required, same URL shape HomeView.vue's own fallback link already
+    # builds client-side for artists not yet in the library. Built before
+    # the network call below, and kept even if that call fails — an MBID
+    # that resolved at all is enough for this one, unlike the five services
+    # below it, which genuinely depend on the url-rels response.
+    links: dict[str, str] = {"musicbrainz": f"https://musicbrainz.org/artist/{mbid}"}
+
+    global _mb_last_call
+    async with _mb_lock:
+        wait = _MB_MIN_INTERVAL - (time.monotonic() - _mb_last_call)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        try:
+            r = await _client.get(
+                f"{_MB_SEARCH_URL}{mbid}", params={"inc": "url-rels", "fmt": "json"}
+            )
+            r.raise_for_status()
+            data = r.json()
+        except httpx.HTTPError as e:
+            logger.warning(f"[recommendations] MusicBrainz url-rels lookup failed for {mbid}: {e}")
+            return links
+        finally:
+            _mb_last_call = time.monotonic()
+
+    for rel in data.get("relations", []):
+        url = (rel.get("url") or {}).get("resource")
+        if not url:
+            continue
+        host = urlparse(url).netloc.lower().removeprefix("www.")
+        service = _LINK_HOSTS.get(host)
+        # First match wins — an artist can have more than one URL under the
+        # same generic MusicBrainz relation type (e.g. two "streaming"
+        # entries that both happen to be Apple Music, regional storefronts),
+        # and there's no signal here for which one is more "correct" than
+        # the other.
+        if service and service not in links:
+            links[service] = url
+    return links
+
+
+async def _get_links_for_mbid(mbid: str) -> dict[str, str]:
+    """Cache-first wrapper around _fetch_artist_links() for one mbid —
+    shared by get_artist_links() and get_artist_links_by_mbid() below.
+
+    A fresh load/mutate/save around just this one mbid, not a shared cache
+    dict loaded once up front for a whole batch and saved once at the end
+    (the more obvious-looking shape, matching get_artist_images()'s own
+    batch) — when called from get_artist_links(), resolve_mbid() (called
+    per name, right before this) does its own independent load/save cycle
+    for the same underlying file. Holding a long-lived dict across those
+    calls would go stale the moment resolve_mbid() persists a newly-
+    resolved MBID mid-loop, and this function's own eventual save would
+    silently overwrite that with its own now-outdated snapshot — undoing
+    the very lookup that just happened."""
+    cache = _load_cache()
+    links_by_mbid = cache.setdefault("links_by_mbid", {})
+    if mbid in links_by_mbid:
+        return links_by_mbid[mbid]
+    links = await _fetch_artist_links(mbid)
+    links_by_mbid[mbid] = links
+    _save_cache(cache)
+    return links
+
+
+async def get_artist_links(names: list[str]) -> dict[str, dict[str, str]]:
+    """MusicBrainz's own artist page plus whichever of Spotify/Apple Music/
+    TIDAL/YouTube/Discogs it has on file, for each of `names`, cache-first
+    (keyed by MBID, since that's the stable identity — resolve_mbid()
+    already handles the name -> MBID half with its own cache), keyed back
+    out by the exact name string passed in, same convention as
+    get_artist_images(). A name with no MBID at all comes back as `{}` — no
+    musicbrainz link either, since there's nothing to link to; a resolved
+    MBID always has at least the musicbrainz entry, even if MusicBrainz has
+    none of the other five on file for it."""
+    results: dict[str, dict[str, str]] = {}
+    for name in names:
+        mbid = await resolve_mbid(name)
+        results[name] = await _get_links_for_mbid(mbid) if mbid else {}
+    return results
+
+
+async def get_artist_links_by_mbid(mbids: list[str]) -> dict[str, dict[str, str]]:
+    """Same cache/fetch mechanism as get_artist_links(), for callers that
+    already have a trusted MBID and shouldn't pay for a redundant
+    resolve_mbid() name-search round trip to re-derive one — HomeView.vue's
+    "New to explore" shelf gets these straight from ListenBrainz Labs' own
+    similar-artists response (SimilarArtist.mbid), which is strictly better
+    to trust than re-resolving from a name search that could, in principle,
+    land on a different (mis-tagged, or just ambiguously-named) artist
+    entirely. Keyed back out by MBID rather than name, since that's what
+    the caller already has on hand here — no name to key by at all."""
+    results: dict[str, dict[str, str]] = {}
+    for mbid in mbids:
+        results[mbid] = await _get_links_for_mbid(mbid)
+    return results
 
 
 async def _fetch_similar_batch(mbids: list[str]) -> dict[str, list[dict]]:

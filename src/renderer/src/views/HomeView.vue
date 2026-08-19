@@ -99,8 +99,10 @@ import { useRecommendationsStore } from '@/stores/recommendations'
 import {
   getSimilarArtists,
   getArtistImages,
+  getArtistLinksByMbid,
   type SimilarArtist,
 } from '@/services/connect/recommendations'
+import { type ExternalLinkKey } from '@/components/library/externalArtistLinks'
 import type { SimilarArtistDisplay } from '@/components/library/SimilarArtistsShelf.vue'
 import HeroBand from '@/components/home/HeroBand.vue'
 import AlbumShelf from '@/components/library/AlbumShelf.vue'
@@ -278,11 +280,15 @@ export default {
       .finally(() => (this.loadingTopSongs = false))
   },
   methods: {
-    // Up to MAX_SEED_ARTISTS distinct artist names from `albums`, in the
-    // order they appear — the frontend-side half of "seed from what's
-    // actually been played", the backend half being
-    // core/recommendations.py's get_similar_artists() not knowing or
-    // caring where its seed names came from.
+    // A random MAX_SEED_ARTISTS-sized sample of the distinct artist names
+    // in `albums` — the frontend-side half of "seed from what's actually
+    // been played", the backend half being core/recommendations.py's
+    // get_similar_artists() not knowing or caring where its seed names
+    // came from. Randomized (a shuffle-then-take, not just always the
+    // first N by frequent-album order, which is what this used to do) so
+    // the Reroll button actually rerolls into something different instead
+    // of deterministically landing on the exact same seeds — and therefore
+    // the exact same (cached) similar-artists result — every time.
     pickSeedArtistNames(albums: Album[]): string[] {
       const seen = new Set<string>()
       const names: string[] = []
@@ -291,9 +297,12 @@ export default {
         if (seen.has(key)) continue
         seen.add(key)
         names.push(album.artist)
-        if (names.length >= MAX_SEED_ARTISTS) break
       }
-      return names
+      for (let i = names.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[names[i], names[j]] = [names[j]!, names[i]!]
+      }
+      return names.slice(0, MAX_SEED_ARTISTS)
     },
     /** Discover shelf — real similar-artist suggestions (ListenBrainz, via
      * connect) when there's enough to seed from and the user hasn't opted
@@ -358,22 +367,40 @@ export default {
       }
 
       const notOwnedCapped = notOwned.slice(0, 20)
-      // Deezer photo + a real artist page (falls back to the MusicBrainz
-      // link already on hand when Deezer has no exact-name match — see
-      // getArtistImages()) — best-effort, a lookup failure here shouldn't
-      // blank out the whole shelf, just leave it image-less.
-      let images: Awaited<ReturnType<typeof getArtistImages>> = {}
-      try {
-        images = await getArtistImages(notOwnedCapped.map((a) => a.name))
-      } catch (error) {
-        console.error('[home] Artist image lookup failed:', error)
+      // Deezer photo + link, and MusicBrainz's own page plus whichever of
+      // Spotify/Apple Music/TIDAL/YouTube/Discogs it has on file (the same
+      // set ArtistDetailView.vue shows for an owned artist) — two
+      // independent lookups, Promise.allSettled so one failing doesn't
+      // blank out what the other found. getArtistLinksByMbid(), not
+      // getArtistLinks(): these artists already carry a trusted MBID
+      // straight from ListenBrainz Labs (getSimilarArtists() above), so a
+      // name-based lookup would just make the backend redundantly re-derive
+      // one it doesn't need to.
+      const [images, linksByMbid] = await Promise.allSettled([
+        getArtistImages(notOwnedCapped.map((a) => a.name)),
+        getArtistLinksByMbid(notOwnedCapped.map((a) => a.mbid)),
+      ])
+      if (images.status === 'rejected') {
+        console.error('[home] Artist image lookup failed:', images.reason)
+      }
+      if (linksByMbid.status === 'rejected') {
+        console.error('[home] Artist links lookup failed:', linksByMbid.reason)
       }
       this.newArtistDiscoveries = notOwnedCapped.map((artist) => {
-        const enrichment = images[artist.name]
+        const enrichment = images.status === 'fulfilled' ? images.value[artist.name] : undefined
+        const links: Partial<Record<ExternalLinkKey, string>> =
+          linksByMbid.status === 'fulfilled' ? { ...linksByMbid.value[artist.mbid] } : {}
+        if (enrichment?.link) links.deezer = enrichment.link
+        // Same last-resort fallback as before this existed — a plain
+        // MusicBrainz page link even when the by-mbid lookup above came
+        // back empty (a transient failure, or genuinely nothing on file),
+        // so there's always at least one way to reach the artist rather
+        // than a discovery card with zero working links.
+        if (!links.musicbrainz) links.musicbrainz = `https://musicbrainz.org/artist/${artist.mbid}`
         return {
           ...artist,
           imageUrl: enrichment?.image ?? null,
-          link: enrichment?.link ?? `https://musicbrainz.org/artist/${artist.mbid}`,
+          links,
         }
       })
       const capped = owned.slice(0, DISCOVER_SHELF_SIZE)

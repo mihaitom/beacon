@@ -25,22 +25,16 @@
      - HomeView.vue's lookup found one, plain fallback icon otherwise (no
      - cover-art placeholder to fall back to like an owned artist has —
      - CoverArt.vue's own coverArtId path never applies here, only
-     - imageUrl). Links to the Deezer artist page when available — a real
-     - page with music to browse, not just metadata — falling back to
-     - MusicBrainz's own page (a real, deterministic URL for an MBID connect
-     - just fetched *from* MusicBrainz itself) when Deezer has no match.
-     - Either way, window.open() is intercepted by main/index.ts's
-     - setWindowOpenHandler -> shell.openExternal, same as
+     - imageUrl). The card itself isn't a link (unlike before) — the icon
+     - row below the name is, one per external service HomeView.vue's
+     - lookup found (same set, same icons, as ArtistDetailView.vue shows
+     - for an owned artist — see externalArtistLinks.ts), instead of
+     - picking a single destination (Deezer, or MusicBrainz as a fallback)
+     - on the artist's behalf. window.open() is intercepted by
+     - main/index.ts's setWindowOpenHandler -> shell.openExternal, same as
      - ServerLoginView.vue's Plex sign-in link. -->
     <div ref="row" class="similar-artists-shelf-row">
-      <a
-        v-for="artist in artists"
-        :key="artist.mbid"
-        :href="artist.link"
-        target="_blank"
-        rel="noopener"
-        class="similar-artists-card"
-      >
+      <div v-for="artist in artists" :key="artist.mbid" class="similar-artists-card">
         <cover-art
           :image-url="artist.imageUrl"
           :size="160"
@@ -51,7 +45,25 @@
         <div class="similar-artists-card-name text-body-2 mt-2 text-truncate">
           {{ artist.name }}
         </div>
-      </a>
+        <div class="similar-artists-card-links">
+          <a
+            v-for="link in externalLinks(artist.links)"
+            :key="link.key"
+            :href="link.url"
+            target="_blank"
+            rel="noopener"
+            class="similar-artists-card-link"
+            :title="$t('library.viewOnService', { service: link.name })"
+          >
+            <img
+              :src="link.icon"
+              :alt="link.name"
+              class="similar-artists-card-link-icon"
+              :class="{ 'similar-artists-card-link-icon--invert': link.invert }"
+            />
+          </a>
+        </div>
+      </div>
     </div>
   </section>
 </template>
@@ -59,15 +71,20 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import type { SimilarArtist } from '@/services/connect/recommendations'
+import {
+  toExternalLinkList,
+  type ExternalLinkKey,
+} from '@/components/library/externalArtistLinks'
 import CoverArt from './CoverArt.vue'
 
-/** SimilarArtist enriched with what HomeView.vue's own artist-images
- * lookup found (see discoverFromSimilarArtists()) — `link` always points
- * somewhere real (Deezer when found, MusicBrainz otherwise), never empty,
- * so this component never has to branch on which. */
+/** SimilarArtist enriched with what HomeView.vue's own artist-images +
+ * artist-links-by-mbid lookups found (see discoverFromSimilarArtists()) —
+ * `links` always has at least a musicbrainz entry (HomeView.vue's own
+ * last-resort fallback when nothing else came back), so this component
+ * never has to handle a totally-empty card. */
 export interface SimilarArtistDisplay extends SimilarArtist {
   imageUrl: string | null
-  link: string
+  links: Partial<Record<ExternalLinkKey, string>>
 }
 
 export default {
@@ -92,6 +109,9 @@ export default {
       const row = this.$refs.row as HTMLElement | undefined
       if (!row) return
       row.scrollBy({ left: direction * row.clientWidth * 0.8, behavior: 'smooth' })
+    },
+    externalLinks(urls: Partial<Record<ExternalLinkKey, string>>) {
+      return toExternalLinkList(urls)
     },
   },
 }
@@ -128,11 +148,7 @@ export default {
 }
 
 .similar-artists-card {
-  display: block;
   width: 160px;
-  color: inherit;
-  text-decoration: none;
-  cursor: pointer;
 }
 
 .similar-artists-card-art {
@@ -146,7 +162,47 @@ export default {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
 }
 
-.similar-artists-card:hover .similar-artists-card-name {
-  color: rgb(var(--v-theme-primary));
+/* Centered, not left-aligned under the art like AlbumCard.vue's own title
+ * — a name alone reads fine flush-left, but with the links row right
+ * beneath it (also centered, see below), a left-aligned name over a
+ * centered icon row looked lopsided. */
+.similar-artists-card-name {
+  text-align: center;
+}
+
+.similar-artists-card-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.similar-artists-card-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  opacity: 0.7;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.similar-artists-card-link:hover {
+  opacity: 1;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.similar-artists-card-link-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.similar-artists-card-link-icon--invert {
+  filter: invert(1);
 }
 </style>

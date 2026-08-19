@@ -115,6 +115,7 @@ export default {
     songRadioError: 'Impossible de démarrer la radio du titre.',
     artistRadio: "Radio de l'artiste",
     artistRadioError: "Impossible de démarrer la radio de l'artiste.",
+    viewOnService: 'Voir sur {service}',
     selected: 'sélectionné(s)',
     clearSelection: 'Effacer la sélection',
     star: 'Ajouter aux favoris',

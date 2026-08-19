@@ -116,6 +116,7 @@ export default {
     songRadioError: 'No se pudo iniciar la radio de la canción.',
     artistRadio: 'Radio del artista',
     artistRadioError: 'No se pudo iniciar la radio del artista.',
+    viewOnService: 'Ver en {service}',
     selected: 'seleccionado(s)',
     clearSelection: 'Borrar selección',
     star: 'Añadir a favoritos',
