@@ -127,6 +127,7 @@ export default {
   nowPlaying: {
     nothingPlaying: "Rien n'est en cours de lecture actuellement.",
     toggleVisualizer: 'Afficher/masquer le visualiseur',
+    toggleFullscreen: 'Basculer le plein écran',
   },
   lyrics: {
     title: 'Paroles',

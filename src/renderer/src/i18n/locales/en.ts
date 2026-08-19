@@ -127,6 +127,7 @@ export default {
   nowPlaying: {
     nothingPlaying: 'Nothing is playing right now.',
     toggleVisualizer: 'Show/hide visualizer',
+    toggleFullscreen: 'Toggle fullscreen',
   },
   lyrics: {
     title: 'Lyrics',

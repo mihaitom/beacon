@@ -128,6 +128,7 @@ export default {
   nowPlaying: {
     nothingPlaying: 'No se está reproduciendo nada ahora mismo.',
     toggleVisualizer: 'Mostrar/ocultar visualizador',
+    toggleFullscreen: 'Alternar pantalla completa',
   },
   lyrics: {
     title: 'Letra',

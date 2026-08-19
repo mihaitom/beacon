@@ -312,9 +312,20 @@ export default {
       const el = this.$refs.scrollEl as HTMLElement | undefined
       if (el) el.scrollTop = 0
     },
-    activeIndex(newIndex: number, oldIndex: number) {
-      if (newIndex < 0 || newIndex === oldIndex) return
-      this.$nextTick(() => this.scrollToActive())
+    // immediate: true — without it, this only ever fired on a *change*, so
+    // mounting straight into an already-loaded, mid-song position (opening
+    // this view partway through a track, now the common case since
+    // NowPlayingView.vue's own currentSong watcher preloads lyrics
+    // regardless of whether this panel is even open yet) left the scroll
+    // wherever it started until the *next* line boundary genuinely changed
+    // activeIndex — visibly sitting at the top for however long that took
+    // instead of opening already at the right place.
+    activeIndex: {
+      immediate: true,
+      handler(newIndex: number, oldIndex: number | undefined) {
+        if (newIndex < 0 || newIndex === oldIndex) return
+        this.$nextTick(() => this.scrollToActive())
+      },
     },
     // Freeze autoscroll for the duration of calibration — the list
     // creeping along while the user is trying to click a specific line

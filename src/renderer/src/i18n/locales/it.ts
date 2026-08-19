@@ -127,6 +127,7 @@ export default {
   nowPlaying: {
     nothingPlaying: "Al momento non c'è nulla in riproduzione.",
     toggleVisualizer: 'Mostra/nascondi visualizzatore',
+    toggleFullscreen: 'Attiva/disattiva schermo intero',
   },
   lyrics: {
     title: 'Testo',

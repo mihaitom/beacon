@@ -125,6 +125,7 @@ export default {
   nowPlaying: {
     nothingPlaying: 'Nichts spielt gerade.',
     toggleVisualizer: 'Visualisierung ein-/ausblenden',
+    toggleFullscreen: 'Vollbild umschalten',
   },
   lyrics: {
     title: 'Songtext',

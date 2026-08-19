@@ -1,5 +1,5 @@
 <template>
-  <div class="now-playing" :class="{ 'now-playing--compact': compact }">
+  <div ref="root" class="now-playing" :class="{ 'now-playing--compact': compact }">
     <!-- Full-bleed blurred artwork behind everything — same backdrop
      - language as DetailHeader.vue's hero cards (blur + scrim over the
      - item's own art). Two stacked layers so a song change crossfades
@@ -14,11 +14,36 @@
     <div class="now-playing__scrim" :style="ambientStyle" />
 
     <div v-if="hasPlayable" class="now-playing__toolbar">
+      <!-- PlayerBar.vue's own lyrics button (the normal way to reach this)
+       - is outside .now-playing entirely, so fullscreen — which only ever
+       - shows this element's own subtree, see toggleFullscreen()'s comment
+       - — hides it along with the rest of the app chrome. Only shown here
+       - while actually fullscreen (never true in compact mode either, see
+       - the fullscreen button's own guard below), so there's no redundant
+       - second lyrics button the rest of the time. -->
+      <v-btn
+        v-if="!compact && isFullscreen && currentSong"
+        icon="mdi-script-text-outline"
+        variant="text"
+        :title="$t('lyrics.title')"
+        @click="playbackStore.toggleLyricsDrawer()"
+      />
       <v-btn
         :icon="showVisualizer ? 'mdi-equalizer' : 'mdi-equalizer-outline'"
         variant="text"
         :title="$t('nowPlaying.toggleVisualizer')"
         @click="showVisualizer = !showVisualizer"
+      />
+      <!-- Not a mobile feature — MobileTransportControls.vue/the tab bar
+       - already own the phone's actual full screen; hiding *that* app
+       - chrome behind the Fullscreen API here wouldn't gain anything and
+       - isn't what "fullscreen" reads as on a phone anyway. -->
+      <v-btn
+        v-if="!compact"
+        :icon="isFullscreen ? 'mdi-fullscreen-exit' : 'mdi-fullscreen'"
+        variant="text"
+        :title="$t('nowPlaying.toggleFullscreen')"
+        @click="toggleFullscreen"
       />
     </div>
 
@@ -40,56 +65,68 @@
         :class="{ 'now-playing__content--split': hasPlayable && showLyrics }"
       >
         <template v-if="hasPlayable">
-          <div class="now-playing__primary">
-            <div class="now-playing__art-wrap">
-              <div class="now-playing__art-glow" :style="{ background: glowColor }" />
-              <cover-art
-                v-if="currentSong"
-                :cover-art-id="currentSong.coverArtId"
-                :size="artSize"
-                class="cover-shadow"
-              />
-              <!-- No cover-shadow/card background for a transparent icon
-               - (see radioIconIsTransparent) — a real card treatment
-               - around a logo that's just floating on transparency looks
-               - like a broken image (this app's own dark background
-               - showing through the "card" as a faint muddy tint) rather
-               - than a clean logo. -->
-              <cover-art
-                v-else
-                :image-url="radioFaviconSrc"
-                :size="artSize"
-                fallback-icon="mdi-radio"
-                :class="radioIconIsTransparent ? 'radio-cover-art--transparent' : 'cover-shadow'"
-              />
+          <!-- display: contents outside the portrait container query (see
+           - .now-playing__flip-card in <style>) — .now-playing__primary and
+           - the lyrics panel behave as direct flex children of
+           - .now-playing__content--split there, identical to before this
+           - wrapper existed. Only on a portrait/narrow-aspect stage does it
+           - become a real, positioned box: the "card" a 3D flip rotates,
+           - with the artwork+info as its front face and lyrics absolutely
+           - positioned as the back one — see that rule's own comment for
+           - why a flip instead of the side-by-side split's flex-wrap
+           - fallback there. -->
+          <div class="now-playing__flip-card">
+            <div class="now-playing__primary">
+              <div class="now-playing__art-wrap">
+                <div class="now-playing__art-glow" :style="{ background: glowColor }" />
+                <cover-art
+                  v-if="currentSong"
+                  :cover-art-id="currentSong.coverArtId"
+                  :size="artSize"
+                  class="cover-shadow"
+                />
+                <!-- No cover-shadow/card background for a transparent icon
+                 - (see radioIconIsTransparent) — a real card treatment
+                 - around a logo that's just floating on transparency looks
+                 - like a broken image (this app's own dark background
+                 - showing through the "card" as a faint muddy tint) rather
+                 - than a clean logo. -->
+                <cover-art
+                  v-else
+                  :image-url="radioFaviconSrc"
+                  :size="artSize"
+                  fallback-icon="mdi-radio"
+                  :class="radioIconIsTransparent ? 'radio-cover-art--transparent' : 'cover-shadow'"
+                />
+              </div>
+
+              <div class="now-playing__info">
+                <div class="eyebrow-label mb-2">{{ eyebrow }}</div>
+                <h1 class="detail-title now-playing__title mb-2">
+                  {{ currentSong?.title ?? playbackStore.radioStation?.name }}
+                </h1>
+                <router-link
+                  v-if="currentSong"
+                  :to="`/artists/${currentSong.artistId}`"
+                  class="text-h6 text-medium-emphasis now-playing__artist-link mb-2"
+                >
+                  {{ currentSong.artist }}
+                </router-link>
+                <div v-else class="text-h6 text-medium-emphasis mb-2" />
+                <router-link
+                  v-if="currentSong"
+                  :to="`/albums/${currentSong.albumId}`"
+                  class="text-body-2 text-medium-emphasis now-playing__album-link"
+                >
+                  {{ currentSong.album }}
+                </router-link>
+              </div>
             </div>
 
-            <div class="now-playing__info">
-              <div class="eyebrow-label mb-2">{{ eyebrow }}</div>
-              <h1 class="detail-title now-playing__title mb-2">
-                {{ currentSong?.title ?? playbackStore.radioStation?.name }}
-              </h1>
-              <router-link
-                v-if="currentSong"
-                :to="`/artists/${currentSong.artistId}`"
-                class="text-h6 text-medium-emphasis now-playing__artist-link mb-2"
-              >
-                {{ currentSong.artist }}
-              </router-link>
-              <div v-else class="text-h6 text-medium-emphasis mb-2" />
-              <router-link
-                v-if="currentSong"
-                :to="`/albums/${currentSong.albumId}`"
-                class="text-body-2 text-medium-emphasis now-playing__album-link"
-              >
-                {{ currentSong.album }}
-              </router-link>
-            </div>
+            <transition name="now-playing-lyrics">
+              <lyrics-panel v-if="showLyrics" variant="immersive" class="now-playing__lyrics" />
+            </transition>
           </div>
-
-          <transition name="now-playing-lyrics">
-            <lyrics-panel v-if="showLyrics" variant="immersive" class="now-playing__lyrics" />
-          </transition>
         </template>
 
         <span v-else class="text-medium-emphasis">{{ $t('nowPlaying.nothingPlaying') }}</span>
@@ -133,6 +170,7 @@ import LyricsPanel from '@/components/lyrics/LyricsPanel.vue'
 import AudioVisualizer from '@/components/player/AudioVisualizer.vue'
 import { extractDominantColor } from '@/services/colorExtractor'
 import { hasTransparency } from '@/services/imageTransparency'
+import type { Song } from '@/types/library'
 
 // Warm amber — the same signal color the app is named after (see main.ts's
 // 'beacon' theme) — used whenever there's nothing to extract a color from
@@ -201,6 +239,11 @@ export default {
       // before it's removed; see the visualizerActive watcher below.
       visualizerMounted: false,
       visualizerHideTimer: null as ReturnType<typeof setTimeout> | null,
+      // Tracks the real DOM state (via the fullscreenchange listener below),
+      // not just "did we ask for it" — the browser/OS can exit fullscreen
+      // on its own (Esc key, an OS-level shortcut), and the button's
+      // icon/title need to reflect that either way.
+      isFullscreen: false,
     }
   },
   computed: {
@@ -237,7 +280,7 @@ export default {
     artSize(): string {
       return this.compact
         ? 'clamp(120px, min(55cqh, 60cqw), 320px)'
-        : 'clamp(180px, min(60cqh, 45cqw), 900px)'
+        : 'clamp(180px, min(70cqh, 50cqw), 900px)'
     },
     // Backed by the same store flag PlayerBar's lyrics button drives
     // (playbackStore.lyricsDrawerOpen) instead of its own local state —
@@ -334,20 +377,41 @@ export default {
         if (url === this.radioFaviconSrc) this.radioIconIsTransparent = transparent
       },
     },
-    // Loads on entering lyrics mode, and again on every song change while
-    // already in it — see LyricsDrawer.vue's identical pair of watchers for
-    // why this is consumer-triggered rather than eager in the store itself.
+    // Also fires the instant lyrics are actually opened, in case the
+    // currentSong watcher below hasn't resolved yet (a fresh song whose
+    // fetch is still in flight) — ensureLoaded() is idempotent/cache-aware
+    // (see its own comment in stores/lyrics.ts), so calling it again here
+    // is a cheap no-op once the preload below has already landed.
     showLyrics(show: boolean) {
       if (show && this.currentSong) useLyricsStore().ensureLoaded(this.currentSong)
     },
-    currentSong(song) {
-      // Radio has no lyrics concept — fall back to the normal artwork view
-      // instead of being stuck showing lyrics for nothing.
-      if (!song) {
-        this.showLyrics = false
-        return
+    // Unconditional (not just "if already showing lyrics") and immediate —
+    // preloads every song's lyrics as soon as it becomes current, not only
+    // once the user actually opens the lyrics view. Without this, flipping
+    // the card over (see .now-playing__flip-card) showed its back face
+    // sitting on a loading state for however long the fetch took, instead
+    // of the lyrics already being there the moment the flip finishes.
+    currentSong: {
+      immediate: true,
+      handler(song: Song | null) {
+        // Radio has no lyrics concept — fall back to the normal artwork
+        // view instead of being stuck showing lyrics for nothing.
+        if (!song) {
+          this.showLyrics = false
+          return
+        }
+        useLyricsStore().ensureLoaded(song)
+      },
+    },
+    // Not expected in practice (the web/Docker build is the only place
+    // `compact` can even change live, by resizing the window across
+    // MobileLayout's breakpoint — Electron never shows the mobile layout at
+    // all) — but if it ever does happen mid-fullscreen, the button that
+    // would let the user back out is the exact thing compact mode just hid.
+    compact(isCompact: boolean) {
+      if (isCompact && document.fullscreenElement === this.$refs.root) {
+        void document.exitFullscreen()
       }
-      if (this.showLyrics) useLyricsStore().ensureLoaded(song)
     },
     showVisualizer(value: boolean) {
       try {
@@ -379,10 +443,41 @@ export default {
       },
     },
   },
+  mounted() {
+    document.addEventListener('fullscreenchange', this.onFullscreenChange)
+  },
   beforeUnmount() {
     if (this.visualizerHideTimer) clearTimeout(this.visualizerHideTimer)
+    document.removeEventListener('fullscreenchange', this.onFullscreenChange)
+    // Leaving the view (route change, logout, ...) shouldn't strand the
+    // whole window in fullscreen with nothing controlling it anymore.
+    if (document.fullscreenElement === this.$refs.root) void document.exitFullscreen()
   },
   methods: {
+    // Requests fullscreen on this view's own root element, not
+    // document.documentElement — the point is hiding the rest of the app
+    // chrome (app-bar, sidebar, PlayerBar) around it, not just the
+    // OS/browser window frame a document-level fullscreen would leave
+    // everything else still visible underneath.
+    async toggleFullscreen() {
+      try {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen()
+        } else {
+          await (this.$refs.root as HTMLElement).requestFullscreen()
+        }
+      } catch (error) {
+        // Rare in practice (this only ever runs from a direct click, which
+        // is exactly the user-gesture context the Fullscreen API requires)
+        // — a platform/permissions-policy refusal shouldn't be a silent
+        // unhandled rejection, but isn't worth surfacing to the user over
+        // either; the button's icon just won't have changed.
+        console.error('[now-playing] Fullscreen request failed:', error)
+      }
+    },
+    onFullscreenChange() {
+      this.isFullscreen = document.fullscreenElement === this.$refs.root
+    },
     async loadColor(url: string) {
       const color = await extractDominantColor(url)
       // The song may have changed again while the image was loading —
@@ -521,7 +616,12 @@ export default {
   justify-content: center;
   text-align: center;
   padding: 32px;
-  max-width: 640px;
+  /* Raised alongside artSize/.now-playing__info's own widescreen bump above
+   * — .now-playing__primary is flex-shrink: 0, so on a screen where the
+   * artwork now actually reaches close to artSize's 900px ceiling, the old
+   * flat 640px here undersold what this box needed to comfortably contain
+   * before overflowing it. */
+  max-width: 1000px;
   gap: 0;
   transition:
     gap 0.45s ease,
@@ -531,7 +631,13 @@ export default {
 .now-playing__content--split {
   max-width: 1800px;
   width: 96cqw;
-  gap: 40px;
+  /* Flat 40px read as cramped once the artwork itself started scaling up
+   * more on wide monitors (see artSize's own widescreen bump) — grows with
+   * the stage's own width instead, same cqw-driven approach as everything
+   * else here, floor unchanged from the original fixed value so narrow
+   * containers (already handled by the flex-wrap safety net below) don't
+   * shift at all. */
+  gap: clamp(40px, 6cqw, 120px);
   /* Safety net for narrow containers: .now-playing__primary and
    * .now-playing__lyrics are both flex-shrink: 0 by design (see each's own
    * comment) — their combined natural width can still exceed this row's
@@ -542,6 +648,13 @@ export default {
    * or the lyrics text) — rare in practice once artSize is already
    * width-aware, but a real fallback rather than an unhandled edge case. */
   flex-wrap: wrap;
+}
+
+/* Transparent to layout by default — see the template's own comment on
+ * this element for what it becomes under the portrait container query
+ * below. */
+.now-playing__flip-card {
+  display: contents;
 }
 
 .now-playing__primary {
@@ -578,11 +691,102 @@ export default {
   opacity: 0;
 }
 
+/* Portrait/narrow monitors — not enough width for artwork and lyrics to
+ * sit side by side the way .now-playing__content--split's flex-wrap
+ * fallback above otherwise handles it (stacking them into two rows, still
+ * both visible/competing for the same limited width). Below this aspect
+ * ratio, flip the artwork+info card over like turning it to its back
+ * instead — lyrics take over the exact box the artwork just occupied,
+ * rather than fighting it for space. Standard CSS "flip card" construction:
+ * .now-playing__flip-card is the rotating element, .now-playing__primary
+ * (front) sizes it via normal flow, .now-playing__lyrics (back) is
+ * absolutely positioned to exactly cover that same box, and both faces
+ * hide their own backface so only whichever one is currently "facing
+ * forward" after the rotation is actually visible.
+ *
+ * :not(.now-playing--compact) throughout — a phone screen is portrait too,
+ * but compact mode has no side-by-side split to begin with (no room to
+ * offer lyrics next to the artwork there in the first place, see
+ * MobileTransportControls.vue), so this aspect-ratio query would otherwise
+ * misfire there for a case that doesn't exist. Same "not a mobile feature"
+ * reasoning as the fullscreen toggle above. */
+@container now-playing-stage (max-aspect-ratio: 4/5) {
+  .now-playing:not(.now-playing--compact) .now-playing__content--split {
+    /* No longer sizing a side-by-side row — a single card, same footprint
+     * as the non-split base rule above. */
+    width: auto;
+    max-width: 1000px;
+    gap: 0;
+    perspective: 2000px;
+  }
+
+  .now-playing:not(.now-playing--compact) .now-playing__flip-card {
+    display: block;
+    position: relative;
+    transform-style: preserve-3d;
+    transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .now-playing:not(.now-playing--compact)
+    .now-playing__content--split
+    .now-playing__flip-card {
+    transform: rotateY(180deg);
+  }
+
+  .now-playing:not(.now-playing--compact) .now-playing__primary {
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  .now-playing:not(.now-playing--compact) .now-playing__lyrics {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    transform: rotateY(180deg);
+  }
+
+  /* No width animation here — the flip itself carries that. But this can't
+   * drop to `transition: none` outright: Vue's <transition> figures out how
+   * long to keep a leaving element in the DOM by listening for *this*
+   * element's own transitionend, and the flip's actual rotation lives on
+   * .now-playing__flip-card (an ancestor), not here — with nothing to
+   * listen for, Vue removed the lyrics panel from the DOM almost
+   * immediately instead of waiting out the flip, so flipping the card back
+   * visibly lost its content well before the rotation finished. Matching
+   * the flip's own 0.7s duration with an opacity fade keeps a real
+   * transition on the element Vue is actually watching (and reads as a
+   * deliberate cross-fade layered on the flip, not just a timing workaround
+   * — backface-visibility already hides each face while it's turned away,
+   * so this only affects the brief moment either face is turning to/from
+   * facing the viewer). */
+  .now-playing:not(.now-playing--compact) .now-playing-lyrics-enter-active,
+  .now-playing:not(.now-playing--compact) .now-playing-lyrics-leave-active {
+    transition: opacity 0.7s ease;
+    width: 100%;
+  }
+
+  .now-playing:not(.now-playing--compact) .now-playing-lyrics-enter-from,
+  .now-playing:not(.now-playing--compact) .now-playing-lyrics-leave-to {
+    /* width explicit here too (not just on -active above) — this and
+     * -active both apply to the element at once during the transition, and
+     * leaving it implicit invited relying on specificity order between two
+     * differently-named selectors to resolve the conflict with the base
+     * (non-flip) -enter-from/-leave-to rule's own `width: 0` instead of
+     * just... not conflicting with it in the first place. */
+    width: 100%;
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .now-playing__content,
   .now-playing-lyrics-enter-active,
   .now-playing-lyrics-leave-active,
-  .now-playing__visualizer-row {
+  .now-playing__visualizer-row,
+  .now-playing__flip-card {
     transition: none;
   }
 }
@@ -664,7 +868,7 @@ export default {
    * :size is bound to — kept in sync with it here since a plain CSS value
    * can't read a component's computed prop) gives long text something
    * concrete to actually wrap against. */
-  max-width: min(clamp(180px, min(60cqh, 45cqw), 900px), 50cqw);
+  max-width: min(clamp(180px, min(70cqh, 50cqw), 900px), 58cqw);
 }
 
 /* Scoped to .now-playing__info, not the bare global class — .eyebrow-label
@@ -684,7 +888,7 @@ export default {
  * both a width and a height fraction so a *short* container shrinks text
  * just as much as a *narrow* one does. */
 .now-playing__title {
-  font-size: clamp(1.1rem, min(2cqw, 8cqh), 2.75rem);
+  font-size: clamp(1.1rem, min(2.3cqw, 9cqh), 2.75rem);
   line-height: 1.15;
   overflow-wrap: break-word;
 }
@@ -695,7 +899,7 @@ export default {
  * compound selector to outrank it, whichever of the two happens to be
  * later in the built stylesheet wins, not necessarily this one. */
 .now-playing__info .now-playing__artist-link {
-  font-size: clamp(0.9rem, min(3cqw, 4cqh), 1.5rem);
+  font-size: clamp(0.9rem, min(3.4cqw, 4.5cqh), 1.5rem);
   /* Block, not the anchor's default inline — inline elements ignore
    * vertical margin (mb-2 here would otherwise silently do nothing) and
    * this also keeps the centered text-align behaving exactly like the
@@ -706,7 +910,7 @@ export default {
 }
 
 .now-playing__info .now-playing__album-link {
-  font-size: clamp(0.75rem, min(2.2cqw, 3cqh), 1rem);
+  font-size: clamp(0.75rem, min(2.5cqw, 3.4cqh), 1rem);
   text-decoration: none;
   overflow-wrap: break-word;
 }
