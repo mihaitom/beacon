@@ -966,12 +966,25 @@ export const usePlaybackStore = defineStore('playback', {
      * up front), in which case there's nothing left to detect. */
     async castTo(targets: ConnectDeviceRef[], force = false): Promise<void> {
       const connect = useConnectStore()
+      // Captured before either play() attempt (including a takeover retry)
+      // — connect's /play always starts the device playing immediately,
+      // there's no "load paused" for these cast protocols, so a handoff
+      // that was paused locally needs its own explicit /pause right back
+      // afterwards instead of just inheriting whatever /play did. Without
+      // this, picking a cast target while paused silently resumed playback
+      // the user had deliberately paused.
+      const wasPlaying = this.isPlaying
       if (this.radioStation) {
         const station = this.radioStation
         const play = async (f: boolean) => {
           if (this.isPlaying) getAudioEngine().pause() // local pauses, connect takes over
           await connectPlayback.playUrl(station.streamUrl, station.name, { targets, force: f })
-          this.isPlaying = true
+          if (wasPlaying) {
+            this.isPlaying = true
+          } else {
+            await connectPlayback.pause()
+            this.isPlaying = false
+          }
         }
         if (force) await play(true)
         else await connect.withTakeoverHandling(play)
@@ -983,7 +996,12 @@ export const usePlaybackStore = defineStore('playback', {
         const play = async (f: boolean) => {
           if (this.isPlaying) getAudioEngine().pause() // local pauses, connect takes over
           await connectPlayback.play(song.id, { targets, startPosition, force: f, gain, queue })
-          this.isPlaying = true
+          if (wasPlaying) {
+            this.isPlaying = true
+          } else {
+            await connectPlayback.pause()
+            this.isPlaying = false
+          }
         }
         if (force) await play(true)
         else await connect.withTakeoverHandling(play)

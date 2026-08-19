@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Fixed the app log file (see 0.1.3) tagging every line from the backend as an error, even completely normal status messages - the backend logs everything to the same output stream regardless of severity, same as most command-line programs, and the log file was mistaking that stream choice for severity
 - Fixed queue changes made while casting (reordering, adding, removing, shuffling) not being followed by auto-advance once nothing was around to manually skip to the next song - the cast target kept auto-advancing through whatever queue order was active when the current song started, ignoring anything changed since
+- Fixed picking a cast target while local playback was paused starting playback on that device right away instead of staying paused
 
 ## [0.1.3] - 2026-08-16
 
