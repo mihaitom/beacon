@@ -215,29 +215,68 @@ async def _resync_position_once(session: SessionState, candidate) -> None:
     _resync_position_periodically() below purely so it's directly testable
     without needing to unwind an infinite loop (see that function for the
     guards deciding whether/when this gets called at all, and the docstring
-    explaining what this is actually for)."""
+    explaining what this is actually for).
+
+    TEMPORARY: logs every tick at DEBUG, not just the ones that actually
+    recalibrate — chasing an intermittent bug (reported twice in one day)
+    where the device settles on reporting position 0 indefinitely while
+    wall-clock keeps advancing, and this function's own calibrate() call
+    below has no way to tell "device genuinely at 0" apart from "device
+    stopped/stalled and 0 is a stale/default reading" — it trusts either one
+    the same way, which would produce exactly the observed symptom (position
+    snapping back to ~0 every ~8s) on its own, regardless of *why* the
+    device is reporting 0. The extra device_state/offset-before/offset-after
+    fields below are what should make that mechanism visible (or rule it
+    out) from the logs alone next time, without needing to reproduce it live.
+    Revert this docstring and the logging noise below once that's settled —
+    the actual calibrate() call and its guards are unchanged."""
     try:
         device_pos = await candidate.get_position()
+    except Exception as e:
+        logger.warning(f"[position-resync] {candidate.target}: get_position() failed: {e}")
+        return
+    try:
+        device_state = await candidate.get_debug_state()
     except Exception:
-        return
-    if device_pos is None or device_pos < 0:
-        return
+        # Logging-only, see get_debug_state()'s docstring — a failure here
+        # (device briefly unreachable for *this* call specifically) must
+        # never take the actual resync/calibration below down with it.
+        device_state = None
     st = session.state
+    offset_before = st.clock.position_offset
+    if device_pos is None or device_pos < 0:
+        logger.debug(
+            f"[position-resync] {candidate.target}: no usable position "
+            f"(raw={device_pos!r}, transport={device_state}, "
+            f"play_generation={st.clock.play_generation}, is_streaming={st.is_streaming})"
+        )
+        return
     # A device clearly reporting well past the track's own duration is a
     # bogus/glitched reading (or has already rolled onto whatever comes
     # after, which our own session doesn't know about yet either way) —
     # not something to recalibrate against.
     if st.current_track and device_pos > st.current_track.duration + POSITION_RESYNC_THRESHOLD:
+        logger.debug(
+            f"[position-resync] {candidate.target}: device={device_pos:.2f}s past track "
+            f"duration={st.current_track.duration}s (transport={device_state}) — ignoring"
+        )
         return
 
     wall_elapsed = st.clock.elapsed_since_stream_start()
-    if abs(device_pos - wall_elapsed) < POSITION_RESYNC_THRESHOLD:
+    delta = device_pos - wall_elapsed
+    logger.debug(
+        f"[position-resync] {candidate.target}: device={device_pos:.2f}s wall={wall_elapsed:.2f}s "
+        f"delta={delta:+.2f}s transport={device_state} offset_before={offset_before:.2f}s "
+        f"play_generation={st.clock.play_generation} is_paused={st.clock.is_paused}"
+    )
+    if abs(delta) < POSITION_RESYNC_THRESHOLD:
         return
 
     offset = st.clock.calibrate(device_pos)
     logger.info(
         f"[position-resync] {candidate.target}: external position change detected — "
-        f"device={device_pos:.2f}s wall={wall_elapsed:.2f}s, new offset={offset:.2f}s"
+        f"device={device_pos:.2f}s wall={wall_elapsed:.2f}s, offset {offset_before:.2f}s "
+        f"-> {offset:.2f}s"
     )
     await session.event_bus.broadcast(build_status_dict(session))
 
@@ -424,6 +463,7 @@ async def play_tracks(
         start_position = max(0.0, min(req.start_position, float(track.duration)))
         logger.info(
             f"[play] {track.artist} — {track.title} ({track.duration}s) → target={target}"
+            f" seq={req.seq}"
             + (f" (start {start_position:.1f}s)" if start_position > 0.5 else "")
         )
 

@@ -230,6 +230,7 @@ export default {
     logLevel: 'Livello di log',
     logLevelHint:
       'Quanto dettaglio scrive il backend Connect nel proprio log: influisce anche su ciò che compare nei log di Docker/container. Ha effetto immediato, nessun riavvio necessario.',
+    logLevelTrace: 'Trace',
     logLevelDebug: 'Debug',
     logLevelInfo: 'Informazione',
     logLevelWarning: 'Avviso',

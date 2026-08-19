@@ -325,6 +325,7 @@ export default {
     },
     logLevelOptions() {
       return [
+        { title: this.$t('settings.logLevelTrace'), value: 'TRACE' },
         { title: this.$t('settings.logLevelDebug'), value: 'DEBUG' },
         { title: this.$t('settings.logLevelInfo'), value: 'INFO' },
         { title: this.$t('settings.logLevelWarning'), value: 'WARNING' },

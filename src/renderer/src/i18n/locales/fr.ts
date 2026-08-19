@@ -231,6 +231,7 @@ export default {
     logLevel: 'Niveau de journalisation',
     logLevelHint:
       'Le niveau de détail que le backend Connect écrit dans son propre journal — affecte aussi ce qui apparaît dans les journaux Docker/du conteneur. Prend effet immédiatement, aucun redémarrage nécessaire.',
+    logLevelTrace: 'Trace',
     logLevelDebug: 'Débogage',
     logLevelInfo: 'Information',
     logLevelWarning: 'Avertissement',

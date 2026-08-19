@@ -1,5 +1,8 @@
 <template>
-  <div class="lyrics-panel" :class="`lyrics-panel--${variant}`">
+  <div
+    class="lyrics-panel"
+    :class="[`lyrics-panel--${variant}`, { 'lyrics-panel--mobile': mobile }]"
+  >
     <div v-if="lyricsStore.loading" class="lyrics-panel__skeleton">
       <!-- Bones only in the compact drawer, where they sit on the app's
        - normal solid surface — over the immersive view's blurred-photo
@@ -71,9 +74,9 @@
       <div v-if="lyricsStore.synced" class="lyrics-panel__sync">
         <v-btn
           icon="mdi-target"
-          size="x-small"
+          :size="mobile ? 'small' : 'x-small'"
           variant="text"
-          density="compact"
+          :density="mobile ? 'comfortable' : 'compact'"
           :color="calibrating ? 'primary' : undefined"
           :title="$t('lyrics.calibrate')"
           @click="calibrating = !calibrating"
@@ -81,9 +84,9 @@
         <v-divider vertical class="mx-1" />
         <v-btn
           icon="mdi-rewind"
-          size="x-small"
+          :size="mobile ? 'small' : 'x-small'"
           variant="text"
-          density="compact"
+          :density="mobile ? 'comfortable' : 'compact'"
           :title="$t('lyrics.syncEarlier')"
           @click="lyricsStore.adjustOffset(-0.1)"
         />
@@ -97,9 +100,9 @@
         </span>
         <v-btn
           icon="mdi-fast-forward"
-          size="x-small"
+          :size="mobile ? 'small' : 'x-small'"
           variant="text"
-          density="compact"
+          :density="mobile ? 'comfortable' : 'compact'"
           :title="$t('lyrics.syncLater')"
           @click="lyricsStore.adjustOffset(0.1)"
         />
@@ -111,8 +114,13 @@
         }}</span>
         <!-- The auto-matched lyrics can be for the wrong edit of a song
          - entirely (not just mistimed) — this is the escape hatch for that,
-         - also the main way to find lyrics at all when nothing auto-matched. -->
+         - also the main way to find lyrics at all when nothing auto-matched.
+         - A dropdown menu works fine with a mouse, but on a phone a floating
+         - panel anchored to a small toolbar button is fiddly to hit and
+         - easy to close by mis-touching; a bottom sheet gives the same list
+         - full-width, thumb-reachable real estate instead. -->
         <v-menu
+          v-if="!mobile"
           :close-on-content-click="false"
           location="top right"
           :offset="[12, 0]"
@@ -130,73 +138,35 @@
               {{ $t('lyrics.pickMatch') }}
             </v-btn>
           </template>
-          <v-list density="compact" class="lyrics-panel__candidates">
-            <v-list-item v-if="lyricsStore.candidatesLoading" disabled>
-              <v-progress-circular indeterminate size="18" width="2" />
-            </v-list-item>
-            <v-list-item v-else-if="!hasCandidates" disabled>
-              <v-list-item-title class="text-medium-emphasis text-body-2">
-                {{ $t('lyrics.noCandidates') }}
-              </v-list-item-title>
-            </v-list-item>
-            <template v-else>
-              <template v-for="group in candidateGroups" :key="group.source">
-                <v-list-subheader>{{ group.source }}</v-list-subheader>
-                <v-list-item
-                  v-for="candidate in group.results"
-                  :key="candidate.id"
-                  :active="isCurrentCandidate(group.source, candidate)"
-                  active-color="primary"
-                  class="lyrics-panel__candidate"
-                  :class="{
-                    'lyrics-panel__candidate--current': isCurrentCandidate(group.source, candidate),
-                  }"
-                  @click="onSelectCandidate(group.source, candidate)"
-                >
-                  <template #prepend>
-                    <v-icon
-                      :icon="syncIcon(candidate)"
-                      size="x-small"
-                      :title="syncLabel(candidate)"
-                    />
-                  </template>
-                  <v-list-item-title>{{ candidate.name }}</v-list-item-title>
-                  <v-list-item-subtitle>{{ candidate.artist }}</v-list-item-subtitle>
-                  <template #append>
-                    <div class="lyrics-panel__candidate-meta">
-                      <v-icon
-                        v-if="isCurrentCandidate(group.source, candidate)"
-                        icon="mdi-check-circle"
-                        size="x-small"
-                        color="primary"
-                        :title="$t('lyrics.currentMatch')"
-                      />
-                      <!-- A duration far off the actual song's own length
-                       - is a strong "wrong edit" signal (radio cut vs.
-                       - album version, live take, ...) — flagged in red so
-                       - it's visible without doing the subtraction by eye. -->
-                      <span
-                        v-if="candidate.duration != null"
-                        class="lyrics-panel__candidate-duration"
-                        :class="{
-                          'lyrics-panel__candidate-duration--mismatch':
-                            isDurationMismatch(candidate),
-                        }"
-                      >
-                        {{ formatDuration(candidate.duration) }}
-                      </span>
-                      <span class="lyrics-panel__candidate-score"
-                        >{{ matchPercent(candidate) }}%</span
-                      >
-                    </div>
-                  </template>
-                </v-list-item>
-              </template>
-            </template>
-          </v-list>
+          <lyrics-candidate-list />
         </v-menu>
+        <v-btn
+          v-else
+          size="small"
+          variant="text"
+          density="comfortable"
+          prepend-icon="mdi-format-list-bulleted"
+          class="lyrics-panel__pick-btn"
+          @click="openMobilePicker"
+        >
+          {{ $t('lyrics.pickMatch') }}
+        </v-btn>
       </div>
     </div>
+
+    <!-- @update:model-value handles *closing* (backdrop click, swipe-down —
+     - v-bottom-sheet emits that itself on its own state changes) but never
+     - fires for openMobilePicker()'s own opening below, which sets
+     - mobilePickerOpen from the outside rather than through an interaction
+     - this component initiates — see that method's own comment. -->
+    <v-bottom-sheet v-if="mobile" v-model="mobilePickerOpen" @update:model-value="onPickerToggle">
+      <v-card class="lyrics-panel__mobile-sheet">
+        <div class="lyrics-panel__mobile-sheet-header">
+          <span class="text-subtitle-1">{{ $t('lyrics.pickMatch') }}</span>
+        </div>
+        <lyrics-candidate-list />
+      </v-card>
+    </v-bottom-sheet>
   </div>
 </template>
 
@@ -205,7 +175,7 @@ import type { PropType } from 'vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { FILE_SOURCE, useLyricsStore } from '@/stores/lyrics'
 import type { LyricLine } from '@/services/lyrics/parseLrc'
-import type { LyricSearchResult } from '@/services/connect/types'
+import LyricsCandidateList from '@/components/lyrics/LyricsCandidateList.vue'
 
 // How long to leave autoscroll paused after the user manually scrolls/
 // touches the list, before snapping back to whatever line is actually
@@ -215,17 +185,24 @@ const MANUAL_SCROLL_PAUSE_MS = 4000
 
 const SKELETON_WIDTHS = ['70%', '45%', '85%', '55%', '65%', '40%']
 
-// A candidate whose duration is off by more than this is almost certainly
-// a different edit of the song (radio cut, live take, ...) rather than a
-// timing quirk — flagged in the picker, see isDurationMismatch() below.
-const DURATION_MISMATCH_THRESHOLD_S = 5
-
 export default {
   name: 'LyricsPanel',
+  components: { LyricsCandidateList },
   props: {
     variant: {
       type: String as PropType<'compact' | 'immersive'>,
       default: 'compact',
+    },
+    // Swaps the toolbar to bigger touch targets and the match picker from
+    // a v-menu dropdown to a full-width v-bottom-sheet — a floating panel
+    // anchored to a small button is fine with a mouse but fiddly to hit
+    // (and easy to dismiss by mis-touching) on a phone. Named for the
+    // input method, not the layout — deliberately independent of `variant`,
+    // since compact/immersive is about which host renders this panel, not
+    // whether that host is being touched or clicked.
+    mobile: {
+      type: Boolean,
+      default: false,
     },
   },
   data() {
@@ -238,6 +215,7 @@ export default {
       // Armed by the target button — while true, the *next* line click
       // calibrates the offset instead of seeking (see onLineClick below).
       calibrating: false,
+      mobilePickerOpen: false,
     }
   },
   computed: {
@@ -285,19 +263,6 @@ export default {
       const source = this.lyricsStore.source
       if (!source) return null
       return source === FILE_SOURCE ? this.$t('lyrics.sourceFile') : source
-    },
-    // Grouped as an array (not the raw Record from the store) so the
-    // template can v-for it directly and empty-result sources don't need
-    // filtering out inline.
-    candidateGroups() {
-      const candidates = this.lyricsStore.candidates
-      if (!candidates) return []
-      return Object.entries(candidates)
-        .map(([source, results]) => ({ source, results }))
-        .filter((group) => group.results.length > 0)
-    },
-    hasCandidates() {
-      return this.candidateGroups.length > 0
     },
   },
   watch: {
@@ -389,42 +354,16 @@ export default {
       if (open && this.currentSong) void this.lyricsStore.loadCandidates(this.currentSong)
       else this.lyricsStore.clearCandidates()
     },
-    onSelectCandidate(source: string, candidate: LyricSearchResult) {
-      if (this.currentSong) {
-        void this.lyricsStore.selectCandidate(this.currentSong, source, candidate.id)
-      }
-    },
-    // `score` is a distance (0 = identical, larger = worse — see
-    // connect/routes/lyrics.py's own MATCH_THRESHOLD comparison), not
-    // already a percentage. Clamped since /search, unlike /auto, doesn't
-    // discard bad matches, so a candidate can score well past 1.
-    matchPercent(candidate: LyricSearchResult): number {
-      return Math.round(Math.max(0, Math.min(1, 1 - candidate.score)) * 100)
-    },
-    formatDuration(seconds: number): string {
-      const total = Math.round(seconds)
-      const minutes = Math.floor(total / 60)
-      const secs = total % 60
-      return `${minutes}:${String(secs).padStart(2, '0')}`
-    },
-    isDurationMismatch(candidate: LyricSearchResult): boolean {
-      const songDuration = this.currentSong?.duration
-      if (candidate.duration == null || songDuration == null) return false
-      return Math.abs(candidate.duration - songDuration) > DURATION_MISMATCH_THRESHOLD_S
-    },
-    // isSync is a real tri-state, not a boolean — NetEase's search API
-    // gives no signal either way (see connect/lyrics/netease.py), which is
-    // a different thing to tell the user than "confirmed plain text".
-    syncIcon(candidate: LyricSearchResult): string {
-      if (candidate.isSync == null) return 'mdi-help-circle-outline'
-      return candidate.isSync ? 'mdi-timer-sync-outline' : 'mdi-text-long'
-    },
-    syncLabel(candidate: LyricSearchResult): string {
-      if (candidate.isSync == null) return this.$t('lyrics.syncUnknown')
-      return candidate.isSync ? this.$t('lyrics.synced') : this.$t('lyrics.unsynced')
-    },
-    isCurrentCandidate(source: string, candidate: LyricSearchResult): boolean {
-      return this.lyricsStore.source === source && this.lyricsStore.remoteId === candidate.id
+    // v-bottom-sheet only emits update:model-value for state changes it
+    // initiates itself (backdrop click, swipe-down) — setting its v-model
+    // from the outside, like this button click does, changes the prop but
+    // never fires that event, so onPickerToggle(true) (and therefore
+    // loadCandidates()) never ran; the sheet opened empty every time,
+    // showing "no candidates" regardless of what was actually available.
+    // Called directly here instead of relying on the event for opening.
+    openMobilePicker() {
+      this.mobilePickerOpen = true
+      this.onPickerToggle(true)
     },
   },
 }
@@ -594,10 +533,22 @@ export default {
  * the same treatment. cqw is scaled down from .now-playing__lyrics' own
  * ~38cqw box width (container query units measure against the *stage*,
  * not this narrower column, so the multiplier has to account for that
- * gap) rather than assuming the full stage width. */
+ * gap) rather than assuming the full stage width.
+ *
+ * font-size/padding read through a custom property, not a literal value
+ * directly here — NowPlayingView.vue's flip-card layout (portrait/narrow
+ * monitors *and* mobile, see its own comment) reuses this same class but
+ * measures cqw/cqh against a completely different, much smaller container
+ * (the artwork's own box, not the full stage), so the coefficients above
+ * are wrong there by roughly an order of magnitude — a custom property set
+ * on .now-playing__lyrics (inherited down into every line here, since it's
+ * the same element as .lyrics-panel via Vue's class fallthrough) is how
+ * that parent overrides this without fighting this rule's own specificity
+ * from outside a scoped child component. Unset (plain split-mode layout)
+ * falls back to the literal value that was always here. */
 .lyrics-panel--immersive .lyrics-panel__line {
-  font-size: clamp(1.1rem, min(2.2cqw, 3.5cqh), 1.9rem);
-  padding: 12px 32px;
+  font-size: var(--lyrics-flip-font-size, clamp(1.1rem, min(2.2cqw, 3.5cqh), 1.9rem));
+  padding: var(--lyrics-flip-line-padding, 12px 32px);
   max-width: 78%;
 }
 
@@ -695,36 +646,26 @@ export default {
   color: rgba(255, 255, 255, 0.55);
 }
 
-.lyrics-panel__candidates {
-  min-width: 260px;
-  max-height: 320px;
-  overflow-y: auto;
+/* .lyrics-panel__source has min-width: 0 (deliberately shrinkable, see its
+ * own rule) while .lyrics-panel__pick-btn is flex-shrink: 0 (never
+ * shrinks) — on mobile's narrower toolbar, now with a wider touch-sized
+ * button (see the mobile prop's own comment), that left nothing for the
+ * source label to shrink *into* short of disappearing outright at 0 width.
+ * Wrapping it to its own row instead keeps it readable rather than
+ * fighting the button for a single line neither fits on. */
+.lyrics-panel--mobile .lyrics-panel__meta {
+  flex-wrap: wrap;
 }
 
-/* Vuetify's own :active tint is subtle enough to miss in a dense list —
- * the checkmark (see template) plus a bolder title makes "this is what's
- * currently loaded" unambiguous at a glance. */
-.lyrics-panel__candidate--current :deep(.v-list-item-title) {
-  font-weight: 600;
-}
-
-.lyrics-panel__candidate-meta {
+.lyrics-panel__mobile-sheet {
+  max-height: 70vh;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 1px;
 }
 
-.lyrics-panel__candidate-score,
-.lyrics-panel__candidate-duration {
-  font-size: 0.7rem;
-  font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.45);
-  margin-left: 1em;
-}
-
-.lyrics-panel__candidate-duration--mismatch {
-  color: rgb(var(--v-theme-error));
+.lyrics-panel__mobile-sheet-header {
+  padding: 16px 16px 4px;
+  flex-shrink: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

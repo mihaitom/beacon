@@ -14,15 +14,19 @@
     <div class="now-playing__scrim" :style="ambientStyle" />
 
     <div v-if="hasPlayable" class="now-playing__toolbar">
-      <!-- PlayerBar.vue's own lyrics button (the normal way to reach this)
-       - is outside .now-playing entirely, so fullscreen — which only ever
-       - shows this element's own subtree, see toggleFullscreen()'s comment
-       - — hides it along with the rest of the app chrome. Only shown here
-       - while actually fullscreen (never true in compact mode either, see
-       - the fullscreen button's own guard below), so there's no redundant
-       - second lyrics button the rest of the time. -->
+      <!-- PlayerBar.vue's own lyrics button (the normal way to reach this
+       - on desktop) is outside .now-playing entirely, so fullscreen — which
+       - only ever shows this element's own subtree, see toggleFullscreen()'s
+       - comment — hides it along with the rest of the app chrome. Compact
+       - mode has no PlayerBar equivalent at all (MobileTransportControls.vue
+       - has no lyrics button — no side-by-side split there to reach it from
+       - either, see the flip-card container query below), so this is the
+       - *only* way to reach lyrics on mobile, not just a fullscreen
+       - stand-in. Neither condition applies on desktop outside fullscreen,
+       - where PlayerBar's own button already covers it — no redundant
+       - second lyrics button there. -->
       <v-btn
-        v-if="!compact && isFullscreen && currentSong"
+        v-if="currentSong && (compact || isFullscreen)"
         icon="mdi-script-text-outline"
         variant="text"
         :title="$t('lyrics.title')"
@@ -124,7 +128,12 @@
             </div>
 
             <transition name="now-playing-lyrics">
-              <lyrics-panel v-if="showLyrics" variant="immersive" class="now-playing__lyrics" />
+              <lyrics-panel
+                v-if="showLyrics"
+                variant="immersive"
+                :mobile="compact"
+                class="now-playing__lyrics"
+              />
             </transition>
           </div>
         </template>
@@ -704,14 +713,13 @@ export default {
  * hide their own backface so only whichever one is currently "facing
  * forward" after the rotation is actually visible.
  *
- * :not(.now-playing--compact) throughout — a phone screen is portrait too,
- * but compact mode has no side-by-side split to begin with (no room to
- * offer lyrics next to the artwork there in the first place, see
- * MobileTransportControls.vue), so this aspect-ratio query would otherwise
- * misfire there for a case that doesn't exist. Same "not a mobile feature"
- * reasoning as the fullscreen toggle above. */
+ * Applies in compact mode too — a phone screen is portrait too, and this
+ * is actually the *only* way compact mode ever gets to show lyrics at all
+ * (MobileTransportControls.vue's own toolbar has no room for a side-by-side
+ * split — see the toolbar's lyrics button in the template above, shown on
+ * mobile specifically because this flip is how it gets used there). */
 @container now-playing-stage (max-aspect-ratio: 4/5) {
-  .now-playing:not(.now-playing--compact) .now-playing__content--split {
+  .now-playing__content--split {
     /* No longer sizing a side-by-side row — a single card, same footprint
      * as the non-split base rule above. */
     width: auto;
@@ -720,25 +728,49 @@ export default {
     perspective: 2000px;
   }
 
-  .now-playing:not(.now-playing--compact) .now-playing__flip-card {
+  .now-playing__flip-card {
     display: block;
     position: relative;
     transform-style: preserve-3d;
     transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+    /* NOT container-type: size on this element itself — it has no explicit
+     * width, only ever getting one from .now-playing__primary's own content
+     * (the artwork + title/artist/album stack) via normal flow, which is
+     * exactly what size containment can't coexist with: a container query
+     * container's own size, on whichever axis is being queried, has to come
+     * from something other than its content, on pain of the browser having
+     * nothing to lay it out from and collapsing that axis to ~0. That's not
+     * a hypothetical — it's what actually happened here: card width
+     * collapsed to near nothing (still holding a real, cross-axis-stretched
+     * height from the flex row around it, since only *size* containment,
+     * not layout, was ever the problem), and every cqw-based measurement
+     * inside it — the lyrics font-size clamp, but *also* artSize/the title
+     * clamp, which no longer resolved against .now-playing__stage as their
+     * own comments assume once this became their nearest container-type
+     * ancestor — inherited that collapse. Text wrapping to one letter per
+     * line (not just one word) was the visible result. See
+     * .now-playing__lyrics below for where the containment actually
+     * belongs instead. */
   }
 
-  .now-playing:not(.now-playing--compact)
-    .now-playing__content--split
-    .now-playing__flip-card {
+  .now-playing__content--split .now-playing__flip-card {
     transform: rotateY(180deg);
   }
 
-  .now-playing:not(.now-playing--compact) .now-playing__primary {
+  .now-playing__primary {
+    /* An explicit identity rotation, not just the absence of one — Chromium
+     * only reliably factors an ancestor's preserve-3d rotation into *this*
+     * element's own backface-visibility check once it has a 3D transform of
+     * its own to compose with that ancestor's transform in the same 3D
+     * space. Without it, the artwork face stayed visibly rendered through
+     * the "back" of the card instead of hiding, no matter what
+     * backface-visibility said. */
+    transform: rotateY(0deg);
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
   }
 
-  .now-playing:not(.now-playing--compact) .now-playing__lyrics {
+  .now-playing__lyrics {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -746,6 +778,32 @@ export default {
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
     transform: rotateY(180deg);
+    /* Unlike the card itself (see its own comment), this is safe: width/
+     * height are already explicit (100% of .now-playing__flip-card, a
+     * *positioned* ancestor with a real, content-derived size of its own —
+     * a plain percentage-of-a-definite-size resolution, nothing content-
+     * dependent about it) *before* containment is applied, so there's
+     * nothing for it to collapse. Re-anchors every cqw/cqh unit inside this
+     * element (including LyricsPanel.vue's own — plain units, not scoped to
+     * a specific named container, so they always resolve against the
+     * *nearest* container-type ancestor) to the same box the artwork
+     * actually occupies, instead of the outer .now-playing__stage the
+     * lyrics font-size clamp's own comment assumes — which is what made
+     * lines wrap far narrower than intended before this existed at all. */
+    container-type: size;
+    /* Consumed by LyricsPanel.vue's own .lyrics-panel--immersive
+     * .lyrics-panel__line rule (see its own comment) — a custom property,
+     * not a value overridden from out here via a selector, since this
+     * element's font-size/padding live inside a separate scoped component
+     * and a plain override rule from this file would be fighting that
+     * rule's own scoped specificity instead of just... telling it the
+     * right number directly. Tuned against *this* box (matching the
+     * artwork, not the full stage) — floor high enough to stay readable in
+     * a small flip-card (mobile), ceiling capped so it doesn't blow up
+     * absurdly large on a big one (a wide desktop window narrow enough to
+     * still trigger flip mode). */
+    --lyrics-flip-font-size: clamp(0.95rem, min(6cqw, 8cqh), 1.9rem);
+    --lyrics-flip-line-padding: 10px 20px;
   }
 
   /* No width animation here — the flip itself carries that. But this can't
@@ -762,14 +820,14 @@ export default {
    * — backface-visibility already hides each face while it's turned away,
    * so this only affects the brief moment either face is turning to/from
    * facing the viewer). */
-  .now-playing:not(.now-playing--compact) .now-playing-lyrics-enter-active,
-  .now-playing:not(.now-playing--compact) .now-playing-lyrics-leave-active {
+  .now-playing-lyrics-enter-active,
+  .now-playing-lyrics-leave-active {
     transition: opacity 0.7s ease;
     width: 100%;
   }
 
-  .now-playing:not(.now-playing--compact) .now-playing-lyrics-enter-from,
-  .now-playing:not(.now-playing--compact) .now-playing-lyrics-leave-to {
+  .now-playing-lyrics-enter-from,
+  .now-playing-lyrics-leave-to {
     /* width explicit here too (not just on -active above) — this and
      * -active both apply to the element at once during the transition, and
      * leaving it implicit invited relying on specificity order between two
@@ -779,6 +837,77 @@ export default {
     width: 100%;
     opacity: 0;
   }
+}
+
+/* Compact (mobile) always flips, regardless of what .now-playing__stage's
+ * own measured aspect ratio comes out to. Unlike a desktop window, which
+ * can genuinely be any shape, compact's "stage" height is already squeezed
+ * by MobileTransportControls.vue/the tab bar below it — once that, the
+ * toolbar, and the title/artist/album text are subtracted from a phone's
+ * available height, the remaining box can measure out right at (or just
+ * past) the max-aspect-ratio: 4/5 cutoff above, so relying on the container
+ * query alone here flapped between flip and the side-by-side fallback
+ * depending on device size and how long the current song's text happened
+ * to be — the fallback's own lyrics column is still only 38cqw wide (see
+ * .now-playing__lyrics' base rule), which is what actually produced the
+ * one-word-per-line wrapping reported on a phone where the flip silently
+ * never engaged. There's no side-by-side alternative on mobile ever (see
+ * the toolbar lyrics button's own comment above) — flip is simply always
+ * the answer here, so this repeats the container-query block above
+ * verbatim under a plain class selector rather than depend on that query
+ * also happening to match. */
+.now-playing--compact .now-playing__content--split {
+  width: auto;
+  max-width: 1000px;
+  gap: 0;
+  perspective: 2000px;
+}
+
+.now-playing--compact .now-playing__flip-card {
+  display: block;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.now-playing--compact .now-playing__content--split .now-playing__flip-card {
+  transform: rotateY(180deg);
+}
+
+.now-playing--compact .now-playing__primary {
+  /* See the @container block above's matching rule for why this needs an
+   * explicit identity transform, not just the absence of one. */
+  transform: rotateY(0deg);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.now-playing--compact .now-playing__lyrics {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: rotateY(180deg);
+  /* See the @container block above's matching rule for why containment
+   * belongs here and not on .now-playing__flip-card itself, and for what
+   * the custom properties below are for. */
+  container-type: size;
+  --lyrics-flip-font-size: clamp(0.95rem, min(6cqw, 8cqh), 1.9rem);
+  --lyrics-flip-line-padding: 10px 20px;
+}
+
+.now-playing--compact .now-playing-lyrics-enter-active,
+.now-playing--compact .now-playing-lyrics-leave-active {
+  transition: opacity 0.7s ease;
+  width: 100%;
+}
+
+.now-playing--compact .now-playing-lyrics-enter-from,
+.now-playing--compact .now-playing-lyrics-leave-to {
+  width: 100%;
+  opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -961,6 +1090,11 @@ export default {
 .now-playing--compact .now-playing__toolbar {
   top: 8px;
   right: 8px;
+  /* Stacked, not a row — a phone screen is narrow enough that even two
+   * icon buttons side by side (now that lyrics can show here too, see the
+   * flip-card container query below) reached noticeably into the artwork
+   * underneath instead of staying clear of it in the corner. */
+  flex-direction: column;
 }
 
 .now-playing--compact .now-playing__visualizer-row--visible {

@@ -24,7 +24,7 @@ def _restore_levels():
     in the same process)."""
     loggers = [
         *log_level._APP_LOGGERS,
-        *log_level._HTTP_CLIENT_LOGGERS,
+        *log_level._THIRD_PARTY_LOGGERS,
         "uvicorn.access",
     ]
     before = {name: logging.getLogger(name).level for name in loggers}
@@ -85,20 +85,47 @@ def test_apply_sets_app_loggers_and_current_level_reflects_it():
             assert log_level.current_level() == "WARNING"
 
 
-def test_apply_debug_also_enables_http_client_loggers():
+def test_apply_trace_current_level_roundtrips_through_custom_level_name():
+    """TRACE is a custom level registered via addLevelName() at import time
+    — this is really a check that logging.getLevelName() actually resolves
+    the numeric value (5) back to "TRACE" rather than the "Level 5" fallback
+    it'd print for an unregistered custom level."""
     with tempfile.TemporaryDirectory() as d:
         with patch.object(log_level, "_PATH", _tmp_path(d)):
-            log_level.apply("DEBUG")
-            for name in log_level._HTTP_CLIENT_LOGGERS:
-                assert logging.getLogger(name).level == logging.DEBUG
+            log_level.apply("TRACE")
+            assert log_level.current_level() == "TRACE"
+
+
+def test_apply_trace_also_enables_third_party_loggers():
+    with tempfile.TemporaryDirectory() as d:
+        with patch.object(log_level, "_PATH", _tmp_path(d)):
+            log_level.apply("TRACE")
+            for name in log_level._APP_LOGGERS:
+                assert logging.getLogger(name).level == log_level.TRACE
+            for name in log_level._THIRD_PARTY_LOGGERS:
+                assert logging.getLogger(name).level == log_level.TRACE
             assert logging.getLogger("uvicorn.access").level == logging.INFO
 
 
-def test_apply_non_debug_keeps_http_client_loggers_quiet():
+def test_apply_debug_keeps_third_party_loggers_quiet():
+    """The behavior TRACE exists for — DEBUG alone (our own code's detail)
+    must *not* also turn on every SOAP/HTTP request the libraries
+    underneath make, unlike before TRACE existed."""
+    with tempfile.TemporaryDirectory() as d:
+        with patch.object(log_level, "_PATH", _tmp_path(d)):
+            log_level.apply("DEBUG")
+            for name in log_level._APP_LOGGERS:
+                assert logging.getLogger(name).level == logging.DEBUG
+            for name in log_level._THIRD_PARTY_LOGGERS:
+                assert logging.getLogger(name).level == logging.WARNING
+            assert logging.getLogger("uvicorn.access").level == logging.WARNING
+
+
+def test_apply_non_debug_keeps_third_party_loggers_quiet():
     with tempfile.TemporaryDirectory() as d:
         with patch.object(log_level, "_PATH", _tmp_path(d)):
             log_level.apply("ERROR")
-            for name in log_level._HTTP_CLIENT_LOGGERS:
+            for name in log_level._THIRD_PARTY_LOGGERS:
                 assert logging.getLogger(name).level == logging.WARNING
             assert logging.getLogger("uvicorn.access").level == logging.WARNING
 

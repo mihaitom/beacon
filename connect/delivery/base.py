@@ -48,6 +48,18 @@ class BaseDelivery(ABC):
         if the protocol doesn't expose one."""
         return None
 
+    async def get_debug_state(self) -> str | None:
+        """Extra device-side diagnostic info (e.g. transport state) for log
+        lines only — never used for any playback decision. None if the
+        protocol has nothing extra to offer.
+
+        TEMPORARY: added to chase an intermittent Sonos stall (device keeps
+        reporting position 0 while the wall clock keeps advancing, with no
+        way to tell from position alone whether it's actually still
+        PLAYING) — see routes/playback.py's _resync_position_once(). Safe to
+        remove, along with its call site there, once that's understood."""
+        return None
+
     async def get_volume(self) -> float | None:
         """Return the device's current volume (0-100), or None if the
         protocol doesn't expose one."""

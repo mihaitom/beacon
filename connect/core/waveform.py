@@ -126,7 +126,7 @@ async def get_waveform(track_id: str, url: str) -> list[float]:
         return []
 
     peaks = await asyncio.to_thread(_compute_peaks, stdout)
-    logger.info(
+    logger.debug(
         f"[waveform] Computed {len(peaks)} peaks for {track_id} "
         f"({len(stdout)} PCM bytes)"
     )

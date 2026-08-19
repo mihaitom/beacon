@@ -27,6 +27,7 @@ load_dotenv()
 
 from core.auth import TOKEN as _CONNECT_TOKEN  # noqa: E402
 from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED  # noqa: E402
+from core.log_level import TRACE as _TRACE_LEVEL  # noqa: E402
 from core.log_level import apply as _apply_log_level  # noqa: E402
 from core.log_level import initial_level as _initial_log_level  # noqa: E402
 from core.remote import reap_stale_remote, remote  # noqa: E402
@@ -83,6 +84,7 @@ class _ShortNameFilter(logging.Filter):
 
 
 _LEVEL_COLORS = {
+    _TRACE_LEVEL: "\033[90m",  # gray — the third-party SOAP/HTTP noise TRACE turns on
     logging.DEBUG: "\033[34m",  # blue
     logging.INFO: "\033[32m",  # green
     logging.WARNING: "\033[38;5;208m",  # orange
@@ -138,8 +140,9 @@ _INITIAL_LOG_LEVEL = _initial_log_level()
 
 # Reformat uvicorn's own loggers (startup/error/access) to match the format
 # used above, so every log line — ours and uvicorn's — looks the same.
-# uvicorn.access logs every incoming request and is only useful for
-# DEBUG=true troubleshooting.
+# uvicorn.access logs every incoming request — noisy enough that it's only
+# ever turned on at TRACE (see core/log_level.py's apply()), same as the
+# other third-party libraries.
 UVICORN_LOG_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -179,15 +182,16 @@ UVICORN_LOG_CONFIG = {
         "uvicorn.error": {"level": "INFO"},
         "uvicorn.access": {
             "handlers": ["access"],
-            "level": "INFO" if _INITIAL_LOG_LEVEL == "DEBUG" else "WARNING",
+            "level": "INFO" if _INITIAL_LOG_LEVEL == "TRACE" else "WARNING",
             "propagate": False,
         },
     },
 }
 
 # Applies _INITIAL_LOG_LEVEL to our own logger tree (connect → also covers
-# children connect.streamer / connect.playback / ...), httpx/httpcore and
-# uvicorn.access — see core/log_level.py. persist=False: this value just
+# children connect.streamer / connect.playback / ...) and, only at TRACE,
+# the third-party libraries (SoCo, pyatv, httpx/httpcore) and uvicorn.access
+# — see core/log_level.py. persist=False: this value just
 # came from disk (or the DEBUG env var fallback) — writing it straight back
 # would be a no-op at best and could stomp a deliberate DEBUG=true override
 # with a stale persisted INFO at worst. routes/log_level.py's POST persists

@@ -55,6 +55,12 @@ class SonosDelivery(BaseDelivery):
 
         info = await asyncio.to_thread(device.get_current_transport_info)
         state = info.get("current_transport_state", "UNKNOWN")
+        # TEMPORARY — logged while chasing an intermittent stall (see
+        # BaseDelivery.get_debug_state()'s docstring): a dispatch arriving
+        # while the device is still TRANSITIONING from a *previous* dispatch
+        # (e.g. two transport switches in quick succession) is exactly the
+        # kind of state this app never used to have visibility into.
+        logger.debug(f"[Sonos:{self.target}] transport state before dispatch: {state}")
         if state in ("PLAYING", "PAUSED_PLAYBACK", "TRANSITIONING"):
             await asyncio.to_thread(device.stop)
 
@@ -119,6 +125,15 @@ class SonosDelivery(BaseDelivery):
             return h * 3600 + m * 60 + s
         except (ValueError, AttributeError):
             return None
+
+    # TEMPORARY — see BaseDelivery.get_debug_state()'s docstring. Not called
+    # from play()/get_position() itself (those stay exactly as before);
+    # routes/playback.py's resync loop calls this on the side, purely to log
+    # it alongside the position it's already fetching.
+    async def get_debug_state(self) -> str | None:
+        device = await asyncio.to_thread(self._get_device)
+        info = await asyncio.to_thread(device.get_current_transport_info)
+        return info.get("current_transport_state", "UNKNOWN")
 
     async def get_volume(self) -> float | None:
         device = await asyncio.to_thread(self._get_device)

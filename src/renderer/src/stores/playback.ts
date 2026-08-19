@@ -847,8 +847,24 @@ export const usePlaybackStore = defineStore('playback', {
     async togglePlay(): Promise<void> {
       const connect = useConnectStore()
       if (connect.isActive) {
-        if (this.isPlaying) await connectPlayback.pause()
-        else await connectPlayback.resume()
+        if (this.isPlaying) {
+          await connectPlayback.pause()
+        } else if (connect.status?.ended) {
+          // Mirrors the local <audio> engine's hasEnded branch below — a
+          // connect session whose stream already ran to completion (last
+          // song of a non-repeating queue) doesn't actually restart from a
+          // bare resume() any more than an ended <audio> element does, just
+          // on the backend's media pipeline instead of the browser's: the
+          // reported position stays frozen wherever it ended, no audio
+          // reaches the cast target, and the visualizer feed (GET
+          // /visualizer) and lyrics sync — both driven by that position
+          // actually advancing — never get anything to work from either. A
+          // full restart, same as the local branch, is what actually gets
+          // it playing again.
+          await this.startCurrent()
+        } else {
+          await connectPlayback.resume()
+        }
         return
       }
       const engine = getAudioEngine()

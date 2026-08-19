@@ -1,6 +1,6 @@
 import { fetchConnect } from './http'
 
-export type LogLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR'
+export type LogLevel = 'TRACE' | 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR'
 
 interface LogLevelResponse {
   level: LogLevel
