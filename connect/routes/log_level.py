@@ -1,7 +1,7 @@
 """routes/log_level.py — GET/POST the backend's own runtime log verbosity.
 
 Settings' log-level dropdown (SettingsView.vue) reads/writes this instead of
-requiring the DEBUG env var + a container restart. Machine-to-machine,
+requiring the LOG_LEVEL env var + a container restart. Machine-to-machine,
 gated by CONNECT_TOKEN like routes/remote.py's control plane — this is an
 app-level setting, not tied to any particular media-server login.
 """

@@ -149,11 +149,11 @@ def test_discover_dlna_skips_and_logs_non_media_renderer_devices(caplog):
 
 
 def test_discover_dlna_includes_sonos_when_debug_enabled(monkeypatch):
-    """DEBUG=1 lets a Sonos-only household exercise the DLNA code path — see
-    manager._DEBUG's docstring."""
+    """Debug (or louder) log level lets a Sonos-only household exercise the
+    DLNA code path — see manager._debug_enabled()'s docstring."""
     from delivery import manager as manager_mod
 
-    monkeypatch.setattr(manager_mod, "_DEBUG", True)
+    monkeypatch.setattr(manager_mod, "_debug_enabled", lambda: True)
 
     sonos_headers = {"location": "http://10.0.0.1/desc.xml", "usn": "uuid:sonos"}
 
@@ -210,7 +210,7 @@ def test_discover_airplay_filters_out_sonos_manufactured_devices():
 def test_discover_airplay_includes_sonos_when_debug_enabled(monkeypatch):
     from delivery import manager as manager_mod
 
-    monkeypatch.setattr(manager_mod, "_DEBUG", True)
+    monkeypatch.setattr(manager_mod, "_debug_enabled", lambda: True)
     sonos_device = _fake_airplay_device("Sonos, Inc.", "Sonos AirPlay")
 
     async def fake_scan(loop, timeout=10):

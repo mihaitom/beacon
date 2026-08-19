@@ -30,6 +30,7 @@ from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED  # noqa: E
 from core.log_level import TRACE as _TRACE_LEVEL  # noqa: E402
 from core.log_level import apply as _apply_log_level  # noqa: E402
 from core.log_level import initial_level as _initial_log_level  # noqa: E402
+from core.log_level import is_at_least  # noqa: E402
 from core.remote import reap_stale_remote, remote  # noqa: E402
 from core.session import reap_stale_sessions, registry  # noqa: E402
 from core.state import PORT, get_local_ip  # noqa: E402
@@ -128,14 +129,13 @@ _root_handler.addFilter(_ShortNameFilter())
 logging.basicConfig(level=logging.INFO, handlers=[_root_handler])
 logger = logging.getLogger("connect")
 
-_DEBUG = os.getenv("DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
-
 # The level Settings' log-level dropdown last persisted, falling back to
-# DEBUG=true above only when nothing's been persisted yet — see
-# core/log_level.py. Deliberately independent of _DEBUG from here on: that
-# var keeps gating the API docs/debug-router attack-surface decisions below
-# (unrelated to verbosity), while this drives everything log-level-related,
-# including at runtime via routes/log_level.py.
+# the LOG_LEVEL env var only when nothing's been persisted yet — see
+# core/log_level.py. Also decides, once, whether routes/debug.py's
+# diagnostic router gets registered at all (see near the bottom of this
+# file) — Debug or louder, same as delivery/manager.py's Sonos device-filter
+# bypass, rather than that router's own separate flag from before this
+# setting could gate it too.
 _INITIAL_LOG_LEVEL = _initial_log_level()
 
 # Reformat uvicorn's own loggers (startup/error/access) to match the format
@@ -191,11 +191,11 @@ UVICORN_LOG_CONFIG = {
 # Applies _INITIAL_LOG_LEVEL to our own logger tree (connect → also covers
 # children connect.streamer / connect.playback / ...) and, only at TRACE,
 # the third-party libraries (SoCo, pyatv, httpx/httpcore) and uvicorn.access
-# — see core/log_level.py. persist=False: this value just
-# came from disk (or the DEBUG env var fallback) — writing it straight back
-# would be a no-op at best and could stomp a deliberate DEBUG=true override
-# with a stale persisted INFO at worst. routes/log_level.py's POST persists
-# for real, once the user actually changes it from Settings.
+# — see core/log_level.py. persist=False: this value just came from disk
+# (or the LOG_LEVEL env var fallback) — writing it straight back would be a
+# no-op at best and could stomp a deliberate LOG_LEVEL override with a
+# stale persisted INFO at worst. routes/log_level.py's POST persists for
+# real, once the user actually changes it from Settings.
 _apply_log_level(_INITIAL_LOG_LEVEL, persist=False)
 
 
@@ -293,12 +293,13 @@ app = FastAPI(
     lifespan=lifespan,
     # Swagger UI / ReDoc / the raw OpenAPI schema are unauthenticated by
     # FastAPI's own design (they live outside any router, so require_token
-    # never applies to them) — reachable at /api/docs through nginx just
-    # like anything else, listing every endpoint and its parameters to
-    # anyone who finds the deployment. Off unless DEBUG=true.
-    docs_url="/docs" if _DEBUG else None,
-    openapi_url="/openapi.json" if _DEBUG else None,
-    redoc_url="/redoc" if _DEBUG else None,
+    # never applies to them) — would be reachable at /api/docs through nginx
+    # just like anything else, listing every endpoint and its parameters to
+    # anyone who finds the deployment. Always off — no real deployment need
+    # for it to ever be reachable.
+    docs_url=None,
+    openapi_url=None,
+    redoc_url=None,
 )
 _ALLOWED_ORIGINS_ENV = os.getenv("ALLOWED_ORIGINS", "")
 _ALLOWED_ORIGINS: list[str] = (
@@ -340,12 +341,19 @@ app.include_router(lyrics_router)
 app.include_router(waveform_router)
 app.include_router(radio_router)
 app.include_router(recommendations_router)
-# Diagnostic-only (routes/debug.py) — off by default alongside /docs etc.,
-# not something a real deployment needs exposed. Registered before
-# proxy_router deliberately: that one ends in a catch-all `/{path:path}`
-# route requiring require_token, which would otherwise shadow /debug/* —
-# Starlette matches routes in registration order, first match wins.
-if _DEBUG:
+# Diagnostic-only (routes/debug.py) — registered at Debug log level or
+# louder (see _INITIAL_LOG_LEVEL's own comment), not something a real
+# deployment running at its default Info needs exposed. A startup-time
+# check only: switching the level up from Settings mid-session doesn't
+# retroactively register it, same as it wouldn't un-register on switching
+# back down — a niche-enough tool (visualizer-timing calibration) that
+# needing an actual restart for this specifically is an acceptable
+# trade for not having to make route registration itself dynamic.
+# Registered before proxy_router deliberately: that one ends in a catch-all
+# `/{path:path}` route requiring require_token, which would otherwise
+# shadow /debug/* — Starlette matches routes in registration order, first
+# match wins.
+if is_at_least("DEBUG"):
     app.include_router(debug_router)
 # Same ordering reason as debug_router above: /remote/* (including its own
 # /remote/app/{path:path} static-file catch-all) must be registered before

@@ -5,15 +5,17 @@ delivery/credentials.py) — CONNECT_DATA_DIR survives Electron app updates
 (the packaged binary's own folder gets replaced wholesale) and Docker
 container recreation (mounted volume). routes/log_level.py's GET/POST
 /log-level (driven by SettingsView.vue's log-level dropdown) reads/writes
-this at runtime; main.py's initial_level() falls back to the old DEBUG env
-var only when nothing's been persisted yet — an upgrade from before this
-setting existed, or a deployment troubleshooting a container that never
-comes up far enough to reach Settings in the first place.
+this at runtime; initial_level() below falls back to the LOG_LEVEL env var
+(any of LEVELS, spelled out directly — see its own docstring) only when
+nothing's been persisted yet, for a deployment troubleshooting a container
+that never comes up far enough to reach Settings in the first place.
 
-Deliberately separate from main.py's own `_DEBUG` — that also gates the API
-docs/openapi/redoc endpoints and routes/debug.py's diagnostic router (real
-attack-surface decisions, not just verbosity), and stays a deploy-time-only
-env var for that reason. This module only ever touches how much gets logged.
+Deliberately separate from main.py's own `_DEBUG` (the plain boolean env
+var, unrelated to this module despite the similar name) — that one also
+gates the API docs/openapi/redoc endpoints and routes/debug.py's diagnostic
+router (real attack-surface decisions, not just verbosity), and stays a
+deploy-time-only env var for that reason. This module only ever touches how
+much gets logged.
 """
 
 import logging
@@ -89,16 +91,15 @@ def _save_persisted(level: str) -> None:
 
 def initial_level() -> str:
     """The level to apply once at process startup — persisted Settings
-    choice first, falling back to the legacy DEBUG env var (DEBUG=true ->
-    DEBUG, otherwise INFO) only when nothing's been persisted yet. Never
-    TRACE from the env var fallback — that's a deliberate, heavier choice
-    only ever made explicitly from Settings, not something a blanket
-    DEBUG=true from before TRACE existed should silently opt into."""
+    choice first; if nothing's been persisted yet, LOG_LEVEL (any of LEVELS,
+    case-insensitive — e.g. LOG_LEVEL=TRACE for a deployment that wants
+    everything from the start, without ever reaching Settings to ask for
+    it); otherwise INFO."""
     persisted = _load_persisted()
     if persisted:
         return persisted
-    debug_env = os.getenv("DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
-    return "DEBUG" if debug_env else "INFO"
+    log_level_env = os.getenv("LOG_LEVEL", "").strip().upper()
+    return log_level_env if log_level_env in LEVELS else "INFO"
 
 
 def current_level() -> str:
@@ -106,6 +107,21 @@ def current_level() -> str:
     stands in for the whole group, since apply() always sets every name in
     it to the same level together."""
     return logging.getLevelName(logging.getLogger(_APP_LOGGERS[0]).level)
+
+
+def is_at_least(level: str) -> bool:
+    """True if the currently active level is `level` or louder (e.g.
+    is_at_least("DEBUG") is True for both DEBUG and TRACE) — LEVELS is
+    ordered loudest-first, so a *lower* index means *more* verbose. For
+    callers that want to gate actual behavior (not just log lines) on
+    verbosity — e.g. delivery/manager.py's Sonos device-filter bypass for
+    testing the AirPlay/DLNA code paths without owning that hardware, which
+    used to be its own separate DEBUG env var, disconnected from (and
+    invisible to) the log-level setting actually driving everything else
+    named "debug" in this app. Reads current_level() fresh on every call,
+    not cached — the whole point is picking up a live change from Settings
+    without needing a restart, the same as everything else here."""
+    return LEVELS.index(current_level()) <= LEVELS.index(level)
 
 
 def apply(level: str, *, persist: bool = True) -> None:

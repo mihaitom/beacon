@@ -14,7 +14,7 @@ services:
             # - SERVER_TYPE=subsonic
             # - WEB_PORT=7070
             # - PORT=7071
-            # - DEBUG=true
+            # - LOG_LEVEL=debug
         # Keeps AirPlay 2 pairings and (Jellyfin/Plex only) internet radio
         # stations across container recreations/updates.
         volumes:

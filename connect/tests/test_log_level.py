@@ -39,24 +39,32 @@ def test_initial_level_defaults_to_info():
             patch.object(log_level, "_PATH", _tmp_path(d)),
             patch.dict(os.environ, {}, clear=False),
         ):
-            os.environ.pop("DEBUG", None)
+            os.environ.pop("LOG_LEVEL", None)
             assert log_level.initial_level() == "INFO"
 
 
-def test_initial_level_honors_debug_env_when_nothing_persisted():
+def test_initial_level_honors_log_level_env_when_nothing_persisted():
+    with tempfile.TemporaryDirectory() as d:
+        with patch.object(log_level, "_PATH", _tmp_path(d)):
+            # Case-insensitive — LEVELS itself is always upper-case.
+            with patch.dict(os.environ, {"LOG_LEVEL": "trace"}):
+                assert log_level.initial_level() == "TRACE"
+
+
+def test_initial_level_ignores_invalid_log_level_env():
     with tempfile.TemporaryDirectory() as d:
         with (
             patch.object(log_level, "_PATH", _tmp_path(d)),
-            patch.dict(os.environ, {"DEBUG": "true"}),
+            patch.dict(os.environ, {"LOG_LEVEL": "VERBOSE"}),
         ):
-            assert log_level.initial_level() == "DEBUG"
+            assert log_level.initial_level() == "INFO"
 
 
-def test_initial_level_prefers_persisted_over_debug_env():
+def test_initial_level_prefers_persisted_over_log_level_env():
     with tempfile.TemporaryDirectory() as d:
         with (
             patch.object(log_level, "_PATH", _tmp_path(d)),
-            patch.dict(os.environ, {"DEBUG": "true"}),
+            patch.dict(os.environ, {"LOG_LEVEL": "TRACE"}),
         ):
             log_level.apply("WARNING")
             assert log_level.initial_level() == "WARNING"

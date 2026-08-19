@@ -2,7 +2,8 @@
 
 import asyncio
 import logging
-import os
+
+from core.log_level import is_at_least
 
 from .base import BaseDelivery
 from .chromecast import _ensure_cast_browser, _wait_for_discovery
@@ -11,15 +12,19 @@ from .sonos import SonosDelivery
 
 logger = logging.getLogger("delivery")
 
-# Same DEBUG flag as main.py's verbose-logging switch. Also disables the
-# Sonos-as-AirPlay/Sonos-as-DLNA dedup filters below, so a household with only
-# Sonos hardware can still exercise the AirPlay/DLNA discovery and delivery
-# code paths during development. Note this doesn't make AirPlay-to-Sonos
-# actually work — that fails for the real reason documented on _is_sonos()
-# (no MFi auth) regardless of DEBUG; it only makes the entry selectable so the
-# failure path itself can be tested. DLNA-to-Sonos does work, since Sonos
-# genuinely speaks UPnP AVTransport.
-_DEBUG = os.getenv("DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+
+# Ties into the same log-level setting as everything else named "debug" in
+# this app (Settings' dropdown, or LOG_LEVEL — see core/log_level.py) rather
+# than its own separate env var — disables the Sonos-as-AirPlay/Sonos-as-DLNA
+# dedup filters below at Debug or louder, so a household with only Sonos
+# hardware can still exercise the AirPlay/DLNA discovery and delivery code
+# paths during development, live, without a restart. Note this doesn't make
+# AirPlay-to-Sonos actually work — that fails for the real reason documented
+# on _is_sonos() (no MFi auth) regardless of log level; it only makes the
+# entry selectable so the failure path itself can be tested. DLNA-to-Sonos
+# does work, since Sonos genuinely speaks UPnP AVTransport.
+def _debug_enabled() -> bool:
+    return is_at_least("DEBUG")
 
 
 class DeliveryManager:
@@ -183,7 +188,7 @@ async def discover_airplay(verbose: bool = False) -> list[dict]:
     devices = await pyatv.scan(asyncio.get_event_loop(), timeout=10)
     result = []
     for d in devices:
-        if _is_sonos(d) and not _DEBUG:
+        if _is_sonos(d) and not _debug_enabled():
             if verbose:
                 logger.info(
                     f"[discover] Skipping AirPlay for Sonos device '{d.name}' "
@@ -264,7 +269,7 @@ async def discover_dlna(verbose: bool = False) -> list[dict]:
         except Exception as e:
             logger.warning(f"[discover] DLNA device at {location}: {e}")
             continue
-        if "sonos" in (device.manufacturer or "").lower() and not _DEBUG:
+        if "sonos" in (device.manufacturer or "").lower() and not _debug_enabled():
             if verbose:
                 logger.info(
                     f"[discover] Skipping DLNA for Sonos device '{device.name}' "
