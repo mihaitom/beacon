@@ -11,7 +11,7 @@ from typing import Any
 
 # Kept in sync with package.json by scripts/sync-connect-version.mjs
 # (runs via the `postversion` hook on `pnpm version`).
-CONNECT_VERSION = "0.1.3"
+CONNECT_VERSION = "0.1.4"
 
 # Shared across providers — some (e.g. SimpMusic) reject requests without one.
 USER_AGENT = (
