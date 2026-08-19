@@ -160,7 +160,23 @@ export interface StatusSong {
 
 export interface ConnectStatus {
   current_song: StatusSong | null
+  // Full queue (already-played history included, not just what's left) and
+  // where current_song sits in it — see connect/core/state.py's
+  // AppState.queue. Lets every client controlling this session mirror the
+  // same queue/now-playing in its own UI, not just whichever one dispatched
+  // it — see stores/playback.ts's queue-adoption logic in its
+  // connect.$subscribe() handler.
+  queue: string[]
   current_song_index: number
+  // Standing shuffle/repeat preferences and the unshuffled reference order
+  // `queue` was built from — see AppState.shuffle/repeat_mode/
+  // original_queue's comments. original_queue matters together with
+  // shuffle: it's what stores/playback.ts's toggleShuffle() reverts `queue`
+  // to when switching shuffle off, so every client needs the same one, not
+  // just the same on/off flag.
+  original_queue: string[]
+  shuffle: boolean
+  repeat_mode: 'off' | 'all' | 'one'
   elapsed: number
   ended: boolean
   paused: boolean
@@ -192,6 +208,12 @@ export interface PlayResponse {
   // state correctly.
   status: 'playing' | 'superseded'
   stream_url?: string
+}
+
+/** POST /queue's response — same `superseded` convention as PlayResponse
+ * (see routes/playback.py's /queue, sharing session.play_seq's ordering). */
+export interface QueueResponse {
+  status: 'ok' | 'superseded'
 }
 
 export interface PairingStartResponse {

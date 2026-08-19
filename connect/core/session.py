@@ -189,14 +189,28 @@ def build_status_dict(session: SessionState, displaced: bool = False) -> dict:
 
     return {
         "current_song": current_track,
-        "current_song_index": 0,
+        # The full queue (history included) and where current_track sits in
+        # it — see AppState.queue's comment. Lets every client sharing this
+        # session (not just whichever one dispatched it) mirror the same
+        # queue/now-playing in its own UI, see stores/playback.ts's
+        # queue-adoption logic.
+        "queue": st.queue,
+        "current_song_index": st.queue_index,
+        # Standing shuffle/repeat preferences — see AppState.shuffle/
+        # repeat_mode's comment. original_queue matters together with
+        # shuffle: it's what stores/playback.ts's toggleShuffle() reverts
+        # `queue` to when switching shuffle off, so every client needs the
+        # same one, not just the same on/off flag.
+        "original_queue": st.original_queue,
+        "shuffle": st.shuffle,
+        "repeat_mode": st.repeat_mode,
         "elapsed": elapsed,
         "ended": st.track_ended,
         "paused": st.clock.is_paused,
         "radio": st.radio_info,
         "streaming": st.is_streaming,
         "targets": targets,
-        "total_songs": 1 if st.current_track else 0,
+        "total_songs": len(st.queue),
         "displaced": displaced,
     }
 

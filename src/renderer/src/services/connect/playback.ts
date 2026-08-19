@@ -1,18 +1,32 @@
 import { fetchConnect } from './http'
-import type { ConnectDeviceRef, PlayResponse } from './types'
+import type { ConnectDeviceRef, PlayResponse, QueueResponse } from './types'
 
 interface PlayOptions {
   targets?: ConnectDeviceRef[]
   gain?: number
   startPosition?: number
   force?: boolean
-  /** Upcoming song ids, NOT including `songId` itself — connect stores
-   * the combined list (see connect/core/state.py's AppState.queue) and
-   * auto-advances through it on its own when each song ends, so casting
-   * keeps going even if the renderer that dispatched it is asleep/suspended
-   * (see connect/routes/stream.py's _advance_or_end()). Omit (or pass [])
-   * to opt out — e.g. repeat-one, where advancing at all would be wrong. */
-  queue?: string[]
+  /** The full queue — already-played history included, not just what's
+   * upcoming — with `songId` at `fullQueue[queueIndex]` (caller's
+   * responsibility to keep the two consistent). connect stores this
+   * verbatim (see connect/core/state.py's AppState.queue) and:
+   * - auto-advances through it on its own when each song ends, so casting
+   *   keeps going even if the renderer that dispatched it is asleep/
+   *   suspended (see connect/routes/stream.py's _advance_or_end()).
+   * - broadcasts it over SSE so every other client sharing this session can
+   *   mirror the same queue/now-playing in its own UI (see
+   *   stores/playback.ts's queue-adoption logic).
+   * Omit (or pass `[songId]`/0) to opt out of auto-advance — e.g.
+   * repeat-one, where advancing at all would be wrong. */
+  fullQueue?: string[]
+  queueIndex?: number
+  /** Standing shuffle/repeat preferences + the unshuffled reference order
+   * `fullQueue` was built from — see AppState.shuffle/repeat_mode/
+   * original_queue's comments. Purely for broadcasting to other clients
+   * sharing this session; connect itself never reads these back. */
+  originalQueue?: string[]
+  shuffle?: boolean
+  repeatMode?: 'off' | 'all' | 'one'
 }
 
 // Shared, strictly-increasing dispatch counter for /play and /play-url (both
@@ -62,7 +76,11 @@ export async function play(songId: string, options: PlayOptions = {}): Promise<P
   return fetchConnect<PlayResponse>('/play', {
     method: 'POST',
     body: {
-      song_ids: [songId, ...(options.queue ?? [])],
+      song_ids: options.fullQueue ?? [songId],
+      queue_index: options.queueIndex ?? 0,
+      original_queue: options.originalQueue ?? [],
+      shuffle: options.shuffle ?? false,
+      repeat_mode: options.repeatMode ?? 'off',
       targets: options.targets?.map((t) => ({ name: t.name, type: t.type })),
       gain: options.gain ?? 1.0,
       start_position: options.startPosition ?? 0,
@@ -76,8 +94,8 @@ export async function playUrl(
   url: string,
   title: string,
   options: { targets?: ConnectDeviceRef[]; force?: boolean } = {},
-): Promise<void> {
-  await fetchConnect('/play-url', {
+): Promise<PlayResponse> {
+  return fetchConnect<PlayResponse>('/play-url', {
     method: 'POST',
     body: {
       url,
@@ -105,11 +123,30 @@ export async function stop(): Promise<void> {
   await fetchConnect('/stop', { method: 'POST' })
 }
 
-/** Re-sends the upcoming queue (same convention as play()'s `queue` option —
- * NOT including the current song) after a queue edit made mid-play, so
- * connect's own auto-advance (routes/stream.py's _advance_or_end()) keeps
- * following it even once the renderer that dispatched it goes to sleep.
- * See stores/playback.ts's syncCastQueue(). */
-export async function updateQueue(songIds: string[]): Promise<void> {
-  await fetchConnect('/queue', { method: 'POST', body: { song_ids: songIds } })
+/** Re-sends the full queue (same convention as play()'s `fullQueue`/
+ * `queueIndex` — history included, not just what's upcoming) after a queue
+ * edit made mid-play (reorder/add/remove/shuffle), so connect's own
+ * auto-advance keeps following it, and every other client sharing this
+ * session picks up the edit too — see stores/playback.ts's
+ * syncCastQueue(). `status: 'superseded'` means a newer dispatch (this
+ * device or another client) already won and this edit never applied — the
+ * caller doesn't need to do anything about it, the next real SSE status
+ * tick already reflects whichever one did (see routes/playback.py's
+ * /queue). */
+export async function updateQueue(
+  songIds: string[],
+  queueIndex: number,
+  options: { originalQueue?: string[]; shuffle?: boolean; repeatMode?: 'off' | 'all' | 'one' } = {},
+): Promise<QueueResponse> {
+  return fetchConnect<QueueResponse>('/queue', {
+    method: 'POST',
+    body: {
+      song_ids: songIds,
+      queue_index: queueIndex,
+      original_queue: options.originalQueue ?? [],
+      shuffle: options.shuffle ?? false,
+      repeat_mode: options.repeatMode ?? 'off',
+      seq: nextSeq(),
+    },
+  })
 }

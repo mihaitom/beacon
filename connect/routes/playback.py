@@ -4,6 +4,7 @@ import asyncio
 import copy
 import logging
 import time
+from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -335,7 +336,22 @@ def _current_reconnect_args(
 
 
 class PlayRequest(BaseModel):
+    # The *full* ordered queue (already-played history included, not just
+    # what's left) — see AppState.queue's comment. queue_index below marks
+    # which entry is the one to actually dispatch/become current.
     song_ids: list[str]
+    # Where in song_ids the track to dispatch sits — defaults to 0, so a
+    # caller that only ever sends `[trackId]` (today's simplest case) still
+    # behaves exactly as before this field existed.
+    queue_index: int = 0
+    # Standing shuffle/repeat preferences — see AppState.shuffle/repeat_mode's
+    # comment. Purely informational for connect itself (never read outside
+    # storing + broadcasting them); shuffle in particular matters together
+    # with original_queue below, since toggling shuffle off on *any* client
+    # reverts to whatever original_queue that client last saw.
+    original_queue: list[str] = []
+    shuffle: bool = False
+    repeat_mode: Literal["off", "all", "one"] = "off"
     targets: list[dict] | None = None
     target_name: str | None = None
     target_type: str | None = None
@@ -389,7 +405,12 @@ async def play_tracks(
         if req.seq:
             session.play_seq = req.seq
 
-        track_id = req.song_ids[0]
+        # Clamped rather than trusted outright — an out-of-range index from a
+        # confused/outdated client shouldn't 500 or silently dispatch the
+        # wrong track; falls back to "the queue starts here", same as before
+        # queue_index existed.
+        queue_index = req.queue_index if 0 <= req.queue_index < len(req.song_ids) else 0
+        track_id = req.song_ids[queue_index]
         try:
             track = session.media.get_track(track_id)
         except Exception as e:
@@ -444,6 +465,9 @@ async def play_tracks(
         previous_clock = copy.copy(st.clock)
         previous_queue = st.queue
         previous_queue_index = st.queue_index
+        previous_original_queue = st.original_queue
+        previous_shuffle = st.shuffle
+        previous_repeat_mode = st.repeat_mode
 
         st.current_track = track
         st.current_track_gain = req.gain
@@ -453,14 +477,16 @@ async def play_tracks(
         st.clock.start(start_position)
         st.track_ended = False
         st.active_delivery = target
-        # The whole remaining queue, not just this one track — see
-        # AppState.queue's comment. Reset to a matching single-item queue
-        # even when the frontend hasn't been updated to send more than one
-        # id yet (today's behavior): queue_index+1 >= len(queue) then always
-        # falls straight through to _advance_or_end()'s existing "mark
-        # ended" branch, identical to before this existed.
+        # The whole queue (history included), not just this one track — see
+        # AppState.queue's comment. A caller that only ever sends a single id
+        # (queue_index defaults to 0 either way) still falls straight through
+        # to _advance_or_end()'s "mark ended" branch once this track finishes,
+        # identical to before queue_index existed.
         st.queue = req.song_ids
-        st.queue_index = 0
+        st.queue_index = queue_index
+        st.original_queue = req.original_queue
+        st.shuffle = req.shuffle
+        st.repeat_mode = req.repeat_mode
 
         if target:
             # internal=True: fetched directly by the cast device, not the browser —
@@ -489,6 +515,9 @@ async def play_tracks(
                     st.clock = previous_clock
                     st.queue = previous_queue
                     st.queue_index = previous_queue_index
+                    st.original_queue = previous_original_queue
+                    st.shuffle = previous_shuffle
+                    st.repeat_mode = previous_repeat_mode
                     # Dispatch never actually reached the device — release the
                     # claim just granted above instead of leaving it locked to
                     # this session (device_in_use for everyone else) with
@@ -715,7 +744,19 @@ async def seek_playback(
 
 
 class QueueRequest(BaseModel):
+    # The full queue, same convention as PlayRequest.song_ids/queue_index —
+    # history included, not just what's upcoming.
     song_ids: list[str]
+    queue_index: int = 0
+    # See PlayRequest.original_queue/shuffle/repeat_mode.
+    original_queue: list[str] = []
+    shuffle: bool = False
+    repeat_mode: Literal["off", "all", "one"] = "off"
+    # See PlayRequest.seq — shares session.play_seq's ordering with /play and
+    # /play-url, since all three write session.state.queue/queue_index and
+    # a stale queue edit must not be able to stomp a more recent song switch
+    # (or vice versa).
+    seq: int = 0
 
 
 @router.post("/queue")
@@ -723,25 +764,37 @@ async def update_queue(
     req: QueueRequest, session: SessionState = Depends(require_authenticated_session)
 ):
     """Keeps session.state.queue (routes/stream.py's _advance_or_end() reads
-    this to auto-advance casting on its own — see AppState.queue's comment)
-    in sync with queue edits the renderer makes *after* the current track
-    already started playing — reorder/add/remove/shuffle all mutate the
-    renderer's own queue live, but /play only ever seeds session.state.queue
-    once, at dispatch time. Without this, those edits stay invisible to
-    connect: it keeps auto-advancing through the stale list from the last
-    /play call once the renderer isn't around to manually dispatch each next
-    track itself (e.g. the controlling phone's screen locks), audibly
-    ignoring whatever the queue was just reordered to.
+    this to auto-advance casting on its own, build_status_dict() broadcasts
+    it to every connected client — see AppState.queue's comment) in sync
+    with queue edits the renderer makes *after* the current track already
+    started playing — reorder/add/remove/shuffle all mutate the renderer's
+    own queue live, but /play only ever seeds session.state.queue once, at
+    dispatch time. Without this, those edits stay invisible to connect (auto-
+    advance keeps following the stale list from the last /play) and to any
+    *other* client sharing this session (its own queue view never updates).
 
-    `song_ids` is the *upcoming* queue only, mirroring PlayRequest.song_ids[1:]
-    — same convention as connectPlayback.play()'s `queue` option (see that
-    docstring) — the current track (already at queue[queue_index]) and
-    everything before it are left untouched."""
+    A full replacement, not a patch — same shape /play's own song_ids/
+    queue_index accept, since a client sends its complete current queue on
+    every edit (see stores/playback.ts's syncCastQueue())."""
     async with session.play_lock:
+        if _is_stale_seq(session, req.seq):
+            logger.info(
+                f"[queue] Ignoring superseded request (seq={req.seq} < {session.play_seq})"
+            )
+            return {"status": "superseded"}
+        if req.seq:
+            session.play_seq = req.seq
+
         st = session.state
         if st.queue:
-            st.queue = st.queue[: st.queue_index + 1] + req.song_ids
-        return {"success": True}
+            queue_index = req.queue_index if 0 <= req.queue_index < len(req.song_ids) else 0
+            st.queue = req.song_ids
+            st.queue_index = queue_index
+            st.original_queue = req.original_queue
+            st.shuffle = req.shuffle
+            st.repeat_mode = req.repeat_mode
+            await session.event_bus.broadcast(build_status_dict(session))
+        return {"status": "ok"}
 
 
 @router.post("/stop")

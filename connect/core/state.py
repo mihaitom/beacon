@@ -52,17 +52,43 @@ class AppState:
         # on what's being sent. Resets to the fallback for radio (/play-url
         # never goes through our own /stream proxy, so it's irrelevant there).
         self.current_output_format: OutputFormat = FALLBACK_FORMAT
-        # Track ids for the current dispatch and whatever the frontend
-        # already knows comes after it (queue[queue_index] == current_track)
-        # — set by /play from the full PlayRequest.track_ids, not derived
-        # from anything else. Lets routes/stream.py's _fire_track_end()
-        # auto-advance casting playback to the next queued track entirely
-        # server-side when one exists, instead of only ever marking
-        # track_ended and waiting for the frontend to notice and re-dispatch
-        # — which never happens if the renderer is asleep (locked screen).
+        # The *full* ordered queue as the frontend currently understands it —
+        # already-played history included, not just what's left — with
+        # queue[queue_index] == current_track. Set by /play (fresh dispatch)
+        # and /queue (an edit that doesn't restart playback, e.g. a reorder);
+        # never derived from anything else. Two independent things read this:
+        # - routes/stream.py's _advance_or_end() auto-advances casting to
+        #   queue[queue_index + 1] entirely server-side when one exists,
+        #   instead of only ever marking track_ended and waiting for the
+        #   frontend to notice and re-dispatch — which never happens if the
+        #   renderer that started this session is asleep (locked screen).
+        # - build_status_dict() broadcasts it over SSE so every client
+        #   controlling this session (not just the one that dispatched it)
+        #   can mirror the same queue/current-song in its own UI — see
+        #   stores/playback.ts's queue-adoption logic.
         # Reset to empty by /stop and /play-url (radio has no queue).
         self.queue: list[str] = []
         self.queue_index: int = 0
+        # The *unshuffled* reference order queue was built from — mirrors
+        # stores/playback.ts's own originalQueue exactly (same ids, same
+        # purpose: what toggling shuffle off reverts queue to). Only ever
+        # meaningful together with `queue`/shuffle above; not touched by
+        # _advance_or_end() itself. Not reset by /stop/-url either — same
+        # reasoning as shuffle/repeat_mode below, these are standing
+        # preferences, not queue contents.
+        self.original_queue: list[str] = []
+        # Standing playback preferences, not tied to any one queue/track —
+        # mirrors stores/playback.ts's shuffle/repeatMode. Broadcast over SSE
+        # (build_status_dict()) purely so every client sharing this session
+        # shows the same toggle state and, for shuffle, has a correct
+        # original_queue to revert to when toggling it off locally — connect
+        # itself never reads either of these (repeat-all/repeat-one/shuffle
+        # logic all stays renderer-side, see stores/playback.ts's
+        # advanceOnSongEnd()/toggleShuffle()). Not reset by /stop/-url:
+        # switching to radio or stopping doesn't mean "forget the shuffle/
+        # repeat preference for next time there's a queue again."
+        self.shuffle: bool = False
+        self.repeat_mode: str = "off"
 
 
 class EventBus:

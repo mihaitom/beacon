@@ -6,11 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added live sync of the queue, shuffle, and repeat state across every device controlling the same cast session - reordering, adding, or removing a song, or toggling shuffle/repeat, on one device now shows up on every other connected device too (previously only which song was playing and its position stayed in sync; the queue itself was independent per device)
+
 ### Fixed
 
 - Fixed the app log file (see 0.1.3) tagging every line from the backend as an error, even completely normal status messages - the backend logs everything to the same output stream regardless of severity, same as most command-line programs, and the log file was mistaking that stream choice for severity
 - Fixed queue changes made while casting (reordering, adding, removing, shuffling) not being followed by auto-advance once nothing was around to manually skip to the next song - the cast target kept auto-advancing through whatever queue order was active when the current song started, ignoring anything changed since
 - Fixed picking a cast target while local playback was paused starting playback on that device right away instead of staying paused
+- Fixed the Previous/Next buttons resuming playback immediately even if it was paused - navigating now stays paused, matching what selecting a cast target already did
+- Fixed the "now playing" display occasionally showing a different song than what was actually playing when two devices controlled the same cast session and both changed something around the same time
 
 ## [0.1.3] - 2026-08-16
 

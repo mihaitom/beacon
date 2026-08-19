@@ -314,23 +314,54 @@ def test_play_seeds_queue_from_song_ids(client, default_session):
     assert default_session.state.queue_index == 0
 
 
-def test_update_queue_replaces_upcoming_tail(client, default_session):
-    """POST /queue re-syncs the *upcoming* part of session.state.queue after
-    a renderer-side reorder/add/remove — without this, _advance_or_end()
-    would keep auto-advancing through whatever /play originally seeded."""
+def test_play_dispatches_track_at_queue_index(client, default_session):
+    """queue_index picks which song_ids entry is the one actually dispatched
+    (and stored as current) — the whole point of song_ids now carrying
+    already-played history too, not just current+upcoming (see
+    AppState.queue's comment)."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="2", title="Song 2", artist="Artist", duration=180, cover_art_id="c")
+
+    with patch.object(default_session.media, "get_track", return_value=track) as get_track:
+        r = client.post("/play", json={"song_ids": ["1", "2", "3"], "queue_index": 1})
+
+    assert r.json()["status"] == "playing"
+    get_track.assert_called_once_with("2")
+    assert default_session.state.queue == ["1", "2", "3"]
+    assert default_session.state.queue_index == 1
+
+
+def test_play_clamps_out_of_range_queue_index(client, default_session):
+    """An out-of-range queue_index (a confused/outdated client) falls back to
+    0 instead of raising or dispatching nothing."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+
+    with patch.object(default_session.media, "get_track", return_value=track) as get_track:
+        r = client.post("/play", json={"song_ids": ["1", "2"], "queue_index": 5})
+
+    assert r.json()["status"] == "playing"
+    get_track.assert_called_once_with("1")
+    assert default_session.state.queue_index == 0
+
+
+def test_update_queue_replaces_the_whole_queue(client, default_session):
+    """POST /queue fully replaces session.state.queue/queue_index (history
+    included) after a renderer-side reorder/add/remove — without this,
+    _advance_or_end() would keep auto-advancing through whatever /play
+    originally seeded, and no *other* client sharing this session would ever
+    see the edit (see build_status_dict())."""
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
     track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
 
     with patch.object(default_session.media, "get_track", return_value=track):
         client.post("/play", json={"song_ids": ["1", "2", "3"]})
 
-    r = client.post("/queue", json={"song_ids": ["3", "2"]})
+    r = client.post("/queue", json={"song_ids": ["0", "1", "3", "2"], "queue_index": 1})
 
-    assert r.json()["success"] is True
-    # queue_index (0, still pointing at "1") and everything up to and
-    # including it are untouched — only the upcoming tail was replaced.
-    assert default_session.state.queue == ["1", "3", "2"]
-    assert default_session.state.queue_index == 0
+    assert r.json()["status"] == "ok"
+    assert default_session.state.queue == ["0", "1", "3", "2"]
+    assert default_session.state.queue_index == 1
 
 
 def test_update_queue_is_noop_without_an_active_queue(client, default_session):
@@ -339,8 +370,85 @@ def test_update_queue_is_noop_without_an_active_queue(client, default_session):
     current track at its head."""
     r = client.post("/queue", json={"song_ids": ["1", "2"]})
 
-    assert r.json()["success"] is True
+    assert r.json()["status"] == "ok"
     assert default_session.state.queue == []
+
+
+def test_update_queue_rejects_stale_seq(client, default_session):
+    """A /queue edit carrying a lower seq than a dispatch this session already
+    accepted is dropped — same ordering /play/-url already rely on, since all
+    three write session.state.queue/queue_index (see PlayRequest.seq)."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+
+    with patch.object(default_session.media, "get_track", return_value=track):
+        client.post("/play", json={"song_ids": ["1", "2"], "seq": 10})
+
+    r = client.post("/queue", json={"song_ids": ["1", "9"], "seq": 5})
+
+    assert r.json()["status"] == "superseded"
+    # The stale request's own song_ids never got applied.
+    assert default_session.state.queue == ["1", "2"]
+
+
+def test_status_reports_queue(client, default_session):
+    """build_status_dict() (GET /status and the SSE /events stream) surfaces
+    the full queue/current index/count so every client sharing this session
+    can mirror it, not just whichever one dispatched /play."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="2", title="Song 2", artist="Artist", duration=180, cover_art_id="c")
+
+    with patch.object(default_session.media, "get_track", return_value=track):
+        client.post("/play", json={"song_ids": ["1", "2", "3"], "queue_index": 1})
+
+    body = client.get("/status").json()
+    assert body["queue"] == ["1", "2", "3"]
+    assert body["current_song_index"] == 1
+    assert body["total_songs"] == 3
+
+
+def test_play_and_queue_sync_shuffle_repeat_and_original_queue(client, default_session):
+    """/play and /queue both store+broadcast shuffle/repeat_mode/
+    original_queue alongside the queue itself — standing preferences every
+    client sharing the session should see, and (for shuffle) needs the same
+    original_queue to revert to when toggling shuffle off locally."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+
+    with patch.object(default_session.media, "get_track", return_value=track):
+        client.post(
+            "/play",
+            json={
+                "song_ids": ["2", "1", "3"],
+                "queue_index": 1,
+                "original_queue": ["1", "2", "3"],
+                "shuffle": True,
+                "repeat_mode": "all",
+            },
+        )
+
+    assert default_session.state.original_queue == ["1", "2", "3"]
+    assert default_session.state.shuffle is True
+    assert default_session.state.repeat_mode == "all"
+
+    r = client.post(
+        "/queue",
+        json={
+            "song_ids": ["1", "2", "3"],
+            "queue_index": 0,
+            "original_queue": ["1", "2", "3"],
+            "shuffle": False,
+            "repeat_mode": "one",
+        },
+    )
+    assert r.json()["status"] == "ok"
+    assert default_session.state.shuffle is False
+    assert default_session.state.repeat_mode == "one"
+
+    body = client.get("/status").json()
+    assert body["original_queue"] == ["1", "2", "3"]
+    assert body["shuffle"] is False
+    assert body["repeat_mode"] == "one"
 
 
 def test_resume_reuses_cached_content_type_without_reprobing(client, default_session):
