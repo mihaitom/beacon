@@ -18,6 +18,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Fixed the Previous/Next buttons resuming playback immediately even if it was paused - navigating now stays paused, matching what selecting a cast target already did
 - Fixed the "now playing" display occasionally showing a different song than what was actually playing when two devices controlled the same cast session and both changed something around the same time
 
+### Security
+
+- Updated Electron from 38 to 39, closing out a batch of upstream security advisories Dependabot flagged (context isolation, protocol handling, and related renderer-process issues)
+
 ## [0.1.3] - 2026-08-16
 
 ### Added

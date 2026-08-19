@@ -10,10 +10,10 @@ importers:
     dependencies:
       '@electron-toolkit/preload':
         specifier: ^3.0.2
-        version: 3.0.2(electron@38.8.6)
+        version: 3.0.2(electron@39.8.10)
       '@electron-toolkit/utils':
         specifier: ^4.0.0
-        version: 4.0.0(electron@38.8.6)
+        version: 4.0.0(electron@39.8.10)
       '@mdi/font':
         specifier: ^7.4.47
         version: 7.4.47
@@ -79,8 +79,8 @@ importers:
         specifier: ^10.0.5
         version: 10.0.5
       electron:
-        specifier: ^38.8.6
-        version: 38.8.6
+        specifier: ^39.8.10
+        version: 39.8.10
       electron-builder:
         specifier: ^26.15.7
         version: 26.15.7(electron-builder-squirrel-windows@26.15.7)
@@ -1719,8 +1719,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@38.8.6:
-    resolution: {integrity: sha512-lyBhcVi9QYAZL6FO6r5twAWAjWnYomo3iVDvrb5SJZlq928BGemHOKG0tPIq41NOLaCu9f3XdEEjMkjQPjprRg==}
+  electron@39.8.10:
+    resolution: {integrity: sha512-zbYtGPYUI7PzqLAzkk21Rk6j67WN0hxn0Mq/njErZo1d0HSf33is4f8ICI5fMLy5vYe0JtCtM5sYunNOaochSQ==}
     engines: {node: '>= 12.20.55'}
     hasBin: true
 
@@ -3417,13 +3417,13 @@ snapshots:
       '@babel/helper-string-parser': 8.0.0
       '@babel/helper-validator-identifier': 8.0.4
 
-  '@electron-toolkit/preload@3.0.2(electron@38.8.6)':
+  '@electron-toolkit/preload@3.0.2(electron@39.8.10)':
     dependencies:
-      electron: 38.8.6
+      electron: 39.8.10
 
-  '@electron-toolkit/utils@4.0.0(electron@38.8.6)':
+  '@electron-toolkit/utils@4.0.0(electron@39.8.10)':
     dependencies:
-      electron: 38.8.6
+      electron: 39.8.10
 
   '@electron/asar@3.4.1':
     dependencies:
@@ -4756,7 +4756,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@38.8.6:
+  electron@39.8.10:
     dependencies:
       '@electron/get': 2.0.3
       '@types/node': 22.20.1
@@ -5431,11 +5431,11 @@ snapshots:
 
   node-abi@4.33.0:
     dependencies:
-      semver: 7.7.4
+      semver: 7.8.5
 
   node-api-version@0.2.1:
     dependencies:
-      semver: 7.7.4
+      semver: 7.8.5
 
   node-gyp@12.4.0:
     dependencies:
@@ -5444,7 +5444,7 @@ snapshots:
       graceful-fs: 4.2.11
       nopt: 9.0.0
       proc-log: 6.1.0
-      semver: 7.7.4
+      semver: 7.8.5
       tar: 7.5.22
       tinyglobby: 0.2.17
       undici: 6.28.0
