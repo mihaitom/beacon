@@ -80,17 +80,30 @@ const JELLYFIN_CAPABILITIES: ServerCapabilities = {
 // (see media/plex_bridge.py's module docstring) — the heart icon and the
 // Favorites nav item/page hide accordingly instead of leading to a
 // dead-end control. playHistoryStats is true: scrobble.view maps onto
-// Plex's own PUT /:/scrobble, confirmed live against a real server. A real
-// InstantMix-equivalent for song radio still needs its own bridge work,
-// so that one stays false until verified for real, same as Jellyfin's own
-// values above were.
+// Plex's own PUT /:/scrobble, confirmed live against a real server.
+// songRadio is true — bridged onto Plex's own Sonic Analysis
+// (`/library/metadata/{id}/nearest`, confirmed live 2026-08-20 — see
+// media/plex_bridge.py's get_similar_songs2() and PLEX_PLAN.md) — but
+// unlike every other true value here, it's not something *this app*
+// controls end to end: Sonic Analysis itself is a Plex Pass-gated feature
+// (confirmed against Plex's own support docs), so a listener without an
+// active Plex Pass sees the Song/Artist Radio buttons and the Autoplay
+// toggle same as everyone else, but they silently return nothing instead
+// of a real mix — connect's own bridge turns the 403 that gets back into
+// an empty result rather than an error (see get_similar_songs2()'s own
+// comment). Left true anyway rather than adding a whole separate "has
+// Plex Pass" capability just to hide these for that one case — there's no
+// way to know that account-level fact from here without a real call
+// first, and a quietly-inert control is a smaller papercut than an
+// always-hidden one for every Plex listener regardless of their own
+// subscription.
 const PLEX_CAPABILITIES: ServerCapabilities = {
   favorites: false,
   emptyPlaylistCreation: false,
   personalRating: true,
   internetRadio: true,
   libraryScan: false,
-  songRadio: false,
+  songRadio: true,
   playHistoryStats: true,
 }
 

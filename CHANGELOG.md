@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added Autoplay - once the queue is down to its last song or so, similar songs get added automatically so playback never just runs dry. Off by default; toggle it from the icon next to Queue in the player bar, and set how many songs get added per top-up in Settings. Works the same for local playback and casting, and keeps topping the queue up on its own server-side even if nothing's around to do it locally (e.g. a phone's screen is locked)
+- Added Song Radio, Artist Radio, and Autoplay support for Plex (needs an active Plex Pass on the account) - previously Navidrome/Subsonic and Jellyfin only
+
 ### Changed
 
 - Changed the Home view's two "discover" shelves for more headroom and a clearer distinction between them - the library-based one now shows up to 20 albums instead of 15 on wide screens, and both got clearer titles ("Discover in your library" / "New artists to explore") so it's obvious which is drawn from albums you already own and which is brand-new artist suggestions

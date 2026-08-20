@@ -79,11 +79,11 @@ Jellyfin and Plex can both be selected as a server type at login. Neither has a 
 | Play history / Stats page                         |           ✅           |    ✅    |   ✅      |
 | Favorites (heart icon)                            |           ✅           |    ✅    |   ❌      |
 | Personal 1-5 star rating                          |           ✅           |    ❌    |   ✅      |
-| Song/Artist Radio and Autoplay                    |           ✅           |    ✅    |   ❌      |
+| Song/Artist Radio and Autoplay                    |           ✅           |    ✅    | ✅ (needs an active Plex Pass) |
 | Create playlists                                  |           ✅           |    ✅    |   ✅      |
 | Trigger a library rescan from Settings            |           ✅           |    ❌    |   ❌      |
 
-A couple of these are real gaps to close, not things Plex is actually incapable of - Plex does have its own sonic-similarity/"Play Similar" mechanism, it just hasn't been bridged into `getSimilarSongs2.view` yet (unlike Jellyfin's InstantMix, which has). Favorites is the one genuine dead end: Plex's core Media Server API has no separate boolean favorite at all - the heart-shaped "Love" seen in Plexamp/mobile is backed by Plex Pass cloud sync (a different API this bridge doesn't talk to), and personal ratings already cover the "mark this" use case for Plex instead.
+Song/Artist Radio and Autoplay on Plex are bridged onto Plex's own Sonic Analysis feature (`/library/metadata/{id}/nearest`, the same thing "Play Similar Tracks" uses in every official Plex client) - but Sonic Analysis itself is a Plex Pass-gated feature server-side, confirmed against Plex's own support docs. Without an active Plex Pass, the buttons and the Autoplay toggle are still there, they just quietly return nothing instead of a real mix. Favorites is the one genuine dead end: Plex's core Media Server API has no separate boolean favorite at all - the heart-shaped "Love" seen in Plexamp/mobile is backed by a different, Plex Pass cloud sync API this bridge doesn't talk to, and personal ratings already cover the "mark this" use case for Plex instead.
 
 ### Remote Control (Electron) and the mobile web UI
 

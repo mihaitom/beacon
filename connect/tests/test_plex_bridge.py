@@ -2,6 +2,7 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 
 from core.session import DEFAULT_SESSION_ID, SessionState
@@ -207,6 +208,61 @@ def test_get_album_list2_returns_mapped_albums(client, plex_session, monkeypatch
     ]
     # Music section resolved once and reused — not re-fetched.
     assert sum(1 for _method, url, _params in calls if url.endswith("/library/sections")) == 1
+
+
+def test_get_similar_songs2_returns_mapped_songs(client, plex_session, monkeypatch):
+    fake_client, calls = _fake_px_client(
+        {
+            "/library/metadata/9001/nearest": {
+                "MediaContainer": {
+                    "Metadata": [
+                        {
+                            "ratingKey": "9002",
+                            "title": "Similar Song",
+                            "grandparentTitle": "Artist B",
+                            "parentTitle": "Album B",
+                            "duration": 200_000,
+                        }
+                    ]
+                }
+            },
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getSimilarSongs2.view", params={"id": "9001", "count": "10"})
+    assert r.status_code == 200
+    body = r.json()["subsonic-response"]
+    assert body["status"] == "ok"
+    songs = body["similarSongs2"]["song"]
+    assert len(songs) == 1
+    assert songs[0]["id"] == "9002"
+    assert songs[0]["artist"] == "Artist B"
+    assert "plexPassRequired" not in body["similarSongs2"]
+    assert calls[0][2]["limit"] == "10"
+
+
+def test_get_similar_songs2_flags_plex_pass_required_on_403(client, plex_session, monkeypatch):
+    """Regression for a real live-server finding (2026-08-20): Plex's Sonic
+    Analysis feature this endpoint bridges onto is Plex Pass-gated, and a
+    non-Pass account gets a clean 403 back — surfaced to the frontend as
+    plexPassRequired rather than a thrown error, so stores/playback.ts can
+    tell the listener why instead of that just silently doing nothing (Song/
+    Artist Radio) or logging a warning forever (Autoplay)."""
+
+    async def fake_request(method, url, headers=None, params=None):
+        return httpx.Response(403, request=httpx.Request(method, url))
+
+    fake_client = MagicMock()
+    fake_client.request = fake_request
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getSimilarSongs2.view", params={"id": "9001"})
+    assert r.status_code == 200
+    body = r.json()["subsonic-response"]
+    assert body["status"] == "ok"
+    assert body["similarSongs2"]["song"] == []
+    assert body["similarSongs2"]["plexPassRequired"] is True
 
 
 def test_get_artist_derives_counts_instead_of_trusting_summary_fields(

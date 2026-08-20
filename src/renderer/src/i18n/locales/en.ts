@@ -115,6 +115,8 @@ export default {
     songRadioError: 'Could not start Song Radio.',
     artistRadio: 'Artist Radio',
     artistRadioError: 'Could not start Artist Radio.',
+    plexPassRequired:
+      "This needs an active Plex Pass subscription - it's what Plex's own Sonic Analysis feature (Song/Artist Radio, Autoplay) is gated behind on their side, not something Beacon can work around.",
     viewOnService: 'View on {service}',
     selected: 'selected',
     clearSelection: 'Clear selection',

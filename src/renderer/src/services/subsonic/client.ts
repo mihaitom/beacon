@@ -271,13 +271,23 @@ export class SubsonicClient {
   }
 
   /** Song Radio — songs similar to `id` (a song, artist, or album id),
-   * per Navidrome's own recommendation engine. */
-  async getSimilarSongs2(id: string, count = 100): Promise<Song[]> {
+   * per Navidrome's own recommendation engine (Jellyfin's InstantMix or
+   * Plex's Sonic Analysis for those server types — see the respective
+   * bridges). `plexPassRequired` surfaces SimilarSongs2Response's own flag
+   * straight through — see its comment; false for every non-Plex session,
+   * since only that bridge ever sets it. */
+  async getSimilarSongs2(
+    id: string,
+    count = 100,
+  ): Promise<{ songs: Song[]; plexPassRequired: boolean }> {
     const data = await this.get<SimilarSongs2Response>('getSimilarSongs2.view', {
       id,
       count: String(count),
     })
-    return (data.similarSongs2.song ?? []).map(mapSong)
+    return {
+      songs: (data.similarSongs2.song ?? []).map(mapSong),
+      plexPassRequired: data.similarSongs2.plexPassRequired ?? false,
+    }
   }
 
   /** Registers a play with the media server — this is what actually drives

@@ -116,6 +116,8 @@ export default {
     songRadioError: 'No se pudo iniciar la radio de la canción.',
     artistRadio: 'Radio del artista',
     artistRadioError: 'No se pudo iniciar la radio del artista.',
+    plexPassRequired:
+      'Esto necesita una suscripción activa a Plex Pass - Plex bloquea su propia función Sonic Analysis (Radio de canción/artista, Autoplay) detrás de eso, Beacon no puede evitarlo.',
     viewOnService: 'Ver en {service}',
     selected: 'seleccionado(s)',
     clearSelection: 'Borrar selección',

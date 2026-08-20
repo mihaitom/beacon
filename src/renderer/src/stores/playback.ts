@@ -8,6 +8,24 @@ import { useAutoplayStore } from './autoplay'
 import * as connectPlayback from '@/services/connect/playback'
 import type { ConnectDeviceRef, ConnectStatus, PlayResponse } from '@/services/connect/types'
 import type { Artist, RadioStation, Song } from '@/types/library'
+import { emitter } from '@/emitter'
+import { i18n } from '@/i18n'
+
+// Store actions, not components — no this.$emitter/this.$t here, hence
+// going straight to the underlying singletons those are thin wrappers
+// around. Shared by startSongRadio()/startArtistRadio()/maybeAutoplay(),
+// the only three callers of getSimilarSongs2() and so the only places
+// SimilarSongs2Response's plexPassRequired flag can ever come back true
+// (see that type's own comment) — `titleKey` is whichever of the three
+// triggered it, so the toast reads as "Song Radio: needs Plex Pass" etc.
+// rather than a single generic title.
+function notifyPlexPassRequired(titleKey: string): void {
+  emitter.emit('toast', {
+    level: 'information',
+    title: i18n.global.t(titleKey),
+    message: i18n.global.t('library.plexPassRequired'),
+  })
+}
 
 type RepeatMode = 'off' | 'all' | 'one'
 
@@ -748,7 +766,10 @@ export const usePlaybackStore = defineStore('playback', {
      * and starts a fresh queue with `song` first, so picking it always
      * plays the song you actually clicked, not an arbitrary similar one. */
     async startSongRadio(song: Song): Promise<void> {
-      const similar = await useLibraryStore().client().getSimilarSongs2(song.id)
+      const { songs: similar, plexPassRequired } = await useLibraryStore()
+        .client()
+        .getSimilarSongs2(song.id)
+      if (plexPassRequired) notifyPlexPassRequired('library.songRadio')
       const songs = [song, ...similar.filter((t) => t.id !== song.id)]
       await this.playSongList(songs, 0)
     },
@@ -760,7 +781,10 @@ export const usePlaybackStore = defineStore('playback', {
      * like Song Radio does — the whole point here is a mix across the
      * artist's catalog, not one particular song. */
     async startArtistRadio(artist: Artist): Promise<void> {
-      const songs = await useLibraryStore().client().getSimilarSongs2(artist.id)
+      const { songs, plexPassRequired } = await useLibraryStore()
+        .client()
+        .getSimilarSongs2(artist.id)
+      if (plexPassRequired) notifyPlexPassRequired('library.artistRadio')
       await this.playSongList(songs, 0)
     },
 
@@ -1059,9 +1083,22 @@ export const usePlaybackStore = defineStore('playback', {
       if (!seed) return
       autoplayFetching = true
       try {
-        const similar = await useLibraryStore()
+        const { songs: similar, plexPassRequired } = await useLibraryStore()
           .client()
           .getSimilarSongs2(seed.id, autoplay.batchSize)
+        if (plexPassRequired) {
+          // Unlike Song/Artist Radio's own one-shot notify-and-move-on
+          // (startSongRadio()/startArtistRadio()), Autoplay is a standing
+          // setting — leaving it on would just mean the exact same 403
+          // again at the next song change, and the one right after that,
+          // for as long as playback continues. Switching it back off is
+          // what actually stops the repeat performance; the toast is what
+          // explains why it turned itself off rather than that just being
+          // silently confusing.
+          autoplay.setEnabled(false)
+          notifyPlexPassRequired('player.autoplay')
+          return
+        }
         // Filtered by id, not just dedupeForQueue()'s object-identity
         // dedup below (which only stops the *same* Song object landing in
         // the queue twice, not a genuine repeat) — otherwise a small

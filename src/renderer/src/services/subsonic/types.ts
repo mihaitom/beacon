@@ -131,7 +131,16 @@ export interface InternetRadioStationsResponse {
 }
 
 export interface SimilarSongs2Response {
-  similarSongs2: { song?: RawSong[] }
+  similarSongs2: {
+    song?: RawSong[]
+    /** Only ever present (and true) for a Plex session — see
+     * connect/media/plex_bridge.py's get_similar_songs2(): Plex's own Sonic
+     * Analysis feature this bridges onto is gated behind an active Plex
+     * Pass subscription, and a 403 from Plex gets translated into this
+     * flag rather than a thrown error, so a listener without one still
+     * gets a real (if empty) response instead of the call failing. */
+    plexPassRequired?: boolean
+  }
 }
 
 // getLyricsBySongId.view (OpenSubsonic extension) — embedded/ID3-tag

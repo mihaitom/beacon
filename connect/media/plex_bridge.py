@@ -34,6 +34,18 @@ Phase C, partial — ratings and playlist CRUD:
     Revisit only if /library/sections/{id}/genre turns out to carry real
     per-genre counts cheaply (PLEX_PLAN.md flagged this as worth checking,
     not yet done).
+  - getSimilarSongs2.view (Song/Artist Radio, and Autoplay's frontend-side
+    top-up — see stores/playback.ts's maybeAutoplay()) maps onto Plex's own
+    Sonic Analysis (`/library/metadata/{id}/nearest`) — see
+    get_similar_songs2()'s own comment and PlexClient.get_similar_songs2()'s
+    (media/plex.py) identical one for the full story: confirmed live
+    (2026-08-20) that the endpoint is real, but Sonic Analysis itself is a
+    Plex Pass-gated feature server-side (confirmed against Plex's own
+    support docs), not something this bridge can work around — a
+    non-Pass account gets a 403, translated here into an empty result
+    rather than an error. services/capabilities.ts's songRadio is true for
+    Plex accordingly, same as Jellyfin, even though it silently does
+    nothing for a listener without Plex Pass.
 
 Field names below are this module's best understanding of Plex's
 Metadata/MediaContainer JSON shape, not yet fully confirmed against a live
@@ -289,6 +301,45 @@ async def get_song(params: dict, media: PlexClient) -> dict:
     if not items:
         raise ValueError(f"Song {params['id']} not found")
     return {"song": _map_song(items[0])}
+
+
+async def get_similar_songs2(params: dict, media: PlexClient) -> dict:
+    """Song/Artist Radio + Autoplay's frontend-facing counterpart to
+    PlexClient.get_similar_songs2() (media/plex.py) — same endpoint, same
+    Plex-Pass caveat and unverified-response-shape note, see that method's
+    own comment for the full explanation. Duplicated rather than shared
+    because that one's synchronous (for connect's own internal Autoplay
+    fallback, see routes/stream.py) and this one's async (this module's
+    handlers all are, see _HANDLERS below) — same split as get_song() above
+    vs. PlexClient.get_track().
+
+    Unlike that one, a 403 here surfaces as `plexPassRequired: true` in the
+    response rather than silently coming back empty — this is the path an
+    actual listener's own request takes (a Song/Artist Radio click, or
+    stores/playback.ts's maybeAutoplay() running for a client that's
+    actually online), so there's someone to actually tell. PlexClient's own
+    version has no equivalent because it's connect's own background
+    fallback for when nobody's around to tell in the first place (see
+    routes/stream.py's _maybe_autoplay_topup())."""
+    item_id = params.get("id", "")
+    if not item_id:
+        raise ValueError("getSimilarSongs2.view requires id")
+    count = params.get("count", "50")
+    try:
+        data = await _px_get(
+            media,
+            f"/library/metadata/{_quote_id(item_id)}/nearest",
+            excludeFields="summary",
+            limit=count,
+            maxDistance="0.25",
+        )
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 403:
+            logger.debug(f"[Plex] Sonic Analysis unavailable (no Plex Pass?) for {item_id}: {e}")
+            return {"similarSongs2": {"song": [], "plexPassRequired": True}}
+        raise
+    songs = data.get("MediaContainer", {}).get("Metadata", [])
+    return {"similarSongs2": {"song": _map_all(_map_song, songs)}}
 
 
 async def get_artists(_params: dict, media: PlexClient) -> dict:
@@ -592,6 +643,7 @@ _HANDLERS: dict[str, Callable[[dict, PlexClient], Awaitable[dict]]] = {
     "getAlbumList2.view": get_album_list2,
     "getAlbum.view": get_album,
     "getSong.view": get_song,
+    "getSimilarSongs2.view": get_similar_songs2,
     "getArtists.view": get_artists,
     "getArtist.view": get_artist,
     "search3.view": search3,

@@ -241,6 +241,62 @@ class PlexClient:
             album=item.get("parentTitle", ""),
         )
 
+    # /nearest + limit/maxDistance matches python-plexapi's own
+    # Audio.sonicallySimilar() (the library every other unofficial Plex
+    # client's equivalent feature is built on) — see
+    # https://python-plexapi.readthedocs.io/en/latest/modules/audio.html.
+    # Confirmed live against a real server (2026-08-20): the endpoint is
+    # real (403, not 404), and per Plex's own support article
+    # (https://support.plex.tv/articles/sonic-analysis-music/), "Sonic
+    # analysis for music is a premium feature and requires an active Plex
+    # Pass subscription for the Server admin account" — exactly the 403 a
+    # non-Pass test account got back. The server itself having
+    # musicAnalysis enabled isn't enough on its own without that
+    # subscription. The success-path *response shape* was never actually
+    # seen against a Pass-holding account, but there's no real reason to
+    # expect it differs from the MediaContainer.Metadata[] list every other
+    # Plex track-listing endpoint already confirmed uses (search, album/
+    # playlist children — see media/plex_bridge.py's _map_song()) — Plex is
+    # consistent about that shape everywhere else, so this reuses
+    # get_track()'s own field mapping above rather than inventing a second
+    # one. Worth a quick sanity check the first time this actually runs
+    # against a Pass account, but not blocked on it.
+    #
+    # 403 specifically returns [] rather than raising — routes/stream.py's
+    # _maybe_autoplay_topup() would otherwise log a real warning on every
+    # single top-up attempt for every non-Pass Plex account, forever, for a
+    # permanent/expected condition rather than a transient failure worth
+    # flagging. Anything else (network error, malformed response, a genuine
+    # server problem) still raises, same as get_track()/get_stream_url()
+    # above — that caller's own except Exception already logs those.
+    def get_similar_songs2(self, seed_id: str, count: int = 10) -> list[Track]:
+        try:
+            data = self._get(
+                f"/library/metadata/{quote(str(seed_id), safe='')}/nearest",
+                excludeFields="summary",
+                limit=count,
+                maxDistance=0.25,
+            )
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 403:
+                logger.debug(
+                    f"[Plex] Sonic Analysis unavailable (no Plex Pass?) for {seed_id}: {e}"
+                )
+                return []
+            raise
+        items = data.get("MediaContainer", {}).get("Metadata", [])
+        return [
+            Track(
+                id=str(item["ratingKey"]),
+                title=item.get("title", "Unknown"),
+                artist=item.get("grandparentTitle", "Unknown"),
+                duration=int((item.get("duration") or 0) / 1000),
+                cover_art_id=str(item.get("parentRatingKey") or item["ratingKey"]),
+                album=item.get("parentTitle", ""),
+            )
+            for item in items
+        ]
+
     def get_stream_url(self, track_id: str) -> str:
         # Direct play, not the universal transcode endpoint — PLEX_PLAN.md
         # calls for implementing this first and treating transcoding as a

@@ -101,6 +101,57 @@ def test_get_track_raises_when_not_found(monkeypatch):
         _client().get_track("missing")
 
 
+# ── get_similar_songs2 (Sonic Analysis, Plex Pass-gated) ─────────────────────
+# See this method's own comment (media/plex.py) for the full story — confirmed
+# live (2026-08-20) that a non-Plex-Pass account gets a real 403 here.
+
+
+def test_get_similar_songs2_parses_items(monkeypatch):
+    item = {
+        "ratingKey": "9002",
+        "title": "Similar Song",
+        "grandparentTitle": "Artist B",
+        "parentTitle": "Another Album",
+        "parentRatingKey": "2002",
+        "duration": 200_000,
+    }
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        assert url.endswith("/library/metadata/9001/nearest")
+        assert params["limit"] == 10
+        return httpx.Response(
+            200,
+            json={"MediaContainer": {"Metadata": [item]}},
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    songs = _client().get_similar_songs2("9001", count=10)
+    assert len(songs) == 1
+    assert songs[0].id == "9002"
+    assert songs[0].artist == "Artist B"
+    assert songs[0].duration == 200
+
+
+def test_get_similar_songs2_returns_empty_without_plex_pass(monkeypatch):
+    def fake_get(url, **kwargs):
+        request = httpx.Request("GET", url)
+        return httpx.Response(403, request=request)
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    assert _client().get_similar_songs2("9001") == []
+
+
+def test_get_similar_songs2_reraises_other_errors(monkeypatch):
+    def fake_get(url, **kwargs):
+        request = httpx.Request("GET", url)
+        return httpx.Response(500, request=request)
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    with pytest.raises(httpx.HTTPStatusError):
+        _client().get_similar_songs2("9001")
+
+
 # ── get_stream_url resolves Media.Part.key ───────────────────────────────────
 
 
