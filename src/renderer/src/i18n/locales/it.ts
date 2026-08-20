@@ -124,6 +124,7 @@ export default {
   player: {
     nothingPlaying: 'Nessuna riproduzione in corso',
     mute: 'Muto',
+    autoplay: 'Autoplay',
   },
   nowPlaying: {
     nothingPlaying: "Al momento non c'è nulla in riproduzione.",
@@ -248,6 +249,10 @@ export default {
     replayGainAlbum: 'Album',
     replayGainHint:
       "Uniforma il volume di registrazioni masterizzate in modo diverso: «Brano» normalizza ogni canzone singolarmente, «Album» mantiene le differenze di volume all'interno di un album. Si applica sia alla riproduzione locale sia alla trasmissione; durante una trasmissione già in corso, una modifica ha effetto solo dal brano successivo.",
+    autoplay: 'Autoplay',
+    autoplayBatchSizeItem: '{count} brani',
+    autoplayHint:
+      "Si attiva/disattiva dalla barra di riproduzione (accanto a Coda), non qui — questo controlla solo quanti brani simili vengono aggiunti ogni volta che la coda viene rifornita, tramite lo stesso motore di raccomandazione di Radio brano/artista. Non si attiva se Ripeti è già acceso, perché in quel caso la coda non si svuota mai da sola.",
     about: 'Informazioni su Beacon',
     whatsNew: 'Novità?',
     ffmpegFound: 'ffmpeg trovato',

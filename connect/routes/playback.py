@@ -391,6 +391,10 @@ class PlayRequest(BaseModel):
     original_queue: list[str] = []
     shuffle: bool = False
     repeat_mode: Literal["off", "all", "one"] = "off"
+    # See AppState.autoplay_enabled/autoplay_batch_size's comment — unlike
+    # shuffle/repeat_mode above, connect itself reads these back.
+    autoplay_enabled: bool = False
+    autoplay_batch_size: int = 10
     targets: list[dict] | None = None
     target_name: str | None = None
     target_type: str | None = None
@@ -508,6 +512,8 @@ async def play_tracks(
         previous_original_queue = st.original_queue
         previous_shuffle = st.shuffle
         previous_repeat_mode = st.repeat_mode
+        previous_autoplay_enabled = st.autoplay_enabled
+        previous_autoplay_batch_size = st.autoplay_batch_size
 
         st.current_track = track
         st.current_track_gain = req.gain
@@ -527,6 +533,8 @@ async def play_tracks(
         st.original_queue = req.original_queue
         st.shuffle = req.shuffle
         st.repeat_mode = req.repeat_mode
+        st.autoplay_enabled = req.autoplay_enabled
+        st.autoplay_batch_size = req.autoplay_batch_size
 
         if target:
             # internal=True: fetched directly by the cast device, not the browser —
@@ -558,6 +566,8 @@ async def play_tracks(
                     st.original_queue = previous_original_queue
                     st.shuffle = previous_shuffle
                     st.repeat_mode = previous_repeat_mode
+                    st.autoplay_enabled = previous_autoplay_enabled
+                    st.autoplay_batch_size = previous_autoplay_batch_size
                     # Dispatch never actually reached the device — release the
                     # claim just granted above instead of leaving it locked to
                     # this session (device_in_use for everyone else) with
@@ -792,6 +802,9 @@ class QueueRequest(BaseModel):
     original_queue: list[str] = []
     shuffle: bool = False
     repeat_mode: Literal["off", "all", "one"] = "off"
+    # See PlayRequest.autoplay_enabled/autoplay_batch_size.
+    autoplay_enabled: bool = False
+    autoplay_batch_size: int = 10
     # See PlayRequest.seq — shares session.play_seq's ordering with /play and
     # /play-url, since all three write session.state.queue/queue_index and
     # a stale queue edit must not be able to stomp a more recent song switch
@@ -833,6 +846,8 @@ async def update_queue(
             st.original_queue = req.original_queue
             st.shuffle = req.shuffle
             st.repeat_mode = req.repeat_mode
+            st.autoplay_enabled = req.autoplay_enabled
+            st.autoplay_batch_size = req.autoplay_batch_size
             await session.event_bus.broadcast(build_status_dict(session))
         return {"status": "ok"}
 

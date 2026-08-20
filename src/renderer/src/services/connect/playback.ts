@@ -27,6 +27,15 @@ interface PlayOptions {
   originalQueue?: string[]
   shuffle?: boolean
   repeatMode?: 'off' | 'all' | 'one'
+  /** Autoplay's own standing preference (stores/autoplay.ts) — unlike
+   * shuffle/repeatMode above, connect *does* read this back: routes/
+   * stream.py's own _advance_or_end() uses it as a fallback top-up for
+   * exactly the case fullQueue's own doc comment describes (auto-advance
+   * with no renderer awake to react) — see stores/playback.ts's
+   * maybeAutoplay() for the primary, frontend-side implementation this
+   * backs up rather than replaces. */
+  autoplayEnabled?: boolean
+  autoplayBatchSize?: number
 }
 
 // Shared, strictly-increasing dispatch counter for /play and /play-url (both
@@ -81,6 +90,8 @@ export async function play(songId: string, options: PlayOptions = {}): Promise<P
       original_queue: options.originalQueue ?? [],
       shuffle: options.shuffle ?? false,
       repeat_mode: options.repeatMode ?? 'off',
+      autoplay_enabled: options.autoplayEnabled ?? false,
+      autoplay_batch_size: options.autoplayBatchSize ?? 10,
       targets: options.targets?.map((t) => ({ name: t.name, type: t.type })),
       gain: options.gain ?? 1.0,
       start_position: options.startPosition ?? 0,
@@ -136,7 +147,13 @@ export async function stop(): Promise<void> {
 export async function updateQueue(
   songIds: string[],
   queueIndex: number,
-  options: { originalQueue?: string[]; shuffle?: boolean; repeatMode?: 'off' | 'all' | 'one' } = {},
+  options: {
+    originalQueue?: string[]
+    shuffle?: boolean
+    repeatMode?: 'off' | 'all' | 'one'
+    autoplayEnabled?: boolean
+    autoplayBatchSize?: number
+  } = {},
 ): Promise<QueueResponse> {
   return fetchConnect<QueueResponse>('/queue', {
     method: 'POST',
@@ -146,6 +163,8 @@ export async function updateQueue(
       original_queue: options.originalQueue ?? [],
       shuffle: options.shuffle ?? false,
       repeat_mode: options.repeatMode ?? 'off',
+      autoplay_enabled: options.autoplayEnabled ?? false,
+      autoplay_batch_size: options.autoplayBatchSize ?? 10,
       seq: nextSeq(),
     },
   })

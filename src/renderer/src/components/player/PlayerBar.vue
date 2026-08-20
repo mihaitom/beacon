@@ -109,6 +109,7 @@
         <v-btn
           v-if="currentSong"
           icon="mdi-script-text-outline"
+          :color="playbackStore.lyricsDrawerOpen ? 'primary' : undefined"
           variant="text"
           density="comfortable"
           :title="$t('lyrics.title')"
@@ -116,9 +117,19 @@
         />
         <v-btn
           icon="mdi-playlist-music"
+          :color="playbackStore.queueDrawerOpen ? 'primary' : undefined"
           variant="text"
           density="comfortable"
           @click="playbackStore.toggleQueueDrawer()"
+        />
+        <v-btn
+          v-if="authStore.capabilities.songRadio"
+          icon="mdi-infinity"
+          :color="autoplayStore.enabled ? 'primary' : undefined"
+          variant="text"
+          density="comfortable"
+          :title="$t('player.autoplay')"
+          @click="autoplayStore.setEnabled(!autoplayStore.enabled)"
         />
         <connect-button />
         <v-btn
@@ -162,6 +173,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useLibraryStore } from '@/stores/library'
 import { useConnectStore } from '@/stores/connect'
 import { useAuthStore } from '@/stores/auth'
+import { useAutoplayStore } from '@/stores/autoplay'
 import { radioFaviconUrl } from '@/services/connect/radio'
 import CoverArt from '@/components/library/CoverArt.vue'
 import ConnectButton from '@/components/connect/ConnectButton.vue'
@@ -208,6 +220,9 @@ export default {
     },
     authStore() {
       return useAuthStore()
+    },
+    autoplayStore() {
+      return useAutoplayStore()
     },
     currentSong() {
       return this.playbackStore.currentSong

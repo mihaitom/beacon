@@ -89,6 +89,18 @@ class AppState:
         # repeat preference for next time there's a queue again."
         self.shuffle: bool = False
         self.repeat_mode: str = "off"
+        # Autoplay's own standing preference — mirrors stores/autoplay.ts's
+        # enabled/batchSize, sent alongside shuffle/repeat_mode above (see
+        # routes/playback.py's PlayRequest/QueueRequest) but, unlike those
+        # two, actually read by connect itself: routes/stream.py's
+        # _advance_or_end() uses it as a fallback queue top-up for whenever
+        # no frontend client is around to run stores/playback.ts's own
+        # maybeAutoplay() — see that function's docstring for why this is a
+        # fallback and not the primary implementation. Not reset by /stop/
+        # -url, same reasoning as shuffle/repeat_mode: a standing
+        # preference, not queue contents.
+        self.autoplay_enabled: bool = False
+        self.autoplay_batch_size: int = 10
 
 
 class EventBus:

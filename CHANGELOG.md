@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - Fixed the displayed playback position flickering continuously for the rest of a track after pausing, resuming, or seeking directly on a cast device (e.g. a Sonos speaker) instead of through Beacon - a single real correction kept being treated as still needing another one on every subsequent check instead of settling once it was already accurate
+- Fixed casting occasionally auto-advancing to the next queued song a few seconds early, cutting off the tail end of the current one - only happened after pausing/resuming directly on the cast device rather than through Beacon: the auto-advance timer was scheduled once up front and never adjusted for a correction like that happening afterward
 
 ## [0.1.4] - 2026-08-17
 

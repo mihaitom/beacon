@@ -124,6 +124,7 @@ export default {
   player: {
     nothingPlaying: 'Nothing playing',
     mute: 'Mute',
+    autoplay: 'Autoplay',
   },
   nowPlaying: {
     nothingPlaying: 'Nothing is playing right now.',
@@ -246,6 +247,10 @@ export default {
     replayGainAlbum: 'Album',
     replayGainHint:
       'Evens out the volume of differently mastered recordings — "Track" normalizes each song individually, "Album" preserves the volume differences within an album. Applies to both local playback and casting; while already casting, a change only takes effect from the next track.',
+    autoplay: 'Autoplay',
+    autoplayBatchSizeItem: '{count} songs',
+    autoplayHint:
+      "Turned on/off from the player bar (next to Queue), not here — this only controls how many similar songs get added each time it tops the queue back up, the same recommendation engine Song/Artist Radio uses. Doesn't kick in with Repeat already on, since the queue never runs out on its own then anyway.",
     about: 'About Beacon',
     whatsNew: "What's new?",
     ffmpegFound: 'ffmpeg found',

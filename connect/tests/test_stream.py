@@ -251,6 +251,120 @@ async def test_advance_or_end_falls_back_when_dispatch_fails(default_session):
     assert default_session.state.track_ended is True
 
 
+# ── Autoplay fallback top-up (_maybe_autoplay_topup) ─────────────────────────
+# The backend-side counterpart to stores/playback.ts's own maybeAutoplay() —
+# see AppState.autoplay_enabled's comment for why this exists at all
+# (casting has to keep going even with no frontend client around to run the
+# frontend's own version).
+
+
+async def test_advance_or_end_autoplay_tops_up_and_advances(default_session):
+    """Queue exhausted, but Autoplay's on and the media client can supply
+    similar songs — tops the queue up and advances into it instead of
+    marking the stream ended, same as if the frontend had already
+    extended the queue itself before the track ran out."""
+    target = ChromecastDelivery("TV")
+    generation = _playing_session(default_session, ["1"], target=target)
+    default_session.state.autoplay_enabled = True
+    similar_track = Track(id="2", title="Similar", artist="Artist", duration=200, cover_art_id="c")
+
+    with (
+        patch.object(default_session.media, "get_similar_songs2", return_value=[similar_track]),
+        patch.object(default_session.media, "get_track", return_value=similar_track),
+        patch("routes.stream.resolve_output_format", AsyncMock(return_value=FALLBACK_FORMAT)),
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play_mock,
+    ):
+        await _advance_or_end(default_session, generation)
+
+    assert play_mock.await_count == 1
+    assert default_session.state.queue == ["1", "2"]
+    assert default_session.state.queue_index == 1
+    assert default_session.state.is_streaming is True
+    assert default_session.state.track_ended is False
+
+
+async def test_advance_or_end_autoplay_disabled_marks_ended(default_session):
+    """Off by default (see stores/autoplay.ts's own default) — a media
+    client that *could* supply similar songs must not get called at all
+    unless the setting's actually on."""
+    target = ChromecastDelivery("TV")
+    generation = _playing_session(default_session, ["1"], target=target)
+    assert default_session.state.autoplay_enabled is False
+
+    with patch.object(default_session.media, "get_similar_songs2") as similar_mock:
+        await _advance_or_end(default_session, generation)
+
+    assert similar_mock.call_count == 0
+    assert default_session.state.queue == ["1"]
+    assert default_session.state.is_streaming is False
+    assert default_session.state.track_ended is True
+
+
+async def test_advance_or_end_autoplay_skipped_under_repeat(default_session):
+    """repeat-all/repeat-one already keep the queue from running out on
+    their own (once the renderer's awake to react — see
+    _advance_or_end()'s own docstring) — Autoplay staying quiet here
+    matches stores/playback.ts's maybeAutoplay() making the exact same
+    call for the exact same reason."""
+    target = ChromecastDelivery("TV")
+    generation = _playing_session(default_session, ["1"], target=target)
+    default_session.state.autoplay_enabled = True
+    default_session.state.repeat_mode = "all"
+
+    with patch.object(default_session.media, "get_similar_songs2") as similar_mock:
+        await _advance_or_end(default_session, generation)
+
+    assert similar_mock.call_count == 0
+    assert default_session.state.queue == ["1"]
+    assert default_session.state.is_streaming is False
+
+
+async def test_advance_or_end_autoplay_filters_songs_already_queued(default_session):
+    """A small library's similar-songs pool circling back to something
+    already in the queue must not re-add it — same by-id dedup reasoning
+    as stores/playback.ts's maybeAutoplay()."""
+    target = ChromecastDelivery("TV")
+    generation = _playing_session(default_session, ["1"], target=target)
+    default_session.state.autoplay_enabled = True
+    already_queued = Track(id="1", title="Current", artist="Artist", duration=180, cover_art_id="c")
+
+    with patch.object(
+        default_session.media, "get_similar_songs2", return_value=[already_queued]
+    ):
+        await _advance_or_end(default_session, generation)
+
+    assert default_session.state.queue == ["1"]
+    assert default_session.state.is_streaming is False
+    assert default_session.state.track_ended is True
+
+
+async def test_advance_or_end_autoplay_skipped_without_similar_songs_support(default_session):
+    """Plex has no equivalent (see SubsonicClient.get_similar_songs2's own
+    comment) — duck-typed via hasattr(), so a media client missing the
+    method entirely must fall straight through to "mark ended" rather than
+    raising. A plain stand-in with only get_track (not the real
+    SubsonicClient, which does have get_similar_songs2), same shape Plex's
+    own MediaClient adapter has."""
+
+    class NoSimilarSongsMedia:
+        def get_track(self, track_id: str) -> Track:
+            return Track(id=track_id, title="Current", artist="Artist", duration=180)
+
+        def get_cover_art_url(self, cover_art_id: str, internal: bool = False) -> str | None:
+            return None  # build_status_dict()'s "mark ended" broadcast reads this
+
+    target = ChromecastDelivery("TV")
+    generation = _playing_session(default_session, ["1"], target=target)
+    default_session.state.autoplay_enabled = True
+
+    with patch.object(default_session, "media", NoSimilarSongsMedia()):
+        await _advance_or_end(default_session, generation)
+
+    assert default_session.state.queue == ["1"]
+    assert default_session.state.is_streaming is False
+    assert default_session.state.track_ended is True
+
+
 async def test_dispatch_queued_track_updates_state_and_schedules_background_tasks(
     default_session,
 ):

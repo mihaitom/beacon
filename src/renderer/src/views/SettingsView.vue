@@ -83,6 +83,20 @@
       <p class="text-caption text-medium-emphasis mt-3">
         {{ $t('settings.replayGainHint') }}
       </p>
+
+      <template v-if="authStore.capabilities.songRadio">
+        <p class="text-body-2 font-weight-medium mt-6 mb-2">{{ $t('settings.autoplay') }}</p>
+        <v-select
+          :model-value="autoplayStore.batchSize"
+          :items="autoplayBatchSizeOptions"
+          variant="solo-filled"
+          hide-details
+          @update:model-value="autoplayStore.setBatchSize($event)"
+        />
+        <p class="text-caption text-medium-emphasis mt-3">
+          {{ $t('settings.autoplayHint') }}
+        </p>
+      </template>
     </section>
 
     <section v-if="authStore.capabilities.libraryScan" class="mb-10">
@@ -230,6 +244,7 @@ import { clearLyricsCache } from '@/stores/lyrics'
 import { getLocale, setLocale, type SupportedLocale } from '@/i18n'
 import { getLogLevel, setLogLevel, type LogLevel } from '@/services/connect/logLevel'
 import { useRecommendationsStore } from '@/stores/recommendations'
+import { AUTOPLAY_BATCH_SIZE_OPTIONS, useAutoplayStore } from '@/stores/autoplay'
 import { useUpdateStore } from '@/stores/update'
 import type { ReplayGainMode } from '@/services/replayGain'
 import NavidromeIcon from '@/components/auth/NavidromeIcon.vue'
@@ -290,6 +305,9 @@ export default {
     recommendationsStore() {
       return useRecommendationsStore()
     },
+    autoplayStore() {
+      return useAutoplayStore()
+    },
     isElectron(): boolean {
       return !!window.api
     },
@@ -313,6 +331,12 @@ export default {
         { title: this.$t('settings.replayGainTrack'), value: 'song' },
         { title: this.$t('settings.replayGainAlbum'), value: 'album' },
       ]
+    },
+    autoplayBatchSizeOptions() {
+      return AUTOPLAY_BATCH_SIZE_OPTIONS.map((count) => ({
+        title: this.$t('settings.autoplayBatchSizeItem', { count }),
+        value: count,
+      }))
     },
     localeOptions() {
       return [

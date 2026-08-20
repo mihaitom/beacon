@@ -70,7 +70,20 @@ Beacon is `connect` as the actual foundation instead of an add-on - a frontend b
 
 ### Jellyfin and Plex support (experimental)
 
-Jellyfin and Plex can both be selected as a server type at login. Neither has a Subsonic-compatible API of its own, so the `connect` backend translates Subsonic-shaped requests into real Jellyfin/Plex API calls on the fly (see `connect/media/jellyfin_bridge.py` and `connect/media/plex_bridge.py`) - the frontend doesn't know the difference. Library browsing and playlists work on both; Jellyfin also has favorites, Plex also has personal 1-5 star ratings - each backend gets whichever of the two it actually supports, rather than faking the other. Internet radio stations work on both too (hosted by `connect` itself, since neither Jellyfin nor Plex has a concept of them). Features a given backend has no equivalent for are hidden automatically rather than shown as dead-end controls. Both paths are newer and less exercised than the Navidrome/Subsonic one.
+Jellyfin and Plex can both be selected as a server type at login. Neither has a Subsonic-compatible API of its own, so the `connect` backend translates Subsonic-shaped requests into real Jellyfin/Plex API calls on the fly (see `connect/media/jellyfin_bridge.py` and `connect/media/plex_bridge.py`) - the frontend doesn't know the difference. Features a given backend has no equivalent for (or that just aren't bridged yet) are hidden automatically rather than shown as dead-end controls. Both paths are newer and less exercised than the Navidrome/Subsonic one.
+
+| Feature                                          | Navidrome / Subsonic | Jellyfin | Plex  |
+| ------------------------------------------------- | :-------------------: | :------: | :--------: |
+| Library browsing, playlists, casting              |           ✅           |    ✅    |   ✅      |
+| Internet radio stations                           |           ✅           |    ✅    |   ✅      |
+| Play history / Stats page                         |           ✅           |    ✅    |   ✅      |
+| Favorites (heart icon)                            |           ✅           |    ✅    |   ❌      |
+| Personal 1-5 star rating                          |           ✅           |    ❌    |   ✅      |
+| Song/Artist Radio and Autoplay                    |           ✅           |    ✅    |   ❌      |
+| Create playlists                                  |           ✅           |    ✅    |   ✅      |
+| Trigger a library rescan from Settings            |           ✅           |    ❌    |   ❌      |
+
+A couple of these are real gaps to close, not things Plex is actually incapable of - Plex does have its own sonic-similarity/"Play Similar" mechanism, it just hasn't been bridged into `getSimilarSongs2.view` yet (unlike Jellyfin's InstantMix, which has). Favorites is the one genuine dead end: Plex's core Media Server API has no separate boolean favorite at all - the heart-shaped "Love" seen in Plexamp/mobile is backed by Plex Pass cloud sync (a different API this bridge doesn't talk to), and personal ratings already cover the "mark this" use case for Plex instead.
 
 ### Remote Control (Electron) and the mobile web UI
 

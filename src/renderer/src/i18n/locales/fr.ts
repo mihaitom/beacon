@@ -124,6 +124,7 @@ export default {
   player: {
     nothingPlaying: 'Rien en cours de lecture',
     mute: 'Muet',
+    autoplay: 'Lecture automatique',
   },
   nowPlaying: {
     nothingPlaying: "Rien n'est en cours de lecture actuellement.",
@@ -249,6 +250,10 @@ export default {
     replayGainAlbum: 'Album',
     replayGainHint:
       "Uniformise le volume des enregistrements masterisés différemment — « Titre » normalise chaque morceau individuellement, « Album » préserve les différences de volume au sein d'un album. S'applique à la lecture locale et à la diffusion ; pendant une diffusion en cours, un changement ne prend effet qu'à partir du morceau suivant.",
+    autoplay: 'Lecture automatique',
+    autoplayBatchSizeItem: '{count} morceaux',
+    autoplayHint:
+      "S'active/se désactive depuis la barre de lecture (à côté de la file d'attente), pas ici — ce réglage définit seulement combien de morceaux similaires sont ajoutés à chaque fois que la file est complétée, via le même moteur de recommandation que Radio par morceau/artiste. Ne se déclenche pas si la répétition est déjà activée, puisque la file ne se vide alors jamais d'elle-même.",
     about: 'À propos de Beacon',
     whatsNew: 'Quoi de neuf ?',
     ffmpegFound: 'ffmpeg trouvé',

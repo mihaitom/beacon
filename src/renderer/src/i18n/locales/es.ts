@@ -125,6 +125,7 @@ export default {
   player: {
     nothingPlaying: 'Nada reproduciéndose',
     mute: 'Silenciar',
+    autoplay: 'Reproducción automática',
   },
   nowPlaying: {
     nothingPlaying: 'No se está reproduciendo nada ahora mismo.',
@@ -248,6 +249,10 @@ export default {
     replayGainAlbum: 'Álbum',
     replayGainHint:
       'Iguala el volumen de grabaciones masterizadas de forma diferente — «Pista» normaliza cada canción individualmente, «Álbum» conserva las diferencias de volumen dentro de un álbum. Se aplica tanto a la reproducción local como a la transmisión; mientras ya se está transmitiendo, un cambio solo tiene efecto a partir de la siguiente pista.',
+    autoplay: 'Reproducción automática',
+    autoplayBatchSizeItem: '{count} canciones',
+    autoplayHint:
+      'Se activa/desactiva desde la barra de reproducción (junto a Cola), no aquí — esto solo controla cuántas canciones similares se añaden cada vez que se rellena la cola, mediante el mismo motor de recomendaciones que Radio de canción/artista. No se activa si Repetir ya está encendido, porque entonces la cola nunca se vacía por sí sola.',
     about: 'Acerca de Beacon',
     whatsNew: '¿Qué hay de nuevo?',
     ffmpegFound: 'ffmpeg encontrado',

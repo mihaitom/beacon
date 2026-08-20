@@ -75,6 +75,32 @@ class SubsonicClient:
             album=song.get("album", ""),
         )
 
+    # Not part of the MediaClient Protocol — genuinely optional (Plex has no
+    # equivalent, see media/plex.py's absence of this method and
+    # capabilities.ts's songRadio: false for it), so callers duck-type via
+    # hasattr() rather than this being declared (and needing a
+    # NotImplementedError stub) on every adapter. Used by both
+    # stores/playback.ts's Song/Artist Radio (via the getSimilarSongs2.view
+    # passthrough in routes/proxy.py, which never touches this method at
+    # all) and, the actual reason this exists as a *client* method rather
+    # than only ever a raw proxied endpoint, routes/stream.py's own
+    # Autoplay fallback top-up, which needs to call this from inside
+    # connect itself — see AppState.autoplay_enabled's comment.
+    def get_similar_songs2(self, seed_id: str, count: int = 10) -> list[Track]:
+        data = self._get("getSimilarSongs2.view", id=seed_id, count=count)
+        songs = data.get("similarSongs2", {}).get("song", [])
+        return [
+            Track(
+                id=song["id"],
+                title=song.get("title", "Unknown"),
+                artist=song.get("artist", "Unknown"),
+                duration=song.get("duration", 0),
+                cover_art_id=song.get("coverArt", ""),
+                album=song.get("album", ""),
+            )
+            for song in songs
+        ]
+
     def get_stream_url(self, track_id: str) -> str:
         # urlencode (not a naive f-string join) so auth param values with
         # reserved characters (e.g. a username containing '&' or a space)

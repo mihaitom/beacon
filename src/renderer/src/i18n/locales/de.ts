@@ -122,6 +122,7 @@ export default {
   player: {
     nothingPlaying: 'Nichts spielt',
     mute: 'Stummschalten',
+    autoplay: 'Autoplay',
   },
   nowPlaying: {
     nothingPlaying: 'Nichts spielt gerade.',
@@ -245,6 +246,10 @@ export default {
     replayGainAlbum: 'Album',
     replayGainHint:
       'Gleicht die Lautstärke unterschiedlich lauter Aufnahmen an — „Titel“ normalisiert jeden Song einzeln, „Album“ behält die Lautstärkeunterschiede innerhalb eines Albums bei. Gilt für lokale Wiedergabe und Casting; bei laufendem Casting wirkt eine Änderung erst ab dem nächsten Titel.',
+    autoplay: 'Autoplay',
+    autoplayBatchSizeItem: '{count} Songs',
+    autoplayHint:
+      'Wird über die Playerleiste (neben Warteschlange) ein-/ausgeschaltet, nicht hier — das hier legt nur fest, wie viele ähnliche Songs bei jedem Nachladen ergänzt werden, über dieselbe Empfehlungs-Engine wie Song-/Artist-Radio. Greift nicht, solange Wiederholen aktiv ist, da die Warteschlange dann ohnehin nie von selbst leer wird.',
     about: 'Über Beacon',
     whatsNew: 'Was ist neu?',
     ffmpegFound: 'ffmpeg gefunden',

@@ -179,6 +179,36 @@ class JellyfinClient:
             album=item.get("Album", ""),
         )
 
+    # See SubsonicClient.get_similar_songs2's identical comment on why this
+    # isn't declared on the MediaClient Protocol. Reimplements InstantMix
+    # directly (rather than reusing media/jellyfin_bridge.py's own
+    # get_similar_songs2(), which does the exact same request) for the same
+    # reason get_track() above duplicates jellyfin_bridge.get_song() rather
+    # than calling it: the bridge's handlers are async and shaped for the
+    # getSimilarSongs2.view proxy surface specifically (routes/proxy.py),
+    # while this needs a synchronous call connect's own internal code
+    # (routes/stream.py's Autoplay fallback) can make directly.
+    def get_similar_songs2(self, seed_id: str, count: int = 10) -> list[Track]:
+        if not self.user_id:
+            raise RuntimeError("Jellyfin user_id missing — re-send /config")
+        data = self._get(
+            f"/Items/{quote(seed_id, safe='')}/InstantMix", userId=self.user_id, Limit=count
+        )
+        tracks = []
+        for item in data.get("Items", []):
+            artists = item.get("Artists") or []
+            tracks.append(
+                Track(
+                    id=item["Id"],
+                    title=item.get("Name", "Unknown"),
+                    artist=", ".join(artists) if artists else item.get("AlbumArtist", "Unknown"),
+                    duration=int((item.get("RunTimeTicks") or 0) / TICKS_PER_SECOND),
+                    cover_art_id=item["Id"],
+                    album=item.get("Album", ""),
+                )
+            )
+        return tracks
+
     def get_stream_url(self, track_id: str) -> str:
         # `/Items/{id}/Download` returns the original file unchanged — FFmpeg
         # handles container/codec conversion downstream. quote() on the id

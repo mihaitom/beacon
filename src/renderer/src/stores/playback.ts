@@ -3,6 +3,8 @@ import { getAudioEngine } from '@/services/audioEngine'
 import { calculateReplayGain, type ReplayGainMode } from '@/services/replayGain'
 import { useLibraryStore } from './library'
 import { useConnectStore } from './connect'
+import { useAuthStore } from './auth'
+import { useAutoplayStore } from './autoplay'
 import * as connectPlayback from '@/services/connect/playback'
 import type { ConnectDeviceRef, ConnectStatus, PlayResponse } from '@/services/connect/types'
 import type { Artist, RadioStation, Song } from '@/types/library'
@@ -31,6 +33,12 @@ interface PlaybackState {
 // music player's "previous" button behaves.
 const RESTART_THRESHOLD_SECONDS = 3
 
+// maybeAutoplay() tops the queue back up once at most this many songs are
+// left after the current one — 1, not 0, so there's a whole song's worth of
+// lead time for the getSimilarSongs2() round trip to finish before the
+// queue would otherwise actually run dry.
+const AUTOPLAY_TRIGGER_REMAINING = 1
+
 // Edge-detects status.ended's false→true transition across SSE updates
 // (module-level: the SSE subscription in init() is set up once per app
 // lifetime, not per store-consumer, so this doesn't belong in state).
@@ -42,6 +50,14 @@ let lastEnded = false
 // id, since adopting now means mirroring the whole queue, not just the
 // current song.
 let reconcilingQueueKey: string | null = null
+
+// Guards maybeAutoplay() against firing a second, overlapping fetch —
+// startCurrent() and adoptCastQueue() both call it on every song change,
+// which for a cast session receiving ~2s SSE ticks can mean several calls
+// landing before the first getSimilarSongs2() round trip even returns.
+// Module-level, not per-invocation, for the same reason as
+// reconcilingQueueKey above: it needs to survive across those calls.
+let autoplayFetching = false
 
 // Bumped at the top of every switchToIndex() call — lets its catch block
 // tell whether it's still the *latest* switch attempt before rolling
@@ -248,15 +264,26 @@ export const usePlaybackStore = defineStore('playback', {
       originalQueue: string[]
       shuffle: boolean
       repeatMode: RepeatMode
+      autoplayEnabled: boolean
+      autoplayBatchSize: number
     } {
       const upToCurrent = state.queue.slice(0, state.currentIndex + 1)
       const songs = state.repeatMode === 'one' ? upToCurrent : state.queue
+      // Told to connect alongside shuffle/repeatMode (not read back from
+      // status the way those are — see adoptCastQueue()) purely so
+      // routes/stream.py's own fallback top-up (maybeAutoplay()'s backend-
+      // side counterpart, for whenever no frontend client is around to run
+      // this one) knows the current setting without needing a whole
+      // separate sync channel for it.
+      const autoplay = useAutoplayStore()
       return {
         fullQueue: songs.map((t) => t.id),
         queueIndex: state.currentIndex,
         originalQueue: state.originalQueue.map((t) => t.id),
         shuffle: state.shuffle,
         repeatMode: state.repeatMode,
+        autoplayEnabled: autoplay.enabled,
+        autoplayBatchSize: autoplay.batchSize,
       }
     },
   },
@@ -557,6 +584,7 @@ export const usePlaybackStore = defineStore('playback', {
         // own (e.g. a fresh SSE subscription discovering playback already
         // in progress), so that's not folded into the comparison above.
         this.currentIndex = status.current_song_index
+        void this.maybeAutoplay()
         return
       }
 
@@ -600,6 +628,7 @@ export const usePlaybackStore = defineStore('playback', {
         if (!queueMatches) this.queue = remoteQueueIds.map((id) => resolvedById.get(id)!)
         if (!originalMatches) this.originalQueue = remoteOriginalIds.map((id) => resolvedById.get(id)!)
         this.currentIndex = status.current_song_index
+        void this.maybeAutoplay()
       } finally {
         if (reconcilingQueueKey === key) reconcilingQueueKey = null
       }
@@ -784,7 +813,8 @@ export const usePlaybackStore = defineStore('playback', {
       if (connect.isActive) {
         pendingLocalSongChange = song.id
         let response: PlayResponse
-        const { fullQueue, queueIndex, originalQueue, shuffle, repeatMode } = this.castQueuePayload
+        const { fullQueue, queueIndex, originalQueue, shuffle, repeatMode, autoplayEnabled, autoplayBatchSize } =
+          this.castQueuePayload
         try {
           response = await connectPlayback.play(song.id, {
             targets: connect.activeTargets,
@@ -795,6 +825,8 @@ export const usePlaybackStore = defineStore('playback', {
             originalQueue,
             shuffle,
             repeatMode,
+            autoplayEnabled,
+            autoplayBatchSize,
           })
         } finally {
           if (pendingLocalSongChange === song.id) pendingLocalSongChange = null
@@ -814,6 +846,7 @@ export const usePlaybackStore = defineStore('playback', {
         .client()
         .scrobble(song.id, false)
         .catch((error) => console.error('[scrobble] now-playing failed:', error))
+      void this.maybeAutoplay()
       return true
     },
 
@@ -1000,6 +1033,52 @@ export const usePlaybackStore = defineStore('playback', {
       this.syncCastQueue()
     },
 
+    /** Autoplay — called after every song change (startCurrent(),
+     * adoptCastQueue()) to top the queue back up with similar songs once
+     * it's about to run out, the same getSimilarSongs2() endpoint Song/
+     * Artist Radio use (see startSongRadio()/startArtistRadio()), seeded
+     * from the last song already queued rather than the one currently
+     * playing — continues whatever's already lined up next instead of
+     * jumping back to the vibe of a song several tracks ago. A no-op
+     * (returns immediately) unless the setting's on, the server can
+     * actually do it, there's no repeat mode already keeping the queue
+     * from ever running out, and there's little enough left to actually
+     * be worth topping up — see the guards below and
+     * AUTOPLAY_TRIGGER_REMAINING's own comment. */
+    async maybeAutoplay(): Promise<void> {
+      if (this.radioStation) return // no queue concept to extend
+      if (this.repeatMode !== 'off') return // never runs out on its own
+      const autoplay = useAutoplayStore()
+      if (!autoplay.enabled) return
+      if (!useAuthStore().capabilities.songRadio) return
+      if (this.currentIndex < 0) return
+      if (this.queue.length - 1 - this.currentIndex > AUTOPLAY_TRIGGER_REMAINING) return
+      if (autoplayFetching) return // already topping up from an earlier call
+
+      const seed = this.queue[this.queue.length - 1]
+      if (!seed) return
+      autoplayFetching = true
+      try {
+        const similar = await useLibraryStore()
+          .client()
+          .getSimilarSongs2(seed.id, autoplay.batchSize)
+        // Filtered by id, not just dedupeForQueue()'s object-identity
+        // dedup below (which only stops the *same* Song object landing in
+        // the queue twice, not a genuine repeat) — otherwise a small
+        // library's similar-songs pool keeps circling back to whatever's
+        // already just been played, and autoplay would spend its fetches
+        // re-adding songs still sitting right there in the queue instead
+        // of actually extending it.
+        const existingIds = new Set(this.queue.map((t) => t.id))
+        const fresh = similar.filter((t) => !existingIds.has(t.id))
+        if (fresh.length) this.addToQueue(fresh)
+      } catch (error) {
+        console.error('[playback] Autoplay top-up failed:', error)
+      } finally {
+        autoplayFetching = false
+      }
+    },
+
     /** Inserts `songs` right after the currently playing one — "Play next",
      * as opposed to addToQueue() which appends at the end. */
     queueNext(songs: Song[]): void {
@@ -1057,9 +1136,16 @@ export const usePlaybackStore = defineStore('playback', {
      * startCurrent() sends the initial queue itself. */
     syncCastQueue(): void {
       if (!this.isCasting || this.currentIndex < 0) return
-      const { fullQueue, queueIndex, originalQueue, shuffle, repeatMode } = this.castQueuePayload
+      const { fullQueue, queueIndex, originalQueue, shuffle, repeatMode, autoplayEnabled, autoplayBatchSize } =
+        this.castQueuePayload
       void connectPlayback
-        .updateQueue(fullQueue, queueIndex, { originalQueue, shuffle, repeatMode })
+        .updateQueue(fullQueue, queueIndex, {
+          originalQueue,
+          shuffle,
+          repeatMode,
+          autoplayEnabled,
+          autoplayBatchSize,
+        })
         .catch((error) => {
           console.error('[playback] Failed to sync queue to connect:', error)
         })
@@ -1160,7 +1246,8 @@ export const usePlaybackStore = defineStore('playback', {
         const song = this.currentSong
         const startPosition = this.localPosition
         const gain = this.replayGainMultiplier
-        const { fullQueue, queueIndex, originalQueue, shuffle, repeatMode } = this.castQueuePayload
+        const { fullQueue, queueIndex, originalQueue, shuffle, repeatMode, autoplayEnabled, autoplayBatchSize } =
+          this.castQueuePayload
         const play = async (f: boolean) => {
           if (this.isPlaying) getAudioEngine().pause() // local pauses, connect takes over
           const response = await connectPlayback.play(song.id, {
@@ -1173,6 +1260,8 @@ export const usePlaybackStore = defineStore('playback', {
             originalQueue,
             shuffle,
             repeatMode,
+            autoplayEnabled,
+            autoplayBatchSize,
           })
           // See the radio branch's identical check above.
           if (response.status === 'superseded') return

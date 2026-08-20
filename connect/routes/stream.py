@@ -15,7 +15,12 @@ from core.state import PORT, list_target_pairs, stream_url
 from core.streamer import demuxer_for, resolve_output_format, stream_tracks
 from routes.debug import TEST_TONE_TRACK_ID
 
-from .playback import _apply_position_offset, _resync_position_periodically
+from .playback import (
+    POSITION_RESYNC_INTERVAL,
+    POSITION_RESYNC_THRESHOLD,
+    _apply_position_offset,
+    _resync_position_periodically,
+)
 
 logger = logging.getLogger("connect.stream")
 router = APIRouter()
@@ -70,6 +75,51 @@ async def _dispatch_queued_track(session: SessionState, target, track, gain: flo
     return True
 
 
+async def _maybe_autoplay_topup(session: SessionState) -> None:
+    """Backend-side fallback for Autoplay — appends similar songs straight
+    onto session.state.queue/original_queue, the same way stores/
+    playback.ts's own maybeAutoplay() (the *primary* implementation) does
+    on the frontend via addToQueue(). This one only matters when no
+    frontend client is around to run that: the frontend's own top-up fires
+    proactively on every song change and normally keeps the queue topped
+    up well before _advance_or_end() below ever finds it actually empty —
+    exactly why AppState.queue exists server-side at all (see its own
+    comment: casting has to keep going even with the renderer that
+    dispatched it asleep/suspended, e.g. a locked phone screen).
+
+    Silent no-op, not an error, whenever: the setting's off; repeat is
+    already keeping the queue from running out on its own (repeat-all
+    wraparound/repeat-one replay still need the renderer awake regardless
+    — see _advance_or_end()'s own docstring, this doesn't change that);
+    or the connected media server has no similar-songs capability (Plex —
+    see SubsonicClient.get_similar_songs2's comment on why that's a
+    hasattr() duck-type check here rather than a Protocol method every
+    adapter must implement)."""
+    st = session.state
+    if not st.autoplay_enabled or st.repeat_mode != "off":
+        return
+    if not hasattr(session.media, "get_similar_songs2") or not st.queue:
+        return
+    seed_id = st.queue[-1]
+    try:
+        similar = await asyncio.to_thread(
+            session.media.get_similar_songs2, seed_id, st.autoplay_batch_size
+        )
+    except Exception as e:
+        logger.warning(f"[stream] Autoplay top-up failed: {e}")
+        return
+    # By id, not just "new objects" — a small library's similar-songs pool
+    # otherwise keeps circling back to whatever's already just been
+    # played, same reasoning as stores/playback.ts's maybeAutoplay().
+    existing_ids = set(st.queue)
+    fresh_ids = [t.id for t in similar if t.id not in existing_ids]
+    if not fresh_ids:
+        return
+    st.queue.extend(fresh_ids)
+    st.original_queue.extend(fresh_ids)
+    logger.info(f"[stream] Autoplay topped up the queue with {len(fresh_ids)} song(s)")
+
+
 async def _advance_or_end(session: SessionState, my_generation: int) -> None:
     """What happens when a track finishes — split out from _fire_track_end()
     below purely so it's directly testable, same reasoning as
@@ -80,11 +130,15 @@ async def _advance_or_end(session: SessionState, my_generation: int) -> None:
     Auto-advances to session.state.queue[queue_index + 1] when there is one
     and a cast target is still active — see AppState.queue's comment — so
     casting keeps going even if the renderer that originally dispatched
-    this session is asleep/suspended. Falls back to the original "mark
-    ended" broadcast once the given queue is exhausted, the next track
-    can't be resolved, or dispatch fails — repeat-all wraparound and
-    repeat-one replay past the end of the given list still need the
-    renderer awake to react to that broadcast, same as before this existed.
+    this session is asleep/suspended. Tries _maybe_autoplay_topup() first
+    when that "when there is one" would otherwise fail, so Autoplay keeps
+    the queue going server-side too, not just while a frontend client is
+    around to react — see that function's own docstring. Falls back to the
+    original "mark ended" broadcast once the queue (topped up or not) is
+    still exhausted, the next track can't be resolved, or dispatch fails —
+    repeat-all wraparound and repeat-one replay past the end of the given
+    list still need the renderer awake to react to that broadcast, same as
+    before this existed.
     """
     st = session.state
     if not (
@@ -95,6 +149,10 @@ async def _advance_or_end(session: SessionState, my_generation: int) -> None:
         return
 
     next_index = st.queue_index + 1
+    if next_index >= len(st.queue) and st.active_delivery:
+        await _maybe_autoplay_topup(session)
+        next_index = st.queue_index + 1  # re-check — the top-up may have extended it
+
     if next_index < len(st.queue) and st.active_delivery:
         next_track_id = st.queue[next_index]
         try:
@@ -189,14 +247,26 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
     # mechanism (position_offset, not resume_offset), keeps reporting the
     # right one. A large gap here is exactly that mismatch; remove once
     # confirmed (or ruled out) from real logs.
+    #
+    # Gated on the drift actually being large, not just `is_streaming`
+    # being True on its own — that's true for basically the entire
+    # session (only False once the queue genuinely ends), so the earlier,
+    # ungated version of this fired on *every* ordinary track change too:
+    # auto-advance and every explicit /play both reset the clock (offset
+    # ≈ elapsed ≈ 0 for a fresh track) right before dispatching, which is
+    # a legitimate reconnect this was never meant to flag. Reusing
+    # POSITION_RESYNC_THRESHOLD here isn't about resync tolerance — it's
+    # just already the app's own answer to "how big a gap is actually
+    # worth a look", so a second magic number isn't needed for it.
     if session.state.is_streaming:
         drift = session.state.clock.elapsed() - offset
-        logger.warning(
-            f"[stream] Reconnect while already streaming — offset={offset:.2f}s "
-            f"(this connection's -ss) vs. clock.elapsed()={session.state.clock.elapsed():.2f}s "
-            f"(calibrated position) — drift={drift:+.2f}s, "
-            f"play_generation={session.state.clock.play_generation}"
-        )
+        if abs(drift) > POSITION_RESYNC_THRESHOLD:
+            logger.warning(
+                f"[stream] Reconnect while already streaming — offset={offset:.2f}s "
+                f"(this connection's -ss) vs. clock.elapsed()={session.state.clock.elapsed():.2f}s "
+                f"(calibrated position) — drift={drift:+.2f}s, "
+                f"play_generation={session.state.clock.play_generation}"
+            )
 
     # Debug, not info — routes/playback.py's own "[play] ..." line already
     # announced this same track+device at the user-action level; this is
@@ -225,12 +295,37 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
         playback state (/play, /stop, /seek, ...) — without it, a track ending
         in the same instant as a user-issued skip/stop could interleave state
         updates between the two.
+
+        `wait` is only the *initial* estimate, from whatever position_offset
+        was in effect the moment ffmpeg finished — not slept in one go
+        anymore (an earlier version did exactly that). The position-resync
+        loop (routes/playback.py) can recalibrate position_offset at any
+        point during this wait — a real correction, e.g. the device having
+        been paused/reconnected externally — and a single up-front sleep
+        had no way to notice that, firing on the original stale schedule
+        instead: observed live auto-advancing several seconds early,
+        cutting off the tail of the still-playing track, after exactly such
+        a mid-wait correction. Re-measuring against the live clock on each
+        poll (same cadence as the resync loop itself, so this never sleeps
+        past a point where a correction could already have landed without
+        reacting to it for a whole extra cycle) is what actually fixes
+        that — a real edit stays picked up within one more poll instead of
+        never at all.
         """
         if wait > 0.5:
             logger.info(
                 f"[stream] FFmpeg done early — waiting {wait:.1f}s for playback to finish"
             )
-            await asyncio.sleep(wait)
+            while (
+                session.state.clock.play_generation == my_generation
+                and session.state.current_track
+            ):
+                remaining = session.state.clock.seconds_until(
+                    session.state.current_track.duration
+                )
+                if remaining <= 0.5:
+                    break
+                await asyncio.sleep(min(remaining, POSITION_RESYNC_INTERVAL))
         async with session.play_lock:
             await _advance_or_end(session, my_generation)
 
