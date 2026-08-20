@@ -257,6 +257,33 @@ async def _resync_position_once(session: SessionState, candidate) -> None:
             f"duration={st.current_track.duration}s — ignoring"
         )
         return
+    # The mirror image of the guard above: once the wall clock has already
+    # reached (or nearly reached) the track's own duration, a device
+    # position that suddenly drops back down is far more likely the device
+    # having already finished/stopped this track than someone rewinding to
+    # the very start in its last second — SonosDelivery.get_position()
+    # reports a bare 0:00:00 once its transport has nothing playing,
+    # indistinguishable at the value level from a genuine rewind. Trusting
+    # it here recalibrates position_offset by (close to) the entire elapsed
+    # wall-clock duration, which _fire_track_end's own remaining =
+    # clock.seconds_until(...) reads directly (see that function's
+    # docstring) — every subsequent resync during the ffmpeg-done-early
+    # overrun window then pushed its schedule further into the future
+    # instead of ever converging, so the track never auto-advanced and the
+    # displayed position visibly snapped back toward 0:00 instead (observed
+    # live 2026-08-20, a full track stuck until manually restarted).
+    if (
+        st.current_track
+        and wall_elapsed >= st.current_track.duration - POSITION_RESYNC_THRESHOLD
+        and device_pos < wall_elapsed - POSITION_RESYNC_THRESHOLD
+    ):
+        logger.debug(
+            f"[position-resync] {candidate.target}: wall clock already at/past track end "
+            f"(wall={wall_elapsed:.2f}s, duration={st.current_track.duration}s) and "
+            f"device={device_pos:.2f}s dropped back below it — likely already finished, "
+            "not a real rewind — ignoring"
+        )
+        return
 
     delta = device_pos - wall_elapsed
     # How far *this* measurement would move position_offset from what's

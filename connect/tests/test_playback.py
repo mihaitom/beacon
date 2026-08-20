@@ -1308,6 +1308,51 @@ def test_resync_position_once_ignores_reading_past_track_duration(default_sessio
     assert default_session.state.clock.position_offset == 0.0
 
 
+def test_resync_position_once_ignores_a_reset_to_zero_once_wall_clock_is_past_duration(
+    default_session,
+):
+    """Regression for a real prod symptom: once the wall clock has already
+    reached the track's own duration (the ffmpeg-done-early overrun window
+    routes/stream.py's _fire_track_end polls through), SonosDelivery's
+    get_position() reporting a bare 0:00:00 — what a stopped/idle transport
+    with nothing playing looks like, indistinguishable from a genuine
+    rewind-to-the-start at the value level alone — must not be trusted as a
+    real seek. Recalibrating onto it corrupts position_offset by roughly the
+    entire elapsed wall-clock duration, which clock.seconds_until() (read
+    directly by _fire_track_end) then reports as a ballooning "remaining"
+    estimate instead of ever reaching zero — observed live as a track never
+    auto-advancing and its displayed position visibly snapping back to
+    0:00 (2026-08-20)."""
+    default_session.state.current_track = Track("1", "Song", "Artist", 180, "")
+    default_session.state.clock.play_start_time = time.time() - 320.0
+    default_session.state.clock.position_offset = -1.07
+    target = SonosDelivery("Arbeitszimmer")
+    import asyncio
+
+    with patch.object(target, "get_position", new=AsyncMock(return_value=0.0)):
+        asyncio.run(_resync_position_once(default_session, target))
+
+    assert default_session.state.clock.position_offset == -1.07
+
+
+def test_resync_position_once_still_recalibrates_a_real_rewind_well_before_duration(
+    default_session,
+):
+    """The guard above is specifically about wall_elapsed already being at/
+    past the track's own duration — a genuine rewind-to-the-start mid-track
+    (well short of duration) must still recalibrate normally."""
+    default_session.state.current_track = Track("1", "Song", "Artist", 180, "")
+    default_session.state.clock.play_start_time = time.time() - 40.0
+    default_session.state.clock.position_offset = 0.0
+    target = SonosDelivery("Küche")
+    import asyncio
+
+    with patch.object(target, "get_position", new=AsyncMock(return_value=0.0)):
+        asyncio.run(_resync_position_once(default_session, target))
+
+    assert default_session.state.clock.position_offset < -POSITION_RESYNC_THRESHOLD
+
+
 def test_resync_position_once_ignores_negative_reading(default_session):
     default_session.state.clock.play_start_time = time.time() - 10.0
     default_session.state.clock.position_offset = 0.0
