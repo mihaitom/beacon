@@ -24,6 +24,7 @@ dev = [
     "httpx>=0.28",
     "httpx2>=2.5.0",
     "ruff>=0.15.13",
+    "pytest-cov>=7.1.0",
 ]
 
 [tool.pytest.ini_options]
@@ -32,4 +33,14 @@ testpaths = ["tests"]
 addopts = "-m 'not live'"
 markers = [
     "live: hits real third-party lyrics provider APIs over the network; excluded by default, run with `-m live`",
+]
+
+[tool.coverage.run]
+source = ["core", "routes", "delivery", "media", "lyrics", "main"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
 ]

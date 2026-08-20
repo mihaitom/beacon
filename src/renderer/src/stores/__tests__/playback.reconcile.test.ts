@@ -1,0 +1,270 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { useLibraryStore } from '../library'
+import { useConnectStore } from '../connect'
+import { usePlaybackStore } from '../playback'
+import * as connectPlayback from '@/services/connect/playback'
+import type { PlayResponse } from '@/services/connect/types'
+import { makeSong, makeStatus } from './fixtures'
+
+// Only `play()` needs to be under test control (its resolution timing is
+// what pendingLocalSongChange guards against) — every other export stays
+// real so useConnectStore()'s own imports of this module keep working.
+vi.mock('@/services/connect/playback', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/connect/playback')>()
+  return { ...actual, play: vi.fn() }
+})
+
+describe('reconcileFromStatus / adoptCastQueue', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.mocked(connectPlayback.play).mockReset()
+  })
+
+  describe('radio', () => {
+    it('does nothing while there is no live status yet (no current_song, no radio)', () => {
+      const playback = usePlaybackStore()
+      const a = makeSong('a')
+      playback.setQueue([a], 0)
+
+      void playback.reconcileFromStatus(makeStatus())
+
+      expect(playback.queue).toEqual([a])
+      expect(playback.currentIndex).toBe(0)
+    })
+
+    it('replaces the queue with the radio station and clears currentIndex when the stream URL changes', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('a'), makeSong('b')], 0)
+
+      await playback.reconcileFromStatus(
+        makeStatus({ radio: { title: 'Chill FM', url: 'https://stream.example/chill' } }),
+      )
+
+      expect(playback.queue).toEqual([])
+      expect(playback.originalQueue).toEqual([])
+      expect(playback.currentIndex).toBe(-1)
+      expect(playback.radioStation).toEqual({
+        id: '',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      })
+    })
+
+    it('leaves radioStation untouched (same object) when the same station repeats on the next tick', async () => {
+      const playback = usePlaybackStore()
+      const status = makeStatus({
+        radio: { title: 'Chill FM', url: 'https://stream.example/chill' },
+      })
+      await playback.reconcileFromStatus(status)
+      const stationAfterFirstTick = playback.radioStation
+
+      await playback.reconcileFromStatus(status)
+
+      expect(playback.radioStation).toBe(stationAfterFirstTick)
+    })
+  })
+
+  describe('the in-flight local song switch race', () => {
+    it('does not blow away the queue when a stale SSE tick lands while our own startCurrent() is still awaiting the backend', async () => {
+      const playback = usePlaybackStore()
+      const connect = useConnectStore()
+      const [a, b, c] = [makeSong('a'), makeSong('b'), makeSong('c')]
+      playback.setQueue([a, b, c], 0)
+      // isCasting derives from connect.status.targets — a non-empty target
+      // list is what routes startCurrent() through the connectPlayback.play()
+      // branch instead of the local <audio> element.
+      connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos' }] })
+
+      // Keep connectPlayback.play() pending so pendingLocalSongChange (set
+      // synchronously before the await) stays set for the assertions below.
+      let resolvePlay!: (response: PlayResponse) => void
+      vi.mocked(connectPlayback.play).mockReturnValue(
+        new Promise((resolve) => {
+          resolvePlay = resolve
+        }),
+      )
+      const startCurrentPromise = playback.startCurrent()
+
+      // A status tick reporting a queue this client doesn't recognize
+      // arrives before the backend has processed our own dispatch —
+      // without the pendingLocalSongChange guard this used to be read as
+      // "adopt this instead" and collapse the queue down to it.
+      await playback.reconcileFromStatus(
+        makeStatus({
+          current_song: {
+            id: 'b',
+            artist: '',
+            album: '',
+            cover_art_url: null,
+            duration: 180,
+            title: 'Song b',
+          },
+          queue: ['b'],
+          original_queue: ['b'],
+          current_song_index: 0,
+        }),
+      )
+
+      expect(playback.queue).toEqual([a, b, c])
+      expect(playback.currentIndex).toBe(0)
+
+      resolvePlay({ status: 'playing' })
+      await startCurrentPromise
+    })
+
+    it('does adopt that same incoming queue once the in-flight switch has resolved', async () => {
+      const playback = usePlaybackStore()
+      const connect = useConnectStore()
+      const library = useLibraryStore()
+      const [a, b, c] = [makeSong('a'), makeSong('b'), makeSong('c')]
+      library.allSongs = [a, b, c]
+      playback.setQueue([a, b, c], 0)
+      connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos' }] })
+      vi.mocked(connectPlayback.play).mockResolvedValue({ status: 'playing' })
+
+      await playback.startCurrent() // pendingLocalSongChange is set and cleared again within this await
+
+      await playback.reconcileFromStatus(
+        makeStatus({
+          current_song: {
+            id: 'b',
+            artist: '',
+            album: '',
+            cover_art_url: null,
+            duration: 180,
+            title: 'Song b',
+          },
+          queue: ['b', 'c'],
+          original_queue: ['b', 'c'],
+          current_song_index: 0,
+        }),
+      )
+
+      expect(playback.queue.map((s) => s.id)).toEqual(['b', 'c'])
+    })
+  })
+
+  describe('adoptCastQueue', () => {
+    it('updates only currentIndex, keeping existing Song references, when the remote queue already matches', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('a'), makeSong('b')], 0)
+      // Read back through the (reactive) store rather than comparing
+      // against the raw makeSong() objects — Pinia hands out a stable
+      // proxy per underlying object, but that proxy is never === the
+      // unwrapped original.
+      const [entryA, entryB] = playback.queue
+
+      await playback.reconcileFromStatus(
+        makeStatus({
+          current_song: {
+            id: 'b',
+            artist: '',
+            album: '',
+            cover_art_url: null,
+            duration: 180,
+            title: 'Song b',
+          },
+          queue: ['a', 'b'],
+          original_queue: ['a', 'b'],
+          current_song_index: 1,
+        }),
+      )
+
+      expect(playback.currentIndex).toBe(1)
+      // Same object references — QueueDrawer.vue keys rows off these, not
+      // just the id, so an unrelated row shouldn't re-render/re-animate.
+      expect(playback.queue[0]).toBe(entryA)
+      expect(playback.queue[1]).toBe(entryB)
+    })
+
+    it('adopts shuffle/repeatMode independently of whether the queue itself changed', async () => {
+      const playback = usePlaybackStore()
+      const [a, b] = [makeSong('a'), makeSong('b')]
+      playback.setQueue([a, b], 0)
+      expect(playback.shuffle).toBe(false)
+
+      await playback.reconcileFromStatus(
+        makeStatus({
+          current_song: {
+            id: 'a',
+            artist: '',
+            album: '',
+            cover_art_url: null,
+            duration: 180,
+            title: 'Song a',
+          },
+          queue: ['a', 'b'],
+          original_queue: ['a', 'b'],
+          current_song_index: 0,
+          shuffle: true,
+          repeat_mode: 'all',
+        }),
+      )
+
+      expect(playback.shuffle).toBe(true)
+      expect(playback.repeatMode).toBe('all')
+    })
+
+    it('rebuilds the queue from a differing remote list, resolving unseen ids from the library', async () => {
+      const playback = usePlaybackStore()
+      const library = useLibraryStore()
+      const a = makeSong('a')
+      const b = makeSong('b')
+      const c = makeSong('c')
+      library.allSongs = [a, b, c]
+      playback.setQueue([a], 0)
+      const entryA = playback.queue[0]
+
+      await playback.reconcileFromStatus(
+        makeStatus({
+          current_song: {
+            id: 'c',
+            artist: '',
+            album: '',
+            cover_art_url: null,
+            duration: 180,
+            title: 'Song c',
+          },
+          queue: ['a', 'b', 'c'],
+          original_queue: ['a', 'b', 'c'],
+          current_song_index: 2,
+        }),
+      )
+
+      expect(playback.queue).toEqual([a, b, c])
+      // Reuses this client's own existing object for 'a' rather than a
+      // fresh one resolved from the library.
+      expect(playback.queue[0]).toBe(entryA)
+      expect(playback.currentIndex).toBe(2)
+    })
+
+    it('leaves local state untouched when a referenced song cannot be resolved anywhere', async () => {
+      const playback = usePlaybackStore()
+      const library = useLibraryStore()
+      const a = makeSong('a')
+      library.allSongs = [a] // 'ghost' is in neither the library nor the local queue
+      playback.setQueue([a], 0)
+
+      await playback.reconcileFromStatus(
+        makeStatus({
+          current_song: {
+            id: 'ghost',
+            artist: '',
+            album: '',
+            cover_art_url: null,
+            duration: 180,
+            title: 'Ghost',
+          },
+          queue: ['a', 'ghost'],
+          original_queue: ['a', 'ghost'],
+          current_song_index: 1,
+        }),
+      )
+
+      expect(playback.queue).toEqual([a])
+      expect(playback.currentIndex).toBe(0)
+    })
+  })
+})

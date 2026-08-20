@@ -208,7 +208,9 @@ let wasCastingActive = false
 // single-instance start every time.
 if (import.meta.hot) {
   import.meta.hot.accept(() => {
-    import.meta.hot!.invalidate('stores/playback.ts holds singleton state that cannot be safely hot-reloaded')
+    import.meta.hot!.invalidate(
+      'stores/playback.ts holds singleton state that cannot be safely hot-reloaded',
+    )
   })
 }
 
@@ -595,7 +597,10 @@ export const usePlaybackStore = defineStore('playback', {
       if (this.repeatMode !== status.repeat_mode) this.repeatMode = status.repeat_mode
 
       const remoteOriginalIds = status.original_queue
-      const queueMatches = idsEqual(this.queue.map((t) => t.id), remoteQueueIds)
+      const queueMatches = idsEqual(
+        this.queue.map((t) => t.id),
+        remoteQueueIds,
+      )
       // Empty remote original_queue is treated as "nothing to adopt" rather
       // than "adopt an empty list" — a defensive guard against wiping this
       // client's own originalQueue from a payload that never meaningfully
@@ -603,7 +608,11 @@ export const usePlaybackStore = defineStore('playback', {
       // two in lockstep — but an empty original_queue is never useful to
       // adopt either way).
       const originalMatches =
-        remoteOriginalIds.length === 0 || idsEqual(this.originalQueue.map((t) => t.id), remoteOriginalIds)
+        remoteOriginalIds.length === 0 ||
+        idsEqual(
+          this.originalQueue.map((t) => t.id),
+          remoteOriginalIds,
+        )
 
       if (queueMatches && originalMatches) {
         // Contents already match — currentIndex can still be stale on its
@@ -652,7 +661,8 @@ export const usePlaybackStore = defineStore('playback', {
         if (neededIds.some((id) => !resolvedById.has(id))) return
         this.radioStation = null
         if (!queueMatches) this.queue = remoteQueueIds.map((id) => resolvedById.get(id)!)
-        if (!originalMatches) this.originalQueue = remoteOriginalIds.map((id) => resolvedById.get(id)!)
+        if (!originalMatches)
+          this.originalQueue = remoteOriginalIds.map((id) => resolvedById.get(id)!)
         this.currentIndex = status.current_song_index
         void this.maybeAutoplay()
       } finally {
@@ -845,8 +855,15 @@ export const usePlaybackStore = defineStore('playback', {
       if (connect.isActive) {
         pendingLocalSongChange = song.id
         let response: PlayResponse
-        const { fullQueue, queueIndex, originalQueue, shuffle, repeatMode, autoplayEnabled, autoplayBatchSize } =
-          this.castQueuePayload
+        const {
+          fullQueue,
+          queueIndex,
+          originalQueue,
+          shuffle,
+          repeatMode,
+          autoplayEnabled,
+          autoplayBatchSize,
+        } = this.castQueuePayload
         try {
           response = await connectPlayback.play(song.id, {
             targets: connect.activeTargets,
@@ -1181,8 +1198,15 @@ export const usePlaybackStore = defineStore('playback', {
      * startCurrent() sends the initial queue itself. */
     syncCastQueue(): void {
       if (!this.isCasting || this.currentIndex < 0) return
-      const { fullQueue, queueIndex, originalQueue, shuffle, repeatMode, autoplayEnabled, autoplayBatchSize } =
-        this.castQueuePayload
+      const {
+        fullQueue,
+        queueIndex,
+        originalQueue,
+        shuffle,
+        repeatMode,
+        autoplayEnabled,
+        autoplayBatchSize,
+      } = this.castQueuePayload
       void connectPlayback
         .updateQueue(fullQueue, queueIndex, {
           originalQueue,
@@ -1291,8 +1315,15 @@ export const usePlaybackStore = defineStore('playback', {
         const song = this.currentSong
         const startPosition = this.localPosition
         const gain = this.replayGainMultiplier
-        const { fullQueue, queueIndex, originalQueue, shuffle, repeatMode, autoplayEnabled, autoplayBatchSize } =
-          this.castQueuePayload
+        const {
+          fullQueue,
+          queueIndex,
+          originalQueue,
+          shuffle,
+          repeatMode,
+          autoplayEnabled,
+          autoplayBatchSize,
+        } = this.castQueuePayload
         const play = async (f: boolean) => {
           if (this.isPlaying) getAudioEngine().pause() // local pauses, connect takes over
           const response = await connectPlayback.play(song.id, {
@@ -1335,7 +1366,7 @@ export const usePlaybackStore = defineStore('playback', {
  * collide between unrelated rows. Only clones on an actual collision — the
  * overwhelmingly common case (no repeats) still pushes the original
  * reference unchanged, same as before this existed. */
-function dedupeForQueue(songs: Song[], existingQueue: Song[]): Song[] {
+export function dedupeForQueue(songs: Song[], existingQueue: Song[]): Song[] {
   const seen = new Set<Song>(existingQueue)
   return songs.map((t) => {
     if (seen.has(t)) return { ...t }
@@ -1347,11 +1378,11 @@ function dedupeForQueue(songs: Song[], existingQueue: Song[]): Song[] {
 /** Same-length, same-order id comparison — used by adoptCastQueue() to tell
  * whether an incoming queue/originalQueue actually differs before doing any
  * (async, per-song) resolution work. */
-function idsEqual(a: string[], b: string[]): boolean {
+export function idsEqual(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((id, i) => id === b[i])
 }
 
-function shuffledExcept(songs: Song[], keepFirst: Song | null | undefined): Song[] {
+export function shuffledExcept(songs: Song[], keepFirst: Song | null | undefined): Song[] {
   // Removes only the one `keepFirst` instance, not every song sharing its
   // id — a plain .filter() by id would drop *every* occurrence, silently
   // shrinking the queue whenever the same song appears twice in it.
