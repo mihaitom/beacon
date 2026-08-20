@@ -149,7 +149,7 @@ export default {
     calibrateHere: 'Calibrar con esta línea',
     source: 'Fuente: {source}',
     sourceFile: 'Del archivo',
-    pickMatch: 'Otra coincidencia',
+    pickMatch: 'Coincidencias',
     noCandidates: 'No se encontraron más coincidencias.',
     synced: 'Sincronizada',
     unsynced: 'No sincronizada',

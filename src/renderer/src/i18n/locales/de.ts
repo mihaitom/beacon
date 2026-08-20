@@ -146,7 +146,7 @@ export default {
     calibrateHere: 'Hierher kalibrieren',
     source: 'Quelle: {source}',
     sourceFile: 'Aus der Datei',
-    pickMatch: 'Anderer Treffer',
+    pickMatch: 'Treffer',
     noCandidates: 'Keine weiteren Treffer gefunden.',
     synced: 'Synchronisiert',
     unsynced: 'Unsynchronisiert',

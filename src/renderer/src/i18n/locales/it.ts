@@ -148,7 +148,7 @@ export default {
     calibrateHere: 'Calibra su questa riga',
     source: 'Fonte: {source}',
     sourceFile: 'Dal file',
-    pickMatch: 'Altra corrispondenza',
+    pickMatch: 'Corrispondenze',
     noCandidates: "Nessun'altra corrispondenza trovata.",
     synced: 'Sincronizzato',
     unsynced: 'Non sincronizzato',
