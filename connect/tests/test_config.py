@@ -125,6 +125,26 @@ def test_config_sets_display_name_from_username(client, default_session):
     assert default_session.display_name == "alice"
 
 
+def test_config_rejects_a_credential_the_media_server_wont_accept(
+    client, default_session, monkeypatch
+):
+    """The shared CONNECT_TOKEN only proves the request came through our own
+    nginx — ping() failing means the credential itself isn't a real,
+    authenticated media-server user, and must 401 rather than accept it."""
+    monkeypatch.setattr(SubsonicClient, "ping", lambda self: False)
+    # The `default_session` fixture pre-sets this True (see its own
+    # docstring) — reset to False here so the assertion below actually
+    # exercises "rejection never flips it True", not just "left at
+    # whatever the fixture happened to already have".
+    default_session.authenticated = False
+
+    r = client.post("/config", json={"url": "http://nav:4533", "credential": "bad"})
+
+    assert r.status_code == 401
+    assert "credential" in r.json()["detail"].lower()
+    assert default_session.authenticated is False
+
+
 # ── internal_url resolution ──────────────────────────────────────────────────
 
 

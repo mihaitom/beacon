@@ -80,6 +80,79 @@ def test_radio_favicon_rejects_url_without_host(client):
 # ── No declared icon → implicit /favicon.ico fallback ───────────────────────
 
 
+# ── _parse_sizes ─────────────────────────────────────────────────────────────
+
+
+def test_parse_sizes_picks_the_largest_declared():
+    assert radio_mod._parse_sizes("16x16 32x32 48x48") == 48
+
+
+def test_parse_sizes_any_outranks_every_raster_size():
+    # "any" (SVG, scales losslessly) counts as larger than any raster size
+    # actually likely to be declared alongside it.
+    assert radio_mod._parse_sizes("48x48 any") == 100_000
+
+
+def test_parse_sizes_empty_string_is_zero():
+    assert radio_mod._parse_sizes("") == 0
+
+
+# ── homepage HTML discovery ───────────────────────────────────────────────────
+
+
+def test_discover_candidates_stops_reading_past_the_html_byte_cap(client):
+    """A homepage response must not be buffered without limit — a huge (or
+    infinite, e.g. misconfigured streaming) body stops being read once
+    _MAX_HTML_BYTES is reached, rather than the response ever finishing."""
+    chunk = b"<html>" + b" " * 1024  # 1KB-ish chunks
+    n_chunks = (radio_mod._MAX_HTML_BYTES // len(chunk)) + 5  # well past the cap
+
+    stream_resp = MagicMock()
+    stream_resp.headers = {"content-type": "text/html"}
+
+    async def aiter_bytes():
+        for _ in range(n_chunks):
+            yield chunk
+
+    stream_resp.aiter_bytes = aiter_bytes
+
+    @asynccontextmanager
+    async def stream(method, url):
+        yield stream_resp
+
+    mock_get = AsyncMock(return_value=_fake_get_response())
+    with (
+        patch.object(radio_mod._client, "stream", stream),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com"})
+
+    # No <link> tags in the (junk) HTML either way — just confirms this
+    # returned promptly instead of consuming every one of n_chunks first.
+    assert r.status_code == 200
+
+
+def test_radio_favicon_skips_an_unreachable_candidate_and_tries_the_next(client):
+    html = (
+        b'<html><head>'
+        b'<link rel="icon" sizes="16x16" href="/broken.png">'
+        b'<link rel="icon" sizes="48x48" href="/good.png">'
+        b"</head><body></body></html>"
+    )
+    good_response = _fake_get_response(content=b"real-icon-bytes", content_type="image/png")
+    mock_get = AsyncMock(side_effect=[httpx.ConnectError("unreachable"), good_response])
+
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com"})
+
+    assert r.status_code == 200
+    assert r.content == b"real-icon-bytes"
+    assert mock_get.await_count == 2
+
+
 def test_radio_favicon_falls_back_to_favicon_ico_when_homepage_unreachable(client):
     with (
         patch.object(radio_mod._client, "stream", side_effect=httpx.ConnectError("x")),
@@ -286,6 +359,21 @@ def test_radio_favicon_decodes_base64_data_uri_png(client):
 def test_radio_favicon_falls_through_to_favicon_ico_on_malformed_data_uri(client):
     # No comma at all — nothing separates the header from a (nonexistent) payload.
     html = b'<html><head><link rel="icon" href="data:image/png;base64"></head></html>'
+    mock_get = AsyncMock(return_value=_fake_get_response())
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com"})
+    assert r.status_code == 200
+    mock_get.assert_awaited_once_with("https://example.com/favicon.ico")
+
+
+def test_radio_favicon_skips_a_decoded_data_uri_with_a_non_image_content_type(client):
+    # Decodes fine, but declares a content type that isn't actually an
+    # image — distinct from the malformed (no comma) case above, which
+    # never gets as far as decoding at all.
+    html = b'<html><head><link rel="icon" href="data:text/plain;base64,aGVsbG8="></head></html>'
     mock_get = AsyncMock(return_value=_fake_get_response())
     with (
         patch.object(radio_mod._client, "stream", _mock_stream(html)),

@@ -10,14 +10,27 @@ no renderer is connected, 504 on a real timeout).
 """
 
 import asyncio
+import json
+from unittest.mock import patch
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from core.remote import remote
 from main import app
 from media import SubsonicClient
 from routes import remote as remote_routes
+
+
+async def _time_out(coro, timeout):
+    """Stand-in for asyncio.wait_for() that fails instantly instead of
+    after a real 15s wait — closes `coro` first (the real queue.get() call
+    the patched-out wait_for would otherwise have awaited) so it doesn't
+    linger as an unawaited-coroutine warning. Same technique as
+    test_stream_events.py's identical helper."""
+    coro.close()
+    raise TimeoutError()
 
 
 @pytest.fixture
@@ -88,6 +101,38 @@ async def test_reap_disables_after_keepalive_timeout():
     assert remote.is_stale() is True
     remote.disable()
     assert remote.is_stale() is False  # disabled feature is never "stale"
+
+
+async def test_reap_stale_remote_disables_once_stale():
+    from core.remote import reap_stale_remote
+
+    remote.enable()
+    remote.last_keepalive = 0  # already stale before the loop even starts
+
+    with patch("core.remote.asyncio.sleep", side_effect=[None, asyncio.CancelledError()]):
+        task = asyncio.create_task(reap_stale_remote())
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    assert remote.enabled is False
+
+
+async def test_reap_stale_remote_leaves_a_fresh_session_enabled():
+    from core.remote import reap_stale_remote
+
+    remote.enable()
+    remote.touch_keepalive()  # not stale
+
+    with patch("core.remote.asyncio.sleep", side_effect=[None, asyncio.CancelledError()]):
+        task = asyncio.create_task(reap_stale_remote())
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    assert remote.enabled is True
 
 
 # ── PIN login + rate limiting ────────────────────────────────────────────
@@ -213,6 +258,174 @@ def test_device_volume_query_503_when_no_renderer_connected(client):
     assert resp.status_code == 503
 
 
+def test_playlists_query_503_when_no_renderer_connected(client):
+    client.post("/remote/enable")
+    resp = client.get("/remote/playlists", headers={"X-Remote-Password": remote.password})
+    assert resp.status_code == 503
+
+
+def test_playlist_by_id_query_503_when_no_renderer_connected(client):
+    client.post("/remote/enable")
+    resp = client.get(
+        "/remote/playlists/abc123", headers={"X-Remote-Password": remote.password}
+    )
+    assert resp.status_code == 503
+
+
+def test_radio_stations_query_503_when_no_renderer_connected(client):
+    client.post("/remote/enable")
+    resp = client.get(
+        "/remote/radio-stations", headers={"X-Remote-Password": remote.password}
+    )
+    assert resp.status_code == 503
+
+
+async def test_query_response_resolves_the_matching_pending_query(client):
+    client.post("/remote/enable")
+    future = remote.new_pending("req-1")
+
+    resp = client.post(
+        "/remote/query-response", json={"request_id": "req-1", "data": {"ok": True}}
+    )
+
+    assert resp.status_code == 200
+    assert await asyncio.wait_for(future, timeout=1.0) == {"ok": True}
+
+
+# ── agent_events (SSE) — the renderer's own long-lived command subscription ─
+# Success-path here (unlike the module docstring's "never terminates
+# naturally" note about driving these through the HTTP client) drives the
+# generator directly via resp.body_iterator instead — same technique as
+# test_stream_events.py's /events and /visualizer tests.
+
+
+async def test_agent_events_opens_with_retry_and_flips_renderer_connected():
+    from routes.remote import agent_events
+
+    remote.renderer_connected = False
+    resp = await agent_events()
+    gen = resp.body_iterator
+    try:
+        first = await gen.__anext__()
+        assert first == "retry: 2000\n\n"
+        assert remote.renderer_connected is True
+    finally:
+        await gen.aclose()
+
+    # Cleared once the connection closes, so phone-facing endpoints correctly
+    # fail fast (503) again instead of hanging against a dead connection.
+    assert remote.renderer_connected is False
+
+
+async def test_agent_events_forwards_a_broadcast_command():
+    from routes.remote import agent_events
+
+    resp = await agent_events()
+    gen = resp.body_iterator
+    try:
+        await gen.__anext__()  # retry
+        payload = {"kind": "command", "type": "toggle-play", "payload": {}}
+        await remote.command_bus.broadcast(payload)
+        forwarded = await gen.__anext__()
+    finally:
+        await gen.aclose()
+
+    assert forwarded == f"data: {json.dumps(payload)}\n\n"
+
+
+async def test_agent_events_heartbeats_on_timeout():
+    from routes.remote import agent_events
+
+    resp = await agent_events()
+    gen = resp.body_iterator
+    try:
+        await gen.__anext__()  # retry
+        with patch("routes.remote.asyncio.wait_for", _time_out):
+            tick = await gen.__anext__()
+    finally:
+        await gen.aclose()
+
+    assert tick == ": heartbeat\n\n"
+
+
+async def test_agent_events_unsubscribes_on_close():
+    from routes.remote import agent_events
+
+    resp = await agent_events()
+    gen = resp.body_iterator
+    await gen.__anext__()
+    assert len(remote.command_bus._queues) == 1
+
+    await gen.aclose()
+
+    assert remote.command_bus._queues == []
+
+
+# ── phone_events (SSE) — a paired phone's status subscription ───────────────
+
+
+async def test_phone_events_opens_with_retry_and_the_current_snapshot():
+    from routes.remote import phone_events
+
+    remote.snapshot = {"playing": True}
+    resp = await phone_events()
+    gen = resp.body_iterator
+    try:
+        first = await gen.__anext__()
+        second = await gen.__anext__()
+    finally:
+        await gen.aclose()
+
+    assert first == "retry: 2000\n\n"
+    assert second == f"data: {json.dumps({'playing': True})}\n\n"
+
+
+async def test_phone_events_forwards_a_broadcast_snapshot():
+    from routes.remote import phone_events
+
+    resp = await phone_events()
+    gen = resp.body_iterator
+    try:
+        await gen.__anext__()  # retry
+        await gen.__anext__()  # initial snapshot
+        await remote.event_bus.broadcast({"playing": False})
+        forwarded = await gen.__anext__()
+    finally:
+        await gen.aclose()
+
+    assert forwarded == f"data: {json.dumps({'playing': False})}\n\n"
+
+
+async def test_phone_events_heartbeats_on_timeout():
+    from routes.remote import phone_events
+
+    resp = await phone_events()
+    gen = resp.body_iterator
+    try:
+        await gen.__anext__()
+        await gen.__anext__()
+        with patch("routes.remote.asyncio.wait_for", _time_out):
+            tick = await gen.__anext__()
+    finally:
+        await gen.aclose()
+
+    assert tick == ": heartbeat\n\n"
+
+
+async def test_phone_events_unsubscribes_on_close():
+    from routes.remote import phone_events
+
+    resp = await phone_events()
+    gen = resp.body_iterator
+    await gen.__anext__()
+    await gen.__anext__()
+    assert len(remote.event_bus._queues) == 1
+
+    await gen.aclose()
+
+    assert remote.event_bus._queues == []
+
+
 # ── /remote/cover-art, /remote/radio-favicon ─────────────────────────────
 # Both exist so the phone never has to be handed a URL carrying the real
 # CONNECT_TOKEN (see routes/remote.py's own comment on why coverArtUrl()/
@@ -330,3 +543,34 @@ def test_app_unknown_subpath_falls_back_to_index_for_spa_router(client):
 def test_app_404_when_disabled(unauthed):
     resp = unauthed.get("/remote/app/")
     assert resp.status_code == 404
+
+
+def test_app_rejects_a_path_traversal_attempt():
+    """Called directly rather than through the HTTP client — httpx/starlette
+    normalize `..` segments before routing, so a real request never actually
+    exercises this guard; the guard exists for whatever survives that
+    normalization (e.g. an already-resolved absolute path)."""
+    from routes.remote import serve_remote_app
+
+    remote.enable()
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(serve_remote_app(path="../../../../etc/passwd"))
+    finally:
+        remote.disable()
+
+    assert exc_info.value.status_code == 404
+
+
+def test_app_404_when_static_assets_are_entirely_missing(tmp_path, monkeypatch):
+    from routes.remote import serve_remote_app
+
+    monkeypatch.setattr(remote_routes, "_static_dir", lambda: tmp_path)
+    remote.enable()
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(serve_remote_app(path="whatever.js"))
+    finally:
+        remote.disable()
+
+    assert exc_info.value.status_code == 404

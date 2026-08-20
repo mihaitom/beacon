@@ -160,6 +160,41 @@ def test_reap_once_stops_delivery_and_releases_claims():
     assert registry.get("stale-with-delivery") is None
 
 
+def test_reap_once_still_reaps_a_session_whose_delivery_wont_stop():
+    from unittest.mock import AsyncMock
+
+    from core.session import SESSION_IDLE_TIMEOUT, reap_once, registry
+
+    session = asyncio.run(registry.get_or_create("stale-unresponsive"))
+    delivery = ChromecastDelivery("TV")
+    delivery.stop = AsyncMock(side_effect=RuntimeError("device unreachable"))
+    session.state.active_delivery = delivery
+    session.last_seen = time.time() - SESSION_IDLE_TIMEOUT - 1
+
+    reaped = asyncio.run(reap_once())  # must not raise
+
+    assert reaped == ["stale-unresponsive"]
+    assert registry.get("stale-unresponsive") is None
+
+
+async def test_reap_stale_sessions_calls_reap_once_after_the_interval():
+    from unittest.mock import AsyncMock, patch
+
+    from core.session import reap_stale_sessions
+
+    with (
+        patch("core.session.asyncio.sleep", side_effect=[None, asyncio.CancelledError()]),
+        patch("core.session.reap_once", new=AsyncMock()) as reap_once_mock,
+    ):
+        task = asyncio.create_task(reap_stale_sessions())
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    reap_once_mock.assert_awaited_once()
+
+
 # ── track_label ────────────────────────────────────────────────────────────────
 
 

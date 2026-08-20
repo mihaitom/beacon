@@ -1,6 +1,7 @@
 """Tests for core/radio_stations.py — persistent self-hosted radio stations
 (used by the Jellyfin bridge — see media/jellyfin_bridge.py)."""
 
+import logging
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -16,6 +17,34 @@ def test_list_returns_empty_when_no_file():
     with tempfile.TemporaryDirectory() as d:
         with patch.object(radio_stations, "_PATH", _tmp_path(d)):
             assert radio_stations.list_stations() == []
+
+
+def test_list_returns_empty_and_logs_on_malformed_json(caplog):
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("{not valid json")
+        with (
+            patch.object(radio_stations, "_PATH", path),
+            caplog.at_level(logging.WARNING, logger="connect.radio_stations"),
+        ):
+            assert radio_stations.list_stations() == []
+
+    assert "Load failed" in caplog.text
+
+
+def test_save_logs_but_does_not_raise_when_unwritable(caplog):
+    with tempfile.TemporaryDirectory() as d:
+        blocker = Path(d) / "blocker"
+        blocker.write_text("x")
+        path = str(blocker / "nested" / "stations.json")
+        with (
+            patch.object(radio_stations, "_PATH", path),
+            caplog.at_level(logging.ERROR, logger="connect.radio_stations"),
+        ):
+            radio_stations.create("KEXP", "https://stream.kexp.org")  # must not raise
+
+    assert "Save failed" in caplog.text
 
 
 def test_create_and_list_roundtrip():

@@ -143,6 +143,95 @@ def test_discover_keeps_cached_branch_when_scanner_raises(client, default_sessio
     assert r.json()["sonos"] == [_unclaimed({"name": "Stale"})]
 
 
+def test_discover_logs_a_sonos_scan_error(client, default_session, caplog):
+    """Forces fresh=true so the scan (and therefore the mocked failure) is
+    actually awaited synchronously — test_discover_keeps_cached_branch_
+    when_scanner_raises above serves cached data instead and only
+    *sometimes* also triggers a real scan in the background, depending on
+    ambient _last_scan_completed timing, so it can't reliably be trusted to
+    exercise this specific log line."""
+    import logging
+
+    with (
+        patch(
+            "routes.discovery.discover_sonos",
+            new=AsyncMock(side_effect=RuntimeError("sonos net error")),
+        ),
+        patch("routes.discovery.discover_airplay", new=AsyncMock(return_value=[])),
+        patch("routes.discovery.discover_chromecast", new=AsyncMock(return_value=[])),
+        patch("routes.discovery.discover_dlna", new=AsyncMock(return_value=[])),
+        caplog.at_level(logging.WARNING, logger="connect.devices"),
+    ):
+        r = client.get("/discover?fresh=true")
+
+    assert r.status_code == 200
+    assert "sonos net error" in caplog.text
+
+
+def test_discover_logs_airplay_chromecast_and_dlna_scan_errors(
+    client, default_session, caplog
+):
+    """The other three device types each have their own identical (but
+    separately covered) error-logging line. An empty cache (unlike the
+    Sonos-specific test above) already forces a synchronous scan on its
+    own, regardless of the fresh param — see _scan_devices()'s has_cache
+    check — so this one doesn't need fresh=true for the same reason."""
+    import logging
+
+    state.ctx.discovered = {"sonos": [], "airplay": [], "chromecast": [], "dlna": []}
+
+    with (
+        patch("routes.discovery.discover_sonos", new=AsyncMock(return_value=[])),
+        patch(
+            "routes.discovery.discover_airplay",
+            new=AsyncMock(side_effect=RuntimeError("airplay net error")),
+        ),
+        patch(
+            "routes.discovery.discover_chromecast",
+            new=AsyncMock(side_effect=RuntimeError("chromecast net error")),
+        ),
+        patch(
+            "routes.discovery.discover_dlna",
+            new=AsyncMock(side_effect=RuntimeError("dlna net error")),
+        ),
+        caplog.at_level(logging.WARNING, logger="connect.devices"),
+    ):
+        r = client.get("/discover")
+
+    assert r.status_code == 200
+    assert "airplay net error" in caplog.text
+    assert "chromecast net error" in caplog.text
+    assert "dlna net error" in caplog.text
+
+
+def test_discover_triggers_a_background_rescan_once_the_cache_is_stale(
+    client, default_session, monkeypatch
+):
+    import time
+
+    import routes.discovery as discovery_mod
+
+    state.ctx.discovered = {"sonos": [{"name": "Cached"}], "airplay": [], "chromecast": [], "dlna": []}
+    monkeypatch.setattr(discovery_mod, "_last_scan_completed", 0.0)  # definitely stale
+
+    with (
+        patch("routes.discovery.discover_sonos", new=AsyncMock(return_value=[])),
+        patch("routes.discovery.discover_airplay", new=AsyncMock(return_value=[])),
+        patch("routes.discovery.discover_chromecast", new=AsyncMock(return_value=[])),
+        patch("routes.discovery.discover_dlna", new=AsyncMock(return_value=[])) as dlna_mock,
+    ):
+        r = client.get("/discover")
+
+        assert r.status_code == 200
+        # Served from cache immediately (not awaited fresh) — the rescan
+        # this triggers is a detached background task; give it a moment to
+        # run before the patches above revert, still real wall-clock time
+        # since TestClient runs requests on its own background thread/loop.
+        assert r.json()["sonos"] == [_unclaimed({"name": "Cached"})]
+        time.sleep(0.2)
+        dlna_mock.assert_awaited()
+
+
 def test_discover_fresh_scan_when_cache_empty(client, default_session):
     with (
         patch("routes.discovery.discover_sonos", new=AsyncMock(return_value=[])),

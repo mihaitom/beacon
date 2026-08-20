@@ -60,6 +60,58 @@ def _fake_px_client(json_by_path: dict[str, dict] | None = None):
     return mock_client, calls
 
 
+# ── Shared httpx client lifecycle ────────────────────────────────────────────
+
+
+def test_get_client_creates_once_and_reuses(monkeypatch):
+    monkeypatch.setattr(plex_bridge, "_client", None)
+
+    first = plex_bridge._get_client()
+    second = plex_bridge._get_client()
+
+    assert first is second
+
+
+async def test_close_closes_and_clears_the_shared_client(monkeypatch):
+    fake_client = AsyncMock()
+    monkeypatch.setattr(plex_bridge, "_client", fake_client)
+
+    await plex_bridge.close()
+
+    fake_client.aclose.assert_awaited_once()
+    assert plex_bridge._client is None
+
+
+async def test_close_is_a_noop_when_never_initialized(monkeypatch):
+    monkeypatch.setattr(plex_bridge, "_client", None)
+
+    await plex_bridge.close()  # must not raise
+
+
+# ── _music_section ────────────────────────────────────────────────────────────
+
+
+async def test_music_section_reuses_an_already_resolved_key(plex_session, monkeypatch):
+    plex_session.media.music_section_key = "5"
+    fake_client, calls = _fake_px_client()
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    key = await plex_bridge._music_section(plex_session.media)
+
+    assert key == "5"
+    assert calls == []  # never hit the network — the cached key won
+
+
+async def test_music_section_raises_when_no_music_library_exists(plex_session, monkeypatch):
+    fake_client, _ = _fake_px_client(
+        {"/library/sections": {"MediaContainer": {"Directory": [{"key": "1", "type": "movie"}]}}}
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    with pytest.raises(ValueError, match="No music library section"):
+        await plex_bridge._music_section(plex_session.media)
+
+
 # ── Field mapping (pure functions, no I/O) ──────────────────────────────────
 
 
@@ -145,6 +197,24 @@ def test_map_song_includes_user_rating_converted_from_plex_scale():
 def test_map_song_omits_user_rating_when_unset():
     item = {"ratingKey": "1001", "title": "T", "duration": 0}
     assert "userRating" not in plex_bridge._map_song(item)
+
+
+def test_map_album_includes_user_rating_converted_from_plex_scale():
+    item = {"ratingKey": "2001", "title": "T", "duration": 0, "userRating": 6}
+    assert plex_bridge._map_album(item)["userRating"] == 3
+
+
+def test_map_artist_includes_user_rating_converted_from_plex_scale():
+    item = {"ratingKey": "3001", "title": "T", "userRating": 10}
+    assert plex_bridge._map_artist(item)["userRating"] == 5
+
+
+def test_map_all_skips_a_malformed_item_instead_of_failing_the_whole_page():
+    # No "ratingKey" at all — every mapper indexes item["ratingKey"]
+    # directly, so this one item must be skipped, not abort the batch.
+    items = [{"title": "Broken, no ratingKey"}, {"ratingKey": "1001", "title": "Fine"}]
+    result = plex_bridge._map_all(plex_bridge._map_song, items)
+    assert [s["id"] for s in result] == ["1001"]
 
 
 # ── JSON handlers ─────────────────────────────────────────────────────────────
@@ -265,6 +335,73 @@ def test_get_similar_songs2_flags_plex_pass_required_on_403(client, plex_session
     assert body["similarSongs2"]["plexPassRequired"] is True
 
 
+def test_get_similar_songs2_requires_id(client, plex_session):
+    r = client.get("/rest/getSimilarSongs2.view")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+def test_get_similar_songs2_reraises_a_non_403_http_error(client, plex_session, monkeypatch):
+    """Only a 403 (no Plex Pass) is a recognized, graceful case — any other
+    HTTP failure (500, connectivity blip, ...) must still surface as a
+    real error, not be silently swallowed the same way."""
+
+    async def fake_request(method, url, headers=None, params=None):
+        return httpx.Response(500, request=httpx.Request(method, url))
+
+    fake_client = MagicMock()
+    fake_client.request = fake_request
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getSimilarSongs2.view", params={"id": "9001"})
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+def test_get_song_returns_mapped_song(client, plex_session, monkeypatch):
+    fake_client, _ = _fake_px_client(
+        {
+            "/library/metadata/1001": {
+                "MediaContainer": {"Metadata": [{"ratingKey": "1001", "title": "T", "duration": 0}]}
+            }
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getSong.view?id=1001")
+
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["song"]["id"] == "1001"
+
+
+def test_get_song_raises_when_not_found(client, plex_session, monkeypatch):
+    fake_client, _ = _fake_px_client(
+        {"/library/metadata/9999": {"MediaContainer": {"Metadata": []}}}
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getSong.view?id=9999")
+
+    assert r.status_code == 200
+    body = r.json()["subsonic-response"]
+    assert body["status"] == "failed"
+    assert "9999" in body["error"]["message"]
+
+
+def test_get_album_raises_when_not_found(client, plex_session, monkeypatch):
+    fake_client, _ = _fake_px_client(
+        {"/library/metadata/9999": {"MediaContainer": {"Metadata": []}}}
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getAlbum.view?id=9999")
+
+    assert r.status_code == 200
+    body = r.json()["subsonic-response"]
+    assert body["status"] == "failed"
+    assert "9999" in body["error"]["message"]
+
+
 def test_get_artist_derives_counts_instead_of_trusting_summary_fields(
     client, plex_session, monkeypatch
 ):
@@ -379,6 +516,20 @@ def test_get_artists_derives_album_count_from_bulk_album_listing(
     # against the same section, one call each — not one call per artist.
     all_calls = [c for c in calls if c[1].endswith("/library/sections/5/all")]
     assert len(all_calls) == 2
+
+
+def test_get_artist_raises_when_not_found(client, plex_session, monkeypatch):
+    fake_client, _ = _fake_px_client(
+        {"/library/metadata/9999": {"MediaContainer": {"Metadata": []}}}
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getArtist.view?id=9999")
+
+    assert r.status_code == 200
+    body = r.json()["subsonic-response"]
+    assert body["status"] == "failed"
+    assert "9999" in body["error"]["message"]
 
 
 def test_search3_empty_query_omits_title_filter(client, plex_session, monkeypatch):
@@ -528,6 +679,18 @@ def test_get_playlist_includes_entries(client, plex_session, monkeypatch):
     playlist = r.json()["subsonic-response"]["playlist"]
     assert playlist["id"] == "5001"
     assert playlist["entry"][0]["id"] == "9001"
+
+
+def test_get_playlist_raises_when_not_found(client, plex_session, monkeypatch):
+    fake_client, _ = _fake_px_client({"/playlists/9999": {"MediaContainer": {"Metadata": []}}})
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getPlaylist.view?id=9999")
+
+    assert r.status_code == 200
+    body = r.json()["subsonic-response"]
+    assert body["status"] == "failed"
+    assert "9999" in body["error"]["message"]
 
 
 def test_create_playlist_builds_server_uri(client, plex_session, monkeypatch):
@@ -697,5 +860,47 @@ def test_get_cover_art_streams_binary(client, plex_session, monkeypatch):
 
 def test_get_cover_art_requires_id(client, plex_session):
     r = client.get("/rest/getCoverArt.view")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+def test_get_cover_art_fails_cleanly_when_no_art_url_is_available(
+    client, plex_session, monkeypatch
+):
+    monkeypatch.setattr(plex_session.media, "get_cover_art_url", lambda *a, **k: None)
+
+    r = client.get("/rest/getCoverArt.view?id=2001")
+
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+def test_stream_view_forwards_range_header(client, plex_session, monkeypatch):
+    monkeypatch.setattr(
+        plex_session.media, "get_stream_url", lambda track_id: "http://plex/file.mp3"
+    )
+    mock_client, captured = _mock_binary_httpx_client()
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: mock_client)
+
+    r = client.get("/rest/stream.view?id=9001", headers={"Range": "bytes=0-100"})
+
+    assert r.status_code == 200
+    assert captured["headers"]["Range"] == "bytes=0-100"
+
+
+def test_binary_handler_exception_returns_failed_envelope_not_500(
+    client, plex_session, monkeypatch
+):
+    """Same as jellyfin_bridge.py's identical guard — a Plex connectivity
+    blip mid cover-art-load or mid-stream must degrade like every other
+    endpoint here instead of surfacing as a raw 500."""
+
+    async def broken_stream_binary(request, url, media):
+        raise RuntimeError("connection reset")
+
+    monkeypatch.setattr(plex_bridge, "_stream_binary", broken_stream_binary)
+
+    r = client.get("/rest/getCoverArt.view?id=2001")
+
     assert r.status_code == 200
     assert r.json()["subsonic-response"]["status"] == "failed"

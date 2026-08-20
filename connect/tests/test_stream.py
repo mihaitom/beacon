@@ -8,12 +8,16 @@ started the track from 0:00 while the app's own state still reported the
 correct position.
 """
 
-from unittest.mock import AsyncMock, patch
+import asyncio
+import logging
+from unittest.mock import AsyncMock, MagicMock, call, patch
+
+import pytest
 
 from core.streamer import FALLBACK_FORMAT, OutputFormat
 from delivery import ChromecastDelivery
 from media import Track
-from routes.stream import _advance_or_end, _dispatch_queued_track
+from routes.stream import _advance_or_end, _dispatch_queued_track, audio_stream
 
 
 async def _empty_stream(*args, **kwargs):
@@ -120,6 +124,29 @@ def test_get_stream_content_type_defaults_to_mp3(client, default_session):
         r = client.get("/stream")
 
     assert r.headers["content-type"].startswith("audio/mpeg")
+
+
+def test_get_stream_logs_when_the_track_actually_starts(client, default_session, caplog):
+    """on_track_start() (the debug line stream_tracks() calls once per
+    track — see stream_with_completion()'s own local function) only fires
+    when a real ffmpeg process actually starts producing bytes, something
+    the other tests' faked-out stream_tracks() never triggers itself."""
+
+    async def _fires_on_track_start(track_urls, on_track_start=None, **kwargs):
+        if on_track_start:
+            on_track_start(0)
+        yield b"chunk-1"
+
+    _configure_and_set_track(client, default_session)
+
+    with (
+        patch("routes.stream.stream_tracks", side_effect=_fires_on_track_start),
+        caplog.at_level(logging.DEBUG, logger="connect.stream"),
+    ):
+        client.get("/stream")
+
+    assert "▶" in caplog.text
+    assert "Song" in caplog.text  # the track's title, set by _configure_and_set_track
 
 
 def test_head_stream_content_type_matches_cached_format(client, default_session):
@@ -365,6 +392,27 @@ async def test_advance_or_end_autoplay_skipped_without_similar_songs_support(def
     assert default_session.state.track_ended is True
 
 
+async def test_advance_or_end_autoplay_falls_back_when_similar_songs_lookup_fails(
+    default_session,
+):
+    """The media server's similar-songs call can itself fail (network hiccup,
+    5xx, ...) — must fall through to the normal "mark ended" broadcast
+    rather than propagating and leaving state stuck mid-transition, same
+    as the "track not found"/"dispatch failed" fallbacks above."""
+    target = ChromecastDelivery("TV")
+    generation = _playing_session(default_session, ["1"], target=target)
+    default_session.state.autoplay_enabled = True
+
+    with patch.object(
+        default_session.media, "get_similar_songs2", side_effect=RuntimeError("navidrome 500")
+    ):
+        await _advance_or_end(default_session, generation)
+
+    assert default_session.state.queue == ["1"]
+    assert default_session.state.is_streaming is False
+    assert default_session.state.track_ended is True
+
+
 async def test_dispatch_queued_track_updates_state_and_schedules_background_tasks(
     default_session,
 ):
@@ -382,3 +430,200 @@ async def test_dispatch_queued_track_updates_state_and_schedules_background_task
     assert play_mock.await_count == 1
     assert default_session.state.current_track.id == "2"
     assert default_session.state.is_streaming is True
+
+
+# ── stream_with_completion()'s failure handling ──────────────────────────────
+# ffmpeg crashing mid-stream and a device simply disconnecting must be told
+# apart: an ffmpeg failure gets caught and reported (is_streaming=False,
+# broadcast) so the frontend doesn't keep believing playback is still live,
+# but must NOT set track_ended — that would make the frontend think this
+# track played to completion and auto-advance, when actually little or
+# nothing of it was ever heard. A disconnect (CancelledError) is a routine
+# event with an entirely different meaning and must not trigger either.
+
+
+async def test_ffmpeg_failure_mid_stream_reports_not_streaming_without_marking_ended(
+    client, default_session,
+):
+    _configure_and_set_track(client, default_session)
+
+    async def _crashes_after_one_chunk(*args, **kwargs):
+        yield b"partial-chunk"
+        raise RuntimeError("ffmpeg exploded")
+
+    q = default_session.event_bus.subscribe()
+
+    with patch("routes.stream.stream_tracks", side_effect=_crashes_after_one_chunk):
+        resp = await audio_stream(session_id=default_session.session_id)
+        chunks = [chunk async for chunk in resp.body_iterator]
+
+    assert chunks == [b"partial-chunk"]
+    assert default_session.state.is_streaming is False
+    # Unlike the natural "queue exhausted" path (_advance_or_end), a crash
+    # mid-track must not read as "this track finished playing".
+    assert default_session.state.track_ended is False
+    payload = q.get_nowait()
+    assert payload["streaming"] is False
+
+
+async def test_client_disconnect_mid_stream_is_reraised_without_touching_state(
+    client, default_session,
+):
+    _configure_and_set_track(client, default_session)
+
+    async def _disconnects_after_one_chunk(*args, **kwargs):
+        yield b"chunk"
+        raise asyncio.CancelledError()
+
+    q = default_session.event_bus.subscribe()
+
+    with patch("routes.stream.stream_tracks", side_effect=_disconnects_after_one_chunk):
+        resp = await audio_stream(session_id=default_session.session_id)
+        gen = resp.body_iterator
+        first = await gen.__anext__()
+        assert first == b"chunk"
+        with pytest.raises(asyncio.CancelledError):
+            await gen.__anext__()
+
+    # A disconnect is routine — state must be left exactly as it was, and
+    # nothing broadcast, since nothing about playback actually changed.
+    assert default_session.state.is_streaming is True
+    assert q.empty()
+
+
+# ── Live analysis hookup (GET /visualizer's data source) ─────────────────────
+# See core/audio_analysis.py's AudioAnalyzer — stream_with_completion()
+# creates one per track whenever a live-analyzable target (Sonos/DLNA/
+# Chromecast) is casting, feeds it every chunk, stops whatever the previous
+# track's analyzer was, and closes it out once ffmpeg's done.
+
+
+async def test_stream_creates_and_feeds_an_analyzer_for_a_live_analyzable_target(
+    client, default_session,
+):
+    _configure_and_set_track(client, default_session)
+    default_session.state.active_delivery = ChromecastDelivery("TV")
+    # Not exercising the completion/auto-advance path here (see the
+    # ffmpeg-failure/disconnect tests above and test_advance_or_end_* for
+    # that) — False keeps stream_with_completion() from scheduling a
+    # _fire_track_end() background task that would otherwise outlive this
+    # test.
+    default_session.state.is_streaming = False
+    previous_analyzer = MagicMock(stop=AsyncMock())
+    default_session.audio_analyzer = previous_analyzer
+
+    new_analyzer = MagicMock(start=AsyncMock(), feed=MagicMock(), finish_feeding=MagicMock())
+    analyzer_class = MagicMock(return_value=new_analyzer)
+
+    with (
+        patch("routes.stream.AudioAnalyzer", analyzer_class),
+        patch("routes.stream.stream_tracks", side_effect=_real_stream),
+    ):
+        resp = await audio_stream(session_id=default_session.session_id)
+        chunks = [chunk async for chunk in resp.body_iterator]
+
+    assert chunks == [b"chunk-1", b"chunk-2"]
+    previous_analyzer.stop.assert_awaited_once()
+    assert default_session.audio_analyzer is new_analyzer
+    new_analyzer.feed.assert_has_calls([call(b"chunk-1"), call(b"chunk-2")])
+    new_analyzer.finish_feeding.assert_called_once()
+
+
+async def test_stream_skips_analysis_for_a_non_analyzable_target(client, default_session):
+    """AirPlay (and radio) can't be live-analyzed — see should_analyze()'s
+    docstring — GET /visualizer just has nothing to send for these."""
+    _configure_and_set_track(client, default_session)
+    default_session.state.active_delivery = None  # no cast target at all
+    default_session.state.is_streaming = False  # see the comment in the test above
+
+    analyzer_class = MagicMock()
+
+    with (
+        patch("routes.stream.AudioAnalyzer", analyzer_class),
+        patch("routes.stream.stream_tracks", side_effect=_real_stream),
+    ):
+        resp = await audio_stream(session_id=default_session.session_id)
+        [_ async for _ in resp.body_iterator]
+
+    analyzer_class.assert_not_called()
+    assert default_session.audio_analyzer is None
+
+
+# ── Scheduling the track-end signal on a normal completion ──────────────────
+
+
+async def test_stream_schedules_fire_track_end_with_the_remaining_duration(client, default_session):
+    """A normal (non-crashing, non-disconnecting) completion — still
+    streaming, unpaused, same generation — schedules _fire_track_end()
+    with however much of the track's duration is left on the clock, not a
+    fixed/zero wait. See _fire_track_end()'s own docstring for why that
+    matters: waiting the wrong amount either cuts the tail of the track or
+    auto-advances early."""
+    _configure_and_set_track(client, default_session)
+    default_session.state.clock.start(0.0)  # sets play_start_time
+
+    captured = {}
+
+    def _capture_and_discard(coro):
+        # Inspect the not-yet-started coroutine's bound arguments rather
+        # than actually running it — _fire_track_end()'s own behavior is
+        # covered separately via _advance_or_end()'s tests above.
+        captured["wait"] = coro.cr_frame.f_locals["wait"]
+        coro.close()
+        return MagicMock()
+
+    with (
+        patch("routes.stream.stream_tracks", side_effect=_real_stream),
+        patch("routes.stream.asyncio.create_task", side_effect=_capture_and_discard),
+    ):
+        resp = await audio_stream(session_id=default_session.session_id)
+        [_ async for _ in resp.body_iterator]
+
+    # Track duration is 180s (see _configure_and_set_track), started just
+    # now — essentially all of it should still be remaining.
+    assert captured["wait"] == pytest.approx(180.0, abs=0.5)
+
+
+async def test_fire_track_end_repolls_until_the_track_actually_finishes(
+    client, default_session
+):
+    """_fire_track_end()'s own wait loop: re-measures the live clock on
+    each poll rather than sleeping the original estimate in one go, so a
+    mid-wait correction (see its own docstring) gets picked up within one
+    more poll instead of never. Captures the real (not discarded, unlike
+    the test above) coroutine and runs it directly against a clock
+    reporting decreasing amounts of remaining time."""
+    _configure_and_set_track(client, default_session)
+    default_session.state.clock.start(0.0)
+
+    captured = {}
+
+    def _capture_task(coro):
+        captured["coro"] = coro
+        return MagicMock()
+
+    with (
+        patch("routes.stream.stream_tracks", side_effect=_real_stream),
+        patch("routes.stream.asyncio.create_task", side_effect=_capture_task),
+    ):
+        resp = await audio_stream(session_id=default_session.session_id)
+        [_ async for _ in resp.body_iterator]
+
+    # Two polls that still find real time left (sleep, re-measure), then a
+    # third that finds the track essentially over (breaks out of the loop).
+    remaining_readings = iter([100.0, 50.0, 0.3])
+
+    with (
+        patch.object(
+            default_session.state.clock,
+            "seconds_until",
+            side_effect=lambda duration: next(remaining_readings),
+        ),
+        patch("routes.stream.asyncio.sleep", new=AsyncMock()) as sleep_mock,
+    ):
+        await captured["coro"]
+
+    assert sleep_mock.await_count == 2
+    # _advance_or_end() ran for real once the loop broke — no queue/active
+    # delivery here, so it fell through to the "mark ended" branch.
+    assert default_session.state.track_ended is True

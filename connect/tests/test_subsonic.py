@@ -145,6 +145,61 @@ def test_get_track_parses_song(monkeypatch):
     assert track.cover_art_id == "cover-1"
 
 
+def test_get_raises_with_the_servers_own_error_message(monkeypatch):
+    import httpx
+    import pytest
+
+    def fake_get(url, **kwargs):
+        return httpx.Response(
+            200,
+            json={
+                "subsonic-response": {
+                    "status": "failed",
+                    "error": {"code": 40, "message": "Wrong username or password"},
+                }
+            },
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    with pytest.raises(RuntimeError, match="Wrong username or password"):
+        _client().get_track("abc")
+
+
+def test_get_similar_songs2_parses_songs(monkeypatch):
+    import httpx
+
+    songs = [
+        {
+            "id": "s1",
+            "title": "Similar Song",
+            "artist": "Artist A",
+            "album": "The Album",
+            "duration": 210,
+            "coverArt": "cover-1",
+        }
+    ]
+
+    def fake_get(url, params=None, **kwargs):
+        assert url.endswith("/rest/getSimilarSongs2.view")
+        assert params["id"] == "seed-1"
+        assert params["count"] == 5
+        return httpx.Response(
+            200,
+            json={"subsonic-response": {"status": "ok", "similarSongs2": {"song": songs}}},
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    tracks = _client().get_similar_songs2("seed-1", count=5)
+
+    assert len(tracks) == 1
+    assert tracks[0].id == "s1"
+    assert tracks[0].artist == "Artist A"
+    assert tracks[0].duration == 210
+
+
 def test_ping_uses_internal_url(monkeypatch):
     import httpx
 
@@ -152,17 +207,51 @@ def test_ping_uses_internal_url(monkeypatch):
 
     def fake_get(url, **kwargs):
         captured["url"] = url
-        mock = httpx.Response(
-            200, json={"subsonic-response": {"status": "ok", "version": "1.16.1"}}
+        return httpx.Response(
+            200,
+            json={"subsonic-response": {"status": "ok", "version": "1.16.1"}},
+            # Bound request instance required — raise_for_status() below
+            # raises RuntimeError without one, which ping()'s own broad
+            # except then swallows into a silent False. Missing here
+            # before, this test passed by accident: it never actually
+            # verified the ping succeeded, only that the URL looked right
+            # before that swallowed failure.
+            request=httpx.Request("GET", url),
         )
-        return mock
 
     monkeypatch.setattr(SubsonicClient, "ping", _REAL_PING)
     monkeypatch.setattr(httpx, "get", fake_get)
 
     c = _client(url="http://proxy:9180", internal_url="http://nav:4533")
-    c.ping()
 
+    assert c.ping() is True
     assert captured["url"].startswith("http://nav:4533"), (
         f"_get() sollte internal_url nutzen, nutzte aber: {captured['url']}"
     )
+
+
+def test_ping_returns_false_and_logs_on_failure(monkeypatch, caplog):
+    import logging
+
+    import httpx
+
+    def fake_get(url, **kwargs):
+        return httpx.Response(
+            200,
+            json={
+                "subsonic-response": {
+                    "status": "failed",
+                    "error": {"code": 40, "message": "Wrong username or password"},
+                }
+            },
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(SubsonicClient, "ping", _REAL_PING)
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    with caplog.at_level(logging.WARNING, logger="connect.subsonic"):
+        result = _client().ping()
+
+    assert result is False
+    assert "Wrong username or password" in caplog.text

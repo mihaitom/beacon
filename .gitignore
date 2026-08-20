@@ -29,6 +29,7 @@ connect/__pycache__
 connect/**/__pycache__
 connect/.ruff_cache
 connect/.pytest_cache
+connect/.coverage
 connect/build
 connect/dist
 

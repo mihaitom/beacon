@@ -23,6 +23,13 @@ def test_volume_get_reads_active_sonos_target(client, default_session):
     assert r.json() == {"volume": 42}
 
 
+def test_volume_get_returns_error_when_device_unreachable(client, default_session):
+    default_session.state.active_delivery = SonosDelivery("Küche")
+    with patch.object(SonosDelivery, "_get_device", side_effect=RuntimeError("unreachable")):
+        r = client.get("/volume")
+    assert r.json() == {"error": "unreachable"}
+
+
 def test_volume_post_sets_active_sonos_target(client, default_session):
     default_session.state.active_delivery = SonosDelivery("Küche")
     dev = MagicMock()
@@ -150,6 +157,16 @@ def test_device_volume_set_dlna(client, default_session):
         )
     assert r.json() == {"volume": 70}
     set_volume.assert_called_once_with(70)
+
+
+def test_device_volume_set_swallows_device_errors(client, default_session):
+    with patch.object(
+        SonosDelivery, "_get_device", side_effect=RuntimeError("unreachable")
+    ):
+        r = client.post(
+            "/device-volume?device_type=sonos&name=Küche", json={"volume": 50}
+        )
+    assert r.json() == {"error": "unreachable"}
 
 
 # ── /device-volume claim enforcement ────────────────────────────────────────────

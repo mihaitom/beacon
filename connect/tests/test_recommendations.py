@@ -38,6 +38,43 @@ def _lb_response(url: str, items: list[dict]) -> httpx.Response:
     return httpx.Response(200, json=items, request=httpx.Request("GET", url))
 
 
+# ── _load_cache / _save_cache ────────────────────────────────────────────────
+
+
+def test_load_cache_returns_empty_dict_on_malformed_json(caplog):
+    import logging
+
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("{not valid json")
+        with (
+            patch.object(recommendations, "_PATH", path),
+            caplog.at_level(logging.WARNING, logger="connect.recommendations"),
+        ):
+            cache = recommendations._load_cache()
+
+    assert cache == {}
+    assert "Cache load failed" in caplog.text
+
+
+def test_save_cache_logs_but_does_not_raise_when_the_directory_is_unwritable(caplog):
+    import logging
+
+    with tempfile.TemporaryDirectory() as d:
+        # A file, not a directory, as the parent — os.makedirs() on it fails.
+        blocker = Path(d) / "blocker"
+        blocker.write_text("x")
+        path = str(blocker / "nested" / "cache.json")
+        with (
+            patch.object(recommendations, "_PATH", path),
+            caplog.at_level(logging.ERROR, logger="connect.recommendations"),
+        ):
+            recommendations._save_cache({"some": "data"})  # must not raise
+
+    assert "Cache save failed" in caplog.text
+
+
 # ── resolve_mbid ──────────────────────────────────────────────────────────
 
 
@@ -280,6 +317,23 @@ async def test_get_similar_artists_returns_empty_when_no_seed_resolves():
     assert result == []
 
 
+async def test_fetch_similar_batch_returns_empty_for_no_mbids():
+    # No point spending a Labs round trip on an empty seed list.
+    assert await recommendations._fetch_similar_batch([]) == {}
+
+
+async def test_fetch_similar_batch_returns_empty_on_listenbrainz_failure(caplog):
+    import logging
+
+    with patch.object(recommendations, "_client") as client:
+        client.get = AsyncMock(side_effect=httpx.ConnectError("unreachable"))
+        with caplog.at_level(logging.WARNING, logger="connect.recommendations"):
+            result = await recommendations._fetch_similar_batch(["mbid-1"])
+
+    assert result == {}
+    assert "ListenBrainz similar-artists failed" in caplog.text
+
+
 # ── get_artist_images ─────────────────────────────────────────────────────
 
 
@@ -373,6 +427,30 @@ async def test_get_artist_images_picks_highest_fan_count_among_exact_matches():
             result = await recommendations.get_artist_images(["Radiohead"])
 
     assert result["Radiohead"] == {"image": "https://img/real", "link": "https://deezer/real"}
+
+
+async def test_fetch_deezer_returns_none_on_a_search_failure(caplog):
+    import logging
+
+    with patch.object(recommendations, "_client") as client:
+        client.get = AsyncMock(side_effect=httpx.ConnectError("unreachable"))
+        with caplog.at_level(logging.WARNING, logger="connect.recommendations"):
+            result = await recommendations._fetch_deezer("Radiohead")
+
+    assert result is None
+    assert "Deezer search failed" in caplog.text
+
+
+async def test_fetch_deezer_returns_none_when_the_match_has_neither_image_nor_link():
+    with patch.object(recommendations, "_client") as client:
+        client.get = AsyncMock(
+            side_effect=lambda url, params=None: _deezer_response(
+                url, [{"name": "Radiohead", "nb_fan": 100, "picture_medium": "", "link": ""}]
+            )
+        )
+        result = await recommendations._fetch_deezer("Radiohead")
+
+    assert result is None
 
 
 async def test_get_artist_images_caches_negative_result_when_no_exact_match():
@@ -508,6 +586,34 @@ async def test_get_artist_links_distinguishes_hosts_sharing_a_musicbrainz_type()
             "discogs": "https://www.discogs.com/artist/3840",
         }
     }
+
+
+async def test_get_artist_links_skips_a_relation_with_no_url_resource():
+    """MusicBrainz relations aren't all URL relations with a resolvable
+    resource — e.g. a "member of band" relation to another artist entity
+    entirely. Must be skipped, not raise trying to read a nonexistent URL."""
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+
+            def fake_get(url, params=None):
+                if params and "inc" in params:
+                    return _mb_url_rels_response(
+                        url,
+                        [
+                            {"type": "member of band"},  # no "url" key at all
+                            _url_rel("youtube", "https://www.youtube.com/channel/abc"),
+                        ],
+                    )
+                return _mb_response(url, "mbid-1")
+
+            client.get = AsyncMock(side_effect=fake_get)
+            result = await recommendations.get_artist_links(["Radiohead"])
+
+    assert result["Radiohead"]["youtube"] == "https://www.youtube.com/channel/abc"
 
 
 async def test_get_artist_links_caches_result_by_mbid():

@@ -154,6 +154,31 @@ def test_load_persisted_ignores_garbage_file():
             assert log_level._load_persisted() is None
 
 
+def test_load_persisted_returns_none_and_logs_on_unexpected_error(caplog):
+    with (
+        patch.object(log_level, "_PATH", "/dev/null/not-a-real-path"),
+        caplog.at_level(logging.WARNING, logger="connect.log_level"),
+    ):
+        assert log_level._load_persisted() is None
+
+    assert "Load failed" in caplog.text
+
+
+def test_save_persisted_logs_but_does_not_raise_when_unwritable(caplog):
+    with tempfile.TemporaryDirectory() as d:
+        # A file, not a directory, as the parent — os.makedirs() on it fails.
+        blocker = Path(d) / "blocker"
+        blocker.write_text("x")
+        path = str(blocker / "nested" / "log_level.txt")
+        with (
+            patch.object(log_level, "_PATH", path),
+            caplog.at_level(logging.ERROR, logger="connect.log_level"),
+        ):
+            log_level._save_persisted("DEBUG")  # must not raise
+
+    assert "Save failed" in caplog.text
+
+
 def test_get_and_post_log_level_roundtrip(client):
     with tempfile.TemporaryDirectory() as d:
         with patch.object(log_level, "_PATH", _tmp_path(d)):

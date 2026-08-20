@@ -2,13 +2,50 @@
 
 import asyncio
 import io
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pyatv.const import Protocol
 
 import delivery.chromecast as _chromecast_mod
 import delivery.dlna as _dlna_mod
-from delivery import AirPlayDelivery, ChromecastDelivery, DlnaDelivery, SonosDelivery
+from core.state import ctx
+from delivery import (
+    AirPlayDelivery,
+    BaseDelivery,
+    ChromecastDelivery,
+    DlnaDelivery,
+    SonosDelivery,
+)
+
+# ── BaseDelivery defaults (pause/resume are no-ops, position/volume unknown) ──
+
+
+class _MinimalDelivery(BaseDelivery):
+    """The smallest possible concrete subclass — just enough to instantiate
+    BaseDelivery (an ABC) and exercise its own default implementations,
+    which every real delivery below overrides."""
+
+    async def play(self, *args, **kwargs) -> None:
+        pass
+
+    async def stop(self) -> None:
+        pass
+
+
+async def test_base_delivery_get_position_defaults_to_none():
+    assert await _MinimalDelivery("x").get_position() is None
+
+
+async def test_base_delivery_get_volume_defaults_to_none():
+    assert await _MinimalDelivery("x").get_volume() is None
+
+
+async def test_base_delivery_pause_and_resume_default_to_noops():
+    d = _MinimalDelivery("x")
+    await d.pause()  # must not raise
+    await d.resume()
 
 
 # ── SonosDelivery ─────────────────────────────────────────────────────────────
@@ -99,6 +136,104 @@ def test_sonos_pause_resume_stop_delegate_to_device():
     dev.pause.assert_called_once()
     dev.play.assert_called_once()
     dev.stop.assert_called_once()
+
+
+def test_sonos_play_logs_unjoin_failure_and_still_proceeds(caplog):
+    dev = _mock_sonos_device(is_coordinator=False)
+    dev.unjoin.side_effect = RuntimeError("network hiccup")
+    d = SonosDelivery("Küche")
+    with (
+        patch.object(SonosDelivery, "_get_device", return_value=dev),
+        caplog.at_level(logging.WARNING, logger="delivery"),
+    ):
+        asyncio.run(d.play("http://stream"))
+    assert "unjoin" in caplog.text
+    # A device that couldn't leave its old group is still worth dispatching
+    # to — same resilience as DeliveryManager._play_grouped_sonos().
+    dev.avTransport.SetAVTransportURI.assert_called_once()
+
+
+# ── SonosDelivery._get_device ─────────────────────────────────────────────────
+
+
+def test_sonos_get_device_raises_when_none_found_at_all():
+    d = SonosDelivery("Küche")
+    with (
+        patch("soco.discover", return_value=None),
+        pytest.raises(RuntimeError, match="No Sonos devices found"),
+    ):
+        d._get_device()
+
+
+class _BrokenSonosDevice:
+    """A device whose player_name access itself raises — a real device on
+    the network mid-error, not just one with an unexpected name."""
+
+    @property
+    def player_name(self):
+        raise RuntimeError("SOAP fault")
+
+
+def test_sonos_get_device_skips_a_device_that_errors_reading_its_name():
+    good = MagicMock()
+    good.player_name = "Küche"
+    d = SonosDelivery("Küche")
+    with patch("soco.discover", return_value=[_BrokenSonosDevice(), good]):
+        assert d._get_device() is good
+
+
+def test_sonos_get_device_raises_with_available_names_when_target_missing():
+    other = MagicMock()
+    other.player_name = "Wohnzimmer"
+    d = SonosDelivery("Küche")
+    with (
+        patch("soco.discover", return_value=[other]),
+        pytest.raises(RuntimeError, match="Wohnzimmer"),
+    ):
+        d._get_device()
+
+
+# ── SonosDelivery.get_position / get_volume / set_volume ────────────────────
+
+
+def test_sonos_get_position_parses_hms():
+    dev = MagicMock()
+    dev.get_current_track_info.return_value = {"position": "0:02:15"}
+    d = SonosDelivery("Küche")
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        assert asyncio.run(d.get_position()) == 135
+
+
+def test_sonos_get_position_defaults_to_zero_when_key_missing():
+    dev = MagicMock()
+    dev.get_current_track_info.return_value = {}
+    d = SonosDelivery("Küche")
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        assert asyncio.run(d.get_position()) == 0
+
+
+def test_sonos_get_position_returns_none_on_an_unparseable_value():
+    dev = MagicMock()
+    dev.get_current_track_info.return_value = {"position": "NOT_IMPLEMENTED"}
+    d = SonosDelivery("Küche")
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        assert asyncio.run(d.get_position()) is None
+
+
+def test_sonos_get_volume_reads_device_volume():
+    dev = MagicMock()
+    dev.volume = 42
+    d = SonosDelivery("Küche")
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        assert asyncio.run(d.get_volume()) == 42
+
+
+def test_sonos_set_volume_writes_device_volume_as_int():
+    dev = MagicMock()
+    d = SonosDelivery("Küche")
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        asyncio.run(d.set_volume(37.9))
+    assert dev.volume == 37
 
 
 # ── AirPlayDelivery ───────────────────────────────────────────────────────────
@@ -212,6 +347,290 @@ def test_airplay_play_downloads_track_before_streaming():
     assert args[0].getvalue() == b"fake-mp3-bytes"
 
 
+# ── AirPlayDelivery._find_device ─────────────────────────────────────────────
+
+
+def _fake_pyatv_device(name: str, address: str = "10.0.0.5") -> MagicMock:
+    device = MagicMock()
+    device.name = name
+    device.address = address
+    return device
+
+
+def test_find_device_uses_cached_address_for_a_fast_unicast_scan():
+    ctx.discovered["airplay"] = [{"name": "HomePod", "address": "10.0.0.5"}]
+    found = _fake_pyatv_device("HomePod", "10.0.0.5")
+    scan_calls = []
+
+    async def fake_scan(loop, timeout, protocol, hosts):
+        scan_calls.append(hosts)
+        return [found] if hosts == ["10.0.0.5"] else []
+
+    d = AirPlayDelivery("HomePod")
+    with (
+        patch("delivery.airplay.creds_store.get", return_value=None),
+        patch("pyatv.scan", new=fake_scan),
+    ):
+        result = asyncio.run(d._find_device())
+
+    assert result is found
+    assert scan_calls == [["10.0.0.5"]]  # only the fast unicast scan ran
+
+
+def test_find_device_falls_back_to_a_full_scan_when_the_cached_address_is_stale():
+    ctx.discovered["airplay"] = [{"name": "HomePod", "address": "10.0.0.5"}]
+    found = _fake_pyatv_device("HomePod", "10.0.0.9")  # moved to a new IP since
+
+    async def fake_scan(loop, timeout, protocol, hosts):
+        return [found] if hosts is None else []
+
+    d = AirPlayDelivery("HomePod")
+    with (
+        patch("delivery.airplay.creds_store.get", return_value=None),
+        patch("pyatv.scan", new=fake_scan),
+    ):
+        result = asyncio.run(d._find_device())
+
+    assert result is found
+
+
+def test_find_device_scans_fully_when_nothing_cached():
+    ctx.discovered["airplay"] = []
+    found = _fake_pyatv_device("HomePod")
+    scan_calls = []
+
+    async def fake_scan(loop, timeout, protocol, hosts):
+        scan_calls.append(hosts)
+        return [found]
+
+    d = AirPlayDelivery("HomePod")
+    with (
+        patch("delivery.airplay.creds_store.get", return_value=None),
+        patch("pyatv.scan", new=fake_scan),
+    ):
+        result = asyncio.run(d._find_device())
+
+    assert result is found
+    assert scan_calls == [None]  # no cached address, went straight to a full scan
+
+
+def test_find_device_raises_when_not_found_in_either_scan():
+    ctx.discovered["airplay"] = []
+    other = _fake_pyatv_device("Kitchen Speaker")
+
+    async def fake_scan(loop, timeout, protocol, hosts):
+        return [other]
+
+    d = AirPlayDelivery("HomePod")
+    with (
+        patch("delivery.airplay.creds_store.get", return_value=None),
+        patch("pyatv.scan", new=fake_scan),
+        pytest.raises(RuntimeError, match="Kitchen Speaker"),
+    ):
+        asyncio.run(d._find_device())
+
+
+def test_find_device_applies_stored_credentials_to_both_protocols():
+    """A paired AirPlay 2 device needs its RAOP service to carry the same
+    HAP credentials the pairing yielded too — otherwise pyatv sets up an
+    unencrypted RAOP session and the device refuses the audio port."""
+    ctx.discovered["airplay"] = []
+    found = _fake_pyatv_device("HomePod")
+    protocols_used = []
+
+    async def fake_scan(loop, timeout, protocol, hosts):
+        protocols_used.append(protocol)
+        return [found]
+
+    d = AirPlayDelivery("HomePod")
+    with (
+        patch("delivery.airplay.creds_store.get", return_value="stored-hap-creds"),
+        patch("pyatv.scan", new=fake_scan),
+    ):
+        result = asyncio.run(d._find_device())
+
+    assert result is found
+    # A full-protocol scan (not RAOP-only) — a paired device's AirPlay (HAP)
+    # service needs to actually be exposed to receive the credentials below.
+    assert protocols_used == [None]
+    found.set_credentials.assert_any_call(Protocol.AirPlay, "stored-hap-creds")
+    found.set_credentials.assert_any_call(Protocol.RAOP, "stored-hap-creds")
+
+
+def test_find_device_uses_raop_only_scan_when_unpaired():
+    ctx.discovered["airplay"] = []
+    found = _fake_pyatv_device("HomePod")
+    protocols_used = []
+
+    async def fake_scan(loop, timeout, protocol, hosts):
+        protocols_used.append(protocol)
+        return [found]
+
+    d = AirPlayDelivery("HomePod")
+    with (
+        patch("delivery.airplay.creds_store.get", return_value=None),
+        patch("pyatv.scan", new=fake_scan),
+    ):
+        asyncio.run(d._find_device())
+
+    assert protocols_used == [Protocol.RAOP]
+    found.set_credentials.assert_not_called()
+
+
+# ── AirPlayDelivery.play()'s _stream() task ──────────────────────────────────
+
+
+def test_airplay_play_with_no_stream_url_logs_and_does_nothing():
+    d = AirPlayDelivery("HomePod")
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock()
+    atv.close.return_value = []
+
+    async def run():
+        with (
+            patch.object(
+                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
+            ),
+            patch("pyatv.connect", new=AsyncMock(return_value=atv)),
+        ):
+            await d.play("", "Title")
+            await d._stream_task
+
+    asyncio.run(run())
+    atv.stream.stream_file.assert_not_called()
+
+
+def test_airplay_stream_task_cancellation_is_logged_and_swallowed(caplog):
+    d = AirPlayDelivery("HomePod")
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock(side_effect=asyncio.CancelledError())
+    atv.close.return_value = []
+
+    async def run():
+        with (
+            patch.object(
+                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
+            ),
+            patch("pyatv.connect", new=AsyncMock(return_value=atv)),
+            caplog.at_level(logging.INFO, logger="delivery"),
+        ):
+            await d.play("http://host/radio.mp3", "Title")
+            await d._stream_task  # swallowed inside _stream() — must not raise
+
+    asyncio.run(run())
+    assert "Stream cancelled" in caplog.text
+
+
+def test_airplay_stream_logs_disconnection_without_traceback_for_a_known_teardown_error(
+    caplog,
+):
+    """'not connected to remote' is teardown noise from the Apple TV having
+    already dropped the connection — the actual cause was already logged by
+    pyatv itself, so this doesn't need (or want) its own traceback."""
+    d = AirPlayDelivery("HomePod")
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock(side_effect=RuntimeError("not connected to remote"))
+    atv.close.return_value = []
+
+    async def run():
+        with (
+            patch.object(
+                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
+            ),
+            patch("pyatv.connect", new=AsyncMock(return_value=atv)),
+            caplog.at_level(logging.WARNING, logger="delivery"),
+        ):
+            await d.play("http://host/radio.mp3", "Title")
+            await d._stream_task
+
+    asyncio.run(run())
+    assert "Device disconnected during stream" in caplog.text
+
+
+def test_airplay_stream_logs_an_unexpected_error(caplog):
+    d = AirPlayDelivery("HomePod")
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock(side_effect=RuntimeError("decoder crashed"))
+    atv.close.return_value = []
+
+    async def run():
+        with (
+            patch.object(
+                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
+            ),
+            patch("pyatv.connect", new=AsyncMock(return_value=atv)),
+            caplog.at_level(logging.ERROR, logger="delivery"),
+        ):
+            await d.play("http://host/radio.mp3", "Title")
+            await d._stream_task
+
+    asyncio.run(run())
+    assert "decoder crashed" in caplog.text
+
+
+def test_airplay_stream_swallows_cancellation_during_shielded_teardown():
+    """finally's own close (shielded so an outer cancellation of _stream()
+    itself can't cut it short) can still raise CancelledError on its own —
+    e.g. the whole app shutting down mid-close — and must be swallowed the
+    same way the rest of _stream() already handles cancellation, not
+    propagate out of the finally block."""
+    d = AirPlayDelivery("HomePod")
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock()
+
+    async def run():
+        with (
+            patch.object(
+                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
+            ),
+            patch("pyatv.connect", new=AsyncMock(return_value=atv)),
+            patch.object(
+                AirPlayDelivery,
+                "_close_atv",
+                new=AsyncMock(side_effect=asyncio.CancelledError()),
+            ),
+        ):
+            await d.play("http://host/radio.mp3", "Title")
+            await d._stream_task  # must not raise
+
+    asyncio.run(run())
+
+
+# ── AirPlayDelivery.stop() / _stop_locked() ──────────────────────────────────
+
+
+def test_airplay_stop_awaits_close_tasks_when_present():
+    """_close_atv() must await whatever tasks atv.close() itself returns
+    (aiohttp session teardown) rather than firing and forgetting them."""
+
+    async def _noop():
+        return None
+
+    d = AirPlayDelivery("HomePod")
+    atv = MagicMock()
+    atv.close.return_value = [_noop(), _noop()]
+    d._atv = atv
+
+    asyncio.run(d.stop())  # must not raise/warn about un-awaited coroutines
+
+    atv.close.assert_called_once()
+
+
+def test_airplay_stop_cancels_an_active_stream_task():
+    d = AirPlayDelivery("HomePod")
+
+    async def _never_ending():
+        await asyncio.sleep(1000)
+
+    async def run():
+        d._stream_task = asyncio.create_task(_never_ending())
+        await asyncio.sleep(0)  # let it actually start before stopping it
+        await d.stop()
+
+    asyncio.run(run())
+    assert d._stream_task.cancelled()
+
+
 # ── ChromecastDelivery cache ──────────────────────────────────────────────────
 
 
@@ -249,6 +668,54 @@ def test_chromecast_cache_evicts_on_socket_exception():
 
 def test_chromecast_cache_miss_returns_none():
     assert _chromecast_mod._get_cached_chromecast("nope") is None
+
+
+# ── ChromecastDelivery._get_device ───────────────────────────────────────────
+
+
+def test_chromecast_get_device_uses_cache_when_available():
+    cast = _mock_cast()
+    cast.socket_client.is_connected = True
+    _chromecast_mod._chromecast_cache["tv"] = cast
+
+    assert ChromecastDelivery("TV")._get_device() is cast
+
+
+def test_chromecast_get_device_discovers_and_caches_a_new_device():
+    cast_info = MagicMock()
+    cast_info.friendly_name = "TV"
+    browser = MagicMock()
+    browser.devices = {"uuid-1": cast_info}
+    new_cast = _mock_cast()
+
+    with (
+        patch(
+            "delivery.chromecast._ensure_cast_browser", return_value=(browser, MagicMock())
+        ),
+        patch("delivery.chromecast._wait_for_discovery"),
+        patch("pychromecast.get_chromecast_from_cast_info", return_value=new_cast),
+    ):
+        result = ChromecastDelivery("TV")._get_device()
+
+    assert result is new_cast
+    new_cast.wait.assert_called_once_with(timeout=10)
+    assert _chromecast_mod._chromecast_cache["tv"] is new_cast
+
+
+def test_chromecast_get_device_raises_with_available_names_when_not_found():
+    other = MagicMock()
+    other.friendly_name = "Bedroom"
+    browser = MagicMock()
+    browser.devices = {"uuid-1": other}
+
+    with (
+        patch(
+            "delivery.chromecast._ensure_cast_browser", return_value=(browser, MagicMock())
+        ),
+        patch("delivery.chromecast._wait_for_discovery"),
+        pytest.raises(RuntimeError, match="Bedroom"),
+    ):
+        ChromecastDelivery("TV")._get_device()
 
 
 # ── ChromecastDelivery playback ───────────────────────────────────────────────
@@ -301,6 +768,46 @@ def test_chromecast_pause_resume_stop_delegate_to_controller():
     cast.media_controller.pause.assert_called_once()
     cast.media_controller.play.assert_called_once()
     cast.media_controller.stop.assert_called_once()
+
+
+def test_chromecast_play_includes_album_art_and_album_in_metadata():
+    cast = _mock_cast()
+    d = ChromecastDelivery("TV")
+    with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
+        asyncio.run(
+            d.play("http://stream", "Title", "Artist", "http://art.jpg", None, "The Album")
+        )
+    call_kwargs = cast.media_controller.play_media.call_args.kwargs
+    assert call_kwargs["thumb"] == "http://art.jpg"
+    assert call_kwargs["metadata"]["images"] == [{"url": "http://art.jpg"}]
+    assert call_kwargs["metadata"]["albumName"] == "The Album"
+
+
+def test_chromecast_play_omits_album_art_and_album_when_not_given():
+    cast = _mock_cast()
+    d = ChromecastDelivery("TV")
+    with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
+        asyncio.run(d.play("http://stream", "Title"))
+    metadata = cast.media_controller.play_media.call_args.kwargs["metadata"]
+    assert "images" not in metadata
+    assert "albumName" not in metadata
+
+
+def test_chromecast_get_position_while_playing():
+    cast = _mock_cast()
+    cast.media_controller.status.player_state = "PLAYING"
+    cast.media_controller.status.adjusted_current_time = 42.5
+    d = ChromecastDelivery("TV")
+    with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
+        assert asyncio.run(d.get_position()) == 42.5
+
+
+def test_chromecast_get_position_returns_none_when_idle():
+    cast = _mock_cast()
+    cast.media_controller.status.player_state = "IDLE"
+    d = ChromecastDelivery("TV")
+    with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
+        assert asyncio.run(d.get_position()) is None
 
 
 # ── DlnaDelivery ──────────────────────────────────────────────────────────────
@@ -588,4 +1095,52 @@ def test_dlna_play_evicts_cache_on_error():
     d = DlnaDelivery("Receiver")
     with pytest.raises(RuntimeError):
         asyncio.run(d.play("http://stream", "Title"))
+    assert "receiver" not in _dlna_mod._device_cache
+
+
+def test_dlna_get_device_resolves_location_via_a_fresh_scan(monkeypatch):
+    """No cached location at all (e.g. built directly from a (type, name)
+    pair — see core/state.py's resolve_target()) — falls back to a live
+    scan and picks the matching device out of it, distinct from
+    test_dlna_get_device_raises_when_not_found's empty-scan case."""
+    created = _mock_dmr_device()
+
+    async def _fake_discover_dlna():
+        return [
+            {"name": "Other Receiver", "location": "http://10.0.0.9/desc.xml"},
+            {"name": "Receiver", "location": "http://10.0.0.4:1400/desc.xml"},
+        ]
+
+    async def _fake_create(location):
+        assert location == "http://10.0.0.4:1400/desc.xml"
+        return created
+
+    import delivery.manager as _manager_mod
+
+    monkeypatch.setattr(_manager_mod, "discover_dlna", _fake_discover_dlna)
+    monkeypatch.setattr(_dlna_mod, "_create_dmr_device", _fake_create)
+
+    d = DlnaDelivery("Receiver")
+    device = asyncio.run(d._get_device())
+
+    assert device is created
+    assert _dlna_mod._device_cache["receiver"] is created
+
+
+def test_dlna_get_device_or_evict_reraises_the_lookup_failure(monkeypatch):
+    """pause()/resume()/stop()/get_position()/get_volume()/set_volume() all
+    go through this instead of _get_device() directly — a lookup failure
+    (device renamed, taken offline, ...) must still propagate, same
+    contract play()'s own _get_device() call has."""
+
+    async def _fake_discover_dlna():
+        return []  # the device is genuinely gone
+
+    import delivery.manager as _manager_mod
+
+    monkeypatch.setattr(_manager_mod, "discover_dlna", _fake_discover_dlna)
+
+    d = DlnaDelivery("Receiver")
+    with pytest.raises(RuntimeError, match="not found"):
+        asyncio.run(d.pause())
     assert "receiver" not in _dlna_mod._device_cache

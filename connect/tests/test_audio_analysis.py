@@ -13,16 +13,22 @@ playback actually finished (ffmpeg can finish transcoding a whole track in
 seconds, well before the track is done playing)."""
 
 import asyncio
+import logging
 import math
 import struct
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from core.audio_analysis import (
-    LIVE_ANALYSIS_TARGET_TYPES,
     _BAND_COUNT,
     _FFT_SIZE,
+    _FRAME_SECONDS,
+    _HOP_SIZE,
+    _MAX_LOOKAHEAD_SECONDS,
     _PREBUFFER_SECONDS,
     _SAMPLE_RATE,
+    LIVE_ANALYSIS_TARGET_TYPES,
     AudioAnalyzer,
     _decode_cmd,
     _smooth_bands,
@@ -89,6 +95,16 @@ def test_analyze_pcm_silence_is_near_zero():
 
 def test_analyze_pcm_empty_input_returns_zeros():
     assert analyze_pcm(b"") == [0.0] * _BAND_COUNT
+
+
+def test_analyze_pcm_pads_input_shorter_than_fft_size():
+    # Far short of a full window — _read_pcm() only ever calls this once its
+    # sliding buffer holds a full window, but analyze_pcm() itself is meant
+    # to tolerate less (see its own docstring): zero-padded rather than
+    # raising or reading past the buffer.
+    short_pcm = _tone_pcm(440, 100)
+    bands = analyze_pcm(short_pcm)
+    assert len(bands) == _BAND_COUNT
 
 
 def test_analyze_pcm_louder_tone_scores_higher():
@@ -375,3 +391,231 @@ async def test_release_frames_waits_for_more_pending_if_not_reading_done():
         assert analyzer.frames.qsize() == 0
     finally:
         task.cancel()
+
+
+async def test_release_frames_keeps_polling_after_pending_drains_mid_stream():
+    """Distinct from the prebuffer-wait test above: here the prebuffer is
+    already satisfied and pending has genuinely drained down to nothing
+    with decoding still in progress — the *second* loop's own wait, not
+    the first's."""
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 100.0)  # always "caught up"
+    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._pending.append((_PREBUFFER_SECONDS, _some_bands()))
+    task = asyncio.create_task(analyzer._release_frames())
+    try:
+        await asyncio.sleep(0.1)
+        assert analyzer.frames.qsize() == 2  # both already-pending frames drained
+
+        analyzer._pending.append((0.0, _some_bands()))
+        await asyncio.sleep(0.1)
+        assert analyzer.frames.qsize() == 3
+        assert not task.done()  # still polling, not exited
+    finally:
+        task.cancel()
+
+
+async def test_release_frames_drops_the_oldest_frame_once_the_output_queue_is_full():
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 100.0)  # always "caught up"
+    for i in range(10):
+        analyzer._pending.append((float(i), [float(i)] * _BAND_COUNT))
+    analyzer._reading_done = True
+    task = asyncio.create_task(analyzer._release_frames())
+    try:
+        await asyncio.wait_for(task, timeout=1.0)
+        assert analyzer.frames.qsize() == 8  # capped at maxsize
+        released_markers = [analyzer.frames.get_nowait()[0] for _ in range(8)]
+        # The two oldest (i=0, i=1) were dropped to make room for the rest —
+        # always show the freshest data, not stale history.
+        assert released_markers == [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+    finally:
+        if not task.done():
+            task.cancel()
+
+
+# ── AudioAnalyzer.start() / feed()'s overflow guard ──────────────────────────
+
+
+async def test_start_creates_the_decoder_process_and_its_three_background_tasks():
+    fake_proc = MagicMock()
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=fake_proc)):
+        await analyzer.start()
+    try:
+        assert analyzer._proc is fake_proc
+        assert analyzer._reader_task is not None
+        assert analyzer._writer_task is not None
+        assert analyzer._release_task is not None
+    finally:
+        analyzer._reader_task.cancel()
+        analyzer._writer_task.cancel()
+        analyzer._release_task.cancel()
+
+
+async def test_start_logs_and_leaves_no_tasks_when_ffmpeg_is_missing(caplog):
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
+    with (
+        patch("asyncio.create_subprocess_exec", AsyncMock(side_effect=FileNotFoundError)),
+        caplog.at_level(logging.WARNING, logger="connect.audio_analysis"),
+    ):
+        await analyzer.start()
+
+    assert "ffmpeg not found" in caplog.text
+    assert analyzer._reader_task is None
+    assert analyzer._writer_task is None
+    assert analyzer._release_task is None
+
+
+async def test_feed_swallows_a_full_input_queue():
+    """Deliberately unbounded in production (see the queue's own comment) —
+    this drives it artificially full to exercise the defensive guard, not
+    something that happens in practice."""
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
+    analyzer._proc = MagicMock()
+    analyzer._input_queue = asyncio.Queue(maxsize=1)
+    analyzer._input_queue.put_nowait(b"already-queued")
+
+    analyzer.feed(b"overflow")  # must not raise
+
+    assert analyzer._input_queue.qsize() == 1
+
+
+# ── AudioAnalyzer._write_input — failure handling ────────────────────────────
+
+
+async def test_write_input_silently_swallows_a_broken_pipe():
+    """A device/connection dropping mid-stream is routine, not worth a log
+    line of its own — routes/stream.py's own handling above this already
+    covers the user-facing side of a dropped connection."""
+    analyzer, _ = _fake_analyzer(elapsed_fn=lambda: 0.0)
+    analyzer._proc.stdin.write = MagicMock(side_effect=BrokenPipeError())
+    task = asyncio.create_task(analyzer._write_input())
+    try:
+        analyzer.feed(b"a")
+        await asyncio.wait_for(task, timeout=1.0)  # must not raise
+    finally:
+        if not task.done():
+            task.cancel()
+
+
+async def test_write_input_logs_an_unexpected_error(caplog):
+    analyzer, _ = _fake_analyzer(elapsed_fn=lambda: 0.0)
+    analyzer._proc.stdin.write = MagicMock(side_effect=RuntimeError("disk full"))
+    task = asyncio.create_task(analyzer._write_input())
+    try:
+        with caplog.at_level(logging.WARNING, logger="connect.audio_analysis"):
+            analyzer.feed(b"a")
+            await asyncio.wait_for(task, timeout=1.0)
+    finally:
+        if not task.done():
+            task.cancel()
+
+    assert "writer stopped" in caplog.text
+
+
+# ── AudioAnalyzer._read_pcm — decode/FFT/windowing ───────────────────────────
+
+
+def _fake_analyzer_with_stdout(elapsed_fn, stdout_chunks) -> AudioAnalyzer:
+    """Same idea as _fake_analyzer() above but for the read side — a
+    stand-in for the decoder's stdout, so _read_pcm()'s own buffering/
+    windowing/pacing logic is directly testable without a real ffmpeg
+    process (see the module docstring: actual MP3 decoding correctness
+    itself still isn't covered here, only the Python logic around it)."""
+    analyzer = AudioAnalyzer(elapsed_fn=elapsed_fn)
+    analyzer._proc = MagicMock()
+    analyzer._proc.stdout = MagicMock()
+    analyzer._proc.stdout.read = AsyncMock(side_effect=list(stdout_chunks))
+    return analyzer
+
+
+async def test_read_pcm_produces_one_frame_from_exactly_one_window():
+    pcm = _tone_pcm(440, _FFT_SIZE)
+    analyzer = _fake_analyzer_with_stdout(elapsed_fn=lambda: 0.0, stdout_chunks=[pcm, b""])
+
+    await analyzer._read_pcm()
+
+    assert len(analyzer._pending) == 1
+    position, bands = analyzer._pending[0]
+    assert position == 0.0
+    assert len(bands) == _BAND_COUNT
+    assert analyzer._reading_done is True
+
+
+async def test_read_pcm_advances_position_by_one_frame_per_hop():
+    n_samples = _FFT_SIZE + 2 * _HOP_SIZE  # one full window plus two more hops
+    pcm = _tone_pcm(440, n_samples)
+    analyzer = _fake_analyzer_with_stdout(elapsed_fn=lambda: 0.0, stdout_chunks=[pcm, b""])
+
+    await analyzer._read_pcm()
+
+    positions = [p for p, _ in analyzer._pending]
+    assert positions == pytest.approx([0.0, _FRAME_SECONDS, 2 * _FRAME_SECONDS])
+
+
+async def test_read_pcm_pauses_once_decoding_gets_too_far_ahead_of_playback():
+    # Enough hops to push _pcm_position well past _MAX_LOOKAHEAD_SECONDS
+    # while elapsed_fn stays frozen at 0 — decode racing ahead of real
+    # playback (ffmpeg's transcode is CPU-bound, not real-time) is exactly
+    # what this guards against, see _MAX_LOOKAHEAD_SECONDS's own comment.
+    lead_hops = int(_MAX_LOOKAHEAD_SECONDS / _FRAME_SECONDS) + 10
+    n_samples = _FFT_SIZE + lead_hops * _HOP_SIZE
+    pcm = _tone_pcm(440, n_samples)
+    analyzer = _fake_analyzer_with_stdout(elapsed_fn=lambda: 0.0, stdout_chunks=[pcm, b""])
+
+    with patch("asyncio.sleep", new=AsyncMock()) as sleep_mock:
+        await analyzer._read_pcm()
+
+    assert sleep_mock.await_count >= 1
+    assert sleep_mock.await_args.args[0] > 0
+
+
+async def test_read_pcm_swallows_cancellation():
+    analyzer = _fake_analyzer_with_stdout(
+        elapsed_fn=lambda: 0.0, stdout_chunks=[asyncio.CancelledError()]
+    )
+
+    await analyzer._read_pcm()  # must not raise
+
+    assert analyzer._reading_done is True
+
+
+async def test_read_pcm_logs_an_unexpected_error(caplog):
+    analyzer = _fake_analyzer_with_stdout(
+        elapsed_fn=lambda: 0.0, stdout_chunks=[RuntimeError("decoder crashed")]
+    )
+
+    with caplog.at_level(logging.WARNING, logger="connect.audio_analysis"):
+        await analyzer._read_pcm()
+
+    assert "reader stopped" in caplog.text
+    assert analyzer._reading_done is True
+
+
+# ── AudioAnalyzer.stop() — immediate teardown ────────────────────────────────
+
+
+async def test_stop_cancels_all_three_background_tasks_and_kills_the_process():
+    analyzer, _ = _fake_analyzer(elapsed_fn=lambda: 0.0)
+
+    async def _never_ending():
+        await asyncio.sleep(1000)
+
+    analyzer._writer_task = asyncio.create_task(_never_ending())
+    analyzer._reader_task = asyncio.create_task(_never_ending())
+    analyzer._release_task = asyncio.create_task(_never_ending())
+    await asyncio.sleep(0)  # let them actually start before stopping them
+
+    await analyzer.stop()
+    await asyncio.sleep(0)  # let the requested cancellation actually land
+
+    assert analyzer._writer_task.cancelled()
+    assert analyzer._reader_task.cancelled()
+    assert analyzer._release_task.cancelled()
+    analyzer._proc.kill.assert_called_once()
+
+
+async def test_stop_swallows_the_process_already_being_gone():
+    analyzer, _ = _fake_analyzer(elapsed_fn=lambda: 0.0)
+    analyzer._proc.kill = MagicMock(side_effect=ProcessLookupError())
+
+    await analyzer.stop()  # must not raise

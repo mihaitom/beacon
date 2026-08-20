@@ -122,7 +122,13 @@ async def start_pairing(req: StartRequest):
             # considers an earlier (e.g. cancelled or wrong-PIN) pairing attempt pending
             # and refuses to start a new handshake — usually fixed by power-cycling it.
             err_str = str(e)
-            if err_str.startswith("<TlvValue."):
+            # KeyError.__str__ wraps its message in repr()'s quotes (a
+            # quirk unique to KeyError among builtin exceptions), so the
+            # raw string here is "'<TlvValue...'", not "<TlvValue...' —
+            # stripped before the prefix check below, or this branch would
+            # never match and every such failure would fall through to the
+            # generic (raw, unfriendly) message instead.
+            if err_str.strip("'").startswith("<TlvValue."):
                 msg = (
                     f"'{req.name}' rejected the pairing request. It may still consider a "
                     f"previous pairing attempt pending — power-cycle the device and try again."

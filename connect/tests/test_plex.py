@@ -24,6 +24,13 @@ def _client(url="http://plex:32400", internal_url="", token="tok") -> PlexClient
     return PlexClient(url, token=token, internal_url=internal_url)
 
 
+def test_auth_headers_public_accessor_matches_internal_headers():
+    """media/plex_bridge.py's own public entry point for this — mirrors
+    JellyfinClient.auth_headers()."""
+    c = _client(token="tok")
+    assert c.auth_headers()["X-Plex-Token"] == "tok"
+
+
 # ── internal_url fallback ────────────────────────────────────────────────────
 
 
@@ -175,6 +182,19 @@ def test_get_stream_url_resolves_part_key(monkeypatch):
     assert url == "http://plex:32400/library/parts/555/file.mp3?X-Plex-Token=tok"
 
 
+def test_get_stream_url_raises_when_track_not_found(monkeypatch):
+    def fake_get(url, **kwargs):
+        return httpx.Response(
+            200,
+            json={"MediaContainer": {"Metadata": []}},
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    with pytest.raises(RuntimeError, match="not found"):
+        _client().get_stream_url("9001")
+
+
 def test_get_stream_url_raises_without_part(monkeypatch):
     def fake_get(url, **kwargs):
         return httpx.Response(
@@ -261,6 +281,18 @@ def test_client_identifier_stable_across_calls(monkeypatch, tmp_path):
     assert first == second
 
 
+def test_client_identifier_falls_back_gracefully_when_persisting_fails(monkeypatch, tmp_path):
+    import media.plex as plex_mod
+
+    monkeypatch.setattr(
+        plex_mod, "_CLIENT_ID_FILE", tmp_path / "no-such-dir" / "client-id"
+    )
+
+    identifier = client_identifier()  # must not raise
+
+    assert len(identifier) == 32  # secrets.token_hex(16)
+
+
 # ── get_account_username ─────────────────────────────────────────────────────
 
 
@@ -321,6 +353,36 @@ def test_list_resources_filters_to_servers_only(monkeypatch):
     ]
 
 
+def test_list_resources_skips_a_server_with_no_usable_connection(monkeypatch):
+    def fake_get(url, **kwargs):
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "provides": "server",
+                    "name": "Offline Server",
+                    "clientIdentifier": "no-conn",
+                    "connections": [],
+                },
+                {
+                    "provides": "server",
+                    "name": "My Server",
+                    "clientIdentifier": "abc123",
+                    "accessToken": "server-tok",
+                    "connections": [
+                        {"protocol": "http", "address": "10.2.2.11", "port": 32400, "local": True}
+                    ],
+                },
+            ],
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    servers = list_resources("acct-tok")
+
+    assert [s["name"] for s in servers] == ["My Server"]
+
+
 def test_list_resources_raises_on_empty_body(monkeypatch):
     def fake_get(url, **kwargs):
         return httpx.Response(200, content=b"", request=httpx.Request("GET", url))
@@ -343,6 +405,23 @@ def test_pick_connection_falls_back_to_remote_when_no_local():
     connections = [{"protocol": "https", "local": False, "uri": "https://remote.plex.direct:32400"}]
     picked = _pick_connection(connections)
     assert picked["protocol"] == "https"
+
+
+def test_pick_connection_falls_back_to_local_https_when_no_http_anywhere():
+    # A local connection exists, but none of them (local or otherwise) are
+    # plain HTTP — still prefer the local one over a remote alternative,
+    # just without the "no TLS cert to validate" upside a raw-IP http
+    # connection would have had.
+    connections = [
+        {"protocol": "https", "local": False, "uri": "https://remote.plex.direct:32400"},
+        {"protocol": "https", "local": True, "uri": "https://local.plex.direct:32400"},
+    ]
+    picked = _pick_connection(connections)
+    assert picked["uri"] == "https://local.plex.direct:32400"
+
+
+def test_pick_connection_returns_none_for_no_connections_at_all():
+    assert _pick_connection([]) is None
 
 
 def test_connection_url_builds_raw_ip_for_http():

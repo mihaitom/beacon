@@ -1,9 +1,10 @@
 """Tests for core/waveform.py — _compute_peaks() and get_waveform()."""
 
 import array
+import logging
 import math
 import struct
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from core import waveform
 from core.waveform import _PEAK_COUNT, _compute_peaks
@@ -97,3 +98,98 @@ async def test_get_waveform_decodes_every_call_not_just_once():
         await waveform.get_waveform("track-1", "http://example/track")
         await waveform.get_waveform("track-1", "http://example/track")
         assert mock_exec.call_count == 2
+
+
+class _FakeWaveformProc:
+    def __init__(
+        self,
+        stdout: bytes = b"",
+        stderr: bytes = b"",
+        returncode: int = 0,
+        communicate_error: BaseException | None = None,
+        wait_error: BaseException | None = None,
+    ):
+        self.returncode = returncode
+        self._stdout = stdout
+        self._stderr = stderr
+        self._communicate_error = communicate_error
+        self._wait_error = wait_error
+        self.killed = False
+
+    async def communicate(self):
+        if self._communicate_error:
+            raise self._communicate_error
+        return self._stdout, self._stderr
+
+    def kill(self) -> None:  # real Process.kill() is synchronous, not awaited
+        self.killed = True
+
+    async def wait(self):
+        if self._wait_error:
+            raise self._wait_error
+
+
+async def test_get_waveform_returns_computed_peaks_on_success():
+    pcm = _tone_pcm(440, _PEAK_COUNT * 10)
+    proc = _FakeWaveformProc(stdout=pcm, returncode=0)
+
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+        result = await waveform.get_waveform("track-1", "http://example/track")
+
+    assert result == _compute_peaks(pcm)
+
+
+async def test_get_waveform_returns_empty_on_a_nonzero_ffmpeg_exit(caplog):
+    proc = _FakeWaveformProc(stderr=b"Invalid data found when processing input", returncode=1)
+
+    with (
+        patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),
+        caplog.at_level(logging.WARNING, logger="connect.waveform"),
+    ):
+        result = await waveform.get_waveform("track-1", "http://example/track")
+
+    assert result == []
+    assert "Invalid data found" in caplog.text
+
+
+async def test_get_waveform_kills_the_process_and_returns_empty_on_a_stalled_decode():
+    """Guards against a stalled/broken source stream hanging the request
+    forever — see _DECODE_TIMEOUT_SECONDS's own comment."""
+    proc = _FakeWaveformProc(communicate_error=TimeoutError())
+
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+        result = await waveform.get_waveform("track-1", "http://example/track")
+
+    assert result == []
+    assert proc.killed is True
+
+
+def test_waveform_endpoint_returns_peaks(client, default_session):
+    """routes/waveform.py's GET /waveform/{track_id} — thin HTTP wrapper
+    around core/waveform.get_waveform(), tested everywhere else above."""
+    pcm = _tone_pcm(440, _PEAK_COUNT * 10)
+    default_session.media.get_stream_url = lambda track_id: "http://nav/stream?id=" + track_id
+    proc = _FakeWaveformProc(stdout=pcm, returncode=0)
+
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+        r = client.get("/waveform/track-1")
+
+    assert r.status_code == 200
+    assert r.json()["peaks"] == _compute_peaks(pcm)
+
+
+async def test_get_waveform_logs_when_the_killed_process_wont_exit_either(caplog):
+    """The kill()-then-reap wait must never itself hang the request — bounded
+    by its own 5s timeout, logged (not raised) if even that isn't enough."""
+    proc = _FakeWaveformProc(
+        communicate_error=TimeoutError(), wait_error=TimeoutError()
+    )
+
+    with (
+        patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),
+        caplog.at_level(logging.WARNING, logger="connect.waveform"),
+    ):
+        result = await waveform.get_waveform("track-1", "http://example/track")
+
+    assert result == []
+    assert "didn't exit after kill" in caplog.text

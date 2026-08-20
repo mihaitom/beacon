@@ -129,6 +129,86 @@ def test_get_track_requires_user_id():
         c.get_track("abc")
 
 
+# ── _auth_header ──────────────────────────────────────────────────────────────
+
+
+def test_auth_header_empty_without_a_token():
+    c = _client(token="")
+    assert c._auth_header() == {}
+
+
+def test_auth_headers_public_accessor_delegates_to_auth_header():
+    """media/jellyfin_bridge.py's own public entry point for this — that
+    module calls several Jellyfin endpoints this class has no method of
+    its own for."""
+    c = _client(token="tok")
+    assert c.auth_headers() == {"X-Emby-Token": "tok"}
+
+
+# ── get_similar_songs2 (Autoplay's internal-code-path Instant Mix) ──────────
+
+
+def test_get_similar_songs2_requires_user_id():
+    c = JellyfinClient("http://jf:8096", token="t", user_id="")
+    with pytest.raises(RuntimeError, match="user_id"):
+        c.get_similar_songs2("seed-1")
+
+
+def test_get_similar_songs2_parses_instant_mix_items(monkeypatch):
+    data = {
+        "Items": [
+            {
+                "Id": "similar-1",
+                "Name": "Similar Song",
+                "Artists": ["Artist A", "Artist B"],
+                "Album": "The Album",
+                "RunTimeTicks": 200 * 10_000_000,
+            }
+        ]
+    }
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        assert url.endswith("/Items/seed-1/InstantMix")
+        assert params["userId"] == "u1"
+        assert params["Limit"] == 5
+        return httpx.Response(200, json=data, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    tracks = _client().get_similar_songs2("seed-1", count=5)
+
+    assert len(tracks) == 1
+    assert tracks[0].id == "similar-1"
+    assert tracks[0].artist == "Artist A, Artist B"
+    assert tracks[0].duration == 200
+    assert tracks[0].cover_art_id == "similar-1"
+
+
+def test_get_similar_songs2_falls_back_to_album_artist(monkeypatch):
+    data = {
+        "Items": [
+            {"Id": "s1", "Name": "T", "AlbumArtist": "AA", "RunTimeTicks": 0},
+        ]
+    }
+    monkeypatch.setattr(
+        httpx, "get", lambda *a, **k: httpx.Response(200, json=data, request=httpx.Request("GET", a[0]))
+    )
+    tracks = _client().get_similar_songs2("seed-1")
+    assert tracks[0].artist == "AA"
+
+
+# ── _device_id persistence ───────────────────────────────────────────────────
+
+
+def test_device_id_falls_back_gracefully_when_persisting_fails(monkeypatch, tmp_path):
+    from media import jellyfin as jellyfin_mod
+
+    monkeypatch.setattr(jellyfin_mod, "_DEVICE_ID_FILE", tmp_path / "no-such-dir" / "device-id")
+
+    device_id = jellyfin_mod._device_id()  # must not raise
+
+    assert len(device_id) == 32  # secrets.token_hex(16)
+
+
 # ── ping ──────────────────────────────────────────────────────────────────────
 
 

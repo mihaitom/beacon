@@ -142,6 +142,89 @@ def test_map_album_and_artist_favorite_presence():
     assert fav_artist["starred"] == "true"
 
 
+def test_map_album_includes_artist_id_year_and_genre_when_present():
+    album = jellyfin_bridge._map_album(
+        {
+            "Id": "a1",
+            "Name": "Album",
+            "AlbumArtists": [{"Id": "artist-1"}],
+            "ProductionYear": 2010,
+            "Genres": ["Electronic", "Ambient"],
+        }
+    )
+    assert album["artistId"] == "artist-1"
+    assert album["year"] == 2010
+    # First genre only — Subsonic's own shape has room for just one.
+    assert album["genre"] == "Electronic"
+
+
+def test_map_album_omits_artist_id_year_and_genre_when_absent():
+    album = jellyfin_bridge._map_album({"Id": "a2", "Name": "Album 2"})
+    assert "artistId" not in album
+    assert "year" not in album
+    assert "genre" not in album
+
+
+# ── Shared httpx client lifecycle ────────────────────────────────────────────
+
+
+def test_get_client_creates_once_and_reuses(monkeypatch):
+    monkeypatch.setattr(jellyfin_bridge, "_client", None)
+
+    first = jellyfin_bridge._get_client()
+    second = jellyfin_bridge._get_client()
+
+    assert first is second
+
+
+async def test_close_closes_and_clears_the_shared_client(monkeypatch):
+    fake_client = AsyncMock()
+    monkeypatch.setattr(jellyfin_bridge, "_client", fake_client)
+
+    await jellyfin_bridge.close()
+
+    fake_client.aclose.assert_awaited_once()
+    assert jellyfin_bridge._client is None
+
+
+async def test_close_is_a_noop_when_never_initialized(monkeypatch):
+    monkeypatch.setattr(jellyfin_bridge, "_client", None)
+
+    await jellyfin_bridge.close()  # must not raise
+
+
+async def test_jf_request_logs_when_a_call_takes_over_a_second(
+    jellyfin_session, monkeypatch, caplog
+):
+    """Not every request — just the ones worth knowing about when something
+    "feels slow" without actually erroring, see _jf_request()'s own
+    comment. Times faked out rather than actually sleeping a second."""
+    import logging
+    import time as time_mod
+
+    fake_client, _ = _fake_jf_client({"/Users/u1/Items/song-1": {"Id": "song-1"}})
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+    # Only the two calls _jf_request() itself makes are faked — anything
+    # else touching time.monotonic() (asyncio/pytest internals during
+    # teardown, in particular) falls through to the real one, or a bare
+    # iterator here would raise StopIteration well after this test's body
+    # already finished.
+    real_monotonic = time_mod.monotonic
+    _exhausted = object()
+    times = iter([0.0, 1.5])
+
+    def _fake_monotonic():
+        v = next(times, _exhausted)
+        return real_monotonic() if v is _exhausted else v
+
+    monkeypatch.setattr(time_mod, "monotonic", _fake_monotonic)
+
+    with caplog.at_level(logging.INFO, logger="connect.jellyfin_bridge"):
+        await jellyfin_bridge._jf_get(jellyfin_session.media, "/Users/u1/Items/song-1")
+
+    assert "took 1.50s" in caplog.text
+
+
 # ── routes/proxy.py dispatch ─────────────────────────────────────────────────
 
 
@@ -329,6 +412,97 @@ def test_search3_skips_malformed_item_instead_of_failing_whole_page(
     assert r.status_code == 200
     body = r.json()["subsonic-response"]["searchResult3"]
     assert [s["id"] for s in body["song"]] == ["s2"]
+
+
+# ── Library browsing (getAlbumList2 / getAlbum / getArtists / getArtist) ────
+
+
+def test_get_album_list2_maps_albums_and_forwards_sort_params(
+    client, jellyfin_session, monkeypatch
+):
+    fake_client, calls = _fake_jf_client(
+        {"/Users/u1/Items": {"Items": [{"Id": "album-1", "Name": "Album", "RunTimeTicks": 0}]}}
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getAlbumList2.view?type=alphabeticalByName")
+
+    assert r.status_code == 200
+    albums = r.json()["subsonic-response"]["albumList2"]["album"]
+    assert [a["id"] for a in albums] == ["album-1"]
+    assert calls[0][2]["SortBy"] == "SortName"
+
+
+def test_get_album_list2_uses_random_sort_when_requested(client, jellyfin_session, monkeypatch):
+    fake_client, calls = _fake_jf_client({"/Users/u1/Items": {"Items": []}})
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    client.get("/rest/getAlbumList2.view?type=random")
+
+    assert calls[0][2]["SortBy"] == "Random"
+
+
+def test_get_album_includes_its_songs(client, jellyfin_session, monkeypatch):
+    fake_client, _ = _fake_jf_client(
+        {
+            "/Users/u1/Items/album-1": {"Id": "album-1", "Name": "Album", "RunTimeTicks": 0},
+            "/Users/u1/Items": {"Items": [{"Id": "song-1", "Name": "Song", "RunTimeTicks": 0}]},
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getAlbum.view?id=album-1")
+
+    assert r.status_code == 200
+    album = r.json()["subsonic-response"]["album"]
+    assert album["id"] == "album-1"
+    assert [s["id"] for s in album["song"]] == ["song-1"]
+
+
+def test_get_artists_buckets_by_first_letter(client, jellyfin_session, monkeypatch):
+    """Jellyfin has no native indexed-by-letter grouping — see get_artists()'s
+    own comment — bucketed client-side to match Subsonic's shape."""
+    fake_client, _ = _fake_jf_client(
+        {
+            "/Users/u1/Items": {
+                "Items": [
+                    {"Id": "a1", "Name": "ABBA"},
+                    {"Id": "b1", "Name": "Beatles"},
+                    {"Id": "a2", "Name": "Air"},
+                ]
+            }
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getArtists.view")
+
+    assert r.status_code == 200
+    index = r.json()["subsonic-response"]["artists"]["index"]
+    assert [entry["name"] for entry in index] == ["A", "B"]
+    a_names = {a["name"] for a in index[0]["artist"]}
+    assert a_names == {"ABBA", "Air"}
+
+
+def test_get_artist_includes_its_albums(client, jellyfin_session, monkeypatch):
+    fake_client, calls = _fake_jf_client(
+        {
+            "/Users/u1/Items/artist-1": {"Id": "artist-1", "Name": "Radiohead"},
+            "/Users/u1/Items": {
+                "Items": [{"Id": "album-1", "Name": "OK Computer", "RunTimeTicks": 0}]
+            },
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getArtist.view?id=artist-1")
+
+    assert r.status_code == 200
+    artist = r.json()["subsonic-response"]["artist"]
+    assert artist["id"] == "artist-1"
+    assert [a["id"] for a in artist["album"]] == ["album-1"]
+    # Scoped to this specific artist, not a generic album listing.
+    assert calls[-1][2]["ArtistIds"] == "artist-1"
 
 
 # ── Favorites ─────────────────────────────────────────────────────────────────
@@ -587,6 +761,14 @@ def test_delete_internet_radio_station(client, jellyfin_session):
         assert radio_stations.list_stations() == []
 
 
+def test_delete_unknown_radio_station_fails_cleanly(client, jellyfin_session):
+    d, patcher = _isolated_station_store()
+    with d, patcher:
+        r = client.get("/rest/deleteInternetRadioStation.view?id=does-not-exist")
+        assert r.status_code == 200
+        assert r.json()["subsonic-response"]["status"] == "failed"
+
+
 # ── Track/Artist Radio (InstantMix) ─────────────────────────────────────────
 
 
@@ -710,5 +892,30 @@ def test_cover_art_view_builds_jellyfin_image_url(client, jellyfin_session, monk
 
 def test_cover_art_view_requires_id(client, jellyfin_session):
     r = client.get("/rest/getCoverArt.view")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+def test_stream_view_requires_id(client, jellyfin_session):
+    r = client.get("/rest/stream.view")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+def test_binary_handler_exception_returns_failed_envelope_not_500(
+    client, jellyfin_session, monkeypatch
+):
+    """Unlike every JSON handler, _handle_binary()/_stream_binary() had no
+    try/except of their own — a Jellyfin connectivity blip mid cover-art-
+    load or mid-stream used to propagate as a raw 500 instead of degrading
+    like every other endpoint here."""
+
+    async def broken_stream_binary(request, url, media):
+        raise RuntimeError("connection reset")
+
+    monkeypatch.setattr(jellyfin_bridge, "_stream_binary", broken_stream_binary)
+
+    r = client.get("/rest/getCoverArt.view?id=item-1")
+
     assert r.status_code == 200
     assert r.json()["subsonic-response"]["status"] == "failed"

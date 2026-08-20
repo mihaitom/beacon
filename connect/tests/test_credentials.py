@@ -104,6 +104,39 @@ def test_save_creates_missing_data_dir():
             assert credentials.get("HomePod") == "creds"
 
 
+def test_get_returns_none_on_malformed_json(caplog):
+    import logging
+
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("{not valid json")
+        with (
+            patch.object(credentials, "_PATH", path),
+            caplog.at_level(logging.WARNING, logger="connect.credentials"),
+        ):
+            assert credentials.get("HomePod") is None
+
+    assert "Load failed" in caplog.text
+
+
+def test_save_logs_but_does_not_raise_when_unwritable(caplog):
+    import logging
+
+    with tempfile.TemporaryDirectory() as d:
+        # A file, not a directory, as the parent — os.makedirs() on it fails.
+        blocker = Path(d) / "blocker"
+        blocker.write_text("x")
+        path = str(blocker / "nested" / "creds.json")
+        with (
+            patch.object(credentials, "_PATH", path),
+            caplog.at_level(logging.ERROR, logger="connect.credentials"),
+        ):
+            credentials.save("HomePod", "creds")  # must not raise
+
+    assert "Save failed" in caplog.text
+
+
 def test_connect_data_dir_env_var_overrides_default_path():
     with tempfile.TemporaryDirectory() as d:
         with patch.dict(os.environ, {"CONNECT_DATA_DIR": d}):

@@ -8,6 +8,7 @@ from delivery import (
     AirPlayDelivery,
     ChromecastDelivery,
     DeliveryManager,
+    DlnaDelivery,
     SonosDelivery,
 )
 
@@ -48,6 +49,18 @@ def test_join_airplay_plays_and_sets_active(client, default_session, _streaming)
     assert isinstance(default_session.state.active_delivery, AirPlayDelivery)
 
 
+def test_join_dlna_plays_and_sets_active(client, default_session, _streaming):
+    with patch.object(DlnaDelivery, "play", new=AsyncMock()) as play:
+        r = client.post(
+            "/join", json={"target_type": "dlna", "target_name": "Receiver"}
+        )
+
+    assert r.json()["status"] == "joined"
+    play.assert_awaited_once()
+    assert isinstance(default_session.state.active_delivery, DlnaDelivery)
+    assert default_session.state.active_delivery.target == "Receiver"
+
+
 def test_join_chromecast_appends_to_existing_manager(
     client, default_session, _streaming
 ):
@@ -74,6 +87,32 @@ def test_join_chromecast_promotes_single_active_to_manager(
     mgr = default_session.state.active_delivery
     assert isinstance(mgr, DeliveryManager)
     assert {type(d) for d in mgr.deliveries} == {AirPlayDelivery, ChromecastDelivery}
+
+
+def test_join_sonos_joins_the_existing_groups_coordinator(
+    client, default_session, _streaming
+):
+    """The success path test_join_sonos_falls_back_to_individual_play_when_
+    group_fails below doesn't reach — that one fails resolving the
+    coordinator itself, before ever getting to the new device's own lookup
+    or the actual group .join() call this exercises."""
+    from unittest.mock import MagicMock
+
+    existing_sonos = SonosDelivery("Küche")
+    default_session.state.active_delivery = existing_sonos
+    coordinator_dev = MagicMock()
+    joiner_dev = MagicMock()
+
+    def _fake_get_device(self):
+        return coordinator_dev if self.target == "Küche" else joiner_dev
+
+    with patch.object(SonosDelivery, "_get_device", _fake_get_device):
+        r = client.post(
+            "/join", json={"target_type": "sonos", "target_name": "Wohnzimmer"}
+        )
+
+    assert r.json()["status"] == "joined"
+    joiner_dev.join.assert_called_once_with(coordinator_dev)
 
 
 def test_join_sonos_falls_back_to_individual_play_when_group_fails(

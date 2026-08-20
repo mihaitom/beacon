@@ -7,15 +7,15 @@ from unittest.mock import AsyncMock, patch
 
 from core.session import compute_position
 from core.streamer import FALLBACK_FORMAT, OutputFormat
-from delivery import AirPlayDelivery, ChromecastDelivery, SonosDelivery
+from delivery import AirPlayDelivery, BaseDelivery, ChromecastDelivery, SonosDelivery
 from media import SubsonicClient, Track
 from routes.playback import (
     POSITION_RESYNC_THRESHOLD,
+    PROVISIONAL_STARTUP_DELAY,
     _apply_position_offset,
     _resync_position_once,
     _resync_position_periodically,
 )
-
 
 # ── /status ──────────────────────────────────────────────────────────────────
 
@@ -53,6 +53,20 @@ def test_play_rejects_when_never_configured(client):
 def test_play_rejects_empty_track_list(client):
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
     r = client.post("/play", json={"song_ids": []})
+    assert "error" in r.json()
+
+
+def test_play_rejects_when_media_server_has_no_base_url(client, default_session):
+    """Distinct from test_play_rejects_when_never_configured above: this
+    session IS authenticated (default_session's own fixture default) but
+    session.media itself has no base_url — the state right after a
+    fresh SessionState() before its first-ever /config, still passing
+    require_authenticated_session's own (weaker) check."""
+    assert default_session.media.base_url == ""
+
+    r = client.post("/play", json={"song_ids": ["1"]})
+
+    assert r.status_code == 200
     assert "error" in r.json()
 
 
@@ -331,6 +345,32 @@ def test_play_dispatches_track_at_queue_index(client, default_session):
     assert default_session.state.queue_index == 1
 
 
+def test_play_refuses_a_target_claimed_by_another_session(client, default_session):
+    """/play shares _claim_or_takeover() with /play-url (see that endpoint's
+    own identical test) — a device already claimed elsewhere is refused
+    rather than silently stolen, unless force=True."""
+    import asyncio
+
+    from core.claims import claims
+
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+    asyncio.run(claims.claim("chromecast", "TV", "other-session"))
+
+    with patch.object(default_session.media, "get_track", return_value=track):
+        r = client.post(
+            "/play",
+            json={
+                "song_ids": ["1"],
+                "target_name": "TV",
+                "target_type": "chromecast",
+            },
+        )
+
+    assert r.json()["error"] == "device_in_use"
+    assert default_session.state.is_streaming is False
+
+
 def test_play_clamps_out_of_range_queue_index(client, default_session):
     """An out-of-range queue_index (a confused/outdated client) falls back to
     0 instead of raising or dispatching nothing."""
@@ -362,6 +402,17 @@ def test_update_queue_replaces_the_whole_queue(client, default_session):
     assert r.json()["status"] == "ok"
     assert default_session.state.queue == ["0", "1", "3", "2"]
     assert default_session.state.queue_index == 1
+
+
+def test_update_queue_advances_play_seq_when_one_is_given(client, default_session):
+    """A nonzero seq updates session.play_seq the same way /play and
+    /play-url's own dispatch does — shared ordering across all three, since
+    each of them writes session.state.queue/queue_index (see QueueRequest.seq)."""
+    assert default_session.play_seq == 0
+
+    client.post("/queue", json={"song_ids": ["1", "2"], "seq": 5})
+
+    assert default_session.play_seq == 5
 
 
 def test_update_queue_is_noop_without_an_active_queue(client, default_session):
@@ -536,6 +587,18 @@ def test_play_url_rejects_non_http_scheme(client, default_session):
     assert default_session.state.is_streaming is False
 
 
+def test_play_url_rejects_when_no_target_resolves(client, default_session):
+    """No targets/target_name given, and nothing already casting to fall
+    back to (see resolve_target()'s `previous` parameter) — there's simply
+    nothing for this to dispatch to."""
+    r = client.post(
+        "/play-url",
+        json={"title": "Radio", "url": "http://example.com/radio.mp3"},
+    )
+    assert r.json() == {"error": "No target configured"}
+    assert default_session.state.is_streaming is False
+
+
 def test_play_url_accepts_https_scheme(client, default_session):
     with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
         r = client.post(
@@ -549,6 +612,29 @@ def test_play_url_accepts_https_scheme(client, default_session):
         )
     assert r.json()["status"] == "playing"
     play.assert_awaited_once()
+
+
+def test_play_url_releases_the_claim_when_delivery_fails(client, default_session):
+    """See /play's identical comment: a failed dispatch must not leave the
+    device locked to this session (device_in_use for every other client)
+    with nothing actually playing on it."""
+    from core.claims import claims
+
+    with patch.object(
+        ChromecastDelivery, "play", new=AsyncMock(side_effect=RuntimeError("unreachable"))
+    ):
+        r = client.post(
+            "/play-url",
+            json={
+                "target_name": "TV",
+                "target_type": "chromecast",
+                "title": "Test",
+                "url": "https://example.com/stream.mp3",
+            },
+        )
+
+    assert r.json() == {"error": "unreachable"}
+    assert claims.owner_of("chromecast", "TV") is None
 
 
 # ── Phase 2 takeover (force=True) ───────────────────────────────────────────
@@ -745,6 +831,21 @@ def test_stop_resets_state(client, default_session):
     assert default_session.state.current_track is None
 
 
+def test_stop_stops_and_clears_a_still_draining_analyzer(client, default_session):
+    """Unlike a track finishing normally (routes/stream.py's
+    finish_feeding() lets the analyzer keep draining what it already
+    buffered), playback is genuinely ending here — nothing left for GET
+    /visualizer to read, so it's torn down outright rather than left to
+    drain on its own."""
+    analyzer = AsyncMock()
+    default_session.audio_analyzer = analyzer
+
+    client.post("/stop")
+
+    analyzer.stop.assert_awaited_once()
+    assert default_session.audio_analyzer is None
+
+
 def test_stop_clears_queue(client, default_session):
     default_session.state.queue = ["1", "2", "3"]
     default_session.state.queue_index = 1
@@ -830,6 +931,49 @@ def test_resume_without_configured_media_returns_error(client, default_session):
     assert r.status_code == 200
     assert "error" in r.json()
     assert default_session.state.clock.is_paused is True
+
+
+def test_pause_delegates_to_the_active_delivery(client, default_session):
+    default_session.media = SubsonicClient("http://nav")
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_start_time = time.time() - 30
+    default_session.state.active_delivery = ChromecastDelivery("TV")
+
+    with patch.object(ChromecastDelivery, "pause", new=AsyncMock()) as pause:
+        r = client.post("/pause")
+
+    assert r.json()["paused"] is True
+    pause.assert_awaited_once()
+
+
+def test_resume_returns_an_error_when_the_delivery_reconnect_fails(client, default_session):
+    """Matches /play's contract: a JSON {"error": ...} body, not an
+    unhandled exception surfacing as a 500 — the device may have gone
+    unreachable while paused."""
+    default_session.media = SubsonicClient("http://nav")
+    default_session.state.clock.is_paused = True
+    default_session.state.clock.paused_elapsed = 30.0
+    default_session.state.active_delivery = ChromecastDelivery("TV")
+
+    with patch.object(
+        ChromecastDelivery, "play", new=AsyncMock(side_effect=RuntimeError("unreachable"))
+    ):
+        r = client.post("/resume")
+
+    assert r.json() == {"error": "unreachable"}
+
+
+def test_seek_returns_an_error_when_the_delivery_reconnect_fails(client, default_session):
+    default_session.media = SubsonicClient("http://nav")
+    default_session.state.is_streaming = True
+    default_session.state.active_delivery = ChromecastDelivery("TV")
+
+    with patch.object(
+        ChromecastDelivery, "play", new=AsyncMock(side_effect=RuntimeError("unreachable"))
+    ):
+        r = client.post("/seek", json={"position": 30.0})
+
+    assert r.json() == {"error": "unreachable"}
 
 
 # ── /seek with position_offset ────────────────────────────────────────────────
@@ -986,6 +1130,78 @@ def test_apply_position_offset_calibrates_correctly_with_start_position(
     # device is ~1s into the post-seek stream, ~0.5s of that is the poll delay
     # -> offset should be a small buffering correction, NOT ~-start_position (-10s).
     assert -2.0 < default_session.state.clock.position_offset < 2.0
+
+
+def test_apply_position_offset_returns_when_nothing_supports_position(default_session):
+    """No FIXED_OFFSET (AirPlay's estimate-based path) and no
+    SUPPORTS_POSITION delivery either — nothing this function can do
+    anything with, must give up immediately rather than loop forever
+    waiting for a reading that can never come."""
+
+    class _NoPositionDelivery(BaseDelivery):
+        async def play(self, *args, **kwargs) -> None:
+            pass
+
+        async def stop(self) -> None:
+            pass
+
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_start_time = time.time()
+    default_session.state.clock.play_generation = 1
+
+    target = _NoPositionDelivery("mystery-device")
+    import asyncio
+
+    asyncio.run(
+        asyncio.wait_for(
+            _apply_position_offset(default_session, target, generation=1), timeout=1.0
+        )
+    )
+
+    assert default_session.state.clock.position_offset == 0.0
+
+
+def test_apply_position_offset_stops_polling_once_streaming_stops_mid_wait(default_session):
+    """Two things in one natural sequence: no reading yet (None) keeps
+    polling, then playback stops externally before the next poll — which
+    must notice and give up rather than keep polling for the rest of the
+    10s deadline."""
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_start_time = time.time()
+    default_session.state.clock.play_generation = 1
+
+    target = SonosDelivery("Küche")
+    import asyncio
+
+    async def _fake_get_position():
+        default_session.state.is_streaming = False
+
+    with patch.object(target, "get_position", new=_fake_get_position):
+        asyncio.run(_apply_position_offset(default_session, target, generation=1))
+
+    # Left at the provisional startup-delay guess set before polling began —
+    # never got a plausible reading to calibrate a real offset from.
+    assert default_session.state.clock.position_offset == -PROVISIONAL_STARTUP_DELAY
+
+
+def test_apply_position_offset_retries_after_a_transient_get_position_error(default_session):
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_start_time = time.time()
+    default_session.state.clock.play_generation = 1
+
+    target = SonosDelivery("Küche")
+    import asyncio
+
+    with patch.object(
+        target,
+        "get_position",
+        new=AsyncMock(side_effect=[RuntimeError("SOAP fault"), 0.5]),
+    ):
+        asyncio.run(_apply_position_offset(default_session, target, generation=1))
+
+    # Used the second, successful reading rather than aborting on the
+    # first transient failure.
+    assert default_session.state.clock.position_offset != 0.0
 
 
 def test_apply_position_offset_abandons_on_track_change(default_session):
@@ -1163,6 +1379,22 @@ async def _run_briefly(coro) -> None:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+
+
+async def test_resync_position_periodically_calls_resync_once_per_interval(
+    default_session, monkeypatch
+):
+    monkeypatch.setattr("routes.playback.POSITION_RESYNC_INTERVAL", 0.01)
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_generation = 1
+    target = SonosDelivery("Küche")
+
+    with patch("routes.playback._resync_position_once", new=AsyncMock()) as resync_once:
+        await _run_briefly(
+            _resync_position_periodically(default_session, target, generation=1)
+        )
+
+    resync_once.assert_awaited()
 
 
 def test_resync_position_periodically_skips_polling_while_paused(default_session, monkeypatch):

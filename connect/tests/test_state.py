@@ -1,10 +1,53 @@
 """Tests for state helpers: compute_position, resolve_target, find_sonos."""
 
+import asyncio
 import time
 
 from core.session import SessionState, compute_position
-from core.state import find_sonos, resolve_target
+from core.state import EventBus, find_sonos, resolve_target
 from media import Track
+
+# ── EventBus ──────────────────────────────────────────────────────────────────
+
+
+async def test_event_bus_broadcast_delivers_to_every_subscriber():
+    bus = EventBus()
+    q1, q2 = bus.subscribe(), bus.subscribe()
+
+    await bus.broadcast({"hello": "world"})
+
+    assert q1.get_nowait() == {"hello": "world"}
+    assert q2.get_nowait() == {"hello": "world"}
+
+
+async def test_event_bus_broadcast_is_a_noop_with_no_subscribers():
+    bus = EventBus()
+    await bus.broadcast({"hello": "world"})  # must not raise
+
+
+async def test_event_bus_broadcast_drops_updates_for_a_slow_consumer():
+    """A subscriber that never drains its queue must not block every other
+    (or future) broadcast — a slow/dead consumer just misses updates."""
+    bus = EventBus()
+    q = bus.subscribe()
+    for i in range(q.maxsize + 5):
+        await bus.broadcast({"i": i})
+
+    assert q.full()
+    assert q.qsize() == q.maxsize  # extra broadcasts past maxsize were dropped
+
+
+def test_event_bus_unsubscribe_removes_the_queue():
+    bus = EventBus()
+    q = bus.subscribe()
+    bus.unsubscribe(q)
+    asyncio.run(bus.broadcast({"hello": "world"}))
+    assert q.empty()
+
+
+def test_event_bus_unsubscribe_unknown_queue_is_a_noop():
+    bus = EventBus()
+    bus.unsubscribe(asyncio.Queue())  # never subscribed — must not raise
 
 
 # ── compute_position ──────────────────────────────────────────────────────────

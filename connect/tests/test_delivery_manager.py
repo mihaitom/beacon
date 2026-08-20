@@ -233,3 +233,302 @@ def test_manager_play_multiple_sonos_uses_grouping():
         asyncio.run(m.play("http://stream", "T"))
 
     grouped.assert_awaited_once()
+
+
+def test_manager_play_is_a_noop_with_no_deliveries():
+    m = DeliveryManager.from_deliveries([])
+
+    asyncio.run(m.play("http://stream"))  # must not raise
+
+
+def test_manager_play_logs_but_does_not_raise_on_a_delivery_error(caplog):
+    import logging
+
+    a = AirPlayDelivery("HomePod")
+    a.play = AsyncMock(side_effect=RuntimeError("device unreachable"))
+    m = DeliveryManager.from_deliveries([a])
+
+    with caplog.at_level(logging.ERROR, logger="delivery"):
+        asyncio.run(m.play("http://stream"))  # must not raise
+
+    assert "device unreachable" in caplog.text
+
+
+def test_manager_pause_fans_out_and_swallows_exceptions():
+    a = AirPlayDelivery("HomePod")
+    c = ChromecastDelivery("TV")
+    a.pause = AsyncMock(side_effect=RuntimeError("boom"))
+    c.pause = AsyncMock()
+    m = DeliveryManager.from_deliveries([a, c])
+
+    asyncio.run(m.pause())  # must not raise
+
+    a.pause.assert_awaited_once()
+    c.pause.assert_awaited_once()
+
+
+def test_manager_resume_fans_out_and_swallows_exceptions():
+    a = AirPlayDelivery("HomePod")
+    c = ChromecastDelivery("TV")
+    a.resume = AsyncMock(side_effect=RuntimeError("boom"))
+    c.resume = AsyncMock()
+    m = DeliveryManager.from_deliveries([a, c])
+
+    asyncio.run(m.resume())  # must not raise
+
+    a.resume.assert_awaited_once()
+    c.resume.assert_awaited_once()
+
+
+def test_manager_play_all_and_stop_all_delegate_to_play_and_stop():
+    a = AirPlayDelivery("HomePod")
+    a.play = AsyncMock()
+    a.stop = AsyncMock()
+    m = DeliveryManager.from_deliveries([a])
+
+    asyncio.run(m.play_all("http://stream", "Title"))
+    asyncio.run(m.stop_all())
+
+    a.play.assert_awaited_once_with(
+        "http://stream", "Title", "", None, None, "", "audio/mpeg"
+    )
+    a.stop.assert_awaited_once()
+
+
+def test_manager_repr_lists_every_target():
+    m = DeliveryManager.from_deliveries([SonosDelivery("Küche"), ChromecastDelivery("TV")])
+
+    assert repr(m) == "sonos:Küche, chromecast:TV"
+
+
+def test_manager_repr_with_no_targets():
+    m = DeliveryManager.from_deliveries([])
+
+    assert repr(m) == "<no targets>"
+
+
+# ── _play_grouped_sonos ──────────────────────────────────────────────────────
+# Real SoCo group choreography: every follower leaves its current group,
+# then joins the (arbitrarily-chosen-as-first) coordinator, with a settle
+# delay on either side, and only then does /play actually get dispatched —
+# to the coordinator only, which is what fans it out to the whole group.
+
+
+def _fake_sonos_device(name: str) -> MagicMock:
+    device = MagicMock()
+    device.player_name = name
+    return device
+
+
+def test_play_grouped_sonos_joins_followers_to_the_first_devices_coordinator():
+    coordinator_delivery = SonosDelivery("Küche")
+    follower_delivery = SonosDelivery("Wohnzimmer")
+    raw_coordinator = _fake_sonos_device("Küche")
+    raw_follower = _fake_sonos_device("Wohnzimmer")
+    coordinator_delivery._get_device = MagicMock(return_value=raw_coordinator)
+    follower_delivery._get_device = MagicMock(return_value=raw_follower)
+    coordinator_delivery.play = AsyncMock()
+    m = DeliveryManager.from_deliveries([coordinator_delivery, follower_delivery])
+
+    with patch("asyncio.sleep", new=AsyncMock()):
+        asyncio.run(
+            m._play_grouped_sonos(
+                [coordinator_delivery, follower_delivery], "http://stream", "Title"
+            )
+        )
+
+    raw_follower.unjoin.assert_called_once()
+    raw_follower.join.assert_called_once_with(raw_coordinator)
+    # Only the coordinator's own delivery actually dispatches /play — SoCo
+    # fans it out to the rest of the group once joined.
+    coordinator_delivery.play.assert_awaited_once_with(
+        "http://stream", "Title", "", None, None, "", "audio/mpeg"
+    )
+
+
+def test_play_grouped_sonos_survives_a_follower_that_wont_unjoin():
+    coordinator_delivery = SonosDelivery("Küche")
+    follower_delivery = SonosDelivery("Wohnzimmer")
+    raw_coordinator = _fake_sonos_device("Küche")
+    raw_follower = _fake_sonos_device("Wohnzimmer")
+    raw_follower.unjoin.side_effect = RuntimeError("network hiccup")
+    coordinator_delivery._get_device = MagicMock(return_value=raw_coordinator)
+    follower_delivery._get_device = MagicMock(return_value=raw_follower)
+    coordinator_delivery.play = AsyncMock()
+    m = DeliveryManager.from_deliveries([coordinator_delivery, follower_delivery])
+
+    with patch("asyncio.sleep", new=AsyncMock()):
+        asyncio.run(
+            m._play_grouped_sonos(
+                [coordinator_delivery, follower_delivery], "http://stream", "Title"
+            )
+        )  # must not raise
+
+    # Still attempts to join afterwards, and still dispatches /play — one
+    # follower failing to leave its old group shouldn't abandon the rest of
+    # the grouping choreography.
+    raw_follower.join.assert_called_once_with(raw_coordinator)
+    coordinator_delivery.play.assert_awaited_once()
+
+
+def test_play_grouped_sonos_survives_a_follower_that_wont_join():
+    coordinator_delivery = SonosDelivery("Küche")
+    follower_delivery = SonosDelivery("Wohnzimmer")
+    raw_coordinator = _fake_sonos_device("Küche")
+    raw_follower = _fake_sonos_device("Wohnzimmer")
+    raw_follower.join.side_effect = RuntimeError("device busy")
+    coordinator_delivery._get_device = MagicMock(return_value=raw_coordinator)
+    follower_delivery._get_device = MagicMock(return_value=raw_follower)
+    coordinator_delivery.play = AsyncMock()
+    m = DeliveryManager.from_deliveries([coordinator_delivery, follower_delivery])
+
+    with patch("asyncio.sleep", new=AsyncMock()):
+        asyncio.run(
+            m._play_grouped_sonos(
+                [coordinator_delivery, follower_delivery], "http://stream", "Title"
+            )
+        )  # must not raise
+
+    coordinator_delivery.play.assert_awaited_once()
+
+
+# ── discover_sonos ────────────────────────────────────────────────────────────
+
+
+def test_discover_sonos_reports_name_and_ip():
+    from delivery.manager import discover_sonos
+
+    device = MagicMock()
+    device.player_name = "Küche"
+    device.ip_address = "10.0.0.5"
+
+    with patch("soco.discover", return_value=[device]):
+        result = asyncio.run(discover_sonos())
+
+    assert result == [{"name": "Küche", "ip": "10.0.0.5"}]
+
+
+def test_discover_sonos_handles_no_devices_found():
+    from delivery.manager import discover_sonos
+
+    with patch("soco.discover", return_value=None):
+        result = asyncio.run(discover_sonos())
+
+    assert result == []
+
+
+# ── discover_chromecast ──────────────────────────────────────────────────────
+
+
+def test_discover_chromecast_reports_host_model_and_name():
+    from delivery.manager import discover_chromecast
+
+    info = MagicMock(model_name="Chromecast Ultra", friendly_name="TV")
+    info.host = "10.0.0.9"
+    browser = MagicMock()
+    browser.devices = {"uuid-1": info}
+
+    with (
+        patch("delivery.manager._ensure_cast_browser", return_value=(browser, MagicMock())),
+        patch("delivery.manager._wait_for_discovery"),
+    ):
+        result = asyncio.run(discover_chromecast())
+
+    assert result == [{"host": "10.0.0.9", "model": "Chromecast Ultra", "name": "TV"}]
+
+
+def test_discover_chromecast_handles_a_device_reporting_no_host():
+    from delivery.manager import discover_chromecast
+
+    info = MagicMock(model_name="Chromecast", friendly_name="Bedroom")
+    info.host = None
+    browser = MagicMock()
+    browser.devices = {"uuid-1": info}
+
+    with (
+        patch("delivery.manager._ensure_cast_browser", return_value=(browser, MagicMock())),
+        patch("delivery.manager._wait_for_discovery"),
+    ):
+        result = asyncio.run(discover_chromecast())
+
+    assert result == [{"host": "", "model": "Chromecast", "name": "Bedroom"}]
+
+
+# ── verbose logging for the Sonos-duplicate skips ────────────────────────────
+
+
+def test_discover_airplay_logs_skipped_sonos_devices_when_verbose(caplog):
+    import logging
+
+    from delivery.manager import discover_airplay
+
+    sonos_device = _fake_airplay_device("Sonos, Inc.", "Sonos AirPlay")
+
+    async def fake_scan(loop, timeout=10):
+        return [sonos_device]
+
+    with (
+        patch("pyatv.scan", new=fake_scan),
+        caplog.at_level(logging.INFO, logger="delivery"),
+    ):
+        result = asyncio.run(discover_airplay(verbose=True))
+
+    assert result == []
+    assert "Sonos AirPlay" in caplog.text
+
+
+def test_discover_dlna_logs_skipped_sonos_devices_when_verbose(caplog):
+    import logging
+
+    from delivery.manager import discover_dlna
+
+    sonos_headers = {"location": "http://10.0.0.1/desc.xml", "usn": "uuid:sonos"}
+
+    async def fake_async_search(async_callback, **kwargs):
+        await async_callback(sonos_headers)
+
+    sonos_device = MagicMock()
+    sonos_device.manufacturer = "Sonos, Inc."
+    sonos_device.name = "Sonos Media Renderer"
+
+    async def fake_create_dmr_device(location):
+        return sonos_device
+
+    with (
+        patch("async_upnp_client.search.async_search", new=fake_async_search),
+        patch("delivery.manager._create_dmr_device", new=fake_create_dmr_device),
+        caplog.at_level(logging.INFO, logger="delivery"),
+    ):
+        result = asyncio.run(discover_dlna(verbose=True))
+
+    assert result == []
+    assert "Sonos Media Renderer" in caplog.text
+
+
+def test_discover_dlna_skips_and_logs_a_device_that_errors_unexpectedly(caplog):
+    """Distinct from test_discover_dlna_skips_and_logs_non_media_renderer_devices
+    above (UnsupportedDlnaDevice, expected/handled) — this is a genuinely
+    unexpected failure (device dropped off the network mid-probe, malformed
+    XML, ...) and must be skipped the same way, not bubble up and abort the
+    whole discovery sweep over every other device found."""
+    import logging
+
+    from delivery.manager import discover_dlna
+
+    flaky_headers = {"location": "http://10.0.0.7/desc.xml", "usn": "uuid:flaky"}
+
+    async def fake_async_search(async_callback, **kwargs):
+        await async_callback(flaky_headers)
+
+    async def fake_create_dmr_device(location):
+        raise ConnectionError("connection reset")
+
+    with (
+        patch("async_upnp_client.search.async_search", new=fake_async_search),
+        patch("delivery.manager._create_dmr_device", new=fake_create_dmr_device),
+        caplog.at_level(logging.WARNING, logger="delivery"),
+    ):
+        result = asyncio.run(discover_dlna())
+
+    assert result == []
+    assert "10.0.0.7" in caplog.text

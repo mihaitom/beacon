@@ -184,6 +184,133 @@ def test_proxy_navidrome_api_returns_503_when_no_url_configured(client, monkeypa
     assert r.status_code == 503
 
 
+def test_proxy_auth_forwards_to_navidrome_when_configured(client):
+    proxy_mod = _reload_proxy("http://navidrome.internal:4533")
+    mock_client_cls, captured = _mock_httpx_client()
+
+    with patch.object(proxy_mod.httpx, "AsyncClient", mock_client_cls):
+        r = client.post("/auth/login", json={"username": "user", "password": "pass"})
+
+    assert r.status_code == 200
+    assert captured["url"] == "http://navidrome.internal:4533/auth/login"
+
+
+def test_proxy_navidrome_api_forwards_to_navidrome_when_configured(client):
+    # nginx strips "/api/" before this ever reaches the backend — see this
+    # route's own module comment — so a bare "/album/abc123" here is the
+    # equivalent of the frontend having requested "/api/album/abc123".
+    proxy_mod = _reload_proxy("http://navidrome.internal:4533")
+    mock_client_cls, captured = _mock_httpx_client()
+
+    with patch.object(proxy_mod.httpx, "AsyncClient", mock_client_cls):
+        r = client.get("/album/abc123")
+
+    assert r.status_code == 200
+    assert captured["url"] == "http://navidrome.internal:4533/api/album/abc123"
+
+
+# ── _proxy()'s httpx failure handling ────────────────────────────────────────
+
+
+def _failing_client(exc: Exception) -> MagicMock:
+    mock_client = MagicMock()
+    mock_client.build_request = MagicMock(return_value=MagicMock())
+    mock_client.send = AsyncMock(side_effect=exc)
+    # The app's own shutdown (main.py's lifespan) awaits this regardless of
+    # what happened during the test — must stay a real awaitable or every
+    # subsequent test sharing routes.proxy's module-level _client breaks too.
+    mock_client.aclose = AsyncMock()
+    return MagicMock(return_value=mock_client)
+
+
+def test_proxy_returns_502_on_connect_error(client, default_session):
+    import httpx
+
+    from media import SubsonicClient
+
+    default_session.media = SubsonicClient("http://navidrome.internal:4533")
+    proxy_mod = _reload_proxy("http://navidrome.internal:4533")
+
+    with patch.object(
+        proxy_mod.httpx, "AsyncClient", _failing_client(httpx.ConnectError("refused"))
+    ):
+        r = client.get("/rest/ping.view?u=user&t=token&s=salt&v=1.16.1&c=test&f=json")
+
+    assert r.status_code == 502
+    assert "not reachable" in r.json()["error"]
+
+
+def test_proxy_returns_504_on_timeout(client, default_session):
+    import httpx
+
+    from media import SubsonicClient
+
+    default_session.media = SubsonicClient("http://navidrome.internal:4533")
+    proxy_mod = _reload_proxy("http://navidrome.internal:4533")
+
+    with patch.object(
+        proxy_mod.httpx, "AsyncClient", _failing_client(httpx.TimeoutException("timed out"))
+    ):
+        r = client.get("/rest/ping.view?u=user&t=token&s=salt&v=1.16.1&c=test&f=json")
+
+    assert r.status_code == 504
+    assert "Timeout" in r.json()["error"]
+
+
+def test_proxy_returns_502_on_an_unexpected_httpx_error(client, default_session):
+    """Catch-all for the several other httpx exceptions that can surface
+    here (RemoteProtocolError, PoolTimeout, ...) — not worth enumerating
+    individually, see _proxy()'s own comment."""
+    from media import SubsonicClient
+
+    default_session.media = SubsonicClient("http://navidrome.internal:4533")
+    proxy_mod = _reload_proxy("http://navidrome.internal:4533")
+
+    with patch.object(
+        proxy_mod.httpx, "AsyncClient", _failing_client(RuntimeError("something else"))
+    ):
+        r = client.get("/rest/ping.view?u=user&t=token&s=salt&v=1.16.1&c=test&f=json")
+
+    assert r.status_code == 502
+    assert "Proxy error" in r.json()["error"]
+
+
+def test_proxy_drops_the_stale_content_length_when_the_response_was_compressed(
+    client, default_session
+):
+    """httpx already decompresses a gzipped origin response before this ever
+    sees it — the original Content-Length header describes the *compressed*
+    size and must not be forwarded as-is, or the browser reading the now-
+    larger decompressed body against it would mismatch."""
+    from media import SubsonicClient
+
+    default_session.media = SubsonicClient("http://navidrome.internal:4533")
+    proxy_mod = _reload_proxy("http://navidrome.internal:4533")
+
+    fake_response = MagicMock()
+    fake_response.status_code = 200
+    fake_response.headers = {
+        "content-type": "application/json",
+        "content-encoding": "gzip",
+        "content-length": "9999",  # stale — describes the compressed body
+    }
+
+    async def aiter_bytes():
+        yield b"{}"
+
+    fake_response.aiter_bytes = aiter_bytes
+    fake_response.aclose = AsyncMock()
+    mock_client = MagicMock()
+    mock_client.build_request = MagicMock(return_value=MagicMock())
+    mock_client.send = AsyncMock(return_value=fake_response)
+    mock_client.aclose = AsyncMock()
+
+    with patch.object(proxy_mod.httpx, "AsyncClient", MagicMock(return_value=mock_client)):
+        r = client.get("/rest/ping.view?u=user&t=token&s=salt&v=1.16.1&c=test&f=json")
+
+    assert r.headers.get("content-length") != "9999"
+
+
 # ── Pairing-Liste (no hardware required) ──────────────────────────────────────
 
 
