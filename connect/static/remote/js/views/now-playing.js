@@ -33,6 +33,7 @@ export function renderNowPlaying(root) {
         <button id="np-repeat"><i class="mdi mdi-repeat"></i></button>
       </div>
       <div class="volume-row">
+        <button id="np-autoplay" title="Autoplay"><i class="mdi mdi-infinity"></i></button>
         <button id="np-cast" title="Play on…"><i class="mdi mdi-cast"></i></button>
         <button id="np-mute"><i class="mdi mdi-volume-high"></i></button>
         <input type="range" id="np-volume" min="0" max="100" step="1" value="100" />
@@ -51,6 +52,7 @@ export function renderNowPlaying(root) {
   const playBtn = root.querySelector('#np-play');
   const shuffleBtn = root.querySelector('#np-shuffle');
   const repeatBtn = root.querySelector('#np-repeat');
+  const autoplayBtn = root.querySelector('#np-autoplay');
   const muteBtn = root.querySelector('#np-mute');
   const volume = root.querySelector('#np-volume');
 
@@ -88,6 +90,12 @@ export function renderNowPlaying(root) {
     repeatBtn.classList.toggle('active', snapshot.repeat !== 'off');
     repeatBtn.innerHTML =
       snapshot.repeat === 'one' ? '<i class="mdi mdi-repeat-once"></i>' : '<i class="mdi mdi-repeat"></i>';
+    // Hidden entirely rather than just inert when the server can't back it
+    // at all (Plex without Sonic Analysis bridged, or no server support) —
+    // same capability gate PlayerBar.vue's own button uses
+    // (authStore.capabilities.songRadio).
+    autoplayBtn.classList.toggle('hidden', !snapshot.song_radio_supported);
+    autoplayBtn.classList.toggle('active', !!snapshot.autoplay);
 
     const casting = snapshot.casting ?? [];
     castBtn.classList.toggle('active', casting.length > 0);
@@ -130,6 +138,7 @@ export function renderNowPlaying(root) {
   root.querySelector('#np-next').addEventListener('click', () => sendCommand('next'));
   shuffleBtn.addEventListener('click', () => sendCommand('shuffle'));
   repeatBtn.addEventListener('click', () => sendCommand('repeat'));
+  autoplayBtn.addEventListener('click', () => sendCommand('autoplay'));
 
   seek.addEventListener('input', () => {
     seeking = true;

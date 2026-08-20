@@ -32,6 +32,21 @@
         :title="$t('lyrics.title')"
         @click="playbackStore.toggleLyricsDrawer()"
       />
+      <!-- Same reasoning as the lyrics button just above — PlayerBar.vue's
+       - own Autoplay button (next to Queue) is outside .now-playing
+       - entirely, so it's unreachable in fullscreen and doesn't exist at
+       - all on mobile (MobileTransportControls.vue has no equivalent
+       - slot), making this the only way to reach it in both cases. Not
+       - shown outside fullscreen on desktop, where PlayerBar's own button
+       - already covers it. -->
+      <v-btn
+        v-if="(compact || isFullscreen) && authStore.capabilities.songRadio"
+        icon="mdi-infinity"
+        :color="autoplayStore.enabled ? 'primary' : undefined"
+        variant="text"
+        :title="$t('player.autoplay')"
+        @click="autoplayStore.setEnabled(!autoplayStore.enabled)"
+      />
       <v-btn
         :icon="showVisualizer ? 'mdi-equalizer' : 'mdi-equalizer-outline'"
         variant="text"
@@ -173,6 +188,7 @@ import { useLibraryStore } from '@/stores/library'
 import { useLyricsStore } from '@/stores/lyrics'
 import { useConnectStore } from '@/stores/connect'
 import { useAuthStore } from '@/stores/auth'
+import { useAutoplayStore } from '@/stores/autoplay'
 import { radioFaviconUrl } from '@/services/connect/radio'
 import CoverArt from '@/components/library/CoverArt.vue'
 import LyricsPanel from '@/components/lyrics/LyricsPanel.vue'
@@ -261,6 +277,12 @@ export default {
     },
     connectStore() {
       return useConnectStore()
+    },
+    authStore() {
+      return useAuthStore()
+    },
+    autoplayStore() {
+      return useAutoplayStore()
     },
     currentSong() {
       return this.playbackStore.currentSong

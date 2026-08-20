@@ -8,6 +8,7 @@ import { useLibraryStore } from '@/stores/library'
 import { useConnectStore } from '@/stores/connect'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useAuthStore } from '@/stores/auth'
+import { useAutoplayStore } from '@/stores/autoplay'
 import type { Song } from '@/types/library'
 import type { DeviceType, DiscoveredDevice } from '@/services/connect/types'
 
@@ -156,6 +157,11 @@ export async function handleRemoteCommand(
     case 'repeat':
       playback.cycleRepeatMode()
       return
+    case 'autoplay': {
+      const autoplay = useAutoplayStore()
+      autoplay.setEnabled(!autoplay.enabled)
+      return
+    }
     case 'queue-jump':
       await playback.playAtIndex(Number(payload.index))
       return

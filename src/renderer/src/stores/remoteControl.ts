@@ -17,6 +17,7 @@ import {
 import { usePlaybackStore } from './playback'
 import { useConnectStore } from './connect'
 import { useAuthStore } from './auth'
+import { useAutoplayStore } from './autoplay'
 
 interface RemoteControlState {
   enabled: boolean
@@ -188,6 +189,7 @@ export const useRemoteControlStore = defineStore('remoteControl', {
       if (unsubscribePlayback) return
       const playback = usePlaybackStore()
       const connect = useConnectStore()
+      const autoplay = useAutoplayStore()
       const push = (): void => {
         statePushTimer = null
         const snapshot = {
@@ -197,6 +199,12 @@ export const useRemoteControlStore = defineStore('remoteControl', {
           volume: playback.volume,
           shuffle: playback.shuffle,
           repeat: playback.repeatMode,
+          autoplay: autoplay.enabled,
+          // Same capability gate PlayerBar.vue's own Autoplay button uses
+          // (authStore.capabilities.songRadio) — now-playing.js hides its
+          // button entirely rather than showing an always-inert one when
+          // this is false.
+          song_radio_supported: useAuthStore().capabilities.songRadio,
           current_song: playback.currentSong ? toRemoteSong(playback.currentSong) : null,
           radio: playback.radioStation
             ? {
@@ -225,17 +233,22 @@ export const useRemoteControlStore = defineStore('remoteControl', {
         statePushTimer = setTimeout(push, STATE_PUSH_DEBOUNCE_MS)
       }
       schedulePushSnapshot = schedulePush
-      // Two separate stores, one debounced push — cast target changes land
-      // in connect's own state (status.targets), not playback's; without
-      // this second subscription, switching devices from the phone would
-      // only be reflected back once something else happened to also mutate
-      // playback (see playback.ts's connect.$subscribe handler, which
-      // *does* cascade indirectly, but relying on that would be fragile).
+      // Three separate stores, one debounced push — cast target changes land
+      // in connect's own state (status.targets), not playback's, and
+      // Autoplay's enabled flag lives in its own dedicated store (see
+      // stores/autoplay.ts, toggled from PlayerBar.vue independently of
+      // both); without these extra subscriptions, switching devices or
+      // toggling Autoplay from the phone would only be reflected back once
+      // something else happened to also mutate playback (see playback.ts's
+      // connect.$subscribe handler, which *does* cascade indirectly for the
+      // connect case, but relying on that would be fragile).
       const unsubFromPlayback = playback.$subscribe(schedulePush, { detached: true })
       const unsubFromConnect = connect.$subscribe(schedulePush, { detached: true })
+      const unsubFromAutoplay = autoplay.$subscribe(schedulePush, { detached: true })
       unsubscribePlayback = () => {
         unsubFromPlayback()
         unsubFromConnect()
+        unsubFromAutoplay()
       }
     },
 
