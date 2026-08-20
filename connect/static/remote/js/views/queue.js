@@ -8,62 +8,134 @@ import { createArt } from '../art.js';
 // dedicated "drag handle" long-press gesture anyway) — a fixed handle icon
 // starts the drag, rows swap live as the pointer crosses their midpoint,
 // and the final position is sent as one queue-reorder command on release.
+//
+// Windowed rendering: only the rows currently scrolled into view (plus a
+// small overscan buffer) ever exist in the DOM. A queue this small usually
+// doesn't matter, but a big self-hosted library can produce queues in the
+// tens of thousands of tracks, and unconditionally rendering all of them
+// (plus, while dragging, re-walking every one of those rows on every single
+// pointermove) is enough to freeze the page outright. The rest of the list
+// above/below what's rendered is represented by two spacer elements sized
+// to hold its place, so the scrollbar and scroll position behave exactly
+// as if every row were really there.
+const OVERSCAN = 6;
+// Matches .row's CSS (44px art + 10px*2 padding + 1px border) — only used
+// to size the very first render, before renderWindow() below measures an
+// actual row and corrects it.
+const FALLBACK_ROW_HEIGHT = 65;
 
 export function renderQueue(root) {
   root.innerHTML = '<div class="list" id="queue-list"></div>';
   const list = root.querySelector('#queue-list');
 
+  const topSpacer = document.createElement('div');
+  topSpacer.className = 'list-spacer';
+  const bottomSpacer = document.createElement('div');
+  bottomSpacer.className = 'list-spacer';
+  list.append(topSpacer, bottomSpacer);
+
   let localQueue = [];
+  let currentIndex = -1;
   let dragFrom = null;
   let dragEl = null;
-  // render() fires on every snapshot tick — several times a second while
-  // playing (position updates), not just when the queue itself changes.
-  // Rebuilding every row's DOM (and, now that art.js uses real <img>
-  // elements instead of a CSS background, re-triggering every cover's
-  // image load) on every one of those would flicker constantly — skip the
-  // rebuild unless the queue's actual contents changed.
-  let lastKey = null;
+  let rowHeight = null;
+  // Content key for the currently *rendered window* only, not the whole
+  // queue — rebuilding is skipped unless something in view actually
+  // changed. Snapshot ticks land several times a second while playing, and
+  // hashing the full queue on every one of those would just move the O(n)
+  // cost from "rendering" to "deciding whether to render", which for a
+  // 30k+ item queue is exactly as bad.
+  let lastWindowKey = null;
+  let scrollFrame = null;
 
-  function renderList(queue, currentIndex) {
-    const key = `${queue.map((t) => t.id).join(',')}|${currentIndex}`;
-    if (key === lastKey) return;
-    lastKey = key;
+  function computeRange() {
+    const height = rowHeight ?? FALLBACK_ROW_HEIGHT;
+    const viewportRows = Math.ceil(root.clientHeight / height);
+    const firstVisible = Math.floor(root.scrollTop / height);
+    const start = Math.max(0, firstVisible - OVERSCAN);
+    const end = Math.min(localQueue.length, firstVisible + viewportRows + OVERSCAN);
+    return { start, end };
+  }
 
-    list.innerHTML = '';
-    if (!queue.length) {
-      list.innerHTML = '<div class="empty-state">Queue is empty</div>';
+  function buildRow(song, index) {
+    const row = document.createElement('div');
+    row.className = 'row' + (index === currentIndex ? ' playing' : '');
+    row.dataset.index = String(index);
+
+    row.appendChild(createArt(song.cover_art_url, null));
+
+    const main = document.createElement('div');
+    main.className = 'row-main';
+    main.addEventListener('click', () => sendCommand('queue-jump', { index }));
+    main.innerHTML = `<div class="row-title">${escapeHtml(song.title)}</div><div class="row-subtitle">${escapeHtml(song.artist || '')}</div>`;
+    row.appendChild(main);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'row-action';
+    removeBtn.innerHTML = '<i class="mdi mdi-close"></i>';
+    removeBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      sendCommand('queue-remove', { index });
+    });
+    row.appendChild(removeBtn);
+
+    const handle = document.createElement('div');
+    handle.className = 'drag-handle';
+    handle.innerHTML = '<i class="mdi mdi-drag"></i>';
+    handle.addEventListener('pointerdown', (event) => startDrag(event, row, index));
+    row.appendChild(handle);
+
+    return row;
+  }
+
+  function renderWindow() {
+    if (!localQueue.length) {
+      topSpacer.style.height = '0';
+      bottomSpacer.style.height = '0';
+      list.querySelectorAll('.row, .empty-state').forEach((el) => el.remove());
+      list.insertBefore(Object.assign(document.createElement('div'), {
+        className: 'empty-state',
+        textContent: 'Queue is empty',
+      }), bottomSpacer);
+      lastWindowKey = null;
       return;
     }
-    queue.forEach((song, index) => {
-      const row = document.createElement('div');
-      row.className = 'row' + (index === currentIndex ? ' playing' : '');
-      row.dataset.index = String(index);
 
-      row.appendChild(createArt(song.cover_art_url, null));
+    const { start, end } = computeRange();
+    const key = `${start}-${end}|${localQueue
+      .slice(start, end)
+      .map((t) => t.id)
+      .join(',')}|${currentIndex}`;
+    if (key === lastWindowKey) return;
+    lastWindowKey = key;
 
-      const main = document.createElement('div');
-      main.className = 'row-main';
-      main.addEventListener('click', () => sendCommand('queue-jump', { index }));
-      main.innerHTML = `<div class="row-title">${escapeHtml(song.title)}</div><div class="row-subtitle">${escapeHtml(song.artist || '')}</div>`;
-      row.appendChild(main);
+    list.querySelectorAll('.row, .empty-state').forEach((el) => el.remove());
+    const fragment = document.createDocumentFragment();
+    for (let i = start; i < end; i++) fragment.appendChild(buildRow(localQueue[i], i));
+    list.insertBefore(fragment, bottomSpacer);
 
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'row-action';
-      removeBtn.innerHTML = '<i class="mdi mdi-close"></i>';
-      removeBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        sendCommand('queue-remove', { index });
-      });
-      row.appendChild(removeBtn);
+    topSpacer.style.height = `${start * (rowHeight ?? FALLBACK_ROW_HEIGHT)}px`;
+    bottomSpacer.style.height = `${(localQueue.length - end) * (rowHeight ?? FALLBACK_ROW_HEIGHT)}px`;
 
-      const handle = document.createElement('div');
-      handle.className = 'drag-handle';
-      handle.innerHTML = '<i class="mdi mdi-drag"></i>';
-      handle.addEventListener('pointerdown', (event) => startDrag(event, row, index));
-      row.appendChild(handle);
-
-      list.appendChild(row);
-    });
+    // First real paint: measure an actual row instead of trusting the CSS-
+    // derived fallback forever (font-size accessibility settings, etc. can
+    // all shift it). If the measured height meaningfully disagrees with
+    // what we used to pick the range, redo it once with the real number —
+    // this still happens before the browser paints, so there's no flicker.
+    if (rowHeight === null) {
+      const firstRow = list.querySelector('.row');
+      if (firstRow) {
+        const measured = firstRow.getBoundingClientRect().height;
+        if (measured > 0) {
+          const previous = rowHeight ?? FALLBACK_ROW_HEIGHT;
+          rowHeight = measured;
+          if (Math.abs(measured - previous) > 1) {
+            lastWindowKey = null;
+            renderWindow();
+          }
+        }
+      }
+    }
   }
 
   function startDrag(event, row, index) {
@@ -81,7 +153,10 @@ export function renderQueue(root) {
 
   function onPointerMove(event) {
     if (dragFrom === null || !dragEl) return;
-    const rows = [...list.children];
+    // Only ever compares against other *rows* — the spacers sit at either
+    // end of `list.children` too, and dragging past the last/first rendered
+    // row should just stop there, not try to hop into a spacer's place.
+    const rows = [...list.children].filter((el) => el.classList.contains('row'));
     for (const other of rows) {
       if (other === dragEl) continue;
       const rect = other.getBoundingClientRect();
@@ -94,7 +169,13 @@ export function renderQueue(root) {
       } else if (event.clientY >= midpoint && otherIndex > dragIndex) {
         list.insertBefore(dragEl, other.nextSibling);
       }
-      [...list.children].forEach((el, i) => (el.dataset.index = String(i)));
+      // Absolute queue indices, not DOM position — `rows` is only the
+      // window currently on screen, which starts partway through the real
+      // queue once you've scrolled at all.
+      const { start } = computeRange();
+      [...list.children]
+        .filter((el) => el.classList.contains('row'))
+        .forEach((el, i) => (el.dataset.index = String(start + i)));
     }
   }
 
@@ -105,21 +186,44 @@ export function renderQueue(root) {
     if (to !== dragFrom) sendCommand('queue-reorder', { from: dragFrom, to });
     dragFrom = null;
     dragEl = null;
+    // Deliberately not re-rendering here: the drag already moved the row's
+    // real DOM node into place, so the window looks right immediately. The
+    // next snapshot (arriving within a fraction of a second either way)
+    // carries the server-confirmed order and reconciles it for real through
+    // the normal render(s) path — rebuilding right now from the *local*,
+    // not-yet-confirmed queue would just snap the row back and then
+    // forward again a moment later.
   }
 
   list.addEventListener('pointermove', onPointerMove);
   list.addEventListener('pointerup', onPointerUp);
   list.addEventListener('pointercancel', onPointerUp);
 
+  // A drag pins the pointer to the handle (setPointerCapture) and the
+  // handle itself is touch-action: none, so `root` never actually scrolls
+  // while dragFrom is set — no need to guard this against an in-flight drag.
+  root.addEventListener('scroll', () => {
+    if (scrollFrame) return;
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = null;
+      renderWindow();
+    });
+  });
+
   function render(s) {
     if (dragFrom !== null) return; // don't fight an in-progress drag
     localQueue = s.snapshot.queue || [];
-    renderList(localQueue, s.snapshot.queue_index);
+    currentIndex = s.snapshot.queue_index;
+    renderWindow();
   }
 
   const unsubscribe = subscribe(render);
   render(state);
-  return unsubscribe;
+
+  return () => {
+    unsubscribe();
+    if (scrollFrame) cancelAnimationFrame(scrollFrame);
+  };
 }
 
 registerRoute('/queue', renderQueue);

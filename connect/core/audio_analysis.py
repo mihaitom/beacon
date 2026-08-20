@@ -378,7 +378,15 @@ class AudioAnalyzer:
         except (BrokenPipeError, ConnectionResetError, asyncio.CancelledError):
             pass
         except Exception as e:
-            logger.debug(f"[audio-analysis] writer stopped: {e}")
+            # Was logger.debug — invisible at the INFO level a prod deploy
+            # normally runs at, which made a mid-track failure here (ffmpeg
+            # dying, a genuinely broken pipe not covered by the tuple above)
+            # read to the user as "the visualizer just silently stopped",
+            # with nothing in the log to explain why. This is the writer
+            # counterpart to _read_pcm()'s own reader-stopped log below —
+            # either one dying mid-track is what leaves _release_frames()
+            # draining `_pending` down to nothing and then exiting for good.
+            logger.warning(f"[audio-analysis] writer stopped: {e}")
 
     async def _read_pcm(self) -> None:
         """Decodes and FFTs as fast as the decoder produces PCM, up to
@@ -424,7 +432,14 @@ class AudioAnalyzer:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            logger.debug(f"[audio-analysis] reader stopped: {e}")
+            # Was logger.debug — see _write_input()'s identical change above
+            # for why that hid this. This one matters more: once this task
+            # dies for any reason, `_reading_done` below goes True and stays
+            # there for the rest of this analyzer's life, so _release_frames()
+            # drains whatever's left in `_pending` and then exits — the
+            # visualizer goes dark for the rest of the track with, until now,
+            # no trace of why in a normal INFO-level log.
+            logger.warning(f"[audio-analysis] reader stopped: {e}")
         finally:
             self._reading_done = True
 

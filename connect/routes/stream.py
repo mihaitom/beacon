@@ -173,6 +173,31 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
     # thus the displayed position) still reports the correct position.
     offset = session.state.clock.resume_offset
 
+    # TEMPORARY — chasing a report where pausing/resuming a Sonos speaker
+    # from its own remote (not through Beacon's /pause and /resume) left
+    # audio broken. resume_offset is only ever set by OUR OWN /play, /seek
+    # and /resume handlers (see PlaybackClock) — it has no way to reflect a
+    # reconnect the device itself initiated, e.g. re-requesting this URL
+    # after a local pause/resume cycle. If that's what's happening, this
+    # connection arrives while is_streaming is still True from the
+    # *previous* connection, and `offset` (already consumed/reset to 0 by
+    # that previous connection — see the comment above) has drifted far
+    # from clock.elapsed(), the position our own resync loop has been
+    # calibrating against the device this whole time — i.e. the device
+    # would be about to receive audio from the wrong point in the track
+    # while our own position display, self-correcting via a *different*
+    # mechanism (position_offset, not resume_offset), keeps reporting the
+    # right one. A large gap here is exactly that mismatch; remove once
+    # confirmed (or ruled out) from real logs.
+    if session.state.is_streaming:
+        drift = session.state.clock.elapsed() - offset
+        logger.warning(
+            f"[stream] Reconnect while already streaming — offset={offset:.2f}s "
+            f"(this connection's -ss) vs. clock.elapsed()={session.state.clock.elapsed():.2f}s "
+            f"(calibrated position) — drift={drift:+.2f}s, "
+            f"play_generation={session.state.clock.play_generation}"
+        )
+
     # Debug, not info — routes/playback.py's own "[play] ..." line already
     # announced this same track+device at the user-action level; this is
     # just the HTTP layer underneath it catching up a beat later.

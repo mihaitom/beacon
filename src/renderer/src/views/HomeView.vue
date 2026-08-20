@@ -118,7 +118,12 @@ import type { Album, Song } from '@/types/library'
 // being off does.
 const MIN_SEED_ARTISTS = 3
 const MAX_SEED_ARTISTS = 5
-const DISCOVER_SHELF_SIZE = 15
+// 20, not some smaller row-of-a-few number: fitToScreen (see AlbumShelf.vue)
+// already sizes the row to however many cards the viewport fits, so this
+// just needs to be at least that many on a wide screen — matches
+// notOwnedCapped's own 20 below, so neither shelf runs out before the
+// other on a wide window.
+const DISCOVER_SHELF_SIZE = 20
 // Below this many owned matches, padding the shelf out with random albums
 // reads better than a visibly sparse "discover" row.
 const MIN_OWNED_MATCHES = 8

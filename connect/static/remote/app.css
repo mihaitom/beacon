@@ -330,6 +330,13 @@ input[type="range"]:disabled::-moz-range-thumb {
   -webkit-touch-callout: none;
 }
 
+/* Holds the place of the queue rows scrolled out of view above/below the
+ * rendered window (see queue.js) so the scrollbar and scroll position
+ * behave as if the whole queue were actually in the DOM. */
+.list-spacer {
+  flex-shrink: 0;
+}
+
 .row {
   display: flex;
   align-items: center;

@@ -1018,15 +1018,37 @@ def test_resync_position_once_ignores_small_drift(default_session):
     target = SonosDelivery("Küche")
     import asyncio
 
-    with (
-        patch.object(target, "get_position", new=AsyncMock(return_value=10.2)),
-        patch.object(target, "get_debug_state", new=AsyncMock(return_value=None)),
-    ):
+    with patch.object(target, "get_position", new=AsyncMock(return_value=10.2)):
         asyncio.run(_resync_position_once(default_session, target))
 
     # 0.2s off wall-clock is ordinary jitter, not a real change — must not
     # have recalibrated at all.
     assert default_session.state.clock.position_offset == 0.0
+
+
+def test_resync_position_once_ignores_small_drift_on_top_of_large_offset(default_session):
+    """Regression for a real prod symptom: once a track has a legitimately
+    large standing offset (here -6.0s, e.g. from an earlier real device
+    pause), a *further* small drift on top of it must stay ignored the same
+    way test_resync_position_once_ignores_small_drift's fresh-offset case
+    does — comparing the raw device/wall-clock delta against
+    POSITION_RESYNC_THRESHOLD on its own (instead of how much it would
+    actually *change* position_offset) recalibrated on every single ~8s
+    check once the standing offset itself exceeded the threshold, forever,
+    which read live as the position UI jittering nonstop for the rest of
+    the track."""
+    default_session.state.clock.play_start_time = time.time() - 40.0
+    default_session.state.clock.position_offset = -6.0
+    target = SonosDelivery("Küche")
+    import asyncio
+
+    # wall_elapsed ≈ 40.0s; device at 34.3s is delta=-5.7s from that — past
+    # POSITION_RESYNC_THRESHOLD on its own, but only 0.3s away from the
+    # already-applied -6.0s offset.
+    with patch.object(target, "get_position", new=AsyncMock(return_value=34.3)):
+        asyncio.run(_resync_position_once(default_session, target))
+
+    assert default_session.state.clock.position_offset == -6.0
 
 
 def test_resync_position_once_recalibrates_on_forward_seek(default_session):
@@ -1039,10 +1061,7 @@ def test_resync_position_once_recalibrates_on_forward_seek(default_session):
     target = SonosDelivery("Küche")
     import asyncio
 
-    with (
-        patch.object(target, "get_position", new=AsyncMock(return_value=40.0)),
-        patch.object(target, "get_debug_state", new=AsyncMock(return_value=None)),
-    ):
+    with patch.object(target, "get_position", new=AsyncMock(return_value=40.0)):
         asyncio.run(_resync_position_once(default_session, target))
 
     assert default_session.state.clock.position_offset > POSITION_RESYNC_THRESHOLD
@@ -1054,10 +1073,7 @@ def test_resync_position_once_recalibrates_on_backward_seek(default_session):
     target = SonosDelivery("Küche")
     import asyncio
 
-    with (
-        patch.object(target, "get_position", new=AsyncMock(return_value=10.0)),
-        patch.object(target, "get_debug_state", new=AsyncMock(return_value=None)),
-    ):
+    with patch.object(target, "get_position", new=AsyncMock(return_value=10.0)):
         asyncio.run(_resync_position_once(default_session, target))
 
     assert default_session.state.clock.position_offset < -POSITION_RESYNC_THRESHOLD
@@ -1070,10 +1086,7 @@ def test_resync_position_once_ignores_reading_past_track_duration(default_sessio
     target = SonosDelivery("Küche")
     import asyncio
 
-    with (
-        patch.object(target, "get_position", new=AsyncMock(return_value=500.0)),
-        patch.object(target, "get_debug_state", new=AsyncMock(return_value=None)),
-    ):
+    with patch.object(target, "get_position", new=AsyncMock(return_value=500.0)):
         asyncio.run(_resync_position_once(default_session, target))
 
     assert default_session.state.clock.position_offset == 0.0
@@ -1085,10 +1098,7 @@ def test_resync_position_once_ignores_negative_reading(default_session):
     target = SonosDelivery("Küche")
     import asyncio
 
-    with (
-        patch.object(target, "get_position", new=AsyncMock(return_value=-1.0)),
-        patch.object(target, "get_debug_state", new=AsyncMock(return_value=None)),
-    ):
+    with patch.object(target, "get_position", new=AsyncMock(return_value=-1.0)):
         asyncio.run(_resync_position_once(default_session, target))
 
     assert default_session.state.clock.position_offset == 0.0

@@ -64,7 +64,7 @@ export default {
     topSongs: 'Brani più ascoltati',
     recentlyAdded: 'Aggiunti di recente',
     recentlyPlayed: 'Ascoltati di recente',
-    discover: 'Scopri',
+    discover: 'Scopri nella tua libreria',
     reroll: 'Rimescola',
     playAll: 'Riproduci tutto',
     readyToPlay: 'Pronto ad ascoltare qualcosa?',
@@ -75,7 +75,7 @@ export default {
     radioEyebrow: 'Radio',
     internetRadio: 'Radio via internet',
     nothingToShow: 'Niente da mostrare.',
-    newArtistsTitle: 'Nuove da scoprire',
+    newArtistsTitle: 'Nuovi artisti da scoprire',
   },
   library: {
     album: 'Album',

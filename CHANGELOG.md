@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Changed the Home view's two "discover" shelves for more headroom and a clearer distinction between them - the library-based one now shows up to 20 albums instead of 15 on wide screens, and both got clearer titles ("Discover in your library" / "New artists to explore") so it's obvious which is drawn from albums you already own and which is brand-new artist suggestions
+
+### Fixed
+
+- Fixed the displayed playback position flickering continuously for the rest of a track after pausing, resuming, or seeking directly on a cast device (e.g. a Sonos speaker) instead of through Beacon - a single real correction kept being treated as still needing another one on every subsequent check instead of settling once it was already accurate
+
 ## [0.1.4] - 2026-08-17
 
 ### Added

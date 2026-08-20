@@ -196,18 +196,28 @@ async def _apply_position_offset(
 # just while a UI happens to have a picker open.
 POSITION_RESYNC_INTERVAL = 8.0
 
-# A device/wall-clock discrepancy under this is ordinary jitter (network
-# round-trip time measuring the device, sub-second clock rounding) rather
-# than something a user actually did — recalibrating (and broadcasting SSE)
-# for every sub-second wobble would be noisy for no benefit. Bigger than
-# MAX_PLAUSIBLE_POSITION_LEAD's 15s on purpose: that guard exists to reject
-# *stale* readings a device can report milliseconds into a brand new stream
-# (left over from whatever it was playing before); several seconds into an
-# established stream, a real device genuinely is only ever off by a couple
-# of seconds unless something (an external seek, a rebuffer) actually
-# changed — small enough to catch a "skip 10s" tap, large enough that
-# ordinary polling jitter never crosses it.
-POSITION_RESYNC_THRESHOLD = 2.5
+# How much the *newly measured* offset is allowed to differ from the
+# *already-applied* one (offset_before, below) before it's worth
+# recalibrating over — ordinary jitter rather than something a user
+# actually did. On this LAN, that jitter isn't network RTT (negligible for
+# a local SSDP+UPnP round trip) — it's SonosDelivery.get_position()'s own
+# H:M:S-string position, which only ever carries whole-second resolution.
+# That alone puts a ~1s floor under how tight this can usefully go: nothing
+# on our side can measure a real device more precisely than the device
+# itself reports it. Small enough to catch a "skip 10s" tap, large enough
+# that this quantization alone never crosses it on a stable stream.
+#
+# Deliberately NOT compared against the raw device/wall-clock delta on its
+# own (an earlier version of this did) — once a device has any lasting
+# offset at all (a Sonos's own several-second startup buffering, say), that
+# raw delta sits well past this threshold *permanently*, on every single
+# check, even though nothing further has actually changed since the offset
+# that already accounts for it was applied. That recalibrated (and
+# rebroadcast over SSE) every ~8s indefinitely once a track legitimately
+# needed any real correction at all — read live as the position UI
+# visibly jittering nonstop for the rest of the track, not just around the
+# one moment something really happened.
+POSITION_RESYNC_THRESHOLD = 1.0
 
 
 async def _resync_position_once(session: SessionState, candidate) -> None:
@@ -215,40 +225,26 @@ async def _resync_position_once(session: SessionState, candidate) -> None:
     _resync_position_periodically() below purely so it's directly testable
     without needing to unwind an infinite loop (see that function for the
     guards deciding whether/when this gets called at all, and the docstring
-    explaining what this is actually for).
-
-    TEMPORARY: logs every tick at DEBUG, not just the ones that actually
-    recalibrate — chasing an intermittent bug (reported twice in one day)
-    where the device settles on reporting position 0 indefinitely while
-    wall-clock keeps advancing, and this function's own calibrate() call
-    below has no way to tell "device genuinely at 0" apart from "device
-    stopped/stalled and 0 is a stale/default reading" — it trusts either one
-    the same way, which would produce exactly the observed symptom (position
-    snapping back to ~0 every ~8s) on its own, regardless of *why* the
-    device is reporting 0. The extra device_state/offset-before/offset-after
-    fields below are what should make that mechanism visible (or rule it
-    out) from the logs alone next time, without needing to reproduce it live.
-    Revert this docstring and the logging noise below once that's settled —
-    the actual calibrate() call and its guards are unchanged."""
+    explaining what this is actually for)."""
     try:
         device_pos = await candidate.get_position()
     except Exception as e:
         logger.warning(f"[position-resync] {candidate.target}: get_position() failed: {e}")
         return
-    try:
-        device_state = await candidate.get_debug_state()
-    except Exception:
-        # Logging-only, see get_debug_state()'s docstring — a failure here
-        # (device briefly unreachable for *this* call specifically) must
-        # never take the actual resync/calibration below down with it.
-        device_state = None
     st = session.state
+    # Frozen right here, immediately after get_position() returns, rather
+    # than after any further work below — SonosDelivery._get_device() does
+    # a fresh, uncached SSDP discover() (real network I/O, not instant) on
+    # every call, and any extra device round trip inserted between reading
+    # device_pos and freezing this would bias delta below by however long
+    # that took (device_pos would always read older than wall_elapsed).
+    wall_elapsed = st.clock.elapsed_since_stream_start()
     offset_before = st.clock.position_offset
     if device_pos is None or device_pos < 0:
         logger.debug(
             f"[position-resync] {candidate.target}: no usable position "
-            f"(raw={device_pos!r}, transport={device_state}, "
-            f"play_generation={st.clock.play_generation}, is_streaming={st.is_streaming})"
+            f"(raw={device_pos!r}, play_generation={st.clock.play_generation}, "
+            f"is_streaming={st.is_streaming})"
         )
         return
     # A device clearly reporting well past the track's own duration is a
@@ -258,18 +254,22 @@ async def _resync_position_once(session: SessionState, candidate) -> None:
     if st.current_track and device_pos > st.current_track.duration + POSITION_RESYNC_THRESHOLD:
         logger.debug(
             f"[position-resync] {candidate.target}: device={device_pos:.2f}s past track "
-            f"duration={st.current_track.duration}s (transport={device_state}) — ignoring"
+            f"duration={st.current_track.duration}s — ignoring"
         )
         return
 
-    wall_elapsed = st.clock.elapsed_since_stream_start()
     delta = device_pos - wall_elapsed
+    # How far *this* measurement would move position_offset from what's
+    # already applied — see POSITION_RESYNC_THRESHOLD's own comment for why
+    # this, and not abs(delta) alone, is what actually gets compared
+    # against it.
+    change = delta - offset_before
     logger.debug(
         f"[position-resync] {candidate.target}: device={device_pos:.2f}s wall={wall_elapsed:.2f}s "
-        f"delta={delta:+.2f}s transport={device_state} offset_before={offset_before:.2f}s "
+        f"delta={delta:+.2f}s change={change:+.2f}s offset_before={offset_before:.2f}s "
         f"play_generation={st.clock.play_generation} is_paused={st.clock.is_paused}"
     )
-    if abs(delta) < POSITION_RESYNC_THRESHOLD:
+    if abs(change) < POSITION_RESYNC_THRESHOLD:
         return
 
     offset = st.clock.calibrate(device_pos)
