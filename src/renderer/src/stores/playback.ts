@@ -88,6 +88,23 @@ let autoplayFetching = false
 // per-invocation local state.
 let switchToIndexSeq = 0
 
+// Guards togglePlay() against a second call landing while the connect
+// branch's first one is still awaiting its pause()/resume() round trip —
+// this.isPlaying isn't updated optimistically there (only the next SSE
+// status tick does that, see the $subscribe callback in init()), so a
+// rapid double-click/double-tap otherwise reads the same stale isPlaying
+// twice and fires the *same* action again instead of alternating (observed
+// live 2026-08-20 as two /pause calls 66ms apart, no /resume between).
+// Worse than just "wrong direction": each call also forces a real device
+// reconnect (pause()/resume() both do), and several of those piling up in
+// a few seconds accumulates enough real buffering lag that the position-
+// resync loop's next correction lands as one big, visible jump — read live
+// as lyrics/visualizer snapping backward. Debouncing here is the actual
+// fix for that: cutting the reconnect pile-up off at the source instead of
+// only smoothing its aftermath (see PlaybackClock.elapsed()'s own comment
+// for the latter's half of this fix).
+let togglePlayInFlight = false
+
 // Bumped at the top of every startCurrent() call — lets its own tail (the
 // isPlaying=true flip and "now playing" scrobble) tell whether a newer
 // startCurrent() has since superseded it before applying those, the same
@@ -927,41 +944,50 @@ export const usePlaybackStore = defineStore('playback', {
     },
 
     async togglePlay(): Promise<void> {
-      const connect = useConnectStore()
-      if (connect.isActive) {
+      // See togglePlayInFlight's own comment — a second call landing while
+      // the connect branch's first one is still in flight would otherwise
+      // read the same stale this.isPlaying and re-fire the same action.
+      if (togglePlayInFlight) return
+      togglePlayInFlight = true
+      try {
+        const connect = useConnectStore()
+        if (connect.isActive) {
+          if (this.isPlaying) {
+            await connectPlayback.pause()
+          } else if (connect.status?.ended) {
+            // Mirrors the local <audio> engine's hasEnded branch below — a
+            // connect session whose stream already ran to completion (last
+            // song of a non-repeating queue) doesn't actually restart from a
+            // bare resume() any more than an ended <audio> element does, just
+            // on the backend's media pipeline instead of the browser's: the
+            // reported position stays frozen wherever it ended, no audio
+            // reaches the cast target, and the visualizer feed (GET
+            // /visualizer) and lyrics sync — both driven by that position
+            // actually advancing — never get anything to work from either. A
+            // full restart, same as the local branch, is what actually gets
+            // it playing again.
+            await this.startCurrent()
+          } else {
+            await connectPlayback.resume()
+          }
+          return
+        }
+        const engine = getAudioEngine()
         if (this.isPlaying) {
-          await connectPlayback.pause()
-        } else if (connect.status?.ended) {
-          // Mirrors the local <audio> engine's hasEnded branch below — a
-          // connect session whose stream already ran to completion (last
-          // song of a non-repeating queue) doesn't actually restart from a
-          // bare resume() any more than an ended <audio> element does, just
-          // on the backend's media pipeline instead of the browser's: the
-          // reported position stays frozen wherever it ended, no audio
-          // reaches the cast target, and the visualizer feed (GET
-          // /visualizer) and lyrics sync — both driven by that position
-          // actually advancing — never get anything to work from either. A
-          // full restart, same as the local branch, is what actually gets
-          // it playing again.
+          engine.pause()
+          this.isPlaying = false
+        } else if (engine.hasEnded) {
+          // The loaded track already played through to the end (e.g. the last
+          // song of a non-repeating queue) — a bare resume() on an ended
+          // <audio> element doesn't reliably restart it, so do a proper
+          // restart instead, same as switchToIndex()/startCurrent() elsewhere.
           await this.startCurrent()
         } else {
-          await connectPlayback.resume()
+          engine.resume()
+          this.isPlaying = true
         }
-        return
-      }
-      const engine = getAudioEngine()
-      if (this.isPlaying) {
-        engine.pause()
-        this.isPlaying = false
-      } else if (engine.hasEnded) {
-        // The loaded track already played through to the end (e.g. the last
-        // song of a non-repeating queue) — a bare resume() on an ended
-        // <audio> element doesn't reliably restart it, so do a proper
-        // restart instead, same as switchToIndex()/startCurrent() elsewhere.
-        await this.startCurrent()
-      } else {
-        engine.resume()
-        this.isPlaying = true
+      } finally {
+        togglePlayInFlight = false
       }
     },
 

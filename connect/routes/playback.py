@@ -743,6 +743,19 @@ async def resume_playback(session: SessionState = Depends(require_authenticated_
         }
     async with session.play_lock:
         st = session.state
+        if not st.clock.is_paused:
+            # Already playing — a second /resume landing on top of an
+            # already-resumed track (a duplicate/stray call, e.g. an OS
+            # media-key or remote-control action arriving after a real one
+            # already took effect) must be a no-op here, not reseek:
+            # clock.resume() below unconditionally jumps back to
+            # resume_offset, which is only ever updated by pause()/seek_to()
+            # — so an extra resume() discards everything actually played
+            # since the *last real* pause and forces a fresh /stream
+            # reconnect on top of it. Observed live (2026-08-20): playback
+            # and lyrics repeatedly snapping back near the last pause point
+            # every time a duplicate resume slipped through.
+            return {"paused": False}
         st.clock.resume()
 
         logger.info(f"[resume] ▶ Seeking to {st.clock.resume_offset:.1f}s")

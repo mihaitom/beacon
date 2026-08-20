@@ -20,6 +20,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Fixed the displayed playback position flickering continuously for the rest of a track after pausing, resuming, or seeking directly on a cast device (e.g. a Sonos speaker) instead of through Beacon - a single real correction kept being treated as still needing another one on every subsequent check instead of settling once it was already accurate
 - Fixed casting occasionally auto-advancing to the next queued song a few seconds early, cutting off the tail end of the current one - only happened after pausing/resuming directly on the cast device rather than through Beacon: the auto-advance timer was scheduled once up front and never adjusted for a correction like that happening afterward
+- Fixed casting occasionally getting stuck right at the end of a track and never advancing to the next queued song, with the displayed position silently snapping back to 0:00 instead - happened if the cast device reported itself as idle right as the current track was finishing, which was being misread as someone rewinding it back to the very start
+- Fixed the displayed playback position (and synced lyrics/the audio visualizer, both tied to it) gradually drifting further out of sync with the actual audio the more a cast session got paused and resumed, eventually landing minutes off; smaller, legitimate corrections now also blend in smoothly instead of visibly jumping
+- Fixed pressing Play again immediately after Pause, before the previous action had finished, occasionally jumping a cast session's track backward to an earlier point instead of just resuming
 
 ## [0.1.4] - 2026-08-17
 

@@ -97,14 +97,31 @@ export function initMediaSession(): void {
     }
   }
 
-  setHandler('play', () => void playback.togglePlay())
-  setHandler('pause', () => void playback.togglePlay())
+  // Checked against the current state before ever calling togglePlay() —
+  // these are directional (the OS is asking "make it play"/"make it
+  // pause"), not a toggle. Chromium is only supposed to invoke 'play' while
+  // playbackState is 'paused' and 'pause' while it's 'playing', but a
+  // duplicate/delayed action from the OS side (media-widget quirk, a
+  // double-fired hardware key) landing after playback already changed
+  // direction on its own would otherwise silently do the opposite of what
+  // was asked — see the 2026-08-20 incident this guards: a stray extra
+  // 'play' while already playing routed into togglePlay()'s connect branch
+  // as an unwanted /resume, which is destructive on its own (see that
+  // route's own comment) on top of firing in the wrong direction here.
+  setHandler('play', () => {
+    if (!playback.isPlaying) void playback.togglePlay()
+  })
+  setHandler('pause', () => {
+    if (playback.isPlaying) void playback.togglePlay()
+  })
   setHandler('previoustrack', () => void playback.playPrevious())
   setHandler('nexttrack', () => void playback.playNext())
   setHandler('seekto', (details) => {
     if (details.seekTime != null) void playback.seek(details.seekTime)
   })
-  setHandler('stop', () => void playback.togglePlay())
+  setHandler('stop', () => {
+    if (playback.isPlaying) void playback.togglePlay()
+  })
 
   playback.$subscribe(() => {
     updateMetadata()

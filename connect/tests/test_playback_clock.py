@@ -5,7 +5,6 @@ import time
 
 from core.playback_clock import PlaybackClock
 
-
 # ── start ─────────────────────────────────────────────────────────────────────
 
 
@@ -152,6 +151,29 @@ def test_resume_increments_play_generation():
     assert clock.play_generation == generation_after_start + 1
 
 
+def test_resume_re_zeroes_track_start_position_to_resume_offset():
+    """Regression test (real prod bug, found live 2026-08-20): /resume's
+    route handler reconnects to a *fresh* stream (FFmpeg restarts near 0
+    again, same -ss reconnect /seek does) — without re-zeroing
+    track_start_position here the same way seek_to() already does (see its
+    own comment for the identical bug class), elapsed_since_stream_start()
+    stayed anchored to the track's pre-pause position instead of this
+    reconnect's own stream start. A Sonos device resets its own reported
+    position on exactly this kind of reconnect too, so periodic resync's
+    device_pos-vs-wall_elapsed comparison drifted by the *entire* pre-resume
+    elapsed time, corrupting position_offset by roughly that whole amount
+    on the very next check — read live as playback/lyrics/the visualizer
+    all jumping minutes out of sync after enough resumes."""
+    clock = PlaybackClock()
+    clock.start()
+    clock.pause(145.6)
+
+    clock.resume()
+
+    assert clock.track_start_position == clock.resume_offset
+    assert abs(clock.elapsed_since_stream_start()) < 0.5
+
+
 # ── seek_to ───────────────────────────────────────────────────────────────────
 
 
@@ -279,3 +301,100 @@ def test_set_fixed_offset():
     clock.set_fixed_offset(-2.0)
 
     assert clock.position_offset == -2.0
+
+
+# ── calibrate() blending elapsed() instead of jumping it ───────────────────
+# Regression coverage for a real prod symptom (2026-08-20): repeated real
+# device reconnects (from mashing play/pause) accumulate real buffering lag
+# that position-resync legitimately needs to correct — but applying that
+# correction to elapsed()'s output in one instant step read live as lyrics
+# and the audio visualizer (both paced directly off elapsed(), see
+# _OFFSET_SLEW_SECONDS' own comment) suddenly snapping backward.
+# position_offset itself (and calibrate()'s return value) must still update
+# immediately regardless — see test_calibrate_from_track_start etc. above,
+# unaffected by any of this.
+
+
+def test_calibrate_does_not_jump_elapsed_immediately():
+    clock = PlaybackClock()
+    clock.play_start_time = time.time() - 30.0
+    before = clock.elapsed()
+
+    offset = clock.calibrate(10.0)  # a big correction: -20.0
+
+    assert clock.position_offset == offset
+    # elapsed() itself hasn't caught up yet — nowhere near where the new
+    # offset alone would put it (~10s).
+    assert abs(clock.elapsed() - before) < 1.0
+
+
+def test_calibrate_blend_converges_to_the_true_offset_after_the_slew_window():
+    clock = PlaybackClock()
+    clock.play_start_time = time.time() - 30.0
+
+    clock.calibrate(10.0)
+    clock._slew_start_time = time.time() - 999  # fast-forward past the blend window
+
+    assert abs(clock.elapsed() - 10.0) < 1.0
+
+
+def test_calibrate_blend_starts_from_the_current_blended_value_not_from_zero():
+    """A second calibrate() landing while an earlier one is still blending
+    in must start its own blend from wherever elapsed() actually was at that
+    moment, not from 0.0 or the earlier call's *target* — otherwise a second
+    correction landing mid-blend would itself cause a visible jump."""
+    clock = PlaybackClock()
+    clock.play_start_time = time.time() - 30.0
+
+    clock.calibrate(10.0)  # position_offset -> -20.0
+    clock._slew_start_time = time.time() - 1.0  # 1s into the 2s blend window
+    mid_blend_offset = clock._effective_offset()
+    assert -20.0 < mid_blend_offset < 0.0  # partway between 0.0 and -20.0
+
+    clock.calibrate(5.0)  # a second correction landing mid-blend
+
+    assert abs(clock._slew_start_offset - mid_blend_offset) < 0.5
+
+
+def test_resume_cancels_any_slew_still_in_progress_from_before_the_pause():
+    clock = PlaybackClock()
+    clock.position_offset = -4.0
+    clock.pause(26.0)  # resume_offset = 26.0 - (-4.0) = 30.0, per pause()'s own contract
+    clock._slew_start_time = time.time()  # a blend "in progress" from before the pause
+
+    clock.resume()
+
+    assert clock._slew_start_time is None
+    # resume_offset(30.0) + position_offset(-4.0), fully unblended, not
+    # partway toward it from some earlier blend state.
+    assert abs(clock.elapsed() - 26.0) < 0.5
+
+
+def test_seek_to_cancels_any_slew_in_progress():
+    clock = PlaybackClock()
+    clock.start()
+    clock._slew_start_time = time.time()
+
+    clock.seek_to(50.0)
+
+    assert clock._slew_start_time is None
+
+
+def test_start_cancels_any_slew_in_progress():
+    clock = PlaybackClock()
+    clock._slew_start_time = time.time()
+
+    clock.start()
+
+    assert clock._slew_start_time is None
+
+
+def test_set_fixed_offset_applies_immediately_without_blending():
+    clock = PlaybackClock()
+    clock.play_start_time = time.time() - 10.0
+    clock._slew_start_time = time.time()  # pretend a blend was in progress
+
+    clock.set_fixed_offset(-2.0)
+
+    assert clock._slew_start_time is None
+    assert abs(clock.elapsed() - 8.0) < 0.5

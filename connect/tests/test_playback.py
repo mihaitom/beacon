@@ -908,6 +908,61 @@ def test_pause_resume_roundtrip_with_position_offset(client, default_session):
     assert abs(default_session.state.clock.position_offset - (-4.0)) < 0.01
 
 
+def test_resume_is_a_no_op_while_already_playing(client, default_session):
+    """Regression for a real prod symptom (2026-08-20): a duplicate /resume
+    call — observed from a stray OS media-key/media-widget action arriving
+    after a real one already took effect, see mediaSession.ts's own fix —
+    landing while the track is already playing must not reseek: clock.
+    resume() unconditionally jumps back to resume_offset, which is only
+    ever updated by pause()/seek_to(), so an extra resume() mid-track
+    discarded everything actually played since the *last real* pause and
+    forced a needless fresh /stream reconnect on top — read live as
+    playback/lyrics repeatedly snapping back near the last pause point."""
+    default_session.media = SubsonicClient("http://nav")
+    default_session.state.is_streaming = True
+    default_session.state.current_track = Track("1", "Song", "Artist", 180, "")
+    default_session.state.clock.play_start_time = time.time() - 45
+    default_session.state.clock.resume_offset = 3.5  # frozen at a much earlier pause
+
+    r = client.post("/resume")
+    assert r.status_code == 200
+    assert r.json()["paused"] is False
+    # Untouched — a real reseek-to-resume_offset would have moved this to
+    # ~44.9s ago instead.
+    assert abs(default_session.state.clock.play_start_time - (time.time() - 45)) < 1.0
+
+
+def test_resume_then_resync_does_not_corrupt_position_offset_after_deep_pause(
+    client, default_session
+):
+    """Integration-level regression for the same real prod bug
+    test_resume_re_zeroes_track_start_position_to_resume_offset covers at
+    the PlaybackClock level: /resume reconnects the stream (fresh -ss seek),
+    and a Sonos device resets its own reported position on exactly that
+    kind of reconnect — periodic resync polling shortly after must not
+    misread that as the *track* itself having jumped back near its start."""
+    default_session.media = SubsonicClient("http://nav")
+    default_session.state.is_streaming = True
+    default_session.state.current_track = Track("1", "Song", "Artist", 180, "")
+    default_session.state.active_delivery = SonosDelivery("Arbeitszimmer")
+    default_session.state.clock.position_offset = -1.15
+    default_session.state.clock.pause(145.6)
+
+    with patch.object(SonosDelivery, "play", new=AsyncMock()):
+        client.post("/resume")
+
+    # Sonos resetting its own position counter on the fresh reconnect —
+    # ~8s in, matching how long it took this resync check to land.
+    with patch.object(SonosDelivery, "get_position", new=AsyncMock(return_value=8.0)):
+        asyncio.run(
+            _resync_position_once(default_session, default_session.state.active_delivery)
+        )
+
+    # Must stay a small, plausible correction — not off by ~145s (the
+    # pre-resume elapsed position), the way the unfixed bug corrupted it to.
+    assert default_session.state.clock.position_offset > -10.0
+
+
 def test_pause_without_configured_media_returns_error(client, default_session):
     """A session that never received /config — e.g. freshly re-created after
     the backend reaped the previous one during a long idle period (see
