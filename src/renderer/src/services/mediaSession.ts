@@ -1,0 +1,115 @@
+import { usePlaybackStore } from '@/stores/playback'
+import { useLibraryStore } from '@/stores/library'
+
+// OS-level media keys (keyboard multimedia keys, Windows/macOS lock-screen
+// controls, and the GNOME/KDE media widget on Linux over MPRIS) all read
+// from this one browser-standard API rather than anything Electron- or
+// platform-specific, so this one service covers every OS Beacon runs on.
+// Guarded by `'mediaSession' in navigator` rather than assumed — desktop
+// Chromium/Electron has it, but nothing else here should hard-fail if a
+// future web/mobile-browser target doesn't.
+//
+// Confirmed live (2026-08-20, via `playerctl` on Hyprland/Linux) working
+// for *local* playback — MPRIS registered correctly with real
+// title/artist/album/length, and remote play/pause genuinely controlled
+// it — on both a Chromium-based browser and Firefox/Gecko (Waterfox), so
+// this isn't a Chromium-only thing the way an earlier version of this
+// comment assumed. NOT exposed at all while casting, on either engine:
+// the browser only reports a session to the OS while a real, audible
+// <audio>/<video> element is actually playing in the tab, and casting
+// sends no audio through one at all (it goes straight to the Sonos/
+// Chromecast/AirPlay/DLNA device — see connect/routes/stream.py). A
+// silent looping <audio> element could keep a "real" session alive during
+// casting too, but that's fragile enough (autoplay policy quirks,
+// volume-zero edge cases) to deliberately leave unimplemented — the cast
+// target's own controls (its companion app, physical buttons) already
+// cover that case. See README.md's FAQ for the user-facing version of
+// this same explanation.
+
+// Re-derived on every playbackStore mutation (see initMediaSession()) —
+// including ones with nothing to do with the current song (a position
+// tick, a queue edit) — so these guard against rebuilding
+// MediaMetadata/re-setting playbackState when nothing actually relevant
+// changed, the same "cheap to over-call, just no-op internally" shape
+// syncCastQueue()'s own $subscribe-driven callers already use elsewhere.
+let lastMetadataKey: string | null = null
+let lastPlaybackState: MediaSessionPlaybackState | null = null
+
+function updatePlaybackState(): void {
+  const playback = usePlaybackStore()
+  const state: MediaSessionPlaybackState = playback.isPlaying ? 'playing' : 'paused'
+  if (state === lastPlaybackState) return
+  lastPlaybackState = state
+  navigator.mediaSession.playbackState = state
+}
+
+function updateMetadata(): void {
+  const playback = usePlaybackStore()
+  const song = playback.currentSong
+  const radio = playback.radioStation
+  const key = song ? `song:${song.id}` : radio ? `radio:${radio.name}` : null
+  if (key === lastMetadataKey) return
+  lastMetadataKey = key
+
+  if (!song && !radio) {
+    navigator.mediaSession.metadata = null
+    return
+  }
+
+  const artwork: MediaImage[] = []
+  if (song?.coverArtId) {
+    // One size is enough — unlike <img>'s own srcset-style multi-size use
+    // elsewhere, every OS surface this actually renders into (lock screen,
+    // media widget) scales a single reasonably-sized image itself; there's
+    // no real benefit to offering several like a website favicon set would.
+    const url = useLibraryStore().client().coverArtUrl(song.coverArtId, 300)
+    if (url) artwork.push({ src: url, sizes: '300x300' })
+  }
+
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: song?.title ?? radio?.name ?? '',
+    artist: song?.artist ?? '',
+    album: song?.album ?? '',
+    artwork,
+  })
+}
+
+/** Called once from playbackStore.init() — sets up the action handlers
+ * (play/pause/skip map straight onto the same actions PlayerBar.vue's own
+ * buttons call) and a playbackStore subscription that keeps
+ * metadata/playbackState current from then on. Safe to call from
+ * environments without the API (Docker/web on an older or non-Chromium
+ * browser) — becomes a no-op rather than throwing. */
+export function initMediaSession(): void {
+  if (!('mediaSession' in navigator)) return
+  const playback = usePlaybackStore()
+
+  // Wrapped per-handler, not once around the whole block: Chromium accepts
+  // every action below, but a browser that only partially implements this
+  // API (an older or non-Chromium one, were this ever to run in one)
+  // shouldn't lose every handler just because one of them threw.
+  const setHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler): void => {
+    try {
+      navigator.mediaSession.setActionHandler(action, handler)
+    } catch {
+      // Not supported by this browser — that one control just doesn't
+      // appear on the OS side; the rest still work.
+    }
+  }
+
+  setHandler('play', () => void playback.togglePlay())
+  setHandler('pause', () => void playback.togglePlay())
+  setHandler('previoustrack', () => void playback.playPrevious())
+  setHandler('nexttrack', () => void playback.playNext())
+  setHandler('seekto', (details) => {
+    if (details.seekTime != null) void playback.seek(details.seekTime)
+  })
+  setHandler('stop', () => void playback.togglePlay())
+
+  playback.$subscribe(() => {
+    updateMetadata()
+    updatePlaybackState()
+  })
+  updateMetadata()
+  updatePlaybackState()
+}

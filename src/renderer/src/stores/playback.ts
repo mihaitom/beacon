@@ -10,6 +10,7 @@ import type { ConnectDeviceRef, ConnectStatus, PlayResponse } from '@/services/c
 import type { Artist, RadioStation, Song } from '@/types/library'
 import { emitter } from '@/emitter'
 import { i18n } from '@/i18n'
+import { initMediaSession } from '@/services/mediaSession'
 
 // Store actions, not components — no this.$emitter/this.$t here, hence
 // going straight to the underlying singletons those are thin wrappers
@@ -342,6 +343,13 @@ export const usePlaybackStore = defineStore('playback', {
         console.error('[playback]', message)
         this.isPlaying = false
       }
+
+      // OS media keys / lock-screen / GNOME-KDE media widget — see that
+      // service's own comment. Works the same whether casting or playing
+      // locally (both keep currentSong/isPlaying current either way), so
+      // this needs no isCasting branch of its own the way the engine
+      // callbacks above do.
+      initMediaSession()
 
       const connect = useConnectStore()
       connect.$subscribe((_mutation, state) => {
