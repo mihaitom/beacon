@@ -1,24 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { dedupeForQueue, idsEqual, shuffledExcept } from '../playback'
+import { dedupeForQueue, shuffledExcept } from '../playback'
 import { makeSong } from './fixtures'
-
-describe('idsEqual', () => {
-  it('is true for same ids in the same order', () => {
-    expect(idsEqual(['a', 'b', 'c'], ['a', 'b', 'c'])).toBe(true)
-  })
-
-  it('is false when the order differs', () => {
-    expect(idsEqual(['a', 'b'], ['b', 'a'])).toBe(false)
-  })
-
-  it('is false when the lengths differ, even if one is a prefix of the other', () => {
-    expect(idsEqual(['a', 'b'], ['a', 'b', 'c'])).toBe(false)
-  })
-
-  it('is true for two empty lists', () => {
-    expect(idsEqual([], [])).toBe(true)
-  })
-})
 
 describe('dedupeForQueue', () => {
   it('passes through distinct songs by reference, unchanged', () => {

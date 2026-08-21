@@ -200,6 +200,15 @@ export default {
 .song-waveform {
   display: block;
   width: 100%;
+  /* A <canvas> with no HTML width/height attribute has a default
+   * intrinsic size of 300x150 — as a flex item, min-width: auto (the
+   * default) resolves toward that, not toward width: 100% above, so it
+   * refused to shrink past ~300px regardless of how narrow .seek-bar
+   * actually was. Overflowed the row's own bounds into neighboring
+   * elements whenever the available width dropped below that floor,
+   * rather than actually filling "however wide .seek-bar is" the way
+   * width: 100% already says it should. */
+  min-width: 0;
   height: 24px;
   cursor: pointer;
   touch-action: none;

@@ -39,5 +39,19 @@ export default {
 .control-container {
   width: 100%;
   min-width: var(--control-container-min-width, 220px);
+  /* A ceiling this time, not the min-width floor above — filling the
+   * *entire* 1fr track on a wide monitor (1000px+) reads as absurdly wide
+   * for a transport-buttons-and-seek-bar cluster, not "using the space
+   * well". Capped here, directly on this box, rather than via the grid
+   * track's own sizing — that was tried once already and failed for an
+   * unrelated CSS-spec reason (see PlayerBar.layout.browser.test.ts's
+   * header comment on the `auto`-track-sizing attempt); the track itself
+   * stays a plain 1fr, this element alone just declines to use all of it.
+   * justify-self: center re-centers the (now possibly narrower-than-its-
+   * track) box within that track — grid's own default stretch alignment
+   * degrades to start (left) once an item's max-width caps below the
+   * space actually available to it. */
+  max-width: 600px;
+  justify-self: center;
 }
 </style>

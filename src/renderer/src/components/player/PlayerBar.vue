@@ -132,12 +132,14 @@ export default {
  * per spec, and SongWaveform.vue's canvas is width: 100%, not a fixed
  * length, so that computation had nothing real to resolve against and
  * settled on an arbitrary, viewport-size-dependent value instead, with a
- * real ResizeObserver feedback loop behind it.) On a wide window this can
- * grow well past 600px — ControlContainer.vue itself fills that whole
- * track (see its own comment on why, modeled on the original Feishin),
- * with SeekBar.vue's own width: 100% filling right along with it while
- * CenterControls.vue's own transport buttons stay at their own narrower
- * natural width, centered independently within the same box.
+ * real ResizeObserver feedback loop behind it.) On a wide window this
+ * *track* keeps growing well past 600px regardless — ControlContainer.vue
+ * itself now caps its own width there and re-centers within the leftover
+ * track space (see its own comment) rather than filling the whole thing
+ * the way it briefly did, with SeekBar.vue's own width: 100% following
+ * suit, while CenterControls.vue's own transport buttons stay at their own
+ * narrower natural width, centered independently within the same
+ * (now-capped) box.
  *
  * min-width is the exact floor where every track is already at its own
  * minimum, in the *collapsed* state — 300 (flank) + 16 gap + 220 (center)

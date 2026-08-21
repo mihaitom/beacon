@@ -27,13 +27,18 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from pydantic import BaseModel
 
 from core.auth import require_token
 from core.remote import remote
 from core.session import SessionState, get_session
-from core.state import get_local_ip, PORT
+from core.state import PORT, get_local_ip
 from routes.radio import radio_favicon as _fetch_radio_favicon
 
 logger = logging.getLogger("connect.remote")
@@ -137,6 +142,8 @@ async def agent_events():
     endpoints can fail fast (503) instead of hanging when nothing is
     listening (e.g. Beacon quit but connect is still running in dev)."""
     queue = remote.command_bus.subscribe()
+    remote.renderer_connection_seq += 1
+    my_connection = remote.renderer_connection_seq
     remote.renderer_connected = True
 
     async def generator():
@@ -146,11 +153,15 @@ async def agent_events():
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=15.0)
                     yield f"data: {json.dumps(payload)}\n\n"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": heartbeat\n\n"
         finally:
             remote.command_bus.unsubscribe(queue)
-            remote.renderer_connected = False
+            # Only clear if a newer connection (a quick reconnect) hasn't
+            # already landed and taken over — see renderer_connection_seq's
+            # own comment.
+            if remote.renderer_connection_seq == my_connection:
+                remote.renderer_connected = False
 
     return StreamingResponse(
         generator(),
@@ -208,7 +219,7 @@ async def phone_events():
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=15.0)
                     yield f"data: {json.dumps(payload)}\n\n"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": heartbeat\n\n"
         finally:
             remote.event_bus.unsubscribe(queue)
@@ -238,7 +249,7 @@ async def _query(query_type: str, payload: dict) -> dict:
     )
     try:
         return await asyncio.wait_for(future, timeout=QUERY_TIMEOUT)
-    except (TimeoutError, asyncio.TimeoutError):
+    except TimeoutError:
         raise HTTPException(status_code=504, detail="Beacon did not respond in time")
     finally:
         remote.drop_pending(request_id)

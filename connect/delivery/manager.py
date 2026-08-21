@@ -75,9 +75,23 @@ class DeliveryManager:
         )
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        for result in results:
-            if isinstance(result, Exception):
-                logger.error(f"Delivery error: {result}")
+        errors = [r for r in results if isinstance(r, Exception)]
+        for error in errors:
+            logger.error(f"Delivery error: {error}")
+        if errors and len(errors) == len(results):
+            # Every target failed — nothing is actually playing anywhere,
+            # unlike a *partial* failure (some targets started fine
+            # despite one having trouble), which callers should not treat
+            # as a failed dispatch just because one device in the group
+            # misbehaved. Re-raising only in the all-failed case is what
+            # lets routes/playback.py's own except-and-rollback around
+            # target.play() actually fire for it — before this, a dispatch
+            # to a DeliveryManager where every device failed still looked
+            # like success to the caller: is_streaming stayed True,
+            # active_delivery stayed set, and every target's claim stayed
+            # held, for a dispatch that produced no actual playback
+            # anywhere.
+            raise errors[0]
 
     async def _play_grouped_sonos(
         self,

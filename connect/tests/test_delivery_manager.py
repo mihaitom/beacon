@@ -3,6 +3,8 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from delivery import (
     AirPlayDelivery,
     ChromecastDelivery,
@@ -10,7 +12,6 @@ from delivery import (
     DlnaDelivery,
     SonosDelivery,
 )
-
 
 # ── from_deliveries / list_targets ────────────────────────────────────────────
 
@@ -241,17 +242,45 @@ def test_manager_play_is_a_noop_with_no_deliveries():
     asyncio.run(m.play("http://stream"))  # must not raise
 
 
-def test_manager_play_logs_but_does_not_raise_on_a_delivery_error(caplog):
+def test_manager_play_logs_but_does_not_raise_on_a_partial_delivery_error(caplog):
+    """One target failing in a group must not sink the whole dispatch —
+    the other target actually started fine, so callers (routes/playback.py)
+    rolling back over this would kill state for a device that's genuinely
+    playing, not just the one that had trouble."""
     import logging
 
     a = AirPlayDelivery("HomePod")
     a.play = AsyncMock(side_effect=RuntimeError("device unreachable"))
-    m = DeliveryManager.from_deliveries([a])
+    c = ChromecastDelivery("TV")
+    c.play = AsyncMock()
+    m = DeliveryManager.from_deliveries([a, c])
 
     with caplog.at_level(logging.ERROR, logger="delivery"):
         asyncio.run(m.play("http://stream"))  # must not raise
 
     assert "device unreachable" in caplog.text
+    c.play.assert_awaited_once()
+
+
+def test_manager_play_raises_when_every_delivery_fails(caplog):
+    """Regression test: unlike a partial failure, nothing is actually
+    playing anywhere once *every* target in the group failed — callers
+    need this to propagate so their own rollback (undoing state, releasing
+    claims) actually fires, instead of a dispatch that produced no
+    playback anywhere still reading as a success."""
+    import logging
+
+    a = AirPlayDelivery("HomePod")
+    a.play = AsyncMock(side_effect=RuntimeError("device unreachable"))
+    c = ChromecastDelivery("TV")
+    c.play = AsyncMock(side_effect=RuntimeError("connection refused"))
+    m = DeliveryManager.from_deliveries([a, c])
+
+    with caplog.at_level(logging.ERROR, logger="delivery"), pytest.raises(RuntimeError):
+        asyncio.run(m.play("http://stream"))
+
+    assert "device unreachable" in caplog.text
+    assert "connection refused" in caplog.text
 
 
 def test_manager_pause_fans_out_and_swallows_exceptions():

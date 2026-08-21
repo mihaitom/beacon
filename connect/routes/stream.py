@@ -177,6 +177,72 @@ async def _advance_or_end(session: SessionState, my_generation: int) -> None:
     await session.event_bus.broadcast(build_status_dict(session))
 
 
+# How long to wait, after a device closes its GET /stream connection mid-
+# track, for a fresh connection to pick the same track back up before
+# concluding it isn't going to — see
+# _mark_disconnected_if_not_reconnected()'s own docstring. Long enough that
+# an ordinary quick reconnect blip (buffer management, a momentary WiFi
+# hiccup) doesn't falsely trip this; short enough that a genuinely dead
+# stream doesn't sit is_streaming=True for long once nothing's actually
+# flowing.
+STREAM_DISCONNECT_GRACE_SECONDS = 5.0
+
+
+async def _mark_disconnected_if_not_reconnected(session: SessionState, my_generation: int) -> None:
+    """A device closing its GET /stream connection mid-track is usually just
+    a brief reconnect blip — it typically reopens the same URL again within
+    a second or two, and is_streaming should stay True through that gap so
+    the position-resync loop and every client watching this session don't
+    flicker to "stopped" for a connection that's about to resume completely
+    normally. That's the whole reason stream_with_completion()'s
+    CancelledError handler doesn't clear is_streaming itself.
+
+    But if nothing reopens it at all — observed live 2026-08-21: a Sonos
+    speaker dropping mid-track (13 minutes into a 76-minute compilation)
+    and never reconnecting — is_streaming stayed True forever, and the
+    position-resync loop (routes/playback.py) kept polling the now-silent
+    device, which correctly reports position 0 once its transport has
+    nothing left to play. Nothing told the resync loop that "streaming"
+    wasn't actually true anymore, so it misread that persisting, ever-
+    growing gap as one genuine external rewind after another (the same
+    ambiguity _resync_position_once()'s own near-track-end guard already
+    covers, just from a different cause — a stream that plain died instead
+    of one that finished on schedule): position_offset ratcheted more
+    negative every single 8s resync tick, indefinitely, while the frontend
+    looped near 0:00 with no audio.
+
+    Runs as an independent task (see stream_with_completion()'s call site)
+    so the CancelledError that spawned it doesn't get to cancel this too.
+    Checks active_stream_connections (a *live count*, not a single "most
+    recent connection" marker) rather than anything identifying this one
+    connection specifically — multi-target casting can have more than one
+    GET /stream connection open for the same session at once (e.g.
+    Chromecast + DLNA), each dropping and reconnecting independently, so
+    "did *a* connection reappear" is the wrong question; "is *anything*
+    still connected" is what actually matters for a session-wide flag like
+    is_streaming. A no-op once another connection is (still or again) open,
+    a new /play/seek/resume has superseded this track, the track finished
+    normally, or the track is legitimately paused — a device that drops its
+    HTTP connection on pause rather than idling the open socket (some DLNA
+    renderers do this) isn't dead, it's just paused, and isn't expected to
+    reconnect until /resume asks it to.
+    """
+    await asyncio.sleep(STREAM_DISCONNECT_GRACE_SECONDS)
+    st = session.state
+    if (
+        st.clock.play_generation == my_generation
+        and st.active_stream_connections == 0
+        and st.is_streaming
+        and not st.clock.is_paused
+    ):
+        logger.warning(
+            f"[stream] No reconnect within {STREAM_DISCONNECT_GRACE_SECONDS:.0f}s "
+            "of a dropped connection — marking not streaming"
+        )
+        st.is_streaming = False
+        await session.event_bus.broadcast(build_status_dict(session))
+
+
 @router.head("/stream")
 @router.head("/stream/{session_id}")
 async def audio_stream_head(session_id: str = DEFAULT_SESSION_ID):
@@ -275,6 +341,12 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
         f"[stream] Client connected — {track.artist} — {track.title}"
         + (f" (seek {offset:.1f}s)" if offset > 0.5 else "")
     )
+
+    # Counted for _mark_disconnected_if_not_reconnected() below — see
+    # active_stream_connections' own comment in core/state.py. Decremented
+    # in stream_with_completion()'s own finally block once this specific
+    # connection ends, however it ends.
+    session.state.active_stream_connections += 1
 
     def on_track_start(_: int) -> None:
         gain = session.state.current_track_gain
@@ -385,7 +457,13 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
                         analyzer.feed(chunk)
                     yield chunk
             except asyncio.CancelledError:
-                raise  # client disconnected mid-stream — not a natural end
+                # client disconnected mid-stream — not a natural end, and
+                # often just a brief reconnect blip a fresh connection is
+                # about to pick right back up. See
+                # _mark_disconnected_if_not_reconnected()'s own docstring
+                # for what happens if it doesn't.
+                asyncio.create_task(_mark_disconnected_if_not_reconnected(session, my_generation))
+                raise
             except Exception:
                 # ffmpeg itself failed (missing binary, crash, decode error —
                 # already logged by stream_tracks()). Not a natural end either:
@@ -411,6 +489,10 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
                     wait = st.clock.seconds_until(st.current_track.duration)
                 asyncio.create_task(_fire_track_end(my_generation, wait))
         finally:
+            # Mirrors the increment in audio_stream() above — this specific
+            # connection is done, one way or another (normal completion,
+            # ffmpeg failure, or a client disconnect/cancellation).
+            session.state.active_stream_connections -= 1
             # finish_feeding(), not stop() — ffmpeg finishing early (well
             # before the track's actual duration, since it's CPU-bound
             # transcoding rather than real-time-throttled) just means this

@@ -155,7 +155,11 @@ describe('PlayerBar layout', () => {
     ).toBeLessThan(1)
   })
 
-  it('control-container fills its whole grid track — grows with the window, it does not stay pinned to center-controls own narrow content width', async () => {
+  it('control-container fills its whole grid track below its own 600px ceiling — grows with the window, it does not stay pinned to center-controls own narrow content width', async () => {
+    // Both widths below stay under the ~1468px row width that would push
+    // control-container's own leftover-track share past its 600px ceiling
+    // (see the dedicated cap test further down for that region instead) —
+    // this one only covers the *uncapped* growth behavior.
     await page.viewport(1600, 400)
     await mountBar(false)
     const narrowerWidth = rect('.control-container').width
@@ -242,23 +246,40 @@ describe('PlayerBar layout', () => {
       }
     })
 
-    // control-container is now deliberately free to stretch to fill the
-    // row's own leftover space (see ControlContainer.vue's own comment,
-    // modeled on the original Feishin) — the invariant this guards isn't
-    // "control-container stays small", it's that seek-bar's own width:
-    // 100% always fills *however wide control-container actually is*, at
-    // any window width, rather than silently capping out somewhere below
-    // it (the old 600px max-width) or overflowing past it. Exact equality,
-    // not just "greater than or equal to some floor" — that would still
-    // pass even if seek-bar were narrower than control-container's own
-    // box, which would visibly misalign it from center-controls above.
+    // control-container fills the row's own leftover grid-track space up to
+    // its own 600px ceiling (see its own comment) — the invariant this
+    // guards isn't "control-container stays small" or "control-container
+    // stays unbounded", it's that seek-bar's own width: 100% always fills
+    // *however wide control-container actually ends up being* — capped or
+    // not — at any window width, rather than silently capping out
+    // somewhere below it on its own (a max-width directly on SeekBar.vue
+    // itself, tried once and reverted — see that file's own comment) or
+    // overflowing past it. Exact equality, not just "greater than or equal
+    // to some floor" — that would still pass even if seek-bar were
+    // narrower than control-container's own box, which would visibly
+    // misalign it from center-controls above. 2200 is comfortably past
+    // control-container's own 600px ceiling, so this also proves the
+    // equality holds *with* that ceiling engaged, not only in the
+    // unbounded region below it.
     it("seek-bar's own rendered width exactly matches control-container's, at any width — not just some shared floor", async () => {
-      for (const width of [1600, 1000, 700]) {
+      for (const width of [2200, 1600, 1000, 700]) {
         await page.viewport(width, 400)
         await mountBar(false)
 
         expect(rect('.seek-bar').width).toBe(rect('.control-container').width)
       }
+    })
+
+    it("control-container's own width stays capped at 600px on a wide monitor, centered within its (wider) grid track rather than pinned to one side", async () => {
+      await page.viewport(2200, 400)
+      await mountBar(false)
+
+      expect(rect('.control-container').width).toBeCloseTo(600, 0)
+      const rowRect = rect('.player-bar__row')
+      const containerRect = rect('.control-container')
+      expect(
+        Math.abs(rowRect.left + rowRect.width / 2 - (containerRect.left + containerRect.width / 2)),
+      ).toBeLessThan(1)
     })
 
     it("seek-bar never renders narrower than control-container's own min-width, once the row itself is squeezed to its floor", async () => {

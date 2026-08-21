@@ -317,6 +317,41 @@ async def test_agent_events_opens_with_retry_and_flips_renderer_connected():
     assert remote.renderer_connected is False
 
 
+async def test_agent_events_overlapping_reconnect_does_not_clobber_the_new_connection():
+    """Regression test: a quick renderer reconnect (a brief network blip, a
+    page reload) can briefly overlap — the *new* connection lands and sets
+    renderer_connected=True before the *old* one has finished unwinding.
+    The old connection's own belated cleanup must not clear
+    renderer_connected out from under the new, still-live one."""
+    from routes.remote import agent_events
+
+    remote.renderer_connected = False
+    old_resp = await agent_events()
+    old_gen = old_resp.body_iterator
+    await old_gen.__anext__()  # retry — old connection is now "live"
+    assert remote.renderer_connected is True
+
+    # A new connection lands before the old one has been torn down.
+    new_resp = await agent_events()
+    new_gen = new_resp.body_iterator
+    try:
+        await new_gen.__anext__()  # retry
+        assert remote.renderer_connected is True
+
+        # The old, now-superseded connection finally closes.
+        await old_gen.aclose()
+
+        # Must still read as connected — the new connection is very much
+        # still live, and only the old connection's own (now-stale) cleanup
+        # ran.
+        assert remote.renderer_connected is True
+    finally:
+        await new_gen.aclose()
+
+    # Only once the *actually current* connection closes does this clear.
+    assert remote.renderer_connected is False
+
+
 async def test_agent_events_forwards_a_broadcast_command():
     from routes.remote import agent_events
 

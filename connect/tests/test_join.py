@@ -38,6 +38,28 @@ def test_join_chromecast_plays_and_sets_active(client, default_session, _streami
     assert default_session.state.active_delivery.target == "TV"
 
 
+def test_join_releases_the_claim_when_the_device_fails_to_start(
+    client, default_session, _streaming
+):
+    """Regression test: check_claims() grants the claim before play() is
+    ever attempted — a device that then fails to actually start (offline,
+    connection refused, ...) must not stay locked to this session
+    (device_in_use for everyone else) with nothing actually playing on it,
+    same as /play's own identical failure handling."""
+    from core.claims import claims
+
+    with patch.object(
+        ChromecastDelivery, "play", new=AsyncMock(side_effect=RuntimeError("unreachable"))
+    ):
+        r = client.post("/join", json={"target_type": "chromecast", "target_name": "TV"})
+
+    assert r.json()["error"] == "unreachable"
+    assert claims.owner_of("chromecast", "TV") is None
+    # Never actually joined — active_delivery must be left exactly as it
+    # was before this call, not pointing at a device nothing is playing on.
+    assert default_session.state.active_delivery is None
+
+
 def test_join_airplay_plays_and_sets_active(client, default_session, _streaming):
     with patch.object(AirPlayDelivery, "play", new=AsyncMock()) as play:
         r = client.post(
@@ -167,9 +189,9 @@ def test_join_sonos_without_existing_sonos_plays_individually(
 
 
 def test_join_rejected_when_target_claimed_by_another_session(client, _streaming):
-    from core.claims import claims
-
     import asyncio
+
+    from core.claims import claims
 
     asyncio.run(claims.claim("chromecast", "TV", "some-other-session"))
 
@@ -187,10 +209,10 @@ def test_join_rejected_when_target_claimed_by_another_session(client, _streaming
 def test_join_with_force_displaces_other_sessions_claim(
     client, default_session, _streaming
 ):
+    import asyncio
+
     from core.claims import claims
     from core.session import registry
-
-    import asyncio
 
     other = asyncio.run(registry.get_or_create("some-other-session"))
     other.state.is_streaming = True
@@ -239,9 +261,9 @@ def test_claim_sets_active_delivery_without_starting_playback(client, default_se
 
 
 def test_claim_rejected_without_force_when_claimed_by_another_session(client, default_session):
-    from core.claims import claims
-
     import asyncio
+
+    from core.claims import claims
 
     asyncio.run(claims.claim("chromecast", "TV", "some-other-session"))
 
@@ -257,10 +279,10 @@ def test_claim_rejected_without_force_when_claimed_by_another_session(client, de
 def test_claim_with_force_displaces_other_sessions_claim_and_stops_their_delivery(
     client, default_session
 ):
+    import asyncio
+
     from core.claims import claims
     from core.session import registry
-
-    import asyncio
 
     other = asyncio.run(registry.get_or_create("some-other-session"))
     other.state.is_streaming = True

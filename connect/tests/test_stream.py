@@ -17,7 +17,12 @@ import pytest
 from core.streamer import FALLBACK_FORMAT, OutputFormat
 from delivery import ChromecastDelivery
 from media import Track
-from routes.stream import _advance_or_end, _dispatch_queued_track, audio_stream
+from routes.stream import (
+    _advance_or_end,
+    _dispatch_queued_track,
+    _mark_disconnected_if_not_reconnected,
+    audio_stream,
+)
 
 
 async def _empty_stream(*args, **kwargs):
@@ -479,6 +484,7 @@ async def test_client_disconnect_mid_stream_is_reraised_without_touching_state(
 
     with patch("routes.stream.stream_tracks", side_effect=_disconnects_after_one_chunk):
         resp = await audio_stream(session_id=default_session.session_id)
+        assert default_session.state.active_stream_connections == 1
         gen = resp.body_iterator
         first = await gen.__anext__()
         assert first == b"chunk"
@@ -488,6 +494,121 @@ async def test_client_disconnect_mid_stream_is_reraised_without_touching_state(
     # A disconnect is routine — state must be left exactly as it was, and
     # nothing broadcast, since nothing about playback actually changed.
     assert default_session.state.is_streaming is True
+    assert q.empty()
+    # The connection is genuinely gone now — the deferred grace-period check
+    # (scheduled above, not awaited by this test) needs this to already be
+    # accurate, not stuck counting a connection that no longer exists.
+    assert default_session.state.active_stream_connections == 0
+
+
+# ── _mark_disconnected_if_not_reconnected ────────────────────────────────────
+# Regression coverage for a real prod bug (2026-08-21): a Sonos speaker
+# dropping its GET /stream connection mid-track and never reconnecting left
+# is_streaming stuck True forever, so the position-resync loop
+# (routes/playback.py) kept polling the now-silent device and misread its
+# persisting position=0 reading as an endless string of "external rewinds" —
+# position_offset ratcheted more negative every single resync tick while the
+# frontend looped near 0:00 with no audio. See that function's own docstring.
+
+
+async def test_marks_not_streaming_when_nothing_reconnects_within_the_grace_period(
+    default_session, monkeypatch,
+):
+    monkeypatch.setattr("routes.stream.STREAM_DISCONNECT_GRACE_SECONDS", 0.01)
+    default_session.state.is_streaming = True
+    default_session.state.active_stream_connections = 0  # the one connection already dropped
+
+    q = default_session.event_bus.subscribe()
+
+    await _mark_disconnected_if_not_reconnected(
+        default_session, my_generation=default_session.state.clock.play_generation,
+    )
+
+    assert default_session.state.is_streaming is False
+    payload = q.get_nowait()
+    assert payload["streaming"] is False
+
+
+async def test_does_not_mark_not_streaming_while_another_connection_is_still_open(
+    default_session, monkeypatch,
+):
+    """Multi-target casting (e.g. Chromecast + DLNA at once) can have more
+    than one GET /stream connection open for the same session — one
+    dropping (and this check running for it) must not declare the whole
+    session dead while a *different* connection is still up and playing.
+    Covers both a fresh reconnect of the same device and an unrelated
+    device that was never affected — active_stream_connections doesn't
+    distinguish the two, by design (see that field's own comment)."""
+    monkeypatch.setattr("routes.stream.STREAM_DISCONNECT_GRACE_SECONDS", 0.01)
+    default_session.state.is_streaming = True
+    default_session.state.active_stream_connections = 1  # another connection still live
+
+    q = default_session.event_bus.subscribe()
+
+    await _mark_disconnected_if_not_reconnected(
+        default_session, my_generation=default_session.state.clock.play_generation,
+    )
+
+    assert default_session.state.is_streaming is True
+    assert q.empty()
+
+
+async def test_does_not_mark_not_streaming_once_a_newer_generation_took_over(
+    default_session, monkeypatch,
+):
+    """A /play, /seek, or /resume landing during the grace period bumps
+    play_generation — this stale check must not touch a session that isn't
+    even playing the track that disconnected anymore."""
+    monkeypatch.setattr("routes.stream.STREAM_DISCONNECT_GRACE_SECONDS", 0.01)
+    default_session.state.is_streaming = True
+    default_session.state.active_stream_connections = 0
+    stale_generation = default_session.state.clock.play_generation
+    default_session.state.clock.play_generation += 1  # a newer /play superseded this track
+
+    q = default_session.event_bus.subscribe()
+
+    await _mark_disconnected_if_not_reconnected(default_session, my_generation=stale_generation)
+
+    assert default_session.state.is_streaming is True
+    assert q.empty()
+
+
+async def test_does_not_mark_not_streaming_while_legitimately_paused(default_session, monkeypatch):
+    """Some DLNA renderers drop their HTTP connection to /stream on pause
+    instead of idling the open socket — that's not a dead stream, it's a
+    normal pause, and isn't expected to reconnect until /resume asks it
+    to. This stale check must not flip is_streaming (and broadcast a
+    spurious 'stopped' to every client watching the session) for that."""
+    monkeypatch.setattr("routes.stream.STREAM_DISCONNECT_GRACE_SECONDS", 0.01)
+    default_session.state.is_streaming = True
+    default_session.state.active_stream_connections = 0
+    default_session.state.clock.pause(30.0)
+
+    q = default_session.event_bus.subscribe()
+
+    await _mark_disconnected_if_not_reconnected(
+        default_session, my_generation=default_session.state.clock.play_generation,
+    )
+
+    assert default_session.state.is_streaming is True
+    assert q.empty()
+
+
+async def test_does_not_rebroadcast_when_already_not_streaming(default_session, monkeypatch):
+    """The track can finish normally (_advance_or_end already marking
+    is_streaming False, or auto-advancing to a next track) during the grace
+    period — this stale check must not re-broadcast a redundant 'not
+    streaming' on top of whatever already happened."""
+    monkeypatch.setattr("routes.stream.STREAM_DISCONNECT_GRACE_SECONDS", 0.01)
+    default_session.state.is_streaming = False
+    default_session.state.active_stream_connections = 0
+
+    q = default_session.event_bus.subscribe()
+
+    await _mark_disconnected_if_not_reconnected(
+        default_session, my_generation=default_session.state.clock.play_generation,
+    )
+
     assert q.empty()
 
 

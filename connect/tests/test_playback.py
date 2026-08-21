@@ -967,6 +967,35 @@ def test_resume_then_resync_does_not_corrupt_position_offset_after_deep_pause(
     assert default_session.state.clock.position_offset > -10.0
 
 
+def test_resume_schedules_immediate_position_offset_recalibration(client, default_session):
+    """/resume's reconnect restarts the stream near 0 again, re-incurring
+    the device's startup-buffering delay exactly like /seek's reconnect
+    does — /resume must schedule the same immediate _apply_position_offset()
+    recalibration /seek does, not just the ongoing periodic resync (see
+    that function's own docstring). Regression test: without this,
+    position_offset stayed whatever it was before the pause for up to
+    POSITION_RESYNC_INTERVAL after every resume while casting."""
+    default_session.media = SubsonicClient("http://nav")
+    default_session.state.is_streaming = True
+    default_session.state.current_track = Track("1", "Song", "Artist", 180, "")
+    default_session.state.active_delivery = SonosDelivery("Küche")
+    default_session.state.clock.pause(30.0)
+
+    with (
+        patch.object(SonosDelivery, "play", new=AsyncMock()),
+        patch("routes.playback._apply_position_offset", new=AsyncMock()) as apply_offset,
+        patch("routes.playback._resync_position_periodically", new=AsyncMock()),
+    ):
+        r = client.post("/resume")
+
+    assert r.status_code == 200
+    apply_offset.assert_called_once_with(
+        default_session,
+        default_session.state.active_delivery,
+        default_session.state.clock.play_generation,
+    )
+
+
 def test_pause_without_configured_media_returns_error(client, default_session):
     """A session that never received /config — e.g. freshly re-created after
     the backend reaped the previous one during a long idle period (see
@@ -1220,11 +1249,68 @@ def test_apply_position_offset_returns_when_nothing_supports_position(default_se
     assert default_session.state.clock.position_offset == 0.0
 
 
-def test_apply_position_offset_stops_polling_once_streaming_stops_mid_wait(default_session):
-    """Two things in one natural sequence: no reading yet (None) keeps
-    polling, then playback stops externally before the next poll — which
-    must notice and give up rather than keep polling for the rest of the
-    10s deadline."""
+def test_apply_position_offset_keeps_polling_while_no_reading_yet(default_session):
+    """None ('no reading yet', very common right at track start) must not
+    be treated the same as a bogus/negative reading to give up on — just
+    keep polling for the next one."""
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_start_time = time.time()
+    default_session.state.clock.play_generation = 1
+
+    target = SonosDelivery("Küche")
+    import asyncio
+
+    with patch.object(target, "get_position", new=AsyncMock(side_effect=[None, 1.0])):
+        asyncio.run(_apply_position_offset(default_session, target, generation=1))
+
+    # Used the second, real reading — didn't give up after the first poll
+    # came back empty.
+    assert default_session.state.clock.position_offset != -PROVISIONAL_STARTUP_DELAY
+
+
+def test_apply_position_offset_stops_polling_once_streaming_stops_between_polls(
+    default_session,
+):
+    """Playback can stop externally while this is waiting out a poll
+    interval (not while a get_position() call is actually in flight — see
+    the dedicated in-flight regression test below) — the top-of-loop
+    freshness check must notice on the very next iteration and give up,
+    rather than keep polling for the rest of the 10s deadline."""
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_start_time = time.time()
+    default_session.state.clock.play_generation = 1
+
+    target = SonosDelivery("Küche")
+    import asyncio
+
+    async def _stop_shortly_after():
+        await asyncio.sleep(0.2)
+        default_session.state.is_streaming = False
+
+    async def _run():
+        await asyncio.gather(
+            _apply_position_offset(default_session, target, generation=1),
+            _stop_shortly_after(),
+        )
+
+    with patch.object(target, "get_position", new=AsyncMock(return_value=5.0)):
+        asyncio.run(_run())
+
+    # Left at the provisional startup-delay guess set before polling began —
+    # never got a plausible reading to calibrate a real offset from.
+    assert default_session.state.clock.position_offset == -PROVISIONAL_STARTUP_DELAY
+
+
+def test_apply_position_offset_discards_stale_reading_that_arrives_after_being_superseded(
+    default_session,
+):
+    """A /play, /seek, or /resume landing while get_position() was still in
+    flight must not have its now-stale reading calibrate the *new* stream's
+    clock — regression test for the exact race that used to read live as a
+    freshly-restarted track's displayed position getting stuck near 0:00
+    (see _resync_position_once()'s identical guard/comment, which already
+    covered this for the periodic resync but not this one-shot startup
+    calibration)."""
     default_session.state.is_streaming = True
     default_session.state.clock.play_start_time = time.time()
     default_session.state.clock.play_generation = 1
@@ -1233,14 +1319,35 @@ def test_apply_position_offset_stops_polling_once_streaming_stops_mid_wait(defau
     import asyncio
 
     async def _fake_get_position():
-        default_session.state.is_streaming = False
+        # A newer /seek completing while this request was in flight.
+        default_session.state.clock.play_generation = 2
+        return 5.0
 
     with patch.object(target, "get_position", new=_fake_get_position):
         asyncio.run(_apply_position_offset(default_session, target, generation=1))
 
-    # Left at the provisional startup-delay guess set before polling began —
-    # never got a plausible reading to calibrate a real offset from.
+    # Left at the provisional guess, not calibrated from the stale reading
+    # meant for a generation that's no longer current.
     assert default_session.state.clock.position_offset == -PROVISIONAL_STARTUP_DELAY
+
+
+def test_apply_position_offset_abandons_fixed_offset_branch_on_track_change(default_session):
+    """The AirPlay/FIXED_OFFSET branch must honor the same generation guard
+    as the SUPPORTS_POSITION branch below it — a stale task from a
+    superseded generation must not stomp the *current* track's clock with a
+    delay estimate meant for a track that isn't playing anymore."""
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_start_time = time.time()
+    # A new /play already bumped the generation by the time this task gets
+    # to run — same setup as test_apply_position_offset_abandons_on_track_change.
+    default_session.state.clock.play_generation = 2
+
+    target = AirPlayDelivery("HomePod")
+    import asyncio
+
+    asyncio.run(_apply_position_offset(default_session, target, generation=1))
+
+    assert default_session.state.clock.position_offset == 0.0
 
 
 def test_apply_position_offset_retries_after_a_transient_get_position_error(default_session):

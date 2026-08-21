@@ -51,6 +51,18 @@ class RemoteState:
         # (503) instead of waiting out their own timeout when nothing is
         # listening on the renderer side at all.
         self.renderer_connected: bool = False
+        # Bumped once per genuine GET /remote/agent-events connection — see
+        # routes/remote.py's agent_events(). Only the renderer's single SSE
+        # connection is expected at a time, but a quick reconnect (a brief
+        # network blip, a page reload) can briefly overlap: the *old*
+        # connection's generator doesn't finish unwinding (and clearing
+        # renderer_connected in its own finally) until after the *new*
+        # one has already landed and set it back to True. Without this,
+        # the old connection's belated cleanup clobbers the new
+        # connection's True back to False, and /remote/command and the
+        # query-relay endpoints wrongly 503 as if nothing were listening,
+        # even though the new connection is live.
+        self.renderer_connection_seq: int = 0
         self.last_keepalive: float = 0.0
         self.snapshot: dict = {}
         self.event_bus = EventBus()  # -> phone GET /remote/events

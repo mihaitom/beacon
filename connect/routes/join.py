@@ -16,7 +16,6 @@ from core.session import (
     require_authenticated_session,
 )
 from core.state import find_sonos, resolve_target, stream_url
-
 from delivery import (
     AirPlayDelivery,
     BaseDelivery,
@@ -25,6 +24,7 @@ from delivery import (
     DlnaDelivery,
     SonosDelivery,
 )
+from routes.playback import _release_claims
 
 logger = logging.getLogger("connect.devices")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -80,25 +80,38 @@ async def join_stream(
         title = st.radio_info["title"] if st.radio_info else "Connect"
         logger.info(f"[join] {req.target_type}:{req.target_name} → {url}")
 
-        if req.target_type == "sonos":
-            existing_sonos = find_sonos(st.active_delivery)
-            if existing_sonos:
-                try:
-                    coordinator = await asyncio.to_thread(existing_sonos[0]._get_device)
-                    joiner = await asyncio.to_thread(new_d._get_device)
-                    await asyncio.to_thread(joiner.join, coordinator)
-                    logger.info(
-                        f"[join] {req.target_name} joining group of {existing_sonos[0].target}"
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"[join] Group join failed ({e}), falling back to individual stream"
-                    )
+        try:
+            if req.target_type == "sonos":
+                existing_sonos = find_sonos(st.active_delivery)
+                if existing_sonos:
+                    try:
+                        coordinator = await asyncio.to_thread(existing_sonos[0]._get_device)
+                        joiner = await asyncio.to_thread(new_d._get_device)
+                        await asyncio.to_thread(joiner.join, coordinator)
+                        logger.info(
+                            f"[join] {req.target_name} joining group of "
+                            f"{existing_sonos[0].target}"
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"[join] Group join failed ({e}), falling back to individual stream"
+                        )
+                        await new_d.play(url, title)
+                else:
                     await new_d.play(url, title)
             else:
                 await new_d.play(url, title)
-        else:
-            await new_d.play(url, title)
+        except Exception as e:
+            # Unlike the inner try/except above (a group-join attempt
+            # falling back to an individual stream, not a hard failure),
+            # this is the same "dispatch never actually reached the
+            # device" case /play's own identical handler guards against —
+            # without releasing it here, check_claims() above leaves the
+            # device locked to this session (device_in_use for everyone
+            # else) with nothing actually playing on it.
+            logger.error(f"[join] Delivery error: {e}", exc_info=True)
+            await _release_claims(new_d, session)
+            return {"error": str(e)}
 
         if isinstance(st.active_delivery, DeliveryManager):
             existing = {d.target for d in st.active_delivery.deliveries}

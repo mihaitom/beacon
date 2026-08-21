@@ -110,6 +110,17 @@ async def _apply_position_offset(
     st = session.state
     deliveries = getattr(target, "deliveries", [target])
 
+    # Every branch below mutates the shared session clock — a stale task
+    # (this generation already superseded by a newer /play, /seek, or
+    # /resume before this task got to run at all) would stomp the *current*
+    # track's clock with a value meant for a track that isn't playing
+    # anymore. Checked once here up front for the immediate writes below,
+    # and again after every await further down (get_position() is a real
+    # device round trip, easily a second or more — see the identical
+    # re-check in _resync_position_once()).
+    if st.clock.play_generation != generation or not st.is_streaming:
+        return
+
     fixed = max((d.FIXED_OFFSET for d in deliveries), default=0.0)
     if fixed:
         st.clock.set_fixed_offset(-fixed)
@@ -121,13 +132,6 @@ async def _apply_position_offset(
 
     candidate = next((d for d in deliveries if d.SUPPORTS_POSITION), None)
     if candidate is None:
-        return
-
-    # Same guard the polling loop below uses — without it, a stale task
-    # (this generation already superseded by a newer /play or /seek before
-    # this task got to run at all) would stomp the *current* track's clock
-    # with a provisional guess meant for a track that isn't playing anymore.
-    if st.clock.play_generation != generation or not st.is_streaming:
         return
 
     st.clock.set_fixed_offset(-PROVISIONAL_STARTUP_DELAY)
@@ -146,6 +150,20 @@ async def _apply_position_offset(
             device_pos = await candidate.get_position()
         except Exception:
             continue
+        # get_position() above is a real device round trip — a /play, /seek,
+        # or /resume landing while it was in flight has by now already reset
+        # the clock for a brand new stream, while device_pos here is still
+        # the *old* stream's reading. Re-check freshness again here, not
+        # just before the request (same race _resync_position_once() guards
+        # against, see its own comment) — comparing device_pos against a
+        # newer stream's clock below would corrupt its calibration.
+        if st.clock.play_generation != generation or not st.is_streaming:
+            logger.debug(
+                f"[lyrics-sync] {candidate.target}: superseded while get_position() "
+                f"was in flight (generation {generation} -> {st.clock.play_generation}) "
+                "— discarding"
+            )
+            return
         # is None: no reading yet, keep polling. A real 0.0 (very common
         # right at track start, which is exactly what this loop is trying to
         # calibrate against) must NOT be treated the same way — `if not
@@ -790,6 +808,18 @@ async def resume_playback(session: SessionState = Depends(require_authenticated_
                 logger.error(f"[resume] Delivery error: {e}", exc_info=True)
                 return {"error": str(e)}
 
+            # The reconnect above starts a *fresh* stream (FFmpeg output
+            # restarts near 0 again), re-incurring the device's startup-
+            # buffering delay exactly like a brand new /play or a /seek —
+            # see _apply_position_offset()'s docstring and the identical
+            # calls from /play, /play-url, and /seek. Without this,
+            # position_offset keeps whatever value was measured before the
+            # pause, so elapsed()/lyrics-sync/the visualizer run ahead of
+            # what's actually audible until the periodic resync below's
+            # first tick catches up, up to POSITION_RESYNC_INTERVAL later.
+            asyncio.create_task(
+                _apply_position_offset(session, st.active_delivery, st.clock.play_generation)
+            )
             # clock.resume() above bumped play_generation, same as seek_to()
             # does — any _resync_position_periodically() task still running
             # from before the pause sees that mismatch on its next wake and

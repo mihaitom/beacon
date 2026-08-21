@@ -1,5 +1,5 @@
 <template>
-  <div class="seek-bar d-flex align-center w-100" style="gap: 8px">
+  <div class="seek-bar" style="gap: 8px">
     <span class="text-caption text-medium-emphasis" style="width: 40px">{{
       formatTime(seekPreviewPosition ?? playbackStore.localPosition)
     }}</span>
@@ -65,18 +65,26 @@ export default {
 </script>
 
 <style scoped>
-/* No max-width here (there used to be a 600px one, and later a fixed
- * 220px one on ControlContainer.vue itself that this inherited via
- * width: 100%) — this deliberately fills ControlContainer.vue's full,
- * stretched width rather than matching CenterControls.vue's own narrower
+/* No max-width here — this deliberately fills ControlContainer.vue's own
+ * width rather than matching CenterControls.vue's own narrower
  * button-cluster width; see ControlContainer.vue's own comment for why.
- * min-width ties the *floor* to that same container's own min-width
- * instead of just implicitly inheriting it via width: 100%, so the
- * dependency is visible here too, not only where the number is actually
- * declared — the one case it still matters: the outer row squeezed narrow
- * enough that even CenterControls.vue's own natural width doesn't fit,
- * see PlayerBar.vue's own min-width for the full arithmetic. */
+ * ControlContainer.vue itself now carries a 600px ceiling (an unclamped
+ * seek bar reads as absurdly wide on a wide monitor) — this just follows
+ * along via width: 100%, the same way it already follows that same
+ * container's min-width floor below. min-width ties the *floor* to that
+ * container's own min-width instead of just implicitly inheriting it via
+ * width: 100%, so the dependency is visible here too, not only where the
+ * number is actually declared — the one case it still matters: the outer
+ * row squeezed narrow enough that even CenterControls.vue's own natural
+ * width doesn't fit, see PlayerBar.vue's own min-width for the full
+ * arithmetic. The intermittent overflow a max-width was once briefly
+ * added *here* to "fix" wasn't actually caused by this being unbounded —
+ * see SongWaveform.vue's own min-width comment for the real cause. */
 .seek-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   min-width: var(--control-container-min-width, 220px);
+  width: 100%;
 }
 </style>

@@ -30,6 +30,23 @@ class AppState:
         # from the frontend's ReplayGain settings for current_track. 1 = no change.
         self.current_track_gain: float = 1.0
         self.is_streaming: bool = False
+        # How many GET /stream connections are *currently* open for this
+        # session, right now — incremented in audio_stream() when a device
+        # actually opens one (not the "no track loaded" 204 case), and
+        # decremented in stream_with_completion()'s own finally block once
+        # that specific connection ends, however it ends. See
+        # _mark_disconnected_if_not_reconnected()'s own docstring for why
+        # this needs to be a live count rather than a single "most recent
+        # connection" marker: multi-target casting (e.g. Chromecast + DLNA
+        # at once) means more than one connection can legitimately be open
+        # for the same session simultaneously, each independently dropping
+        # and reconnecting on its own — a single shared counter/generation
+        # can't tell "the *other* device's connection changed" apart from
+        # "mine did", and either wrongly declares the whole session dead
+        # while a different device is still audibly playing, or never
+        # notices its own device died at all once a later device's
+        # connection has since bumped the count past it.
+        self.active_stream_connections: int = 0
         self.radio_info: dict | None = None
         self.active_delivery: BaseDelivery | DeliveryManager | None = None
         # Wall-clock position tracking for the current track/stream — see

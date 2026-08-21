@@ -11,6 +11,12 @@ import type { Artist, RadioStation, Song } from '@/types/library'
 import { emitter } from '@/emitter'
 import { i18n } from '@/i18n'
 import { initMediaSession } from '@/services/mediaSession'
+import { createPositionTracker } from './positionTracker'
+import { createSequenceGuard } from './sequenceGuard'
+import { createKeyedGuard } from './keyedGuard'
+import { createLock } from './lock'
+import { createEdgeDetector } from './edgeDetector'
+import { diffCastQueue } from './queueReconcile'
 
 // Store actions, not components — no this.$emitter/this.$t here, hence
 // going straight to the underlying singletons those are thin wrappers
@@ -72,7 +78,7 @@ const QUEUE_DRAWER_PEEK_MS = 4000
 
 // setTimeout handle for the above — module-level, not store state: a plain
 // timer id isn't something Pinia needs to track/persist/react to, same
-// reasoning as lastEnded below.
+// reasoning as endedEdge below.
 let queueDrawerAutoCloseTimer: ReturnType<typeof setTimeout> | null = null
 
 function cancelQueueDrawerAutoCloseTimer(): void {
@@ -92,32 +98,31 @@ function armQueueDrawerAutoCloseTimer(store: { queueDrawerOpen: boolean }): void
 // Edge-detects status.ended's false→true transition across SSE updates
 // (module-level: the SSE subscription in init() is set up once per app
 // lifetime, not per store-consumer, so this doesn't belong in state).
-let lastEnded = false
+const endedEdge = createEdgeDetector()
 
 // Guards adoptCastQueue()'s per-song getSong() lookups against firing again
 // for every ~2s SSE tick while resolving the same incoming queue is still in
 // flight — keyed by the joined id sequence being resolved, not a single song
 // id, since adopting now means mirroring the whole queue, not just the
 // current song.
-let reconcilingQueueKey: string | null = null
+const queueReconcileGuard = createKeyedGuard<string>()
 
 // Guards maybeAutoplay() against firing a second, overlapping fetch —
 // startCurrent() and adoptCastQueue() both call it on every song change,
 // which for a cast session receiving ~2s SSE ticks can mean several calls
 // landing before the first getSimilarSongs2() round trip even returns.
 // Module-level, not per-invocation, for the same reason as
-// reconcilingQueueKey above: it needs to survive across those calls.
-let autoplayFetching = false
+// queueReconcileGuard above: it needs to survive across those calls.
+const autoplayLock = createLock()
 
-// Bumped at the top of every switchToIndex() call — lets its catch block
-// tell whether it's still the *latest* switch attempt before rolling
-// currentIndex back on failure. Without this, a slow-to-fail older call
-// (e.g. the first of two rapid Next clicks) can resolve its catch after a
-// second, successful switchToIndex() has already moved currentIndex on,
-// stomping it back to the wrong song. Module-level for the same reason as
-// lastEnded above — this needs to survive across calls, not live in
-// per-invocation local state.
-let switchToIndexSeq = 0
+// Guards switchToIndex()'s catch block against rolling currentIndex back
+// once it's no longer the *latest* switch attempt. Without this, a
+// slow-to-fail older call (e.g. the first of two rapid Next clicks) can
+// resolve its catch after a second, successful switchToIndex() has already
+// moved currentIndex on, stomping it back to the wrong song. Module-level
+// for the same reason as endedEdge above — this needs to survive across
+// calls, not live in per-invocation local state.
+const switchToIndexGuard = createSequenceGuard()
 
 // Guards togglePlay() against a second call landing while the connect
 // branch's first one is still awaiting its pause()/resume() round trip —
@@ -134,15 +139,15 @@ let switchToIndexSeq = 0
 // fix for that: cutting the reconnect pile-up off at the source instead of
 // only smoothing its aftermath (see PlaybackClock.elapsed()'s own comment
 // for the latter's half of this fix).
-let togglePlayInFlight = false
+const togglePlayLock = createLock()
 
-// Bumped at the top of every startCurrent() call — lets its own tail (the
-// isPlaying=true flip and "now playing" scrobble) tell whether a newer
-// startCurrent() has since superseded it before applying those, the same
-// class of race switchToIndexSeq guards against above. Kept separate from
-// switchToIndexSeq since startCurrent() also runs outside switchToIndex()
-// (playSongList(), advanceOnSongEnd()'s repeat-one branch).
-let startCurrentSeq = 0
+// Guards startCurrent()'s own tail (the isPlaying=true flip and "now
+// playing" scrobble) against applying once a newer startCurrent() has since
+// superseded it — the same class of race switchToIndexGuard guards against
+// above. Kept separate from switchToIndexGuard since startCurrent() also
+// runs outside switchToIndex() (playSongList(), advanceOnSongEnd()'s
+// repeat-one branch).
+const startCurrentGuard = createSequenceGuard()
 
 // Set while our own startCurrent() has told the connect backend to switch
 // to a song but hasn't heard back yet — an SSE status tick can land in
@@ -150,7 +155,7 @@ let startCurrentSeq = 0
 // processed our command yet), which reconcileFromStatus() would otherwise
 // read as "a queue it doesn't recognize" and blow away the whole queue down
 // to that one stale song. See reconcileFromStatus()'s early return below.
-let pendingLocalSongChange: string | null = null
+const localSongChangeGuard = createKeyedGuard<string>()
 
 // The song id already registered as "played" (scrobble submission=true)
 // during the current play-through — guards checkScrobbleThreshold() against
@@ -159,19 +164,11 @@ let pendingLocalSongChange: string | null = null
 // this to null first, see below).
 let scrobbledSongId: string | null = null
 
-// Cast playback's position otherwise only ever moves in ~2s jumps (however
-// often the connect backend's SSE status ticks — see connect.$subscribe()
-// below), which reads as visibly stuttering on the seek bar and puts lyric
-// line highlighting up to ~2s behind the actual audio. These two song the
-// last real (server-authoritative, buffering-delay-calibrated — see
-// connect/routes/playback.py's _apply_position_offset) position report, so
-// the interval below can extrapolate smoothly forward from it every 200ms
-// in between, re-anchoring to the next real report as soon as it arrives
-// (small corrections, not visible jumps, the same way any client-side
-// clock reconciled against a server clock behaves). `null` until the first
-// real report — extrapolating before that would just be guessing.
-let lastServerElapsed: number | null = null
-let lastServerElapsedAt = 0
+// Smooths cast playback's position — see positionTracker.ts's own comment
+// for why and how. The status tick's position is server-authoritative and
+// buffering-delay-calibrated (see connect/routes/playback.py's
+// _apply_position_offset) — exactly what record() below should anchor to.
+const positionTracker = createPositionTracker()
 
 // Subsonic/Last.fm convention: a play counts once listened past 50% of the
 // song or 4 minutes, whichever comes first.
@@ -239,16 +236,16 @@ let localResumeDecided = false
 // (user hit "Stop casting"/disconnected the last device mid-session) can be
 // told apart from merely observing "not casting" on app boot, which
 // decideLocalResume() already owns — see the $subscribe handler in init().
-let wasCastingActive = false
+const castingActiveEdge = createEdgeDetector()
 
-// All the singleton bookkeeping above (lastEnded, the seq counters,
+// All the singleton bookkeeping above (endedEdge, the seq/keyed guards,
 // persistTimer, ...) lives outside Pinia's own reactive state, so Vite's
 // partial HMR doesn't know to reset or preserve it consistently — a live
 // edit to this file while a song's playing can leave a *new* module
-// instance's fresh `lastEnded = false` etc. racing against timers/
-// subscriptions still running from the *old* one, which reads as
-// impossible playback bugs (UI stuck on a track connect already advanced
-// past, see the 2026-08-18 "stuck on Tinlicker" debugging session).
+// instance's fresh guard state racing against timers/subscriptions still
+// running from the *old* one, which reads as impossible playback bugs (UI
+// stuck on a track connect already advanced past, see the 2026-08-18
+// "stuck on Tinlicker" debugging session).
 // hot.decline() used to be the direct way to opt a module out of HMR, but
 // Vite removed it — self-accepting and immediately invalidating is the
 // current replacement, forcing a full reload on any edit to this file
@@ -417,7 +414,8 @@ export const usePlaybackStore = defineStore('playback', {
         // while casting, since this same tick's early return (right below)
         // skips overwriting them from a now-inactive status. Exactly what
         // local playback should pick back up from.
-        if (localResumeDecided && wasCastingActive && !activeNow) {
+        const castingEdge = castingActiveEdge.update(activeNow)
+        if (localResumeDecided && castingEdge === 'falling') {
           // A takeover displacing this session from its target is not the
           // user asking to stop — picking playback back up over local
           // speakers would be audibly wrong (nobody asked this machine to
@@ -426,32 +424,28 @@ export const usePlaybackStore = defineStore('playback', {
           if (status?.displaced) this.isPlaying = false
           else void this.handOffToLocalPlayback()
         }
-        wasCastingActive = activeNow
 
         if (!status || !activeNow) return
 
         this.isPlaying = status.streaming && !status.paused
         this.localPosition = status.elapsed
-        lastServerElapsed = status.elapsed
-        lastServerElapsedAt = performance.now()
+        positionTracker.record(status.elapsed, performance.now())
         if (status.current_song) this.duration = status.current_song.duration
         this.checkScrobbleThreshold()
 
         void this.reconcileFromStatus(status)
 
-        if (status.ended && !lastEnded) void this.advanceOnSongEnd()
-        lastEnded = status.ended
+        if (endedEdge.update(status.ended) === 'rising') void this.advanceOnSongEnd()
       })
 
       // Smooths the ~2s-stepped position above into something that moves
-      // every 200ms instead — see lastServerElapsed's comment. A no-op
+      // every 200ms instead — see positionTracker.ts's own comment. A no-op
       // whenever not actively cast-playing, so this is cheap to just leave
       // running for the app's whole lifetime rather than starting/stopping
       // it around every play/pause/cast-toggle.
       setInterval(() => {
-        if (!this.isCasting || !this.isPlaying || lastServerElapsed === null) return
-        const extrapolated = lastServerElapsed + (performance.now() - lastServerElapsedAt) / 1000
-        this.localPosition = this.duration ? Math.min(extrapolated, this.duration) : extrapolated
+        if (!this.isCasting || !this.isPlaying || !positionTracker.hasAnchor()) return
+        this.localPosition = positionTracker.extrapolate(performance.now(), this.duration)
       }, 200)
 
       // Keeps the persisted snapshot fresh so a reload always has something
@@ -619,7 +613,7 @@ export const usePlaybackStore = defineStore('playback', {
       }
 
       if (!status.current_song) return
-      if (pendingLocalSongChange) return // our own song switch hasn't been confirmed yet — see above
+      if (localSongChangeGuard.hasAny()) return // our own song switch hasn't been confirmed yet — see above
 
       await this.adoptCastQueue(status)
     },
@@ -646,22 +640,12 @@ export const usePlaybackStore = defineStore('playback', {
       if (this.repeatMode !== status.repeat_mode) this.repeatMode = status.repeat_mode
 
       const remoteOriginalIds = status.original_queue
-      const queueMatches = idsEqual(
-        this.queue.map((t) => t.id),
-        remoteQueueIds,
+      // See diffCastQueue()'s own comment for why an empty remote
+      // original_queue counts as a match rather than something to adopt.
+      const { queueMatches, originalMatches } = diffCastQueue(
+        { queue: this.queue.map((t) => t.id), originalQueue: this.originalQueue.map((t) => t.id) },
+        { queue: remoteQueueIds, originalQueue: remoteOriginalIds },
       )
-      // Empty remote original_queue is treated as "nothing to adopt" rather
-      // than "adopt an empty list" — a defensive guard against wiping this
-      // client's own originalQueue from a payload that never meaningfully
-      // set one (shouldn't normally happen — setQueue() always keeps the
-      // two in lockstep — but an empty original_queue is never useful to
-      // adopt either way).
-      const originalMatches =
-        remoteOriginalIds.length === 0 ||
-        idsEqual(
-          this.originalQueue.map((t) => t.id),
-          remoteOriginalIds,
-        )
 
       if (queueMatches && originalMatches) {
         // Contents already match — currentIndex can still be stale on its
@@ -673,9 +657,9 @@ export const usePlaybackStore = defineStore('playback', {
       }
 
       const key = `${remoteQueueIds.join(',')}|${remoteOriginalIds.join(',')}`
-      if (reconcilingQueueKey === key) return // already resolving this exact pair
+      if (queueReconcileGuard.isCurrent(key)) return // already resolving this exact pair
 
-      reconcilingQueueKey = key
+      queueReconcileGuard.begin(key)
       try {
         const library = useLibraryStore()
         // Reuses this client's own existing Song object for any id it
@@ -703,7 +687,7 @@ export const usePlaybackStore = defineStore('playback', {
         )
         // Re-check after the awaits — a local action (or a newer status
         // tick resolving first) may have already moved state on.
-        if (reconcilingQueueKey !== key) return
+        if (!queueReconcileGuard.isCurrent(key)) return
         // A lookup failed for something either list needs — leave local
         // state as-is rather than adopting a queue with a hole in it; the
         // next status tick tries again.
@@ -715,7 +699,7 @@ export const usePlaybackStore = defineStore('playback', {
         this.currentIndex = status.current_song_index
         void this.maybeAutoplay()
       } finally {
-        if (reconcilingQueueKey === key) reconcilingQueueKey = null
+        queueReconcileGuard.end(key)
       }
     },
 
@@ -789,7 +773,7 @@ export const usePlaybackStore = defineStore('playback', {
       const previous = this.currentIndex
       const wasPlaying = this.isPlaying
       this.currentIndex = index
-      const seq = ++switchToIndexSeq
+      const seq = switchToIndexGuard.begin()
       try {
         const applied = await this.startCurrent()
         if (!applied) {
@@ -800,13 +784,13 @@ export const usePlaybackStore = defineStore('playback', {
           // catch block below does for a genuine failure — whichever
           // dispatch really won updates currentIndex correctly on its own
           // next real SSE status tick (see reconcileFromStatus()).
-          if (seq === switchToIndexSeq) this.currentIndex = previous
+          if (switchToIndexGuard.isCurrent(seq)) this.currentIndex = previous
           return
         }
         // Only re-pause if nothing newer has taken over in the meantime —
         // same staleness guard as the catch block below, see
-        // switchToIndexSeq's comment.
-        if (preservePause && !wasPlaying && seq === switchToIndexSeq) {
+        // switchToIndexGuard's comment.
+        if (preservePause && !wasPlaying && switchToIndexGuard.isCurrent(seq)) {
           if (this.isCasting) await connectPlayback.pause()
           else getAudioEngine().pause()
           this.isPlaying = false
@@ -815,8 +799,8 @@ export const usePlaybackStore = defineStore('playback', {
         // Only roll back if nothing newer (another switchToIndex call) has
         // already taken over — otherwise this stale failure would stomp
         // currentIndex back over a since-successful switch. See
-        // switchToIndexSeq's comment.
-        if (seq === switchToIndexSeq) {
+        // switchToIndexGuard's comment.
+        if (switchToIndexGuard.isCurrent(seq)) {
           this.currentIndex = previous
           this.isPlaying = false
         }
@@ -895,21 +879,20 @@ export const usePlaybackStore = defineStore('playback', {
     async startCurrent(startPosition = 0): Promise<boolean> {
       const song = this.currentSong
       if (!song) return false
-      const seq = ++startCurrentSeq
+      const seq = startCurrentGuard.begin()
       const connect = useConnectStore()
       this.localPosition = startPosition
       scrobbledSongId = null // fresh play-through, even if it's the same song id as before
-      // Otherwise the extrapolation interval (see lastServerElapsed's
-      // comment above) would keep advancing *this* song's position from
-      // the *previous* song's last known elapsed until the next real SSE
-      // tick corrects it — a stale number that looks like live progress,
-      // worse than just sitting still. Cleared here regardless of cast
-      // state; harmless when not casting since the interval already no-ops
-      // then.
-      lastServerElapsed = null
+      // Otherwise the extrapolation interval (see positionTracker.ts's own
+      // comment) would keep advancing *this* song's position from the
+      // *previous* song's last known elapsed until the next real SSE tick
+      // corrects it — a stale number that looks like live progress, worse
+      // than just sitting still. Cleared here regardless of cast state;
+      // harmless when not casting since the interval already no-ops then.
+      positionTracker.reset()
 
       if (connect.isActive) {
-        pendingLocalSongChange = song.id
+        localSongChangeGuard.begin(song.id)
         let response: PlayResponse
         const {
           fullQueue,
@@ -934,7 +917,7 @@ export const usePlaybackStore = defineStore('playback', {
             autoplayBatchSize,
           })
         } finally {
-          if (pendingLocalSongChange === song.id) pendingLocalSongChange = null
+          localSongChangeGuard.end(song.id)
         }
         if (response.status === 'superseded') return false
       } else {
@@ -944,8 +927,8 @@ export const usePlaybackStore = defineStore('playback', {
       // A newer startCurrent() already took over while the above awaited —
       // applying isPlaying/scrobble here would be reporting "now playing"
       // for a song that isn't the current one anymore. See
-      // startCurrentSeq's comment.
-      if (seq !== startCurrentSeq) return false
+      // startCurrentGuard's comment.
+      if (!startCurrentGuard.isCurrent(seq)) return false
       this.isPlaying = true
       void useLibraryStore()
         .client()
@@ -983,11 +966,11 @@ export const usePlaybackStore = defineStore('playback', {
     },
 
     async togglePlay(): Promise<void> {
-      // See togglePlayInFlight's own comment — a second call landing while
+      // See togglePlayLock's own comment — a second call landing while
       // the connect branch's first one is still in flight would otherwise
       // read the same stale this.isPlaying and re-fire the same action.
-      if (togglePlayInFlight) return
-      togglePlayInFlight = true
+      if (togglePlayLock.isLocked()) return
+      togglePlayLock.acquire()
       try {
         const connect = useConnectStore()
         if (connect.isActive) {
@@ -1026,7 +1009,7 @@ export const usePlaybackStore = defineStore('playback', {
           this.isPlaying = true
         }
       } finally {
-        togglePlayInFlight = false
+        togglePlayLock.release()
       }
     },
 
@@ -1088,12 +1071,11 @@ export const usePlaybackStore = defineStore('playback', {
       const connect = useConnectStore()
       if (connect.isActive) {
         await connectPlayback.seek(position)
-        // Re-anchors the extrapolation interval (see lastServerElapsed's
-        // comment) to the seeked-to position right away — otherwise it'd
-        // keep extrapolating from the pre-seek anchor for up to ~200ms and
-        // briefly overwrite this seek with a stale position.
-        lastServerElapsed = position
-        lastServerElapsedAt = performance.now()
+        // Re-anchors the extrapolation interval (see positionTracker.ts's
+        // own comment) to the seeked-to position right away — otherwise
+        // it'd keep extrapolating from the pre-seek anchor for up to ~200ms
+        // and briefly overwrite this seek with a stale position.
+        positionTracker.record(position, performance.now())
       } else {
         getAudioEngine().seek(position)
       }
@@ -1173,11 +1155,11 @@ export const usePlaybackStore = defineStore('playback', {
       if (!useAuthStore().capabilities.songRadio) return
       if (this.currentIndex < 0) return
       if (this.queue.length - 1 - this.currentIndex > AUTOPLAY_TRIGGER_REMAINING) return
-      if (autoplayFetching) return // already topping up from an earlier call
+      if (autoplayLock.isLocked()) return // already topping up from an earlier call
 
       const seed = this.queue[this.queue.length - 1]
       if (!seed) return
-      autoplayFetching = true
+      autoplayLock.acquire()
       try {
         const { songs: similar, plexPassRequired } = await useLibraryStore()
           .client()
@@ -1208,7 +1190,7 @@ export const usePlaybackStore = defineStore('playback', {
       } catch (error) {
         console.error('[playback] Autoplay top-up failed:', error)
       } finally {
-        autoplayFetching = false
+        autoplayLock.release()
       }
     },
 
@@ -1490,13 +1472,6 @@ export function dedupeForQueue(songs: Song[], existingQueue: Song[]): Song[] {
     seen.add(t)
     return t
   })
-}
-
-/** Same-length, same-order id comparison — used by adoptCastQueue() to tell
- * whether an incoming queue/originalQueue actually differs before doing any
- * (async, per-song) resolution work. */
-export function idsEqual(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every((id, i) => id === b[i])
 }
 
 export function shuffledExcept(songs: Song[], keepFirst: Song | null | undefined): Song[] {
