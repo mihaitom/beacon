@@ -16,5 +16,22 @@ export default defineConfig({
     test: {
         environment: 'jsdom',
         include: ['src/renderer/src/**/__tests__/**/*.test.ts'],
+        // *.browser.test.ts (see vitest.browser.config.ts) needs real CSS
+        // layout — container queries, clamp(), the flip-card's 3D
+        // transform — none of which jsdom actually computes. Excluded here
+        // so this project doesn't also try to run them (they'd "pass"
+        // against jsdom's fake layout without checking anything real).
+        exclude: ['**/node_modules/**', '**/*.browser.test.ts'],
+        setupFiles: ['src/renderer/src/__tests__/setup.ts'],
+        server: {
+            // Vitest externalizes node_modules deps by default (Node requires
+            // them directly, bypassing Vite's transform pipeline) — Vuetify's
+            // components each carry a side-effect .css import that only Vite
+            // knows how to handle, so a plain Node require of one blows up
+            // with "Unknown file extension .css" the moment a component test
+            // mounts real Vuetify components (v-btn, v-slider, ...) instead
+            // of stubbing them.
+            deps: { inline: [/vuetify/] },
+        },
     },
 });

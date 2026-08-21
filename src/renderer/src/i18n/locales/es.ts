@@ -127,6 +127,7 @@ export default {
   player: {
     nothingPlaying: 'Nada reproduciéndose',
     mute: 'Silenciar',
+    volume: 'Volumen',
     autoplay: 'Reproducción automática',
   },
   nowPlaying: {
@@ -188,10 +189,8 @@ export default {
   remoteControl: {
     title: 'Control remoto',
     hint: 'Permite que un teléfono en tu red controle la reproducción — Reproduciendo ahora, Cola, Listas de reproducción, Canciones y Radio.',
-    enable: 'Activar control remoto',
     enableFailed: 'No se pudo activar el control remoto.',
     disableFailed: 'No se pudo desactivar el control remoto.',
-    showCode: 'Mostrar código de emparejamiento',
     pairTitle: 'Emparejar un teléfono',
     pairHint:
       'Escanea este código con la cámara de tu teléfono, o abre la dirección de abajo e introduce el PIN.',
@@ -199,8 +198,6 @@ export default {
     regenerate: 'Regenerar código',
     needsRegenerate:
       'El código de emparejamiento anterior ya no está disponible. Genera uno nuevo para emparejar un teléfono — esto desconectará cualquier teléfono emparejado anteriormente.',
-    activeHint:
-      'El control remoto está activo — un teléfono puede controlar la reproducción. Haz clic para abrir Ajustes.',
   },
   settings: {
     title: 'Ajustes',

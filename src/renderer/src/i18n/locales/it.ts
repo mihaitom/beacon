@@ -116,7 +116,7 @@ export default {
     artistRadio: "Radio dell'artista",
     artistRadioError: "Impossibile avviare la radio dell'artista.",
     plexPassRequired:
-      "Serve un abbonamento Plex Pass attivo - è Plex stesso a bloccare la propria funzione Sonic Analysis (Radio brano/artista, Autoplay) dietro questo abbonamento, Beacon non può aggirarlo.",
+      'Serve un abbonamento Plex Pass attivo - è Plex stesso a bloccare la propria funzione Sonic Analysis (Radio brano/artista, Autoplay) dietro questo abbonamento, Beacon non può aggirarlo.',
     viewOnService: 'Vedi su {service}',
     selected: 'selezionati',
     clearSelection: 'Cancella selezione',
@@ -126,6 +126,7 @@ export default {
   player: {
     nothingPlaying: 'Nessuna riproduzione in corso',
     mute: 'Muto',
+    volume: 'Volume',
     autoplay: 'Autoplay',
   },
   nowPlaying: {
@@ -188,10 +189,8 @@ export default {
   remoteControl: {
     title: 'Controllo remoto',
     hint: 'Consenti a un telefono sulla tua rete di controllare la riproduzione — In riproduzione, Coda, Playlist, Brani e Radio.',
-    enable: 'Attiva controllo remoto',
     enableFailed: 'Impossibile attivare il controllo remoto.',
     disableFailed: 'Impossibile disattivare il controllo remoto.',
-    showCode: 'Mostra codice di associazione',
     pairTitle: 'Associa un telefono',
     pairHint:
       "Scansiona questo codice con la fotocamera del telefono, oppure apri l'indirizzo qui sotto e inserisci il PIN.",
@@ -199,8 +198,6 @@ export default {
     regenerate: 'Rigenera codice',
     needsRegenerate:
       'Il codice di associazione precedente non è più disponibile. Rigeneralo per associare un telefono: questo disconnetterà qualsiasi telefono associato in precedenza.',
-    activeHint:
-      'Il controllo remoto è attivo: un telefono può controllare la riproduzione. Fai clic per aprire le Impostazioni.',
   },
   settings: {
     title: 'Impostazioni',
@@ -254,7 +251,7 @@ export default {
     autoplay: 'Autoplay',
     autoplayBatchSizeItem: '{count} brani',
     autoplayHint:
-      "Si attiva/disattiva dalla barra di riproduzione (accanto a Coda), non qui — questo controlla solo quanti brani simili vengono aggiunti ogni volta che la coda viene rifornita, tramite lo stesso motore di raccomandazione di Radio brano/artista. Non si attiva se Ripeti è già acceso, perché in quel caso la coda non si svuota mai da sola.",
+      'Si attiva/disattiva dalla barra di riproduzione (accanto a Coda), non qui — questo controlla solo quanti brani simili vengono aggiunti ogni volta che la coda viene rifornita, tramite lo stesso motore di raccomandazione di Radio brano/artista. Non si attiva se Ripeti è già acceso, perché in quel caso la coda non si svuota mai da sola.',
     about: 'Informazioni su Beacon',
     whatsNew: 'Novità?',
     ffmpegFound: 'ffmpeg trovato',

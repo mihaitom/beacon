@@ -126,6 +126,7 @@ export default {
   player: {
     nothingPlaying: 'Nothing playing',
     mute: 'Mute',
+    volume: 'Volume',
     autoplay: 'Autoplay',
   },
   nowPlaying: {
@@ -187,10 +188,8 @@ export default {
   remoteControl: {
     title: 'Remote Control',
     hint: 'Let a phone on your network control playback — Now Playing, Queue, Playlists, Songs, and Radio.',
-    enable: 'Enable Remote Control',
     enableFailed: "Couldn't enable Remote Control.",
     disableFailed: "Couldn't disable Remote Control.",
-    showCode: 'Show pairing code',
     pairTitle: 'Pair a phone',
     pairHint:
       "Scan this code with your phone's camera, or open the address below and enter the PIN.",
@@ -198,7 +197,6 @@ export default {
     regenerate: 'Regenerate code',
     needsRegenerate:
       'The pairing code from last time is no longer available. Regenerate a new one to pair a phone — this disconnects any phone paired earlier.',
-    activeHint: 'Remote Control is active — a phone can control playback. Click to open Settings.',
   },
   settings: {
     title: 'Settings',

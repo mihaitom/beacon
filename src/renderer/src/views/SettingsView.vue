@@ -30,39 +30,6 @@
       />
     </section>
 
-    <!-- Electron-only: this pairs a phone against *this* already-running
-     - desktop window over the LAN (see stores/remoteControl.ts). In a
-     - Docker/web deployment there's no separate desktop instance to pair
-     - against — the browser tab itself already is the player, and the new
-     - mobile web view (composables/useIsMobileWeb.ts) covers that use case
-     - directly, without PIN pairing. -->
-    <section v-if="isElectron" class="mb-10">
-      <h2 class="section-title mb-4">{{ $t('remoteControl.title') }}</h2>
-      <p class="text-body-2 text-medium-emphasis mb-4">
-        {{ $t('remoteControl.hint') }}
-      </p>
-      <v-switch
-        :model-value="remoteControlStore.enabled"
-        :loading="remoteControlBusy"
-        :disabled="remoteControlBusy"
-        color="primary"
-        density="compact"
-        hide-details
-        :label="$t('remoteControl.enable')"
-        @update:model-value="onRemoteControlToggle"
-      />
-      <v-btn
-        v-if="remoteControlStore.enabled"
-        variant="tonal"
-        prepend-icon="mdi-qrcode"
-        class="mt-3"
-        @click="showPairingDialog = true"
-      >
-        {{ $t('remoteControl.showCode') }}
-      </v-btn>
-      <remote-control-pairing-dialog v-model="showPairingDialog" />
-    </section>
-
     <section class="mb-10">
       <h2 class="section-title mb-4">{{ $t('settings.playbackTitle') }}</h2>
       <p class="text-body-2 font-weight-medium mb-2">{{ $t('settings.replayGain') }}</p>
@@ -239,7 +206,6 @@ import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useConnectStore } from '@/stores/connect'
-import { useRemoteControlStore } from '@/stores/remoteControl'
 import { clearLyricsCache } from '@/stores/lyrics'
 import { getLocale, setLocale, type SupportedLocale } from '@/i18n'
 import { getLogLevel, setLogLevel, type LogLevel } from '@/services/connect/logLevel'
@@ -250,7 +216,6 @@ import type { ReplayGainMode } from '@/services/replayGain'
 import NavidromeIcon from '@/components/auth/NavidromeIcon.vue'
 import JellyfinIcon from '@/components/auth/JellyfinIcon.vue'
 import PlexIcon from '@/components/auth/PlexIcon.vue'
-import RemoteControlPairingDialog from '@/components/settings/RemoteControlPairingDialog.vue'
 import packageJson from '../../../../package.json'
 
 // How often getScanStatus.view is polled while a scan is running — frequent
@@ -261,7 +226,7 @@ const SCAN_POLL_INTERVAL_MS = 2000
 
 export default {
   name: 'SettingsView',
-  components: { NavidromeIcon, JellyfinIcon, PlexIcon, RemoteControlPairingDialog },
+  components: { NavidromeIcon, JellyfinIcon, PlexIcon },
   data() {
     return {
       serverUrl: '',
@@ -274,8 +239,6 @@ export default {
       scanCount: 0,
       scanTimer: null as ReturnType<typeof setTimeout> | null,
       resettingAirplay: false,
-      remoteControlBusy: false,
-      showPairingDialog: false,
       // null until loadLogLevel() (created() below) resolves — the
       // v-select stays disabled/loading until then rather than guessing a
       // default that might not match what's actually configured backend-side.
@@ -289,9 +252,6 @@ export default {
     },
     connectStore() {
       return useConnectStore()
-    },
-    remoteControlStore() {
-      return useRemoteControlStore()
     },
     libraryStore() {
       return useLibraryStore()
@@ -307,9 +267,6 @@ export default {
     },
     autoplayStore() {
       return useAutoplayStore()
-    },
-    isElectron(): boolean {
-      return !!window.api
     },
     // Defaults to true (no warning dot) while health hasn't loaded yet —
     // ffmpeg being genuinely missing is rare enough that a false negative
@@ -535,28 +492,6 @@ export default {
         console.error('[settings] Failed to reset AirPlay pairings:', error)
       } finally {
         this.resettingAirplay = false
-      }
-    },
-    async onRemoteControlToggle(value: boolean | null) {
-      this.remoteControlBusy = true
-      try {
-        if (value) {
-          await this.remoteControlStore.enable()
-          this.showPairingDialog = true
-        } else {
-          await this.remoteControlStore.disable()
-        }
-      } catch (error) {
-        this.$emitter.emit('toast', {
-          level: 'error',
-          title: this.$t('remoteControl.title'),
-          message: value
-            ? this.$t('remoteControl.enableFailed')
-            : this.$t('remoteControl.disableFailed'),
-        })
-        console.error('[settings] Failed to toggle remote control:', error)
-      } finally {
-        this.remoteControlBusy = false
       }
     },
   },

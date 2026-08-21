@@ -6,7 +6,18 @@
         :content="connectStore.activeTargets.length"
         color="primary"
       >
-        <v-btn :icon="icon" :color="iconColor" variant="text" v-bind="menuProps" />
+        <!-- density="comfortable" — every other icon button in
+         - PlayerBar.vue's own toolbar sets this explicitly; without it here
+         - too this rendered at Vuetify's default (larger) density, a real
+         - 48px vs. 36px, not just a visual illusion — measured directly,
+         - not guessed. -->
+        <v-btn
+          :icon="icon"
+          :color="iconColor"
+          variant="text"
+          density="comfortable"
+          v-bind="menuProps"
+        />
       </v-badge>
     </template>
     <connect-device-picker />

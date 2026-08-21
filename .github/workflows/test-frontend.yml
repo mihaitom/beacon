@@ -1,0 +1,45 @@
+name: Frontend Tests
+
+on:
+    workflow_dispatch:
+    push:
+        branches: [main]
+        paths:
+            - src/renderer/**
+            - vitest.config.ts
+            - vitest.browser.config.ts
+            - package.json
+            - pnpm-lock.yaml
+    pull_request:
+        paths:
+            - src/renderer/**
+            - vitest.config.ts
+            - vitest.browser.config.ts
+            - package.json
+            - pnpm-lock.yaml
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            - name: Install Node and PNPM
+              uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+            - name: Install dependencies
+              run: pnpm install
+
+            - name: Run unit tests (jsdom)
+              run: pnpm test:unit
+
+            # Only the layout suite (vitest.browser.config.ts) needs a real
+            # browser — installed here rather than unconditionally on every
+            # job so a jsdom-only failure above fails fast without waiting
+            # on this download first.
+            - name: Install Playwright Chromium
+              run: pnpm exec playwright install --with-deps chromium
+
+            - name: Run layout tests (real browser)
+              run: pnpm test:layout

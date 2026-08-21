@@ -13,6 +13,10 @@
     />
     <div class="now-playing__scrim" :style="ambientStyle" />
 
+    <!-- density="comfortable" on every button below — matches PlayerBar.vue's
+     - own toolbar icons app-wide; left implicit (Vuetify's larger default
+     - density) before, these rendered visibly bigger than every other icon
+     - button in the app. -->
     <div v-if="hasPlayable" class="now-playing__toolbar">
       <!-- PlayerBar.vue's own lyrics button (the normal way to reach this
        - on desktop) is outside .now-playing entirely, so fullscreen — which
@@ -29,6 +33,7 @@
         v-if="currentSong && (compact || isFullscreen)"
         icon="mdi-script-text-outline"
         variant="text"
+        density="comfortable"
         :title="$t('lyrics.title')"
         @click="playbackStore.toggleLyricsDrawer()"
       />
@@ -44,12 +49,14 @@
         icon="mdi-infinity"
         :color="autoplayStore.enabled ? 'primary' : undefined"
         variant="text"
+        density="comfortable"
         :title="$t('player.autoplay')"
         @click="autoplayStore.setEnabled(!autoplayStore.enabled)"
       />
       <v-btn
         :icon="showVisualizer ? 'mdi-equalizer' : 'mdi-equalizer-outline'"
         variant="text"
+        density="comfortable"
         :title="$t('nowPlaying.toggleVisualizer')"
         @click="showVisualizer = !showVisualizer"
       />
@@ -61,6 +68,7 @@
         v-if="!compact"
         :icon="isFullscreen ? 'mdi-fullscreen-exit' : 'mdi-fullscreen'"
         variant="text"
+        density="comfortable"
         :title="$t('nowPlaying.toggleFullscreen')"
         @click="toggleFullscreen"
       />

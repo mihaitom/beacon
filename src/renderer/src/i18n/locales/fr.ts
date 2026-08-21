@@ -126,6 +126,7 @@ export default {
   player: {
     nothingPlaying: 'Rien en cours de lecture',
     mute: 'Muet',
+    volume: 'Volume',
     autoplay: 'Lecture automatique',
   },
   nowPlaying: {
@@ -188,10 +189,8 @@ export default {
   remoteControl: {
     title: 'Contrôle à distance',
     hint: "Laissez un téléphone sur votre réseau contrôler la lecture — Lecture en cours, File d'attente, Playlists, Titres et Radio.",
-    enable: 'Activer le contrôle à distance',
     enableFailed: "Impossible d'activer le contrôle à distance.",
     disableFailed: 'Impossible de désactiver le contrôle à distance.',
-    showCode: "Afficher le code d'association",
     pairTitle: 'Associer un téléphone',
     pairHint:
       "Scannez ce code avec l'appareil photo de votre téléphone, ou ouvrez l'adresse ci-dessous et saisissez le code PIN.",
@@ -199,8 +198,6 @@ export default {
     regenerate: 'Régénérer le code',
     needsRegenerate:
       "Le code d'association précédent n'est plus disponible. Générez-en un nouveau pour associer un téléphone — cela déconnectera tout téléphone associé précédemment.",
-    activeHint:
-      'Le contrôle à distance est actif — un téléphone peut contrôler la lecture. Cliquez pour ouvrir les Paramètres.',
   },
   settings: {
     title: 'Paramètres',

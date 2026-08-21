@@ -1,5 +1,11 @@
 pnpm exec lint-staged
 
+if git diff --cached --name-only | grep -qE '^(src/renderer/|vitest\.config\.ts|vitest\.browser\.config\.ts)'; then
+  echo "→ frontend changed — running the Vue test suite…"
+  pnpm test:unit || exit 1
+  pnpm test:layout || exit 1
+fi
+
 if git diff --cached --name-only | grep -q '^connect/'; then
   echo "→ connect/ changed — running the Python test suite…"
   (cd connect && uv run --group dev pytest) || exit 1

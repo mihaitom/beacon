@@ -1,363 +1,73 @@
 <template>
   <v-footer app inset height="88" color="#0B0D13" class="player-bar px-4">
-    <div class="d-flex align-center w-100" style="gap: 16px">
-      <div
-        class="song-info d-flex align-center"
-        style="width: 220px; cursor: pointer"
-        @click="hasPlayable && $router.push('/now-playing')"
-      >
-        <cover-art
-          v-if="currentSong"
-          :cover-art-id="currentSong.coverArtId"
-          :size="48"
-          class="player-bar__cover mr-3"
-        />
-        <cover-art
-          v-else-if="playbackStore.radioStation"
-          :image-url="radioFaviconSrc"
-          :size="48"
-          fallback-icon="mdi-radio"
-          class="player-bar__cover mr-3"
-        />
-        <div class="min-width-0">
-          <div class="text-body-2 text-truncate">
-            {{
-              currentSong?.title ?? playbackStore.radioStation?.name ?? $t('player.nothingPlaying')
-            }}
-          </div>
-          <router-link
-            v-if="currentSong"
-            :to="`/artists/${currentSong.artistId}`"
-            class="text-caption text-medium-emphasis text-truncate player-bar__artist-link"
-            @click.stop
-          >
-            {{ currentSong.artist }}
-          </router-link>
-          <div v-else class="text-caption text-medium-emphasis text-truncate" />
-        </div>
-        <v-btn
-          v-if="currentSong && authStore.capabilities.favorites"
-          :icon="currentSong.starred ? 'mdi-heart' : 'mdi-heart-outline'"
-          :color="currentSong.starred ? 'primary' : undefined"
-          :disabled="starringInFlight"
-          variant="text"
-          density="comfortable"
-          size="small"
-          @click.stop="toggleStar"
-        />
-      </div>
-
-      <div class="flex-grow-1 d-flex flex-column align-center min-width-0">
-        <div class="d-flex align-center" style="gap: 4px">
-          <v-btn
-            icon="mdi-shuffle"
-            :color="playbackStore.shuffle ? 'primary' : undefined"
-            variant="text"
-            density="comfortable"
-            @click="playbackStore.toggleShuffle()"
-          />
-          <v-btn
-            icon="mdi-skip-previous"
-            variant="text"
-            density="comfortable"
-            :disabled="!hasPlayable"
-            @click="playbackStore.playPrevious()"
-          />
-          <v-btn
-            class="player-bar__play-btn mx-1"
-            :icon="playbackStore.isPlaying ? 'mdi-pause' : 'mdi-play'"
-            variant="flat"
-            color="primary"
-            size="large"
-            density="comfortable"
-            :disabled="!hasPlayable"
-            @click="playbackStore.togglePlay()"
-          />
-          <v-btn
-            icon="mdi-skip-next"
-            variant="text"
-            density="comfortable"
-            :disabled="!hasPlayable || !playbackStore.hasNext"
-            @click="playbackStore.playNext()"
-          />
-          <v-btn
-            :icon="repeatIcon"
-            :color="playbackStore.repeatMode !== 'off' ? 'primary' : undefined"
-            variant="text"
-            density="comfortable"
-            @click="playbackStore.cycleRepeatMode()"
-          />
-        </div>
-        <div class="d-flex align-center w-100" style="gap: 8px; max-width: 600px">
-          <span class="text-caption text-medium-emphasis" style="width: 40px">{{
-            formatTime(seekPreviewPosition ?? playbackStore.localPosition)
-          }}</span>
-          <song-waveform
-            :model-value="seekPreviewPosition ?? playbackStore.localPosition"
-            :duration="playbackStore.duration"
-            :disabled="!hasPlayable || !!playbackStore.radioStation"
-            @update:model-value="seekPreviewPosition = $event"
-            @end="onSeekEnd"
-          />
-          <span class="text-caption text-medium-emphasis" style="width: 40px">{{
-            formatTime(playbackStore.duration)
-          }}</span>
-        </div>
-      </div>
-
-      <div class="d-flex align-center" style="min-width: 320px; gap: 4px">
-        <v-btn
-          v-if="currentSong"
-          icon="mdi-script-text-outline"
-          :color="playbackStore.lyricsDrawerOpen ? 'primary' : undefined"
-          variant="text"
-          density="comfortable"
-          :title="$t('lyrics.title')"
-          @click="playbackStore.toggleLyricsDrawer()"
-        />
-        <v-btn
-          icon="mdi-playlist-music"
-          :color="playbackStore.queueDrawerOpen ? 'primary' : undefined"
-          variant="text"
-          density="comfortable"
-          @click="playbackStore.toggleQueueDrawer()"
-        />
-        <v-btn
-          v-if="authStore.capabilities.songRadio"
-          icon="mdi-infinity"
-          :color="autoplayStore.enabled ? 'primary' : undefined"
-          variant="text"
-          density="comfortable"
-          :title="$t('player.autoplay')"
-          @click="autoplayStore.setEnabled(!autoplayStore.enabled)"
-        />
-        <connect-button />
-        <v-btn
-          :icon="volumeIcon"
-          :disabled="muteDisabled"
-          variant="text"
-          density="comfortable"
-          size="small"
-          :title="$t('player.mute')"
-          @click="toggleMute"
-        />
-        <v-slider
-          v-if="singleActiveTarget"
-          :model-value="deviceVolume ?? 0"
-          :max="100"
-          :step="1"
-          :disabled="deviceVolume == null"
-          density="compact"
-          hide-details
-          style="max-width: 200px"
-          @update:model-value="onDeviceVolumeChange"
-        />
-        <v-slider
-          v-else
-          :model-value="playbackStore.volume"
-          :max="1"
-          density="compact"
-          hide-details
-          :disabled="playbackStore.isCasting"
-          style="max-width: 200px"
-          @update:model-value="playbackStore.setVolume($event)"
-        />
-        <span class="text-caption text-medium-emphasis volume-value">{{ volumePercentLabel }}</span>
-      </div>
+    <div class="player-bar__row" :style="{ '--player-bar-flank-width': flankWidthPx + 'px' }">
+      <song-info />
+      <control-container />
+      <player-toolbar :volume-collapsed="volumeCollapsed" />
     </div>
   </v-footer>
 </template>
 
 <script lang="ts">
-import { usePlaybackStore } from '@/stores/playback'
-import { useLibraryStore } from '@/stores/library'
-import { useConnectStore } from '@/stores/connect'
-import { useAuthStore } from '@/stores/auth'
-import { useAutoplayStore } from '@/stores/autoplay'
-import { radioFaviconUrl } from '@/services/connect/radio'
-import CoverArt from '@/components/library/CoverArt.vue'
-import ConnectButton from '@/components/connect/ConnectButton.vue'
-import SongWaveform from './SongWaveform.vue'
-import type { ConnectDeviceRef } from '@/services/connect/types'
+import SongInfo from './SongInfo.vue'
+import ControlContainer from './ControlContainer.vue'
+import PlayerToolbar from './PlayerToolbar.vue'
+
+// Below this width, PlayerToolbar.vue drops its volume slider + percentage label
+// entirely and folds them into a popover behind the mute icon instead (see
+// its own :volume-collapsed prop). Considered having the toolbar visually
+// overlap the slider instead of this, but two interactive controls sharing
+// the same pixels means whichever is "on top" steals the other's
+// clicks/drags — this avoids that outright rather than trying to manage it.
+//
+// Set comfortably above 1200px (.player-bar__row's own min-width while
+// *not* collapsed, see its own comment) — the collapse needs to have
+// already happened by the time the row would otherwise be forced that
+// narrow, or there'd be a dead zone where the row's still-uncollapsed
+// 434px flanks (see flankWidthPx) can't fit but nothing has told it to
+// shrink them yet.
+const VOLUME_COLLAPSE_BREAKPOINT_PX = 1250
 
 export default {
   name: 'PlayerBar',
-  components: { CoverArt, ConnectButton, SongWaveform },
+  components: { SongInfo, ControlContainer, PlayerToolbar },
   data() {
     return {
-      // null while unfetched/unsupported (e.g. DLNA renderer without volume
-      // control) — see connectStore.getDeviceVolume().
-      deviceVolume: null as number | null,
-      starringInFlight: false,
-      // Connect's SSE status has no volume field, so there's no push
-      // channel for "someone changed it on the device itself/another
-      // session" — polling is the only way this slider ever finds out.
-      volumePollTimer: null as ReturnType<typeof setInterval> | null,
-      // Non-null only while actively dragging the seek bar (SongWaveform)
-      // — decouples its live visual position from playbackStore.seek()
-      // itself, which used to fire on every drag tick via
-      // @update:model-value. During casting each of those was a real
-      // round-trip to the device (Sonos/Chromecast/etc.) — dozens of
-      // overlapping seek commands during one drag made the device
-      // audibly struggle to keep up and settle. Now @update:model-value
-      // only updates this (purely visual), and the actual seek() call
-      // fires once, from @end, when the drag finishes.
-      seekPreviewPosition: null as number | null,
-      // What to restore to on un-mute — captured right before muting, same
-      // pattern as DeviceListItem.vue's own onToggleMute(). Two separate
-      // fields since local volume (0-1) and device volume (0-100) are on
-      // different scales and muted independently of one another.
-      volumeBeforeMute: 1,
-      deviceVolumeBeforeMute: 50,
+      // Driven by barResizeObserver below, off this element's own real
+      // rendered width — not a window-width media query, which would stay
+      // wrong whenever the sidebar rail's own width changes independently
+      // of the window (e.g. expand-on-hover, see DefaultLayout.vue).
+      volumeCollapsed: false,
+      barResizeObserver: null as ResizeObserver | null,
     }
   },
   computed: {
-    playbackStore() {
-      return usePlaybackStore()
-    },
-    connectStore() {
-      return useConnectStore()
-    },
-    authStore() {
-      return useAuthStore()
-    },
-    autoplayStore() {
-      return useAutoplayStore()
-    },
-    currentSong() {
-      return this.playbackStore.currentSong
-    },
-    // 96, not 48 (the box's actual CSS size) — a favicon this small still
-    // benefits from headroom on a high-DPI display, and the source is
-    // free to just be smaller than that if that's all the station's
-    // homepage actually declares (see routes/radio.py's _select()).
-    radioFaviconSrc(): string | null {
-      const homePageUrl = this.playbackStore.radioStation?.homePageUrl
-      if (!homePageUrl) return null
-      const auth = useAuthStore()
-      return radioFaviconUrl(auth.apiUrl, auth.connectToken, homePageUrl, 96)
-    },
-    hasPlayable() {
-      return this.currentSong != null || this.playbackStore.radioStation != null
-    },
-    repeatIcon() {
-      return this.playbackStore.repeatMode === 'one' ? 'mdi-repeat-once' : 'mdi-repeat'
-    },
-    // Only meaningful to control from here when there's exactly one active
-    // cast target — with several, "the" volume is ambiguous (that's what
-    // the per-device sliders in the connect picker are for).
-    singleActiveTarget() {
-      const targets = this.connectStore.activeTargets
-      return targets.length === 1 ? targets[0] : null
-    },
-    // Watched instead of singleActiveTarget itself — that's a fresh object
-    // parsed from every SSE status tick (~2s), so a reference-equality
-    // watch on it fires every tick even when it's the exact same device,
-    // resetting deviceVolume to null (slider flashes to 0) and re-fetching
-    // for no reason. A string key is stable across ticks as long as the
-    // device itself hasn't changed.
-    singleActiveTargetKey() {
-      const target = this.singleActiveTarget
-      return target ? `${target.type}:${target.name}` : null
-    },
-    // Always a "%" now, whichever source it's reading from — this used to
-    // show a bare number while casting to a single device (0-100 scale)
-    // but "42%" during local playback (0-1 scale rounded), inconsistent for
-    // no reason other than the two branches never having been reconciled.
-    volumePercentLabel() {
-      if (this.singleActiveTarget) {
-        return this.deviceVolume == null ? '—' : `${this.deviceVolume}%`
-      }
-      return `${Math.round(this.playbackStore.volume * 100)}%`
-    },
-    // Mirrors DeviceListItem.vue's own two-state volumeIcon (mute vs. not) —
-    // same simple mute/not-mute distinction, not a third "medium" state.
-    volumeIcon() {
-      const muted = this.singleActiveTarget
-        ? this.deviceVolume === 0
-        : this.playbackStore.volume === 0
-      return muted ? 'mdi-volume-mute' : 'mdi-volume-high'
-    },
-    muteDisabled() {
-      return this.singleActiveTarget ? this.deviceVolume == null : this.playbackStore.isCasting
+    // Both song-info's and toolbar's own grid track (see .player-bar__row's
+    // own comment on why they're forced identical, not each sized to its
+    // own content) — the shared value is whichever of the two ever needs
+    // more room in the *current* state: 434px is PlayerToolbar.vue's own natural
+    // width in the widest case with the volume slider still shown
+    // (Electron, a song loaded, casting to one device); 300px is what's
+    // left needing accommodating once VOLUME_COLLAPSE_BREAKPOINT_PX has
+    // already dropped the slider/label, where song-info's own fixed width
+    // becomes the wider one instead. A single static number across both
+    // states (434px always) would keep exact centering too, but would also
+    // silently defeat the collapse's entire reason to exist — the
+    // reclaimed space would just sit unused to the left of a now-smaller
+    // icon row inside a track that never actually shrank.
+    flankWidthPx(): number {
+      return this.volumeCollapsed ? 300 : 434
     },
   },
-  watch: {
-    singleActiveTargetKey: {
-      immediate: true,
-      handler() {
-        this.deviceVolume = null
-        clearInterval(this.volumePollTimer ?? undefined)
-        this.volumePollTimer = null
-        if (this.singleActiveTarget) {
-          this.fetchDeviceVolume(this.singleActiveTarget)
-          this.volumePollTimer = setInterval(() => {
-            if (this.singleActiveTarget) this.fetchDeviceVolume(this.singleActiveTarget)
-          }, 4000)
-        }
-      },
-    },
+  mounted() {
+    this.barResizeObserver = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width
+      if (width != null) this.volumeCollapsed = width < VOLUME_COLLAPSE_BREAKPOINT_PX
+    })
+    this.barResizeObserver.observe(this.$el as Element)
   },
   beforeUnmount() {
-    clearInterval(this.volumePollTimer ?? undefined)
-  },
-  methods: {
-    formatTime(seconds: number): string {
-      const total = Math.max(0, Math.round(seconds))
-      const minutes = Math.floor(total / 60)
-      const secs = total % 60
-      return `${minutes}:${String(secs).padStart(2, '0')}`
-    },
-    async fetchDeviceVolume(target: ConnectDeviceRef) {
-      const raw = await this.connectStore.getDeviceVolume(target.type, target.name)
-      this.deviceVolume = raw == null ? null : Math.round(raw)
-    },
-    async onDeviceVolumeChange(value: number) {
-      const target = this.singleActiveTarget
-      if (!target) return
-      const rounded = Math.round(value)
-      this.deviceVolume = rounded
-      await this.connectStore.setDeviceVolume(target.type, target.name, rounded)
-    },
-    toggleMute() {
-      if (this.singleActiveTarget) {
-        if (this.deviceVolume === 0) {
-          void this.onDeviceVolumeChange(this.deviceVolumeBeforeMute || 50)
-        } else {
-          this.deviceVolumeBeforeMute = this.deviceVolume ?? 50
-          void this.onDeviceVolumeChange(0)
-        }
-        return
-      }
-      if (this.playbackStore.volume === 0) {
-        this.playbackStore.setVolume(this.volumeBeforeMute || 1)
-      } else {
-        this.volumeBeforeMute = this.playbackStore.volume
-        this.playbackStore.setVolume(0)
-      }
-    },
-    async onSeekEnd(value: number) {
-      // Cleared only *after* seek() resolves (it sets localPosition to
-      // this same value once done) — clearing first would flash the
-      // slider back to the pre-seek position for whatever the round-trip
-      // takes.
-      await this.playbackStore.seek(value)
-      this.seekPreviewPosition = null
-    },
-    async toggleStar() {
-      if (!this.currentSong || this.starringInFlight) return
-      this.starringInFlight = true
-      const song = this.currentSong
-      const wasStarred = song.starred
-      try {
-        await useLibraryStore().toggleStar({ id: song.id, starred: wasStarred })
-        // Flip the captured song, not this.currentSong — the song that
-        // was actually playing might have advanced during the round-trip.
-        song.starred = !wasStarred
-      } finally {
-        this.starringInFlight = false
-      }
-    },
+    this.barResizeObserver?.disconnect()
   },
 }
 </script>
@@ -367,41 +77,108 @@ export default {
   border-top: 1px solid var(--beacon-hairline);
 }
 
-.player-bar__cover {
-  flex-shrink: 0;
-}
+/* A 3-column grid, not flex — song-info and toolbar almost never end up the
+ * same width (whether a song is currently loaded alone toggles the star
+ * button and the lyrics button, casting to one device adds the
+ * device-volume slider, Electron adds the remote-control icon, ...), so
+ * centering control-container by giving it the flex-grow leftover space
+ * (the old approach) only actually centers it when both side columns
+ * happen to match — otherwise it sits wherever the *narrower* side's slack
+ * happens to push it, visibly off-center.
+ *
+ * Both flanks share the exact same width, driven by the
+ * --player-bar-flank-width custom property (see the template's own :style
+ * binding and flankWidthPx above) — not each sized to its own content.
+ * `auto` on each flank independently (tried first) does keep both from
+ * ever shrinking, since grid always satisfies non-flexible tracks in full
+ * before an `fr` track gets anything, but song-info's own 300px and
+ * toolbar's own natural width are almost never equal — control-container
+ * still ends up measurably off the bar's own midpoint (up to ~67px, in the
+ * widest real mismatch). A shared value is the only way for two
+ * *different*-content columns to occupy *identical* track widths, which is
+ * what the classic "equal flanks center the middle track by construction"
+ * trick actually depends on — flankWidthPx is whichever of the two
+ * genuinely needs more room in the *current* state (434px normally,
+ * toolbar's own natural width in the widest case with the volume slider
+ * still shown; 300px, song-info's own width, once
+ * VOLUME_COLLAPSE_BREAKPOINT_PX has already dropped the slider and toolbar
+ * no longer needs as much). A single static value across both states would
+ * keep exact centering too, but would also silently defeat the collapse's
+ * entire reason to exist — the reclaimed space would just sit unused to
+ * the left of a now-smaller icon row inside a track that never actually
+ * shrank alongside it. The (accepted) visible cost either way: some empty
+ * space between song-info's own content and where control-container
+ * starts whenever toolbar happens to be the wider flank, where a track
+ * sized to its own content alone wouldn't have any.
+ *
+ * The center track is minmax(var(--control-container-min-width), 1fr), not
+ * `auto` — as the row's *only* `fr` track, it's the one grid gives
+ * leftover space to (or takes it away from first, down to that same
+ * 220px floor ControlContainer.vue/SeekBar.vue also declare, once there
+ * isn't enough to go around). Declared here, on the row, rather than only
+ * inside ControlContainer.vue — a custom property set on a *child* can't
+ * be read back by its own *parent*'s grid-template-columns; this is the
+ * one place both directions (this rule, and ControlContainer.vue/
+ * SeekBar.vue inheriting the same property downward) can agree on a
+ * single number. (Earlier this used a bare 300px here instead, an
+ * unrelated leftover from before control-container's own children moved
+ * into their own components — center-controls' real natural width was
+ * never actually re-measured against it until then, so the two only
+ * happened to both "work" because 300 > 220 by coincidence, not by
+ * design.) (Also earlier, before minmax(min, 1fr) at all: `auto`, on the
+ * theory that grid would size the track off its own content's max-content
+ * width — 600px, capped by SeekBar.vue's own max-width. It didn't:
+ * percentage widths are excluded from max-content computation entirely
+ * per spec, and SongWaveform.vue's canvas is width: 100%, not a fixed
+ * length, so that computation had nothing real to resolve against and
+ * settled on an arbitrary, viewport-size-dependent value instead, with a
+ * real ResizeObserver feedback loop behind it.) On a wide window this can
+ * grow well past 600px — ControlContainer.vue itself fills that whole
+ * track (see its own comment on why, modeled on the original Feishin),
+ * with SeekBar.vue's own width: 100% filling right along with it while
+ * CenterControls.vue's own transport buttons stay at their own narrower
+ * natural width, centered independently within the same box.
+ *
+ * min-width is the exact floor where every track is already at its own
+ * minimum, in the *collapsed* state — 300 (flank) + 16 gap + 220 (center)
+ * + 16 gap + 300 (flank) = 852px (.player-bar's own px-4 padding is
+ * separate, added on top of *this* element's box, not part of it; no
+ * extra rounding buffer either — this value has to stay exact, a few
+ * spare px here is exactly what let the row overflow its own already-
+ * this-narrow parent once during testing). Below this, the window itself
+ * needs to scroll rather than any piece here visually breaking — the
+ * not-collapsed state has its own, larger natural floor
+ * (434 + 16 + 220 + 16 + 434 = 1120px), but VOLUME_COLLAPSE_BREAKPOINT_PX
+ * is set comfortably above that specifically so collapse has already
+ * happened by the time it would otherwise matter. Deliberately on this
+ * element, not .player-bar itself — .player-bar is what this component's
+ * own ResizeObserver watches to decide that breakpoint, and it needs to
+ * keep reporting its real, unclamped width for that to work at all; a
+ * min-width there would quietly floor .player-bar's own measured width at
+ * this same number, so once the window ever got this narrow the observer
+ * could never see anything narrower again. Enforcing the floor one level
+ * down instead still stops the row from visibly breaking — .player-bar
+ * itself just overflows past its own (now measurably too-narrow) box,
+ * which is what actually needs to be scrollable, not clamped. */
 
-/* Block, not the anchor's default inline — text-truncate (overflow/
- * white-space/ellipsis) needs a constrained box to truncate against,
- * which an inline element sitting in normal block flow doesn't have here
- * (this row isn't itself a flex item, see .min-width-0 above it). */
-.player-bar__artist-link {
-  display: block;
-  text-decoration: none;
-}
-
-.player-bar__artist-link:hover {
-  color: rgb(var(--v-theme-primary));
-}
-
-/* The center column (transport + seek slider) is the only flex-grow item
- * in the row and has no min-width of its own — without min-width:0 it
- * refuses to shrink below its content's natural width, so at real window
- * widths it pushed the seek slider past the window edge instead of
- * shrinking. This is the one-line fix; nothing else about the layout
- * changed. */
-.min-width-0 {
-  min-width: 0;
-}
-
-/* Filled, inverted-color circle — reads as "the" button at a glance next
- * to the flanking transport buttons' plain outlined icons. */
-.player-bar__play-btn :deep(.v-icon) {
-  color: rgb(var(--v-theme-background));
-}
-
-.volume-value {
-  width: 32px;
-  text-align: right;
+.player-bar__row {
+  display: grid;
+  grid-template-columns:
+    var(--player-bar-flank-width) minmax(var(--control-container-min-width), 1fr)
+    var(--player-bar-flank-width);
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-width: 852px;
+  /* CenterControls.vue is a fixed set of five buttons that never changes
+   * at runtime, unlike PlayerToolbar.vue's own varying content (see
+   * flankWidthPx) — a real ResizeObserver measurement would be pure
+   * overhead here, so this is a plain measured constant instead (with a
+   * small rounding buffer over the ~212px actually measured). Declared as
+   * a custom property, not a bare number inline below, so
+   * ControlContainer.vue and SeekBar.vue can inherit this exact same
+   * value themselves instead of a second, independently-hardcoded copy
+   * that could silently drift from this one. */
+  --control-container-min-width: 220px;
 }
 </style>

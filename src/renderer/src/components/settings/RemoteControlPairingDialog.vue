@@ -3,7 +3,20 @@
     <v-card>
       <v-card-title>{{ $t('remoteControl.pairTitle') }}</v-card-title>
       <v-card-text>
-        <v-alert v-if="store.needsRegenerate" type="info" variant="tonal" density="compact" class="mb-2">
+        <!-- What Remote Control actually does — used to sit in Settings
+         - next to its own enable switch (before that moved to PlayerBar.vue's
+         - toolbar, see RemoteControlButton.vue), the only explanation of the
+         - feature anywhere in the app now that it's gone from there. Shown
+         - unconditionally (not just the non-regenerate branch below) since
+         - it explains the feature itself, not the current pairing code. -->
+        <p class="text-body-2 text-medium-emphasis mb-4">{{ $t('remoteControl.hint') }}</p>
+        <v-alert
+          v-if="store.needsRegenerate"
+          type="info"
+          variant="tonal"
+          density="compact"
+          class="mb-2"
+        >
           {{ $t('remoteControl.needsRegenerate') }}
         </v-alert>
         <template v-else>

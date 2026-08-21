@@ -124,6 +124,7 @@ export default {
   player: {
     nothingPlaying: 'Nichts spielt',
     mute: 'Stummschalten',
+    volume: 'Lautstärke',
     autoplay: 'Autoplay',
   },
   nowPlaying: {
@@ -185,10 +186,8 @@ export default {
   remoteControl: {
     title: 'Fernsteuerung',
     hint: 'Erlaubt einem Handy im selben Netzwerk, die Wiedergabe zu steuern — Wiedergabe, Warteschlange, Playlists, Titel und Radio.',
-    enable: 'Fernsteuerung aktivieren',
     enableFailed: 'Fernsteuerung konnte nicht aktiviert werden.',
     disableFailed: 'Fernsteuerung konnte nicht deaktiviert werden.',
-    showCode: 'Pairing-Code anzeigen',
     pairTitle: 'Handy koppeln',
     pairHint:
       'Diesen Code mit der Handykamera scannen, oder die Adresse unten öffnen und die PIN eingeben.',
@@ -196,8 +195,6 @@ export default {
     regenerate: 'Code neu erzeugen',
     needsRegenerate:
       'Der vorherige Pairing-Code ist nicht mehr verfügbar. Erzeuge einen neuen, um ein Handy zu koppeln — bereits gekoppelte Handys werden dabei getrennt.',
-    activeHint:
-      'Fernsteuerung ist aktiv — ein Handy kann die Wiedergabe steuern. Klicken für Einstellungen.',
   },
   settings: {
     title: 'Settings',
