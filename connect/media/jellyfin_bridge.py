@@ -35,6 +35,7 @@ import httpx
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from . import apply_image_cache_control
 from .base import (
     create_internet_radio_station,
     delete_internet_radio_station,
@@ -706,11 +707,13 @@ async def _stream_binary(request: Request, url: str, media: JellyfinClient) -> S
     resp_headers = {
         k: v for k, v in response.headers.items() if k.lower() not in _SKIP_RESP_HEADERS
     }
+    content_type = response.headers.get("content-type")
+    apply_image_cache_control(resp_headers, content_type)
     return StreamingResponse(
         streamed(),
         status_code=response.status_code,
         headers=resp_headers,
-        media_type=response.headers.get("content-type"),
+        media_type=content_type,
     )
 
 

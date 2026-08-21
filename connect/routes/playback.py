@@ -220,7 +220,7 @@ POSITION_RESYNC_INTERVAL = 8.0
 POSITION_RESYNC_THRESHOLD = 1.0
 
 
-async def _resync_position_once(session: SessionState, candidate) -> None:
+async def _resync_position_once(session: SessionState, candidate, generation: int) -> None:
     """One resync check/correction against `candidate` — split out from
     _resync_position_periodically() below purely so it's directly testable
     without needing to unwind an infinite loop (see that function for the
@@ -232,12 +232,30 @@ async def _resync_position_once(session: SessionState, candidate) -> None:
         logger.warning(f"[position-resync] {candidate.target}: get_position() failed: {e}")
         return
     st = session.state
-    # Frozen right here, immediately after get_position() returns, rather
-    # than after any further work below — SonosDelivery._get_device() does
-    # a fresh, uncached SSDP discover() (real network I/O, not instant) on
-    # every call, and any extra device round trip inserted between reading
-    # device_pos and freezing this would bias delta below by however long
-    # that took (device_pos would always read older than wall_elapsed).
+    # get_position() above is a real device round trip — SonosDelivery.
+    # _get_device() does a fresh, uncached SSDP discover() on every call,
+    # easily a second or more, not instant. _resync_position_periodically
+    # only checked play_generation/is_streaming *before* kicking this off;
+    # a /play, /seek, or /resume landing while it was in flight (e.g.
+    # restarting the current track mid-playback via the Previous button)
+    # has by now already reset the clock for a brand new stream, while
+    # device_pos here is still the *old* stream's reading. Comparing the
+    # two against each other below would recalibrate position_offset from
+    # numbers belonging to two different streams — observed live as a
+    # freshly-restarted track's displayed position getting stuck near
+    # 0:00 for a while, the same symptom as the already-fixed near-track-
+    # end case above, just from an unrelated cause.
+    if st.clock.play_generation != generation or not st.is_streaming:
+        logger.debug(
+            f"[position-resync] {candidate.target}: superseded while get_position() was "
+            f"in flight (generation {generation} -> {st.clock.play_generation}) — discarding"
+        )
+        return
+    # Frozen right here, immediately after get_position() returns (and the
+    # freshness check above), rather than after any further work below —
+    # any extra device round trip inserted between reading device_pos and
+    # freezing this would bias delta below by however long that took
+    # (device_pos would always read older than wall_elapsed).
     wall_elapsed = st.clock.elapsed_since_stream_start()
     offset_before = st.clock.position_offset
     if device_pos is None or device_pos < 0:
@@ -350,7 +368,7 @@ async def _resync_position_periodically(
             return
         if st.clock.is_paused:
             continue
-        await _resync_position_once(session, candidate)
+        await _resync_position_once(session, candidate, generation)
 
 
 def _current_track_play_args(

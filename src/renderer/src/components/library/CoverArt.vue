@@ -1,6 +1,25 @@
 <template>
+  <!-- No `eager` — v-img's default is to lazy-load via IntersectionObserver
+   - (see lazyOptions below), only actually requesting the image once it's
+   - about to scroll into view. This component renders on every single row
+   - of every grid/list in the app; loading all of them immediately meant
+   - a page with hundreds of covers fired off hundreds of concurrent
+   - requests the instant it mounted, most for art nobody had scrolled to
+   - yet, competing for bandwidth/connection slots with the handful that
+   - were actually visible. An always-on-screen instance (PlayerBar's own
+   - small art, NowPlayingView's big one) isn't slowed by this in
+   - practice — it's already within the viewport root the moment it
+   - mounts, so the observer fires on the very next frame regardless. -->
   <v-avatar v-if="rounded" :size="sizeCss" rounded="0">
-    <v-img v-if="url" :src="url" width="100%" height="100%" cover eager @error="onError">
+    <v-img
+      v-if="url"
+      :src="url"
+      width="100%"
+      height="100%"
+      cover
+      :options="lazyOptions"
+      @error="onError"
+    >
       <template #placeholder>
         <v-skeleton-loader type="image" class="cover-art-skeleton" />
       </template>
@@ -15,7 +34,15 @@
    - telling *it* to animate too. Filling the parent means it always
    - matches this box's current size, mid-transition or not. -->
   <div v-else class="cover-art" :style="{ width: sizeCss, height: sizeCss }">
-    <v-img v-if="url" :src="url" width="100%" height="100%" cover eager @error="onError">
+    <v-img
+      v-if="url"
+      :src="url"
+      width="100%"
+      height="100%"
+      cover
+      :options="lazyOptions"
+      @error="onError"
+    >
       <template #placeholder>
         <v-skeleton-loader type="image" class="cover-art-skeleton" />
       </template>
@@ -29,6 +56,15 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import { useLibraryStore } from '@/stores/library'
+
+// v-img's IntersectionObserver options (see the template's own comment on
+// why this isn't `eager`) — a plain module-level constant, not a computed,
+// since it's the same object for every instance and never changes. A
+// generous rootMargin starts the request a bit before the cover actually
+// scrolls into view, so it's already there (or close to it) by the time
+// it would otherwise pop in, rather than only starting the fetch the
+// instant it crosses the viewport edge.
+const LAZY_OPTIONS = { rootMargin: '400px 0px' }
 
 export default {
   name: 'CoverArt',
@@ -78,6 +114,9 @@ export default {
     }
   },
   computed: {
+    lazyOptions() {
+      return LAZY_OPTIONS
+    },
     // This component's own CSS box (width/height, both branches) — a
     // number needs "px" appended, a string (already a full CSS value) is
     // used as-is.

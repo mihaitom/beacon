@@ -25,7 +25,13 @@ from starlette.requests import ClientDisconnect
 
 from core.auth import require_token
 from core.session import SessionState, get_session
-from media import JellyfinClient, PlexClient, jellyfin_bridge, plex_bridge
+from media import (
+    JellyfinClient,
+    PlexClient,
+    apply_image_cache_control,
+    jellyfin_bridge,
+    plex_bridge,
+)
 
 router = APIRouter(dependencies=[Depends(require_token)])
 
@@ -154,6 +160,7 @@ async def _proxy(request: Request, target: str) -> StreamingResponse | JSONRespo
     resp_headers = {
         k: v for k, v in response.headers.items() if k.lower() not in skip_resp
     }
+    apply_image_cache_control(resp_headers, response.headers.get("content-type"))
 
     async def streamed():
         # Closes this specific response (releasing its connection back to
