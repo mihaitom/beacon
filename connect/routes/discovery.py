@@ -8,13 +8,50 @@ from fastapi import APIRouter, Depends
 
 from core.auth import require_token
 from core.claims import claims
-from core.session import SessionState, registry, require_authenticated_session, track_label
+from core.session import (
+    SessionState,
+    registry,
+    require_authenticated_session,
+    track_label,
+)
 from core.state import ctx
-
-from delivery import credentials, discover_airplay, discover_chromecast, discover_dlna, discover_sonos
+from delivery import (
+    credentials,
+    discover_airplay,
+    discover_chromecast,
+    discover_dlna,
+    discover_sonos,
+)
 
 logger = logging.getLogger("connect.devices")
 router = APIRouter(dependencies=[Depends(require_token)])
+
+
+# How many consecutive scans a single protocol's discover_*() call may fail
+# before its last-known device list is dropped instead of being carried
+# forward indefinitely (see _resolve_scan_result()) — high enough that one
+# or two transient blips (a dropped multicast packet, a momentary network
+# hiccup) don't flicker a device in and out; low enough that a genuinely,
+# persistently broken discovery backend (a firewall rule change, a crashed
+# zeroconf browser) stops confidently reporting now-nonexistent devices as
+# available within a few scan cycles instead of forever.
+_MAX_CONSECUTIVE_FAILURES = 3
+_consecutive_failures: dict[str, int] = {"sonos": 0, "airplay": 0, "chromecast": 0, "dlna": 0}
+
+
+def _resolve_scan_result(protocol: str, result: object, cached_list: list) -> list:
+    """One protocol's gather() result -> the list _scan_devices() should
+    actually use: the fresh scan if it succeeded, or the previous cached
+    list carried forward for a bounded number of consecutive failures
+    before giving up and reporting empty instead of devices that may no
+    longer even be on the network."""
+    if isinstance(result, list):
+        _consecutive_failures[protocol] = 0
+        return result
+    _consecutive_failures[protocol] += 1
+    if _consecutive_failures[protocol] >= _MAX_CONSECUTIVE_FAILURES:
+        return []
+    return cached_list
 
 
 async def _scan_devices(verbose: bool = False) -> dict:
@@ -33,12 +70,10 @@ async def _scan_devices(verbose: bool = False) -> dict:
         discover_dlna(verbose=verbose),
         return_exceptions=True,
     )
-    sonos = sonos_res if isinstance(sonos_res, list) else cached["sonos"]
-    airplay = airplay_res if isinstance(airplay_res, list) else cached["airplay"]
-    chromecast = (
-        chromecast_res if isinstance(chromecast_res, list) else cached["chromecast"]
-    )
-    dlna = dlna_res if isinstance(dlna_res, list) else cached["dlna"]
+    sonos = _resolve_scan_result("sonos", sonos_res, cached["sonos"])
+    airplay = _resolve_scan_result("airplay", airplay_res, cached["airplay"])
+    chromecast = _resolve_scan_result("chromecast", chromecast_res, cached["chromecast"])
+    dlna = _resolve_scan_result("dlna", dlna_res, cached["dlna"])
     if isinstance(sonos_res, Exception):
         logger.warning(f"[discover] Sonos error: {sonos_res}")
     if isinstance(airplay_res, Exception):
@@ -73,6 +108,21 @@ _last_scan_completed: float = 0.0
 # below main.py's hourly periodic scan — just enough to make an open
 # popover eventually notice a device that just appeared.
 _BACKGROUND_RESCAN_MIN_INTERVAL = 30.0
+
+
+async def _background_rescan() -> None:
+    """Fire-and-forget wrapper for the quiet rescan /discover kicks off
+    below — unlike main.py's own periodic scan (_periodic_discovery, same
+    try/except), nothing awaits or otherwise observes this task's result,
+    so an unhandled exception here would otherwise vanish as an unretrieved
+    task exception (a "Task exception was never retrieved" warning at best)
+    instead of being logged, and would leave _last_scan_completed stuck,
+    triggering another one of these on every subsequent poll instead of
+    respecting _BACKGROUND_RESCAN_MIN_INTERVAL."""
+    try:
+        await discover_all()
+    except Exception:
+        logger.exception("[discover] Background rescan failed")
 
 
 async def discover_all(verbose: bool = False) -> dict:
@@ -142,9 +192,16 @@ async def discover(
     fresh: bool = False, session: SessionState = Depends(require_authenticated_session)
 ):
     cached = ctx.discovered
-    has_cache = bool(
-        cached["sonos"] or cached["airplay"] or cached["chromecast"] or cached["dlna"]
-    )
+    # Whether a scan has ever completed at all — not whether it *found*
+    # anything. A deployment with genuinely zero Sonos/AirPlay/Chromecast/
+    # DLNA devices on the network (or every discovery backend transiently
+    # unreachable, e.g. a firewall blocking multicast) legitimately
+    # completes a scan with four empty lists; checking cached contents
+    # instead of _last_scan_completed used to read that indistinguishably
+    # from "never scanned yet" and fall through to a full synchronous
+    # rescan on every single poll below instead of ever engaging the
+    # background-rescan path.
+    has_cache = _last_scan_completed > 0.0
 
     # fresh=true (explicit "Scan again") awaits a full rescan so the client can
     # show real progress. Otherwise serve cache instantly and rescan in the
@@ -154,7 +211,7 @@ async def discover(
     # full SSDP/mDNS scan every 4 seconds for as long as the popover stays open.
     if has_cache and not fresh:
         if time.monotonic() - _last_scan_completed > _BACKGROUND_RESCAN_MIN_INTERVAL:
-            asyncio.create_task(discover_all())
+            asyncio.create_task(_background_rescan())
         return _annotate_claims(cached)
 
     return _annotate_claims(await discover_all(verbose=True))

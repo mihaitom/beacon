@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, patch
 from core.claims import claims
 from core.session import check_claims, displace_target, registry
 from delivery import ChromecastDelivery, DeliveryManager, SonosDelivery
+from media import SubsonicClient, Track
+from routes.playback import PlayRequest, play_tracks
 
 # ── check_claims ─────────────────────────────────────────────────────────────
 
@@ -217,4 +219,80 @@ def test_displace_target_is_a_noop_when_owner_has_no_active_delivery(default_ses
     # Must not raise even though there's nothing to stop.
     asyncio.run(displace_target(other, "chromecast", "TV"))
 
-    assert other.state.active_delivery is None
+
+# ── active_delivery_seq: the rollback-clobber race ───────────────────────────
+
+
+async def test_play_rollback_does_not_clobber_a_concurrent_unlocked_displacement(
+    default_session, caplog,
+):
+    """Regression test for a real, documented (if rare) race: /play holds
+    its own session's play_lock for its whole dispatch, including its own
+    rollback-on-failure. If a force-takeover's displace_target() times out
+    waiting for that same lock (see that function's own docstring) and
+    falls back to mutating active_delivery *without* it, and this
+    session's own dispatch then fails and rolls back, the rollback must
+    not silently undo a takeover another session was already told (via the
+    "displaced" broadcast) had succeeded — see active_delivery_seq's own
+    comment in core/state.py."""
+    import logging
+
+    default_session.media = SubsonicClient("http://nav")
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="")
+    default_session.media.get_track = lambda track_id: track
+    default_session.state.active_delivery = ChromecastDelivery("TV")
+    default_session.state.is_streaming = True
+    default_session.state.current_track = Track(
+        id="0", title="Previous", artist="A", duration=100, cover_art_id=""
+    )
+
+    async def _slow_then_fails(*args, **kwargs):
+        # Long enough for the concurrent displace_target() below to time
+        # out waiting for this session's play_lock and fall back, still in
+        # flight when this then raises.
+        await asyncio.sleep(0.1)
+        raise RuntimeError("device unreachable")
+
+    real_timeout = asyncio.timeout
+
+    async def _run_play():
+        req = PlayRequest(song_ids=["1"], target_name="TV", target_type="chromecast")
+        with patch.object(ChromecastDelivery, "play", new=_slow_then_fails):
+            return await play_tracks(req, default_session)
+
+    async def _run_displace():
+        await asyncio.sleep(0.02)  # let /play's dispatch begin (and hold play_lock) first
+        with patch("core.session.asyncio.timeout", side_effect=lambda _: real_timeout(0.03)):
+            await displace_target(default_session, "chromecast", "TV")
+
+    with caplog.at_level(logging.WARNING, logger="connect.session"):
+        result, _ = await asyncio.gather(_run_play(), _run_displace())
+
+    assert result["error"] == "device unreachable"
+    # The takeover that landed *during* the failed dispatch must survive
+    # the rollback, not get silently restored to the pre-dispatch snapshot.
+    assert default_session.state.active_delivery is None
+    assert default_session.state.is_streaming is False
+    # Everything displace_target() never touches must still roll back
+    # normally — this isn't a blanket "skip the whole rollback" either.
+    assert default_session.state.current_track.id == "0"
+
+
+async def test_play_rollback_restores_active_delivery_when_nothing_raced_it(default_session):
+    """The common case (no concurrent displacement at all) must be
+    unaffected — active_delivery_seq only ever skips the restore when it
+    actually changed underneath this dispatch."""
+    default_session.media = SubsonicClient("http://nav")
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="")
+    default_session.media.get_track = lambda track_id: track
+    previous_delivery = ChromecastDelivery("TV")
+    default_session.state.active_delivery = previous_delivery
+
+    req = PlayRequest(song_ids=["1"], target_name="TV", target_type="chromecast")
+    with patch.object(
+        ChromecastDelivery, "play", new=AsyncMock(side_effect=RuntimeError("boom"))
+    ):
+        result = await play_tracks(req, default_session)
+
+    assert result["error"] == "boom"
+    assert default_session.state.active_delivery is previous_delivery

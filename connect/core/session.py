@@ -20,7 +20,7 @@ from media import MediaClient, SubsonicClient
 
 from .audio_analysis import AudioAnalyzer
 from .claims import claims
-from .state import AppState, delivery_class_for, EventBus, list_target_pairs
+from .state import AppState, EventBus, delivery_class_for, list_target_pairs
 
 logger = logging.getLogger("connect.session")
 
@@ -55,6 +55,18 @@ class SessionState:
         # overwriting session state. seq=0 (the default for any caller that
         # doesn't send one, e.g. tests) opts out of the check entirely.
         self.play_seq: int = 0
+        # The same "stale response overwrites a newer one" race as play_seq
+        # above, for /config instead of /play — two concurrent /config calls
+        # for this session (a UI double-submit, a retry racing the original
+        # request) each await media.ping() (a real network round trip)
+        # before applying their result; without this, whichever ping()
+        # happens to resolve *last* wins regardless of which request was
+        # actually issued last, and the session can end up authenticated
+        # against the wrong/older server credentials. Bumped at the start of
+        # every /config call (routes/devices.py's configure()); a call whose
+        # own value no longer matches this by the time its ping() resolves
+        # has been superseded and discards its result instead of applying it.
+        self.config_seq: int = 0
         # Default is an unconfigured Subsonic client — overwritten by /config
         # with either a Subsonic or Jellyfin client.
         self.media: MediaClient = SubsonicClient("")
@@ -334,6 +346,12 @@ async def displace_target(owner_session: SessionState, target_type: str, name: s
             st.active_delivery = remaining[0]
         else:
             st.active_delivery = DeliveryManager.from_deliveries(remaining)
+        # See active_delivery_seq's own comment in core/state.py — bumped
+        # here regardless of which of the two call sites below reached
+        # this (the locked path doesn't strictly need it, already
+        # serialized against /play by play_lock itself, but there's no
+        # harm in it being consistent either way).
+        st.active_delivery_seq += 1
         return lost
 
     st = owner_session.state

@@ -3,14 +3,19 @@
 import asyncio
 import json
 import logging
-import time
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response, StreamingResponse
 
 from core.audio_analysis import AudioAnalyzer, should_analyze
 from core.auth import require_token
-from core.session import DEFAULT_SESSION_ID, SessionState, build_status_dict, get_session, registry
+from core.session import (
+    DEFAULT_SESSION_ID,
+    SessionState,
+    build_status_dict,
+    get_session,
+    registry,
+)
 from core.state import PORT, list_target_pairs, stream_url
 from core.streamer import demuxer_for, resolve_output_format, stream_tracks
 from routes.debug import TEST_TONE_TRACK_ID
@@ -42,7 +47,7 @@ async def _dispatch_queued_track(session: SessionState, target, track, gain: flo
     broadcast instead of leaving state stuck mid-transition."""
     st = session.state
     track_url = await asyncio.to_thread(session.media.get_stream_url, track.id)
-    output_format = await resolve_output_format(track_url)
+    output_format = await resolve_output_format(track_url, gain=gain)
     url = stream_url(session.session_id)
 
     st.current_track = track
@@ -182,10 +187,18 @@ async def _advance_or_end(session: SessionState, my_generation: int) -> None:
 # concluding it isn't going to — see
 # _mark_disconnected_if_not_reconnected()'s own docstring. Long enough that
 # an ordinary quick reconnect blip (buffer management, a momentary WiFi
-# hiccup) doesn't falsely trip this; short enough that a genuinely dead
+# hiccup, a Sonos re-doing SSDP discovery before it re-requests the stream —
+# "easily a second or more" on its own per _resync_position_once()'s
+# comment) doesn't falsely trip this; short enough that a genuinely dead
 # stream doesn't sit is_streaming=True for long once nothing's actually
-# flowing.
-STREAM_DISCONNECT_GRACE_SECONDS = 5.0
+# flowing. 5s (the original value) turned out too tight in practice —
+# observed live 2026-08-22 firing on reconnects that either hadn't finished
+# yet or would have landed a few seconds later. A false trip is no longer
+# the permanent, self-worsening problem it used to be (see offset_consumed's
+# own comment above on reviving is_streaming once real audio actually
+# resumes), so erring wide here costs a few extra seconds of "not
+# streaming" being displayed at worst, not a stuck session.
+STREAM_DISCONNECT_GRACE_SECONDS = 10.0
 
 
 async def _mark_disconnected_if_not_reconnected(session: SessionState, my_generation: int) -> None:
@@ -270,21 +283,37 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
             status_code=204,
         )
 
-    track = session.state.current_track
-    output_format = session.state.current_output_format
-    # Debug-only special case (see routes/debug.py) — the test tone isn't a
-    # real library track, so there's nothing for session.media to resolve.
-    # Loopback, not stream_url()'s LAN IP: ffmpeg fetches this from inside
-    # the same process/container, not from the cast device.
-    # to_thread: get_stream_url() is a pure, instant string builder for
-    # Subsonic/Jellyfin, but Plex's needs a real network lookup first (see
-    # media/plex.py's docstring) — without this, that lookup would block
-    # the whole event loop, not just this one request/session.
-    track_url = (
-        f"http://127.0.0.1:{PORT}/debug/test-tone.wav"
-        if track.id == TEST_TONE_TRACK_ID
-        else await asyncio.to_thread(session.media.get_stream_url, track.id)
-    )
+    # Counted from here — as soon as this is known to be a real connection
+    # attempt, not only once its own setup below has finished (in
+    # particular get_stream_url()'s network round-trip for Plex, just
+    # below) — see active_stream_connections' own comment in core/state.py.
+    # A reconnect that's already reached the server but is still resolving
+    # its stream URL must count as "connected" immediately, or
+    # _mark_disconnected_if_not_reconnected's grace-period check can read 0
+    # connections even though a real reconnect is already in flight.
+    # Matched by the except below (setup failing before the connection
+    # ever actually starts streaming) and by stream_with_completion()'s own
+    # finally (once it does).
+    session.state.active_stream_connections += 1
+    try:
+        track = session.state.current_track
+        output_format = session.state.current_output_format
+        # Debug-only special case (see routes/debug.py) — the test tone isn't a
+        # real library track, so there's nothing for session.media to resolve.
+        # Loopback, not stream_url()'s LAN IP: ffmpeg fetches this from inside
+        # the same process/container, not from the cast device.
+        # to_thread: get_stream_url() is a pure, instant string builder for
+        # Subsonic/Jellyfin, but Plex's needs a real network lookup first (see
+        # media/plex.py's docstring) — without this, that lookup would block
+        # the whole event loop, not just this one request/session.
+        track_url = (
+            f"http://127.0.0.1:{PORT}/debug/test-tone.wav"
+            if track.id == TEST_TONE_TRACK_ID
+            else await asyncio.to_thread(session.media.get_stream_url, track.id)
+        )
+    except Exception:
+        session.state.active_stream_connections -= 1
+        raise
 
     # Captured now (for this connection's -ss), but *not* cleared yet — see
     # stream_with_completion(), which only clears it once this connection has
@@ -342,12 +371,6 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
         + (f" (seek {offset:.1f}s)" if offset > 0.5 else "")
     )
 
-    # Counted for _mark_disconnected_if_not_reconnected() below — see
-    # active_stream_connections' own comment in core/state.py. Decremented
-    # in stream_with_completion()'s own finally block once this specific
-    # connection ends, however it ends.
-    session.state.active_stream_connections += 1
-
     def on_track_start(_: int) -> None:
         gain = session.state.current_track_gain
         gain_str = f", gain={gain:.2f}" if gain != 1.0 else ""
@@ -404,40 +427,48 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
     async def stream_with_completion():
         my_generation = session.state.clock.play_generation
         offset_consumed = False
-
         # AirPlay/radio never end up here with a live-analyzable target (see
-        # should_analyze()'s docstring) — analyzer stays None for them, and
-        # GET /visualizer below just has nothing to send.
+        # should_analyze()'s docstring) — stays None for them, and GET
+        # /visualizer below just has nothing to send. Declared here (not
+        # inside the try below) only so the finally can reach it even if
+        # analyzer setup itself is what fails/gets cancelled.
         analyzer: AudioAnalyzer | None = None
-        target_pairs = list_target_pairs(session.state.active_delivery)
-        if should_analyze(target_pairs):
-            logger.debug(f"[stream] Live analysis enabled — targets={target_pairs}")
-            # Paced against the same calibrated clock /status's `elapsed`
-            # uses — not a fixed bitrate timeline, which can't account for
-            # the device's own startup-buffering delay (see
-            # AudioAnalyzer's docstring). `offset` is where in the track
-            # this connection's first byte actually starts.
-            analyzer = AudioAnalyzer(
-                elapsed_fn=lambda: session.state.clock.elapsed(),
-                start_offset=offset,
-                input_format=demuxer_for(output_format),
-            )
-            await analyzer.start()
-            previous = session.audio_analyzer
-            session.audio_analyzer = analyzer
-            if previous:
-                await previous.stop()
-        else:
-            # Diagnostic for exactly this "visualizer only ever shows
-            # heartbeats" symptom — tells apart "no live-analyzable target at
-            # all" (targets=[], or all-AirPlay) from a case where a
-            # sonos/dlna/chromecast target genuinely should have qualified.
-            logger.debug(
-                f"[stream] Live analysis skipped — targets={target_pairs}, "
-                f"active_delivery={session.state.active_delivery!r}"
-            )
 
+        # One try/finally for this whole generator body, analyzer setup
+        # included — analyzer.start()/previous.stop() below are real
+        # awaits, and a client disconnect landing during either of those
+        # (not just during the streaming loop further down) used to skip
+        # the finally entirely, permanently leaking the connection count
+        # incremented in audio_stream() above.
         try:
+            target_pairs = list_target_pairs(session.state.active_delivery)
+            if should_analyze(target_pairs):
+                logger.debug(f"[stream] Live analysis enabled — targets={target_pairs}")
+                # Paced against the same calibrated clock /status's `elapsed`
+                # uses — not a fixed bitrate timeline, which can't account for
+                # the device's own startup-buffering delay (see
+                # AudioAnalyzer's docstring). `offset` is where in the track
+                # this connection's first byte actually starts.
+                analyzer = AudioAnalyzer(
+                    elapsed_fn=lambda: session.state.clock.elapsed(),
+                    start_offset=offset,
+                    input_format=demuxer_for(output_format),
+                )
+                await analyzer.start()
+                previous = session.audio_analyzer
+                session.audio_analyzer = analyzer
+                if previous:
+                    await previous.stop()
+            else:
+                # Diagnostic for exactly this "visualizer only ever shows
+                # heartbeats" symptom — tells apart "no live-analyzable target at
+                # all" (targets=[], or all-AirPlay) from a case where a
+                # sonos/dlna/chromecast target genuinely should have qualified.
+                logger.debug(
+                    f"[stream] Live analysis skipped — targets={target_pairs}, "
+                    f"active_delivery={session.state.active_delivery!r}"
+                )
+
             try:
                 async for chunk in stream_tracks(
                     [track_url],
@@ -448,11 +479,30 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
                 ):
                     if not offset_consumed:
                         offset_consumed = True
-                        # Only clear resume_offset once THIS connection has
-                        # actually started producing audio — and only if no newer
-                        # /play, /seek or /resume has since set a different one.
+                        # Only apply either of these once THIS connection has
+                        # actually started producing audio — and only if no
+                        # newer /play, /seek or /resume has since set a
+                        # different one.
                         if session.state.clock.play_generation == my_generation:
                             session.state.clock.resume_offset = 0.0
+                            # A bare device-initiated reconnect (no /play,
+                            # /seek, or /resume involved — the device just
+                            # re-requested this URL on its own) never goes
+                            # through any of the handlers that otherwise set
+                            # is_streaming back to True. Without this, a
+                            # false-positive (or even a genuine, since-
+                            # recovered) _mark_disconnected_if_not_reconnected
+                            # trip leaves is_streaming stuck False for the
+                            # rest of the track even once audio is audibly
+                            # flowing again — which then also permanently
+                            # disables position resync (routes/playback.py's
+                            # own is_streaming guard) and auto-advance
+                            # (_advance_or_end's), and makes /join reject
+                            # with "No active stream" for a session that's
+                            # very much still playing.
+                            if not session.state.is_streaming:
+                                session.state.is_streaming = True
+                                await session.event_bus.broadcast(build_status_dict(session))
                     if analyzer:
                         analyzer.feed(chunk)
                     yield chunk
@@ -491,7 +541,8 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
         finally:
             # Mirrors the increment in audio_stream() above — this specific
             # connection is done, one way or another (normal completion,
-            # ffmpeg failure, or a client disconnect/cancellation).
+            # ffmpeg failure, or a client disconnect/cancellation, including
+            # one during analyzer setup itself).
             session.state.active_stream_connections -= 1
             # finish_feeding(), not stop() — ffmpeg finishing early (well
             # before the track's actual duration, since it's CPU-bound
@@ -529,7 +580,7 @@ async def status_events(session: SessionState = Depends(get_session)):
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=2.0)
                     yield f"data: {json.dumps(payload)}\n\n"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     session.touch()
                     if session.state.is_streaming and not session.state.clock.is_paused:
                         yield f"data: {json.dumps(build_status_dict(session))}\n\n"
@@ -567,7 +618,7 @@ async def visualizer_events(session: SessionState = Depends(get_session)):
                 try:
                     bands = await asyncio.wait_for(analyzer.frames.get(), timeout=1.0)
                     yield f"data: {json.dumps({'bands': bands})}\n\n"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": heartbeat\n\n"
         except asyncio.CancelledError:
             pass

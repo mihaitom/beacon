@@ -45,6 +45,50 @@ def _lock_for(name: str) -> asyncio.Lock:
 # their own after a while anyway.
 _SESSION_TTL = 90
 
+# How often reap_stale_pairings() below checks for sessions past _SESSION_TTL
+# — well under it, so a session goes reaped within a few seconds of actually
+# expiring rather than sitting open for most of another full TTL window.
+PAIRING_REAP_INTERVAL = 30
+
+
+async def reap_stale_pairings_once() -> list[str]:
+    """Closes every pairing session past _SESSION_TTL — split out from
+    reap_stale_pairings() below purely so it's directly testable, same
+    reasoning as core/session.py's reap_once(). /start's own TTL check only
+    notices a stale session when the *same* device is started again; a user
+    who starts a pairing and then just gives up (closes the dialog, never
+    calls /finish or /start again) otherwise leaves it — and the pyatv
+    handshake/connection it holds open — sitting in _sessions forever.
+    Returns the device names that were reaped, mainly so tests don't need
+    to duplicate this logic to assert on it."""
+    now = time.monotonic()
+    stale = [name for name, (_, started_at) in _sessions.items() if now - started_at >= _SESSION_TTL]
+    for name in stale:
+        pairing, _ = _sessions.pop(name, (None, None))
+        if pairing:
+            try:
+                await pairing.close()
+            except Exception:
+                pass
+        # Opportunistic cleanup for the per-device lock too (see _locks'
+        # own comment) — only when nothing currently holds/is waiting on
+        # it, so this can never pull a lock out from under a concurrent
+        # /start that's about to acquire it.
+        lock = _locks.get(name)
+        if lock and not lock.locked():
+            _locks.pop(name, None)
+    if stale:
+        logger.info(f"[pairing] Reaped {len(stale)} stale pairing session(s): {stale}")
+    return stale
+
+
+async def reap_stale_pairings() -> None:
+    """Background task (see main.py's lifespan): calls
+    reap_stale_pairings_once() every PAIRING_REAP_INTERVAL, forever."""
+    while True:
+        await asyncio.sleep(PAIRING_REAP_INTERVAL)
+        await reap_stale_pairings_once()
+
 
 class StartRequest(BaseModel):
     force: bool = False

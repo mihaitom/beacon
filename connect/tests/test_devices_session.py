@@ -273,3 +273,26 @@ def test_device_stop_releases_the_claim(client, default_session):
         client.post("/device-stop?device_type=chromecast&name=TV")
 
     assert claims.owner_of("chromecast", "TV") is None
+
+
+def test_device_stop_releases_the_claim_even_when_the_stop_call_fails(client, default_session):
+    """Regression test: the device's own stop() call failing (offline,
+    network timeout) must not leave it locked to this session forever —
+    /discover would otherwise keep reporting device_in_use for a device
+    nothing is confirmed to still be playing on."""
+    from core.claims import claims
+
+    default_session.state.is_streaming = True
+    default_session.state.active_delivery = ChromecastDelivery("TV")
+
+    import asyncio
+
+    asyncio.run(claims.claim("chromecast", "TV", default_session.session_id))
+
+    with patch.object(
+        ChromecastDelivery, "stop", new=AsyncMock(side_effect=RuntimeError("boom"))
+    ):
+        r = client.post("/device-stop?device_type=chromecast&name=TV")
+
+    assert "error" in r.json()
+    assert claims.owner_of("chromecast", "TV") is None

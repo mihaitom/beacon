@@ -3,14 +3,14 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from core import auth
+from core import auth, state
 from core import claims as claims_module
 from core import remote as remote_module
 from core import session as session_module
-from core import state
 from core.session import DEFAULT_SESSION_ID, SessionState
 from main import app
 from media import JellyfinClient, PlexClient, SubsonicClient
+from routes import discovery as discovery_module
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def _stub_output_format(monkeypatch):
     themselves."""
     from core.streamer import FALLBACK_FORMAT
 
-    async def _fake_resolve(url):
+    async def _fake_resolve(url, gain=1.0):
         return FALLBACK_FORMAT
 
     monkeypatch.setattr("routes.playback.resolve_output_format", _fake_resolve)
@@ -70,6 +70,18 @@ def reset_state():
     session_module.registry._sessions.clear()
     claims_module.claims._claims.clear()
     state.ctx.discovered = {"airplay": [], "chromecast": [], "dlna": [], "sonos": []}
+    # has_cache (GET /discover) is keyed off this, not off ctx.discovered's
+    # contents above — a test leaving it at a real timestamp from an
+    # earlier scan would make a later test's /discover call believe a scan
+    # had already completed and serve the (just-reset, empty) cache instead
+    # of actually running the mocked discover_*() functions that test set up.
+    discovery_module._last_scan_completed = 0.0
+    discovery_module._consecutive_failures = {
+        "sonos": 0,
+        "airplay": 0,
+        "chromecast": 0,
+        "dlna": 0,
+    }
     remote_module.remote.disable()
     remote_module.remote._attempts.clear()
     remote_module.remote._lockout_until.clear()

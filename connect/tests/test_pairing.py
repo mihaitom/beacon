@@ -475,3 +475,103 @@ def test_unpair_a_device_that_was_never_paired_reports_404(client, default_sessi
 
     assert r.status_code == 404
     assert r.json() == {"error": "'NeverPaired' was not paired."}
+
+
+# ── reap_stale_pairings ──────────────────────────────────────────────────────
+# Regression coverage: a user who starts a pairing and then just gives up
+# (closes the dialog, never calls /finish or /start again) used to leave the
+# pyatv handshake/connection sitting in _sessions forever — /start's own TTL
+# check only ever noticed it on a *later* /start for the same device.
+
+
+async def test_reap_stale_pairings_once_closes_and_removes_expired_sessions(default_session):
+    fresh_pairing = _FakePairing()
+    stale_pairing = _FakePairing()
+    routes_pairing._sessions["FreshDevice"] = (fresh_pairing, time.monotonic())
+    routes_pairing._sessions["StaleDevice"] = (
+        stale_pairing,
+        time.monotonic() - (routes_pairing._SESSION_TTL + 1),
+    )
+
+    reaped = await routes_pairing.reap_stale_pairings_once()
+
+    assert reaped == ["StaleDevice"]
+    assert "StaleDevice" not in routes_pairing._sessions
+    assert stale_pairing.close_calls == 1
+    # The still-fresh session is untouched.
+    assert routes_pairing._sessions["FreshDevice"][0] is fresh_pairing
+    assert fresh_pairing.close_calls == 0
+
+
+async def test_reap_stale_pairings_once_is_a_no_op_with_nothing_stale(default_session):
+    fresh_pairing = _FakePairing()
+    routes_pairing._sessions["FreshDevice"] = (fresh_pairing, time.monotonic())
+
+    reaped = await routes_pairing.reap_stale_pairings_once()
+
+    assert reaped == []
+    assert fresh_pairing.close_calls == 0
+
+
+async def test_reap_stale_pairings_once_swallows_a_close_error(default_session):
+    """A device that errors on close() must still be forgotten — same
+    'best-effort cleanup' reasoning as /start's own old-session cleanup."""
+    stale_pairing = _FakePairing(close_error=RuntimeError("already gone"))
+    routes_pairing._sessions["StaleDevice"] = (
+        stale_pairing,
+        time.monotonic() - (routes_pairing._SESSION_TTL + 1),
+    )
+
+    reaped = await routes_pairing.reap_stale_pairings_once()
+
+    assert reaped == ["StaleDevice"]
+    assert "StaleDevice" not in routes_pairing._sessions
+
+
+async def test_reap_stale_pairings_once_drops_the_devices_lock_when_idle(default_session):
+    stale_pairing = _FakePairing()
+    routes_pairing._sessions["StaleDevice"] = (
+        stale_pairing,
+        time.monotonic() - (routes_pairing._SESSION_TTL + 1),
+    )
+    routes_pairing._locks["StaleDevice"] = asyncio.Lock()
+
+    await routes_pairing.reap_stale_pairings_once()
+
+    assert "StaleDevice" not in routes_pairing._locks
+
+
+async def test_reap_stale_pairings_once_keeps_a_lock_currently_held(default_session):
+    """Must never pull a lock out from under a concurrent /start that's
+    about to acquire it — only ever cleaned up once nothing holds it."""
+    stale_pairing = _FakePairing()
+    routes_pairing._sessions["StaleDevice"] = (
+        stale_pairing,
+        time.monotonic() - (routes_pairing._SESSION_TTL + 1),
+    )
+    lock = asyncio.Lock()
+    routes_pairing._locks["StaleDevice"] = lock
+
+    async with lock:
+        await routes_pairing.reap_stale_pairings_once()
+        assert "StaleDevice" in routes_pairing._locks
+
+
+async def test_reap_stale_pairings_calls_reap_once_after_the_interval():
+    from unittest.mock import AsyncMock
+
+    with (
+        patch(
+            "routes.pairing.asyncio.sleep", side_effect=[None, asyncio.CancelledError()]
+        ),
+        patch.object(
+            routes_pairing, "reap_stale_pairings_once", new=AsyncMock()
+        ) as reap_once_mock,
+    ):
+        task = asyncio.create_task(routes_pairing.reap_stale_pairings())
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    reap_once_mock.assert_awaited_once()

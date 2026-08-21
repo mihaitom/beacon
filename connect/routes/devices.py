@@ -21,7 +21,6 @@ from core.session import (
     require_authenticated_session,
 )
 from core.state import stream_url
-
 from delivery import (
     AirPlayDelivery,
     BaseDelivery,
@@ -136,6 +135,13 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
             req.url, credential=req.credential, internal_url=internal_url
         )
 
+    # See config_seq's own comment — claimed before the slow ping() below so
+    # a second, newer /config call landing while this one is still verifying
+    # its credential is what actually gets applied, not whichever of the two
+    # happens to finish last.
+    session.config_seq += 1
+    seq = session.config_seq
+
     # Verify the credential actually authenticates before trusting it — the
     # shared CONNECT_TOKEN only proves "this request came through our nginx",
     # not that the caller is a legitimate media-server user (see
@@ -148,6 +154,13 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
         raise HTTPException(
             status_code=401, detail="Media server rejected the supplied credential"
         )
+
+    if session.config_seq != seq:
+        logger.info(
+            f"[config] Superseded by a newer /config call for this session — "
+            f"discarding this one's result ({req.url})"
+        )
+        return {"status": "ok"}
 
     session.media = media
     session.authenticated = True
@@ -301,6 +314,14 @@ async def stop_device(
 
         except Exception as e:
             logger.error(f"[device-stop] {name}: {e}", exc_info=True)
+            # The device's own stop() call failing (offline, network timeout,
+            # a discovery error) shouldn't leave it locked to this session
+            # forever — same reasoning as /play's/_join's own claim release
+            # on a failed dispatch (see routes/playback.py's
+            # _release_claims()), just for the opposite direction: without
+            # this, /discover kept reporting device_in_use for a device that
+            # was never confirmed to still be playing anything.
+            await claims.release(device_type, name, session.session_id)
             return {"error": str(e)}
 
         await claims.release(device_type, name, session.session_id)

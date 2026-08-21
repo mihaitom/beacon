@@ -100,13 +100,20 @@ def test_discover_all_starts_a_new_scan_after_the_previous_one_finished():
     assert call_count == 2
 
 
-def test_discover_returns_cached_results_immediately(client, default_session):
+def test_discover_returns_cached_results_immediately(client, default_session, monkeypatch):
+    import time
+
+    import routes.discovery as discovery_mod
+
     state.ctx.discovered = {
         "sonos": [{"name": "Cached"}],
         "airplay": [],
         "chromecast": [],
         "dlna": [],
     }
+    # A scan completed recently — has_cache is keyed off this (see its own
+    # comment), not off ctx.discovered's contents above.
+    monkeypatch.setattr(discovery_mod, "_last_scan_completed", time.monotonic())
 
     with (
         patch("routes.discovery.discover_sonos", new=AsyncMock(return_value=[])),
@@ -212,7 +219,14 @@ def test_discover_triggers_a_background_rescan_once_the_cache_is_stale(
     import routes.discovery as discovery_mod
 
     state.ctx.discovered = {"sonos": [{"name": "Cached"}], "airplay": [], "chromecast": [], "dlna": []}
-    monkeypatch.setattr(discovery_mod, "_last_scan_completed", 0.0)  # definitely stale
+    # A scan completed once (has_cache needs a genuine, nonzero timestamp,
+    # not 0.0 - see that field's own comment), but long enough ago to be
+    # past the rescan floor.
+    monkeypatch.setattr(
+        discovery_mod,
+        "_last_scan_completed",
+        time.monotonic() - discovery_mod._BACKGROUND_RESCAN_MIN_INTERVAL - 1,
+    )
 
     with (
         patch("routes.discovery.discover_sonos", new=AsyncMock(return_value=[])),
@@ -342,3 +356,55 @@ def test_discover_reports_radio_title_as_track_for_claim_owner(client, default_s
         r = client.get("/discover")
 
     assert r.json()["sonos"][0]["in_use_by_song"] == "Radio FM"
+
+
+# ── _resolve_scan_result / _background_rescan ────────────────────────────────
+
+
+def test_resolve_scan_result_gives_up_after_max_consecutive_failures():
+    """A protocol failing MAX_CONSECUTIVE_FAILURES times in a row must stop
+    serving its last-known device list — a device that's actually left the
+    network (or a permanently broken discovery backend) shouldn't be
+    reported as available forever just because it keeps erroring."""
+    import routes.discovery as discovery_mod
+
+    cached = [{"name": "Ghost"}]
+    error = RuntimeError("net")
+
+    # Still serves the cached list for every failure short of the limit.
+    for _ in range(discovery_mod._MAX_CONSECUTIVE_FAILURES - 1):
+        assert discovery_mod._resolve_scan_result("sonos", error, cached) == cached
+
+    # The Nth consecutive failure crosses the threshold - give up on it.
+    assert discovery_mod._resolve_scan_result("sonos", error, cached) == []
+
+
+def test_resolve_scan_result_resets_failure_count_on_success():
+    import routes.discovery as discovery_mod
+
+    discovery_mod._consecutive_failures["sonos"] = discovery_mod._MAX_CONSECUTIVE_FAILURES - 1
+    fresh = [{"name": "Küche"}]
+
+    result = discovery_mod._resolve_scan_result("sonos", fresh, [{"name": "Stale"}])
+
+    assert result == fresh
+    assert discovery_mod._consecutive_failures["sonos"] == 0
+
+
+async def test_background_rescan_logs_but_does_not_raise_on_failure(caplog):
+    """Regression test: unlike main.py's own periodic scan, nothing awaits
+    this fire-and-forget task - an unhandled exception here would otherwise
+    vanish silently instead of being logged."""
+    import logging
+
+    import routes.discovery as discovery_mod
+
+    with (
+        patch.object(
+            discovery_mod, "discover_all", new=AsyncMock(side_effect=RuntimeError("boom"))
+        ),
+        caplog.at_level(logging.ERROR, logger="connect.devices"),
+    ):
+        await discovery_mod._background_rescan()  # must not raise
+
+    assert "Background rescan failed" in caplog.text

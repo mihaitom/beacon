@@ -25,35 +25,36 @@ from fastapi.middleware.cors import CORSMiddleware
 # or exported manually), never via a plain .env file alone.
 load_dotenv()
 
-from core.auth import TOKEN as _CONNECT_TOKEN  # noqa: E402
-from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED  # noqa: E402
-from core.log_level import TRACE as _TRACE_LEVEL  # noqa: E402
-from core.log_level import apply as _apply_log_level  # noqa: E402
-from core.log_level import initial_level as _initial_log_level  # noqa: E402
-from core.log_level import is_at_least  # noqa: E402
-from core.remote import reap_stale_remote, remote  # noqa: E402
-from core.session import reap_stale_sessions, registry  # noqa: E402
-from core.state import PORT, get_local_ip  # noqa: E402
-from routes.debug import router as debug_router  # noqa: E402
-from routes.devices import router as devices_router  # noqa: E402
-from routes.discovery import discover_all  # noqa: E402
-from routes.discovery import router as discovery_router  # noqa: E402
-from media import jellyfin_bridge, plex_bridge  # noqa: E402
-from routes.jellyfin_auth import router as jellyfin_auth_router  # noqa: E402
-from routes.join import router as join_router  # noqa: E402
-from routes.log_level import router as log_level_router  # noqa: E402
-from routes.lyrics import router as lyrics_router  # noqa: E402
-from routes.pairing import router as pairing_router  # noqa: E402
-from routes.playback import router as playback_router  # noqa: E402
-from routes.plex_auth import router as plex_auth_router  # noqa: E402
-from routes.proxy import close as close_proxy_client  # noqa: E402
-from routes.proxy import router as proxy_router  # noqa: E402
-from routes.radio import router as radio_router  # noqa: E402
-from routes.recommendations import router as recommendations_router  # noqa: E402
-from routes.remote import router as remote_router  # noqa: E402
-from routes.stream import router as stream_router  # noqa: E402
-from routes.volume import router as volume_router  # noqa: E402
-from routes.waveform import router as waveform_router  # noqa: E402
+from core.auth import TOKEN as _CONNECT_TOKEN
+from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED
+from core.log_level import TRACE as _TRACE_LEVEL
+from core.log_level import apply as _apply_log_level
+from core.log_level import initial_level as _initial_log_level
+from core.log_level import is_at_least
+from core.remote import reap_stale_remote, remote
+from core.session import reap_stale_sessions, registry
+from core.state import PORT, get_local_ip
+from media import jellyfin_bridge, plex_bridge
+from routes.debug import router as debug_router
+from routes.devices import router as devices_router
+from routes.discovery import discover_all
+from routes.discovery import router as discovery_router
+from routes.jellyfin_auth import router as jellyfin_auth_router
+from routes.join import router as join_router
+from routes.log_level import router as log_level_router
+from routes.lyrics import router as lyrics_router
+from routes.pairing import reap_stale_pairings
+from routes.pairing import router as pairing_router
+from routes.playback import router as playback_router
+from routes.plex_auth import router as plex_auth_router
+from routes.proxy import close as close_proxy_client
+from routes.proxy import router as proxy_router
+from routes.radio import router as radio_router
+from routes.recommendations import router as recommendations_router
+from routes.remote import router as remote_router
+from routes.stream import router as stream_router
+from routes.volume import router as volume_router
+from routes.waveform import router as waveform_router
 
 
 class _ShortNameFilter(logging.Filter):
@@ -253,12 +254,14 @@ async def lifespan(_: FastAPI):
     discovery_task = asyncio.create_task(_periodic_discovery())
     reaper_task = asyncio.create_task(reap_stale_sessions())
     remote_reaper_task = asyncio.create_task(reap_stale_remote())
+    pairing_reaper_task = asyncio.create_task(reap_stale_pairings())
     try:
         yield
     finally:
         discovery_task.cancel()
         reaper_task.cancel()
         remote_reaper_task.cancel()
+        pairing_reaper_task.cancel()
         # A killed process (dev-mode Ctrl+C, packaged app quitting) can't run
         # the Electron before-quit round-trip that normally disables Remote
         # Control (see App.vue) — disable it here too so a still-running

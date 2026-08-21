@@ -125,6 +125,40 @@ def test_config_sets_display_name_from_username(client, default_session):
     assert default_session.display_name == "alice"
 
 
+async def test_config_uses_the_newer_calls_result_even_if_its_ping_resolves_first(
+    default_session,
+):
+    """Regression test: two concurrent /config calls for the same session
+    (a UI double-submit, a retry racing the original request) each await
+    media.ping() (a real network round trip) before applying their result.
+    The older call's ping() taking *longer* and resolving after the newer
+    one's must not let it win and overwrite the session with stale
+    credentials just because it happened to finish last."""
+    import asyncio
+    import time
+    from unittest.mock import patch
+
+    from routes.devices import ConfigRequest, configure
+
+    def _ping(self):
+        if self.base_url == "http://old:4533":
+            time.sleep(0.1)  # the older request's own credential check is slow
+        return True
+
+    with patch.object(SubsonicClient, "ping", new=_ping):
+        old_req = ConfigRequest(url="http://old:4533", credential="old-cred")
+        old_task = asyncio.create_task(configure(old_req, default_session))
+        await asyncio.sleep(0)  # let the older call start (and claim seq=1) first
+
+        new_req = ConfigRequest(url="http://new:4533", credential="new-cred")
+        new_task = asyncio.create_task(configure(new_req, default_session))
+
+        await asyncio.gather(old_task, new_task)
+
+    assert default_session.media.base_url == "http://new:4533"
+    assert default_session.media._credential == "new-cred"
+
+
 def test_config_rejects_a_credential_the_media_server_wont_accept(
     client, default_session, monkeypatch
 ):

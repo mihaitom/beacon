@@ -541,7 +541,7 @@ async def play_tracks(
         # lookup first (see media/plex.py's docstring); resolve_output_format()
         # itself shells out to ffmpeg, also blocking.
         track_url = await asyncio.to_thread(session.media.get_stream_url, track.id)
-        output_format = await resolve_output_format(track_url)
+        output_format = await resolve_output_format(track_url, gain=req.gain)
 
         if target:
             conflict = await _claim_or_takeover(target, session, req.force)
@@ -586,6 +586,11 @@ async def play_tracks(
         st.clock.start(start_position)
         st.track_ended = False
         st.active_delivery = target
+        # Captured right after the write above — see active_delivery_seq's
+        # own comment in core/state.py for why the except branch below
+        # needs this rather than unconditionally restoring active_delivery
+        # on a failed dispatch.
+        dispatch_delivery_seq = st.active_delivery_seq
         # The whole queue (history included), not just this one track — see
         # AppState.queue's comment. A caller that only ever sends a single id
         # (queue_index defaults to 0 either way) still falls straight through
@@ -619,10 +624,23 @@ async def play_tracks(
                     st.current_track = previous_track
                     st.current_track_gain = previous_gain
                     st.current_output_format = previous_output_format
-                    st.is_streaming = previous_is_streaming
                     st.radio_info = previous_radio_info
                     st.track_ended = previous_track_ended
-                    st.active_delivery = previous_active_delivery
+                    # Only if nothing else has touched active_delivery since
+                    # this dispatch's own write to it above — a force-
+                    # takeover's displace_target() can (rarely) mutate both
+                    # this and is_streaming together, without this session's
+                    # own play_lock, when its own play_lock-timeout fallback
+                    # kicks in (see active_delivery_seq's own comment in
+                    # core/state.py). Restoring the pre-dispatch snapshot
+                    # over that would silently undo a takeover another
+                    # session was already told (via the "displaced"
+                    # broadcast) had succeeded — unconditionally restoring
+                    # is correct for everything else here, which
+                    # displace_target() never touches.
+                    if st.active_delivery_seq == dispatch_delivery_seq:
+                        st.active_delivery = previous_active_delivery
+                        st.is_streaming = previous_is_streaming
                     st.clock = previous_clock
                     st.queue = previous_queue
                     st.queue_index = previous_queue_index

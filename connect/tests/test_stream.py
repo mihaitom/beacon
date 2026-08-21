@@ -36,6 +36,13 @@ async def _real_stream(*args, **kwargs):
     yield b"chunk-2"
 
 
+def _drain(q) -> list:
+    items = []
+    while not q.empty():
+        items.append(q.get_nowait())
+    return items
+
+
 def _configure_and_set_track(client, default_session):
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
     track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="")
@@ -100,6 +107,31 @@ def test_stale_connection_does_not_clear_a_newer_generations_offset(
         client.get("/stream")
 
     assert default_session.state.clock.resume_offset == 99.0
+
+
+# ── active_stream_connections stays balanced even when setup itself fails ───
+
+
+async def test_active_stream_connections_rolls_back_when_setup_fails_before_streaming(
+    client, default_session,
+):
+    """Regression test: the connection is counted (for
+    _mark_disconnected_if_not_reconnected's grace-period check) *before*
+    get_stream_url()'s own network round-trip (a real one for Plex) — if
+    that then fails, the increment must be undone here too, not only in
+    stream_with_completion()'s own finally, which this failure never
+    reaches (the StreamingResponse — and therefore that generator — is
+    never even created)."""
+    _configure_and_set_track(client, default_session)
+    before = default_session.state.active_stream_connections
+
+    with patch(
+        "media.subsonic.SubsonicClient.get_stream_url",
+        side_effect=RuntimeError("media server unreachable"),
+    ), pytest.raises(RuntimeError):
+        await audio_stream(session_id=default_session.session_id)
+
+    assert default_session.state.active_stream_connections == before
 
 
 # ── Content-Type reflects the cached format decision ────────────────────────
@@ -437,6 +469,27 @@ async def test_dispatch_queued_track_updates_state_and_schedules_background_task
     assert default_session.state.is_streaming is True
 
 
+async def test_dispatch_queued_track_passes_its_gain_to_resolve_output_format(default_session):
+    """Regression test: resolve_output_format() needs to know the
+    ReplayGain multiplier up front to rule out a stream-copy tier that
+    can't actually apply it (see that function's own comment) — the same
+    `gain` this reuses for the device dispatch itself (see this function's
+    own docstring) must also reach resolve_output_format()."""
+    target = ChromecastDelivery("TV")
+    _playing_session(default_session, ["1", "2"], target=target)
+    next_track = Track(id="2", title="Next", artist="Artist", duration=200, cover_art_id="c")
+
+    with (
+        patch(
+            "routes.stream.resolve_output_format", AsyncMock(return_value=FALLBACK_FORMAT)
+        ) as resolve_mock,
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+    ):
+        await _dispatch_queued_track(default_session, target, next_track, gain=0.8)
+
+    assert resolve_mock.call_args.kwargs["gain"] == 0.8
+
+
 # ── stream_with_completion()'s failure handling ──────────────────────────────
 # ffmpeg crashing mid-stream and a device simply disconnecting must be told
 # apart: an ffmpeg failure gets caught and reported (is_streaming=False,
@@ -499,6 +552,53 @@ async def test_client_disconnect_mid_stream_is_reraised_without_touching_state(
     # (scheduled above, not awaited by this test) needs this to already be
     # accurate, not stuck counting a connection that no longer exists.
     assert default_session.state.active_stream_connections == 0
+
+
+async def test_is_streaming_revives_once_a_bare_reconnect_produces_audio(
+    client, default_session,
+):
+    """Regression test (2026-08-22): a bare device-initiated reconnect (no
+    /play, /seek, or /resume involved — the device just re-requested this
+    URL on its own) never goes through any of the handlers that otherwise
+    set is_streaming back to True. Left stuck False (e.g. after a
+    _mark_disconnected_if_not_reconnected trip, false-positive or not),
+    position resync and auto-advance both stay permanently disabled for the
+    rest of the track even once audio is audibly flowing again — this is
+    what actually revives it, the moment real audio starts flowing."""
+    _configure_and_set_track(client, default_session)
+    default_session.state.is_streaming = False
+    # Isolates this from the *separate*, pre-existing "queue exhausted"
+    # completion path (_advance_or_end, see test_advance_or_end_* for that
+    # one) — with no queue and is_paused=False, reviving is_streaming here
+    # would otherwise immediately trigger that unrelated path too, which
+    # sets it right back to False again before this test ever gets to
+    # check it, for a reason that has nothing to do with what's under test
+    # here.
+    default_session.state.clock.is_paused = True
+
+    q = default_session.event_bus.subscribe()
+
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream):
+        client.get("/stream")
+
+    assert default_session.state.is_streaming is True
+    assert any(payload["streaming"] is True for payload in _drain(q))
+
+
+async def test_is_streaming_does_not_rebroadcast_when_already_true(client, default_session):
+    """The common case (a normal /play-initiated connection, is_streaming
+    already True) must not broadcast a redundant status on top of
+    whatever /play itself already broadcast."""
+    _configure_and_set_track(client, default_session)
+    assert default_session.state.is_streaming is True
+    default_session.state.clock.is_paused = True  # see the comment above
+
+    q = default_session.event_bus.subscribe()
+
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream):
+        client.get("/stream")
+
+    assert q.empty()
 
 
 # ── _mark_disconnected_if_not_reconnected ────────────────────────────────────
@@ -668,6 +768,32 @@ async def test_stream_skips_analysis_for_a_non_analyzable_target(client, default
 
     analyzer_class.assert_not_called()
     assert default_session.audio_analyzer is None
+
+
+async def test_active_stream_connections_decrements_even_when_analyzer_setup_is_cancelled(
+    client, default_session,
+):
+    """Regression test: analyzer.start() is a real await, before the
+    streaming loop's own try/finally used to begin — a client disconnect
+    landing exactly there used to skip the finally that decrements
+    active_stream_connections entirely, permanently leaking the increment
+    from audio_stream() and eventually wedging
+    _mark_disconnected_if_not_reconnected's active_stream_connections == 0
+    check so it could never fire again for this session."""
+    _configure_and_set_track(client, default_session)
+    default_session.state.active_delivery = ChromecastDelivery("TV")
+    before = default_session.state.active_stream_connections
+
+    analyzer_class = MagicMock(
+        return_value=MagicMock(start=AsyncMock(side_effect=asyncio.CancelledError()))
+    )
+
+    with patch("routes.stream.AudioAnalyzer", analyzer_class):
+        resp = await audio_stream(session_id=default_session.session_id)
+        with pytest.raises(asyncio.CancelledError):
+            await resp.body_iterator.__anext__()
+
+    assert default_session.state.active_stream_connections == before
 
 
 # ── Scheduling the track-end signal on a normal completion ──────────────────

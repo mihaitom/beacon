@@ -244,6 +244,34 @@ def test_play_passes_resolved_content_type_to_target_and_caches_it(
     assert default_session.state.current_output_format is flac_copy
 
 
+def test_play_passes_the_requests_gain_to_resolve_output_format(client, default_session):
+    """Regression test: resolve_output_format() needs to know the
+    ReplayGain multiplier up front to rule out a stream-copy tier that
+    can't actually apply it (see that function's own comment) — /play's
+    own req.gain, not some other default, is what must reach it."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+
+    with (
+        patch.object(default_session.media, "get_track", return_value=track),
+        patch(
+            "routes.playback.resolve_output_format", AsyncMock(return_value=FALLBACK_FORMAT)
+        ) as resolve_mock,
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+    ):
+        client.post(
+            "/play",
+            json={
+                "song_ids": ["1"],
+                "target_name": "TV",
+                "target_type": "chromecast",
+                "gain": 0.8,
+            },
+        )
+
+    assert resolve_mock.call_args.kwargs["gain"] == 0.8
+
+
 def test_play_sets_current_track_before_dispatching_to_target(client, default_session):
     """Regression test: a fast-responding device can open its own GET
     /stream/{session_id} connection back to us before target.play() below

@@ -49,6 +49,22 @@ class AppState:
         self.active_stream_connections: int = 0
         self.radio_info: dict | None = None
         self.active_delivery: BaseDelivery | DeliveryManager | None = None
+        # Bumped by core/session.py's displace_target() whenever its
+        # play_lock-timeout fallback mutates active_delivery/is_streaming
+        # *without* holding play_lock (see that function's own docstring
+        # for why the fallback exists at all — a bounded wait to avoid a
+        # cross-session deadlock). /play's own dispatch captures this right
+        # after it sets active_delivery; if a failed target.play() then
+        # needs to roll that back, it re-checks this first — a stale
+        # displacement from a slow/unreachable device (the same kind of
+        # device the timeout fallback exists for) resolving *after* an
+        # unlocked displacement already landed must not silently clobber
+        # it back to the pre-dispatch snapshot, undoing a takeover another
+        # session was already told (via the "displaced" broadcast)
+        # succeeded. Not touched by the locked, normal path in
+        # displace_target()'s own _apply() — that one is already correctly
+        # serialized against /play by play_lock itself.
+        self.active_delivery_seq: int = 0
         # Wall-clock position tracking for the current track/stream — see
         # playback_clock.py for why this is its own object.
         self.clock = PlaybackClock()
