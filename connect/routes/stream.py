@@ -501,6 +501,11 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
                             # with "No active stream" for a session that's
                             # very much still playing.
                             if not session.state.is_streaming:
+                                logger.info(
+                                    "[stream] is_streaming revived on reconnect "
+                                    f"(generation={my_generation}) — audio is "
+                                    "flowing again after a disconnect/grace trip"
+                                )
                                 session.state.is_streaming = True
                                 await session.event_bus.broadcast(build_status_dict(session))
                     if analyzer:

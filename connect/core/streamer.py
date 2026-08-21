@@ -306,6 +306,7 @@ async def stream_tracks(
             # this simple; only the throttle decision itself is skippable.
             track_start = time.monotonic()
             bytes_produced = 0
+            paced = False
             while True:
                 chunk = await proc.stdout.read(8192)
                 if not chunk:
@@ -315,6 +316,19 @@ async def stream_tracks(
                     produced_seconds = bytes_produced * 8 / fmt.bitrate_bps
                     ahead_by = produced_seconds - (time.monotonic() - track_start)
                     if ahead_by > LOOKAHEAD_SECONDS:
+                        if not paced:
+                            # Once per track, not once per chunk — this
+                            # branch keeps re-triggering for the rest of the
+                            # track once reached (stream-copy stays far
+                            # faster than real-time), so logging it every
+                            # time would spam exactly when DEBUG is turned
+                            # on to investigate this.
+                            logger.debug(
+                                f"[ffmpeg] Track {i + 1} pacing engaged — "
+                                f"{ahead_by:.1f}s ahead of playback, holding "
+                                f"back to {LOOKAHEAD_SECONDS:.0f}s"
+                            )
+                            paced = True
                         await asyncio.sleep(ahead_by - LOOKAHEAD_SECONDS)
                 yield chunk
 
