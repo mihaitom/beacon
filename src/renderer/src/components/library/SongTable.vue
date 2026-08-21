@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div :class="{ 'song-table--with-alphabet-bar': showAlphabetBar }">
     <song-table-header
       :class="{ 'song-table-header--sticky': stickyHeader }"
       :show-cover="showCover"
@@ -64,6 +64,7 @@
           :show-format="showFormat"
           :selection-mode="selectionMode"
           :selected="selectedRowKeys.has(row.index)"
+          :selected-count="selectedRowKeys.size"
           @play="playSong"
           @play-next="playNextSong"
           @song-radio="startSongRadio"
@@ -76,12 +77,56 @@
         />
       </template>
     </template>
+    <!-- Past SONG_VIRTUALIZE_THRESHOLD (any list here — every SongTable
+     - consumer renders the load-more-on-scroll way now, see visibleSongs'
+     - own comment), switches from incrementally-growing plain rows to
+     - v-virtual-scroll instead of mounting the entire list at once — same
+     - reasoning as QueueDrawer.vue's QUEUE_VIRTUALIZE_THRESHOLD: that's the
+     - mount-everything pattern which froze/crashed the renderer there once
+     - a list ran into the tens of thousands. renderless — none of these
+     - views box the table into a fixed-height scroll area of its own, the
+     - whole page scrolls, so this rides that scroll parent
+     - (document.documentElement) instead. -->
+    <v-virtual-scroll
+      v-else-if="virtualizeSongs"
+      ref="virtualScroll"
+      renderless
+      :items="sortedSongs"
+      item-height="48"
+    >
+      <template #default="{ item: song, index }">
+        <song-row
+          :key="`${song.id}-${index}`"
+          :song="song"
+          :index="index"
+          :show-cover="showCover"
+          :show-album="showAlbum"
+          :show-genre="showGenre"
+          :show-year="showYear"
+          :show-play-count="showPlayCount"
+          :show-format="showFormat"
+          :selection-mode="selectionMode"
+          :selected="selectedRowKeys.has(index)"
+          :selected-count="selectedRowKeys.size"
+          @play="playSong"
+          @play-next="playNextSong"
+          @song-radio="startSongRadio"
+          @toggle-star="toggleStar"
+          @set-rating="setRating"
+          @add-to-queue="addToQueue"
+          @add-to-playlist="addToPlaylist"
+          @create-playlist="openCreatePlaylistDialog"
+          @toggle-select="toggleSelect"
+        />
+      </template>
+    </v-virtual-scroll>
     <template v-else>
       <song-row
         v-for="(song, index) in visibleSongs"
         :key="`${song.id}-${index}`"
+        :data-song-index="index"
         :song="song"
-        :index="rowIndexOffset + index"
+        :index="index"
         :show-cover="showCover"
         :show-album="showAlbum"
         :show-genre="showGenre"
@@ -89,7 +134,8 @@
         :show-play-count="showPlayCount"
         :show-format="showFormat"
         :selection-mode="selectionMode"
-        :selected="selectedRowKeys.has(rowIndexOffset + index)"
+        :selected="selectedRowKeys.has(index)"
+        :selected-count="selectedRowKeys.size"
         @play="playSong"
         @play-next="playNextSong"
         @song-radio="startSongRadio"
@@ -101,58 +147,16 @@
         @toggle-select="toggleSelect"
       />
     </template>
-    <div
-      v-if="!disablePagination && !infiniteScroll && pageCount > 1"
-      class="d-flex justify-center mt-3"
-    >
-      <v-pagination
-        v-model="currentPage"
-        :length="pageCount"
-        :total-visible="7"
-        density="comfortable"
-      />
-    </div>
     <infinite-scroll-trigger
-      v-if="infiniteScroll && visibleCount < sortedSongs.length"
+      v-if="!virtualizeSongs && visibleCount < sortedSongs.length"
       @trigger="loadMoreVisible"
     />
 
-    <!-- Floating, not part of document flow (position: fixed, see <style>
-     - below) — SongTable gets embedded in all sorts of different page
-     - layouts, so anchoring this to the list itself would mean re-deriving
-     - "is this actually still on screen" per context. Fixed to the
-     - viewport bottom (offset above PlayerBar) works the same everywhere
-     - it's used. -->
-    <v-slide-y-reverse-transition>
-      <div v-if="selectionMode" class="selection-bar">
-        <span class="text-body-2">
-          {{ selectedRowKeys.size }}
-          {{ selectedRowKeys.size === 1 ? $t('library.song1') : $t('library.songsN') }}
-          {{ $t('library.selected') }}
-        </span>
-        <v-btn variant="text" prepend-icon="mdi-skip-next-outline" @click="bulkPlayNext">
-          {{ $t('library.playNext') }}
-        </v-btn>
-        <v-btn variant="text" prepend-icon="mdi-playlist-plus" @click="bulkAddToQueue">
-          {{ $t('common.addToQueue') }}
-        </v-btn>
-        <!-- No "Add to Playlist" button here — a selected row's own "..."
-         - menu (SongRow.vue) already has one, and applies it to the whole
-         - selection instead of just that row once it's part of one (see
-         - selectedOrSingle() below). Keeping a second, separate playlist
-         - submenu here just to duplicate that would only be one more
-         - place for its own quirks (its height-limited scrolling, its own
-         - "no playlists yet" state, ...) to drift out of sync with the
-         - original. -->
-        <v-btn
-          icon="mdi-close"
-          variant="text"
-          density="comfortable"
-          :title="$t('library.clearSelection')"
-          @click="clearSelection"
-        />
-      </div>
-    </v-slide-y-reverse-transition>
+    <alphabet-index-bar
+      v-if="showAlphabetBar"
+      :available="availableLetters"
+      @select="jumpToLetter"
+    />
 
     <!-- Reached from a row's own "..." menu -> "Add to playlist" ->
      - "Create new playlist" (SongRow.vue) — pre-seeds the new playlist
@@ -189,24 +193,34 @@
 import type { PropType } from 'vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useLibraryStore } from '@/stores/library'
+import { firstIndexByLetter } from '@/services/alphabetIndex'
 import SongRow from './SongRow.vue'
 import SongTableHeader from './SongTableHeader.vue'
+import AlphabetIndexBar from './AlphabetIndexBar.vue'
 import InfiniteScrollTrigger from '@/components/InfiniteScrollTrigger.vue'
 import type { Song } from '@/types/library'
 
 type SortKey = 'title' | 'album' | 'genre' | 'year' | 'playCount' | 'format' | 'duration' | 'rating'
 
 const PAGE_SIZE = 100
+// See the v-virtual-scroll template comment (above the v-else-if="virtualizeSongs"
+// branch) for why this exists and why it mirrors QueueDrawer.vue's own
+// QUEUE_VIRTUALIZE_THRESHOLD.
+const SONG_VIRTUALIZE_THRESHOLD = 500
+// See showAlphabetBar's own comment — matches AlbumsView/ArtistsView's
+// PAGE_SIZE (60), a reasonable "more screens than you'd want to scroll by
+// hand" cutoff for 48px-tall rows too.
+const ALPHABET_BAR_MIN_SONGS = 60
 
 export default {
   name: 'SongTable',
-  components: { SongRow, SongTableHeader, InfiniteScrollTrigger },
+  components: { SongRow, SongTableHeader, AlphabetIndexBar, InfiniteScrollTrigger },
   props: {
     // Pass the complete list this view has (not a pre-sliced page) —
-    // sorting and render-pagination both happen inside this component, in
-    // that order, so a column sort always spans everything given here, and
-    // "Mehr laden" only ever grows how much of the (already sorted) result
-    // is rendered.
+    // sorting and render-slicing (visibleSongs/virtualizeSongs) both happen
+    // inside this component, in that order, so a column sort always spans
+    // everything given here, and scrolling only ever grows/virtualizes how
+    // much of the (already sorted) result is rendered.
     songs: {
       type: Array as () => Song[],
       required: true,
@@ -228,14 +242,6 @@ export default {
     // return".
     defaultSortKey: { type: String as PropType<SortKey | null>, default: 'title' },
     defaultSortDirection: { type: String as () => 'asc' | 'desc', default: 'asc' },
-    // Opt-in: replaces the v-pagination page-number nav with an
-    // auto-load-more-on-scroll sentinel instead. Off by default — the
-    // page-number nav is deliberate for most call sites (album/playlist/
-    // genre detail, search, favorites — all reasonably small lists), this
-    // is for the few top-level browse views with genuinely long lists
-    // (SongsView) where scrolling to the bottom and clicking through pages
-    // is more friction than it's worth.
-    infiniteScroll: { type: Boolean, default: false },
     // Whether clicking a song queues the rest of this list too (true,
     // default) or just that one song (false). Set to false for raw
     // library-browse views whose list isn't a curated sequence and can run
@@ -265,18 +271,11 @@ export default {
     // songs — a playlist/search/queue list can mix songs from many
     // different albums, where "disc number" isn't a meaningful grouping.
     groupByDisc: { type: Boolean, default: false },
-    // Album detail's own opt-in — an album (even a large box set) is a
-    // small, bounded list where paging through it is more friction than
-    // it's worth; just render every song. Also sidesteps disc groups
-    // (see groupByDisc) getting split across pages, since discGroups only
-    // ever sees the current page's worth of visibleSongs.
-    disablePagination: { type: Boolean, default: false },
   },
   data() {
     return {
       sortKey: this.defaultSortKey as SortKey | null,
       sortDirection: this.defaultSortDirection as 'asc' | 'desc',
-      currentPage: 1,
       visibleCount: PAGE_SIZE,
       // Set by onSort() the moment the user picks a column themselves —
       // from then on the defaultSortKey watcher below must leave sortKey
@@ -342,23 +341,23 @@ export default {
         return 0
       })
     },
-    pageCount(): number {
-      return Math.max(1, Math.ceil(this.sortedSongs.length / PAGE_SIZE))
+    // Every SongTable list now renders the same "grow on scroll" way (see
+    // visibleSongs) instead of the old per-caller pagination/disablePagination
+    // split, so this can fire for any of them — a big genre, a huge starred/
+    // search result set, a long playlist, not just SongsView's full catalog.
+    virtualizeSongs(): boolean {
+      return this.sortedSongs.length > SONG_VIRTUALIZE_THRESHOLD
     },
-    pageOffset(): number {
-      return (this.currentPage - 1) * PAGE_SIZE
-    },
+    // No more page-number nav or a disablePagination escape hatch — every
+    // caller gets the same incrementally-growing slice, with
+    // infinite-scroll-trigger (below) revealing more as it's scrolled to.
+    // PAGE_SIZE (100) already covers virtually every bounded list this
+    // renders (an album, a playlist, a single genre) in one go, so this
+    // reads as "show everything" there and only actually paces the load for
+    // the few genuinely huge lists — and past SONG_VIRTUALIZE_THRESHOLD,
+    // virtualizeSongs takes over rendering instead of this.
     visibleSongs(): Song[] {
-      if (this.disablePagination) {
-        return this.sortedSongs
-      }
-      if (this.infiniteScroll) {
-        return this.sortedSongs.slice(0, this.visibleCount)
-      }
-      return this.sortedSongs.slice(this.pageOffset, this.pageOffset + PAGE_SIZE)
-    },
-    rowIndexOffset(): number {
-      return this.disablePagination || this.infiniteScroll ? 0 : this.pageOffset
+      return this.sortedSongs.slice(0, this.visibleCount)
     },
     // Grouping only makes visual sense in the songs' own natural order —
     // sorting by title/duration/etc. would otherwise scatter one disc's
@@ -368,15 +367,30 @@ export default {
     },
     discGroups(): { discNumber: number; rows: { song: Song; index: number }[] }[] {
       const groups = new Map<number, { song: Song; index: number }[]>()
-      this.visibleSongs.forEach((song, i) => {
+      this.visibleSongs.forEach((song, index) => {
         const disc = song.discNumber ?? 1
         const rows = groups.get(disc) ?? []
-        rows.push({ song, index: this.rowIndexOffset + i })
+        rows.push({ song, index })
         groups.set(disc, rows)
       })
       return [...groups.entries()]
         .sort(([a], [b]) => a - b)
         .map(([discNumber, rows]) => ({ discNumber, rows }))
+    },
+    letterFirstIndex(): Map<string, number> {
+      return firstIndexByLetter(this.sortedSongs, (song) => song.title)
+    },
+    availableLetters(): Set<string> {
+      return new Set(this.letterFirstIndex.keys())
+    },
+    // Alphabet jump only makes sense while the list is actually sorted
+    // alphabetically by title — not natural/disc order (album, playlist
+    // detail), not playCount (Home/Artist detail's "top songs" shelves) —
+    // and only once scrolling by hand would actually be a chore. A small
+    // shelf or a single album's tracklist never needs it, even if it
+    // happens to be title-sorted; ALPHABET_BAR_MIN_SONGS is that cutoff.
+    showAlphabetBar(): boolean {
+      return this.sortKey === 'title' && this.sortedSongs.length >= ALPHABET_BAR_MIN_SONGS
     },
   },
   watch: {
@@ -386,12 +400,10 @@ export default {
     // (see its own comment), also invalidate any existing selection: the
     // same indices would now silently point at different songs.
     songs() {
-      this.currentPage = 1
       this.visibleCount = PAGE_SIZE
       this.clearSelection()
     },
     sortKey() {
-      this.currentPage = 1
       this.visibleCount = PAGE_SIZE
       this.clearSelection()
     },
@@ -413,9 +425,46 @@ export default {
       this.sortKey = value
     },
   },
+  mounted() {
+    window.addEventListener('keydown', this.onKeydown)
+  },
+  beforeUnmount() {
+    window.removeEventListener('keydown', this.onKeydown)
+  },
   methods: {
+    // Escape clears a multi-selection — the only way to back out of one
+    // now that the old floating selection bar (Play Next/Add to Queue,
+    // already duplicating what a selected row's own "..." menu does via
+    // selectedOrSingle, plus a close button) was removed as redundant.
+    // Skipped while the create-playlist dialog is open so Escape closes
+    // that (Vuetify's own default dialog behavior) instead of also
+    // silently clearing the selection underneath it.
+    onKeydown(event: KeyboardEvent) {
+      if (event.key !== 'Escape' || !this.selectionMode || this.createPlaylistDialog) return
+      this.clearSelection()
+    },
     loadMoreVisible() {
       this.visibleCount += PAGE_SIZE
+    },
+    jumpToLetter(letter: string) {
+      const index = this.letterFirstIndex.get(letter)
+      if (index === undefined) return
+      if (this.virtualizeSongs) {
+        const virtualScroll = this.$refs.virtualScroll as
+          { scrollToIndex: (i: number) => void } | undefined
+        virtualScroll?.scrollToIndex(index)
+        return
+      }
+      // Plain-list path: make sure the target row is actually rendered
+      // before trying to scroll to it — jumping to a letter past
+      // visibleCount's current slice would otherwise reach for a row that
+      // doesn't exist in the DOM yet.
+      if (index >= this.visibleCount) {
+        this.visibleCount = Math.ceil((index + 1) / PAGE_SIZE) * PAGE_SIZE
+      }
+      this.$nextTick(() => {
+        document.querySelector(`[data-song-index="${index}"]`)?.scrollIntoView({ block: 'center' })
+      })
     },
     sortValue(song: Song, key: SortKey): string | number {
       // Format has no single natural sort order of its own — bitrate is the
@@ -435,6 +484,19 @@ export default {
       }
     },
     playSong(song: Song, index: number | null) {
+      // Multi-selection: replace the queue with just the selected songs (in
+      // list order, same as selectedSongs) and start the first one, instead
+      // of either of the branches below - same "act on the whole selection"
+      // convention as playNextSong/addToQueue/addToPlaylist
+      // (selectedOrSingle), and takes priority over queueWholeList since a
+      // deliberate multi-song pick isn't "just browsing" either way.
+      // pinFirst: false - this is "play the whole selection", not one
+      // specific song the user picked as the start (same reasoning as
+      // PlaylistDetailView.vue's playAll()).
+      if (this.selectionMode && index != null && this.selectedRowKeys.has(index)) {
+        void this.playbackStore.playSongList(this.selectedSongs, 0, false)
+        return
+      }
       if (!this.queueWholeList) {
         // Raw library browsing (Songs/Genre views) — not a curated
         // sequence, so only the clicked song goes into the queue, not the
@@ -556,17 +618,6 @@ export default {
         }
       }
     },
-    // Deliberately doesn't clear the selection afterwards — either bulk
-    // action can be followed by the other (e.g. queue a batch, then also
-    // file it into a playlist via a selected row's own "..." menu, see
-    // selectedOrSingle()) without having to reselect the same songs. Only
-    // the bar's own close button (clearSelection) ends a selection.
-    bulkAddToQueue() {
-      this.playbackStore.addToQueue(this.selectedSongs)
-    },
-    bulkPlayNext() {
-      this.playbackStore.queueNext(this.selectedSongs)
-    },
     clearSelection() {
       this.selectedRowKeys.clear()
     },
@@ -575,6 +626,14 @@ export default {
 </script>
 
 <style scoped>
+/* Keeps the rightmost column (song-actions) clear of AlphabetIndexBar's own
+ * fixed position (right: 6px + its own ~26px width, see its stylesheet) —
+ * only applied while the bar actually renders, so every other SongTable
+ * consumer keeps using the full width it always had. */
+.song-table--with-alphabet-bar {
+  margin-right: 40px;
+}
+
 /* Column widths/flex mirror SongRow.vue's so a skeleton row lines up with
  * the real rows that replace it once loading finishes. */
 .song-row {
@@ -582,7 +641,7 @@ export default {
 }
 
 .song-index {
-  flex: 0 0 28px;
+  flex: 0 0 44px;
 }
 
 .song-cover {
@@ -657,28 +716,5 @@ export default {
    * (the compositor and main thread disagree on the sub-pixel offset for a
    * frame or two). */
   transform: translateZ(0);
-}
-
-/* Fixed to the viewport, not this component's own layout — SongTable gets
- * embedded at all sorts of scroll depths across different pages, so this
- * always ends up in the same comfortable spot regardless. Offset above
- * PlayerBar.vue's own fixed 88px height (see its :height prop) plus a
- * small gap, so it never sits on top of the transport controls; same
- * z-index as toast.vue's stack (the only other fixed-to-viewport UI here)
- * for consistency, comfortably above ordinary page content either way. */
-.selection-bar {
-  position: fixed;
-  left: 50%;
-  bottom: 104px;
-  transform: translateX(-50%);
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 9999px;
-  background: #1a1d27;
-  border: 1px solid var(--beacon-hairline);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 </style>

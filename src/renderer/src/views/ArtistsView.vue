@@ -24,8 +24,36 @@
     </v-alert>
     <v-progress-circular v-if="libraryStore.loading" indeterminate class="mb-4" />
 
-    <div class="artist-grid">
-      <artist-card v-for="artist in visibleArtists" :key="artist.id" :artist="artist" />
+    <div
+      ref="gridRoot"
+      :class="{
+        'grid-root--with-alphabet-bar': !libraryStore.loading && filteredArtists.length > 0,
+      }"
+    >
+      <div v-if="!virtualizeArtists" class="artist-grid">
+        <artist-card
+          v-for="(artist, index) in visibleArtists"
+          :key="artist.id"
+          :data-artist-index="index"
+          :artist="artist"
+        />
+      </div>
+      <!-- See AlbumsView.vue's identical v-virtual-scroll comment for why
+       - this exists and how the row-chunking/paddingTop works — same
+       - pattern, just artist-sized dimensions. -->
+      <v-virtual-scroll
+        v-else
+        ref="virtualScroll"
+        renderless
+        :items="artistRows"
+        :item-height="artistItemHeight"
+      >
+        <template #default="{ item: row, index }">
+          <div class="artist-grid" :style="{ paddingTop: index === 0 ? '0px' : `${artistGap}px` }">
+            <artist-card v-for="artist in row" :key="artist.id" :artist="artist" />
+          </div>
+        </template>
+      </v-virtual-scroll>
     </div>
 
     <v-alert
@@ -41,26 +69,57 @@
     </v-alert>
 
     <infinite-scroll-trigger
-      v-if="visibleCount < filteredArtists.length"
+      v-if="!virtualizeArtists && visibleCount < filteredArtists.length"
       @trigger="loadMore"
+    />
+
+    <alphabet-index-bar
+      v-if="!libraryStore.loading && filteredArtists.length > 0"
+      :available="availableLetters"
+      @select="jumpToLetter"
     />
   </v-container>
 </template>
 
 <script lang="ts">
+import { ref } from 'vue'
 import { useLibraryStore } from '@/stores/library'
+import { useElementWidth } from '@/composables/useElementWidth'
+import { firstIndexByLetter } from '@/services/alphabetIndex'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import ArtistCard from '@/components/library/ArtistCard.vue'
+import AlphabetIndexBar from '@/components/library/AlphabetIndexBar.vue'
 import InfiniteScrollTrigger from '@/components/InfiniteScrollTrigger.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
+import type { Artist } from '@/types/library'
 
 const PAGE_SIZE = 60
+
+// See AlbumsView.vue's ALBUM_VIRTUALIZE_THRESHOLD comment — same reasoning,
+// mirrors SongTable.vue's SONG_VIRTUALIZE_THRESHOLD / QueueDrawer.vue's
+// QUEUE_VIRTUALIZE_THRESHOLD. Verified elsewhere in this file: 6000+ artists
+// is a real library size this app has to handle.
+const ARTIST_VIRTUALIZE_THRESHOLD = 500
+// Must match .artist-card's own width (ArtistCard.vue) and .artist-grid's
+// own gap (below) — turns an available pixel width into a column count.
+const ARTIST_ITEM_WIDTH = 200
+const ARTIST_GAP = 20
+// Seed for v-virtual-scroll's row height (200px cover + mt-2 + name line +
+// album-count caption line) — see AlbumsView.vue's identical comment on why
+// this doesn't need to be exact.
+const ARTIST_ROW_HEIGHT_GUESS = 250
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'ArtistsView',
-  components: { DetailHeader, ArtistCard, InfiniteScrollTrigger, StickyFilter },
+  components: { DetailHeader, ArtistCard, AlphabetIndexBar, InfiniteScrollTrigger, StickyFilter },
+  // Composition API escape hatch just for gridWidth — see
+  // AlbumsView.vue's identical setup() and useElementWidth's own comment.
+  setup() {
+    const gridRoot = ref<HTMLElement | null>(null)
+    return { gridRoot, gridWidth: useElementWidth(gridRoot) }
+  },
   data() {
     return {
       // getArtists.view has no server-side pagination — it returns the whole
@@ -83,15 +142,46 @@ export default {
     libraryStore() {
       return useLibraryStore()
     },
-    filteredArtists() {
+    artistGap() {
+      return ARTIST_GAP
+    },
+    artistItemHeight() {
+      return ARTIST_ROW_HEIGHT_GUESS
+    },
+    filteredArtists(): Artist[] {
       const query = this.debouncedQuery.trim().toLowerCase()
       if (!query) return this.libraryStore.artists
-      return this.libraryStore.artists.filter((artist: { name: string }) =>
+      return this.libraryStore.artists.filter((artist: Artist) =>
         artist.name.toLowerCase().includes(query),
       )
     },
-    visibleArtists() {
+    visibleArtists(): Artist[] {
       return this.filteredArtists.slice(0, this.visibleCount)
+    },
+    virtualizeArtists(): boolean {
+      return this.filteredArtists.length > ARTIST_VIRTUALIZE_THRESHOLD
+    },
+    columns(): number {
+      if (this.gridWidth <= 0) return 1
+      return Math.max(
+        1,
+        Math.floor((this.gridWidth + ARTIST_GAP) / (ARTIST_ITEM_WIDTH + ARTIST_GAP)),
+      )
+    },
+    artistRows(): Artist[][] {
+      if (!this.virtualizeArtists) return []
+      const cols = this.columns
+      const rows: Artist[][] = []
+      for (let i = 0; i < this.filteredArtists.length; i += cols) {
+        rows.push(this.filteredArtists.slice(i, i + cols))
+      }
+      return rows
+    },
+    letterFirstIndex(): Map<string, number> {
+      return firstIndexByLetter(this.filteredArtists, (artist) => artist.name)
+    },
+    availableLetters(): Set<string> {
+      return new Set(this.letterFirstIndex.keys())
     },
   },
   watch: {
@@ -110,11 +200,36 @@ export default {
     loadMore() {
       this.visibleCount += PAGE_SIZE
     },
+    jumpToLetter(letter: string) {
+      const index = this.letterFirstIndex.get(letter)
+      if (index === undefined) return
+      if (this.virtualizeArtists) {
+        const row = Math.floor(index / this.columns)
+        const virtualScroll = this.$refs.virtualScroll as
+          { scrollToIndex: (i: number) => void } | undefined
+        virtualScroll?.scrollToIndex(row)
+        return
+      }
+      // Plain-grid path: see AlbumsView.vue's identical jumpToLetter comment.
+      if (index >= this.visibleCount) {
+        this.visibleCount = Math.ceil((index + 1) / PAGE_SIZE) * PAGE_SIZE
+      }
+      this.$nextTick(() => {
+        document
+          .querySelector(`[data-artist-index="${index}"]`)
+          ?.scrollIntoView({ block: 'center' })
+      })
+    },
   },
 }
 </script>
 
 <style scoped>
+/* See AlbumsView.vue's identical .grid-root--with-alphabet-bar comment. */
+.grid-root--with-alphabet-bar {
+  margin-right: 40px;
+}
+
 .artist-grid {
   display: flex;
   flex-wrap: wrap;

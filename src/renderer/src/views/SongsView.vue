@@ -37,7 +37,6 @@
       :songs="filteredSongs"
       :loading="libraryStore.loading"
       :default-sort-key="libraryStore.allSongsLoaded ? 'title' : null"
-      infinite-scroll
       sticky-header
       :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
       :queue-whole-list="false"

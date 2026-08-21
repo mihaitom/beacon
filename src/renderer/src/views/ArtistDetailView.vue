@@ -11,50 +11,53 @@
       @toggle-star="toggleStar"
       @set-rating="setRating"
     >
-      <!-- v-if on the template tag itself, not just the buttons inside —
-       - DetailHeader.vue only renders its #top-right wrapper (and its own
-       - row for this slot specifically, see that component's own comment)
-       - when $slots['top-right'] is truthy, which providing this slot
-       - always would regardless of externalLinks, even with nothing
-       - visible inside it (a v-for over an empty array still counts as
-       - slot content). This way, no links yet (still loading, or nothing
-       - found) means the slot isn't provided at all, same as before any of
-       - this existed. -->
-      <template v-if="externalLinks.length" #top-right>
-        <v-btn
-          v-for="link in externalLinks"
-          :key="link.key"
-          icon
-          size="small"
-          variant="text"
-          :href="link.url"
-          target="_blank"
-          rel="noopener"
-          :title="$t('library.viewOnService', { service: link.name })"
-        >
-          <img
-            :src="link.icon"
-            :alt="link.name"
-            class="external-link-icon"
-            :class="{ 'external-link-icon--invert': link.invert }"
-          />
-        </v-btn>
-      </template>
       <template #meta>
         {{ artist.albumCount }}
         {{ artist.albumCount === 1 ? $t('library.album1') : $t('library.albumsN') }} ·
         {{ totalSongCount }}
         {{ totalSongCount === 1 ? $t('library.song1') : $t('library.songsN') }}
       </template>
-      <template v-if="authStore.capabilities.songRadio" #actions>
-        <v-btn
-          color="primary"
-          rounded="pill"
-          prepend-icon="mdi-radio-tower"
-          @click="startArtistRadio"
-        >
-          {{ $t('library.artistRadio') }}
-        </v-btn>
+      <!-- v-if on the template tag itself, not just the content inside —
+       - DetailHeader.vue only renders its own #actions wrapper (reserving
+       - margin-top, see that component's own comment on $slots.actions)
+       - when this slot is provided at all, regardless of what's actually
+       - inside it. Guarding here means neither Artist Radio nor the
+       - external-link icons existing yet (capability off, still loading,
+       - nothing found) doesn't reserve a gap for nothing. Icons moved here
+       - from their old #top-right spot (see TODO.md) — up to 7 of them
+       - crammed into that absolute-positioned corner alongside the rating/
+       - heart row was cramped; this is normal reading-flow layout with
+       - room to wrap instead. -->
+      <template v-if="authStore.capabilities.songRadio || externalLinks.length" #actions>
+        <div class="detail-header__actions-row">
+          <v-btn
+            v-if="authStore.capabilities.songRadio"
+            color="primary"
+            rounded="pill"
+            prepend-icon="mdi-radio-tower"
+            @click="startArtistRadio"
+          >
+            {{ $t('library.artistRadio') }}
+          </v-btn>
+          <v-btn
+            v-for="link in externalLinks"
+            :key="link.key"
+            icon
+            size="small"
+            variant="text"
+            :href="link.url"
+            target="_blank"
+            rel="noopener"
+            :title="$t('library.viewOnService', { service: link.name })"
+          >
+            <img
+              :src="link.icon"
+              :alt="link.name"
+              class="external-link-icon"
+              :class="{ 'external-link-icon--invert': link.invert }"
+            />
+          </v-btn>
+        </div>
       </template>
     </detail-header>
 
@@ -63,9 +66,28 @@
     </div>
 
     <template v-if="topSongs.length || loadingTopSongs">
-      <h2 class="section-title mt-8 mb-2">{{ $t('library.mostPlayed') }}</h2>
+      <div class="section-header mt-8 mb-2">
+        <h2 class="section-title">
+          {{ allSongsShown ? $t('library.allSongs') : $t('library.mostPlayed') }}
+        </h2>
+        <!-- Only once the artist actually has more songs than
+         - TOP_SONGS_LIMIT (totalSongCount is every song across every
+         - album) — otherwise there'd be nothing for the toggle to do.
+         - Stays visible in both states, swapping label/target so it can
+         - toggle back and forth instead of only ever expanding once. -->
+        <v-btn
+          v-if="canToggleAllSongs"
+          variant="text"
+          size="small"
+          :loading="loadingAllSongs"
+          :disabled="loadingAllSongs"
+          @click="toggleAllTopSongs"
+        >
+          {{ allSongsShown ? $t('library.showLess') : $t('library.showAllSongs') }}
+        </v-btn>
+      </div>
       <song-table
-        :songs="topSongs"
+        :songs="displayedTopSongs"
         :loading="loadingTopSongs"
         default-sort-key="playCount"
         default-sort-direction="desc"
@@ -87,7 +109,7 @@
 </template>
 
 <script lang="ts">
-import { useLibraryStore } from '@/stores/library'
+import { useLibraryStore, TOP_SONGS_LIMIT } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import DetailHeader from '@/components/library/DetailHeader.vue'
@@ -95,20 +117,34 @@ import AlbumCard from '@/components/library/AlbumCard.vue'
 import SongTable from '@/components/library/SongTable.vue'
 import PageLoader from '@/components/PageLoader.vue'
 import { getArtistImages, getArtistLinks } from '@/services/connect/recommendations'
-import {
-  toExternalLinkList,
-  type ExternalLinkKey,
-} from '@/components/library/externalArtistLinks'
+import { toExternalLinkList, type ExternalLinkKey } from '@/components/library/externalArtistLinks'
 import type { Song } from '@/types/library'
+
+// Artist detail (with its own .albums, unlike the plain library-store
+// Artist type) — named here so data()'s own field below doesn't have to
+// repeat this whole ReturnType chain inline.
+type ArtistDetail = Awaited<ReturnType<ReturnType<typeof useLibraryStore>['fetchArtist']>>
 
 export default {
   name: 'ArtistDetailView',
   components: { DetailHeader, AlbumCard, SongTable, PageLoader },
   data() {
     return {
-      artist: null as Awaited<ReturnType<ReturnType<typeof useLibraryStore>['fetchArtist']>> | null,
+      artist: null as ArtistDetail | null,
+      // The default capped fetch (top TOP_SONGS_LIMIT by playCount) —
+      // always loaded, and what's shown while allSongsShown is false. See
+      // displayedTopSongs for which of this/allTopSongs actually renders.
       topSongs: [] as Song[],
       loadingTopSongs: false,
+      // Every song by the artist, lazily fetched the first time
+      // toggleAllTopSongs() is clicked — null until then. Cached (not
+      // re-fetched) once loaded, so toggling back to the capped view and
+      // forward again is instant and free the second time onward.
+      allTopSongs: null as Song[] | null,
+      loadingAllSongs: false,
+      // Which of topSongs/allTopSongs is currently on screen — see
+      // toggleAllTopSongs().
+      allSongsShown: false,
       // Keyed by externalArtistLinks.ts's own keys — Deezer's url comes
       // from a different endpoint (getArtistImages(), shared with
       // HomeView.vue's own lookup) than the other six (getArtistLinks(),
@@ -128,6 +164,17 @@ export default {
     totalSongCount() {
       return this.artist?.albums.reduce((sum, album) => sum + album.songCount, 0) ?? 0
     },
+    // Whether there's actually a reason to offer the toggle at all — an
+    // artist with TOP_SONGS_LIMIT songs or fewer has nothing more for
+    // "Show all" to reveal. Independent of what's been fetched so far
+    // (unlike allTopSongs), so the button doesn't flicker in/out across a
+    // toggle the way comparing against topSongs.length would.
+    canToggleAllSongs() {
+      return this.totalSongCount > TOP_SONGS_LIMIT
+    },
+    displayedTopSongs() {
+      return this.allSongsShown && this.allTopSongs ? this.allTopSongs : this.topSongs
+    },
     externalLinks() {
       return toExternalLinkList(this.externalLinkUrls)
     },
@@ -142,6 +189,8 @@ export default {
     async loadArtist() {
       const id = this.$route.params.id as string
       this.topSongs = []
+      this.allTopSongs = null
+      this.allSongsShown = false
       this.externalLinkUrls = {}
       // A newer navigation may resolve before this one, or move the route
       // on while a fetch is still in flight — the `$route.params.id === id`
@@ -168,6 +217,34 @@ export default {
           console.error('[artist-detail] Failed to load top songs:', error)
       } finally {
         if (this.$route.params.id === id) this.loadingTopSongs = false
+      }
+    },
+    // Toggles between the capped topSongs and the full allTopSongs — the
+    // latter only actually fetched the first time this flips to "shown"
+    // (see allTopSongs' own comment); every toggle after that is instant.
+    async toggleAllTopSongs() {
+      if (this.allSongsShown) {
+        this.allSongsShown = false
+        return
+      }
+      if (this.allTopSongs || !this.artist) {
+        this.allSongsShown = true
+        return
+      }
+      const artist = this.artist
+      const id = artist.id
+      this.loadingAllSongs = true
+      try {
+        const songs = await this.libraryStore.fetchTopSongsForArtist(artist, Infinity)
+        if (this.$route.params.id === id) {
+          this.allTopSongs = songs
+          this.allSongsShown = true
+        }
+      } catch (error) {
+        if (this.$route.params.id === id)
+          console.error('[artist-detail] Failed to load all songs:', error)
+      } finally {
+        if (this.$route.params.id === id) this.loadingAllSongs = false
       }
     },
     // Fired-and-forgotten by loadArtist() rather than awaited inline — these
@@ -241,6 +318,23 @@ export default {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Artist Radio + the external-link icons share one row, wrapping onto a
+ * second line rather than overflowing/squeezing on a narrow window - see
+ * this file's own #actions template comment for why they live here now. */
+.detail-header__actions-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .external-link-icon {

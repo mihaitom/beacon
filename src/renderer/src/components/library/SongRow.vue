@@ -106,6 +106,27 @@
      - coordinates (right-click), so the same menu serves both. -->
     <v-menu v-model="menuOpen" :target="menuTarget">
       <v-list density="compact">
+        <!-- Only when this row is itself part of a multi-selection (not
+         - just "some selection exists elsewhere") — matches
+         - SongTable.vue's selectedOrSingle(), the same condition under
+         - which Play Next/Add to Queue/Add to Playlist below actually act
+         - on the whole selection instead of just this one song. Makes that
+         - otherwise-invisible scope switch visible before anything's
+         - clicked. -->
+        <v-list-subheader v-if="showSelectionSubheader">
+          {{ selectedCount }}
+          {{ selectedCount === 1 ? $t('library.song1') : $t('library.songsN') }}
+          {{ $t('library.selected') }}
+        </v-list-subheader>
+        <!-- Play has a real "whole selection" reading too — see
+         - SongTable.vue's playSong(), which replaces the queue with the
+         - selection and starts the first one instead of starting the full
+         - list from this song's position, same as Play Next/Add to
+         - Queue/Add to Playlist below (selectedOrSingle). Song Radio
+         - doesn't: it always seeds a fresh queue off just this one track,
+         - so it hides once this row is part of an actual multi-selection
+         - instead of offering an action that silently ignores everything
+         - else selected. -->
         <v-list-item @click="$emit('play', song, index)">
           <template #prepend><v-icon icon="mdi-play" size="small" /></template>
           <v-list-item-title>{{ $t('library.play') }}</v-list-item-title>
@@ -114,7 +135,10 @@
           <template #prepend><v-icon icon="mdi-skip-next-outline" size="small" /></template>
           <v-list-item-title>{{ $t('library.playNext') }}</v-list-item-title>
         </v-list-item>
-        <v-list-item v-if="authStore.capabilities.songRadio" @click="$emit('song-radio', song)">
+        <v-list-item
+          v-if="authStore.capabilities.songRadio && !showSelectionSubheader"
+          @click="$emit('song-radio', song)"
+        >
           <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
           <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
         </v-list-item>
@@ -158,6 +182,10 @@ import CoverArt from './CoverArt.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
+
+// Gives every SongRow instance its own stable id for the
+// contextMenuOpened broadcast below — see menuId's own comment.
+let nextMenuId = 0
 
 export default {
   name: 'SongRow',
@@ -220,6 +248,16 @@ export default {
       type: Boolean,
       default: false,
     },
+    // Total number of selected rows in the list (SongTable.vue's
+    // selectedRowKeys.size) — only actually used to label the context
+    // menu's subheader when this row is itself part of that selection (see
+    // showSelectionSubheader), so the menu makes it obvious a bulk action
+    // is about to apply to the whole selection, not just the row that was
+    // right-clicked.
+    selectedCount: {
+      type: Number,
+      default: 0,
+    },
   },
   emits: [
     'play',
@@ -237,6 +275,13 @@ export default {
       menuOpen: false,
       menuTarget: [0, 0] as [number, number],
       isHovered: false,
+      // Identifies this row's own menu in the contextMenuOpened broadcast —
+      // see openMenu()/onOtherMenuOpened() below. A plain incrementing
+      // counter rather than the song's id: uniqueness only needs to hold
+      // for however long a menu might stay open, and this also can't
+      // collide with another row showing the same song twice (e.g. a
+      // playlist with a duplicate).
+      menuId: nextMenuId++,
     }
   },
   computed: {
@@ -264,6 +309,19 @@ export default {
       if (format && bitRate) return `${format} · ${bitRate}`
       return format || bitRate || '—'
     },
+    // See the v-list-subheader's own template comment — only once this row
+    // is part of an actual multi-selection, not for a lone selected row
+    // (where the subheader would just be redundant noise on top of normal
+    // single-row behavior).
+    showSelectionSubheader() {
+      return this.selectionMode && this.selected && this.selectedCount > 1
+    },
+  },
+  mounted() {
+    this.$emitter.on('contextMenuOpened', this.onOtherMenuOpened)
+  },
+  beforeUnmount() {
+    this.$emitter.off('contextMenuOpened', this.onOtherMenuOpened)
   },
   methods: {
     onCoverClick() {
@@ -273,6 +331,9 @@ export default {
     openMenu(event: MouseEvent) {
       this.menuTarget = [event.clientX, event.clientY]
       this.menuOpen = true
+      // Tells every other mounted row to close its own menu — see
+      // menuId's own comment for why this is needed at all.
+      this.$emitter.emit('contextMenuOpened', this.menuId)
       // Fetched eagerly (not on-demand when the submenu opens) so the
       // playlist list is already there by the time it's hovered — playlist
       // counts are small enough that this is cheap, and it only ever
@@ -280,6 +341,9 @@ export default {
       if (this.libraryStore.playlists.length === 0) {
         void this.libraryStore.fetchPlaylists()
       }
+    },
+    onOtherMenuOpened(id: number) {
+      if (id !== this.menuId) this.menuOpen = false
     },
   },
 }
@@ -325,14 +389,19 @@ export default {
  * for column, or the header labels drift out of alignment with the rows. */
 .song-select-checkbox {
   /* Overrides v-checkbox-btn's default hit-area padding, which is sized
-   * for a standalone checkbox, not a 28px-wide index column — without
+   * for a standalone checkbox, not a 44px-wide index column — without
    * this it visually pushes into the next column. */
   margin: 0 -8px;
 }
 
+/* 44px, same width as the other narrow right-aligned columns
+ * (.song-year/.song-playcount/.song-duration below) — comfortably fits a
+ * 5-digit track number, tabular-nums so digit width stays consistent
+ * regardless of which digits actually show up. */
 .song-index {
-  flex: 0 0 28px;
+  flex: 0 0 44px;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .song-cover {

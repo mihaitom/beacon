@@ -3,6 +3,11 @@ import { useAuthStore } from './auth'
 import { SubsonicClient } from '@/services/subsonic/client'
 import type { Album, Artist, Genre, Playlist, RadioStation, Song } from '@/types/library'
 
+// Default cap for fetchTopSongsForArtist() below — exported so
+// ArtistDetailView.vue's "Show all" toggle can tell whether an artist
+// actually has more songs than that cap without duplicating the number.
+export const TOP_SONGS_LIMIT = 10
+
 // Dedupes concurrent fetchAllSongs() calls — fetchAlbum()'s derived path
 // (and things that fan out into many fetchAlbum() calls at once, like
 // fetchTopSongsForArtist()'s Promise.all) can all end up awaiting this at
@@ -427,8 +432,10 @@ export const useLibraryStore = defineStore('library', {
     /** Top songs for an artist by local playCount, sorted descending. There's
      * no direct Subsonic endpoint for this (getArtist.view's albums don't
      * include song lists, only album-level metadata) — fetches each album's
-     * full song list (via the same cache as fetchAlbum()) and aggregates. */
-    async fetchTopSongsForArtist(artist: Artist, limit = 10): Promise<Song[]> {
+     * full song list (via the same cache as fetchAlbum()) and aggregates.
+     * ArtistDetailView.vue's own "Show all" toggle passes Infinity to lift
+     * this default cap once the artist has more than TOP_SONGS_LIMIT. */
+    async fetchTopSongsForArtist(artist: Artist, limit = TOP_SONGS_LIMIT): Promise<Song[]> {
       const albums = await Promise.all(artist.albums.map((album) => this.fetchAlbum(album.id)))
       return albums
         .flatMap((album) => album.songs)

@@ -103,7 +103,7 @@ export default {
 /* Widths/flex-grow here must mirror SongRow.vue's exactly, column for
  * column, or the header labels drift out of alignment with the rows. */
 .song-index {
-  flex: 0 0 28px;
+  flex: 0 0 44px;
 }
 
 .song-cover-spacer {
