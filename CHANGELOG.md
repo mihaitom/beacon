@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Added a second quick-play action to the Songs, Genre, Albums, and Artists views, alongside the already-random one: picks from what's actually been played a lot instead of the whole (or, for a genre, whole-genre) pool, so it leans toward music you already like rather than being a total shot in the dark
 - Added an automatic peek at the queue whenever something lands in it without being clicked song-by-song - those quick-play actions, Play Next/Add to Queue, Song Radio, Artist Radio, and Autoplay's own top-up all trigger it. The queue opens with each track fading in one after another and scrolls to whatever's currently playing, then closes itself again after a few seconds unless the mouse actually reaches it, in which case it stays open
 - Added a matching fade-out to clearing the queue - tracks disappear bottom-to-top starting from wherever you've actually scrolled to, instead of all at once
+- Added a "Stop all" action to the mobile web UI's device picker, matching the one already on desktop - previously the only way to back out of casting there was picking "This device", which also switches playback to it right away
 
 ### Changed
 
@@ -26,15 +27,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Changed selecting multiple songs to no longer show a floating action bar - Play Next/Add to Queue/Add to Playlist for the whole selection already live in a selected song's right-click menu, so the bar was just duplicating them; press Escape to clear a selection instead of its old close button
 - Changed where an artist page's external links (Spotify, Apple Music, TIDAL, YouTube, Deezer, Discogs, MusicBrainz) show up - they sit next to the Artist Radio button now instead of crowding the top-right corner alongside the rating stars and favorite heart
 - Changed cover art to only load once it's about to scroll into view instead of every single one on a page loading at once, and to be cached by the browser afterward - large grids/lists load noticeably faster and revisiting them no longer re-fetches art that was already shown
+- Changed the seek bar to stop stretching past 600px wide on very wide monitors
 
 ### Fixed
 
 - Fixed the displayed playback position flickering continuously for the rest of a track after pausing, resuming, or seeking directly on a cast device (e.g. a Sonos speaker) instead of through Beacon - a single real correction kept being treated as still needing another one on every subsequent check instead of settling once it was already accurate
 - Fixed casting occasionally auto-advancing to the next queued song a few seconds early, cutting off the tail end of the current one - only happened after pausing/resuming directly on the cast device rather than through Beacon: the auto-advance timer was scheduled once up front and never adjusted for a correction like that happening afterward
 - Fixed casting occasionally getting stuck right at the end of a track and never advancing to the next queued song, with the displayed position silently snapping back to 0:00 instead - happened if the cast device reported itself as idle right as the current track was finishing, which was being misread as someone rewinding it back to the very start
+- Fixed a cast session occasionally getting stuck looping near 0:00 with no audio, indefinitely, if the cast device's connection dropped mid-track (a brief network hiccup, for example) and didn't reconnect on its own - the displayed position kept resyncing against the now-silent device's "nothing playing" reading as one genuine rewind to the start after another, instead of recognizing that playback itself had actually stopped
 - Fixed the displayed position occasionally getting stuck near 0:00 for a few seconds after restarting the currently playing track (or seeking) while casting - a slow-to-respond device's background position check could land right as the fresh restart was still reconnecting and get compared against its leftover reading from before instead of being discarded
+- Fixed the displayed position (and synced lyrics/the audio visualizer) briefly running ahead of the actual audio for a few seconds after resuming a paused cast session, instead of getting the same immediate correction a seek already does
 - Fixed the displayed playback position (and synced lyrics/the audio visualizer, both tied to it) gradually drifting further out of sync with the actual audio the more a cast session got paused and resumed, eventually landing minutes off; smaller, legitimate corrections now also blend in smoothly instead of visibly jumping
 - Fixed pressing Play again immediately after Pause, before the previous action had finished, occasionally jumping a cast session's track backward to an earlier point instead of just resuming
+- Fixed joining an unreachable device to an existing cast session leaving it stuck marked as in-use for everyone else, even though nothing was actually playing on it
+- Fixed casting to several devices at once silently appearing to succeed, with no error shown and every device staying marked in-use, when none of them actually managed to start playing
+- Fixed the Electron Remote Control pairing occasionally reporting the app as unreachable right after a quick reconnect (a brief network blip, for example), even though it was already back and listening again
+- Fixed the seek bar's waveform occasionally overflowing into neighboring player bar elements at narrower window widths instead of shrinking to fit
 - Fixed the Songs, Albums, and Artists library views getting progressively slower and less responsive the further you scrolled through a large library - every row/card stayed mounted after loading more instead of only the ones actually on screen
 - Fixed a song's right-click menu not closing when another song's was opened - each could be opened independently, leaving several stacked on top of each other at once
 

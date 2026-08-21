@@ -1,5 +1,8 @@
 <template>
-  <v-bottom-sheet :model-value="modelValue" @update:model-value="$emit('update:modelValue', $event)">
+  <v-bottom-sheet
+    :model-value="modelValue"
+    @update:model-value="$emit('update:modelValue', $event)"
+  >
     <v-card class="mobile-device-picker">
       <div class="mobile-device-picker__header">
         <span class="text-subtitle-1">{{ $t('mobile.playOn') }}</span>
@@ -14,12 +17,24 @@
         </v-btn>
       </div>
 
-      <div v-if="connectStore.isScanning && allDevices.length === 0" class="d-flex justify-center pa-6">
+      <div
+        v-if="connectStore.isScanning && allDevices.length === 0"
+        class="d-flex justify-center pa-6"
+      >
         <v-progress-circular indeterminate color="primary" />
       </div>
 
       <v-list v-else class="mobile-device-picker__list">
-        <v-list-item @click="stopLocal">
+        <v-list-item
+          v-if="connectStore.isActive"
+          class="mobile-device-picker__disconnect"
+          @click="disconnectAll"
+        >
+          <template #prepend><v-icon icon="mdi-cast-off" /></template>
+          <v-list-item-title>{{ $t('connect.stopAll') }}</v-list-item-title>
+        </v-list-item>
+
+        <v-list-item @click="disconnectAll">
           <template #prepend><v-icon icon="mdi-speaker" /></template>
           <v-list-item-title>{{ $t('mobile.thisDevice') }}</v-list-item-title>
         </v-list-item>
@@ -37,7 +52,10 @@
           />
         </template>
 
-        <div v-if="allDevices.length === 0 && !connectStore.isScanning" class="text-body-2 text-medium-emphasis pa-4">
+        <div
+          v-if="allDevices.length === 0 && !connectStore.isScanning"
+          class="text-body-2 text-medium-emphasis pa-4"
+        >
           {{ $t('connect.noDevicesFound') }}
         </div>
       </v-list>
@@ -145,7 +163,12 @@ export default {
         [...this.selectedKeys].every((key) => this.initialKeys.has(key))
       )
     },
-    stopLocal() {
+    // Releases every active cast target — local playback then picks up on
+    // its own (see stores/playback.ts's connect.$subscribe handler), the
+    // same underlying action whether triggered from the explicit
+    // "Stop all" row (only shown while actually casting) or by picking
+    // "This device" itself.
+    disconnectAll() {
       void this.connectStore.stopAll()
       this.$emit('update:modelValue', false)
     },
@@ -175,6 +198,14 @@ export default {
   display: flex;
   align-items: center;
   padding: 16px 16px 8px;
+}
+
+/* Destructive action (stops every active cast target) — colored to read
+ * that way at a glance, same as ConnectDevicePicker.vue's own "Stop all"
+ * button (color="error"). */
+.mobile-device-picker__disconnect,
+.mobile-device-picker__disconnect :deep(.v-icon) {
+  color: rgb(var(--v-theme-error));
 }
 
 .mobile-device-picker__list {

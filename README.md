@@ -12,6 +12,12 @@
   <a href="https://github.com/mihaitom/beacon/actions/workflows/test-python.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/mihaitom/beacon/test-python.yml?branch=development&style=flat-square&label=backend%20tests" alt="Backend tests">
   </a>
+  <a href="https://codecov.io/gh/mihaitom/beacon">
+    <img src="https://codecov.io/gh/mihaitom/beacon/branch/development/graph/badge.svg" alt="Backend coverage">
+  </a>
+  <a href="https://github.com/mihaitom/beacon/actions/workflows/test-frontend.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/mihaitom/beacon/test-frontend.yml?branch=development&style=flat-square&label=frontend%20tests" alt="Frontend tests">
+  </a>
   <a href="https://github.com/mihaitom/beacon/commits/development">
     <img src="https://img.shields.io/github/last-commit/mihaitom/beacon?style=flat-square&color=blue" alt="Last commit">
   </a>
@@ -242,6 +248,7 @@ Built with Vue 3 (Options API) + Vuetify + Pinia on the frontend, and Python/Fas
 - `pnpm run dev` - start frontend + backend for development
 - `pnpm run type-check` - type-check the frontend
 - `pnpm run lint` - lint the frontend
+- `pnpm test:unit` - run the frontend unit test suite (jsdom); `pnpm test:layout` runs the real-browser layout suite alongside it
 - `cd connect && uv run pytest` - run the backend test suite
 
 ## License

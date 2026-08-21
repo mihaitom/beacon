@@ -3,7 +3,7 @@ name: Frontend Tests
 on:
     workflow_dispatch:
     push:
-        branches: [main]
+        branches: [main, development]
         paths:
             - src/renderer/**
             - vitest.config.ts
