@@ -1279,18 +1279,24 @@ export const usePlaybackStore = defineStore('playback', {
      * enforces per-row, just applied to the whole queue at once. Radio has
      * no queue to clear (this.queue is already empty then; QueueDrawer.vue
      * only shows the button at all once there's more than the current
-     * song to drop, see its own guard). */
+     * song to drop, see its own guard). Like every other queue-mutating
+     * action here, pushes the result to connect via syncCastQueue() —
+     * without it, this client's own next status tick would still carry the
+     * pre-clear queue and adoptCastQueue() would restore it a few seconds
+     * later, undoing the clear. */
     clearQueue(): void {
       const current = this.currentSong
       if (!current) {
         this.originalQueue = []
         this.queue = []
         this.currentIndex = -1
+        this.syncCastQueue()
         return
       }
       this.originalQueue = [current]
       this.queue = [current]
       this.currentIndex = 0
+      this.syncCastQueue()
     },
 
     async stop(): Promise<void> {

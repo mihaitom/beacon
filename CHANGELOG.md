@@ -47,6 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Fixed a rare inconsistency after force-taking over a device from another session: if that session's own attempt to (re)start playback on the same device failed at almost the same moment, its failure cleanup could undo the takeover, leaving both sessions disagreeing about who actually has the device until something else refreshed it
 - Fixed the Songs, Albums, and Artists library views getting progressively slower and less responsive the further you scrolled through a large library - every row/card stayed mounted after loading more instead of only the ones actually on screen
 - Fixed a song's right-click menu not closing when another song's was opened - each could be opened independently, leaving several stacked on top of each other at once
+- Fixed clearing the queue while casting getting silently undone a few seconds later, with every song reappearing - the clear never made it past this device to the cast session itself
 
 ## [0.1.4] - 2026-08-17
 
