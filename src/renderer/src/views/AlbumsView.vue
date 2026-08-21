@@ -5,6 +5,34 @@
         {{ filteredAlbums.length }}
         {{ filteredAlbums.length === 1 ? $t('library.album1') : $t('library.albumsN') }}
       </template>
+      <!-- Wrapped, not two bare siblings — DetailHeader.vue's own
+       - .detail-header__actions only ever had margin-top before (every
+       - prior consumer put exactly one button in this slot), no gap/wrap
+       - for two v-btns sitting side by side. -->
+      <template #actions>
+        <div class="detail-header__actions-row">
+          <v-btn
+            color="primary"
+            rounded="pill"
+            prepend-icon="mdi-shuffle-variant"
+            :loading="playingRandomAlbum"
+            :disabled="!libraryStore.albums.length"
+            @click="playRandomAlbum"
+          >
+            {{ $t('library.playRandom') }}
+          </v-btn>
+          <v-btn
+            color="primary"
+            rounded="pill"
+            prepend-icon="mdi-trending-up"
+            :loading="playingTopAlbum"
+            :disabled="!libraryStore.albums.length"
+            @click="playTopAlbum"
+          >
+            {{ $t('library.playFromTopPlayed') }}
+          </v-btn>
+        </div>
+      </template>
     </detail-header>
 
     <sticky-filter>
@@ -108,6 +136,7 @@
 <script lang="ts">
 import { ref } from 'vue'
 import { useLibraryStore } from '@/stores/library'
+import { usePlaybackStore } from '@/stores/playback'
 import { useElementWidth } from '@/composables/useElementWidth'
 import { firstIndexByLetter } from '@/services/alphabetIndex'
 import DetailHeader from '@/components/library/DetailHeader.vue'
@@ -162,6 +191,12 @@ export default {
       // ArtistsView's identical debounce for why (avoids the freshly-typed
       // character sharing a render pass with a full-list re-filter).
       debouncedQuery: '',
+      // Drives the Play Random button's own :loading — fetchAlbum() (for
+      // the picked album's actual song list, not yet in libraryStore.albums'
+      // summary form) is a real network round trip.
+      playingRandomAlbum: false,
+      // Same, for the "Random from top 20" button below.
+      playingTopAlbum: false,
     }
   },
   computed: {
@@ -250,11 +285,66 @@ export default {
         document.querySelector(`[data-album-index="${index}"]`)?.scrollIntoView({ block: 'center' })
       })
     },
+    async playRandomAlbum() {
+      if (!this.libraryStore.albums.length || this.playingRandomAlbum) return
+      // Picks from the full unfiltered catalog, same as SongsView's own
+      // playRandom() — an active filter narrows what's browsable, not what
+      // "random" draws from.
+      const albums = this.libraryStore.albums
+      const pick = albums[Math.floor(Math.random() * albums.length)]
+      if (!pick) return
+      this.playingRandomAlbum = true
+      try {
+        const full = await this.libraryStore.fetchAlbum(pick.id)
+        const playbackStore = usePlaybackStore()
+        // pinFirst: false — see AlbumCard.vue's identical onCoverClick()
+        // comment. Natural track order, not shuffled: an album is a
+        // coherent, deliberately-sequenced work, unlike a pile of
+        // unrelated songs.
+        await playbackStore.playSongList(full.songs, 0, false)
+        // A pick the user didn't make themselves — see peekQueueDrawer()'s
+        // own comment for why this opens the drawer.
+        playbackStore.peekQueueDrawer()
+      } finally {
+        this.playingRandomAlbum = false
+      }
+    },
+    async playTopAlbum() {
+      if (!this.libraryStore.albums.length || this.playingTopAlbum) return
+      this.playingTopAlbum = true
+      try {
+        // getAlbumList2('frequent', ...) — server-side playCount-sorted,
+        // same source HomeView's own "Frequently played" shelf uses. Not
+        // cached (see fetchFrequentAlbums' own comment): a top-20 that
+        // never moves would make this button pick from the same 20 forever
+        // even as actual listening habits shift.
+        const topAlbums = await this.libraryStore.fetchFrequentAlbums(20)
+        if (!topAlbums.length) return
+        const pick = topAlbums[Math.floor(Math.random() * topAlbums.length)]
+        if (!pick) return
+        const full = await this.libraryStore.fetchAlbum(pick.id)
+        const playbackStore = usePlaybackStore()
+        // pinFirst: false, natural track order — see playRandomAlbum()'s
+        // identical comment.
+        await playbackStore.playSongList(full.songs, 0, false)
+        playbackStore.peekQueueDrawer()
+      } finally {
+        this.playingTopAlbum = false
+      }
+    },
   },
 }
 </script>
 
 <style scoped>
+/* See this file's own #actions template comment for why this exists. */
+.detail-header__actions-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* Keeps the grid's own rightmost column clear of AlphabetIndexBar's fixed
  * position (right: 6px + its own ~26px width, see its stylesheet) — only
  * applied while the bar actually renders. Shrinks gridRoot's own measured

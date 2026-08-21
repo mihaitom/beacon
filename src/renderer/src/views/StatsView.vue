@@ -75,19 +75,19 @@
       <div v-else class="pair-grid mb-10">
         <section>
           <h2 class="section-title mb-4">{{ $t('stats.topSongs') }}</h2>
-          <ranked-list :items="topSongs" />
+          <ranked-list :items="topSongs" value-icon="mdi-play" />
         </section>
         <section>
           <h2 class="section-title mb-4">{{ $t('stats.topArtists') }}</h2>
-          <ranked-list :items="topArtists" />
+          <ranked-list :items="topArtists" value-icon="mdi-play" />
         </section>
         <section>
           <h2 class="section-title mb-4">{{ $t('stats.topAlbums') }}</h2>
-          <ranked-list :items="topAlbums" />
+          <ranked-list :items="topAlbums" value-icon="mdi-play" />
         </section>
         <section>
           <h2 class="section-title mb-4">{{ $t('stats.topGenres') }}</h2>
-          <ranked-list :items="topGenres" />
+          <ranked-list :items="topGenres" value-icon="mdi-play" />
         </section>
       </div>
 
@@ -211,7 +211,11 @@ export default {
           label: t.title,
           sublabel: t.artist,
           value: t.playCount,
-          valueLabel: this.$t('stats.plays', { count: t.playCount }),
+          // Just the number, no repeated "X plays" unit word — RankedList's
+          // own valueIcon (mdi-play, set on the <ranked-list> tag below)
+          // carries that meaning instead, since every row on this page's
+          // four ranked lists means the same thing.
+          valueLabel: this.formatNumber(t.playCount),
           // No standalone song page in this app to link to — album is
           // the closest real destination.
           to: `/albums/${t.albumId}`,
@@ -328,7 +332,8 @@ export default {
           id,
           label: v.label,
           value: v.plays,
-          valueLabel: this.$t('stats.plays', { count: v.plays }),
+          // See topSongs' identical comment above.
+          valueLabel: this.formatNumber(v.plays),
           to: toFn(id),
           coverArtId: includeCoverArt ? v.coverArtId : undefined,
         }))

@@ -5,6 +5,32 @@
         {{ filteredArtists.length }}
         {{ filteredArtists.length === 1 ? $t('library.artist') : $t('library.artists') }}
       </template>
+      <!-- See AlbumsView.vue's identical #actions template comment for why
+       - this wrapper exists. -->
+      <template #actions>
+        <div class="detail-header__actions-row">
+          <v-btn
+            color="primary"
+            rounded="pill"
+            prepend-icon="mdi-shuffle-variant"
+            :loading="playingRandomArtist"
+            :disabled="!libraryStore.artists.length"
+            @click="playRandomArtist"
+          >
+            {{ $t('library.playRandom') }}
+          </v-btn>
+          <v-btn
+            color="primary"
+            rounded="pill"
+            prepend-icon="mdi-trending-up"
+            :loading="playingTopArtist"
+            :disabled="!libraryStore.artists.length"
+            @click="playTopArtist"
+          >
+            {{ $t('library.playFromTopPlayed') }}
+          </v-btn>
+        </div>
+      </template>
     </detail-header>
 
     <sticky-filter>
@@ -84,8 +110,10 @@
 <script lang="ts">
 import { ref } from 'vue'
 import { useLibraryStore } from '@/stores/library'
+import { usePlaybackStore } from '@/stores/playback'
 import { useElementWidth } from '@/composables/useElementWidth'
 import { firstIndexByLetter } from '@/services/alphabetIndex'
+import { shuffled } from '@/services/shuffle'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import ArtistCard from '@/components/library/ArtistCard.vue'
 import AlphabetIndexBar from '@/components/library/AlphabetIndexBar.vue'
@@ -136,6 +164,13 @@ export default {
       // input itself feel laggy. filterQuery still updates instantly (it's
       // just the input's own text); only the actual filtering waits a beat.
       debouncedQuery: '',
+      // Drives the Play Random button's own :loading — playRandomArtist()
+      // needs a real fetchArtist() + per-album fetchAlbum() round trip
+      // before there's anything to play (see fetchAllSongsForArtist()'s
+      // own comment on why a list-view Artist alone isn't enough).
+      playingRandomArtist: false,
+      // Same, for the "Random from top 20" button below.
+      playingTopArtist: false,
     }
   },
   computed: {
@@ -220,11 +255,74 @@ export default {
           ?.scrollIntoView({ block: 'center' })
       })
     },
+    async playRandomArtist() {
+      if (!this.libraryStore.artists.length || this.playingRandomArtist) return
+      // Picks from the full unfiltered catalog, same as SongsView's own
+      // playRandom() — an active filter narrows what's browsable, not what
+      // "random" draws from.
+      const artists = this.libraryStore.artists
+      const pick = artists[Math.floor(Math.random() * artists.length)]
+      if (!pick) return
+      this.playingRandomArtist = true
+      try {
+        await this.playArtistCatalog(pick.id)
+      } finally {
+        this.playingRandomArtist = false
+      }
+    },
+    async playTopArtist() {
+      if (!this.libraryStore.artists.length || this.playingTopArtist) return
+      this.playingTopArtist = true
+      try {
+        // No "top played artists" Subsonic endpoint exists — derived from
+        // the artists behind the top played *albums* instead (same
+        // server-side frequent-albums source AlbumsView's own
+        // playTopAlbum() and HomeView's "Frequently played" shelf use),
+        // deduped since more than one of the top albums can share an
+        // artist. Not cached — see fetchFrequentAlbums' own comment.
+        const topAlbums = await this.libraryStore.fetchFrequentAlbums(20)
+        const artistIds = [...new Set(topAlbums.map((album) => album.artistId).filter(Boolean))]
+        if (!artistIds.length) return
+        const pick = artistIds[Math.floor(Math.random() * artistIds.length)]
+        if (!pick) return
+        await this.playArtistCatalog(pick)
+      } finally {
+        this.playingTopArtist = false
+      }
+    },
+    // Shared tail of playRandomArtist()/playTopArtist() — both just pick
+    // `artistId` differently, everything after that is identical.
+    async playArtistCatalog(artistId: string) {
+      // The list-view Artist alone has no real .albums (see
+      // fetchAllSongsForArtist()'s own comment) — fetchArtist() first for
+      // the full detail fetchAllSongsForArtist() actually needs.
+      const full = await this.libraryStore.fetchArtist(artistId)
+      const songs = await this.libraryStore.fetchAllSongsForArtist(full)
+      if (!songs.length) return
+      const playbackStore = usePlaybackStore()
+      // Shuffled, unlike AlbumsView's own playRandomAlbum()/playTopAlbum()
+      // — an artist's songs span several separately-sequenced albums, so
+      // there's no single natural order spanning all of them the way one
+      // album's own track order is. pinFirst: false, same reasoning as
+      // AlbumCard.vue's onCoverClick().
+      await playbackStore.playSongList(shuffled(songs), 0, false)
+      // A pick the user didn't make themselves — see peekQueueDrawer()'s
+      // own comment for why this opens the drawer.
+      playbackStore.peekQueueDrawer()
+    },
   },
 }
 </script>
 
 <style scoped>
+/* See AlbumsView.vue's identical rule. */
+.detail-header__actions-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* See AlbumsView.vue's identical .grid-root--with-alphabet-bar comment. */
 .grid-root--with-alphabet-bar {
   margin-right: 40px;

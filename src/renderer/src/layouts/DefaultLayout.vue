@@ -47,7 +47,7 @@
     <queue-drawer
       v-if="queueDrawerEverOpened"
       :model-value="playbackStore.queueDrawerOpen"
-      @update:model-value="playbackStore.queueDrawerOpen = $event"
+      @update:model-value="playbackStore.setQueueDrawerOpen($event)"
     />
     <lyrics-drawer
       v-if="lyricsDrawerEverOpened"

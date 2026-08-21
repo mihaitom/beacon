@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
@@ -39,6 +39,10 @@ describe('QueueDrawer', () => {
     setActivePinia(createPinia())
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('shows the empty state and no clear button with nothing queued', () => {
     const wrapper = mountDrawer()
 
@@ -59,7 +63,36 @@ describe('QueueDrawer', () => {
     expect(rows[1]!.classes()).toContain('queue-row--current')
   })
 
-  it('shows the clear-all button once there is more than one song, and wires it up', async () => {
+  it('reveals rows one at a time after a peek, via a class toggle rather than remounting them', async () => {
+    vi.useFakeTimers()
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a'), makeSong('b'), makeSong('c')], 0)
+    const wrapper = mountDrawer()
+
+    playback.peekQueueDrawer()
+    await wrapper.vm.$nextTick()
+
+    // Every row starts hidden, waiting on its own staggered timer...
+    let rows = wrapper.findAll('.queue-row')
+    expect(rows[0]!.classes()).toContain('queue-row--reveal-pending')
+    expect(rows[1]!.classes()).toContain('queue-row--reveal-pending')
+
+    await vi.advanceTimersByTimeAsync(200) // REVEAL_BASE_DELAY_MS
+    await wrapper.vm.$nextTick()
+
+    // ...the first one reveals once that elapses, the next one not yet.
+    rows = wrapper.findAll('.queue-row')
+    expect(rows[0]!.classes()).not.toContain('queue-row--reveal-pending')
+    expect(rows[1]!.classes()).toContain('queue-row--reveal-pending')
+
+    await vi.advanceTimersByTimeAsync(30)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('.queue-row')[1]!.classes()).not.toContain('queue-row--reveal-pending')
+  })
+
+  it('shows the clear-all button once there is more than one song, and clears the queue after its staggered fade-out', async () => {
+    vi.useFakeTimers()
     const playback = usePlaybackStore()
     playback.setQueue([makeSong('a'), makeSong('b')], 0)
     const wrapper = mountDrawer()
@@ -67,8 +100,60 @@ describe('QueueDrawer', () => {
 
     const clearBtn = wrapper.get('.mdi-notification-clear-all').element.closest('button')!
     await clearBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    // Deliberately not called yet — the real state change waits out the
+    // rows' own fade-out first (see onClearQueue()'s own comment).
+    expect(clearSpy).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(2000)
 
     expect(clearSpy).toHaveBeenCalledOnce()
+  })
+
+  it('fades rows out bottom-to-top from the visible anchor, instead of all at once', async () => {
+    vi.useFakeTimers()
+    const playback = usePlaybackStore()
+    playback.setQueue(
+      [makeSong('a'), makeSong('b'), makeSong('c'), makeSong('d'), makeSong('e')],
+      0,
+    )
+    const wrapper = mountDrawer()
+    // jsdom never actually lays anything out (every getBoundingClientRect()
+    // is all-zero, see this file's own TOP_HALF/BOTTOM_HALF comment for the
+    // identical caveat elsewhere), so findVisibleAnchorIndex()'s own
+    // measurement can't be exercised here — stub it directly instead,
+    // simulating a view scrolled down to row 'd' (index 3).
+    vi.spyOn(
+      wrapper.vm as unknown as { findVisibleAnchorIndex(): number },
+      'findVisibleAnchorIndex',
+    ).mockReturnValue(3)
+
+    const clearBtn = wrapper.get('.mdi-notification-clear-all').element.closest('button')!
+    await clearBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(0)
+    await wrapper.vm.$nextTick()
+
+    // At/below the anchor ('d' index 3, 'e' index 4) fade together with no
+    // delay at all — nothing to stagger for rows already past the bottom
+    // of what's visible...
+    let rows = wrapper.findAll('.queue-row')
+    expect(rows[3]!.classes()).toContain('queue-row--clearing')
+    expect(rows[4]!.classes()).toContain('queue-row--clearing')
+    // ...but sweeping upward past the anchor only actually paces itself
+    // once it reaches rows that are on screen ('c'/'b' above it) — this is
+    // the actual bug report this test guards against: a single synchronous
+    // class toggle across every row (differing only by CSS
+    // transition-delay) turned out to just fade everything together
+    // instead of staggering.
+    expect(rows[2]!.classes()).not.toContain('queue-row--clearing')
+    expect(rows[1]!.classes()).not.toContain('queue-row--clearing')
+
+    await vi.advanceTimersByTimeAsync(30)
+    await wrapper.vm.$nextTick()
+
+    // 'c' (1 row above the anchor) picks up next, 'b' (2 rows above) still not yet.
+    rows = wrapper.findAll('.queue-row')
+    expect(rows[2]!.classes()).toContain('queue-row--clearing')
+    expect(rows[1]!.classes()).not.toContain('queue-row--clearing')
   })
 
   it('plays a row on click', async () => {

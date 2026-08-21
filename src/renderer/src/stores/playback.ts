@@ -44,6 +44,11 @@ interface PlaybackState {
   radioStation: RadioStation | null
   initialized: boolean
   queueDrawerOpen: boolean
+  // Bumped by peekQueueDrawer() specifically — QueueDrawer.vue watches
+  // this (not queueDrawerOpen) to know a staggered reveal is actually
+  // warranted, as opposed to a plain manual toggle-open of an otherwise
+  // unchanged queue, which should just show it as-is with no fanfare.
+  queueRevealSeq: number
   lyricsDrawerOpen: boolean
 }
 
@@ -57,6 +62,32 @@ const RESTART_THRESHOLD_SECONDS = 3
 // lead time for the getSimilarSongs2() round trip to finish before the
 // queue would otherwise actually run dry.
 const AUTOPLAY_TRIGGER_REMAINING = 1
+
+// How long peekQueueDrawer() leaves the drawer open before auto-closing it
+// again, absent a mouseenter (cancelQueueDrawerAutoCloseTimer()) telling it
+// the user's actually looking. Long enough to register "oh, that's what got
+// picked" at a glance, short enough not to just sit open indefinitely for
+// someone who's moved on.
+const QUEUE_DRAWER_PEEK_MS = 4000
+
+// setTimeout handle for the above — module-level, not store state: a plain
+// timer id isn't something Pinia needs to track/persist/react to, same
+// reasoning as lastEnded below.
+let queueDrawerAutoCloseTimer: ReturnType<typeof setTimeout> | null = null
+
+function cancelQueueDrawerAutoCloseTimer(): void {
+  if (queueDrawerAutoCloseTimer === null) return
+  clearTimeout(queueDrawerAutoCloseTimer)
+  queueDrawerAutoCloseTimer = null
+}
+
+function armQueueDrawerAutoCloseTimer(store: { queueDrawerOpen: boolean }): void {
+  cancelQueueDrawerAutoCloseTimer()
+  queueDrawerAutoCloseTimer = setTimeout(() => {
+    queueDrawerAutoCloseTimer = null
+    store.queueDrawerOpen = false
+  }, QUEUE_DRAWER_PEEK_MS)
+}
 
 // Edge-detects status.ended's false→true transition across SSE updates
 // (module-level: the SSE subscription in init() is set up once per app
@@ -255,6 +286,7 @@ export const usePlaybackStore = defineStore('playback', {
     radioStation: null,
     initialized: false,
     queueDrawerOpen: false,
+    queueRevealSeq: 0,
     lyricsDrawerOpen: false,
   }),
 
@@ -807,6 +839,11 @@ export const usePlaybackStore = defineStore('playback', {
       if (plexPassRequired) notifyPlexPassRequired('library.songRadio')
       const songs = [song, ...similar.filter((t) => t.id !== song.id)]
       await this.playSongList(songs, 0)
+      // A server-picked mix, unlike playSongList()'s other, more direct
+      // callers (clicking a song/album/playlist you were already looking
+      // at) — see peekQueueDrawer()'s own comment for why that distinction
+      // is what actually decides whether a call site peeks or not.
+      this.peekQueueDrawer()
     },
 
     /** Artist Radio — same getSimilarSongs2 endpoint as Song Radio, but
@@ -821,6 +858,8 @@ export const usePlaybackStore = defineStore('playback', {
         .getSimilarSongs2(artist.id)
       if (plexPassRequired) notifyPlexPassRequired('library.artistRadio')
       await this.playSongList(songs, 0)
+      // See startSongRadio()'s identical comment.
+      this.peekQueueDrawer()
     },
 
     async playRadioStation(station: RadioStation): Promise<void> {
@@ -1101,11 +1140,17 @@ export const usePlaybackStore = defineStore('playback', {
       this.syncCastQueue()
     },
 
+    // The one central "something just landed in the queue that the user
+    // didn't necessarily see coming" spot — covers every caller (a song's
+    // own context menu, the mobile action sheet, remote-control commands
+    // from a phone, and maybeAutoplay()'s own top-up below) with a single
+    // peekQueueDrawer() rather than needing one at each call site.
     addToQueue(songs: Song[]): void {
       const toAdd = dedupeForQueue(songs, this.queue)
       this.originalQueue.push(...toAdd)
       this.queue.push(...toAdd)
       this.syncCastQueue()
+      this.peekQueueDrawer()
     },
 
     /** Autoplay — called after every song change (startCurrent(),
@@ -1171,7 +1216,7 @@ export const usePlaybackStore = defineStore('playback', {
      * as opposed to addToQueue() which appends at the end. */
     queueNext(songs: Song[]): void {
       if (this.currentIndex < 0) {
-        this.addToQueue(songs)
+        this.addToQueue(songs) // peeks on its own, see its own comment
         return
       }
       const toInsert = dedupeForQueue(songs, this.queue)
@@ -1184,6 +1229,7 @@ export const usePlaybackStore = defineStore('playback', {
         this.originalQueue.push(...toInsert)
       }
       this.syncCastQueue()
+      this.peekQueueDrawer()
     },
 
     removeFromQueue(index: number): void {
@@ -1286,11 +1332,56 @@ export const usePlaybackStore = defineStore('playback', {
      * account is signed into this window. */
     resetForLogout(): void {
       getAudioEngine().stop()
+      cancelQueueDrawerAutoCloseTimer()
       this.$reset()
     },
 
+    // Routes every manual open/close through here (DefaultLayout.vue's own
+    // v-model listener, toggleQueueDrawer() below) instead of setting
+    // queueDrawerOpen directly, so a still-pending peekQueueDrawer() timer
+    // (see its own comment) always gets cancelled first — without this, a
+    // stale timer could auto-close a drawer the user had just reopened
+    // manually within that same few-second window.
+    setQueueDrawerOpen(open: boolean): void {
+      cancelQueueDrawerAutoCloseTimer()
+      this.queueDrawerOpen = open
+    },
+
     toggleQueueDrawer(): void {
-      this.queueDrawerOpen = !this.queueDrawerOpen
+      this.setQueueDrawerOpen(!this.queueDrawerOpen)
+    },
+
+    // Called by every action that changes the queue in a way that isn't
+    // already obvious from whatever the user was just looking at:
+    // addToQueue()/queueNext() (a song's context menu, the mobile action
+    // sheet, remote-control commands, and maybeAutoplay()'s own top-up,
+    // all funneled through those two), startSongRadio()/
+    // startArtistRadio() (a server-picked mix), and the Songs/Genre/
+    // Albums/Artists views' own "play random"/"play from top played"
+    // actions. Deliberately NOT called from playSongList() itself, though
+    // — its more direct callers (clicking a song/album/playlist you were
+    // already looking at) already show you exactly what's about to play,
+    // so peeking there would just be noise.
+    // queueRevealSeq always bumps (that's the "show me what got added"
+    // signal QueueDrawer.vue's own reveal animation watches for — see its
+    // own comment), even if the drawer was already open from an earlier
+    // peek/manual toggle. The auto-close timer only arms when this call is
+    // the one actually opening it, though: a drawer the user already had
+    // open manually is left alone entirely otherwise — imposing an
+    // auto-close on state they set up themselves would be surprising.
+    peekQueueDrawer(): void {
+      const wasAlreadyOpen = this.queueDrawerOpen
+      this.queueDrawerOpen = true
+      this.queueRevealSeq++
+      if (!wasAlreadyOpen) armQueueDrawerAutoCloseTimer(this)
+    },
+
+    // QueueDrawer.vue's own @mouseenter — one touch of the mouse is enough
+    // to mean "I'm actually looking at this", cancelling the pending
+    // auto-close for good (not just deferring it), so it then stays open
+    // the same as if it had been opened manually.
+    cancelQueueDrawerAutoClose(): void {
+      cancelQueueDrawerAutoCloseTimer()
     },
 
     toggleLyricsDrawer(): void {

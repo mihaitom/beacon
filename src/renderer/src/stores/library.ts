@@ -429,18 +429,25 @@ export const useLibraryStore = defineStore('library', {
       })
     },
 
-    /** Top songs for an artist by local playCount, sorted descending. There's
-     * no direct Subsonic endpoint for this (getArtist.view's albums don't
-     * include song lists, only album-level metadata) — fetches each album's
-     * full song list (via the same cache as fetchAlbum()) and aggregates.
+    /** Every song by `artist`, across all their albums. `artist.albums` only
+     * has real content when `artist` came from fetchArtist() (getArtist.view
+     * nests full album summaries) — getArtists()' index/list form leaves it
+     * empty, so a caller starting from a plain list-view Artist (e.g.
+     * ArtistsView.vue's play-random) needs to fetchArtist() first. Fetches
+     * each album's full song list via the same cache as fetchAlbum(), since
+     * neither Subsonic endpoint returns song-level data for an artist
+     * directly. */
+    async fetchAllSongsForArtist(artist: Artist): Promise<Song[]> {
+      const albums = await Promise.all(artist.albums.map((album) => this.fetchAlbum(album.id)))
+      return albums.flatMap((album) => album.songs)
+    },
+
+    /** Top songs for an artist by local playCount, sorted descending.
      * ArtistDetailView.vue's own "Show all" toggle passes Infinity to lift
      * this default cap once the artist has more than TOP_SONGS_LIMIT. */
     async fetchTopSongsForArtist(artist: Artist, limit = TOP_SONGS_LIMIT): Promise<Song[]> {
-      const albums = await Promise.all(artist.albums.map((album) => this.fetchAlbum(album.id)))
-      return albums
-        .flatMap((album) => album.songs)
-        .sort((a, b) => b.playCount - a.playCount)
-        .slice(0, limit)
+      const songs = await this.fetchAllSongsForArtist(artist)
+      return songs.sort((a, b) => b.playCount - a.playCount).slice(0, limit)
     },
 
     /** For HomeView's shelves — each a thin wrapper over getAlbumList2's

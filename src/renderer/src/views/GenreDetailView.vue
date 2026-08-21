@@ -4,16 +4,29 @@
       <template v-if="songs.length" #meta>
         {{ $t('library.albumsAndSongs', { albums: albumCount, songs: songs.length }) }}
       </template>
+      <!-- See AlbumsView.vue's identical #actions template comment for why
+       - this wrapper exists. -->
       <template #actions>
-        <v-btn
-          color="primary"
-          rounded="pill"
-          prepend-icon="mdi-shuffle-variant"
-          :disabled="!songs.length"
-          @click="playRandom"
-        >
-          {{ $t('library.playRandom') }}
-        </v-btn>
+        <div class="detail-header__actions-row">
+          <v-btn
+            color="primary"
+            rounded="pill"
+            prepend-icon="mdi-shuffle-variant"
+            :disabled="!songs.length"
+            @click="playRandom"
+          >
+            {{ $t('library.playRandom') }}
+          </v-btn>
+          <v-btn
+            color="primary"
+            rounded="pill"
+            prepend-icon="mdi-trending-up"
+            :disabled="!songs.length"
+            @click="playTopSongs"
+          >
+            {{ $t('library.playFromTopPlayed') }}
+          </v-btn>
+        </div>
       </template>
     </detail-header>
 
@@ -68,6 +81,10 @@ import StickyFilter from '@/components/StickyFilter.vue'
 import type { Song } from '@/types/library'
 
 const RANDOM_PLAY_COUNT = 100
+// See SongsView.vue's identical TOP_SONGS_POOL_SIZE comment — same
+// reasoning, scoped to just this genre's own songs instead of the whole
+// library.
+const TOP_SONGS_POOL_SIZE = 1000
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -139,9 +156,36 @@ export default {
     async playRandom() {
       if (!this.songs.length) return
       const sample = shuffled(this.songs).slice(0, RANDOM_PLAY_COUNT)
+      const playbackStore = usePlaybackStore()
       // pinFirst: false — see PlaylistDetailView.vue's identical comment.
-      await usePlaybackStore().playSongList(sample, 0, false)
+      await playbackStore.playSongList(sample, 0, false)
+      // A pick the user didn't make song-by-song themselves — see
+      // peekQueueDrawer()'s own comment for why this opens the drawer.
+      playbackStore.peekQueueDrawer()
+    },
+    // See SongsView.vue's identical playTopSongs() comment.
+    async playTopSongs() {
+      const played = this.songs.filter((song) => song.playCount > 0)
+      if (!played.length) return
+      const pool = [...played]
+        .sort((a, b) => b.playCount - a.playCount)
+        .slice(0, TOP_SONGS_POOL_SIZE)
+      const sample = shuffled(pool).slice(0, RANDOM_PLAY_COUNT)
+      const playbackStore = usePlaybackStore()
+      // pinFirst: false — see playRandom()'s identical comment.
+      await playbackStore.playSongList(sample, 0, false)
+      playbackStore.peekQueueDrawer()
     },
   },
 }
 </script>
+
+<style scoped>
+/* See AlbumsView.vue's identical rule. */
+.detail-header__actions-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+</style>

@@ -24,9 +24,10 @@
           <div class="ranked-list__bar-fill" :style="{ width: `${barWidth(item)}%` }" />
         </div>
       </div>
-      <span class="ranked-list__value text-caption text-medium-emphasis">{{
-        item.valueLabel
-      }}</span>
+      <span class="ranked-list__value text-caption text-medium-emphasis">
+        <v-icon v-if="valueIcon" :icon="valueIcon" size="12" class="ranked-list__value-icon" />
+        {{ item.valueLabel }}
+      </span>
     </component>
   </div>
 </template>
@@ -73,6 +74,17 @@ export default {
     items: {
       type: Array as PropType<RankedItem[]>,
       required: true,
+    },
+    // Shown once per row next to item.valueLabel, e.g. mdi-play for a
+    // "plays" ranking — one icon for the whole list rather than a
+    // per-item field, since every row here always shares the same unit
+    // (StatsView.vue's Top Songs/Artists/Albums/Genres all rank by play
+    // count; its format/decade breakdowns rank by % and pass nothing).
+    // Lets StatsView drop the repeated "X plays" word from valueLabel in
+    // favor of just the number plus this icon.
+    valueIcon: {
+      type: String as PropType<string | null>,
+      default: null,
     },
   },
   computed: {
@@ -156,8 +168,15 @@ a.ranked-list__row:hover {
 }
 
 .ranked-list__value {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.ranked-list__value-icon {
+  opacity: 0.7;
 }
 </style>

@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Added an A-Z jump bar to the Albums and Artists views, and to any song list sorted alphabetically by title that's long enough for it to be worth it - drag or tap a letter to jump straight there instead of scrolling by hand
 - Added a count to a song's right-click menu ("5 songs selected") when several are selected, making it clear the actions below apply to the whole selection - Play now replaces the queue with just the selected songs and starts the first one instead of playing from wherever was clicked through the full list, and Song Radio drops out of the menu since it can't act on more than one song at a time
 - Added a "Show all"/"Show less" toggle to an artist page's Most Played list once there are more songs by them than the top 10 shown by default - the section title switches to "All songs" while expanded, and toggling back and forth after the first time is instant
+- Added a play icon to the numbers in the Stats page's Top Songs/Artists/Albums/Genres lists, replacing the repeated "X plays" text next to each entry
+- Added a second quick-play action to the Songs, Genre, Albums, and Artists views, alongside the already-random one: picks from what's actually been played a lot instead of the whole (or, for a genre, whole-genre) pool, so it leans toward music you already like rather than being a total shot in the dark
+- Added an automatic peek at the queue whenever something lands in it without being clicked song-by-song - those quick-play actions, Play Next/Add to Queue, Song Radio, Artist Radio, and Autoplay's own top-up all trigger it. The queue opens with each track fading in one after another and scrolls to whatever's currently playing, then closes itself again after a few seconds unless the mouse actually reaches it, in which case it stays open
+- Added a matching fade-out to clearing the queue - tracks disappear bottom-to-top starting from wherever you've actually scrolled to, instead of all at once
 
 ### Changed
 
