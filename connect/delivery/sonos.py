@@ -4,6 +4,8 @@ import asyncio
 import logging
 from xml.sax.saxutils import escape
 
+from core.upnp_events import AVTRANSPORT_EVENT_PATH, subscribe
+
 from .base import BaseDelivery
 
 logger = logging.getLogger("delivery")
@@ -43,6 +45,7 @@ class SonosDelivery(BaseDelivery):
         # not yet wired up here — not part of the DLNA missing-duration fix
         # this parameter was added for (see dlna.py).
         device = await asyncio.to_thread(self._get_device)
+        await self._subscribe_to_events(device)
 
         # Leave any existing group so we play on this specific device
         try:
@@ -101,6 +104,26 @@ class SonosDelivery(BaseDelivery):
             device.avTransport.Play, [("InstanceID", 0), ("Speed", 1)]
         )
         logger.info(f"[Sonos:{self.target}] ✓ playing")
+
+    async def _subscribe_to_events(self, device) -> None:
+        """Ask this speaker to report its own transport-state changes (see
+        core/upnp_events.py). Purely diagnostic — a speaker that refuses
+        the subscription still plays perfectly well, so every failure here
+        is swallowed rather than allowed to break a dispatch."""
+        # Imported here, not at module scope: routes/upnp.py imports the
+        # delivery layer's siblings via core.state, and pulling it in at
+        # import time would close that loop.
+        from routes.upnp import callback_url_for
+
+        try:
+            ip = await asyncio.to_thread(lambda: device.ip_address)
+            await subscribe(
+                self.target,
+                f"http://{ip}:1400{AVTRANSPORT_EVENT_PATH}",
+                callback_url_for(self.target),
+            )
+        except Exception as e:
+            logger.debug(f"[Sonos:{self.target}] transport eventing unavailable: {e}")
 
     async def pause(self) -> None:
         device = await asyncio.to_thread(self._get_device)

@@ -3,12 +3,15 @@
 import asyncio
 import json
 import logging
+import time
+from dataclasses import dataclass
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response, StreamingResponse
 
 from core.audio_analysis import AudioAnalyzer, should_analyze
 from core.auth import require_token
+from core.loop_health import peak_lag
 from core.session import (
     DEFAULT_SESSION_ID,
     SessionState,
@@ -201,7 +204,95 @@ async def _advance_or_end(session: SessionState, my_generation: int) -> None:
 STREAM_DISCONNECT_GRACE_SECONDS = 10.0
 
 
-async def _mark_disconnected_if_not_reconnected(session: SessionState, my_generation: int) -> None:
+@dataclass(frozen=True)
+class DisconnectSnapshot:
+    """What one /stream connection looked like the instant it was cancelled.
+
+    Diagnostic instrumentation for the recurring, non-reproducible cast
+    drops (beacon-dev 2026-08-22 02:06 — one log line and no way to tell
+    what had actually gone wrong; the same track replayed cleanly hours
+    later). Every field separates one candidate explanation from another,
+    so the *next* occurrence is evidence rather than another guess:
+
+    - `blocked_for` — how long the connection sat inside a single handoff.
+      A large value means the device had stopped reading well before it
+      dropped (its buffer was full, i.e. TCP backpressure was doing the
+      throttling), rather than the connection dying while audio flowed.
+    - `bytes_delivered` over `wall` — this connection's real production
+      rate. With pacing working (core/streamer.py's _READRATE_ARGS) wall
+      time tracks the played position closely; a large gap means pacing
+      has regressed again.
+    - `loop_lag_*` — worst event-loop stall recently (core/loop_health.py).
+      Non-trivial values mean *this process* starved the socket and the
+      device dropped as a consequence, which is an entirely different bug
+      from a flaky speaker or network.
+
+    Captured at cancellation but deliberately *not* logged there — see
+    capture_disconnect_snapshot() for why.
+    """
+
+    label: str
+    duration: int
+    position: float
+    blocked_for: float
+    bytes_delivered: int
+    wall: float
+    loop_lag_30s: float
+    loop_lag_120s: float
+
+    def describe(self) -> str:
+        return (
+            f"{self.label} ({self.duration}s) | position={self.position:.1f}s "
+            f"blocked_for={self.blocked_for:.2f}s "
+            f"delivered={self.bytes_delivered}B over wall={self.wall:.1f}s "
+            f"loop_lag_30s={self.loop_lag_30s:.2f}s "
+            f"loop_lag_120s={self.loop_lag_120s:.2f}s"
+        )
+
+
+def capture_disconnect_snapshot(
+    session: SessionState,
+    track,
+    *,
+    first_byte_at: float | None,
+    last_handoff: float,
+    bytes_delivered: int,
+) -> DisconnectSnapshot:
+    """Freeze the numbers above at the moment of cancellation.
+
+    They have to be read here rather than after the grace period, because
+    every one of them is about the instant the connection died — but they
+    must not be *logged* here: at this point it is genuinely unknowable
+    whether this was a device dropping out or one of our own /pause,
+    /stop, /seek or /play handlers closing the connection on purpose. The
+    connection count still includes this connection (its `finally` hasn't
+    run yet) and clock.is_paused may not be set yet either, so an
+    immediate log line reads "device dropped" for an ordinary pause —
+    observed doing exactly that on beacon-dev 2026-08-22 09:31, which
+    would bury the rare real event this exists to catch.
+
+    _mark_disconnected_if_not_reconnected() already answers that question
+    correctly, just ten seconds later, so the snapshot rides along and is
+    logged only once that call has concluded it really was a drop.
+    """
+    now = time.monotonic()
+    return DisconnectSnapshot(
+        label=f"{track.artist} — {track.title}",
+        duration=track.duration,
+        position=session.state.clock.elapsed(),
+        blocked_for=now - last_handoff,
+        bytes_delivered=bytes_delivered,
+        wall=now - first_byte_at if first_byte_at is not None else 0.0,
+        loop_lag_30s=peak_lag(30.0),
+        loop_lag_120s=peak_lag(120.0),
+    )
+
+
+async def _mark_disconnected_if_not_reconnected(
+    session: SessionState,
+    my_generation: int,
+    snapshot: DisconnectSnapshot | None = None,
+) -> None:
     """A device closing its GET /stream connection mid-track is usually just
     a brief reconnect blip — it typically reopens the same URL again within
     a second or two, and is_streaming should stay True through that gap so
@@ -239,6 +330,12 @@ async def _mark_disconnected_if_not_reconnected(session: SessionState, my_genera
     HTTP connection on pause rather than idling the open socket (some DLNA
     renderers do this) isn't dead, it's just paused, and isn't expected to
     reconnect until /resume asks it to.
+
+    `snapshot` is the caller's frozen view of the connection at the instant
+    it was cancelled (see capture_disconnect_snapshot()). It is logged only
+    on the branch below that has actually concluded this was a real drop,
+    which is the whole reason it is carried here instead of being logged at
+    the cancellation site.
     """
     await asyncio.sleep(STREAM_DISCONNECT_GRACE_SECONDS)
     st = session.state
@@ -248,9 +345,10 @@ async def _mark_disconnected_if_not_reconnected(session: SessionState, my_genera
         and st.is_streaming
         and not st.clock.is_paused
     ):
+        detail = f" | {snapshot.describe()}" if snapshot else ""
         logger.warning(
             f"[stream] No reconnect within {STREAM_DISCONNECT_GRACE_SECONDS:.0f}s "
-            "of a dropped connection — marking not streaming"
+            f"of a dropped connection — marking not streaming{detail}"
         )
         st.is_streaming = False
         await session.event_bus.broadcast(build_status_dict(session))
@@ -469,6 +567,15 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
                     f"active_delivery={session.state.active_delivery!r}"
                 )
 
+            # Diagnostic bookkeeping for the cancellation snapshot below —
+            # see DisconnectSnapshot for what each of these is meant to
+            # distinguish. `last_handoff` is updated *after* each yield
+            # returns, so at cancellation time "now - last_handoff" is how
+            # long this connection has been blocked handing the current
+            # chunk to the device.
+            first_byte_at: float | None = None
+            last_handoff = time.monotonic()
+            bytes_delivered = 0
             try:
                 async for chunk in stream_tracks(
                     [track_url],
@@ -477,6 +584,8 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
                     gain=session.state.current_track_gain,
                     output_format=output_format,
                 ):
+                    if first_byte_at is None:
+                        first_byte_at = time.monotonic()
                     if not offset_consumed:
                         offset_consumed = True
                         # Only apply either of these once THIS connection has
@@ -511,13 +620,27 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
                     if analyzer:
                         analyzer.feed(chunk)
                     yield chunk
+                    bytes_delivered += len(chunk)
+                    last_handoff = time.monotonic()
             except asyncio.CancelledError:
                 # client disconnected mid-stream — not a natural end, and
                 # often just a brief reconnect blip a fresh connection is
                 # about to pick right back up. See
                 # _mark_disconnected_if_not_reconnected()'s own docstring
                 # for what happens if it doesn't.
-                asyncio.create_task(_mark_disconnected_if_not_reconnected(session, my_generation))
+                asyncio.create_task(
+                    _mark_disconnected_if_not_reconnected(
+                        session,
+                        my_generation,
+                        capture_disconnect_snapshot(
+                            session,
+                            track,
+                            first_byte_at=first_byte_at,
+                            last_handoff=last_handoff,
+                            bytes_delivered=bytes_delivered,
+                        ),
+                    )
+                )
                 raise
             except Exception:
                 # ffmpeg itself failed (missing binary, crash, decode error —

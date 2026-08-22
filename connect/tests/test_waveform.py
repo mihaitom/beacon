@@ -4,6 +4,7 @@ import array
 import logging
 import math
 import struct
+import time
 from unittest.mock import AsyncMock, patch
 
 from core import waveform
@@ -74,12 +75,66 @@ def test_compute_peaks_fewer_samples_than_buckets():
     assert len(peaks) == _PEAK_COUNT
 
 
-def test_compute_peaks_uses_array_module_for_conversion():
+def test_compute_peaks_round_trips_signed_16_bit_samples():
     # Sanity check the conversion path actually round-trips signed 16-bit
     # samples correctly (not e.g. mis-signed or byte-swapped).
     raw = array.array("h", [32767, -32768] * ((_PEAK_COUNT * 10) // 2)).tobytes()
     peaks = _compute_peaks(raw)
     assert max(peaks) == 1.0
+
+
+def test_compute_peaks_does_not_wrap_on_the_int16_minimum():
+    """-(-32768) does not fit in an int16. Reducing a bucket and negating
+    it without widening first wraps the value straight back to -32768, so a
+    full-scale negative peak would read as silence — a trap the previous,
+    Python-int implementation could not hit but a vectorized one can."""
+    quiet, loud = 100, -32768
+    samples = [quiet] * (_PEAK_COUNT * 10)
+    samples[: 10] = [loud] * 10  # the first bucket is full-scale negative
+    peaks = _compute_peaks(array.array("h", samples).tobytes())
+    assert peaks[0] == 1.0
+    assert peaks[-1] < 0.01
+
+
+def test_compute_peaks_folds_an_uneven_remainder_into_the_last_bucket():
+    """Sample counts rarely divide evenly by _PEAK_COUNT. The leftover tail
+    belongs to the final bucket rather than being dropped, so a peak living
+    in the last fraction of a second still shows up."""
+    n = _PEAK_COUNT * 10 + 7  # 7 samples that don't fill a whole bucket
+    samples = [100] * n
+    samples[-1] = 32767  # the loudest sample is inside that remainder
+    peaks = _compute_peaks(array.array("h", samples).tobytes())
+    assert peaks[-1] == 1.0
+
+
+def test_compute_peaks_is_vectorized_not_per_sample():
+    """Regression guard for a real prod bug (beacon-dev 2026-08-22): the
+    previous implementation used max()/min() over array.array slices, which
+    iterate via the iterator protocol and box every sample into a Python
+    int. An 80-minute DJ mix (52.8M samples) took 2.53s that way — and
+    because boxing ints holds the GIL, the caller's asyncio.to_thread()
+    hop could not stop it blocking the event loop, starving the casting
+    device's open /stream socket for that whole time.
+
+    Calibrated against a boxed pass over the same data rather than a fixed
+    wall-clock bound, so this measures the *approach* and not how fast the
+    machine running it happens to be — no flakiness on a loaded CI box."""
+    n = 1_000_000
+    samples = array.array("h", [(i * 7919) % 30000 - 15000 for i in range(n)])
+    pcm = samples.tobytes()
+
+    start = time.perf_counter()
+    max(samples), min(samples)  # exactly what the old version did, once
+    boxed = time.perf_counter() - start
+
+    start = time.perf_counter()
+    _compute_peaks(pcm)
+    actual = time.perf_counter() - start
+
+    assert actual * 5 < boxed, (
+        f"_compute_peaks took {actual*1000:.1f}ms vs {boxed*1000:.1f}ms for a single "
+        "boxed pass — it looks per-sample again, which will block the event loop"
+    )
 
 
 # ── get_waveform ─────────────────────────────────────────────────────────────

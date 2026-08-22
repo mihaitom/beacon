@@ -10,6 +10,7 @@ import pytest
 
 from core.streamer import (
     FALLBACK_FORMAT,
+    LOOKAHEAD_SECONDS,
     OutputFormat,
     _probe_source,
     demuxer_for,
@@ -35,10 +36,10 @@ def test_probe_source_parses_flac_stream_line():
     stderr = b"Stream #0:0: Audio: flac, 96000 Hz, stereo, s32 (24 bit)"
     with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=_fake_probe_proc(stderr))):
         result = asyncio.run(_probe_source("http://nav/stream"))
-    assert result == ("flac", None)
+    assert result == "flac"
 
 
-def test_probe_source_parses_mp3_stream_line_and_bitrate():
+def test_probe_source_parses_mp3_stream_line():
     stderr = (
         b"Input #0, mp3, from 'http://nav/stream':\n"
         b"  Duration: 00:04:32.10, start: 0.000000, bitrate: 320 kb/s\n"
@@ -46,14 +47,7 @@ def test_probe_source_parses_mp3_stream_line_and_bitrate():
     )
     with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=_fake_probe_proc(stderr))):
         result = asyncio.run(_probe_source("http://nav/stream"))
-    assert result == ("mp3", 320_000)
-
-
-def test_probe_source_returns_none_bitrate_when_duration_line_is_missing():
-    stderr = b"Stream #0:0: Audio: mp3, 44100 Hz, stereo, fltp, 320 kb/s"
-    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=_fake_probe_proc(stderr))):
-        result = asyncio.run(_probe_source("http://nav/stream"))
-    assert result == ("mp3", None)
+    assert result == "mp3"
 
 
 def test_probe_source_returns_none_when_no_audio_stream_line():
@@ -90,24 +84,11 @@ def test_probe_source_returns_none_on_timeout():
     ],
 )
 def test_resolve_output_format_copy_tier(codec, expected_muxer, expected_content_type):
-    with patch("core.streamer._probe_source", AsyncMock(return_value=(codec, 705_000))):
+    with patch("core.streamer._probe_source", AsyncMock(return_value=codec)):
         fmt = asyncio.run(resolve_output_format("http://nav/stream"))
     assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", expected_muxer]
     assert fmt.content_type == expected_content_type
     assert "-ar" not in fmt.ffmpeg_args
-    # The copy tier has no fixed bitrate of its own — it's whatever the
-    # probe found the source actually is, carried straight through for
-    # stream_tracks()'s own pacing (see that function's comment).
-    assert fmt.bitrate_bps == 705_000
-
-
-def test_resolve_output_format_copy_tier_paces_nothing_when_bitrate_unknown():
-    """The probe finding a codec but not a bitrate (an unusual stderr
-    shape) must not make something up — see stream_tracks()'s own comment
-    on why guessing wrong here is worse than not pacing at all."""
-    with patch("core.streamer._probe_source", AsyncMock(return_value=("mp3", None))):
-        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
-    assert fmt.bitrate_bps is None
 
 
 @pytest.mark.parametrize("codec", ["flac", "mp3", "aac", "vorbis"])
@@ -117,7 +98,7 @@ def test_resolve_output_format_replay_gain_rules_out_the_copy_tier(codec):
     together") — a ReplayGain-enabled track that would otherwise qualify
     for stream-copy must fall back to a real re-encode instead of silently
     never producing any audio at all."""
-    with patch("core.streamer._probe_source", AsyncMock(return_value=(codec, 705_000))):
+    with patch("core.streamer._probe_source", AsyncMock(return_value=codec)):
         fmt = asyncio.run(resolve_output_format("http://nav/stream", gain=0.8))
     assert fmt is FALLBACK_FORMAT
     assert "copy" not in fmt.ffmpeg_args
@@ -127,7 +108,7 @@ def test_resolve_output_format_replay_gain_does_not_affect_the_lossless_reencode
     """This tier already decodes+re-encodes to FLAC regardless of gain — a
     volume filter fits into that same pipeline for free, no fallback
     needed."""
-    with patch("core.streamer._probe_source", AsyncMock(return_value=("alac", None))):
+    with patch("core.streamer._probe_source", AsyncMock(return_value="alac")):
         fmt = asyncio.run(resolve_output_format("http://nav/stream", gain=0.8))
     assert fmt.ffmpeg_args == ["-acodec", "flac", "-f", "flac"]
 
@@ -136,22 +117,18 @@ def test_resolve_output_format_unity_gain_still_uses_the_copy_tier():
     """The default (no ReplayGain, or a mode/track where the multiplier is
     exactly 1.0) must be unaffected — this isn't a blanket regression on
     the copy tier's whole reason to exist."""
-    with patch("core.streamer._probe_source", AsyncMock(return_value=("mp3", 705_000))):
+    with patch("core.streamer._probe_source", AsyncMock(return_value="mp3")):
         fmt = asyncio.run(resolve_output_format("http://nav/stream", gain=1.0))
     assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "mp3"]
 
 
 @pytest.mark.parametrize("codec", ["alac", "pcm_s16le", "pcm_s24le", "pcm_s16be", "ape"])
 def test_resolve_output_format_lossless_reencode_tier(codec):
-    with patch("core.streamer._probe_source", AsyncMock(return_value=(codec, 1_000_000))):
+    with patch("core.streamer._probe_source", AsyncMock(return_value=codec)):
         fmt = asyncio.run(resolve_output_format("http://nav/stream"))
     assert fmt.ffmpeg_args == ["-acodec", "flac", "-f", "flac"]
     assert fmt.content_type == "audio/flac"
     assert "-ar" not in fmt.ffmpeg_args
-    # No fixed bitrate to pace against — FLAC is variable, and the real
-    # re-encode work this tier still does costs actual CPU time per frame
-    # regardless (see stream_tracks()'s own comment on why that matters).
-    assert fmt.bitrate_bps is None
 
 
 def test_resolve_output_format_falls_back_when_detection_fails():
@@ -160,11 +137,10 @@ def test_resolve_output_format_falls_back_when_detection_fails():
     assert fmt is FALLBACK_FORMAT
     assert fmt.content_type == "audio/mpeg"
     assert "-ar" in fmt.ffmpeg_args
-    assert fmt.bitrate_bps == 192_000
 
 
 def test_resolve_output_format_falls_back_for_unrecognized_codec():
-    with patch("core.streamer._probe_source", AsyncMock(return_value=("wmav2", 256_000))):
+    with patch("core.streamer._probe_source", AsyncMock(return_value="wmav2")):
         fmt = asyncio.run(resolve_output_format("http://nav/stream"))
     assert fmt is FALLBACK_FORMAT
 
@@ -482,68 +458,81 @@ def test_stream_tracks_kills_the_process_and_reraises_on_an_unexpected_error():
     assert proc.killed is True
 
 
-def test_stream_tracks_paces_output_when_running_far_ahead_of_playback():
-    """Regression test (2026-08-22): the copy tier does essentially no CPU
-    work, so without this it produces — and hands off to the device — a
-    long track's entire output in seconds rather than anything close to
-    real time. See this function's own pacing comment for the actual
-    live-observed consequence (a cast device's connection sitting idle for
-    minutes, then dropping outright)."""
-    proc = _ConfigurableFakeProc(stdout_chunks=[b"x" * 100_000, b""])
-    # bitrate_bps=8 (1 byte/s) makes even this single chunk represent a
-    # wildly implausible amount of "produced audio" on paper — the point
-    # isn't a realistic bitrate, it's forcing ahead_by past LOOKAHEAD_SECONDS
-    # deterministically, without the test itself needing to run in real time.
-    fmt = OutputFormat(
-        ffmpeg_args=["-acodec", "copy", "-f", "mp3"], content_type="audio/mpeg", bitrate_bps=8
-    )
-    sleep_calls = []
+@pytest.mark.parametrize(
+    "args,content_type",
+    [
+        (["-acodec", "copy", "-f", "mp3"], "audio/mpeg"),
+        (["-acodec", "flac", "-f", "flac"], "audio/flac"),
+        (list(FALLBACK_FORMAT.ffmpeg_args), FALLBACK_FORMAT.content_type),
+    ],
+)
+def test_stream_tracks_paces_every_tier_via_ffmpeg_readrate(args, content_type):
+    """Regression test (2026-08-22). Pacing used to be a hand-rolled
+    throttle in stream_tracks() that estimated produced-audio-seconds from
+    a bitrate the probe read off ffmpeg's "Duration: ..., bitrate: N kb/s"
+    line. That is the *container* bitrate — embedded cover art included —
+    while the bytes being counted are audio-only (-vn strips the attached
+    picture), so for a track with a large cover the throttle over-delivered
+    by exactly that ratio. Measured live: a ~4MB PNG cover (container
+    397 kb/s vs. 320 kb/s of audio) made a 411s track finish in 316s and
+    left the device's connection idle for 95s — the condition pacing
+    existed to prevent in the first place.
+
+    ffmpeg pacing itself against real input timestamps has no bitrate to
+    get wrong, so the assertion is simply that every tier's command
+    carries it — including the lossless-reencode tier, which under the old
+    scheme opted out of pacing entirely (bitrate_bps=None).
+    """
+    captured: list[str] = []
+    proc = _ConfigurableFakeProc(stdout_chunks=[b"x" * 1024, b""])
 
     async def _fake_exec(*cmd, **kwargs):
+        captured.extend(cmd)
         return proc
 
-    async def _fake_sleep(seconds):
-        sleep_calls.append(seconds)
-
     async def _run():
-        with (
-            patch("asyncio.create_subprocess_exec", _fake_exec),
-            patch("core.streamer.asyncio.sleep", _fake_sleep),
-        ):
+        fmt = OutputFormat(ffmpeg_args=args, content_type=content_type)
+        with patch("asyncio.create_subprocess_exec", _fake_exec):
             async for _ in stream_tracks(["http://nav/stream"], output_format=fmt):
                 pass
 
     asyncio.run(_run())
 
-    assert len(sleep_calls) == 1
-    assert sleep_calls[0] > 0
+    assert captured[captured.index("-readrate") + 1] == "1"
+    burst = captured.index("-readrate_initial_burst")
+    assert captured[burst + 1] == f"{LOOKAHEAD_SECONDS:.0f}"
+    # Without a catch-up rate, "1" is a ceiling with no floor: a lead lost
+    # to one stall never comes back for the rest of the track, and the
+    # device ends up playing at the live edge. See _READRATE_ARGS.
+    assert float(captured[captured.index("-readrate_catchup") + 1]) > 1.0
+    # Input options, so they must sit before -i or ffmpeg applies them to
+    # the output, where they mean something else entirely.
+    assert burst < captured.index("-i")
+    assert captured.index("-readrate_catchup") < captured.index("-i")
 
 
-def test_stream_tracks_does_not_pace_when_bitrate_is_unknown():
-    """The lossless-reencode tier (and a copy-tier probe that couldn't read
-    a bitrate) sets bitrate_bps=None specifically to opt out of pacing —
-    see resolve_output_format()'s own comments on why guessing wrong here
-    would be worse than not pacing at all."""
-    proc = _ConfigurableFakeProc(stdout_chunks=[b"x" * 100_000, b""])
-    fmt = OutputFormat(
-        ffmpeg_args=["-acodec", "flac", "-f", "flac"], content_type="audio/flac", bitrate_bps=None
-    )
+def test_stream_tracks_keeps_readrate_ahead_of_a_resume_seek():
+    """-ss is inserted immediately before -i on a resumed track. It must
+    land *after* the readrate options, not between them and their values —
+    both are input options and the order of the pair matters."""
+    captured = []
+    proc = _ConfigurableFakeProc(stdout_chunks=[b"x" * 1024, b""])
 
     async def _fake_exec(*cmd, **kwargs):
+        captured.extend(cmd)
         return proc
 
-    async def _fail_if_called(seconds):
-        raise AssertionError("must not pace when bitrate_bps is None")
-
     async def _run():
-        with (
-            patch("asyncio.create_subprocess_exec", _fake_exec),
-            patch("core.streamer.asyncio.sleep", _fail_if_called),
-        ):
-            async for _ in stream_tracks(["http://nav/stream"], output_format=fmt):
+        with patch("asyncio.create_subprocess_exec", _fake_exec):
+            async for _ in stream_tracks(["http://nav/stream"], start_offset=92.075):
                 pass
 
-    asyncio.run(_run())  # must not raise
+    asyncio.run(_run())
+
+    assert captured[captured.index("-readrate") + 1] == "1"
+    assert captured[captured.index("-readrate_initial_burst") + 1] == "15"
+    assert captured.index("-readrate_initial_burst") < captured.index("-ss")
+    assert captured.index("-ss") < captured.index("-i")
 
 
 def test_stream_tracks_swallows_a_kill_error_after_an_unexpected_error():

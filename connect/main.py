@@ -31,6 +31,8 @@ from core.log_level import TRACE as _TRACE_LEVEL
 from core.log_level import apply as _apply_log_level
 from core.log_level import initial_level as _initial_log_level
 from core.log_level import is_at_least
+from core.loop_health import monitor_loop_lag
+from core.upnp_events import renew_due_subscriptions
 from core.remote import reap_stale_remote, remote
 from core.session import reap_stale_sessions, registry
 from core.state import PORT, get_local_ip
@@ -53,6 +55,7 @@ from routes.radio import router as radio_router
 from routes.recommendations import router as recommendations_router
 from routes.remote import router as remote_router
 from routes.stream import router as stream_router
+from routes.upnp import router as upnp_router
 from routes.volume import router as volume_router
 from routes.waveform import router as waveform_router
 
@@ -214,6 +217,21 @@ def _asyncio_exception_handler(loop, context):
 
 _DISCOVERY_INTERVAL = 60 * 60  # rescan for new Sonos/AirPlay/Chromecast devices hourly
 
+# UPnP event subscriptions are leases — see core/upnp_events.py. Checked far
+# more often than they expire so one slow pass can't let a lease lapse; a
+# lapsed subscription is silent, and silence here reads exactly like "the
+# device reported no problems".
+_SUBSCRIPTION_RENEWAL_INTERVAL = 60
+
+
+async def _renew_upnp_subscriptions() -> None:
+    while True:
+        await asyncio.sleep(_SUBSCRIPTION_RENEWAL_INTERVAL)
+        try:
+            await renew_due_subscriptions()
+        except Exception:
+            logger.exception("[upnp] Subscription renewal pass failed")
+
 
 async def _periodic_discovery() -> None:
     while True:
@@ -255,6 +273,8 @@ async def lifespan(_: FastAPI):
     reaper_task = asyncio.create_task(reap_stale_sessions())
     remote_reaper_task = asyncio.create_task(reap_stale_remote())
     pairing_reaper_task = asyncio.create_task(reap_stale_pairings())
+    loop_lag_task = asyncio.create_task(monitor_loop_lag())
+    upnp_renewal_task = asyncio.create_task(_renew_upnp_subscriptions())
     try:
         yield
     finally:
@@ -262,6 +282,8 @@ async def lifespan(_: FastAPI):
         reaper_task.cancel()
         remote_reaper_task.cancel()
         pairing_reaper_task.cancel()
+        loop_lag_task.cancel()
+        upnp_renewal_task.cancel()
         # A killed process (dev-mode Ctrl+C, packaged app quitting) can't run
         # the Electron before-quit round-trip that normally disables Remote
         # Control (see App.vue) — disable it here too so a still-running
@@ -344,6 +366,7 @@ app.include_router(lyrics_router)
 app.include_router(waveform_router)
 app.include_router(radio_router)
 app.include_router(recommendations_router)
+app.include_router(upnp_router)
 # Diagnostic-only (routes/debug.py) — registered at Debug log level or
 # louder (see _INITIAL_LOG_LEVEL's own comment), not something a real
 # deployment running at its default Info needs exposed. A startup-time

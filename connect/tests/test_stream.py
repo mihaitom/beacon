@@ -18,6 +18,7 @@ from core.streamer import FALLBACK_FORMAT, OutputFormat
 from delivery import ChromecastDelivery
 from media import Track
 from routes.stream import (
+    DisconnectSnapshot,
     _advance_or_end,
     _dispatch_queued_track,
     _mark_disconnected_if_not_reconnected,
@@ -627,6 +628,77 @@ async def test_marks_not_streaming_when_nothing_reconnects_within_the_grace_peri
     assert default_session.state.is_streaming is False
     payload = q.get_nowait()
     assert payload["streaming"] is False
+
+
+def _snapshot(**over):
+    kw = {
+        "label": "OVERWERK — Toccata", "duration": 411, "position": 270.1,
+        "blocked_for": 0.02, "bytes_delivered": 11_400_000, "wall": 270.0,
+        "loop_lag_30s": 0.0, "loop_lag_120s": 0.0,
+    }
+    kw.update(over)
+    return DisconnectSnapshot(**kw)
+
+
+async def test_a_real_drop_logs_the_captured_snapshot(default_session, monkeypatch, caplog):
+    """The snapshot's whole purpose is to make the next real drop
+    diagnosable, so it has to reach the log on the branch that concluded
+    a drop actually happened."""
+    monkeypatch.setattr("routes.stream.STREAM_DISCONNECT_GRACE_SECONDS", 0.01)
+    default_session.state.is_streaming = True
+    default_session.state.active_stream_connections = 0
+
+    with caplog.at_level(logging.WARNING, logger="connect.stream"):
+        await _mark_disconnected_if_not_reconnected(
+            default_session,
+            my_generation=default_session.state.clock.play_generation,
+            snapshot=_snapshot(blocked_for=41.5, loop_lag_30s=2.25),
+        )
+
+    msg = "\n".join(r.message for r in caplog.records)
+    assert "No reconnect within" in msg
+    assert "blocked_for=41.50s" in msg
+    assert "loop_lag_30s=2.25s" in msg
+    assert "position=270.1s" in msg
+
+
+async def test_a_pause_does_not_log_a_drop(default_session, monkeypatch, caplog):
+    """Regression test (2026-08-22): pausing cancels the stream generator
+    exactly like a device dropping does, and the snapshot used to be logged
+    right there — so an ordinary pause produced "Device dropped /stream
+    mid-track" in the log. Left alone that would bury the rare real event
+    this instrumentation exists to catch, which is the whole reason the
+    snapshot is logged from here instead."""
+    monkeypatch.setattr("routes.stream.STREAM_DISCONNECT_GRACE_SECONDS", 0.01)
+    default_session.state.is_streaming = True
+    default_session.state.active_stream_connections = 0
+    default_session.state.clock.pause(270.1)
+
+    with caplog.at_level(logging.WARNING, logger="connect.stream"):
+        await _mark_disconnected_if_not_reconnected(
+            default_session,
+            my_generation=default_session.state.clock.play_generation,
+            snapshot=_snapshot(),
+        )
+
+    assert default_session.state.is_streaming is True
+    assert not caplog.records
+
+
+async def test_the_grace_period_still_works_without_a_snapshot(default_session, monkeypatch, caplog):
+    """snapshot is optional — the disconnect handling itself must not
+    depend on diagnostic instrumentation being wired up."""
+    monkeypatch.setattr("routes.stream.STREAM_DISCONNECT_GRACE_SECONDS", 0.01)
+    default_session.state.is_streaming = True
+    default_session.state.active_stream_connections = 0
+
+    with caplog.at_level(logging.WARNING, logger="connect.stream"):
+        await _mark_disconnected_if_not_reconnected(
+            default_session, my_generation=default_session.state.clock.play_generation,
+        )
+
+    assert default_session.state.is_streaming is False
+    assert "No reconnect within" in "\n".join(r.message for r in caplog.records)
 
 
 async def test_does_not_mark_not_streaming_while_another_connection_is_still_open(

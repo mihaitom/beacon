@@ -12,9 +12,10 @@ cache (services/connect/waveform.ts) already avoids re-fetching while
 browsing within one session, which is the case that actually matters.
 """
 
-import array
 import asyncio
 import logging
+
+import numpy as np
 
 logger = logging.getLogger("connect.waveform")
 
@@ -52,35 +53,57 @@ def _compute_peaks(pcm: bytes) -> list[float]:
     [0, 1], normalized against this track's own loudest bucket (not a fixed
     theoretical max) so quiet tracks still use the full visual height.
 
-    Uses array.array (C-speed bulk conversion) and the max()/min() builtins
-    over array slices (also C-speed) rather than a manual per-sample Python
-    loop — a multi-minute track at _SAMPLE_RATE is a few million samples,
-    and looping over that at the Python level would be exactly the kind of
-    synchronous, un-awaited CPU work that turned out to starve the event
-    loop in audio_analysis.py's FFT path (see its _MAX_LOOKAHEAD_SECONDS).
-    Still run via asyncio.to_thread() by the caller out of caution."""
-    samples = array.array("h")
-    samples.frombytes(pcm[: len(pcm) - (len(pcm) % 2)])
-    n = len(samples)
+    Vectorized with numpy, and that matters more than it looks. The previous
+    version used array.array plus the max()/min() builtins over slices,
+    believing those to be "C-speed bulk" operations. They are not, in the
+    way that counts: both iterate via the iterator protocol, boxing every
+    single sample into a Python int and doing a rich comparison on it. At
+    _SAMPLE_RATE mono that is ~11k allocations per second of audio, twice
+    over (max and min) — fine for a 3-minute song, ruinous for a long DJ
+    mix. Measured live on beacon-dev 2026-08-22: an 80-minute mix
+    (52.8M samples) blocked the event loop for 2.53s, during which the
+    casting device's open /stream socket received nothing at all.
+
+    asyncio.to_thread() in the caller did not, and could not, prevent that:
+    boxing ints and comparing them holds the GIL for the entire duration,
+    so the "background" thread stalls the event loop just as thoroughly as
+    inline code would. Only work that actually drops the GIL — or, as here,
+    that finishes in milliseconds instead of seconds because it runs as
+    vectorized C over raw memory — makes that hop meaningful."""
+    usable = len(pcm) - (len(pcm) % 2)
+    # memoryview, not pcm[:usable]: slicing the bytes object would copy the
+    # whole decoded track (~105MB for the mix above) just to drop a
+    # trailing odd byte.
+    samples = np.frombuffer(memoryview(pcm)[:usable], dtype="<i2")
+    n = samples.size
     if n == 0:
         return [0.0] * _PEAK_COUNT
 
-    bucket_size = max(1, n // _PEAK_COUNT)
-    peaks = []
-    for b in range(_PEAK_COUNT):
-        start = b * bucket_size
-        end = n if b == _PEAK_COUNT - 1 else min(n, start + bucket_size)
-        if start >= end:
-            peaks.append(0.0)
-            continue
-        chunk = samples[start:end]
-        peak = max(max(chunk), -min(chunk))
-        peaks.append(peak / 32768.0)
+    if n < _PEAK_COUNT:
+        # Fewer samples than buckets — one sample each, rest stay silent,
+        # matching what the slice-based version produced here.
+        peaks = np.zeros(_PEAK_COUNT, dtype=np.float64)
+        peaks[:n] = np.abs(samples.astype(np.int32)) / 32768.0
+    else:
+        bucket_size = n // _PEAK_COUNT
+        whole = bucket_size * _PEAK_COUNT
+        buckets = samples[:whole].reshape(_PEAK_COUNT, bucket_size)
+        # Reduce in int16 (values are in range), then widen before negating:
+        # -(-32768) does not fit in an int16 and would wrap to itself.
+        highs = buckets.max(axis=1).astype(np.int32)
+        lows = buckets.min(axis=1).astype(np.int32)
+        peaks = np.maximum(highs, -lows) / 32768.0
+        # Whatever didn't divide evenly belongs to the final bucket, same as
+        # the slice-based version's `end = n` on the last iteration.
+        tail = samples[whole:]
+        if tail.size:
+            tail_peak = max(int(tail.max()), -int(tail.min())) / 32768.0
+            peaks[-1] = max(float(peaks[-1]), tail_peak)
 
-    loudest = max(peaks, default=0.0)
+    loudest = float(peaks.max())
     if loudest > 1e-6:
-        peaks = [min(1.0, p / loudest) for p in peaks]
-    return peaks
+        peaks = np.minimum(1.0, peaks / loudest)
+    return peaks.tolist()
 
 
 async def get_waveform(track_id: str, url: str) -> list[float]:

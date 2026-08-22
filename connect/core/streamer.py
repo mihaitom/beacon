@@ -9,11 +9,73 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger("connect.streamer")
 
+# How far ahead of real playback time a stream is allowed to run before
+# ffmpeg throttles itself back to real time. Long enough to smooth over an
+# ordinary network/disk hiccup fetching the next stretch of the source
+# without an audible stall; short enough that a device connection dropping
+# mid-track only ever has to recover this many seconds of already-sent-but-
+# unplayed audio, not the rest of a multi-hour file.
+LOOKAHEAD_SECONDS = 15.0
+
+# -readrate 1 tells ffmpeg to read its *input* at 1x real time, judged by
+# the input's own timestamps; -readrate_initial_burst lets it run flat out
+# for the first LOOKAHEAD_SECONDS to fill the device's buffer before that
+# throttle engages. Both are input options, so they sit before -i.
+#
+# This replaced a hand-rolled throttle in stream_tracks() that estimated
+# produced-audio-seconds as bytes*8/bitrate, with `bitrate` read off
+# ffmpeg's "Duration: ..., bitrate: N kb/s" summary line. That line is the
+# *container* bitrate, which includes any embedded cover art, while the
+# bytes actually being counted are audio-only (-vn strips the attached
+# picture). For a track with a large embedded cover the two diverge badly
+# and the throttle silently over-delivers by that ratio. Measured live on
+# beacon-dev 2026-08-22 against OVERWERK — Toccata (a ~4MB PNG cover:
+# container 397 kb/s vs. 320 kb/s of actual audio): the real lead grew
+# ~0.24s per second instead of holding at 15s, so ffmpeg finished a 411s
+# track after 316s and left the device's connection sitting completely
+# idle for the remaining 95s — the exact condition the pacing was added to
+# eliminate. Confirmed in production, not just in a harness: the device
+# really does swallow the whole overshoot, TCP backpressure does not
+# absorb it ("FFmpeg done early — waiting 95.1s", routes/stream.py).
+#
+# Letting ffmpeg pace itself against real timestamps removes the estimate
+# entirely, so there is no bitrate to get wrong. It also covers the tiers
+# the old throttle could not: FLAC's "Stream #0:0: Audio: flac, 44100 Hz,
+# stereo, s16" line carries no bitrate at all, and the lossless-reencode
+# tier opted out of pacing altogether by setting bitrate_bps=None.
+_READRATE_ARGS = [
+    "-readrate",
+    "1",
+    "-readrate_initial_burst",
+    f"{LOOKAHEAD_SECONDS:.0f}",
+    # Without this, "1" is a ceiling with no floor: ffmpeg reads at exactly
+    # real time and therefore never regains a lead it has lost. Anything
+    # that stalls the pipeline once — a slow stretch fetching from the
+    # media server, or this process's own event loop blocking (see
+    # core/loop_health.py) — permanently shortens the device's buffer for
+    # the rest of that track, and a few such events in a row leave it
+    # playing at the live edge with nothing in hand. Observed on beacon-dev
+    # 2026-08-22: a 2.53s loop stall early in an 80-minute mix, then a
+    # device drop four minutes later with the lead down from 15s to
+    # roughly nothing.
+    #
+    # The hand-rolled throttle this replaced did catch up, incidentally
+    # rather than by design: it slept only while already more than
+    # LOOKAHEAD_SECONDS ahead, so falling behind simply meant it stopped
+    # sleeping and ran flat out until the lead was restored. Losing that
+    # was a regression in the switch to -readrate; 2x is the explicit
+    # version of the same behaviour, fast enough to refill a 15s buffer in
+    # 15s without dumping the whole remaining file at the device.
+    "-readrate_catchup",
+    "2",
+]
+
 _FFMPEG_BASE_CMD = [
     "ffmpeg",
     "-hide_banner",
     "-loglevel",
     "warning",  # warning so codec/format issues surface in logs
+    *_READRATE_ARGS,
     "-i",
     "{url}",
     "-vn",
@@ -56,24 +118,8 @@ _LOSSLESS_REENCODE_CODECS = {"alac", "pcm_s16le", "pcm_s24le", "pcm_s16be", "ape
 _FALLBACK_ARGS = ["-acodec", "libmp3lame", "-ab", "192k", "-ar", "44100", "-f", "mp3"]
 _FALLBACK_CONTENT_TYPE = "audio/mpeg"
 
-# How far ahead of real playback time stream_tracks() lets itself get before
-# throttling further reads — see its own pacing comment for the full
-# reasoning. Long enough to smooth over an ordinary network/disk hiccup
-# fetching the next stretch of the source without an audible stall; short
-# enough that a device connection dropping mid-track only ever has to
-# recover this many seconds of already-sent-but-unplayed audio, not the
-# rest of a multi-hour file.
-LOOKAHEAD_SECONDS = 15.0
-
 _PROBE_TIMEOUT = 10.0
 _AUDIO_STREAM_RE = re.compile(rb"Stream #\d+:\d+.*?Audio:\s*([a-zA-Z0-9_]+)")
-# ffmpeg's own input-summary line: "Duration: 00:04:32.10, start: 0.000000,
-# bitrate: 705 kb/s" — the container's overall bitrate, which for a pure
-# audio source is the audio bitrate. Used to pace stream_tracks()'s output
-# for the copy tier below, where (unlike the fallback's fixed -ab 192k)
-# there's no bitrate ffmpeg_args itself declares — it is whatever the
-# source already is.
-_BITRATE_RE = re.compile(rb"bitrate:\s*(\d+)\s*kb/s")
 
 
 @dataclass
@@ -86,10 +132,6 @@ class OutputFormat:
     ffmpeg_args: list[str] = field(default_factory=lambda: list(_FALLBACK_ARGS))
     content_type: str = _FALLBACK_CONTENT_TYPE
     label: str = "mp3-192k (fallback)"
-    # Expected output bits/second, when known — see stream_tracks()'s own
-    # pacing comment for why this exists and what None means for a given
-    # tier.
-    bitrate_bps: int | None = 192_000
 
 
 FALLBACK_FORMAT = OutputFormat()
@@ -122,18 +164,23 @@ def demuxer_for(output_format: OutputFormat) -> str:
     return _DEMUXER_FOR_MUXER.get(muxer, "mp3")
 
 
-async def _probe_source(url: str) -> tuple[str, int | None] | None:
-    """Return (codec name, bitrate in bits/second or None), or None if
-    detection fails entirely.
+async def _probe_source(url: str) -> str | None:
+    """Return the source's audio codec name, or None if detection fails.
 
     Uses `ffmpeg -i <url>` itself rather than a separate `ffprobe` call —
     ffmpeg -i with no output target still fully parses and prints the
-    input's stream info (`Stream #0:0: Audio: flac, 96000 Hz, ...`, and a
-    `Duration: ..., bitrate: NNN kb/s` summary line) to stderr before
-    exiting non-zero, which is enough to read both off of. The Docker
-    image's custom minimal ffmpeg build only ships the one `ffmpeg` binary
-    (see Dockerfile) — adding a second, similarly-sized static ffprobe
-    binary just for this lookup isn't worth it.
+    input's stream info (`Stream #0:0: Audio: flac, 96000 Hz, ...`) to
+    stderr before exiting non-zero, which is enough to read the codec off
+    of. The Docker image's custom minimal ffmpeg build only ships the one
+    `ffmpeg` binary (see Dockerfile) — adding a second, similarly-sized
+    static ffprobe binary just for this lookup isn't worth it.
+
+    Deliberately does *not* also read the "Duration: ..., bitrate: N kb/s"
+    summary line any more. Nothing needs it now that ffmpeg paces itself
+    (see _READRATE_ARGS), and what it reports is the container bitrate,
+    cover art included — a number that looks like the audio bitrate,
+    isn't, and silently broke pacing for every track with a large embedded
+    cover.
     """
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -153,11 +200,7 @@ async def _probe_source(url: str) -> tuple[str, int | None] | None:
     if not match:
         logger.warning(f"[ffmpeg] format probe: no audio stream detected for {url[:80]}")
         return None
-    codec = match.group(1).decode()
-
-    bitrate_match = _BITRATE_RE.search(stderr)
-    bitrate_bps = int(bitrate_match.group(1)) * 1000 if bitrate_match else None
-    return codec, bitrate_bps
+    return match.group(1).decode()
 
 
 async def resolve_output_format(url: str, gain: float = 1.0) -> OutputFormat:
@@ -177,10 +220,9 @@ async def resolve_output_format(url: str, gain: float = 1.0) -> OutputFormat:
     all. The lossless-reencode tier below is unaffected either way — it
     already decodes+re-encodes to FLAC, so a volume filter fits into that
     same pipeline for free."""
-    probed = await _probe_source(url)
-    if probed is None:
+    codec = await _probe_source(url)
+    if codec is None:
         return FALLBACK_FORMAT
-    codec, bitrate_bps = probed
 
     muxer = _COPY_MUXER_FOR_CODEC.get(codec)
     if muxer and gain == 1.0:
@@ -188,12 +230,6 @@ async def resolve_output_format(url: str, gain: float = 1.0) -> OutputFormat:
             ffmpeg_args=["-acodec", "copy", "-f", muxer],
             content_type=_CONTENT_TYPE_FOR_MUXER[muxer],
             label=f"{codec} (copy)",
-            # The source's own bitrate (copy means the output *is* the
-            # source) — None if the probe couldn't read one, which
-            # stream_tracks() takes as "don't pace this connection" rather
-            # than guessing. See that function's own comment for why
-            # pacing matters at all for this tier specifically.
-            bitrate_bps=bitrate_bps,
         )
     if muxer:
         logger.info(
@@ -208,11 +244,6 @@ async def resolve_output_format(url: str, gain: float = 1.0) -> OutputFormat:
             ffmpeg_args=["-acodec", "flac", "-f", "flac"],
             content_type="audio/flac",
             label=f"{codec} → flac",
-            # No fixed bitrate to pace against (FLAC is variable, and the
-            # real re-encode work below still costs actual CPU time per
-            # frame, unlike the copy tier above) — see stream_tracks()'s
-            # own comment on why that tier doesn't strictly need this.
-            bitrate_bps=None,
         )
 
     reason = (
@@ -239,12 +270,11 @@ async def stream_tracks(
     gain is a linear amplitude multiplier (ReplayGain), applied via ffmpeg's
     `volume` filter — 1.0 (the default) leaves the audio unchanged.
 
-    Paced to at most LOOKAHEAD_SECONDS ahead of real playback time whenever
-    `output_format.bitrate_bps` is known (see that field's own comment for
-    which tiers do/don't set it) — without this, ffmpeg (and this loop's own
-    unthrottled `read()`) happily produce output as fast as the source can
-    be fetched and decoded, not at anything close to real time. That was
-    never a problem for the old always-re-encode pipeline this one
+    Paced to at most LOOKAHEAD_SECONDS ahead of real playback by ffmpeg
+    itself — see _READRATE_ARGS, which every tier's command carries.
+    Without pacing, ffmpeg happily produces output as fast as the source
+    can be fetched and decoded, not at anything close to real time. That
+    was never a problem for the old always-re-encode pipeline this one
     replaced — actual decode+encode CPU work incidentally kept it roughly
     real-time-ish on its own — but the `-acodec copy` tier this one added
     (real quality win: zero re-encode loss, see resolve_output_format())
@@ -298,40 +328,26 @@ async def stream_tracks(
             # Read stderr concurrently to prevent pipe buffer deadlock
             stderr_task = asyncio.create_task(proc.stderr.read())
 
-            # See stream_tracks()'s own pacing comment. Reset per track —
-            # each is its own ffmpeg invocation with its own timeline.
-            # bytes_produced is tracked regardless of whether bitrate_bps is
-            # known, so a mid-track OutputFormat never applies (there isn't
-            # one — output_format is fixed for the whole call), keeping
-            # this simple; only the throttle decision itself is skippable.
+            # Pacing itself is ffmpeg's job now (see _READRATE_ARGS), so
+            # this loop just moves bytes. Reset per track — each is its own
+            # ffmpeg invocation with its own timeline. Kept only to log the
+            # summary below, which is the cheapest way to notice pacing
+            # having regressed again: for a paced stream, wall time to
+            # produce a track lands within ~LOOKAHEAD_SECONDS of that
+            # track's real duration, not a fraction of it.
             track_start = time.monotonic()
             bytes_produced = 0
-            paced = False
             while True:
                 chunk = await proc.stdout.read(8192)
                 if not chunk:
                     break
                 bytes_produced += len(chunk)
-                if fmt.bitrate_bps:
-                    produced_seconds = bytes_produced * 8 / fmt.bitrate_bps
-                    ahead_by = produced_seconds - (time.monotonic() - track_start)
-                    if ahead_by > LOOKAHEAD_SECONDS:
-                        if not paced:
-                            # Once per track, not once per chunk — this
-                            # branch keeps re-triggering for the rest of the
-                            # track once reached (stream-copy stays far
-                            # faster than real-time), so logging it every
-                            # time would spam exactly when DEBUG is turned
-                            # on to investigate this.
-                            logger.debug(
-                                f"[ffmpeg] Track {i + 1} pacing engaged — "
-                                f"{ahead_by:.1f}s ahead of playback, holding "
-                                f"back to {LOOKAHEAD_SECONDS:.0f}s"
-                            )
-                            paced = True
-                        await asyncio.sleep(ahead_by - LOOKAHEAD_SECONDS)
                 yield chunk
 
+            logger.debug(
+                f"[ffmpeg] Track {i + 1} produced {bytes_produced} bytes in "
+                f"{time.monotonic() - track_start:.1f}s wall"
+            )
             await proc.wait()
             stderr = await stderr_task
 
