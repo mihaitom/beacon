@@ -167,7 +167,7 @@ export default {
     rescan: 'Rescanner',
     stopAll: 'Tout arrêter',
     connect: 'Connecter',
-    addN: '+{count} de plus',
+    apply: 'Appliquer',
     noDevicesFound: 'Aucun appareil trouvé.',
     inUseBy: 'Utilisé par {name}',
     inUseByUnknown: "Utilisé par quelqu'un d'autre",

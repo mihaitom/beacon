@@ -168,7 +168,7 @@ export default {
     rescan: 'Volver a escanear',
     stopAll: 'Detener todo',
     connect: 'Conectar',
-    addN: '+{count} más',
+    apply: 'Aplicar',
     noDevicesFound: 'No se encontraron dispositivos.',
     inUseBy: 'En uso por {name}',
     inUseByUnknown: 'En uso por otra persona',

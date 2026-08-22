@@ -185,7 +185,10 @@ export default {
           const [deviceType, ...rest] = key.split(':')
           return { type: deviceType as DeviceType, name: rest.join(':') }
         })
-        await usePlaybackStore().castTo(targets)
+        // applyTargets(), not castTo(): this picker already collected a
+        // desired *end state*, and castTo() would re-dispatch every device
+        // in it, including ones already playing. See its own docstring.
+        await usePlaybackStore().applyTargets(targets)
       }
       this.$emit('update:modelValue', false)
     },

@@ -237,7 +237,12 @@ export async function handleRemoteCommand(
         // claimed device is explicit intent to take over — no separate
         // confirm step — the same outcome a desktop user gets by confirming
         // that dialog.
-        await playback.castTo(targets, true)
+        // applyTargets() reconciles instead of replacing, so picking a
+        // second speaker on the phone joins it rather than dropping the
+        // first — the same fix the desktop picker needed. force=true still
+        // applies to the fresh-cast path inside it; see below for why the
+        // phone always takes over.
+        await playback.applyTargets(targets, true)
       } catch (error) {
         console.error('[remoteControl] Failed to update cast targets:', error)
       }

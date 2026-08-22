@@ -1459,6 +1459,52 @@ export const usePlaybackStore = defineStore('playback', {
         await connect.claimDevices(targets)
       }
     },
+
+    /** Move the active cast targets to exactly `desired`, as one step.
+     *
+     * Every device picker in the app is a desired-state editor: the phone's
+     * and the mobile web UI's have always been ("what's checked when I hit
+     * Done"), and the desktop's now is too. This is the single place that
+     * turns such a set into calls, so those three surfaces can't drift apart
+     * again — they previously did, and the desktop's picker applied its
+     * selection with castTo(), which *replaces* the target set. Adding a
+     * second speaker to a running session therefore dropped the first one
+     * instead of joining it: playback carried on there until the end of the
+     * track (its stream connection was still open) and then only the newly
+     * picked device kept playing.
+     *
+     * Additions go first and removals second, deliberately. The reverse
+     * order would empty the target set in between when switching from one
+     * device to another, and an empty set is not a neutral intermediate
+     * state — it hands playback straight back to local speakers, which is
+     * audible and is exactly what made "switch devices" unusable before.
+     */
+    async applyTargets(desired: ConnectDeviceRef[], force = false): Promise<void> {
+      const connect = useConnectStore()
+      const key = (t: ConnectDeviceRef) => `${t.type}:${t.name}`
+      const active = connect.activeTargets as ConnectDeviceRef[]
+
+      if (desired.length === 0) {
+        if (active.length > 0) await connect.stopAll()
+        return
+      }
+      // Nothing running yet: this is a fresh cast, not an edit. castTo()
+      // carries the queue, position and paused-state handoff that /join
+      // has no reason to.
+      if (active.length === 0) {
+        await this.castTo(desired, force)
+        return
+      }
+
+      const desiredKeys = new Set(desired.map(key))
+      const activeKeys = new Set(active.map(key))
+      for (const target of desired.filter((t) => !activeKeys.has(key(t)))) {
+        await connect.joinDevice(target)
+      }
+      for (const target of active.filter((t) => !desiredKeys.has(key(t)))) {
+        await connect.stopDevice(target.type, target.name)
+      }
+    },
   },
 })
 

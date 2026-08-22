@@ -337,17 +337,38 @@ describe('handleRemoteCommand', () => {
     })
 
     it('forces a cast to every given target, mapping deviceType onto type', async () => {
-      const castSpy = vi.spyOn(usePlaybackStore(), 'castTo').mockResolvedValue()
+      const applySpy = vi.spyOn(usePlaybackStore(), 'applyTargets').mockResolvedValue()
 
       await handleRemoteCommand('cast-to-many', {
         targets: [{ deviceType: 'sonos', name: 'Kitchen' }],
       })
 
-      expect(castSpy).toHaveBeenCalledWith([{ type: 'sonos', name: 'Kitchen' }], true)
+      // applyTargets(), not castTo(): the phone sends a desired end state,
+      // and on a running session castTo() would replace the targets rather
+      // than reconcile them. Asserting on castTo() here used to pass either
+      // way, since applyTargets() delegates to it when nothing is casting.
+      expect(applySpy).toHaveBeenCalledWith([{ type: 'sonos', name: 'Kitchen' }], true)
     })
 
-    it('logs instead of throwing when castTo() fails (e.g. the device went offline)', async () => {
-      vi.spyOn(usePlaybackStore(), 'castTo').mockRejectedValue(new Error('offline'))
+    it('joins an added device rather than dropping the one already casting', async () => {
+      const connect = useConnectStore()
+      connect.status = makeStatus({ targets: [{ type: 'sonos', name: 'Kitchen' }] })
+      const joinSpy = vi.spyOn(connect, 'joinDevice').mockResolvedValue()
+      const castSpy = vi.spyOn(usePlaybackStore(), 'castTo').mockResolvedValue()
+
+      await handleRemoteCommand('cast-to-many', {
+        targets: [
+          { deviceType: 'sonos', name: 'Kitchen' },
+          { deviceType: 'sonos', name: 'Living Room' },
+        ],
+      })
+
+      expect(joinSpy).toHaveBeenCalledWith({ type: 'sonos', name: 'Living Room' })
+      expect(castSpy).not.toHaveBeenCalled()
+    })
+
+    it('logs instead of throwing when applying the targets fails (e.g. the device went offline)', async () => {
+      vi.spyOn(usePlaybackStore(), 'applyTargets').mockRejectedValue(new Error('offline'))
 
       await expect(
         handleRemoteCommand('cast-to-many', {

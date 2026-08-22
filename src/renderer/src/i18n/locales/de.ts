@@ -165,7 +165,7 @@ export default {
     rescan: 'Neu scannen',
     stopAll: 'Alle stoppen',
     connect: 'Verbinden',
-    addN: '+{count} hinzufügen',
+    apply: 'Übernehmen',
     noDevicesFound: 'Keine Geräte gefunden.',
     inUseBy: 'Belegt von {name}',
     inUseByUnknown: 'Belegt von jemand anderem',

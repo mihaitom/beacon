@@ -70,6 +70,24 @@ Both the mp3-copy and flac-copy tiers are affected.
 | AudioAnalyzer blocking the stream generator | `feed()` is non-blocking (unbounded queue), so it cannot stall it |
 | Embedded cover art / the bitrate factor below | A track whose factor was 1.006 dropped just the same |
 
+**Strongest open lead - the stream-copy tier itself.** The drops were first
+noticed after `resolve_output_format()` gained the `-acodec copy` tiers.
+Before that every track was re-encoded to a uniform MP3 192k CBR stream, and
+the simpler upstream this backend derives from still does exactly that and has
+never shown this bug. Stream-copy instead hands the device the source's own
+frames: VBR, 48 kHz, free-format or unusual frame headers, an ID3 tag inline,
+FLAC whose STREAMINFO cannot state `total_samples` on a piped stream. Any of
+those could plausibly make a renderer decide it has reached the end of the
+content - which is exactly what the device reports (`STOPPED`, status `OK`,
+full buffer).
+
+The A/B is cheap and decisive: make `resolve_output_format()` return
+`FALLBACK_FORMAT` unconditionally, deploy, and play a few dozen tracks. If the
+drops stop, the cause is in what stream-copy emits, and the next question is
+which property of the source triggers it (compare the codec/sample-rate/VBR
+shape of tracks that dropped against ones that did not). If they continue, the
+copy tier is exonerated and this entry can move to the ruled-out table.
+
 **Open lead - Beacon re-runs SSDP discovery every 8 seconds.**
 `SonosDelivery._get_device()` calls `soco.discover()`, a full network-wide
 SSDP M-SEARCH, and has seven call sites: `play`, `pause`, `resume`, `stop`,
@@ -181,6 +199,24 @@ closed the connection: the connection count still includes this connection
 carry them into `_mark_disconnected_if_not_reconnected()` and log them only on
 the branch that has already concluded it was a real drop. This reuses the
 existing, correct decision instead of inventing a second one.
+
+---
+
+### One device dropping out of a multi-target cast is never surfaced
+
+Not investigated yet, found while planning a two-speaker repro (2026-08-22).
+
+`_mark_disconnected_if_not_reconnected()` gates on
+`active_stream_connections == 0`, which is session-wide. That is right for
+the session-wide `is_streaming` flag it guards, but it means a session
+casting to two devices at once never notices one of them going away: the
+count is still 1, so no grace period fires, no `DisconnectSnapshot` is
+logged, and nothing tells the user that half their cast is silent.
+
+Consequences worth knowing before relying on the logs: the app-level drop
+detector is only meaningful for single-target sessions. Per-device coverage
+has to come from UPnP eventing (each renderer reports its own
+`TransportState`) or from a packet capture.
 
 ---
 

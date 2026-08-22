@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- Changed the device picker so the ticked devices are simply where you want playback to go, applied in one step: unticking one no longer stops it on the spot, so switching from one speaker to another no longer drops back to this device's own speakers in between. The button now reads "Apply" and only appears when there is actually something to change
 - Changed an artist page's albums from a wrapping grid to a scrollable row (like the Home view's shelves), sorted newest-first by default with a toggle to flip it to oldest-first
 - Changed the Home view's two "discover" shelves for more headroom and a clearer distinction between them - the library-based one now shows up to 20 albums instead of 15 on wide screens, and both got clearer titles ("Discover in your library" / "New artists to explore") so it's obvious which is drawn from albums you already own and which is brand-new artist suggestions
 - Changed song lists (genres, favorites, search results, playlists, album tracklists) to load more as you scroll instead of paging through numbered pages, matching how the Songs library view already worked
@@ -34,6 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed picking a second device while already casting silently dropping the first one - it kept playing until the end of the current track and then went quiet, with only the newly picked device carrying on
 - Fixed the displayed playback position flickering continuously for the rest of a track after pausing, resuming, or seeking directly on a cast device (e.g. a Sonos speaker) instead of through Beacon - a single real correction kept being treated as still needing another one on every subsequent check instead of settling once it was already accurate
 - Fixed casting occasionally auto-advancing to the next queued song a few seconds early, cutting off the tail end of the current one - only happened after pausing/resuming directly on the cast device rather than through Beacon: the auto-advance timer was scheduled once up front and never adjusted for a correction like that happening afterward
 - Fixed casting occasionally getting stuck right at the end of a track and never advancing to the next queued song, with the displayed position silently snapping back to 0:00 instead - happened if the cast device reported itself as idle right as the current track was finishing, which was being misread as someone rewinding it back to the very start

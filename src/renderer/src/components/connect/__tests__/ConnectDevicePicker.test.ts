@@ -9,19 +9,20 @@ import { useConnectStore } from '@/stores/connect'
 import { usePlaybackStore } from '@/stores/playback'
 import ConnectDevicePicker from '../ConnectDevicePicker.vue'
 import type { DiscoverResponse } from '@/services/connect/types'
+import { makeStatus } from '@/stores/__tests__/fixtures'
 
 const vuetify = createVuetify({ components, directives })
 
 // DeviceListItem.vue has its own considerable logic (volume polling, pairing
 // state, ...) that's out of scope for what ConnectDevicePicker itself is
-// responsible for (grouping/sorting devices, selection, the connect/
-// take-over/pair/stop wiring) — a minimal stand-in that still exposes the
+// responsible for (grouping/sorting devices, selection, the apply/
+// take-over/pair wiring) — a minimal stand-in that still exposes the
 // real props/events contract keeps these tests about that wiring, not
 // DeviceListItem's internals.
 const DeviceListItemStub = {
   name: 'DeviceListItem',
   props: ['device', 'type', 'selected'],
-  emits: ['update:selected', 'take-over', 'pair', 'stop', 'volume-change'],
+  emits: ['update:selected', 'take-over', 'pair', 'volume-change'],
   template: `<div class="device-list-item-stub" :data-name="device.name" :data-type="type">
     {{ device.name }}
   </div>`,
@@ -115,42 +116,61 @@ describe('ConnectDevicePicker', () => {
       connect.devices = makeDevices({ sonos: [{ name: 'Kitchen' }, { name: 'Living Room' }] })
     })
 
-    it('has no connect button until at least one device is selected, then labels it by whether a cast is already active', async () => {
+    it('labels the action by what applying would actually do, and hides it when there is nothing to do', async () => {
       const connect = useConnectStore()
       const wrapper = mountPicker()
       const items = wrapper.findAllComponents(DeviceListItemStub)
 
+      // Nothing casting, nothing checked: no action.
       expect(wrapper.text()).not.toContain('Connect')
 
       await items[0]!.vm.$emit('update:selected', true)
       expect(wrapper.text()).toContain('Connect')
 
-      connect.status = {
-        current_song: null,
-        queue: [],
-        current_song_index: -1,
-        original_queue: [],
-        shuffle: false,
-        repeat_mode: 'off',
-        elapsed: 0,
-        ended: false,
-        paused: false,
-        radio: null,
-        streaming: false,
-        targets: [{ name: 'Kitchen', type: 'sonos' }],
-        total_songs: 0,
-        displaced: false,
-      }
+      // That device is now actually casting, so the checked set matches
+      // reality and there is nothing left to apply.
+      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
       await wrapper.vm.$nextTick()
-      // connect.addN is "+{count} more" once a cast is already active — a
-      // different string from the plain "Connect" shown when nothing's
-      // casting yet (asserted above).
-      expect(wrapper.text()).toContain('+1 more')
+      expect(wrapper.get('.connect-picker__actions').text()).not.toContain('Apply')
+
+      // Checking a second device is a real change again — and "Apply", not
+      // "+1 more": it reconciles the whole set rather than only adding.
+      await items[1]!.vm.$emit('update:selected', true)
+      await wrapper.vm.$nextTick()
+      expect(wrapper.text()).toContain('Apply')
     })
 
-    it('castTo()s the selected devices and clears the selection on success', async () => {
+    it('seeds the checkboxes from the live targets, so an untouched picker mirrors reality', async () => {
+      const connect = useConnectStore()
+      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
       const wrapper = mountPicker()
-      const castToSpy = vi.spyOn(usePlaybackStore(), 'castTo').mockResolvedValue()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.findAllComponents(DeviceListItemStub).map((i) => i.props('selected'))).toEqual(
+        [true, false],
+      )
+      // Nothing to apply yet — it already matches what is casting.
+      expect(wrapper.get('.connect-picker__actions').text()).not.toContain('Apply')
+    })
+
+    it('unchecking an active device stages a removal instead of stopping it immediately', async () => {
+      const connect = useConnectStore()
+      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+      const stopSpy = vi.spyOn(connect, 'stopDevice').mockResolvedValue()
+      const wrapper = mountPicker()
+      await wrapper.vm.$nextTick()
+
+      await wrapper.findAllComponents(DeviceListItemStub)[0]!.vm.$emit('update:selected', false)
+
+      // Regression test: this used to stop the device on the spot, which is
+      // what made switching devices fall back to local playback in between.
+      expect(stopSpy).not.toHaveBeenCalled()
+      expect(wrapper.get('.connect-picker__actions').text()).toContain('Stop all')
+    })
+
+    it('applies the checked set as the desired targets and re-syncs on success', async () => {
+      const wrapper = mountPicker()
+      const applySpy = vi.spyOn(usePlaybackStore(), 'applyTargets').mockResolvedValue()
       const items = wrapper.findAllComponents(DeviceListItemStub)
       await items[0]!.vm.$emit('update:selected', true)
       await items[1]!.vm.$emit('update:selected', true)
@@ -158,19 +178,22 @@ describe('ConnectDevicePicker', () => {
       await wrapper.get('.connect-picker__actions').findAll('button').at(-1)!.trigger('click')
       await wrapper.vm.$nextTick()
 
-      expect(castToSpy).toHaveBeenCalledWith([
+      // applyTargets(), not castTo(): on a running session castTo() would
+      // replace the target set, dropping devices that are already playing.
+      expect(applySpy).toHaveBeenCalledWith([
         { name: 'Kitchen', type: 'sonos' },
         { name: 'Living Room', type: 'sonos' },
       ])
-      // deviceListItemStub props reflect the (now cleared) selectedKeys.
+      // Re-seeded from the (still empty, since applyTargets is mocked)
+      // live targets rather than simply cleared.
       expect(wrapper.findAllComponents(DeviceListItemStub).map((i) => i.props('selected'))).toEqual(
         [false, false],
       )
     })
 
-    it('swallows a castTo() failure instead of leaving an unhandled rejection', async () => {
+    it('swallows an apply failure instead of leaving an unhandled rejection', async () => {
       const wrapper = mountPicker()
-      vi.spyOn(usePlaybackStore(), 'castTo').mockRejectedValue(new Error('device in use'))
+      vi.spyOn(usePlaybackStore(), 'applyTargets').mockRejectedValue(new Error('device in use'))
       const items = wrapper.findAllComponents(DeviceListItemStub)
       await items[0]!.vm.$emit('update:selected', true)
 
@@ -221,17 +244,6 @@ describe('ConnectDevicePicker', () => {
     await stopBtn.trigger('click')
 
     expect(stopAllSpy).toHaveBeenCalledOnce()
-  })
-
-  it('a stop event from a row stops that specific device', async () => {
-    const connect = useConnectStore()
-    connect.devices = makeDevices({ airplay: [{ name: 'Living Room' }] })
-    const wrapper = mountPicker()
-    const stopSpy = vi.spyOn(connect, 'stopDevice').mockResolvedValue()
-
-    await wrapper.getComponent(DeviceListItemStub).vm.$emit('stop')
-
-    expect(stopSpy).toHaveBeenCalledWith('airplay', 'Living Room')
   })
 
   it('opens the AirPlay pairing dialog for the row that asked for it', async () => {

@@ -135,7 +135,7 @@ export default {
       default: false,
     },
   },
-  emits: ['update:selected', 'take-over', 'pair', 'stop', 'volume-change'],
+  emits: ['update:selected', 'take-over', 'pair', 'volume-change'],
   data() {
     return {
       // null while unfetched/unsupported — the slider stays hidden rather
@@ -170,7 +170,10 @@ export default {
       )
     },
     checked() {
-      return this.isMyActiveTarget || this.selected
+      // Purely the parent's staged selection now — it seeds that from the
+      // live targets, so an untouched picker still shows exactly what is
+      // casting, while an edited one shows what *will* be.
+      return this.selected
     },
     canShowVolume() {
       return this.isMyActiveTarget && VOLUME_CAPABLE_TYPES.has(this.type)
@@ -205,11 +208,13 @@ export default {
   methods: {
     onToggle() {
       if (this.claimedByOther) return
-      if (this.isMyActiveTarget) {
-        this.$emit('stop', this.device)
-      } else {
-        this.$emit('update:selected', !this.selected)
-      }
+      // Unchecking an active target used to stop it immediately while
+      // checking an inactive one only staged it. That asymmetry is what made
+      // switching devices drop to local playback in between: turning the old
+      // one off took effect at once, leaving no targets at all until the new
+      // one was applied. Both directions are now edits to a desired set the
+      // parent applies in one step (see playbackStore.applyTargets()).
+      this.$emit('update:selected', !this.selected)
     },
     onInfoClick() {
       if (this.isMyActiveTarget || this.claimedByOther) return

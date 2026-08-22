@@ -55,7 +55,6 @@
           @update:selected="toggleSelected(entry, $event)"
           @take-over="takeOver(entry)"
           @pair="openPairing(entry.device.name)"
-          @stop="connectStore.stopDevice(entry.type, entry.device.name)"
           @volume-change="onVolumeChange"
         />
       </template>
@@ -75,18 +74,14 @@
         {{ $t('connect.stopAll') }}
       </v-btn>
       <v-btn
-        v-if="selectedKeys.size > 0"
+        v-if="hasPendingChanges && selectedKeys.size > 0"
         size="small"
         color="primary"
         :loading="connecting"
         :disabled="connecting"
         @click="connectSelected"
       >
-        {{
-          connectStore.isActive
-            ? $t('connect.addN', { count: selectedKeys.size })
-            : $t('connect.connect')
-        }}
+        {{ applyLabel }}
       </v-btn>
     </v-card-actions>
 
@@ -131,6 +126,12 @@ export default {
     return {
       selectedKeys: new Set<string>(),
       connecting: false,
+      // What the active target set was when this picker last synced itself.
+      // The diff against selectedKeys is what "is there anything to apply"
+      // means, and it also lets an outside change (another client casting,
+      // a device dropping) re-seed the checkboxes while the user has not
+      // touched them — see syncFromActiveTargets().
+      appliedKeys: new Set<string>(),
       pairingOpen: false,
       pairingDeviceName: '',
       devicesPollTimer: null as ReturnType<typeof setInterval> | null,
@@ -165,6 +166,47 @@ export default {
     allDevices(): DeviceEntry[] {
       return this.deviceGroups.flatMap((group) => group.entries)
     },
+    activeKeys(): string[] {
+      return this.connectStore.activeTargets.map(
+        (t: { name: string; type: string }) => `${t.type}:${t.name}`,
+      )
+    },
+    /** True once the checked set differs from what is actually casting —
+     * i.e. there is something for the apply button to do. Covers removals
+     * as well as additions, which is the whole point of applying as one
+     * step (see playbackStore.applyTargets()). */
+    /** Whether the checked set has been touched since it was last seeded
+     * from reality. Distinct from hasPendingChanges(): after applying,
+     * both go false; while an outside change lands mid-edit, only this one
+     * stays true and protects the in-progress selection. */
+    userHasEdited(): boolean {
+      if (this.appliedKeys.size !== this.selectedKeys.size) return true
+      return [...this.selectedKeys].some((key) => !this.appliedKeys.has(key))
+    },
+    hasPendingChanges(): boolean {
+      const active = new Set(this.activeKeys)
+      if (active.size !== this.selectedKeys.size) return true
+      return [...this.selectedKeys].some((key) => !active.has(key))
+    },
+    /** Unticking everything is a removal like any other, but it needs no
+     * button of its own: the destructive "Stop all" next to this one
+     * already says exactly that, and showing both read as two different
+     * actions. So this only labels the case where something stays playing. */
+    applyLabel(): string {
+      return this.connectStore.isActive ? this.$t('connect.apply') : this.$t('connect.connect')
+    },
+  },
+  watch: {
+    // Re-seed while the user has no unapplied edits, so the checkboxes keep
+    // reflecting reality (another client casting, a device dropping out)
+    // without ever discarding a selection someone is in the middle of
+    // making.
+    activeKeys: {
+      immediate: true,
+      handler() {
+        if (!this.userHasEdited) this.syncFromActiveTargets()
+      },
+    },
   },
   mounted() {
     // Keeps in_use_by_name/in_use_by_song fresh while the picker is open —
@@ -180,6 +222,10 @@ export default {
     if (this.devicesPollTimer) clearInterval(this.devicesPollTimer)
   },
   methods: {
+    syncFromActiveTargets() {
+      this.selectedKeys = new Set(this.activeKeys)
+      this.appliedKeys = new Set(this.activeKeys)
+    },
     toggleSelected(entry: DeviceEntry, value: boolean) {
       const key = `${entry.type}:${entry.device.name}`
       if (value) this.selectedKeys.add(key)
@@ -193,8 +239,11 @@ export default {
         const targets = this.allDevices
           .filter((e) => this.selectedKeys.has(`${e.type}:${e.device.name}`))
           .map((e) => ({ name: e.device.name, type: e.type }))
-        await usePlaybackStore().castTo(targets)
-        this.selectedKeys = new Set()
+        // Not castTo(): the checked set is the desired *end state*, and on
+        // an already-running session castTo() would replace the targets
+        // rather than reconcile them. See applyTargets()'s own docstring.
+        await usePlaybackStore().applyTargets(targets)
+        this.syncFromActiveTargets()
       } catch {
         // A device-in-use conflict already opened the takeover dialog (see
         // castTo()/withTakeoverHandling()); any other failure already set
