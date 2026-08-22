@@ -27,6 +27,14 @@
       >
         <template #append>
           <v-btn
+            v-if="playbackStore.queue.length"
+            icon="mdi-playlist-plus"
+            variant="text"
+            size="small"
+            :title="$t('queue.saveAsPlaylist')"
+            @click="openCreatePlaylistDialog"
+          />
+          <v-btn
             v-if="playbackStore.queue.length > 1"
             icon="mdi-notification-clear-all"
             variant="text"
@@ -37,6 +45,33 @@
           />
         </template>
       </v-toolbar>
+
+      <!-- Pre-seeds the new playlist with the queue exactly as currently
+       - shown here (same order, already-played songs included) — same
+       - "create new playlist" dialog shape as SongTable.vue's own, just
+       - seeded from the whole queue instead of a song selection. -->
+      <v-dialog v-model="createPlaylistDialog" max-width="400">
+        <v-card>
+          <v-card-title>{{ $t('playlists.createTitle') }}</v-card-title>
+          <v-card-text>
+            <v-text-field
+              v-model="createPlaylistName"
+              :label="$t('common.name')"
+              variant="solo-filled"
+              autofocus
+              clearable
+              @keyup.enter="confirmCreatePlaylist"
+            />
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer />
+            <v-btn variant="text" @click="createPlaylistDialog = false">{{
+              $t('common.cancel')
+            }}</v-btn>
+            <v-btn color="primary" @click="confirmCreatePlaylist">{{ $t('common.create') }}</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
 
       <template v-if="playbackStore.queue.length">
         <!-- Real Vue move animation (TransitionGroup's FLIP-based .move class)
@@ -124,6 +159,7 @@
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
+import { useLibraryStore } from '@/stores/library'
 import QueueRow from './QueueRow.vue'
 import type { Song } from '@/types/library'
 
@@ -229,11 +265,16 @@ export default {
       clearingRows: new Set() as Set<number>,
       clearingTimer: null as ReturnType<typeof setTimeout> | null,
       clearingRowTimers: [] as ReturnType<typeof setTimeout>[],
+      createPlaylistDialog: false,
+      createPlaylistName: '',
     }
   },
   computed: {
     playbackStore() {
       return usePlaybackStore()
+    },
+    libraryStore() {
+      return useLibraryStore()
     },
     virtualizeQueue(): boolean {
       return this.playbackStore.queue.length > QUEUE_VIRTUALIZE_THRESHOLD
@@ -376,6 +417,27 @@ export default {
     // thing's done: the outer v-if="playbackStore.queue.length" above
     // would otherwise tear down this whole TransitionGroup (and every
     // row's fade-out with it) the instant the queue actually emptied.
+    openCreatePlaylistDialog() {
+      this.createPlaylistName = ''
+      this.createPlaylistDialog = true
+    },
+    async confirmCreatePlaylist() {
+      if (!this.createPlaylistName.trim()) return
+      try {
+        await this.libraryStore.createPlaylist(
+          this.createPlaylistName,
+          this.playbackStore.queue.map((song) => song.id),
+        )
+        this.createPlaylistDialog = false
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('playlists.createTitle'),
+          message: error instanceof Error ? error.message : String(error),
+        })
+        console.error('[queue-drawer] Failed to create playlist:', error)
+      }
+    },
     onClearQueue() {
       if (this.clearing || this.playbackStore.queue.length <= 1) return
       if (this.virtualizeQueue) {

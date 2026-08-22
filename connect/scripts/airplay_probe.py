@@ -23,7 +23,7 @@ import sys
 # Allow `from delivery import credentials` regardless of cwd (scripts/ lives under connect/).
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from delivery import credentials as creds_store  # noqa: E402
+from delivery import credentials as creds_store
 
 logging.basicConfig(
     level=logging.DEBUG,

@@ -70,7 +70,7 @@ async def _dispatch_queued_track(session: SessionState, target, track, gain: flo
             output_format.content_type,
         )
     except Exception as e:
-        logger.error(f"[stream] Auto-advance delivery error: {e}", exc_info=True)
+        logger.exception(f"[stream] Auto-advance delivery error: {e}")
         st.is_streaming = False
         return False
 

@@ -27,6 +27,17 @@ dev = [
     "pytest-cov>=7.1.0",
 ]
 
+[tool.ruff.lint]
+ignore = [
+    # `Depends(...)` as an argument default is FastAPI's own dependency-
+    # injection idiom (straight from FastAPI's docs) — evaluated specially
+    # by FastAPI itself, not a real "mutable default" foot-gun. Flagged on
+    # essentially every route handler in routes/*.py; fighting the
+    # framework's own convention here would make every handler worse to
+    # read for no actual safety gain.
+    "B008",
+]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

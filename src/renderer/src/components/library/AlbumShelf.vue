@@ -3,7 +3,7 @@
     <div class="album-shelf-head">
       <h2 class="section-title">{{ title }}</h2>
       <v-btn
-        v-if="albums.length"
+        v-if="albums.length && showPlayAll"
         icon="mdi-play-circle-outline"
         variant="text"
         size="small"
@@ -103,6 +103,14 @@ export default {
     playOnClick: {
       type: Boolean,
       default: false,
+    },
+    // On by default (matches every existing HomeView.vue shelf) — turn off
+    // for a shelf with no sensible "play everything in this row" action of
+    // its own (e.g. ArtistDetailView.vue's album shelf, which already has
+    // Artist Radio for that).
+    showPlayAll: {
+      type: Boolean,
+      default: true,
     },
   },
   emits: ['play-all'],

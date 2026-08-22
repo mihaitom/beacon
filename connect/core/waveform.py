@@ -103,7 +103,7 @@ async def get_waveform(track_id: str, url: str) -> list[float]:
         stdout, stderr = await asyncio.wait_for(
             proc.communicate(), timeout=_DECODE_TIMEOUT_SECONDS
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(f"[waveform] Decode timed out for {track_id}")
         proc.kill()
         # communicate()'s own reader tasks were cancelled mid-read by the
@@ -114,7 +114,7 @@ async def get_waveform(track_id: str, url: str) -> list[float]:
         # request if it somehow doesn't.
         try:
             await asyncio.wait_for(proc.wait(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(f"[waveform] Process for {track_id} didn't exit after kill()")
         return []
 

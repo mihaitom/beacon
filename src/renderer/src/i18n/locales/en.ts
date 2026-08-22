@@ -9,6 +9,7 @@ export default {
     edit: 'Edit',
     add: 'Add',
     create: 'Create',
+    delete: 'Delete',
     done: 'Done',
     retry: 'Retry',
     filter: 'Filter',
@@ -101,6 +102,8 @@ export default {
     songCount: '{count} songs',
     albumsAndSongs: '{albums} albums · {songs} songs',
     mostPlayed: 'Most played',
+    newestFirst: 'Newest first',
+    oldestFirst: 'Oldest first',
     showAllSongs: 'Show all',
     showLess: 'Show less',
     allSongs: 'All songs',
@@ -187,6 +190,7 @@ export default {
     title: 'Queue',
     empty: 'Queue is empty.',
     clear: 'Clear queue',
+    saveAsPlaylist: 'Save queue as playlist',
   },
   remoteControl: {
     title: 'Remote Control',
@@ -276,6 +280,8 @@ export default {
     global: 'Global playlists',
     editTitle: 'Edit playlist',
     byOwner: 'by {owner}',
+    deleteTitle: 'Delete playlist?',
+    deleteConfirm: 'Delete "{name}"? This cannot be undone.',
   },
   radio: {
     title: 'Radio',

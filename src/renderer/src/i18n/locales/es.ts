@@ -9,6 +9,7 @@ export default {
     edit: 'Editar',
     add: 'Añadir',
     create: 'Crear',
+    delete: 'Eliminar',
     done: 'Hecho',
     retry: 'Reintentar',
     filter: 'Filtrar',
@@ -102,6 +103,8 @@ export default {
     songCount: '{count} canciones',
     albumsAndSongs: '{albums} álbumes · {songs} pistas',
     mostPlayed: 'Más reproducidos',
+    newestFirst: 'Más recientes primero',
+    oldestFirst: 'Más antiguos primero',
     showAllSongs: 'Mostrar todo',
     showLess: 'Mostrar menos',
     allSongs: 'Todas las canciones',
@@ -188,6 +191,7 @@ export default {
     title: 'Cola',
     empty: 'La cola está vacía.',
     clear: 'Vaciar cola',
+    saveAsPlaylist: 'Guardar cola como lista de reproducción',
   },
   remoteControl: {
     title: 'Control remoto',
@@ -277,6 +281,8 @@ export default {
     global: 'Listas globales',
     editTitle: 'Editar lista de reproducción',
     byOwner: 'de {owner}',
+    deleteTitle: '¿Eliminar lista de reproducción?',
+    deleteConfirm: '¿Eliminar "{name}"? Esto no se puede deshacer.',
   },
   radio: {
     title: 'Radio',

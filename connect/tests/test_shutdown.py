@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
 
-from core.session import DEFAULT_SESSION_ID, SessionState, registry
+from core.session import SessionState, registry
 from main import app
 from media import SubsonicClient
 

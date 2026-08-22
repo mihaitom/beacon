@@ -6,6 +6,7 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
+import { useLibraryStore } from '@/stores/library'
 import QueueDrawer from '../QueueDrawer.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
 
@@ -43,11 +44,12 @@ describe('QueueDrawer', () => {
     vi.useRealTimers()
   })
 
-  it('shows the empty state and no clear button with nothing queued', () => {
+  it('shows the empty state and no clear/save-as-playlist buttons with nothing queued', () => {
     const wrapper = mountDrawer()
 
     expect(wrapper.text()).toContain('Queue is empty')
     expect(wrapper.find('.mdi-notification-clear-all').exists()).toBe(false)
+    expect(wrapper.find('.mdi-playlist-plus').exists()).toBe(false)
   })
 
   it('renders one row per queued song, in order, with the current one marked', () => {
@@ -182,6 +184,60 @@ describe('QueueDrawer', () => {
     await otherRemoveBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
 
     expect(removeSpy).toHaveBeenCalledWith(1)
+  })
+
+  describe('save queue as playlist', () => {
+    it('opens the create-playlist dialog from the toolbar button', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('a'), makeSong('b')], 0)
+      const wrapper = mountDrawer()
+      const vm = wrapper.vm as unknown as { createPlaylistDialog: boolean }
+      expect(vm.createPlaylistDialog).toBe(false)
+
+      const saveBtn = wrapper.get('.mdi-playlist-plus').element.closest('button')!
+      await saveBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+
+      expect(vm.createPlaylistDialog).toBe(true)
+    })
+
+    it('creates a playlist from the queue in its current order, then closes the dialog', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('a'), makeSong('b'), makeSong('c')], 1)
+      const wrapper = mountDrawer()
+      const library = useLibraryStore()
+      const createSpy = vi.spyOn(library, 'createPlaylist').mockResolvedValue()
+      const vm = wrapper.vm as unknown as {
+        createPlaylistDialog: boolean
+        createPlaylistName: string
+        confirmCreatePlaylist(): Promise<void>
+      }
+      vm.createPlaylistDialog = true
+      vm.createPlaylistName = 'My mix'
+
+      await vm.confirmCreatePlaylist()
+
+      // Whole queue, current order — already-played songs included, same
+      // list QueueDrawer.vue itself renders, not just what's left to play.
+      expect(createSpy).toHaveBeenCalledWith('My mix', ['a', 'b', 'c'])
+      expect(vm.createPlaylistDialog).toBe(false)
+    })
+
+    it('does nothing when confirmed with a blank name', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('a')], 0)
+      const wrapper = mountDrawer()
+      const library = useLibraryStore()
+      const createSpy = vi.spyOn(library, 'createPlaylist').mockResolvedValue()
+      const vm = wrapper.vm as unknown as {
+        createPlaylistName: string
+        confirmCreatePlaylist(): Promise<void>
+      }
+      vm.createPlaylistName = '   '
+
+      await vm.confirmCreatePlaylist()
+
+      expect(createSpy).not.toHaveBeenCalled()
+    })
   })
 
   describe('drag to reorder', () => {

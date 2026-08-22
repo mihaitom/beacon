@@ -9,6 +9,7 @@ export default {
     edit: 'Modifica',
     add: 'Aggiungi',
     create: 'Crea',
+    delete: 'Elimina',
     done: 'Fatto',
     retry: 'Riprova',
     filter: 'Filtra',
@@ -101,6 +102,8 @@ export default {
     songCount: '{count} brani',
     albumsAndSongs: '{albums} album · {songs} brani',
     mostPlayed: 'Più ascoltati',
+    newestFirst: 'Più recenti prima',
+    oldestFirst: 'Più vecchi prima',
     showAllSongs: 'Mostra tutti',
     showLess: 'Mostra meno',
     allSongs: 'Tutti i brani',
@@ -188,6 +191,7 @@ export default {
     title: 'Coda',
     empty: 'La coda è vuota.',
     clear: 'Svuota coda',
+    saveAsPlaylist: 'Salva la coda come playlist',
   },
   remoteControl: {
     title: 'Controllo remoto',
@@ -277,6 +281,8 @@ export default {
     global: 'Playlist globali',
     editTitle: 'Modifica playlist',
     byOwner: 'di {owner}',
+    deleteTitle: 'Eliminare la playlist?',
+    deleteConfirm: 'Eliminare "{name}"? Questa azione non può essere annullata.',
   },
   radio: {
     title: 'Radio',

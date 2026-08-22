@@ -669,6 +669,15 @@ export const useLibraryStore = defineStore('library', {
       await this.withLoading(async () => {
         await this.client().deletePlaylist(id)
         this.playlists = this.playlists.filter((p) => p.id !== id)
+        // Without this, PlaylistsView's next mount (e.g. right after this
+        // same delete navigates back to it) reads the cache-first path in
+        // cachedFetch() — which, within CACHE_TTL_MS, serves the stale
+        // cached list straight back over this in-memory update, bringing
+        // the just-deleted playlist right back until the cache happens to
+        // go stale. createPlaylist()/updatePlaylist() already avoid this
+        // (via fetchPlaylists(true) / their own saveLibraryCacheField
+        // call); this was the one mutation missing it.
+        saveLibraryCacheField('playlists', this.playlists)
       })
     },
 

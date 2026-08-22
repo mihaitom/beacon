@@ -7,6 +7,7 @@ export default {
     edit: 'Bearbeiten',
     add: 'Hinzufügen',
     create: 'Erstellen',
+    delete: 'Löschen',
     done: 'Fertig',
     retry: 'Erneut versuchen',
     filter: 'Filtern',
@@ -99,6 +100,8 @@ export default {
     songCount: '{count} Titel',
     albumsAndSongs: '{albums} Alben · {songs} Titel',
     mostPlayed: 'Meistgespielt',
+    newestFirst: 'Neueste zuerst',
+    oldestFirst: 'Älteste zuerst',
     showAllSongs: 'Alle anzeigen',
     showLess: 'Weniger anzeigen',
     allSongs: 'Alle Songs',
@@ -185,6 +188,7 @@ export default {
     title: 'Queue',
     empty: 'Queue ist leer.',
     clear: 'Queue leeren',
+    saveAsPlaylist: 'Queue als Playlist speichern',
   },
   remoteControl: {
     title: 'Fernsteuerung',
@@ -274,6 +278,8 @@ export default {
     global: 'Globale Playlists',
     editTitle: 'Playlist bearbeiten',
     byOwner: 'von {owner}',
+    deleteTitle: 'Playlist löschen?',
+    deleteConfirm: '"{name}" löschen? Das kann nicht rückgängig gemacht werden.',
   },
   radio: {
     title: 'Radio',

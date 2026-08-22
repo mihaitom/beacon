@@ -366,7 +366,7 @@ async def stream_tracks(
             raise  # propagate so stream_with_completion skips the track-end broadcast
 
         except Exception as e:
-            logger.error(f"[ffmpeg] Error on track {i + 1}: {e}", exc_info=True)
+            logger.exception(f"[ffmpeg] Error on track {i + 1}: {e}")
             if proc:
                 try:
                     proc.kill()

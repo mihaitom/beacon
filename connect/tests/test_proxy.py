@@ -3,7 +3,6 @@
 import importlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 # ── Utility function: Reload proxy module with a given environment variable ───────────────
 
 
@@ -68,6 +67,7 @@ def _mock_httpx_client():
     def build_request(**kwargs):
         captured["headers"] = kwargs["headers"]
         captured["url"] = kwargs["url"]
+        captured["params"] = kwargs["params"]
         return MagicMock()
 
     mock_client.build_request = build_request
@@ -104,6 +104,31 @@ def test_proxy_strips_authentik_headers_before_forwarding(client, default_sessio
     assert headers.get("X-Custom-Header") == "keep-me" or headers.get(
         "x-custom-header"
     ) == "keep-me"
+
+
+# ── Repeated query params (Subsonic's list-argument convention) ──────────────
+#
+# createPlaylist.view/updatePlaylist.view send a song list as a repeated key
+# (songId=a&songId=b&songId=c). dict(request.query_params) silently collapses
+# that to just the last value — a "create a playlist from these 3 songs"
+# request arrived here fine but left for Navidrome with only the last one.
+
+
+def test_proxy_forwards_every_value_of_a_repeated_query_param(client, default_session):
+    from media import SubsonicClient
+
+    default_session.media = SubsonicClient("http://navidrome.internal:4533")
+    proxy_mod = _reload_proxy("http://navidrome.internal:4533")
+    mock_client_cls, captured = _mock_httpx_client()
+
+    with patch.object(proxy_mod.httpx, "AsyncClient", mock_client_cls):
+        client.get(
+            "/rest/createPlaylist.view?u=user&t=token&s=salt&v=1.16.1&c=test&f=json"
+            "&name=Mix&songId=a&songId=b&songId=c"
+        )
+
+    song_ids = [v for k, v in captured["params"] if k == "songId"]
+    assert song_ids == ["a", "b", "c"]
 
 
 # ── ClientDisconnect ─────────────────────────────────────────────────────────
@@ -316,6 +341,7 @@ def test_proxy_drops_the_stale_content_length_when_the_response_was_compressed(
 
 def test_pair_list_returns_empty_initially(client, default_session):
     import tempfile
+
     from delivery import credentials
 
     with tempfile.TemporaryDirectory() as d:
@@ -348,6 +374,7 @@ def test_pair_finish_without_start_returns_400(client, default_session):
 
 def test_unpair_nonexistent_returns_404(client, default_session):
     import tempfile
+
     from delivery import credentials
 
     with tempfile.TemporaryDirectory() as d:
@@ -360,6 +387,7 @@ def test_unpair_nonexistent_returns_404(client, default_session):
 
 def test_unpair_existing_returns_success(client, default_session):
     import tempfile
+
     from delivery import credentials
 
     with tempfile.TemporaryDirectory() as d:

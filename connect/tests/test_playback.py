@@ -1656,7 +1656,7 @@ async def _run_briefly(coro) -> None:
     task = asyncio.ensure_future(coro)
     try:
         await asyncio.wait_for(asyncio.shield(task), timeout=0.05)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         pass
     finally:
         task.cancel()

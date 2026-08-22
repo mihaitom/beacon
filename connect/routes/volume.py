@@ -9,7 +9,6 @@ from pydantic import BaseModel
 from core.auth import require_token
 from core.session import SessionState, check_ownership, require_authenticated_session
 from core.state import find_sonos
-
 from delivery import ChromecastDelivery, DlnaDelivery, SonosDelivery
 
 logger = logging.getLogger("connect.devices")

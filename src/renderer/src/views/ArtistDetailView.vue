@@ -61,9 +61,20 @@
       </template>
     </detail-header>
 
-    <div class="album-grid">
-      <album-card v-for="album in artist.albums" :key="album.id" :album="album" />
-    </div>
+    <album-shelf :title="$t('library.albums')" :albums="sortedAlbums" :show-play-all="false">
+      <template #action>
+        <v-btn
+          :icon="
+            albumSortAscending ? 'mdi-sort-calendar-descending' : 'mdi-sort-calendar-ascending'
+          "
+          variant="text"
+          size="small"
+          density="comfortable"
+          :title="albumSortAscending ? $t('library.newestFirst') : $t('library.oldestFirst')"
+          @click="albumSortAscending = !albumSortAscending"
+        />
+      </template>
+    </album-shelf>
 
     <template v-if="topSongs.length || loadingTopSongs">
       <div class="section-header mt-8 mb-2">
@@ -113,7 +124,7 @@ import { useLibraryStore, TOP_SONGS_LIMIT } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import DetailHeader from '@/components/library/DetailHeader.vue'
-import AlbumCard from '@/components/library/AlbumCard.vue'
+import AlbumShelf from '@/components/library/AlbumShelf.vue'
 import SongTable from '@/components/library/SongTable.vue'
 import PageLoader from '@/components/PageLoader.vue'
 import { getArtistImages, getArtistLinks } from '@/services/connect/recommendations'
@@ -127,10 +138,14 @@ type ArtistDetail = Awaited<ReturnType<ReturnType<typeof useLibraryStore>['fetch
 
 export default {
   name: 'ArtistDetailView',
-  components: { DetailHeader, AlbumCard, SongTable, PageLoader },
+  components: { DetailHeader, AlbumShelf, SongTable, PageLoader },
   data() {
     return {
       artist: null as ArtistDetail | null,
+      // Newest-first (descending by year) by default — see this file's own
+      // #action template comment. Reset per artist in loadArtist() so a
+      // toggle made on one artist page doesn't carry over to the next.
+      albumSortAscending: false,
       // The default capped fetch (top TOP_SONGS_LIMIT by playCount) —
       // always loaded, and what's shown while allSongsShown is false. See
       // displayedTopSongs for which of this/allTopSongs actually renders.
@@ -178,6 +193,19 @@ export default {
     externalLinks() {
       return toExternalLinkList(this.externalLinkUrls)
     },
+    // Undated albums (year === null) sort last regardless of direction —
+    // there's no sensible position for "unknown" between two known years,
+    // and burying them at the end keeps the shelf's front consistently
+    // meaningful either way round.
+    sortedAlbums() {
+      if (!this.artist) return []
+      const direction = this.albumSortAscending ? 1 : -1
+      return [...this.artist.albums].sort((a, b) => {
+        if (a.year === null) return b.year === null ? 0 : 1
+        if (b.year === null) return -1
+        return (a.year - b.year) * direction
+      })
+    },
   },
   created() {
     this.loadArtist()
@@ -192,6 +220,7 @@ export default {
       this.allTopSongs = null
       this.allSongsShown = false
       this.externalLinkUrls = {}
+      this.albumSortAscending = false
       // A newer navigation may resolve before this one, or move the route
       // on while a fetch is still in flight — the `$route.params.id === id`
       // checks below make sure a slower, now-stale response can't overwrite
@@ -314,12 +343,6 @@ export default {
 </script>
 
 <style scoped>
-.album-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
 .section-header {
   display: flex;
   align-items: center;

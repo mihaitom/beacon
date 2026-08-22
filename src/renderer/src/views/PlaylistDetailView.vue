@@ -34,7 +34,7 @@
           :title="$t('common.edit')"
           @click="openEdit"
         />
-        <v-btn icon="mdi-delete-outline" variant="text" @click="remove" />
+        <v-btn icon="mdi-delete-outline" variant="text" @click="deleteDialog = true" />
       </template>
     </detail-header>
 
@@ -62,6 +62,20 @@
           <v-btn color="primary" :disabled="!editName.trim()" @click="saveEdit">{{
             $t('common.save')
           }}</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="deleteDialog" max-width="400">
+      <v-card>
+        <v-card-title>{{ $t('playlists.deleteTitle') }}</v-card-title>
+        <v-card-text>
+          {{ $t('playlists.deleteConfirm', { name: playlist.name }) }}
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="deleteDialog = false">{{ $t('common.cancel') }}</v-btn>
+          <v-btn color="error" :loading="deleting" @click="remove">{{ $t('common.delete') }}</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -105,6 +119,8 @@ export default {
       editDialog: false,
       editName: '',
       editPublic: false,
+      deleteDialog: false,
+      deleting: false,
     }
   },
   computed: {
@@ -148,8 +164,21 @@ export default {
       }
     },
     async remove() {
-      await this.libraryStore.deletePlaylist(this.$route.params.id as string)
-      this.$router.push('/playlists')
+      this.deleting = true
+      try {
+        await this.libraryStore.deletePlaylist(this.$route.params.id as string)
+        this.deleteDialog = false
+        this.$router.push('/playlists')
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('playlists.deleteTitle'),
+          message: error instanceof Error ? error.message : String(error),
+        })
+        console.error('[playlist-detail] Failed to delete playlist:', error)
+      } finally {
+        this.deleting = false
+      }
     },
     openEdit() {
       if (!this.playlist) return

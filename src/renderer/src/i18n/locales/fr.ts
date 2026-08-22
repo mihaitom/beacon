@@ -9,6 +9,7 @@ export default {
     edit: 'Modifier',
     add: 'Ajouter',
     create: 'Créer',
+    delete: 'Supprimer',
     done: 'Terminé',
     retry: 'Réessayer',
     filter: 'Filtrer',
@@ -101,6 +102,8 @@ export default {
     songCount: '{count} titres',
     albumsAndSongs: '{albums} albums · {songs} titres',
     mostPlayed: 'Les plus écoutés',
+    newestFirst: "Plus récents d'abord",
+    oldestFirst: "Plus anciens d'abord",
     showAllSongs: 'Tout afficher',
     showLess: 'Afficher moins',
     allSongs: 'Tous les titres',
@@ -188,6 +191,7 @@ export default {
     title: "File d'attente",
     empty: "La file d'attente est vide.",
     clear: "Vider la file d'attente",
+    saveAsPlaylist: "Enregistrer la file d'attente comme playlist",
   },
   remoteControl: {
     title: 'Contrôle à distance',
@@ -278,6 +282,8 @@ export default {
     global: 'Playlists globales',
     editTitle: 'Modifier la playlist',
     byOwner: 'par {owner}',
+    deleteTitle: 'Supprimer la playlist ?',
+    deleteConfirm: 'Supprimer "{name}" ? Cette action est irréversible.',
   },
   radio: {
     title: 'Radio',

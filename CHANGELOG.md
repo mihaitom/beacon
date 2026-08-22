@@ -19,9 +19,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Added an automatic peek at the queue whenever something lands in it without being clicked song-by-song - those quick-play actions, Play Next/Add to Queue, Song Radio, Artist Radio, and Autoplay's own top-up all trigger it. The queue opens with each track fading in one after another and scrolls to whatever's currently playing, then closes itself again after a few seconds unless the mouse actually reaches it, in which case it stays open
 - Added a matching fade-out to clearing the queue - tracks disappear bottom-to-top starting from wherever you've actually scrolled to, instead of all at once
 - Added a "Stop all" action to the mobile web UI's device picker, matching the one already on desktop - previously the only way to back out of casting there was picking "This device", which also switches playback to it right away
+- Added a way to save the current queue as a new playlist, right from the queue drawer
+- Added a confirmation prompt before deleting a playlist
 
 ### Changed
 
+- Changed an artist page's albums from a wrapping grid to a scrollable row (like the Home view's shelves), sorted newest-first by default with a toggle to flip it to oldest-first
 - Changed the Home view's two "discover" shelves for more headroom and a clearer distinction between them - the library-based one now shows up to 20 albums instead of 15 on wide screens, and both got clearer titles ("Discover in your library" / "New artists to explore") so it's obvious which is drawn from albums you already own and which is brand-new artist suggestions
 - Changed song lists (genres, favorites, search results, playlists, album tracklists) to load more as you scroll instead of paging through numbered pages, matching how the Songs library view already worked
 - Changed selecting multiple songs to no longer show a floating action bar - Play Next/Add to Queue/Add to Playlist for the whole selection already live in a selected song's right-click menu, so the bar was just duplicating them; press Escape to clear a selection instead of its old close button
@@ -44,6 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Fixed the Electron Remote Control pairing occasionally reporting the app as unreachable right after a quick reconnect (a brief network blip, for example), even though it was already back and listening again
 - Fixed the seek bar's waveform occasionally overflowing into neighboring player bar elements at narrower window widths instead of shrinking to fit
 - Fixed a ReplayGain-adjusted track not playing at all while casting if its format didn't need re-encoding (MP3, FLAC, AAC, Ogg Vorbis) - the volume adjustment and that format's fast, lossless pass-through can't be combined; such a track now gets a quick re-encode instead so ReplayGain still applies
+- Fixed a deleted playlist reappearing in the Playlists view, sometimes for up to an hour afterward - deleting it updated what was on screen right away, but not the on-device cache checked first on the next visit
 - Fixed a rare inconsistency after force-taking over a device from another session: if that session's own attempt to (re)start playback on the same device failed at almost the same moment, its failure cleanup could undo the takeover, leaving both sessions disagreeing about who actually has the device until something else refreshed it
 - Fixed the Songs, Albums, and Artists library views getting progressively slower and less responsive the further you scrolled through a large library - every row/card stayed mounted after loading more instead of only the ones actually on screen
 - Fixed a song's right-click menu not closing when another song's was opened - each could be opened independently, leaving several stacked on top of each other at once

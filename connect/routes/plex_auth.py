@@ -25,7 +25,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from core.auth import require_token
-from media.plex import check_pin, client_identifier, create_pin, get_account_username, list_resources
+from media.plex import (
+    check_pin,
+    client_identifier,
+    create_pin,
+    get_account_username,
+    list_resources,
+)
 
 logger = logging.getLogger("connect.plex_auth")
 router = APIRouter(dependencies=[Depends(require_token)])

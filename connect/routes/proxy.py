@@ -123,7 +123,14 @@ async def _proxy(request: Request, target: str) -> StreamingResponse | JSONRespo
         req = client.build_request(
             method=request.method,
             url=target,
-            params=dict(request.query_params),
+            # multi_items(), not dict(request.query_params) — Subsonic's
+            # list-argument convention is a repeated key (songId=a&songId=b&
+            # ...; see e.g. createPlaylist, updatePlaylist's songIdToAdd/
+            # songIndexToRemove). dict() on a Starlette QueryParams silently
+            # keeps only the *last* value per key, so a multi-song request
+            # like "create a playlist from this queue" arrived here fine but
+            # left with only its last song by the time it reached Navidrome.
+            params=list(request.query_params.multi_items()),
             headers=fwd_headers,
             content=await request.body(),
         )
