@@ -17,6 +17,11 @@ export const state = {
     queue_index: -1,
     casting: [],
     device_volume: null,
+    // A cast device dropped out on its own and playback can be picked back
+    // up — see app.js's interrupted banner. Nothing resumes automatically:
+    // a speaker stopping by itself and somebody stopping it are
+    // indistinguishable from the server's side.
+    interrupted: false,
   },
   connected: false,
 };

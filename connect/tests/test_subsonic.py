@@ -1,6 +1,6 @@
 """Tests for SubsonicClient — especially the internal_url logic."""
 
-from media import SubsonicClient
+from media import SubsonicClient, http_client
 
 # Captured at import time, before conftest's autouse _stub_media_ping
 # monkeypatches SubsonicClient.ping for the duration of each test — lets
@@ -135,7 +135,7 @@ def test_get_track_parses_song(monkeypatch):
             request=httpx.Request("GET", url),
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     track = _client().get_track("abc")
     assert track.id == "abc"
     assert track.title == "Song Title"
@@ -161,7 +161,7 @@ def test_get_raises_with_the_servers_own_error_message(monkeypatch):
             request=httpx.Request("GET", url),
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
 
     with pytest.raises(RuntimeError, match="Wrong username or password"):
         _client().get_track("abc")
@@ -191,7 +191,7 @@ def test_get_similar_songs2_parses_songs(monkeypatch):
             request=httpx.Request("GET", url),
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     tracks = _client().get_similar_songs2("seed-1", count=5)
 
     assert len(tracks) == 1
@@ -220,7 +220,7 @@ def test_ping_uses_internal_url(monkeypatch):
         )
 
     monkeypatch.setattr(SubsonicClient, "ping", _REAL_PING)
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
 
     c = _client(url="http://proxy:9180", internal_url="http://nav:4533")
 
@@ -248,7 +248,7 @@ def test_ping_returns_false_and_logs_on_failure(monkeypatch, caplog):
         )
 
     monkeypatch.setattr(SubsonicClient, "ping", _REAL_PING)
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
 
     with caplog.at_level(logging.WARNING, logger="connect.subsonic"):
         result = _client().ping()

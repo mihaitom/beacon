@@ -41,6 +41,10 @@ interface PlaybackState {
   queue: Song[]
   currentIndex: number
   isPlaying: boolean
+  /** A cast device dropped out on its own and playback can be picked back
+   * up (see notifyCastInterrupted). Cleared once someone does, or once
+   * playback is dispatched or stopped by any other route. */
+  castInterrupted: boolean
   localPosition: number
   duration: number
   volume: number
@@ -272,6 +276,7 @@ export const usePlaybackStore = defineStore('playback', {
     queue: [],
     currentIndex: -1,
     isPlaying: false,
+    castInterrupted: false,
     localPosition: 0,
     duration: 0,
     volume: 1,
@@ -425,6 +430,12 @@ export const usePlaybackStore = defineStore('playback', {
           else void this.handOffToLocalPlayback()
         }
 
+        // A one-shot flag on a single payload, so no edge detector: the
+        // backend only ever sets it on the broadcast for the interruption
+        // itself. Checked before the guard below, since that returns early
+        // whenever targets are already gone.
+        if (status?.interrupted) this.notifyCastInterrupted()
+
         if (!status || !activeNow) return
 
         this.isPlaying = status.streaming && !status.paused
@@ -572,6 +583,8 @@ export const usePlaybackStore = defineStore('playback', {
      * session's own live values) rather than resumeLocalPlayback()'s
      * restored-from-storage snapshot. */
     async handOffToLocalPlayback(): Promise<void> {
+      // Casting is over; there is nothing left to resume on a device.
+      this.castInterrupted = false
       if (this.radioStation) {
         if (this.isPlaying) getAudioEngine().play(this.radioStation.streamUrl)
         return
@@ -1384,7 +1397,55 @@ export const usePlaybackStore = defineStore('playback', {
      * dialog instead of the conflict just failing silently — unless `force`
      * is already true (the device-row "Take over" action decided that
      * up front), in which case there's nothing left to detect. */
+    /** A cast device stopped without anyone asking it to (see
+     * ConnectStatus.interrupted). Beacon cannot tell that apart from
+     * somebody pressing stop on the speaker itself, so it does not resume on
+     * its own - it says so and offers to, and the person decides.
+     *
+     * A long timeout on purpose: this asks a question rather than reporting
+     * something, and the default is calibrated for glancing at a
+     * notification, not for noticing one, reading it and acting on it. It
+     * also stops counting down while the pointer is over it. */
+    notifyCastInterrupted(): void {
+      // Kept as state, not just a toast: the phone remote is fed debounced
+      // *snapshots*, so a one-shot event would simply never reach it. This
+      // is what both surfaces read - the desktop/mobile toast fires once
+      // from here, the phone renders a banner for as long as it stands.
+      this.castInterrupted = true
+      const connect = useConnectStore()
+      const where = connect.activeTargets.map((t) => t.name).join(', ')
+      emitter.emit('toast', {
+        level: 'error',
+        title: i18n.global.t('connect.interruptedTitle'),
+        message: where
+          ? i18n.global.t('connect.interruptedOn', { device: where })
+          : i18n.global.t('connect.interrupted'),
+        clickable: true,
+        timeoutMs: 45000,
+        onClick: () => {
+          void this.resumeAfterInterruption().catch(() => {
+            emitter.emit('toast', [
+              'error',
+              i18n.global.t('connect.interruptedTitle'),
+              i18n.global.t('connect.interruptedResumeFailed'),
+            ])
+          })
+        },
+      })
+    },
+
+    /** Pick playback back up after castInterrupted. Shared by the toast on
+     * desktop/mobile and the phone remote's banner, so the flag is cleared
+     * in exactly one place however the request arrived. */
+    async resumeAfterInterruption(): Promise<void> {
+      await connectPlayback.resumeInterrupted()
+      this.castInterrupted = false
+    },
+
     async castTo(targets: ConnectDeviceRef[], force = false): Promise<void> {
+      // Any deliberate dispatch supersedes a pending interruption - whatever
+      // was interrupted is not what is about to play.
+      this.castInterrupted = false
       const connect = useConnectStore()
       // Captured before either play() attempt (including a takeover retry)
       // — connect's /play always starts the device playing immediately,

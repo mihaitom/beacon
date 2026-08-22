@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useLibraryStore } from '../library'
 import { useConnectStore } from '../connect'
 import { usePlaybackStore } from '../playback'
+import { emitter } from '@/emitter'
 import * as connectPlayback from '@/services/connect/playback'
 import type { PlayResponse } from '@/services/connect/types'
 import { makeSong, makeStatus } from './fixtures'
@@ -13,6 +14,61 @@ import { makeSong, makeStatus } from './fixtures'
 vi.mock('@/services/connect/playback', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/connect/playback')>()
   return { ...actual, play: vi.fn() }
+})
+
+describe('cast interruption', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('raises a toast offering to resume, rather than resuming by itself', async () => {
+    /** Beacon cannot tell a device dropping out on its own apart from
+     * someone pressing stop on the speaker — both end in a clean FIN with
+     * the device reporting STOPPED and TransportStatus unchanged. So it
+     * asks instead of guessing. */
+    const playback = usePlaybackStore()
+    const toasts: unknown[] = []
+    emitter.on('toast', (t) => toasts.push(t))
+    const resumeSpy = vi.spyOn(connectPlayback, 'resumeInterrupted').mockResolvedValue(undefined)
+
+    playback.notifyCastInterrupted()
+
+    expect(resumeSpy).not.toHaveBeenCalled()
+    expect(toasts).toHaveLength(1)
+    const toast = toasts[0] as { clickable: boolean; timeoutMs: number; onClick: () => void }
+    expect(toast.clickable).toBe(true)
+    // Long enough to notice a question, read it and act on it.
+    expect(toast.timeoutMs).toBeGreaterThan(12_000)
+
+    toast.onClick()
+    expect(resumeSpy).toHaveBeenCalledOnce()
+    emitter.all.clear()
+  })
+
+  it('keeps the interruption as state so the phone remote can see it too', async () => {
+    /** The remote protocol pushes debounced snapshots, so a toast alone
+     * would never reach the phone - it renders a banner off this flag. */
+    const playback = usePlaybackStore()
+    emitter.on('toast', () => {})
+
+    playback.notifyCastInterrupted()
+    expect(playback.castInterrupted).toBe(true)
+
+    vi.spyOn(connectPlayback, 'resumeInterrupted').mockResolvedValue(undefined)
+    await playback.resumeAfterInterruption()
+    expect(playback.castInterrupted).toBe(false)
+    emitter.all.clear()
+  })
+
+  it('drops a pending interruption when playback is dispatched somewhere else', async () => {
+    const playback = usePlaybackStore()
+    playback.castInterrupted = true
+    vi.spyOn(useConnectStore(), 'claimDevices').mockResolvedValue()
+
+    await playback.castTo([])
+
+    expect(playback.castInterrupted).toBe(false)
+  })
 })
 
 describe('reconcileFromStatus / adoptCastQueue', () => {

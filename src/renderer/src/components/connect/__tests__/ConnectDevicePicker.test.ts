@@ -219,22 +219,7 @@ describe('ConnectDevicePicker', () => {
     const wrapper = mountPicker()
     expect(wrapper.text()).not.toContain('Stop all')
 
-    connect.status = {
-      current_song: null,
-      queue: [],
-      current_song_index: -1,
-      original_queue: [],
-      shuffle: false,
-      repeat_mode: 'off',
-      elapsed: 0,
-      ended: false,
-      paused: false,
-      radio: null,
-      streaming: false,
-      targets: [{ name: 'Kitchen', type: 'sonos' }],
-      total_songs: 0,
-      displaced: false,
-    }
+    connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
     await wrapper.vm.$nextTick()
     const stopAllSpy = vi.spyOn(connect, 'stopAll').mockResolvedValue()
 

@@ -1,5 +1,5 @@
-import { login, getStoredPassword, setStoredPassword, clearStoredPassword, connectEvents, fetchInitialState } from './js/api.js';
-import { setSnapshot, setConnected } from './js/state.js';
+import { login, getStoredPassword, setStoredPassword, clearStoredPassword, connectEvents, fetchInitialState, sendCommand } from './js/api.js';
+import { setSnapshot, setConnected, subscribe } from './js/state.js';
 import { startRouter } from './js/router.js';
 
 import './js/views/now-playing.js';
@@ -24,6 +24,20 @@ if ('serviceWorker' in navigator) {
 const loginScreen = document.getElementById('login-screen');
 const appScreen = document.getElementById('app-screen');
 const disconnectedBanner = document.getElementById('disconnected-banner');
+const interruptedBanner = document.getElementById('interrupted-banner');
+
+// Nothing resumes on its own: from the server's side a speaker that stopped
+// by itself and one somebody stopped are indistinguishable, so this asks
+// rather than guesses. Mirrors the toast the desktop and mobile web UI raise
+// for the same snapshot field.
+interruptedBanner.addEventListener('click', () => {
+  interruptedBanner.classList.add('hidden');
+  sendCommand('resume-interrupted');
+});
+
+subscribe((s) => {
+  interruptedBanner.classList.toggle('hidden', !s.snapshot.interrupted);
+});
 
 function consumePairingLink() {
   const hash = location.hash;

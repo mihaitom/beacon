@@ -7,6 +7,7 @@ Sub-modules:
   plex      PlexClient (Plex API)
 """
 
+from . import http_client
 from .base import MediaClient, Track
 from .jellyfin import JellyfinClient
 from .plex import PlexClient
@@ -60,5 +61,6 @@ __all__ = [
     "SubsonicClient",
     "Track",
     "apply_image_cache_control",
+    "http_client",
     "server_type_name",
 ]

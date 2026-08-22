@@ -126,6 +126,13 @@ export async function resume(): Promise<void> {
   await fetchConnect('/resume', { method: 'POST' })
 }
 
+/** Pick playback back up after a cast device dropped out on its own. Not
+ * the same as resume(), which un-pauses: nothing here is paused, the stream
+ * simply ended and the device stopped. */
+export async function resumeInterrupted(): Promise<void> {
+  await fetchConnect('/resume-interrupted', { method: 'POST' })
+}
+
 export async function seek(position: number): Promise<void> {
   await fetchConnect('/seek', { method: 'POST', body: { position } })
 }

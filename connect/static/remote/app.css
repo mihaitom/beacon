@@ -122,6 +122,20 @@ input {
   z-index: 100;
 }
 
+/* An actionable banner — the interruption one offers to resume rather than
+ * just reporting, so it has to look pressable and take a tap. */
+.banner-action {
+  display: block;
+  width: 100%;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.banner-action:active {
+  filter: brightness(0.9);
+}
+
 /* ── App bar ── */
 /* Mirrors src/renderer/src/layouts/MobileLayout.vue's own <v-app-bar> —
  * same lighthouse mark + wordmark, same chrome/hairline tokens, so this

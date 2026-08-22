@@ -27,6 +27,7 @@ from .playback import (
     POSITION_RESYNC_INTERVAL,
     POSITION_RESYNC_THRESHOLD,
     _apply_position_offset,
+    _current_reconnect_args,
     _resync_position_periodically,
 )
 
@@ -128,6 +129,34 @@ async def _maybe_autoplay_topup(session: SessionState) -> None:
     logger.info(f"[stream] Autoplay topped up the queue with {len(fresh_ids)} song(s)")
 
 
+async def _resolve_track(session: SessionState, track_id: str, context: str):
+    """Look a queued track up, tolerating a brief media-server hiccup.
+
+    Auto-advance used to give up on the first failure, which meant a
+    transient error — a DNS lookup for the media server failing for a
+    moment, observed on beacon-dev 2026-08-22 — ended playback outright
+    with a full queue still waiting. "The next track cannot be resolved
+    right now" and "there is nothing left to play" are very different
+    things, and only the second one should stop the music.
+
+    Deliberately a small, bounded number of attempts: this runs while
+    holding session.play_lock, and a genuinely unavailable media server
+    must not stall every other playback handler behind it.
+    """
+    for attempt in range(_TRACK_LOOKUP_ATTEMPTS):
+        try:
+            return await asyncio.to_thread(session.media.get_track, track_id)
+        except Exception as e:
+            last = attempt == _TRACK_LOOKUP_ATTEMPTS - 1
+            logger.warning(
+                f"[stream] {context}: track {track_id} not found "
+                f"(attempt {attempt + 1}/{_TRACK_LOOKUP_ATTEMPTS}): {e}"
+            )
+            if not last:
+                await asyncio.sleep(_TRACK_LOOKUP_RETRY_SECONDS)
+    return None
+
+
 async def _advance_or_end(session: SessionState, my_generation: int) -> None:
     """What happens when a track finishes — split out from _fire_track_end()
     below purely so it's directly testable, same reasoning as
@@ -163,11 +192,14 @@ async def _advance_or_end(session: SessionState, my_generation: int) -> None:
 
     if next_index < len(st.queue) and st.active_delivery:
         next_track_id = st.queue[next_index]
-        try:
-            next_track = session.media.get_track(next_track_id)
-        except Exception as e:
-            logger.warning(f"[stream] Auto-advance: track {next_track_id} not found: {e}")
-            next_track = None
+        # to_thread, like every other session.media call around here: these
+        # adapters are synchronous HTTP clients, so calling one directly
+        # blocks the whole event loop — and with it every open /stream
+        # socket — for as long as the request takes. Usually milliseconds
+        # and invisible; measured on beacon-dev 2026-08-22 at 4.71s when
+        # DNS for the media server went sour, which is well into "the
+        # device runs out of buffered audio" territory.
+        next_track = await _resolve_track(session, next_track_id, "Auto-advance")
         if next_track is not None:
             dispatched = await _dispatch_queued_track(
                 session, st.active_delivery, next_track, st.current_track_gain
@@ -202,6 +234,14 @@ async def _advance_or_end(session: SessionState, my_generation: int) -> None:
 # resumes), so erring wide here costs a few extra seconds of "not
 # streaming" being displayed at worst, not a stuck session.
 STREAM_DISCONNECT_GRACE_SECONDS = 10.0
+
+
+# How hard to try resolving the next queued track before concluding there
+# is nothing to play — see _resolve_track(). Short and few: this runs under
+# play_lock, so the total is bounded well below the buffer a casting device
+# is holding at that point.
+_TRACK_LOOKUP_ATTEMPTS = 3
+_TRACK_LOOKUP_RETRY_SECONDS = 1.0
 
 
 @dataclass(frozen=True)
@@ -346,12 +386,93 @@ async def _mark_disconnected_if_not_reconnected(
         and not st.clock.is_paused
     ):
         detail = f" | {snapshot.describe()}" if snapshot else ""
-        logger.warning(
-            f"[stream] No reconnect within {STREAM_DISCONNECT_GRACE_SECONDS:.0f}s "
-            f"of a dropped connection — marking not streaming{detail}"
+        # error, not warning: playback the user asked for has stopped and
+        # nothing about it was requested. Recovery below may well paper over
+        # it, which is exactly why the log must still say plainly that it
+        # happened - a silent auto-recovery would hide the one event worth
+        # investigating.
+        logger.error(
+            f"[stream] Cast device dropped its connection and did not come back "
+            f"within {STREAM_DISCONNECT_GRACE_SECONDS:.0f}s{detail}"
         )
         st.is_streaming = False
-        await session.event_bus.broadcast(build_status_dict(session))
+        # interrupted=True marks this particular streaming->false transition
+        # as "nobody asked for this", which is what lets the frontend offer
+        # to pick playback back up instead of just going quiet. Beacon
+        # deliberately does not resume on its own: a device stopping by
+        # itself and a person pressing stop on the speaker are
+        # indistinguishable from here (both end in a clean FIN with
+        # TransportState=STOPPED and TransportStatus unchanged), so guessing
+        # would sometimes restart music somebody had just silenced.
+        await session.event_bus.broadcast(build_status_dict(session, interrupted=True))
+
+
+async def _resume_after_interruption(session: SessionState) -> bool:
+    """Re-dispatch the current track to the same target, from where the
+    clock got to.
+
+    The device stopped without anything asking it to, and beacon's only
+    reaction so far was to mark the session not-streaming and go quiet - the
+    music simply ended and stayed ended. Whatever makes these speakers stop
+    has resisted a full day of investigation (see docs/playback-bugs.md; the
+    cause is outside this codebase), so the useful thing left to do is to
+    stop letting it end the session.
+
+    Called only when someone asks for it - the toast the interrupted
+    broadcast raises in the frontend. Returns True if a fresh stream was
+    dispatched.
+
+    Seeks to the position the clock is already at rather than restarting the
+    track: clock.seek_to() sets the offset the new connection's `-ss` reads
+    and bumps play_generation, which is also what retires the resync task
+    belonging to the connection that just died. This is the same path /seek
+    and /resume take, deliberately - a second way to reconnect a stream is
+    the last thing this subsystem needs.
+    """
+    st = session.state
+    if not st.active_delivery or st.current_track is None:
+        return False
+
+    position = st.clock.elapsed()
+    logger.info(f"[stream] Resuming after an interruption from {position:.1f}s")
+    st.clock.seek_to(position)
+    try:
+        await st.active_delivery.play(*_current_reconnect_args(session))
+    except Exception as e:
+        logger.error(f"[stream] Resume-after-interruption failed: {e}", exc_info=True)
+        return False
+
+    asyncio.create_task(
+        _apply_position_offset(session, st.active_delivery, st.clock.play_generation)
+    )
+    asyncio.create_task(
+        _resync_position_periodically(session, st.active_delivery, st.clock.play_generation)
+    )
+    st.is_streaming = True
+    await session.event_bus.broadcast(build_status_dict(session))
+    return True
+
+
+@router.post("/resume-interrupted", dependencies=[Depends(require_token)])
+async def resume_interrupted(session: SessionState = Depends(get_session)):
+    """Pick playback back up after a device dropped out on its own.
+
+    Raised by the toast the `interrupted` broadcast produces, so this is an
+    explicit "yes, carry on" from a person - which is exactly the signal
+    beacon cannot derive for itself (see _mark_disconnected_if_not_reconnected).
+
+    Serialized on play_lock like every other handler that re-dispatches
+    playback, so a resume landing at the same moment as a /play or /stop
+    cannot interleave with it.
+    """
+    async with session.play_lock:
+        if session.state.is_streaming:
+            # Something already picked it back up - the device reconnected on
+            # its own, or another client resumed first. Not an error.
+            return {"resumed": False, "reason": "already streaming"}
+        if not await _resume_after_interruption(session):
+            return {"resumed": False, "reason": "nothing to resume"}
+    return {"resumed": True}
 
 
 @router.head("/stream")

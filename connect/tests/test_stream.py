@@ -10,10 +10,13 @@ correct position.
 
 import asyncio
 import logging
+import time
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
+import routes.stream as stream_routes
+from core.session import build_status_dict
 from core.streamer import FALLBACK_FORMAT, OutputFormat
 from delivery import ChromecastDelivery
 from media import Track
@@ -22,6 +25,8 @@ from routes.stream import (
     _advance_or_end,
     _dispatch_queued_track,
     _mark_disconnected_if_not_reconnected,
+    _resolve_track,
+    _resume_after_interruption,
     audio_stream,
 )
 
@@ -602,6 +607,162 @@ async def test_is_streaming_does_not_rebroadcast_when_already_true(client, defau
     assert q.empty()
 
 
+async def test_a_real_drop_marks_the_broadcast_as_an_interruption(default_session, monkeypatch):
+    """The frontend can only offer to pick playback back up if it can tell
+    this streaming->false transition apart from an ordinary stop. Beacon
+    deliberately does not resume by itself: a device stopping on its own and
+    someone pressing stop on the speaker look identical from here."""
+    monkeypatch.setattr("routes.stream.STREAM_DISCONNECT_GRACE_SECONDS", 0.01)
+    default_session.state.is_streaming = True
+    default_session.state.active_stream_connections = 0
+    q = default_session.event_bus.subscribe()
+
+    await _mark_disconnected_if_not_reconnected(
+        default_session, my_generation=default_session.state.clock.play_generation,
+    )
+
+    payload = q.get_nowait()
+    assert payload["interrupted"] is True
+    assert payload["streaming"] is False
+
+
+async def test_an_ordinary_broadcast_is_not_marked_as_an_interruption(default_session):
+    payload = build_status_dict(default_session)
+    assert payload["interrupted"] is False
+
+
+async def test_resume_after_interruption_redispatches_from_the_current_position(
+    default_session, monkeypatch,
+):
+    """Re-dispatch, not restart: the clock kept running while the device was
+    silent, and seek_to() is what makes the fresh connection's -ss pick up
+    there. It also bumps play_generation, retiring the resync task that
+    belonged to the connection that died."""
+    delivery = MagicMock()
+    delivery.play = AsyncMock()
+    default_session.state.active_delivery = delivery
+    default_session.state.current_track = MagicMock(duration=300)
+    default_session.state.clock.start(0.0)
+    monkeypatch.setattr("routes.stream._current_reconnect_args", lambda s: ("url", "t", "a", None, 300.0, "", "audio/mpeg"))
+
+    before = default_session.state.clock.play_generation
+    assert await _resume_after_interruption(default_session) is True
+
+    delivery.play.assert_awaited_once()
+    assert default_session.state.clock.play_generation != before
+    assert default_session.state.is_streaming is True
+
+
+async def test_resume_after_interruption_does_nothing_without_a_target(default_session):
+    default_session.state.active_delivery = None
+    assert await _resume_after_interruption(default_session) is False
+
+
+async def test_resume_after_interruption_reports_a_failed_dispatch(default_session, monkeypatch):
+    """The device may be genuinely gone by the time someone clicks. That is
+    a normal outcome, not a 500."""
+    delivery = MagicMock()
+    delivery.play = AsyncMock(side_effect=OSError("unreachable"))
+    default_session.state.active_delivery = delivery
+    default_session.state.current_track = MagicMock(duration=300)
+    monkeypatch.setattr("routes.stream._current_reconnect_args", lambda s: ("url", "t", "a", None, 300.0, "", "audio/mpeg"))
+
+    assert await _resume_after_interruption(default_session) is False
+
+
+def test_resume_interrupted_endpoint_reports_when_there_is_nothing_to_resume(client):
+    r = client.post("/resume-interrupted")
+    assert r.status_code == 200
+    assert r.json() == {"resumed": False, "reason": "nothing to resume"}
+
+
+def test_resume_interrupted_endpoint_is_a_no_op_while_already_streaming(client, default_session):
+    """Two clients can both see the toast, and the device may reconnect on
+    its own in between. Whoever is second must not re-dispatch on top of a
+    stream that is already running."""
+    default_session.state.is_streaming = True
+
+    r = client.post("/resume-interrupted")
+
+    assert r.json() == {"resumed": False, "reason": "already streaming"}
+
+
+def test_resume_interrupted_endpoint_dispatches(client, default_session, monkeypatch):
+    async def _ok(_session):
+        return True
+
+    monkeypatch.setattr("routes.stream._resume_after_interruption", _ok)
+
+    assert client.post("/resume-interrupted").json() == {"resumed": True}
+
+
+# ── _resolve_track ───────────────────────────────────────────────────────────
+
+
+async def test_resolve_track_retries_a_transient_failure(default_session, monkeypatch):
+    """Regression test (2026-08-22): a momentary media-server failure — DNS
+    for it returning EAI_AGAIN while the library was under load — made
+    auto-advance give up and end playback with a full queue still waiting.
+    "Cannot resolve it right now" is not "there is nothing left to play"."""
+    monkeypatch.setattr("routes.stream._TRACK_LOOKUP_RETRY_SECONDS", 0)
+    track = MagicMock()
+    calls = []
+
+    def _flaky(track_id):
+        calls.append(track_id)
+        if len(calls) < 2:
+            raise OSError("[Errno -3] Try again")
+        return track
+
+    default_session.media.get_track = _flaky
+
+    assert await _resolve_track(default_session, "abc", "Auto-advance") is track
+    assert len(calls) == 2
+
+
+async def test_resolve_track_gives_up_after_a_bounded_number_of_attempts(
+    default_session, monkeypatch,
+):
+    """It runs under play_lock, so a genuinely unreachable media server must
+    not stall every other playback handler behind an unbounded retry."""
+    monkeypatch.setattr("routes.stream._TRACK_LOOKUP_RETRY_SECONDS", 0)
+    calls = []
+
+    def _always_fails(track_id):
+        calls.append(track_id)
+        raise OSError("[Errno -3] Try again")
+
+    default_session.media.get_track = _always_fails
+
+    assert await _resolve_track(default_session, "abc", "Auto-advance") is None
+    assert len(calls) == stream_routes._TRACK_LOOKUP_ATTEMPTS
+
+
+async def test_resolve_track_does_not_block_the_event_loop(default_session):
+    """The lookup is a synchronous HTTP client call; run inline it freezes
+    every open /stream socket for the length of the request. Measured at
+    4.71s live before this was moved onto a thread."""
+    started = asyncio.Event()
+
+    def _slow(track_id):
+        started.set()
+        time.sleep(0.2)
+        return MagicMock()
+
+    default_session.media.get_track = _slow
+    lookup = asyncio.create_task(_resolve_track(default_session, "abc", "ctx"))
+    await started.wait()
+
+    # The loop is still responsive while the lookup is in flight — this
+    # await would never resume if get_track() were called inline.
+    ticked = False
+    for _ in range(5):
+        await asyncio.sleep(0)
+        ticked = True
+    assert ticked
+    await lookup
+
+
 # ── _mark_disconnected_if_not_reconnected ────────────────────────────────────
 # Regression coverage for a real prod bug (2026-08-21): a Sonos speaker
 # dropping its GET /stream connection mid-track and never reconnecting left
@@ -648,7 +809,7 @@ async def test_a_real_drop_logs_the_captured_snapshot(default_session, monkeypat
     default_session.state.is_streaming = True
     default_session.state.active_stream_connections = 0
 
-    with caplog.at_level(logging.WARNING, logger="connect.stream"):
+    with caplog.at_level(logging.ERROR, logger="connect.stream"):
         await _mark_disconnected_if_not_reconnected(
             default_session,
             my_generation=default_session.state.clock.play_generation,
@@ -656,7 +817,7 @@ async def test_a_real_drop_logs_the_captured_snapshot(default_session, monkeypat
         )
 
     msg = "\n".join(r.message for r in caplog.records)
-    assert "No reconnect within" in msg
+    assert "did not come back" in msg
     assert "blocked_for=41.50s" in msg
     assert "loop_lag_30s=2.25s" in msg
     assert "position=270.1s" in msg
@@ -674,7 +835,7 @@ async def test_a_pause_does_not_log_a_drop(default_session, monkeypatch, caplog)
     default_session.state.active_stream_connections = 0
     default_session.state.clock.pause(270.1)
 
-    with caplog.at_level(logging.WARNING, logger="connect.stream"):
+    with caplog.at_level(logging.ERROR, logger="connect.stream"):
         await _mark_disconnected_if_not_reconnected(
             default_session,
             my_generation=default_session.state.clock.play_generation,
@@ -692,13 +853,13 @@ async def test_the_grace_period_still_works_without_a_snapshot(default_session, 
     default_session.state.is_streaming = True
     default_session.state.active_stream_connections = 0
 
-    with caplog.at_level(logging.WARNING, logger="connect.stream"):
+    with caplog.at_level(logging.ERROR, logger="connect.stream"):
         await _mark_disconnected_if_not_reconnected(
             default_session, my_generation=default_session.state.clock.play_generation,
         )
 
     assert default_session.state.is_streaming is False
-    assert "No reconnect within" in "\n".join(r.message for r in caplog.records)
+    assert "did not come back" in "\n".join(r.message for r in caplog.records)
 
 
 async def test_does_not_mark_not_streaming_while_another_connection_is_still_open(

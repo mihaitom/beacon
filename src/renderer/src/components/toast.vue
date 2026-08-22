@@ -7,6 +7,8 @@
       :class="[toast.level, { clickable: toast.clickable }]"
       :style="{ zIndex: 9999 + index }"
       @click="handleToastClick(toast)"
+      @mouseenter="pauseDismiss(toast)"
+      @mouseleave="resumeDismiss(toast)"
     >
       <div class="toast-icon">
         <v-icon size="16">{{ getIcon(toast.level) }}</v-icon>
@@ -28,7 +30,15 @@ import type { ToastTuple } from '@/types/events'
 import type Toast from '@/types/toast'
 import { defineComponent } from 'vue'
 
-type ToastInternal = Toast & { id: number; visible: boolean }
+type ToastInternal = Toast & {
+  id: number
+  visible: boolean
+  timer: ReturnType<typeof setTimeout> | null
+}
+
+/** Long enough to read a notification in passing. A toast that asks a
+ * question should pass its own, longer `timeoutMs` - see Toast.timeoutMs. */
+const DEFAULT_TIMEOUT_MS = 12000
 
 export default defineComponent({
   name: 'ToastSnackbar',
@@ -68,18 +78,42 @@ export default defineComponent({
         ...toast,
         id,
         visible: true,
+        timer: null,
       }
       this.toasts.push(newToast)
 
       this.logEvent(toast)
-      // Auto-dismiss
-      setTimeout(() => {
-        this.removeToast(id)
-      }, 12000)
+      this.startDismiss(newToast)
+    },
+    startDismiss(toast: ToastInternal) {
+      toast.timer = setTimeout(
+        () => this.removeToast(toast.id),
+        toast.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      )
+    },
+    /** Hovering means someone is reading it - or reaching for it, since a
+     * clickable toast is the target of the very gesture that would otherwise
+     * make it disappear. */
+    pauseDismiss(toast: ToastInternal) {
+      if (toast.timer) {
+        clearTimeout(toast.timer)
+        toast.timer = null
+      }
+    },
+    /** Restarts the full duration rather than resuming what was left of it.
+     * Someone who just read a toast and moved the mouse away should get a
+     * fair chance to come back to it, and a few extra seconds on screen
+     * costs nothing. */
+    resumeDismiss(toast: ToastInternal) {
+      if (!toast.timer) this.startDismiss(toast)
     },
     removeToast(id: number) {
       const toast = this.toasts.find((t) => t.id === id)
       if (toast) {
+        // Without this a dismissed toast's timer keeps running and fires
+        // against an id that is gone - harmless today, but it also means a
+        // paused toast could never be cleaned up properly.
+        if (toast.timer) clearTimeout(toast.timer)
         toast.visible = false
         this.toasts = this.toasts.filter((t) => t.id !== id)
       }

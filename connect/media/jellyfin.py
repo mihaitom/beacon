@@ -9,8 +9,7 @@ import secrets
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
-import httpx
-
+from . import http_client
 from .base import Track
 
 logger = logging.getLogger("connect.jellyfin")
@@ -60,7 +59,7 @@ def authenticate_by_name(url: str, username: str, password: str) -> dict:
     that server type. Raises httpx.HTTPStatusError on rejected credentials
     (4xx) — callers turn that into a clean 401."""
     base = url.rstrip("/")
-    response = httpx.post(
+    response = http_client.post(
         f"{base}/Users/AuthenticateByName",
         json={"Username": username, "Pw": password},
         headers=_client_auth_header(),
@@ -82,7 +81,7 @@ def initiate_quick_connect(url: str) -> dict:
     routes/jellyfin_auth.py turns that into a clean error for the login
     screen rather than a generic 500."""
     base = url.rstrip("/")
-    response = httpx.post(
+    response = http_client.post(
         f"{base}/QuickConnect/Initiate",
         headers=_client_auth_header(),
         timeout=10,
@@ -97,7 +96,7 @@ def check_quick_connect_authenticated(url: str, secret: str) -> bool:
     (see initiate_quick_connect()) — approval itself happens entirely on
     another device; this just reads the current state."""
     base = url.rstrip("/")
-    response = httpx.get(
+    response = http_client.get(
         f"{base}/QuickConnect/Connect",
         params={"secret": secret},
         headers=_client_auth_header(),
@@ -116,7 +115,7 @@ def authenticate_with_quick_connect(url: str, secret: str) -> dict:
     has it from the login form) — Quick Connect never collects one
     directly, so this is the only place to get it from."""
     base = url.rstrip("/")
-    response = httpx.post(
+    response = http_client.post(
         f"{base}/Users/AuthenticateWithQuickConnect",
         json={"Secret": secret},
         headers=_client_auth_header(),
@@ -156,7 +155,7 @@ class JellyfinClient:
 
     def _get(self, path: str, **params) -> dict:
         url = f"{self.internal_url}{path}"
-        response = httpx.get(
+        response = http_client.get(
             url, headers=self._auth_header(), params=params, timeout=10
         )
         response.raise_for_status()
@@ -231,7 +230,7 @@ class JellyfinClient:
         requires it (unlike /System/Info/Public, which any anonymous caller
         can reach), so this can't be satisfied by an unrelated/garbage token."""
         try:
-            response = httpx.get(
+            response = http_client.get(
                 f"{self.internal_url}/Users/Me",
                 headers=self._auth_header(),
                 timeout=10,

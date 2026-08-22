@@ -3,7 +3,7 @@
 import httpx
 import pytest
 
-from media import JellyfinClient
+from media import JellyfinClient, http_client
 from media.jellyfin import (
     authenticate_by_name,
     authenticate_with_quick_connect,
@@ -100,7 +100,7 @@ def test_get_track_parses_item(monkeypatch):
         assert headers == {"X-Emby-Token": "tok"}
         return httpx.Response(200, json=item, request=httpx.Request("GET", url))
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     track = _client().get_track("abc")
     assert track.id == "abc"
     assert track.title == "Song Title"
@@ -117,7 +117,7 @@ def test_get_track_falls_back_to_album_artist(monkeypatch):
     def fake_get(url, **kwargs):
         return httpx.Response(200, json=item, request=httpx.Request("GET", url))
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     track = _client().get_track("x")
     assert track.artist == "AA"
     assert track.duration == 0
@@ -173,7 +173,7 @@ def test_get_similar_songs2_parses_instant_mix_items(monkeypatch):
         assert params["Limit"] == 5
         return httpx.Response(200, json=data, request=httpx.Request("GET", url))
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     tracks = _client().get_similar_songs2("seed-1", count=5)
 
     assert len(tracks) == 1
@@ -190,7 +190,9 @@ def test_get_similar_songs2_falls_back_to_album_artist(monkeypatch):
         ]
     }
     monkeypatch.setattr(
-        httpx, "get", lambda *a, **k: httpx.Response(200, json=data, request=httpx.Request("GET", a[0]))
+        http_client,
+        "get",
+        lambda *a, **k: httpx.Response(200, json=data, request=httpx.Request("GET", a[0])),
     )
     tracks = _client().get_similar_songs2("seed-1")
     assert tracks[0].artist == "AA"
@@ -223,7 +225,7 @@ def test_ping_hits_authenticated_endpoint_with_token(monkeypatch):
         )
 
     monkeypatch.setattr(JellyfinClient, "ping", _REAL_PING)
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     c = _client(url="http://proxy:9180", internal_url="http://jf:8096", token="tok")
     assert c.ping() is True
     assert captured["url"] == "http://jf:8096/Users/Me"
@@ -235,7 +237,7 @@ def test_ping_returns_false_on_error(monkeypatch):
         raise httpx.ConnectError("nope")
 
     monkeypatch.setattr(JellyfinClient, "ping", _REAL_PING)
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     assert _client().ping() is False
 
 
@@ -244,7 +246,7 @@ def test_ping_returns_false_on_invalid_token(monkeypatch):
         return httpx.Response(401, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(JellyfinClient, "ping", _REAL_PING)
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     assert _client(token="wrong").ping() is False
 
 
@@ -263,7 +265,7 @@ def test_authenticate_by_name_returns_token_and_user_id(monkeypatch):
             request=httpx.Request("POST", url),
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(http_client, "post", fake_post)
     result = authenticate_by_name("http://jf:8096/", "alice", "secret")
     assert result == {"token": "tok-abc", "user_id": "user-guid-1"}
 
@@ -272,7 +274,7 @@ def test_authenticate_by_name_raises_on_rejected_credentials(monkeypatch):
     def fake_post(url, **kwargs):
         return httpx.Response(401, request=httpx.Request("POST", url))
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(http_client, "post", fake_post)
     with pytest.raises(httpx.HTTPStatusError):
         authenticate_by_name("http://jf:8096", "alice", "wrong")
 
@@ -292,7 +294,7 @@ def test_authenticate_by_name_device_id_stable_across_calls(monkeypatch, tmp_pat
             request=httpx.Request("POST", url),
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(http_client, "post", fake_post)
     authenticate_by_name("http://jf:8096", "a", "b")
     authenticate_by_name("http://jf:8096", "a", "b")
     assert captured[0] == captured[1]
@@ -311,7 +313,7 @@ def test_initiate_quick_connect_returns_secret_and_code(monkeypatch):
             request=httpx.Request("POST", url),
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(http_client, "post", fake_post)
     result = initiate_quick_connect("http://jf:8096/")
     assert result == {"secret": "sec-1", "code": "123456"}
 
@@ -320,7 +322,7 @@ def test_initiate_quick_connect_raises_when_disabled(monkeypatch):
     def fake_post(url, **kwargs):
         return httpx.Response(400, request=httpx.Request("POST", url))
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(http_client, "post", fake_post)
     with pytest.raises(httpx.HTTPStatusError):
         initiate_quick_connect("http://jf:8096")
 
@@ -333,7 +335,7 @@ def test_check_quick_connect_authenticated_true(monkeypatch):
             200, json={"Authenticated": True}, request=httpx.Request("GET", url)
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     assert check_quick_connect_authenticated("http://jf:8096", "sec-1") is True
 
 
@@ -343,7 +345,7 @@ def test_check_quick_connect_authenticated_false(monkeypatch):
             200, json={"Authenticated": False}, request=httpx.Request("GET", url)
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     assert check_quick_connect_authenticated("http://jf:8096", "sec-1") is False
 
 
@@ -357,7 +359,7 @@ def test_authenticate_with_quick_connect_returns_token_user_id_and_username(monk
             request=httpx.Request("POST", url),
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(http_client, "post", fake_post)
     result = authenticate_with_quick_connect("http://jf:8096", "sec-1")
     assert result == {"token": "tok-xyz", "user_id": "u1", "username": "alice"}
 
@@ -366,6 +368,6 @@ def test_authenticate_with_quick_connect_raises_when_not_yet_approved(monkeypatc
     def fake_post(url, **kwargs):
         return httpx.Response(401, request=httpx.Request("POST", url))
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(http_client, "post", fake_post)
     with pytest.raises(httpx.HTTPStatusError):
         authenticate_with_quick_connect("http://jf:8096", "sec-1")

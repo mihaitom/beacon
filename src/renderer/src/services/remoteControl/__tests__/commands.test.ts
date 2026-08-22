@@ -326,6 +326,25 @@ describe('handleRemoteCommand', () => {
     })
   })
 
+  describe('resume-interrupted', () => {
+    it('picks playback back up when the phone asks, and never on its own', async () => {
+      const playback = usePlaybackStore()
+      const spy = vi.spyOn(playback, 'resumeAfterInterruption').mockResolvedValue()
+
+      await handleRemoteCommand('resume-interrupted', {})
+
+      expect(spy).toHaveBeenCalledOnce()
+    })
+
+    it('logs instead of throwing when the device is gone by the time it is tapped', async () => {
+      vi.spyOn(usePlaybackStore(), 'resumeAfterInterruption').mockRejectedValue(
+        new Error('unreachable'),
+      )
+
+      await expect(handleRemoteCommand('resume-interrupted', {})).resolves.not.toThrow()
+    })
+  })
+
   describe('cast-to-many', () => {
     it('stops all casting when the target list is empty', async () => {
       const connect = useConnectStore()

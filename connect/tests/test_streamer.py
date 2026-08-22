@@ -458,6 +458,34 @@ def test_stream_tracks_kills_the_process_and_reraises_on_an_unexpected_error():
     assert proc.killed is True
 
 
+def test_force_fallback_format_bypasses_the_copy_tier_and_the_probe(monkeypatch):
+    """The A/B switch for the cast-drop investigation (docs/playback-bugs.md):
+    with it set, every track takes the pre-copy-tier path — the shape this
+    backend had before stream-copy existed, and which has never shown the
+    bug. It skips the probe too, since that pipeline never inspected the
+    source either."""
+    monkeypatch.setenv("FORCE_FALLBACK_FORMAT", "1")
+    probe = AsyncMock(side_effect=AssertionError("must not probe"))
+
+    with patch("core.streamer._probe_source", probe):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
+
+    assert fmt is FALLBACK_FORMAT
+    probe.assert_not_called()
+
+
+@pytest.mark.parametrize("value", ["", "0", "no", "off"])
+def test_force_fallback_format_stays_off_unless_explicitly_enabled(value, monkeypatch):
+    """A stray or emptied env var must not silently downgrade everyone's
+    audio quality — this only ever turns on for an explicit yes."""
+    monkeypatch.setenv("FORCE_FALLBACK_FORMAT", value)
+
+    with patch("core.streamer._probe_source", AsyncMock(return_value="flac")):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
+
+    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "flac"]
+
+
 @pytest.mark.parametrize(
     "args,content_type",
     [

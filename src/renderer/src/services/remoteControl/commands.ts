@@ -248,6 +248,18 @@ export async function handleRemoteCommand(
       }
       return
     }
+    case 'resume-interrupted': {
+      // The phone's counterpart to the desktop toast: an explicit "yes,
+      // carry on" from a person, which is exactly the signal beacon cannot
+      // derive for itself (see connect/routes/stream.py's
+      // _mark_disconnected_if_not_reconnected).
+      try {
+        await playback.resumeAfterInterruption()
+      } catch (error) {
+        console.error('[remoteControl] Failed to resume after interruption:', error)
+      }
+      return
+    }
     case 'cast-stop': {
       await connect.stopAll()
       return

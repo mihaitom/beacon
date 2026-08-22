@@ -21,6 +21,7 @@ from urllib.parse import quote
 
 import httpx
 
+from . import http_client
 from .base import Track
 
 logger = logging.getLogger("connect.plex")
@@ -69,7 +70,7 @@ def create_pin() -> dict:
     shown to the user embedded in an app.plex.tv/auth link (see
     routes/plex_auth.py, which builds that URL); `id` is polled with
     check_pin() until the user approves it there."""
-    response = httpx.post(
+    response = http_client.post(
         f"{_PLEX_TV}/api/v2/pins",
         params={"strong": "true"},
         headers=_headers(),
@@ -85,7 +86,7 @@ def check_pin(pin_id: int) -> str | None:
     returns the account's authToken once it has, None while still
     pending. Approval happens entirely in the browser tab the frontend
     opened; this just reads the current state."""
-    response = httpx.get(
+    response = http_client.get(
         f"{_PLEX_TV}/api/v2/pins/{pin_id}",
         headers=_headers(),
         timeout=10,
@@ -102,7 +103,7 @@ def get_account_username(account_token: str) -> str:
     display (SettingsView.vue's account strip, "claimed by" labels
     elsewhere) — login itself doesn't depend on it, so a failure here
     shouldn't fail the login (see the caller's own try/except)."""
-    response = httpx.get(
+    response = http_client.get(
         f"{_PLEX_TV}/api/v2/user",
         headers=_headers(account_token),
         timeout=10,
@@ -161,7 +162,7 @@ def list_resources(account_token: str) -> list[dict]:
     XML-first behavior for that endpoint specifically), while the PIN
     endpoints above — already on /api/v2/* — worked fine. Consistent v2
     usage avoids the same trap resurfacing on a future endpoint."""
-    response = httpx.get(
+    response = http_client.get(
         f"{_PLEX_TV}/api/v2/resources",
         params={"includeHttps": "1"},
         headers=_headers(account_token),
@@ -221,7 +222,7 @@ class PlexClient:
 
     def _get(self, path: str, **params) -> dict:
         url = f"{self.internal_url}{path}"
-        response = httpx.get(url, headers=_headers(self.token), params=params, timeout=10)
+        response = http_client.get(url, headers=_headers(self.token), params=params, timeout=10)
         response.raise_for_status()
         return response.json() if response.content else {}
 
@@ -335,7 +336,7 @@ class PlexClient:
         this specific server — /library/sections requires a valid token,
         unlike an anonymous-reachable endpoint."""
         try:
-            response = httpx.get(
+            response = http_client.get(
                 f"{self.internal_url}/library/sections",
                 headers=_headers(self.token),
                 timeout=10,

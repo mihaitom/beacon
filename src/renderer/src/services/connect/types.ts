@@ -190,6 +190,12 @@ export interface ConnectStatus {
   // playback off to local speakers, since the user didn't ask to stop
   // casting, another session just took the device.
   displaced: boolean
+  // True only on the single status tick fired when a cast device dropped its
+  // connection and never came back — see connect/routes/stream.py's
+  // _mark_disconnected_if_not_reconnected(). Distinct from `displaced`: this
+  // one means nobody asked for the stop at all, which is why the frontend
+  // offers to pick playback back up rather than deciding for the user.
+  interrupted: boolean
 }
 
 // One GET /visualizer frame — see connect/core/audio_analysis.py. Only ever

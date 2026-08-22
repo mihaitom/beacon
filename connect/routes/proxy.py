@@ -55,11 +55,25 @@ _ALL_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"]
 # client already does via keep-alive.
 _client: httpx.AsyncClient | None = None
 
+# httpx's defaults (100 connections, but only 20 kept alive, expiring after
+# 5s) are too tight for what this route actually sees. A library view
+# scrolling past hundreds of covers opens far more than 20 at once, so the
+# surplus is closed the moment each request finishes and has to be
+# re-established — DNS lookup and TLS handshake included — for the next one.
+# Sustained scrolling turns that into continuous connection churn, which on
+# beacon-dev 2026-08-22 was enough to overrun the host's DNS stub until it
+# answered EAI_AGAIN (see docs/playback-bugs.md). Keeping many more alive,
+# for much longer than the gap between two scroll bursts, is what makes the
+# pool actually behave like a pool under this workload.
+_LIMITS = httpx.Limits(
+    max_connections=100, max_keepalive_connections=100, keepalive_expiry=120.0
+)
+
 
 def _get_client() -> httpx.AsyncClient:
     global _client
     if _client is None:
-        _client = httpx.AsyncClient(follow_redirects=True, timeout=60)
+        _client = httpx.AsyncClient(follow_redirects=True, timeout=60, limits=_LIMITS)
     return _client
 
 

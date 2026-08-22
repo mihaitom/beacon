@@ -170,7 +170,9 @@ def compute_position(session: SessionState) -> float:
     return elapsed
 
 
-def build_status_dict(session: SessionState, displaced: bool = False) -> dict:
+def build_status_dict(
+    session: SessionState, displaced: bool = False, interrupted: bool = False
+) -> dict:
     """Build the full status payload shared by /status and SSE /events.
 
     `displaced` is only ever True for the single broadcast displace_target()
@@ -178,7 +180,15 @@ def build_status_dict(session: SessionState, displaced: bool = False) -> dict:
     frontend this particular streaming->false transition was a takeover, not
     the user stopping playback themselves, so it should just go quiet
     instead of picking playback back up over local speakers (see
-    playback.ts's connect.$subscribe handler)."""
+    playback.ts's connect.$subscribe handler).
+
+    `interrupted` is the same shape for a different event: the single
+    broadcast fired when a cast device dropped its connection and never came
+    back. It says "this stopped and nobody asked for it" - the frontend turns
+    that into a toast offering to pick playback back up. A one-shot flag on
+    the payload rather than state on the session, deliberately: there is
+    nothing to clear afterwards, and a client connecting later should not be
+    told about an interruption it never witnessed."""
     elapsed = compute_position(session)
     st = session.state
 
@@ -224,6 +234,7 @@ def build_status_dict(session: SessionState, displaced: bool = False) -> dict:
         "targets": targets,
         "total_songs": len(st.queue),
         "displaced": displaced,
+        "interrupted": interrupted,
     }
 
 

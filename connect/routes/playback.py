@@ -518,7 +518,12 @@ async def play_tracks(
         queue_index = req.queue_index if 0 <= req.queue_index < len(req.song_ids) else 0
         track_id = req.song_ids[queue_index]
         try:
-            track = session.media.get_track(track_id)
+            # to_thread: session.media is a synchronous HTTP client, and
+            # calling it inline blocks the event loop — every open /stream
+            # socket included — for the length of the request. Measured at
+            # 4.75s on beacon-dev 2026-08-22 during a media-server DNS
+            # hiccup.
+            track = await asyncio.to_thread(session.media.get_track, track_id)
         except Exception as e:
             logger.warning(f"[play] Track {track_id} not found: {e}")
             return {"error": f"Track not found: {e}"}

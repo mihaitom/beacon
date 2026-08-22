@@ -43,6 +43,7 @@ export function makeStatus(overrides: Partial<ConnectStatus> = {}): ConnectStatu
     targets: [],
     total_songs: 0,
     displaced: false,
+    interrupted: false,
     ...overrides,
   }
 }

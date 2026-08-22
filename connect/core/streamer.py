@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import re
 import time
 from collections.abc import AsyncGenerator, Callable
@@ -118,6 +119,19 @@ _LOSSLESS_REENCODE_CODECS = {"alac", "pcm_s16le", "pcm_s24le", "pcm_s16be", "ape
 _FALLBACK_ARGS = ["-acodec", "libmp3lame", "-ab", "192k", "-ar", "44100", "-f", "mp3"]
 _FALLBACK_CONTENT_TYPE = "audio/mpeg"
 
+# Diagnostic switch for the recurring cast-drop investigation (see
+# docs/playback-bugs.md). Set FORCE_FALLBACK_FORMAT=1 to make every track go
+# through the MP3 192k re-encode, i.e. exactly what this backend did before
+# the stream-copy tiers were added — the shape the simpler upstream it grew
+# out of still uses, and which has never shown the bug.
+#
+# Read per call rather than captured at import so it can be flipped with a
+# container restart instead of a rebuild, which is what makes an A/B over
+# hours of listening practical at all.
+def _fallback_forced() -> bool:
+    return os.getenv("FORCE_FALLBACK_FORMAT", "").strip().lower() in {"1", "true", "yes"}
+
+
 _PROBE_TIMEOUT = 10.0
 _AUDIO_STREAM_RE = re.compile(rb"Stream #\d+:\d+.*?Audio:\s*([a-zA-Z0-9_]+)")
 
@@ -220,6 +234,12 @@ async def resolve_output_format(url: str, gain: float = 1.0) -> OutputFormat:
     all. The lossless-reencode tier below is unaffected either way — it
     already decodes+re-encodes to FLAC, so a volume filter fits into that
     same pipeline for free."""
+    if _fallback_forced():
+        # No probe either: the point is to reproduce the pre-copy-tier
+        # pipeline exactly, and that never inspected the source.
+        logger.info("[ffmpeg] FORCE_FALLBACK_FORMAT set — re-encoding to mp3 192k")
+        return FALLBACK_FORMAT
+
     codec = await _probe_source(url)
     if codec is None:
         return FALLBACK_FORMAT

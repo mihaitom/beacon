@@ -229,6 +229,7 @@ describe('NowPlayingView', () => {
         targets: targets as never,
         total_songs: 0,
         displaced: false,
+        interrupted: false,
       }
     }
   })

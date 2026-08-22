@@ -5,8 +5,7 @@ import logging
 import secrets
 from urllib.parse import parse_qs, urlencode
 
-import httpx
-
+from . import http_client
 from .base import Track
 
 logger = logging.getLogger("connect.subsonic")
@@ -50,7 +49,7 @@ class SubsonicClient:
 
     def _get(self, endpoint: str, **params) -> dict:
         url = f"{self.internal_url}/rest/{endpoint}"
-        response = httpx.get(url, params={**self._auth_params(), **params}, timeout=10)
+        response = http_client.get(url, params={**self._auth_params(), **params}, timeout=10)
         response.raise_for_status()
         data = response.json()
 

@@ -60,7 +60,9 @@ let deviceVolumeCache: number | null = null
 // Vite's partial HMR.
 if (import.meta.hot) {
   import.meta.hot.accept(() => {
-    import.meta.hot!.invalidate('stores/remoteControl.ts holds singleton state that cannot be safely hot-reloaded')
+    import.meta.hot!.invalidate(
+      'stores/remoteControl.ts holds singleton state that cannot be safely hot-reloaded',
+    )
   })
 }
 
@@ -216,6 +218,11 @@ export const useRemoteControlStore = defineStore('remoteControl', {
           queue: playback.queue.map(toRemoteSong),
           queue_index: playback.currentIndex,
           casting: connect.activeTargets,
+          // A cast device dropped out on its own and playback can be picked
+          // back up. State rather than an event, because this channel only
+          // ever pushes snapshots — the phone renders a banner for as long
+          // as it stands, the same condition the desktop toast reports once.
+          interrupted: playback.castInterrupted,
           // Separate from `volume` (always local) rather than overloading
           // it — mirrors PlayerBar.vue's own two distinct sliders
           // (deviceVolume vs playbackStore.volume) exactly, so the phone

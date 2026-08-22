@@ -399,3 +399,17 @@ def test_unpair_existing_returns_success(client, default_session):
             r = client.delete("/pair/airplay/HomePod")
     assert r.status_code == 200
     assert r.json()["success"] is True
+
+
+def test_the_shared_client_keeps_enough_connections_alive_for_a_library_scroll():
+    """Regression guard (2026-08-22): with httpx's defaults only 20 of up to
+    100 connections were kept alive, and only for 5s. Scrolling a library
+    view past hundreds of covers therefore closed and re-opened connections
+    continuously — a DNS lookup and TLS handshake each time — which was
+    enough to overrun the host's DNS stub. A pool that discards most of its
+    connections between requests is not doing its job."""
+    import routes.proxy as proxy_mod
+
+    limits = proxy_mod._LIMITS
+    assert limits.max_keepalive_connections == limits.max_connections
+    assert limits.keepalive_expiry >= 60

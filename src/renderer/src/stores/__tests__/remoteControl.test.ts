@@ -386,6 +386,7 @@ describe('remoteControl store', () => {
         targets: [{ name: 'Kitchen', type: 'sonos' }],
         total_songs: 0,
         displaced: false,
+        interrupted: false,
       }
       const getVolumeSpy = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
       await store.enable()
@@ -441,6 +442,7 @@ describe('remoteControl store', () => {
         targets: [{ name: 'Kitchen', type: 'sonos' }],
         total_songs: 0,
         displaced: false,
+        interrupted: false,
       }
       vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
       await store.enable()

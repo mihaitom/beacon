@@ -3,7 +3,7 @@
 import httpx
 import pytest
 
-from media import PlexClient
+from media import PlexClient, http_client
 from media.plex import (
     _connection_url,
     _pick_connection,
@@ -86,7 +86,7 @@ def test_get_track_parses_item(monkeypatch):
             request=httpx.Request("GET", url),
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     track = _client().get_track("9001")
     assert track.id == "9001"
     assert track.title == "Song Title"
@@ -103,7 +103,7 @@ def test_get_track_raises_when_not_found(monkeypatch):
             200, json={"MediaContainer": {}}, request=httpx.Request("GET", url)
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     with pytest.raises(RuntimeError, match="not found"):
         _client().get_track("missing")
 
@@ -132,7 +132,7 @@ def test_get_similar_songs2_parses_items(monkeypatch):
             request=httpx.Request("GET", url),
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     songs = _client().get_similar_songs2("9001", count=10)
     assert len(songs) == 1
     assert songs[0].id == "9002"
@@ -145,7 +145,7 @@ def test_get_similar_songs2_returns_empty_without_plex_pass(monkeypatch):
         request = httpx.Request("GET", url)
         return httpx.Response(403, request=request)
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     assert _client().get_similar_songs2("9001") == []
 
 
@@ -154,7 +154,7 @@ def test_get_similar_songs2_reraises_other_errors(monkeypatch):
         request = httpx.Request("GET", url)
         return httpx.Response(500, request=request)
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     with pytest.raises(httpx.HTTPStatusError):
         _client().get_similar_songs2("9001")
 
@@ -175,7 +175,7 @@ def test_get_stream_url_resolves_part_key(monkeypatch):
             request=httpx.Request("GET", url),
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     url = _client(url="http://proxy:9180", internal_url="http://plex:32400", token="tok").get_stream_url(
         "9001"
     )
@@ -190,7 +190,7 @@ def test_get_stream_url_raises_when_track_not_found(monkeypatch):
             request=httpx.Request("GET", url),
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     with pytest.raises(RuntimeError, match="not found"):
         _client().get_stream_url("9001")
 
@@ -203,7 +203,7 @@ def test_get_stream_url_raises_without_part(monkeypatch):
             request=httpx.Request("GET", url),
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     with pytest.raises(RuntimeError, match="no playable Part"):
         _client().get_stream_url("9001")
 
@@ -220,7 +220,7 @@ def test_ping_hits_sections_endpoint_with_token(monkeypatch):
         return httpx.Response(200, json={}, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(PlexClient, "ping", _REAL_PING)
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     c = _client(url="http://proxy:9180", internal_url="http://plex:32400", token="tok")
     assert c.ping() is True
     assert captured["url"] == "http://plex:32400/library/sections"
@@ -232,7 +232,7 @@ def test_ping_returns_false_on_error(monkeypatch):
         raise httpx.ConnectError("nope")
 
     monkeypatch.setattr(PlexClient, "ping", _REAL_PING)
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     assert _client().ping() is False
 
 
@@ -247,7 +247,7 @@ def test_create_pin_returns_id_and_code(monkeypatch):
             200, json={"id": 42, "code": "ABCD"}, request=httpx.Request("POST", url)
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(http_client, "post", fake_post)
     assert create_pin() == {"id": 42, "code": "ABCD"}
 
 
@@ -258,7 +258,7 @@ def test_check_pin_returns_none_while_pending(monkeypatch):
             200, json={"authToken": None}, request=httpx.Request("GET", url)
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     assert check_pin(42) is None
 
 
@@ -268,7 +268,7 @@ def test_check_pin_returns_token_once_approved(monkeypatch):
             200, json={"authToken": "acct-tok"}, request=httpx.Request("GET", url)
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     assert check_pin(42) == "acct-tok"
 
 
@@ -305,7 +305,7 @@ def test_get_account_username_prefers_username_field(monkeypatch):
             request=httpx.Request("GET", url),
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     assert get_account_username("acct-tok") == "alice"
 
 
@@ -315,7 +315,7 @@ def test_get_account_username_falls_back_to_title_then_email(monkeypatch):
             200, json={"email": "a@example.com"}, request=httpx.Request("GET", url)
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     assert get_account_username("acct-tok") == "a@example.com"
 
 
@@ -341,7 +341,7 @@ def test_list_resources_filters_to_servers_only(monkeypatch):
             request=httpx.Request("GET", url),
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     servers = list_resources("acct-tok")
     assert servers == [
         {
@@ -377,7 +377,7 @@ def test_list_resources_skips_a_server_with_no_usable_connection(monkeypatch):
             request=httpx.Request("GET", url),
         )
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     servers = list_resources("acct-tok")
 
     assert [s["name"] for s in servers] == ["My Server"]
@@ -387,7 +387,7 @@ def test_list_resources_raises_on_empty_body(monkeypatch):
     def fake_get(url, **kwargs):
         return httpx.Response(200, content=b"", request=httpx.Request("GET", url))
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(http_client, "get", fake_get)
     with pytest.raises(ValueError, match="empty response"):
         list_resources("acct-tok")
 
