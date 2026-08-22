@@ -7,6 +7,7 @@ from core.log_level import is_at_least
 
 from .base import BaseDelivery
 from .chromecast import _ensure_cast_browser, _wait_for_discovery
+from .lazy_import import import_in_thread
 from .dlna import UnsupportedDlnaDevice, _create_dmr_device, _location_cache
 from .sonos import SonosDelivery
 
@@ -182,7 +183,7 @@ class DeliveryManager:
 
 async def discover_sonos() -> list[dict]:
     """Discovers all Sonos devices on the network."""
-    import soco
+    soco = await import_in_thread("soco")
 
     devices = await asyncio.to_thread(lambda: list(soco.discover() or []))
     return [{"name": d.player_name, "ip": d.ip_address} for d in devices]
@@ -210,8 +211,8 @@ async def discover_airplay(verbose: bool = False) -> list[dict]:
     showing for an explicit "Scan again", not the quiet background rescans
     triggered by every popover open or the periodic task in main.py.
     """
-    import pyatv
-    from pyatv.const import Protocol
+    pyatv = await import_in_thread("pyatv")
+    Protocol = (await import_in_thread("pyatv.const")).Protocol
 
     devices = await pyatv.scan(asyncio.get_event_loop(), timeout=10)
     result = []
@@ -266,8 +267,8 @@ async def discover_dlna(verbose: bool = False) -> list[dict]:
     `verbose` logs which Sonos-duplicate entries were skipped — see
     discover_airplay()'s docstring.
     """
-    from async_upnp_client.search import async_search
-    from async_upnp_client.utils import CaseInsensitiveDict
+    async_search = (await import_in_thread("async_upnp_client.search")).async_search
+    CaseInsensitiveDict = (await import_in_thread("async_upnp_client.utils")).CaseInsensitiveDict
 
     responses: dict[str, CaseInsensitiveDict] = {}
 

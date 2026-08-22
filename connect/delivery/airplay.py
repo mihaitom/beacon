@@ -8,6 +8,7 @@ import httpx
 
 from . import credentials as creds_store
 from .base import BaseDelivery
+from .lazy_import import import_in_thread
 
 logger = logging.getLogger("delivery")
 
@@ -33,8 +34,8 @@ class AirPlayDelivery(BaseDelivery):
         self._play_lock = asyncio.Lock()
 
     async def _find_device(self):
-        import pyatv
-        from pyatv.const import Protocol
+        pyatv = await import_in_thread("pyatv")
+        Protocol = (await import_in_thread("pyatv.const")).Protocol
 
         # Lazy import: core/state.py imports delivery, so top-level import would be circular
         from core.state import ctx
@@ -122,7 +123,7 @@ class AirPlayDelivery(BaseDelivery):
         # AirPlay downloads and streams the original file directly (pyatv's
         # own stream_file), it never goes through our ffmpeg /stream proxy
         # that content_type describes (see core/streamer.py).
-        import pyatv
+        pyatv = await import_in_thread("pyatv")
 
         async def _stream():
             try:

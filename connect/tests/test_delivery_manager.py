@@ -1,6 +1,8 @@
 """Tests for DeliveryManager — construction, factories and fan-out."""
 
 import asyncio
+import importlib
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -112,6 +114,67 @@ def test_manager_play_single_sonos_skips_grouping():
 
     grouped.assert_not_awaited()
     s.play.assert_awaited_once()
+
+
+# ── import_in_thread / where the protocol libraries get imported ─────────────
+# Regression tests: every discover_* below used to import its library inline
+# in the coroutine, i.e. on the event loop. Measured in the deployed image
+# on 2026-08-22 — pyatv 0.68s, async_upnp_client 0.22s, soco 0.19s — and a
+# scan starts all of them at once, which showed up as a 1.71s event-loop
+# stall (core/loop_health.py). A scan happens while music is playing, and
+# that window is time a cast device's /stream socket isn't served either.
+
+
+async def test_import_in_thread_runs_off_the_event_loop():
+    import threading
+
+    from delivery.lazy_import import import_in_thread
+
+    where: list[int] = []
+    real_import = importlib.import_module
+
+    def _recording_import(name: str):
+        where.append(threading.get_ident())
+        return real_import(name)
+
+    with patch("importlib.import_module", new=_recording_import):
+        module = await import_in_thread("json")
+
+    assert module is json
+    assert where and where[0] != threading.get_ident()
+
+
+@pytest.mark.parametrize(
+    "func,expected",
+    [
+        ("discover_sonos", "soco"),
+        ("discover_airplay", "pyatv"),
+        ("discover_dlna", "async_upnp_client.search"),
+    ],
+)
+def test_discovery_imports_its_library_off_the_loop(func, expected):
+    """Pins the fix in place: the import has to go through the helper, not
+    back into a bare `import x` inside the coroutine."""
+    import delivery.manager as manager_mod
+
+    imported: list[str] = []
+
+    async def _recording(name: str):
+        imported.append(name)
+        return importlib.import_module(name)
+
+    async def _nothing(*args, **kwargs):
+        return []
+
+    with (
+        patch.object(manager_mod, "import_in_thread", new=_recording),
+        patch("pyatv.scan", new=_nothing),
+        patch("async_upnp_client.search.async_search", new=_nothing),
+        patch("soco.discover", return_value=[]),
+    ):
+        asyncio.run(getattr(manager_mod, func)())
+
+    assert expected in imported
 
 
 # ── discover_dlna ─────────────────────────────────────────────────────────────

@@ -39,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed the app going unresponsive for up to about 1.5 seconds the first time it scans for devices after starting, which also held up the audio being sent to a speaker for that moment if something was already casting - opening the device picker mid-playback was enough to trigger it
 - Fixed a speaker being stopped out of the blue about half an hour after a session was last used, even when something else had started playing on it in the meantime - another device in the house, another person, or a second copy of Beacon. Cleaning up a forgotten session now only stops a speaker if it is still playing what that session actually sent it
 - Fixed the app locking up for a moment while the seek bar's waveform was being prepared for a very long track, such as a DJ mix or a live set: with playback going to a speaker, the pause was long enough to interrupt the audio being sent to it
 - Fixed casting stopping altogether when the music server got briefly slow to answer - browsing a large library while casting could be enough - instead of just carrying on with the next song; looking a song up also no longer holds up the audio being sent to the speakers while it waits
