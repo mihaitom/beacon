@@ -48,6 +48,19 @@ class BaseDelivery(ABC):
         if the protocol doesn't expose one."""
         return None
 
+    async def current_uri(self) -> str | None:
+        """What the device says it is currently playing, or None if it can't
+        say (no transport to ask, nothing playing, lookup failed).
+
+        Exists so a caller can tell "this device is still playing the stream
+        *I* gave it" from "somebody else owns this device now" — which
+        matters because a speaker is shared far more widely than this
+        process knows about: another session, another Beacon instance on the
+        same host, or one on a different machine entirely. Only session
+        housekeeping uses it (core/session.py's reap_once); anything the
+        user actually asked for stops the device unconditionally."""
+        return None
+
     async def get_volume(self) -> float | None:
         """Return the device's current volume (0-100), or None if the
         protocol doesn't expose one."""

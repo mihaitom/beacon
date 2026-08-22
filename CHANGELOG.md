@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- Added a notification when a speaker you're casting to stops on its own: instead of the music just ending in silence, a message says which device dropped out and clicking it picks playback back up from where it left off. It shows up on the desktop, in the mobile web player and on the phone remote. Beacon deliberately doesn't restart playback by itself, since a speaker being stopped on purpose and one dropping out look exactly the same from its side
+- Added a notification when a speaker you're casting to stops on its own: instead of the music just ending in silence, a message says which device dropped out and offers a Resume button that picks playback back up from where it left off. It shows up on the desktop, in the mobile web player and on the phone remote. Beacon deliberately doesn't restart playback by itself, since a speaker being stopped on purpose and one dropping out look exactly the same from its side
 - Added Autoplay - once the queue is down to its last song or so, similar songs get added automatically so playback never just runs dry. Off by default; toggle it from the icon next to Queue in the player bar, and set how many songs get added per top-up in Settings. Works the same for local playback and casting, and keeps topping the queue up on its own server-side even if nothing's around to do it locally (e.g. a phone's screen is locked)
 - Added Song Radio, Artist Radio, and Autoplay support for Plex (needs an active Plex Pass on the account) - previously Navidrome/Subsonic and Jellyfin only
 - Added OS media key support - play/pause/previous/next now work from the keyboard's media keys, the lock screen on Windows/macOS, and the media widget on GNOME/KDE, showing the current song's title/artist/artwork
@@ -39,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed a speaker being stopped out of the blue about half an hour after a session was last used, even when something else had started playing on it in the meantime - another device in the house, another person, or a second copy of Beacon. Cleaning up a forgotten session now only stops a speaker if it is still playing what that session actually sent it
 - Fixed the app locking up for a moment while the seek bar's waveform was being prepared for a very long track, such as a DJ mix or a live set: with playback going to a speaker, the pause was long enough to interrupt the audio being sent to it
 - Fixed casting stopping altogether when the music server got briefly slow to answer - browsing a large library while casting could be enough - instead of just carrying on with the next song; looking a song up also no longer holds up the audio being sent to the speakers while it waits
 - Fixed picking a second device while already casting silently dropping the first one - it kept playing until the end of the current track and then went quiet, with only the newly picked device carrying on

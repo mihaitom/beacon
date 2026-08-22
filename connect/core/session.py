@@ -19,7 +19,7 @@ from delivery import BaseDelivery, DeliveryManager
 from media import MediaClient, SubsonicClient
 
 from .claims import claims
-from .state import AppState, EventBus, delivery_class_for, list_target_pairs
+from .state import AppState, EventBus, delivery_class_for, list_target_pairs, stream_url
 from .visualizer_feed import VisualizerFeed
 
 logger = logging.getLogger("connect.session")
@@ -392,6 +392,43 @@ SESSION_REAP_INTERVAL = 60
 SESSION_IDLE_TIMEOUT = int(os.getenv("SESSION_IDLE_TIMEOUT", str(60 * 30)))
 
 
+async def _device_is_still_ours(session: SessionState) -> bool:
+    """Whether the device this session was casting to is still playing the
+    stream *this* session handed it — see reap_once() for why that question
+    exists at all.
+
+    Compares the device's own reported URI against what was dispatched: our
+    /stream URL (which carries this instance's port and this session's id,
+    so a different Beacon instance's stream is distinguishable even when it
+    happens to use the same session id — session ids come from the media
+    server login, so two instances serving the same user genuinely share
+    one) or, for radio, the station URL that went straight to the device.
+
+    A device that can't answer, or fails to, counts as ours: unchanged
+    behaviour for AirPlay and anything else with no transport to query, and
+    the safer default for our own housekeeping — leaving a speaker playing
+    forever is a worse outcome than a stop that was already justified when
+    the session was still alive."""
+    st = session.state
+    if st.active_delivery is None:
+        return False
+    expected = st.radio_info["url"] if st.radio_info else stream_url(session.session_id)
+    try:
+        uri = await st.active_delivery.current_uri()
+    except Exception as e:
+        logger.debug(f"[reap] {session.session_id}: could not read device URI: {e}")
+        return True
+    if uri is None:
+        return True
+    if uri == expected:
+        return True
+    logger.info(
+        f"[reap] {session.session_id}: leaving {st.active_delivery!r} alone — it plays "
+        f"{uri[:80]!r}, not this session's stream"
+    )
+    return False
+
+
 async def reap_once() -> list[str]:
     """Stop delivery, release claims, and forget any session that's been idle
     past SESSION_IDLE_TIMEOUT. A session is "idle" only if no request AND no
@@ -404,7 +441,22 @@ async def reap_once() -> list[str]:
     for session in registry.all():
         if now - session.last_seen <= SESSION_IDLE_TIMEOUT:
             continue
-        if session.state.active_delivery:
+        # Two guards before touching the device, because a reap is the one
+        # teardown nobody asked for — it fires 30 minutes after the last
+        # sign of life, long after whatever this session was doing, and the
+        # speaker is shared far more widely than this process can see.
+        # Observed live 2026-08-22: a session whose cast had already ended
+        # hours earlier got reaped and stopped its old speaker — which by
+        # then a *different* Beacon instance on the same host was streaming
+        # to. That instance saw a device dropping its connection with no
+        # cause of its own, i.e. exactly the signature of the bug being
+        # hunted in docs/playback-bugs.md.
+        #
+        # is_streaming first because it needs no device round-trip and
+        # covers that case outright: this session already knew it wasn't
+        # streaming (a dropped connection had marked it so), and stopping
+        # the device was never its business.
+        if session.state.is_streaming and await _device_is_still_ours(session):
             try:
                 await session.state.active_delivery.stop()
             except Exception:

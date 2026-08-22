@@ -42,6 +42,13 @@ async def test_base_delivery_get_volume_defaults_to_none():
     assert await _MinimalDelivery("x").get_volume() is None
 
 
+async def test_base_delivery_current_uri_defaults_to_none():
+    """"Can't say" is the honest default — a protocol with no transport to
+    query (AirPlay) must not be mistaken for one reporting "nothing playing".
+    See core/session.py's reap_once(), the only caller."""
+    assert await _MinimalDelivery("x").current_uri() is None
+
+
 async def test_base_delivery_pause_and_resume_default_to_noops():
     d = _MinimalDelivery("x")
     await d.pause()  # must not raise
@@ -218,6 +225,24 @@ def test_sonos_get_position_returns_none_on_an_unparseable_value():
     d = SonosDelivery("Küche")
     with patch.object(SonosDelivery, "_get_device", return_value=dev):
         assert asyncio.run(d.get_position()) is None
+
+
+def test_sonos_current_uri_reads_the_devices_own_track_uri():
+    dev = MagicMock()
+    dev.get_current_track_info.return_value = {"uri": "http://host:8071/stream/abc"}
+    d = SonosDelivery("Küche")
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        assert asyncio.run(d.current_uri()) == "http://host:8071/stream/abc"
+
+
+def test_sonos_current_uri_is_none_when_the_device_reports_nothing():
+    """An empty string is what a stopped Sonos returns — that's "nothing
+    playing", not a URI, and must not be compared against ours as one."""
+    dev = MagicMock()
+    dev.get_current_track_info.return_value = {"uri": ""}
+    d = SonosDelivery("Küche")
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        assert asyncio.run(d.current_uri()) is None
 
 
 def test_sonos_get_volume_reads_device_volume():

@@ -228,6 +228,11 @@ class DlnaDelivery(BaseDelivery):
         position = device.media_position
         return float(position) if position is not None else None
 
+    async def current_uri(self) -> str | None:
+        device = await self._get_device_or_evict()
+        await device.async_update(do_ping=False)
+        return device.current_track_uri or None
+
     async def get_volume(self) -> float | None:
         device = await self._get_device_or_evict()
         await device.async_update(do_ping=False)

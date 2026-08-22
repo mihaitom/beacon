@@ -83,22 +83,50 @@ describe('ToastSnackbar', () => {
     expect(wrapper.findAll('.toast')).toHaveLength(0)
   })
 
-  it('runs a clickable toast’s action and dismisses it', async () => {
+  it('runs a toast’s action from its button and dismisses it', async () => {
     const wrapper = mountToasts()
     const onClick = vi.fn()
     emitter.emit('toast', {
       level: 'error',
-      title: 'Interrupted',
-      message: 'Resume?',
-      clickable: true,
-      onClick,
+      title: 'Playback interrupted',
+      message: 'Küche ended the connection.',
+      action: { label: 'Resume', onClick },
     })
     await wrapper.vm.$nextTick()
 
-    await wrapper.get('.toast').trigger('click')
+    const button = wrapper.find('.toast-action')
+    expect(button.text()).toBe('Resume')
+    await button.trigger('click')
 
     expect(onClick).toHaveBeenCalledOnce()
     expect(wrapper.findAll('.toast')).toHaveLength(0)
+  })
+
+  it('does not act on a plain toast when its body is clicked', async () => {
+    /** The action used to be "click anywhere on the toast", which is both
+     * undiscoverable and easy to hit while reaching for the close button. */
+    const wrapper = mountToasts()
+    const onClick = vi.fn()
+    emitter.emit('toast', {
+      level: 'error',
+      title: 'Playback interrupted',
+      message: 'Küche ended the connection.',
+      action: { label: 'Resume', onClick },
+    })
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('.toast-body').trigger('click')
+
+    expect(onClick).not.toHaveBeenCalled()
+    expect(wrapper.findAll('.toast')).toHaveLength(1)
+  })
+
+  it('renders no action row for a toast that only reports something', async () => {
+    const wrapper = mountToasts()
+    emitter.emit('toast', ['information', 'Hi', 'there'])
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.toast-actions').exists()).toBe(false)
   })
 
   it('does not leave a timer running for a toast that was closed by hand', async () => {

@@ -144,3 +144,10 @@ class ChromecastDelivery(BaseDelivery):
         if status.player_state not in ("PLAYING", "PAUSED"):
             return None
         return status.adjusted_current_time
+
+    async def current_uri(self) -> str | None:
+        cast = await asyncio.to_thread(self._get_device)
+        status = cast.media_controller.status
+        if status.player_state not in ("PLAYING", "PAUSED", "BUFFERING"):
+            return None
+        return status.content_id or None

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { flushPromises } from '@vue/test-utils'
 import { useLibraryStore } from '../library'
 import { useConnectStore } from '../connect'
 import { usePlaybackStore } from '../playback'
@@ -35,12 +36,16 @@ describe('cast interruption', () => {
 
     expect(resumeSpy).not.toHaveBeenCalled()
     expect(toasts).toHaveLength(1)
-    const toast = toasts[0] as { clickable: boolean; timeoutMs: number; onClick: () => void }
-    expect(toast.clickable).toBe(true)
+    const toast = toasts[0] as {
+      timeoutMs: number
+      action: { label: string; onClick: () => void }
+    }
+    // A real button, not "click the toast somewhere" — see Toast.action.
+    expect(toast.action.label).toBeTruthy()
     // Long enough to notice a question, read it and act on it.
     expect(toast.timeoutMs).toBeGreaterThan(12_000)
 
-    toast.onClick()
+    toast.action.onClick()
     expect(resumeSpy).toHaveBeenCalledOnce()
     emitter.all.clear()
   })
@@ -57,6 +62,37 @@ describe('cast interruption', () => {
     vi.spyOn(connectPlayback, 'resumeInterrupted').mockResolvedValue(undefined)
     await playback.resumeAfterInterruption()
     expect(playback.castInterrupted).toBe(false)
+    emitter.all.clear()
+  })
+
+  it('raises the toast once per broadcast, not on every store mutation', async () => {
+    /** The bug this exists for: the connect store's $subscribe handler runs
+     * on *every* mutation of that store and re-reads the same `state.status`
+     * object, so one interrupted payload raised its toast over and over. And
+     * no newer payload comes to clear it - once the session stops streaming,
+     * /events falls back to heartbeats and that payload stays current, so it
+     * repeated indefinitely rather than a few times. */
+    const playback = usePlaybackStore()
+    const connect = useConnectStore()
+    const toasts: unknown[] = []
+    emitter.on('toast', (t) => toasts.push(t))
+    playback.init()
+
+    connect.status = makeStatus({ interrupted: true, streaming: false })
+    await flushPromises()
+    expect(toasts).toHaveLength(1)
+
+    // Anything else touching that store - a device scan finishing, a
+    // connection flag flipping - must not re-raise it.
+    connect.isScanning = true
+    connect.connected = true
+    await flushPromises()
+    expect(toasts).toHaveLength(1)
+
+    // A genuinely new interruption is a new payload, and does come through.
+    connect.status = makeStatus({ interrupted: true, streaming: false })
+    await flushPromises()
+    expect(toasts).toHaveLength(2)
     emitter.all.clear()
   })
 

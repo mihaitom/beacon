@@ -4,9 +4,8 @@
       v-for="(toast, index) in toasts"
       :key="toast.id"
       class="toast"
-      :class="[toast.level, { clickable: toast.clickable }]"
+      :class="toast.level"
       :style="{ zIndex: 9999 + index }"
-      @click="handleToastClick(toast)"
       @mouseenter="pauseDismiss(toast)"
       @mouseleave="resumeDismiss(toast)"
     >
@@ -16,6 +15,11 @@
       <div class="toast-body">
         <div class="toast-title">{{ toast.title }}</div>
         <div class="toast-message">{{ toast.message }}</div>
+        <div v-if="toast.action" class="toast-actions">
+          <button class="toast-action" @click="runAction(toast)">
+            {{ toast.action.label }}
+          </button>
+        </div>
       </div>
       <button class="toast-close" @click.stop="removeToast(toast.id)">
         <v-icon size="14">mdi-close</v-icon>
@@ -92,8 +96,8 @@ export default defineComponent({
       )
     },
     /** Hovering means someone is reading it - or reaching for it, since a
-     * clickable toast is the target of the very gesture that would otherwise
-     * make it disappear. */
+     * toast that carries an action button is the target of the very gesture
+     * that would otherwise make it disappear. */
     pauseDismiss(toast: ToastInternal) {
       if (toast.timer) {
         clearTimeout(toast.timer)
@@ -118,11 +122,12 @@ export default defineComponent({
         this.toasts = this.toasts.filter((t) => t.id !== id)
       }
     },
-    handleToastClick(toast: ToastInternal) {
-      if (toast.clickable && toast.onClick) {
-        toast.onClick()
-        this.removeToast(toast.id)
-      }
+    /** Acting on a toast also dismisses it — whatever it was asking about
+     * has been answered, and leaving it up invites pressing the button
+     * twice. */
+    runAction(toast: ToastInternal) {
+      toast.action?.onClick()
+      this.removeToast(toast.id)
     },
     logEvent(toast: Toast) {
       if (toast.level === 'error') {
@@ -200,18 +205,27 @@ export default defineComponent({
   --toast-accent: rgb(var(--v-theme-error));
 }
 
-.toast.clickable {
-  cursor: pointer;
-  transition:
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
+/* Same shape as UpdateToast.vue's own action row, so the two read as one
+ * pattern rather than two kinds of actionable notification. */
+.toast-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.375rem;
 }
 
-.toast.clickable:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 0 0 1px var(--toast-accent),
-    0 16px 32px rgba(0, 0, 0, 0.45);
+.toast-action {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--toast-accent);
+  cursor: pointer;
+}
+
+.toast-action:hover {
+  text-decoration: underline;
 }
 
 .toast-icon {

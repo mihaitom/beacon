@@ -150,6 +150,11 @@ class SonosDelivery(BaseDelivery):
         except (ValueError, AttributeError):
             return None
 
+    async def current_uri(self) -> str | None:
+        device = await asyncio.to_thread(self._get_device)
+        info = await asyncio.to_thread(device.get_current_track_info)
+        return info.get("uri") or None
+
     async def get_volume(self) -> float | None:
         device = await asyncio.to_thread(self._get_device)
         return await asyncio.to_thread(lambda: device.volume)

@@ -140,17 +140,32 @@ def test_reap_once_leaves_recently_touched_session_alone():
     assert registry.get("fresh-session") is not None
 
 
-def test_reap_once_stops_delivery_and_releases_claims():
+def _stale_casting_session(session_id: str, uri: str | None):
+    """An idle-past-the-timeout session that still believes it is casting,
+    with a device that reports `uri` as what it's currently playing (None =
+    can't say)."""
     from unittest.mock import AsyncMock
 
-    from core.claims import claims
-    from core.session import SESSION_IDLE_TIMEOUT, reap_once, registry
+    from core.session import SESSION_IDLE_TIMEOUT, registry
 
-    session = asyncio.run(registry.get_or_create("stale-with-delivery"))
+    session = asyncio.run(registry.get_or_create(session_id))
     delivery = ChromecastDelivery("TV")
     delivery.stop = AsyncMock()
+    delivery.current_uri = AsyncMock(return_value=uri)
     session.state.active_delivery = delivery
+    session.state.is_streaming = True
     session.last_seen = time.time() - SESSION_IDLE_TIMEOUT - 1
+    return session, delivery
+
+
+def test_reap_once_stops_delivery_and_releases_claims():
+    from core.claims import claims
+    from core.session import reap_once, registry
+    from core.state import stream_url
+
+    session, delivery = _stale_casting_session(
+        "stale-with-delivery", stream_url("stale-with-delivery")
+    )
     asyncio.run(claims.claim("chromecast", "TV", "stale-with-delivery"))
 
     asyncio.run(reap_once())
@@ -160,16 +175,87 @@ def test_reap_once_stops_delivery_and_releases_claims():
     assert registry.get("stale-with-delivery") is None
 
 
+def test_reap_once_leaves_a_device_alone_when_the_session_was_not_streaming():
+    """The 2026-08-22 incident (see docs/playback-bugs.md): a session whose
+    cast had ended hours earlier still held its old delivery. Reaping stopped
+    that speaker — which a *different* Beacon instance was streaming to by
+    then, and which therefore saw a cast device drop for no reason of its
+    own. A session that already knows it isn't streaming has no business
+    stopping anything."""
+    from core.session import reap_once, registry
+
+    session, delivery = _stale_casting_session("stale-not-streaming", None)
+    session.state.is_streaming = False
+
+    reaped = asyncio.run(reap_once())
+
+    delivery.stop.assert_not_awaited()
+    assert reaped == ["stale-not-streaming"]  # the session still goes away
+    assert registry.get("stale-not-streaming") is None
+
+
+def test_reap_once_leaves_a_device_playing_someone_elses_stream_alone():
+    """Same speaker, different owner: the device answers with a URL that
+    isn't this session's stream (another instance's port, or another
+    session's id), so stopping it would cut off playback nobody asked to
+    end."""
+    from core.session import reap_once
+
+    _, delivery = _stale_casting_session(
+        "stale-taken-over", "http://10.0.0.5:9071/stream/other-session"
+    )
+
+    asyncio.run(reap_once())
+
+    delivery.stop.assert_not_awaited()
+
+
+def test_reap_once_still_stops_a_device_that_cannot_report_its_uri():
+    """AirPlay and anything else without a transport to query — unchanged
+    behaviour, and the safer default: a speaker left playing forever is
+    worse than a stop that was already justified while the session lived."""
+    from core.session import reap_once
+
+    _, delivery = _stale_casting_session("stale-silent-device", None)
+
+    asyncio.run(reap_once())
+
+    delivery.stop.assert_awaited_once()
+
+
+def test_reap_once_compares_against_the_station_url_for_radio():
+    """Radio never goes through our own /stream — the station URL is what
+    was handed to the device, so that's what its answer has to match."""
+    from core.session import reap_once
+
+    session, delivery = _stale_casting_session("stale-radio", "http://radio/stream")
+    session.state.radio_info = {"title": "FIP", "url": "http://radio/stream"}
+
+    asyncio.run(reap_once())
+
+    delivery.stop.assert_awaited_once()
+
+
+def test_reap_once_survives_a_device_that_errors_on_the_uri_lookup():
+    from unittest.mock import AsyncMock
+
+    from core.session import reap_once
+
+    _, delivery = _stale_casting_session("stale-uri-error", None)
+    delivery.current_uri = AsyncMock(side_effect=RuntimeError("device unreachable"))
+
+    asyncio.run(reap_once())  # must not raise
+
+    delivery.stop.assert_awaited_once()  # unknown counts as ours
+
+
 def test_reap_once_still_reaps_a_session_whose_delivery_wont_stop():
     from unittest.mock import AsyncMock
 
-    from core.session import SESSION_IDLE_TIMEOUT, reap_once, registry
+    from core.session import reap_once, registry
 
-    session = asyncio.run(registry.get_or_create("stale-unresponsive"))
-    delivery = ChromecastDelivery("TV")
+    session, delivery = _stale_casting_session("stale-unresponsive", None)
     delivery.stop = AsyncMock(side_effect=RuntimeError("device unreachable"))
-    session.state.active_delivery = delivery
-    session.last_seen = time.time() - SESSION_IDLE_TIMEOUT - 1
 
     reaped = asyncio.run(reap_once())  # must not raise
 

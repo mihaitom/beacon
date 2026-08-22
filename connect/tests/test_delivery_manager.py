@@ -71,6 +71,37 @@ def test_manager_stop_swallows_exceptions():
     c.stop.assert_awaited_once()
 
 
+def test_manager_current_uri_takes_the_first_target_that_can_answer():
+    """play() hands every target the same URL, so one answer speaks for the
+    group — see core/session.py's reap_once(), which asks this before
+    stopping anything it no longer owns."""
+    a = AirPlayDelivery("HomePod")  # can never say
+    c = ChromecastDelivery("TV")
+    a.current_uri = AsyncMock(return_value=None)
+    c.current_uri = AsyncMock(return_value="http://host:8071/stream/abc")
+    m = DeliveryManager.from_deliveries([a, c])
+
+    assert asyncio.run(m.current_uri()) == "http://host:8071/stream/abc"
+
+
+def test_manager_current_uri_skips_a_target_that_errors():
+    a = AirPlayDelivery("HomePod")
+    c = ChromecastDelivery("TV")
+    a.current_uri = AsyncMock(side_effect=RuntimeError("unreachable"))
+    c.current_uri = AsyncMock(return_value="http://host:8071/stream/abc")
+    m = DeliveryManager.from_deliveries([a, c])
+
+    assert asyncio.run(m.current_uri()) == "http://host:8071/stream/abc"
+
+
+def test_manager_current_uri_is_none_when_nobody_can_answer():
+    a = AirPlayDelivery("HomePod")
+    a.current_uri = AsyncMock(return_value=None)
+    m = DeliveryManager.from_deliveries([a])
+
+    assert asyncio.run(m.current_uri()) is None
+
+
 def test_manager_play_single_sonos_skips_grouping():
     s = SonosDelivery("Küche")
     s.play = AsyncMock()

@@ -242,6 +242,20 @@ let localResumeDecided = false
 // decideLocalResume() already owns — see the $subscribe handler in init().
 const castingActiveEdge = createEdgeDetector()
 
+// The last status payload whose `interrupted` flag was already acted on.
+// The $subscribe handler below runs on *every* mutation of the connect
+// store, not only when a new payload lands, and it re-reads the same
+// `state.status` object each time — so a payload carrying interrupted=true
+// raised its toast again on every unrelated mutation (device list refresh,
+// volume, ...). Worse, an interruption is exactly when no newer payload is
+// coming to clear it: the session is no longer streaming, so /events falls
+// back to heartbeats and that payload stays the current one indefinitely.
+// Observed live as the same toast reappearing every few seconds, forever.
+// Comparing payload identity keeps the backend's "one-shot flag on a single
+// broadcast" contract intact on this side: acted on once per payload, and a
+// genuinely new interruption arrives as a new object.
+let interruptedPayloadHandled: unknown = null
+
 // All the singleton bookkeeping above (endedEdge, the seq/keyed guards,
 // persistTimer, ...) lives outside Pinia's own reactive state, so Vite's
 // partial HMR doesn't know to reset or preserve it consistently — a live
@@ -430,11 +444,13 @@ export const usePlaybackStore = defineStore('playback', {
           else void this.handOffToLocalPlayback()
         }
 
-        // A one-shot flag on a single payload, so no edge detector: the
-        // backend only ever sets it on the broadcast for the interruption
-        // itself. Checked before the guard below, since that returns early
-        // whenever targets are already gone.
-        if (status?.interrupted) this.notifyCastInterrupted()
+        // Once per payload, not once per mutation — see
+        // interruptedPayloadHandled. Checked before the guard below, since
+        // that returns early whenever targets are already gone.
+        if (status?.interrupted && status !== interruptedPayloadHandled) {
+          interruptedPayloadHandled = status
+          this.notifyCastInterrupted()
+        }
 
         if (!status || !activeNow) return
 
@@ -1420,16 +1436,18 @@ export const usePlaybackStore = defineStore('playback', {
         message: where
           ? i18n.global.t('connect.interruptedOn', { device: where })
           : i18n.global.t('connect.interrupted'),
-        clickable: true,
         timeoutMs: 45000,
-        onClick: () => {
-          void this.resumeAfterInterruption().catch(() => {
-            emitter.emit('toast', [
-              'error',
-              i18n.global.t('connect.interruptedTitle'),
-              i18n.global.t('connect.interruptedResumeFailed'),
-            ])
-          })
+        action: {
+          label: i18n.global.t('connect.interruptedResume'),
+          onClick: () => {
+            void this.resumeAfterInterruption().catch(() => {
+              emitter.emit('toast', [
+                'error',
+                i18n.global.t('connect.interruptedTitle'),
+                i18n.global.t('connect.interruptedResumeFailed'),
+              ])
+            })
+          },
         },
       })
     },

@@ -145,6 +145,20 @@ class DeliveryManager:
             *[d.stop() for d in self.deliveries], return_exceptions=True
         )
 
+    async def current_uri(self) -> str | None:
+        """First target that can answer — play() hands every target in a
+        manager the same URL, so any one of them answers for the group. A
+        target that can't say (or fails to) is skipped rather than deciding
+        the answer for the rest."""
+        for delivery in self.deliveries:
+            try:
+                uri = await delivery.current_uri()
+            except Exception:
+                continue
+            if uri is not None:
+                return uri
+        return None
+
     async def play_all(self, stream_url: str, title: str = "Connect") -> None:
         await self.play(stream_url, title)
 
