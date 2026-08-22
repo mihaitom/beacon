@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response, StreamingResponse
 
-from core.audio_analysis import AudioAnalyzer, should_analyze
 from core.auth import require_token
 from core.loop_health import peak_lag
 from core.session import (
@@ -19,9 +18,8 @@ from core.session import (
     get_session,
     registry,
 )
-from core.state import PORT, list_target_pairs, stream_url
-from core.streamer import demuxer_for, resolve_output_format, stream_tracks
-from routes.debug import TEST_TONE_TRACK_ID
+from core.state import TEST_TONE_TRACK_ID, stream_url, test_tone_url
+from core.streamer import resolve_output_format, stream_tracks
 
 from .playback import (
     POSITION_RESYNC_INTERVAL,
@@ -519,14 +517,12 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
         output_format = session.state.current_output_format
         # Debug-only special case (see routes/debug.py) — the test tone isn't a
         # real library track, so there's nothing for session.media to resolve.
-        # Loopback, not stream_url()'s LAN IP: ffmpeg fetches this from inside
-        # the same process/container, not from the cast device.
         # to_thread: get_stream_url() is a pure, instant string builder for
         # Subsonic/Jellyfin, but Plex's needs a real network lookup first (see
         # media/plex.py's docstring) — without this, that lookup would block
         # the whole event loop, not just this one request/session.
         track_url = (
-            f"http://127.0.0.1:{PORT}/debug/test-tone.wav"
+            test_tone_url()
             if track.id == TEST_TONE_TRACK_ID
             else await asyncio.to_thread(session.media.get_stream_url, track.id)
         )
@@ -646,48 +642,12 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
     async def stream_with_completion():
         my_generation = session.state.clock.play_generation
         offset_consumed = False
-        # AirPlay/radio never end up here with a live-analyzable target (see
-        # should_analyze()'s docstring) — stays None for them, and GET
-        # /visualizer below just has nothing to send. Declared here (not
-        # inside the try below) only so the finally can reach it even if
-        # analyzer setup itself is what fails/gets cancelled.
-        analyzer: AudioAnalyzer | None = None
 
-        # One try/finally for this whole generator body, analyzer setup
-        # included — analyzer.start()/previous.stop() below are real
-        # awaits, and a client disconnect landing during either of those
-        # (not just during the streaming loop further down) used to skip
-        # the finally entirely, permanently leaking the connection count
-        # incremented in audio_stream() above.
+        # One try/finally for this whole generator body — a client
+        # disconnect can land anywhere in it, and skipping the finally would
+        # permanently leak the connection count incremented in
+        # audio_stream() above.
         try:
-            target_pairs = list_target_pairs(session.state.active_delivery)
-            if should_analyze(target_pairs):
-                logger.debug(f"[stream] Live analysis enabled — targets={target_pairs}")
-                # Paced against the same calibrated clock /status's `elapsed`
-                # uses — not a fixed bitrate timeline, which can't account for
-                # the device's own startup-buffering delay (see
-                # AudioAnalyzer's docstring). `offset` is where in the track
-                # this connection's first byte actually starts.
-                analyzer = AudioAnalyzer(
-                    elapsed_fn=lambda: session.state.clock.elapsed(),
-                    start_offset=offset,
-                    input_format=demuxer_for(output_format),
-                )
-                await analyzer.start()
-                previous = session.audio_analyzer
-                session.audio_analyzer = analyzer
-                if previous:
-                    await previous.stop()
-            else:
-                # Diagnostic for exactly this "visualizer only ever shows
-                # heartbeats" symptom — tells apart "no live-analyzable target at
-                # all" (targets=[], or all-AirPlay) from a case where a
-                # sonos/dlna/chromecast target genuinely should have qualified.
-                logger.debug(
-                    f"[stream] Live analysis skipped — targets={target_pairs}, "
-                    f"active_delivery={session.state.active_delivery!r}"
-                )
-
             # Diagnostic bookkeeping for the cancellation snapshot below —
             # see DisconnectSnapshot for what each of these is meant to
             # distinguish. `last_handoff` is updated *after* each yield
@@ -738,8 +698,6 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
                                 )
                                 session.state.is_streaming = True
                                 await session.event_bus.broadcast(build_status_dict(session))
-                    if analyzer:
-                        analyzer.feed(chunk)
                     yield chunk
                     bytes_delivered += len(chunk)
                     last_handoff = time.monotonic()
@@ -790,20 +748,8 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
         finally:
             # Mirrors the increment in audio_stream() above — this specific
             # connection is done, one way or another (normal completion,
-            # ffmpeg failure, or a client disconnect/cancellation, including
-            # one during analyzer setup itself).
+            # ffmpeg failure, or a client disconnect/cancellation).
             session.state.active_stream_connections -= 1
-            # finish_feeding(), not stop() — ffmpeg finishing early (well
-            # before the track's actual duration, since it's CPU-bound
-            # transcoding rather than real-time-throttled) just means this
-            # generator itself is done; the analyzer keeps draining
-            # whatever it's already buffered at the normal real-time pace
-            # and exits on its own once that's genuinely exhausted. session.
-            # audio_analyzer deliberately stays pointed at it — GET
-            # /visualizer needs to keep reading from it while it drains.
-            # See routes/playback.py's /stop for the actual hard teardown.
-            if analyzer:
-                analyzer.finish_feeding()
 
     return StreamingResponse(
         stream_with_completion(),
@@ -848,18 +794,25 @@ async def status_events(session: SessionState = Depends(get_session)):
 @router.get("/visualizer", dependencies=[Depends(require_token)])
 async def visualizer_events(session: SessionState = Depends(get_session)):
     """Frequency-band frames for the fullscreen visualizer's 'cast' mode
-    (AudioVisualizer.vue) — see core/audio_analysis.py. session.audio_analyzer
-    is re-read every iteration (not captured once) since stream_with_completion()
-    above replaces it on every track change, and is None whenever nothing
-    live-analyzable is currently playing (nothing streaming at all, or
-    streaming to AirPlay/radio) — those periods just heartbeat with no data,
-    same as this producing nothing is the frontend's own signal to render
-    nothing rather than a fake idle animation."""
+    (AudioVisualizer.vue) — see core/audio_analysis.py.
+
+    An open connection here is also what *causes* the analysis to happen at
+    all: the analyzer runs only while at least one client is subscribed (see
+    core/visualizer_feed.py), so subscribe()/unsubscribe() around this
+    generator aren't bookkeeping, they're the on/off switch. The feed's
+    analyzer is re-read every iteration (not captured once) since it's
+    replaced on every track change and seek, and is None whenever nothing
+    analyzable is playing (nothing streaming at all, or streaming to
+    AirPlay/radio) — those periods just heartbeat with no data, same as this
+    producing nothing is the frontend's own signal to render nothing rather
+    than a fake idle animation."""
+    feed = session.visualizer
 
     async def generator():
+        feed.subscribe()
         try:
             while True:
-                analyzer = session.audio_analyzer
+                analyzer = feed.analyzer
                 if analyzer is None:
                     await asyncio.sleep(0.5)
                     yield ": idle\n\n"
@@ -871,6 +824,8 @@ async def visualizer_events(session: SessionState = Depends(get_session)):
                     yield ": heartbeat\n\n"
         except asyncio.CancelledError:
             pass
+        finally:
+            feed.unsubscribe()
 
     return StreamingResponse(
         generator(),

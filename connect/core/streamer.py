@@ -150,34 +150,6 @@ class OutputFormat:
 
 FALLBACK_FORMAT = OutputFormat()
 
-# ffmpeg's *demuxer* name for reading back a stream in a given muxed format —
-# not always identical to the muxer name used to produce it (every
-# ffmpeg_args above ends in ["-f", <muxer>]). Raw ADTS AAC in particular:
-# written with the "adts" muxer, but ffmpeg has no "adts" *demuxer* at all —
-# reading it back needs "aac" instead. See core/audio_analysis.py's
-# AudioAnalyzer, which needs to tell its own decode-only ffmpeg process what
-# it's about to receive on stdin (a pipe, unlike a file ffmpeg could sniff an
-# extension from) — it used to hardcode "-f mp3" unconditionally there, so
-# GET /visualizer only ever produced real frames for a track whose resolved
-# output format actually was mp3 (i.e. the fallback tier) and silently
-# never produced any for flac/aac/ogg copy-through or the lossless-reencode-
-# to-flac tier — this mapping (used via demuxer_for() below) is what makes
-# that decode step match whatever stream_tracks() is actually sending.
-_DEMUXER_FOR_MUXER = {
-    "mp3": "mp3",
-    "flac": "flac",
-    "adts": "aac",
-    "ogg": "ogg",
-}
-
-
-def demuxer_for(output_format: OutputFormat) -> str:
-    """The ffmpeg -f value to *read back* the bytes stream_tracks() is
-    producing for `output_format` — see _DEMUXER_FOR_MUXER's own comment."""
-    muxer = output_format.ffmpeg_args[-1]
-    return _DEMUXER_FOR_MUXER.get(muxer, "mp3")
-
-
 async def _probe_source(url: str) -> str | None:
     """Return the source's audio codec name, or None if detection fails.
 

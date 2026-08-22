@@ -859,19 +859,19 @@ def test_stop_resets_state(client, default_session):
     assert default_session.state.current_track is None
 
 
-def test_stop_stops_and_clears_a_still_draining_analyzer(client, default_session):
-    """Unlike a track finishing normally (routes/stream.py's
-    finish_feeding() lets the analyzer keep draining what it already
-    buffered), playback is genuinely ending here — nothing left for GET
-    /visualizer to read, so it's torn down outright rather than left to
-    drain on its own."""
-    analyzer = AsyncMock()
-    default_session.audio_analyzer = analyzer
+def test_stop_wakes_the_visualizer_supervisor(client, default_session):
+    """Playback genuinely ending is one of the things the visualizer's
+    analysis has to follow (see core/visualizer_feed.py). It would notice on
+    its own within a tick; this just makes it immediate — and only after
+    is_streaming is already False, which is what it actually reads."""
+    notified = []
+    default_session.visualizer.notify = lambda: notified.append(
+        default_session.state.is_streaming
+    )
 
     client.post("/stop")
 
-    analyzer.stop.assert_awaited_once()
-    assert default_session.audio_analyzer is None
+    assert notified == [False]
 
 
 def test_stop_clears_queue(client, default_session):

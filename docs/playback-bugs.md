@@ -62,9 +62,20 @@ coordinator:
 | 3 | flac copy | 370s | 59s | ~9-15s, healthy |
 | 4 | mp3 copy, 200 kb/s VBR, 80-minute mix | 4791s | 238s | ~0s, exhausted |
 | 5 | mp3 copy, 320 kb/s | 225s | 11s | ~15.5s, healthy |
+| 6 | flac copy | 245s | 11s | current build |
+| 7 | mp3 copy, 80-minute mix | 4791s | ~1560s | pre-fix build |
+| 8 | mp3 copy | 260s | 65s | current build |
+| 9 | flac copy | 294s | 67s | ~15s, healthy; pre-fix build |
+
+Rows 6-9 are all of 2026-08-22; 7 and 8 are the controlled comparison below.
+Row 9 came in the evening, with only the pre-fix build streaming at all - the
+current build had no stream open at that moment.
 
 No pattern in absolute time, position in the track, track length, or codec.
-Both the mp3-copy and flac-copy tiers are affected.
+Both the mp3-copy and flac-copy tiers are affected. Four of the nine dropped
+within the first ~70s of a track, which is more than a uniform distribution
+over a ~250-300s track would give, but n=9 and this is not currently
+actionable.
 
 **Ruled out** (with the evidence, so these need not be re-tested):
 
@@ -76,7 +87,7 @@ Both the mp3-copy and flac-copy tiers are affected.
 | The event loop starving the socket | `loop_lag_30s`/`loop_lag_120s` were 0.00-0.01s at every drop |
 | TCP backpressure / device stopped reading | Send-queue depth 0 and `blocked_for` ~0.01s right up to the FIN |
 | Network trouble | Clean FIN, all bytes ACKed, retransmitted bytes ~0.03% |
-| Beacon issuing a transport command (stop/pause) | A capture of host-to-speaker traffic showed only read calls (`GetVolume`, `GetPositionInfo`, `GetZoneGroupState`) in normal operation. Note the per-drop check was narrower than the baseline one, so treat this as strong rather than airtight |
+| Beacon issuing a transport command (stop/pause) | Airtight for anything crossing this host's NIC, as of the full-day capture on 2026-08-22 (see "What a full day of SOAPACTION capture adds"). Every non-`Get` UPnP action of the whole day is accounted for: Beacon's own dispatch triples, `SetVolume`, and two `ListAlarms`. At each drop the nearest preceding command is that track's own dispatch, 55-67s earlier, and nothing at the drop itself |
 | The Sonos group re-forming | The satellite emitted no events at all; its transport is bound to the coordinator |
 | The stream declaring a wrong duration | No Xing/Info header in what ffmpeg emits; duration reaches the device only via DIDL metadata, correctly |
 | The session idle reaper | `SESSION_IDLE_TIMEOUT` is 30 min; the first drop was 14 min into the session |
@@ -152,6 +163,66 @@ To take this further, the next instrument would have to capture
 `GetZoneGroupState` **responses** rather than just the request names, so a
 topology change becomes visible as a content diff. Today's capture filtered
 response bodies out.
+
+### What a full day of SOAPACTION capture adds (2026-08-22, evening)
+
+A sixth drop that evening (row 9 above) with the capture running all day, and
+the day's logs read as a whole.
+
+**The signature is unchanged.** 20:38:10 local, `flac (copy)`, 67s into a
+294s track, a healthy ~15s lead, 11.25 MB acknowledged, the device sending
+FIN first, `TransportState=STOPPED` with no `TRANSITIONING` and
+`TransportStatus` unchanged, then the 10s grace period. Nothing here is new
+except the count.
+
+**No local transport command exists, and now that is measured rather than
+sampled.** The capture keeps every `SOAPACTION` line to and from the players
+for the whole day. Filtering it to non-`Get` actions yields only Beacon's own
+dispatch triples (`Stop`/`SetAVTransportURI`/`Play`), `SetVolume`, and two
+`ListAlarms`. At every one of the day's four drops the nearest command is the
+dispatch of the track that then dropped, 55-67s earlier. The ruled-out row
+above is upgraded accordingly. This says nothing about phone-to-speaker or
+cloud traffic, which still never reaches this NIC.
+
+**The copy tier is neither implicated nor exonerated - it is unmeasured.** Of
+95 track dispatches that day across both builds, 60 were `mp3 (copy)` and 35
+`flac (copy)`. **Zero** used the fallback tier, and `FORCE_FALLBACK_FORMAT`
+was set on neither container: the A/B this file calls the strongest open lead
+has never actually been run. Drops split 2 and 2 across the two copy tiers, so
+they do not separate the tiers either.
+
+At four drops per 95 tracks, one comparable listening day on the fallback tier
+is a decisive experiment rather than a suggestive one: ~4 drops expected,
+observing none puts it at roughly p = 0.02.
+
+**"Outside Beacon" is broader than "in the Sonos system".** The controlled
+comparison excludes *application logic* - two code bases cannot share a bug at
+the same instant. It does not exclude anything the two processes have in
+common, and that list is longer than it first appears: the same host and NIC,
+the same network, the same ffmpeg copy output from the same library, the same
+Sonos household, and the same SSDP behaviour (the 8s discovery sweep is in
+both builds, and running two instances doubles it). The pending
+`FORCE_FALLBACK_FORMAT` A/B tests exactly one of those shared layers - what
+the byte stream looks like - which is why it stays the best next step even
+after the comparison. Caching the resolved SoCo device would test another.
+
+Checked and not supported: whether drops line up with Beacon's own SSDP
+sweeps. Only one drop falls inside the capture's window (it started 17:04
+UTC), 2.2s after the preceding sweep at a ~8s cadence, which shows nothing.
+Re-testing this needs the capture to have been running well before the drop.
+
+**Two things to know before reading the captures again:**
+
+- The ctrl capture retains only timestamps plus `SOAPACTION` and `NOTIFY`
+  request lines - no bodies at all (`grep DIDL` over the whole 92 MB log:
+  zero hits). The `GetZoneGroupState` **response** instrument this file asks
+  for above therefore still does not exist, and the 4262 `ZoneGroupState`
+  hits are all request lines.
+- The players' connections to port 8099 right after a drop are the
+  monitoring's own UPnP NOTIFY receiver (`/tmp/sonos_events2.py`), not a
+  third-party service. Three players also rejected `SUBSCRIBE` with HTTP 503
+  at 18:18:29 UTC, so a gap in the event log is not by itself evidence that
+  nothing happened.
 
 ---
 

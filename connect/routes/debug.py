@@ -25,7 +25,7 @@ import wave
 from fastapi import APIRouter, Depends, Response
 
 from core.session import SessionState, build_status_dict, require_authenticated_session
-from core.state import stream_url
+from core.state import TEST_TONE_TRACK_ID, stream_url
 from core.streamer import FALLBACK_FORMAT
 from media.base import Track
 
@@ -33,8 +33,6 @@ from .playback import _apply_position_offset
 
 logger = logging.getLogger("connect.debug")
 router = APIRouter(prefix="/debug")
-
-TEST_TONE_TRACK_ID = "__test_tone__"
 
 _SAMPLE_RATE = 44100
 _DURATION_S = 600  # long enough to not run out mid-session

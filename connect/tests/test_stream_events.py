@@ -110,7 +110,7 @@ async def test_events_resends_status_on_timeout_while_actively_streaming(default
 
 
 async def test_visualizer_idles_when_no_analyzer_is_active(default_session):
-    default_session.audio_analyzer = None
+    default_session.visualizer.analyzer = None
     resp = await visualizer_events(session=default_session)
     gen = resp.body_iterator
     try:
@@ -126,7 +126,7 @@ async def test_visualizer_forwards_a_frame_from_the_active_analyzer(default_sess
     analyzer = MagicMock()
     analyzer.frames = asyncio.Queue()
     analyzer.frames.put_nowait([1.0, 2.0, 3.0])
-    default_session.audio_analyzer = analyzer
+    default_session.visualizer.analyzer = analyzer
 
     resp = await visualizer_events(session=default_session)
     gen = resp.body_iterator
@@ -141,7 +141,7 @@ async def test_visualizer_forwards_a_frame_from_the_active_analyzer(default_sess
 async def test_visualizer_heartbeats_while_the_active_analyzer_has_no_frame_yet(default_session):
     analyzer = MagicMock()
     analyzer.frames = asyncio.Queue()  # never fed — nothing to get()
-    default_session.audio_analyzer = analyzer
+    default_session.visualizer.analyzer = analyzer
 
     resp = await visualizer_events(session=default_session)
     gen = resp.body_iterator
@@ -157,12 +157,12 @@ async def test_visualizer_heartbeats_while_the_active_analyzer_has_no_frame_yet(
 async def test_visualizer_switches_from_idle_to_forwarding_once_a_track_starts_analyzing(
     default_session,
 ):
-    """session.audio_analyzer is re-read every loop iteration, not captured
-    once — stream_with_completion() replaces it on every track change, and
-    an already-open /visualizer connection must pick that up rather than
-    staying stuck idling against the analyzer (or lack of one) from when it
-    first connected."""
-    default_session.audio_analyzer = None
+    """The feed's analyzer is re-read every loop iteration, not captured
+    once — core/visualizer_feed.py replaces it on every track change and
+    seek, and an already-open /visualizer connection must pick that up
+    rather than staying stuck idling against the analyzer (or lack of one)
+    from when it first connected."""
+    default_session.visualizer.analyzer = None
     resp = await visualizer_events(session=default_session)
     gen = resp.body_iterator
     try:
@@ -172,7 +172,7 @@ async def test_visualizer_switches_from_idle_to_forwarding_once_a_track_starts_a
         analyzer = MagicMock()
         analyzer.frames = asyncio.Queue()
         analyzer.frames.put_nowait([4.0])
-        default_session.audio_analyzer = analyzer
+        default_session.visualizer.analyzer = analyzer
 
         frame = await gen.__anext__()
     finally:
@@ -183,7 +183,7 @@ async def test_visualizer_switches_from_idle_to_forwarding_once_a_track_starts_a
 
 
 async def test_visualizer_stops_cleanly_on_cancellation(default_session):
-    default_session.audio_analyzer = None
+    default_session.visualizer.analyzer = None
     resp = await visualizer_events(session=default_session)
     gen = resp.body_iterator
 
@@ -194,3 +194,37 @@ async def test_visualizer_stops_cleanly_on_cancellation(default_session):
         # show up as a server error in the logs.
         with pytest.raises(StopAsyncIteration):
             await gen.athrow(asyncio.CancelledError())
+
+
+async def test_visualizer_subscribes_while_connected_and_releases_on_disconnect(
+    default_session,
+):
+    """An open connection here is what makes the analysis run at all (see
+    core/visualizer_feed.py) — so the subscription has to be tied to the
+    generator's own lifetime, released however it ends."""
+    feed = default_session.visualizer
+    feed.analyzer = None
+    resp = await visualizer_events(session=default_session)
+    gen = resp.body_iterator
+
+    assert feed._subscribers == 0  # nothing runs until the body is iterated
+    with patch("routes.stream.asyncio.sleep", AsyncMock()):
+        await gen.__anext__()
+        assert feed._subscribers == 1
+    await gen.aclose()
+
+    assert feed._subscribers == 0
+
+
+async def test_visualizer_releases_its_subscription_on_cancellation(default_session):
+    feed = default_session.visualizer
+    feed.analyzer = None
+    resp = await visualizer_events(session=default_session)
+    gen = resp.body_iterator
+
+    with patch("routes.stream.asyncio.sleep", AsyncMock()):
+        await gen.__anext__()
+        with pytest.raises(StopAsyncIteration):
+            await gen.athrow(asyncio.CancelledError())
+
+    assert feed._subscribers == 0

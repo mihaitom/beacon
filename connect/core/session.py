@@ -18,9 +18,9 @@ from fastapi import Header, HTTPException, Query
 from delivery import BaseDelivery, DeliveryManager
 from media import MediaClient, SubsonicClient
 
-from .audio_analysis import AudioAnalyzer
 from .claims import claims
 from .state import AppState, EventBus, delivery_class_for, list_target_pairs
+from .visualizer_feed import VisualizerFeed
 
 logger = logging.getLogger("connect.session")
 
@@ -71,12 +71,10 @@ class SessionState:
         # with either a Subsonic or Jellyfin client.
         self.media: MediaClient = SubsonicClient("")
         self.event_bus = EventBus()
-        # Owned by routes/stream.py's stream_with_completion(), which
-        # creates a fresh one per track and tears down the previous one —
-        # see core/audio_analysis.py. None whenever nothing is currently
-        # being live-analyzed (nothing streaming, or streaming to a target
-        # that can't be, e.g. AirPlay/radio).
-        self.audio_analyzer: AudioAnalyzer | None = None
+        # Runs the fullscreen visualizer's frequency analysis, but only
+        # while a GET /visualizer subscriber is actually watching it — see
+        # core/visualizer_feed.py.
+        self.visualizer = VisualizerFeed(self)
         self.last_seen: float = time.time()
         # Set only once /config has verified the supplied credential actually
         # authenticates against the (optionally locked) media server — see
@@ -411,6 +409,7 @@ async def reap_once() -> list[str]:
                 await session.state.active_delivery.stop()
             except Exception:
                 pass
+        await session.visualizer.shutdown()
         await claims.release_all_for_session(session.session_id)
         await registry.remove(session.session_id)
         reaped.append(session.session_id)

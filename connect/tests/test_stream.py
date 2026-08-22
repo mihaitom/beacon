@@ -11,7 +11,7 @@ correct position.
 import asyncio
 import logging
 import time
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -945,16 +945,18 @@ async def test_does_not_rebroadcast_when_already_not_streaming(default_session, 
     assert q.empty()
 
 
-# ── Live analysis hookup (GET /visualizer's data source) ─────────────────────
-# See core/audio_analysis.py's AudioAnalyzer — stream_with_completion()
-# creates one per track whenever a live-analyzable target (Sonos/DLNA/
-# Chromecast) is casting, feeds it every chunk, stops whatever the previous
-# track's analyzer was, and closes it out once ffmpeg's done.
+# ── Live analysis is no longer part of the stream itself ────────────────────
+# It follows GET /visualizer's subscribers now (see core/visualizer_feed.py
+# and test_visualizer_feed.py), decoding the track from the media server
+# rather than tapping these chunks — this loop neither creates, feeds nor
+# tears down an analyzer any more.
 
 
-async def test_stream_creates_and_feeds_an_analyzer_for_a_live_analyzable_target(
-    client, default_session,
-):
+async def test_casting_alone_starts_no_analysis(client, default_session):
+    """Regression guard for the whole point of that split: casting used to
+    spawn a second ffmpeg and run ~43 FFTs/s for the length of every track
+    whether or not anyone had the visualizer open, throwing every frame
+    away."""
     _configure_and_set_track(client, default_session)
     default_session.state.active_delivery = ChromecastDelivery("TV")
     # Not exercising the completion/auto-advance path here (see the
@@ -963,70 +965,14 @@ async def test_stream_creates_and_feeds_an_analyzer_for_a_live_analyzable_target
     # _fire_track_end() background task that would otherwise outlive this
     # test.
     default_session.state.is_streaming = False
-    previous_analyzer = MagicMock(stop=AsyncMock())
-    default_session.audio_analyzer = previous_analyzer
 
-    new_analyzer = MagicMock(start=AsyncMock(), feed=MagicMock(), finish_feeding=MagicMock())
-    analyzer_class = MagicMock(return_value=new_analyzer)
-
-    with (
-        patch("routes.stream.AudioAnalyzer", analyzer_class),
-        patch("routes.stream.stream_tracks", side_effect=_real_stream),
-    ):
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream):
         resp = await audio_stream(session_id=default_session.session_id)
         chunks = [chunk async for chunk in resp.body_iterator]
 
     assert chunks == [b"chunk-1", b"chunk-2"]
-    previous_analyzer.stop.assert_awaited_once()
-    assert default_session.audio_analyzer is new_analyzer
-    new_analyzer.feed.assert_has_calls([call(b"chunk-1"), call(b"chunk-2")])
-    new_analyzer.finish_feeding.assert_called_once()
-
-
-async def test_stream_skips_analysis_for_a_non_analyzable_target(client, default_session):
-    """AirPlay (and radio) can't be live-analyzed — see should_analyze()'s
-    docstring — GET /visualizer just has nothing to send for these."""
-    _configure_and_set_track(client, default_session)
-    default_session.state.active_delivery = None  # no cast target at all
-    default_session.state.is_streaming = False  # see the comment in the test above
-
-    analyzer_class = MagicMock()
-
-    with (
-        patch("routes.stream.AudioAnalyzer", analyzer_class),
-        patch("routes.stream.stream_tracks", side_effect=_real_stream),
-    ):
-        resp = await audio_stream(session_id=default_session.session_id)
-        [_ async for _ in resp.body_iterator]
-
-    analyzer_class.assert_not_called()
-    assert default_session.audio_analyzer is None
-
-
-async def test_active_stream_connections_decrements_even_when_analyzer_setup_is_cancelled(
-    client, default_session,
-):
-    """Regression test: analyzer.start() is a real await, before the
-    streaming loop's own try/finally used to begin — a client disconnect
-    landing exactly there used to skip the finally that decrements
-    active_stream_connections entirely, permanently leaking the increment
-    from audio_stream() and eventually wedging
-    _mark_disconnected_if_not_reconnected's active_stream_connections == 0
-    check so it could never fire again for this session."""
-    _configure_and_set_track(client, default_session)
-    default_session.state.active_delivery = ChromecastDelivery("TV")
-    before = default_session.state.active_stream_connections
-
-    analyzer_class = MagicMock(
-        return_value=MagicMock(start=AsyncMock(side_effect=asyncio.CancelledError()))
-    )
-
-    with patch("routes.stream.AudioAnalyzer", analyzer_class):
-        resp = await audio_stream(session_id=default_session.session_id)
-        with pytest.raises(asyncio.CancelledError):
-            await resp.body_iterator.__anext__()
-
-    assert default_session.state.active_stream_connections == before
+    assert default_session.visualizer.analyzer is None
+    assert default_session.visualizer._task is None
 
 
 # ── Scheduling the track-end signal on a normal completion ──────────────────

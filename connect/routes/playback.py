@@ -969,12 +969,6 @@ async def stop_playback(session: SessionState = Depends(require_authenticated_se
         st = session.state
         if st.active_delivery:
             await st.active_delivery.stop()
-        # Playback is genuinely ending here (unlike a track just finishing
-        # normally, see routes/stream.py's finish_feeding()) — no reason to let
-        # a still-draining analyzer keep running for content that was stopped.
-        if session.audio_analyzer:
-            await session.audio_analyzer.stop()
-            session.audio_analyzer = None
         st.is_streaming = False
         st.clock.is_paused = False
         st.track_ended = False
@@ -985,6 +979,12 @@ async def stop_playback(session: SessionState = Depends(require_authenticated_se
         st.last_dispatch_key = None
         st.queue = []
         st.queue_index = 0
+        # Playback is genuinely ending here — let the visualizer's supervisor
+        # tear its decoder down now rather than on its next tick (see
+        # core/visualizer_feed.py). Immediacy only: is_streaming going False
+        # above is what it actually reacts to, notified or not, which is why
+        # this belongs after that rather than before it.
+        session.visualizer.notify()
         await claims.release_all_for_session(session.session_id)
         logger.info("[stop] ⏹ Playback stopped")
         await session.event_bus.broadcast(build_status_dict(session))

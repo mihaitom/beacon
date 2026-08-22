@@ -1,16 +1,16 @@
 """Tests for core/audio_analysis.py — analyze_pcm(), should_analyze(), and
 AudioAnalyzer's decode/pace/release pipeline. The subprocess itself
-(spawning ffmpeg, decoding actual MP3) isn't covered here — that needs a
+(spawning ffmpeg, decoding a real file) isn't covered here — that needs a
 real ffmpeg process and is exercised manually against a live cast target
-instead, same as the lyrics providers' test_lyrics_live.py. _write_input()
-and _release_frames() are still covered directly though, by faking out just
-_proc/_proc.stdin (for the former) or _pending/_reading_done directly (for
-the latter) — _release_frames() in particular is the piece that had two
-real bugs: pacing against a fixed bitrate timeline instead of the actual
-calibrated playback clock (let analysis race ahead of real playback), and
-being torn down the moment ffmpeg finished producing bytes rather than once
-playback actually finished (ffmpeg can finish transcoding a whole track in
-seconds, well before the track is done playing)."""
+instead, same as the lyrics providers' test_lyrics_live.py. _read_pcm() and
+_release_frames() are still covered directly though, by faking out
+_proc.stdout (for the former) or _pending/_reading_done (for the latter) —
+_release_frames() in particular is the piece that had two real bugs: pacing
+against a fixed bitrate timeline instead of the actual calibrated playback
+clock (let analysis race ahead of real playback), and being torn down the
+moment ffmpeg finished producing bytes rather than once playback actually
+finished. When analysis starts is core/visualizer_feed.py's job, and is
+covered by test_visualizer_feed.py instead."""
 
 import asyncio
 import logging
@@ -25,6 +25,7 @@ from core.audio_analysis import (
     _FFT_SIZE,
     _FRAME_SECONDS,
     _HOP_SIZE,
+    _MAX_LATENESS_SECONDS,
     _MAX_LOOKAHEAD_SECONDS,
     _PREBUFFER_SECONDS,
     _SAMPLE_RATE,
@@ -45,33 +46,40 @@ def _tone_pcm(freq: float, n: int, sample_rate: int = _SAMPLE_RATE, amplitude: f
 
 
 # ── _decode_cmd ──────────────────────────────────────────────────────────────
-# Regression tests: this used to be a fixed command hardcoding "-f mp3" —
-# see core/streamer.py's demuxer_for() for the full story (GET /visualizer
-# silently never produced frames for a flac/aac/ogg-sourced track cast to
-# Sonos/DLNA/Chromecast). The subprocess itself isn't exercised here (see
-# this module's own docstring), just that the input_format actually lands
-# in the built command where ffmpeg expects an input format flag.
+# The analyzer decodes the media server's own copy of the track rather than
+# the bytes on their way to the device (see the module docstring in
+# core/audio_analysis.py), which is what makes starting mid-track possible
+# at all — so what these cover is that the seek and the ReplayGain the real
+# stream carries actually land in the built command.
 
 
-def test_decode_cmd_uses_given_input_format():
-    cmd = _decode_cmd("flac")
-    assert cmd[cmd.index("-f") + 1] == "flac"
+def test_decode_cmd_seeks_to_the_start_offset_before_the_input():
+    cmd = _decode_cmd("http://media/track.flac", 91.5, 1.0)
+    assert cmd[cmd.index("-ss") + 1] == "91.500"
+    assert cmd.index("-ss") < cmd.index("-i")
 
 
-def test_decode_cmd_reads_from_stdin_and_writes_pcm_to_stdout():
-    cmd = _decode_cmd("mp3")
-    assert cmd[cmd.index("-i") + 1] == "pipe:0"
+def test_decode_cmd_omits_the_seek_when_starting_from_the_beginning():
+    cmd = _decode_cmd("http://media/track.flac", 0.0, 1.0)
+    assert "-ss" not in cmd
+
+
+def test_decode_cmd_applies_replaygain_when_the_stream_carries_it():
+    cmd = _decode_cmd("http://media/track.flac", 0.0, 0.7)
+    assert cmd[cmd.index("-af") + 1] == "volume=0.7"
+
+
+def test_decode_cmd_omits_the_volume_filter_at_unity_gain():
+    cmd = _decode_cmd("http://media/track.flac", 0.0, 1.0)
+    assert "-af" not in cmd
+
+
+def test_decode_cmd_reads_the_source_url_and_writes_mono_pcm_to_stdout():
+    cmd = _decode_cmd("http://media/track.flac", 0.0, 1.0)
+    assert cmd[cmd.index("-i") + 1] == "http://media/track.flac"
+    assert cmd[cmd.index("-ac") + 1] == "1"
+    assert cmd[cmd.index("-ar") + 1] == str(_SAMPLE_RATE)
     assert cmd[-3:] == ["-f", "s16le", "pipe:1"]
-
-
-def test_audio_analyzer_defaults_input_format_to_mp3():
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
-    assert analyzer._input_format == "mp3"
-
-
-def test_audio_analyzer_stores_given_input_format():
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, input_format="flac")
-    assert analyzer._input_format == "flac"
 
 
 # ── analyze_pcm ──────────────────────────────────────────────────────────────
@@ -204,82 +212,6 @@ def test_live_analysis_target_types_excludes_airplay():
     assert "airplay" not in LIVE_ANALYSIS_TARGET_TYPES
 
 
-# ── AudioAnalyzer._write_input — unthrottled, no pacing here anymore ─────────
-
-
-def _fake_analyzer(elapsed_fn) -> tuple[AudioAnalyzer, list[bytes]]:
-    """An AudioAnalyzer with a stand-in for the ffmpeg subprocess — records
-    whatever _write_input() would have written to its stdin, without
-    needing a real decoder process for these tests."""
-    written: list[bytes] = []
-    analyzer = AudioAnalyzer(elapsed_fn=elapsed_fn)
-    analyzer._proc = MagicMock()
-    analyzer._proc.stdin = MagicMock()
-    analyzer._proc.stdin.write = written.append
-    analyzer._proc.stdin.drain = AsyncMock()
-    analyzer._proc.stdin.is_closing = MagicMock(return_value=False)
-    return analyzer, written
-
-
-async def test_write_input_sends_chunks_immediately_regardless_of_elapsed():
-    # Decode-side feeding is deliberately unthrottled now — pacing lives at
-    # the release-to-frontend end instead (_release_frames below), so
-    # elapsed_fn staying at 0 must not hold anything back here.
-    analyzer, written = _fake_analyzer(elapsed_fn=lambda: 0.0)
-    task = asyncio.create_task(analyzer._write_input())
-    try:
-        analyzer.feed(b"a")
-        analyzer.feed(b"b")
-        analyzer.feed(b"c")
-        await asyncio.sleep(0.05)
-        assert written == [b"a", b"b", b"c"]
-    finally:
-        task.cancel()
-
-
-async def test_write_input_closes_stdin_and_exits_on_finish_feeding():
-    analyzer, written = _fake_analyzer(elapsed_fn=lambda: 0.0)
-    task = asyncio.create_task(analyzer._write_input())
-    try:
-        analyzer.feed(b"a")
-        analyzer.finish_feeding()
-        await asyncio.wait_for(task, timeout=1.0)
-        assert written == [b"a"]
-        analyzer._proc.stdin.close.assert_called_once()
-    finally:
-        if not task.done():
-            task.cancel()
-
-
-async def test_feed_after_finish_feeding_is_ignored():
-    analyzer, written = _fake_analyzer(elapsed_fn=lambda: 0.0)
-    task = asyncio.create_task(analyzer._write_input())
-    try:
-        analyzer.finish_feeding()
-        await asyncio.wait_for(task, timeout=1.0)
-        analyzer.feed(b"late")
-        await asyncio.sleep(0.05)
-        assert written == []
-    finally:
-        if not task.done():
-            task.cancel()
-
-
-async def test_finish_feeding_is_idempotent():
-    analyzer, _ = _fake_analyzer(elapsed_fn=lambda: 0.0)
-    analyzer.finish_feeding()
-    analyzer.finish_feeding()  # must not queue a second sentinel / raise
-    assert analyzer._input_queue.qsize() == 1
-
-
-async def test_stop_marks_finished():
-    analyzer, _ = _fake_analyzer(elapsed_fn=lambda: 0.0)
-    await analyzer.stop()
-    assert analyzer._finished is True
-    analyzer.feed(b"x")
-    assert analyzer._input_queue.qsize() == 0
-
-
 # ── AudioAnalyzer._release_frames — this is where pacing actually happens ────
 
 
@@ -288,7 +220,7 @@ def _some_bands() -> list[float]:
 
 
 async def test_release_frames_sends_first_pending_frame_immediately():
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
     analyzer._pending.append((0.0, _some_bands()))
     # Prebuffering (see test_release_frames_waits_for_prebuffer_*  below) is
     # a separate concern from the pacing this test covers — mark decoding
@@ -308,7 +240,7 @@ async def test_release_frames_holds_back_frames_ahead_of_playback():
     # computed them in — this is what makes delivery smooth instead,
     # regardless of how early a frame was actually computed.
     elapsed = 0.0
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: elapsed)
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: elapsed, source_url="http://media/track.flac")
     analyzer._pending.append((0.0, _some_bands()))
     analyzer._pending.append((1.0, _some_bands()))
     analyzer._reading_done = True  # bypass prebuffering — not this test's concern
@@ -324,7 +256,7 @@ async def test_release_frames_holds_back_frames_ahead_of_playback():
 
 async def test_release_frames_releases_once_playback_catches_up():
     elapsed = 0.0
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: elapsed)
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: elapsed, source_url="http://media/track.flac")
     analyzer._pending.append((0.0, _some_bands()))
     analyzer._pending.append((1.0, _some_bands()))
     analyzer._reading_done = True  # bypass prebuffering — not this test's concern
@@ -341,7 +273,7 @@ async def test_release_frames_releases_once_playback_catches_up():
 
 
 async def test_release_frames_exits_once_drained_and_reading_done():
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
     analyzer._pending.append((0.0, _some_bands()))
     analyzer._reading_done = True  # decoding already finished
     task = asyncio.create_task(analyzer._release_frames())
@@ -357,7 +289,7 @@ async def test_release_frames_withholds_everything_until_prebuffer_fills():
     # A single frame at position 0 with decoding still in progress is
     # exactly the "just started, decode hasn't built a lead yet" case
     # _PREBUFFER_SECONDS exists for — nothing should go out yet.
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
     analyzer._pending.append((0.0, _some_bands()))
     task = asyncio.create_task(analyzer._release_frames())
     try:
@@ -370,7 +302,7 @@ async def test_release_frames_withholds_everything_until_prebuffer_fills():
 async def test_release_frames_releases_once_prebuffer_fills():
     # Once _pending's own span reaches _PREBUFFER_SECONDS, the earliest
     # frame(s) should start going out even though decoding is still ongoing.
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
     analyzer._pending.append((0.0, _some_bands()))
     analyzer._pending.append((_PREBUFFER_SECONDS, _some_bands()))
     task = asyncio.create_task(analyzer._release_frames())
@@ -382,7 +314,7 @@ async def test_release_frames_releases_once_prebuffer_fills():
 
 
 async def test_release_frames_waits_for_more_pending_if_not_reading_done():
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
     # Nothing pending yet, decoding still in progress — must not exit.
     task = asyncio.create_task(analyzer._release_frames())
     try:
@@ -398,15 +330,25 @@ async def test_release_frames_keeps_polling_after_pending_drains_mid_stream():
     already satisfied and pending has genuinely drained down to nothing
     with decoding still in progress — the *second* loop's own wait, not
     the first's."""
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 100.0)  # always "caught up"
+    # A stand-in playback position the test moves along by hand, so each
+    # frame comes due (but never falls stale — see _MAX_LATENESS_SECONDS)
+    # exactly when this says so.
+    position = [0.0]
+    analyzer = AudioAnalyzer(
+        elapsed_fn=lambda: position[0], source_url="http://media/track.flac"
+    )
     analyzer._pending.append((0.0, _some_bands()))
     analyzer._pending.append((_PREBUFFER_SECONDS, _some_bands()))
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.sleep(0.1)
-        assert analyzer.frames.qsize() == 2  # both already-pending frames drained
+        assert analyzer.frames.qsize() == 1  # the second frame isn't due yet
 
-        analyzer._pending.append((0.0, _some_bands()))
+        position[0] = _PREBUFFER_SECONDS
+        await asyncio.sleep(_PREBUFFER_SECONDS + 0.1)
+        assert analyzer.frames.qsize() == 2  # pending has now drained fully
+
+        analyzer._pending.append((_PREBUFFER_SECONDS, _some_bands()))
         await asyncio.sleep(0.1)
         assert analyzer.frames.qsize() == 3
         assert not task.done()  # still polling, not exited
@@ -415,9 +357,12 @@ async def test_release_frames_keeps_polling_after_pending_drains_mid_stream():
 
 
 async def test_release_frames_drops_the_oldest_frame_once_the_output_queue_is_full():
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 100.0)  # always "caught up"
+    """A client that stops reading its SSE connection (a stalled browser
+    tab, say) is what fills this up — every frame here is due at the same
+    moment, so pacing holds none of them back."""
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 10.0, source_url="http://media/track.flac")
     for i in range(10):
-        analyzer._pending.append((float(i), [float(i)] * _BAND_COUNT))
+        analyzer._pending.append((10.0, [float(i)] * _BAND_COUNT))
     analyzer._reading_done = True
     task = asyncio.create_task(analyzer._release_frames())
     try:
@@ -432,27 +377,70 @@ async def test_release_frames_drops_the_oldest_frame_once_the_output_queue_is_fu
             task.cancel()
 
 
-# ── AudioAnalyzer.start() / feed()'s overflow guard ──────────────────────────
+async def test_release_frames_drops_frames_playback_has_already_passed():
+    """What an analyzer started mid-track produces first: frames for a
+    position playback moved past while ffmpeg was still spinning up. Sending
+    them would flush a backlog at the frontend as fast as it can take it —
+    a visible stutter — before finally landing in sync. See
+    _MAX_LATENESS_SECONDS."""
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 30.0, source_url="http://media/track.flac")
+    analyzer._pending.append((29.0, [1.0] * _BAND_COUNT))  # a second late
+    analyzer._pending.append((30.0 - _MAX_LATENESS_SECONDS / 2, [2.0] * _BAND_COUNT))
+    analyzer._reading_done = True
+    task = asyncio.create_task(analyzer._release_frames())
+    try:
+        await asyncio.wait_for(task, timeout=1.0)
+        # Only the barely-late one — still current enough to be worth
+        # showing — actually goes out.
+        assert [f[0] for f in list(analyzer.frames._queue)] == [2.0]
+    finally:
+        if not task.done():
+            task.cancel()
 
 
-async def test_start_creates_the_decoder_process_and_its_three_background_tasks():
+# ── AudioAnalyzer.start() ────────────────────────────────────────────────────
+
+
+async def test_start_creates_the_decoder_process_and_its_background_tasks():
     fake_proc = MagicMock()
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
     with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=fake_proc)):
         await analyzer.start()
     try:
         assert analyzer._proc is fake_proc
         assert analyzer._reader_task is not None
-        assert analyzer._writer_task is not None
         assert analyzer._release_task is not None
     finally:
         analyzer._reader_task.cancel()
-        analyzer._writer_task.cancel()
+        analyzer._release_task.cancel()
+
+
+async def test_start_passes_the_source_and_position_to_ffmpeg():
+    exec_mock = AsyncMock(return_value=MagicMock())
+    analyzer = AudioAnalyzer(
+        elapsed_fn=lambda: 0.0,
+        source_url="http://media/track.flac",
+        start_offset=42.0,
+        gain=0.5,
+    )
+    with patch("asyncio.create_subprocess_exec", exec_mock):
+        await analyzer.start()
+    try:
+        cmd = list(exec_mock.await_args.args)
+        assert cmd[cmd.index("-i") + 1] == "http://media/track.flac"
+        assert cmd[cmd.index("-ss") + 1] == "42.000"
+        assert cmd[cmd.index("-af") + 1] == "volume=0.5"
+        # Frames are tagged from where the decode actually starts, not from
+        # the track's beginning — that's what keeps a mid-track start in
+        # sync with playback.
+        assert analyzer._pcm_position == 42.0
+    finally:
+        analyzer._reader_task.cancel()
         analyzer._release_task.cancel()
 
 
 async def test_start_logs_and_leaves_no_tasks_when_ffmpeg_is_missing(caplog):
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
     with (
         patch("asyncio.create_subprocess_exec", AsyncMock(side_effect=FileNotFoundError)),
         caplog.at_level(logging.WARNING, logger="connect.audio_analysis"),
@@ -461,55 +449,7 @@ async def test_start_logs_and_leaves_no_tasks_when_ffmpeg_is_missing(caplog):
 
     assert "ffmpeg not found" in caplog.text
     assert analyzer._reader_task is None
-    assert analyzer._writer_task is None
     assert analyzer._release_task is None
-
-
-async def test_feed_swallows_a_full_input_queue():
-    """Deliberately unbounded in production (see the queue's own comment) —
-    this drives it artificially full to exercise the defensive guard, not
-    something that happens in practice."""
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0)
-    analyzer._proc = MagicMock()
-    analyzer._input_queue = asyncio.Queue(maxsize=1)
-    analyzer._input_queue.put_nowait(b"already-queued")
-
-    analyzer.feed(b"overflow")  # must not raise
-
-    assert analyzer._input_queue.qsize() == 1
-
-
-# ── AudioAnalyzer._write_input — failure handling ────────────────────────────
-
-
-async def test_write_input_silently_swallows_a_broken_pipe():
-    """A device/connection dropping mid-stream is routine, not worth a log
-    line of its own — routes/stream.py's own handling above this already
-    covers the user-facing side of a dropped connection."""
-    analyzer, _ = _fake_analyzer(elapsed_fn=lambda: 0.0)
-    analyzer._proc.stdin.write = MagicMock(side_effect=BrokenPipeError())
-    task = asyncio.create_task(analyzer._write_input())
-    try:
-        analyzer.feed(b"a")
-        await asyncio.wait_for(task, timeout=1.0)  # must not raise
-    finally:
-        if not task.done():
-            task.cancel()
-
-
-async def test_write_input_logs_an_unexpected_error(caplog):
-    analyzer, _ = _fake_analyzer(elapsed_fn=lambda: 0.0)
-    analyzer._proc.stdin.write = MagicMock(side_effect=RuntimeError("disk full"))
-    task = asyncio.create_task(analyzer._write_input())
-    try:
-        with caplog.at_level(logging.WARNING, logger="connect.audio_analysis"):
-            analyzer.feed(b"a")
-            await asyncio.wait_for(task, timeout=1.0)
-    finally:
-        if not task.done():
-            task.cancel()
-
-    assert "writer stopped" in caplog.text
 
 
 # ── AudioAnalyzer._read_pcm — decode/FFT/windowing ───────────────────────────
@@ -521,7 +461,7 @@ def _fake_analyzer_with_stdout(elapsed_fn, stdout_chunks) -> AudioAnalyzer:
     windowing/pacing logic is directly testable without a real ffmpeg
     process (see the module docstring: actual MP3 decoding correctness
     itself still isn't covered here, only the Python logic around it)."""
-    analyzer = AudioAnalyzer(elapsed_fn=elapsed_fn)
+    analyzer = AudioAnalyzer(elapsed_fn=elapsed_fn, source_url="http://media/track.flac")
     analyzer._proc = MagicMock()
     analyzer._proc.stdout = MagicMock()
     analyzer._proc.stdout.read = AsyncMock(side_effect=list(stdout_chunks))
@@ -594,13 +534,13 @@ async def test_read_pcm_logs_an_unexpected_error(caplog):
 # ── AudioAnalyzer.stop() — immediate teardown ────────────────────────────────
 
 
-async def test_stop_cancels_all_three_background_tasks_and_kills_the_process():
-    analyzer, _ = _fake_analyzer(elapsed_fn=lambda: 0.0)
+async def test_stop_cancels_both_background_tasks_and_kills_the_process():
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
+    analyzer._proc = MagicMock()
 
     async def _never_ending():
         await asyncio.sleep(1000)
 
-    analyzer._writer_task = asyncio.create_task(_never_ending())
     analyzer._reader_task = asyncio.create_task(_never_ending())
     analyzer._release_task = asyncio.create_task(_never_ending())
     await asyncio.sleep(0)  # let them actually start before stopping them
@@ -608,14 +548,22 @@ async def test_stop_cancels_all_three_background_tasks_and_kills_the_process():
     await analyzer.stop()
     await asyncio.sleep(0)  # let the requested cancellation actually land
 
-    assert analyzer._writer_task.cancelled()
     assert analyzer._reader_task.cancelled()
     assert analyzer._release_task.cancelled()
     analyzer._proc.kill.assert_called_once()
 
 
 async def test_stop_swallows_the_process_already_being_gone():
-    analyzer, _ = _fake_analyzer(elapsed_fn=lambda: 0.0)
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
+    analyzer._proc = MagicMock()
     analyzer._proc.kill = MagicMock(side_effect=ProcessLookupError())
+
+    await analyzer.stop()  # must not raise
+
+
+async def test_stop_is_safe_before_start_ever_ran():
+    """ffmpeg missing (see start()) leaves no process and no tasks — the
+    supervisor still stops it like any other analyzer."""
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
 
     await analyzer.stop()  # must not raise

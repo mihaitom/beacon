@@ -1,21 +1,37 @@
 """core/audio_analysis.py — Real-time frequency-band analysis for casting.
 
-Taps the same MP3 bytes already being streamed to a Sonos/DLNA/Chromecast
-device (see routes/stream.py's stream_with_completion()) through a second,
-decode-only ffmpeg process, runs a small FFT over the decoded PCM, and
-publishes normalized band-energy frames for the fullscreen visualizer
-(AudioVisualizer.vue's 'cast' mode) via a per-session queue exposed over
-GET /visualizer.
+Decodes the casting track a second time — straight from the media server,
+seeked to wherever playback actually is — runs a small FFT over the decoded
+PCM, and publishes normalized band-energy frames for the fullscreen
+visualizer (AudioVisualizer.vue's 'cast' mode) via a per-session queue
+exposed over GET /visualizer.
 
-Deliberately not wired up for AirPlay (delivery/airplay.py downloads a whole
-track into memory *ahead* of pushing it to the device, to dodge a pyatv
-decoder-detection timeout — "live" analysis there would run well ahead of
-what's actually audible) or radio (its raw station URL goes straight to the
-device, bypassing this pipeline entirely — see routes/playback.py). See
-_should_analyze() in routes/stream.py, which gates this off before it's ever
-started for those cases.
+Only ever runs while someone actually has that visualizer open —
+core/visualizer_feed.py owns that lifecycle; this module knows nothing about
+it beyond being started and stopped at arbitrary moments. Which is also why
+this decodes the source itself instead of tapping the bytes already on their
+way to the device (what it used to do, via a feed() called from
+routes/stream.py's streaming loop): such a tap can only ever be joined at
+the stream's very start. The track position of a byte arriving mid-stream
+isn't knowable without either having buffered the whole stream from its
+beginning or parsing container timestamps back out of it, and a frame
+tagged with the wrong position gets released at the wrong moment — visibly
+out of sync with the music, which is the one thing this has to get right.
+Seeking a fresh decoder to clock.elapsed() makes the position exact by
+construction at *any* moment instead, so analysis can start and stop
+whenever its audience does.
+
+The tradeoff is one extra read of the track from the media server for as
+long as the visualizer stays open — from the current position onward, not
+the track's beginning, and paced at roughly 1x real time (see _decode_cmd()).
+
+Still skipped for AirPlay and radio (see should_analyze(), which
+core/visualizer_feed.py gates on): AirPlay pushes a whole track into the
+device ahead of time and has no position feedback, so its playback clock is
+a fixed estimate rather than something calibrated against the device (see
+PlaybackClock.set_fixed_offset()), and radio has no track — its station URL
+goes straight to the device, with no position to seek to at all.
 """
-
 import asyncio
 import logging
 import math
@@ -37,21 +53,42 @@ logger = logging.getLogger("connect.audio_analysis")
 _SAMPLE_RATE = 44100
 
 
-def _decode_cmd(input_format: str) -> list[str]:
-    """`input_format` is an ffmpeg *demuxer* name (see core/streamer.py's
-    demuxer_for()) matching whatever stream_with_completion() actually feeds
-    this via feed() — not always "mp3": a track's resolved OutputFormat can
-    just as well be flac/aac/ogg copy-through, or a lossless flac re-encode."""
+def _decode_cmd(source_url: str, start_offset: float, gain: float) -> list[str]:
+    """Decode-only ffmpeg over the media server's own copy of the track,
+    seeked to `start_offset` — the track position this analysis run starts
+    at, which for a visualizer opened mid-track is simply wherever playback
+    already is.
+
+    Deliberately carries no -readrate pacing of its own (unlike
+    core/streamer.py's command, see _READRATE_ARGS there): _read_pcm() stops
+    reading stdout once it's _MAX_LOOKAHEAD_SECONDS ahead of playback,
+    ffmpeg blocks on its own write as soon as the pipe buffer fills, and the
+    whole pipeline behind it — the HTTP fetch from the media server included
+    — stalls with it. So the extra read averages ~1x real time on its own,
+    without a second pacing mechanism that would then have to be kept in
+    agreement with that one.
+
+    `gain` is the same ReplayGain multiplier the real stream is encoded with
+    (see core/streamer.py's stream_tracks()), applied here too so band
+    levels match what the device is actually playing rather than the
+    untouched file.
+    """
+    # -ss before -i, same as stream_tracks() — input-side seeking, which
+    # skips straight to the right point instead of decoding everything
+    # before it. The 0.5s threshold matches that function's too: below it,
+    # seeking isn't worth its own imprecision.
+    seek = ["-ss", f"{start_offset:.3f}"] if start_offset > 0.5 else []
+    volume = ["-af", f"volume={gain}"] if gain != 1.0 else []
     return [
         "ffmpeg",
         "-hide_banner",
         "-loglevel",
         "error",
-        "-f",
-        input_format,
+        *seek,
         "-i",
-        "pipe:0",
+        source_url,
         "-vn",
+        *volume,
         "-ac",
         "1",
         "-ar",
@@ -60,6 +97,7 @@ def _decode_cmd(input_format: str) -> list[str]:
         "s16le",
         "pipe:1",
     ]
+
 
 # Analysis window — same size as 'local' mode's Web Audio AnalyserNode
 # (see audioEngine.ts's setupAnalyser()). An FFT's window length IS the
@@ -148,17 +186,15 @@ _MAX_DB = -25.0
 # the overlap already provides, rather than doubling up on it.
 _SMOOTHING_TIME_CONSTANT = 0.25
 # How much of a content_position lookahead must be sitting in `_pending`
-# before _release_frames() starts releasing anything at all. Both ffmpeg
-# processes in play here (the real encode feeding the device, and this
-# module's own decode-only one) take a moment to spin up, and MP3 decoding
-# itself needs a little buffered input before it starts producing output —
-# during that startup window `_pending` swings between empty (release finds
-# nothing to send) and suddenly holding several already-releasable frames at
-# once (which then go out back-to-back with no pacing between them, since
-# each already satisfies `remaining <= 0`), reading as a stuttery/staccato
-# start before decode settles into comfortably outrunning real time. Waiting
-# for this small a cushion first means decode already has its lead by the
-# time delivery begins, instead of visibly building it live.
+# before _release_frames() starts releasing anything at all. ffmpeg takes a
+# moment to spin up, fetch its first bytes from the media server and get
+# decoding — during that startup window `_pending` swings between empty
+# (release finds nothing to send) and suddenly holding several already-
+# releasable frames at once (which then go out back-to-back with no pacing
+# between them, since each already satisfies `remaining <= 0`), reading as a
+# stuttery/staccato start before decode settles into comfortably outrunning
+# real time. Waiting for this small a cushion first means decode already has
+# its lead by the time delivery begins, instead of visibly building it live.
 _PREBUFFER_SECONDS = 0.3
 # Caps how far ahead of real playback _read_pcm() is allowed to decode+FFT
 # before pausing (see its own use of this below). Without a cap, decode
@@ -178,6 +214,18 @@ _PREBUFFER_SECONDS = 0.3
 # cushion against real hiccups while keeping the steady-state FFT rate
 # close to the ~43/s it's sized for.
 _MAX_LOOKAHEAD_SECONDS = 3.0
+# How far past its own moment a frame may still be released, before
+# _release_frames() drops it instead. Decode normally runs comfortably ahead
+# of playback (see _MAX_LOOKAHEAD_SECONDS), so this only ever comes up at
+# start-up: an analyzer started mid-track spends a moment spawning ffmpeg
+# and fetching the first bytes from the media server, and by the time its
+# first frames exist, playback has already moved past the position they
+# describe. Sending them anyway means opening the visualizer starts by
+# flushing that backlog as fast as the SSE consumer will take it — none of
+# it paced, since every frame is already due — a visible stutter that then
+# settles into sync. Dropping them instead simply starts at the first frame
+# that is actually current.
+_MAX_LATENESS_SECONDS = 0.15
 
 
 def analyze_pcm(pcm: bytes) -> list[float]:
@@ -243,81 +291,63 @@ def _smooth_bands(
 
 
 class AudioAnalyzer:
-    """One instance per actively-analyzed *track* (see routes/stream.py's
-    stream_with_completion(), which creates and feeds one per track, and
-    routes/playback.py's /stop, which is the other thing that tears one
-    down — see finish_feeding()/stop() below for why those are two
-    different methods). feed() is non-blocking and safe to call from the
-    hot path that's also yielding chunks to the actual device — this must
-    never add latency there, so all decoding/FFT/pacing work happens in
-    background tasks instead.
+    """One decode+analysis run, for one track from one starting position.
+    Created by core/visualizer_feed.py whenever there is both something
+    analyzable playing and somebody watching it, and torn down again
+    (stop()) as soon as either stops being true — a track change, a seek, or
+    the last /visualizer subscriber going away.
 
-    Decoding and FFT (_write_input/_read_pcm) run flat out, unthrottled —
-    ffmpeg's transcode is CPU-bound, not real-time, so this can (and does)
-    race ahead of actual playback. Pacing happens at the very end instead
-    (_release_frames): finished band frames sit in `_pending` until their
-    own moment actually arrives, then get drip-fed to `frames` (what GET
-    /visualizer reads) one at a time. Doing it this way rather than
-    pacing the decoder's *input* (an earlier version of this) means a
-    burst of quickly-available frames doesn't also arrive at the frontend
-    in a burst — each is released on its own schedule regardless of how
-    early it was actually computed.
+    Decoding and FFT (_read_pcm) run flat out, pausing only once far enough
+    ahead of playback (_MAX_LOOKAHEAD_SECONDS) — ffmpeg's decode is
+    CPU-bound, not real-time, so it would otherwise race through the rest of
+    the track in seconds. Pacing happens at the very end instead
+    (_release_frames): finished band frames sit in `_pending` until their own
+    moment actually arrives, then get drip-fed to `frames` (what GET
+    /visualizer reads) one at a time, so a burst of quickly-computed frames
+    doesn't also arrive at the frontend in a burst.
 
     `elapsed_fn` should be the session's calibrated PlaybackClock.elapsed()
     (track-relative seconds, corrected for the device's real startup-
     buffering delay — see core/playback_clock.py), not a fixed bitrate
-    timeline, since a device's own startup buffering needs accounting for
-    too. `start_offset` is the track position (seconds) this stream's very
-    first byte represents — 0.0 unless this connection is a seek/resume
-    rather than starting a track from the beginning. `input_format` is the
-    ffmpeg demuxer name matching the actual bytes feed() will receive (see
-    core/streamer.py's demuxer_for()) — defaults to "mp3" only because that
-    happens to be this class's own fallback-tier assumption, not because
-    it's a safe default for any other caller to skip passing the real one."""
-
-    # Sentinel telling _write_input() "no more real chunks are coming, close
-    # the decoder's stdin once the queue's empty" — see finish_feeding().
-    _END = object()
+    timeline: it's both what `start_offset` is read from at construction and
+    what every frame is then released against. `source_url` is the media
+    server's own URL for the track (MediaClient.get_stream_url()), decoded
+    here independently of whatever is being sent to the device — see the
+    module docstring for why. `gain` mirrors the ReplayGain applied to that
+    real stream."""
 
     def __init__(
         self,
         elapsed_fn: Callable[[], float],
+        source_url: str,
         start_offset: float = 0.0,
-        input_format: str = "mp3",
+        gain: float = 1.0,
     ) -> None:
-        self._input_format = input_format
         self.frames: asyncio.Queue[list[float]] = asyncio.Queue(maxsize=8)
-        # Deliberately unbounded — feed() must never block (see its own
-        # docstring), and since ffmpeg's transcode can run well ahead of
-        # real time, this can end up briefly holding most of a track's
-        # worth of MP3 (a few MB) before _write_input() gets to it. Fine
-        # for one analyzed stream at a time; would want a cap if this ever
-        # supported many concurrent sessions.
-        self._input_queue: asyncio.Queue[bytes | object] = asyncio.Queue()
         # (content_position, bands) pairs already computed but not yet
         # released — see _release_frames(). A handful of KB even for a
-        # whole track's worth (each entry is _BAND_COUNT floats), unlike
-        # the MP3-bytes queue above.
+        # whole track's worth (each entry is _BAND_COUNT floats).
         self._pending: deque[tuple[float, list[float]]] = deque()
+        self._source_url = source_url
+        self._start_offset = start_offset
+        self._gain = gain
         self._proc: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task | None = None
-        self._writer_task: asyncio.Task | None = None
         self._release_task: asyncio.Task | None = None
         self._pcm_buffer = bytearray()
         # Running state for _smooth_bands() — carries across frames within
-        # this one analyzer/track, reset naturally for the next track since
-        # each gets a fresh AudioAnalyzer instance.
+        # this one run, reset naturally for the next one since each gets a
+        # fresh AudioAnalyzer instance.
         self._smoothed_bands: list[float] | None = None
         self._elapsed_fn = elapsed_fn
         self._pcm_position = start_offset
         self._reading_done = False
-        self._finished = False
 
     async def start(self) -> None:
         try:
             self._proc = await asyncio.create_subprocess_exec(
-                *_decode_cmd(self._input_format),
-                stdin=asyncio.subprocess.PIPE,
+                *_decode_cmd(self._source_url, self._start_offset, self._gain),
+                stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
@@ -325,68 +355,7 @@ class AudioAnalyzer:
             logger.warning("[audio-analysis] ffmpeg not found — visualizer data disabled")
             return
         self._reader_task = asyncio.create_task(self._read_pcm())
-        self._writer_task = asyncio.create_task(self._write_input())
         self._release_task = asyncio.create_task(self._release_frames())
-
-    def feed(self, chunk: bytes) -> None:
-        """Queues one MP3 chunk for (backgrounded) decoding — never blocks,
-        so it's safe to call inline from the actual device-streaming loop
-        without risking adding latency to real playback."""
-        if not self._proc or self._finished:
-            return
-        try:
-            self._input_queue.put_nowait(chunk)
-        except asyncio.QueueFull:
-            pass
-
-    def finish_feeding(self) -> None:
-        """Marks that no more feed() calls are coming for this track, once
-        routes/stream.py's device-streaming loop itself has finished — NOT
-        the same moment as "safe to tear down". ffmpeg's own transcode can
-        finish producing a whole track's MP3 in a few seconds regardless of
-        the track's real length (that's the "FFmpeg done early" log line),
-        so at that point there can still be most of a track's worth of
-        audio not yet decoded, analyzed, and released. Calling stop() here
-        instead would cut analysis off within seconds of a track starting
-        rather than following it to the end — this lets the decode/FFT/
-        release pipeline keep running until there's genuinely nothing left,
-        then exit on its own. See stop() for the actual immediate teardown,
-        used when a *different* track supersedes this one instead."""
-        if self._finished or not self._proc:
-            return
-        self._finished = True
-        self._input_queue.put_nowait(self._END)
-
-    async def _write_input(self) -> None:
-        """Feeds the decoder as fast as chunks arrive — no pacing here
-        (see the class docstring for where pacing actually happens)."""
-        assert self._proc and self._proc.stdin
-        try:
-            while True:
-                chunk = await self._input_queue.get()
-                if chunk is self._END:
-                    break
-                assert isinstance(chunk, bytes)
-                self._proc.stdin.write(chunk)
-                await self._proc.stdin.drain()
-            # Nothing left to feed — let the decoder flush and exit on its
-            # own (_read_pcm sees EOF) rather than killing it, so whatever
-            # was still in flight through it still produces its last
-            # real frame(s).
-            if not self._proc.stdin.is_closing():
-                self._proc.stdin.close()
-        except (BrokenPipeError, ConnectionResetError, asyncio.CancelledError):
-            pass
-        except Exception as e:
-            # Was logger.debug — invisible at the INFO level a prod deploy
-            # normally runs at, which made a mid-track failure here (ffmpeg
-            # dying, a genuinely broken pipe not covered by the tuple above)
-            # read to the user as "the visualizer just silently stopped",
-            # with nothing in the log to explain why. This is the writer
-            # counterpart to _read_pcm()'s own reader-stopped log below —
-            # either one dying mid-track is what leaves _release_frames()
-            # draining `_pending` down to nothing and then exiting for good.
-            logger.warning(f"[audio-analysis] writer stopped: {e}")
 
     async def _read_pcm(self) -> None:
         """Decodes and FFTs as fast as the decoder produces PCM, up to
@@ -473,6 +442,11 @@ class AudioAnalyzer:
                     await asyncio.sleep(min(remaining, 0.5))
                     continue
                 self._pending.popleft()
+                # Already past its moment by more than a blink — see
+                # _MAX_LATENESS_SECONDS. Dropped rather than sent, so
+                # catching up costs nothing visible.
+                if remaining < -_MAX_LATENESS_SECONDS:
+                    continue
                 if self.frames.full():
                     self.frames.get_nowait()  # drop oldest — always show freshest
                 self.frames.put_nowait(bands)
@@ -480,29 +454,26 @@ class AudioAnalyzer:
             pass
 
     async def stop(self) -> None:
-        """Immediate teardown — used when a *different* track's analyzer
-        supersedes this one, or playback stops entirely (routes/playback.py's
-        /stop), not for a track just finishing normally (see
-        finish_feeding() for that path)."""
-        self._finished = True
-        if self._writer_task:
-            self._writer_task.cancel()
+        """Immediate teardown — everything this run owns goes away at once.
+        Called by core/visualizer_feed.py for every reason a run ends:
+        nobody is watching any more, or what's playing has changed and a
+        fresh run at the new position supersedes this one. Safe to call on
+        an analyzer whose start() never got as far as a process (ffmpeg
+        missing), and safe to call twice."""
         if self._reader_task:
             self._reader_task.cancel()
         if self._release_task:
             self._release_task.cancel()
         if self._proc:
             try:
-                if self._proc.stdin and not self._proc.stdin.is_closing():
-                    self._proc.stdin.close()
                 self._proc.kill()
             except ProcessLookupError:
                 pass
 
 
-# Kept here (rather than only in a docstring) so both routes/stream.py and
-# tests reference the exact same set — "everything except AirPlay" is the
-# actual intent, not "these three specifically", but spelling it out
+# Kept here (rather than only in a docstring) so both
+# core/visualizer_feed.py and tests reference the exact same set —
+# "everything except AirPlay" is the actual intent, not "these three specifically", but spelling it out
 # explicitly is safer than an exclusion list silently covering some future
 # delivery type nobody's decided is actually safe to analyze yet.
 LIVE_ANALYSIS_TARGET_TYPES = frozenset({"sonos", "dlna", "chromecast"})
@@ -510,7 +481,7 @@ LIVE_ANALYSIS_TARGET_TYPES = frozenset({"sonos", "dlna", "chromecast"})
 
 def should_analyze(target_pairs: list[tuple[str, str]]) -> bool:
     """Whether at least one currently-active delivery target can plausibly
-    have its stream analyzed live — see the module docstring for why
+    have its playback analyzed — see the module docstring for why
     AirPlay/radio can't. `target_pairs` is core.state.list_target_pairs()'s
     output, kept as a plain parameter (not importing SessionState here) to
     avoid a session <-> audio_analysis import cycle."""

@@ -200,6 +200,20 @@ def stream_url(session_id: str) -> str:
     return f"http://{get_local_ip()}:{PORT}/stream/{session_id}"
 
 
+# Track id of routes/debug.py's synthesized test tone — not a real library
+# track, so anything that would otherwise resolve a track id against the
+# media server has to special-case it (routes/stream.py and
+# core/visualizer_feed.py both do). Lives here rather than in routes/debug.py
+# itself so core/ can recognize it without importing a route module back.
+TEST_TONE_TRACK_ID = "__test_tone__"
+
+
+def test_tone_url() -> str:
+    """Loopback, not stream_url()'s LAN IP: the test tone is fetched by
+    ffmpeg from inside this same process/container, never by a cast device."""
+    return f"http://127.0.0.1:{PORT}/debug/test-tone.wav"
+
+
 _DELIVERY_TYPES: dict[str, type[BaseDelivery]] = {
     "airplay": AirPlayDelivery,
     "chromecast": ChromecastDelivery,

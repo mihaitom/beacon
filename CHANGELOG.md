@@ -35,6 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Changed where an artist page's external links (Spotify, Apple Music, TIDAL, YouTube, Deezer, Discogs, MusicBrainz) show up - they sit next to the Artist Radio button now instead of crowding the top-right corner alongside the rating stars and favorite heart
 - Changed cover art to only load once it's about to scroll into view instead of every single one on a page loading at once, and to be cached by the browser afterward - large grids/lists load noticeably faster and revisiting them no longer re-fetches art that was already shown
 - Changed the seek bar to stop stretching past 600px wide on very wide monitors
+- Changed the fullscreen visualizer's cast mode to only analyze the audio while somebody actually has it open, instead of doing that work for every cast whether or not anyone was watching - casting is noticeably lighter on the server, and opening the visualizer part-way through a song picks the music up where it is
 
 ### Fixed
 
