@@ -1,29 +1,35 @@
 <template>
-  <!-- No `eager` — v-img's default is to lazy-load via IntersectionObserver
-   - (see lazyOptions below), only actually requesting the image once it's
-   - about to scroll into view. This component renders on every single row
-   - of every grid/list in the app; loading all of them immediately meant
-   - a page with hundreds of covers fired off hundreds of concurrent
-   - requests the instant it mounted, most for art nobody had scrolled to
-   - yet, competing for bandwidth/connection slots with the handful that
-   - were actually visible. An always-on-screen instance (PlayerBar's own
-   - small art, NowPlayingView's big one) isn't slowed by this in
-   - practice — it's already within the viewport root the moment it
-   - mounts, so the observer fires on the very next frame regardless. -->
-  <v-avatar v-if="rounded" :size="sizeCss" rounded="0">
+  <!-- The image is only mounted (and therefore only requested) once
+   - `shouldLoad` says this cover has actually stayed in view — see
+   - LOAD_SETTLE_MS. This component renders on every single row of every
+   - grid/list in the app, so what it does while scrolling is the whole
+   - question: loading eagerly meant a page fired off hundreds of
+   - concurrent requests the instant it mounted, and v-img's own
+   - intersection-based laziness (what this replaced) still meant one
+   - request per row *passed*, which on a 15k-song list is 15k requests
+   - for a single flick of the scroll wheel. `eager` on the v-img itself
+   - is deliberate and not a contradiction: by the time it exists at all,
+   - the decision to load has already been made here, and a second
+   - observer inside it would only delay the request it was mounted for.
+   - An always-on-screen instance (PlayerBar's own small art,
+   - NowPlayingView's big one) pays only the settle delay once, on mount,
+   - and nothing on any later track change — `shouldLoad` stays true for
+   - this instance's lifetime. -->
+  <v-avatar v-if="rounded" ref="root" :size="sizeCss" rounded="0">
     <v-img
-      v-if="url"
+      v-if="url && shouldLoad"
       :src="url"
       width="100%"
       height="100%"
       cover
-      :options="lazyOptions"
+      eager
       @error="onError"
     >
       <template #placeholder>
         <v-skeleton-loader type="image" class="cover-art-skeleton" />
       </template>
     </v-img>
+    <v-skeleton-loader v-else-if="url" type="image" class="cover-art-skeleton" />
     <v-icon v-else :size="iconSizeCss(0.6)" :icon="fallbackIcon" />
   </v-avatar>
   <!-- v-img is sized as 100%/100% of this box, not its own copy of `size`
@@ -33,20 +39,21 @@
    - while the image inside it snapped instantly, since nothing here was
    - telling *it* to animate too. Filling the parent means it always
    - matches this box's current size, mid-transition or not. -->
-  <div v-else class="cover-art" :style="{ width: sizeCss, height: sizeCss }">
+  <div v-else ref="root" class="cover-art" :style="{ width: sizeCss, height: sizeCss }">
     <v-img
-      v-if="url"
+      v-if="url && shouldLoad"
       :src="url"
       width="100%"
       height="100%"
       cover
-      :options="lazyOptions"
+      eager
       @error="onError"
     >
       <template #placeholder>
         <v-skeleton-loader type="image" class="cover-art-skeleton" />
       </template>
     </v-img>
+    <v-skeleton-loader v-else-if="url" type="image" class="cover-art-skeleton" />
     <div v-else class="cover-art-fallback">
       <v-icon :size="iconSizeCss(0.5)" :icon="fallbackIcon" />
     </div>
@@ -57,14 +64,28 @@
 import type { PropType } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 
-// v-img's IntersectionObserver options (see the template's own comment on
-// why this isn't `eager`) — a plain module-level constant, not a computed,
-// since it's the same object for every instance and never changes. A
-// generous rootMargin starts the request a bit before the cover actually
-// scrolls into view, so it's already there (or close to it) by the time
-// it would otherwise pop in, rather than only starting the fetch the
-// instant it crosses the viewport edge.
-const LAZY_OPTIONS = { rootMargin: '400px 0px' }
+// Starts the request a bit before the cover actually scrolls into view, so
+// it's already there (or close to it) by the time it would otherwise pop
+// in, rather than only starting the fetch the instant it crosses the
+// viewport edge.
+const LAZY_ROOT_MARGIN = '400px 0px'
+// How long a cover has to stay within that margin before it's actually
+// requested. Entering the viewport is not the same thing as being looked
+// at: scrolling a 15,000-song list from the top to the bottom sweeps every
+// row through it, and requesting on entry alone means every one of those
+// rows fetches its art, for a list the user never stopped at — measured
+// live on 2026-08-22 as exactly that, one server request per song in the
+// list for a single fast scroll. A row passed at scrolling speed is on
+// screen for a frame or two, far below this, so its timer is cancelled by
+// the exit before it ever fires and no request is made at all; the rows
+// wherever the scroll actually comes to rest are the ones that load.
+//
+// Kept short enough to stay invisible when scrolling normally: paired with
+// LAZY_ROOT_MARGIN's 400px of lead, a cover still has this long *plus* the
+// time it takes to travel those 400px before anyone can see whether it
+// arrived. Raising it would start dropping covers the user genuinely
+// scrolled to.
+const LOAD_SETTLE_MS = 150
 
 export default {
   name: 'CoverArt',
@@ -111,12 +132,17 @@ export default {
       // Index into the candidate list below — advances on @error until
       // exhausted, at which point `url` returns null (icon placeholder).
       failedCount: 0,
+      // Whether this cover has earned its request yet — see LOAD_SETTLE_MS.
+      // One-way: once true it stays true for this instance's lifetime, so
+      // scrolling a loaded cover back out of view and in again doesn't
+      // re-gate it (and doesn't re-request it either, the browser cache
+      // already has it).
+      shouldLoad: false,
+      observer: null as IntersectionObserver | null,
+      settleTimer: null as number | null,
     }
   },
   computed: {
-    lazyOptions() {
-      return LAZY_OPTIONS
-    },
     // This component's own CSS box (width/height, both branches) — a
     // number needs "px" appended, a string (already a full CSS value) is
     // used as-is.
@@ -160,7 +186,70 @@ export default {
       this.failedCount = 0
     },
   },
+  mounted() {
+    // Either of these means there's nothing to observe against, so the
+    // choice is "load now" or "never load" — and a cover that never
+    // appears is by far the worse failure. No IntersectionObserver at all
+    // is jsdom under test or a very old browser; no resolvable root
+    // element shouldn't happen, but see rootElement() for why $el alone
+    // can't be trusted here.
+    const target = this.rootElement()
+    if (typeof IntersectionObserver === 'undefined' || !target) {
+      this.shouldLoad = true
+      return
+    }
+    this.observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[entries.length - 1]?.isIntersecting) {
+          this.startSettle()
+        } else {
+          this.cancelSettle()
+        }
+      },
+      { rootMargin: LAZY_ROOT_MARGIN },
+    )
+    this.observer.observe(target)
+  },
+  beforeUnmount() {
+    // Both matter for a virtualized list (SongTable.vue's v-virtual-scroll),
+    // where rows are unmounted by the hundred while scrolling: a timer left
+    // running would fire against a component that no longer exists, and an
+    // observer left connected keeps a detached element alive.
+    this.cancelSettle()
+    this.observer?.disconnect()
+    this.observer = null
+  },
   methods: {
+    /** The DOM element to watch. Deliberately not `this.$el`: this
+     * component's two root branches have template comments between them,
+     * which a dev build keeps, making the component a *fragment* — and
+     * `$el` is then the first node of that fragment, i.e. a comment node,
+     * which IntersectionObserver.observe() rejects outright ("parameter 1
+     * is not of type 'Element'"). A ref on each branch's actual root
+     * always resolves to the real element, whichever branch rendered.
+     * The avatar branch's ref is a component, not an element, so its own
+     * root has to be unwrapped. */
+    rootElement(): Element | null {
+      const root = this.$refs.root as Element | { $el?: unknown } | undefined
+      if (root instanceof Element) return root
+      const el = root && '$el' in root ? root.$el : null
+      return el instanceof Element ? el : null
+    },
+    startSettle() {
+      if (this.shouldLoad || this.settleTimer !== null) return
+      this.settleTimer = window.setTimeout(() => {
+        this.settleTimer = null
+        this.shouldLoad = true
+        // Nothing left to decide for this instance — see shouldLoad.
+        this.observer?.disconnect()
+        this.observer = null
+      }, LOAD_SETTLE_MS)
+    },
+    cancelSettle() {
+      if (this.settleTimer === null) return
+      window.clearTimeout(this.settleTimer)
+      this.settleTimer = null
+    },
     onError() {
       this.failedCount += 1
     },
