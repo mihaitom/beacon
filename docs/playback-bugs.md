@@ -20,13 +20,29 @@ For a fixed one, always answer "why did the test suite not catch this?".
 
 ### Cast device drops a healthy stream mid-track
 
-**Status:** almost certainly not in this codebase. On 2026-08-22 the pre-fix
-build and the current build were run side by side, each serving a different
-room from its own process, port and session. Both lost their device within
-ten seconds of each other, with identical signatures. Two different code
-bases cannot share an application bug at the same instant, so the cause lies
-outside Beacon - in the Sonos system or the network. See "The controlled
-comparison" below.
+**Status: root-caused 2026-08-23, and it is ours after all** - though not
+where anyone looked for three days. Beacon's *request volume* knocks over an
+authorisation middleware in the reverse proxy that its own media fetches
+depend on; the middleware then denies everything, both casting streams lose
+their source in the same instant, and each speaker stops once its buffer
+runs out. Reproduced deliberately at 21:37 by scrolling cover art until it
+fell over. See "The mechanism" below; the day's elimination work that led
+there is kept after it, because the dead ends are the valuable part.
+
+Everything the earlier entries ruled out stays ruled out - the delivery
+format, the copy tier, transport commands, the cloud, WiFi, the devices
+themselves. They were all correct and all beside the point: the failure is
+in how much traffic this app generates, not in what it sends. Everything downstream of that (which tier, which format, how the
+stream is paced, how it is delivered) is therefore ruled out as a cause,
+whatever remains interesting about it for other reasons.
+
+**Earlier status, kept because the reasoning was the step before:** on
+2026-08-22 the pre-fix build and the current build were run side by side,
+each serving a different room from its own process, port and session. Both
+lost their device within ten seconds of each other. Two different code bases
+cannot share an application bug at the same instant - but they *can* share a
+delivery path, which is why that comparison could not exonerate the delivery
+path itself. See "The controlled comparison" further down.
 
 **Earlier status, kept because the reasoning still applies to the mechanism:**
 root cause unknown as of 2026-08-22. Several contributing bugs
@@ -103,7 +119,13 @@ actionable.
 | A zone-group topology change | Subscribed to `ZoneGroupTopology` on all six players. Topology stayed at `groups=2` throughout; the only broadcasts coincided with the app being opened by hand |
 | A firmware version mismatch in the household | The Sub runs 17.2.6 against 18.7 elsewhere, but Sonos publishes that as the separate "legacy system version" track and the app reports everything up to date. A supported state, not a defect |
 
-**Strongest open lead - the stream-copy tier itself.** The drops were first
+**Former lead, now closed - the stream-copy tier itself.** Kept for the
+reasoning, not as a candidate. Three independent findings close it: a room
+stopped the same way while playing through the household's own music service
+(no ffmpeg, no copy tier, no `/stream` of ours); the specific track both
+2026-08-23 events happened on played four more times on repeat without an
+abort; and the aborts split evenly across mp3-copy and flac-copy anyway. The `FORCE_FALLBACK_FORMAT` A/B
+described here is therefore no longer worth running as a cause test. The drops were first
 noticed after `resolve_output_format()` gained the `-acodec copy` tiers.
 Before that every track was re-encoded to a uniform MP3 192k CBR stream, and
 the simpler upstream this backend derives from still does exactly that and has
@@ -121,6 +143,273 @@ environment variable rather than a code edit so the two arms can be swapped
 with a container restart instead of a rebuild. If the drops stop, the cause
 is in what stream-copy emits, and the next question is which property of the
 source triggers it. If they continue, the copy tier is exonerated.
+
+### The mechanism (2026-08-23, root cause)
+
+**The chain, start to finish:**
+
+1. The backend is configured with the media server's *public* URL, so every
+   server-side fetch - audio, cover art, metadata - leaves the host, crosses
+   a reverse proxy on another machine, and comes back. A client request that
+   the app then proxies onward therefore crosses that proxy **twice**.
+2. Each crossing invokes an IP-reputation middleware that asks its own API
+   whether the client is banned. Measured cost: **26-50 ms per request**.
+3. Scrolling a library view produced **3733 requests in 4.8 minutes** - about
+   7500 authorisation lookups, in bursts far above the average. On top of a
+   steady baseline: the player polls each active device's volume every 4 s,
+   and every open device list polls its own.
+4. The middleware's API stops answering in time. The middleware **fails
+   closed**: after a 5 s timeout it returns **HTTP 403**. Measured: **4075
+   such denials in one hour**, each preceded by
+   `An error occurred while checking IP … context deadline exceeded`.
+5. From that moment every request through the proxy is denied - including the
+   backend's own media fetches for the *currently casting* streams.
+6. Both casting rooms lose their source in the same instant. Each keeps
+   playing until its buffer runs out: room B stopped 16 s later, room A 28 s
+   later.
+7. The speaker then closes the connection (FIN, sometimes RST). **That is the
+   consequence, not the cause** - we stopped feeding it.
+
+**The independent witness.** A plain HTTP client, unrelated to the app,
+fetching the same media file over the same public path, began receiving 403
+at the same moment and kept receiving it every five seconds afterwards. It
+had been completing the same fetch in 55 s with status 200 all evening.
+
+**Why the 10-12 second offset between rooms was so consistent:** it is the
+difference between the two sources' buffers. Subtracting each one's lead from
+its stop time puts the trigger at the same second in every double event -
+an arithmetic coincidence noted hours earlier and dismissed, because at the
+time nothing was known that could cut both sources at once.
+
+**Why it took three days.** Every local instrument said "healthy", and each
+said so correctly:
+
+- The app's own snapshot shows `blocked_for≈0` - because a stalled *source*
+  leaves nothing to hand to the device, which looks identical to a healthy
+  stream. This value was read the wrong way round for two days.
+- The device reports `TransportState=STOPPED` with `TransportStatus` **OK**,
+  because from its point of view nothing went wrong.
+- No transport command appears on the wire, because none was sent.
+- The media server logs no error, because it was never asked.
+- The proxy's CPU graph is unremarkable at the moment of failure, because the
+  failure is a timeout, not saturation.
+- And the proxy writes its access log to a file rather than to its container
+  log, so the 403s were invisible in the obvious place.
+
+**What to fix, in order of effect. The first one is the fix; the rest are
+improvements.**
+
+1. **Bound how many covers load at once (done, 2026-08-23).** The app relied
+   on a browser limit that no longer exists: HTTP/1.1 allowed six
+   connections per origin, and that quietly shaped every burst this app has
+   ever produced. Over HTTP/2 the browser multiplexes as many requests as it
+   is handed, so a list settling with sixty covers on screen sends sixty at
+   once. `CoverArt.vue` now holds a process-wide queue of twelve concurrent
+   image loads, and a cover that scrolls away while queued gives its place
+   up rather than being fetched later. Twelve rather than the old
+   six-per-origin browser figure: a cover costs roughly one proxy round trip
+   (~106 ms), so a limit of N produces about 10·N requests per second from
+   the app and twice that across the proxy, which puts twelve near the
+   outage's 142/s peak — but only in bursts that now end when the scroll
+   does, where the outage sustained it for minutes.
+
+   A queue alone still only limits *how many start*; what had already
+   started ran to the end whether or not anyone was still looking at it. So
+   the component no longer lets `<v-img src>` own the request at all: it
+   fetches the image itself under an `AbortController` and hands the result
+   to `v-img` as an object URL. Leaving the viewport, or having its row
+   unmounted by the virtual scroller, now aborts the request on the wire and
+   frees its slot immediately. Vuetify's `VImg` renders a plain `<img>`, and
+   whether tearing that down cancels the request is up to the browser's
+   garbage collector — not something to base a network budget on.
+
+   One exception, deliberately: an image on a foreign host (artist photos
+   arrive as pre-signed CDN URLs, radio favicons come from the station's own
+   site) sends no CORS headers, so JS may render it but not read its bytes.
+   Those keep the plain `<img>` path — uncancellable, but they never touch
+   the proxy this is protecting, and they appear a handful at a time rather
+   than by the screenful. `SubsonicClient.isProxyUrl()` draws the line.
+
+   Note what none of this is: the settle
+   delay added the same day decides *which* covers load, not how many at a
+   time, and on its own it did not prevent the outage — the reproduction at
+   21:37 ran against a build that already had it.
+2. **Generate fewer requests in the background.** The player polls each
+   active device's volume every 4 s, and every open device list polls its
+   own, because the status stream carries no volume field. A batched
+   endpoint, or polling only while a volume control is visible, removes a
+   constant baseline.
+3. **Optionally, take the proxy out of the server-side path.**
+   `NAVIDROME_INTERNAL_URL` sends the backend's own fetches straight to the
+   media server on the LAN, which halves the proxy's request volume and
+   drops per-request latency from ~106 ms to ~0.5 ms. Worth doing, but it is
+   deployment configuration: the app has to behave when it is unset, which
+   is what point 1 is for.
+4. **Make the middleware fail open, or exempt LAN clients.** An
+   authorisation layer whose *failure mode* is to deny an entire household's
+   music is the wrong trade-off for a home network. Infrastructure, not
+   application — but it is what turns a burst of requests into an outage
+   instead of a slow page.
+
+**Why the test suite could never have caught this:** nothing here is wrong in
+isolation. The request rate is legitimate, each request is correct, the
+backend's fetches are correct, and the proxy's behaviour is a deliberate
+security choice. The defect only exists in the *combination*, at a scale that
+appears when a person scrolls a large library while music is casting.
+
+### A day of elimination (2026-08-23)
+
+The day this stopped being a hunt for a bug in this codebase and became a
+process of elimination with instruments. Two genuine events, a control arm
+that contains no Beacon at all, and a long list of things that are now ruled
+out with evidence rather than argument.
+
+#### The two events
+
+    Event 1                              Event 2
+    12:08:19  room B  STOPPED            17:47:27  room B  STOPPED
+    12:08:29  room A  STOPPED            17:47:38  room A  STOPPED
+
+Room A was served by Beacon (mp3/flac copy tier). Room B was served by the
+household's own music-service integration (an SMAPI bridge reading from the
+same media server) - no Beacon in that path at all: not the stream, not the
+pacing, not the format, not the transport commands. Both rooms stopped about
+ten seconds apart, twice, in the same order.
+
+A third event at 08:59 hit room B alone after nearly six hours of unattended
+playback. That the queue had genuinely looped rather than ended is visible in
+the event log: the same track URI plays at 08:09 and again at 08:59.
+
+#### The measurement that decided the direction
+
+For event 2 we have the abort from two independent vantage points, on the
+same clock:
+
+    17:47:38.229    the speaker sends TCP RST to our stream socket   (packet capture, media host)
+    17:47:38.2335   the upstream fetch through the proxy ends        (reverse-proxy access log)
+
+Event 1 shows the same ordering, 3 ms apart. **The device aborts first; our
+whole chain unwinds behind it.** The upstream fetch only ends because the
+response generator is cancelled and ffmpeg goes with it.
+
+That single measurement removes an entire class of explanations: nothing
+upstream - not the media server, not the reverse proxy, not its rate limiter,
+not the network path - can be the trigger, because all of it was still
+healthy when the speaker pulled the plug. The source had delivered 17.9 MB in
+40 seconds, status 206, no errors, no delay.
+
+It also re-interprets a value that had been read the wrong way round for two
+days: `blocked_for` in `DisconnectSnapshot` measures how long the connection
+was blocked *handing a chunk to the device*. A stalled **source** produces
+nothing to hand over, so it reads ~0 - identical to a perfectly healthy
+stream. `blocked_for≈0` therefore never was evidence against source
+starvation. The millisecond ordering is what actually settles it.
+
+#### What is ruled out, and by what
+
+| Candidate | Ruled out by |
+|---|---|
+| Beacon's delivery path (format, pacing, `/stream`) | Room B stops the same way with no Beacon in its path |
+| Any transport command from the LAN | Full-day SOAPACTION capture: no `Stop` at any event; nearest command is that track's own dispatch, 55-86 s earlier |
+| Cloud control (voice assistants, remote apps, the speaker vendor's cloud) | Every speaker and both voice assistants had their internet access blocked at the router from 15:00 on. Event 2 happened anyway |
+| WiFi association loss, DFS channel change | The router logs 5 GHz de/registrations for other devices that day; the speakers never appear. They held their link through both events |
+| Group/topology change | Topology broadcasts follow the stops by 18-29 s; they are consequence, not cause |
+| The specific file or the copy tier | The track both events happened on played four more times on repeat afterwards without a single abort |
+| Our own multicast load | Deliberate stress: 183 SSDP searches/min for seven minutes, versus a 23-30/min baseline. Nothing happened |
+| Client activity in the app | Seven separate stimuli over 2.5 hours (see the protocol below), none of them produced an event |
+| Reverse proxy, media server, rate limiter | The millisecond ordering above; and the rate limiter was never even reached (peak 142 req/s against an average of 100/burst 400 - and no 429 in the logs) |
+| The idle-session reaper | Fixed the same day, twice (see Fixed); both fixes verified in the field afterwards |
+
+#### The stimulus protocol, and its complete lack of results
+
+With both rooms playing and the household cut off from the internet, each
+step was applied with at least fifteen minutes between them and the exact
+time recorded:
+
+| Step | Stimulus | Result |
+|---|---|---|
+| Baseline | no client connected anywhere | 44 min quiet |
+| 2 | phone woken, browser open, app not opened | 24 min quiet |
+| 3 | login on the casting instance, same URL as the event | 15 min quiet |
+| 3.5 | login with the other URL spelling, creating a second session | 20 min quiet |
+| 3.6 | login on the second instance, same account | quiet |
+| 3.7 | cold login in a private window, visualizer open, device picker open | quiet |
+| 3.8 | second account, device picker open | quiet |
+| 4 | two device pickers open at once, 183 SSDP searches/min | quiet |
+| 5 | heavy library scrolling, 142 requests/s, ~1300 requests | quiet |
+
+The one pattern that survives the day is temporal and weak: both genuine
+events followed a period of user interaction (a login five minutes before,
+a login-plus-scrolling burst three minutes before). Every attempt to
+reproduce that deliberately failed.
+
+#### An arithmetic coincidence worth keeping
+
+Subtracting each source's buffer from its stop time puts the two rooms'
+"trigger" at the same second, twice:
+
+    room A stops 17:47:38, minus ~15 s of stream lead   -> 17:47:23
+    room B stops 17:47:27, minus ~5 s of bridge buffer  -> 17:47:22
+
+    room A stops 12:08:29, minus ~15 s                  -> 12:08:14
+    room B stops 12:08:19, minus ~5 s                   -> 12:08:14
+
+That is what a single upstream interruption would look like - which the
+millisecond ordering rules out. Either the buffer figures are coincidence, or
+something reaches both speakers at one moment without touching the data path.
+It is the sharpest unexplained observation of the day.
+
+#### Infrastructure findings that are real but not the cause
+
+Worth fixing on their own merits, and worth knowing when reading timings:
+
+- **Every server-side media fetch leaves the host and comes back.** The
+  backend is configured with the media server's public URL, which resolves to
+  a reverse proxy on a *different* machine. Each request therefore crosses
+  the network twice and passes the proxy's middleware chain. Measured: 106 ms
+  to first byte via the public route versus 0.5 ms locally, a factor of 200.
+  `NAVIDROME_INTERNAL_URL` exists precisely for this and was not set.
+- **Every proxied request pays a ~30 ms authorisation round trip** to the
+  proxy's IP-reputation middleware. During the scrolling stimulus that meant
+  several hundred such calls per second, which is where the proxy host's CPU
+  spikes come from.
+- **Each cover-art request traverses the proxy twice** - once from the
+  browser to the app, once from the app to the media server - so client-side
+  request bursts are doubled before they reach the media server.
+- **22 unexplained HTTP 403s** appeared on the app's router during the
+  scrolling burst. Not the rate limiter (no 429s), not the reputation
+  middleware (it logged 200 for every lookup), and the app's own token
+  rejection returns 401. Unresolved.
+
+#### Instruments now in place
+
+For whoever picks this up next - all of these run on the media host unless
+noted:
+
+- Full-payload packet capture of both rooms' stream ports, 40×100 MB ring
+  (~17 h of history at the observed rate), with the two newest files frozen
+  automatically when an abort is detected.
+- A control stream: a plain HTTP client pulling the same media file over the
+  same public path, rate-limited to roughly real time, logging every fetch's
+  duration and status. If it is cut at the same instant as a speaker, the
+  path is implicated; if it survives, the speaker is.
+- Connection-level capture (SYN/FIN/RST) for both stream ports, and a
+  control-traffic capture filtered to UPnP SOAPACTION/NOTIFY lines.
+- UPnP transport-event subscriptions for both room coordinators, which record
+  a room's `STOPPED` regardless of who is playing to it.
+- A watchdog that reports any speaker that stops and does not resume within
+  45 s, and a push notification for both that and app-detected aborts.
+
+#### Open threads
+
+1. What reaches both speakers at the same moment without touching the data
+   path (see the arithmetic above).
+2. The 19.47 s event-loop stall, still unexplained and unrepeated (its own
+   entry below).
+3. The 22 HTTP 403s during the request burst.
+4. Vendor diagnostics: the speakers' own logs are the one record that would
+   say why a player stopped, and they are only readable by the vendor's
+   support. After a day of elimination this is a reasonable escalation.
 
 ### The controlled comparison (2026-08-22, 18:53)
 
@@ -530,7 +819,7 @@ above:
 
     00:49:13  [stream] Reconnect while already streaming — offset=0.00s vs elapsed()=59.03s, drift=+59.03s
     00:49:13  [ffmpeg] new invocation, no -ss: the track from its beginning
-    00:49:13  [upnp] Arbeitszimmer state=STOPPED
+    00:49:13  [upnp] room A state=STOPPED
     00:49:13  [position-resync] external position change — device=0.00s wall=60.35s, offset -1.02s -> -60.35s
     00:49:22  [position-resync] external position change — device=0.00s wall=68.68s, offset -60.35s -> -68.68s
     00:49:23  [stream] Cast device dropped its connection ... loop_lag_30s=19.47s
@@ -590,8 +879,8 @@ snapshot: `blocked_for=0.01s`, `loop_lag_30s=0.00s`, 58 MB delivered over
 **Proven on the wire**, which is the only reason it wasn't filed as another
 mystery drop:
 
-    00:27:50.133 UTC  Out →  10.2.2.112:1400   SOAPACTION: AVTransport:1#Stop
-    00:27:50.970 UTC  In  ←  10.2.2.112        FIN on port 7071
+    00:27:50.133 UTC  Out →  the room-A coordinator:1400   SOAPACTION: AVTransport:1#Stop
+    00:27:50.970 UTC  In  ←  the room-A coordinator        FIN on port 7071
 
 We stopped the speaker; the device closed the stream 840ms later. The
 direction is not ambiguous.
@@ -641,7 +930,7 @@ still held from a cast that had ended over an hour earlier. That speaker
 belonged to a *different* Beacon instance by then, which was mid-track on it.
 The victim instance saw its stream cancelled with nothing to explain it - no
 request, no error - and reported a drop 10s later. The only trace was a single
-`[Sonos:Arbeitszimmer] stopped` line in the *other* container's log.
+`[Sonos:room A] stopped` line in the *other* container's log.
 
 Cross-instance claims cannot catch this: `core/claims.py` is per process, and
 two instances share nothing but the speakers themselves. Session ids don't

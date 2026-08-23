@@ -1,29 +1,31 @@
 <template>
-  <!-- The image is only mounted (and therefore only requested) once
-   - `shouldLoad` says this cover has actually stayed in view — see
-   - LOAD_SETTLE_MS. This component renders on every single row of every
-   - grid/list in the app, so what it does while scrolling is the whole
-   - question: loading eagerly meant a page fired off hundreds of
-   - concurrent requests the instant it mounted, and v-img's own
-   - intersection-based laziness (what this replaced) still meant one
-   - request per row *passed*, which on a 15k-song list is 15k requests
-   - for a single flick of the scroll wheel. `eager` on the v-img itself
-   - is deliberate and not a contradiction: by the time it exists at all,
-   - the decision to load has already been made here, and a second
-   - observer inside it would only delay the request it was mounted for.
-   - An always-on-screen instance (PlayerBar's own small art,
-   - NowPlayingView's big one) pays only the settle delay once, on mount,
-   - and nothing on any later track change — `shouldLoad` stays true for
-   - this instance's lifetime. -->
+  <!-- The image is only shown once this component has actually fetched it
+   - (see loadCandidates), which is deliberate and is the whole point of the
+   - component. It renders on every row of every grid and list in the app,
+   - so what it does while scrolling decides what the app does to the
+   - network. Three separate limits apply, and each exists because the one
+   - before it wasn't enough:
+   -
+   -   * only covers the scroll comes to rest on are fetched at all
+   -     (LOAD_SETTLE_MS),
+   -   * at most MAX_CONCURRENT_LOADS are in flight across the whole app,
+   -   * and a fetch is aborted the moment its cover stops being rendered.
+   -
+   - v-img is left as pure presentation here - it usually receives an object
+   - URL for an image already in memory, so `eager` costs nothing and its own
+   - intersection handling would only get in the way. The exception is an
+   - image on a foreign host, which JS may render but not read (see
+   - queueLoad): that one is handed to <img> as a plain URL, and only the
+   - first of the three limits above applies to it. -->
   <v-avatar v-if="rounded" ref="root" :size="sizeCss" rounded="0">
     <v-img
-      v-if="url && shouldLoad"
-      :src="url"
+      v-if="displaySrc"
+      :src="displaySrc"
       width="100%"
       height="100%"
       cover
       eager
-      @error="onError"
+      @error="onImageError"
     >
       <template #placeholder>
         <v-skeleton-loader type="image" class="cover-art-skeleton" />
@@ -41,13 +43,13 @@
    - matches this box's current size, mid-transition or not. -->
   <div v-else ref="root" class="cover-art" :style="{ width: sizeCss, height: sizeCss }">
     <v-img
-      v-if="url && shouldLoad"
-      :src="url"
+      v-if="displaySrc"
+      :src="displaySrc"
       width="100%"
       height="100%"
       cover
       eager
-      @error="onError"
+      @error="onImageError"
     >
       <template #placeholder>
         <v-skeleton-loader type="image" class="cover-art-skeleton" />
@@ -64,28 +66,81 @@
 import type { PropType } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 
-// Starts the request a bit before the cover actually scrolls into view, so
-// it's already there (or close to it) by the time it would otherwise pop
-// in, rather than only starting the fetch the instant it crosses the
-// viewport edge.
+// Starts the request a little before the cover actually scrolls into view,
+// so it's already there (or close to it) by the time it would otherwise pop
+// in, rather than only starting the fetch as it crosses the viewport edge.
 const LAZY_ROOT_MARGIN = '400px 0px'
-// How long a cover has to stay within that margin before it's actually
-// requested. Entering the viewport is not the same thing as being looked
-// at: scrolling a 15,000-song list from the top to the bottom sweeps every
-// row through it, and requesting on entry alone means every one of those
-// rows fetches its art, for a list the user never stopped at — measured
-// live on 2026-08-22 as exactly that, one server request per song in the
-// list for a single fast scroll. A row passed at scrolling speed is on
-// screen for a frame or two, far below this, so its timer is cancelled by
-// the exit before it ever fires and no request is made at all; the rows
-// wherever the scroll actually comes to rest are the ones that load.
+
+// How long a cover has to stay within that margin before it is requested at
+// all. Entering the viewport is not the same as being looked at: scrolling a
+// 15,000-song list from top to bottom sweeps every row through it, and
+// requesting on entry alone means every one of those rows fetches its art
+// for a list the user never stopped at - measured live on 2026-08-22 as
+// exactly that, one request per song for a single fast scroll. A row passed
+// at scrolling speed is on screen for a frame or two, far below this, so its
+// timer is cancelled by the exit before it ever fires.
 //
-// Kept short enough to stay invisible when scrolling normally: paired with
-// LAZY_ROOT_MARGIN's 400px of lead, a cover still has this long *plus* the
-// time it takes to travel those 400px before anyone can see whether it
-// arrived. Raising it would start dropping covers the user genuinely
-// scrolled to.
+// Kept short enough to stay invisible in normal scrolling: paired with
+// LAZY_ROOT_MARGIN's 400px of lead, a cover has this long *plus* the time it
+// takes to travel those 400px before anyone can see whether it arrived.
 const LOAD_SETTLE_MS = 150
+
+// How many covers may be fetching at once, across the whole app.
+//
+// Nothing in the browser enforces this any more. Under HTTP/1.1 the
+// six-connections-per-origin limit quietly did it for us; over HTTP/2 the
+// browser multiplexes as many requests as it is handed, so a list settling
+// with sixty covers on screen sends sixty at once - and in a deployment
+// where the app and the media server sit behind the same reverse proxy,
+// each of those crosses it twice and pays an authorisation round trip each
+// time. On 2026-08-23 that burst took a household's playback down: the
+// proxy's authorisation middleware stopped answering in time, failed closed,
+// and every request through it - including the *casting streams' own media
+// fetches* - was denied for as long as the burst lasted. See
+// docs/playback-bugs.md, "The mechanism".
+//
+// The number itself is a compromise, and worth re-deriving rather than
+// guessing at if it ever needs changing. A cover takes roughly one proxy
+// round trip (~106 ms measured), so a limit of N produces about 10·N
+// requests per second from the app, and the proxy sees twice that because
+// every one of them crosses it a second time on the backend's behalf. The
+// outage peaked at 142 requests per second - sustained for minutes, because
+// nothing cancelled. Twelve puts the ceiling near that peak but only in
+// bursts that now end the moment the scroll moves on, and fills a large
+// grid in half the time six did.
+//
+// For comparison: feishin-connect, which has run through the same kind of
+// proxy without ever producing this, caps nothing at all - it relies purely
+// on the viewport gate and cancellation. This limit is cheap insurance on
+// top of those, not the load-bearing part.
+export const MAX_CONCURRENT_LOADS = 12
+let inFlight = 0
+const waiting: Array<() => void> = []
+
+/** Runs `start` once a slot is free. Returns a cancel function for a cover
+ * that is scrolled away or unmounted while still queued - without it, a fast
+ * scroll through a long list would still fetch every cover it passed, just
+ * more slowly. */
+function takeLoadSlot(start: () => void): () => void {
+  if (inFlight < MAX_CONCURRENT_LOADS) {
+    inFlight += 1
+    start()
+    return () => {}
+  }
+  waiting.push(start)
+  return () => {
+    const at = waiting.indexOf(start)
+    if (at >= 0) waiting.splice(at, 1)
+  }
+}
+
+/** Hands the slot straight to whoever is waiting, so the queue keeps moving
+ * without an extra scheduling turn. Only ever called by a slot holder. */
+function releaseLoadSlot(): void {
+  const next = waiting.shift()
+  if (next) next()
+  else inFlight -= 1
+}
 
 export default {
   name: 'CoverArt',
@@ -129,17 +184,29 @@ export default {
   },
   data() {
     return {
-      // Index into the candidate list below — advances on @error until
-      // exhausted, at which point `url` returns null (icon placeholder).
+      // Index into the candidate list below — advances when a fetch fails
+      // until exhausted, at which point `url` returns null (icon
+      // placeholder).
       failedCount: 0,
-      // Whether this cover has earned its request yet — see LOAD_SETTLE_MS.
-      // One-way: once true it stays true for this instance's lifetime, so
-      // scrolling a loaded cover back out of view and in again doesn't
-      // re-gate it (and doesn't re-request it either, the browser cache
-      // already has it).
-      shouldLoad: false,
+      // The fetched image, as an object URL. Null until it has arrived, so
+      // the skeleton stays up for exactly as long as there is nothing to
+      // show. Revoked whenever it's replaced or the component goes away —
+      // an object URL keeps its blob alive until it is.
+      objectUrl: null as string | null,
+      // The in-flight fetch, so it can be aborted. This is why the fetching
+      // isn't left to v-img: a request nobody is waiting for any more should
+      // stop costing bandwidth, a connection and (in the deployment above)
+      // an authorisation lookup — and it should hand its concurrency slot to
+      // the next cover immediately rather than when it happens to finish.
+      controller: null as AbortController | null,
+      // A candidate on a foreign host, handed straight to <img> because JS
+      // isn't allowed to read its bytes (see SubsonicClient.isProxyUrl).
+      // Mutually exclusive with objectUrl.
+      directUrl: null as string | null,
       observer: null as IntersectionObserver | null,
       settleTimer: null as number | null,
+      holdsLoadSlot: false,
+      cancelQueued: null as (() => void) | null,
     }
   },
   computed: {
@@ -167,6 +234,11 @@ export default {
     url(): string | null {
       return this.candidates[this.failedCount] ?? null
     },
+    /** What the <img> actually shows: an image this component fetched and
+     * holds in memory, or one a foreign host is loading directly. */
+    displaySrc(): string | null {
+      return this.objectUrl ?? this.directUrl
+    },
   },
   watch: {
     // candidates() also depends on useLibraryStore().client(), which reads
@@ -184,18 +256,26 @@ export default {
     // these two props specifically.
     candidates() {
       this.failedCount = 0
+      // A different cover entirely — drop what's on screen and fetch the new
+      // one if this instance had already earned its place (an always-visible
+      // instance like the player bar's own art, on every track change).
+      const wasShowing = this.displaySrc !== null || this.holdsLoadSlot
+      this.abortLoad()
+      this.setObjectUrl(null)
+      this.directUrl = null
+      if (wasShowing) this.queueLoad()
     },
   },
   mounted() {
     // Either of these means there's nothing to observe against, so the
-    // choice is "load now" or "never load" — and a cover that never
-    // appears is by far the worse failure. No IntersectionObserver at all
-    // is jsdom under test or a very old browser; no resolvable root
-    // element shouldn't happen, but see rootElement() for why $el alone
-    // can't be trusted here.
+    // choice is "load now" or "never load" — and a cover that never appears
+    // is by far the worse failure. No IntersectionObserver at all is jsdom
+    // under test or a very old browser; no resolvable root element
+    // shouldn't happen, but see rootElement() for why $el alone can't be
+    // trusted here.
     const target = this.rootElement()
     if (typeof IntersectionObserver === 'undefined' || !target) {
-      this.shouldLoad = true
+      this.queueLoad()
       return
     }
     this.observer = new IntersectionObserver(
@@ -211,11 +291,14 @@ export default {
     this.observer.observe(target)
   },
   beforeUnmount() {
-    // Both matter for a virtualized list (SongTable.vue's v-virtual-scroll),
-    // where rows are unmounted by the hundred while scrolling: a timer left
-    // running would fire against a component that no longer exists, and an
-    // observer left connected keeps a detached element alive.
+    // The component is going away — in a virtualized list (SongTable.vue's
+    // v-virtual-scroll) that happens to rows by the hundred while scrolling.
+    // Everything this cover still owns has to go with it: a pending timer, a
+    // queued place, an in-flight request, its slot, and its object URL.
     this.cancelSettle()
+    this.abortLoad()
+    this.releaseSlot()
+    this.setObjectUrl(null)
     this.observer?.disconnect()
     this.observer = null
   },
@@ -236,22 +319,116 @@ export default {
       return el instanceof Element ? el : null
     },
     startSettle() {
-      if (this.shouldLoad || this.settleTimer !== null) return
+      if (this.displaySrc || this.holdsLoadSlot || this.settleTimer !== null) return
       this.settleTimer = window.setTimeout(() => {
         this.settleTimer = null
-        this.shouldLoad = true
-        // Nothing left to decide for this instance — see shouldLoad.
-        this.observer?.disconnect()
-        this.observer = null
+        this.queueLoad()
       }, LOAD_SETTLE_MS)
     },
+    /** The cover left the viewport (or is going away entirely). Everything it
+     * has in progress is now work for a cover nobody is looking at, so all
+     * three stages are wound back: the pending timer, a queued place, and a
+     * request already on the wire. A cover that made it far enough to be
+     * *shown* is left alone - it costs nothing further, and dropping it would
+     * make scrolling back flash empty boxes. */
     cancelSettle() {
-      if (this.settleTimer === null) return
-      window.clearTimeout(this.settleTimer)
-      this.settleTimer = null
+      if (this.settleTimer !== null) {
+        window.clearTimeout(this.settleTimer)
+        this.settleTimer = null
+      }
+      this.cancelQueued?.()
+      this.cancelQueued = null
+      if (!this.displaySrc) {
+        this.abortLoad()
+        this.releaseSlot()
+      }
     },
-    onError() {
+    queueLoad() {
+      const url = this.url
+      if (!url) return
+      // A foreign host (artist photo, radio favicon) can't be fetched from
+      // JS at all — no CORS headers, so reading the bytes is forbidden even
+      // though rendering them isn't. Those go straight to <img>, unqueued
+      // and uncancellable: neither matters for them, since they don't touch
+      // the media server or the proxy in front of it, and they appear a
+      // handful at a time rather than by the screenful.
+      if (!useLibraryStore().client().isProxyUrl(url)) {
+        this.directUrl = url
+        this.observer?.disconnect()
+        this.observer = null
+        return
+      }
+      this.cancelQueued = takeLoadSlot(() => {
+        this.cancelQueued = null
+        this.holdsLoadSlot = true
+        void this.loadCandidates()
+      })
+    },
+    /** The <img> itself refused what it was given — a foreign photo that
+     * 404s (an artist without one falls back to the album cover behind it),
+     * or, far less likely, bytes we fetched that turn out not to be an
+     * image. Either way: on to the next candidate. */
+    onImageError() {
+      this.setObjectUrl(null)
+      this.directUrl = null
       this.failedCount += 1
+      this.queueLoad()
+    },
+    /** Works down the candidate list within the one slot it was granted, so
+     * a cover whose first URL 404s (a missing artist photo, see imageUrl)
+     * doesn't have to queue again for its fallback. */
+    async loadCandidates(): Promise<void> {
+      try {
+        while (this.url) {
+          const controller = new AbortController()
+          this.controller = controller
+          try {
+            // Low priority: cover art is the least urgent thing the app ever
+            // asks for, and should never be queued ahead of the data the
+            // page is actually made of (or of a stream being set up).
+            const response = await fetch(this.url, {
+              signal: controller.signal,
+              priority: 'low',
+            } as RequestInit)
+            if (!response.ok) throw new Error(`HTTP ${response.status}`)
+            const blob = await response.blob()
+            this.setObjectUrl(URL.createObjectURL(blob))
+            return
+          } catch (error) {
+            // Aborted means the cover is gone or superseded — not a failure
+            // of this URL, so the next candidate must not be tried.
+            if ((error as Error)?.name === 'AbortError') return
+            this.failedCount += 1
+          } finally {
+            if (this.controller === controller) this.controller = null
+          }
+        }
+      } finally {
+        this.releaseSlot()
+      }
+    },
+    abortLoad() {
+      this.controller?.abort()
+      this.controller = null
+    },
+    /** This cover's turn is over, one way or another — pass the slot on. */
+    releaseSlot() {
+      if (!this.holdsLoadSlot) return
+      this.holdsLoadSlot = false
+      releaseLoadSlot()
+    },
+    setObjectUrl(next: string | null) {
+      // An object URL keeps its blob in memory until it's revoked, and this
+      // component exists by the thousand.
+      if (this.objectUrl) URL.revokeObjectURL(this.objectUrl)
+      this.objectUrl = next
+      if (next) {
+        // Arrived — there is nothing left for the observer to decide. Until
+        // this point it has to keep watching, because leaving the viewport
+        // mid-flight is exactly what should abort the request.
+        this.observer?.disconnect()
+        this.observer = null
+      }
     },
     // Fallback icon's proportional size (0.6 for the rounded avatar
     // variant, 0.5 for the plain box — see the template). CSS calc(),
@@ -282,12 +459,11 @@ export default {
   color: rgba(255, 255, 255, 0.3);
 }
 
-/* Shown via v-img's own #placeholder slot for as long as the actual image
- * file is still loading (fetched separately from the album/song data
- * itself) — without this, the cover briefly renders empty/transparent
- * between "data arrived" and "image file arrived". .v-img__placeholder is
- * already position:absolute + 100%/100%, so this just needs to fill that;
- * the parent (.cover-art or the avatar) already clips to the right shape. */
+/* Shown for as long as there is no image to show yet — without this, the
+ * cover briefly renders empty/transparent between "data arrived" and
+ * "image arrived". .v-img__placeholder is already position:absolute +
+ * 100%/100%, so this just needs to fill that; the parent (.cover-art or
+ * the avatar) already clips to the right shape. */
 .cover-art-skeleton {
   width: 100%;
   height: 100%;

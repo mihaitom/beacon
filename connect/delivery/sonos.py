@@ -11,12 +11,78 @@ from .base import BaseDelivery
 logger = logging.getLogger("delivery")
 
 
+# Resolved SoCo devices by (lower-cased) target name — see
+# SonosDelivery._get_device() for why this exists. Process-wide rather than
+# per-delivery: a delivery object is constructed per dispatch, so per-instance
+# caching would barely ever hit.
+_device_cache: dict = {}
+
+
+def _cached_device(target: str):
+    """The cached device for `target`, confirmed to still be that speaker, or
+    None if there is nothing usable cached.
+
+    The confirmation is one unicast HTTP request to the speaker (SoCo's
+    get_speaker_info against /status/zp). It costs a few milliseconds against
+    a device that is there, and it is what keeps a cache entry from outliving
+    the speaker it names: a Sonos that changed IP, was renamed, or is simply
+    gone drops out of the cache here and the caller falls back to a full
+    discovery."""
+    device = _device_cache.get(target.lower())
+    if device is None:
+        return None
+    try:
+        info = device.get_speaker_info(refresh=True)
+    except Exception as e:
+        logger.debug(f"[Sonos:{target}] cached device no longer answering ({e}) — rediscovering")
+        _device_cache.pop(target.lower(), None)
+        return None
+    if (info.get("zone_name") or "").lower() != target.lower():
+        logger.debug(
+            f"[Sonos:{target}] cached device now reports "
+            f"'{info.get('zone_name')}' — rediscovering"
+        )
+        _device_cache.pop(target.lower(), None)
+        return None
+    return device
+
+
+def forget_cached_devices() -> None:
+    """Drops every cached device. For tests, and for anything that knows the
+    network changed underneath us."""
+    _device_cache.clear()
+
+
 class SonosDelivery(BaseDelivery):
     """Controls a Sonos speaker via SoCo."""
 
     SUPPORTS_POSITION: bool = True
 
     def _get_device(self):
+        """The SoCo device for this target.
+
+        Cached across calls, and that matters more than it sounds: this is
+        called on *every* device interaction, and the position-resync loop
+        alone calls it every POSITION_RESYNC_INTERVAL for as long as a cast
+        runs. Each uncached call is a network-wide SSDP M-SEARCH, which SoCo
+        repeats several times over its timeout - measured on beacon-dev
+        2026-08-23 at roughly 25 multicast searches per minute during
+        ordinary playback, rising past 180/min with a device picker open in
+        two instances. That is by far the loudest thing this app does to the
+        network it shares with the speakers, and every one of those searches
+        also blocks its worker thread for the discovery timeout.
+
+        The cached device is confirmed before use with a single unicast HTTP
+        call to the speaker itself (SoCo's own get_speaker_info against
+        /status/zp, a few milliseconds), so a speaker that changed address or
+        went away falls back to a real discovery instead of leaving this
+        stuck on a dead handle. Keyed by target name and shared process-wide:
+        two sessions casting to the same speaker resolve it once between
+        them."""
+        cached = _cached_device(self.target)
+        if cached is not None:
+            return cached
+
         import soco
 
         devices = list(soco.discover() or [])
@@ -25,7 +91,9 @@ class SonosDelivery(BaseDelivery):
         for d in devices:
             try:
                 if d.player_name.lower() == self.target.lower():
-                    return d  # Return the actual device; callers handle grouping themselves
+                    # Return the actual device; callers handle grouping themselves
+                    _device_cache[self.target.lower()] = d
+                    return d
             except Exception:
                 pass
         available = [d.player_name for d in devices]

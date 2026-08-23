@@ -30,6 +30,19 @@ def client():
 
 
 @pytest.fixture(autouse=True)
+def _clear_sonos_device_cache():
+    """delivery/sonos.py caches resolved SoCo devices process-wide (see
+    _get_device()), so without this one test's fake speaker would still be
+    cached for the next one — and a test that patched soco.discover would
+    silently never reach it."""
+    from delivery.sonos import forget_cached_devices
+
+    forget_cached_devices()
+    yield
+    forget_cached_devices()
+
+
+@pytest.fixture(autouse=True)
 def _stub_media_ping(monkeypatch):
     """/config now calls media.ping() to verify the supplied credential
     actually authenticates before accepting it (see routes/devices.py) — but

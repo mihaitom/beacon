@@ -200,6 +200,82 @@ def test_sonos_get_device_raises_with_available_names_when_target_missing():
         d._get_device()
 
 
+# ── SonosDelivery._get_device — der Geraete-Cache ────────────────────────────
+# Regression tests: every device interaction used to run a full network-wide
+# SSDP search, and the position-resync loop does one every few seconds for as
+# long as a cast runs — measured at ~25 multicast searches per minute during
+# ordinary playback, over 180/min with a device picker open (beacon-dev
+# 2026-08-23). See _get_device()'s docstring.
+
+
+def _fake_sonos(name: str):
+    device = MagicMock()
+    device.player_name = name
+    device.get_speaker_info.return_value = {"zone_name": name}
+    return device
+
+
+def test_get_device_discovers_only_once_for_repeated_calls():
+    kitchen = _fake_sonos("Küche")
+    d = SonosDelivery("Küche")
+    with patch("soco.discover", return_value=[kitchen]) as discover:
+        assert d._get_device() is kitchen
+        assert d._get_device() is kitchen
+        assert d._get_device() is kitchen
+
+    discover.assert_called_once()
+    # The repeat calls confirmed the cached speaker against the speaker
+    # itself instead — one unicast request, not a network-wide search.
+    assert kitchen.get_speaker_info.call_count == 2
+
+
+def test_get_device_is_shared_between_delivery_instances():
+    """A delivery object is built per dispatch, so a per-instance cache would
+    almost never hit."""
+    kitchen = _fake_sonos("Küche")
+    with patch("soco.discover", return_value=[kitchen]) as discover:
+        SonosDelivery("Küche")._get_device()
+        SonosDelivery("Küche")._get_device()
+
+    discover.assert_called_once()
+
+
+def test_get_device_rediscovers_when_the_cached_speaker_stops_answering():
+    """It moved, was unplugged, or the address was handed to something else -
+    the cache must not outlive the speaker it names."""
+    gone = _fake_sonos("Küche")
+    fresh = _fake_sonos("Küche")
+    d = SonosDelivery("Küche")
+    with patch("soco.discover", return_value=[gone]):
+        assert d._get_device() is gone
+
+    gone.get_speaker_info.side_effect = OSError("no route to host")
+    with patch("soco.discover", return_value=[fresh]) as discover:
+        assert d._get_device() is fresh
+
+    discover.assert_called_once()
+
+
+def test_get_device_rediscovers_when_the_cached_speaker_was_renamed():
+    kitchen = _fake_sonos("Küche")
+    d = SonosDelivery("Küche")
+    with patch("soco.discover", return_value=[kitchen]):
+        assert d._get_device() is kitchen
+
+    kitchen.get_speaker_info.return_value = {"zone_name": "Wohnzimmer"}
+    replacement = _fake_sonos("Küche")
+    with patch("soco.discover", return_value=[replacement]) as discover:
+        assert d._get_device() is replacement
+
+    discover.assert_called_once()
+
+
+def test_get_device_still_raises_when_the_target_is_nowhere():
+    with patch("soco.discover", return_value=[_fake_sonos("Bad")]):
+        with pytest.raises(RuntimeError, match="not found"):
+            SonosDelivery("Küche")._get_device()
+
+
 # ── SonosDelivery.get_position / get_volume / set_volume ────────────────────
 
 

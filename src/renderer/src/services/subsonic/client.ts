@@ -126,6 +126,22 @@ export class SubsonicClient {
     return `${this.proxyBaseUrl}/rest/getCoverArt.view?${params.toString()}`
   }
 
+  /** Whether an image URL goes through our own proxy, i.e. whether JS is
+   * allowed to read its bytes.
+   *
+   * The distinction decides how CoverArt.vue loads it. Our proxy answers
+   * with CORS headers (see connect/main.py), so an image from it can be
+   * fetched, held and — the point of doing so — aborted again. A foreign
+   * host generally sends no such headers, and a fetch there fails outright
+   * where a plain <img src> would have rendered it: artist photos come from
+   * the media server as pre-signed URLs on someone else's CDN, and radio
+   * favicons from the station's own site. Those keep the <img> path, which
+   * can't be cancelled but also never lands on the infrastructure this is
+   * protecting. */
+  isProxyUrl(url: string): boolean {
+    return url.startsWith(`${this.proxyBaseUrl}/`)
+  }
+
   async getAlbumList2(
     type: 'alphabeticalByName' | 'newest' | 'frequent' | 'recent' | 'random' = 'alphabeticalByName',
     size = 100,

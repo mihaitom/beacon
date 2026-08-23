@@ -178,6 +178,20 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
             f"[config] Subsonic configured & verified: {req.url} "
             f"(internal: {internal_url or 'same'})"
         )
+
+    # Where the verification request actually landed, if that isn't what was
+    # typed — a login given as http:// against a server that redirects to
+    # https:// verifies fine (every client here follows redirects, see
+    # media/http_client.py) and then pays a 301 on every request for the rest
+    # of the session. The frontend adopts this so later requests go straight
+    # to the address that answered. Only reported when it genuinely differs
+    # and only for clients that can tell us (see SubsonicClient._get); an
+    # internal-URL override deliberately reports nothing, since that address
+    # is ours to reach, not necessarily the browser's.
+    resolved = getattr(media, "resolved_url", "") or ""
+    if resolved and resolved != req.url.rstrip("/"):
+        logger.info(f"[config] Login URL {req.url} actually resolves to {resolved}")
+        return {"status": "ok", "resolved_url": resolved}
     return {"status": "ok"}
 
 

@@ -22,6 +22,9 @@ class SubsonicClient:
     ):
         self.base_url = url.rstrip("/")
         self.internal_url = (internal_url or url).rstrip("/")
+        # Where requests actually ended up, once redirects were followed —
+        # see _get(). Empty until the first successful call.
+        self.resolved_url = ""
         self.user = user
         self.password = password
         self._credential = credential  # pre-built Subsonic auth query string
@@ -51,6 +54,17 @@ class SubsonicClient:
         url = f"{self.internal_url}/rest/{endpoint}"
         response = http_client.get(url, params={**self._auth_params(), **params}, timeout=10)
         response.raise_for_status()
+        # A server behind a reverse proxy commonly answers http:// with a 301
+        # to https://, and every client here follows redirects (see
+        # media/http_client.py) — so a login typed with the wrong scheme
+        # works, but pays an extra round trip on every single request from
+        # then on. Recording where the request really landed lets /config
+        # hand the frontend the address that actually answered. Only
+        # meaningful when we asked the login URL itself: with an internal
+        # override in play, this resolves to a LAN address the browser may
+        # not be able to reach at all.
+        if self.internal_url == self.base_url:
+            self.resolved_url = str(response.url).split("/rest/")[0]
         data = response.json()
 
         subsonic = data.get("subsonic-response", {})
