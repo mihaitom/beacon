@@ -179,6 +179,38 @@ class PlaybackClock:
         # A fresh stream reconnect, same reasoning as start()/resume() above.
         self._slew_start_time = None
 
+    def stream_restart_position(self) -> float:
+        """Where a stream being reopened *right now* should start.
+
+        The raw wall-clock position, without position_offset — the same
+        convention pause() uses for resume_offset, and for the same reason:
+        the device is about to re-incur its own startup buffering, so handing
+        it the buffering-corrected position would send it a second helping of
+        that correction. Paused, resume_offset already holds exactly this."""
+        if self.is_paused:
+            return self.resume_offset
+        return max(0.0, time.time() - self.play_start_time)
+
+    def restream_from(self, position: float) -> None:
+        """The device reopened the stream on its own and is being served from
+        `position` (raw, as returned by stream_restart_position()).
+
+        Deliberately touches only track_start_position, and neither
+        play_start_time nor play_generation: nobody seeked, so the *track*
+        timeline is unchanged and elapsed() must keep reporting what it
+        reported a moment ago — `position` is that same value by
+        construction. What does restart is the *stream* timeline, and
+        elapsed_since_stream_start() is the reference frame a device's own
+        reported position is compared against (see calibrate()). A device
+        that reopens the stream reports ~0 again, so without re-basing here,
+        the next resync compares that fresh 0 against the whole time since
+        the track began and "corrects" position_offset by that entire amount.
+        Observed live 2026-08-23: a reconnect 59s into a track dragged
+        position_offset to -60.35s and then -68.68s, which poisons everything
+        downstream of elapsed() — displayed position, lyrics sync, the cast
+        visualizer's pacing, auto-advance scheduling."""
+        self.track_start_position = position
+
     def calibrate(self, device_pos: float) -> float:
         """Set position_offset from a measured device position and return it.
         device_pos must be in the post-seek stream's own reference frame (see

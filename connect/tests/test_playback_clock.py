@@ -3,6 +3,8 @@ without going through the HTTP routes. See core/playback_clock.py."""
 
 import time
 
+import pytest
+
 from core.playback_clock import PlaybackClock
 
 # ── start ─────────────────────────────────────────────────────────────────────
@@ -398,3 +400,63 @@ def test_set_fixed_offset_applies_immediately_without_blending():
 
     assert clock._slew_start_time is None
     assert abs(clock.elapsed() - 8.0) < 0.5
+
+
+# ── stream_restart_position / restream_from ─────────────────────────────────
+# A device that reopens the stream by itself (no /play, /seek or /resume) has
+# to be served from where playback actually is, and its own position counter
+# restarts with that stream — see routes/stream.py's `reconnecting` branch
+# and docs/playback-bugs.md.
+
+
+def test_stream_restart_position_is_the_raw_wall_position():
+    """Without position_offset, same convention pause() uses: the device is
+    about to re-incur its own startup buffering, so it must not be handed a
+    position that already accounts for it."""
+    clock = PlaybackClock()
+    clock.start(0.0)
+    clock.play_start_time -= 59.0
+    clock.position_offset = -1.5
+
+    assert clock.stream_restart_position() == pytest.approx(59.0, abs=0.5)
+
+
+def test_stream_restart_position_while_paused_is_the_resume_offset():
+    clock = PlaybackClock()
+    clock.start(0.0)
+    clock.play_start_time -= 30.0
+    clock.pause(30.0)
+
+    assert clock.stream_restart_position() == pytest.approx(clock.resume_offset)
+
+
+def test_restream_from_rebases_the_stream_timeline_only():
+    clock = PlaybackClock()
+    clock.start(0.0)
+    clock.play_start_time -= 59.0
+    before_elapsed = clock.elapsed()
+    before_generation = clock.play_generation
+
+    clock.restream_from(59.0)
+
+    # The track timeline is untouched - nobody seeked anywhere.
+    assert clock.elapsed() == pytest.approx(before_elapsed, abs=0.5)
+    assert clock.play_generation == before_generation
+    # The stream timeline starts here, which is what a device's own freshly
+    # restarted position gets compared against.
+    assert clock.elapsed_since_stream_start() == pytest.approx(0.0, abs=0.5)
+
+
+def test_restream_from_keeps_a_later_calibration_sane():
+    """The whole point: after a reconnect the device reports ~0 again. With
+    the stream timeline re-based, calibrating against that yields a small
+    offset instead of dragging it by the entire track position (-60s live on
+    2026-08-23)."""
+    clock = PlaybackClock()
+    clock.start(0.0)
+    clock.play_start_time -= 59.0
+    clock.restream_from(59.0)
+
+    offset = clock.calibrate(0.0)
+
+    assert offset == pytest.approx(0.0, abs=0.5)

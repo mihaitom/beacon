@@ -140,10 +140,11 @@ def test_reap_once_leaves_recently_touched_session_alone():
     assert registry.get("fresh-session") is not None
 
 
-def _stale_casting_session(session_id: str, uri: str | None):
-    """An idle-past-the-timeout session that still believes it is casting,
-    with a device that reports `uri` as what it's currently playing (None =
-    can't say)."""
+def _stale_session(session_id: str, uri: str | None, streaming: bool = False):
+    """A session whose last_seen is past the timeout, holding a delivery
+    whose device reports `uri` as what it is currently playing (None = can't
+    say). `streaming` is what the session itself believes about its own
+    playback."""
     from unittest.mock import AsyncMock
 
     from core.session import SESSION_IDLE_TIMEOUT, registry
@@ -153,9 +154,48 @@ def _stale_casting_session(session_id: str, uri: str | None):
     delivery.stop = AsyncMock()
     delivery.current_uri = AsyncMock(return_value=uri)
     session.state.active_delivery = delivery
-    session.state.is_streaming = True
+    session.state.is_streaming = streaming
     session.last_seen = time.time() - SESSION_IDLE_TIMEOUT - 1
     return session, delivery
+
+
+# ── what "idle" must not mean ────────────────────────────────────────────────
+
+
+def test_reap_once_never_reaps_a_session_that_is_still_streaming():
+    """The 2026-08-23 incident (see docs/playback-bugs.md). Nothing about
+    casting touches last_seen once a track is under way — the /events
+    heartbeat needs an open app window, and a GET /stream connection touches
+    the session once, when the device opens it. So an 80-minute mix played
+    with every tab closed ages its own session past the timeout while it is
+    audibly playing, and the reap stopped the speaker 31 minutes in."""
+    from core.session import reap_once, registry
+
+    session, delivery = _stale_session("long-track", uri=None, streaming=True)
+
+    reaped = asyncio.run(reap_once())
+
+    assert reaped == []
+    assert registry.get("long-track") is session
+    delivery.stop.assert_not_awaited()
+    # Not even asked: what it plays is irrelevant while we know we're casting.
+    delivery.current_uri.assert_not_awaited()
+
+
+def test_reap_once_leaves_a_paused_cast_alone():
+    """Same reasoning one step later: somebody may well come back to it, and
+    stopping the device under them is the same rudeness."""
+    from core.session import reap_once, registry
+
+    session, delivery = _stale_session("paused-cast", uri=None, streaming=True)
+    session.state.clock.is_paused = True
+
+    assert asyncio.run(reap_once()) == []
+    assert registry.get("paused-cast") is not None
+    delivery.stop.assert_not_awaited()
+
+
+# ── what a reap does to the device it finds ──────────────────────────────────
 
 
 def test_reap_once_stops_delivery_and_releases_claims():
@@ -163,9 +203,7 @@ def test_reap_once_stops_delivery_and_releases_claims():
     from core.session import reap_once, registry
     from core.state import stream_url
 
-    session, delivery = _stale_casting_session(
-        "stale-with-delivery", stream_url("stale-with-delivery")
-    )
+    _, delivery = _stale_session("stale-with-delivery", stream_url("stale-with-delivery"))
     asyncio.run(claims.claim("chromecast", "TV", "stale-with-delivery"))
 
     asyncio.run(reap_once())
@@ -175,61 +213,31 @@ def test_reap_once_stops_delivery_and_releases_claims():
     assert registry.get("stale-with-delivery") is None
 
 
-def test_reap_once_leaves_a_device_alone_when_the_session_was_not_streaming():
-    """The 2026-08-22 incident (see docs/playback-bugs.md): a session whose
-    cast had ended hours earlier still held its old delivery. Reaping stopped
-    that speaker — which a *different* Beacon instance was streaming to by
-    then, and which therefore saw a cast device drop for no reason of its
-    own. A session that already knows it isn't streaming has no business
-    stopping anything."""
-    from core.session import reap_once, registry
-
-    session, delivery = _stale_casting_session("stale-not-streaming", None)
-    session.state.is_streaming = False
-
-    reaped = asyncio.run(reap_once())
-
-    delivery.stop.assert_not_awaited()
-    assert reaped == ["stale-not-streaming"]  # the session still goes away
-    assert registry.get("stale-not-streaming") is None
-
-
 def test_reap_once_leaves_a_device_playing_someone_elses_stream_alone():
     """Same speaker, different owner: the device answers with a URL that
     isn't this session's stream (another instance's port, or another
     session's id), so stopping it would cut off playback nobody asked to
-    end."""
-    from core.session import reap_once
+    end — the 2026-08-22 incident, where a second Beacon instance on the
+    same host lost its cast to exactly this."""
+    from core.session import reap_once, registry
 
-    _, delivery = _stale_casting_session(
-        "stale-taken-over", "http://10.0.0.5:9071/stream/other-session"
-    )
+    _, delivery = _stale_session("stale-taken-over", "http://10.0.0.5:9071/stream/other")
 
-    asyncio.run(reap_once())
+    reaped = asyncio.run(reap_once())
 
     delivery.stop.assert_not_awaited()
+    assert reaped == ["stale-taken-over"]  # the session still goes away
+    assert registry.get("stale-taken-over") is None
 
 
 def test_reap_once_still_stops_a_device_that_cannot_report_its_uri():
     """AirPlay and anything else without a transport to query — unchanged
-    behaviour, and the safer default: a speaker left playing forever is
-    worse than a stop that was already justified while the session lived."""
+    behaviour, and the safer default for a session that has already stopped
+    streaming: a speaker left playing forever is worse than a stop that was
+    already justified while the session lived."""
     from core.session import reap_once
 
-    _, delivery = _stale_casting_session("stale-silent-device", None)
-
-    asyncio.run(reap_once())
-
-    delivery.stop.assert_awaited_once()
-
-
-def test_reap_once_compares_against_the_station_url_for_radio():
-    """Radio never goes through our own /stream — the station URL is what
-    was handed to the device, so that's what its answer has to match."""
-    from core.session import reap_once
-
-    session, delivery = _stale_casting_session("stale-radio", "http://radio/stream")
-    session.state.radio_info = {"title": "FIP", "url": "http://radio/stream"}
+    _, delivery = _stale_session("stale-silent-device", None)
 
     asyncio.run(reap_once())
 
@@ -241,7 +249,7 @@ def test_reap_once_survives_a_device_that_errors_on_the_uri_lookup():
 
     from core.session import reap_once
 
-    _, delivery = _stale_casting_session("stale-uri-error", None)
+    _, delivery = _stale_session("stale-uri-error", None)
     delivery.current_uri = AsyncMock(side_effect=RuntimeError("device unreachable"))
 
     asyncio.run(reap_once())  # must not raise
@@ -254,13 +262,24 @@ def test_reap_once_still_reaps_a_session_whose_delivery_wont_stop():
 
     from core.session import reap_once, registry
 
-    session, delivery = _stale_casting_session("stale-unresponsive", None)
+    _, delivery = _stale_session("stale-unresponsive", None)
     delivery.stop = AsyncMock(side_effect=RuntimeError("device unreachable"))
 
     reaped = asyncio.run(reap_once())  # must not raise
 
     assert reaped == ["stale-unresponsive"]
     assert registry.get("stale-unresponsive") is None
+
+
+def test_device_is_still_ours_compares_against_the_station_url_for_radio():
+    """Radio never goes through our own /stream — the station URL is what
+    was handed to the device, so that's what its answer has to match."""
+    from core.session import _device_is_still_ours
+
+    session, _ = _stale_session("radio-session", "http://radio/stream")
+    session.state.radio_info = {"title": "FIP", "url": "http://radio/stream"}
+
+    assert asyncio.run(_device_is_still_ours(session)) is True
 
 
 async def test_reap_stale_sessions_calls_reap_once_after_the_interval():

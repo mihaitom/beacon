@@ -115,6 +115,85 @@ def test_stale_connection_does_not_clear_a_newer_generations_offset(
     assert default_session.state.clock.resume_offset == 99.0
 
 
+# ── a device reopening the stream on its own ─────────────────────────────────
+# Regression tests: a reconnect used to be served the same way a fresh
+# dispatch is, i.e. from resume_offset — which by then reads 0, because the
+# first connection of that dispatch consumed it. The device got the track
+# from the beginning while the session's clock was a minute in, then reported
+# ~0 as its position, which the resync loop took for a seek on the speaker
+# and "corrected" position_offset by the full track position. Observed live
+# 2026-08-23; see docs/playback-bugs.md.
+
+
+def _mid_track_session(client, default_session, elapsed: float):
+    """A session that has already served audio for the current generation
+    and whose clock stands `elapsed` seconds into the track — i.e. exactly
+    what a device re-requesting the URL finds."""
+    track = _configure_and_set_track(client, default_session)
+    st = default_session.state
+    st.clock.start(0.0)
+    st.clock.play_start_time -= elapsed
+    st.clock.resume_offset = 0.0  # consumed by the first connection
+    st.streamed_generation = st.clock.play_generation
+    return track
+
+
+def test_a_reconnect_is_served_from_the_current_position(client, default_session):
+    _mid_track_session(client, default_session, elapsed=59.0)
+
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked:
+        client.get("/stream")
+
+    assert mocked.call_args.kwargs["start_offset"] == pytest.approx(59.0, abs=1.0)
+
+
+def test_a_reconnect_rebases_the_stream_timeline(client, default_session):
+    """The device's own reported position restarts with the new stream, so
+    the frame the resync compares it against has to restart too — otherwise
+    the next resync reads the device's fresh 0 as a minute-long backwards
+    seek."""
+    _mid_track_session(client, default_session, elapsed=59.0)
+
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream):
+        client.get("/stream")
+
+    clock = default_session.state.clock
+    assert clock.track_start_position == pytest.approx(59.0, abs=1.0)
+    assert clock.elapsed_since_stream_start() == pytest.approx(0.0, abs=1.0)
+
+
+def test_a_fresh_dispatch_is_still_served_from_its_own_offset(client, default_session):
+    """A slow device can take seconds to open its connection after a /play —
+    that first connection must still get the dispatch's own offset, not
+    wherever the clock has crept to in the meantime."""
+    _configure_and_set_track(client, default_session)  # resume_offset = 42.0
+    st = default_session.state
+    st.clock.start(42.0)
+    st.clock.play_start_time -= 6.0  # six seconds passed before the device connected
+    st.streamed_generation = None
+
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked:
+        client.get("/stream")
+
+    assert mocked.call_args.kwargs["start_offset"] == 42.0
+    assert st.streamed_generation == st.clock.play_generation
+
+
+def test_a_reconnect_after_playback_ended_is_not_resumed_mid_track(
+    client, default_session
+):
+    """is_streaming is False here — the session's playback genuinely ended
+    and the device is only now getting round to re-requesting the URL.
+    Nothing to resume into."""
+    _mid_track_session(client, default_session, elapsed=59.0)
+    default_session.state.is_streaming = False
+
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked:
+        client.get("/stream")
+
+    assert mocked.call_args.kwargs["start_offset"] == 0.0
+
+
 # ── active_stream_connections stays balanced even when setup itself fails ───
 
 

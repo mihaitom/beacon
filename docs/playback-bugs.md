@@ -90,7 +90,7 @@ actionable.
 | Beacon issuing a transport command (stop/pause) | Airtight for anything crossing this host's NIC, as of the full-day capture on 2026-08-22 (see "What a full day of SOAPACTION capture adds"). Every non-`Get` UPnP action of the whole day is accounted for: Beacon's own dispatch triples, `SetVolume`, and two `ListAlarms`. At each drop the nearest preceding command is that track's own dispatch, 55-67s earlier, and nothing at the drop itself |
 | The Sonos group re-forming | The satellite emitted no events at all; its transport is bound to the coordinator |
 | The stream declaring a wrong duration | No Xing/Info header in what ffmpeg emits; duration reaches the device only via DIDL metadata, correctly |
-| The session idle reaper | `SESSION_IDLE_TIMEOUT` is 30 min; the first drop was 14 min into the session |
+| The session idle reaper | Still ruled out for the drops in this table, but on different evidence than first written: the packet capture shows no `Stop` reaching the speaker at any of them (see "What a full day of SOAPACTION capture adds"). The original reasoning - "the first drop was 14 min into the session" - measured the wrong clock. What matters is time since the session was last *touched*, not since it started, and a long track touches nothing for its whole duration. That reaper did stop a real cast on 2026-08-23; see "A cast stops half an hour into a long track" under Fixed |
 | AudioAnalyzer blocking the stream generator | `feed()` is non-blocking (unbounded queue), so it cannot stall it |
 | Embedded cover art / the bitrate factor below | A track whose factor was 1.006 dropped just the same |
 | The frontend commanding a stop from a background tab | Two independent checks: no UPnP command reached the speaker, and no `/pause` or `/stop` appears in the backend log at any drop |
@@ -461,7 +461,187 @@ has to come from UPnP eventing (each renderer reports its own
 
 ---
 
+### An event-loop stall of 19.47s, cause unknown
+
+2026-08-23, 00:49, on one instance while casting. One occurrence, not seen
+again over the following night.
+
+    00:48:46  resync healthy: device=32.00s wall=33.01s delta=-1.01s
+    00:49:13  [loop] Event loop blocked for 19.47s
+    00:49:13  [ffmpeg] Stream cancelled (Track 1)
+    ...      (the reconnect chain that followed is under Fixed below)
+
+**Why it matters even though it happened once:** nothing is serviced for that
+long, a cast device's open `/stream` socket included. The device gave up and
+reconnected, which is how a stall on our side turns into a stopped speaker.
+It is also the same class of hiccup `-readrate_catchup` exists to recover
+from (see core/streamer.py), only two orders of magnitude larger.
+
+**What it was not:**
+
+- Not request-driven: the log has no line at all between 00:48:46 and
+  00:49:13, so nothing was being served.
+- Not the host: a second instance on the same machine, idle, running the same
+  detector (`core/loop_health.py`), logged nothing in that window. CPU
+  starvation would have shown in both.
+- Not device discovery, which was the *other* stall found the same evening
+  (1.71s, fixed - see delivery/lazy_import.py): no scan ran here.
+
+The Sonos app was used to start a different room at roughly that moment, via
+a music-service integration that has nothing to do with this process. That is
+suggestive and unproven; the household topology never changed (`groups=2`
+throughout).
+
+**The instrument this needs.** `monitor_loop_lag()` can only report the
+duration, because by the time it runs again the culprit has already returned.
+Catching it needs a watchdog *thread* - the loop updates a timestamp, the
+thread checks it every 0.5s and dumps every thread's stack once the loop has
+not ticked for N seconds, i.e. while the block is still in progress.
+
+---
+
 ## Fixed
+
+### A mid-track reconnect restarted the track and poisoned the clock (2026-08-23)
+
+**Symptom, as it reached the user:** the app looked broken rather than merely
+quiet. The position jumped, the progress bar disagreed with what was audible,
+lyrics and the visualizer drifted with it, and playback appeared stuck. The
+only way out from the UI was a hard reload plus skipping to the next track.
+
+**The chain**, all of it in one log window, triggered by the 19.47s stall
+above:
+
+    00:49:13  [stream] Reconnect while already streaming — offset=0.00s vs elapsed()=59.03s, drift=+59.03s
+    00:49:13  [ffmpeg] new invocation, no -ss: the track from its beginning
+    00:49:13  [upnp] Arbeitszimmer state=STOPPED
+    00:49:13  [position-resync] external position change — device=0.00s wall=60.35s, offset -1.02s -> -60.35s
+    00:49:22  [position-resync] external position change — device=0.00s wall=68.68s, offset -60.35s -> -68.68s
+    00:49:23  [stream] Cast device dropped its connection ... loop_lag_30s=19.47s
+
+1. The device gave up on the stalled connection and re-requested the URL.
+2. `routes/stream.py` served it `offset = clock.resume_offset`, which the
+   *first* connection of that dispatch had already consumed and reset to 0.
+   So the speaker got the track from 0:00 while the session's clock stood at
+   59s. The `TEMPORARY` diagnostic block in that file existed to find out
+   whether this case was real; it was, and this was its first full capture.
+3. The resync then read device=0.00s against wall=60.35s as a deliberate seek
+   on the speaker - the case `_resync_position_once()` exists to follow - and
+   calibrated `position_offset` to -60.35s, then -68.68s.
+4. `elapsed()` was then wrong by a minute, and everything downstream reads
+   from it: displayed position, lyrics sync, the visualizer's frame pacing,
+   `seconds_until()`'s auto-advance scheduling.
+
+**Fix**, two parts, both in the "device reopened this on its own" branch:
+
+- A connection for a `play_generation` that has already been served audio
+  (`AppState.streamed_generation`) is a reconnect, and is served from
+  `PlaybackClock.stream_restart_position()` - the raw wall position, without
+  `position_offset`, since the device is about to re-incur its own startup
+  buffering. A fresh dispatch still gets its own `resume_offset`, which is
+  what keeps a slow device's first connection from being served from wherever
+  the clock crept to while it was connecting.
+- `PlaybackClock.restream_from()` re-bases `track_start_position` when that
+  audio actually starts flowing. The device's own position counter restarts
+  with the new stream, and `elapsed_since_stream_start()` is the frame it is
+  compared against - without this, step 3 happens anyway.
+
+**Still open, as defence in depth:** the resync's backwards correction is
+unbounded, while the startup path bounds the forwards one
+(`MAX_PLAUSIBLE_POSITION_LEAD`). Nothing should be able to drag
+`position_offset` by a whole track position in one step, whatever the device
+reports.
+
+**Why the test suite didn't catch it:** the reconnect path was covered -
+there is a test for `is_streaming` being revived by a bare reconnect - but
+none asserted *which position* a reconnect is served from. The offset was
+treated as an input to a connection rather than as behaviour worth pinning,
+so the code and its tests shared the same blind spot.
+
+### A cast stops half an hour into a long track (2026-08-23)
+
+The clearest self-inflicted version of this file's own symptom, found by
+running the app against a control arm overnight: playback stopped mid-track
+with no cause visible in the app's own reasoning, and was logged as a device
+drop.
+
+**Symptom:** an 80-minute mix cast to a Sonos, with no Beacon window open
+anywhere, stopped 31 minutes in. The log reports the usual "Cast device
+dropped its connection and did not come back within 10s", with a healthy
+snapshot: `blocked_for=0.01s`, `loop_lag_30s=0.00s`, 58 MB delivered over
+1856s.
+
+**Proven on the wire**, which is the only reason it wasn't filed as another
+mystery drop:
+
+    00:27:50.133 UTC  Out →  10.2.2.112:1400   SOAPACTION: AVTransport:1#Stop
+    00:27:50.970 UTC  In  ←  10.2.2.112        FIN on port 7071
+
+We stopped the speaker; the device closed the stream 840ms later. The
+direction is not ambiguous.
+
+**Cause:** `reap_once()` treats a session as idle purely on `last_seen`, and
+nothing about casting touches that once a track is under way. The /events
+heartbeat needs a client with the app open, and each GET /stream connection
+touches the session exactly once - when the device opens it, i.e. once per
+*track*. A track longer than `SESSION_IDLE_TIMEOUT` therefore ages its own
+session past the timeout while it is audibly playing. The mix started at
+01:56:54, the reaper (60s cadence) fired at 02:27:50, exactly 30 minutes
+later, and stopped the delivery.
+
+Nothing about this is Sonos-specific or format-specific. Any target, any
+tier, any track over 30 minutes, whenever nobody has the app open - which is
+precisely the "start a long set in the evening and close the laptop" case.
+
+**Fix:** a session that is still streaming is never reaped, whatever
+`last_seen` says. Paused casts count as streaming too - somebody may come
+back to one, and stopping the device under them is the same rudeness one step
+later. The device-ownership check below still applies to sessions that have
+genuinely stopped.
+
+**Why the test suite didn't catch it:** the reap tests set up a stale session
+and asserted it gets cleaned up, which is what the code was written to do.
+None of them described a session that is *busy*, because "idle" was never
+stated as anything but a timestamp comparison - the test suite encoded the
+same assumption as the code. The behaviour also cannot appear in a fast test
+without either a 30-minute wait or the timeout being treated as an input,
+which nothing did.
+
+**Note for reading old logs:** this makes any drop of a track longer than 30
+minutes suspect, in both directions. Check whether a `[Sonos:<room>] stopped`
+line appears in the same second in the *same* instance's log, and whether the
+capture shows a `Stop` on the wire.
+
+### A session being reaped stopped a speaker somebody else was using (2026-08-22)
+
+Not a drop, but it produces one: the same "cast device dropped its connection"
+error, with no cause visible in the affected instance at all. Worth reading
+before chasing a drop that happened while more than one Beacon instance was
+running.
+
+**What happened:** at 22:01:30 a session in one instance was reaped after
+`SESSION_IDLE_TIMEOUT`, and `reap_once()` called `stop()` on the delivery it
+still held from a cast that had ended over an hour earlier. That speaker
+belonged to a *different* Beacon instance by then, which was mid-track on it.
+The victim instance saw its stream cancelled with nothing to explain it - no
+request, no error - and reported a drop 10s later. The only trace was a single
+`[Sonos:Arbeitszimmer] stopped` line in the *other* container's log.
+
+Cross-instance claims cannot catch this: `core/claims.py` is per process, and
+two instances share nothing but the speakers themselves. Session ids don't
+even differ between them - they are derived from the media-server login, so
+the same user gets the same id everywhere.
+
+**Fix:** `reap_once()` now stops a device only when the session still believes
+it is streaming *and* the device still reports our own stream URL (our port,
+our session id) as what it is playing - `BaseDelivery.current_uri()`, with
+Sonos/Chromecast/DLNA implementations and `None` ("can't say", stop as before)
+for AirPlay.
+
+**Why the tests didn't catch it:** the existing reap test asserted that the
+delivery gets stopped, which was the whole of the intended behaviour as
+written. Nothing described *whose* device it was, because until a second
+instance existed on the same network the question could not come up.
 
 ### Pacing threw away the lead it had built (2026-08-22)
 

@@ -47,6 +47,14 @@ class AppState:
         # notices its own device died at all once a later device's
         # connection has since bumped the count past it.
         self.active_stream_connections: int = 0
+        # The play_generation that has already had audio served for it. What
+        # distinguishes "the first GET /stream of a fresh dispatch" from "the
+        # device reopened the stream on its own" — the two look identical
+        # otherwise, since resume_offset has been consumed by then in both
+        # cases. Set by routes/stream.py once a connection actually produces
+        # bytes, not when it merely opens: a device can open and abandon a
+        # connection without ever reading from it.
+        self.streamed_generation: int | None = None
         self.radio_info: dict | None = None
         self.active_delivery: BaseDelivery | DeliveryManager | None = None
         # Bumped by core/session.py's displace_target() whenever its

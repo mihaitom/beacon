@@ -23,7 +23,6 @@ from core.streamer import resolve_output_format, stream_tracks
 
 from .playback import (
     POSITION_RESYNC_INTERVAL,
-    POSITION_RESYNC_THRESHOLD,
     _apply_position_offset,
     _current_reconnect_args,
     _resync_position_periodically,
@@ -541,42 +540,34 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
     # thus the displayed position) still reports the correct position.
     offset = session.state.clock.resume_offset
 
-    # TEMPORARY — chasing a report where pausing/resuming a Sonos speaker
-    # from its own remote (not through Beacon's /pause and /resume) left
-    # audio broken. resume_offset is only ever set by OUR OWN /play, /seek
-    # and /resume handlers (see PlaybackClock) — it has no way to reflect a
-    # reconnect the device itself initiated, e.g. re-requesting this URL
-    # after a local pause/resume cycle. If that's what's happening, this
-    # connection arrives while is_streaming is still True from the
-    # *previous* connection, and `offset` (already consumed/reset to 0 by
-    # that previous connection — see the comment above) has drifted far
-    # from clock.elapsed(), the position our own resync loop has been
-    # calibrating against the device this whole time — i.e. the device
-    # would be about to receive audio from the wrong point in the track
-    # while our own position display, self-correcting via a *different*
-    # mechanism (position_offset, not resume_offset), keeps reporting the
-    # right one. A large gap here is exactly that mismatch; remove once
-    # confirmed (or ruled out) from real logs.
+    # A connection for a generation that has already been served audio is
+    # the device reopening the stream by itself — no /play, /seek or /resume
+    # was involved, so resume_offset (which only those set) has long been
+    # consumed and reads 0. Serving that 0 hands the device the track from
+    # the beginning while this session's clock is minutes in, which is worse
+    # than it sounds: the device then reports ~0 as its position, the resync
+    # loop reads that as a deliberate seek on the speaker and drags
+    # position_offset by the full track position, and everything downstream
+    # of elapsed() goes with it — displayed position, lyrics sync, the cast
+    # visualizer's pacing, auto-advance scheduling. Observed live 2026-08-23
+    # after an event-loop stall made a Sonos give up and reconnect: the
+    # track restarted audibly, position_offset went to -60.35s, and the only
+    # way out from the UI was a reload plus skipping the track.
     #
-    # Gated on the drift actually being large, not just `is_streaming`
-    # being True on its own — that's true for basically the entire
-    # session (only False once the queue genuinely ends), so the earlier,
-    # ungated version of this fired on *every* ordinary track change too:
-    # auto-advance and every explicit /play both reset the clock (offset
-    # ≈ elapsed ≈ 0 for a fresh track) right before dispatching, which is
-    # a legitimate reconnect this was never meant to flag. Reusing
-    # POSITION_RESYNC_THRESHOLD here isn't about resync tolerance — it's
-    # just already the app's own answer to "how big a gap is actually
-    # worth a look", so a second magic number isn't needed for it.
-    if session.state.is_streaming:
-        drift = session.state.clock.elapsed() - offset
-        if abs(drift) > POSITION_RESYNC_THRESHOLD:
-            logger.warning(
-                f"[stream] Reconnect while already streaming — offset={offset:.2f}s "
-                f"(this connection's -ss) vs. clock.elapsed()={session.state.clock.elapsed():.2f}s "
-                f"(calibrated position) — drift={drift:+.2f}s, "
-                f"play_generation={session.state.clock.play_generation}"
-            )
+    # Gated on is_streaming as well, so this never applies to a session
+    # whose playback genuinely ended and whose device is only now getting
+    # round to re-requesting the URL.
+    reconnecting = (
+        session.state.is_streaming
+        and session.state.streamed_generation == session.state.clock.play_generation
+    )
+    if reconnecting:
+        offset = session.state.clock.stream_restart_position()
+        logger.info(
+            f"[stream] Device reopened the stream on its own — resuming at "
+            f"{offset:.1f}s instead of 0:00 "
+            f"(play_generation={session.state.clock.play_generation})"
+        )
 
     # Debug, not info — routes/playback.py's own "[play] ..." line already
     # announced this same track+device at the user-action level; this is
@@ -675,6 +666,19 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
                         # different one.
                         if session.state.clock.play_generation == my_generation:
                             session.state.clock.resume_offset = 0.0
+                            # Marks this generation as "has had audio", which
+                            # is what makes the *next* connection for it
+                            # recognisable as a reconnect (see `reconnecting`
+                            # above). Set here rather than at connection time
+                            # because a device can open a connection and
+                            # never read from it.
+                            session.state.streamed_generation = my_generation
+                            if reconnecting:
+                                # The device's own position restarts with
+                                # this stream, so the frame the resync loop
+                                # compares it against has to restart too —
+                                # see PlaybackClock.restream_from().
+                                session.state.clock.restream_from(offset)
                             # A bare device-initiated reconnect (no /play,
                             # /seek, or /resume involved — the device just
                             # re-requested this URL on its own) never goes

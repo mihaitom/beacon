@@ -430,33 +430,52 @@ async def _device_is_still_ours(session: SessionState) -> bool:
 
 
 async def reap_once() -> list[str]:
-    """Stop delivery, release claims, and forget any session that's been idle
-    past SESSION_IDLE_TIMEOUT. A session is "idle" only if no request AND no
-    /events heartbeat has touched it — an open tab actively streaming or just
-    listening never goes idle, since both paths call session.touch().
-    Returns the session ids that were reaped, mainly so tests don't need to
-    duplicate this logic to assert on it."""
+    """Release claims and forget any session that's been idle past
+    SESSION_IDLE_TIMEOUT, stopping its device if it's still sitting on our
+    stream. Returns the session ids that were reaped, mainly so tests don't
+    need to duplicate this logic to assert on it.
+
+    "Idle" is deliberately two conditions, not one — see the loop below."""
     now = time.time()
     reaped = []
     for session in registry.all():
         if now - session.last_seen <= SESSION_IDLE_TIMEOUT:
             continue
-        # Two guards before touching the device, because a reap is the one
-        # teardown nobody asked for — it fires 30 minutes after the last
-        # sign of life, long after whatever this session was doing, and the
-        # speaker is shared far more widely than this process can see.
-        # Observed live 2026-08-22: a session whose cast had already ended
-        # hours earlier got reaped and stopped its old speaker — which by
-        # then a *different* Beacon instance on the same host was streaming
-        # to. That instance saw a device dropping its connection with no
-        # cause of its own, i.e. exactly the signature of the bug being
-        # hunted in docs/playback-bugs.md.
+        # last_seen alone is NOT enough to call a session idle, because
+        # nothing about casting touches it once a track is under way: the
+        # /events heartbeat needs a client with the app open, and each GET
+        # /stream connection touches it exactly once, when the device opens
+        # it — one touch per *track*, not per minute.
         #
-        # is_streaming first because it needs no device round-trip and
-        # covers that case outright: this session already knew it wasn't
-        # streaming (a dropped connection had marked it so), and stopping
-        # the device was never its business.
-        if session.state.is_streaming and await _device_is_still_ours(session):
+        # So a track longer than SESSION_IDLE_TIMEOUT, played with no app
+        # window anywhere, ages its own session past the timeout while it is
+        # audibly playing. Observed live 2026-08-23: an 80-minute mix cast
+        # to a Sonos with every tab closed was reaped 31 minutes in and its
+        # speaker stopped — proven on the wire, our Stop at 00:27:50.133 UTC
+        # and the device's FIN 840ms later. From the outside that is
+        # indistinguishable from the unexplained drops in
+        # docs/playback-bugs.md, which is how it went unnoticed.
+        #
+        # Whatever is still streaming is by definition not abandoned, so it
+        # is not reaped at all. Covers a paused cast too: somebody may well
+        # come back to it, and stopping the device under them would be the
+        # same rudeness one step later.
+        if session.state.is_streaming:
+            logger.debug(
+                f"[reap] {session.session_id}: idle since "
+                f"{now - session.last_seen:.0f}s but still streaming — left alone"
+            )
+            continue
+        # Not streaming any more, but the device may still be sitting on
+        # this session's stream — a false-positive drop, or a queue that
+        # ended without the device letting go. Stop it only if it really is
+        # still ours: a reap is the one teardown nobody asked for, and the
+        # speaker is shared far more widely than this process can see.
+        # Observed live 2026-08-22: a session whose cast had ended hours
+        # earlier was reaped and stopped its old speaker, which by then a
+        # *different* Beacon instance on the same host was streaming to —
+        # that instance saw a device drop with no cause of its own.
+        if session.state.active_delivery and await _device_is_still_ours(session):
             try:
                 await session.state.active_delivery.stop()
             except Exception:
