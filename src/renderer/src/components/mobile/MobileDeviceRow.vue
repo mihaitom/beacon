@@ -53,7 +53,9 @@
         style="flex: 1"
         @update:model-value="onVolumeChange"
       />
-      <span class="text-caption text-medium-emphasis mobile-device-row__volume-value">{{ volume != null ? `${volume}%` : '–' }}</span>
+      <span class="text-caption text-medium-emphasis mobile-device-row__volume-value">{{
+        volume != null ? `${volume}%` : '–'
+      }}</span>
     </div>
   </div>
 </template>
@@ -126,6 +128,14 @@ export default {
     showVolume() {
       return this.isMyActiveTarget && VOLUME_CAPABLE_TYPES.has(this.type)
     },
+    // Pushed reading for push-capable types (Sonos today - see
+    // connectStore.isVolumePushCapable()'s own comment), null for
+    // everything else (and whenever nothing's pushed a reading yet), which
+    // the watcher below simply ignores rather than overwriting a real value
+    // with nothing.
+    pushedVolume(): number | null {
+      return this.connectStore.pushedVolumeFor(this.type, this.device.name)
+    },
   },
   watch: {
     isMyActiveTarget: {
@@ -134,10 +144,18 @@ export default {
         clearInterval(this.volumePollTimer ?? undefined)
         this.volumePollTimer = null
         if (active) {
+          // Still needed for every type, push-capable included: a push
+          // channel only ever fires on the *next* change, so the very
+          // first paint still needs one real round trip.
           this.fetchVolume()
-          this.volumePollTimer = setInterval(() => this.fetchVolume(), 4000)
+          if (!this.connectStore.isVolumePushCapable(this.type)) {
+            this.volumePollTimer = setInterval(() => this.fetchVolume(), 4000)
+          }
         }
       },
+    },
+    pushedVolume(value: number | null) {
+      if (value != null) this.volume = value
     },
   },
   beforeUnmount() {

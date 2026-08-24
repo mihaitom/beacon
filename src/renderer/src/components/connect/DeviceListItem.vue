@@ -142,10 +142,10 @@ export default {
       // than showing a made-up starting value (see fetchVolume()).
       volume: null as number | null,
       volumeBeforeMute: null as number | null,
-      // Polling fallback for chromecast/dlna, which have no push channel
-      // for "someone changed it on the device itself/another session" (see
-      // pushedVolume's own comment for the sonos case, which no longer
-      // needs this). Left null and unused for sonos.
+      // Polling fallback for types connectStore.isVolumePushCapable()
+      // doesn't cover - those have no channel for "someone changed it on
+      // the device itself/another session" other than asking again. Left
+      // null and unused for push-capable types (see pushedVolume).
       volumePollTimer: null as ReturnType<typeof setInterval> | null,
     }
   },
@@ -170,18 +170,13 @@ export default {
         (t: { name: string; type: string }) => t.name === this.device.name && t.type === this.type,
       )
     },
-    // Sonos volume/mute reaches connect's status payload by push now (a
-    // RenderingControl subscription, see connect/routes/upnp.py) instead of
-    // only ever being polled — chromecast/dlna have no such channel yet, so
-    // they stay on volumePollTimer below. null here for those (and
-    // whenever nothing's pushed a reading yet), which the watcher below
-    // simply ignores rather than overwriting a real value with nothing.
+    // Pushed reading for push-capable types (Sonos today - see
+    // connectStore.isVolumePushCapable()'s own comment), null for
+    // everything else (and whenever nothing's pushed a reading yet), which
+    // the watcher below simply ignores rather than overwriting a real value
+    // with nothing.
     pushedVolume(): number | null {
-      if (this.type !== 'sonos') return null
-      const target = this.connectStore.activeTargets.find(
-        (t) => t.name === this.device.name && t.type === this.type,
-      )
-      return target?.volume ?? null
+      return this.connectStore.pushedVolumeFor(this.type, this.device.name)
     },
     checked() {
       // Purely the parent's staged selection now — it seeds that from the
@@ -214,7 +209,7 @@ export default {
           // only ever fires on the *next* change, so the very first paint
           // still needs one real round trip — see pushedVolume's comment.
           this.fetchVolume()
-          if (this.type !== 'sonos') {
+          if (!this.connectStore.isVolumePushCapable(this.type)) {
             this.volumePollTimer = setInterval(() => this.fetchVolume(), 4000)
           }
         }

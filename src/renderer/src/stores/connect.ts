@@ -73,6 +73,31 @@ export const useConnectStore = defineStore('connect', {
     isActive(): boolean {
       return this.activeTargets.length > 0
     },
+    // Which device types push their volume/mute into `status.targets`
+    // instead of only ever needing to be polled for it - a
+    // RenderingControl subscription for Sonos (see
+    // connect/routes/upnp.py), nothing yet for chromecast/dlna.
+    // Centralized here so every surface showing a device's volume
+    // (DeviceListItem.vue, MobileDeviceRow.vue, PlayerToolbar.vue,
+    // MobileTransportControls.vue, remoteControl.ts's own poll) agrees on
+    // which types that applies to, rather than each re-implementing its
+    // own `type !== 'sonos'` check - three of those drifted out of sync
+    // with the original fix that way (kept polling every 4s for Sonos
+    // regardless), caught live 2026-08-25.
+    isVolumePushCapable() {
+      return (type: DeviceType): boolean => type === 'sonos'
+    },
+    // The pushed reading for a specific device, or null when its type
+    // isn't push-capable, or when nothing has pushed one yet (an unclaimed
+    // device, or a claimed one whose first reading hasn't landed - see
+    // ConnectStatusTarget.volume's own comment).
+    pushedVolumeFor() {
+      return (type: DeviceType, name: string): number | null => {
+        if (!this.isVolumePushCapable(type)) return null
+        const target = this.activeTargets.find((t) => t.type === type && t.name === name)
+        return target?.volume ?? null
+      }
+    },
   },
 
   actions: {

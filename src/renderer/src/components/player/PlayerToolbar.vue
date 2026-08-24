@@ -151,9 +151,10 @@ export default {
       // null while unfetched/unsupported (e.g. DLNA renderer without volume
       // control) — see connectStore.getDeviceVolume().
       deviceVolume: null as number | null,
-      // Connect's SSE status has no volume field, so there's no push
-      // channel for "someone changed it on the device itself/another
-      // session" — polling is the only way this slider ever finds out.
+      // Polling fallback for types connectStore.isVolumePushCapable()
+      // doesn't cover - those have no channel for "someone changed it on
+      // the device itself/another session" other than asking again. Left
+      // null and unused for push-capable types (see pushedDeviceVolume).
       volumePollTimer: null as ReturnType<typeof setInterval> | null,
       // What to restore to on un-mute — captured right before muting, same
       // pattern as DeviceListItem.vue's own onToggleMute(). Two separate
@@ -222,6 +223,15 @@ export default {
     muteDisabled() {
       return this.singleActiveTarget ? this.deviceVolume == null : this.playbackStore.isCasting
     },
+    // Pushed reading for push-capable types (Sonos today - see
+    // connectStore.isVolumePushCapable()'s own comment), null for
+    // everything else (and whenever nothing's pushed a reading yet), which
+    // the watcher below simply ignores rather than overwriting a real value
+    // with nothing.
+    pushedDeviceVolume(): number | null {
+      const target = this.singleActiveTarget
+      return target ? this.connectStore.pushedVolumeFor(target.type, target.name) : null
+    },
   },
   watch: {
     singleActiveTargetKey: {
@@ -231,12 +241,20 @@ export default {
         clearInterval(this.volumePollTimer ?? undefined)
         this.volumePollTimer = null
         if (this.singleActiveTarget) {
+          // Still needed for every type, push-capable included: a push
+          // channel only ever fires on the *next* change, so the very
+          // first paint still needs one real round trip.
           this.fetchDeviceVolume(this.singleActiveTarget)
-          this.volumePollTimer = setInterval(() => {
-            if (this.singleActiveTarget) this.fetchDeviceVolume(this.singleActiveTarget)
-          }, 4000)
+          if (!this.connectStore.isVolumePushCapable(this.singleActiveTarget.type)) {
+            this.volumePollTimer = setInterval(() => {
+              if (this.singleActiveTarget) this.fetchDeviceVolume(this.singleActiveTarget)
+            }, 4000)
+          }
         }
       },
+    },
+    pushedDeviceVolume(value: number | null) {
+      if (value != null) this.deviceVolume = value
     },
   },
   beforeUnmount() {

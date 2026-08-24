@@ -491,5 +491,72 @@ describe('remoteControl store', () => {
         expect((snapshot as Record<string, unknown>).device_volume).toBeNull()
       }
     })
+
+    // Regression test: Sonos volume/mute reaches connectStore.status by
+    // push (see connectStore.isVolumePushCapable()) - this poll used to
+    // call getDeviceVolume() every tick regardless of type, one of several
+    // surfaces that silently kept doing so after DeviceListItem.vue's own
+    // fix, caught live 2026-08-25.
+    it('stops calling getDeviceVolume for a push-capable target once a pushed reading exists', async () => {
+      vi.useFakeTimers()
+      vi.mocked(remoteHttp.enableRemoteControl).mockResolvedValue({
+        password: 'secret',
+        pin: '1',
+        lan_ip: '',
+        port: 0,
+      })
+      const store = useRemoteControlStore()
+      const connect = useConnectStore()
+      connect.status = {
+        current_song: null,
+        stream_info: {
+          label: 'mp3-192k (fallback)',
+          content_type: 'audio/mpeg',
+          transcoding: true,
+          source_codec: null,
+          source_sample_rate: null,
+          source_bit_depth: null,
+          source_bitrate_kbps: null,
+          active_connections: 0,
+          loop_lag: 0,
+        },
+        queue: [],
+        current_song_index: -1,
+        original_queue: [],
+        shuffle: false,
+        repeat_mode: 'off',
+        elapsed: 0,
+        ended: false,
+        paused: false,
+        radio: null,
+        streaming: false,
+        // No volume field yet — the first tick still has nothing pushed,
+        // same gap DeviceListItem.vue's always-on-activation fetch covers.
+        targets: [{ name: 'Kitchen', type: 'sonos' }],
+        total_songs: 0,
+        displaced: false,
+        interrupted: false,
+      }
+      const getVolumeSpy = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
+      await store.enable()
+      await vi.advanceTimersByTimeAsync(300)
+      expect(getVolumeSpy).toHaveBeenCalled()
+
+      // A push now lands (e.g. someone changed it via the Sonos app).
+      connect.status = {
+        ...connect.status,
+        targets: [{ name: 'Kitchen', type: 'sonos', volume: 55 }],
+      }
+      getVolumeSpy.mockClear()
+      vi.mocked(remoteHttp.pushRemoteState).mockClear()
+      await vi.advanceTimersByTimeAsync(4000)
+
+      expect(getVolumeSpy).not.toHaveBeenCalled()
+      const snapshot = vi.mocked(remoteHttp.pushRemoteState).mock.calls.at(-1)?.[0] as Record<
+        string,
+        unknown
+      >
+      expect(snapshot.device_volume).toBe(55)
+    })
   })
 })

@@ -36,9 +36,9 @@ interface RemoteControlState {
 
 const KEEPALIVE_INTERVAL_MS = 20_000
 const STATE_PUSH_DEBOUNCE_MS = 300
-// Matches DeviceListItem.vue's own polling interval — connect's SSE status
-// has no volume field (nothing pushes "someone changed it on the device
-// itself"), so this is the only way either UI ever finds out.
+// Matches DeviceListItem.vue's own polling interval — the fallback for
+// device types connectStore.isVolumePushCapable() doesn't cover (see
+// startDeviceVolumePoll()'s own comment for the push-capable case).
 const DEVICE_VOLUME_POLL_INTERVAL_MS = 4_000
 
 let agentSource: RemoteAgentEventSource | null = null
@@ -261,14 +261,22 @@ export const useRemoteControlStore = defineStore('remoteControl', {
 
     /** Polls the single active cast target's volume (if there is exactly
      * one) so the phone's main Now Playing slider can show/control it, the
-     * same way PlayerBar.vue's own deviceVolume polling does — connect's
-     * SSE status has no volume field to push this instead (see
-     * DEVICE_VOLUME_POLL_INTERVAL_MS's comment). With zero or 2+ active
-     * targets there's no single device this control should represent
-     * (matches PlayerBar.vue's local slider going `disabled` in the 2+
-     * case) — the phone's device picker sheet (devices.js) is where each
-     * individual target's volume lives instead, fetched on demand rather
-     * than continuously polled here. */
+     * same way PlayerBar.vue's own deviceVolume polling does. For a
+     * push-capable type (see connectStore.isVolumePushCapable()) this
+     * still ticks on the same interval - it doubles as "notice the target
+     * changed", which the push channel alone doesn't tell this loop about
+     * - but once a pushed reading actually exists it's used straight from
+     * the store instead of a network round trip. Falls back to a real
+     * fetch until the first one arrives (push only ever fires on the
+     * *next* change, never proactively on claim - same gap
+     * DeviceListItem.vue's own fetchVolume() covers with its one
+     * always-on-activation call), so the very first tick for a
+     * newly-active push-capable device still costs one request, not zero.
+     * With zero or 2+ active targets there's no single device this
+     * control should represent (matches PlayerBar.vue's local slider
+     * going `disabled` in the 2+ case) - the phone's device picker sheet
+     * (devices.js) is where each individual target's volume lives
+     * instead, fetched on demand rather than continuously polled here. */
     startDeviceVolumePoll(): void {
       if (deviceVolumePollTimer) return
       const connect = useConnectStore()
@@ -281,7 +289,11 @@ export const useRemoteControlStore = defineStore('remoteControl', {
           }
           return
         }
-        const volume = await connect.getDeviceVolume(targets[0]!.type, targets[0]!.name)
+        const target = targets[0]!
+        const pushed = connect.isVolumePushCapable(target.type)
+          ? connect.pushedVolumeFor(target.type, target.name)
+          : null
+        const volume = pushed ?? (await connect.getDeviceVolume(target.type, target.name))
         if (volume !== deviceVolumeCache) {
           deviceVolumeCache = volume
           schedulePushSnapshot?.()

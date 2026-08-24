@@ -80,16 +80,18 @@ describe('PlayerToolbar', () => {
   })
 
   describe('mute/volume (single cast target)', () => {
+    // Chromecast has no push channel (connectStore.isVolumePushCapable()),
+    // so this exercises the polling fallback specifically.
     it('fetches and polls the device volume while exactly one target is active, and stops polling on unmount', async () => {
       vi.useFakeTimers()
       const wrapper = mountToolbar()
       const connect = useConnectStore()
       const getVolumeSpy = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
-      connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos' }] })
+      connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'chromecast' }] })
       await wrapper.vm.$nextTick()
       await vi.runOnlyPendingTimersAsync()
 
-      expect(getVolumeSpy).toHaveBeenCalledWith('sonos', 'Living Room')
+      expect(getVolumeSpy).toHaveBeenCalledWith('chromecast', 'Living Room')
       expect(wrapper.get('.volume-value').text()).toBe('30%')
 
       getVolumeSpy.mockClear()
@@ -99,6 +101,35 @@ describe('PlayerToolbar', () => {
       wrapper.unmount()
       getVolumeSpy.mockClear()
       await vi.advanceTimersByTimeAsync(8000)
+      expect(getVolumeSpy).not.toHaveBeenCalled()
+    })
+
+    // Regression test: Sonos volume/mute reaches connectStore.status by
+    // push (see connectStore.isVolumePushCapable()) - this used to still
+    // poll every 4s regardless of type, one of several surfaces that
+    // silently kept doing so after DeviceListItem.vue's own fix, caught
+    // live 2026-08-25.
+    it('fetches once for a push-capable target, then relies on pushed updates instead of polling', async () => {
+      vi.useFakeTimers()
+      const wrapper = mountToolbar()
+      const connect = useConnectStore()
+      const getVolumeSpy = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
+      connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos', volume: 30 }] })
+      await wrapper.vm.$nextTick()
+      await vi.runOnlyPendingTimersAsync()
+
+      expect(getVolumeSpy).toHaveBeenCalledOnce()
+      expect(wrapper.get('.volume-value').text()).toBe('30%')
+
+      getVolumeSpy.mockClear()
+      await vi.advanceTimersByTimeAsync(8000)
+      expect(getVolumeSpy).not.toHaveBeenCalled()
+
+      // A push (e.g. the Sonos app, another session) updates the slider
+      // without any request from this client at all.
+      connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos', volume: 55 }] })
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('.volume-value').text()).toBe('55%')
       expect(getVolumeSpy).not.toHaveBeenCalled()
     })
 
