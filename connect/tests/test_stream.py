@@ -705,31 +705,86 @@ async def test_a_real_drop_marks_the_broadcast_as_an_interruption(default_sessio
     assert payload["streaming"] is False
 
 
+async def test_a_real_drop_freezes_the_clock_at_its_position(default_session, monkeypatch):
+    """Regression test for a real prod bug (2026-08-24): elapsed() has no
+    notion of is_streaming and keeps advancing with wall-clock time
+    regardless, so leaving the clock running after a drop means whoever
+    eventually taps "Resume" - sometimes minutes later - has
+    _resume_after_interruption() seek past the track's own end. Freezing it
+    here the same way /pause does is what makes that resume, whenever it
+    comes, pick up from where the drop actually happened instead."""
+    monkeypatch.setattr("routes.stream.STREAM_DISCONNECT_GRACE_SECONDS", 0.01)
+    default_session.state.is_streaming = True
+    default_session.state.active_stream_connections = 0
+    default_session.state.current_track = MagicMock(duration=300)
+    default_session.state.clock.start(0.0)
+    default_session.state.clock.play_start_time -= 45.0  # 45s into the track
+
+    await _mark_disconnected_if_not_reconnected(
+        default_session, my_generation=default_session.state.clock.play_generation,
+    )
+
+    assert default_session.state.clock.is_paused is True
+    assert default_session.state.clock.paused_elapsed == pytest.approx(45.0, abs=1.0)
+
+
 async def test_an_ordinary_broadcast_is_not_marked_as_an_interruption(default_session):
     payload = build_status_dict(default_session)
     assert payload["interrupted"] is False
 
 
-async def test_resume_after_interruption_redispatches_from_the_current_position(
+async def test_resume_after_interruption_resumes_from_the_frozen_position(
     default_session, monkeypatch,
 ):
-    """Re-dispatch, not restart: the clock kept running while the device was
-    silent, and seek_to() is what makes the fresh connection's -ss pick up
-    there. It also bumps play_generation, retiring the resync task that
+    """Re-dispatch, not restart: _mark_disconnected_if_not_reconnected() froze
+    the clock at the moment it declared the drop (the same way /pause does),
+    and this resumes from exactly that - not from PlaybackClock.elapsed()'s
+    own live value, which would have kept advancing with wall-clock time for
+    however long the interruption sat unresolved. clock.resume() (the same
+    path a real /resume takes) is what makes the fresh connection's -ss pick
+    up there; it also bumps play_generation, retiring the resync task that
     belonged to the connection that died."""
     delivery = MagicMock()
     delivery.play = AsyncMock()
     default_session.state.active_delivery = delivery
     default_session.state.current_track = MagicMock(duration=300)
     default_session.state.clock.start(0.0)
+    default_session.state.clock.pause(12.5)  # frozen where the drop happened
     monkeypatch.setattr("routes.stream._current_reconnect_args", lambda s: ("url", "t", "a", None, 300.0, "", "audio/mpeg"))
 
     before = default_session.state.clock.play_generation
     assert await _resume_after_interruption(default_session) is True
 
     delivery.play.assert_awaited_once()
+    assert default_session.state.clock.resume_offset == pytest.approx(12.5)
+    assert default_session.state.clock.is_paused is False
     assert default_session.state.clock.play_generation != before
     assert default_session.state.is_streaming is True
+
+
+async def test_resume_after_interruption_clamps_an_unfrozen_clock_to_track_duration(
+    default_session, monkeypatch,
+):
+    """Defensive fallback for a clock that wasn't frozen (shouldn't happen in
+    practice - see the function's own docstring, every path that sets
+    interrupted=True pauses it first). Without this clamp, a clock left
+    running past the track's own end would seek there - which FFmpeg answers
+    with silence and no error, not a failure anything here could detect.
+    Regression coverage for a real prod bug (2026-08-24): a drop early in a
+    222s track, resumed ~10 minutes later, produced a 200 response and no
+    audio at all."""
+    delivery = MagicMock()
+    delivery.play = AsyncMock()
+    default_session.state.active_delivery = delivery
+    default_session.state.current_track = MagicMock(duration=300)
+    default_session.state.clock.start(0.0)
+    default_session.state.clock.play_start_time -= 1000.0  # elapsed() now far past duration
+    monkeypatch.setattr("routes.stream._current_reconnect_args", lambda s: ("url", "t", "a", None, 300.0, "", "audio/mpeg"))
+
+    assert await _resume_after_interruption(default_session) is True
+
+    delivery.play.assert_awaited_once()
+    assert default_session.state.clock.resume_offset == pytest.approx(300.0)
 
 
 async def test_resume_after_interruption_does_nothing_without_a_target(default_session):

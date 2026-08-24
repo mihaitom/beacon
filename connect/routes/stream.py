@@ -15,6 +15,7 @@ from core.session import (
     DEFAULT_SESSION_ID,
     SessionState,
     build_status_dict,
+    compute_position,
     get_session,
     registry,
 )
@@ -392,7 +393,24 @@ async def _mark_disconnected_if_not_reconnected(
             f"[stream] Cast device dropped its connection and did not come back "
             f"within {STREAM_DISCONNECT_GRACE_SECONDS:.0f}s{detail}"
         )
+        # Captured before the flag flips below — compute_position() reads
+        # is_streaming itself and returns 0.0 once it's False (see its own
+        # docstring), which would make every interruption look like it
+        # happened at 0:00 regardless of where the device actually was.
+        position = compute_position(session)
         st.is_streaming = False
+        # Freezes elapsed() at `position` the same way /pause does, rather
+        # than leaving it tied to the wall clock — PlaybackClock.elapsed()
+        # has no notion of is_streaming and keeps advancing with real time
+        # whether or not anything is actually playing. Without this,
+        # _resume_after_interruption() (routes/stream.py) reads elapsed() at
+        # whatever moment someone eventually taps "Resume" — sometimes
+        # minutes later — and seeks the reconnect there: past the track's
+        # own end on anything but an immediate resume, which FFmpeg's -ss
+        # answers with silence and no error. Observed live 2026-08-24: a
+        # drop ~10s into a 222s track, resumed ~10 minutes later, produced a
+        # 200 response and no audio at all.
+        st.clock.pause(position)
         # interrupted=True marks this particular streaming->false transition
         # as "nobody asked for this", which is what lets the frontend offer
         # to pick playback back up instead of just going quiet. Beacon
@@ -419,20 +437,34 @@ async def _resume_after_interruption(session: SessionState) -> bool:
     broadcast raises in the frontend. Returns True if a fresh stream was
     dispatched.
 
-    Seeks to the position the clock is already at rather than restarting the
-    track: clock.seek_to() sets the offset the new connection's `-ss` reads
-    and bumps play_generation, which is also what retires the resync task
-    belonging to the connection that just died. This is the same path /seek
-    and /resume take, deliberately - a second way to reconnect a stream is
-    the last thing this subsystem needs.
+    Resumes from the position the clock was frozen at when the drop was
+    declared (_mark_disconnected_if_not_reconnected() pauses it there, the
+    same way /pause does) rather than wherever elapsed() has drifted to by
+    now - elapsed() has no notion of is_streaming and keeps advancing with
+    real time regardless, so reading it fresh here would seek an interruption
+    resumed minutes later past the track's own end, same class of bug
+    seek_to()'s and resume()'s own comments describe for a fresh stream's
+    start_position. clock.resume() is the same path a real /resume takes:
+    it un-pauses, bumps play_generation (which is what retires the resync
+    task belonging to the connection that just died), and re-zeroes
+    track_start_position - all three needed for the reconnect below to
+    calibrate correctly, not just the position number itself.
     """
     st = session.state
     if not st.active_delivery or st.current_track is None:
         return False
 
-    position = st.clock.elapsed()
+    if st.clock.is_paused:
+        st.clock.resume()
+    else:
+        # Defensive fallback - shouldn't be reachable since the only path
+        # that sets interrupted=True (above) always pauses the clock first,
+        # but a duration clamp here costs nothing and keeps this function
+        # safe to call against whatever state it's actually handed.
+        position = min(st.clock.elapsed(), float(st.current_track.duration))
+        st.clock.seek_to(position)
+    position = st.clock.resume_offset
     logger.info(f"[stream] Resuming after an interruption from {position:.1f}s")
-    st.clock.seek_to(position)
     try:
         await st.active_delivery.play(*_current_reconnect_args(session))
     except Exception as e:
