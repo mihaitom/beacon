@@ -163,7 +163,8 @@ def _stale_session(session_id: str, uri: str | None, streaming: bool = False):
 
 
 def test_reap_once_never_reaps_a_session_that_is_still_streaming():
-    """The 2026-08-23 incident (see docs/playback-bugs.md). Nothing about
+    """The 2026-08-23 incident (see
+    docs/playback-bugs/fixed-cast-stops-after-30-minutes.md). Nothing about
     casting touches last_seen once a track is under way — the /events
     heartbeat needs an open app window, and a GET /stream connection touches
     the session once, when the device opens it. So an 80-minute mix played

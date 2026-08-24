@@ -191,6 +191,16 @@ export default {
     takeoverTitle: "Prendre le contrôle de l'appareil ?",
     takeoverBody:
       '« {name} » est actuellement utilisé par {owner}. Prendre le contrôle arrêtera sa lecture sur cet appareil.',
+    streamInfo: {
+      title: 'Infos du flux',
+      transcoding: 'Transcodage',
+      no: 'Non, copie directe',
+      source: 'Source',
+      connection: 'Connexion',
+      connected: 'Connecté',
+      idle: 'Aucune connexion active',
+      serverLag: 'Réactivité du serveur',
+    },
   },
   queue: {
     title: "File d'attente",

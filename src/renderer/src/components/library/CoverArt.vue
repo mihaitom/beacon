@@ -97,7 +97,7 @@ const LOAD_SETTLE_MS = 150
 // proxy's authorisation middleware stopped answering in time, failed closed,
 // and every request through it - including the *casting streams' own media
 // fetches* - was denied for as long as the burst lasted. See
-// docs/playback-bugs.md, "The mechanism".
+// docs/playback-bugs/mid-track-drop-reverse-proxy-403.md, "The mechanism".
 //
 // The number itself is a compromise, and worth re-deriving rather than
 // guessing at if it ever needs changing. A cover takes roughly one proxy
@@ -358,6 +358,26 @@ export default {
         this.observer = null
         return
       }
+      // A previous call already has this instance queued (waiting for a
+      // slot, not holding one yet) — the candidates() watcher can call this
+      // again before that one ever started (a track change landing during a
+      // queue backlog), and without this the old entry sits orphaned in
+      // `waiting` forever: a place held for an instance that no longer
+      // wants it, while a second, newer one queues right behind it.
+      this.cancelQueued?.()
+      this.cancelQueued = null
+      // Already running (holdsLoadSlot true) — loadCandidates()'s own
+      // while(this.url) loop picks up the new candidate itself once
+      // abortLoad() unblocks it (see that method's AbortError branch),
+      // still inside the one slot it already holds. Requesting a second
+      // slot here would instead run two overlapping loadCandidates() calls
+      // on the same instance, racing over the shared
+      // this.controller/holdsLoadSlot fields — observed live 2026-08-24 as
+      // a cover stuck on its skeleton forever despite the fetch actually
+      // succeeding: whichever of the two calls finished last (the stale,
+      // already-superseded one) still ran its own finally and reset
+      // holdsLoadSlot out from under the other.
+      if (this.holdsLoadSlot) return
       this.cancelQueued = takeLoadSlot(() => {
         this.cancelQueued = null
         this.holdsLoadSlot = true
@@ -395,10 +415,25 @@ export default {
             this.setObjectUrl(URL.createObjectURL(blob))
             return
           } catch (error) {
-            // Aborted means the cover is gone or superseded — not a failure
-            // of this URL, so the next candidate must not be tried.
-            if ((error as Error)?.name === 'AbortError') return
-            this.failedCount += 1
+            if ((error as Error)?.name === 'AbortError') {
+              // Two different reasons this loop's own fetch gets aborted,
+              // told apart by holdsLoadSlot: cancelSettle()/beforeUnmount()
+              // both release the slot *before* aborting when this cover
+              // genuinely stopped being wanted (scrolled away, unmounting)
+              // — holdsLoadSlot is already false by the time this runs, so
+              // there's truly nothing left to load and this loop ends.
+              // Otherwise this was the candidates() watcher: it aborts,
+              // then calls queueLoad() again, which is now a deliberate
+              // no-op while holdsLoadSlot is still true (see queueLoad()'s
+              // own comment) — the new candidate is only ever going to be
+              // picked up here, by falling through to this loop's own
+              // while(this.url) re-check, still inside the one slot this
+              // call already holds. Not a failure of this URL either way,
+              // so failedCount is untouched.
+              if (!this.holdsLoadSlot) return
+            } else {
+              this.failedCount += 1
+            }
           } finally {
             if (this.controller === controller) this.controller = null
           }

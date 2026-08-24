@@ -58,6 +58,9 @@
           @volume-change="onVolumeChange"
         />
       </template>
+
+      <v-divider v-if="connectStore.isActive" class="my-2" />
+      <stream-info-section v-if="connectStore.isActive" />
     </v-card-text>
     <v-card-actions class="connect-picker__actions">
       <v-btn size="small" variant="text" @click="connectStore.refreshDevices(true)">
@@ -96,6 +99,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import ConnectErrorBanner from './ConnectErrorBanner.vue'
 import DeviceListItem from './DeviceListItem.vue'
 import AirplayPairingDialog from './AirplayPairingDialog.vue'
+import StreamInfoSection from './StreamInfoSection.vue'
 import type { DeviceType, DiscoveredDevice } from '@/services/connect/types'
 
 interface DeviceEntry {
@@ -121,7 +125,7 @@ const TYPE_LABELS: Record<DeviceType, string> = {
 
 export default {
   name: 'ConnectDevicePicker',
-  components: { ConnectErrorBanner, DeviceListItem, AirplayPairingDialog },
+  components: { ConnectErrorBanner, DeviceListItem, AirplayPairingDialog, StreamInfoSection },
   data() {
     return {
       selectedKeys: new Set<string>(),

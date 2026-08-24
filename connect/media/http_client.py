@@ -6,7 +6,8 @@ a connection, does a DNS lookup and a TLS handshake, makes one request, and
 throws the whole thing away. Browsing a large library turns that into
 thousands of connection setups: measured on beacon-dev 2026-08-22, enough of
 a burst to overrun the host's DNS stub until it started answering `EAI_AGAIN`,
-which then took out a cast session (see docs/playback-bugs.md).
+which then took out a cast session (see
+docs/playback-bugs/fixed-slow-media-lookup-froze-streaming.md).
 
 routes/proxy.py already learned this lesson and keeps a long-lived
 `httpx.AsyncClient`; this is the same thing for the synchronous side. It is

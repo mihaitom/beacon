@@ -62,9 +62,10 @@ _client: httpx.AsyncClient | None = None
 # re-established — DNS lookup and TLS handshake included — for the next one.
 # Sustained scrolling turns that into continuous connection churn, which on
 # beacon-dev 2026-08-22 was enough to overrun the host's DNS stub until it
-# answered EAI_AGAIN (see docs/playback-bugs.md). Keeping many more alive,
-# for much longer than the gap between two scroll bursts, is what makes the
-# pool actually behave like a pool under this workload.
+# answered EAI_AGAIN (see
+# docs/playback-bugs/fixed-slow-media-lookup-froze-streaming.md). Keeping
+# many more alive, for much longer than the gap between two scroll bursts, is
+# what makes the pool actually behave like a pool under this workload.
 _LIMITS = httpx.Limits(
     max_connections=100, max_keepalive_connections=100, keepalive_expiry=120.0
 )

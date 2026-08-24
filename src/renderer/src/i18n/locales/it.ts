@@ -191,6 +191,16 @@ export default {
     takeoverTitle: 'Subentrare nel dispositivo?',
     takeoverBody:
       '"{name}" è attualmente in uso da {owner}. Subentrare interromperà la sua riproduzione su questo dispositivo.',
+    streamInfo: {
+      title: 'Info stream',
+      transcoding: 'Transcodifica',
+      no: 'No, copia diretta',
+      source: 'Sorgente',
+      connection: 'Connessione',
+      connected: 'Connesso',
+      idle: 'Nessuna connessione attiva',
+      serverLag: 'Reattività del server',
+    },
   },
   queue: {
     title: 'Coda',

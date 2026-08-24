@@ -122,7 +122,7 @@ def test_stale_connection_does_not_clear_a_newer_generations_offset(
 # from the beginning while the session's clock was a minute in, then reported
 # ~0 as its position, which the resync loop took for a seek on the speaker
 # and "corrected" position_offset by the full track position. Observed live
-# 2026-08-23; see docs/playback-bugs.md.
+# 2026-08-23; see docs/playback-bugs/fixed-reconnect-restarted-track-poisoned-clock.md.
 
 
 def _mid_track_session(client, default_session, elapsed: float):

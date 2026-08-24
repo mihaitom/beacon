@@ -40,6 +40,67 @@ def test_status_reflects_state(client, default_session):
     assert body["paused"] is True
 
 
+def test_status_reports_stream_info_default(client):
+    """Nothing has ever been dispatched — current_output_format is still the
+    FALLBACK_FORMAT default, and stream_info should say so plainly rather
+    than omitting the key."""
+    body = client.get("/status").json()
+    info = body["stream_info"]
+    assert info["label"] == "mp3-192k (fallback)"
+    assert info["content_type"] == "audio/mpeg"
+    assert info["transcoding"] is True
+    assert info["source_codec"] is None
+    assert info["source_sample_rate"] is None
+    assert info["source_bit_depth"] is None
+    assert info["source_bitrate_kbps"] is None
+    assert info["active_connections"] == 0
+    # Not asserted as exactly 0.0: core/loop_health.py's history is
+    # process-wide, not per-test, and the real monitor_loop_lag() task runs
+    # for as long as any TestClient's lifespan is active in this same
+    # process — a genuinely idle loop still reports a real, if tiny,
+    # non-negative float. Its own exact-value behavior is
+    # test_loop_health.py's job, not this endpoint's.
+    assert info["loop_lag"] >= 0.0
+
+
+def test_status_reports_stream_info_for_a_copy_tier_dispatch(client, default_session):
+    default_session.state.current_output_format = OutputFormat(
+        ffmpeg_args=["-acodec", "copy", "-f", "mp3"],
+        content_type="audio/mpeg",
+        label="mp3 (copy)",
+        source_codec="mp3",
+        source_sample_rate=44100,
+        source_bit_depth=None,
+        source_bitrate_kbps=320,
+    )
+    default_session.state.active_stream_connections = 1
+    body = client.get("/status").json()
+    info = body["stream_info"]
+    assert info["label"] == "mp3 (copy)"
+    assert info["transcoding"] is False
+    assert info["source_codec"] == "mp3"
+    assert info["source_sample_rate"] == 44100
+    assert info["source_bitrate_kbps"] == 320
+    assert info["active_connections"] == 1
+
+
+def test_status_reports_stream_info_for_a_resampled_dispatch_as_transcoding(
+    client, default_session
+):
+    # "→ flac (resampled for device limit)" carries no "(copy)" substring —
+    # must read as transcoding even though the source was FLAC too.
+    default_session.state.current_output_format = OutputFormat(
+        ffmpeg_args=["-acodec", "flac", "-f", "flac", "-ar", "48000"],
+        content_type="audio/flac",
+        label="flac → flac (resampled for device limit)",
+        source_codec="flac",
+        source_sample_rate=96000,
+        source_bit_depth=24,
+    )
+    body = client.get("/status").json()
+    assert body["stream_info"]["transcoding"] is True
+
+
 # ── /play ─────────────────────────────────────────────────────────────────────
 
 

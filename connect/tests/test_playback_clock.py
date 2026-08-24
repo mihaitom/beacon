@@ -406,7 +406,7 @@ def test_set_fixed_offset_applies_immediately_without_blending():
 # A device that reopens the stream by itself (no /play, /seek or /resume) has
 # to be served from where playback actually is, and its own position counter
 # restarts with that stream — see routes/stream.py's `reconnecting` branch
-# and docs/playback-bugs.md.
+# and docs/playback-bugs/fixed-reconnect-restarted-track-poisoned-clock.md.
 
 
 def test_stream_restart_position_is_the_raw_wall_position():

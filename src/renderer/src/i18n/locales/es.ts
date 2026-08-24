@@ -191,6 +191,16 @@ export default {
     takeoverTitle: '¿Tomar el control del dispositivo?',
     takeoverBody:
       '"{name}" está siendo usado actualmente por {owner}. Tomar el control detendrá su reproducción en este dispositivo.',
+    streamInfo: {
+      title: 'Información del stream',
+      transcoding: 'Transcodificación',
+      no: 'No, copia directa',
+      source: 'Fuente',
+      connection: 'Conexión',
+      connected: 'Conectado',
+      idle: 'Sin conexión activa',
+      serverLag: 'Capacidad de respuesta del servidor',
+    },
   },
   queue: {
     title: 'Cola',

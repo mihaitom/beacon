@@ -70,6 +70,55 @@ def test_parse_event_returns_empty_for_an_unparseable_body():
     assert upnp_events.parse_event("not xml at all") == {}
 
 
+# ── parse_rendering_control_event ───────────────────────────────────────────
+
+# Shaped like a real RenderingControl LastChange: channel-qualified, unlike
+# AVTransport's — see _RENDERING_CONTROL_PROPERTY_RE's own comment.
+RC_NOTIFY_BODY = (
+    '<?xml version="1.0"?>'
+    '<e:propertyset xmlns:e="urn:schemas-upnp-org:event-1-0"><e:property><LastChange>'
+    "&lt;Event&gt;&lt;InstanceID val=&quot;0&quot;&gt;"
+    "&lt;Volume channel=&quot;Master&quot; val=&quot;{volume}&quot;/&gt;"
+    "&lt;Volume channel=&quot;LF&quot; val=&quot;99&quot;/&gt;"
+    "&lt;Volume channel=&quot;RF&quot; val=&quot;99&quot;/&gt;"
+    "&lt;Mute channel=&quot;Master&quot; val=&quot;{mute}&quot;/&gt;"
+    "&lt;/InstanceID&gt;&lt;/Event&gt;"
+    "</LastChange></e:property></e:propertyset>"
+)
+
+
+def test_parse_rendering_control_event_reads_master_channel_volume_and_mute():
+    props = upnp_events.parse_rendering_control_event(
+        RC_NOTIFY_BODY.format(volume="35", mute="0")
+    )
+    assert props == {"Volume": "35", "Mute": "0"}
+
+
+def test_parse_rendering_control_event_ignores_lf_rf_channels():
+    """Only Master is what GET /device-volume and the slider already mean
+    by "this device's volume" — LF/RF only diverge when someone's
+    deliberately unbalanced a stereo pair."""
+    props = upnp_events.parse_rendering_control_event(
+        RC_NOTIFY_BODY.format(volume="35", mute="0")
+    )
+    assert "99" not in props.values()
+
+
+def test_parse_rendering_control_event_returns_empty_for_an_unparseable_body():
+    assert upnp_events.parse_rendering_control_event("not xml at all") == {}
+
+
+def test_parse_rendering_control_event_returns_only_whats_present():
+    """The spec doesn't require a device to send both Volume and Mute on
+    every change — a Mute-only toggle shouldn't fabricate a Volume key."""
+    body = (
+        "<e:propertyset><e:property><LastChange>"
+        "&lt;Mute channel=&quot;Master&quot; val=&quot;1&quot;/&gt;"
+        "</LastChange></e:property></e:propertyset>"
+    )
+    assert upnp_events.parse_rendering_control_event(body) == {"Mute": "1"}
+
+
 # ── problem_in ────────────────────────────────────────────────────────────────
 
 
@@ -136,38 +185,56 @@ def _headers(sid: str | None):
 
 async def test_subscribe_stores_the_devices_subscription_id():
     with patch.object(upnp_events, "_request", return_value=_headers("uuid:sub-1")):
-        sub = await upnp_events.subscribe("Arbeitszimmer", "http://d/evt", "http://me/cb")
+        sub = await upnp_events.subscribe(
+            "Arbeitszimmer", "avtransport", "http://d/evt", "http://me/cb"
+        )
     assert sub is not None
     assert sub.sid == "uuid:sub-1"
-    assert upnp_events.active_labels() == ["Arbeitszimmer"]
+    assert upnp_events.active_labels() == ["Arbeitszimmer/avtransport"]
 
 
 async def test_subscribe_returns_none_when_the_device_refuses():
     """Eventing is diagnostic — a device that won't have it must still be
     able to play, so this can never raise into a dispatch."""
     with patch.object(upnp_events, "_request", side_effect=urllib.error.URLError("nope")):
-        sub = await upnp_events.subscribe("Arbeitszimmer", "http://d/evt", "http://me/cb")
+        sub = await upnp_events.subscribe(
+            "Arbeitszimmer", "avtransport", "http://d/evt", "http://me/cb"
+        )
     assert sub is None
     assert upnp_events.active_labels() == []
 
 
 async def test_subscribe_returns_none_when_no_sid_comes_back():
     with patch.object(upnp_events, "_request", return_value=_headers(None)):
-        assert await upnp_events.subscribe("A", "http://d/evt", "http://me/cb") is None
+        assert (
+            await upnp_events.subscribe("A", "avtransport", "http://d/evt", "http://me/cb")
+            is None
+        )
 
 
-async def test_subscribe_replaces_an_existing_subscription_for_the_same_label():
+async def test_subscribe_replaces_an_existing_subscription_for_the_same_label_and_service():
     with patch.object(upnp_events, "_request", return_value=_headers("uuid:one")):
-        await upnp_events.subscribe("A", "http://d/evt", "http://me/cb")
+        await upnp_events.subscribe("A", "avtransport", "http://d/evt", "http://me/cb")
     with patch.object(upnp_events, "_request", return_value=_headers("uuid:two")):
-        await upnp_events.subscribe("A", "http://d/evt", "http://me/cb")
-    assert upnp_events.active_labels() == ["A"]
-    assert upnp_events._subscriptions["A"].sid == "uuid:two"
+        await upnp_events.subscribe("A", "avtransport", "http://d/evt", "http://me/cb")
+    assert upnp_events.active_labels() == ["A/avtransport"]
+    assert upnp_events._subscriptions[("A", "avtransport")].sid == "uuid:two"
+
+
+async def test_subscribe_holds_one_subscription_per_service_for_the_same_label():
+    """A single Sonos player carries both an AVTransport and a
+    RenderingControl subscription at once (see delivery/sonos.py) — the
+    second must not evict the first."""
+    with patch.object(upnp_events, "_request", return_value=_headers("uuid:av")):
+        await upnp_events.subscribe("A", "avtransport", "http://d/evt1", "http://me/cb1")
+    with patch.object(upnp_events, "_request", return_value=_headers("uuid:rc")):
+        await upnp_events.subscribe("A", "renderingcontrol", "http://d/evt2", "http://me/cb2")
+    assert upnp_events.active_labels() == ["A/avtransport", "A/renderingcontrol"]
 
 
 async def test_renew_extends_the_lease():
     with patch.object(upnp_events, "_request", return_value=_headers("uuid:1")):
-        sub = await upnp_events.subscribe("A", "http://d/evt", "http://me/cb")
+        sub = await upnp_events.subscribe("A", "avtransport", "http://d/evt", "http://me/cb")
     sub.renew_at = 0.0
     with patch.object(upnp_events, "_request", return_value={}):
         assert await upnp_events.renew(sub) is True
@@ -179,7 +246,7 @@ async def test_a_failed_renewal_drops_the_subscription():
     future renewal — holding on to it would mean never resubscribing, and a
     silent subscription is indistinguishable from a healthy one."""
     with patch.object(upnp_events, "_request", return_value=_headers("uuid:1")):
-        sub = await upnp_events.subscribe("A", "http://d/evt", "http://me/cb")
+        sub = await upnp_events.subscribe("A", "avtransport", "http://d/evt", "http://me/cb")
     with patch.object(upnp_events, "_request", side_effect=OSError("gone")):
         assert await upnp_events.renew(sub) is False
     assert upnp_events.active_labels() == []
@@ -187,16 +254,16 @@ async def test_a_failed_renewal_drops_the_subscription():
 
 async def test_forget_drops_a_subscription_without_calling_the_device():
     with patch.object(upnp_events, "_request", return_value=_headers("uuid:1")):
-        await upnp_events.subscribe("A", "http://d/evt", "http://me/cb")
+        await upnp_events.subscribe("A", "avtransport", "http://d/evt", "http://me/cb")
     with patch.object(upnp_events, "_request", side_effect=AssertionError("must not call")):
-        upnp_events.forget("A")
+        upnp_events.forget("A", "avtransport")
     assert upnp_events.active_labels() == []
 
 
 async def test_renew_due_subscriptions_only_renews_what_is_due():
     with patch.object(upnp_events, "_request", return_value=_headers("uuid:1")):
-        due = await upnp_events.subscribe("due", "http://d/evt", "http://me/cb")
-        await upnp_events.subscribe("fresh", "http://d/evt", "http://me/cb")
+        due = await upnp_events.subscribe("due", "avtransport", "http://d/evt", "http://me/cb")
+        await upnp_events.subscribe("fresh", "avtransport", "http://d/evt", "http://me/cb")
     due.renew_at = time.monotonic() - 1
     calls = []
 
@@ -244,17 +311,27 @@ def test_request_sends_a_subscribe_and_returns_the_response_headers():
 # ── routes/upnp.py ────────────────────────────────────────────────────────────
 
 
-def test_callback_url_carries_the_label_in_the_path():
-    """One endpoint serves every subscribed device — a grouped Sonos pair
-    reports from two players about the same session, so the path is what
-    tells them apart rather than the source address."""
-    assert callback_url_for("Arbeitszimmer").endswith("/upnp/events/Arbeitszimmer")
+def test_callback_url_carries_the_service_and_label_in_the_path():
+    """One endpoint serves every subscribed device *and* service — a
+    grouped Sonos pair reports from two players about the same session, and
+    each player holds one subscription per service (see
+    core/upnp_events.py's Subscription), so both need to be in the path
+    rather than just the source address."""
+    assert callback_url_for("Arbeitszimmer", "avtransport").endswith(
+        "/upnp/events/avtransport/Arbeitszimmer"
+    )
+
+
+def test_callback_url_defaults_to_avtransport():
+    assert callback_url_for("Arbeitszimmer").endswith("/upnp/events/avtransport/Arbeitszimmer")
 
 
 def test_notify_endpoint_logs_the_event_and_answers_200(client):
     body = NOTIFY_BODY.format(state="STOPPED", status="ERROR_CANT_CONNECT")
     with patch("routes.upnp.handle_event") as handler:
-        response = client.request("NOTIFY", "/upnp/events/Arbeitszimmer", content=body)
+        response = client.request(
+            "NOTIFY", "/upnp/events/avtransport/Arbeitszimmer", content=body
+        )
     assert response.status_code == 200
     handler.assert_called_once()
     assert handler.call_args[0][0] == "Arbeitszimmer"
@@ -263,7 +340,7 @@ def test_notify_endpoint_logs_the_event_and_answers_200(client):
 def test_notify_endpoint_ignores_an_oversized_body(client):
     huge = "x" * (upnp_events_max() + 1)
     with patch("routes.upnp.handle_event", side_effect=AssertionError("must not parse")) as h:
-        response = client.request("NOTIFY", "/upnp/events/A", content=huge)
+        response = client.request("NOTIFY", "/upnp/events/avtransport/A", content=huge)
     assert response.status_code == 200
     h.assert_not_called()
 
@@ -272,8 +349,72 @@ def test_notify_endpoint_still_answers_200_when_handling_raises(client):
     """A device that gets an error back may cancel its subscription —
     losing eventing over one malformed payload is worse than dropping it."""
     with patch("routes.upnp.handle_event", side_effect=ValueError("boom")):
-        response = client.request("NOTIFY", "/upnp/events/A", content="<x/>")
+        response = client.request("NOTIFY", "/upnp/events/avtransport/A", content="<x/>")
     assert response.status_code == 200
+
+
+# ── routes/upnp.py — RenderingControl (volume/mute push) ────────────────────
+
+
+async def test_notify_pushes_volume_into_the_claiming_session(client, default_session):
+    from core.claims import claims
+
+    await claims.claim("sonos", "Arbeitszimmer", default_session.session_id)
+    body = RC_NOTIFY_BODY.format(volume="42", mute="0")
+
+    response = client.request(
+        "NOTIFY", "/upnp/events/renderingcontrol/Arbeitszimmer", content=body
+    )
+
+    assert response.status_code == 200
+    assert default_session.state.device_volumes["sonos:Arbeitszimmer"] == (42, False)
+
+
+async def test_notify_broadcasts_the_updated_status_with_the_new_volume(client, default_session):
+    from core.claims import claims
+    from delivery import SonosDelivery
+
+    default_session.state.active_delivery = SonosDelivery("Arbeitszimmer")
+    await claims.claim("sonos", "Arbeitszimmer", default_session.session_id)
+    q = default_session.event_bus.subscribe()
+    body = RC_NOTIFY_BODY.format(volume="42", mute="0")
+
+    client.request("NOTIFY", "/upnp/events/renderingcontrol/Arbeitszimmer", content=body)
+
+    payload = q.get_nowait()
+    assert payload["targets"] == [
+        {"name": "Arbeitszimmer", "type": "sonos", "volume": 42, "muted": False}
+    ]
+
+
+async def test_notify_volume_only_update_does_not_clobber_a_known_mute(client, default_session):
+    from core.claims import claims
+
+    await claims.claim("sonos", "Arbeitszimmer", default_session.session_id)
+    default_session.state.device_volumes["sonos:Arbeitszimmer"] = (10, True)
+    body = (
+        "<e:propertyset><e:property><LastChange>"
+        "&lt;Volume channel=&quot;Master&quot; val=&quot;55&quot;/&gt;"
+        "</LastChange></e:property></e:propertyset>"
+    )
+
+    client.request("NOTIFY", "/upnp/events/renderingcontrol/Arbeitszimmer", content=body)
+
+    assert default_session.state.device_volumes["sonos:Arbeitszimmer"] == (55, True)
+
+
+def test_notify_rendering_control_is_a_no_op_for_an_unclaimed_device(client, default_session):
+    """A stray/unsolicited POST, or a device nobody has cast to yet — same
+    as an AVTransport NOTIFY from a device nobody's watching, this must not
+    raise or fabricate a session's worth of state."""
+    body = RC_NOTIFY_BODY.format(volume="42", mute="0")
+
+    response = client.request(
+        "NOTIFY", "/upnp/events/renderingcontrol/NobodysDevice", content=body
+    )
+
+    assert response.status_code == 200
+    assert default_session.state.device_volumes == {}
 
 
 def upnp_events_max() -> int:

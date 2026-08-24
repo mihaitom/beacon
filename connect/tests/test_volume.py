@@ -216,3 +216,84 @@ def test_device_volume_get_allowed_when_unclaimed(client, default_session):
     with patch.object(SonosDelivery, "_get_device", return_value=dev):
         r = client.get("/device-volume?device_type=sonos&name=Küche")
     assert r.json() == {"volume": 42}
+
+
+# ── device_volumes / push (Sonos only) ──────────────────────────────────────
+# Everything a Sonos volume call learns is written into session.state.
+# device_volumes and broadcast — the same reactive path a RenderingControl
+# push (routes/upnp.py) uses, so DeviceListItem.vue's slider reads all three
+# sources the same way instead of needing a special case for whichever one
+# happened to answer first. chromecast/dlna deliberately don't participate
+# (still poll-only in the frontend), see routes/volume.py's own comments.
+
+
+def test_volume_get_records_and_broadcasts_the_active_targets_volume(client, default_session):
+    default_session.state.active_delivery = SonosDelivery("Küche")
+    q = default_session.event_bus.subscribe()
+    dev = MagicMock()
+    dev.volume = 42
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        client.get("/volume")
+    assert default_session.state.device_volumes["sonos:Küche"] == (42, None)
+    assert q.get_nowait()["targets"] == [
+        {"name": "Küche", "type": "sonos", "volume": 42, "muted": None}
+    ]
+
+
+def test_volume_post_records_and_broadcasts_for_every_grouped_target(client, default_session):
+    from delivery import DeliveryManager
+
+    default_session.state.active_delivery = DeliveryManager.from_deliveries(
+        [SonosDelivery("Küche"), SonosDelivery("Wohnzimmer")]
+    )
+    q = default_session.event_bus.subscribe()
+    devices = [MagicMock(), MagicMock()]
+    with patch.object(SonosDelivery, "_get_device", side_effect=devices):
+        client.post("/volume", json={"volume": 60})
+    assert default_session.state.device_volumes["sonos:Küche"] == (60, None)
+    assert default_session.state.device_volumes["sonos:Wohnzimmer"] == (60, None)
+    names = {t["name"] for t in q.get_nowait()["targets"]}
+    assert names == {"Küche", "Wohnzimmer"}
+
+
+def test_device_volume_get_records_and_broadcasts_for_sonos(client, default_session):
+    default_session.state.active_delivery = SonosDelivery("Küche")
+    q = default_session.event_bus.subscribe()
+    dev = MagicMock()
+    dev.volume = 42
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        client.get("/device-volume?device_type=sonos&name=Küche")
+    assert default_session.state.device_volumes["sonos:Küche"] == (42, None)
+    assert q.get_nowait()["targets"] == [
+        {"name": "Küche", "type": "sonos", "volume": 42, "muted": None}
+    ]
+
+
+def test_device_volume_get_does_not_record_chromecast_or_dlna(client, default_session):
+    """Those stay on DeviceListItem.vue's own poll — nothing here should
+    fabricate a device_volumes entry (or a broadcast) for a type that has
+    no push path to read it back from."""
+    cast = MagicMock()
+    cast.status.volume_level = 0.5
+    with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
+        client.get("/device-volume?device_type=chromecast&name=TV")
+    assert default_session.state.device_volumes == {}
+
+
+def test_device_volume_set_records_and_broadcasts_for_sonos(client, default_session):
+    default_session.state.active_delivery = SonosDelivery("Küche")
+    q = default_session.event_bus.subscribe()
+    dev = MagicMock()
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        client.post("/device-volume?device_type=sonos&name=Küche", json={"volume": 77})
+    assert default_session.state.device_volumes["sonos:Küche"] == (77, None)
+    assert q.get_nowait()["targets"] == [
+        {"name": "Küche", "type": "sonos", "volume": 77, "muted": None}
+    ]
+
+
+def test_device_volume_set_does_not_record_chromecast_or_dlna(client, default_session):
+    cast = MagicMock()
+    with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
+        client.post("/device-volume?device_type=chromecast&name=TV", json={"volume": 50})
+    assert default_session.state.device_volumes == {}

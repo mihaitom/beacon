@@ -4,7 +4,7 @@ import asyncio
 import time
 
 from core.session import SessionState, compute_position
-from core.state import EventBus, find_sonos, resolve_target
+from core.state import EventBus, audio_capability_limits, find_sonos, resolve_target
 from media import Track
 
 # ── EventBus ──────────────────────────────────────────────────────────────────
@@ -331,3 +331,56 @@ def test_find_sonos_picks_sonos_from_mixed_manager():
 def test_find_sonos_returns_none_from_empty():
     result = find_sonos(None)
     assert result == []
+
+
+# ── audio_capability_limits ─────────────────────────────────────────────────
+
+
+def test_audio_capability_limits_from_none():
+    assert audio_capability_limits(None) == (None, None)
+
+
+def test_audio_capability_limits_single_delivery():
+    from delivery import SonosDelivery
+
+    result = audio_capability_limits(SonosDelivery("Küche"))
+    assert result == (48000, 24)
+
+
+def test_audio_capability_limits_delivery_with_no_declared_limit():
+    from delivery import AirPlayDelivery
+
+    d = AirPlayDelivery("HomePod")
+    d.MAX_SAMPLE_RATE_HZ = None
+    d.MAX_BIT_DEPTH = None
+    assert audio_capability_limits(d) == (None, None)
+
+
+def test_audio_capability_limits_manager_picks_the_most_restrictive():
+    from delivery import ChromecastDelivery, DeliveryManager, SonosDelivery
+
+    s = SonosDelivery("Küche")  # 48000 Hz / 24 bit
+    c = ChromecastDelivery("TV")  # 96000 Hz / 24 bit
+    manager = DeliveryManager.from_deliveries([s, c])
+    assert audio_capability_limits(manager) == (48000, 24)
+
+
+def test_audio_capability_limits_manager_ignores_members_with_no_limit():
+    from delivery import AirPlayDelivery, ChromecastDelivery, DeliveryManager
+
+    a = AirPlayDelivery("HomePod")
+    a.MAX_SAMPLE_RATE_HZ = None
+    a.MAX_BIT_DEPTH = None
+    c = ChromecastDelivery("TV")  # 96000 Hz / 24 bit
+    manager = DeliveryManager.from_deliveries([a, c])
+    assert audio_capability_limits(manager) == (96000, 24)
+
+
+def test_audio_capability_limits_manager_all_members_without_a_limit():
+    from delivery import AirPlayDelivery, DeliveryManager
+
+    a = AirPlayDelivery("HomePod")
+    a.MAX_SAMPLE_RATE_HZ = None
+    a.MAX_BIT_DEPTH = None
+    manager = DeliveryManager.from_deliveries([a])
+    assert audio_capability_limits(manager) == (None, None)

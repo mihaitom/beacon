@@ -142,9 +142,10 @@ export default {
       // than showing a made-up starting value (see fetchVolume()).
       volume: null as number | null,
       volumeBeforeMute: null as number | null,
-      // Connect's SSE status has no volume field, so there's no push
-      // channel for "someone changed it on the device itself/another
-      // session" — polling is the only way this slider ever finds out.
+      // Polling fallback for chromecast/dlna, which have no push channel
+      // for "someone changed it on the device itself/another session" (see
+      // pushedVolume's own comment for the sonos case, which no longer
+      // needs this). Left null and unused for sonos.
       volumePollTimer: null as ReturnType<typeof setInterval> | null,
     }
   },
@@ -168,6 +169,19 @@ export default {
       return this.connectStore.activeTargets.some(
         (t: { name: string; type: string }) => t.name === this.device.name && t.type === this.type,
       )
+    },
+    // Sonos volume/mute reaches connect's status payload by push now (a
+    // RenderingControl subscription, see connect/routes/upnp.py) instead of
+    // only ever being polled — chromecast/dlna have no such channel yet, so
+    // they stay on volumePollTimer below. null here for those (and
+    // whenever nothing's pushed a reading yet), which the watcher below
+    // simply ignores rather than overwriting a real value with nothing.
+    pushedVolume(): number | null {
+      if (this.type !== 'sonos') return null
+      const target = this.connectStore.activeTargets.find(
+        (t) => t.name === this.device.name && t.type === this.type,
+      )
+      return target?.volume ?? null
     },
     checked() {
       // Purely the parent's staged selection now — it seeds that from the
@@ -196,10 +210,18 @@ export default {
         clearInterval(this.volumePollTimer ?? undefined)
         this.volumePollTimer = null
         if (active) {
+          // Still needed for every type, sonos included: a push channel
+          // only ever fires on the *next* change, so the very first paint
+          // still needs one real round trip — see pushedVolume's comment.
           this.fetchVolume()
-          this.volumePollTimer = setInterval(() => this.fetchVolume(), 4000)
+          if (this.type !== 'sonos') {
+            this.volumePollTimer = setInterval(() => this.fetchVolume(), 4000)
+          }
         }
       },
+    },
+    pushedVolume(value: number | null) {
+      if (value != null) this.volume = value
     },
   },
   beforeUnmount() {

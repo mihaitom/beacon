@@ -188,6 +188,16 @@ export default {
     takeoverTitle: 'Gerät übernehmen?',
     takeoverBody:
       '„{name}“ wird gerade von {owner} benutzt. Übernehmen beendet deren Wiedergabe auf diesem Gerät.',
+    streamInfo: {
+      title: 'Stream-Info',
+      transcoding: 'Transcodierung',
+      no: 'Nein, direkte Kopie',
+      source: 'Quelle',
+      connection: 'Verbindung',
+      connected: 'Verbunden',
+      idle: 'Keine aktive Verbindung',
+      serverLag: 'Server-Reaktionsfähigkeit',
+    },
   },
   queue: {
     title: 'Queue',

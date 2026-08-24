@@ -142,6 +142,17 @@ class AppState:
         # preference, not queue contents.
         self.autoplay_enabled: bool = False
         self.autoplay_batch_size: int = 10
+        # Last-known (volume, muted) per claimed device, keyed like
+        # core/claims.py's own "type:name" — pushed by routes/upnp.py's
+        # RenderingControl NOTIFY handler (Sonos only for now) and by
+        # routes/volume.py's own explicit set, so build_status_dict() can
+        # include it without a live device round trip on every status poll.
+        # Either half stays None until something has actually reported it —
+        # a device this session has never claimed, or one whose first
+        # RenderingControl event hasn't arrived yet, has nothing to show,
+        # which is exactly DeviceListItem.vue's existing "unfetched" state
+        # (the slider hides rather than guessing a starting value).
+        self.device_volumes: dict[str, tuple[int | None, bool | None]] = {}
 
 
 class EventBus:
@@ -283,6 +294,34 @@ def find_sonos(active: BaseDelivery | DeliveryManager | None) -> list[SonosDeliv
     if isinstance(active, DeliveryManager):
         return [d for d in active.deliveries if isinstance(d, SonosDelivery)]
     return []
+
+
+def audio_capability_limits(
+    delivery: BaseDelivery | DeliveryManager | None,
+) -> tuple[int | None, int | None]:
+    """The most restrictive (max_sample_rate_hz, max_bit_depth) across every
+    delivery currently active, for core/streamer.py's resolve_output_format().
+
+    Every active target shares the exact same encoded stream — there is only
+    one ffmpeg process per session (see routes/stream.py's audio_stream()) —
+    so a source that exceeds *any one* active delivery's own declared limit
+    (BaseDelivery.MAX_SAMPLE_RATE_HZ/MAX_BIT_DEPTH) can't be safely
+    stream-copied to *any* of them, not just the one it would have broken.
+    None in either slot means nothing currently active declares a limit at
+    all (no delivery active, or every active one's own attribute is None) —
+    resolve_output_format() then leaves a high-res source untouched, exactly
+    as it did before this function existed."""
+    deliveries: list[BaseDelivery]
+    if isinstance(delivery, DeliveryManager):
+        deliveries = delivery.deliveries
+    elif delivery is not None:
+        deliveries = [delivery]
+    else:
+        deliveries = []
+
+    rates = [d.MAX_SAMPLE_RATE_HZ for d in deliveries if d.MAX_SAMPLE_RATE_HZ is not None]
+    depths = [d.MAX_BIT_DEPTH for d in deliveries if d.MAX_BIT_DEPTH is not None]
+    return (min(rates) if rates else None, min(depths) if depths else None)
 
 
 def list_target_pairs(

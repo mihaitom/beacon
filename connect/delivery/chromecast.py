@@ -67,6 +67,16 @@ class ChromecastDelivery(BaseDelivery):
     """Controls a Chromecast (Google Cast) device via pychromecast."""
 
     SUPPORTS_POSITION: bool = True
+    # The (now discontinued) Chromecast Audio's own spec — 24-bit/96kHz.
+    # Not necessarily every Cast-enabled speaker/soundbar this delivery can
+    # target (Google's own Default Media Receiver's real ceiling isn't
+    # published as clearly), but a documented number beats a guess, and
+    # it's the more permissive end of what's out there rather than the
+    # restrictive one — see docs/playback-bugs/copy-tier-device-limits.md,
+    # for why guessing wrong in the *restrictive* direction is the one that
+    # actually breaks playback.
+    MAX_SAMPLE_RATE_HZ: int | None = 96000
+    MAX_BIT_DEPTH: int | None = 24
 
     def _get_device(self):
         import pychromecast

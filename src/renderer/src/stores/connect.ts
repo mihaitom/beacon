@@ -19,6 +19,7 @@ import { isDeviceInUseError } from '@/services/connect/types'
 import type {
   ConnectDeviceRef,
   ConnectStatus,
+  ConnectStatusTarget,
   DeviceType,
   DiscoverResponse,
 } from '@/services/connect/types'
@@ -48,7 +49,9 @@ let eventSource: ConnectEventSource | null = null
 // exactly what feeds playback.ts's status.ended detection while casting).
 if (import.meta.hot) {
   import.meta.hot.accept(() => {
-    import.meta.hot!.invalidate('stores/connect.ts holds singleton state that cannot be safely hot-reloaded')
+    import.meta.hot!.invalidate(
+      'stores/connect.ts holds singleton state that cannot be safely hot-reloaded',
+    )
   })
 }
 
@@ -64,7 +67,7 @@ export const useConnectStore = defineStore('connect', {
   }),
 
   getters: {
-    activeTargets(state): ConnectDeviceRef[] {
+    activeTargets(state): ConnectStatusTarget[] {
       return state.status?.targets ?? []
     },
     isActive(): boolean {

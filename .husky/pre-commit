@@ -1,5 +1,10 @@
 pnpm exec lint-staged
 
+if git diff --cached --name-only | grep -qE '^(src/|tsconfig.*\.json)'; then
+  echo "→ src/ changed — type-checking…"
+  pnpm type-check || exit 1
+fi
+
 if git diff --cached --name-only | grep -qE '^(src/renderer/|vitest\.config\.ts|vitest\.browser\.config\.ts)'; then
   echo "→ frontend changed — running the Vue test suite…"
   pnpm test:unit || exit 1

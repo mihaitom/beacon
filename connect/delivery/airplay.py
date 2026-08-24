@@ -26,6 +26,14 @@ class AirPlayDelivery(BaseDelivery):
     # AirPlay/RAOP gives no position feedback. Empirically the device's
     # buffering adds roughly this much delay before audio is audible.
     FIXED_OFFSET: float = 2.0
+    # Classic AirPlay/RAOP's real ceiling — 16-bit/44.1kHz, matching CD
+    # quality and nothing past it (AirPlay 2 raised this on newer hardware,
+    # but pyatv's classic RAOP path this delivery uses does not negotiate
+    # that). Lower priority than Sonos/Chromecast/DLNA to actually exercise
+    # live (see TODO.md), but declared correctly rather than left at "no
+    # limit" now that the mechanism exists.
+    MAX_SAMPLE_RATE_HZ: int | None = 44100
+    MAX_BIT_DEPTH: int | None = 16
 
     def __init__(self, target: str):
         super().__init__(target)
@@ -168,7 +176,7 @@ class AirPlayDelivery(BaseDelivery):
                         f"[AirPlay:{self.target}] Device disconnected during stream"
                     )
                 else:
-                    logger.error(f"[AirPlay:{self.target}] Error: {e}", exc_info=True)
+                    logger.exception(f"[AirPlay:{self.target}] Error")
 
             finally:
                 if self._atv is captured_atv:

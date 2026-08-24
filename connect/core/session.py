@@ -19,6 +19,7 @@ from delivery import BaseDelivery, DeliveryManager
 from media import MediaClient, SubsonicClient
 
 from .claims import claims
+from .loop_health import peak_lag
 from .state import AppState, EventBus, delivery_class_for, list_target_pairs, stream_url
 from .visualizer_feed import VisualizerFeed
 
@@ -202,13 +203,37 @@ def build_status_dict(
             "title": t.title,
         }
 
-    targets = [
-        {"name": name, "type": target_type}
-        for target_type, name in list_target_pairs(st.active_delivery)
-    ]
+    targets = []
+    for target_type, name in list_target_pairs(st.active_delivery):
+        volume, muted = st.device_volumes.get(f"{target_type}:{name}", (None, None))
+        targets.append(
+            {"name": name, "type": target_type, "volume": volume, "muted": muted}
+        )
+
+    fmt = st.current_output_format
+    stream_info = {
+        # "transcoding" is derived rather than a stored flag: every copy-tier
+        # label ends in "(copy)" (see core/streamer.py's resolve_output_format())
+        # and nothing else ever does, so this can't drift out of sync with the
+        # label text the way a second, hand-set boolean could.
+        "label": fmt.label,
+        "content_type": fmt.content_type,
+        "transcoding": "copy" not in fmt.label,
+        "source_codec": fmt.source_codec,
+        "source_sample_rate": fmt.source_sample_rate,
+        "source_bit_depth": fmt.source_bit_depth,
+        "source_bitrate_kbps": fmt.source_bitrate_kbps,
+        "active_connections": st.active_stream_connections,
+        # Process-wide, not session-scoped — see core/loop_health.py. A short
+        # window (30s) rather than the module's full 120s history: this is
+        # meant to answer "is anything wrong *right now*", not carry a stall
+        # from ten minutes ago forward on every status tick after it.
+        "loop_lag": peak_lag(30.0),
+    }
 
     return {
         "current_song": current_track,
+        "stream_info": stream_info,
         # The full queue (history included) and where current_track sits in
         # it — see AppState.queue's comment. Lets every client sharing this
         # session (not just whichever one dispatched it) mirror the same
@@ -454,7 +479,8 @@ async def reap_once() -> list[str]:
         # speaker stopped — proven on the wire, our Stop at 00:27:50.133 UTC
         # and the device's FIN 840ms later. From the outside that is
         # indistinguishable from the unexplained drops in
-        # docs/playback-bugs.md, which is how it went unnoticed.
+        # docs/playback-bugs/mid-track-drop-symptom.md, which is how it went
+        # unnoticed.
         #
         # Whatever is still streaming is by definition not abandoned, so it
         # is not reaped at all. Covers a paused cast too: somebody may well

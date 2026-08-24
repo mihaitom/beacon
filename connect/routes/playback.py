@@ -20,7 +20,13 @@ from core.session import (
     registry,
     require_authenticated_session,
 )
-from core.state import AppState, list_target_pairs, resolve_target, stream_url
+from core.state import (
+    AppState,
+    audio_capability_limits,
+    list_target_pairs,
+    resolve_target,
+    stream_url,
+)
 from core.streamer import FALLBACK_FORMAT, resolve_output_format
 
 logger = logging.getLogger("connect.playback")
@@ -546,7 +552,10 @@ async def play_tracks(
         # lookup first (see media/plex.py's docstring); resolve_output_format()
         # itself shells out to ffmpeg, also blocking.
         track_url = await asyncio.to_thread(session.media.get_stream_url, track.id)
-        output_format = await resolve_output_format(track_url, gain=req.gain)
+        max_rate, max_depth = audio_capability_limits(target)
+        output_format = await resolve_output_format(
+            track_url, gain=req.gain, max_sample_rate=max_rate, max_bit_depth=max_depth
+        )
 
         if target:
             conflict = await _claim_or_takeover(target, session, req.force)
@@ -625,7 +634,7 @@ async def play_tracks(
                         output_format.content_type,
                     )
                 except Exception as e:
-                    logger.error(f"[play] Delivery error: {e}", exc_info=True)
+                    logger.exception("[play] Delivery error")
                     st.current_track = previous_track
                     st.current_track_gain = previous_gain
                     st.current_output_format = previous_output_format
@@ -733,7 +742,7 @@ async def play_url(
             try:
                 await target.play(req.url, req.title)
             except Exception as e:
-                logger.error(f"[play-url] Delivery error: {e}", exc_info=True)
+                logger.exception("[play-url] Delivery error")
                 # See /play's identical comment — don't leave the device locked
                 # to this session when nothing actually started playing on it.
                 await _release_claims(target, session)
@@ -828,7 +837,7 @@ async def resume_playback(session: SessionState = Depends(require_authenticated_
                 # Match /play's contract: a JSON {"error": ...} body, not an
                 # unhandled exception surfacing as a 500 (the device may have
                 # gone unreachable while paused).
-                logger.error(f"[resume] Delivery error: {e}", exc_info=True)
+                logger.exception("[resume] Delivery error")
                 return {"error": str(e)}
 
             # The reconnect above starts a *fresh* stream (FFmpeg output
@@ -880,7 +889,7 @@ async def seek_playback(
                 await st.active_delivery.play(*_current_reconnect_args(session))
             except Exception as e:
                 # See /resume's identical comment.
-                logger.error(f"[seek] Delivery error: {e}", exc_info=True)
+                logger.exception("[seek] Delivery error")
                 return {"error": str(e)}
             # The reconnect above starts a *fresh* stream (FFmpeg output restarts
             # near 0 again), which re-incurs the device's startup-buffering delay

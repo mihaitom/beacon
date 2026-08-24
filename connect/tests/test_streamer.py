@@ -12,10 +12,22 @@ from core.streamer import (
     FALLBACK_FORMAT,
     LOOKAHEAD_SECONDS,
     OutputFormat,
+    SourceInfo,
     _probe_source,
     resolve_output_format,
     stream_tracks,
 )
+
+
+def _info(
+    codec: str,
+    sample_rate: int | None = None,
+    bit_depth: int | None = None,
+    bitrate_kbps: int | None = None,
+) -> SourceInfo:
+    return SourceInfo(
+        codec=codec, sample_rate=sample_rate, bit_depth=bit_depth, bitrate_kbps=bitrate_kbps
+    )
 
 
 def _fake_probe_proc(stderr: bytes, returncode: int = 1):
@@ -35,7 +47,7 @@ def test_probe_source_parses_flac_stream_line():
     stderr = b"Stream #0:0: Audio: flac, 96000 Hz, stereo, s32 (24 bit)"
     with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=_fake_probe_proc(stderr))):
         result = asyncio.run(_probe_source("http://nav/stream"))
-    assert result == "flac"
+    assert result == _info("flac", sample_rate=96000, bit_depth=24)
 
 
 def test_probe_source_parses_mp3_stream_line():
@@ -46,7 +58,56 @@ def test_probe_source_parses_mp3_stream_line():
     )
     with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=_fake_probe_proc(stderr))):
         result = asyncio.run(_probe_source("http://nav/stream"))
-    assert result == "mp3"
+    # mp3's own line has no parenthesized "(N bit)" — bit_depth is simply
+    # unknown for it, not guessed at. It does carry its own bitrate though.
+    assert result == _info("mp3", sample_rate=44100, bit_depth=None, bitrate_kbps=320)
+
+
+def test_probe_source_reads_pcm_bit_depth_without_parens():
+    stderr = b"Stream #0:0: Audio: pcm_s24le, 48000 Hz, stereo, s24 (24 bit)"
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=_fake_probe_proc(stderr))):
+        result = asyncio.run(_probe_source("http://nav/stream"))
+    assert result == _info("pcm_s24le", sample_rate=48000, bit_depth=24)
+
+
+def test_probe_source_does_not_read_past_the_audio_streams_own_line():
+    # A track with embedded cover art gets a second, video/attached-pic
+    # Stream line from ffmpeg — its own (unrelated) numbers must never leak
+    # into the audio line's sample_rate/bit_depth.
+    stderr = (
+        b"Stream #0:0: Audio: flac, 44100 Hz, stereo, s16\n"
+        b"Stream #0:1: Video: mjpeg, none, 96000x1 (96 bit), 90k tbr"
+    )
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=_fake_probe_proc(stderr))):
+        result = asyncio.run(_probe_source("http://nav/stream"))
+    assert result == _info("flac", sample_rate=44100, bit_depth=None)
+
+
+def test_probe_source_reads_bitrate_from_the_streams_own_line_not_the_container_summary():
+    # Regression guard for the exact mistake docs/playback-bugs/
+    # fixed-pacing-used-container-bitrate.md documents: the container
+    # summary line's bitrate includes embedded cover art and is *not* the
+    # audio's own bitrate. Deliberately different numbers on each line here
+    # (397 vs. 320, the real figures from that incident) so reading the
+    # wrong one would be caught immediately rather than coincidentally
+    # matching.
+    stderr = (
+        b"Input #0, mp3, from 'http://nav/stream':\n"
+        b"  Duration: 00:06:51.00, start: 0.000000, bitrate: 397 kb/s\n"
+        b"    Stream #0:0: Audio: mp3, 44100 Hz, stereo, fltp, 320 kb/s"
+    )
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=_fake_probe_proc(stderr))):
+        result = asyncio.run(_probe_source("http://nav/stream"))
+    assert result.bitrate_kbps == 320
+
+
+def test_probe_source_bitrate_is_none_for_a_lossless_codec():
+    # FLAC/ALAC/PCM never report a "N kb/s" figure on their own Audio
+    # line — nothing here should guess one.
+    stderr = b"Stream #0:0: Audio: flac, 96000 Hz, stereo, s32 (24 bit)"
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=_fake_probe_proc(stderr))):
+        result = asyncio.run(_probe_source("http://nav/stream"))
+    assert result.bitrate_kbps is None
 
 
 def test_probe_source_returns_none_when_no_audio_stream_line():
@@ -83,7 +144,7 @@ def test_probe_source_returns_none_on_timeout():
     ],
 )
 def test_resolve_output_format_copy_tier(codec, expected_muxer, expected_content_type):
-    with patch("core.streamer._probe_source", AsyncMock(return_value=codec)):
+    with patch("core.streamer._probe_source", AsyncMock(return_value=_info(codec))):
         fmt = asyncio.run(resolve_output_format("http://nav/stream"))
     assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", expected_muxer]
     assert fmt.content_type == expected_content_type
@@ -97,7 +158,7 @@ def test_resolve_output_format_replay_gain_rules_out_the_copy_tier(codec):
     together") — a ReplayGain-enabled track that would otherwise qualify
     for stream-copy must fall back to a real re-encode instead of silently
     never producing any audio at all."""
-    with patch("core.streamer._probe_source", AsyncMock(return_value=codec)):
+    with patch("core.streamer._probe_source", AsyncMock(return_value=_info(codec))):
         fmt = asyncio.run(resolve_output_format("http://nav/stream", gain=0.8))
     assert fmt is FALLBACK_FORMAT
     assert "copy" not in fmt.ffmpeg_args
@@ -107,7 +168,7 @@ def test_resolve_output_format_replay_gain_does_not_affect_the_lossless_reencode
     """This tier already decodes+re-encodes to FLAC regardless of gain — a
     volume filter fits into that same pipeline for free, no fallback
     needed."""
-    with patch("core.streamer._probe_source", AsyncMock(return_value="alac")):
+    with patch("core.streamer._probe_source", AsyncMock(return_value=_info("alac"))):
         fmt = asyncio.run(resolve_output_format("http://nav/stream", gain=0.8))
     assert fmt.ffmpeg_args == ["-acodec", "flac", "-f", "flac"]
 
@@ -116,14 +177,14 @@ def test_resolve_output_format_unity_gain_still_uses_the_copy_tier():
     """The default (no ReplayGain, or a mode/track where the multiplier is
     exactly 1.0) must be unaffected — this isn't a blanket regression on
     the copy tier's whole reason to exist."""
-    with patch("core.streamer._probe_source", AsyncMock(return_value="mp3")):
+    with patch("core.streamer._probe_source", AsyncMock(return_value=_info("mp3"))):
         fmt = asyncio.run(resolve_output_format("http://nav/stream", gain=1.0))
     assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "mp3"]
 
 
 @pytest.mark.parametrize("codec", ["alac", "pcm_s16le", "pcm_s24le", "pcm_s16be", "ape"])
 def test_resolve_output_format_lossless_reencode_tier(codec):
-    with patch("core.streamer._probe_source", AsyncMock(return_value=codec)):
+    with patch("core.streamer._probe_source", AsyncMock(return_value=_info(codec))):
         fmt = asyncio.run(resolve_output_format("http://nav/stream"))
     assert fmt.ffmpeg_args == ["-acodec", "flac", "-f", "flac"]
     assert fmt.content_type == "audio/flac"
@@ -139,7 +200,7 @@ def test_resolve_output_format_falls_back_when_detection_fails():
 
 
 def test_resolve_output_format_falls_back_for_unrecognized_codec():
-    with patch("core.streamer._probe_source", AsyncMock(return_value="wmav2")):
+    with patch("core.streamer._probe_source", AsyncMock(return_value=_info("wmav2"))):
         fmt = asyncio.run(resolve_output_format("http://nav/stream"))
     assert fmt is FALLBACK_FORMAT
 
@@ -150,9 +211,195 @@ def test_resolve_output_format_falls_back_for_opus():
     Sonos' own published format list has no Opus entry (only Ogg Vorbis).
     Opus must stay out of the copy tier and fall through to the mp3
     fallback instead of risking silent playback on real hardware."""
-    with patch("core.streamer._probe_source", AsyncMock(return_value=("opus", 128_000))):
+    with patch("core.streamer._probe_source", AsyncMock(return_value=_info("opus", 48000))):
         fmt = asyncio.run(resolve_output_format("http://nav/stream"))
     assert fmt is FALLBACK_FORMAT
+
+
+# ── resolve_output_format device sample-rate/bit-depth limits ───────────────
+# Regression tests for a real bug (root-caused 2026-08-22, fixed 2026-08-24 —
+# see docs/playback-bugs/copy-tier-device-limits.md): a 24-bit/96kHz FLAC
+# copied straight to a Sonos reported
+# ERROR_UNSUPPORTED_FREQ over UPnP eventing and stopped 1.1s in.
+
+
+def test_resolve_output_format_copies_a_source_within_the_devices_limit():
+    # No behavior change for the common case: nothing here should start
+    # resampling sources that were already fine.
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("flac", sample_rate=44100, bit_depth=16)),
+    ):
+        fmt = asyncio.run(
+            resolve_output_format("http://nav/stream", max_sample_rate=48000, max_bit_depth=24)
+        )
+    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "flac"]
+
+
+def test_resolve_output_format_resamples_a_copy_eligible_codec_over_the_rate_limit():
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("flac", sample_rate=96000, bit_depth=24)),
+    ):
+        fmt = asyncio.run(
+            resolve_output_format("http://nav/stream", max_sample_rate=48000, max_bit_depth=24)
+        )
+    assert "copy" not in fmt.ffmpeg_args
+    assert fmt.ffmpeg_args == ["-acodec", "flac", "-f", "flac", "-ar", "48000"]
+    assert fmt.content_type == "audio/flac"
+    # Bit depth (24) is within the limit here — only the rate needs fixing.
+    assert "-sample_fmt" not in fmt.ffmpeg_args
+
+
+def test_resolve_output_format_resamples_over_the_bit_depth_limit_too():
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("flac", sample_rate=44100, bit_depth=24)),
+    ):
+        fmt = asyncio.run(
+            resolve_output_format("http://nav/stream", max_sample_rate=48000, max_bit_depth=16)
+        )
+    assert fmt.ffmpeg_args == ["-acodec", "flac", "-f", "flac", "-sample_fmt", "s16"]
+
+
+def test_resolve_output_format_never_upsamples_a_source_below_the_limit():
+    # A device limit is a ceiling, not a target — a 44.1kHz source must stay
+    # exactly that even when a much higher limit is declared.
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("flac", sample_rate=44100, bit_depth=16)),
+    ):
+        fmt = asyncio.run(
+            resolve_output_format("http://nav/stream", max_sample_rate=192000, max_bit_depth=32)
+        )
+    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "flac"]
+
+
+def test_resolve_output_format_leaves_a_source_alone_when_rate_could_not_be_detected():
+    # No sample_rate reading (see _probe_source's own "not guessed" comment)
+    # means there is nothing to compare against a limit — must not be
+    # treated as "0 Hz, therefore over the limit" or any other guess.
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("mp3", sample_rate=None, bit_depth=None)),
+    ):
+        fmt = asyncio.run(
+            resolve_output_format("http://nav/stream", max_sample_rate=44100, max_bit_depth=16)
+        )
+    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "mp3"]
+
+
+def test_resolve_output_format_no_declared_limit_leaves_a_high_res_source_untouched():
+    # max_sample_rate/max_bit_depth default to None — every caller from
+    # before this mechanism existed (a delivery whose class never declared
+    # a limit, or a purely local/non-cast dispatch) must behave exactly as
+    # it always did.
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("flac", sample_rate=192000, bit_depth=32)),
+    ):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
+    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "flac"]
+
+
+def test_resolve_output_format_resamples_the_lossless_reencode_tier_too():
+    # ALAC/PCM/APE already go through a real re-encode (never stream-copy),
+    # so this is purely about whether the resample args get added to that
+    # existing pipeline, not about which tier gets picked.
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("alac", sample_rate=96000, bit_depth=24)),
+    ):
+        fmt = asyncio.run(
+            resolve_output_format("http://nav/stream", max_sample_rate=48000, max_bit_depth=24)
+        )
+    assert fmt.ffmpeg_args == ["-acodec", "flac", "-f", "flac", "-ar", "48000"]
+
+
+def test_resolve_output_format_resample_tier_ignores_replay_gain():
+    # Every resample path already decodes+re-encodes (same as the plain
+    # lossless-reencode tier) — stream_tracks() fits a volume filter into
+    # that pipeline for free, so gain != 1.0 must not additionally fall
+    # back to mp3 the way it does for an actual stream-copy.
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("flac", sample_rate=96000, bit_depth=24)),
+    ):
+        fmt = asyncio.run(
+            resolve_output_format(
+                "http://nav/stream", gain=0.8, max_sample_rate=48000, max_bit_depth=24
+            )
+        )
+    assert fmt.ffmpeg_args == ["-acodec", "flac", "-f", "flac", "-ar", "48000"]
+
+
+# ── resolve_output_format source info (for the stream-info overlay) ─────────
+# core/session.py's build_status_dict() surfaces these on OutputFormat as
+# stream_info.source_codec/source_sample_rate/source_bit_depth.
+
+
+def test_resolve_output_format_copy_tier_carries_source_info():
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("mp3", sample_rate=44100, bit_depth=None, bitrate_kbps=320)),
+    ):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
+    assert fmt.source_codec == "mp3"
+    assert fmt.source_sample_rate == 44100
+    assert fmt.source_bitrate_kbps == 320
+
+
+def test_resolve_output_format_resampled_tier_carries_the_sources_own_numbers():
+    # The *source's* numbers, not the resampled target's — the whole point
+    # is showing "96kHz, resampled to 48kHz", not hiding the resample ever
+    # happened.
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("flac", sample_rate=96000, bit_depth=24)),
+    ):
+        fmt = asyncio.run(
+            resolve_output_format("http://nav/stream", max_sample_rate=48000, max_bit_depth=24)
+        )
+    assert fmt.source_codec == "flac"
+    assert fmt.source_sample_rate == 96000
+    assert fmt.source_bit_depth == 24
+
+
+def test_resolve_output_format_lossless_reencode_tier_carries_source_info():
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("alac", sample_rate=44100, bit_depth=16)),
+    ):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
+    assert fmt.source_codec == "alac"
+    assert fmt.source_sample_rate == 44100
+    assert fmt.source_bit_depth == 16
+
+
+def test_resolve_output_format_fallback_has_no_source_info():
+    # FALLBACK_FORMAT is the shared default instance — nothing was probed
+    # (or the probe result was discarded), so there's nothing accurate to
+    # report rather than a guess.
+    with patch("core.streamer._probe_source", AsyncMock(return_value=None)):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
+    assert fmt.source_codec is None
+    assert fmt.source_sample_rate is None
+    assert fmt.source_bit_depth is None
+    assert fmt.source_bitrate_kbps is None
+
+
+def test_resolve_output_format_replay_gain_fallback_has_no_source_info():
+    # This path probes successfully (codec would have qualified for copy)
+    # but discards the result in favor of FALLBACK_FORMAT because of gain —
+    # see resolve_output_format()'s own docstring. Must not report the
+    # probed source's numbers next to a format that isn't actually using them.
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("mp3", sample_rate=44100, bit_depth=None)),
+    ):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream", gain=0.8))
+    assert fmt is FALLBACK_FORMAT
+    assert fmt.source_codec is None
 
 
 # ── stream_tracks() command building ─────────────────────────────────────────
@@ -422,7 +669,8 @@ def test_stream_tracks_kills_the_process_and_reraises_on_an_unexpected_error():
 
 
 def test_force_fallback_format_bypasses_the_copy_tier_and_the_probe(monkeypatch):
-    """The A/B switch for the cast-drop investigation (docs/playback-bugs.md):
+    """The A/B switch for the cast-drop investigation
+    (docs/playback-bugs/mid-track-drop-symptom.md):
     with it set, every track takes the pre-copy-tier path — the shape this
     backend had before stream-copy existed, and which has never shown the
     bug. It skips the probe too, since that pipeline never inspected the
@@ -443,7 +691,7 @@ def test_force_fallback_format_stays_off_unless_explicitly_enabled(value, monkey
     audio quality — this only ever turns on for an explicit yes."""
     monkeypatch.setenv("FORCE_FALLBACK_FORMAT", value)
 
-    with patch("core.streamer._probe_source", AsyncMock(return_value="flac")):
+    with patch("core.streamer._probe_source", AsyncMock(return_value=_info("flac"))):
         fmt = asyncio.run(resolve_output_format("http://nav/stream"))
 
     assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "flac"]

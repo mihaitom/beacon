@@ -30,6 +30,31 @@ def client():
 
 
 @pytest.fixture(autouse=True)
+def _block_real_sonos_discovery(monkeypatch):
+    """soco.discover() is a real, unmocked network-wide SSDP multicast search
+    (see delivery/sonos.py's _get_device() docstring) — on a LAN that also
+    has real Sonos hardware on it, an uncovered call reaches actual
+    speakers, not a fake one.
+
+    Confirmed live 2026-08-24: a /resume regression test in test_playback.py
+    uses the real production room name "Arbeitszimmer" for its
+    active_delivery and only mocks SonosDelivery.play — the position-resync
+    background tasks that /resume's handler schedules (_apply_position_offset,
+    _resync_position_periodically) are not covered by that mock and call the
+    real, unmocked get_position() for as long as the test process runs. The
+    dev machine and the production Sonos speakers share the same /24, so
+    this reached the real device; the user reproduced it directly (fresh
+    playback started, test suite run, playback stopped immediately).
+
+    Every test that legitimately needs a device patches soco.discover or
+    SonosDelivery._get_device itself, which shadows this default for its own
+    scope — this fixture only closes the gap for whatever a test forgot to
+    cover, so a forgotten mock fails fast (no device found) instead of
+    silently reaching real hardware."""
+    monkeypatch.setattr("soco.discover", lambda *args, **kwargs: None)
+
+
+@pytest.fixture(autouse=True)
 def _clear_sonos_device_cache():
     """delivery/sonos.py caches resolved SoCo devices process-wide (see
     _get_device()), so without this one test's fake speaker would still be
@@ -69,7 +94,7 @@ def _stub_output_format(monkeypatch):
     themselves."""
     from core.streamer import FALLBACK_FORMAT
 
-    async def _fake_resolve(url, gain=1.0):
+    async def _fake_resolve(url, gain=1.0, max_sample_rate=None, max_bit_depth=None):
         return FALLBACK_FORMAT
 
     monkeypatch.setattr("routes.playback.resolve_output_format", _fake_resolve)

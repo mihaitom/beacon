@@ -14,12 +14,19 @@ notifications carry TransportStatus and TransportErrorDescription alongside
 TransportState — the device naming its own failure instead of us inferring
 it from a silence.
 
-Deliberately log-only. Nothing here feeds back into playback decisions: no
-auto-stop, no auto-recovery, no position handling. That keeps a diagnostic
-addition from becoming a new way for playback to break, which matters more
-than usual in a subsystem with this bug history. Reacting to these events
-(surfacing a dead cast to the frontend, see TODO.md) is a deliberate next
-step, not something to slip in here.
+AVTransport events are deliberately log-only. Nothing here feeds back into
+playback decisions from them: no auto-stop, no auto-recovery, no position
+handling. That keeps a diagnostic addition from becoming a new way for
+playback to break, which matters more than usual in a subsystem with this
+bug history. Reacting to *those* (surfacing a dead cast to the frontend) is
+a deliberate next step, not something to slip in here.
+
+RenderingControl events are the one narrow exception (routes/upnp.py):
+volume/mute pushed to whichever session currently claims the device (see
+core/claims.py), replacing DeviceListItem.vue's 4s poll. Safe to feed back
+in a way the transport-state case above isn't — a wrong volume reading
+changes what a number on screen says, not what audio is playing, so there's
+no equivalent failure mode to guard against.
 """
 
 import asyncio
@@ -43,11 +50,28 @@ _HTTP_TIMEOUT = 10.0
 # The AVTransport event service path is the same on Sonos and on generic
 # DLNA renderers built from the same UPnP profile.
 AVTRANSPORT_EVENT_PATH = "/MediaRenderer/AVTransport/Event"
+# Same idea, the volume/mute-reporting sibling service — see
+# parse_rendering_control_event()'s own comment for why its LastChange body
+# needs a different parser than AVTransport's.
+RENDERINGCONTROL_EVENT_PATH = "/MediaRenderer/RenderingControl/Event"
 
 # LastChange arrives as an XML document embedded, escaped, inside the
 # NOTIFY body's XML — hence the double unescape in parse_event() before
 # these can match.
 _PROPERTY_RE = re.compile(r"<(\w+)\s+val=\"([^\"]*)\"")
+
+# RenderingControl's LastChange is channel-qualified — <Volume
+# channel="Master" val="35"/>, plus an LF/RF pair per stereo leg and a
+# handful of Sonos extensions this app has no use for — so _PROPERTY_RE
+# above doesn't match it at all (it expects val="" as the first, only
+# attribute, true for every AVTransport property but not these). Only the
+# Master channel is kept: that's the one both the existing GET
+# /device-volume endpoint and DeviceListItem.vue's slider already mean by
+# "this device's volume" — LF/RF only diverge when someone's deliberately
+# unbalanced a stereo pair, not something either surface exposes.
+_RENDERING_CONTROL_PROPERTY_RE = re.compile(
+    r'<(Volume|Mute)\s+channel="Master"\s+val="([^"]*)"'
+)
 
 # The properties worth keeping out of a LastChange payload that also
 # carries volume, mute, EQ and a dozen Sonos-specific extensions.
@@ -68,20 +92,22 @@ _HEALTHY_STATUS = "OK"
 
 @dataclass
 class Subscription:
-    """One live AVTransport subscription. `sid` is the device's own handle
-    for it, needed to renew or cancel; it changes whenever the device
-    reboots or lets the lease lapse."""
+    """One live subscription to one service on one device. `sid` is the
+    device's own handle for it, needed to renew or cancel; it changes
+    whenever the device reboots or lets the lease lapse."""
 
     label: str
+    service: str
     event_url: str
     sid: str
     renew_at: float = field(default=0.0)
 
 
-# Keyed by the caller's label (a device/target name), not by URL — a
-# renamed-but-same-IP device should replace its subscription rather than
-# accumulate a second one.
-_subscriptions: dict[str, Subscription] = {}
+# Keyed by (label, service), not by URL — a renamed-but-same-IP device
+# should replace its subscription rather than accumulate a second one, and
+# a device can hold one subscription per service (AVTransport and
+# RenderingControl) at once, which a bare label-keyed dict couldn't.
+_subscriptions: dict[tuple[str, str], Subscription] = {}
 
 
 def _request(url: str, headers: dict[str, str]) -> dict[str, str]:
@@ -90,10 +116,12 @@ def _request(url: str, headers: dict[str, str]) -> dict[str, str]:
         return dict(resp.headers)
 
 
-async def subscribe(label: str, event_url: str, callback_url: str) -> Subscription | None:
-    """Open (or replace) a subscription for `label`. Returns None on
-    failure — eventing is diagnostic, so a device that refuses it must not
-    stop that device from playing."""
+async def subscribe(
+    label: str, service: str, event_url: str, callback_url: str
+) -> Subscription | None:
+    """Open (or replace) a subscription for (`label`, `service`). Returns
+    None on failure — eventing is diagnostic, so a device that refuses it
+    must not stop that device from playing."""
     headers = {
         "CALLBACK": f"<{callback_url}>",
         "NT": "upnp:event",
@@ -102,22 +130,23 @@ async def subscribe(label: str, event_url: str, callback_url: str) -> Subscripti
     try:
         resp_headers = await asyncio.to_thread(_request, event_url, headers)
     except (urllib.error.URLError, OSError, ValueError) as e:
-        logger.debug(f"[upnp] SUBSCRIBE failed for {label}: {e}")
+        logger.debug(f"[upnp] SUBSCRIBE failed for {label} ({service}): {e}")
         return None
 
     sid = resp_headers.get("SID")
     if not sid:
-        logger.debug(f"[upnp] SUBSCRIBE for {label} returned no SID")
+        logger.debug(f"[upnp] SUBSCRIBE for {label} ({service}) returned no SID")
         return None
 
     sub = Subscription(
         label=label,
+        service=service,
         event_url=event_url,
         sid=sid,
         renew_at=time.monotonic() + _SUBSCRIPTION_SECONDS - _RENEW_MARGIN_SECONDS,
     )
-    _subscriptions[label] = sub
-    logger.debug(f"[upnp] Subscribed to {label}'s transport events")
+    _subscriptions[(label, service)] = sub
+    logger.debug(f"[upnp] Subscribed to {label}'s {service} events")
     return sub
 
 
@@ -132,40 +161,55 @@ async def renew(sub: Subscription) -> bool:
             {"SID": sub.sid, "TIMEOUT": f"Second-{_SUBSCRIPTION_SECONDS}"},
         )
     except (urllib.error.URLError, OSError, ValueError) as e:
-        logger.debug(f"[upnp] Renewal failed for {sub.label}: {e}")
-        _subscriptions.pop(sub.label, None)
+        logger.debug(f"[upnp] Renewal failed for {sub.label} ({sub.service}): {e}")
+        _subscriptions.pop((sub.label, sub.service), None)
         return False
     sub.renew_at = time.monotonic() + _SUBSCRIPTION_SECONDS - _RENEW_MARGIN_SECONDS
     return True
 
 
-def forget(label: str) -> None:
+def forget(label: str, service: str = "avtransport") -> None:
     """Drop a subscription locally. No UNSUBSCRIBE call: the lease expires
     on its own, and a device that has become unreachable (the usual reason
     for dropping one) would only make this block."""
-    _subscriptions.pop(label, None)
+    _subscriptions.pop((label, service), None)
 
 
 def active_labels() -> list[str]:
-    return sorted(_subscriptions)
+    return sorted(f"{label}/{service}" for label, service in _subscriptions)
+
+
+def _unescape_last_change(body: str) -> str:
+    """LastChange sits XML-escaped inside the NOTIFY body's own XML, so
+    unescaping has to happen twice before its attributes are visible.
+    Shared by both event parsers below."""
+    text = body.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
+    text = text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
+    return text.replace("&amp;", "&")
 
 
 def parse_event(body: str) -> dict[str, str]:
-    """Pull the properties worth having out of a NOTIFY body.
-
-    The interesting values sit in a LastChange document that is XML-escaped
-    inside the NOTIFY's own XML, so unescaping has to happen twice before
-    the attributes are visible. Returns only non-empty values — renderers
-    routinely send a property with val="" to mean "unchanged", which would
-    otherwise read as "the URI is now empty"."""
-    text = body.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
-    text = text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
-    text = text.replace("&amp;", "&")
+    """Pull the AVTransport properties worth having out of a NOTIFY body.
+    Returns only non-empty values — renderers routinely send a property
+    with val="" to mean "unchanged", which would otherwise read as "the URI
+    is now empty"."""
+    text = _unescape_last_change(body)
     found = {}
     for name, value in _PROPERTY_RE.findall(text):
         if name in _KEPT_PROPERTIES and value:
             found[name] = value
     return found
+
+
+def parse_rendering_control_event(body: str) -> dict[str, str]:
+    """Pull Master-channel Volume/Mute out of a RenderingControl NOTIFY
+    body — see _RENDERING_CONTROL_PROPERTY_RE's own comment for why this
+    needs a different pattern than parse_event()'s. Returns a dict with
+    whichever of "Volume"/"Mute" the device actually reported this time —
+    Sonos sends both on any change, but the spec doesn't require it, and
+    routes/upnp.py only updates the fields it actually got."""
+    text = _unescape_last_change(body)
+    return dict(_RENDERING_CONTROL_PROPERTY_RE.findall(text))
 
 
 def problem_in(properties: dict[str, str]) -> str | None:

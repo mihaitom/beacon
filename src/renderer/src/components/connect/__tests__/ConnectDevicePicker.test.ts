@@ -271,4 +271,20 @@ describe('ConnectDevicePicker', () => {
     await vi.advanceTimersByTimeAsync(8000)
     expect(refreshSpy).not.toHaveBeenCalled()
   })
+
+  describe('stream info', () => {
+    it('is hidden while nothing is casting', () => {
+      const wrapper = mountPicker()
+
+      expect(wrapper.findComponent({ name: 'StreamInfoSection' }).exists()).toBe(false)
+    })
+
+    it('is shown once casting to a device — no separate button needed to reach it', () => {
+      const connect = useConnectStore()
+      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+      const wrapper = mountPicker()
+
+      expect(wrapper.findComponent({ name: 'StreamInfoSection' }).exists()).toBe(true)
+    })
+  })
 })

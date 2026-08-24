@@ -73,7 +73,7 @@ Resource.to_xml = _patched_resource_to_xml
 
 def _format_didl_duration(seconds: float) -> str:
     """DIDL-Lite <res duration=...> format, e.g. 3:45 -> "0:03:45"."""
-    total = max(0, int(round(seconds)))
+    total = max(0, round(seconds))
     hours, remainder = divmod(total, 3600)
     minutes, secs = divmod(remainder, 60)
     return f"{hours}:{minutes:02d}:{secs:02d}"
@@ -143,6 +143,18 @@ class DlnaDelivery(BaseDelivery):
     """Controls a DLNA/UPnP MediaRenderer device via async-upnp-client."""
 
     SUPPORTS_POSITION: bool = True
+    # "Varies per renderer" is the honest answer (see
+    # docs/playback-bugs/copy-tier-device-limits.md) — DLNA covers
+    # everything from budget soundbars to full AV receivers, with no
+    # single real spec ceiling the way Sonos/Chromecast Audio publish one.
+    # Reuses Sonos' own 24-bit/48kHz as the least-surprising shared
+    # assumption: the two protocols' devices overlap heavily in practice
+    # (see core/upnp_events.py's own comment on sharing an event-service
+    # path), and understating a renderer's real ceiling costs a needless
+    # resample, while overstating it reproduces the exact silent-failure
+    # this whole mechanism exists to prevent.
+    MAX_SAMPLE_RATE_HZ: int | None = 48000
+    MAX_BIT_DEPTH: int | None = 24
 
     async def _get_device(self):
         cached = _device_cache.get(self.target.lower())

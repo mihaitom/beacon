@@ -190,6 +190,16 @@ export default {
     takeoverTitle: 'Take over device?',
     takeoverBody:
       '"{name}" is currently in use by {owner}. Taking over will stop their playback on this device.',
+    streamInfo: {
+      title: 'Stream info',
+      transcoding: 'Transcoding',
+      no: 'No, direct copy',
+      source: 'Source',
+      connection: 'Connection',
+      connected: 'Connected',
+      idle: 'No active connection',
+      serverLag: 'Server responsiveness',
+    },
   },
   queue: {
     title: 'Queue',

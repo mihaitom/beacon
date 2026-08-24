@@ -28,6 +28,24 @@ import asyncio
 import importlib
 from types import ModuleType
 
+# A device scan starts every protocol's discovery at once (see
+# routes/discovery.py's asyncio.gather), and each protocol's first import
+# above runs in its own OS thread via asyncio.to_thread — genuinely
+# concurrent, not just interleaved. CPython's own per-module import lock
+# only guards a *single* top-level import call; it does nothing to stop two
+# *different* top-level imports (say, pyatv for AirPlay and
+# async_upnp_client for DLNA) from racing through a dependency they both
+# transitively pull in. Confirmed live (2026-08-24) on a fresh instance,
+# both scans starting at once: "cannot import name 'HeadersParser' from
+# partially initialized module 'aiohttp.http_parser' (most likely due to a
+# circular import)" — aiohttp itself, imported by both threads at the same
+# moment. This lock serializes every call here so at most one heavy import
+# runs at a time — still entirely off the event loop, still free after the
+# first call per module (the to_thread hop is the only remaining cost),
+# just no longer racing another thread through the same half-initialized
+# package.
+_import_lock = asyncio.Lock()
+
 
 async def import_in_thread(name: str) -> ModuleType:
     """Import `name` off the event loop and return the module.
@@ -35,4 +53,5 @@ async def import_in_thread(name: str) -> ModuleType:
     Every call after the first hits sys.modules and costs nothing beyond the
     thread hop, so callers can use this unconditionally instead of tracking
     whether the import already happened."""
-    return await asyncio.to_thread(importlib.import_module, name)
+    async with _import_lock:
+        return await asyncio.to_thread(importlib.import_module, name)

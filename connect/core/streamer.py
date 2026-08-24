@@ -120,10 +120,11 @@ _FALLBACK_ARGS = ["-acodec", "libmp3lame", "-ab", "192k", "-ar", "44100", "-f", 
 _FALLBACK_CONTENT_TYPE = "audio/mpeg"
 
 # Diagnostic switch for the recurring cast-drop investigation (see
-# docs/playback-bugs.md). Set FORCE_FALLBACK_FORMAT=1 to make every track go
-# through the MP3 192k re-encode, i.e. exactly what this backend did before
-# the stream-copy tiers were added — the shape the simpler upstream it grew
-# out of still uses, and which has never shown the bug.
+# docs/playback-bugs/mid-track-drop-symptom.md). Set FORCE_FALLBACK_FORMAT=1
+# to make every track go through the MP3 192k re-encode, i.e. exactly what
+# this backend did before the stream-copy tiers were added — the shape the
+# simpler upstream it grew out of still uses, and which has never shown the
+# bug.
 #
 # Read per call rather than captured at import so it can be flipped with a
 # container restart instead of a rebuild, which is what makes an A/B over
@@ -134,6 +135,29 @@ def _fallback_forced() -> bool:
 
 _PROBE_TIMEOUT = 10.0
 _AUDIO_STREAM_RE = re.compile(rb"Stream #\d+:\d+.*?Audio:\s*([a-zA-Z0-9_]+)")
+# Both searched only within the matched Audio line itself (see _probe_source),
+# never the whole stderr blob — a source with embedded cover art gets a
+# second, video/attached-pic Stream line from ffmpeg that has no "Hz" of its
+# own to false-match, but there's no reason to rely on that alone.
+_SAMPLE_RATE_RE = re.compile(rb",\s*(\d+)\s*Hz")
+# ffmpeg reports the *real* bit depth this way only for formats where the
+# sample format alone doesn't already say it (FLAC/ALAC's internal 32-bit
+# buffer isn't the source's own depth) — e.g. "s32 (24 bit)". Formats that
+# don't carry this (raw PCM's "s16"/"s24" already *is* the real depth) are
+# simply reported as None here; nothing in this module currently needs a
+# depth cap for those (_LOSSLESS_REENCODE_CODECS' own real-world sources are
+# overwhelmingly ALAC/FLAC-adjacent, where this pattern applies).
+_BIT_DEPTH_RE = re.compile(rb"\((\d+)\s*bit\)")
+# The Audio stream's *own* line carries its bitrate for lossy codecs (e.g.
+# "mp3, 44100 Hz, stereo, fltp, 320 kb/s") — deliberately not the same
+# thing the pacing bug this backend already fixed once read (the container
+# summary line's "Duration: ..., bitrate: N kb/s", which includes embedded
+# cover art and is *not* the audio's own bitrate; see
+# docs/playback-bugs/fixed-pacing-used-container-bitrate.md). Bound to the
+# same per-line search as sample rate/bit depth above, for the same reason.
+# Absent for lossless codecs (FLAC/ALAC/PCM never report one here) — never
+# guessed at, same convention as sample_rate/bit_depth being None.
+_BITRATE_RE = re.compile(rb",\s*(\d+)\s*kb/s")
 
 
 @dataclass
@@ -141,32 +165,63 @@ class OutputFormat:
     """What ffmpeg should do with a source, and what the result actually is —
     the single source of truth both `/stream`'s Content-Type header and each
     delivery's device-facing metadata (DIDL protocolInfo, Cast content_type)
-    read from, so they can never disagree with what stream_tracks() sends."""
+    read from, so they can never disagree with what stream_tracks() sends.
+
+    `source_codec`/`source_sample_rate`/`source_bit_depth`/`source_bitrate_kbps`
+    are the probed source's own numbers (see SourceInfo) — carried along
+    purely for core/session.py's build_status_dict() to surface in the
+    frontend's stream-info overlay ("FLAC 96kHz/24bit, resampled to 48kHz
+    for this device"). None on the fallback/default instance and on the
+    ReplayGain-forced-fallback path in resolve_output_format(): both discard
+    whatever the probe found rather than acting on it, so there is nothing
+    accurate to report."""
 
     ffmpeg_args: list[str] = field(default_factory=lambda: list(_FALLBACK_ARGS))
     content_type: str = _FALLBACK_CONTENT_TYPE
     label: str = "mp3-192k (fallback)"
+    source_codec: str | None = None
+    source_sample_rate: int | None = None
+    source_bit_depth: int | None = None
+    source_bitrate_kbps: int | None = None
 
 
 FALLBACK_FORMAT = OutputFormat()
 
-async def _probe_source(url: str) -> str | None:
-    """Return the source's audio codec name, or None if detection fails.
+
+@dataclass
+class SourceInfo:
+    """What _probe_source() actually found. sample_rate/bit_depth are None
+    when ffmpeg's own line didn't carry them (see _BIT_DEPTH_RE's comment) —
+    resolve_output_format() then simply can't judge this source against a
+    device's declared limit and leaves it untouched, the same as a device
+    with no declared limit at all. bitrate_kbps is None for lossless codecs
+    (see _BITRATE_RE's comment) — informational only, nothing in
+    resolve_output_format() judges a source against it. No field is ever
+    guessed."""
+
+    codec: str
+    sample_rate: int | None
+    bit_depth: int | None
+    bitrate_kbps: int | None
+
+
+async def _probe_source(url: str) -> SourceInfo | None:
+    """Return the source's audio codec/sample rate/bit depth, or None if
+    detection fails.
 
     Uses `ffmpeg -i <url>` itself rather than a separate `ffprobe` call —
     ffmpeg -i with no output target still fully parses and prints the
     input's stream info (`Stream #0:0: Audio: flac, 96000 Hz, ...`) to
-    stderr before exiting non-zero, which is enough to read the codec off
-    of. The Docker image's custom minimal ffmpeg build only ships the one
+    stderr before exiting non-zero, which is enough to read this off of.
+    The Docker image's custom minimal ffmpeg build only ships the one
     `ffmpeg` binary (see Dockerfile) — adding a second, similarly-sized
     static ffprobe binary just for this lookup isn't worth it.
 
     Deliberately does *not* also read the "Duration: ..., bitrate: N kb/s"
-    summary line any more. Nothing needs it now that ffmpeg paces itself
-    (see _READRATE_ARGS), and what it reports is the container bitrate,
-    cover art included — a number that looks like the audio bitrate,
-    isn't, and silently broke pacing for every track with a large embedded
-    cover.
+    summary line. Nothing needs it now that ffmpeg paces itself (see
+    _READRATE_ARGS), and what it reports is the container bitrate, cover
+    art included — a number that looks like the audio bitrate, isn't, and
+    silently broke pacing for every track with a large embedded cover.
     """
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -186,16 +241,85 @@ async def _probe_source(url: str) -> str | None:
     if not match:
         logger.warning(f"[ffmpeg] format probe: no audio stream detected for {url[:80]}")
         return None
-    return match.group(1).decode()
+    codec = match.group(1).decode()
+
+    # Bounded to the rest of the Audio stream's own line — see
+    # _SAMPLE_RATE_RE/_BIT_DEPTH_RE's own comments for why a later,
+    # unrelated line (embedded cover art's own video Stream line) must
+    # never be what these end up matching.
+    line_end = stderr.find(b"\n", match.end())
+    line = stderr[match.end() : line_end if line_end != -1 else len(stderr)]
+    rate_match = _SAMPLE_RATE_RE.search(line)
+    depth_match = _BIT_DEPTH_RE.search(line)
+    bitrate_match = _BITRATE_RE.search(line)
+    return SourceInfo(
+        codec=codec,
+        sample_rate=int(rate_match.group(1)) if rate_match else None,
+        bit_depth=int(depth_match.group(1)) if depth_match else None,
+        bitrate_kbps=int(bitrate_match.group(1)) if bitrate_match else None,
+    )
 
 
-async def resolve_output_format(url: str, gain: float = 1.0) -> OutputFormat:
-    """Detect the real source codec and decide how ffmpeg should handle it —
-    stream-copy when the source is already device-compatible (preserving its
-    exact quality/bitrate), lossless re-encode to FLAC for other lossless
-    sources, or the existing MP3 192k re-encode as the universal fallback
-    when detection fails or the source is something else entirely (never a
-    new failure mode, only ever an upgrade when detection succeeds).
+def _resample_args(
+    info: SourceInfo, max_sample_rate: int | None, max_bit_depth: int | None
+) -> list[str]:
+    """ffmpeg args to bring `info` down to a device's declared limits, or []
+    if nothing needs to change. Never upsamples or upgrades: a cap higher
+    than the source's own rate/depth (or a source whose rate/depth couldn't
+    be detected at all) leaves it alone rather than "helpfully" changing
+    anything not actually required to make the device happy."""
+    args = []
+    if (
+        max_sample_rate is not None
+        and info.sample_rate is not None
+        and info.sample_rate > max_sample_rate
+    ):
+        args += ["-ar", str(max_sample_rate)]
+    if (
+        max_bit_depth is not None
+        and info.bit_depth is not None
+        and info.bit_depth > max_bit_depth
+    ):
+        # FLAC/ALAC sources in practice are 16- or 24-bit; s16 is the only
+        # meaningful "smaller" target once 24 itself isn't allowed.
+        args += ["-sample_fmt", "s16"]
+    return args
+
+
+async def resolve_output_format(
+    url: str,
+    gain: float = 1.0,
+    max_sample_rate: int | None = None,
+    max_bit_depth: int | None = None,
+) -> OutputFormat:
+    """Detect the real source codec/sample rate/bit depth and decide how
+    ffmpeg should handle it — stream-copy when the source is already
+    device-compatible (preserving its exact quality/bitrate), lossless
+    re-encode to FLAC (resampled down to a device's limit when it has one
+    and the source exceeds it) for other lossless sources, or the existing
+    MP3 192k re-encode as the universal fallback when detection fails or the
+    source is something else entirely (never a new failure mode, only ever
+    an upgrade when detection succeeds).
+
+    `max_sample_rate`/`max_bit_depth` are the casting target's own declared
+    ceiling — see delivery/base.py's BaseDelivery.MAX_SAMPLE_RATE_HZ/
+    MAX_BIT_DEPTH and core/state.py's audio_capability_limits(), which every
+    caller here is expected to have already reduced a (possibly multi-
+    target) dispatch down to the single most restrictive pair. None (the
+    default) means no known limit — every caller from before these
+    parameters existed keeps behaving exactly as it did.
+
+    A source that exceeds either is never stream-copied, even when its
+    codec would otherwise qualify: copying means the device gets the
+    file's own bytes untouched, and there's no such thing as a device-
+    compatible copy of a stream whose sample rate the device can't decode
+    at all — confirmed live (see
+    docs/playback-bugs/copy-tier-device-limits.md): a 24-bit/96kHz FLAC
+    copied straight to a Sonos reported ERROR_UNSUPPORTED_FREQ and stopped
+    1.1s in. It's re-encoded losslessly to FLAC instead, resampled down to
+    the limit — the same tier _LOSSLESS_REENCODE_CODECS below already
+    uses, just also reached from a codec that would otherwise have
+    qualified for copy.
 
     `gain` (ReplayGain, see stream_tracks()'s own docstring) rules out the
     copy tier specifically: stream-copy means ffmpeg never decodes the
@@ -203,25 +327,46 @@ async def resolve_output_format(url: str, gain: float = 1.0) -> OutputFormat:
     `ffmpeg -af volume=X -acodec copy` fails outright ("Filtering and
     streamcopy cannot be used together"), which meant a ReplayGain-enabled
     track that also happened to qualify for stream-copy never played at
-    all. The lossless-reencode tier below is unaffected either way — it
-    already decodes+re-encodes to FLAC, so a volume filter fits into that
-    same pipeline for free."""
+    all. Every FLAC re-encode tier below is unaffected either way — it
+    already decodes+re-encodes, so stream_tracks() fits a volume filter
+    into that same pipeline for free (see its own handling of `gain`)."""
     if _fallback_forced():
         # No probe either: the point is to reproduce the pre-copy-tier
         # pipeline exactly, and that never inspected the source.
         logger.info("[ffmpeg] FORCE_FALLBACK_FORMAT set — re-encoding to mp3 192k")
         return FALLBACK_FORMAT
 
-    codec = await _probe_source(url)
-    if codec is None:
+    info = await _probe_source(url)
+    if info is None:
         return FALLBACK_FORMAT
+    codec = info.codec
+    resample_args = _resample_args(info, max_sample_rate, max_bit_depth)
 
     muxer = _COPY_MUXER_FOR_CODEC.get(codec)
+    if muxer and resample_args:
+        logger.info(
+            f"[ffmpeg] format probe: '{codec}' would copy, but source "
+            f"{info.sample_rate}Hz/{info.bit_depth}bit exceeds this target's limit "
+            f"({max_sample_rate}Hz/{max_bit_depth}bit) — re-encoding to flac, resampled"
+        )
+        return OutputFormat(
+            ffmpeg_args=["-acodec", "flac", "-f", "flac", *resample_args],
+            content_type="audio/flac",
+            label=f"{codec} → flac (resampled for device limit)",
+            source_codec=info.codec,
+            source_sample_rate=info.sample_rate,
+            source_bit_depth=info.bit_depth,
+            source_bitrate_kbps=info.bitrate_kbps,
+        )
     if muxer and gain == 1.0:
         return OutputFormat(
             ffmpeg_args=["-acodec", "copy", "-f", muxer],
             content_type=_CONTENT_TYPE_FOR_MUXER[muxer],
             label=f"{codec} (copy)",
+            source_codec=info.codec,
+            source_sample_rate=info.sample_rate,
+            source_bit_depth=info.bit_depth,
+            source_bitrate_kbps=info.bitrate_kbps,
         )
     if muxer:
         logger.info(
@@ -232,10 +377,15 @@ async def resolve_output_format(url: str, gain: float = 1.0) -> OutputFormat:
         return FALLBACK_FORMAT
 
     if codec in _LOSSLESS_REENCODE_CODECS:
+        label = f"{codec} → flac" + (" (resampled for device limit)" if resample_args else "")
         return OutputFormat(
-            ffmpeg_args=["-acodec", "flac", "-f", "flac"],
+            ffmpeg_args=["-acodec", "flac", "-f", "flac", *resample_args],
             content_type="audio/flac",
-            label=f"{codec} → flac",
+            label=label,
+            source_codec=info.codec,
+            source_sample_rate=info.sample_rate,
+            source_bit_depth=info.bit_depth,
+            source_bitrate_kbps=info.bitrate_kbps,
         )
 
     reason = (
@@ -373,8 +523,8 @@ async def stream_tracks(
                 stderr_task.cancel()
             raise  # propagate so stream_with_completion skips the track-end broadcast
 
-        except Exception as e:
-            logger.exception(f"[ffmpeg] Error on track {i + 1}: {e}")
+        except Exception:
+            logger.exception(f"[ffmpeg] Error on track {i + 1}")
             if proc:
                 try:
                     proc.kill()

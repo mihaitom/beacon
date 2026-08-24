@@ -5,6 +5,26 @@ export interface ConnectDeviceRef {
   type: DeviceType
 }
 
+// One entry of ConnectStatus.targets below — a ConnectDeviceRef plus
+// whatever's currently known about its volume. Kept separate from
+// ConnectDeviceRef itself (rather than adding these fields there) since
+// that type is also used for staged/requested targets (the device picker,
+// PlayRequest) where a volume reading doesn't apply at all.
+export interface ConnectStatusTarget extends ConnectDeviceRef {
+  // Optional as well as nullable: the backend always sends both (null until
+  // something has actually reported a reading — an unclaimed device, or a
+  // claimed one whose first reading, device-volume GET or a Sonos
+  // RenderingControl push, hasn't landed yet — see connect/routes/upnp.py),
+  // but plenty of test fixtures build a target literal from just
+  // {name, type} without caring about volume at all; optional lets those
+  // keep doing that instead of needing `volume: null, muted: null` padding
+  // everywhere. Only ever populated for Sonos today; chromecast/dlna stay
+  // unset here and keep DeviceListItem.vue's existing poll as their only
+  // source.
+  volume?: number | null
+  muted?: boolean | null
+}
+
 export interface DiscoveredDevice {
   name: string
   // AirPlay-only.
@@ -158,8 +178,47 @@ export interface StatusSong {
   title: string
 }
 
+// What the backend is actually doing with the current/last-dispatched
+// track's audio — see connect/core/streamer.py's OutputFormat and
+// resolve_output_format(). Always present (even with nothing ever
+// dispatched, it reflects the fallback default) so components can read it
+// unconditionally; StreamInfoSection.vue only renders while actually
+// casting (see ConnectDevicePicker.vue's own v-if).
+export interface ConnectStreamInfo {
+  // e.g. "flac (copy)", "flac → flac (resampled for device limit)",
+  // "mp3-192k (fallback)" — see resolve_output_format()'s own tiers. Not
+  // shown verbatim in the UI (too technical for a casual glance) — used
+  // only to derive `transcoding` backend-side.
+  label: string
+  content_type: string
+  // Derived backend-side from `label` (every copy-tier label ends in
+  // "(copy)", nothing else does) rather than left for the frontend to
+  // pattern-match the label text itself.
+  transcoding: boolean
+  // The probed source's own numbers — null when nothing has been probed
+  // (the fallback default) or when a probe's result was discarded (the
+  // ReplayGain-forced-fallback path). Never the *output* format's numbers;
+  // for a resampled dispatch this is deliberately the source's original
+  // rate/depth, not the capped one, so "96kHz, resampled for this device"
+  // can be shown instead of hiding the resample happened. bitrate_kbps is
+  // null for lossless codecs (they don't report one) as well as whenever
+  // nothing was probed.
+  source_codec: string | null
+  source_sample_rate: number | null
+  source_bit_depth: number | null
+  source_bitrate_kbps: number | null
+  // How many cast devices currently have the stream open — 0 while paused
+  // or between tracks is normal, not itself a health problem.
+  active_connections: number
+  // Worst event-loop stall in the last 30s, in seconds — process-wide, see
+  // connect/core/loop_health.py. 0 is healthy; anything approaching 1s+ is
+  // what a real drop looks like building up to.
+  loop_lag: number
+}
+
 export interface ConnectStatus {
   current_song: StatusSong | null
+  stream_info: ConnectStreamInfo
   // Full queue (already-played history included, not just what's left) and
   // where current_song sits in it — see connect/core/state.py's
   // AppState.queue. Lets every client controlling this session mirror the
@@ -182,7 +241,7 @@ export interface ConnectStatus {
   paused: boolean
   radio: { title: string; url: string } | null
   streaming: boolean
-  targets: ConnectDeviceRef[]
+  targets: ConnectStatusTarget[]
   total_songs: number
   // True only on the single status tick right after a takeover displaced
   // this session from its target — see connect/core/session.py's

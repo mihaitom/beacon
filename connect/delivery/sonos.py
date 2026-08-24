@@ -4,7 +4,11 @@ import asyncio
 import logging
 from xml.sax.saxutils import escape
 
-from core.upnp_events import AVTRANSPORT_EVENT_PATH, subscribe
+from core.upnp_events import (
+    AVTRANSPORT_EVENT_PATH,
+    RENDERINGCONTROL_EVENT_PATH,
+    subscribe,
+)
 
 from .base import BaseDelivery
 
@@ -57,6 +61,12 @@ class SonosDelivery(BaseDelivery):
     """Controls a Sonos speaker via SoCo."""
 
     SUPPORTS_POSITION: bool = True
+    # Confirmed the hard way (see docs/playback-bugs/copy-tier-device-limits.md):
+    # a 24-bit/96kHz FLAC
+    # sent as-is reported ERROR_UNSUPPORTED_FREQ over UPnP eventing and
+    # stopped 1.1s in. Sonos' own published spec tops out at 24-bit/48kHz.
+    MAX_SAMPLE_RATE_HZ: int | None = 48000
+    MAX_BIT_DEPTH: int | None = 24
 
     def _get_device(self):
         """The SoCo device for this target.
@@ -174,10 +184,16 @@ class SonosDelivery(BaseDelivery):
         logger.info(f"[Sonos:{self.target}] ✓ playing")
 
     async def _subscribe_to_events(self, device) -> None:
-        """Ask this speaker to report its own transport-state changes (see
-        core/upnp_events.py). Purely diagnostic — a speaker that refuses
-        the subscription still plays perfectly well, so every failure here
-        is swallowed rather than allowed to break a dispatch."""
+        """Ask this speaker to report its own transport-state changes and
+        its own volume/mute (see core/upnp_events.py) — two independent
+        subscriptions, one per UPnP service, so either can fail without
+        taking the other down. The AVTransport one stays purely diagnostic;
+        a speaker that refuses it still plays perfectly well, so every
+        failure here is swallowed rather than allowed to break a dispatch.
+        The RenderingControl one now actually feeds a session's
+        device_volumes (routes/upnp.py) — still swallowed the same way on
+        failure, since DeviceListItem.vue's own poll is still there as a
+        fallback for a speaker that won't subscribe."""
         # Imported here, not at module scope: routes/upnp.py imports the
         # delivery layer's siblings via core.state, and pulling it in at
         # import time would close that loop.
@@ -185,13 +201,29 @@ class SonosDelivery(BaseDelivery):
 
         try:
             ip = await asyncio.to_thread(lambda: device.ip_address)
+        except Exception as e:
+            logger.debug(f"[Sonos:{self.target}] transport eventing unavailable: {e}")
+            return
+
+        try:
             await subscribe(
                 self.target,
+                "avtransport",
                 f"http://{ip}:1400{AVTRANSPORT_EVENT_PATH}",
-                callback_url_for(self.target),
+                callback_url_for(self.target, "avtransport"),
             )
         except Exception as e:
             logger.debug(f"[Sonos:{self.target}] transport eventing unavailable: {e}")
+
+        try:
+            await subscribe(
+                self.target,
+                "renderingcontrol",
+                f"http://{ip}:1400{RENDERINGCONTROL_EVENT_PATH}",
+                callback_url_for(self.target, "renderingcontrol"),
+            )
+        except Exception as e:
+            logger.debug(f"[Sonos:{self.target}] volume eventing unavailable: {e}")
 
     async def pause(self) -> None:
         device = await asyncio.to_thread(self._get_device)

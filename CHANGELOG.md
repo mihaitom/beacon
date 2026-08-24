@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Added a "Stop all" action to the mobile web UI's device picker, matching the one already on desktop - previously the only way to back out of casting there was picking "This device", which also switches playback to it right away
 - Added a way to save the current queue as a new playlist, right from the queue drawer
 - Added a confirmation prompt before deleting a playlist
+- Added a small stream info section to the casting device picker, shown once you're actually casting - whether the current track is being transcoded (and to what format), the source file's own format/bitrate, and the cast connection's health
 
 ### Changed
 
@@ -36,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Changed cover art to load a few at a time and only once scrolling actually comes to rest on it, to stop loading again the moment it scrolls back out of view, and to be cached by the browser afterward, instead of every cover on a page being requested at once and every started download running to the end regardless - large grids and lists load noticeably faster, flicking through a huge list no longer fetches a cover for every song it races past on the way, and coming back to a list no longer re-fetches art that was already shown
 - Changed the seek bar to stop stretching past 600px wide on very wide monitors
 - Changed the fullscreen visualizer's cast mode to only analyze the audio while somebody actually has it open, instead of doing that work for every cast whether or not anyone was watching - casting is noticeably lighter on the server, and opening the visualizer part-way through a song picks the music up where it is
+- Changed a Sonos speaker's volume and mute to update in Beacon right away when changed from elsewhere (the Sonos app, another Beacon session), instead of up to 4 seconds later - Chromecast and DLNA devices still poll for now
 
 ### Fixed
 
@@ -59,6 +61,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Fixed the Songs, Albums, and Artists library views getting progressively slower and less responsive the further you scrolled through a large library - every row/card stayed mounted after loading more instead of only the ones actually on screen
 - Fixed a song's right-click menu not closing when another song's was opened - each could be opened independently, leaving several stacked on top of each other at once
 - Fixed clearing the queue while casting getting silently undone a few seconds later, with every song reappearing - the clear never made it past this device to the cast session itself
+- Fixed a high-resolution FLAC (above 24-bit/48kHz, e.g. 24-bit/96kHz) failing to play at all when cast to a Sonos speaker - it was sent to the device completely unchanged even though Sonos only supports up to 24-bit/48kHz, so the speaker rejected it and stopped about a second in. It's now automatically downsampled to whatever the target device actually supports (Chromecast, DLNA and AirPlay each have their own limit too)
 
 ## [0.1.4] - 2026-08-17
 

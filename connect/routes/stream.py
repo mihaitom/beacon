@@ -19,7 +19,12 @@ from core.session import (
     get_session,
     registry,
 )
-from core.state import TEST_TONE_TRACK_ID, stream_url, test_tone_url
+from core.state import (
+    TEST_TONE_TRACK_ID,
+    audio_capability_limits,
+    stream_url,
+    test_tone_url,
+)
 from core.streamer import resolve_output_format, stream_tracks
 
 from .playback import (
@@ -49,7 +54,10 @@ async def _dispatch_queued_track(session: SessionState, target, track, gain: flo
     broadcast instead of leaving state stuck mid-transition."""
     st = session.state
     track_url = await asyncio.to_thread(session.media.get_stream_url, track.id)
-    output_format = await resolve_output_format(track_url, gain=gain)
+    max_rate, max_depth = audio_capability_limits(target)
+    output_format = await resolve_output_format(
+        track_url, gain=gain, max_sample_rate=max_rate, max_bit_depth=max_depth
+    )
     url = stream_url(session.session_id)
 
     st.current_track = track
@@ -71,8 +79,8 @@ async def _dispatch_queued_track(session: SessionState, target, track, gain: flo
             track.album,
             output_format.content_type,
         )
-    except Exception as e:
-        logger.exception(f"[stream] Auto-advance delivery error: {e}")
+    except Exception:
+        logger.exception("[stream] Auto-advance delivery error")
         st.is_streaming = False
         return False
 
@@ -429,8 +437,9 @@ async def _resume_after_interruption(session: SessionState) -> bool:
     The device stopped without anything asking it to, and beacon's only
     reaction so far was to mark the session not-streaming and go quiet - the
     music simply ended and stayed ended. Whatever makes these speakers stop
-    has resisted a full day of investigation (see docs/playback-bugs.md; the
-    cause is outside this codebase), so the useful thing left to do is to
+    has resisted a full day of investigation (see
+    docs/playback-bugs/mid-track-drop-symptom.md; the cause is outside this
+    codebase), so the useful thing left to do is to
     stop letting it end the session.
 
     Called only when someone asks for it - the toast the interrupted
@@ -467,8 +476,8 @@ async def _resume_after_interruption(session: SessionState) -> bool:
     logger.info(f"[stream] Resuming after an interruption from {position:.1f}s")
     try:
         await st.active_delivery.play(*_current_reconnect_args(session))
-    except Exception as e:
-        logger.error(f"[stream] Resume-after-interruption failed: {e}", exc_info=True)
+    except Exception:
+        logger.exception("[stream] Resume-after-interruption failed")
         return False
 
     asyncio.create_task(

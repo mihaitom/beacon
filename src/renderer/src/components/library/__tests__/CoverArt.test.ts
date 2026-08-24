@@ -113,8 +113,15 @@ function mountCover(props: Record<string, unknown> = {}) {
 }
 
 /** Brings a cover to the point where it would fetch: into view, past the
- * settle delay, and through the concurrency queue if there is room. */
-async function scrollIntoRest(wrapper: ReturnType<typeof mount>) {
+ * settle delay, and through the concurrency queue if there is room.
+ *
+ * Generic (rather than `wrapper: ReturnType<typeof mount>`) so the caller's
+ * own specific wrapper type — CoverArt's actual props, not the bare
+ * fallback `mount()`'s unparameterized overload resolves to — survives the
+ * round trip. Passing it straight through as `wrapper: ReturnType<typeof
+ * mount>` used to widen every caller's wrapper to that generic type,
+ * breaking hasImage()'s own more specific parameter type below. */
+async function scrollIntoRest<T extends ReturnType<typeof mount>>(wrapper: T): Promise<T> {
   lastObserver().emit(true)
   vi.advanceTimersByTime(200)
   await flush()
@@ -173,9 +180,9 @@ describe('CoverArt', () => {
 
   it('fetches and shows a cover the scroll comes to rest on', async () => {
     const wrapper = await scrollIntoRest(mountCover())
-    expect(requests[0].url).toContain('getCoverArt.view')
+    expect(requests[0]!.url).toContain('getCoverArt.view')
 
-    requests[0].succeed()
+    requests[0]!.succeed()
     await flush()
 
     expect(hasImage(wrapper)).toBe(true)
@@ -231,9 +238,9 @@ describe('CoverArt', () => {
 
     wrapper.findComponent({ name: 'VImg' }).vm.$emit('error')
     await flush()
-    expect(requests[0].url).toContain('getCoverArt.view')
+    expect(requests[0]!.url).toContain('getCoverArt.view')
 
-    requests[0].succeed()
+    requests[0]!.succeed()
     await flush()
 
     expect(wrapper.html()).toContain('blob:cover-1')
@@ -262,7 +269,7 @@ describe('CoverArt', () => {
     lastObserver().emit(false)
     await flush()
 
-    expect(requests[0].aborted).toBe(true)
+    expect(requests[0]!.aborted).toBe(true)
   })
 
   it('aborts a fetch still on the wire when the row is unmounted', async () => {
@@ -272,7 +279,7 @@ describe('CoverArt', () => {
     unmount(wrapper)
     await flush()
 
-    expect(requests[0].aborted).toBe(true)
+    expect(requests[0]!.aborted).toBe(true)
   })
 
   it('fetches again when a cancelled cover comes back into view', async () => {
@@ -283,19 +290,19 @@ describe('CoverArt', () => {
     await scrollIntoRest(wrapper)
     observer.emit(false)
     await flush()
-    expect(requests[0].aborted).toBe(true)
+    expect(requests[0]!.aborted).toBe(true)
 
     observer.emit(true)
     vi.advanceTimersByTime(200)
     await flush()
 
     expect(requests).toHaveLength(2)
-    expect(requests[1].aborted).toBe(false)
+    expect(requests[1]!.aborted).toBe(false)
   })
 
   it('keeps a cover that has already arrived when it scrolls back out', async () => {
     const wrapper = await scrollIntoRest(mountCover())
-    requests[0].succeed()
+    requests[0]!.succeed()
     await flush()
 
     lastObserver().emit(false)
@@ -312,7 +319,7 @@ describe('CoverArt', () => {
     const observer = lastObserver()
     expect(observer.disconnected).toBe(false)
 
-    requests[0].succeed()
+    requests[0]!.succeed()
     await flush()
 
     expect(observer.disconnected).toBe(true)
@@ -332,7 +339,7 @@ describe('CoverArt', () => {
 
   it('releases the image it was holding when it goes away', async () => {
     const wrapper = await scrollIntoRest(mountCover())
-    requests[0].succeed()
+    requests[0]!.succeed()
     await flush()
 
     unmount(wrapper)
@@ -347,7 +354,7 @@ describe('CoverArt', () => {
   // every visible cover at once, which over HTTP/2 the browser no longer
   // caps, and the burst took down the reverse proxy's authorisation
   // middleware — which then denied the casting streams' own media fetches.
-  // See docs/playback-bugs.md, "The mechanism".
+  // See docs/playback-bugs/mid-track-drop-reverse-proxy-403.md, "The mechanism".
 
   it('never has more than the limit fetching at once', async () => {
     for (let i = 0; i < MAX + 4; i++) await scrollIntoRest(mountCover())
@@ -359,7 +366,7 @@ describe('CoverArt', () => {
     for (let i = 0; i < MAX + 1; i++) await scrollIntoRest(mountCover())
     expect(requests).toHaveLength(MAX)
 
-    requests[0].succeed()
+    requests[0]!.succeed()
     await flush()
 
     expect(requests).toHaveLength(MAX + 1)
@@ -368,7 +375,7 @@ describe('CoverArt', () => {
   it('hands the place on when a fetch fails, not just when it succeeds', async () => {
     for (let i = 0; i < MAX + 1; i++) await scrollIntoRest(mountCover())
 
-    requests[0].fail()
+    requests[0]!.fail()
     await flush()
 
     expect(requests).toHaveLength(MAX + 1)
@@ -380,7 +387,7 @@ describe('CoverArt', () => {
     const covers = []
     for (let i = 0; i < MAX + 1; i++) covers.push(await scrollIntoRest(mountCover()))
 
-    unmount(covers[0])
+    unmount(covers[0]!)
     await flush()
 
     expect(requests).toHaveLength(MAX + 1)
@@ -392,9 +399,68 @@ describe('CoverArt', () => {
     for (let i = 0; i < MAX + 1; i++) await scrollIntoRest(mountCover())
 
     lastObserver().emit(false) // the queued one scrolls out of view again
-    requests[0].succeed()
+    requests[0]!.succeed()
     await flush()
 
     expect(requests).toHaveLength(MAX)
+  })
+
+  // ── candidates changing mid-fetch (a track/album changing under an
+  // already-visible cover, e.g. NowPlayingView.vue's own art) ────────────
+  // Regression tests for a real bug (2026-08-24): the candidates() watcher
+  // aborted the in-flight fetch and immediately called queueLoad() again,
+  // which - with no guard against a load already running - took a *second*
+  // concurrency slot and started a second, overlapping loadCandidates()
+  // call on the same instance. Both shared this.holdsLoadSlot, so whichever
+  // one's `finally` ran last reset it regardless of which fetch it actually
+  // belonged to - observed live as a cover stuck on its skeleton forever
+  // even though its fetch had already completed successfully.
+
+  it('reuses its held slot instead of taking a second one when candidates change mid-fetch', async () => {
+    const wrapper = await scrollIntoRest(mountCover({ coverArtId: 'cover-1' }))
+    expect(inFlight()).toHaveLength(1)
+
+    // Simulates a track change while this exact instance (e.g. the
+    // now-playing view's own art) is still fetching the previous one.
+    await wrapper.setProps({ coverArtId: 'cover-2' })
+    await flush()
+
+    // The old fetch was aborted and exactly one new one made - never two
+    // racing at once for what is still a single instance.
+    expect(requests).toHaveLength(2)
+    expect(requests[0]!.aborted).toBe(true)
+    expect(requests[1]!.url).toContain('cover-2')
+    expect(inFlight()).toHaveLength(1)
+  })
+
+  it('shows the new cover after candidates change mid-fetch, not a permanent skeleton', async () => {
+    const wrapper = await scrollIntoRest(mountCover({ coverArtId: 'cover-1' }))
+    await wrapper.setProps({ coverArtId: 'cover-2' })
+    await flush()
+
+    requests[1]!.succeed()
+    await flush()
+
+    expect(hasImage(wrapper)).toBe(true)
+  })
+
+  it('does not orphan a still-queued load when candidates change before it ever starts', async () => {
+    for (let i = 0; i < MAX; i++) await scrollIntoRest(mountCover())
+    // The (MAX+1)th has no slot yet - still sitting in `waiting`.
+    const queued = await scrollIntoRest(mountCover({ coverArtId: 'cover-queued-1' }))
+    expect(requests).toHaveLength(MAX)
+
+    // Its own candidates change again before it was ever granted a slot.
+    await queued.setProps({ coverArtId: 'cover-queued-2' })
+    await flush()
+
+    // Freeing a slot must start exactly one request for this instance (the
+    // current candidate) - not a leftover one for the stale candidate plus
+    // a fresh one for the new one.
+    requests[0]!.succeed()
+    await flush()
+
+    expect(requests).toHaveLength(MAX + 1)
+    expect(requests[MAX]!.url).toContain('cover-queued-2')
   })
 })

@@ -373,6 +373,17 @@ describe('remoteControl store', () => {
       const connect = useConnectStore()
       connect.status = {
         current_song: null,
+        stream_info: {
+          label: 'mp3-192k (fallback)',
+          content_type: 'audio/mpeg',
+          transcoding: true,
+          source_codec: null,
+          source_sample_rate: null,
+          source_bit_depth: null,
+          source_bitrate_kbps: null,
+          active_connections: 0,
+          loop_lag: 0,
+        },
         queue: [],
         current_song_index: -1,
         original_queue: [],
@@ -429,6 +440,17 @@ describe('remoteControl store', () => {
       const connect = useConnectStore()
       connect.status = {
         current_song: null,
+        stream_info: {
+          label: 'mp3-192k (fallback)',
+          content_type: 'audio/mpeg',
+          transcoding: true,
+          source_codec: null,
+          source_sample_rate: null,
+          source_bit_depth: null,
+          source_bitrate_kbps: null,
+          active_connections: 0,
+          loop_lag: 0,
+        },
         queue: [],
         current_song_index: -1,
         original_queue: [],

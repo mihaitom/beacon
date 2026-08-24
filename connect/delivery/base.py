@@ -12,6 +12,18 @@ class BaseDelivery(ABC):
     # True if get_position() returns a real device-side position.
     SUPPORTS_POSITION: bool = False
 
+    # Highest sample rate (Hz) / bit depth this device class is known to
+    # accept for a stream-copied or lossless-reencoded source — read by
+    # core/state.py's audio_capability_limits() and enforced in
+    # core/streamer.py's resolve_output_format(). None means no known
+    # limit: a high-res source is left untouched, same as before either
+    # attribute existed. See each subclass for where its own number comes
+    # from; this base default deliberately assumes nothing; a delivery
+    # nobody has ever hit this class of failure with (AirPlay, DLNA, ...)
+    # gets whatever the subclass declares, not a guess made here.
+    MAX_SAMPLE_RATE_HZ: int | None = None
+    MAX_BIT_DEPTH: int | None = None
+
     def __init__(self, target: str):
         self.target = target
 
