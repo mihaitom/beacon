@@ -140,7 +140,12 @@ export default {
   transition: opacity 0.15s ease;
 }
 
-.album-card:hover .album-card-star,
+.album-card:hover .album-card-star {
+  opacity: 1;
+}
+
+/* See ArtistCard.vue's identical rule — amber only for an actually
+ * starred album, not merely a hovered one. */
 .album-card-star--visible {
   opacity: 1;
   color: rgb(var(--v-theme-primary)) !important;

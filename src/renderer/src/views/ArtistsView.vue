@@ -130,12 +130,12 @@ const PAGE_SIZE = 60
 const ARTIST_VIRTUALIZE_THRESHOLD = 500
 // Must match .artist-card's own width (ArtistCard.vue) and .artist-grid's
 // own gap (below) — turns an available pixel width into a column count.
-const ARTIST_ITEM_WIDTH = 200
+const ARTIST_ITEM_WIDTH = 160
 const ARTIST_GAP = 20
-// Seed for v-virtual-scroll's row height (200px cover + mt-2 + name line +
+// Seed for v-virtual-scroll's row height (160px cover + mt-2 + name line +
 // album-count caption line) — see AlbumsView.vue's identical comment on why
 // this doesn't need to be exact.
-const ARTIST_ROW_HEIGHT_GUESS = 250
+const ARTIST_ROW_HEIGHT_GUESS = 210
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 

@@ -1,81 +1,56 @@
 <template>
-  <section v-if="artists.length" class="similar-artists-shelf">
-    <div class="similar-artists-shelf-head">
-      <h2 class="section-title">{{ title }}</h2>
-      <v-spacer />
-      <div class="similar-artists-shelf-nav">
-        <v-btn
-          icon="mdi-chevron-left"
-          variant="text"
-          size="small"
-          density="comfortable"
-          @click="scrollRow(-1)"
-        />
-        <v-btn
-          icon="mdi-chevron-right"
-          variant="text"
-          size="small"
-          density="comfortable"
-          @click="scrollRow(1)"
-        />
+  <!-- Same big-card language as AlbumCard.vue/ArtistCard.vue (160px cover +
+   - name below), not the old small-pill row — a real Deezer photo when
+   - HomeView.vue's lookup found one, plain fallback icon otherwise (no
+   - cover-art placeholder to fall back to like an owned artist has —
+   - CoverArt.vue's own coverArtId path never applies here, only imageUrl).
+   - The card itself isn't a link (unlike before) — the icon row below the
+   - name is, one per external service HomeView.vue's lookup found (same
+   - set, same icons, as ArtistDetailView.vue shows for an owned artist —
+   - see externalArtistLinks.ts), instead of picking a single destination
+   - (Deezer, or MusicBrainz as a fallback) on the artist's behalf.
+   - window.open() is intercepted by main/index.ts's setWindowOpenHandler ->
+   - shell.openExternal, same as ServerLoginView.vue's Plex sign-in link. -->
+  <card-shelf v-if="artists.length" :title="title">
+    <div v-for="artist in artists" :key="artist.mbid" class="similar-artists-card">
+      <cover-art
+        :image-url="artist.imageUrl"
+        :size="160"
+        rounded
+        fallback-icon="mdi-account-music"
+        class="similar-artists-card-art"
+      />
+      <div class="similar-artists-card-name text-body-2 mt-2 text-truncate">
+        {{ artist.name }}
+      </div>
+      <div class="similar-artists-card-links">
+        <a
+          v-for="link in externalLinks(artist.links)"
+          :key="link.key"
+          :href="link.url"
+          target="_blank"
+          rel="noopener"
+          class="similar-artists-card-link"
+          :title="$t('library.viewOnService', { service: link.name })"
+        >
+          <img
+            :src="link.icon"
+            :alt="link.name"
+            class="similar-artists-card-link-icon"
+            :class="{ 'similar-artists-card-link-icon--invert': link.invert }"
+          />
+        </a>
       </div>
     </div>
-    <!-- Same big-card language as AlbumCard.vue/ArtistCard.vue (160px cover
-     - + name below), not the old small-pill row — a real Deezer photo when
-     - HomeView.vue's lookup found one, plain fallback icon otherwise (no
-     - cover-art placeholder to fall back to like an owned artist has —
-     - CoverArt.vue's own coverArtId path never applies here, only
-     - imageUrl). The card itself isn't a link (unlike before) — the icon
-     - row below the name is, one per external service HomeView.vue's
-     - lookup found (same set, same icons, as ArtistDetailView.vue shows
-     - for an owned artist — see externalArtistLinks.ts), instead of
-     - picking a single destination (Deezer, or MusicBrainz as a fallback)
-     - on the artist's behalf. window.open() is intercepted by
-     - main/index.ts's setWindowOpenHandler -> shell.openExternal, same as
-     - ServerLoginView.vue's Plex sign-in link. -->
-    <div ref="row" class="similar-artists-shelf-row">
-      <div v-for="artist in artists" :key="artist.mbid" class="similar-artists-card">
-        <cover-art
-          :image-url="artist.imageUrl"
-          :size="160"
-          rounded
-          fallback-icon="mdi-account-music"
-          class="similar-artists-card-art"
-        />
-        <div class="similar-artists-card-name text-body-2 mt-2 text-truncate">
-          {{ artist.name }}
-        </div>
-        <div class="similar-artists-card-links">
-          <a
-            v-for="link in externalLinks(artist.links)"
-            :key="link.key"
-            :href="link.url"
-            target="_blank"
-            rel="noopener"
-            class="similar-artists-card-link"
-            :title="$t('library.viewOnService', { service: link.name })"
-          >
-            <img
-              :src="link.icon"
-              :alt="link.name"
-              class="similar-artists-card-link-icon"
-              :class="{ 'similar-artists-card-link-icon--invert': link.invert }"
-            />
-          </a>
-        </div>
-      </div>
-    </div>
-  </section>
+  </card-shelf>
 </template>
 
 <script lang="ts">
 import type { PropType } from 'vue'
 import type { SimilarArtist } from '@/services/connect/recommendations'
-import {
-  toExternalLinkList,
-  type ExternalLinkKey,
-} from '@/components/library/externalArtistLinks'
+import { toExternalLinkList, type ExternalLinkKey } from '@/components/library/externalArtistLinks'
 import CoverArt from './CoverArt.vue'
+import CardShelf from './CardShelf.vue'
 
 /** SimilarArtist enriched with what HomeView.vue's own artist-images +
  * artist-links-by-mbid lookups found (see discoverFromSimilarArtists()) —
@@ -89,7 +64,7 @@ export interface SimilarArtistDisplay extends SimilarArtist {
 
 export default {
   name: 'SimilarArtistsShelf',
-  components: { CoverArt },
+  components: { CoverArt, CardShelf },
   props: {
     title: {
       type: String,
@@ -101,15 +76,6 @@ export default {
     },
   },
   methods: {
-    // Same "scroll one row's worth" behavior as AlbumShelf.vue's own
-    // scrollRow() — this shelf never uses AlbumShelf.vue's fitToScreen
-    // mode (there's no reroll button here to fall back on, so it always
-    // needs a scrollable pool instead of just truncating).
-    scrollRow(direction: 1 | -1): void {
-      const row = this.$refs.row as HTMLElement | undefined
-      if (!row) return
-      row.scrollBy({ left: direction * row.clientWidth * 0.8, behavior: 'smooth' })
-    },
     externalLinks(urls: Partial<Record<ExternalLinkKey, string>>) {
       return toExternalLinkList(urls)
     },
@@ -118,35 +84,6 @@ export default {
 </script>
 
 <style scoped>
-.similar-artists-shelf {
-  margin-bottom: 40px;
-}
-
-.similar-artists-shelf-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.similar-artists-shelf-nav {
-  display: flex;
-  gap: 4px;
-}
-
-.similar-artists-shelf-row {
-  display: flex;
-  gap: 20px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-  scroll-snap-type: x proximity;
-}
-
-.similar-artists-shelf-row > * {
-  flex: 0 0 auto;
-  scroll-snap-align: start;
-}
-
 .similar-artists-card {
   width: 160px;
 }

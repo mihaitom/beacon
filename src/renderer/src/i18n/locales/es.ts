@@ -80,6 +80,7 @@ export default {
     newArtistsTitle: 'Nuevos artistas por descubrir',
   },
   library: {
+    showAsGrid: 'Ver en cuadrícula',
     album: 'Álbum',
     artist: 'Artista',
     playlist: 'Lista de reproducción',
@@ -321,6 +322,7 @@ export default {
   },
   favorites: {
     title: 'Favoritos',
+    artists: 'Artistas',
     albums: 'Álbumes',
     songs: 'Canciones',
     noneYet: 'Todavía no se ha marcado ningún favorito.',

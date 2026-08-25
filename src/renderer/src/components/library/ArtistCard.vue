@@ -1,7 +1,7 @@
 <template>
   <div class="artist-card" @click="$router.push(`/artists/${artist.id}`)">
     <div class="artist-card-cover">
-      <cover-art :cover-art-id="artist.coverArtId" :image-url="artist.imageUrl" :size="200" />
+      <cover-art :cover-art-id="artist.coverArtId" :image-url="artist.imageUrl" :size="160" />
       <v-btn
         v-if="authStore.capabilities.favorites"
         :icon="artist.starred ? 'mdi-heart' : 'mdi-heart-outline'"
@@ -55,8 +55,12 @@ export default {
 </script>
 
 <style scoped>
+/* Same width as AlbumCard.vue's own .album-card, deliberately — the two
+ * appear side by side (search results, the favorites view) and read as
+ * mismatched at different sizes. The cover-art :size above matches it, so
+ * both card types also come out the same height: cover + name + caption. */
 .artist-card {
-  width: 200px;
+  width: 160px;
   cursor: pointer;
 }
 
@@ -82,9 +86,20 @@ export default {
   transition: opacity 0.15s ease;
 }
 
-.artist-card:hover .artist-card-star,
+.artist-card:hover .artist-card-star {
+  opacity: 1;
+}
+
+/* Amber, on nothing — same "amber means this is on" rule the rest of the
+ * app follows. Both !importants undo this element's own resting style
+ * above: the dark pill behind the icon exists to keep an *unstarred* heart
+ * legible over artwork, and Vuetify paints `color` onto the background for
+ * a flat button, so without clearing it the button stayed dark and the
+ * heart never turned amber at all. */
 .artist-card-star--visible {
   opacity: 1;
+  color: rgb(var(--v-theme-primary)) !important;
+  background: transparent !important;
 }
 
 .artist-card:hover .artist-card-name {

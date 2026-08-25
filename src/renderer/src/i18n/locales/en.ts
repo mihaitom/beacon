@@ -79,6 +79,7 @@ export default {
     newArtistsTitle: 'New artists to explore',
   },
   library: {
+    showAsGrid: 'Show as grid',
     album: 'Album',
     artist: 'Artist',
     playlist: 'Playlist',
@@ -319,6 +320,7 @@ export default {
   },
   favorites: {
     title: 'Favorites',
+    artists: 'Artists',
     albums: 'Albums',
     songs: 'Songs',
     noneYet: 'No favorites marked yet.',

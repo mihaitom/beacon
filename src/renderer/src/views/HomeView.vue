@@ -14,7 +14,10 @@
       :is-playing-this="heroIsPlaying"
       :has-content="heroHasContent"
       :loading="heroLoading"
+      :can-start-radio="heroCanStartRadio"
+      :radio-loading="heroRadioLoading"
       @play="onHeroPlay"
+      @song-radio="onHeroSongRadio"
     />
 
     <album-shelf
@@ -181,6 +184,9 @@ export default {
       // SimilarArtistsShelf component hides itself in all of those cases.
       newArtistDiscoveries: [] as SimilarArtistDisplay[],
       topSongs: [] as Song[],
+      // Spinner on the hero's own Song Radio button while the mix is being
+      // fetched — see onHeroSongRadio().
+      heroRadioLoading: false,
       loadingFrequent: false,
       loadingNewest: false,
       loadingRecent: false,
@@ -270,6 +276,15 @@ export default {
     },
     heroIsPlaying() {
       return this.playbackStore.isPlaying
+    },
+    // Song Radio needs an actual song to build the mix around, so this is
+    // deliberately narrower than heroHasContent: the "here's your most
+    // recent album" fallback has no single seed song, and an internet radio
+    // station isn't in the library at all. Same capability gate every other
+    // Song Radio entry point uses (SongRow.vue's menu, PlayerToolbar.vue's
+    // autoplay button).
+    heroCanStartRadio(): boolean {
+      return this.authStore.capabilities.songRadio && this.playbackStore.currentSong != null
     },
     heroHasContent() {
       return !!(
@@ -472,6 +487,27 @@ export default {
               ...capped,
               ...(await this.libraryStore.fetchRandomAlbums(DISCOVER_SHELF_SIZE - capped.length)),
             ]
+    },
+    // Mirrors SongTable.vue's own startSongRadio() — same store action,
+    // same toast on failure. The spinner lives on the button because the
+    // mix is a real server round trip (getSimilarSongs2) that can take a
+    // moment, and nothing else on screen would show it happening.
+    async onHeroSongRadio() {
+      const song = this.playbackStore.currentSong
+      if (!song || this.heroRadioLoading) return
+      this.heroRadioLoading = true
+      try {
+        await this.playbackStore.startSongRadio(song)
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('library.songRadio'),
+          message: this.$t('library.songRadioError'),
+        })
+        console.error('[song-radio]', error)
+      } finally {
+        this.heroRadioLoading = false
+      }
     },
     async onHeroPlay() {
       if (this.playbackStore.currentSong) {

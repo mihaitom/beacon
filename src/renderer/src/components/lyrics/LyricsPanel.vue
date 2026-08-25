@@ -28,7 +28,13 @@
     </div>
 
     <div v-else-if="!lyricsStore.synced" class="lyrics-panel__scroll lyrics-panel__scroll--plain">
+      <!-- Keeps the first and last lines out of the edge mask's fade zone
+       - (see .lyrics-panel__mask-pad). The synced list below needs no
+       - equivalent: its own centering pads already put every line well
+       - clear of both edges. -->
+      <div class="lyrics-panel__mask-pad" />
       <p class="lyrics-panel__line lyrics-panel__line--plain">{{ plainText }}</p>
+      <div class="lyrics-panel__mask-pad" />
     </div>
 
     <div
@@ -392,8 +398,19 @@ export default {
   /* Signals "more content above/below" without a hard cutoff, and works
    * regardless of what's behind the panel (solid surface in the compact
    * drawer, blurred album art in the immersive view) — an alpha mask, not
-   * a background-color overlay, is what makes that background-agnostic. */
-  mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+   * a background-color overlay, is what makes that background-agnostic.
+   *
+   * The fade depth is a custom property because .lyrics-panel__mask-pad
+   * below has to match it exactly: content that starts inside this zone
+   * renders permanently half-faded, which is a bug, not a hint. */
+  --lyrics-mask-fade: 15%;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black var(--lyrics-mask-fade),
+    black calc(100% - var(--lyrics-mask-fade)),
+    transparent 100%
+  );
 }
 
 .lyrics-panel__scroll::-webkit-scrollbar {
@@ -406,6 +423,18 @@ export default {
  * subtle) scrollbar is what makes "you can freely scroll this" obvious
  * rather than something you have to discover by accident. */
 .lyrics-panel__scroll--plain {
+  /* Centered while the text fits, top-aligned (and scrollable) once it
+   * doesn't — `safe` is what makes that switch automatic. Without it,
+   * centering overflowing content in a scroll container pushes the start of
+   * it above the scrollport, where it can't be scrolled back to. Unsynced
+   * lyrics have nothing scrolling them on their own, so a short set sitting
+   * at the very top of a tall panel reads as if it had been cut off.
+   * The mask pads stay in the flow either way: at the top of a scrolling
+   * set they keep the first and last lines clear of the edge fade, and in a
+   * centered short set they simply sit either side of it. */
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
 }
@@ -429,6 +458,18 @@ export default {
    * actually center the first/last real line instead of stopping short at
    * the scroll container's hard edge. */
   height: 50%;
+  flex-shrink: 0;
+}
+
+/* Unsynced lyrics are one block of text with nothing scrolling it, so they
+ * sit at the very top of the container — which is exactly where the edge
+ * mask above is still fading in, leaving the first line permanently
+ * half-transparent (and the last one likewise at the bottom). This clears
+ * that zone. A percentage *height* on an element rather than padding on
+ * the container: percentage padding resolves against the container's
+ * width, which has nothing to do with where the mask sits. */
+.lyrics-panel__mask-pad {
+  height: var(--lyrics-mask-fade);
   flex-shrink: 0;
 }
 

@@ -79,6 +79,7 @@ export default {
     newArtistsTitle: 'Nuovi artisti da scoprire',
   },
   library: {
+    showAsGrid: 'Mostra a griglia',
     album: 'Album',
     artist: 'Artista',
     playlist: 'Playlist',
@@ -321,6 +322,7 @@ export default {
   },
   favorites: {
     title: 'Preferiti',
+    artists: 'Artisti',
     albums: 'Album',
     songs: 'Brani',
     noneYet: 'Nessun preferito ancora contrassegnato.',

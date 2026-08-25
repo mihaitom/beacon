@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Added an automatic peek at the queue whenever something lands in it without being clicked song-by-song - those quick-play actions, Play Next/Add to Queue, Song Radio, Artist Radio, and Autoplay's own top-up all trigger it. The queue opens with each track fading in one after another and scrolls to whatever's currently playing, then closes itself again after a few seconds unless the mouse actually reaches it, in which case it stays open
 - Added a matching fade-out to clearing the queue - tracks disappear bottom-to-top starting from wherever you've actually scrolled to, instead of all at once
 - Added a "Stop all" action to the device picker in the mobile web UI and on the phone remote, matching the one already on desktop - previously the only way to back out of casting there was picking "This device", which also switches playback to it right away
+- Added a Song Radio button to the Home view's hero card, next to Keep listening - starts a mix built around whatever song is currently playing there. Hidden when the card is showing a recently played album or an internet radio station instead, since neither gives a single song to build a mix around
 - Added a way to save the current queue as a new playlist, right from the queue drawer
 - Added a confirmation prompt before deleting a playlist
 - Added a small stream info section to the casting device picker, shown once you're actually casting - whether the current track is being transcoded, what it is being turned into (including the sample rate and bit depth when those had to be reduced) and why, the source file's own format/bitrate, and the cast connection's health
@@ -39,7 +40,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Changed the seek bar to stop stretching past 600px wide on very wide monitors
 - Changed the fullscreen visualizer's cast mode to only analyze the audio while somebody actually has it open, instead of doing that work for every cast whether or not anyone was watching - casting is noticeably lighter on the server, and opening the visualizer part-way through a song picks the music up where it is
 - Changed a Sonos speaker's volume and mute to update in Beacon right away when changed from elsewhere (the Sonos app, another Beacon session), instead of up to 4 seconds later - Chromecast and DLNA devices still poll for now
+- Changed the blurred artwork backdrop behind the Home view's hero card and every album/artist/genre/playlist header to crossfade when it changes, instead of snapping over to the new artwork the moment it loads. All of them now fade at the same speed as the Now Playing view's own backdrop, which already worked this way
 - Various small UI sizing/spacing tweaks based on actually using it
+- Changed artist cards to the same size as album cards, so the two line up where both appear (the Favorites view, any mixed grid) instead of the artist ones sitting noticeably larger
 
 ### Fixed
 
@@ -66,6 +69,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Fixed a high-resolution FLAC (above 24-bit/48kHz, e.g. 24-bit/96kHz) failing to play at all when cast to a Sonos speaker - it was sent to the device completely unchanged even though Sonos only supports up to 24-bit/48kHz, so the speaker rejected it and stopped about a second in. It's now automatically downsampled to whatever the target device actually supports (Chromecast, DLNA and AirPlay each have their own limit too)
 - Fixed the Now Playing view squeezing artwork and lyrics into two cramped stacked rows on windows that are wide but not wide enough, instead of turning the artwork over to show lyrics on its back. That flip used to happen only on portrait screens; it now happens whenever the two genuinely stop fitting side by side, which on a typical monitor is anywhere below about 1560px wide
 - Fixed the last fraction of a second being cut off every track while casting - the next track was dispatched to the speaker slightly before the current one had finished playing, and the countdown to that moment used the whole-second length reported by the music server rather than the track's real one. Only noticeable on tracks that end abruptly rather than fading out, where it sounded clipped
+- Fixed the first and last line of unsynced lyrics (ones without timings) always looking half faded out, because the text began exactly where the panel's soft top edge fades in. Short lyrics that fit without scrolling are now centred in the panel rather than sitting at the very top, while longer ones still start below the fade and scroll normally
+- Fixed favourited artists never showing up in the Favorites view - only albums and songs were listed there, so marking an artist as a favourite looked like it did nothing
+- Changed the Favorites view's artists and albums to scrollable rows with arrows, like the Home view's shelves, so the favourite songs below them stay reachable instead of sitting behind rows and rows of cards. Each row has its own button to spread it out into a full grid instead, remembered separately for the next visit
+- Fixed the heart on an artist card staying dark instead of turning amber once that artist is a favourite, unlike album cards and every other favourite toggle in the app. Hovering an unfavourited album card no longer colours its heart amber either, since that reads as "already a favourite"
 
 ## [0.1.4] - 2026-08-17
 

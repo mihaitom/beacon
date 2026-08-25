@@ -5,10 +5,10 @@
      - item's own art). Two stacked layers so a song change crossfades
      - between cover arts — see backdropLayers' comment. -->
     <div
-      v-for="(url, i) in backdropLayers"
+      v-for="(url, i) in backdrop.urls"
       :key="i"
       class="now-playing__backdrop"
-      :class="{ 'now-playing__backdrop--active': i === activeBackdropLayer }"
+      :class="{ 'now-playing__backdrop--active': i === backdrop.active }"
       :style="url ? { backgroundImage: `url(${url})` } : {}"
     />
     <div class="now-playing__scrim" :style="ambientStyle" />
@@ -208,6 +208,7 @@
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
 import { useLibraryStore } from '@/stores/library'
+import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
 import { useLyricsStore } from '@/stores/lyrics'
 import { useConnectStore } from '@/stores/connect'
 import { useAuthStore } from '@/stores/auth'
@@ -269,17 +270,10 @@ export default {
       // then, so there's no flash of the transparent-icon styling before
       // the icon itself has even loaded.
       radioIconIsTransparent: false,
-      // Two stacked layers so a song change can crossfade between cover
-      // arts instead of popping — a plain CSS `transition` on
-      // background-image doesn't actually interpolate between two url()s
-      // (there's nothing for the browser to blend between two arbitrary
-      // images), it just swaps at the halfway point, which reads as a hard
-      // cut despite the transition being there. Alternating which layer is
-      // "active" (opacity: 1, see the template/style below) and setting the
-      // new image on the other one lets a plain opacity transition do the
-      // actual crossfade instead. See setBackdrop().
-      backdropLayers: [null, null] as (string | null)[],
-      activeBackdropLayer: 0,
+      // Two stacked layers, only one shown at a time, so a song change
+      // crossfades between cover arts instead of popping — see
+      // services/crossfadeBackdrop.ts for why one element can't do this.
+      backdrop: createBackdropLayers(),
       showVisualizer: readShowVisualizer(),
       // Whether <audio-visualizer> is actually in the DOM — trails
       // visualizerActive by visualizerHideDelayMs on the way down so its
@@ -417,7 +411,7 @@ export default {
       handler(url: string | null) {
         this.extractedColor = null
         if (url) this.loadColor(url)
-        this.setBackdrop(url)
+        showBackdrop(this.backdrop, url)
       },
     },
     radioFaviconSrc: {
@@ -539,17 +533,6 @@ export default {
       if (url !== this.coverArtUrl) return
       this.extractedColor = color ? color.join(', ') : null
     },
-    // Puts `url` on the currently-*inactive* layer and flips which one is
-    // active — the opacity transition on now-playing__backdrop--active (see
-    // <style> below) is what actually crossfades from whatever the other
-    // layer still shows to this one. See backdropLayers' comment for why
-    // this exists instead of just binding the image straight to a single
-    // element's style.
-    setBackdrop(url: string | null) {
-      const next = this.activeBackdropLayer === 0 ? 1 : 0
-      this.backdropLayers[next] = url
-      this.activeBackdropLayer = next
-    },
   },
 }
 </script>
@@ -600,13 +583,11 @@ export default {
   background-position: center;
   filter: blur(50px) saturate(1.3) brightness(0.5);
   transform: scale(1.15);
-  /* Two stacked instances of this (see backdropLayers), only one of which
-   * is --active (opacity: 1) at a time — this opacity transition is what
-   * actually crossfades between them on a song change. A plain
-   * `transition: background-image` on a single element (the previous
-   * approach) doesn't work: there's no browser-defined interpolation
-   * between two url()s, so it just swaps at the halfway point instead of
-   * blending. */
+  /* Two stacked instances of this, only one of which is --active
+   * (opacity: 1) at a time — this opacity transition is what actually
+   * crossfades between them on a song change (see
+   * services/crossfadeBackdrop.ts). Same 0.6s as DetailHeader.vue and
+   * HeroBand.vue, so every backdrop in the app fades at one speed. */
   opacity: 0;
   transition: opacity 0.6s ease;
 }

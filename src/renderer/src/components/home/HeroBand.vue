@@ -1,6 +1,15 @@
 <template>
   <section class="hero-band">
-    <div class="hero-backdrop" :style="backdropStyle" />
+    <!-- Two stacked layers, only one visible at a time, so the artwork
+     - crossfades when the hero switches to a different song — see
+     - services/crossfadeBackdrop.ts for why one element can't do this. -->
+    <div
+      v-for="(url, i) in backdrop.urls"
+      :key="i"
+      class="hero-backdrop"
+      :class="{ 'hero-backdrop--active': i === backdrop.active }"
+      :style="url ? { backgroundImage: `url(${url})` } : {}"
+    />
     <div class="hero-scrim" />
     <div class="hero-content">
       <p class="hero-greeting">{{ greeting }}</p>
@@ -59,15 +68,30 @@
             </template>
             <template v-else>{{ subtitle }}</template>
           </div>
-          <v-btn
-            class="mt-4"
-            color="primary"
-            :prepend-icon="isPlayingThis ? 'mdi-pause' : 'mdi-play'"
-            rounded="pill"
-            @click="$emit('play')"
-          >
-            {{ isPlayingThis ? $t('home.paused') : $t('home.keepListening') }}
-          </v-btn>
+          <div class="hero-actions mt-4">
+            <v-btn
+              color="primary"
+              :prepend-icon="isPlayingThis ? 'mdi-pause' : 'mdi-play'"
+              rounded="pill"
+              @click="$emit('play')"
+            >
+              {{ isPlayingThis ? $t('home.paused') : $t('home.keepListening') }}
+            </v-btn>
+            <!-- Secondary on purpose: the pill above is what this band is
+             - for. Only shown when the hero is a *song* (the seed a mix is
+             - built from) and the server can build one at all — see
+             - HomeView.vue's heroCanStartRadio. -->
+            <v-btn
+              v-if="canStartRadio"
+              prepend-icon="mdi-radio-tower"
+              rounded="pill"
+              color="primary"
+              :loading="radioLoading"
+              @click="$emit('song-radio')"
+            >
+              {{ $t('library.songRadio') }}
+            </v-btn>
+          </div>
         </div>
       </div>
       <div v-else class="hero-body">
@@ -84,6 +108,7 @@
 import type { PropType } from 'vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import { useLibraryStore } from '@/stores/library'
+import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
 
 export default {
   name: 'HeroBand',
@@ -115,20 +140,46 @@ export default {
     isPlayingThis: { type: Boolean, default: false },
     hasContent: { type: Boolean, default: false },
     loading: { type: Boolean, default: false },
+    // Whether a Song Radio can be built from whatever the hero is showing
+    // right now — the decision itself is HomeView.vue's (it owns both the
+    // seed song and the server capability), this component only renders
+    // the button or doesn't.
+    canStartRadio: { type: Boolean, default: false },
+    radioLoading: { type: Boolean, default: false },
   },
-  emits: ['play'],
+  emits: ['play', 'song-radio'],
+  data() {
+    return { backdrop: createBackdropLayers() }
+  },
   computed: {
-    backdropStyle() {
-      const url = this.coverId
-        ? useLibraryStore().client().coverArtUrl(this.coverId, 300)
-        : this.imageUrl
-      return url ? { backgroundImage: `url(${url})` } : {}
+    backdropUrl(): string | null {
+      if (this.coverId) return useLibraryStore().client().coverArtUrl(this.coverId, 300)
+      return this.imageUrl
+    },
+  },
+  watch: {
+    // immediate — the first hero should fade in from nothing rather than
+    // waiting for a *second* one before the backdrop ever appears.
+    backdropUrl: {
+      immediate: true,
+      handler(url: string | null) {
+        showBackdrop(this.backdrop, url)
+      },
     },
   },
 }
 </script>
 
 <style scoped>
+.hero-actions {
+  display: flex;
+  align-items: center;
+  /* Wraps rather than squeezing both pills onto one line on a narrow
+   * window — the band's own min-height already accommodates a second row. */
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .hero-band {
   position: relative;
   border-radius: 16px;
@@ -145,6 +196,17 @@ export default {
   background-position: center;
   filter: blur(38px) saturate(1.4) brightness(0.6);
   transform: scale(1.15);
+  /* Two stacked instances of this, only one of them --active at a time —
+   * this opacity transition is the crossfade itself. Same 0.6s as
+   * DetailHeader.vue and NowPlayingView.vue, so every backdrop in the app
+   * fades at one speed (and a song change, which updates two of them at
+   * once, stays in step). */
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.hero-backdrop--active {
+  opacity: 1;
 }
 
 .hero-scrim {

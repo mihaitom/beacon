@@ -1,6 +1,15 @@
 <template>
   <section class="detail-header">
-    <div class="detail-header__backdrop" :style="backdropStyle" />
+    <!-- Two stacked layers so navigating from one album/artist to the next
+     - crossfades the artwork behind the header instead of cutting to it —
+     - see services/crossfadeBackdrop.ts for why one element can't do this. -->
+    <div
+      v-for="(url, i) in backdrop.urls"
+      :key="i"
+      class="detail-header__backdrop"
+      :class="{ 'detail-header__backdrop--active': i === backdrop.active }"
+      :style="url ? { backgroundImage: `url(${url})` } : {}"
+    />
     <div class="detail-header__scrim" />
     <div v-if="starred !== null || $slots['top-right']" class="detail-header__top-right">
       <!-- Its own row, separate from the #top-right slot below — rating/
@@ -66,6 +75,7 @@
 import type { PropType } from 'vue'
 import CoverArt from './CoverArt.vue'
 import { useLibraryStore } from '@/stores/library'
+import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
 
 /**
  * Shared "hero" treatment for album/artist/playlist detail pages — a
@@ -98,12 +108,23 @@ export default {
     rating: { type: Number as PropType<number | null>, default: null },
   },
   emits: ['toggle-star', 'set-rating'],
+  data() {
+    return { backdrop: createBackdropLayers() }
+  },
   computed: {
-    backdropStyle() {
-      const url = this.coverArtId
-        ? useLibraryStore().client().coverArtUrl(this.coverArtId, 300)
-        : this.imageUrl
-      return url ? { backgroundImage: `url(${url})` } : {}
+    backdropUrl(): string | null {
+      if (this.coverArtId) return useLibraryStore().client().coverArtUrl(this.coverArtId, 300)
+      return this.imageUrl
+    },
+  },
+  watch: {
+    // immediate — the first header should fade its artwork in rather than
+    // staying blank until some *later* navigation changes it.
+    backdropUrl: {
+      immediate: true,
+      handler(url: string | null) {
+        showBackdrop(this.backdrop, url)
+      },
     },
   },
 }
@@ -126,6 +147,15 @@ export default {
   background-position: center;
   filter: blur(38px) saturate(1.4) brightness(0.55);
   transform: scale(1.15);
+  /* Two stacked instances, one --active at a time — this opacity
+   * transition is the crossfade itself. Same 0.6s as HeroBand.vue and
+   * NowPlayingView.vue, so every backdrop in the app fades at one speed. */
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.detail-header__backdrop--active {
+  opacity: 1;
 }
 
 .detail-header__scrim {
