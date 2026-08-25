@@ -36,8 +36,8 @@
     <sticky-filter>
       <v-text-field
         v-model="filterQuery"
-        :label="$t('common.filter')"
-        prepend-inner-icon="mdi-filter-variant"
+        :label="$t('search.label')"
+        prepend-inner-icon="mdi-magnify"
         variant="solo-filled"
         density="compact"
         clearable
@@ -114,6 +114,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useElementWidth } from '@/composables/useElementWidth'
 import { firstIndexByLetter } from '@/services/alphabetIndex'
 import { shuffled } from '@/services/shuffle'
+import { matchesAllTerms } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import ArtistCard from '@/components/library/ArtistCard.vue'
 import AlphabetIndexBar from '@/components/library/AlphabetIndexBar.vue'
@@ -184,10 +185,10 @@ export default {
       return ARTIST_ROW_HEIGHT_GUESS
     },
     filteredArtists(): Artist[] {
-      const query = this.debouncedQuery.trim().toLowerCase()
-      if (!query) return this.libraryStore.artists
+      const query = this.debouncedQuery
+      if (!query.trim()) return this.libraryStore.artists
       return this.libraryStore.artists.filter((artist: Artist) =>
-        artist.name.toLowerCase().includes(query),
+        matchesAllTerms(query, artist.name),
       )
     },
     visibleArtists(): Artist[] {

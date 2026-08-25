@@ -12,7 +12,6 @@ export default {
     delete: 'Elimina',
     done: 'Fatto',
     retry: 'Riprova',
-    filter: 'Filtra',
     loadMore: 'Carica altro',
     name: 'Nome',
     addToQueue: 'Aggiungi alla coda',

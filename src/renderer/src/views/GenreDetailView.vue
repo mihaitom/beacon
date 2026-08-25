@@ -33,8 +33,8 @@
     <sticky-filter :z-index="3" :fade="false" @resize="stickyHeaderHeight = $event">
       <v-text-field
         v-model="filterQuery"
-        :label="$t('common.filter')"
-        prepend-inner-icon="mdi-filter-variant"
+        :label="$t('search.label')"
+        prepend-inner-icon="mdi-magnify"
         variant="solo-filled"
         density="compact"
         clearable
@@ -74,6 +74,7 @@
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { shuffled } from '@/services/shuffle'
+import { matchesAllTerms } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import SongTable from '@/components/library/SongTable.vue'
 import PageLoader from '@/components/PageLoader.vue'
@@ -117,13 +118,10 @@ export default {
       return new Set(this.songs.map((song) => song.albumId)).size
     },
     filteredSongs(): Song[] {
-      const query = this.debouncedQuery.trim().toLowerCase()
-      if (!query) return this.songs
-      return this.songs.filter(
-        (song) =>
-          song.title.toLowerCase().includes(query) ||
-          song.artist.toLowerCase().includes(query) ||
-          song.album.toLowerCase().includes(query),
+      const query = this.debouncedQuery
+      if (!query.trim()) return this.songs
+      return this.songs.filter((song) =>
+        matchesAllTerms(query, song.title, song.artist, song.album),
       )
     },
   },

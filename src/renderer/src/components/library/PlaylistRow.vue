@@ -1,24 +1,29 @@
 <template>
   <router-link :to="`/playlists/${playlist.id}`" class="playlist-row d-flex align-center">
-    <cover-art
-      :cover-art-id="playlist.coverArtId"
-      :size="56"
-      fallback-icon="mdi-playlist-music"
-      class="playlist-row__cover cover-shadow mr-4"
-    />
+    <!-- Bigger than the old 56px thumbnail, and the play button now lives
+     - on top of it (revealed on hover, same dimmed-backdrop + centered icon
+     - language as AlbumCard.vue's own shelf-card overlay) instead of
+     - sitting off to the side next to the text. -->
+    <div class="playlist-row__cover-wrap">
+      <cover-art
+        :cover-art-id="playlist.coverArtId"
+        :size="64"
+        fallback-icon="mdi-playlist-music"
+        class="playlist-row__cover cover-shadow"
+      />
+      <v-btn
+        icon="mdi-play-circle"
+        variant="text"
+        size="large"
+        class="playlist-row__play-overlay"
+        :title="$t('library.play')"
+        @click.prevent.stop="$emit('play', playlist)"
+      />
+    </div>
     <div class="min-width-0 flex-grow-1">
       <div class="text-body-1 text-truncate playlist-row__name">{{ playlist.name }}</div>
       <div class="text-caption text-medium-emphasis text-truncate">{{ meta }}</div>
     </div>
-    <v-btn
-      icon="mdi-play-circle"
-      variant="text"
-      size="small"
-      color="primary"
-      class="playlist-row__play"
-      :title="$t('library.play')"
-      @click.prevent.stop="$emit('play', playlist)"
-    />
     <v-icon
       v-if="playlist.public"
       icon="mdi-earth"
@@ -26,7 +31,11 @@
       class="text-medium-emphasis mx-1"
       :title="$t('playlists.public')"
     />
-    <v-icon icon="mdi-chevron-right" size="20" class="playlist-row__chevron text-medium-emphasis ml-1" />
+    <v-icon
+      icon="mdi-chevron-right"
+      size="20"
+      class="playlist-row__chevron text-medium-emphasis ml-1"
+    />
   </router-link>
 </template>
 
@@ -95,8 +104,14 @@ export default {
   transform: translateX(2px);
 }
 
-.playlist-row:hover .playlist-row__play {
+.playlist-row:hover .playlist-row__play-overlay {
   opacity: 1;
+}
+
+.playlist-row__cover-wrap {
+  position: relative;
+  flex-shrink: 0;
+  margin-right: 16px;
 }
 
 .playlist-row__cover {
@@ -107,9 +122,20 @@ export default {
   font-weight: 500;
 }
 
-.playlist-row__play {
+/* Fills the cover exactly (Vuetify's own icon-button sizing is overridden
+ * below) rather than floating a fixed-size circle over it — same dimmed-
+ * backdrop language as AlbumCard.vue's .album-card-play-overlay, just a
+ * real button here (not a decorative div) since there's no other element
+ * on the cover itself to carry the click. */
+.playlist-row__play-overlay {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  border-radius: 4px;
+  background: rgba(11, 13, 19, 0.45) !important;
+  color: white;
   opacity: 0;
-  flex-shrink: 0;
   transition: opacity 0.15s ease;
 }
 

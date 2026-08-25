@@ -4,8 +4,8 @@
 
     <v-text-field
       v-model="filterQuery"
-      :label="$t('common.filter')"
-      prepend-inner-icon="mdi-filter-variant"
+      :label="$t('search.label')"
+      prepend-inner-icon="mdi-magnify"
       variant="solo-filled"
       density="compact"
       clearable
@@ -57,6 +57,7 @@
 import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
+import { matchesAllTerms } from '@/services/textSearch'
 import MobilePlaylistRow from '@/components/mobile/MobilePlaylistRow.vue'
 import type { Playlist } from '@/types/library'
 
@@ -79,10 +80,10 @@ export default {
       return useAuthStore()
     },
     filteredPlaylists(): Playlist[] {
-      const query = this.debouncedQuery.trim().toLowerCase()
-      if (!query) return this.libraryStore.playlists
+      const query = this.debouncedQuery
+      if (!query.trim()) return this.libraryStore.playlists
       return this.libraryStore.playlists.filter((playlist: Playlist) =>
-        playlist.name.toLowerCase().includes(query),
+        matchesAllTerms(query, playlist.name),
       )
     },
     personalPlaylists(): Playlist[] {

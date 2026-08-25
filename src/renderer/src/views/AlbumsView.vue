@@ -38,8 +38,8 @@
     <sticky-filter>
       <v-text-field
         v-model="filterQuery"
-        :label="$t('common.filter')"
-        prepend-inner-icon="mdi-filter-variant"
+        :label="$t('search.label')"
+        prepend-inner-icon="mdi-magnify"
         variant="solo-filled"
         density="compact"
         clearable
@@ -139,6 +139,7 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useElementWidth } from '@/composables/useElementWidth'
 import { firstIndexByLetter } from '@/services/alphabetIndex'
+import { matchesAllTerms } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
 import AlphabetIndexBar from '@/components/library/AlphabetIndexBar.vue'
@@ -213,11 +214,9 @@ export default {
       return ALBUM_ROW_HEIGHT_GUESS
     },
     filteredAlbums(): Album[] {
-      const query = this.debouncedQuery.trim().toLowerCase()
-      if (!query) return this.libraryStore.albums
-      return this.libraryStore.albums.filter((album: Album) =>
-        album.name.toLowerCase().includes(query),
-      )
+      const query = this.debouncedQuery
+      if (!query.trim()) return this.libraryStore.albums
+      return this.libraryStore.albums.filter((album: Album) => matchesAllTerms(query, album.name))
     },
     visibleAlbums(): Album[] {
       return this.filteredAlbums.slice(0, this.visibleCount)

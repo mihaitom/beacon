@@ -4,8 +4,8 @@
       <h1 class="page-title mb-4">{{ $t('library.genres') }}</h1>
       <v-text-field
         v-model="filterQuery"
-        :label="$t('common.filter')"
-        prepend-inner-icon="mdi-filter-variant"
+        :label="$t('search.label')"
+        prepend-inner-icon="mdi-magnify"
         variant="solo-filled"
         density="compact"
         clearable
@@ -45,6 +45,7 @@
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import { matchesAllTerms } from '@/services/textSearch'
 import StickyFilter from '@/components/StickyFilter.vue'
 import type { Genre } from '@/types/library'
 
@@ -88,8 +89,9 @@ export default {
     // a real match that just isn't one of the biggest genres.
     filteredGenres(): Genre[] {
       if (!this.isFiltering) return this.sortedGenres.slice(0, TOP_COUNT)
-      const query = this.debouncedQuery.trim().toLowerCase()
-      return this.libraryStore.genres.filter((genre) => genre.name.toLowerCase().includes(query))
+      return this.libraryStore.genres.filter((genre) =>
+        matchesAllTerms(this.debouncedQuery, genre.name),
+      )
     },
     // Tile size reflects rank, not just decoration: #1 gets the spotlight
     // tile, #2–5 are featured-width, the rest are standard. Only meaningful

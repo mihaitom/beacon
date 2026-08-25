@@ -43,9 +43,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Changed the blurred artwork backdrop behind the Home view's hero card and every album/artist/genre/playlist header to crossfade when it changes, instead of snapping over to the new artwork the moment it loads. All of them now fade at the same speed as the Now Playing view's own backdrop, which already worked this way
 - Various small UI sizing/spacing tweaks based on actually using it
 - Changed artist cards to the same size as album cards, so the two line up where both appear (the Favorites view, any mixed grid) instead of the artist ones sitting noticeably larger
-
+- Changed the Playlists view's rows to a bigger cover with the play button on it (shown on hover) instead of a small cover next to a separate play button off to the side
+- Changed the "Filter" field on the Songs, Artists, Albums, Genres, and Playlists views (desktop and mobile web) to say "Search" instead, with a matching magnifying-glass icon - it now actually behaves like one (see the matching Fixed entry below)
 ### Fixed
 
+- Fixed the search field on the Songs, Artists, Albums, Genres, and Playlists views (desktop and mobile web) not finding a match when the search words were split across different fields (e.g. "Michael Jackson Bad" needing to be typed as either "Michael Jackson" or "Bad" alone to find the song) - it now matches each word independently, the same way the search in the top bar already did
 - Fixed the app going unresponsive for up to about 1.5 seconds the first time it scans for devices after starting, which also held up the audio being sent to a speaker for that moment if something was already casting - opening the device picker mid-playback was enough to trigger it
 - Fixed a speaker that briefly lost its connection starting the current song over from the beginning instead of picking it up where it was, which also left the progress bar, synced lyrics and the visualizer jumping around afterwards - bad enough that the only way out was reloading the app and skipping the song
 - Fixed casting stopping roughly half an hour into a long track - a DJ set, a live recording, a long mix - whenever no Beacon window was open anywhere. The music simply ended mid-track and the speaker went quiet, as if the device had dropped out

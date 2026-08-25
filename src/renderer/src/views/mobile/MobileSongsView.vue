@@ -4,8 +4,8 @@
 
     <v-text-field
       v-model="filterQuery"
-      :label="$t('common.filter')"
-      prepend-inner-icon="mdi-filter-variant"
+      :label="$t('search.label')"
+      prepend-inner-icon="mdi-magnify"
       variant="solo-filled"
       density="compact"
       clearable
@@ -50,6 +50,7 @@
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
+import { matchesAllTerms } from '@/services/textSearch'
 import MobileSongRow from '@/components/mobile/MobileSongRow.vue'
 import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
 import type { Song } from '@/types/library'
@@ -80,13 +81,10 @@ export default {
       return useLibraryStore()
     },
     filteredSongs(): Song[] {
-      const query = this.debouncedQuery.trim().toLowerCase()
-      if (!query) return this.libraryStore.allSongs
-      return this.libraryStore.allSongs.filter(
-        (song: Song) =>
-          song.title.toLowerCase().includes(query) ||
-          song.artist.toLowerCase().includes(query) ||
-          song.album.toLowerCase().includes(query),
+      const query = this.debouncedQuery
+      if (!query.trim()) return this.libraryStore.allSongs
+      return this.libraryStore.allSongs.filter((song: Song) =>
+        matchesAllTerms(query, song.title, song.artist, song.album),
       )
     },
     visibleSongs(): Song[] {

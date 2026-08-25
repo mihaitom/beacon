@@ -34,8 +34,8 @@
     <sticky-filter :z-index="3" :fade="false" @resize="stickyHeaderHeight = $event">
       <v-text-field
         v-model="filterQuery"
-        :label="$t('common.filter')"
-        prepend-inner-icon="mdi-filter-variant"
+        :label="$t('search.label')"
+        prepend-inner-icon="mdi-magnify"
         variant="solo-filled"
         density="compact"
         clearable
@@ -75,6 +75,7 @@
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { shuffled } from '@/services/shuffle'
+import { matchesAllTerms } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import SongTable from '@/components/library/SongTable.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
@@ -119,13 +120,11 @@ export default {
     // SongTable's column-sort both work across the whole library — SongTable
     // itself paginates the render, this just needs to hand over everything.
     filteredSongs() {
-      const query = this.debouncedQuery.trim().toLowerCase()
-      if (!query) return this.libraryStore.allSongs
+      const query = this.debouncedQuery
+      if (!query.trim()) return this.libraryStore.allSongs
       return this.libraryStore.allSongs.filter(
         (song: { title: string; artist: string; album: string }) =>
-          song.title.toLowerCase().includes(query) ||
-          song.artist.toLowerCase().includes(query) ||
-          song.album.toLowerCase().includes(query),
+          matchesAllTerms(query, song.title, song.artist, song.album),
       )
     },
   },

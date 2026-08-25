@@ -12,7 +12,6 @@ export default {
     delete: 'Supprimer',
     done: 'Terminé',
     retry: 'Réessayer',
-    filter: 'Filtrer',
     loadMore: 'Charger plus',
     name: 'Nom',
     addToQueue: "Ajouter à la file d'attente",

@@ -12,7 +12,6 @@ export default {
     delete: 'Delete',
     done: 'Done',
     retry: 'Retry',
-    filter: 'Filter',
     loadMore: 'Load more',
     name: 'Name',
     addToQueue: 'Add to queue',
