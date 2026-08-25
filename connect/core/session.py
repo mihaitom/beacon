@@ -223,6 +223,12 @@ def build_status_dict(
         "source_sample_rate": fmt.source_sample_rate,
         "source_bit_depth": fmt.source_bit_depth,
         "source_bitrate_kbps": fmt.source_bitrate_kbps,
+        # Only set where the output is actually forced away from the
+        # source's own numbers, and why this track is being transcoded at
+        # all — see OutputFormat's own comment on both.
+        "target_sample_rate": fmt.target_sample_rate,
+        "target_bit_depth": fmt.target_bit_depth,
+        "transcode_reason": fmt.transcode_reason,
         "active_connections": st.active_stream_connections,
         # Process-wide, not session-scoped — see core/loop_health.py. A short
         # window (30s) rather than the module's full 120s history: this is

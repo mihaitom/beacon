@@ -10,6 +10,8 @@
 //    on its back face instead of squeezing a side-by-side row
 //  - mobile (the `compact` prop): always flipped, regardless of aspect
 //    ratio, in a much smaller box
+//  - both sides of the flip boundary itself, and the thing that boundary
+//    exists to prevent: artwork and lyrics wrapping into two stacked rows
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -180,6 +182,85 @@ describe('NowPlayingView layout', () => {
     expect(art.right).toBeLessThanOrEqual(1080 + 1)
 
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(1081)
+  })
+
+  describe('the side-by-side/flip boundary', () => {
+    /** True while the flip-card is a real rotating box (the container query
+     * matched) rather than `display: contents` (side-by-side). */
+    function isFlipped(wrapper: VueWrapper): boolean {
+      return getComputedStyle(wrapper.get('.now-playing__flip-card').element).transform !== 'none'
+    }
+
+    /** The state the flip exists to avoid: both panels still laid out as a
+     * row, but wrapped onto two lines, each squeezed and competing for the
+     * same width. */
+    function isWrapped(wrapper: VueWrapper): boolean {
+      const primary = rect(wrapper.get('.now-playing__primary').element)
+      const lyrics = rect(wrapper.get('.now-playing__lyrics').element)
+      return lyrics.top > primary.bottom - 1
+    }
+
+    it('flips a 1400x1080 window, which used to wrap into two cramped rows', async () => {
+      // The reported case. Aspect ratio 1.30 is nowhere near the old
+      // portrait-only 4/5 cutoff, so the flip never engaged and the
+      // flex-wrap safety net took over instead.
+      await page.viewport(1400, 1080)
+      const { wrapper } = await mountWithSongAndLyrics()
+
+      expect(isFlipped(wrapper)).toBe(true)
+      expect(isWrapped(wrapper)).toBe(false)
+    })
+
+    it('stays side by side at 1600x1080, where both panels genuinely still fit', async () => {
+      // The other side of the same boundary — a trigger that fires here
+      // would be throwing away a layout that has ~60px of room to spare.
+      await page.viewport(1600, 1080)
+      const { wrapper } = await mountWithSongAndLyrics()
+
+      expect(isFlipped(wrapper)).toBe(false)
+      const primary = rect(wrapper.get('.now-playing__primary').element)
+      const lyrics = rect(wrapper.get('.now-playing__lyrics').element)
+      expect(lyrics.left).toBeGreaterThanOrEqual(primary.right - 1)
+    })
+
+    it('stays side by side on a short, wide 1500x900 window despite being under 1560px', async () => {
+      // The aspect-ratio half of the condition: a flat container caps the
+      // artwork at 70cqh (630px here) long before width becomes the
+      // constraint, so there is still room for both.
+      await page.viewport(1500, 900)
+      const { wrapper } = await mountWithSongAndLyrics()
+
+      expect(isFlipped(wrapper)).toBe(false)
+      expect(isWrapped(wrapper)).toBe(false)
+    })
+
+    it('never leaves the two panels wrapped onto two rows, at any common window size', async () => {
+      // The actual contract, rather than a list of remembered breakpoints:
+      // every size below either fits side by side or flips, never wraps.
+      // Both the width- and height-driven artwork regimes are represented
+      // (see artSize's min(70cqh, 50cqw)).
+      const sizes: [number, number][] = [
+        [1920, 1080],
+        [1600, 1440],
+        [1500, 1080],
+        [1400, 900],
+        [1350, 900],
+        [1200, 1080],
+        [1100, 1440],
+      ]
+      for (const [width, height] of sizes) {
+        await page.viewport(width, height)
+        const { wrapper } = await mountWithSongAndLyrics()
+
+        expect(isWrapped(wrapper), `${width}x${height} wrapped into two rows`).toBe(false)
+        expect(
+          document.documentElement.scrollWidth,
+          `${width}x${height} overflowed horizontally`,
+        ).toBeLessThanOrEqual(width + 1)
+        wrapper.unmount()
+        mountedWrappers.pop()
+      }
+    })
   })
 
   it('always flips on mobile (compact), fits a phone width, and stacks the toolbar', async () => {

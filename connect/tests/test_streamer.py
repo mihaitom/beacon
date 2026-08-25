@@ -11,6 +11,13 @@ import pytest
 from core.streamer import (
     FALLBACK_FORMAT,
     LOOKAHEAD_SECONDS,
+    REASON_CODEC_NOT_CASTABLE,
+    REASON_CODEC_UNKNOWN,
+    REASON_DEVICE_LIMIT,
+    REASON_FORCED,
+    REASON_LOSSLESS_CONTAINER,
+    REASON_PROBE_FAILED,
+    REASON_REPLAY_GAIN,
     OutputFormat,
     SourceInfo,
     _probe_source,
@@ -160,7 +167,8 @@ def test_resolve_output_format_replay_gain_rules_out_the_copy_tier(codec):
     never producing any audio at all."""
     with patch("core.streamer._probe_source", AsyncMock(return_value=_info(codec))):
         fmt = asyncio.run(resolve_output_format("http://nav/stream", gain=0.8))
-    assert fmt is FALLBACK_FORMAT
+    assert fmt.ffmpeg_args == FALLBACK_FORMAT.ffmpeg_args
+    assert fmt.transcode_reason == "replay_gain"
     assert "copy" not in fmt.ffmpeg_args
 
 
@@ -194,7 +202,8 @@ def test_resolve_output_format_lossless_reencode_tier(codec):
 def test_resolve_output_format_falls_back_when_detection_fails():
     with patch("core.streamer._probe_source", AsyncMock(return_value=None)):
         fmt = asyncio.run(resolve_output_format("http://nav/stream"))
-    assert fmt is FALLBACK_FORMAT
+    assert fmt.ffmpeg_args == FALLBACK_FORMAT.ffmpeg_args
+    assert fmt.transcode_reason == "probe_failed"
     assert fmt.content_type == "audio/mpeg"
     assert "-ar" in fmt.ffmpeg_args
 
@@ -202,7 +211,8 @@ def test_resolve_output_format_falls_back_when_detection_fails():
 def test_resolve_output_format_falls_back_for_unrecognized_codec():
     with patch("core.streamer._probe_source", AsyncMock(return_value=_info("wmav2"))):
         fmt = asyncio.run(resolve_output_format("http://nav/stream"))
-    assert fmt is FALLBACK_FORMAT
+    assert fmt.ffmpeg_args == FALLBACK_FORMAT.ffmpeg_args
+    assert fmt.transcode_reason == "codec_unknown"
 
 
 def test_resolve_output_format_falls_back_for_opus():
@@ -213,7 +223,10 @@ def test_resolve_output_format_falls_back_for_opus():
     fallback instead of risking silent playback on real hardware."""
     with patch("core.streamer._probe_source", AsyncMock(return_value=_info("opus", 48000))):
         fmt = asyncio.run(resolve_output_format("http://nav/stream"))
-    assert fmt is FALLBACK_FORMAT
+    assert fmt.ffmpeg_args == FALLBACK_FORMAT.ffmpeg_args
+    # Not "unknown": opus is recognized and decodable, it's kept out of the
+    # copy tier on purpose (Sonos plays it silently).
+    assert fmt.transcode_reason == "codec_not_castable"
 
 
 # ── resolve_output_format device sample-rate/bit-depth limits ───────────────
@@ -398,8 +411,97 @@ def test_resolve_output_format_replay_gain_fallback_has_no_source_info():
         AsyncMock(return_value=_info("mp3", sample_rate=44100, bit_depth=None)),
     ):
         fmt = asyncio.run(resolve_output_format("http://nav/stream", gain=0.8))
-    assert fmt is FALLBACK_FORMAT
+    assert fmt.ffmpeg_args == FALLBACK_FORMAT.ffmpeg_args
     assert fmt.source_codec is None
+
+
+# ── transcode reason / target reporting ──────────────────────────────────────
+# What the frontend's stream-info section shows next to "Transcoding" — the
+# tier alone never said *why* a track isn't being copied, or what it's being
+# turned into (see components/connect/StreamInfoSection.vue).
+
+
+def test_copy_tier_reports_no_reason_at_all():
+    # Nothing is being transcoded, so there is nothing to explain.
+    with patch("core.streamer._probe_source", AsyncMock(return_value=_info("flac"))):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
+    assert fmt.transcode_reason is None
+    assert fmt.target_sample_rate is None
+    assert fmt.target_bit_depth is None
+
+
+def test_device_limit_reports_the_rate_it_is_actually_resampled_to():
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("flac", sample_rate=96000, bit_depth=24)),
+    ):
+        fmt = asyncio.run(
+            resolve_output_format("http://nav/stream", max_sample_rate=48000, max_bit_depth=24)
+        )
+    assert fmt.transcode_reason == "device_limit"
+    assert fmt.target_sample_rate == 48000
+    # Untouched, so deliberately not restated as a "target" of its own.
+    assert fmt.target_bit_depth is None
+
+
+def test_device_limit_reports_the_bit_depth_it_is_actually_reduced_to():
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("flac", sample_rate=44100, bit_depth=24)),
+    ):
+        fmt = asyncio.run(
+            resolve_output_format("http://nav/stream", max_sample_rate=48000, max_bit_depth=16)
+        )
+    assert fmt.transcode_reason == "device_limit"
+    assert fmt.target_bit_depth == 16
+    assert fmt.target_sample_rate is None
+
+
+@pytest.mark.parametrize("codec", ["alac", "pcm_s16le", "ape"])
+def test_lossless_reencode_reports_the_container_as_the_reason(codec):
+    with patch("core.streamer._probe_source", AsyncMock(return_value=_info(codec))):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
+    assert fmt.transcode_reason == "lossless_container"
+    assert fmt.target_sample_rate is None
+
+
+def test_a_resampled_lossless_source_reports_the_device_limit_instead():
+    # Both are true at once — the device limit is the more specific (and
+    # more actionable) of the two, so it's the one reported.
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("alac", sample_rate=96000, bit_depth=24)),
+    ):
+        fmt = asyncio.run(
+            resolve_output_format("http://nav/stream", max_sample_rate=44100, max_bit_depth=16)
+        )
+    assert fmt.transcode_reason == "device_limit"
+    assert fmt.target_sample_rate == 44100
+    assert fmt.target_bit_depth == 16
+
+
+def test_every_reason_the_frontend_knows_about_is_one_this_module_can_produce():
+    """The frontend translates these keys one by one (an unknown one shows
+    no reason at all rather than leaking the key — see
+    StreamInfoSection.vue's reasonText), so the two lists have to stay in
+    step. This is the canonical set."""
+    assert {
+        REASON_FORCED,
+        REASON_PROBE_FAILED,
+        REASON_DEVICE_LIMIT,
+        REASON_REPLAY_GAIN,
+        REASON_LOSSLESS_CONTAINER,
+        REASON_CODEC_NOT_CASTABLE,
+        REASON_CODEC_UNKNOWN,
+    } == {
+        "forced",
+        "probe_failed",
+        "device_limit",
+        "replay_gain",
+        "lossless_container",
+        "codec_not_castable",
+        "codec_unknown",
+    }
 
 
 # ── stream_tracks() command building ─────────────────────────────────────────
@@ -681,7 +783,8 @@ def test_force_fallback_format_bypasses_the_copy_tier_and_the_probe(monkeypatch)
     with patch("core.streamer._probe_source", probe):
         fmt = asyncio.run(resolve_output_format("http://nav/stream"))
 
-    assert fmt is FALLBACK_FORMAT
+    assert fmt.ffmpeg_args == FALLBACK_FORMAT.ffmpeg_args
+    assert fmt.transcode_reason == "forced"
     probe.assert_not_called()
 
 

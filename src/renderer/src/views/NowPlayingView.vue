@@ -730,13 +730,38 @@ export default {
   opacity: 0;
 }
 
-/* Portrait/narrow monitors — not enough width for artwork and lyrics to
- * sit side by side the way .now-playing__content--split's flex-wrap
- * fallback above otherwise handles it (stacking them into two rows, still
- * both visible/competing for the same limited width). Below this aspect
- * ratio, flip the artwork+info card over like turning it to its back
- * instead — lyrics take over the exact box the artwork just occupied,
- * rather than fighting it for space. Standard CSS "flip card" construction:
+/* Not enough width for artwork and lyrics to sit side by side the way
+ * .now-playing__content--split's flex-wrap fallback above otherwise
+ * handles it (stacking them into two rows, still both visible/competing
+ * for the same limited width). Past this point, flip the artwork+info card
+ * over like turning it to its back instead — lyrics take over the exact
+ * box the artwork just occupied, rather than fighting it for space.
+ *
+ * Two conditions, because "does it still fit" genuinely depends on both
+ * the container's shape *and* its width — the artwork is
+ * min(70cqh, 50cqw) (see artSize), so a tall container sizes it off the
+ * width and a flat one off the height, and those two regimes run out of
+ * room at completely different places:
+ *
+ *  - max-aspect-ratio: 4/5 — portrait, including every phone. The original
+ *    (and only) condition this block had.
+ *  - max-width: 1560px and not flatter than 3/2 — where the artwork is
+ *    width-driven, side by side only actually fits from ~1560px up:
+ *    artwork (50cqw) + gap (6cqw) + lyrics (38cqw) is 94% of a row that
+ *    only ever gets 96cqw minus 64px of padding, so the three grow almost
+ *    exactly as fast as the room for them. Measured, not derived on paper
+ *    — see NowPlayingView.layout.browser.test.ts, which pins both sides of
+ *    this boundary. A flatter container (a short, wide window) caps the
+ *    artwork at 70cqh well before that and keeps fitting comfortably,
+ *    which is what the aspect-ratio half of the condition preserves;
+ *    without it, a 1500x900 window would flip despite having room to
+ *    spare.
+ *
+ * Before this, aspect ratio alone decided it: a 1400x1080 window (ratio
+ * 1.3, nowhere near 4/5) wrapped into two cramped rows instead of
+ * flipping, which is the state this replaces.
+ *
+ * Standard CSS "flip card" construction:
  * .now-playing__flip-card is the rotating element, .now-playing__primary
  * (front) sizes it via normal flow, .now-playing__lyrics (back) is
  * absolutely positioned to exactly cover that same box, and both faces
@@ -748,7 +773,9 @@ export default {
  * (MobileTransportControls.vue's own toolbar has no room for a side-by-side
  * split — see the toolbar's lyrics button in the template above, shown on
  * mobile specifically because this flip is how it gets used there). */
-@container now-playing-stage (max-aspect-ratio: 4/5) {
+@container now-playing-stage (
+  (max-aspect-ratio: 4/5) or ((max-width: 1560px) and (max-aspect-ratio: 3/2))
+) {
   .now-playing__content--split {
     /* No longer sizing a side-by-side row — a single card, same footprint
      * as the non-split base rule above. */

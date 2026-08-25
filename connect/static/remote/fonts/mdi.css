@@ -39,6 +39,7 @@
 .mdi-close::before { content: "\F0156"; }
 .mdi-cast::before { content: "\F0118"; }
 .mdi-cast-connected::before { content: "\F0119"; }
+.mdi-cast-off::before { content: "\F078A"; }
 .mdi-speaker::before { content: "\F04C3"; }
 .mdi-chevron-left::before { content: "\F0141"; }
 .mdi-music-note::before { content: "\F0387"; }

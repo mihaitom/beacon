@@ -17,6 +17,13 @@
         {{ info.transcoding ? targetLabel : $t('connect.streamInfo.no') }}
       </span>
     </div>
+    <!-- Only under a transcoding one, and only for a reason this build
+     - knows a wording for — a key from a newer backend renders as nothing
+     - rather than as a raw "codec_unknown" leaking into the UI. -->
+    <div v-if="reasonText" class="stream-info-row">
+      <span class="text-medium-emphasis">{{ $t('connect.streamInfo.reason') }}</span>
+      <span class="stream-info-reason">{{ reasonText }}</span>
+    </div>
     <div v-if="sourceLine" class="stream-info-row">
       <span class="text-medium-emphasis">{{ $t('connect.streamInfo.source') }}</span>
       <span>{{ sourceLine }}</span>
@@ -61,6 +68,9 @@ const FALLBACK_INFO: ConnectStreamInfo = {
   source_sample_rate: null,
   source_bit_depth: null,
   source_bitrate_kbps: null,
+  target_sample_rate: null,
+  target_bit_depth: null,
+  transcode_reason: null,
   active_connections: 0,
   loop_lag: 0,
 }
@@ -74,6 +84,15 @@ const FALLBACK_INFO: ConnectStreamInfo = {
 const TARGET_LABEL_FOR_CONTENT_TYPE: Record<string, string> = {
   'audio/flac': 'FLAC',
   'audio/mpeg': 'MP3, 192 kb/s',
+}
+
+// e.g. 96000 -> "96 kHz", 44100 -> "44.1 kHz". Shared by the source and
+// target lines so a resampled dispatch reads as one comparison
+// ("96 kHz / 24-bit" -> "48 kHz") rather than two differently-formatted
+// numbers.
+function formatKhz(hz: number): string {
+  const khz = hz / 1000
+  return `${Number.isInteger(khz) ? khz : khz.toFixed(1)} kHz`
 }
 
 export default {
@@ -94,19 +113,39 @@ export default {
       if (!source_codec) return null
       const parts = [source_codec.toUpperCase()]
       if (source_sample_rate) {
-        const khz = source_sample_rate / 1000
-        const rate = Number.isInteger(khz) ? `${khz}` : khz.toFixed(1)
-        parts.push(source_bit_depth ? `${rate} kHz / ${source_bit_depth}-bit` : `${rate} kHz`)
+        const rate = formatKhz(source_sample_rate)
+        parts.push(source_bit_depth ? `${rate} / ${source_bit_depth}-bit` : rate)
       }
       if (source_bitrate_kbps) parts.push(`${source_bitrate_kbps} kb/s`)
       return parts.join(', ')
+    },
+    // Why it's being transcoded, in words. Backend-side keys (see
+    // connect/core/streamer.py's REASON_* constants) rather than a
+    // ready-made sentence, so this stays translatable; an unknown key
+    // yields null instead of rendering the key itself.
+    reasonText(): string | null {
+      const key = this.info.transcode_reason
+      if (!this.info.transcoding || !key) return null
+      const path = `connect.streamInfo.reasons.${key}`
+      return this.$te(path) ? this.$t(path) : null
     },
     // What's actually being sent to the device once transcoding is
     // happening — falls back to the raw content_type in the (currently
     // unreachable) case of a tier this map doesn't know about, rather than
     // showing nothing.
+    //
+    // The rate/depth are appended only where they were actually forced
+    // away from the source's own (see ConnectStreamInfo.target_sample_rate)
+    // — that's the case worth spelling out, since "FLAC" alone reads as an
+    // unchanged copy of a FLAC source when it's really a downsampled one.
     targetLabel(): string {
-      return TARGET_LABEL_FOR_CONTENT_TYPE[this.info.content_type] ?? this.info.content_type
+      const base = TARGET_LABEL_FOR_CONTENT_TYPE[this.info.content_type] ?? this.info.content_type
+      const { target_sample_rate, target_bit_depth } = this.info
+      const changed = [
+        target_sample_rate ? formatKhz(target_sample_rate) : null,
+        target_bit_depth ? `${target_bit_depth}-bit` : null,
+      ].filter(Boolean)
+      return changed.length > 0 ? `${base}, ${changed.join(' / ')}` : base
     },
   },
 }
@@ -126,6 +165,13 @@ export default {
  * section of that card, not a bolted-on second component. */
 .stream-info-heading {
   padding: 4px 0 2px;
+}
+
+/* Wraps instead of squeezing the label: these are whole sentences, unlike
+ * every other value in this section. */
+.stream-info-reason {
+  text-align: right;
+  line-height: 1.3;
 }
 
 .stream-info-row {

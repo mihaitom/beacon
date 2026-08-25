@@ -73,10 +73,6 @@ const TYPE_ICONS: Record<string, string> = {
   sonos: 'mdi-speaker-wireless',
 }
 
-// Same set DeviceListItem.vue gates its own volume slider on — AirPlay/RAOP
-// has no per-device volume endpoint (see connect/routes/volume.py).
-const VOLUME_CAPABLE_TYPES = new Set(['sonos', 'chromecast', 'dlna'])
-
 export default {
   name: 'MobileDeviceRow',
   components: { AirplayIcon },
@@ -126,7 +122,9 @@ export default {
       )
     },
     showVolume() {
-      return this.isMyActiveTarget && VOLUME_CAPABLE_TYPES.has(this.type)
+      // AirPlay/RAOP has no per-device volume endpoint — same gate
+      // DeviceListItem.vue uses, see connectStore.isVolumeCapable().
+      return this.isMyActiveTarget && this.connectStore.isVolumeCapable(this.type)
     },
     // Pushed reading for push-capable types (Sonos today - see
     // connectStore.isVolumePushCapable()'s own comment), null for
@@ -138,12 +136,15 @@ export default {
     },
   },
   watch: {
-    isMyActiveTarget: {
+    // showVolume, not isMyActiveTarget: a type without a volume endpoint
+    // was polled every 4s for a reading that could never come back and had
+    // nowhere to be shown anyway.
+    showVolume: {
       immediate: true,
-      handler(active: boolean) {
+      handler(canShow: boolean) {
         clearInterval(this.volumePollTimer ?? undefined)
         this.volumePollTimer = null
-        if (active) {
+        if (canShow) {
           // Still needed for every type, push-capable included: a push
           // channel only ever fires on the *next* change, so the very
           // first paint still needs one real round trip.

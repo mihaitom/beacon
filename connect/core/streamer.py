@@ -174,7 +174,19 @@ class OutputFormat:
     for this device"). None on the fallback/default instance and on the
     ReplayGain-forced-fallback path in resolve_output_format(): both discard
     whatever the probe found rather than acting on it, so there is nothing
-    accurate to report."""
+    accurate to report.
+
+    `target_sample_rate`/`target_bit_depth` are only set where this format
+    actually forces the output away from the source's own numbers (the
+    resampled tiers) — None everywhere else, since "the target equals the
+    source" is already visible from the source fields and repeating it
+    would just read as a second, redundant claim.
+
+    `transcode_reason` is a stable key, not prose: the frontend's
+    stream-info section turns it into a translated sentence (see
+    components/connect/StreamInfoSection.vue), so the wording can change
+    per language without this file knowing anything about it. None on the
+    copy tier, which isn't transcoding at all."""
 
     ffmpeg_args: list[str] = field(default_factory=lambda: list(_FALLBACK_ARGS))
     content_type: str = _FALLBACK_CONTENT_TYPE
@@ -183,9 +195,33 @@ class OutputFormat:
     source_sample_rate: int | None = None
     source_bit_depth: int | None = None
     source_bitrate_kbps: int | None = None
+    target_sample_rate: int | None = None
+    target_bit_depth: int | None = None
+    transcode_reason: str | None = None
 
 
 FALLBACK_FORMAT = OutputFormat()
+
+# Reasons a track can end up transcoded, as they reach the frontend. Kept
+# together here so the set is readable in one place rather than scattered
+# across resolve_output_format()'s branches — see OutputFormat's own
+# comment on why these are keys and not sentences.
+REASON_FORCED = "forced"  # FORCE_FALLBACK_FORMAT is set (diagnostic switch)
+REASON_PROBE_FAILED = "probe_failed"  # ffmpeg couldn't tell us what the source is
+REASON_DEVICE_LIMIT = "device_limit"  # source exceeds the target's sample rate/bit depth
+REASON_REPLAY_GAIN = "replay_gain"  # copying rules out the volume filter ReplayGain needs
+REASON_LOSSLESS_CONTAINER = "lossless_container"  # lossless, but not in a castable container
+REASON_CODEC_NOT_CASTABLE = "codec_not_castable"  # decodable, deliberately not copied (opus)
+REASON_CODEC_UNKNOWN = "codec_unknown"  # nothing recognized it
+
+
+def _fallback(reason: str) -> OutputFormat:
+    """The mp3-192k fallback, carrying why this particular track landed on
+    it. A fresh instance rather than FALLBACK_FORMAT itself, which stays
+    the shared reason-less default (core/state.py's initial value,
+    /debug's reset) — the command and content type are identical either
+    way."""
+    return OutputFormat(transcode_reason=reason)
 
 
 @dataclass
@@ -260,21 +296,32 @@ async def _probe_source(url: str) -> SourceInfo | None:
     )
 
 
-def _resample_args(
+def _resample_plan(
     info: SourceInfo, max_sample_rate: int | None, max_bit_depth: int | None
-) -> list[str]:
-    """ffmpeg args to bring `info` down to a device's declared limits, or []
-    if nothing needs to change. Never upsamples or upgrades: a cap higher
-    than the source's own rate/depth (or a source whose rate/depth couldn't
-    be detected at all) leaves it alone rather than "helpfully" changing
-    anything not actually required to make the device happy."""
+) -> tuple[list[str], int | None, int | None]:
+    """ffmpeg args to bring `info` down to a device's declared limits, plus
+    the sample rate/bit depth those args actually produce (None for
+    whichever one isn't being changed). Args are [] if nothing needs to
+    change at all. Never upsamples or upgrades: a cap higher than the
+    source's own rate/depth (or a source whose rate/depth couldn't be
+    detected at all) leaves it alone rather than "helpfully" changing
+    anything not actually required to make the device happy.
+
+    The two returned numbers exist purely to be reported (see
+    OutputFormat.target_sample_rate) — they're derived from the same
+    condition as the args themselves rather than re-checked separately,
+    so what the stream-info section shows can't drift from what ffmpeg was
+    actually told to do."""
     args = []
+    target_sample_rate = None
+    target_bit_depth = None
     if (
         max_sample_rate is not None
         and info.sample_rate is not None
         and info.sample_rate > max_sample_rate
     ):
         args += ["-ar", str(max_sample_rate)]
+        target_sample_rate = max_sample_rate
     if (
         max_bit_depth is not None
         and info.bit_depth is not None
@@ -283,7 +330,8 @@ def _resample_args(
         # FLAC/ALAC sources in practice are 16- or 24-bit; s16 is the only
         # meaningful "smaller" target once 24 itself isn't allowed.
         args += ["-sample_fmt", "s16"]
-    return args
+        target_bit_depth = 16
+    return args, target_sample_rate, target_bit_depth
 
 
 async def resolve_output_format(
@@ -334,13 +382,15 @@ async def resolve_output_format(
         # No probe either: the point is to reproduce the pre-copy-tier
         # pipeline exactly, and that never inspected the source.
         logger.info("[ffmpeg] FORCE_FALLBACK_FORMAT set — re-encoding to mp3 192k")
-        return FALLBACK_FORMAT
+        return _fallback(REASON_FORCED)
 
     info = await _probe_source(url)
     if info is None:
-        return FALLBACK_FORMAT
+        return _fallback(REASON_PROBE_FAILED)
     codec = info.codec
-    resample_args = _resample_args(info, max_sample_rate, max_bit_depth)
+    resample_args, target_rate, target_depth = _resample_plan(
+        info, max_sample_rate, max_bit_depth
+    )
 
     muxer = _COPY_MUXER_FOR_CODEC.get(codec)
     if muxer and resample_args:
@@ -357,6 +407,9 @@ async def resolve_output_format(
             source_sample_rate=info.sample_rate,
             source_bit_depth=info.bit_depth,
             source_bitrate_kbps=info.bitrate_kbps,
+            target_sample_rate=target_rate,
+            target_bit_depth=target_depth,
+            transcode_reason=REASON_DEVICE_LIMIT,
         )
     if muxer and gain == 1.0:
         return OutputFormat(
@@ -374,7 +427,7 @@ async def resolve_output_format(
             "(gain != 1.0) — using mp3 fallback instead, since streamcopy and a volume "
             "filter can't be combined"
         )
-        return FALLBACK_FORMAT
+        return _fallback(REASON_REPLAY_GAIN)
 
     if codec in _LOSSLESS_REENCODE_CODECS:
         label = f"{codec} → flac" + (" (resampled for device limit)" if resample_args else "")
@@ -386,15 +439,23 @@ async def resolve_output_format(
             source_sample_rate=info.sample_rate,
             source_bit_depth=info.bit_depth,
             source_bitrate_kbps=info.bitrate_kbps,
+            target_sample_rate=target_rate,
+            target_bit_depth=target_depth,
+            # Both are true for a resampled one; the device limit is the
+            # more specific (and more actionable) of the two, so it wins.
+            transcode_reason=(
+                REASON_DEVICE_LIMIT if resample_args else REASON_LOSSLESS_CONTAINER
+            ),
         )
 
+    not_castable = codec == "opus"
     reason = (
         "not broadly device-compatible (see _COPY_MUXER_FOR_CODEC's comment)"
-        if codec == "opus"
+        if not_castable
         else "unrecognized codec"
     )
     logger.info(f"[ffmpeg] format probe: {reason} '{codec}', using mp3 fallback")
-    return FALLBACK_FORMAT
+    return _fallback(REASON_CODEC_NOT_CASTABLE if not_castable else REASON_CODEC_UNKNOWN)
 
 
 async def stream_tracks(

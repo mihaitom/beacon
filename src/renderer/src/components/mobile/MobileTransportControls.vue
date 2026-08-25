@@ -178,7 +178,13 @@ export default {
         this.deviceVolume = null
         clearInterval(this.volumePollTimer ?? undefined)
         this.volumePollTimer = null
-        if (this.singleActiveTarget) {
+        // Not just "a target is active": AirPlay has no per-device volume
+        // endpoint (see connectStore.isVolumeCapable()), so asking for one
+        // — once, let alone every 4s — can only ever come back empty.
+        if (
+          this.singleActiveTarget &&
+          this.connectStore.isVolumeCapable(this.singleActiveTarget.type)
+        ) {
           // Still needed for every type, push-capable included: a push
           // channel only ever fires on the *next* change, so the very
           // first paint still needs one real round trip.

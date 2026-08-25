@@ -88,6 +88,22 @@ export async function openDevicePicker() {
   const list = document.createElement('div');
   list.className = 'device-list';
 
+  // Only while something is actually casting — same rule (and same
+  // underlying cast-stop command as "This device" below) as the mobile web
+  // UI's own picker, which shows both rows: one says "put the music back on
+  // the Beacon machine", the other says "stop casting", and reading them
+  // as the same action isn't obvious from "This device" alone.
+  if ((state.snapshot.casting?.length ?? 0) > 0) {
+    const stopRow = document.createElement('button');
+    stopRow.className = 'device-row-stop';
+    stopRow.innerHTML = '<i class="mdi mdi-cast-off"></i><span>Stop all</span>';
+    stopRow.addEventListener('click', () => {
+      sendCommand('cast-stop');
+      close();
+    });
+    list.appendChild(stopRow);
+  }
+
   const localRow = document.createElement('button');
   localRow.innerHTML = '<i class="mdi mdi-speaker"></i><span>This device</span>';
   localRow.addEventListener('click', () => {

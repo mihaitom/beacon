@@ -101,6 +101,10 @@ body {
   --beacon-chrome: #0b0d13;
   --beacon-hover: rgba(245, 169, 78, 0.07);
   --beacon-hairline: rgba(245, 169, 78, 0.14);
+  /* Must match PlayerBar.vue's own height="88" — read from here by the
+   * popovers below, which are pinned above the bar rather than to the
+   * button that opened them and so have to know how tall it is. */
+  --beacon-player-bar-height: 88px;
 }
 
 /* Opt-in for plain v-list-item rows (genre/search results, anywhere else
@@ -114,4 +118,31 @@ body {
 
 .beacon-list .v-list-item__overlay {
   opacity: 0 !important;
+}
+
+/* The player bar's two popovers (the volume slider once the bar is too
+ * narrow to show it inline, and the cast device picker) sit in a fixed
+ * bottom-right corner instead of floating off whichever icon opened them.
+ * Both open off the same little cluster of icons at the right end of the
+ * bar, so anchoring each to its own button had them land a button-width
+ * apart and shift sideways as icons come and go (the lyrics/remote-control
+ * buttons aren't always there). Applied via each v-menu's content-class,
+ * which lands on the teleported .v-overlay__content — out of reach of any
+ * component's own scoped styles, hence living here.
+ *
+ * Needs location-strategy="static" on the menu itself: the default
+ * strategy writes its own inline top/left onto this element every time it
+ * opens, which no stylesheet can override. */
+.beacon-player-popover.v-overlay__content {
+  position: fixed;
+  inset: auto 8px calc(var(--beacon-player-bar-height) + 8px) auto;
+  /* The static strategy doesn't do the viewport-fitting the default one
+   * does, so the device picker (a list that grows with the network) needs
+   * its own ceiling — the v-card inside a v-menu already scrolls at
+   * whatever height it's given. */
+  max-height: calc(100vh - var(--beacon-player-bar-height) - 16px);
+  /* Also the strategy's job normally, and it stays at Vuetify's centre
+   * default without it: the open/close scale should grow out of the corner
+   * the popover is pinned to. */
+  transform-origin: bottom right;
 }

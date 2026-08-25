@@ -207,6 +207,19 @@ export interface ConnectStreamInfo {
   source_sample_rate: number | null
   source_bit_depth: number | null
   source_bitrate_kbps: number | null
+  // The output's own numbers, but *only* where they're forced away from
+  // the source's (the resampled tiers) — null everywhere else, including
+  // every tier that simply keeps whatever the source had. So a non-null
+  // value here always means "this specific number changed on the way to
+  // the device", which is exactly what's worth showing.
+  target_sample_rate: number | null
+  target_bit_depth: number | null
+  // Why this track is being transcoded, as a stable key (see
+  // connect/core/streamer.py's REASON_* constants) that
+  // StreamInfoSection.vue turns into a translated sentence. null on the
+  // copy tier, which isn't transcoding, and on the shared fallback default
+  // that was never resolved for a particular track.
+  transcode_reason: string | null
   // How many cast devices currently have the stream open — 0 while paused
   // or between tracks is normal, not itself a health problem.
   active_connections: number

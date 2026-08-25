@@ -197,6 +197,16 @@ export default {
       connected: 'Verbunden',
       idle: 'Keine aktive Verbindung',
       serverLag: 'Server-Reaktionsfähigkeit',
+      reason: 'Grund',
+      reasons: {
+        device_limit: 'Quelle liegt über der Qualität, die dieses Gerät unterstützt',
+        lossless_container: 'Verlustfreie Quelle in einem Format, das Cast-Geräte nicht annehmen',
+        codec_not_castable: 'Quell-Codec wird von Cast-Geräten nicht zuverlässig unterstützt',
+        codec_unknown: 'Quell-Codec wurde nicht erkannt',
+        probe_failed: 'Quellformat konnte nicht erkannt werden',
+        replay_gain: 'ReplayGain ist aktiv, dadurch ist unverändertes Senden nicht möglich',
+        forced: 'Fallback-Format per Servereinstellung erzwungen',
+      },
     },
   },
   queue: {

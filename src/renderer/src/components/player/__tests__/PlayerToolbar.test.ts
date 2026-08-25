@@ -22,6 +22,14 @@ function mountToolbar(props: Record<string, unknown> = {}) {
   })
 }
 
+/** A real wheel event over the volume slider, so the test can also check
+ * whether the toolbar claimed it (preventDefault) or left it alone. */
+function scroll(wrapper: ReturnType<typeof mountToolbar>, deltaY: number): WheelEvent {
+  const event = new WheelEvent('wheel', { deltaY, cancelable: true, bubbles: true })
+  wrapper.getComponent({ name: 'VSlider' }).element.dispatchEvent(event)
+  return event
+}
+
 describe('PlayerToolbar', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -67,6 +75,44 @@ describe('PlayerToolbar', () => {
       playback.volume = 0
       vm.toggleMute()
       expect(setVolumeSpy).toHaveBeenLastCalledWith(0.6)
+    })
+
+    it('is adjustable by mouse wheel, in 5% steps', async () => {
+      const wrapper = mountToolbar()
+      const playback = usePlaybackStore()
+      const setVolumeSpy = vi.spyOn(playback, 'setVolume')
+      playback.volume = 0.5
+      await wrapper.vm.$nextTick()
+
+      const up = scroll(wrapper, -120)
+      expect(setVolumeSpy).toHaveBeenLastCalledWith(0.55)
+      // Claimed, so the page doesn't scroll along with it.
+      expect(up.defaultPrevented).toBe(true)
+
+      playback.volume = 0.55
+      await wrapper.vm.$nextTick()
+      scroll(wrapper, 120)
+      expect(setVolumeSpy).toHaveBeenLastCalledWith(0.5)
+    })
+
+    it('ignores the wheel while casting, when the local slider controls nothing', async () => {
+      const wrapper = mountToolbar()
+      const playback = usePlaybackStore()
+      const setVolumeSpy = vi.spyOn(playback, 'setVolume')
+      // Two targets: no single device to control from here either, so this
+      // is the (disabled) local slider.
+      useConnectStore().status = makeStatus({
+        targets: [
+          { name: 'Kitchen', type: 'sonos' },
+          { name: 'Living Room', type: 'sonos' },
+        ],
+      })
+      await wrapper.vm.$nextTick()
+
+      const event = scroll(wrapper, -120)
+
+      expect(setVolumeSpy).not.toHaveBeenCalled()
+      expect(event.defaultPrevented).toBe(false)
     })
 
     it('formats the volume label as a rounded percentage', async () => {
@@ -131,6 +177,38 @@ describe('PlayerToolbar', () => {
       await wrapper.vm.$nextTick()
       expect(wrapper.get('.volume-value').text()).toBe('55%')
       expect(getVolumeSpy).not.toHaveBeenCalled()
+    })
+
+    it('sends a wheel adjustment to the device, not the local player', async () => {
+      const wrapper = mountToolbar()
+      const connect = useConnectStore()
+      const playback = usePlaybackStore()
+      vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(50)
+      const setDeviceVolumeSpy = vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
+      const setLocalVolumeSpy = vi.spyOn(playback, 'setVolume')
+      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+      await wrapper.vm.$nextTick()
+      await wrapper.vm.$nextTick()
+
+      scroll(wrapper, -120)
+      await wrapper.vm.$nextTick()
+
+      expect(setDeviceVolumeSpy).toHaveBeenCalledWith('sonos', 'Kitchen', 55)
+      expect(setLocalVolumeSpy).not.toHaveBeenCalled()
+      expect(wrapper.get('.volume-value').text()).toBe('55%')
+    })
+
+    it('never asks an AirPlay target for a volume it has no endpoint for', async () => {
+      vi.useFakeTimers()
+      const wrapper = mountToolbar()
+      const connect = useConnectStore()
+      const getVolumeSpy = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
+      connect.status = makeStatus({ targets: [{ name: 'Bedroom', type: 'airplay' }] })
+      await wrapper.vm.$nextTick()
+      await vi.advanceTimersByTimeAsync(8000)
+
+      expect(getVolumeSpy).not.toHaveBeenCalled()
+      expect(wrapper.get('.volume-value').text()).toBe('—')
     })
 
     it('mutes/unmutes the device via setDeviceVolume instead of the local store', async () => {

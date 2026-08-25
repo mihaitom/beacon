@@ -200,6 +200,17 @@ export default {
       connected: 'Connecté',
       idle: 'Aucune connexion active',
       serverLag: 'Réactivité du serveur',
+      reason: 'Raison',
+      reasons: {
+        device_limit: 'La source dépasse la qualité prise en charge par cet appareil',
+        lossless_container: "Source sans perte dans un format que les appareils n'acceptent pas",
+        codec_not_castable:
+          "Le codec source n'est pas pris en charge de façon fiable par les appareils",
+        codec_unknown: "Le codec source n'a pas été reconnu",
+        probe_failed: "Le format source n'a pas pu être détecté",
+        replay_gain: "ReplayGain est actif, ce qui empêche d'envoyer le fichier tel quel",
+        forced: 'Format de repli imposé par un réglage du serveur',
+      },
     },
   },
   queue: {

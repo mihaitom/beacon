@@ -87,6 +87,18 @@ export const useConnectStore = defineStore('connect', {
     isVolumePushCapable() {
       return (type: DeviceType): boolean => type === 'sonos'
     },
+    // Which device types have a per-device volume endpoint at all (see
+    // connect/routes/volume.py's /device-volume, which answers with a
+    // plain "not supported" error for anything else). Centralized here for
+    // the same reason as isVolumePushCapable() above: DeviceListItem.vue,
+    // MobileDeviceRow.vue and MobileTransportControls.vue each carried
+    // their own copy of this set, and each one's *fetch* forgot to consult
+    // it - an active AirPlay target was polled every 4s for a reading that
+    // could never come back and was never shown.
+    isVolumeCapable() {
+      return (type: DeviceType): boolean =>
+        type === 'sonos' || type === 'chromecast' || type === 'dlna'
+    },
     // The pushed reading for a specific device, or null when its type
     // isn't push-capable, or when nothing has pushed one yet (an unclaimed
     // device, or a claimed one whose first reading hasn't landed - see

@@ -19,10 +19,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Added a second quick-play action to the Songs, Genre, Albums, and Artists views, alongside the already-random one: picks from what's actually been played a lot instead of the whole (or, for a genre, whole-genre) pool, so it leans toward music you already like rather than being a total shot in the dark
 - Added an automatic peek at the queue whenever something lands in it without being clicked song-by-song - those quick-play actions, Play Next/Add to Queue, Song Radio, Artist Radio, and Autoplay's own top-up all trigger it. The queue opens with each track fading in one after another and scrolls to whatever's currently playing, then closes itself again after a few seconds unless the mouse actually reaches it, in which case it stays open
 - Added a matching fade-out to clearing the queue - tracks disappear bottom-to-top starting from wherever you've actually scrolled to, instead of all at once
-- Added a "Stop all" action to the mobile web UI's device picker, matching the one already on desktop - previously the only way to back out of casting there was picking "This device", which also switches playback to it right away
+- Added a "Stop all" action to the device picker in the mobile web UI and on the phone remote, matching the one already on desktop - previously the only way to back out of casting there was picking "This device", which also switches playback to it right away
 - Added a way to save the current queue as a new playlist, right from the queue drawer
 - Added a confirmation prompt before deleting a playlist
-- Added a small stream info section to the casting device picker, shown once you're actually casting - whether the current track is being transcoded (and to what format), the source file's own format/bitrate, and the cast connection's health
+- Added a small stream info section to the casting device picker, shown once you're actually casting - whether the current track is being transcoded, what it is being turned into (including the sample rate and bit depth when those had to be reduced) and why, the source file's own format/bitrate, and the cast connection's health
+- Added mouse wheel control to the volume sliders in the player bar and in the casting device list - scrolling over one moves it in 5% steps, and changes whatever that slider is currently for, this device's own volume or the speaker being cast to
 
 ### Changed
 
@@ -38,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Changed the seek bar to stop stretching past 600px wide on very wide monitors
 - Changed the fullscreen visualizer's cast mode to only analyze the audio while somebody actually has it open, instead of doing that work for every cast whether or not anyone was watching - casting is noticeably lighter on the server, and opening the visualizer part-way through a song picks the music up where it is
 - Changed a Sonos speaker's volume and mute to update in Beacon right away when changed from elsewhere (the Sonos app, another Beacon session), instead of up to 4 seconds later - Chromecast and DLNA devices still poll for now
+- Various small UI sizing/spacing tweaks based on actually using it
 
 ### Fixed
 
@@ -62,6 +64,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Fixed a song's right-click menu not closing when another song's was opened - each could be opened independently, leaving several stacked on top of each other at once
 - Fixed clearing the queue while casting getting silently undone a few seconds later, with every song reappearing - the clear never made it past this device to the cast session itself
 - Fixed a high-resolution FLAC (above 24-bit/48kHz, e.g. 24-bit/96kHz) failing to play at all when cast to a Sonos speaker - it was sent to the device completely unchanged even though Sonos only supports up to 24-bit/48kHz, so the speaker rejected it and stopped about a second in. It's now automatically downsampled to whatever the target device actually supports (Chromecast, DLNA and AirPlay each have their own limit too)
+- Fixed the Now Playing view squeezing artwork and lyrics into two cramped stacked rows on windows that are wide but not wide enough, instead of turning the artwork over to show lyrics on its back. That flip used to happen only on portrait screens; it now happens whenever the two genuinely stop fitting side by side, which on a typical monitor is anywhere below about 1560px wide
 
 ## [0.1.4] - 2026-08-17
 

@@ -73,6 +73,9 @@ export default {
 </script>
 
 <style scoped>
+/* The 88 in the template's height attribute is mirrored by
+ * --beacon-player-bar-height in assets/base.css, which the bar's own
+ * popovers are positioned against — keep the two in step. */
 .player-bar {
   border-top: 1px solid var(--beacon-hairline);
 }

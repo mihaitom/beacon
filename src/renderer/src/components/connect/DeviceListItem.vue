@@ -90,6 +90,7 @@
           hide-details
           style="flex: 1"
           @update:model-value="onVolumeChange"
+          @wheel="onVolumeWheel"
         />
         <span class="text-caption text-medium-emphasis volume-value">{{
           volume != null ? `${volume}%` : '–'
@@ -102,6 +103,7 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import { useConnectStore } from '@/stores/connect'
+import { volumeAfterWheel } from '@/services/volumeWheel'
 import { useAuthStore } from '@/stores/auth'
 import AirplayIcon from './AirplayIcon.vue'
 import type { DeviceType } from '@/services/connect/types'
@@ -114,9 +116,6 @@ const TYPE_ICONS: Record<string, string> = {
   dlna: 'mdi-television-classic',
   sonos: 'mdi-speaker-wireless',
 }
-
-// Airplay/RAOP has no per-device volume endpoint (see connect/routes/volume.py) — only these support it.
-const VOLUME_CAPABLE_TYPES = new Set(['sonos', 'chromecast', 'dlna'])
 
 export default {
   name: 'DeviceListItem',
@@ -142,6 +141,9 @@ export default {
       // than showing a made-up starting value (see fetchVolume()).
       volume: null as number | null,
       volumeBeforeMute: null as number | null,
+      // Scroll that hasn't added up to a whole volume step yet — see
+      // volumeAfterWheel().
+      volumeWheelCarry: 0,
       // Polling fallback for types connectStore.isVolumePushCapable()
       // doesn't cover - those have no channel for "someone changed it on
       // the device itself/another session" other than asking again. Left
@@ -185,7 +187,9 @@ export default {
       return this.selected
     },
     canShowVolume() {
-      return this.isMyActiveTarget && VOLUME_CAPABLE_TYPES.has(this.type)
+      // Airplay/RAOP has no per-device volume endpoint at all — see
+      // connectStore.isVolumeCapable().
+      return this.isMyActiveTarget && this.connectStore.isVolumeCapable(this.type)
     },
     showVolumeSlider() {
       return this.canShowVolume && this.connectStore.activeTargets.length === 1
@@ -199,12 +203,15 @@ export default {
     },
   },
   watch: {
-    isMyActiveTarget: {
+    // canShowVolume, not isMyActiveTarget: a type without a volume
+    // endpoint was polled every 4s for a reading that could never come back
+    // and had nowhere to be shown anyway.
+    canShowVolume: {
       immediate: true,
-      handler(active: boolean) {
+      handler(canShow: boolean) {
         clearInterval(this.volumePollTimer ?? undefined)
         this.volumePollTimer = null
-        if (active) {
+        if (canShow) {
           // Still needed for every type, sonos included: a push channel
           // only ever fires on the *next* change, so the very first paint
           // still needs one real round trip — see pushedVolume's comment.
@@ -245,6 +252,15 @@ export default {
       const rounded = Math.round(value)
       this.volume = rounded
       this.$emit('volume-change', { device: this.device, type: this.type, volume: rounded })
+    },
+    onVolumeWheel(event: WheelEvent) {
+      if (this.volume == null) return
+      // The device list scrolls, so an unhandled wheel over this slider
+      // would scroll the row out from under the pointer instead.
+      event.preventDefault()
+      const { volume, carry } = volumeAfterWheel(event, this.volume, 100, this.volumeWheelCarry)
+      this.volumeWheelCarry = carry
+      if (volume != null) this.onVolumeChange(volume)
     },
     onToggleMute() {
       if (this.volume === 0) {

@@ -487,6 +487,13 @@ h2.section-title { font-size: 1.1rem; margin: 4px 0 10px; }
 .device-list button i:first-child { font-size: 1.2rem; margin-right: 14px; color: var(--text-muted); flex-shrink: 0; }
 .device-row-check { margin-left: auto; color: var(--accent) !important; font-size: 1.1rem !important; flex-shrink: 0; }
 
+/* Same red as the mobile web UI's own "Stop all" row — the one
+ * destructive-ish action in a sheet that's otherwise all "start playing
+ * here". Both selectors have to out-specify .sheet button / .device-list
+ * button i:first-child above, which set the default text/icon colors. */
+.device-list .device-row-stop { color: var(--error); }
+.device-list .device-row-stop i:first-child { color: var(--error); }
+
 .device-row-disabled { opacity: 0.45; cursor: default; }
 .device-row-disabled .device-row-check { color: var(--text-muted) !important; }
 .device-row-hint { font-size: 0.72rem; }

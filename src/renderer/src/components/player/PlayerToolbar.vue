@@ -37,7 +37,6 @@
         :disabled="muteDisabled"
         variant="text"
         density="comfortable"
-        size="small"
         :title="$t('player.mute')"
         @click="toggleMute"
       />
@@ -51,6 +50,7 @@
         density="compact"
         hide-details
         @update:model-value="onDeviceVolumeChange"
+        @wheel="onVolumeWheel"
       />
       <v-slider
         v-else
@@ -61,6 +61,7 @@
         hide-details
         :disabled="playbackStore.isCasting"
         @update:model-value="playbackStore.setVolume($event)"
+        @wheel="onVolumeWheel"
       />
       <span class="text-caption text-medium-emphasis volume-value">{{ volumePercentLabel }}</span>
     </template>
@@ -71,13 +72,22 @@
      - Not :disabled — muteDisabled only gates the actual mute toggle
      - inside the popover; the popover itself should still open to at
      - least show the (disabled) slider and why. -->
-    <v-menu v-else :close-on-content-click="false" location="top">
+    <!-- Pinned to the bar's bottom-right corner rather than to this
+     - button, so it lands in the same place as ConnectButton.vue's picker
+     - instead of a button-width to the side of it — see
+     - .beacon-player-popover in assets/base.css, which also explains why
+     - the location strategy has to be static for that to hold. -->
+    <v-menu
+      v-else
+      :close-on-content-click="false"
+      location-strategy="static"
+      content-class="beacon-player-popover"
+    >
       <template #activator="{ props: menuProps }">
         <v-btn
           :icon="volumeIcon"
           variant="text"
           density="comfortable"
-          size="small"
           :title="$t('player.volume')"
           v-bind="menuProps"
         />
@@ -103,6 +113,7 @@
             density="compact"
             hide-details
             @update:model-value="onDeviceVolumeChange"
+            @wheel="onVolumeWheel"
           />
           <v-slider
             v-else
@@ -113,6 +124,7 @@
             hide-details
             :disabled="playbackStore.isCasting"
             @update:model-value="playbackStore.setVolume($event)"
+            @wheel="onVolumeWheel"
           />
           <span class="text-caption text-medium-emphasis volume-value">{{
             volumePercentLabel
@@ -130,6 +142,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import ConnectButton from '@/components/connect/ConnectButton.vue'
 import RemoteControlButton from '@/components/settings/RemoteControlButton.vue'
+import { volumeAfterWheel } from '@/services/volumeWheel'
 import type { ConnectDeviceRef } from '@/services/connect/types'
 
 export default {
@@ -162,6 +175,9 @@ export default {
       // different scales and muted independently of one another.
       volumeBeforeMute: 1,
       deviceVolumeBeforeMute: 50,
+      // Scroll that hasn't added up to a whole volume step yet — see
+      // volumeAfterWheel().
+      volumeWheelCarry: 0,
     }
   },
   computed: {
@@ -240,7 +256,13 @@ export default {
         this.deviceVolume = null
         clearInterval(this.volumePollTimer ?? undefined)
         this.volumePollTimer = null
-        if (this.singleActiveTarget) {
+        // Not just "a target is active": AirPlay has no per-device volume
+        // endpoint (see connectStore.isVolumeCapable()), so asking for one
+        // — once, let alone every 4s — can only ever come back empty.
+        if (
+          this.singleActiveTarget &&
+          this.connectStore.isVolumeCapable(this.singleActiveTarget.type)
+        ) {
           // Still needed for every type, push-capable included: a push
           // channel only ever fires on the *next* change, so the very
           // first paint still needs one real round trip.
@@ -271,6 +293,26 @@ export default {
       const rounded = Math.round(value)
       this.deviceVolume = rounded
       await this.connectStore.setDeviceVolume(target.type, target.name, rounded)
+    },
+    // Same branch toggleMute() makes: with exactly one cast target this
+    // slider is that device's, otherwise it's local playback's.
+    onVolumeWheel(event: WheelEvent) {
+      const target = this.singleActiveTarget
+      const current = target ? this.deviceVolume : this.playbackStore.volume
+      // A disabled slider (a device with no volume support, local playback
+      // while casting) leaves the wheel to whatever is scrollable behind it.
+      if (current == null || (!target && this.playbackStore.isCasting)) return
+      event.preventDefault()
+      const { volume, carry } = volumeAfterWheel(
+        event,
+        current,
+        target ? 100 : 1,
+        this.volumeWheelCarry,
+      )
+      this.volumeWheelCarry = carry
+      if (volume == null) return
+      if (target) void this.onDeviceVolumeChange(volume)
+      else this.playbackStore.setVolume(volume)
     },
     toggleMute() {
       if (this.singleActiveTarget) {

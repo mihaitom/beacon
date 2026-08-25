@@ -53,6 +53,11 @@ def test_status_reports_stream_info_default(client):
     assert info["source_sample_rate"] is None
     assert info["source_bit_depth"] is None
     assert info["source_bitrate_kbps"] is None
+    assert info["target_sample_rate"] is None
+    assert info["target_bit_depth"] is None
+    # The shared default instance carries no reason — it was never resolved
+    # for a particular track (see core/streamer.py's _fallback()).
+    assert info["transcode_reason"] is None
     assert info["active_connections"] == 0
     # Not asserted as exactly 0.0: core/loop_health.py's history is
     # process-wide, not per-test, and the real monitor_loop_lag() task runs
@@ -81,6 +86,7 @@ def test_status_reports_stream_info_for_a_copy_tier_dispatch(client, default_ses
     assert info["source_codec"] == "mp3"
     assert info["source_sample_rate"] == 44100
     assert info["source_bitrate_kbps"] == 320
+    assert info["transcode_reason"] is None
     assert info["active_connections"] == 1
 
 
@@ -96,9 +102,17 @@ def test_status_reports_stream_info_for_a_resampled_dispatch_as_transcoding(
         source_codec="flac",
         source_sample_rate=96000,
         source_bit_depth=24,
+        target_sample_rate=48000,
+        transcode_reason="device_limit",
     )
     body = client.get("/status").json()
-    assert body["stream_info"]["transcoding"] is True
+    info = body["stream_info"]
+    assert info["transcoding"] is True
+    # What it's being turned into, and why — the section used to show only
+    # that *something* was being transcoded.
+    assert info["target_sample_rate"] == 48000
+    assert info["target_bit_depth"] is None
+    assert info["transcode_reason"] == "device_limit"
 
 
 # ── /play ─────────────────────────────────────────────────────────────────────
