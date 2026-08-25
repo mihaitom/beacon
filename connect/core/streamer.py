@@ -158,6 +158,16 @@ _BIT_DEPTH_RE = re.compile(rb"\((\d+)\s*bit\)")
 # Absent for lossless codecs (FLAC/ALAC/PCM never report one here) — never
 # guessed at, same convention as sample_rate/bit_depth being None.
 _BITRATE_RE = re.compile(rb",\s*(\d+)\s*kb/s")
+# The container summary line's own "Duration: 00:03:03.61" — hundredths of a
+# second, i.e. the real audio length, unlike the whole-second `duration` a
+# music server's metadata carries (media/base.py's Track.duration is an int,
+# and Jellyfin's/Plex's adapters truncate rather than round). That difference
+# is audible: auto-advance scheduled off a truncated duration cuts the last
+# fraction of a second off a track that ends abruptly. Matched against the
+# whole probe output rather than the Audio stream's own line, unlike every
+# regex above — this one deliberately *is* the container line those go out
+# of their way not to read.
+_DURATION_RE = re.compile(rb"Duration:\s*(\d+):(\d\d):(\d\d)\.(\d+)")
 
 
 @dataclass
@@ -175,6 +185,12 @@ class OutputFormat:
     ReplayGain-forced-fallback path in resolve_output_format(): both discard
     whatever the probe found rather than acting on it, so there is nothing
     accurate to report.
+
+    `source_duration` is the probed length in seconds, to hundredths — see
+    _DURATION_RE on why the music server's own whole-second duration isn't
+    good enough for scheduling the end of a track. Unlike the other source_*
+    fields it survives onto the fallback tiers wherever a probe did happen:
+    how long the audio is doesn't depend on which tier ends up encoding it.
 
     `target_sample_rate`/`target_bit_depth` are only set where this format
     actually forces the output away from the source's own numbers (the
@@ -195,6 +211,7 @@ class OutputFormat:
     source_sample_rate: int | None = None
     source_bit_depth: int | None = None
     source_bitrate_kbps: int | None = None
+    source_duration: float | None = None
     target_sample_rate: int | None = None
     target_bit_depth: int | None = None
     transcode_reason: str | None = None
@@ -215,13 +232,18 @@ REASON_CODEC_NOT_CASTABLE = "codec_not_castable"  # decodable, deliberately not 
 REASON_CODEC_UNKNOWN = "codec_unknown"  # nothing recognized it
 
 
-def _fallback(reason: str) -> OutputFormat:
+def _fallback(reason: str, duration: float | None = None) -> OutputFormat:
     """The mp3-192k fallback, carrying why this particular track landed on
     it. A fresh instance rather than FALLBACK_FORMAT itself, which stays
     the shared reason-less default (core/state.py's initial value,
     /debug's reset) — the command and content type are identical either
-    way."""
-    return OutputFormat(transcode_reason=reason)
+    way.
+
+    `duration` is passed on wherever a probe actually ran: this tier
+    discards the source's *format* on purpose (it isn't encoding to it),
+    but the audio's length is the same either way, and routes/stream.py
+    schedules the end of the track off it."""
+    return OutputFormat(transcode_reason=reason, source_duration=duration)
 
 
 @dataclass
@@ -239,6 +261,10 @@ class SourceInfo:
     sample_rate: int | None
     bit_depth: int | None
     bitrate_kbps: int | None
+    # Real audio length in seconds (see _DURATION_RE), or None when the probe
+    # output carried no Duration line at all — a live/endless stream, or a
+    # source ffmpeg couldn't measure.
+    duration: float | None = None
 
 
 async def _probe_source(url: str) -> SourceInfo | None:
@@ -293,6 +319,22 @@ async def _probe_source(url: str) -> SourceInfo | None:
         sample_rate=int(rate_match.group(1)) if rate_match else None,
         bit_depth=int(depth_match.group(1)) if depth_match else None,
         bitrate_kbps=int(bitrate_match.group(1)) if bitrate_match else None,
+        duration=_parse_duration(stderr),
+    )
+
+
+def _parse_duration(probe_output: bytes) -> float | None:
+    """Seconds from the probe's Duration line, or None when it has none (a
+    live stream reports "N/A" there)."""
+    match = _DURATION_RE.search(probe_output)
+    if not match:
+        return None
+    hours, minutes, seconds, fraction = match.groups()
+    return (
+        int(hours) * 3600
+        + int(minutes) * 60
+        + int(seconds)
+        + int(fraction) / (10 ** len(fraction))
     )
 
 
@@ -407,6 +449,7 @@ async def resolve_output_format(
             source_sample_rate=info.sample_rate,
             source_bit_depth=info.bit_depth,
             source_bitrate_kbps=info.bitrate_kbps,
+            source_duration=info.duration,
             target_sample_rate=target_rate,
             target_bit_depth=target_depth,
             transcode_reason=REASON_DEVICE_LIMIT,
@@ -420,6 +463,7 @@ async def resolve_output_format(
             source_sample_rate=info.sample_rate,
             source_bit_depth=info.bit_depth,
             source_bitrate_kbps=info.bitrate_kbps,
+            source_duration=info.duration,
         )
     if muxer:
         logger.info(
@@ -427,7 +471,7 @@ async def resolve_output_format(
             "(gain != 1.0) — using mp3 fallback instead, since streamcopy and a volume "
             "filter can't be combined"
         )
-        return _fallback(REASON_REPLAY_GAIN)
+        return _fallback(REASON_REPLAY_GAIN, info.duration)
 
     if codec in _LOSSLESS_REENCODE_CODECS:
         label = f"{codec} → flac" + (" (resampled for device limit)" if resample_args else "")
@@ -439,6 +483,7 @@ async def resolve_output_format(
             source_sample_rate=info.sample_rate,
             source_bit_depth=info.bit_depth,
             source_bitrate_kbps=info.bitrate_kbps,
+            source_duration=info.duration,
             target_sample_rate=target_rate,
             target_bit_depth=target_depth,
             # Both are true for a resampled one; the device limit is the
@@ -455,7 +500,9 @@ async def resolve_output_format(
         else "unrecognized codec"
     )
     logger.info(f"[ffmpeg] format probe: {reason} '{codec}', using mp3 fallback")
-    return _fallback(REASON_CODEC_NOT_CASTABLE if not_castable else REASON_CODEC_UNKNOWN)
+    return _fallback(
+        REASON_CODEC_NOT_CASTABLE if not_castable else REASON_CODEC_UNKNOWN, info.duration
+    )
 
 
 async def stream_tracks(

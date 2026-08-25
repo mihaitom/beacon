@@ -33,12 +33,12 @@
     </div>
     <v-btn
       v-if="currentSong && authStore.capabilities.favorites"
+      style="margin-inline: 8px"
       :icon="currentSong.starred ? 'mdi-heart' : 'mdi-heart-outline'"
       :color="currentSong.starred ? 'primary' : undefined"
       :disabled="starringInFlight"
       variant="text"
       density="comfortable"
-      size="small"
       @click.stop="toggleStar"
     />
   </div>

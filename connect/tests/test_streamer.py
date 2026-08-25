@@ -31,9 +31,14 @@ def _info(
     sample_rate: int | None = None,
     bit_depth: int | None = None,
     bitrate_kbps: int | None = None,
+    duration: float | None = None,
 ) -> SourceInfo:
     return SourceInfo(
-        codec=codec, sample_rate=sample_rate, bit_depth=bit_depth, bitrate_kbps=bitrate_kbps
+        codec=codec,
+        sample_rate=sample_rate,
+        bit_depth=bit_depth,
+        bitrate_kbps=bitrate_kbps,
+        duration=duration,
     )
 
 
@@ -66,8 +71,11 @@ def test_probe_source_parses_mp3_stream_line():
     with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=_fake_probe_proc(stderr))):
         result = asyncio.run(_probe_source("http://nav/stream"))
     # mp3's own line has no parenthesized "(N bit)" — bit_depth is simply
-    # unknown for it, not guessed at. It does carry its own bitrate though.
-    assert result == _info("mp3", sample_rate=44100, bit_depth=None, bitrate_kbps=320)
+    # unknown for it, not guessed at. It does carry its own bitrate though,
+    # and the container line above it carries the real length.
+    assert result == _info(
+        "mp3", sample_rate=44100, bit_depth=None, bitrate_kbps=320, duration=272.10
+    )
 
 
 def test_probe_source_reads_pcm_bit_depth_without_parens():
@@ -136,6 +144,68 @@ def test_probe_source_returns_none_on_timeout():
     with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
         result = asyncio.run(_probe_source("http://nav/stream"))
     assert result is None
+
+
+# ── probed duration ──────────────────────────────────────────────────────────
+# The music server only ever reports whole seconds (media/base.py's
+# Track.duration is an int), so the end of a track is scheduled off this
+# instead — see routes/stream.py's _playback_duration().
+
+
+def test_probe_source_reads_the_real_duration_to_hundredths():
+    stderr = (
+        b"Input #0, flac, from 'http://nav/stream':\n"
+        b"  Duration: 00:03:03.61, start: 0.000000, bitrate: 1005 kb/s\n"
+        b"    Stream #0:0: Audio: flac, 44100 Hz, stereo, s16 (16 bit)"
+    )
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=_fake_probe_proc(stderr))):
+        result = asyncio.run(_probe_source("http://nav/stream"))
+    # 3:03.61 — the .61 is exactly what a whole-second metadata duration
+    # throws away, and what gets cut off the end of the track with it.
+    assert result.duration == pytest.approx(183.61)
+
+
+def test_probe_source_reads_an_hours_long_duration():
+    stderr = (
+        b"  Duration: 01:02:03.50, start: 0.000000, bitrate: 320 kb/s\n"
+        b"    Stream #0:0: Audio: mp3, 44100 Hz, stereo"
+    )
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=_fake_probe_proc(stderr))):
+        result = asyncio.run(_probe_source("http://nav/stream"))
+    assert result.duration == pytest.approx(3723.5)
+
+
+def test_probe_source_reports_no_duration_for_an_endless_stream():
+    # A live stream's Duration reads "N/A" — must stay None rather than
+    # being parsed as some number.
+    stderr = (
+        b"  Duration: N/A, start: 0.000000, bitrate: 128 kb/s\n"
+        b"    Stream #0:0: Audio: mp3, 44100 Hz, stereo"
+    )
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=_fake_probe_proc(stderr))):
+        result = asyncio.run(_probe_source("http://nav/stream"))
+    assert result.duration is None
+
+
+def test_resolve_output_format_carries_the_probed_duration_on_every_tier():
+    """Every tier that got a probe result reports it, the fallback ones
+    included: how long the audio is doesn't depend on which encoder ends up
+    handling it, and routes/stream.py schedules the end of the track off
+    this regardless of tier."""
+    for codec, gain in [("flac", 1.0), ("alac", 1.0), ("flac", 0.8), ("wmav2", 1.0)]:
+        with patch(
+            "core.streamer._probe_source",
+            AsyncMock(return_value=_info(codec, duration=183.61)),
+        ):
+            fmt = asyncio.run(resolve_output_format("http://nav/stream", gain=gain))
+        assert fmt.source_duration == pytest.approx(183.61), f"{codec} gain={gain}"
+
+
+def test_a_format_that_never_probed_reports_no_duration():
+    with patch("core.streamer._probe_source", AsyncMock(return_value=None)):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
+    assert fmt.source_duration is None
+    assert FALLBACK_FORMAT.source_duration is None
 
 
 # ── resolve_output_format tiers ──────────────────────────────────────────────

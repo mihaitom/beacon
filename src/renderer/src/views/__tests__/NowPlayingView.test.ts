@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createVuetify } from 'vuetify'
@@ -9,6 +9,8 @@ import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
 import { useConnectStore } from '@/stores/connect'
 import { useLyricsStore } from '@/stores/lyrics'
+import { useAuthStore } from '@/stores/auth'
+import { useAutoplayStore } from '@/stores/autoplay'
 import NowPlayingView from '../NowPlayingView.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
 
@@ -246,6 +248,93 @@ describe('NowPlayingView', () => {
         interrupted: false,
       }
     }
+  })
+
+  describe('toolbar buttons', () => {
+    // One rule across the whole app (see the toolbar's own comment):
+    // color="primary" — amber — means the thing behind the button is on.
+    // These four each used to state it differently, or not at all.
+    async function mountToolbar(props: Record<string, unknown> = {}) {
+      const mounted = await mountView(props)
+      usePlaybackStore().setQueue([makeSong('a')], 0)
+      // Autoplay's button is behind the same capability gate PlayerBar's is.
+      useAuthStore().capabilities.songRadio = true
+      await mounted.wrapper.vm.$nextTick()
+      return mounted
+    }
+
+    /** The rendered button carrying `icon`, by its mdi class. */
+    function button(wrapper: VueWrapper, icon: string) {
+      return wrapper.get(`.now-playing__toolbar .${icon}`).element.closest('button')!
+    }
+
+    function isAmber(wrapper: VueWrapper, icon: string): boolean {
+      return button(wrapper, icon).classList.contains('text-primary')
+    }
+
+    it('colors the lyrics button while lyrics are showing', async () => {
+      // Only rendered where it's the only way to reach lyrics at all.
+      const { wrapper } = await mountToolbar({ compact: true })
+      expect(isAmber(wrapper, 'mdi-script-text-outline')).toBe(false)
+
+      usePlaybackStore().lyricsDrawerOpen = true
+      await wrapper.vm.$nextTick()
+
+      expect(isAmber(wrapper, 'mdi-script-text-outline')).toBe(true)
+    })
+
+    it('colors the autoplay button while autoplay is on', async () => {
+      const { wrapper } = await mountToolbar({ compact: true })
+      expect(isAmber(wrapper, 'mdi-infinity')).toBe(false)
+
+      useAutoplayStore().enabled = true
+      await wrapper.vm.$nextTick()
+
+      expect(isAmber(wrapper, 'mdi-infinity')).toBe(true)
+    })
+
+    it.each([
+      ['desktop', {}],
+      // The mobile web UI renders this same toolbar — MobileNowPlayingView.vue
+      // is a thin wrapper around <now-playing-view compact />.
+      ['mobile (compact)', { compact: true }],
+    ])('colors the visualizer button while it is showing, on %s', async (_name, props) => {
+      const { wrapper } = await mountToolbar(props)
+      const vm = wrapper.vm as unknown as { showVisualizer: boolean }
+      vm.showVisualizer = false
+      await wrapper.vm.$nextTick()
+      expect(isAmber(wrapper, 'mdi-equalizer')).toBe(false)
+
+      vm.showVisualizer = true
+      await wrapper.vm.$nextTick()
+
+      expect(isAmber(wrapper, 'mdi-equalizer')).toBe(true)
+      // The outline/filled icon swap it used to rely on instead is gone —
+      // the state is the color's job now, same as every other toggle.
+      expect(wrapper.find('.now-playing__toolbar .mdi-equalizer-outline').exists()).toBe(false)
+    })
+
+    it('colors the lyrics button on mobile too, where it is the only way to reach lyrics', async () => {
+      const { wrapper } = await mountToolbar({ compact: true })
+
+      usePlaybackStore().lyricsDrawerOpen = true
+      await wrapper.vm.$nextTick()
+
+      expect(isAmber(wrapper, 'mdi-script-text-outline')).toBe(true)
+    })
+
+    it('colors the fullscreen button while fullscreen, and still swaps its icon', async () => {
+      const { wrapper } = await mountToolbar()
+      const vm = wrapper.vm as unknown as { isFullscreen: boolean }
+      expect(isAmber(wrapper, 'mdi-fullscreen')).toBe(false)
+
+      vm.isFullscreen = true
+      await wrapper.vm.$nextTick()
+
+      // The icon swap stays: unlike the others, it describes what clicking
+      // does (leave fullscreen), not just the state the color carries.
+      expect(isAmber(wrapper, 'mdi-fullscreen-exit')).toBe(true)
+    })
   })
 
   describe('visualizer toggle', () => {

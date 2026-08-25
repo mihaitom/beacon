@@ -65,6 +65,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Fixed clearing the queue while casting getting silently undone a few seconds later, with every song reappearing - the clear never made it past this device to the cast session itself
 - Fixed a high-resolution FLAC (above 24-bit/48kHz, e.g. 24-bit/96kHz) failing to play at all when cast to a Sonos speaker - it was sent to the device completely unchanged even though Sonos only supports up to 24-bit/48kHz, so the speaker rejected it and stopped about a second in. It's now automatically downsampled to whatever the target device actually supports (Chromecast, DLNA and AirPlay each have their own limit too)
 - Fixed the Now Playing view squeezing artwork and lyrics into two cramped stacked rows on windows that are wide but not wide enough, instead of turning the artwork over to show lyrics on its back. That flip used to happen only on portrait screens; it now happens whenever the two genuinely stop fitting side by side, which on a typical monitor is anywhere below about 1560px wide
+- Fixed the last fraction of a second being cut off every track while casting - the next track was dispatched to the speaker slightly before the current one had finished playing, and the countdown to that moment used the whole-second length reported by the music server rather than the track's real one. Only noticeable on tracks that end abruptly rather than fading out, where it sounded clipped
 
 ## [0.1.4] - 2026-08-17
 

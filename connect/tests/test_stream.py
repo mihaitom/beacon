@@ -23,6 +23,7 @@ from media import Track
 from routes.stream import (
     DisconnectSnapshot,
     _advance_or_end,
+    _playback_duration,
     _dispatch_queued_track,
     _mark_disconnected_if_not_reconnected,
     _resolve_track,
@@ -1144,6 +1145,114 @@ async def test_stream_schedules_fire_track_end_with_the_remaining_duration(clien
     assert captured["wait"] == pytest.approx(180.0, abs=0.5)
 
 
+# ── how long a track actually plays ──────────────────────────────────────────
+# The end of a track is scheduled off this, so anything it gets wrong is
+# heard as the tail being cut off (or, the other way, a gap before the next
+# track starts).
+
+
+def test_playback_duration_prefers_the_measured_length_over_whole_second_metadata(
+    client, default_session
+):
+    """A music server reports whole seconds (media/base.py's Track.duration
+    is an int, and Jellyfin's/Plex's adapters truncate) — ffmpeg measured
+    the file itself to hundredths. Scheduling off the metadata figure ends
+    the track up to a second early, which is audible on one that stops
+    abruptly."""
+    _configure_and_set_track(client, default_session)  # metadata says 180
+    default_session.state.current_output_format = OutputFormat(source_duration=180.73)
+
+    assert _playback_duration(default_session.state) == pytest.approx(180.73)
+
+
+def test_playback_duration_falls_back_to_metadata_when_nothing_was_probed(
+    client, default_session
+):
+    # The forced/probe-failed fallback tiers carry no measured length.
+    _configure_and_set_track(client, default_session)
+    default_session.state.current_output_format = FALLBACK_FORMAT
+
+    assert _playback_duration(default_session.state) == pytest.approx(180.0)
+
+
+def test_playback_duration_ignores_a_measurement_that_disagrees_wildly(
+    client, default_session
+):
+    """A probe that measured something else entirely (a redirect to a
+    different file, a live stream that reported a bogus length) must not be
+    able to hold a finished track open — or cut a long one short."""
+    _configure_and_set_track(client, default_session)  # metadata says 180
+    default_session.state.current_output_format = OutputFormat(source_duration=3600.0)
+
+    assert _playback_duration(default_session.state) == pytest.approx(180.0)
+
+
+def test_playback_duration_accepts_the_usual_sub_second_disagreement(
+    client, default_session
+):
+    # Rounding alone puts these up to a second apart — that's the normal
+    # case this exists for, not a suspicious one.
+    _configure_and_set_track(client, default_session)
+    default_session.state.current_output_format = OutputFormat(source_duration=180.99)
+
+    assert _playback_duration(default_session.state) == pytest.approx(180.99)
+
+
+def test_playback_duration_is_zero_for_radio_with_no_known_length(
+    client, default_session
+):
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    default_session.state.current_track = Track(
+        id="r", title="Radio", artist="Station", duration=0, cover_art_id=""
+    )
+    default_session.state.current_output_format = OutputFormat(source_duration=None)
+
+    assert _playback_duration(default_session.state) == 0.0
+
+
+async def test_fire_track_end_waits_out_the_last_half_second_instead_of_cutting_it(
+    client, default_session
+):
+    """Regression test: the wait loop used to break at 0.5s remaining and
+    advance the queue there, which hands the device a new URI while it is
+    still playing the tail of the current track — the last half second was
+    simply gone from every track. Only inaudible on tracks that fade out or
+    end in silence, which is why it survived this long."""
+    _configure_and_set_track(client, default_session)
+    default_session.state.clock.start(0.0)
+
+    captured = {}
+
+    def _capture_task(coro):
+        captured["coro"] = coro
+        return MagicMock()
+
+    with (
+        patch("routes.stream.stream_tracks", side_effect=_real_stream),
+        patch("routes.stream.asyncio.create_task", side_effect=_capture_task),
+    ):
+        resp = await audio_stream(session_id=default_session.session_id)
+        [_ async for _ in resp.body_iterator]
+
+    # Half a second left: the old loop treated this as "done" and advanced.
+    remaining_readings = iter([0.4, 0.2, 0.0])
+    with (
+        patch.object(
+            default_session.state.clock,
+            "seconds_until",
+            side_effect=lambda duration: next(remaining_readings),
+        ),
+        patch("routes.stream.asyncio.sleep", new=AsyncMock()) as sleep_mock,
+    ):
+        await captured["coro"]
+
+    # It slept those last fractions out rather than ending the track on them.
+    assert sleep_mock.await_count == 2
+    assert sleep_mock.await_args_list[0].args[0] == pytest.approx(0.4)
+    assert sleep_mock.await_args_list[1].args[0] == pytest.approx(0.2)
+    assert default_session.state.track_ended is True
+
+
 async def test_fire_track_end_repolls_until_the_track_actually_finishes(
     client, default_session
 ):
@@ -1170,8 +1279,9 @@ async def test_fire_track_end_repolls_until_the_track_actually_finishes(
         [_ async for _ in resp.body_iterator]
 
     # Two polls that still find real time left (sleep, re-measure), then a
-    # third that finds the track essentially over (breaks out of the loop).
-    remaining_readings = iter([100.0, 50.0, 0.3])
+    # third that finds the track over (breaks out of the loop). 0.3s counts
+    # as real time left now — see _TRACK_END_TOLERANCE.
+    remaining_readings = iter([100.0, 50.0, 0.0])
 
     with (
         patch.object(

@@ -36,6 +36,7 @@ opening every file.
 
 ## Fixed
 
+- [Every cast track ended a fraction of a second early](fixed-track-end-cut-short.md) (2026-08-25)
 - [Resuming an old interruption seeked past the track's own end](fixed-resume-seeked-past-track-end.md) (2026-08-24)
 - [A mid-track reconnect restarted the track and poisoned the clock](fixed-reconnect-restarted-track-poisoned-clock.md) (2026-08-23)
 - [A cast stops half an hour into a long track](fixed-cast-stops-after-30-minutes.md) (2026-08-23)

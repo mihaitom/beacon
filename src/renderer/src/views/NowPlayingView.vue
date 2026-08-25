@@ -16,7 +16,19 @@
     <!-- density="comfortable" on every button below — matches PlayerBar.vue's
      - own toolbar icons app-wide; left implicit (Vuetify's larger default
      - density) before, these rendered visibly bigger than every other icon
-     - button in the app. -->
+     - button in the app.
+     -
+     - Amber (color="primary") means "this is on", for every toggle here and
+     - everywhere else in the app: PlayerToolbar.vue's lyrics/queue/autoplay/
+     - cast buttons, CenterControls.vue's shuffle/repeat,
+     - MobileTransportControls.vue's own copies, and the phone remote's
+     - .active rule (connect/static/remote/app.css). These four used to each
+     - say it differently — one colored, two swapping between an outline and
+     - a filled icon, one saying nothing at all — so "is the visualizer on?"
+     - read differently here than the identical question does two elements
+     - away in the player bar. An icon still swaps where it describes what
+     - the *click* does (fullscreen vs. exit fullscreen), never where it's
+     - only restating the on/off state the color already carries. -->
     <div v-if="hasPlayable" class="now-playing__toolbar">
       <!-- PlayerBar.vue's own lyrics button (the normal way to reach this
        - on desktop) is outside .now-playing entirely, so fullscreen — which
@@ -32,6 +44,7 @@
       <v-btn
         v-if="currentSong && (compact || isFullscreen)"
         icon="mdi-script-text-outline"
+        :color="playbackStore.lyricsDrawerOpen ? 'primary' : undefined"
         variant="text"
         density="comfortable"
         :title="$t('lyrics.title')"
@@ -54,7 +67,8 @@
         @click="autoplayStore.setEnabled(!autoplayStore.enabled)"
       />
       <v-btn
-        :icon="showVisualizer ? 'mdi-equalizer' : 'mdi-equalizer-outline'"
+        icon="mdi-equalizer"
+        :color="showVisualizer ? 'primary' : undefined"
         variant="text"
         density="comfortable"
         :title="$t('nowPlaying.toggleVisualizer')"
@@ -67,6 +81,7 @@
       <v-btn
         v-if="!compact"
         :icon="isFullscreen ? 'mdi-fullscreen-exit' : 'mdi-fullscreen'"
+        :color="isFullscreen ? 'primary' : undefined"
         variant="text"
         density="comfortable"
         :title="$t('nowPlaying.toggleFullscreen')"

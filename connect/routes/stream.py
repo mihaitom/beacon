@@ -163,6 +163,45 @@ async def _resolve_track(session: SessionState, track_id: str, context: str):
     return None
 
 
+# How close to the end of a track the wait loop below gets before it calls
+# the track finished. Not a comfort margin: every millisecond of it is audio
+# the device is still playing when the queue advances over it, so this is
+# only as large as it takes for the loop to terminate rather than spin on
+# sub-millisecond sleeps.
+_TRACK_END_TOLERANCE = 0.05
+
+# How far the probed length may differ from the music server's own before it
+# is treated as measuring something else entirely (a redirect to a different
+# file, a live stream) and ignored. Generous: the two legitimately disagree
+# by up to a second from whole-second rounding alone, and by a bit more for
+# formats whose metadata duration is derived from a bitrate estimate.
+_DURATION_SANITY_WINDOW = 5.0
+
+
+def _playback_duration(st) -> float:
+    """How long the current track actually plays for, in seconds.
+
+    Prefers the length ffmpeg measured off the file itself (hundredths of a
+    second — see core/streamer.py's _DURATION_RE) over the music server's
+    metadata, which is whole seconds and, for Jellyfin/Plex, truncated
+    rather than rounded. Scheduling the end of a track off the metadata
+    figure ends it early by that rounding error, which is audible on tracks
+    that stop abruptly: the queue advances, the device gets a new URI, and
+    the tail is simply gone.
+
+    Falls back to the metadata duration whenever nothing was probed (the
+    forced/probe-failed fallback tiers, radio) or the probed value disagrees
+    with it wildly enough to look like it measured something else — see
+    _DURATION_SANITY_WINDOW."""
+    metadata = float(st.current_track.duration) if st.current_track else 0.0
+    probed = st.current_output_format.source_duration
+    if probed is None or metadata <= 0:
+        return metadata
+    if abs(probed - metadata) > _DURATION_SANITY_WINDOW:
+        return metadata
+    return probed
+
+
 async def _advance_or_end(session: SessionState, my_generation: int) -> None:
     """What happens when a track finishes — split out from _fire_track_end()
     below purely so it's directly testable, same reasoning as
@@ -653,8 +692,19 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
         reacting to it for a whole extra cycle) is what actually fixes
         that — a real edit stays picked up within one more poll instead of
         never at all.
+
+        The loop runs down to _TRACK_END_TOLERANCE rather than to a
+        comfortable-looking fraction of a second: whatever is left when it
+        breaks is time the *device* is still playing, and advancing the
+        queue hands that device a new URI, which cuts the current track off
+        mid-note. This used to stop at 0.5s, i.e. clipped the last half
+        second off every single track — inaudible on anything that fades or
+        ends in silence, obvious on one that stops abruptly. Sleeping the
+        remainder costs nothing: the sleep below is already
+        min(remaining, ...), so a short remainder is slept exactly, not
+        rounded up to a poll interval.
         """
-        if wait > 0.5:
+        if wait > _TRACK_END_TOLERANCE:
             logger.info(
                 f"[stream] FFmpeg done early — waiting {wait:.1f}s for playback to finish"
             )
@@ -662,10 +712,8 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
                 session.state.clock.play_generation == my_generation
                 and session.state.current_track
             ):
-                remaining = session.state.clock.seconds_until(
-                    session.state.current_track.duration
-                )
-                if remaining <= 0.5:
+                remaining = session.state.clock.seconds_until(_playback_duration(session.state))
+                if remaining <= _TRACK_END_TOLERANCE:
                     break
                 await asyncio.sleep(min(remaining, POSITION_RESYNC_INTERVAL))
         async with session.play_lock:
@@ -788,7 +836,7 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
             ):
                 wait = 0.0
                 if st.current_track and st.clock.play_start_time:
-                    wait = st.clock.seconds_until(st.current_track.duration)
+                    wait = st.clock.seconds_until(_playback_duration(st))
                 asyncio.create_task(_fire_track_end(my_generation, wait))
         finally:
             # Mirrors the increment in audio_stream() above — this specific
