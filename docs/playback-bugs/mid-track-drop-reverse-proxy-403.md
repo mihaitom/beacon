@@ -368,6 +368,11 @@ both builds, and running two instances doubles it). The pending
 the byte stream looks like - which is why it stays the best next step even
 after the comparison. Caching the resolved SoCo device would test another.
 
+(That env var was removed 2026-08-26. The same arm is now reachable from the
+frontend's cast quality setting - see
+[the symptom file](mid-track-drop-symptom.md) for what changed and what
+didn't. The reasoning above is unaffected; only the switch moved.)
+
 Checked and not supported: whether drops line up with Beacon's own SSDP
 sweeps. Only one drop falls inside the capture's window (it started 17:04
 UTC), 2.2s after the preceding sweep at a ~8s cadence, which shows nothing.

@@ -1,5 +1,6 @@
 import { fetchConnect } from './http'
 import type { ConnectDeviceRef, PlayResponse, QueueResponse } from './types'
+import type { TranscodeFormat } from '@/services/streamQuality'
 
 interface PlayOptions {
   targets?: ConnectDeviceRef[]
@@ -36,6 +37,17 @@ interface PlayOptions {
    * backs up rather than replaces. */
   autoplayEnabled?: boolean
   autoplayBatchSize?: number
+  /** The listener's quality ceiling for casting (see
+   * services/streamQuality.ts). A *cap* on connect's own tier choice, not a
+   * replacement for it: a source that already fits is still stream-copied
+   * untouched, and the cast device's own format limits still win over both
+   * (see resolve_output_format()). Both must be sent together — connect
+   * ignores a half-set pair rather than guessing the other half. Omitting
+   * them means no ceiling, which is what every call did before they
+   * existed. Named in connect's snake_case because they go into the request
+   * body verbatim, unlike the camelCase options above. */
+  max_lossy_format?: TranscodeFormat
+  max_lossy_bitrate_kbps?: number
 }
 
 // Shared, strictly-increasing dispatch counter for /play and /play-url (both
@@ -97,6 +109,15 @@ export async function play(songId: string, options: PlayOptions = {}): Promise<P
       start_position: options.startPosition ?? 0,
       force: options.force ?? false,
       seq: nextSeq(),
+      // Left out entirely rather than sent as null when there is no
+      // ceiling — connect reads "both absent" as "don't cap", and a
+      // half-present pair as a caller bug.
+      ...(options.max_lossy_format && options.max_lossy_bitrate_kbps
+        ? {
+            max_lossy_format: options.max_lossy_format,
+            max_lossy_bitrate_kbps: options.max_lossy_bitrate_kbps,
+          }
+        : {}),
     },
   })
 }

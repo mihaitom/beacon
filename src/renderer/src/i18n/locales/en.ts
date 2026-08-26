@@ -164,6 +164,8 @@ export default {
   },
   connect: {
     title: 'Casting',
+    playingOn: 'Playing on',
+    thisDevice: 'This device',
     rescan: 'Rescan',
     stopAll: 'Stop all',
     connect: 'Connect',
@@ -210,7 +212,8 @@ export default {
         codec_unknown: 'Codec unknown',
         probe_failed: 'Format unknown',
         replay_gain: 'ReplayGain',
-        forced: 'Server setting',
+        quality_limit: 'Quality limit',
+        browser_unsupported: 'Browser format',
       },
       reasons: {
         device_limit: "Source is beyond this device's supported quality",
@@ -219,7 +222,8 @@ export default {
         codec_unknown: 'Source codec was not recognized',
         probe_failed: 'Source format could not be detected',
         replay_gain: 'ReplayGain is applied, which rules out sending the file as-is',
-        forced: 'Fallback format forced by a server setting',
+        quality_limit: 'Source is above the quality limit set in Settings',
+        browser_unsupported: 'Source format cannot be played by the browser',
       },
     },
   },
@@ -291,6 +295,16 @@ export default {
     replayGainAlbum: 'Album',
     replayGainHint:
       'Evens out the volume of differently mastered recordings — "Track" normalizes each song individually, "Album" preserves the volume differences within an album. Applies to both local playback and casting; while already casting, a change only takes effect from the next track.',
+    localQuality: 'Audio quality (this device)',
+    localQualityHint:
+      'Applies only to playback on this device, and is stored here rather than with your account — so a phone and a desktop can be set differently. "Original" sends the file untouched; MP3 converts it as it plays, which saves bandwidth and makes files playable that the browser otherwise can\'t open. MP3 is the only conversion offered here, because it is the only one that lets you reliably jump around in the track while it plays. A change takes effect from the next track.',
+    castQuality: 'Audio quality (casting)',
+    castQualityHint:
+      "A ceiling, not a fixed choice: Beacon still picks the best format each device will accept, it just never sends anything above this setting. A recording that already fits is sent untouched. The device's own limits always apply on top. Takes effect from the next track.",
+    qualityFormat: 'Format',
+    qualityBitrate: 'Bitrate',
+    qualityBitrateItem: '{value} kbps',
+    qualityOriginal: 'Original (untouched)',
     autoplay: 'Autoplay',
     autoplayBatchSizeItem: '{count} songs',
     autoplayHint:
@@ -383,7 +397,6 @@ export default {
     tabNowPlaying: 'Now Playing',
     tabQueue: 'Queue',
     playOn: 'Play on',
-    thisDevice: 'This device',
     needsPairing: 'Needs pairing in the Beacon app first',
   },
   updateToast: {

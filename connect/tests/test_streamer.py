@@ -14,15 +14,17 @@ from core.streamer import (
     REASON_CODEC_NOT_CASTABLE,
     REASON_CODEC_UNKNOWN,
     REASON_DEVICE_LIMIT,
-    REASON_FORCED,
     REASON_LOSSLESS_CONTAINER,
     REASON_PROBE_FAILED,
+    REASON_QUALITY_LIMIT,
     REASON_REPLAY_GAIN,
     OutputFormat,
     SourceInfo,
     _probe_source,
+    lossy_encode_args,
     resolve_output_format,
     stream_tracks,
+    transcoded_byte_length,
 )
 
 
@@ -556,22 +558,246 @@ def test_every_reason_the_frontend_knows_about_is_one_this_module_can_produce():
     StreamInfoSection.vue's reasonText), so the two lists have to stay in
     step. This is the canonical set."""
     assert {
-        REASON_FORCED,
         REASON_PROBE_FAILED,
         REASON_DEVICE_LIMIT,
+        REASON_QUALITY_LIMIT,
         REASON_REPLAY_GAIN,
         REASON_LOSSLESS_CONTAINER,
         REASON_CODEC_NOT_CASTABLE,
         REASON_CODEC_UNKNOWN,
     } == {
-        "forced",
         "probe_failed",
         "device_limit",
+        "quality_limit",
         "replay_gain",
         "lossless_container",
         "codec_not_castable",
         "codec_unknown",
     }
+
+
+# ── The listener's quality ceiling ───────────────────────────────────────────
+# resolve_output_format()'s max_lossy_format/max_lossy_bitrate_kbps — the
+# frontend's cast quality setting. It caps the tiers above rather than
+# replacing them, so most of what matters here is what it leaves alone.
+
+
+def _resolve(info, **kwargs):
+    with patch("core.streamer._probe_source", AsyncMock(return_value=info)):
+        return asyncio.run(resolve_output_format("http://nav/stream", **kwargs))
+
+
+def test_quality_ceiling_re_encodes_a_lossless_source():
+    """A FLAC is above every lossy ceiling there is, whatever number it
+    names — that's the whole reason someone sets one."""
+    fmt = _resolve(
+        _info("flac", sample_rate=44100, bit_depth=16, duration=180.0),
+        max_lossy_format="mp3",
+        max_lossy_bitrate_kbps=192,
+    )
+
+    assert fmt.ffmpeg_args == [
+        "-acodec", "libmp3lame", "-b:a", "192k", "-ar", "44100", "-f", "mp3",
+    ]
+    assert fmt.content_type == "audio/mpeg"
+    assert fmt.transcode_reason == REASON_QUALITY_LIMIT
+    # The source's own numbers still travel to the stream-info overlay.
+    assert fmt.source_codec == "flac"
+    assert fmt.source_duration == 180.0
+
+
+def test_quality_ceiling_leaves_a_lossy_source_under_it_copied():
+    """The point of a ceiling is to stop streams *bigger* than it. A
+    192kbps mp3 under a 320kbps ceiling already qualifies, and re-encoding
+    it would throw away quality for no reduction at all."""
+    fmt = _resolve(
+        _info("mp3", sample_rate=44100, bitrate_kbps=192),
+        max_lossy_format="mp3",
+        max_lossy_bitrate_kbps=320,
+    )
+
+    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "mp3"]
+    assert fmt.transcode_reason is None
+
+
+def test_quality_ceiling_re_encodes_a_lossy_source_above_it():
+    fmt = _resolve(
+        _info("mp3", sample_rate=44100, bitrate_kbps=320),
+        max_lossy_format="mp3",
+        max_lossy_bitrate_kbps=128,
+    )
+
+    assert "-b:a" in fmt.ffmpeg_args
+    assert fmt.ffmpeg_args[fmt.ffmpeg_args.index("-b:a") + 1] == "128k"
+    assert fmt.transcode_reason == REASON_QUALITY_LIMIT
+
+
+def test_quality_ceiling_leaves_a_lossy_source_of_unknown_bitrate_alone():
+    """ffmpeg reports no bitrate for some sources (see SourceInfo). Acting
+    on a number we don't have would re-encode an already-small file for
+    nothing — the same rule the rest of this module follows."""
+    fmt = _resolve(
+        _info("mp3", sample_rate=44100, bitrate_kbps=None),
+        max_lossy_format="mp3",
+        max_lossy_bitrate_kbps=96,
+    )
+
+    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "mp3"]
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"max_lossy_format": "mp3"},
+        {"max_lossy_bitrate_kbps": 192},
+    ],
+)
+def test_no_ceiling_means_exactly_the_old_behaviour(kwargs):
+    """Both halves are needed for either to count — a half-set ceiling is a
+    caller bug, and guessing the missing half would silently downgrade
+    somebody's audio."""
+    fmt = _resolve(_info("flac", sample_rate=44100, bit_depth=16), **kwargs)
+
+    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "flac"]
+
+
+def test_unknown_ceiling_format_is_ignored_rather_than_obeyed(caplog):
+    """A format this build has no encoder for can't be honoured. Falling
+    back to the untouched source is the safe reading; guessing a different
+    encoder is not."""
+    with caplog.at_level(logging.WARNING, logger="connect.streamer"):
+        fmt = _resolve(
+            _info("flac", sample_rate=44100, bit_depth=16),
+            max_lossy_format="wma",
+            max_lossy_bitrate_kbps=192,
+        )
+
+    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "flac"]
+    assert any("wma" in r.message for r in caplog.records)
+
+
+def test_device_limit_still_caps_the_rate_the_ceiling_encodes_at():
+    """The device's own ceiling is what it can decode at all — a rate it
+    rejects produces silence, so it wins over the listener's preference
+    rather than being averaged with it."""
+    fmt = _resolve(
+        _info("flac", sample_rate=96000, bit_depth=24),
+        max_sample_rate=44100,
+        max_bit_depth=16,
+        max_lossy_format="aac",
+        max_lossy_bitrate_kbps=256,
+    )
+
+    assert fmt.ffmpeg_args[fmt.ffmpeg_args.index("-ar") + 1] == "44100"
+    assert fmt.target_sample_rate == 44100
+    # -sample_fmt belongs to the FLAC tiers; libmp3lame/aac reject it and
+    # pick their own sample format anyway.
+    assert "-sample_fmt" not in fmt.ffmpeg_args
+
+
+def test_ceiling_keeps_a_48khz_source_at_48khz():
+    """Resampling that isn't required is quality thrown away for nothing —
+    same rule _resample_plan() already follows for the FLAC tiers."""
+    fmt = _resolve(
+        _info("flac", sample_rate=48000, bit_depth=24),
+        max_lossy_format="mp3",
+        max_lossy_bitrate_kbps=320,
+    )
+
+    assert fmt.ffmpeg_args[fmt.ffmpeg_args.index("-ar") + 1] == "48000"
+
+
+def test_the_ceiling_reports_the_bitrate_it_encoded_at():
+    """The stream-info panel used to hardcode "192 kb/s" against the mp3
+    content type, which was right while the fallback was the only way to
+    reach mp3. A ceiling can now land on that same content type at 320 or
+    96, so the number has to travel with the format."""
+    fmt = _resolve(
+        _info("flac", sample_rate=44100, bit_depth=16),
+        max_lossy_format="mp3",
+        max_lossy_bitrate_kbps=320,
+    )
+
+    assert fmt.target_bitrate_kbps == 320
+
+
+def test_the_fallback_tier_reports_its_own_fixed_bitrate():
+    fmt = _resolve(_info("opus", sample_rate=48000))
+
+    assert fmt.content_type == "audio/mpeg"
+    assert fmt.target_bitrate_kbps == 192
+
+
+def test_a_copied_track_reports_no_target_bitrate():
+    """Nothing was chosen — the output is the source's own bytes, and the
+    source line already says what those are."""
+    fmt = _resolve(_info("flac", sample_rate=44100, bit_depth=16))
+
+    assert fmt.target_bitrate_kbps is None
+
+
+# ── lossy_encode_args() / transcoded_byte_length() ───────────────────────────
+# Shared with routes/local_stream.py, where the byte arithmetic below is what
+# makes seeking work in a browser.
+
+
+@pytest.mark.parametrize(
+    "fmt,codec,muxer,content_type",
+    [
+        ("mp3", "libmp3lame", "mp3", "audio/mpeg"),
+        ("aac", "aac", "adts", "audio/aac"),
+        ("opus", "libopus", "ogg", "audio/ogg"),
+    ],
+)
+def test_lossy_encode_args_per_format(fmt, codec, muxer, content_type):
+    args, ct = lossy_encode_args(fmt, 192, source_rate=44100)
+
+    assert args[:4] == ["-acodec", codec, "-b:a", "192k"]
+    assert args[-2:] == ["-f", muxer]
+    assert ct == content_type
+
+
+def test_opus_is_forced_to_constant_bitrate():
+    """Opus is variable-rate by default, and a variable-rate stream has no
+    byte-to-time mapping — which is exactly what routes/local_stream.py
+    divides by to answer a Range request."""
+    args, _ = lossy_encode_args("opus", 128, source_rate=44100)
+
+    assert args[args.index("-vbr") + 1] == "off"
+
+
+def test_opus_always_encodes_at_48khz():
+    """ffmpeg's opus encoder has no other rate. Picking the nearest lower
+    allowed value instead would land a 44.1kHz source on 24kHz."""
+    args, _ = lossy_encode_args("opus", 128, source_rate=44100)
+
+    assert args[args.index("-ar") + 1] == "48000"
+
+
+def test_lossy_encode_falls_back_to_44100_when_the_source_rate_is_unknown():
+    args, _ = lossy_encode_args("mp3", 192, source_rate=None)
+
+    assert args[args.index("-ar") + 1] == "44100"
+
+
+def test_lossy_encode_resamples_a_rate_the_encoder_cannot_take():
+    """MP3 has no 96kHz mode at all — handing one to libmp3lame fails
+    outright rather than being quietly accepted."""
+    args, _ = lossy_encode_args("mp3", 320, source_rate=96000)
+
+    assert args[args.index("-ar") + 1] == "48000"
+
+
+def test_transcoded_byte_length_matches_the_bitrate_it_was_encoded_at():
+    # 192 kbps = 24000 bytes/s; 180s of it is 4,320,000 bytes.
+    assert transcoded_byte_length(192, 180.0) == 4_320_000
+
+
+def test_transcoded_byte_length_rounds_up():
+    """Never short: a length below what ffmpeg actually produces truncates
+    the end of the track in the browser."""
+    assert transcoded_byte_length(192, 180.5) == 4_332_000
 
 
 # ── stream_tracks() command building ─────────────────────────────────────────
@@ -838,36 +1064,6 @@ def test_stream_tracks_kills_the_process_and_reraises_on_an_unexpected_error():
         asyncio.run(_run())
 
     assert proc.killed is True
-
-
-def test_force_fallback_format_bypasses_the_copy_tier_and_the_probe(monkeypatch):
-    """The A/B switch for the cast-drop investigation
-    (docs/playback-bugs/mid-track-drop-symptom.md):
-    with it set, every track takes the pre-copy-tier path — the shape this
-    backend had before stream-copy existed, and which has never shown the
-    bug. It skips the probe too, since that pipeline never inspected the
-    source either."""
-    monkeypatch.setenv("FORCE_FALLBACK_FORMAT", "1")
-    probe = AsyncMock(side_effect=AssertionError("must not probe"))
-
-    with patch("core.streamer._probe_source", probe):
-        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
-
-    assert fmt.ffmpeg_args == FALLBACK_FORMAT.ffmpeg_args
-    assert fmt.transcode_reason == "forced"
-    probe.assert_not_called()
-
-
-@pytest.mark.parametrize("value", ["", "0", "no", "off"])
-def test_force_fallback_format_stays_off_unless_explicitly_enabled(value, monkeypatch):
-    """A stray or emptied env var must not silently downgrade everyone's
-    audio quality — this only ever turns on for an explicit yes."""
-    monkeypatch.setenv("FORCE_FALLBACK_FORMAT", value)
-
-    with patch("core.streamer._probe_source", AsyncMock(return_value=_info("flac"))):
-        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
-
-    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "flac"]
 
 
 @pytest.mark.parametrize(

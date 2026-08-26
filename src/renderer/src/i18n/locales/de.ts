@@ -162,6 +162,8 @@ export default {
   },
   connect: {
     title: 'Casting',
+    playingOn: 'Wiedergabe auf',
+    thisDevice: 'Dieses Gerät',
     rescan: 'Neu scannen',
     stopAll: 'Alle stoppen',
     connect: 'Verbinden',
@@ -208,7 +210,8 @@ export default {
         codec_unknown: 'Codec unbekannt',
         probe_failed: 'Format unbekannt',
         replay_gain: 'ReplayGain',
-        forced: 'Servereinstellung',
+        quality_limit: 'Qualitätsgrenze',
+        browser_unsupported: 'Browser-Format',
       },
       reasons: {
         device_limit: 'Quelle liegt über der Qualität, die dieses Gerät unterstützt',
@@ -217,7 +220,8 @@ export default {
         codec_unknown: 'Quell-Codec wurde nicht erkannt',
         probe_failed: 'Quellformat konnte nicht erkannt werden',
         replay_gain: 'ReplayGain ist aktiv, dadurch ist unverändertes Senden nicht möglich',
-        forced: 'Fallback-Format per Servereinstellung erzwungen',
+        quality_limit: 'Quelle liegt über der in den Einstellungen gewählten Qualitätsgrenze',
+        browser_unsupported: 'Quellformat kann vom Browser nicht abgespielt werden',
       },
     },
   },
@@ -289,6 +293,16 @@ export default {
     replayGainAlbum: 'Album',
     replayGainHint:
       'Gleicht die Lautstärke unterschiedlich lauter Aufnahmen an — „Titel“ normalisiert jeden Song einzeln, „Album“ behält die Lautstärkeunterschiede innerhalb eines Albums bei. Gilt für lokale Wiedergabe und Casting; bei laufendem Casting wirkt eine Änderung erst ab dem nächsten Titel.',
+    localQuality: 'Audioqualität (dieses Gerät)',
+    localQualityHint:
+      'Gilt nur für die Wiedergabe auf diesem Gerät und ist hier gespeichert, nicht im Konto — Handy und Desktop können also unterschiedlich eingestellt sein. „Original“ sendet die Datei unverändert; MP3 wandelt sie beim Abspielen um, was Bandbreite spart und Dateien abspielbar macht, die der Browser sonst nicht öffnen kann. MP3 ist hier das einzige Umwandlungsformat, weil nur damit das Springen in der laufenden Aufnahme zuverlässig funktioniert. Eine Änderung wirkt ab dem nächsten Titel.',
+    castQuality: 'Audioqualität (Casting)',
+    castQualityHint:
+      'Eine Obergrenze, keine feste Vorgabe: Beacon wählt weiterhin selbst das beste Format, das das jeweilige Gerät annimmt, sendet aber nichts oberhalb dieser Einstellung. Eine Aufnahme, die ohnehin darunter liegt, wird unverändert gesendet. Die Grenzen des Geräts selbst gelten immer zusätzlich. Wirkt ab dem nächsten Titel.',
+    qualityFormat: 'Format',
+    qualityBitrate: 'Bitrate',
+    qualityBitrateItem: '{value} kbit/s',
+    qualityOriginal: 'Original (unverändert)',
     autoplay: 'Autoplay',
     autoplayBatchSizeItem: '{count} Songs',
     autoplayHint:
@@ -381,7 +395,6 @@ export default {
     tabNowPlaying: 'Jetzt läuft',
     tabQueue: 'Queue',
     playOn: 'Wiedergeben auf',
-    thisDevice: 'Dieses Gerät',
     needsPairing: 'Muss zuerst in der Beacon-App gepairt werden',
   },
   updateToast: {

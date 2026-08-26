@@ -56,7 +56,14 @@ async def _dispatch_queued_track(session: SessionState, target, track, gain: flo
     track_url = await asyncio.to_thread(session.media.get_stream_url, track.id)
     max_rate, max_depth = audio_capability_limits(target)
     output_format = await resolve_output_format(
-        track_url, gain=gain, max_sample_rate=max_rate, max_bit_depth=max_depth
+        track_url,
+        gain=gain,
+        max_sample_rate=max_rate,
+        max_bit_depth=max_depth,
+        # Off the session, not a request — auto-advance has none. See
+        # SessionState.max_lossy_format's comment.
+        max_lossy_format=st.max_lossy_format,
+        max_lossy_bitrate_kbps=st.max_lossy_bitrate_kbps,
     )
     url = stream_url(session.session_id)
 

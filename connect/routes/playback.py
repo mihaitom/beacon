@@ -480,6 +480,15 @@ class PlayRequest(BaseModel):
     # Strictly increasing per-session dispatch counter — see SessionState.
     # play_seq's comment. 0 (the default) opts out of the staleness check.
     seq: int = 0
+    # The listener's quality ceiling for casting, from the frontend's
+    # playback settings — see core/streamer.py's resolve_output_format().
+    # Unlike `gain` above, which is a per-track number, this is a standing
+    # preference, so it is also remembered on the session (see
+    # SessionState.max_lossy_*) for auto-advance and for any other client
+    # sharing this cast. None (both of them) means no ceiling, i.e. exactly
+    # the behaviour every caller from before these fields had.
+    max_lossy_format: Literal["mp3", "aac", "opus"] | None = None
+    max_lossy_bitrate_kbps: int | None = None
 
 
 def _is_stale_seq(session: SessionState, seq: int) -> bool:
@@ -553,8 +562,17 @@ async def play_tracks(
         # itself shells out to ffmpeg, also blocking.
         track_url = await asyncio.to_thread(session.media.get_stream_url, track.id)
         max_rate, max_depth = audio_capability_limits(target)
+        # Remembered before resolving, so auto-advance and the /resume and
+        # /seek paths below all see the same ceiling this dispatch used.
+        session.state.max_lossy_format = req.max_lossy_format
+        session.state.max_lossy_bitrate_kbps = req.max_lossy_bitrate_kbps
         output_format = await resolve_output_format(
-            track_url, gain=req.gain, max_sample_rate=max_rate, max_bit_depth=max_depth
+            track_url,
+            gain=req.gain,
+            max_sample_rate=max_rate,
+            max_bit_depth=max_depth,
+            max_lossy_format=req.max_lossy_format,
+            max_lossy_bitrate_kbps=req.max_lossy_bitrate_kbps,
         )
 
         if target:

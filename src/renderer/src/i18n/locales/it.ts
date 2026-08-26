@@ -164,6 +164,8 @@ export default {
   },
   connect: {
     title: 'Trasmissione',
+    playingOn: 'Riproduzione su',
+    thisDevice: 'Questo dispositivo',
     rescan: 'Ripeti scansione',
     stopAll: 'Ferma tutto',
     connect: 'Connetti',
@@ -211,7 +213,8 @@ export default {
         codec_unknown: 'Codec sconosciuto',
         probe_failed: 'Formato sconosciuto',
         replay_gain: 'ReplayGain',
-        forced: 'Impostazione del server',
+        quality_limit: 'Limite di qualità',
+        browser_unsupported: 'Formato browser',
       },
       reasons: {
         device_limit: 'La sorgente supera la qualità supportata da questo dispositivo',
@@ -221,7 +224,8 @@ export default {
         codec_unknown: 'Codec di origine non riconosciuto',
         probe_failed: 'Impossibile rilevare il formato di origine',
         replay_gain: 'ReplayGain è attivo, quindi il file non può essere inviato così com’è',
-        forced: 'Formato di ripiego imposto da un’impostazione del server',
+        quality_limit: 'La sorgente supera il limite di qualità impostato nelle impostazioni',
+        browser_unsupported: 'Il browser non può riprodurre il formato di origine',
       },
     },
   },
@@ -293,6 +297,16 @@ export default {
     replayGainAlbum: 'Album',
     replayGainHint:
       "Uniforma il volume di registrazioni masterizzate in modo diverso: «Brano» normalizza ogni canzone singolarmente, «Album» mantiene le differenze di volume all'interno di un album. Si applica sia alla riproduzione locale sia alla trasmissione; durante una trasmissione già in corso, una modifica ha effetto solo dal brano successivo.",
+    localQuality: 'Qualità audio (questo dispositivo)',
+    localQualityHint:
+      "Si applica solo alla riproduzione su questo dispositivo ed è salvata qui, non nell'account, quindi telefono e computer possono avere impostazioni diverse. «Originale» invia il file invariato; MP3 lo converte durante la riproduzione, il che riduce la banda usata e rende riproducibili file che il browser altrimenti non apre. MP3 è l'unica conversione offerta qui, perché è l'unica con cui spostarsi all'interno del brano funziona in modo affidabile. La modifica ha effetto dal brano successivo.",
+    castQuality: 'Qualità audio (trasmissione)',
+    castQualityHint:
+      'Un limite massimo, non una scelta fissa: Beacon continua a scegliere il formato migliore accettato da ogni dispositivo, ma non invia mai nulla al di sopra di questa impostazione. Una registrazione già al di sotto viene inviata invariata. I limiti del dispositivo stesso valgono sempre in aggiunta. Ha effetto dal brano successivo.',
+    qualityFormat: 'Formato',
+    qualityBitrate: 'Bitrate',
+    qualityBitrateItem: '{value} kbit/s',
+    qualityOriginal: 'Originale (invariato)',
     autoplay: 'Autoplay',
     autoplayBatchSizeItem: '{count} brani',
     autoplayHint:
@@ -386,7 +400,6 @@ export default {
     tabNowPlaying: 'In riproduzione',
     tabQueue: 'Coda',
     playOn: 'Riproduci su',
-    thisDevice: 'Questo dispositivo',
     needsPairing: "Deve prima essere associato nell'app Beacon",
   },
   updateToast: {

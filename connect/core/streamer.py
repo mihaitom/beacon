@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-import os
+import math
 import re
 import time
 from collections.abc import AsyncGenerator, Callable
@@ -116,21 +116,113 @@ _CONTENT_TYPE_FOR_MUXER = {
 # even though the bytes on the wire change.
 _LOSSLESS_REENCODE_CODECS = {"alac", "pcm_s16le", "pcm_s24le", "pcm_s16be", "ape"}
 
-_FALLBACK_ARGS = ["-acodec", "libmp3lame", "-ab", "192k", "-ar", "44100", "-f", "mp3"]
+_FALLBACK_BITRATE_KBPS = 192
+_FALLBACK_ARGS = [
+    "-acodec",
+    "libmp3lame",
+    "-ab",
+    f"{_FALLBACK_BITRATE_KBPS}k",
+    "-ar",
+    "44100",
+    "-f",
+    "mp3",
+]
 _FALLBACK_CONTENT_TYPE = "audio/mpeg"
 
-# Diagnostic switch for the recurring cast-drop investigation (see
-# docs/playback-bugs/mid-track-drop-symptom.md). Set FORCE_FALLBACK_FORMAT=1
-# to make every track go through the MP3 192k re-encode, i.e. exactly what
-# this backend did before the stream-copy tiers were added — the shape the
-# simpler upstream it grew out of still uses, and which has never shown the
-# bug.
+# Source codecs that carry the full signal. A lossy ceiling always applies
+# to these, whatever bitrate number it names: there is no such thing as a
+# lossless source that already fits under "at most 192 kbps".
 #
-# Read per call rather than captured at import so it can be flipped with a
-# container restart instead of a rebuild, which is what makes an A/B over
-# hours of listening practical at all.
-def _fallback_forced() -> bool:
-    return os.getenv("FORCE_FALLBACK_FORMAT", "").strip().lower() in {"1", "true", "yes"}
+# Deliberately derived from _LOSSLESS_REENCODE_CODECS rather than listed
+# again — that set is the same question asked for a different purpose (which
+# lossless codecs need a container change to be castable), and two hand-kept
+# lists of lossless codecs would drift.
+_LOSSLESS_CODECS = _LOSSLESS_REENCODE_CODECS | {"flac"}
+
+# The lossy encoders a quality ceiling can name, with the muxer each one's
+# output goes into. Not the same question as _COPY_MUXER_FOR_CODEC above,
+# which is about codecs we pass through untouched: opus is missing there
+# because a Sonos won't play it, and present here because a browser will —
+# whether a target can play a format is the caller's business (see
+# resolve_output_format()'s max_lossy_format), not this table's.
+_LOSSY_ENCODERS = {
+    "mp3": ("libmp3lame", "mp3"),
+    "aac": ("aac", "adts"),
+    "opus": ("libopus", "ogg"),
+}
+
+# Sample rates each lossy encoder actually accepts. A source outside them
+# has to be resampled — MP3 has no 96kHz mode at all, and ffmpeg's opus
+# encoder only ever works at 48kHz. Picked as "the highest allowed rate at
+# or below what we want, else the lowest allowed one", which lands opus on
+# 48000 from anything and leaves an ordinary 44.1kHz source alone.
+_LOSSY_ENCODER_RATES = {
+    "mp3": (32000, 44100, 48000),
+    "aac": (32000, 44100, 48000),
+    "opus": (48000,),
+}
+
+
+def _lossy_sample_rate(
+    fmt: str, source_rate: int | None, max_sample_rate: int | None
+) -> int:
+    """Output sample rate for a lossy re-encode of a source at
+    `source_rate`, respecting a device's own `max_sample_rate` ceiling.
+
+    A source whose rate couldn't be detected gets 44100 — the same value
+    the mp3 fallback tier has always forced, and the one rate every
+    encoder here accepts."""
+    allowed = _LOSSY_ENCODER_RATES[fmt]
+    if source_rate is None:
+        rate = 44100
+    elif max_sample_rate is not None:
+        rate = min(source_rate, max_sample_rate)
+    else:
+        rate = source_rate
+    if rate in allowed:
+        return rate
+    return max((r for r in allowed if r <= rate), default=min(allowed))
+
+
+def lossy_encode_args(
+    fmt: str,
+    bitrate_kbps: int,
+    source_rate: int | None = None,
+    max_sample_rate: int | None = None,
+) -> tuple[list[str], str]:
+    """ffmpeg output args for a constant-bitrate encode to `fmt`, plus the
+    content type the result carries.
+
+    Constant bitrate specifically, not "roughly this size": routes/
+    local_stream.py turns a byte offset back into a timestamp by dividing
+    by exactly this number, which is what makes seeking work in a browser
+    for a stream that has no real length. `-vbr off` on opus is that same
+    requirement — opus is variable-rate by default, and a variable-rate
+    stream has no byte-to-time mapping to divide by.
+
+    Shared with resolve_output_format()'s quality-ceiling tier so a track
+    capped for a cast device and the same track transcoded for local
+    playback are encoded by identical commands."""
+    codec, muxer = _LOSSY_ENCODERS[fmt]
+    rate = _lossy_sample_rate(fmt, source_rate, max_sample_rate)
+    args = ["-acodec", codec, "-b:a", f"{bitrate_kbps}k", "-ar", str(rate)]
+    if fmt == "opus":
+        args += ["-vbr", "off"]
+    args += ["-f", muxer]
+    return args, _CONTENT_TYPE_FOR_MUXER[muxer]
+
+
+def transcoded_byte_length(bitrate_kbps: int, duration: float) -> int:
+    """How many bytes a `duration`-second constant-bitrate encode produces.
+
+    An estimate, and unavoidably so — the real file also carries container
+    framing, and the last frame is padded. It lands within a fraction of a
+    percent for the bitrates offered here, which is what a browser needs to
+    seek: it maps a scrub position onto a byte offset through this number,
+    and the server maps it back the same way (see lossy_encode_args()).
+    Both directions use the same arithmetic, so the two agree exactly even
+    where they are both slightly off the real file."""
+    return math.ceil(bitrate_kbps * 1000 / 8 * duration)
 
 
 _PROBE_TIMEOUT = 10.0
@@ -196,7 +288,8 @@ class OutputFormat:
     actually forces the output away from the source's own numbers (the
     resampled tiers) — None everywhere else, since "the target equals the
     source" is already visible from the source fields and repeating it
-    would just read as a second, redundant claim.
+    would just read as a second, redundant claim. `target_bitrate_kbps`
+    follows the same rule for a lossy re-encode's chosen bitrate.
 
     `transcode_reason` is a stable key, not prose: the frontend's
     stream-info section turns it into a translated sentence (see
@@ -214,6 +307,13 @@ class OutputFormat:
     source_duration: float | None = None
     target_sample_rate: int | None = None
     target_bit_depth: int | None = None
+    # The output's own bitrate, set only on the tiers that pick one. The
+    # frontend used to hardcode "192 kb/s" against the mp3 content type,
+    # which was accurate while the fallback was the only way to reach mp3;
+    # a quality ceiling can now land on that same content type at 320 or
+    # 96, so the number has to travel with it rather than be assumed.
+    # None on every tier whose bitrate is simply the source's own.
+    target_bitrate_kbps: int | None = None
     transcode_reason: str | None = None
 
 
@@ -223,9 +323,9 @@ FALLBACK_FORMAT = OutputFormat()
 # together here so the set is readable in one place rather than scattered
 # across resolve_output_format()'s branches — see OutputFormat's own
 # comment on why these are keys and not sentences.
-REASON_FORCED = "forced"  # FORCE_FALLBACK_FORMAT is set (diagnostic switch)
 REASON_PROBE_FAILED = "probe_failed"  # ffmpeg couldn't tell us what the source is
 REASON_DEVICE_LIMIT = "device_limit"  # source exceeds the target's sample rate/bit depth
+REASON_QUALITY_LIMIT = "quality_limit"  # source exceeds the quality ceiling the user set
 REASON_REPLAY_GAIN = "replay_gain"  # copying rules out the volume filter ReplayGain needs
 REASON_LOSSLESS_CONTAINER = "lossless_container"  # lossless, but not in a castable container
 REASON_CODEC_NOT_CASTABLE = "codec_not_castable"  # decodable, deliberately not copied (opus)
@@ -243,7 +343,13 @@ def _fallback(reason: str, duration: float | None = None) -> OutputFormat:
     discards the source's *format* on purpose (it isn't encoding to it),
     but the audio's length is the same either way, and routes/stream.py
     schedules the end of the track off it."""
-    return OutputFormat(transcode_reason=reason, source_duration=duration)
+    return OutputFormat(
+        transcode_reason=reason,
+        source_duration=duration,
+        # _FALLBACK_ARGS' own fixed -ab 192k, carried rather than left for
+        # a reader to match against the content type.
+        target_bitrate_kbps=_FALLBACK_BITRATE_KBPS,
+    )
 
 
 @dataclass
@@ -376,11 +482,73 @@ def _resample_plan(
     return args, target_sample_rate, target_bit_depth
 
 
+def _exceeds_quality_ceiling(
+    info: SourceInfo, max_lossy_format: str | None, max_lossy_bitrate_kbps: int | None
+) -> bool:
+    """Whether `info` is bigger than the listener's quality ceiling and so
+    has to be re-encoded down to it.
+
+    Three cases, and the third is the one worth stating: a lossy source
+    whose own bitrate ffmpeg didn't report is left alone. Guessing "it's
+    probably above the ceiling" would re-encode an already-small file for
+    nothing, and guessing the other way is no better founded — same rule
+    the rest of this module follows for a number it doesn't have (see
+    SourceInfo's own docstring)."""
+    if not max_lossy_format or not max_lossy_bitrate_kbps:
+        return False
+    if max_lossy_format not in _LOSSY_ENCODERS:
+        logger.warning(
+            f"[ffmpeg] Ignoring unknown quality ceiling format '{max_lossy_format}'"
+        )
+        return False
+    if info.codec in _LOSSLESS_CODECS:
+        return True
+    return info.bitrate_kbps is not None and info.bitrate_kbps > max_lossy_bitrate_kbps
+
+
+def _lossy_ceiling_format(
+    info: SourceInfo,
+    fmt: str,
+    bitrate_kbps: int,
+    max_sample_rate: int | None,
+) -> OutputFormat:
+    """The re-encode a source over the listener's ceiling lands on.
+
+    No `_resample_plan()` args here, unlike the FLAC tiers: a lossy encode
+    picks its own output rate anyway (see _lossy_sample_rate(), which is
+    handed the device's ceiling and honours it), and its bit depth is
+    whatever the encoder produces — `-sample_fmt s16` would be rejected by
+    libmp3lame rather than respected."""
+    args, content_type = lossy_encode_args(
+        fmt, bitrate_kbps, info.sample_rate, max_sample_rate
+    )
+    logger.info(
+        f"[ffmpeg] format probe: '{info.codec}' "
+        f"{f'{info.bitrate_kbps}kbps ' if info.bitrate_kbps else ''}"
+        f"exceeds the {fmt} {bitrate_kbps}kbps quality ceiling — re-encoding"
+    )
+    return OutputFormat(
+        ffmpeg_args=args,
+        content_type=content_type,
+        label=f"{info.codec} → {fmt} {bitrate_kbps}k (quality ceiling)",
+        source_codec=info.codec,
+        source_sample_rate=info.sample_rate,
+        source_bit_depth=info.bit_depth,
+        source_bitrate_kbps=info.bitrate_kbps,
+        source_duration=info.duration,
+        target_sample_rate=_lossy_sample_rate(fmt, info.sample_rate, max_sample_rate),
+        target_bitrate_kbps=bitrate_kbps,
+        transcode_reason=REASON_QUALITY_LIMIT,
+    )
+
+
 async def resolve_output_format(
     url: str,
     gain: float = 1.0,
     max_sample_rate: int | None = None,
     max_bit_depth: int | None = None,
+    max_lossy_format: str | None = None,
+    max_lossy_bitrate_kbps: int | None = None,
 ) -> OutputFormat:
     """Detect the real source codec/sample rate/bit depth and decide how
     ffmpeg should handle it — stream-copy when the source is already
@@ -419,13 +587,22 @@ async def resolve_output_format(
     track that also happened to qualify for stream-copy never played at
     all. Every FLAC re-encode tier below is unaffected either way — it
     already decodes+re-encodes, so stream_tracks() fits a volume filter
-    into that same pipeline for free (see its own handling of `gain`)."""
-    if _fallback_forced():
-        # No probe either: the point is to reproduce the pre-copy-tier
-        # pipeline exactly, and that never inspected the source.
-        logger.info("[ffmpeg] FORCE_FALLBACK_FORMAT set — re-encoding to mp3 192k")
-        return _fallback(REASON_FORCED)
+    into that same pipeline for free (see its own handling of `gain`).
 
+    `max_lossy_format`/`max_lossy_bitrate_kbps` are the *listener's* ceiling
+    rather than the device's — the quality setting in the frontend, carried
+    here from /play (see routes/playback.py). Both must be given together
+    for either to do anything. They cap the tiers below instead of replacing
+    them: a source that already fits stays exactly where it would have
+    landed, so an mp3-192k source under a 320k ceiling is still copied
+    untouched. Only a source above the ceiling is re-encoded down to it, and
+    a lossless source is always above it, whatever number it names.
+
+    The device's own limits above still win where they disagree, and that
+    ordering is deliberate: `max_sample_rate` is what a device can decode at
+    all, so ignoring it produces silence (see the ERROR_UNSUPPORTED_FREQ
+    case above), while ignoring the listener's ceiling only produces a
+    bigger stream than they asked for."""
     info = await _probe_source(url)
     if info is None:
         return _fallback(REASON_PROBE_FAILED)
@@ -433,6 +610,11 @@ async def resolve_output_format(
     resample_args, target_rate, target_depth = _resample_plan(
         info, max_sample_rate, max_bit_depth
     )
+
+    if _exceeds_quality_ceiling(info, max_lossy_format, max_lossy_bitrate_kbps):
+        return _lossy_ceiling_format(
+            info, max_lossy_format, max_lossy_bitrate_kbps, max_sample_rate
+        )
 
     muxer = _COPY_MUXER_FOR_CODEC.get(codec)
     if muxer and resample_args:

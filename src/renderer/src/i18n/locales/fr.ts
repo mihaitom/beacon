@@ -164,6 +164,8 @@ export default {
   },
   connect: {
     title: 'Diffusion',
+    playingOn: 'Lecture sur',
+    thisDevice: 'Cet appareil',
     rescan: 'Rescanner',
     stopAll: 'Tout arrêter',
     connect: 'Connecter',
@@ -211,7 +213,8 @@ export default {
         codec_unknown: 'Codec inconnu',
         probe_failed: 'Format inconnu',
         replay_gain: 'ReplayGain',
-        forced: 'Réglage du serveur',
+        quality_limit: 'Limite de qualité',
+        browser_unsupported: 'Format navigateur',
       },
       reasons: {
         device_limit: 'La source dépasse la qualité prise en charge par cet appareil',
@@ -221,7 +224,8 @@ export default {
         codec_unknown: "Le codec source n'a pas été reconnu",
         probe_failed: "Le format source n'a pas pu être détecté",
         replay_gain: "ReplayGain est actif, ce qui empêche d'envoyer le fichier tel quel",
-        forced: 'Format de repli imposé par un réglage du serveur',
+        quality_limit: 'La source dépasse la limite de qualité définie dans les réglages',
+        browser_unsupported: 'Le navigateur ne peut pas lire le format source',
       },
     },
   },
@@ -294,6 +298,16 @@ export default {
     replayGainAlbum: 'Album',
     replayGainHint:
       "Uniformise le volume des enregistrements masterisés différemment — « Titre » normalise chaque morceau individuellement, « Album » préserve les différences de volume au sein d'un album. S'applique à la lecture locale et à la diffusion ; pendant une diffusion en cours, un changement ne prend effet qu'à partir du morceau suivant.",
+    localQuality: 'Qualité audio (cet appareil)',
+    localQualityHint:
+      "Ne s'applique qu'à la lecture sur cet appareil et est enregistré ici, pas dans le compte — un téléphone et un ordinateur peuvent donc être réglés différemment. « Original » envoie le fichier tel quel ; MP3 le convertit à la lecture, ce qui économise de la bande passante et rend lisibles des fichiers que le navigateur ne sait pas ouvrir. MP3 est la seule conversion proposée ici, car c'est la seule avec laquelle se déplacer dans le morceau fonctionne de manière fiable. Le changement prend effet à partir du morceau suivant.",
+    castQuality: 'Qualité audio (diffusion)',
+    castQualityHint:
+      "Un plafond, pas un choix imposé : Beacon continue de choisir le meilleur format accepté par chaque appareil, mais n'envoie jamais rien au-dessus de ce réglage. Un enregistrement déjà en dessous est envoyé tel quel. Les limites propres à l'appareil s'appliquent toujours en plus. Prend effet à partir du morceau suivant.",
+    qualityFormat: 'Format',
+    qualityBitrate: 'Débit',
+    qualityBitrateItem: '{value} kbit/s',
+    qualityOriginal: 'Original (inchangé)',
     autoplay: 'Lecture automatique',
     autoplayBatchSizeItem: '{count} morceaux',
     autoplayHint:
@@ -387,7 +401,6 @@ export default {
     tabNowPlaying: 'En cours de lecture',
     tabQueue: "File d'attente",
     playOn: 'Lire sur',
-    thisDevice: 'Cet appareil',
     needsPairing: "Doit d'abord être associé dans l'application Beacon",
   },
   updateToast: {

@@ -93,6 +93,15 @@ class AppState:
         # on what's being sent. Resets to the fallback for radio (/play-url
         # never goes through our own /stream proxy, so it's irrelevant there).
         self.current_output_format: OutputFormat = FALLBACK_FORMAT
+        # The listener's standing quality ceiling for this cast, as last set
+        # by a /play (see routes/playback.py's PlayRequest). Held on the
+        # session rather than only per request because auto-advance
+        # (routes/stream.py) resolves the *next* track's format with no
+        # request of its own to read it from, and because a second client
+        # controlling the same cast should not silently re-cap it to its own
+        # setting mid-queue. Both None means no ceiling.
+        self.max_lossy_format: str | None = None
+        self.max_lossy_bitrate_kbps: int | None = None
         # The *full* ordered queue as the frontend currently understands it —
         # already-played history included, not just what's left — with
         # queue[queue_index] == current_track. Set by /play (fresh dispatch)

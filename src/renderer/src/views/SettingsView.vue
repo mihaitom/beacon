@@ -51,6 +51,57 @@
         {{ $t('settings.replayGainHint') }}
       </p>
 
+      <p class="text-body-2 font-weight-medium mt-6 mb-2">{{ $t('settings.localQuality') }}</p>
+      <div class="quality-row">
+        <v-select
+          :model-value="playbackStore.localQuality.format"
+          :items="formatOptions"
+          :label="$t('settings.qualityFormat')"
+          variant="solo-filled"
+          hide-details
+          @update:model-value="playbackStore.setLocalQuality($event)"
+        />
+        <v-select
+          v-if="playbackStore.localQuality.format !== 'original'"
+          :model-value="playbackStore.localQuality.bitrate"
+          :items="bitrateOptions(playbackStore.localQuality.format)"
+          :label="$t('settings.qualityBitrate')"
+          variant="solo-filled"
+          hide-details
+          @update:model-value="
+            playbackStore.setLocalQuality(playbackStore.localQuality.format, $event)
+          "
+        />
+      </div>
+      <p class="text-caption text-medium-emphasis mt-3">
+        {{ $t('settings.localQualityHint') }}
+      </p>
+      <p class="text-body-2 font-weight-medium mt-6 mb-2">{{ $t('settings.castQuality') }}</p>
+      <div class="quality-row">
+        <v-select
+          :model-value="playbackStore.castQuality.format"
+          :items="castFormatOptions"
+          :label="$t('settings.qualityFormat')"
+          variant="solo-filled"
+          hide-details
+          @update:model-value="playbackStore.setCastQuality($event)"
+        />
+        <v-select
+          v-if="playbackStore.castQuality.format !== 'original'"
+          :model-value="playbackStore.castQuality.bitrate"
+          :items="bitrateOptions(playbackStore.castQuality.format)"
+          :label="$t('settings.qualityBitrate')"
+          variant="solo-filled"
+          hide-details
+          @update:model-value="
+            playbackStore.setCastQuality(playbackStore.castQuality.format, $event)
+          "
+        />
+      </div>
+      <p class="text-caption text-medium-emphasis mt-3">
+        {{ $t('settings.castQualityHint') }}
+      </p>
+
       <template v-if="authStore.capabilities.songRadio">
         <p class="text-body-2 font-weight-medium mt-6 mb-2">{{ $t('settings.autoplay') }}</p>
         <v-select
@@ -213,6 +264,13 @@ import { useRecommendationsStore } from '@/stores/recommendations'
 import { AUTOPLAY_BATCH_SIZE_OPTIONS, useAutoplayStore } from '@/stores/autoplay'
 import { useUpdateStore } from '@/stores/update'
 import type { ReplayGainMode } from '@/services/replayGain'
+import {
+  BITRATES,
+  CAST_FORMATS,
+  LOCAL_FORMATS,
+  type StreamFormat,
+  type TranscodeFormat,
+} from '@/services/streamQuality'
 import NavidromeIcon from '@/components/auth/NavidromeIcon.vue'
 import JellyfinIcon from '@/components/auth/JellyfinIcon.vue'
 import PlexIcon from '@/components/auth/PlexIcon.vue'
@@ -289,6 +347,16 @@ export default {
         { title: this.$t('settings.replayGainAlbum'), value: 'album' },
       ]
     },
+    /** Both lists come from services/streamQuality.ts rather than being
+     * written out here — which formats each side can offer is a fact about
+     * the encoders and the seeking, not a UI decision, and it's explained
+     * where it's decided. */
+    formatOptions(): { title: string; value: StreamFormat }[] {
+      return LOCAL_FORMATS.map((value) => ({ title: this.formatLabel(value), value }))
+    },
+    castFormatOptions(): { title: string; value: StreamFormat }[] {
+      return CAST_FORMATS.map((value) => ({ title: this.formatLabel(value), value }))
+    },
     autoplayBatchSizeOptions() {
       return AUTOPLAY_BATCH_SIZE_OPTIONS.map((count) => ({
         title: this.$t('settings.autoplayBatchSizeItem', { count }),
@@ -341,6 +409,15 @@ export default {
     if (this.scanTimer) clearTimeout(this.scanTimer)
   },
   methods: {
+    formatLabel(format: StreamFormat): string {
+      return format === 'original' ? this.$t('settings.qualityOriginal') : format.toUpperCase()
+    },
+    bitrateOptions(format: TranscodeFormat): { title: string; value: number }[] {
+      return BITRATES[format].map((value) => ({
+        title: this.$t('settings.qualityBitrateItem', { value }),
+        value,
+      }))
+    },
     onLocaleChange(value: SupportedLocale) {
       setLocale(value)
     },
@@ -499,6 +576,24 @@ export default {
 </script>
 
 <style scoped>
+/* Format and bitrate side by side, with the format wider — it carries the
+ * actual decision, while the bitrate is a number that needs no room. Wraps
+ * on a narrow window (the mobile web build) instead of squeezing both into
+ * something unreadable. */
+.quality-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.quality-row > :first-child {
+  flex: 2 1 180px;
+}
+
+.quality-row > :last-child:not(:first-child) {
+  flex: 1 1 120px;
+}
+
 /* Echoes ServerLoginView.vue's lit account badge — the same signal that
  * confirmed which server you signed into now confirms who you're signed in
  * as, a deliberate bookend rather than a plain read-only form field. */

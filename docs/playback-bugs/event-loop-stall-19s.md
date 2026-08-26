@@ -41,13 +41,24 @@ parses that; SUBSCRIBE/renew go through `asyncio.to_thread`
 (core/upnp_events.py); every Sonos call resolves its device in a thread too
 (`SonosDelivery._get_device`). None of those is on the loop.
 
-**How to catch it.** Two options, and the cheap one needs no code:
+**How to catch it.** From outside, while it is stalling: `py-spy dump --pid
+<the container's python>` from the host. That names the frame directly, and
+needs only ptrace permission - no code in this repo at all.
 
-- While it is stalling, dump the stack from outside: `py-spy dump --pid <the
-  container's python>` from the host. That names the frame directly, and
-  needs only ptrace permission.
-- The durable version: a watchdog *thread* - the loop updates a timestamp,
-  the thread checks it every 0.5s and dumps every thread's stack once the
-  loop has not ticked for N seconds, i.e. while the block is still in
-  progress. `monitor_loop_lag()` cannot do this itself: by the time it runs
-  again, the culprit has already returned.
+**A built-in watchdog thread was considered and dropped (2026-08-26).** The
+shape was a plain thread outside the loop: the loop updates a timestamp,
+the thread checks it every 0.5s and dumps every thread's stack once the loop
+has not ticked for N seconds - i.e. while the block is still in progress,
+which `monitor_loop_lag()` can never do, because by the time it runs again
+the culprit has already returned.
+
+It is dropped anyway, because naming the frame is not the part that is
+missing. What a stall actually does to playback is leave the device's
+position reading rewound, and that reading is not separable from a rewind
+somebody triggered on the device - the same ambiguity documented in
+[Auto-advance onto a still-playing device](auto-advance-still-playing-device.md),
+"Attempted and reverted", where no threshold could split the two cases
+either. So the watchdog would add a permanently running thread and a burst
+of log output to a process that streams audio, and still leave the decision
+it was supposed to inform unmade. `py-spy` above produces the same frame on
+demand, with nothing to maintain, for a stall seen exactly once.

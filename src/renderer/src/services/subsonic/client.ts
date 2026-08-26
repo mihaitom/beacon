@@ -17,6 +17,7 @@ import type {
 } from './types'
 import { mapAlbum, mapArtist, mapPlaylist, mapRadioStation, mapSong } from './mappers'
 import type { Album, Artist, Playlist, RadioStation, Song } from '@/types/library'
+import type { StreamQuality } from '@/services/streamQuality'
 
 const API_VERSION = '1.16.1'
 const APP_NAME = 'beacon'
@@ -107,12 +108,29 @@ export class SubsonicClient {
    * browser can't attach custom headers for those, so both the connect
    * token and the session id (see the constructor's sessionId comment)
    * have to travel as query params instead (require_token/get_session both
-   * accept query-param fallbacks, see connect/core/auth.py + session.py). */
-  streamUrl(songId: string): string {
+   * accept query-param fallbacks, see connect/core/auth.py + session.py).
+   *
+   * `quality` other than 'original' points at connect's own transcoder
+   * (connect/routes/local_stream.py) instead of the media server's bytes.
+   * Two different endpoints rather than a flag on one, deliberately: the
+   * untouched path keeps working exactly as it always has — same URL, same
+   * Range handling by the media server itself — instead of gaining a
+   * second implementation that has to be kept identical to the first. */
+  streamUrl(songId: string, quality: StreamQuality = { format: 'original', bitrate: 0 }): string {
     const params = this.authParams()
-    params.set('id', songId)
     if (this.connectToken) params.set('token', this.connectToken)
     if (this.sessionId) params.set('session', this.sessionId)
+    if (quality.format !== 'original') {
+      // No Subsonic auth params here — connect resolves the source itself
+      // from the session's own media client, the same way casting does.
+      const transcodeParams = new URLSearchParams()
+      if (this.connectToken) transcodeParams.set('token', this.connectToken)
+      if (this.sessionId) transcodeParams.set('session', this.sessionId)
+      transcodeParams.set('fmt', quality.format)
+      transcodeParams.set('br', String(quality.bitrate))
+      return `${this.proxyBaseUrl}/stream/local/${encodeURIComponent(songId)}?${transcodeParams.toString()}`
+    }
+    params.set('id', songId)
     return `${this.proxyBaseUrl}/rest/stream.view?${params.toString()}`
   }
 

@@ -163,13 +163,21 @@ those could plausibly make a renderer decide it has reached the end of the
 content - which is exactly what the device reports (`STOPPED`, status `OK`,
 full buffer).
 
-The A/B is cheap: set `FORCE_FALLBACK_FORMAT=1`, which makes
+The A/B was cheap: set `FORCE_FALLBACK_FORMAT=1`, which made
 `resolve_output_format()` return `FALLBACK_FORMAT` for everything and skip
-the probe, reproducing the pre-copy-tier pipeline exactly. It is an
-environment variable rather than a code edit so the two arms can be swapped
-with a container restart instead of a rebuild. If the drops stop, the cause
-is in what stream-copy emits, and the next question is which property of the
-source triggers it. If they continue, the copy tier is exonerated.
+the probe, reproducing the pre-copy-tier pipeline exactly. It was an
+environment variable rather than a code edit so the two arms could be
+swapped with a container restart instead of a rebuild. If the drops stopped,
+the cause was in what stream-copy emits, and the next question would have
+been which property of the source triggers it. If they continued, the copy
+tier was exonerated.
+
+**`FORCE_FALLBACK_FORMAT` no longer exists (removed 2026-08-26).** It was
+replaced by the quality settings in the frontend, which do the same thing
+more precisely: setting the cast ceiling to mp3 192 forces every source
+above it through the same re-encode, per session and with no restart, while
+leaving the local player alone. The one thing the env var did that the
+setting does not is skip the probe — nothing here ever depended on that.
 
 ### Raising the event rate
 

@@ -40,6 +40,7 @@ export function makeStatus(overrides: Partial<ConnectStatus> = {}): ConnectStatu
       source_bitrate_kbps: null,
       target_sample_rate: null,
       target_bit_depth: null,
+      target_bitrate_kbps: null,
       transcode_reason: null,
       active_connections: 0,
       loop_lag: 0,

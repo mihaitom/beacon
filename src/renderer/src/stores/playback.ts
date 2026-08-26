@@ -1,6 +1,16 @@
 import { defineStore } from 'pinia'
 import { getAudioEngine } from '@/services/audioEngine'
 import { calculateReplayGain, type ReplayGainMode } from '@/services/replayGain'
+import {
+  bitrateFor,
+  load as loadStreamQuality,
+  save as saveStreamQuality,
+  plan,
+  type LocalStreamPlan,
+  type StreamFormat,
+  type StreamQuality,
+  type TranscodeFormat,
+} from '@/services/streamQuality'
 import { useLibraryStore } from './library'
 import { useConnectStore } from './connect'
 import { useAuthStore } from './auth'
@@ -51,6 +61,23 @@ interface PlaybackState {
   shuffle: boolean
   repeatMode: RepeatMode
   replayGainMode: ReplayGainMode
+  /** Quality ceilings for this device's own player and for casting — see
+   * services/streamQuality.ts for why both are caps rather than fixed
+   * choices, and why they are two settings and not one. */
+  localQuality: StreamQuality
+  castQuality: StreamQuality
+  /** What the currently loaded local stream actually is, and why — null
+   * when nothing is loaded. Distinct from `localQuality` above in two
+   * ways, both of which the stream-info panel depends on:
+   *
+   * - That one is the *setting*, and a setting change only takes effect at
+   *   the next song start (see setLocalQuality()), so the running stream
+   *   can legitimately be something else for the rest of a track.
+   * - The setting is a ceiling, so a track already under it plays
+   *   untouched even though the setting names a format (see plan() in
+   *   services/streamQuality.ts).
+   */
+  activeLocalStream: LocalStreamPlan | null
   radioStation: RadioStation | null
   initialized: boolean
   queueDrawerOpen: boolean
@@ -299,28 +326,40 @@ if (import.meta.hot) {
  * never need to know which one is actually happening.
  */
 export const usePlaybackStore = defineStore('playback', {
-  state: (): PlaybackState => ({
-    originalQueue: [],
-    queue: [],
-    currentIndex: -1,
-    isPlaying: false,
-    castInterrupted: false,
-    localPosition: 0,
-    duration: 0,
-    volume: 1,
-    shuffle: false,
-    repeatMode: 'off',
-    // 'off' by default — ReplayGain changes playback volume, which
-    // shouldn't happen for existing users without them opting in first.
-    replayGainMode: 'off',
-    radioStation: null,
-    initialized: false,
-    queueDrawerOpen: false,
-    queueRevealSeq: 0,
-    queueRevealNeedsOpenDelay: false,
-    queueRevealSongs: [],
-    lyricsDrawerOpen: false,
-  }),
+  state: (): PlaybackState => {
+    // Read here rather than at module load so a fresh store (tests, a
+    // second window) sees whatever is actually in storage now.
+    const quality = loadStreamQuality()
+    return {
+      originalQueue: [],
+      queue: [],
+      currentIndex: -1,
+      isPlaying: false,
+      castInterrupted: false,
+      localPosition: 0,
+      duration: 0,
+      volume: 1,
+      shuffle: false,
+      repeatMode: 'off',
+      // 'off' by default — ReplayGain changes playback volume, which
+      // shouldn't happen for existing users without them opting in first.
+      replayGainMode: 'off',
+      // Read straight out of storage rather than defaulted and restored
+      // later: these decide the URL the very first startCurrent() builds,
+      // and a restore landing after it would play one track at the wrong
+      // quality on every app start.
+      localQuality: quality.local,
+      castQuality: quality.cast,
+      activeLocalStream: null,
+      radioStation: null,
+      initialized: false,
+      queueDrawerOpen: false,
+      queueRevealSeq: 0,
+      queueRevealNeedsOpenDelay: false,
+      queueRevealSongs: [],
+      lyricsDrawerOpen: false,
+    }
+  },
 
   getters: {
     currentSong(state): Song | null {
@@ -345,6 +384,21 @@ export const usePlaybackStore = defineStore('playback', {
      * see core/streamer.py). */
     replayGainMultiplier(): number {
       return this.currentSong ? calculateReplayGain(this.currentSong, this.replayGainMode) : 1
+    },
+    /** The cast quality ceiling in the shape connect's /play expects, or an
+     * empty object when there is none — connect treats both fields missing
+     * as "no ceiling" and behaves exactly as it did before they existed
+     * (see resolve_output_format()), so spreading nothing is the correct
+     * way to say "don't cap this". */
+    castQualityPayload(state): {
+      max_lossy_format?: TranscodeFormat
+      max_lossy_bitrate_kbps?: number
+    } {
+      if (state.castQuality.format === 'original') return {}
+      return {
+        max_lossy_format: state.castQuality.format,
+        max_lossy_bitrate_kbps: state.castQuality.bitrate,
+      }
     },
     /** The full queue (history included) + current index, plus the standing
      * shuffle/repeat/originalQueue preferences — everything
@@ -594,7 +648,7 @@ export const usePlaybackStore = defineStore('playback', {
       }
       const song = this.currentSong
       if (!song) return
-      const url = useLibraryStore().client().streamUrl(song.id)
+      const url = this.localStreamUrl(song)
       const gain = this.replayGainMultiplier
       if (restoredWasPlaying) {
         getAudioEngine().play(url, this.localPosition, gain)
@@ -623,7 +677,7 @@ export const usePlaybackStore = defineStore('playback', {
       }
       const song = this.currentSong
       if (!song) return
-      const url = useLibraryStore().client().streamUrl(song.id)
+      const url = this.localStreamUrl(song)
       const gain = this.replayGainMultiplier
       if (this.isPlaying) {
         getAudioEngine().play(url, this.localPosition, gain)
@@ -970,6 +1024,7 @@ export const usePlaybackStore = defineStore('playback', {
             targets: connect.activeTargets,
             startPosition,
             gain: this.replayGainMultiplier,
+            ...this.castQualityPayload,
             fullQueue,
             queueIndex,
             originalQueue,
@@ -983,7 +1038,7 @@ export const usePlaybackStore = defineStore('playback', {
         }
         if (response.status === 'superseded') return false
       } else {
-        const url = useLibraryStore().client().streamUrl(song.id)
+        const url = this.localStreamUrl(song)
         getAudioEngine().play(url, startPosition, this.replayGainMultiplier)
       }
       // A newer startCurrent() already took over while the above awaited —
@@ -1160,6 +1215,49 @@ export const usePlaybackStore = defineStore('playback', {
     setReplayGainMode(mode: ReplayGainMode): void {
       this.replayGainMode = mode
       if (!this.isCasting) getAudioEngine().setReplayGain(this.replayGainMultiplier)
+    },
+
+    /** The stream URL for `song`, recording what was actually decided.
+     * The two belong together: the stream-info panel describes what is
+     * playing by reading `activeLocalStream`, and a URL built anywhere
+     * else would leave that describing the previous track.
+     *
+     * Note this is not simply the setting — plan() applies it as a
+     * ceiling, so a track already below it is fetched untouched. */
+    localStreamUrl(song: Song): string {
+      const streamPlan = plan(song, this.localQuality)
+      this.activeLocalStream = streamPlan
+      return useLibraryStore().client().streamUrl(song.id, streamPlan.quality)
+    },
+
+    /** Settings-driven. Takes effect from the next song start onward rather
+     * than immediately: the running `<audio>` element is already fetching a
+     * URL that encodes the old choice, and reloading it mid-track to apply
+     * a quality change would cost an audible gap for no benefit. Same
+     * timing as setReplayGainMode() has while casting, and for the same
+     * kind of reason. */
+    setLocalQuality(format: StreamFormat, bitrate?: number): void {
+      this.localQuality = {
+        format,
+        bitrate: bitrate ?? bitrateFor(format, this.localQuality.bitrate),
+      }
+      this.persistQuality()
+    },
+
+    /** The ceiling for casting. Reaches connect with the next /play (see
+     * castQualityPayload), which is also when auto-advance picks it up for
+     * the rest of the queue — the local one is applied client-side
+     * instead, see localStreamUrl(). */
+    setCastQuality(format: StreamFormat, bitrate?: number): void {
+      this.castQuality = {
+        format,
+        bitrate: bitrate ?? bitrateFor(format, this.castQuality.bitrate),
+      }
+      this.persistQuality()
+    },
+
+    persistQuality(): void {
+      saveStreamQuality({ local: this.localQuality, cast: this.castQuality })
     },
 
     toggleShuffle(): void {

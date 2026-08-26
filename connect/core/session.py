@@ -228,6 +228,7 @@ def build_status_dict(
         # all — see OutputFormat's own comment on both.
         "target_sample_rate": fmt.target_sample_rate,
         "target_bit_depth": fmt.target_bit_depth,
+        "target_bitrate_kbps": fmt.target_bitrate_kbps,
         "transcode_reason": fmt.transcode_reason,
         "active_connections": st.active_stream_connections,
         # Process-wide, not session-scoped — see core/loop_health.py. A short

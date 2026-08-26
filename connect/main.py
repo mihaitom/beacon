@@ -43,6 +43,7 @@ from routes.discovery import discover_all
 from routes.discovery import router as discovery_router
 from routes.jellyfin_auth import router as jellyfin_auth_router
 from routes.join import router as join_router
+from routes.local_stream import router as local_stream_router
 from routes.log_level import router as log_level_router
 from routes.lyrics import router as lyrics_router
 from routes.pairing import reap_stale_pairings
@@ -353,6 +354,10 @@ app.add_middleware(
 )
 
 app.include_router(stream_router)
+# After stream_router, which owns /stream/{session_id} — a different
+# segment count, so the two never compete, but keeping them adjacent
+# makes that obvious rather than something to re-derive.
+app.include_router(local_stream_router)
 app.include_router(playback_router)
 app.include_router(devices_router)
 app.include_router(jellyfin_auth_router)

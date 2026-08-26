@@ -36,7 +36,7 @@
 
         <v-list-item @click="disconnectAll">
           <template #prepend><v-icon icon="mdi-speaker" /></template>
-          <v-list-item-title>{{ $t('mobile.thisDevice') }}</v-list-item-title>
+          <v-list-item-title>{{ $t('connect.thisDevice') }}</v-list-item-title>
         </v-list-item>
 
         <template v-for="group in deviceGroups" :key="group.type">

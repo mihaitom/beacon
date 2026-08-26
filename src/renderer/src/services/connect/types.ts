@@ -214,6 +214,12 @@ export interface ConnectStreamInfo {
   // the device", which is exactly what's worth showing.
   target_sample_rate: number | null
   target_bit_depth: number | null
+  // The bitrate the output was encoded at, on the tiers that pick one —
+  // null wherever the bitrate is simply the source's own. Travels with the
+  // format rather than being inferred from the content type: mp3 used to
+  // mean "the 192k fallback" and can now also mean whatever ceiling the
+  // listener set (see PlayOptions.max_lossy_bitrate_kbps).
+  target_bitrate_kbps: number | null
   // Why this track is being transcoded, as a stable key (see
   // connect/core/streamer.py's REASON_* constants) that
   // StreamInfoSection.vue turns into a translated sentence. null on the

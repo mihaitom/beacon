@@ -272,11 +272,62 @@ describe('ConnectDevicePicker', () => {
     expect(refreshSpy).not.toHaveBeenCalled()
   })
 
-  describe('stream info', () => {
-    it('is hidden while nothing is casting', () => {
+  // Local playback used to be "nothing is ticked" — implicit, and with
+  // nothing on the card naming it. The stream-info section below now
+  // describes it, which needs something visible to attach to.
+  describe('this device', () => {
+    it('is marked as the one playing while nothing is cast', () => {
       const wrapper = mountPicker()
 
-      expect(wrapper.findComponent({ name: 'StreamInfoSection' }).exists()).toBe(false)
+      const entry = wrapper.get('.this-device')
+      expect(entry.classes()).toContain('this-device--active')
+      expect(entry.attributes('aria-pressed')).toBe('true')
+    })
+
+    it('is not marked while a speaker has playback', () => {
+      const connect = useConnectStore()
+      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+      const wrapper = mountPicker()
+
+      const entry = wrapper.get('.this-device')
+      expect(entry.classes()).not.toContain('this-device--active')
+      expect(entry.attributes('aria-pressed')).toBe('false')
+    })
+
+    it('brings playback back here by stopping every cast target', async () => {
+      // The same call "Stop all" makes — stopping every target *is*
+      // playing here. Two labels for one action, so the affordance can
+      // read as "play here" rather than as something destructive.
+      const connect = useConnectStore()
+      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+      const stopAll = vi.spyOn(connect, 'stopAll').mockResolvedValue()
+      const wrapper = mountPicker()
+
+      await wrapper.get('.this-device').trigger('click')
+
+      expect(stopAll).toHaveBeenCalled()
+    })
+
+    it('does nothing when playback is already here', async () => {
+      const connect = useConnectStore()
+      const stopAll = vi.spyOn(connect, 'stopAll').mockResolvedValue()
+      const wrapper = mountPicker()
+
+      await wrapper.get('.this-device').trigger('click')
+
+      expect(stopAll).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('stream info', () => {
+    // It used to be gated on casting, because a format only existed for a
+    // cast. Since the quality setting arrived, local playback has one too,
+    // so the section is always here — see StreamInfoSection.vue, which
+    // decides for itself what it can say about each.
+    it('is shown while nothing is casting', () => {
+      const wrapper = mountPicker()
+
+      expect(wrapper.findComponent({ name: 'StreamInfoSection' }).exists()).toBe(true)
     })
 
     it('is shown once casting to a device — no separate button needed to reach it', () => {

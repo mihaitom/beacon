@@ -94,7 +94,7 @@ def _stub_output_format(monkeypatch):
     themselves."""
     from core.streamer import FALLBACK_FORMAT
 
-    async def _fake_resolve(url, gain=1.0, max_sample_rate=None, max_bit_depth=None):
+    async def _fake_resolve(url, gain=1.0, **kwargs):
         return FALLBACK_FORMAT
 
     monkeypatch.setattr("routes.playback.resolve_output_format", _fake_resolve)

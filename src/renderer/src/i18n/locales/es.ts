@@ -165,6 +165,8 @@ export default {
   },
   connect: {
     title: 'Transmisión',
+    playingOn: 'Reproduciendo en',
+    thisDevice: 'Este dispositivo',
     rescan: 'Volver a escanear',
     stopAll: 'Detener todo',
     connect: 'Conectar',
@@ -211,7 +213,8 @@ export default {
         codec_unknown: 'Códec desconocido',
         probe_failed: 'Formato desconocido',
         replay_gain: 'ReplayGain',
-        forced: 'Ajuste del servidor',
+        quality_limit: 'Límite de calidad',
+        browser_unsupported: 'Formato del navegador',
       },
       reasons: {
         device_limit: 'La fuente supera la calidad que admite este dispositivo',
@@ -221,7 +224,8 @@ export default {
         codec_unknown: 'No se reconoció el códec de origen',
         probe_failed: 'No se pudo detectar el formato de origen',
         replay_gain: 'ReplayGain está activo, por lo que no se puede enviar el archivo tal cual',
-        forced: 'Formato alternativo forzado por un ajuste del servidor',
+        quality_limit: 'La fuente supera el límite de calidad fijado en los ajustes',
+        browser_unsupported: 'El navegador no puede reproducir el formato de origen',
       },
     },
   },
@@ -293,6 +297,16 @@ export default {
     replayGainAlbum: 'Álbum',
     replayGainHint:
       'Iguala el volumen de grabaciones masterizadas de forma diferente — «Pista» normaliza cada canción individualmente, «Álbum» conserva las diferencias de volumen dentro de un álbum. Se aplica tanto a la reproducción local como a la transmisión; mientras ya se está transmitiendo, un cambio solo tiene efecto a partir de la siguiente pista.',
+    localQuality: 'Calidad de audio (este dispositivo)',
+    localQualityHint:
+      'Solo se aplica a la reproducción en este dispositivo y se guarda aquí, no en la cuenta, así que un móvil y un ordenador pueden tener ajustes distintos. «Original» envía el archivo sin modificar; MP3 lo convierte al reproducirse, lo que ahorra ancho de banda y permite reproducir archivos que el navegador no puede abrir. MP3 es la única conversión disponible aquí, porque es la única con la que saltar dentro de la pista funciona de forma fiable. El cambio surte efecto a partir de la siguiente pista.',
+    castQuality: 'Calidad de audio (transmisión)',
+    castQualityHint:
+      'Un límite máximo, no una elección fija: Beacon sigue eligiendo el mejor formato que acepte cada dispositivo, pero nunca envía nada por encima de este ajuste. Una grabación que ya cabe por debajo se envía sin modificar. Los límites del propio dispositivo se aplican siempre además de este. Surte efecto a partir de la siguiente pista.',
+    qualityFormat: 'Formato',
+    qualityBitrate: 'Tasa de bits',
+    qualityBitrateItem: '{value} kb/s',
+    qualityOriginal: 'Original (sin modificar)',
     autoplay: 'Reproducción automática',
     autoplayBatchSizeItem: '{count} canciones',
     autoplayHint:
@@ -386,7 +400,6 @@ export default {
     tabNowPlaying: 'Reproduciendo ahora',
     tabQueue: 'Cola',
     playOn: 'Reproducir en',
-    thisDevice: 'Este dispositivo',
     needsPairing: 'Necesita emparejarse primero en la aplicación Beacon',
   },
   updateToast: {

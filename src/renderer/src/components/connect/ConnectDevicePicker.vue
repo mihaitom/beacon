@@ -4,7 +4,7 @@
       density="compact"
       color="#0B0D13"
       class="connect-picker__toolbar"
-      :title="$t('connect.title')"
+      :title="$t('connect.playingOn')"
     >
       <template #append>
         <v-icon
@@ -44,6 +44,27 @@
         {{ $t('connect.noDevicesFound') }}
       </div>
 
+      <!-- Local playback as a real entry rather than "nothing ticked",
+       - matching MobileDevicePicker.vue, which has had one all along.
+       - Since the stream-info section below now describes local playback
+       - too, the card needed something for it to refer to — a panel
+       - explaining a format with no visible sign of what is playing it
+       - reads as belonging to whichever device is listed first. -->
+      <button
+        type="button"
+        class="this-device"
+        :class="{ 'this-device--active': !connectStore.isActive }"
+        :aria-pressed="!connectStore.isActive"
+        @click="playHere"
+      >
+        <v-icon
+          :icon="connectStore.isActive ? 'mdi-laptop' : 'mdi-circle-slice-8'"
+          :color="connectStore.isActive ? undefined : 'primary'"
+          size="small"
+        />
+        {{ $t('connect.thisDevice') }}
+      </button>
+
       <template v-for="group in deviceGroups" :key="group.type">
         <div class="eyebrow-label device-group-heading">{{ group.label }}</div>
         <device-list-item
@@ -59,8 +80,8 @@
         />
       </template>
 
-      <v-divider v-if="connectStore.isActive" class="my-2" />
-      <stream-info-section v-if="connectStore.isActive" />
+      <v-divider class="my-2" />
+      <stream-info-section />
     </v-card-text>
     <v-card-actions class="connect-picker__actions">
       <v-btn size="small" variant="text" @click="connectStore.refreshDevices(true)">
@@ -263,6 +284,15 @@ export default {
     async stopAll() {
       await this.connectStore.stopAll()
     },
+    /** Bring playback back to this device. Same call as "Stop all" — the
+     * two differ in what they say, not in what they do: stopping every
+     * cast target *is* playing here. Kept separate so the affordance reads
+     * as "play here" rather than as a destructive action, and it's a no-op
+     * when nothing is casting. */
+    async playHere() {
+      if (!this.connectStore.isActive) return
+      await this.connectStore.stopAll()
+    },
     openPairing(name: string) {
       this.pairingDeviceName = name
       this.pairingOpen = true
@@ -307,5 +337,56 @@ export default {
 
 .device-group-heading {
   padding: 8px 12px 4px;
+}
+
+/* Deliberately built to DeviceListItem.vue's own .device-row measurements
+ * (46px min-height, 4px 12px padding, the same hover tint and lit edge)
+ * rather than reusing that component: this row has no volume slider, no
+ * claim state and no checkbox — a props-driven variant of it would be more
+ * branching than the twenty lines below. Scoped styles don't cross
+ * components anyway, so either way the values are restated. */
+.this-device {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 4px 12px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.this-device:hover {
+  background: var(--beacon-hover);
+}
+
+.this-device--active {
+  position: relative;
+  background: rgba(var(--v-theme-primary), 0.08);
+}
+
+.this-device--active:hover {
+  background: rgba(var(--v-theme-primary), 0.12);
+}
+
+/* The same beam the active cast target gets — playing here is a state
+ * worth marking as clearly as playing on a speaker. */
+.this-device--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: rgb(var(--v-theme-primary));
+  box-shadow: 0 0 10px 1px rgba(245, 169, 78, 0.55);
+}
+
+.this-device--active .v-icon {
+  filter: drop-shadow(0 0 5px rgba(245, 169, 78, 0.4));
 }
 </style>
