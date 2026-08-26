@@ -193,8 +193,13 @@ def test_should_analyze_true_for_chromecast():
     assert should_analyze([("chromecast", "Kitchen")]) is True
 
 
-def test_should_analyze_false_for_airplay_only():
-    assert should_analyze([("airplay", "Living Room")]) is False
+def test_should_analyze_true_for_airplay_only():
+    # AirPlay streams incrementally now (see the module docstring's
+    # fixed-airplay-silent-death reference) and this module never taps the
+    # device-bound bytes anyway, so its fixed-estimate clock only has to
+    # seek a fresh decoder close enough — same as it already does for
+    # AirPlay's lyrics sync.
+    assert should_analyze([("airplay", "Living Room")]) is True
 
 
 def test_should_analyze_false_for_no_targets():
@@ -204,12 +209,16 @@ def test_should_analyze_false_for_no_targets():
 def test_should_analyze_true_when_mixed_with_airplay():
     # Matches the frontend's own "at least one live target" check
     # (NowPlayingView.vue's visualizerAvailable) — if analysis runs at
-    # all, frames get pushed regardless of what else is also playing.
+    # all, frames get pushed regardless of what else is also playing. No
+    # longer a distinguishing case now that AirPlay alone is also True (see
+    # test_should_analyze_true_for_airplay_only above), but still worth its
+    # own assertion since the mixed-target behavior itself isn't obvious
+    # from either single-target test.
     assert should_analyze([("airplay", "Bedroom"), ("sonos", "Living Room")]) is True
 
 
-def test_live_analysis_target_types_excludes_airplay():
-    assert "airplay" not in LIVE_ANALYSIS_TARGET_TYPES
+def test_live_analysis_target_types_includes_airplay():
+    assert "airplay" in LIVE_ANALYSIS_TARGET_TYPES
 
 
 # ── AudioAnalyzer._release_frames — this is where pacing actually happens ────

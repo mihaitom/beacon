@@ -1,6 +1,7 @@
 """delivery/base.py — BaseDelivery abstract class"""
 
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 
 
 class BaseDelivery(ABC):
@@ -26,6 +27,23 @@ class BaseDelivery(ABC):
 
     def __init__(self, target: str):
         self.target = target
+        # Called when a delivery discovers by itself that playback has
+        # failed, with a short description for the log. The one and only
+        # way back into the session from here: a delivery holds no
+        # reference to one, and cannot be given one, because core/state.py
+        # imports this package and the reverse would be circular.
+        #
+        # Only AirPlay needs it, and only because of how it plays. Every
+        # other target pulls GET /stream for the duration of the track, so
+        # a device going away closes that connection and routes/stream.py
+        # notices without anything being reported to it. AirPlay is pushed
+        # to, and once the push fails there is nothing left holding a
+        # connection open for anyone to notice the absence of.
+        #
+        # Wired up in core/state.py's resolve_target(); left None for a
+        # delivery built outside that path (tests, routes/devices.py's
+        # one-shot stop), where there is no session to report to anyway.
+        self.on_playback_error: Callable[[str], Awaitable[None]] | None = None
 
     @abstractmethod
     async def play(

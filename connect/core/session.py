@@ -268,6 +268,50 @@ def build_status_dict(
     }
 
 
+async def mark_interrupted(session: SessionState) -> None:
+    """Record that playback stopped without anyone asking, and tell every
+    client watching this session.
+
+    Lives here rather than next to either of its callers because it has
+    two: routes/stream.py's _mark_disconnected_if_not_reconnected(), for a
+    device that closed its GET /stream connection and never came back, and
+    delivery/airplay.py, whose push to the device failed outright. The two
+    arrive at the same conclusion by very different routes — one after a
+    grace period spent waiting for a reconnect that never happened, the
+    other immediately, because a failed push leaves nothing ambiguous.
+
+    The order below is load-bearing and was arrived at by two separate
+    live bugs, so it is worth stating rather than rediscovering:
+
+    - The position is read *before* is_streaming flips. compute_position()
+      reads that flag itself and returns 0.0 once it is False, so reading
+      it afterwards makes every interruption look like it happened at
+      0:00, wherever the device actually was.
+    - The clock is then paused at that position rather than left running.
+      PlaybackClock.elapsed() has no notion of is_streaming and keeps
+      advancing with the wall clock whether or not anything is playing.
+      Without this, a resume minutes later seeks FFmpeg to wherever the
+      clock got to — past the track's own end on anything but an immediate
+      one, which FFmpeg answers with silence and no error. Observed live
+      2026-08-24: a drop ~10s into a 222s track, resumed ~10 minutes
+      later, produced a 200 response and no audio at all.
+
+    `interrupted=True` marks this particular streaming->false transition as
+    "nobody asked for this", which is what lets the frontend offer to pick
+    playback back up instead of just going quiet. Beacon deliberately does
+    not resume on its own for the pull-based targets: a device stopping by
+    itself and a person pressing stop on the speaker are indistinguishable
+    from here. AirPlay's failed push *is* distinguishable, but it reports
+    through this same function anyway, so the interruption looks identical
+    to the user whichever target it came from.
+    """
+    st = session.state
+    position = compute_position(session)
+    st.is_streaming = False
+    st.clock.pause(position)
+    await session.event_bus.broadcast(build_status_dict(session, interrupted=True))
+
+
 def track_label(session: SessionState) -> str | None:
     """Short "what's playing" label for a session — used to annotate a
     claimed device in /discover (e.g. "in use by X, playing Y") so another

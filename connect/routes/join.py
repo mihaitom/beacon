@@ -24,7 +24,7 @@ from delivery import (
     DlnaDelivery,
     SonosDelivery,
 )
-from routes.playback import _release_claims
+from routes.playback import _release_claims, playback_error_reporter
 
 logger = logging.getLogger("connect.devices")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -148,7 +148,9 @@ async def claim_device(
     active target so the next /play (once something is actually picked)
     targets it automatically, and /status "targets" for it right away.
     """
-    target = resolve_target(req.targets, None, None)
+    target = resolve_target(
+        req.targets, None, None, on_playback_error=playback_error_reporter(session)
+    )
     if not target:
         return {"error": "No target configured"}
 

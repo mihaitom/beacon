@@ -210,7 +210,6 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useLibraryStore } from '@/stores/library'
 import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
 import { useLyricsStore } from '@/stores/lyrics'
-import { useConnectStore } from '@/stores/connect'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import { radioFaviconUrl } from '@/services/connect/radio'
@@ -292,9 +291,6 @@ export default {
     playbackStore() {
       return usePlaybackStore()
     },
-    connectStore() {
-      return useConnectStore()
-    },
     authStore() {
       return useAuthStore()
     },
@@ -351,16 +347,14 @@ export default {
         this.playbackStore.lyricsDrawerOpen = value
       },
     },
-    // AirPlay downloads a whole song into memory *ahead* of pushing it to
-    // the device (see connect/delivery/airplay.py), and radio's raw
-    // station URL bypasses connect's streaming pipeline entirely — neither
-    // has real audio data for the backend to analyze (see
-    // connect/core/audio_analysis.py's should_analyze()), so there's
-    // nothing honest to show for them rather than a fake animation.
+    // Radio's raw station URL bypasses connect's streaming pipeline
+    // entirely, so there's no track for the backend to analyze (see
+    // connect/core/audio_analysis.py's should_analyze()) and nothing
+    // honest to show but a fake animation. AirPlay used to be excluded
+    // here too, but the backend analyzes it like any other cast target
+    // now (see that module's docstring for why).
     visualizerAvailable() {
-      if (!this.playbackStore.isCasting) return true
-      if (!this.currentSong) return false // casting radio
-      return this.connectStore.activeTargets.some((target) => target.type !== 'airplay')
+      return !this.playbackStore.isCasting || !!this.currentSong
     },
     visualizerActive() {
       return this.hasPlayable && this.showVisualizer && this.visualizerAvailable

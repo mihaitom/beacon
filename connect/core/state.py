@@ -6,6 +6,7 @@ SessionState.
 import asyncio
 import os
 import socket
+from collections.abc import Awaitable, Callable
 
 from delivery import (
     AirPlayDelivery,
@@ -259,6 +260,7 @@ def resolve_target(
     target_name: str | None = None,
     target_type: str | None = None,
     previous: BaseDelivery | DeliveryManager | None = None,
+    on_playback_error: Callable[[str], Awaitable[None]] | None = None,
 ) -> BaseDelivery | DeliveryManager | None:
     """Resolve one or more targets from a request into a single delivery object.
 
@@ -270,7 +272,20 @@ def resolve_target(
     a fresh instance on every call skips that, leaving the old RAOP session
     racing the new one for the device's single audio data port, which the
     device then refuses instead of cleanly handing over.
+
+    `on_playback_error` is the delivery's way back into the calling
+    session — see BaseDelivery.on_playback_error. Attached here, where
+    every delivery this app actually plays through is resolved, rather than
+    at each of the three call sites, so a new one cannot forget it. Set on
+    reused instances too: `previous` can carry a callback bound to an
+    earlier dispatch of the same session, and re-binding it costs nothing
+    while leaving it stale would report an interruption against whatever
+    that older closure captured.
     """
+
+    def _attach(delivery: BaseDelivery) -> BaseDelivery:
+        delivery.on_playback_error = on_playback_error
+        return delivery
 
     def _reuse(cls: type[BaseDelivery], name: str) -> BaseDelivery | None:
         candidates = (
@@ -288,11 +303,11 @@ def resolve_target(
         deliveries: list[BaseDelivery] = []
         for t in targets:
             cls = _DELIVERY_TYPES.get(t.get("type"), AirPlayDelivery)
-            deliveries.append(_reuse(cls, t["name"]) or cls(t["name"]))
+            deliveries.append(_attach(_reuse(cls, t["name"]) or cls(t["name"])))
         return DeliveryManager.from_deliveries(deliveries)
     if target_type and target_name:
         cls = _DELIVERY_TYPES.get(target_type, AirPlayDelivery)
-        return _reuse(cls, target_name) or cls(target_name)
+        return _attach(_reuse(cls, target_name) or cls(target_name))
     return None
 
 

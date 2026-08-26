@@ -15,8 +15,8 @@ from core.session import (
     DEFAULT_SESSION_ID,
     SessionState,
     build_status_dict,
-    compute_position,
     get_session,
+    mark_interrupted,
     registry,
 )
 from core.state import (
@@ -447,33 +447,12 @@ async def _mark_disconnected_if_not_reconnected(
             f"[stream] Cast device dropped its connection and did not come back "
             f"within {STREAM_DISCONNECT_GRACE_SECONDS:.0f}s{detail}"
         )
-        # Captured before the flag flips below — compute_position() reads
-        # is_streaming itself and returns 0.0 once it's False (see its own
-        # docstring), which would make every interruption look like it
-        # happened at 0:00 regardless of where the device actually was.
-        position = compute_position(session)
-        st.is_streaming = False
-        # Freezes elapsed() at `position` the same way /pause does, rather
-        # than leaving it tied to the wall clock — PlaybackClock.elapsed()
-        # has no notion of is_streaming and keeps advancing with real time
-        # whether or not anything is actually playing. Without this,
-        # _resume_after_interruption() (routes/stream.py) reads elapsed() at
-        # whatever moment someone eventually taps "Resume" — sometimes
-        # minutes later — and seeks the reconnect there: past the track's
-        # own end on anything but an immediate resume, which FFmpeg's -ss
-        # answers with silence and no error. Observed live 2026-08-24: a
-        # drop ~10s into a 222s track, resumed ~10 minutes later, produced a
-        # 200 response and no audio at all.
-        st.clock.pause(position)
-        # interrupted=True marks this particular streaming->false transition
-        # as "nobody asked for this", which is what lets the frontend offer
-        # to pick playback back up instead of just going quiet. Beacon
-        # deliberately does not resume on its own: a device stopping by
-        # itself and a person pressing stop on the speaker are
-        # indistinguishable from here (both end in a clean FIN with
-        # TransportState=STOPPED and TransportStatus unchanged), so guessing
-        # would sometimes restart music somebody had just silenced.
-        await session.event_bus.broadcast(build_status_dict(session, interrupted=True))
+        # Everything this conclusion implies — freezing the position, the
+        # clock and the interrupted broadcast, in that order and for the
+        # reasons spelled out there — lives in core/session.py, because
+        # delivery/airplay.py reaches the same conclusion by an entirely
+        # different route and must not reimplement it.
+        await mark_interrupted(session)
 
 
 async def _resume_after_interruption(session: SessionState) -> bool:

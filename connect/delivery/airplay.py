@@ -1,7 +1,6 @@
 """delivery/airplay.py — AirPlayDelivery via pyatv"""
 
 import asyncio
-import io
 import logging
 
 import httpx
@@ -11,6 +10,139 @@ from .base import BaseDelivery
 from .lazy_import import import_in_thread
 
 logger = logging.getLogger("delivery")
+
+
+# Artwork is sent inline over RTSP as part of the track's DAAP metadata, so
+# it travels on the same connection as the audio and there is no second
+# fetch for the device to make. Big enough for a cover, small enough that a
+# mis-sized image can't crowd out the stream it shares a socket with — a
+# 300px JPEG, which is what every media server here serves, lands well
+# under this.
+_MAX_ARTWORK_BYTES = 2 * 1024 * 1024
+
+# Long enough for a media server that has to resize on demand, short enough
+# that a slow one delays the first note by a noticeable but bounded amount.
+# The track plays without a cover if this runs out; it never fails the play.
+_ARTWORK_TIMEOUT_SECONDS = 5.0
+
+
+async def _fetch_artwork(url: str | None) -> bytes | None:
+    """Raw JPEG bytes for `url`, or None if it can't be had.
+
+    Never raises: artwork is decoration, and a media server having a bad
+    moment must not stop the music. Every miss is a debug line and a track
+    that plays without a cover.
+    """
+    if not url:
+        return None
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=True, timeout=_ARTWORK_TIMEOUT_SECONDS
+        ) as http:
+            resp = await http.get(url)
+            resp.raise_for_status()
+            if len(resp.content) > _MAX_ARTWORK_BYTES:
+                logger.debug(
+                    f"[AirPlay] Artwork too large ({len(resp.content)}B), skipping"
+                )
+                return None
+            return resp.content
+    except (httpx.HTTPError, ValueError) as e:
+        logger.debug(f"[AirPlay] Artwork unavailable: {e}")
+        return None
+
+
+async def _aclose_quietly(closeable) -> None:
+    """Close an httpx client or response without letting the teardown itself
+    become the failure.
+
+    Called from a finally that may already be unwinding a real error, and on
+    the cancellation path, where the connection is usually half-torn-down
+    already — which is exactly when aclose() has something to complain
+    about. The two caught here are what that actually looks like: a
+    transport-level error finishing the read, or httpx objecting that the
+    thing is closed or in the wrong state. Anything else is a real bug and
+    is left to propagate.
+    """
+    try:
+        await closeable.aclose()
+    except (httpx.HTTPError, RuntimeError) as e:
+        logger.debug(f"[AirPlay] Ignoring error while closing stream: {e}")
+
+
+class _ResponseReader:
+    """Hands pyatv an open HTTP response one chunk at a time.
+
+    Exists to keep whole tracks out of memory. AirPlay used to download the
+    entire track into an io.BytesIO before playing a note of it — over
+    100MB for an 80-minute mix, per target — because handing pyatv the URL
+    itself runs into a hardcoded timeout: `PatchedIceCastClient.read()`
+    (pyatv's protocols/raop/audio_source.py) raises after DEFAULT_TIMEOUT =
+    10s whenever the buffer hasn't filled, and our /stream is fed by a
+    freshly spawned ffmpeg that can take longer than that to produce its
+    first bytes. The failure surfaces as an opaque "failed to init decoder".
+
+    That timeout belongs to the URL path specifically. `open_source()`
+    branches on `isinstance(source, str)`, and anything that is neither a
+    string nor an io.BufferedIOBase ends up in `StreamReaderWrapper`, whose
+    only interaction with what it was given is `await source.read(n)` —
+    with no timeout anywhere. So this class implements exactly that one
+    method and nothing else.
+
+    Back-pressure comes for free: the next chunk is pulled off the response
+    only when pyatv asks for one, so nothing accumulates. An
+    asyncio.StreamReader fed by a pump task would have reintroduced the
+    original problem in a new shape — feed_data() has no flow control
+    without a transport behind it, so a producer faster than the consumer
+    fills memory just the same.
+
+    **A known edge, and why it does not bite in practice.**
+    `StreamReaderWrapper.read()` computes `min(n, BUFFER_SIZE - buffer.size)`
+    before asking us for anything, so a full 64KB buffer makes it ask for
+    zero bytes — and a zero-byte read is, correctly, empty, which miniaudio
+    reads as end of stream. Reproduced 2026-08-26 by feeding a whole track
+    in as fast as the reader would take it, where FLAC then failed to
+    initialise its decoder.
+
+    It does not happen against the real /stream because that end is paced to
+    real time (core/streamer.py's _READRATE_ARGS), so the buffer never gets
+    far enough ahead — confirmed on a real Apple TV the same day, playing a
+    24/96 FLAC resampled to 44.1/16. Worth knowing before "speeding up" the
+    stream: removing the pacing for AirPlay would turn this from a lab
+    curiosity into silence.
+    """
+
+    # What read(-1) answers with. pyatv asks for "everything" in one branch
+    # of StreamReaderWrapper.read(); answering literally would buffer the
+    # rest of the track, which is the thing this class exists to avoid.
+    # Returning less than asked for is allowed — the caller comes back for
+    # more — as long as it is never *empty*, which means end of stream.
+    _UNBOUNDED_READ_SIZE = 64 * 1024
+
+    def __init__(self, response: httpx.Response):
+        self._chunks = response.aiter_bytes()
+        self._buffer = bytearray()
+        self._eof = False
+
+    async def read(self, n: int = -1) -> bytes:
+        """Up to `n` bytes, or fewer only at the end of the stream.
+
+        Fewer *before* the end would be legal for a file object but is not
+        worth the risk here: miniaudio treats a short read as a hint about
+        the source, and the chunk boundaries httpx happens to produce carry
+        no meaning at all.
+        """
+        want = self._UNBOUNDED_READ_SIZE if n < 0 else n
+        if want == 0:
+            return b""
+        while len(self._buffer) < want and not self._eof:
+            try:
+                self._buffer += await anext(self._chunks)
+            except StopAsyncIteration:
+                self._eof = True
+        chunk = bytes(self._buffer[:want])
+        del self._buffer[:want]
+        return chunk
 
 
 class AirPlayDelivery(BaseDelivery):
@@ -106,6 +238,22 @@ class AirPlayDelivery(BaseDelivery):
             logger.info(f"[AirPlay:{self.target}] Found: {match.address} ({kind})")
         return match
 
+    async def _report_playback_error(self, detail: str) -> None:
+        """Tell the session its playback died, if anyone is listening.
+
+        None whenever this delivery wasn't built through
+        core/state.py's resolve_target() — routes/devices.py constructs a
+        throwaway instance just to stop a device, and there is no session
+        behind that one to report to. A failure in the callback itself must
+        not take down the teardown that follows it in _stream()'s finally.
+        """
+        if self.on_playback_error is None:
+            return
+        try:
+            await self.on_playback_error(detail)
+        except Exception:
+            logger.exception(f"[AirPlay:{self.target}] Reporting playback error failed")
+
     @staticmethod
     async def _close_atv(atv) -> None:
         """Await all tasks returned by atv.close() so the aiohttp session is
@@ -124,16 +272,37 @@ class AirPlayDelivery(BaseDelivery):
         album: str = "",
         content_type: str = "audio/mpeg",
     ) -> None:
-        # duration accepted for interface parity with BaseDelivery.play() but
-        # not yet wired up here — not part of the DLNA missing-duration fix
-        # this parameter was added for (see dlna.py). content_type accepted
-        # for the same interface-parity reason but genuinely unused here —
-        # AirPlay downloads and streams the original file directly (pyatv's
-        # own stream_file), it never goes through our ffmpeg /stream proxy
-        # that content_type describes (see core/streamer.py).
+        # content_type accepted for interface parity with BaseDelivery.play()
+        # but genuinely unused here: it describes what our ffmpeg /stream
+        # proxy is sending, and pyatv works that out from the bytes itself
+        # rather than being told.
         pyatv = await import_in_thread("pyatv")
+        MediaMetadata = (await import_in_thread("pyatv.interface")).MediaMetadata
+
+        # Told to the device explicitly rather than left for pyatv to read
+        # out of the stream. Two reasons it cannot be left to the stream:
+        # ffmpeg's -vn (see core/streamer.py's _FFMPEG_BASE_CMD) strips the
+        # embedded cover before anything downstream could see it, and the
+        # tags that do survive are only readable when the source is fully
+        # seekable — which a live stream is not. We have all of it in hand
+        # anyway, from the same /play request that named the track.
+        #
+        # Passing this also stops pyatv calling get_metadata() on the source
+        # at all (see its stream_file()), so nothing depends on what the
+        # stream happens to carry.
+        metadata = MediaMetadata(
+            title=title or None,
+            artist=artist or None,
+            album=album or None,
+            duration=duration,
+            artwork=await _fetch_artwork(album_art_url),
+        )
 
         async def _stream():
+            # Set only on the queued-track path below; closed in the finally
+            # whichever way this ends, including cancellation.
+            http: httpx.AsyncClient | None = None
+            resp: httpx.Response | None = None
             try:
                 if not stream_url:
                     logger.warning(f"[AirPlay:{self.target}] No stream URL")
@@ -143,25 +312,31 @@ class AirPlayDelivery(BaseDelivery):
                     # Radio / live URL — already producing bytes in real time,
                     # so pyatv can fetch and decode it directly.
                     logger.info(f"[AirPlay:{self.target}] ▶ {title}: {stream_url[:80]}")
-                    await captured_atv.stream.stream_file(stream_url)
+                    await captured_atv.stream.stream_file(stream_url, metadata=metadata)
                 else:
                     # Queued track: stream_url is our own /stream/<session_id>
-                    # proxy, fed by a freshly spawned ffmpeg transcode — its
-                    # first bytes can take longer than pyatv's hardcoded 10s
-                    # decoder-detection timeout to arrive, which fails with an
-                    # opaque "failed to init decoder" if handed to pyatv live.
-                    # Downloading the whole (seek/gain-adjusted) track first
-                    # sidesteps that: pyatv then decodes from an in-memory
-                    # buffer with no timeout risk.
-                    logger.info(f"[AirPlay:{self.target}] ↓ downloading: {title}")
-                    async with httpx.AsyncClient(
-                        follow_redirects=True, timeout=600.0
-                    ) as http:
-                        resp = await http.get(stream_url)
-                        resp.raise_for_status()
-                    audio = io.BytesIO(resp.content)
-                    logger.info(f"[AirPlay:{self.target}] ▶ {title}")
-                    await captured_atv.stream.stream_file(audio)
+                    # proxy, fed by a freshly spawned ffmpeg transcode. Read
+                    # incrementally rather than handed to pyatv as a URL —
+                    # see _ResponseReader for why the URL path is not an
+                    # option and why this doesn't buffer the track.
+                    #
+                    # The client and the response both have to outlive this
+                    # statement: stream_file() below reads from them for the
+                    # length of the track, so closing either at the end of an
+                    # `async with` would tear the stream down before a note
+                    # played. Both are closed in the finally instead.
+                    http = httpx.AsyncClient(follow_redirects=True, timeout=600.0)
+                    resp = await http.send(
+                        http.build_request("GET", stream_url), stream=True
+                    )
+                    resp.raise_for_status()
+                    logger.info(
+                        f"[AirPlay:{self.target}] ▶ {title}"
+                        f"{' (with artwork)' if metadata.artwork else ''}"
+                    )
+                    await captured_atv.stream.stream_file(
+                        _ResponseReader(resp), metadata=metadata
+                    )
 
                 logger.info(f"[AirPlay:{self.target}] ✓ stream ended")
 
@@ -170,15 +345,36 @@ class AirPlayDelivery(BaseDelivery):
 
             except Exception as e:
                 if "not connected to remote" in str(e):
-                    # Teardown noise: Apple TV dropped the connection; the actual
-                    # cause (e.g. "Connection refused") is already logged by pyatv above.
+                    # The device went away mid-track. Unlike the pull-based
+                    # targets, nothing else can notice this: they hold a GET
+                    # /stream connection open for the whole track, so their
+                    # dying closes it and routes/stream.py sees the absence.
+                    # AirPlay is pushed to, and a failed push is the only
+                    # trace there is — which is why this used to be a silent
+                    # death (see docs/playback-bugs/airplay-silent-death.md).
+                    #
+                    # Reported without a grace period, deliberately, unlike
+                    # _mark_disconnected_if_not_reconnected()'s 10s wait: a
+                    # clean FIN there cannot be told apart from somebody
+                    # pressing stop on the speaker, so it waits to see if a
+                    # reconnect turns up. A push that failed is unambiguous.
                     logger.warning(
                         f"[AirPlay:{self.target}] Device disconnected during stream"
+                    )
+                    await self._report_playback_error(
+                        f"AirPlay device '{self.target}' disconnected mid-track"
                     )
                 else:
                     logger.exception(f"[AirPlay:{self.target}] Error")
 
             finally:
+                # Before the atv teardown: these hold an open connection to
+                # our own /stream, and leaving it dangling keeps ffmpeg
+                # producing for a target that has stopped listening.
+                if resp is not None:
+                    await asyncio.shield(_aclose_quietly(resp))
+                if http is not None:
+                    await asyncio.shield(_aclose_quietly(http))
                 if self._atv is captured_atv:
                     self._atv = None
                 try:

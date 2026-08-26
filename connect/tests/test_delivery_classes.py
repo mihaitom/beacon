@@ -5,6 +5,7 @@ import io
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from pyatv.const import Protocol
 
@@ -18,6 +19,7 @@ from delivery import (
     DlnaDelivery,
     SonosDelivery,
 )
+from delivery.airplay import _MAX_ARTWORK_BYTES, _fetch_artwork, _ResponseReader
 
 # ── BaseDelivery defaults (pause/resume are no-ops, position/volume unknown) ──
 
@@ -406,29 +408,47 @@ def test_airplay_play_streams_radio_url_directly():
             await d._stream_task
 
     asyncio.run(run())
-    atv.stream.stream_file.assert_called_once_with("http://host/radio.mp3")
+    args, kwargs = atv.stream.stream_file.call_args
+    assert args[0] == "http://host/radio.mp3"
+    # Metadata travels even for radio, where there is no file to read tags
+    # from at all — the station name is all the device would otherwise get.
+    assert kwargs["metadata"].title == "Title"
+    assert kwargs["metadata"].artist == "Artist"
 
 
-def test_airplay_play_downloads_track_before_streaming():
-    """Queued tracks (duration given) must be fully downloaded before being
-    handed to pyatv, not passed as a live URL — pyatv's decoder-detection
-    has a hardcoded 10s read timeout (see audio_source.py's DEFAULT_TIMEOUT),
-    and our own /stream/<session_id> proxy (fed by a freshly spawned ffmpeg
-    transcode) can take longer than that to produce its first bytes, which
-    fails with an opaque 'failed to init decoder' if streamed live."""
+class _FakeStreamResponse:
+    """An open httpx response yielding `chunks`."""
+
+    def __init__(self, chunks: list[bytes]):
+        self._chunks = list(chunks)
+        self.closed = False
+
+    async def aiter_bytes(self):
+        for chunk in self._chunks:
+            yield chunk
+
+    def raise_for_status(self):
+        return None
+
+    async def aclose(self):
+        self.closed = True
+
+
+def _fake_stream_client(response):
+    """An httpx.AsyncClient stand-in whose send() returns `response`."""
+    client = MagicMock()
+    client.build_request = MagicMock(return_value=MagicMock())
+    client.send = AsyncMock(return_value=response)
+    client.aclose = AsyncMock()
+    return client
+
+
+def _run_airplay_track(response, atv, on_playback_error=None):
+    """play() a queued track through a faked device and response, and wait
+    for the background stream task to finish."""
     d = AirPlayDelivery("HomePod")
-    atv = MagicMock()
-    atv.stream.stream_file = AsyncMock()
-    atv.close.return_value = []
-
-    fake_response = MagicMock()
-    fake_response.content = b"fake-mp3-bytes"
-    fake_response.raise_for_status = MagicMock()
-
-    fake_http_client = AsyncMock()
-    fake_http_client.get = AsyncMock(return_value=fake_response)
-    fake_http_client.__aenter__ = AsyncMock(return_value=fake_http_client)
-    fake_http_client.__aexit__ = AsyncMock(return_value=False)
+    d.on_playback_error = on_playback_error
+    client = _fake_stream_client(response)
 
     async def run():
         with (
@@ -436,16 +456,322 @@ def test_airplay_play_downloads_track_before_streaming():
                 AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
             ),
             patch("pyatv.connect", new=AsyncMock(return_value=atv)),
-            patch("delivery.airplay.httpx.AsyncClient", return_value=fake_http_client),
+            patch("delivery.airplay.httpx.AsyncClient", return_value=client),
         ):
             await d.play("http://host/stream/session123", "Title", "Artist", None, 200.0)
             await d._stream_task
 
     asyncio.run(run())
-    fake_http_client.get.assert_called_once_with("http://host/stream/session123")
-    args, _ = atv.stream.stream_file.call_args
-    assert isinstance(args[0], io.BytesIO)
-    assert args[0].getvalue() == b"fake-mp3-bytes"
+    return d, client
+
+
+def test_airplay_streams_a_track_instead_of_buffering_it():
+    """A queued track must reach pyatv as something it reads incrementally,
+    not as a fully-downloaded buffer. The download used to be deliberate —
+    pyatv's URL path times out after 10s waiting for our freshly-spawned
+    ffmpeg — but it cost over 100MB of RAM per target on a long mix. See
+    _ResponseReader: the reader path pyatv uses for a non-file source has
+    no timeout at all, so the buffer bought nothing."""
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock()
+    atv.close.return_value = []
+    response = _FakeStreamResponse([b"fake-mp3-bytes"])
+
+    _, client = _run_airplay_track(response, atv)
+
+    # stream=True, i.e. the body is not read up front.
+    _, kwargs = client.send.call_args
+    assert kwargs["stream"] is True
+    handed_over = atv.stream.stream_file.call_args[0][0]
+    assert isinstance(handed_over, _ResponseReader)
+    assert not isinstance(handed_over, io.BytesIO)
+
+
+def test_airplay_closes_the_stream_it_opened():
+    """The response holds an open connection to our own /stream; leaving it
+    dangling keeps ffmpeg producing for a target that stopped listening."""
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock()
+    atv.close.return_value = []
+    response = _FakeStreamResponse([b"bytes"])
+
+    _, client = _run_airplay_track(response, atv)
+
+    assert response.closed is True
+    client.aclose.assert_awaited()
+
+
+# ── _ResponseReader ──────────────────────────────────────────────────────────
+# What pyatv actually calls (see StreamReaderWrapper in pyatv's
+# protocols/raop/audio_source.py). Chunk boundaries from httpx carry no
+# meaning, so the reader has to hand out exactly what was asked for.
+
+
+def _read(reader, *sizes):
+    async def run():
+        return [await reader.read(n) for n in sizes]
+
+    return asyncio.run(run())
+
+
+def test_response_reader_reassembles_across_chunk_boundaries():
+    reader = _ResponseReader(_FakeStreamResponse([b"abc", b"def", b"ghi"]))
+
+    assert _read(reader, 4, 4) == [b"abcd", b"efgh"]
+
+
+def test_response_reader_splits_a_chunk_larger_than_asked_for():
+    reader = _ResponseReader(_FakeStreamResponse([b"abcdefgh"]))
+
+    assert _read(reader, 3, 3) == [b"abc", b"def"]
+
+
+def test_response_reader_returns_the_remainder_then_nothing():
+    """Empty is how a caller learns the stream ended — it must not appear
+    before then, and must appear after."""
+    reader = _ResponseReader(_FakeStreamResponse([b"abcde"]))
+
+    assert _read(reader, 10, 10) == [b"abcde", b""]
+
+
+def test_response_reader_answers_an_unbounded_read_with_a_bounded_chunk():
+    """pyatv asks for "everything" in one branch. Answering literally would
+    buffer the rest of the track, which is what this class exists to
+    avoid — but the answer must still not be empty."""
+    reader = _ResponseReader(_FakeStreamResponse([b"x" * 200_000]))
+
+    chunk = _read(reader, -1)[0]
+
+    assert 0 < len(chunk) <= _ResponseReader._UNBOUNDED_READ_SIZE
+
+
+def test_response_reader_reads_zero_bytes_without_touching_the_stream():
+    reader = _ResponseReader(_FakeStreamResponse([b"abc"]))
+
+    assert _read(reader, 0) == [b""]
+
+
+def test_airplay_a_stream_that_fails_to_close_does_not_mask_the_real_error():
+    """The close runs in a finally that may already be unwinding a real
+    failure — and on the cancellation path the connection is usually
+    half-torn-down, which is exactly when aclose() has something to
+    complain about. It must not become the failure."""
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock()
+    atv.close.return_value = []
+    response = _FakeStreamResponse([b"bytes"])
+    response.aclose = AsyncMock(side_effect=httpx.ReadError("connection already gone"))
+
+    d, client = _run_airplay_track(response, atv)
+
+    # Got past the close and finished the teardown it guards.
+    client.aclose.assert_awaited()
+    assert d._atv is None
+
+
+# ── AirPlayDelivery metadata ─────────────────────────────────────────────────
+# Told to the device rather than left to be read out of the stream. Two
+# things make the stream unable to carry it: ffmpeg's -vn strips the cover
+# before anything downstream sees it, and the surviving tags are only
+# readable from a fully seekable source, which a live stream isn't.
+
+
+def _metadata_of(atv):
+    return atv.stream.stream_file.call_args[1]["metadata"]
+
+
+def test_airplay_tells_the_device_what_is_playing():
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock()
+    atv.close.return_value = []
+    d = AirPlayDelivery("HomePod")
+    client = _fake_stream_client(_FakeStreamResponse([b"bytes"]))
+
+    async def run():
+        with (
+            patch.object(
+                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
+            ),
+            patch("pyatv.connect", new=AsyncMock(return_value=atv)),
+            patch("delivery.airplay.httpx.AsyncClient", return_value=client),
+            patch("delivery.airplay._fetch_artwork", new=AsyncMock(return_value=b"jpeg")),
+        ):
+            await d.play(
+                "http://host/stream/s1",
+                "Song Title",
+                "Some Artist",
+                "http://host/cover.jpg",
+                200.0,
+                "An Album",
+            )
+            await d._stream_task
+
+    asyncio.run(run())
+
+    md = _metadata_of(atv)
+    assert md.title == "Song Title"
+    assert md.artist == "Some Artist"
+    assert md.album == "An Album"
+    assert md.duration == 200.0
+    assert md.artwork == b"jpeg"
+
+
+def test_airplay_sends_no_empty_strings_as_metadata():
+    """pyatv passes these straight into the DAAP fields. An empty string is
+    a value the device will happily display as blank; None means "not
+    known" and leaves the field out."""
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock()
+    atv.close.return_value = []
+    d = AirPlayDelivery("HomePod")
+    client = _fake_stream_client(_FakeStreamResponse([b"bytes"]))
+
+    async def run():
+        with (
+            patch.object(
+                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
+            ),
+            patch("pyatv.connect", new=AsyncMock(return_value=atv)),
+            patch("delivery.airplay.httpx.AsyncClient", return_value=client),
+            patch("delivery.airplay._fetch_artwork", new=AsyncMock(return_value=None)),
+        ):
+            await d.play("http://host/stream/s1", "Song Title", "", None, 200.0, "")
+            await d._stream_task
+
+    asyncio.run(run())
+
+    md = _metadata_of(atv)
+    assert md.artist is None
+    assert md.album is None
+    assert md.artwork is None
+
+
+# ── _fetch_artwork ───────────────────────────────────────────────────────────
+
+
+def _artwork(url, response=None, error=None):
+    http = MagicMock()
+    http.get = AsyncMock(return_value=response) if error is None else AsyncMock(side_effect=error)
+    http.__aenter__ = AsyncMock(return_value=http)
+    http.__aexit__ = AsyncMock(return_value=False)
+    with patch("delivery.airplay.httpx.AsyncClient", return_value=http):
+        return asyncio.run(_fetch_artwork(url))
+
+
+def _jpeg_response(payload: bytes):
+    resp = MagicMock()
+    resp.content = payload
+    resp.raise_for_status = MagicMock()
+    return resp
+
+
+def test_fetch_artwork_returns_the_bytes():
+    assert _artwork("http://host/cover.jpg", _jpeg_response(b"jpeg-bytes")) == b"jpeg-bytes"
+
+
+def test_fetch_artwork_without_a_url_is_not_an_error():
+    """A track with no cover art at all is ordinary, not a failure."""
+    assert asyncio.run(_fetch_artwork(None)) is None
+
+
+def test_fetch_artwork_refuses_an_oversized_image():
+    """It rides on the same connection as the audio — a mis-sized image
+    must not get the chance to crowd out the stream."""
+    oversized = b"x" * (_MAX_ARTWORK_BYTES + 1)
+
+    assert _artwork("http://host/huge.jpg", _jpeg_response(oversized)) is None
+
+
+def test_fetch_artwork_never_stops_the_music():
+    """Artwork is decoration. A media server having a bad moment must cost
+    the cover, not the track."""
+    assert _artwork("http://host/cover.jpg", error=httpx.ConnectError("refused")) is None
+
+
+# ── AirPlayDelivery failure reporting ────────────────────────────────────────
+
+
+def test_airplay_reports_a_device_that_died_mid_track():
+    """The gap this closes: every other target pulls GET /stream for the
+    whole track, so a device going away closes that connection and
+    routes/stream.py notices. AirPlay is pushed to — a failed push was the
+    only trace, and it went into a log line and nowhere else. See
+    docs/playback-bugs/airplay-silent-death.md."""
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock(side_effect=Exception("not connected to remote"))
+    atv.close.return_value = []
+    reported: list[str] = []
+
+    async def on_error(detail: str) -> None:
+        reported.append(detail)
+
+    _run_airplay_track(_FakeStreamResponse([b"bytes"]), atv, on_playback_error=on_error)
+
+    assert len(reported) == 1
+    assert "HomePod" in reported[0]
+
+
+def test_airplay_reports_nothing_when_we_stopped_it_ourselves():
+    """/pause and /stop cancel the stream task. Reporting that as a failure
+    would raise an interruption toast for something the user just did."""
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock(side_effect=asyncio.CancelledError)
+    atv.close.return_value = []
+    reported: list[str] = []
+
+    async def on_error(detail: str) -> None:
+        reported.append(detail)
+
+    _run_airplay_track(_FakeStreamResponse([b"bytes"]), atv, on_playback_error=on_error)
+
+    assert reported == []
+
+
+def test_airplay_reports_nothing_for_an_unrelated_error():
+    """Only the disconnect is a device death. An unexpected exception is a
+    bug in this code, logged as one, not an interruption to offer a Resume
+    button for."""
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock(side_effect=ValueError("something else"))
+    atv.close.return_value = []
+    reported: list[str] = []
+
+    async def on_error(detail: str) -> None:
+        reported.append(detail)
+
+    _run_airplay_track(_FakeStreamResponse([b"bytes"]), atv, on_playback_error=on_error)
+
+    assert reported == []
+
+
+def test_airplay_survives_having_no_one_to_report_to():
+    """routes/devices.py builds a throwaway instance just to stop a device;
+    it has no session behind it. The teardown in _stream()'s finally must
+    still run."""
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock(side_effect=Exception("not connected to remote"))
+    atv.close.return_value = []
+    response = _FakeStreamResponse([b"bytes"])
+
+    _run_airplay_track(response, atv, on_playback_error=None)
+
+    assert response.closed is True
+
+
+def test_airplay_a_failing_reporter_does_not_break_the_teardown():
+    """The callback reaches into session state and broadcasts over SSE —
+    both of which can fail. The connection still has to be closed."""
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock(side_effect=Exception("not connected to remote"))
+    atv.close.return_value = []
+    response = _FakeStreamResponse([b"bytes"])
+
+    async def on_error(detail: str) -> None:
+        raise RuntimeError("broadcast failed")
+
+    _run_airplay_track(response, atv, on_playback_error=on_error)
+
+    assert response.closed is True
 
 
 # ── AirPlayDelivery._find_device ─────────────────────────────────────────────

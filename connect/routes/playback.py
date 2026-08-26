@@ -4,6 +4,7 @@ import asyncio
 import copy
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from typing import Literal
 
 from fastapi import APIRouter, Depends
@@ -17,8 +18,10 @@ from core.session import (
     check_claims,
     compute_position,
     displace_target,
+    mark_interrupted,
     registry,
     require_authenticated_session,
+    track_label,
 )
 from core.state import (
     AppState,
@@ -491,6 +494,37 @@ class PlayRequest(BaseModel):
     max_lossy_bitrate_kbps: int | None = None
 
 
+def playback_error_reporter(session: SessionState) -> Callable[[str], Awaitable[None]]:
+    """The callback a delivery uses to say "this stopped and nobody asked".
+
+    See BaseDelivery.on_playback_error for why deliveries need one at all.
+    Only AirPlay ever calls it; every other target's failure surfaces as
+    its GET /stream connection closing, which routes/stream.py notices on
+    its own.
+
+    Note this marks the *session* interrupted, not one device. For a
+    single-target cast — which is what AirPlay is in practice — those are
+    the same thing. For a multi-target one they are not, and the session
+    would be marked interrupted while the other devices play on. That gap
+    is the same one documented in
+    docs/playback-bugs/multi-target-partial-drop-not-surfaced.md, which
+    _mark_disconnected_if_not_reconnected() has for the same reason: there
+    is no per-device notion of "streaming" to flip. Reporting a real
+    failure against the session beats today's alternative of not reporting
+    it at all, but it is not a per-device signal and must not be read as
+    one.
+    """
+
+    async def _report(detail: str) -> None:
+        logger.error(
+            f"[playback] Delivery reported playback failure: {detail} | "
+            f"{track_label(session) or 'no track'}"
+        )
+        await mark_interrupted(session)
+
+    return _report
+
+
 def _is_stale_seq(session: SessionState, seq: int) -> bool:
     """True if `seq` has already been superseded by a later dispatch this
     session accepted — see SessionState.play_seq's comment. seq=0 (no
@@ -544,7 +578,11 @@ async def play_tracks(
             return {"error": f"Track not found: {e}"}
 
         target = resolve_target(
-            req.targets, req.target_name, req.target_type, previous=session.state.active_delivery
+            req.targets,
+            req.target_name,
+            req.target_type,
+            previous=session.state.active_delivery,
+            on_playback_error=playback_error_reporter(session),
         )
         url = stream_url(session.session_id)
         start_position = max(0.0, min(req.start_position, float(track.duration)))
@@ -728,7 +766,11 @@ async def play_url(
         return {"error": "Only http:// and https:// radio URLs are supported"}
 
     target = resolve_target(
-        req.targets, req.target_name, req.target_type, previous=session.state.active_delivery
+        req.targets,
+        req.target_name,
+        req.target_type,
+        previous=session.state.active_delivery,
+        on_playback_error=playback_error_reporter(session),
     )
     if not target:
         return {"error": "No target configured"}

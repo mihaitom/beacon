@@ -11,6 +11,13 @@ Things that repeatedly turned out to matter while chasing these:
 - **A confident comment is not evidence.** Both the pacing bitrate and the
   waveform threading were wrong *and* documented as correct. Where a comment
   explains why something is safe, that is a place to check, not to trust.
+  A third case, 2026-08-26: AirPlay buffered whole tracks into RAM because a
+  comment - present since the first commit, and never re-read - said pyatv's
+  10s timeout left no choice. Reading pyatv's own source showed that timeout
+  belongs to one code path the delivery doesn't have to take. The comment
+  had been treated as the finding for months. **A workaround's stated reason
+  ages worse than the workaround** - the library moves, and nobody re-checks
+  a line that already explains itself.
 - **100% coverage cannot catch a wrong meaning or a slow implementation.**
   Both major fixes here were bugs where the code did exactly what it said.
 - **Silence is not success.** A monitor with a broken filter, or a lapsed UPnP

@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import routes.stream as stream_routes
-from core.session import build_status_dict
+from core.session import build_status_dict, mark_interrupted
 from core.streamer import FALLBACK_FORMAT, OutputFormat
 from delivery import ChromecastDelivery
 from media import Track
@@ -898,6 +898,68 @@ async def test_resolve_track_does_not_block_the_event_loop(default_session):
     await lookup
 
 
+# ── mark_interrupted ─────────────────────────────────────────────────────────
+# Shared by the grace-period check below and by delivery/airplay.py, which
+# reaches the same conclusion by an entirely different route: a push that
+# failed, rather than a pull connection that never came back. The ordering
+# inside it is load-bearing and was arrived at by two separate live bugs —
+# see its docstring in core/session.py.
+
+
+async def test_mark_interrupted_freezes_the_position_the_device_reached(default_session):
+    """The clock has to be frozen at where playback actually got to, and
+    that reading has to be taken *before* is_streaming flips:
+    compute_position() reads that flag itself and returns 0.0 once it is
+    False, so the obvious order leaves the clock parked at 0:00 and a later
+    Resume restarting the track from the beginning.
+
+    Deliberately asserted on the clock, not on the broadcast payload — that
+    one carries elapsed=0 either way, since build_status_dict() calls
+    compute_position() again after the flag is already down. Nothing reads
+    it for the resume; /resume-interrupted goes off the clock below."""
+    st = default_session.state
+    st.current_track = Track(id="1", title="Song", artist="A", duration=200, cover_art_id="")
+    st.is_streaming = True
+    st.clock.start(0.0)
+    st.clock.play_start_time = time.time() - 42.0
+
+    await mark_interrupted(default_session)
+
+    assert st.clock.elapsed() == pytest.approx(42.0, abs=1.5)
+
+
+async def test_mark_interrupted_freezes_the_clock(default_session):
+    """PlaybackClock.elapsed() has no notion of is_streaming and keeps
+    advancing with the wall clock. Without freezing it, a resume minutes
+    later seeks FFmpeg past the track's own end, which it answers with
+    silence and no error (observed live 2026-08-24)."""
+    st = default_session.state
+    st.current_track = Track(id="1", title="Song", artist="A", duration=200, cover_art_id="")
+    st.is_streaming = True
+    st.clock.start(0.0)
+    st.clock.play_start_time = time.time() - 30.0
+
+    await mark_interrupted(default_session)
+    frozen = st.clock.elapsed()
+    await asyncio.sleep(0.05)
+
+    assert st.clock.is_paused is True
+    assert st.clock.elapsed() == pytest.approx(frozen)
+
+
+async def test_mark_interrupted_says_nobody_asked_for_this(default_session):
+    """The flag is what turns a plain "stopped" into the toast offering to
+    pick playback back up — without it the music just goes quiet."""
+    default_session.state.is_streaming = True
+
+    q = default_session.event_bus.subscribe()
+    await mark_interrupted(default_session)
+
+    payload = q.get_nowait()
+    assert payload["interrupted"] is True
+    assert payload["streaming"] is False
+
+
 # ── _mark_disconnected_if_not_reconnected ────────────────────────────────────
 # Regression coverage for a real prod bug (2026-08-21): a Sonos speaker
 # dropping its GET /stream connection mid-track and never reconnecting left
@@ -1038,6 +1100,45 @@ async def test_does_not_mark_not_streaming_once_a_newer_generation_took_over(
     await _mark_disconnected_if_not_reconnected(default_session, my_generation=stale_generation)
 
     assert default_session.state.is_streaming is True
+    assert q.empty()
+
+
+async def test_a_finished_track_that_auto_advanced_is_not_a_drop(
+    default_session, monkeypatch,
+):
+    """AirPlay closes its GET /stream connection when the track's bytes run
+    out, and since it streams incrementally now (see delivery/airplay.py's
+    _ResponseReader) that happens at the *end* of the track rather than
+    long before it — right where this check is armed and waiting.
+
+    What saves it is that auto-advance starts a new clock, which bumps
+    play_generation. Asserted through the real dispatch path rather than by
+    incrementing the counter by hand, so this stays true if that path ever
+    stops going through clock.start()."""
+    monkeypatch.setattr("routes.stream.STREAM_DISCONNECT_GRACE_SECONDS", 0.01)
+    st = default_session.state
+    st.is_streaming = True
+    st.active_stream_connections = 0
+    finished_generation = st.clock.play_generation
+
+    delivery = MagicMock()
+    delivery.play = AsyncMock()
+    monkeypatch.setattr(
+        "routes.stream.resolve_output_format", AsyncMock(return_value=FALLBACK_FORMAT)
+    )
+    default_session.media = MagicMock()
+    default_session.media.get_stream_url = MagicMock(return_value="http://nav/x")
+    default_session.media.get_cover_art_url = MagicMock(return_value=None)
+    next_track = Track(id="2", title="Next", artist="A", duration=180, cover_art_id="")
+
+    assert await _dispatch_queued_track(default_session, delivery, next_track, 1.0) is True
+
+    q = default_session.event_bus.subscribe()
+    await _mark_disconnected_if_not_reconnected(
+        default_session, my_generation=finished_generation
+    )
+
+    assert st.is_streaming is True
     assert q.empty()
 
 

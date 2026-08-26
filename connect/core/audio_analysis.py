@@ -25,12 +25,22 @@ The tradeoff is one extra read of the track from the media server for as
 long as the visualizer stays open — from the current position onward, not
 the track's beginning, and paced at roughly 1x real time (see _decode_cmd()).
 
-Still skipped for AirPlay and radio (see should_analyze(), which
-core/visualizer_feed.py gates on): AirPlay pushes a whole track into the
-device ahead of time and has no position feedback, so its playback clock is
-a fixed estimate rather than something calibrated against the device (see
-PlaybackClock.set_fixed_offset()), and radio has no track — its station URL
-goes straight to the device, with no position to seek to at all.
+Still skipped for radio only now (see should_analyze(), which
+core/visualizer_feed.py gates on) — a station URL goes straight to the
+device, with no track and no position to seek to at all. AirPlay used to be
+excluded here too, on two grounds that both turned out not to hold up: it
+was believed to push a whole track into the device ahead of time (fixed
+2026-08-26 — see docs/playback-bugs/fixed-airplay-silent-death.md, the
+_ResponseReader half — AirPlay streams incrementally like everything else
+now), and its playback clock is a fixed estimate rather than something
+calibrated against the device (see PlaybackClock.set_fixed_offset()), which
+remains true but turns out not to matter here: this module never taps the
+bytes on their way to the device in the first place (see above), it decodes
+the source itself and seeks to clock.elapsed() regardless of which delivery
+is playing, so the estimate only has to be good enough to seek a fresh
+decoder to roughly the right spot — the same estimate already carries
+AirPlay's lyrics sync (routes/playback.py, "[lyrics-sync]"), and a frequency
+band tolerates drift far better than a highlighted lyric line does.
 """
 import asyncio
 import logging
@@ -204,12 +214,14 @@ _PREBUFFER_SECONDS = 0.3
 # back-to-back at whatever rate decode can sustain (measured around 500/s,
 # not the ~43/s it's actually sized for) for as long as that race lasts.
 # Each call is fast (numpy's FFT; ~0.4ms measured at _FFT_SIZE=16384 — see
-# its own comment), but synchronous and un-awaited all the same — for
-# however many seconds the race lasts, everything else sharing this loop
-# (notably GET /visualizer's own SSE delivery) gets starved of scheduling
-# time between calls, which is what actually caused the "choppy for the
-# first N seconds, then suddenly smooth" symptom, not anything about
-# delivery pacing itself (release already paces correctly — see
+# its own comment), but synchronous all the same — for however many seconds
+# the race lasts, everything else sharing this loop gets starved of
+# scheduling time between calls unless something explicitly yields (see
+# _read_pcm()'s own sleep(0), added after this starved a real AirPlay
+# target's RTSP handshake on 2026-08-26, not just GET /visualizer's SSE
+# delivery as originally thought — a synchronous stretch is a lot more
+# forgiving of an SSE consumer than of a device mid-connect). Not anything
+# about delivery pacing itself (release already paces correctly — see
 # _release_frames()). A few seconds of lookahead is more than enough
 # cushion against real hiccups while keeping the steady-state FFT rate
 # close to the ~43/s it's sized for.
@@ -389,6 +401,22 @@ class AudioAnalyzer:
                     self._pending.append((self._pcm_position, bands))
                     self._pcm_position += _FRAME_SECONDS
                     del self._pcm_buffer[:hop_bytes]
+                    # Yield after every frame — see _MAX_LOOKAHEAD_SECONDS's
+                    # comment for the starvation this loop causes while
+                    # racing to build its lookahead: neither this inner loop
+                    # nor stdout.read() above suspends on its own when the
+                    # decoder already has bytes ready, so without this the
+                    # loop can go the whole race without giving anything
+                    # else sharing it a turn. Confirmed 2026-08-26 to be more
+                    # than cosmetic once AirPlay joined LIVE_ANALYSIS_TARGET_TYPES:
+                    # a track change starts this analyzer and a fresh
+                    # AirPlayDelivery.play() at the same moment, and that
+                    # target's RTSP handshake is fragile enough that the
+                    # starvation dropped it outright on a real Apple TV.
+                    # sleep(0) only re-queues this task behind whatever else
+                    # is ready, not a real delay, so the race still finishes
+                    # in essentially the same wall-clock time.
+                    await asyncio.sleep(0)
                 # Pause once far enough ahead — see _MAX_LOOKAHEAD_SECONDS.
                 # Not reading further just leaves bytes sitting in the
                 # decoder's own stdout pipe; once that (small, kernel-sized)
@@ -472,17 +500,22 @@ class AudioAnalyzer:
 
 
 # Kept here (rather than only in a docstring) so both
-# core/visualizer_feed.py and tests reference the exact same set —
-# "everything except AirPlay" is the actual intent, not "these three specifically", but spelling it out
-# explicitly is safer than an exclusion list silently covering some future
-# delivery type nobody's decided is actually safe to analyze yet.
-LIVE_ANALYSIS_TARGET_TYPES = frozenset({"sonos", "dlna", "chromecast"})
+# core/visualizer_feed.py and tests reference the exact same set — "every
+# delivery type with a track behind it" is the actual intent, not "these
+# four specifically", but spelling it out explicitly is safer than an
+# exclusion list silently covering some future delivery type nobody's
+# decided is actually safe to analyze yet. AirPlay joined this set
+# 2026-08-26 — see the module docstring for why its two original reasons for
+# exclusion no longer hold. Radio is the only thing still excluded, and it
+# isn't a delivery type at all: should_analyze() never sees it show up here,
+# since it has no track for a target to be "playing" in the first place.
+LIVE_ANALYSIS_TARGET_TYPES = frozenset({"sonos", "dlna", "chromecast", "airplay"})
 
 
 def should_analyze(target_pairs: list[tuple[str, str]]) -> bool:
     """Whether at least one currently-active delivery target can plausibly
-    have its playback analyzed — see the module docstring for why
-    AirPlay/radio can't. `target_pairs` is core.state.list_target_pairs()'s
+    have its playback analyzed — see the module docstring for why radio
+    can't. `target_pairs` is core.state.list_target_pairs()'s
     output, kept as a plain parameter (not importing SessionState here) to
     avoid a session <-> audio_analysis import cycle."""
     return any(target_type in LIVE_ANALYSIS_TARGET_TYPES for target_type, _ in target_pairs)

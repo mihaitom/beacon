@@ -168,14 +168,18 @@ describe('NowPlayingView', () => {
       )
     })
 
-    it('is unavailable casting to AirPlay only', async () => {
+    it('is available casting to AirPlay only', async () => {
+      // AirPlay used to be excluded here (see connect/core/audio_analysis.py's
+      // module docstring for why that no longer holds) - the backend analyzes
+      // it like any other cast target now, so the frontend no longer needs its
+      // own AirPlay-specific check on top of should_analyze().
       const { wrapper } = await mountWithSongFor()
       const connect = useConnectStore()
       connect.status = statusWithTargets([{ name: 'Living Room', type: 'airplay' }])
       await wrapper.vm.$nextTick()
 
       expect((wrapper.vm as unknown as { visualizerAvailable: boolean }).visualizerAvailable).toBe(
-        false,
+        true,
       )
     })
 

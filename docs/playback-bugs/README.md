@@ -28,7 +28,6 @@ opening every file.
 - [Cast device drops mid-track - symptom, evidence & ruled-out theories](mid-track-drop-symptom.md) - **PROBABLY RESOLVED 2026-08-24**, pending a quiet confirmation period; shared diagnostic reference for the two causes below plus the general mitigation
 - [Cast device drops mid-track - reverse-proxy 403](mid-track-drop-reverse-proxy-403.md) - **RESOLVED 2026-08-23**
 - [Cast device drops mid-track - test-suite Sonos-discovery leak](mid-track-drop-test-suite-sonos-leak.md) - **RESOLVED 2026-08-24 (test-suite side)** - assessed as probably the whole story, not independently wire-confirmed
-- [AirPlay reports nothing when it dies mid-track](airplay-silent-death.md) - **OPEN**
 - [The copy tier never checks what the device can actually play](copy-tier-device-limits.md) - **RESOLVED 2026-08-24**
 - [One device dropping out of a multi-target cast is never surfaced](multi-target-partial-drop-not-surfaced.md) - **OPEN** (code gap unfixed; its original 2026-08-22 trigger is now suspected to be the test-suite leak too)
 - [Auto-advance onto a still-playing device drops the next track silently](auto-advance-still-playing-device.md) - **OPEN**
@@ -36,6 +35,7 @@ opening every file.
 
 ## Fixed
 
+- [AirPlay reports nothing when it dies mid-track](fixed-airplay-silent-death.md) (2026-08-26) - the RAM-buffering half of that entry is fixed with it
 - [Every cast track ended a fraction of a second early](fixed-track-end-cut-short.md) (2026-08-25)
 - [Resuming an old interruption seeked past the track's own end](fixed-resume-seeked-past-track-end.md) (2026-08-24)
 - [A mid-track reconnect restarted the track and poisoned the clock](fixed-reconnect-restarted-track-poisoned-clock.md) (2026-08-23)

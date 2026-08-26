@@ -106,6 +106,24 @@ async def test_subscribing_starts_analysis_of_what_is_playing(casting_session, f
         await feed.shutdown()
 
 
+async def test_subscribing_starts_analysis_of_an_airplay_target(casting_session, fake_analyzer):
+    """AirPlay used to be excluded here (its position is a fixed estimate,
+    not something calibrated against the device) — see
+    core/audio_analysis.py's module docstring for why that no longer rules
+    it out: this module decodes the source itself and never taps the bytes
+    actually going to the device, so the estimate only has to be good
+    enough to seek a fresh decoder to roughly the right spot."""
+    casting_session.state.active_delivery = AirPlayDelivery("Wohnzimmer")
+    feed = casting_session.visualizer
+    feed.subscribe()
+    await _settle(feed)
+    try:
+        assert len(fake_analyzer) == 1
+        assert feed.analyzer is fake_analyzer[0]
+    finally:
+        await feed.shutdown()
+
+
 async def test_analysis_starts_at_the_current_playback_position(casting_session, fake_analyzer):
     """A visualizer opened mid-track must pick playback up where it is —
     the decoder seeks there, which is what makes starting late possible at
@@ -240,20 +258,6 @@ async def test_analysis_starts_once_playback_does_for_an_already_open_visualizer
 
 
 # ── what can't be analyzed ───────────────────────────────────────────────────
-
-
-async def test_no_analysis_for_an_airplay_target(casting_session, fake_analyzer):
-    """See core/audio_analysis.py's module docstring: AirPlay's position is
-    an estimate rather than something calibrated against the device, so
-    frames couldn't be released at the right moment anyway."""
-    casting_session.state.active_delivery = AirPlayDelivery("Wohnzimmer")
-    feed = casting_session.visualizer
-    feed.subscribe()
-    await _settle(feed)
-    try:
-        assert fake_analyzer == []
-    finally:
-        await feed.shutdown()
 
 
 async def test_no_analysis_for_radio(casting_session, fake_analyzer):
