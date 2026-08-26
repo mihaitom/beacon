@@ -1,4 +1,4 @@
-# An event-loop stall of 19.47s, cause unknown (OPEN)
+# An event-loop stall of 19.47s, cause unknown (RESOLVED 2026-08-26, by absence)
 
 2026-08-23, 00:49, on one instance while casting. One occurrence, not seen
 again over the following night.
@@ -62,3 +62,14 @@ either. So the watchdog would add a permanently running thread and a burst
 of log output to a process that streams audio, and still leave the decision
 it was supposed to inform unmade. `py-spy` above produces the same frame on
 demand, with nothing to maintain, for a stall seen exactly once.
+
+**Closed 2026-08-26, on the trigger rather than the frame.** The specific
+line in our own process that blocked for 19.47s was never isolated - the
+three theories above were only *ruled out*, not replaced with a positive
+one. What closes this is the trigger side instead: no repeat since
+2026-08-23 despite ordinary multi-room use, consistent with this needing the
+same rare combination (an active cast plus another room being started/
+stopped from the Sonos app at that moment) that only coincided once. If it
+recurs, `py-spy` above is still the way to actually name the frame - that
+part of the investigation was never finished, only judged not worth a
+permanent watchdog for a single occurrence.

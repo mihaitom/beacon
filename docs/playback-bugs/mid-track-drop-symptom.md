@@ -1,4 +1,4 @@
-# Cast device drops a healthy stream mid-track - symptom, evidence & ruled-out theories (PROBABLY RESOLVED 2026-08-24, pending a quiet confirmation period)
+# Cast device drops a healthy stream mid-track - symptom, evidence & ruled-out theories (RESOLVED 2026-08-26)
 
 Shared diagnostic reference for two confirmed causes that produce the
 identical device-side signature and were, for a while, chased as one bug:
@@ -17,6 +17,11 @@ rests entirely on timing correlation plus a plausible mechanism, not a
 packet-level demonstration that the read-only SOAP burst is what makes the
 device let go. Downgrade back to open the moment a mid-track drop recurs with
 no `pytest` run anywhere near it.
+
+**Graduated to RESOLVED 2026-08-26:** the quiet period held - no recurrence
+since the 2026-08-24 assessment above. Still resting on the same timing
+correlation, not a packet-level proof; downgrade this file the moment a
+mid-track drop turns up again.
 
 The ruled-out list below stays useful regardless of how this resolves - it is
 what stops a future recurrence from re-testing the same fifteen theories.

@@ -494,7 +494,15 @@ export default {
       // specific song the user picked as the start (same reasoning as
       // PlaylistDetailView.vue's playAll()).
       if (this.selectionMode && index != null && this.selectedRowKeys.has(index)) {
-        void this.playbackStore.playSongList(this.selectedSongs, 0, false)
+        // peek: replaces the queue with more than one song whenever more
+        // than one is actually selected — see peekQueueDrawer()'s own
+        // comment for the rule.
+        void this.playbackStore.playSongList(
+          this.selectedSongs,
+          0,
+          false,
+          this.selectedSongs.length > 1,
+        )
         return
       }
       if (!this.queueWholeList) {
@@ -514,7 +522,15 @@ export default {
       // playing the wrong position when the same song appears twice in
       // one list (e.g. concatenated from two playlists).
       const position = index ?? this.sortedSongs.findIndex((t) => t.id === song.id)
-      void this.playbackStore.playSongList(this.sortedSongs, Math.max(0, position))
+      // peek: replaces the queue with the whole list, even though only the
+      // clicked position starts playing immediately — see
+      // peekQueueDrawer()'s own comment for the rule.
+      void this.playbackStore.playSongList(
+        this.sortedSongs,
+        Math.max(0, position),
+        true,
+        this.sortedSongs.length > 1,
+      )
     },
     playNextSong(song: Song, index?: number) {
       this.playbackStore.queueNext(this.selectedOrSingle(song, index))

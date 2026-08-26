@@ -151,7 +151,9 @@ export default {
       // so the full song list has to be fetched before it can be queued.
       const full = await this.libraryStore.fetchPlaylist(playlist.id)
       // pinFirst: false — see PlaylistDetailView.vue's identical comment.
-      await usePlaybackStore().playSongList(full.songs, 0, false)
+      // peek: replaces the queue with more than one song — see
+      // peekQueueDrawer()'s own comment for the rule.
+      await usePlaybackStore().playSongList(full.songs, 0, false, full.songs.length > 1)
     },
     async createPlaylist() {
       if (!this.newPlaylistName.trim()) return

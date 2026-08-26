@@ -1,4 +1,4 @@
-# Auto-advance onto a still-playing device drops the next track silently (OPEN)
+# Auto-advance onto a still-playing device drops the next track silently (RESOLVED 2026-08-26, via the test-suite leak fix)
 
 One occurrence, 2026-08-24, prod. Distinct from
 [Cast device drops mid-track](mid-track-drop-symptom.md): that one drops a
@@ -7,6 +7,7 @@ all. Also distinct from the
 [test-suite Sonos-discovery leak](mid-track-drop-test-suite-sonos-leak.md):
 that entry's correlation with pytest timing was checked for this drop too and
 was pure coincidence - this drop has its own, unrelated log trace below.
+(Reconsidered 2026-08-26 - see "Reattributed" at the end of this file.)
 
 **Symptom:** queue auto-advanced from "SIDEPIECE — Cry for You" to "Royal
 Gigolos — California Dreamin" on room A's Sonos. No sound from the new track
@@ -108,3 +109,33 @@ the resume seeked FFmpeg past the track's own end), fixed separately - see
 [Resuming an old interruption seeked past the track's own end](fixed-resume-seeked-past-track-end.md).
 It explains that follow-on symptom but says nothing about why the device
 stopped in the first place — this entry is still open.
+
+**Reattributed to the test-suite leak, 2026-08-26.** The "pure coincidence"
+call above didn't hold up to the same standard the rest of this file family
+uses elsewhere: rows 12-14 in
+[the shared symptom file's drops table](mid-track-drop-symptom.md) each show
+an exact `pytest -q` start time and how many seconds before the drop it
+began; this entry's own pytest-timing check never got that same treatment,
+just the bare assertion above. Once actually looked at the same way, *all
+six* room-A incidents that evening - this one at 20:31 plus the five
+mid-track drops at 21:14-23:00 - coincided with a backend test run, not five
+of six.
+
+That also removes the reason to treat this as a separate mechanism in the
+first place. "Beacon's own `device.stop()` call causing the stop" was never
+in question - it's the shape every auto-advance onto a still-playing device
+takes, and it succeeds 14 other times in the same log window. What
+distinguishes this one failure from those 14 successes was never explained
+by the stop()-call observation alone; a foreign SOAP burst landing on the
+device at exactly that moment - Sonos's small concurrent-connection budget
+exhausted by the leaking test's SSDP scan plus repeated
+`get_current_track_info`, on top of the stop()+reissue cycle already in
+flight - is a more complete account of why this specific attempt didn't
+recover than "unrelated race, chance timing" was.
+
+Not independently wire-confirmed, same caveat as
+[the leak file](mid-track-drop-test-suite-sonos-leak.md) carries for its
+other five rows. Downgrade back to open the same way that file would: a
+recurrence of this exact shape (auto-advance onto a device still PLAYING the
+same session URL, flips to STOPPED within the same second, never recovers)
+with no test run anywhere near it.

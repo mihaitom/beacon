@@ -276,15 +276,28 @@ async def lifespan(_: FastAPI):
     pairing_reaper_task = asyncio.create_task(reap_stale_pairings())
     loop_lag_task = asyncio.create_task(monitor_loop_lag())
     upnp_renewal_task = asyncio.create_task(_renew_upnp_subscriptions())
+    background_tasks = (
+        discovery_task,
+        reaper_task,
+        remote_reaper_task,
+        pairing_reaper_task,
+        loop_lag_task,
+        upnp_renewal_task,
+    )
     try:
         yield
     finally:
-        discovery_task.cancel()
-        reaper_task.cancel()
-        remote_reaper_task.cancel()
-        pairing_reaper_task.cancel()
-        loop_lag_task.cancel()
-        upnp_renewal_task.cancel()
+        for task in background_tasks:
+            task.cancel()
+        # Actually letting each task run its own cancellation (rather than
+        # just requesting it and moving on) matters here: an event loop that
+        # closes with a task still merely *scheduled* to cancel — not yet
+        # actually cancelled — logs "Task was destroyed but it is pending!"
+        # on exit, on every plain Ctrl+C. return_exceptions=True is what
+        # keeps that CancelledError from propagating out of gather() itself
+        # once each task raises it, same as the finally block already does
+        # per-delivery below for its own exceptions.
+        await asyncio.gather(*background_tasks, return_exceptions=True)
         # A killed process (dev-mode Ctrl+C, packaged app quitting) can't run
         # the Electron before-quit round-trip that normally disables Remote
         # Control (see App.vue) — disable it here too so a still-running

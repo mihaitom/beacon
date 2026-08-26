@@ -203,7 +203,10 @@ export async function handleRemoteCommand(
     case 'play-playlist': {
       const playlist = await library.fetchPlaylist(String(payload.playlistId))
       const startIndex = typeof payload.startIndex === 'number' ? payload.startIndex : 0
-      await playback.playSongList(playlist.songs, startIndex)
+      // peek: this runs on the desktop process actually holding the queue
+      // (see peekQueueDrawer()'s own comment) — the phone sending this
+      // command has no queue drawer of its own to peek into.
+      await playback.playSongList(playlist.songs, startIndex, true, playlist.songs.length > 1)
       return
     }
     case 'play-radio-station': {

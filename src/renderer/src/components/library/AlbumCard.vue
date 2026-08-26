@@ -78,7 +78,9 @@ export default {
     async onCoverClick() {
       const full = await useLibraryStore().fetchAlbum(this.album.id)
       // pinFirst: false — see PlaylistDetailView.vue's identical comment.
-      await usePlaybackStore().playSongList(full.songs, 0, false)
+      // peek: replaces the queue with more than one song — see
+      // peekQueueDrawer()'s own comment for the rule.
+      await usePlaybackStore().playSongList(full.songs, 0, false, full.songs.length > 1)
     },
     async toggleStar() {
       await useLibraryStore().toggleStar({ albumId: this.album.id, starred: this.album.starred })

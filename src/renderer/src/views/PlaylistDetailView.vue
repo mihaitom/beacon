@@ -200,7 +200,14 @@ export default {
       // pinFirst: false — this is "play the whole playlist", not a specific
       // song pick, so shuffle (if on) should be free to reorder the first
       // song too instead of always starting on track 1.
-      await usePlaybackStore().playSongList(this.playlist.songs, 0, false)
+      // peek: replaces the queue with more than one song — see
+      // peekQueueDrawer()'s own comment for the rule.
+      await usePlaybackStore().playSongList(
+        this.playlist.songs,
+        0,
+        false,
+        this.playlist.songs.length > 1,
+      )
     },
   },
 }

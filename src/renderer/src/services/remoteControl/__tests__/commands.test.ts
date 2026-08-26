@@ -281,10 +281,12 @@ describe('handleRemoteCommand', () => {
 
     await handleRemoteCommand('play-playlist', { playlistId: 'p1', startIndex: 1 })
     expect(fetchSpy).toHaveBeenCalledWith('p1')
-    expect(playSpy).toHaveBeenCalledWith(playlist.songs, 1)
+    // peek: true, and pinFirst: true (the default) — see commands.ts's own
+    // comment on why this peeks the *desktop's* queue drawer.
+    expect(playSpy).toHaveBeenCalledWith(playlist.songs, 1, true, true)
 
     await handleRemoteCommand('play-playlist', { playlistId: 'p1' })
-    expect(playSpy).toHaveBeenLastCalledWith(playlist.songs, 0)
+    expect(playSpy).toHaveBeenLastCalledWith(playlist.songs, 0, true, true)
   })
 
   describe('play-radio-station', () => {

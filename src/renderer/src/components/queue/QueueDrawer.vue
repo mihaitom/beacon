@@ -103,22 +103,45 @@
          - animate from. Letting Vue's own, already-correct enter/leave
          - lifecycle own the property changes sidesteps both problems
          - directly instead of re-solving them by hand. -->
-        <!-- `appear` so the very first reveal animates too. DefaultLayout.vue
-         - doesn't mount this component at all until the drawer first opens
-         - (see its own v-if comment), so on a peek that's *also* the first
-         - open, every row is part of this list's initial render rather than
-         - an addition to an existing one — and a TransitionGroup without
-         - `appear` deliberately skips its initial render, which would have
-         - left exactly the "Song Radio from a closed drawer doesn't animate
-         - at all" hole. Bound to queueRevealSeq rather than just set: a
-         - first open that's a plain manual toggle (seq still 0) should show
-         - its rows as they are, no fanfare — same distinction the
-         - queueRevealSeq watcher below makes. -->
+        <!-- No `appear`, deliberately — see below for why, and for what
+         - this costs. -->
+        <!-- `appear` used to be bound to queueRevealSeq > 0, so a peek that's
+         - *also* the drawer's first-ever open (DefaultLayout.vue doesn't
+         - mount this component at all until the drawer first opens — see its
+         - own v-if comment) still animated its rows in, instead of a plain
+         - TransitionGroup silently skipping its own initial render (which
+         - would have left exactly the "Song Radio from a closed drawer
+         - doesn't animate at all" hole this was built to close).
+         -
+         - Turned off for good 2026-08-26: that first-ever `appear` render is
+         - specifically what raced against Vue's own TransitionGroup move
+         - logic (applyTranslation() in @vue/runtime-dom, still present
+         - unpatched as of 3.5.41 stable and 3.6.0-rc.5 — no guard anywhere
+         - in it against an element still mid-enter when the list re-renders
+         - a second time) — confirmed live: .queue-move-move sitting on a row
+         - at the same instant as .queue-move-enter-from/-active, which
+         - snapped it back to its enter-from offset and restarted the whole
+         - transition, non-deterministically landing the row up to 50px off
+         - from the rest of the list until a several-hundred-ms self-
+         - correction kicked in. The exact second-render trigger was never
+         - pinned down (tried forcing an unrelated prop write at several
+         - points in the transition lifecycle — nextTick, double-rAF,
+         - @before-enter — none of it reproduced the class collision in
+         - isolation, and Vue's own renderTriggered dev hook came up empty on
+         - both this component and QueueRow.vue when the bug still fired
+         - without the fix below, meaning the culprit render lives inside
+         - TransitionGroup's own component instance, not anything reachable
+         - from here). Given that, the fix is to stop giving it a second
+         - render to race against for this one case, not to keep chasing
+         - the exact trigger. Every later reveal (queueNext/addToQueue/a
+         - fresh replace once the drawer's already mounted) still animates
+         - normally through the plain, non-appear enter path below — this
+         - only costs the very first reveal of a session its slide-in; rows
+         - just appear already in place instead. -->
         <transition-group
           v-if="!virtualizeQueue"
           tag="div"
           name="queue-move"
-          :appear="playbackStore.queueRevealSeq > 0"
           class="flex-grow-1 queue-scroll"
         >
           <queue-row

@@ -43,10 +43,22 @@
      - model-value already false, before the closed transform took effect.
      - Nothing to flash if it isn't in the DOM yet. Stays mounted for the
      - rest of the session once opened, same "persistent, not temporary"
-     - behavior as before either way. -->
+     - behavior as before either way.
+     - model-value is forced false for this same first mount, on top of
+     - that: queueDrawerOpen is already true in the store by the moment
+     - queueDrawerEverOpened flips (that's what triggered it), so without
+     - this override the component would be *born* already open, with no
+     - closed frame ever committed to the page for the browser to animate
+     - its very first opening transition from — the rows inside it
+     - (QueueDrawer.vue's own reveal, timed against that transition)
+     - visibly overshot and snapped back once real layout caught up.
+     - queueDrawerFirstMountSettled releases it a tick later, once the
+     - browser has had a real closed frame to start from — every open/close
+     - after that first one passes queueDrawerOpen straight through, same
+     - as before. Reported live 2026-08-26. -->
     <queue-drawer
       v-if="queueDrawerEverOpened"
-      :model-value="playbackStore.queueDrawerOpen"
+      :model-value="queueDrawerFirstMountSettled && playbackStore.queueDrawerOpen"
       @update:model-value="playbackStore.setQueueDrawerOpen($event)"
     />
     <lyrics-drawer
@@ -83,6 +95,9 @@ export default {
       // see the queue-drawer/lyrics-drawer v-if above for why.
       queueDrawerEverOpened: false,
       lyricsDrawerEverOpened: false,
+      // See the queue-drawer's own model-value comment above — released
+      // one tick after queueDrawerEverOpened first flips true.
+      queueDrawerFirstMountSettled: false,
     }
   },
   computed: {
@@ -127,6 +142,12 @@ export default {
     },
     'playbackStore.lyricsDrawerOpen'(open: boolean) {
       if (open) this.lyricsDrawerEverOpened = true
+    },
+    // Fires exactly once, right after the mount this same tick's v-if
+    // triggers — see the queue-drawer's own model-value comment above for
+    // why this can't just be true from the start.
+    queueDrawerEverOpened(everOpened: boolean) {
+      if (everOpened) this.$nextTick(() => (this.queueDrawerFirstMountSettled = true))
     },
   },
 }

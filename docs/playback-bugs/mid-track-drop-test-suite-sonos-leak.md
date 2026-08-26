@@ -77,13 +77,16 @@ observed stable throughout both times.
 
 ## What this does and does not explain
 
-**Does not explain:** the very first drop that evening, 20:31 ("Royal
-Gigolos") - that one has its own confirmed, unrelated cause, an auto-advance
-race - see
+**Reconsidered 2026-08-26 - now believed to explain the very first drop
+that evening too:** 20:31 ("Royal Gigolos"), an auto-advance onto a device
+still playing the previous track rather than a mid-stream drop - see
 [Auto-advance onto a still-playing device drops the next track silently](auto-advance-still-playing-device.md).
-The coincidence with a pytest run at the time was chance; that entry's own
-log trace shows Beacon's own `device.stop()` call causing the stop, nothing
-to do with test pollution.
+Originally filed as unrelated ("the coincidence with a pytest run at the
+time was chance; that entry's own log trace shows Beacon's own
+`device.stop()` call causing the stop, nothing to do with test pollution"),
+but that check never got the same timestamp treatment rows 12-14 above did -
+see that file's own "Reattributed" section. All six room-A incidents that
+evening, not five, now line up with a backend test run.
 
 **Does not yet explain the mechanism fully:** why a foreign, read-only SOAP
 query from another host would make the device abandon its own

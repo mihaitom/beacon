@@ -518,12 +518,14 @@ export default {
       if (!album) return
       const full = await this.libraryStore.fetchAlbum(album.id)
       // pinFirst: false — see PlaylistDetailView.vue's identical comment.
-      await this.playbackStore.playSongList(full.songs, 0, false)
+      await this.playbackStore.playSongList(full.songs, 0, false, full.songs.length > 1)
     },
     async playSongList(songs: Song[]) {
       if (!songs.length) return
       // pinFirst: false — see PlaylistDetailView.vue's identical comment.
-      await this.playbackStore.playSongList(songs, 0, false)
+      // peek: replaces the queue with more than one song — see
+      // peekQueueDrawer()'s own comment for the rule.
+      await this.playbackStore.playSongList(songs, 0, false, songs.length > 1)
     },
     // AlbumShelf.vue's album cards only ever carry list-level Album data
     // (no song list — see fetchAlbum()'s own comment), so "play all" for a

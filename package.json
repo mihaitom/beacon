@@ -24,10 +24,10 @@
     "url": "https://github.com/mihaitom/"
   },
   "scripts": {
-    "dev": "concurrently -k -n connect,electron \"pnpm:dev:connect\" \"pnpm:dev:electron\"",
+    "dev": "concurrently -k -s first -n connect,electron \"pnpm:dev:connect\" \"pnpm:dev:electron\"",
     "dev:electron": "electron-vite dev",
     "dev:connect": "cd connect && uv run python main.py",
-    "dev:web": "concurrently -k -n connect,web \"pnpm:dev:connect\" \"pnpm:dev:web:vite\"",
+    "dev:web": "concurrently -k -s first -n connect,web \"pnpm:dev:connect\" \"pnpm:dev:web:vite\"",
     "dev:web:vite": "vite --config web.vite.config.ts",
     "build": "electron-vite build",
     "build:web": "vite build --config web.vite.config.ts",

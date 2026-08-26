@@ -366,9 +366,12 @@ export const useAuthStore = defineStore('auth', {
         // a different account/server, since it isn't scoped to one — see
         // PERSIST_KEY's comment) the instant that login succeeds is
         // surprising, not helpful. This restore() path is specifically "the
-        // app reloaded/restarted mid-session," which is the one case
-        // "continue where I left off, including auto-playing" is actually
-        // wanted.
+        // app reloaded/restarted mid-session," the one case "load the queue
+        // and position back up" is always wanted — whether it also resumes
+        // making sound depends on which of the two this boot actually is
+        // (see resumeLocalPlayback()'s own comment): a reload picks back up
+        // exactly where it was, including audio, but a genuine restart
+        // leaves that decision to the user instead of assuming it.
         usePlaybackStore().attemptLocalResumeAfterAuth()
         return true
       } catch (error) {

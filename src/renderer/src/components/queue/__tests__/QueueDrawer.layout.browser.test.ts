@@ -207,13 +207,18 @@ describe('QueueDrawer reveal animation layout', () => {
     expect(getComputedStyle(newRow).opacity).toBe('1')
   })
 
-  it('animates the rows in on a peek that also mounts the drawer for the first time', async () => {
+  it('shows every row already in place on a peek that also mounts the drawer for the first time, no animation', async () => {
     // DefaultLayout.vue doesn't mount this component at all until the
     // drawer first opens, so a Song Radio started from a closed drawer
     // renders every row as part of this TransitionGroup's *initial*
-    // render — which Vue skips animating unless told to `appear`. Without
-    // that prop the whole reveal silently doesn't happen on exactly the
-    // path most likely to trigger it.
+    // render. That case used to animate too, via `appear` — removed
+    // 2026-08-26 (see the template's own comment) after it turned out to be
+    // exactly what raced against a Vue TransitionGroup bug (no guard, in
+    // any released or pre-release version checked, against an element still
+    // mid-enter when the list re-renders again), non-deterministically
+    // landing rows up to 50px off from the rest of the list. Trading the
+    // slide-in away for this one case is the actual fix — rows just render
+    // at their final position immediately, same as this test now asserts.
     await page.viewport(1200, 800)
     setActivePinia(createPinia())
     const playback = usePlaybackStore()
@@ -221,14 +226,23 @@ describe('QueueDrawer reveal animation layout', () => {
     playback.peekQueueDrawer() // before mounting, same order as the real app
 
     mountBoundToStore()
-    await new Promise((resolve) => setTimeout(resolve, 100)) // inside REVEAL_BASE_DELAY_MS
-
     const firstRow = document.querySelector('[data-queue-index="0"]') as HTMLElement
-    // Still waiting out the drawer's own opening transition.
-    expect(getComputedStyle(firstRow).opacity).toBe('0')
-
-    await new Promise((resolve) => setTimeout(resolve, 800))
+    // Never invisible/faded, unlike the old `appear`-driven reveal — no
+    // enter transition means opacity is 1 from the very first frame.
     expect(getComputedStyle(firstRow).opacity).toBe('1')
+
+    // Not instantly at rest, though: something still re-renders this list a
+    // second time shortly after its own first mount — never pinned down
+    // exactly what (see the template's own comment), independent of the
+    // `appear` removal above. Before that removal this collided with the
+    // still-active enter transition and corrupted it (the actual bug this
+    // fix closes); with no enter transition to collide with any more, the
+    // same re-render's own TransitionGroup .move class just plays out as an
+    // ordinary, correctly-completing FLIP settle instead — confirmed to
+    // reach and *stay* at rest, not the old bug's snap-back.
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    expect(getComputedStyle(firstRow).transform).toBe('none')
+    await new Promise((resolve) => setTimeout(resolve, 300))
     expect(getComputedStyle(firstRow).transform).toBe('none')
   })
 

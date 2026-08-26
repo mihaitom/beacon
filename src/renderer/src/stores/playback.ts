@@ -236,7 +236,6 @@ interface PersistedPlaybackState {
   volume: number
   replayGainMode: ReplayGainMode
   localPosition: number
-  wasPlaying: boolean
 }
 
 function loadPersisted(): PersistedPlaybackState | null {
@@ -257,6 +256,36 @@ function savePersisted(snapshot: PersistedPlaybackState): void {
   }
 }
 
+// sessionStorage, deliberately not part of PersistedPlaybackState above —
+// resumeLocalPlayback()'s decision to actually make sound needs to tell a
+// reload apart from a genuine app restart, and localStorage can't do that on
+// its own (it survives both identically). sessionStorage is the platform's
+// own answer to exactly this: it survives a reload of the same window/tab
+// but is gone the moment that window/tab is closed, so it's only ever still
+// there to read back if this boot is a reload of a session that was already
+// running — never on a real restart (a fresh process/window/tab, Electron or
+// web alike). Read once, first thing, in restoreFromStorage() below, before
+// anything in this fresh instance's own life could overwrite it.
+const SESSION_WAS_PLAYING_KEY = 'beacon.playback.session-was-playing'
+
+function readSessionWasPlaying(): boolean {
+  try {
+    return sessionStorage.getItem(SESSION_WAS_PLAYING_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function writeSessionWasPlaying(wasPlaying: boolean): void {
+  try {
+    sessionStorage.setItem(SESSION_WAS_PLAYING_KEY, String(wasPlaying))
+  } catch {
+    // Same acceptable degradation as savePersisted() above — worst case a
+    // reload no longer resumes audio either, just like a restart already
+    // doesn't.
+  }
+}
+
 /** Called from authStore.logout() — a different Navidrome account signing
  * in afterwards shouldn't inherit the previous one's queue/position (whose
  * stream URLs wouldn't even be valid for the new account anyway). */
@@ -269,8 +298,9 @@ export function clearPersistedPlayback(): void {
 }
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null
-// Whether the persisted snapshot being restored had audio actually playing
-// (vs. loaded-but-paused) — read once by resumeLocalPlayback().
+// Whether the sessionStorage marker read at boot (see SESSION_WAS_PLAYING_KEY
+// above) says this is a reload of a session that was already playing — set
+// once by restoreFromStorage(), read once by resumeLocalPlayback().
 let restoredWasPlaying = false
 // Sequences with connect's first SSE status tick (or a timeout, whichever
 // comes first) so local resume only ever gets decided once — see
@@ -568,8 +598,14 @@ export const usePlaybackStore = defineStore('playback', {
      * (if any) into state — called once from init(), before anything else,
      * so it's already in place by the time either resumeLocalPlayback() or
      * a connect SSE reconcile needs it (see both). Does not itself start
-     * any playback. */
+     * any playback. Also captures the sessionStorage reload marker (see
+     * SESSION_WAS_PLAYING_KEY's own comment) into restoredWasPlaying, ahead
+     * of anything in this fresh instance that could overwrite it — read
+     * unconditionally, before the early return below, since it's an
+     * independent signal from whether a localStorage snapshot exists at
+     * all. */
     restoreFromStorage(): void {
+      restoredWasPlaying = readSessionWasPlaying()
       const saved = loadPersisted()
       if (!saved) return
       this.queue = saved.queue
@@ -582,7 +618,6 @@ export const usePlaybackStore = defineStore('playback', {
       // Falls back to 'off' for data saved before this field existed.
       this.replayGainMode = saved.replayGainMode ?? 'off'
       this.localPosition = saved.localPosition
-      restoredWasPlaying = saved.wasPlaying
     },
 
     persistNow(): void {
@@ -596,15 +631,14 @@ export const usePlaybackStore = defineStore('playback', {
         volume: this.volume,
         replayGainMode: this.replayGainMode,
         localPosition: this.localPosition,
-        // Not just this.isPlaying — resumeLocalPlayback() (the only reader
-        // of this flag) uses it to decide whether to auto-play through the
-        // *local* <audio> element on next boot. Persisting it while casting
-        // would auto-start local speaker playback next launch even though
-        // local playback was never actually happening last session (only
-        // the cast device was audible) — this.isPlaying is true in both
-        // cases, so it alone can't tell the two apart.
-        wasPlaying: this.isPlaying && !this.isCasting,
       })
+      // Not just this.isPlaying — resumeLocalPlayback() (the only reader of
+      // this) needs to know whether *local* playback specifically was
+      // audible, and this.isPlaying is true while casting too, when nothing
+      // was actually coming out of this device's own speakers. See
+      // SESSION_WAS_PLAYING_KEY's own comment for why this lives in
+      // sessionStorage rather than alongside the snapshot above.
+      writeSessionWasPlaying(this.isPlaying && !this.isCasting)
     },
 
     /** Called from authStore.restore() once a silent re-auth on app boot
@@ -630,16 +664,22 @@ export const usePlaybackStore = defineStore('playback', {
       if (!useConnectStore().isActive) void this.resumeLocalPlayback()
     },
 
-    /** Actually resumes (or pre-loads) local <audio> playback from the
-     * snapshot restoreFromStorage() put into state — only called once we
-     * know a cast session isn't already handling it (see
-     * decideLocalResume()). Resumes playing if it was mid-playback before
-     * the reload; otherwise just loads the song/position so hitting play
-     * afterwards has something to resume instead of an empty element. */
+    /** Resumes (or pre-loads) local <audio> playback from the snapshot
+     * restoreFromStorage() put into state — only called once we know a cast
+     * session isn't already handling it (see decideLocalResume()). Whether
+     * it actually starts sound turns on restoredWasPlaying (the
+     * sessionStorage marker read once in restoreFromStorage() — see
+     * SESSION_WAS_PLAYING_KEY's own comment): true only for a reload of a
+     * session that was already playing, never for a genuine app restart —
+     * that's the app's own decision to make sound happen again, not the
+     * user's, on a boot the user didn't just press play to trigger. A
+     * restart still gets the song/position loaded either way, so pressing
+     * play afterwards has something to resume instead of an empty element.
+     * Radio has nothing stable to preload when it wasn't playing (no
+     * position to seek a live stream to), so a restart leaves it untouched
+     * beyond the station name already restored into state. */
     async resumeLocalPlayback(): Promise<void> {
       if (this.radioStation) {
-        // No stable "position" to preload for a live stream — only
-        // meaningful to auto-reconnect if it was actually playing.
         if (restoredWasPlaying) {
           getAudioEngine().play(this.radioStation.streamUrl)
           this.isPlaying = true
@@ -907,10 +947,11 @@ export const usePlaybackStore = defineStore('playback', {
       }
     },
 
-    /** `peek` opens the queue drawer on the new queue — for callers whose
-     * pick the user didn't make song-by-song themselves (see
-     * peekQueueDrawer()'s own comment for that distinction). It has to
-     * happen here rather than in the caller, right after the mutation and
+    /** `peek` opens the queue drawer on the new queue — every caller that
+     * replaces the queue passes it, except one handing a single song that
+     * plays immediately (see peekQueueDrawer()'s own comment for the exact
+     * rule). It has to happen here rather than in the caller, right after
+     * the mutation and
      * *before* the await: the reveal animation is driven by per-row
      * transition delays that only exist once peekQueueDrawer() has marked
      * which songs are new, so marking them a caller's `await` too late
@@ -1499,19 +1540,33 @@ export const usePlaybackStore = defineStore('playback', {
       this.setQueueDrawerOpen(!this.queueDrawerOpen)
     },
 
-    // Called by every action that changes the queue in a way that isn't
-    // already obvious from whatever the user was just looking at:
-    // addToQueue()/queueNext() (a song's context menu, the mobile action
-    // sheet, remote-control commands, and maybeAutoplay()'s own top-up,
-    // all funneled through those two), startSongRadio()/
-    // startArtistRadio() (a server-picked mix), and the Songs/Genre/
-    // Albums/Artists views' own "play random"/"play from top played"
-    // actions. Those last three all reach it through playSongList()'s own
-    // opt-in `peek` argument (see its comment for why the peek has to
-    // happen inside that call rather than after it); playSongList() never
-    // peeks on its own, since its more direct callers (clicking a
-    // song/album/playlist you were already looking at) already show you
-    // exactly what's about to play, so peeking there would just be noise.
+    // Called by every action that replaces the queue, with one exception:
+    // a single song that plays immediately (playSongList([song], 0) —
+    // clicking a bare song in raw-browsing SongTable, the mobile action
+    // sheet, the phone remote's play-song) needs no peek, since there's
+    // nothing about the resulting one-row queue the click itself didn't
+    // already show. Everything else that replaces the queue peeks, even a
+    // whole album/playlist/curated-list play the user was already looking
+    // at (AlbumCard, HomeView's hero/shelf plays, PlaylistsView/
+    // PlaylistDetailView's playAll, SongTable's curated-list click and
+    // multi-selection play) — changed 2026-08-26 from only peeking for
+    // picks the user didn't make song-by-song (server mixes, quick-play
+    // random/top actions), which is still also covered but no longer the
+    // dividing line. addToQueue()/queueNext() reach it too (a song's
+    // context menu, the mobile action sheet, remote-control commands, and
+    // maybeAutoplay()'s own top-up, all funneled through those two) even
+    // though they don't replace the queue — appending is exactly as easy
+    // to miss as replacing. Callers that replace it pass `peek` straight
+    // into playSongList() (see its own comment for why the peek has to
+    // happen inside that call rather than after it) or call this directly
+    // right after their own mutation, same timing requirement either way.
+    // The phone remote's own play-playlist is one of these: it runs
+    // through commands.ts on the desktop process actually holding the
+    // queue, so the peek opens the desktop's drawer, not anything on the
+    // phone — the phone has no queue drawer of its own to peek into, is
+    // sending this command precisely because it isn't looking at the
+    // desktop, and mobile web has no drawer either, so no callers there
+    // pass `peek` regardless of what they replace.
     // queueRevealSeq always bumps (that's the "show me what got added"
     // signal QueueDrawer.vue's own reveal animation watches for — see its
     // own comment), even if the drawer was already open from an earlier

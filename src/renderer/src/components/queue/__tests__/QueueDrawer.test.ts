@@ -135,17 +135,20 @@ describe('QueueDrawer', () => {
     expect(revealDelays(wrapper)).toEqual([undefined, undefined, undefined, undefined])
   })
 
-  it('staggers every row, after the drawer-opening delay, the very first time it is peeked', async () => {
-    // The one case where "reveal everything" remains correct: nothing has
-    // rendered yet, so every row genuinely is new to the user's view. This
-    // is the real app's actual shape for a first-ever peek — the drawer
-    // component itself doesn't mount at all until the first
-    // peekQueueDrawer() call (see DefaultLayout.vue), so the peek (and the
-    // `immediate: true` watcher handler it triggers) always lands *before*
-    // this component's own first render — unlike mountDrawer()'s other
-    // callers above, which mount first and peek afterward. Every delay is
-    // offset by REVEAL_BASE_DELAY_MS here, so nothing starts sliding in
-    // until the drawer itself has finished opening.
+  it("still computes every row's stagger delay on a first-ever peek, even though none of it plays", async () => {
+    // revealDelayStyle()/revealDelayMap() don't special-case this at all —
+    // they compute the same per-row transition-delay here as for any other
+    // reveal, "everything in the queue is new" (see queueRevealSongs'
+    // default of `this.queue`). What's different is that none of it is
+    // actually visible: the TransitionGroup below has no `appear` (removed
+    // 2026-08-26 — see its own comment for the Vue TransitionGroup bug that
+    // forced this), so a first-ever peek's rows — nothing has rendered yet,
+    // so every row genuinely is new to the user's view, same as any other
+    // full reveal — get no enter transition to delay in the first place.
+    // The inline style still lands on the DOM (asserted below), it just has
+    // nothing to act on; still worth asserting so a future change to
+    // revealDelayStyle() that broke this case wouldn't go unnoticed just
+    // because it's currently inert here specifically.
     vi.useFakeTimers()
     const playback = usePlaybackStore()
     playback.setQueue([makeSong('a'), makeSong('b'), makeSong('c')], 0)
@@ -155,8 +158,6 @@ describe('QueueDrawer', () => {
     await wrapper.vm.$nextTick()
 
     expect(revealDelays(wrapper)).toEqual(['200ms', '230ms', '260ms'])
-    // Rows are part of this component's very first render here, which a
-    // TransitionGroup skips animating unless it's told to `appear`.
     expect(wrapper.find('.queue-scroll').exists()).toBe(true)
     expect(wrapper.vm.playbackStore.queueRevealSeq).toBeGreaterThan(0)
   })
