@@ -300,10 +300,9 @@ export default {
         // comment. Natural track order, not shuffled: an album is a
         // coherent, deliberately-sequenced work, unlike a pile of
         // unrelated songs.
-        await playbackStore.playSongList(full.songs, 0, false)
-        // A pick the user didn't make themselves — see peekQueueDrawer()'s
-        // own comment for why this opens the drawer.
-        playbackStore.peekQueueDrawer()
+        // peek: a pick the user didn't make themselves — see
+        // peekQueueDrawer()'s own comment for why that opens the drawer.
+        await playbackStore.playSongList(full.songs, 0, false, true)
       } finally {
         this.playingRandomAlbum = false
       }
@@ -325,8 +324,7 @@ export default {
         const playbackStore = usePlaybackStore()
         // pinFirst: false, natural track order — see playRandomAlbum()'s
         // identical comment.
-        await playbackStore.playSongList(full.songs, 0, false)
-        playbackStore.peekQueueDrawer()
+        await playbackStore.playSongList(full.songs, 0, false, true)
       } finally {
         this.playingTopAlbum = false
       }

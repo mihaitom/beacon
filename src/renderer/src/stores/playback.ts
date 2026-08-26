@@ -59,6 +59,20 @@ interface PlaybackState {
   // warranted, as opposed to a plain manual toggle-open of an otherwise
   // unchanged queue, which should just show it as-is with no fanfare.
   queueRevealSeq: number
+  // Whether *this* peekQueueDrawer() call is the one actually opening the
+  // drawer from closed, set alongside queueRevealSeq above — see
+  // QueueDrawer.vue's own startReveal(), which needs to wait out the
+  // drawer's own opening transition before revealing anything in that
+  // case, but not when the drawer was already open and visible (a
+  // mid-queue "Play Next" while watching it, say) and the reveal should
+  // just start immediately instead.
+  queueRevealNeedsOpenDelay: boolean
+  // Exactly which songs QueueDrawer.vue's reveal animation should treat as
+  // new, set by peekQueueDrawer() at the same moment as queueRevealSeq —
+  // see that action's own comment on why this has to be an explicit list
+  // handed down from here, not something QueueDrawer.vue can work out for
+  // itself by watching what it's already rendered.
+  queueRevealSongs: Song[]
   lyricsDrawerOpen: boolean
 }
 
@@ -303,6 +317,8 @@ export const usePlaybackStore = defineStore('playback', {
     initialized: false,
     queueDrawerOpen: false,
     queueRevealSeq: 0,
+    queueRevealNeedsOpenDelay: false,
+    queueRevealSongs: [],
     lyricsDrawerOpen: false,
   }),
 
@@ -837,8 +853,27 @@ export const usePlaybackStore = defineStore('playback', {
       }
     },
 
-    async playSongList(songs: Song[], startIndex = 0, pinFirst = true): Promise<void> {
+    /** `peek` opens the queue drawer on the new queue — for callers whose
+     * pick the user didn't make song-by-song themselves (see
+     * peekQueueDrawer()'s own comment for that distinction). It has to
+     * happen here rather than in the caller, right after the mutation and
+     * *before* the await: the reveal animation is driven by per-row
+     * transition delays that only exist once peekQueueDrawer() has marked
+     * which songs are new, so marking them a caller's `await` too late
+     * means Vue has already rendered — and fully animated — those rows on
+     * the mutation alone, un-staggered and, if the drawer was shut,
+     * entirely out of sight. Reported live 2026-08-26 as Song Radio
+     * animating the queue in the first time and never again (the first
+     * time only worked because DefaultLayout.vue hadn't mounted the drawer
+     * yet, making it an initial render its `appear` covers). */
+    async playSongList(
+      songs: Song[],
+      startIndex = 0,
+      pinFirst = true,
+      peek = false,
+    ): Promise<void> {
       this.setQueue(songs, startIndex, pinFirst)
+      if (peek) this.peekQueueDrawer()
       await this.startCurrent()
     },
 
@@ -851,12 +886,11 @@ export const usePlaybackStore = defineStore('playback', {
         .getSimilarSongs2(song.id)
       if (plexPassRequired) notifyPlexPassRequired('library.songRadio')
       const songs = [song, ...similar.filter((t) => t.id !== song.id)]
-      await this.playSongList(songs, 0)
-      // A server-picked mix, unlike playSongList()'s other, more direct
-      // callers (clicking a song/album/playlist you were already looking
-      // at) — see peekQueueDrawer()'s own comment for why that distinction
-      // is what actually decides whether a call site peeks or not.
-      this.peekQueueDrawer()
+      // peek: a server-picked mix, unlike playSongList()'s other, more
+      // direct callers (clicking a song/album/playlist you were already
+      // looking at) — see peekQueueDrawer()'s own comment for why that
+      // distinction is what actually decides whether a call site peeks.
+      await this.playSongList(songs, 0, true, true)
     },
 
     /** Artist Radio — same getSimilarSongs2 endpoint as Song Radio, but
@@ -870,9 +904,8 @@ export const usePlaybackStore = defineStore('playback', {
         .client()
         .getSimilarSongs2(artist.id)
       if (plexPassRequired) notifyPlexPassRequired('library.artistRadio')
-      await this.playSongList(songs, 0)
-      // See startSongRadio()'s identical comment.
-      this.peekQueueDrawer()
+      // peek — see startSongRadio()'s identical comment.
+      await this.playSongList(songs, 0, true, true)
     },
 
     async playRadioStation(station: RadioStation): Promise<void> {
@@ -1161,7 +1194,7 @@ export const usePlaybackStore = defineStore('playback', {
       this.originalQueue.push(...toAdd)
       this.queue.push(...toAdd)
       this.syncCastQueue()
-      this.peekQueueDrawer()
+      this.peekQueueDrawer(toAdd)
     },
 
     /** Autoplay — called after every song change (startCurrent(),
@@ -1240,7 +1273,7 @@ export const usePlaybackStore = defineStore('playback', {
         this.originalQueue.push(...toInsert)
       }
       this.syncCastQueue()
-      this.peekQueueDrawer()
+      this.peekQueueDrawer(toInsert)
     },
 
     removeFromQueue(index: number): void {
@@ -1375,10 +1408,12 @@ export const usePlaybackStore = defineStore('playback', {
     // all funneled through those two), startSongRadio()/
     // startArtistRadio() (a server-picked mix), and the Songs/Genre/
     // Albums/Artists views' own "play random"/"play from top played"
-    // actions. Deliberately NOT called from playSongList() itself, though
-    // — its more direct callers (clicking a song/album/playlist you were
-    // already looking at) already show you exactly what's about to play,
-    // so peeking there would just be noise.
+    // actions. Those last three all reach it through playSongList()'s own
+    // opt-in `peek` argument (see its comment for why the peek has to
+    // happen inside that call rather than after it); playSongList() never
+    // peeks on its own, since its more direct callers (clicking a
+    // song/album/playlist you were already looking at) already show you
+    // exactly what's about to play, so peeking there would just be noise.
     // queueRevealSeq always bumps (that's the "show me what got added"
     // signal QueueDrawer.vue's own reveal animation watches for — see its
     // own comment), even if the drawer was already open from an earlier
@@ -1386,9 +1421,31 @@ export const usePlaybackStore = defineStore('playback', {
     // the one actually opening it, though: a drawer the user already had
     // open manually is left alone entirely otherwise — imposing an
     // auto-close on state they set up themselves would be surprising.
-    peekQueueDrawer(): void {
+    // `revealSongs` is exactly which songs QueueDrawer.vue's reveal
+    // animation should treat as new — omit it (every replace-the-whole-
+    // queue caller: startSongRadio(), startArtistRadio(), every "play
+    // random"/"play from top played" action) to mean "the entire current
+    // queue", since every one of those really did just become entirely
+    // new. addToQueue()/queueNext() pass the specific songs they just
+    // added instead, so only those get revealed — not rows that were
+    // already sitting there and merely shifted position.
+    //
+    // This can't be inferred by QueueDrawer.vue itself from what it has or
+    // hasn't rendered yet (an earlier version tried exactly that, checking
+    // a WeakMap of already-seen Song objects): by the time it renders, the
+    // songs are simply there, with nothing marking which of them the user
+    // hasn't seen before. Reported live 2026-08-25 as "no animation when
+    // the queue regenerates while the drawer's open".
+    //
+    // Every caller has to reach here in the same synchronous tick as its
+    // own queue mutation, so that both land in one render — the reveal is
+    // just per-row transition delays (see QueueDrawer.vue), which do
+    // nothing for a row Vue already rendered and animated an await ago.
+    peekQueueDrawer(revealSongs?: Song[]): void {
       const wasAlreadyOpen = this.queueDrawerOpen
       this.queueDrawerOpen = true
+      this.queueRevealNeedsOpenDelay = !wasAlreadyOpen
+      this.queueRevealSongs = revealSongs ?? this.queue
       this.queueRevealSeq++
       if (!wasAlreadyOpen) armQueueDrawerAutoCloseTimer(this)
     },

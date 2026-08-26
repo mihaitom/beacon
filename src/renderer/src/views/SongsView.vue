@@ -151,10 +151,9 @@ export default {
       const sample = shuffled(this.libraryStore.allSongs).slice(0, RANDOM_PLAY_COUNT)
       const playbackStore = usePlaybackStore()
       // pinFirst: false — see PlaylistDetailView.vue's identical comment.
-      await playbackStore.playSongList(sample, 0, false)
-      // A pick the user didn't make song-by-song themselves — see
-      // peekQueueDrawer()'s own comment for why this opens the drawer.
-      playbackStore.peekQueueDrawer()
+      // peek: a pick the user didn't make song-by-song themselves — see
+      // peekQueueDrawer()'s own comment for why that opens the drawer.
+      await playbackStore.playSongList(sample, 0, false, true)
     },
     // Same idea as AlbumsView.vue's/ArtistsView.vue's own "Random from top
     // played", scaled up: songs are cheap to rank client-side (the full
@@ -172,8 +171,7 @@ export default {
       const sample = shuffled(pool).slice(0, RANDOM_PLAY_COUNT)
       const playbackStore = usePlaybackStore()
       // pinFirst: false — see playRandom()'s identical comment.
-      await playbackStore.playSongList(sample, 0, false)
-      playbackStore.peekQueueDrawer()
+      await playbackStore.playSongList(sample, 0, false, true)
     },
   },
 }

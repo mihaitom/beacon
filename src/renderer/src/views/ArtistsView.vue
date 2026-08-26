@@ -306,10 +306,9 @@ export default {
       // there's no single natural order spanning all of them the way one
       // album's own track order is. pinFirst: false, same reasoning as
       // AlbumCard.vue's onCoverClick().
-      await playbackStore.playSongList(shuffled(songs), 0, false)
-      // A pick the user didn't make themselves — see peekQueueDrawer()'s
-      // own comment for why this opens the drawer.
-      playbackStore.peekQueueDrawer()
+      // peek: a pick the user didn't make themselves — see
+      // peekQueueDrawer()'s own comment for why that opens the drawer.
+      await playbackStore.playSongList(shuffled(songs), 0, false, true)
     },
   },
 }

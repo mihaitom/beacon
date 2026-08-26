@@ -156,10 +156,9 @@ export default {
       const sample = shuffled(this.songs).slice(0, RANDOM_PLAY_COUNT)
       const playbackStore = usePlaybackStore()
       // pinFirst: false — see PlaylistDetailView.vue's identical comment.
-      await playbackStore.playSongList(sample, 0, false)
-      // A pick the user didn't make song-by-song themselves — see
-      // peekQueueDrawer()'s own comment for why this opens the drawer.
-      playbackStore.peekQueueDrawer()
+      // peek: a pick the user didn't make song-by-song themselves — see
+      // peekQueueDrawer()'s own comment for why that opens the drawer.
+      await playbackStore.playSongList(sample, 0, false, true)
     },
     // See SongsView.vue's identical playTopSongs() comment.
     async playTopSongs() {
@@ -171,8 +170,7 @@ export default {
       const sample = shuffled(pool).slice(0, RANDOM_PLAY_COUNT)
       const playbackStore = usePlaybackStore()
       // pinFirst: false — see playRandom()'s identical comment.
-      await playbackStore.playSongList(sample, 0, false)
-      playbackStore.peekQueueDrawer()
+      await playbackStore.playSongList(sample, 0, false, true)
     },
   },
 }

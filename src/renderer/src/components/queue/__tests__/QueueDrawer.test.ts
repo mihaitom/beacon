@@ -32,6 +32,16 @@ function mountDrawer() {
 // the midpoint is always 0: a positive clientY reliably reads as "bottom
 // half of the row", zero or negative as "top half" — not a real geometry
 // check here, but a deterministic stand-in for driving the same branch.
+// Each row's own reveal stagger, as QueueDrawer binds it: the inline
+// transition-delay revealDelayStyle() produces, or undefined for a row
+// that isn't part of the current reveal at all.
+function revealDelays(wrapper: ReturnType<typeof mountDrawer>) {
+  return wrapper.findAll('.queue-row').map((row) => {
+    const match = /transition-delay:\s*([^;]+)/.exec(row.attributes('style') ?? '')
+    return match ? match[1]!.trim() : undefined
+  })
+}
+
 const TOP_HALF = { clientY: 0 }
 const BOTTOM_HALF = { clientY: 1 }
 
@@ -65,32 +75,90 @@ describe('QueueDrawer', () => {
     expect(rows[1]!.classes()).toContain('queue-row--current')
   })
 
-  it('reveals rows one at a time after a peek, via a class toggle rather than remounting them', async () => {
+  // The reveal itself is Vue's own TransitionGroup enter transition, which
+  // jsdom can't meaningfully run (no layout, no real transitionend) — what
+  // *is* assertable here is the part QueueDrawer actually owns: which rows
+  // get an inline transition-delay, what that delay is, and that it gets
+  // cleaned back off again afterwards.
+  it('staggers only genuinely new rows on a peek, leaving already-rendered ones untouched', async () => {
+    vi.useFakeTimers()
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a'), makeSong('b')], 0)
+    const wrapper = mountDrawer()
+    // Rendered once already at mount, with no reveal — a fresh mount whose
+    // queueRevealSeq is still 0 (no peek caused it) shows its rows plainly.
+    expect(revealDelays(wrapper)).toEqual([undefined, undefined])
+
+    // A real caller, not a bare peekQueueDrawer() — "Play Next" splices a
+    // genuinely new song into the middle of the queue.
+    playback.queueNext([makeSong('new')])
+    await wrapper.vm.$nextTick()
+
+    // Only the new row (now at index 1) carries a delay — 'a' and 'b' were
+    // already visible and are left alone, so nothing of theirs can linger
+    // to slow down some unrelated later transition on the same element.
+    // REVEAL_BASE_DELAY_MS, since queueNext()'s own peek is what opened the
+    // drawer in the store here (mountDrawer() only ever sets the prop) —
+    // the already-open case is the next test's.
+    expect(revealDelays(wrapper)).toEqual([undefined, '200ms', undefined])
+  })
+
+  it('starts the stagger from 0 for a live update while the drawer is already open', async () => {
+    // Regression test (reported live 2026-08-25): "Play Next" into an
+    // already-open drawer used to hide and re-reveal the *entire* queue at
+    // once, fighting the TransitionGroup move animation already sliding
+    // existing rows apart to make room — it read as the whole list
+    // jittering rather than a clean insert. There's no drawer-opening
+    // transition to wait out here either, unlike the very first peek, so
+    // the new row's delay starts at 0 rather than REVEAL_BASE_DELAY_MS.
+    vi.useFakeTimers()
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a'), makeSong('b')], 0)
+    const wrapper = mountDrawer()
+    playback.peekQueueDrawer() // opens it once, same as any real first peek
+    await vi.advanceTimersByTimeAsync(1000)
+    await wrapper.vm.$nextTick()
+
+    playback.queueNext([makeSong('new'), makeSong('newer')])
+    await wrapper.vm.$nextTick()
+
+    // Two simultaneously-new rows stagger relative to each other by
+    // ROW_STAGGER_MS, counted from within the batch itself rather than
+    // from their absolute queue index.
+    expect(revealDelays(wrapper)).toEqual([undefined, '0ms', '30ms', undefined])
+
+    // ...and the whole thing is cleaned back off once the last row's
+    // entrance has actually finished (30 + ROW_ENTER_TRANSITION_MS + 50).
+    await vi.advanceTimersByTimeAsync(380)
+    await wrapper.vm.$nextTick()
+    expect(playback.queueRevealSongs).toEqual([])
+    expect(revealDelays(wrapper)).toEqual([undefined, undefined, undefined, undefined])
+  })
+
+  it('staggers every row, after the drawer-opening delay, the very first time it is peeked', async () => {
+    // The one case where "reveal everything" remains correct: nothing has
+    // rendered yet, so every row genuinely is new to the user's view. This
+    // is the real app's actual shape for a first-ever peek — the drawer
+    // component itself doesn't mount at all until the first
+    // peekQueueDrawer() call (see DefaultLayout.vue), so the peek (and the
+    // `immediate: true` watcher handler it triggers) always lands *before*
+    // this component's own first render — unlike mountDrawer()'s other
+    // callers above, which mount first and peek afterward. Every delay is
+    // offset by REVEAL_BASE_DELAY_MS here, so nothing starts sliding in
+    // until the drawer itself has finished opening.
     vi.useFakeTimers()
     const playback = usePlaybackStore()
     playback.setQueue([makeSong('a'), makeSong('b'), makeSong('c')], 0)
-    const wrapper = mountDrawer()
-
     playback.peekQueueDrawer()
+
+    const wrapper = mountDrawer()
     await wrapper.vm.$nextTick()
 
-    // Every row starts hidden, waiting on its own staggered timer...
-    let rows = wrapper.findAll('.queue-row')
-    expect(rows[0]!.classes()).toContain('queue-row--reveal-pending')
-    expect(rows[1]!.classes()).toContain('queue-row--reveal-pending')
-
-    await vi.advanceTimersByTimeAsync(200) // REVEAL_BASE_DELAY_MS
-    await wrapper.vm.$nextTick()
-
-    // ...the first one reveals once that elapses, the next one not yet.
-    rows = wrapper.findAll('.queue-row')
-    expect(rows[0]!.classes()).not.toContain('queue-row--reveal-pending')
-    expect(rows[1]!.classes()).toContain('queue-row--reveal-pending')
-
-    await vi.advanceTimersByTimeAsync(30)
-    await wrapper.vm.$nextTick()
-
-    expect(wrapper.findAll('.queue-row')[1]!.classes()).not.toContain('queue-row--reveal-pending')
+    expect(revealDelays(wrapper)).toEqual(['200ms', '230ms', '260ms'])
+    // Rows are part of this component's very first render here, which a
+    // TransitionGroup skips animating unless it's told to `appear`.
+    expect(wrapper.find('.queue-scroll').exists()).toBe(true)
+    expect(wrapper.vm.playbackStore.queueRevealSeq).toBeGreaterThan(0)
   })
 
   it('shows the clear-all button once there is more than one song, and clears the queue after its staggered fade-out', async () => {

@@ -83,24 +83,42 @@
          - in the first place — see its comment) and a real per-row
          - transition wouldn't have anything correct to animate from anyway,
          - since off-screen rows aren't in the DOM to begin with. -->
-        <!-- No :key/appear-driven remount here — an earlier version forced
-         - one (bumping a :key on this whole TransitionGroup) specifically
-         - to make Vue's own enter transition replay for a reveal even on
-         - rows it had already mounted before. That meant genuinely
-         - destroying and recreating every row's component instance on
-         - every single peek, which for a real queue-sized list is real
-         - Vue/DOM work — work that ate into the very time budget the
-         - animation itself needed, so on a big queue the fade sometimes
-         - never visibly played at all, just jumped straight to its end
-         - state. revealingRows (below) replaces that with a manually-timed
-         - class toggle instead, the same approach onClearQueue() already
-         - uses for its own fade-out — completely decoupled from mount/
-         - unmount, so the DOM stays put and the animation actually has its
-         - own time instead of competing with component creation for it. -->
+        <!-- New rows animate in and removed ones animate out via Vue's own
+         - native enter/leave transitions (.queue-move-enter-*/-leave-*
+         - below) — no custom JS needed for either: a genuinely new v-for
+         - key gets -enter-from/-active for free, a genuinely removed one
+         - gets -leave-to/-active the same way. :style below only adds a
+         - per-row transition-delay so several simultaneously-new rows
+         - (Song Radio's whole mix, say) stagger in one after another
+         - instead of all snapping in at once — see revealDelayStyle()'s
+         - own comment. An earlier version instead hid/revealed rows via a
+         - hand-timed setTimeout-per-row class toggle, built specifically
+         - to make an enter-like fade replay even for rows Vue itself
+         - wouldn't have treated as entering at all — that turned out to
+         - fight .queue-move-move (below) for control of the same
+         - properties on rows that were simultaneously repositioning
+         - (reported live 2026-08-25 as a Play Next "zuckt nur rum"), and
+         - needed its own increasingly fiddly floor/delay math to avoid a
+         - same-tick hide-then-reveal that gave the browser nothing to
+         - animate from. Letting Vue's own, already-correct enter/leave
+         - lifecycle own the property changes sidesteps both problems
+         - directly instead of re-solving them by hand. -->
+        <!-- `appear` so the very first reveal animates too. DefaultLayout.vue
+         - doesn't mount this component at all until the drawer first opens
+         - (see its own v-if comment), so on a peek that's *also* the first
+         - open, every row is part of this list's initial render rather than
+         - an addition to an existing one — and a TransitionGroup without
+         - `appear` deliberately skips its initial render, which would have
+         - left exactly the "Song Radio from a closed drawer doesn't animate
+         - at all" hole. Bound to queueRevealSeq rather than just set: a
+         - first open that's a plain manual toggle (seq still 0) should show
+         - its rows as they are, no fanfare — same distinction the
+         - queueRevealSeq watcher below makes. -->
         <transition-group
           v-if="!virtualizeQueue"
           tag="div"
           name="queue-move"
+          :appear="playbackStore.queueRevealSeq > 0"
           class="flex-grow-1 queue-scroll"
         >
           <queue-row
@@ -109,10 +127,8 @@
             :song="song"
             :index="index"
             :data-queue-index="index"
-            :class="{
-              'queue-row--reveal-pending': revealingRows.has(index),
-              'queue-row--clearing': clearingRows.has(index),
-            }"
+            :style="revealDelayStyle(song)"
+            :class="{ 'queue-row--clearing': clearingRows.has(index) }"
             :drag-over-position="dragIndex !== index ? dragOverPosition(index) : null"
             :dragging="dragIndex === index"
             :landed="queueRowKey(song) === landedKey"
@@ -191,24 +207,30 @@ function queueRowKey(song: Song): string {
 const QUEUE_VIRTUALIZE_THRESHOLD = 500
 
 // v-navigation-drawer's own open transition (Vuetify's
-// VNavigationDrawer.css, transition-duration: 0.2s) — the reveal's base
-// delay, so rows only start fading in once the drawer itself has actually
-// finished sliding into place instead of visibly overlapping it. Clearing
-// doesn't need this: the drawer's already open by the time you can click
-// the clear button at all.
+// VNavigationDrawer.css, transition-duration: 0.2s) — folded into
+// revealDelayStyle()'s own transition-delay so a reveal that's actually
+// opening the drawer from closed only starts sliding in once the drawer
+// itself has finished sliding into place, instead of visibly overlapping
+// it. Clearing doesn't need this: the drawer's already open by the time
+// you can click the clear button at all.
 const REVEAL_BASE_DELAY_MS = 200
-// Per-row stagger, shared by the reveal and the clear — both driven by
-// their own individually-timed setTimeout per row (startReveal(),
-// onClearQueue()) rather than a single synchronous class toggle across
-// every row with only a differing CSS transition-delay meant to stagger
-// them, which turned out not to actually stagger visually, just apply the
-// end state to everything together. Capped at this many rows so a long
-// queue's animation still wraps up quickly rather than fanning out for
-// seconds; rows beyond the cap all share the same timing instead of
-// growing further, which reads fine since anything past ~30 rows is
+// Per-row stagger for several simultaneously-new/-clearing rows (Song
+// Radio's whole mix, "Play Next" on more than one selected song, ...) —
+// revealDelayStyle() bakes this into each row's own transition-delay,
+// declaratively, so Vue's native enter transition (see the template's own
+// comment) does the actual staggered animating; onClearQueue() still
+// drives its own per-row setTimeout with it instead, for the reason its
+// own comment on queue-row--clearing goes into. Capped at this many rows
+// so a long queue's animation still wraps up quickly rather than fanning
+// out for seconds; rows beyond the cap all share the same timing instead
+// of growing further, which reads fine since anything past ~30 rows is
 // scrolled out of view either way.
 const ROW_STAGGER_MS = 30
 const ROW_STAGGER_MAX_ROWS = 30
+// .queue-move-enter-active's own CSS transition duration (below) —
+// revealDelayStyle()'s own comment on why this needs to be known here too,
+// not just declared in CSS.
+const ROW_ENTER_TRANSITION_MS = 300
 // queue-row--clearing's own CSS transition duration (below) — onClearQueue()
 // uses this to work out how long its whole staggered fade-out takes.
 const CLEARING_FADE_MS = 250
@@ -244,13 +266,11 @@ export default {
       // it gets a "landed here" pulse on top of the slide animation (or, in
       // the virtualized path with no slide, as the only landing feedback).
       landedKey: null as string | null,
-      // Indices startReveal() has hidden pending their own staggered
-      // reveal — the template's queue-row--reveal-pending class binding
-      // reads this directly, same pattern as clearingRows below. Starts
-      // holding *every* row's index (see startReveal()'s own comment),
-      // each one individually removed on its own timer.
-      revealingRows: new Set() as Set<number>,
-      revealRowTimers: [] as ReturnType<typeof setTimeout>[],
+      // Set by startReveal() once per queueRevealSeq bump, to clear
+      // playbackStore.queueRevealSongs back out once the whole staggered
+      // reveal has actually finished — see startReveal()'s own comment for
+      // why that cleanup has to happen at all.
+      revealCleanupTimer: null as ReturnType<typeof setTimeout> | null,
       // True for the duration of a clear-queue animation — see
       // onClearQueue(). Only gates the clear button's own :disabled below;
       // the actual fade-out is driven per-row by clearingRows.
@@ -278,6 +298,30 @@ export default {
     },
     virtualizeQueue(): boolean {
       return this.playbackStore.queue.length > QUEUE_VIRTUALIZE_THRESHOLD
+    },
+    // Maps each song playbackStore.queueRevealSongs names to the
+    // transition-delay (in ms) revealDelayStyle() should give its row, so
+    // several simultaneously-new rows stagger in one after another instead
+    // of all sliding in at once — position is this song's own rank *within
+    // the reveal batch specifically*, not its index in the whole queue, so
+    // a Play Next that inserts two songs in the middle of an otherwise
+    // untouched queue still staggers those two relative to each other
+    // starting from 0, rather than picking up wherever their queue index
+    // happens to land. Recomputed from scratch on every queueRevealSeq
+    // bump purely by virtue of being a computed over reactive state — no
+    // separate "did this change" bookkeeping needed.
+    revealDelayMap(): Map<Song, number> {
+      const revealSet = new Set(this.playbackStore.queueRevealSongs)
+      const baseDelay = this.playbackStore.queueRevealNeedsOpenDelay ? REVEAL_BASE_DELAY_MS : 0
+      const map = new Map<Song, number>()
+      let position = 0
+      for (const song of this.playbackStore.queue) {
+        if (!revealSet.has(song)) continue
+        const capped = Math.min(position, ROW_STAGGER_MAX_ROWS)
+        map.set(song, baseDelay + capped * ROW_STAGGER_MS)
+        position++
+      }
+      return map
     },
   },
   watch: {
@@ -307,18 +351,43 @@ export default {
     // freshly (re)opened drawer isn't actually laid out yet on this same
     // tick, so scrolling immediately would measure against stale/empty
     // layout.
-    modelValue(open: boolean) {
-      if (!open) return
-      this.$nextTick(() => this.scrollToCurrent())
+    //
+    // immediate: true — the same reason queueRevealSeq's own watcher above
+    // needs it: DefaultLayout.vue never mounts this component until it
+    // sees queueDrawerOpen go true (see that watcher's comment), so on the
+    // very first ever open, `modelValue` is already `true` from this
+    // component's first tick of existing at all — there's no false→true
+    // *change* within its own lifetime for a plain (non-immediate) watcher
+    // to see, so it silently never fired and the very first open never
+    // scrolled anywhere. Every later close/reopen already had a real
+    // instance around to watch the transition on, which is why this only
+    // ever showed up as "the current track isn't centered when the drawer
+    // opens" rather than every single time.
+    modelValue: {
+      handler(open: boolean) {
+        if (!open) return
+        this.$nextTick(() => this.scrollToCurrent())
+      },
+      immediate: true,
     },
   },
   beforeUnmount() {
-    this.revealRowTimers.forEach(clearTimeout)
+    if (this.revealCleanupTimer) clearTimeout(this.revealCleanupTimer)
     if (this.clearingTimer) clearTimeout(this.clearingTimer)
     this.clearingRowTimers.forEach(clearTimeout)
   },
   methods: {
     queueRowKey,
+    // revealDelayMap's own per-row lookup, as the :style the template
+    // actually binds — undefined (not a 0ms delay) for any row that isn't
+    // part of the current reveal at all, so untouched rows never pick up
+    // an inline transition-delay that could then linger and affect some
+    // completely unrelated later transition on that same element (a
+    // drag-reorder's own .queue-move-move, say).
+    revealDelayStyle(song: Song) {
+      const delay = this.revealDelayMap.get(song)
+      return delay === undefined ? undefined : { transitionDelay: `${delay}ms` }
+    },
     // See the modelValue watcher's own comment for when this runs.
     scrollToCurrent() {
       const index = this.playbackStore.currentIndex
@@ -363,29 +432,89 @@ export default {
       }
       return rows.length
     },
-    // Hides every row, then reveals each one on its own staggered
-    // setTimeout, first-to-last — see the TransitionGroup's own template
-    // comment for why this is a manually-timed class toggle rather than
-    // Vue's native enter transition (which is what an earlier version of
-    // this relied on, forcing a full remount to get it to replay). Runs
-    // for *every* queueRevealSeq bump, even a single-song addToQueue() on
-    // an otherwise-unchanged queue — re-revealing rows that were already
-    // visible is a deliberate tradeoff for "look what's in the queue now"
-    // staying simple and consistent, not something worth special-casing.
+    // Whichever rows playbackStore.queueRevealSongs names get their own
+    // enter transition entirely for free from Vue's native TransitionGroup
+    // (see the template's own comment) — a genuinely new v-for key
+    // automatically gets .queue-move-enter-from/-active applied and
+    // removed on exactly the right frames, no manual hide/reveal timing
+    // needed at all. revealDelayMap (a computed, driven by the same
+    // queueRevealSongs) supplies each new row's own stagger via
+    // revealDelayStyle()'s inline transition-delay, so this method itself
+    // only has two jobs left: re-centering the scroll position for a
+    // full-queue replacement, and cleaning queueRevealSongs back out once
+    // the reveal it's driving has actually finished playing.
+    //
+    // queueRevealSongs is handed down by peekQueueDrawer() rather than
+    // worked out here from "whichever rows aren't in queueRowKeys yet" —
+    // see that action's own comment in playback.ts for why inferring it
+    // from what this component has already rendered can't work. Note that
+    // it names the rows to *stagger*, not the rows Vue treats as entering:
+    // that part is purely queueRowKey() identity, and the two can drift
+    // apart for any caller that reaches peekQueueDrawer() a tick later
+    // than its own queue mutation — the rows would already be on screen by
+    // then, entering un-staggered on the mutation instead. That's why
+    // every caller peeks synchronously with the mutation (see
+    // playSongList()'s `peek` argument), and why this method only has the
+    // scroll and the cleanup left to do.
     startReveal() {
-      this.revealRowTimers.forEach(clearTimeout)
-      this.revealRowTimers = []
       const queue = this.playbackStore.queue
-      this.revealingRows = new Set(queue.map((_song, index) => index))
-      queue.forEach((_song, index) => {
-        const capped = Math.min(index, ROW_STAGGER_MAX_ROWS)
-        const delay = REVEAL_BASE_DELAY_MS + capped * ROW_STAGGER_MS
-        this.revealRowTimers.push(
-          setTimeout(() => {
-            this.revealingRows.delete(index)
-          }, delay),
+      const isFullQueueReveal = this.playbackStore.queueRevealSongs.length === queue.length
+      // A full-queue replacement leaves .queue-scroll's own scrollTop
+      // wherever it happened to be for the *previous* queue, which the new
+      // one may not even be tall enough to still justify — scrollToCurrent()
+      // (see the modelValue watcher's own comment) re-centers it on the
+      // current track instead of leaving it to whatever the browser
+      // otherwise does with a now-invalid scroll offset (typically an
+      // instant, untransitioned clamp), reported live 2026-08-25 as a
+      // jump/jitter right as the drawer opens on a regenerated queue that
+      // had been scrolled down. Not needed for a partial reveal
+      // (addToQueue()/queueNext()): those never remove anything, so the
+      // scrollable height only ever grows and the existing scroll offset
+      // stays perfectly valid.
+      if (isFullQueueReveal) {
+        this.$nextTick(() => this.scrollToCurrent())
+      }
+      // queueRevealSongs has to be cleared back out once its reveal is
+      // done, or every one of these songs keeps carrying its own stale
+      // transition-delay (via revealDelayStyle(), still bound in the
+      // template) into whatever unrelated transition touches that same
+      // row next — a drag-reorder's own .queue-move-move, most visibly,
+      // would then start noticeably late for a row that was "new" several
+      // actions ago. maxDelay covers the longest stagger any row in this
+      // particular batch actually got; ROW_ENTER_TRANSITION_MS covers the
+      // transition's own duration on top of that (see the CSS comment on
+      // .queue-move-enter-active for why that number specifically); +50ms
+      // is just headroom against timer jitter, same margin onClearQueue()
+      // gives its own equivalent cleanup below.
+      if (this.revealCleanupTimer) clearTimeout(this.revealCleanupTimer)
+      const maxDelay = Math.max(0, ...this.revealDelayMap.values())
+      this.revealCleanupTimer = setTimeout(
+        () => {
+          this.playbackStore.queueRevealSongs = []
+        },
+        maxDelay + ROW_ENTER_TRANSITION_MS + 50,
+      )
+    },
+    openCreatePlaylistDialog() {
+      this.createPlaylistName = ''
+      this.createPlaylistDialog = true
+    },
+    async confirmCreatePlaylist() {
+      if (!this.createPlaylistName.trim()) return
+      try {
+        await this.libraryStore.createPlaylist(
+          this.createPlaylistName,
+          this.playbackStore.queue.map((song) => song.id),
         )
-      })
+        this.createPlaylistDialog = false
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('playlists.createTitle'),
+          message: error instanceof Error ? error.message : String(error),
+        })
+        console.error('[queue-drawer] Failed to create playlist:', error)
+      }
     },
     // Fades every row but the currently-playing one out, bottom-to-top,
     // before actually clearing the queue — NOT last-array-index-first like
@@ -417,27 +546,6 @@ export default {
     // thing's done: the outer v-if="playbackStore.queue.length" above
     // would otherwise tear down this whole TransitionGroup (and every
     // row's fade-out with it) the instant the queue actually emptied.
-    openCreatePlaylistDialog() {
-      this.createPlaylistName = ''
-      this.createPlaylistDialog = true
-    },
-    async confirmCreatePlaylist() {
-      if (!this.createPlaylistName.trim()) return
-      try {
-        await this.libraryStore.createPlaylist(
-          this.createPlaylistName,
-          this.playbackStore.queue.map((song) => song.id),
-        )
-        this.createPlaylistDialog = false
-      } catch (error) {
-        this.$emitter.emit('toast', {
-          level: 'error',
-          title: this.$t('playlists.createTitle'),
-          message: error instanceof Error ? error.message : String(error),
-        })
-        console.error('[queue-drawer] Failed to create playlist:', error)
-      }
-    },
     onClearQueue() {
       if (this.clearing || this.playbackStore.queue.length <= 1) return
       if (this.virtualizeQueue) {
@@ -569,16 +677,29 @@ export default {
   transition: transform 0.3s ease;
 }
 
-.queue-move-enter-active,
+/* The entrance every genuinely-new row gets from Vue itself — reads as
+ * sliding in from the right, the same direction/language a freshly
+ * (re)generated queue (Song Radio, playSongList) already used, so a "Play
+ * Next" inserting into the middle of an existing queue is now just that
+ * same entrance scoped to the one or two rows it actually adds.
+ * revealDelayStyle() only adds a per-row transition-delay on top; the
+ * duration here is mirrored as ROW_ENTER_TRANSITION_MS in the script above,
+ * which startReveal()'s cleanup timer needs in order to know when the last
+ * row's entrance has actually finished. */
+.queue-move-enter-active {
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
+}
+.queue-move-enter-from {
+  opacity: 0;
+  transform: translateX(50px);
+}
+
 .queue-move-leave-active {
   transition:
     opacity 0.2s ease,
     transform 0.2s ease;
-}
-
-.queue-move-enter-from {
-  opacity: 0;
-  transform: translateX(12px);
 }
 
 .queue-move-leave-to {
@@ -606,17 +727,6 @@ export default {
  * actually kicked in. */
 .queue-row--clearing {
   transition: opacity 0.25s ease;
-  opacity: 0;
-}
-
-/* startReveal()'s own fade-in — same manually-toggled-class approach as
- * queue-row--clearing above, in reverse (rows start hidden, then this gets
- * removed on each one's own staggered timer instead of added). No
- * transition declared here on purpose: QueueRow.vue's own base .queue-row
- * rule already has `transition: opacity 0.15s ease` unconditionally (it's
- * what animates queue-row--dragging's opacity too), so this only needs to
- * set the value being transitioned *to*. */
-.queue-row--reveal-pending {
   opacity: 0;
 }
 </style>
