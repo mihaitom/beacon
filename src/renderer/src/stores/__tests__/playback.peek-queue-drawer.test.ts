@@ -58,6 +58,75 @@ describe('peekQueueDrawer', () => {
   })
 })
 
+// QUEUE_DRAWER_PEEK_MS itself isn't exported (module-private, same as the
+// timer handle it drives) — 4000 here is that same value, not re-derived.
+const QUEUE_DRAWER_PEEK_MS = 4000
+
+describe('peekQueueDrawer auto-close timer', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('auto-closes on its own after the peek window, absent anything else happening', () => {
+    const playback = usePlaybackStore()
+    playback.peekQueueDrawer()
+
+    vi.advanceTimersByTime(QUEUE_DRAWER_PEEK_MS - 1)
+    expect(playback.queueDrawerOpen).toBe(true)
+
+    vi.advanceTimersByTime(1)
+    expect(playback.queueDrawerOpen).toBe(false)
+  })
+
+  it('re-arms the countdown when a second peek lands while the first is still pending, instead of closing on the original schedule', () => {
+    // Reported live 2026-08-27: autoplay's own top-up (or any other peek)
+    // arriving partway through an already-open peek's countdown used to
+    // leave that stale timer running untouched — the drawer then closed on
+    // the *original* schedule, potentially right out from under a reveal
+    // that had only just started.
+    const playback = usePlaybackStore()
+    playback.peekQueueDrawer()
+
+    vi.advanceTimersByTime(QUEUE_DRAWER_PEEK_MS - 1000) // 1s left on the original countdown
+    playback.peekQueueDrawer() // a second, independent peek — e.g. autoplay's top-up
+
+    // The original countdown's own deadline passes — still open, because
+    // the second peek reset it rather than leaving it to fire on schedule.
+    vi.advanceTimersByTime(1000)
+    expect(playback.queueDrawerOpen).toBe(true)
+
+    // A full fresh window after the *second* peek, though, does close it.
+    vi.advanceTimersByTime(QUEUE_DRAWER_PEEK_MS - 1000)
+    expect(playback.queueDrawerOpen).toBe(false)
+  })
+
+  it('never arms a close timer for a drawer the user opened manually', () => {
+    const playback = usePlaybackStore()
+    playback.setQueueDrawerOpen(true)
+
+    playback.peekQueueDrawer() // already open — not this call's to auto-close
+
+    vi.advanceTimersByTime(QUEUE_DRAWER_PEEK_MS * 2)
+    expect(playback.queueDrawerOpen).toBe(true)
+  })
+
+  it('does not re-arm after a mouseenter has cancelled the pending close for good', () => {
+    const playback = usePlaybackStore()
+    playback.peekQueueDrawer()
+    playback.cancelQueueDrawerAutoClose() // the user is looking at it right now
+
+    playback.peekQueueDrawer() // more content arrives while they're still there
+
+    vi.advanceTimersByTime(QUEUE_DRAWER_PEEK_MS * 2)
+    expect(playback.queueDrawerOpen).toBe(true)
+  })
+})
+
 describe('playSongList peeking', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

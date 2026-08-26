@@ -1600,7 +1600,19 @@ export const usePlaybackStore = defineStore('playback', {
       this.queueRevealNeedsOpenDelay = !wasAlreadyOpen
       this.queueRevealSongs = revealSongs ?? this.queue
       this.queueRevealSeq++
-      if (!wasAlreadyOpen) armQueueDrawerAutoCloseTimer(this)
+      // Re-arms, not just arms — a peek landing while an *earlier* peek's
+      // own auto-close timer is still counting down (autoplay's top-up
+      // right on the heels of the reveal it just opened for, say) must not
+      // let that stale countdown cut the fresh one off partway through.
+      // queueDrawerAutoCloseTimer !== null is exactly the right signal for
+      // "still open because of a peek, not because of the user": a manual
+      // open and a mouseenter (cancelQueueDrawerAutoClose()) both clear it,
+      // and nothing else ever sets it besides armQueueDrawerAutoCloseTimer()
+      // itself — so it still being set here can only mean an unexpired peek
+      // countdown, never state the user set up themselves that this
+      // shouldn't touch. Reported live 2026-08-27 as the drawer closing out
+      // from under a reveal that had only just started.
+      if (!wasAlreadyOpen || queueDrawerAutoCloseTimer !== null) armQueueDrawerAutoCloseTimer(this)
     },
 
     // QueueDrawer.vue's own @mouseenter — one touch of the mouse is enough
