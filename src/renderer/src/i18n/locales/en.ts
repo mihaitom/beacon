@@ -200,6 +200,18 @@ export default {
       idle: 'No active connection',
       serverLag: 'Server responsiveness',
       reason: 'Reason',
+      // Deliberately a couple of words at most: this is the value in a
+      // two-column row, so anything longer wraps the row into a block of
+      // text. The matching `reasons` sentence below is the hover title.
+      reasonsShort: {
+        device_limit: 'Device limit',
+        lossless_container: 'Container format',
+        codec_not_castable: 'Codec unsupported',
+        codec_unknown: 'Codec unknown',
+        probe_failed: 'Format unknown',
+        replay_gain: 'ReplayGain',
+        forced: 'Server setting',
+      },
       reasons: {
         device_limit: "Source is beyond this device's supported quality",
         lossless_container: "Lossless source in a format cast devices don't accept",

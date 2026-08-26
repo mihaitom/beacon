@@ -198,6 +198,18 @@ export default {
       idle: 'Keine aktive Verbindung',
       serverLag: 'Server-Reaktionsfähigkeit',
       reason: 'Grund',
+      // Deliberately a couple of words at most: this is the value in a
+      // two-column row, so anything longer wraps the row into a block of
+      // text. The matching `reasons` sentence below is the hover title.
+      reasonsShort: {
+        device_limit: 'Gerätelimit',
+        lossless_container: 'Container-Format',
+        codec_not_castable: 'Codec nicht unterstützt',
+        codec_unknown: 'Codec unbekannt',
+        probe_failed: 'Format unbekannt',
+        replay_gain: 'ReplayGain',
+        forced: 'Servereinstellung',
+      },
       reasons: {
         device_limit: 'Quelle liegt über der Qualität, die dieses Gerät unterstützt',
         lossless_container: 'Verlustfreie Quelle in einem Format, das Cast-Geräte nicht annehmen',

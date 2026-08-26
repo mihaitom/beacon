@@ -22,7 +22,7 @@
      - rather than as a raw "codec_unknown" leaking into the UI. -->
     <div v-if="reasonText" class="stream-info-row">
       <span class="text-medium-emphasis">{{ $t('connect.streamInfo.reason') }}</span>
-      <span class="stream-info-reason">{{ reasonText }}</span>
+      <span class="stream-info-reason" :title="reasonText">{{ reasonShort }}</span>
     </div>
     <div v-if="sourceLine" class="stream-info-row">
       <span class="text-medium-emphasis">{{ $t('connect.streamInfo.source') }}</span>
@@ -119,15 +119,30 @@ export default {
       if (source_bitrate_kbps) parts.push(`${source_bitrate_kbps} kb/s`)
       return parts.join(', ')
     },
-    // Why it's being transcoded, in words. Backend-side keys (see
+    // Why it's being transcoded, spelled out. Backend-side keys (see
     // connect/core/streamer.py's REASON_* constants) rather than a
     // ready-made sentence, so this stays translatable; an unknown key
     // yields null instead of rendering the key itself.
+    //
+    // Only ever the hover title now, not the visible value — a whole
+    // sentence in the right-hand column of a two-column row wrapped it
+    // into a paragraph and pushed the rest of the section around.
     reasonText(): string | null {
       const key = this.info.transcode_reason
       if (!this.info.transcoding || !key) return null
       const path = `connect.streamInfo.reasons.${key}`
       return this.$te(path) ? this.$t(path) : null
+    },
+    // The couple of words actually shown in the row. Falls back to the
+    // full sentence rather than to nothing if only the short wording is
+    // missing for a key, so a half-translated locale still says something
+    // — the row's own v-if is on reasonText, which stays the one thing
+    // deciding whether there's a reason to show at all.
+    reasonShort(): string | null {
+      const key = this.info.transcode_reason
+      if (!this.reasonText || !key) return null
+      const path = `connect.streamInfo.reasonsShort.${key}`
+      return this.$te(path) ? this.$t(path) : this.reasonText
     },
     // What's actually being sent to the device once transcoding is
     // happening — falls back to the raw content_type in the (currently
@@ -167,11 +182,15 @@ export default {
   padding: 4px 0 2px;
 }
 
-/* Wraps instead of squeezing the label: these are whole sentences, unlike
- * every other value in this section. */
+/* The dotted underline and the help cursor are the only hint that the
+ * shortened wording has a fuller explanation behind it — without them a
+ * bare "Container format" reads as the whole answer and nobody hovers. */
 .stream-info-reason {
   text-align: right;
   line-height: 1.3;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: help;
 }
 
 .stream-info-row {

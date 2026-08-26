@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { createI18n } from 'vue-i18n'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
@@ -15,6 +16,35 @@ const vuetify = createVuetify({ components, directives })
 function mountSection() {
   return mount(StreamInfoSection, {
     global: { plugins: [vuetify, i18n] },
+  })
+}
+
+// A stand-in for a locale that's only been half-translated: the sentence
+// exists, the short wording doesn't. Every locale this repo ships has both,
+// so the fallback can't be reached with the real i18n instance — hence its
+// own mount rather than a parameter on mountSection() above.
+function mountSectionWithoutShortWordings() {
+  return mount(StreamInfoSection, {
+    global: {
+      plugins: [
+        vuetify,
+        createI18n({
+          legacy: true,
+          globalInjection: true,
+          locale: 'en',
+          messages: {
+            en: {
+              connect: {
+                streamInfo: {
+                  reason: 'Reason',
+                  reasons: { device_limit: "Source is beyond this device's supported quality" },
+                },
+              },
+            },
+          },
+        }),
+      ],
+    },
   })
 }
 
@@ -126,6 +156,19 @@ describe('StreamInfoSection', () => {
       const wrapper = mountSection()
 
       expect(wrapper.text()).toContain('Reason')
+      // Short enough to sit in the row's own right-hand column without
+      // wrapping it into a paragraph; the sentence is the hover title.
+      const reason = wrapper.get('.stream-info-reason')
+      expect(reason.text()).toBe('Device limit')
+      expect(reason.attributes('title')).toBe("Source is beyond this device's supported quality")
+    })
+
+    it('falls back to the full sentence for a key with no short wording yet', () => {
+      // A too-long value beats an empty row: the reason itself is still
+      // known, only its abbreviation is missing.
+      setStreamInfo({ transcoding: true, transcode_reason: 'device_limit' })
+      const wrapper = mountSectionWithoutShortWordings()
+
       expect(wrapper.get('.stream-info-reason').text()).toBe(
         "Source is beyond this device's supported quality",
       )
@@ -145,7 +188,12 @@ describe('StreamInfoSection', () => {
         'codec_unknown',
       ]) {
         setStreamInfo({ transcoding: true, transcode_reason: reason })
-        expect(mountSection().find('.stream-info-reason').exists()).toBe(true)
+        const wrapper = mountSection()
+        expect(wrapper.find('.stream-info-reason').exists()).toBe(true)
+        // Both wordings, not just the sentence — a key that only has the
+        // long one falls back to it and quietly reintroduces the wrapping
+        // this row was shortened to avoid.
+        expect(wrapper.vm.reasonShort).not.toBe(wrapper.vm.reasonText)
       }
     })
 
