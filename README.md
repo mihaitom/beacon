@@ -23,7 +23,7 @@
   </a>
 </p>
 
-> **Development note:** This project is developed with AI assistance. Please expect rough edges and report issues if you encounter them.
+> **Development note:** This project is developed with AI assistance, and is covered by an extensive automated test suite. Issue reports are welcome.
 
 ---
 
