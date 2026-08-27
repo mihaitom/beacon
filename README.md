@@ -13,7 +13,7 @@
     <img src="https://img.shields.io/github/actions/workflow/status/mihaitom/beacon/test-python.yml?branch=development&style=flat-square&label=backend%20tests" alt="Backend tests">
   </a>
   <a href="https://codecov.io/gh/mihaitom/beacon">
-    <img src="https://codecov.io/gh/mihaitom/beacon/branch/development/graph/badge.svg" alt="Backend coverage">
+    <img src="https://img.shields.io/codecov/c/github/mihaitom/beacon/development?style=flat-square&label=backend%20coverage" alt="Backend coverage">
   </a>
   <a href="https://github.com/mihaitom/beacon/actions/workflows/test-frontend.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/mihaitom/beacon/test-frontend.yml?branch=development&style=flat-square&label=frontend%20tests" alt="Frontend tests">
