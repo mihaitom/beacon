@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="">
+  <head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="./favicon.ico">
+    <link rel="icon" type="image/png" sizes="16x16" href="./favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="48x48" href="./favicon-48x48.png">
+    <link rel="icon" type="image/png" sizes="64x64" href="./favicon-64x64.png">
+    <link rel="icon" type="image/png" sizes="180x180" href="./favicon-180x180.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="./favicon-192x192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="./favicon-512x512.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="./favicon-180x180.png">
+    <link rel="manifest" href="./site.webmanifest">
+    <meta name="theme-color" content="#F5A94E">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Beacon</title>
+    <script type="module" crossorigin src="./assets/index-U8oMJMZS.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Bvr2bGJu.css">
+  </head>
+  <body>
+    <div id="app"></div>
+    <!-- Injected via document.createElement rather than a plain
+         <script src="/settings.js">, which vite's HTML plugin insists on
+         trying to bundle at build time — settings.js doesn't exist until
+         the web/Docker build's nginx generates it at container startup (see
+         settings.js.template), so there's nothing for vite to resolve. 404s
+         silently in the Electron build, which never reads
+         window.__CONNECT_URL__/__CONNECT_TOKEN__. The fetch here is
+         fire-and-forget/async — safe because stores/auth.ts's
+         loadConnectDefaults() only reads those globals lazily at runtime
+         (on login/restore), never at module-eval time, so there's no
+         ordering race with the app bundle below. -->
+    <script>
+      var settingsScript = document.createElement('script')
+      settingsScript.src = '/settings.js'
+      document.head.appendChild(settingsScript)
+    </script>
+  </body>
+</html>

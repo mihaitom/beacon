@@ -43,14 +43,25 @@ export const EXTERNAL_LINK_ORDER: readonly ExternalLinkKey[] = [
   'musicbrainz',
 ]
 
+// Icon paths are relative ('./x.svg'), not absolute. These live in
+// public/, so Vite copies them next to index.html but never rewrites the
+// string here the way it rewrites index.html's own asset references. The
+// packaged desktop build loads that index.html over file:// (see
+// src/main/index.ts's loadFile()), where a leading '/' resolves against
+// the filesystem root instead of the app directory and every icon comes
+// up empty. Relative resolves against index.html's own directory, which
+// is correct in the packaged build, under electron-vite dev, and behind
+// nginx in the Docker build alike — the hash router (see router/index.ts)
+// keeps the document URL on index.html, so the route never shifts what
+// './' means.
 export const EXTERNAL_LINK_META: Record<ExternalLinkKey, ExternalLinkMeta> = {
-  spotify: { name: 'Spotify', icon: '/spotify.svg' },
-  apple_music: { name: 'Apple Music', icon: '/apple_music.svg' },
-  tidal: { name: 'TIDAL', icon: '/tidal.svg', invert: true },
-  youtube: { name: 'YouTube', icon: '/youtube.svg' },
-  deezer: { name: 'Deezer', icon: '/deezer.svg' },
-  discogs: { name: 'Discogs', icon: '/discogs.svg', invert: true },
-  musicbrainz: { name: 'MusicBrainz', icon: '/musicbrainz.svg' },
+  spotify: { name: 'Spotify', icon: './spotify.svg' },
+  apple_music: { name: 'Apple Music', icon: './apple_music.svg' },
+  tidal: { name: 'TIDAL', icon: './tidal.svg', invert: true },
+  youtube: { name: 'YouTube', icon: './youtube.svg' },
+  deezer: { name: 'Deezer', icon: './deezer.svg' },
+  discogs: { name: 'Discogs', icon: './discogs.svg', invert: true },
+  musicbrainz: { name: 'MusicBrainz', icon: './musicbrainz.svg' },
 }
 
 /** Turns a `{key: url}` map (however partial/whichever order) into the
