@@ -43,7 +43,7 @@ function makeRouter() {
   })
 }
 
-async function mountPanel(synced: boolean, lineCount = 12) {
+async function mountPanel(synced: boolean, lineCount = 12, positionSeconds = 0) {
   // Mounted inside NowPlayingView rather than on a bare host div: the
   // panel is `height: 100%` over a flex chain, and its pads are
   // percentages of the scroll container, so it only measures anything
@@ -56,6 +56,9 @@ async function mountPanel(synced: boolean, lineCount = 12) {
   wrappers.push(wrapper)
   const playback = usePlaybackStore()
   playback.setQueue([makeSong('a', { title: 'Harbor Lights', artist: 'The Tide' })], 0)
+  // Set before the lines arrive: that is the real sequence — playback is
+  // already somewhere in the song when the lyrics finish loading.
+  playback.localPosition = positionSeconds
   const lyrics = useLyricsStore()
   vi.spyOn(lyrics, 'ensureLoaded').mockResolvedValue()
   lyrics.synced = synced
@@ -181,5 +184,79 @@ describe('LyricsPanel edge mask', () => {
     const { offset, fadeEndsAt } = firstLineOffset()
     expect(offset).toBeGreaterThan(fadeEndsAt)
     expect(document.querySelectorAll('.lyrics-panel__mask-pad')).toHaveLength(0)
+  })
+})
+
+describe('LyricsPanel scrolling', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.setItem('beacon.showVisualizer', 'false')
+  })
+
+  afterEach(() => {
+    for (const wrapper of wrappers.splice(0)) wrapper.unmount()
+    document.body.innerHTML = ''
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('shows no scrollbar in the full-screen view, even for unsynced lyrics', async () => {
+    // Synced lyrics never had one; unsynced ones deliberately do in the
+    // drawer, where nothing else says "this scrolls". Full-screen, the
+    // lyrics are the page and a bar down the side is chrome over artwork.
+    await page.viewport(1200, 800)
+    await mountPanel(false, 80)
+
+    const scroll = document.querySelector('.lyrics-panel__scroll') as HTMLElement
+    expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight) // it does overflow
+    expect(scroll.offsetWidth - scroll.clientWidth).toBe(0)
+  })
+
+  it('opens already at the playing line when lyrics arrive mid-song', async () => {
+    // Covered by the activeIndex watcher rather than by the lines watcher
+    // added alongside this test — kept because it is the behaviour the
+    // panel is expected to have, whichever of the two delivers it.
+    await page.viewport(1200, 800)
+    await mountPanel(true, 60, 160)
+
+    const scroll = document.querySelector('.lyrics-panel__scroll') as HTMLElement
+    const active = document.querySelector('.lyrics-panel__line--active') as HTMLElement
+    expect(active).not.toBeNull()
+
+    const scrollRect = scroll.getBoundingClientRect()
+    const activeRect = active.getBoundingClientRect()
+    const activeCentre = activeRect.top + activeRect.height / 2 - scrollRect.top
+    // Centred in the box, not parked at the top.
+    expect(scroll.scrollTop).toBeGreaterThan(0)
+    expect(Math.abs(activeCentre - scrollRect.height / 2)).toBeLessThan(scrollRect.height * 0.15)
+  })
+
+  it('re-centres when the lines change but the playing index does not', async () => {
+    // Picking a different match mid-song: same position, so the same line
+    // number is playing, but every line is now a different height and the
+    // active one has moved. The activeIndex watcher sees no change and
+    // does nothing — without a watcher on the lines themselves, the panel
+    // stays scrolled to wherever the *old* lines had put it.
+    await page.viewport(1200, 800)
+    const wrapper = await mountPanel(true, 60, 160)
+    const lyrics = useLyricsStore()
+    const indexBefore = document.querySelectorAll('.lyrics-panel__line--past').length
+
+    lyrics.lines = lyrics.lines.map((line, i) => ({
+      time: line.time,
+      text: `Line ${i + 1} ${'with a considerably longer text that wraps onto several rows '.repeat(3)}`,
+    }))
+    await wrapper.vm.$nextTick()
+    await new Promise((resolve) => setTimeout(resolve, 250))
+
+    // Same line is playing...
+    expect(document.querySelectorAll('.lyrics-panel__line--past').length).toBe(indexBefore)
+    // ...and it is back in the middle rather than off-screen.
+    const scroll = document.querySelector('.lyrics-panel__scroll') as HTMLElement
+    const active = document.querySelector('.lyrics-panel__line--active') as HTMLElement
+    const scrollRect = scroll.getBoundingClientRect()
+    const activeRect = active.getBoundingClientRect()
+    const activeCentre = activeRect.top + activeRect.height / 2 - scrollRect.top
+    expect(Math.abs(activeCentre - scrollRect.height / 2)).toBeLessThan(scrollRect.height * 0.2)
   })
 })

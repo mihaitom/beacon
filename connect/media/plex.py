@@ -9,9 +9,9 @@ PlexClient (below) come into play, the same way JellyfinClient does once
 /config has a real token (see media/jellyfin.py).
 
 Field names for the plex.tv responses below are taken from Plex's public
-API docs, not yet confirmed against a live account — see PLEX_PLAN.md's
-Open Question 2. Adjust the `data[...]` accesses here first if the live
-flow doesn't work.
+API docs rather than from a live account. If the sign-in flow fails
+against a real one, adjust the `data[...]` accesses here first — that is
+the likeliest place for the docs and the actual payload to disagree.
 """
 
 import logging
@@ -152,9 +152,10 @@ def list_resources(account_token: str) -> list[dict]:
     its own server-scoped accessToken (distinct from the account token
     passed in), not the account token itself. Picks one reachable
     Connection per server — see _pick_connection()/_connection_url() for
-    the local-plain-HTTP-first reasoning; simplified for Phase A beyond
-    that (see PLEX_PLAN.md, refine once tested against a real
-    remote-relay-only account, which none of this has been yet).
+    the local-plain-HTTP-first reasoning. Deliberately simple beyond that:
+    an account reachable only through Plex's own relay has never been
+    tested here, and guessing at how to rank those connections without one
+    to try it against would only look like it had been thought through.
 
     /api/v2/resources, not the legacy /api/resources — confirmed live
     (2026-08-17): the legacy path answered with an empty 200 body despite
@@ -299,9 +300,11 @@ class PlexClient:
         ]
 
     def get_stream_url(self, track_id: str) -> str:
-        # Direct play, not the universal transcode endpoint — PLEX_PLAN.md
-        # calls for implementing this first and treating transcoding as a
-        # stretch goal needing its own live trial-and-error later.
+        # Direct play, not the universal transcode endpoint. Beacon
+        # transcodes on its own side anyway when a device needs it (see
+        # core/streamer.py), so asking Plex to do it too would add a second
+        # conversion — and a large set of parameters that can only really
+        # be got right by trying them against a live server.
         #
         # Unlike Jellyfin's fixed /Items/{id}/Download pattern, there's no
         # way to construct a Plex track's real streamable path from

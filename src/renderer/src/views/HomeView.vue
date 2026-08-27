@@ -73,7 +73,7 @@
     <album-shelf
       :title="$t('home.discover')"
       :albums="randomAlbums"
-      :loading="loadingRandom"
+      :loading="loadingDiscover === 'albums'"
       :play-all-loading="playingAllShelf === 'random'"
       fit-to-screen
       play-on-click
@@ -84,13 +84,29 @@
           icon="mdi-shuffle-variant"
           variant="text"
           size="small"
+          :loading="loadingDiscover === 'albums'"
           :title="$t('home.reroll')"
-          @click="rerollDiscover(undefined, true)"
+          @click="rerollDiscover(undefined, true, 'albums')"
         />
       </template>
     </album-shelf>
 
-    <similar-artists-shelf :title="$t('home.newArtistsTitle')" :artists="newArtistDiscoveries" />
+    <similar-artists-shelf
+      :title="$t('home.newArtistsTitle')"
+      :artists="newArtistDiscoveries"
+      :loading="loadingDiscover === 'artists'"
+    >
+      <template #action>
+        <v-btn
+          icon="mdi-shuffle-variant"
+          variant="text"
+          size="small"
+          :loading="loadingDiscover === 'artists'"
+          :title="$t('home.reroll')"
+          @click="rerollDiscover(undefined, true, 'artists')"
+        />
+      </template>
+    </similar-artists-shelf>
   </v-container>
 </template>
 
@@ -190,7 +206,21 @@ export default {
       loadingFrequent: false,
       loadingNewest: false,
       loadingRecent: false,
-      loadingRandom: false,
+      // Which of the two Discover shelves is currently waiting on a
+      // lookup, or null. One field rather than two booleans: the lookup
+      // fills both shelves in one go, so at most one of them can be the
+      // one that asked — and it is also the only one that shows the wait.
+      loadingDiscover: null as 'albums' | 'artists' | null,
+      // The half of a lookup the shelf that asked for it didn't use. One
+      // lookup produces both halves (see discoverFromSimilarArtists), and
+      // that whole chain — MusicBrainz, ListenBrainz, then Deezer photos
+      // and links per artist — takes seconds. Keeping the other half means
+      // the *other* shelf's next shuffle is instant, and it is still a
+      // genuinely fresh set: it came from the seeds that lookup picked.
+      // Used once, then gone, so a second shuffle of the same shelf is a
+      // real lookup again.
+      heldOverAlbums: null as Album[] | null,
+      heldOverArtists: null as SimilarArtistDisplay[] | null,
       loadingTopSongs: false,
       // Which shelf's "play all" is currently fetching album song lists —
       // a single field (not one boolean per shelf) since only one of these
@@ -385,28 +415,58 @@ export default {
      * Home). `seedAlbums`, given (only by created()'s own initial call),
      * reuses frequentAlbums' already-in-flight fetch instead of this
      * re-requesting it — the manual reroll button (template's own
-     * @click="rerollDiscover(undefined, true)") calls this with no
-     * seedAlbums, falling back to this.frequentAlbums (already populated
-     * by then), and `force: true` so it actually picks something new
-     * instead of reusing the cached seeds from before — see
-     * pickSeedArtistNames()'s own comment. */
-    async rerollDiscover(seedAlbums?: Album[], force = false): Promise<void> {
-      this.loadingRandom = true
+     * @click="rerollDiscover(undefined, true, 'albums')") calls this with
+     * no seedAlbums, falling back to this.frequentAlbums (already
+     * populated by then), and `force: true` so it actually picks something
+     * new instead of reusing the cached seeds from before — see
+     * pickSeedArtistNames()'s own comment.
+     *
+     * `only` is which shelf asked. One lookup fills both (see
+     * discoverFromSimilarArtists), but replacing the shelf somebody
+     * *didn't* touch is a surprise: they press shuffle under the new
+     * artists and the albums above them change too, for no reason they
+     * can see. The other half of the result is simply dropped. Null (the
+     * initial load) takes both, since neither is showing anything yet. */
+    async rerollDiscover(
+      seedAlbums?: Album[],
+      force = false,
+      only: 'albums' | 'artists' | null = null,
+    ): Promise<void> {
+      // Spend the half kept back from the other shelf's last shuffle
+      // before asking for anything new.
+      if (only === 'artists' && this.heldOverArtists) {
+        this.newArtistDiscoveries = this.heldOverArtists
+        this.heldOverArtists = null
+        return
+      }
+      if (only === 'albums' && this.heldOverAlbums) {
+        this.randomAlbums = this.heldOverAlbums
+        this.heldOverAlbums = null
+        return
+      }
+
+      this.loadingDiscover = only ?? 'albums'
       try {
         const albums = seedAlbums ?? this.frequentAlbums
         const seedNames = this.pickSeedArtistNames(albums, force)
         if (this.recommendationsStore.enabled && seedNames.length >= MIN_SEED_ARTISTS) {
           try {
-            await this.discoverFromSimilarArtists(seedNames)
+            await this.discoverFromSimilarArtists(seedNames, only)
             return
           } catch (error) {
             console.error('[home] Similar-artist discover failed, falling back to random:', error)
           }
         }
-        this.newArtistDiscoveries = []
-        this.randomAlbums = await this.libraryStore.fetchRandomAlbums(DISCOVER_SHELF_SIZE)
+        // The fallback has no artists to offer at all, so it only ever
+        // touches the albums shelf — leaving whatever the artists shelf
+        // already had rather than emptying it because an unrelated lookup
+        // failed.
+        if (only !== 'artists') {
+          this.newArtistDiscoveries = only === null ? [] : this.newArtistDiscoveries
+          this.randomAlbums = await this.libraryStore.fetchRandomAlbums(DISCOVER_SHELF_SIZE)
+        }
       } finally {
-        this.loadingRandom = false
+        this.loadingDiscover = null
       }
     },
     /** The actual ListenBrainz-backed half of rerollDiscover() — split out
@@ -417,7 +477,10 @@ export default {
      * fetchArtists() already loaded never carry a full album list — same
      * "list vs. detail" split as fetchAlbum()'s own comment) and
      * newArtistDiscoveries (everything not in the library at all). */
-    async discoverFromSimilarArtists(seedNames: string[]): Promise<void> {
+    async discoverFromSimilarArtists(
+      seedNames: string[],
+      only: 'albums' | 'artists' | null = null,
+    ): Promise<void> {
       await this.libraryStore.fetchArtists()
       // No explicit limit — relies on getSimilarArtists()'s own default
       // (100, matching the backend's), not a smaller number picked here.
@@ -462,7 +525,7 @@ export default {
       if (linksByMbid.status === 'rejected') {
         console.error('[home] Artist links lookup failed:', linksByMbid.reason)
       }
-      this.newArtistDiscoveries = notOwnedCapped.map((artist) => {
+      const discoveries = notOwnedCapped.map((artist) => {
         const enrichment = images.status === 'fulfilled' ? images.value[artist.name] : undefined
         const links: Partial<Record<ExternalLinkKey, string>> =
           linksByMbid.status === 'fulfilled' ? { ...linksByMbid.value[artist.mbid] } : {}
@@ -480,13 +543,23 @@ export default {
         }
       })
       const capped = owned.slice(0, DISCOVER_SHELF_SIZE)
-      this.randomAlbums =
+      const albums =
         capped.length >= MIN_OWNED_MATCHES
           ? capped
           : [
               ...capped,
               ...(await this.libraryStore.fetchRandomAlbums(DISCOVER_SHELF_SIZE - capped.length)),
             ]
+
+      // Both halves are computed either way — one lookup produced them.
+      // The shelf that asked shows its half now; the other is kept for
+      // that shelf's next shuffle (see heldOverAlbums/heldOverArtists)
+      // rather than being thrown away or replacing a shelf nobody
+      // touched.
+      if (only !== 'albums') this.newArtistDiscoveries = discoveries
+      else this.heldOverArtists = discoveries
+      if (only !== 'artists') this.randomAlbums = albums
+      else this.heldOverAlbums = albums
     },
     // Mirrors SongTable.vue's own startSongRadio() — same store action,
     // same toast on failure. The spinner lives on the button because the

@@ -2,12 +2,9 @@
 into real Plex API calls, for a session whose SessionState.media is a
 PlexClient (see routes/proxy.py's proxy_subsonic).
 
-Phase B (read-only browsing + direct-play streaming) — see PLEX_PLAN.md.
-Artists/albums/tracks, search, cover art, and playback (direct play — the
-universal transcode endpoint is its own later stretch goal, per
-PLEX_PLAN.md).
-
-Phase C, partial — ratings and playlist CRUD:
+Covers artists/albums/tracks, search, cover art, and playback (direct
+play — see PlexClient.get_stream_url() for why the universal transcode
+endpoint is left alone), plus ratings and playlist CRUD:
   - Personal ratings (setRating.view) map onto Plex's own `PUT /:/rate`
     (0-10 internally, 2 units per star) — the one personal-marking
     mechanism the core Plex Media Server REST API exposes for music at
@@ -32,8 +29,8 @@ Phase C, partial — ratings and playlist CRUD:
     already derives everything from the full track scan (see search3()
     below, and stores/library.ts), which works regardless of backend.
     Revisit only if /library/sections/{id}/genre turns out to carry real
-    per-genre counts cheaply (PLEX_PLAN.md flagged this as worth checking,
-    not yet done).
+    per-genre counts cheaply — worth checking against a live library, not
+    yet done.
   - getSimilarSongs2.view (Song/Artist Radio, and Autoplay's frontend-side
     top-up — see stores/playback.ts's maybeAutoplay()) maps onto Plex's own
     Sonic Analysis (`/library/metadata/{id}/nearest`) — see
@@ -306,6 +303,150 @@ async def get_song(params: dict, media: PlexClient) -> dict:
     return {"song": _map_song(items[0])}
 
 
+# ── Library scan + who is asking ─────────────────────────────────────────────
+
+
+async def get_user(params: dict, media: PlexClient) -> dict:
+    """Subsonic's getUser.view, bridged for the one thing Beacon asks it:
+    whether this account may run a library scan (see capabilities.ts's
+    libraryScan).
+
+    Plex has no role to read here — a server is owned by exactly one
+    account, and everyone else reaches it as a shared user. What separates
+    them is what the server lets them call: /:/prefs is the server's own
+    settings, which only its owner may read. Asking is the test."""
+    try:
+        await _px_get(media, "/:/prefs")
+        is_admin = True
+    except httpx.HTTPStatusError:
+        # 403 for a shared user. Any other status ends up here too, which
+        # errs towards "not an admin" and so towards hiding a scan button
+        # rather than offering one that cannot work.
+        is_admin = False
+    return {"user": {"username": params.get("username", ""), "adminRole": is_admin}}
+
+
+# What Plex calls a running library scan in /activities (seen live
+# 2026-08-27 — unlike Jellyfin there is no task list to consult, and the
+# section itself carries no "refreshing" flag in this server version).
+_SCAN_ACTIVITY_TYPE = "library.update.section"
+
+
+async def start_scan(_params: dict, media: PlexClient) -> dict:
+    """Kicks off a scan of the music section. Owner-only, same as
+    Jellyfin's (see that bridge's start_scan) — the button leading here is
+    hidden for a shared user rather than failing when pressed.
+
+    Scoped to the music section rather than the whole server: everything
+    else in a Plex library (films, series) is none of Beacon's business."""
+    section = await _music_section(media)
+    await _px_request("GET", media, f"/library/sections/{_quote_id(section)}/refresh")
+    return {"scanStatus": {"scanning": True}}
+
+
+async def get_scan_status(_params: dict, media: PlexClient) -> dict:
+    """Whether a scan of the *music* section is still running, and how far
+    along it is, read from Plex's own list of background activities.
+
+    Matched on the section as well as the activity type: a server that also
+    holds films and series reports their scans here too, and someone else's
+    film scan is neither this scan running nor this scan finishing (each
+    activity carries a Context.librarySectionID, verified live
+    2026-08-27).
+
+    No count of processed items — Plex reports a percentage per activity
+    instead, passed through as `progress` so the UI has something to show;
+    `count` is left out rather than filled with a wrong number."""
+    section = await _music_section(media)
+    data = await _px_get(media, "/activities")
+    activities = data.get("MediaContainer", {}).get("Activity", [])
+    scan = next(
+        (
+            a
+            for a in activities
+            if a.get("type") == _SCAN_ACTIVITY_TYPE
+            and str((a.get("Context") or {}).get("librarySectionID", section)) == section
+        ),
+        None,
+    )
+    status: dict = {"scanning": scan is not None}
+    progress = (scan or {}).get("progress")
+    # Plex uses -1 for an activity that cannot say how far along it is.
+    if progress is not None and progress >= 0:
+        status["progress"] = round(float(progress))
+    return {"scanStatus": status}
+
+
+# ── Lyrics ───────────────────────────────────────────────────────────────────
+
+
+async def get_lyrics_by_song_id(params: dict, media: PlexClient) -> dict:
+    """The lyrics belonging to this exact file. Plex attaches them to a
+    track as a stream of its own (streamType 4), built from a .lrc file
+    sitting next to the audio — verified against a live server
+    (2026-08-27), including that lyrics embedded in the file's own tags are
+    ignored entirely, unlike on Navidrome and Jellyfin.
+
+    Fetching that stream returns the lines already parsed, in
+    milliseconds, rather than the raw LRC text — Plex serves the file
+    verbatim only to a caller that doesn't ask for JSON, and every call
+    from here does (see media/plex.py's _headers()).
+
+    Empty for a track with no such stream, which is the extension's own way
+    of saying "nothing tagged here" — the frontend then falls back to
+    connect's third-party providers (see stores/lyrics.ts). Also empty for
+    a stream Plex still lists after its .lrc is gone: it keeps the entry
+    until something makes it re-examine the track, and serves nothing for
+    it in the meantime."""
+    item_id = params.get("id", "")
+    if not item_id:
+        raise ValueError("getLyricsBySongId.view requires id")
+    data = await _px_get(media, f"/library/metadata/{_quote_id(item_id)}")
+    stream_key = next(
+        (
+            stream["key"]
+            for track in data.get("MediaContainer", {}).get("Metadata", [])
+            for medium in track.get("Media", [])
+            for part in medium.get("Part", [])
+            for stream in part.get("Stream", [])
+            if stream.get("streamType") == 4 and stream.get("key")
+        ),
+        None,
+    )
+    if not stream_key:
+        return {"lyricsList": {}}
+
+    stream = await _px_get(media, stream_key)
+    lyrics = next(iter(stream.get("MediaContainer", {}).get("Lyrics", [])), None)
+    if not lyrics:
+        return {"lyricsList": {}}
+
+    lines = []
+    for line in lyrics.get("Line", []):
+        # Plex splits a line into spans, its own unit for per-word timing,
+        # which the Subsonic extension has no place for — joined back into
+        # the single string per line that it does.
+        value = "".join(span.get("text", "") for span in line.get("Span", []))
+        start = line.get("startOffset")
+        # Already milliseconds, so nothing to convert. Left out entirely
+        # when absent rather than defaulted to 0, which would read as "this
+        # line begins at the top of the track".
+        lines.append({"start": start, "value": value} if start is not None else {"value": value})
+    if not lines:
+        return {"lyricsList": {}}
+
+    return {
+        "lyricsList": {
+            # Plex records no language for a lyric stream, and the
+            # extension's own placeholder for that is "xxx".
+            "structuredLyrics": [
+                {"lang": "xxx", "synced": bool(lyrics.get("timed")), "line": lines}
+            ]
+        }
+    }
+
+
+
 async def get_similar_songs2(params: dict, media: PlexClient) -> dict:
     """Song/Artist Radio + Autoplay's frontend-facing counterpart to
     PlexClient.get_similar_songs2() (media/plex.py) — same endpoint, same
@@ -417,10 +558,10 @@ async def search3(params: dict, media: PlexClient) -> dict:
     #
     # Uses the section-scoped /all + `title` filter rather than Plex's
     # /hubs/search — that endpoint groups results into type-keyed "Hub"
-    # objects whose exact shape PLEX_PLAN.md flagged as unverified; /all
-    # already has a known, predictable Metadata-list shape (used by every
-    # other handler here too), so reusing it avoids a second unverified
-    # response format on top of the rest of this file's guesses.
+    # objects whose exact shape has never been checked against a live
+    # server; /all already has a known, predictable Metadata-list shape
+    # (used by every other handler here too), so reusing it avoids taking
+    # on a second unverified response format.
     query = params.get("query", "")
     song_count = int(params.get("songCount", 25))
     album_count = int(params.get("albumCount", 25))
@@ -715,6 +856,10 @@ _HANDLERS: dict[str, Callable[[dict, PlexClient], Awaitable[dict]]] = {
     "scrobble.view": scrobble,
     "getPlaylists.view": get_playlists,
     "getPlaylist.view": get_playlist,
+    "getLyricsBySongId.view": get_lyrics_by_song_id,
+    "getUser.view": get_user,
+    "startScan.view": start_scan,
+    "getScanStatus.view": get_scan_status,
     "createPlaylist.view": create_playlist,
     "updatePlaylist.view": update_playlist,
     "deletePlaylist.view": delete_playlist,

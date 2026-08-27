@@ -41,3 +41,11 @@ if (!window.visualViewport) {
     dispatchEvent: () => false,
   } as unknown as VisualViewport
 }
+
+// jsdom implements no scrolling at all, so scrollIntoView() simply doesn't
+// exist on its elements — any component that keeps something in view
+// (LyricsPanel's autoscroll, SongTable's jump-to-letter) throws on a call
+// it can't be expected to guard. A no-op is the honest stand-in: the tests
+// that care about *where* things end up run in a real browser instead (see
+// vitest.browser.config.ts).
+Element.prototype.scrollIntoView ??= function scrollIntoView(): void {}

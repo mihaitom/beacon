@@ -158,6 +158,7 @@ export default {
     toggleFullscreen: 'Alternar pantalla completa',
   },
   lyrics: {
+    resumeAutoscroll: 'Volver a seguir la canción',
     title: 'Letra',
     notFound: 'No se encontró letra para esta canción.',
     seekHere: 'Saltar a esta línea',
@@ -273,6 +274,8 @@ export default {
     libraryScanHint: 'Haz que Navidrome busque archivos nuevos, modificados o eliminados.',
     rescanLibrary: 'Volver a escanear biblioteca',
     scanning: 'Escaneando … ({count})',
+    scanningPercent: 'Analizando \u2026 ({percent}%)',
+    scanningPlain: 'Analizando \u2026',
     scanComplete: 'Escaneo completo — {count} canciones procesadas.',
     scanFailed: 'No se pudo iniciar el escaneo.',
     libraryRefreshHint:

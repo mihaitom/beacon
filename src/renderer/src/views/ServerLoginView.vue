@@ -158,7 +158,8 @@
 
                 <!-- Plex authenticates a plex.tv *account*, not a per-server
                  - password — no username/password fields at all, and a server
-                 - picker once the account's linked (see PLEX_PLAN.md). -->
+                 - picker once the account's linked, since one account can
+                 - reach several servers. -->
                 <template v-if="selectedServerType === 'plex'">
                   <p
                     v-if="!plexWaiting && !plexPickingServer"
@@ -290,7 +291,8 @@ const FORM_HEIGHT_TRANSITION_MS = 260
 // The server-URL combobox's own remembered-servers list — every Subsonic/
 // Jellyfin URL actually signed into before (not just typed and abandoned;
 // see rememberServerUrl()), most recent first. Plex has no URL field at all
-// (see PLEX_PLAN.md) so never contributes here.
+// — its servers are discovered through the linked account (see
+// authStore.startPlexAuth()) — so it never contributes here.
 const RECENT_SERVER_URLS_KEY = 'beacon.recent-server-urls'
 // Recent-*list* territory, not "keep everything forever" — a handful of
 // actually-distinct servers is the realistic case (home server, a friend's,

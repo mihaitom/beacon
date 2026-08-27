@@ -50,3 +50,50 @@ describe('SubsonicClient playlist songs', () => {
     expect(requested.searchParams.get('playlistId')).toBe('pl-1')
   })
 })
+
+/** Whether Settings offers a library rescan at all hangs on this answer,
+ * and the three states are genuinely different: an admin, a listener, and
+ * a server that never answered the question. */
+describe('SubsonicClient.isAdmin', () => {
+  function respond(body: unknown, ok = true): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok, json: async () => body }) as Response),
+    )
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const client = new SubsonicClient('http://connect:8080', 'u=bob&t=abc&s=xyz', 'connect-token')
+
+  it('reports a real admin', async () => {
+    respond({ 'subsonic-response': { status: 'ok', user: { username: 'bob', adminRole: true } } })
+
+    await expect(client.isAdmin('bob')).resolves.toBe(true)
+  })
+
+  it('reports an ordinary listener', async () => {
+    respond({ 'subsonic-response': { status: 'ok', user: { username: 'bob', adminRole: false } } })
+
+    await expect(client.isAdmin('bob')).resolves.toBe(false)
+  })
+
+  it('answers null when the server has no such field', async () => {
+    // Not "false": a server that never mentions adminRole has said nothing
+    // about this account, and treating silence as a denial would hide a
+    // working button.
+    respond({ 'subsonic-response': { status: 'ok', user: { username: 'bob' } } })
+
+    await expect(client.isAdmin('bob')).resolves.toBeNull()
+  })
+
+  it('answers null rather than throwing when the call fails outright', async () => {
+    // getUser.view is standard Subsonic but not universal, and this runs
+    // as part of signing in — it must never be able to fail a login.
+    respond({ 'subsonic-response': { status: 'failed', error: { code: 0 } } })
+
+    await expect(client.isAdmin('bob')).resolves.toBeNull()
+  })
+})

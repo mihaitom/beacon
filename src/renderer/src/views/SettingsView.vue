@@ -129,9 +129,7 @@
         :disabled="scanning"
         @click="rescanLibrary"
       >
-        {{
-          scanning ? $t('settings.scanning', { count: scanCount }) : $t('settings.rescanLibrary')
-        }}
+        {{ scanning ? scanLabel : $t('settings.rescanLibrary') }}
       </v-btn>
     </section>
 
@@ -300,9 +298,13 @@ export default {
       locale: getLocale(),
       appVersion: packageJson.version,
       scanning: false,
-      // Navidrome's own running total of items scanned so far — only
-      // meaningful while `scanning` is true.
-      scanCount: 0,
+      // How far the running scan has got, in whichever of the two ways the
+      // server can say (see the client's ScanProgress): Navidrome counts
+      // items, the Jellyfin and Plex bridges report a percentage, and
+      // either can be null — hence scanLabel below rather than one fixed
+      // string. Only meaningful while `scanning` is true.
+      scanCount: null as number | null,
+      scanPercent: null as number | null,
       scanTimer: null as ReturnType<typeof setTimeout> | null,
       resettingAirplay: false,
       // null until loadLogLevel() (created() below) resolves — the
@@ -313,6 +315,17 @@ export default {
     }
   },
   computed: {
+    // Whatever the server actually knows about the running scan: a count of
+    // processed items (Navidrome), a percentage (the Jellyfin and Plex
+    // bridges), or nothing at all — in which case it still has to say that
+    // something is happening.
+    scanLabel(): string {
+      if (this.scanCount != null) return this.$t('settings.scanning', { count: this.scanCount })
+      if (this.scanPercent != null) {
+        return this.$t('settings.scanningPercent', { percent: this.scanPercent })
+      }
+      return this.$t('settings.scanningPlain')
+    },
     authStore() {
       return useAuthStore()
     },
@@ -474,10 +487,12 @@ export default {
     },
     async rescanLibrary() {
       this.scanning = true
-      this.scanCount = 0
+      this.scanCount = null
+      this.scanPercent = null
       try {
         const status = await this.libraryStore.client().startScan()
         this.scanCount = status.count
+        this.scanPercent = status.percent
       } catch (error) {
         this.scanning = false
         this.$emitter.emit('toast', {
@@ -505,6 +520,7 @@ export default {
         return
       }
       this.scanCount = status.count
+      this.scanPercent = status.percent
       if (status.scanning) {
         this.scanTimer = setTimeout(() => this.pollScanStatus(), SCAN_POLL_INTERVAL_MS)
         return

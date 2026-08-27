@@ -654,6 +654,157 @@ async def delete_playlist(params: dict, media: JellyfinClient) -> dict:
     return {}
 
 
+# ── Library scan + who is asking ─────────────────────────────────────────────
+
+
+async def get_user(params: dict, media: JellyfinClient) -> dict:
+    """Subsonic's getUser.view, bridged for the one thing Beacon asks it:
+    whether this account may run a library scan (see capabilities.ts's
+    libraryScan). Jellyfin keeps that in the user's policy rather than as a
+    role of its own.
+
+    /Users/Me rather than /Users/{id}: it answers for whoever the token
+    belongs to, which is exactly who is asking, and unlike the by-id form
+    it needs no elevation to call."""
+    me = await _jf_get(media, "/Users/Me")
+    policy = me.get("Policy") or {}
+    return {
+        "user": {
+            "username": params.get("username") or me.get("Name", ""),
+            "adminRole": bool(policy.get("IsAdministrator")),
+        }
+    }
+
+
+async def _music_libraries(media: JellyfinClient) -> list[dict]:
+    """The server's music libraries, as Jellyfin's own library list reports
+    them. A server almost always holds films and series as well, and
+    scanning those on Beacon's behalf would be both slow and none of its
+    business."""
+    folders = await _jf_request("GET", media, "/Library/VirtualFolders")
+    return [folder for folder in folders if folder.get("CollectionType") == "music"]
+
+
+async def start_scan(_params: dict, media: JellyfinClient) -> dict:
+    """Kicks off a scan of the music libraries, one refresh per library.
+
+    Deliberately not /Library/Refresh, which is what Jellyfin's own
+    "scan all libraries" does: that would drag every film and series on the
+    server through a scan because someone pressed a button in a music app.
+
+    Server-admin only (Jellyfin marks these endpoints RequiresElevation),
+    which is why the button leading here is hidden for everyone else rather
+    than failing when pressed — see capabilities.ts's libraryScan and
+    authStore.resolveAdminRole().
+
+    Reports `scanning: true` without waiting for the refresh to be picked
+    up: it has been accepted, and the frontend's own polling
+    (SettingsView.vue) takes it from there."""
+    libraries = await _music_libraries(media)
+    if not libraries:
+        raise ValueError("This Jellyfin server has no music library to scan")
+    for library in libraries:
+        await _jf_request("POST", media, f"/Items/{_quote_id(library['ItemId'])}/Refresh")
+    return {"scanStatus": {"scanning": True}}
+
+
+async def get_scan_status(_params: dict, media: JellyfinClient) -> dict:
+    """Whether that scan is still running, and how far along it is — both
+    read from the library list itself, which carries a per-library
+    RefreshStatus and RefreshProgress (verified live 2026-08-27: "Active"
+    with a percentage while scanning, "Idle" with none when not).
+
+    No count of processed items, unlike Navidrome's own extension —
+    Jellyfin only knows a percentage, so `count` is left out entirely
+    rather than filled with a number that would be wrong (see the
+    frontend's own handling of a missing count)."""
+    libraries = await _music_libraries(media)
+    scanning = any(library.get("RefreshStatus") == "Active" for library in libraries)
+    status: dict = {"scanning": scanning}
+    # Averaged across libraries: a server with two music libraries is
+    # halfway done when one has finished, not 100% done.
+    progresses = [
+        library["RefreshProgress"]
+        for library in libraries
+        if library.get("RefreshProgress") is not None
+    ]
+    if scanning and progresses:
+        status["progress"] = round(sum(progresses) / len(progresses))
+    return {"scanStatus": status}
+
+
+# ── Lyrics ───────────────────────────────────────────────────────────────────
+
+
+async def get_lyrics_by_song_id(params: dict, media: JellyfinClient) -> dict:
+    """The lyrics stored with this exact file — Jellyfin's own
+    /Audio/{id}/Lyrics, which reads the tags embedded in the audio file or
+    a .lrc sitting next to it, nothing looked up on the internet. That
+    distinction is the whole reason the frontend asks for these before
+    falling back to connect's third-party providers (see
+    stores/lyrics.ts's fetchFileLyrics()): they belong to this recording
+    rather than to some other edit of a song with the same name.
+
+    Ordinary user permission, unlike Jellyfin's admin-gated endpoints
+    (verified against a live 10.11.11 server's own OpenAPI: the policy is
+    DefaultAuthorization) — so this works for whoever is logged in, not
+    only for a server owner."""
+    item_id = params.get("id", "")
+    if not item_id:
+        raise ValueError("getLyricsBySongId.view requires id")
+    try:
+        data = await _jf_get(media, f"/Audio/{_quote_id(item_id)}/Lyrics")
+    except httpx.HTTPStatusError as e:
+        # 404 is Jellyfin's answer for "this track has no lyrics", which is
+        # a normal, extremely common result rather than a failure — the
+        # empty list below is what the Subsonic extension says for it.
+        if e.response.status_code == 404:
+            return {"lyricsList": {}}
+        raise
+
+    lines = data.get("Lyrics") or []
+    metadata = data.get("Metadata") or {}
+    structured_lines = []
+    for line in lines:
+        # Reading lyrics out of an ID3 tag leaves Jellyfin's own last line
+        # as a lone NUL byte (the frame's terminator, seen live
+        # 2026-08-27). The byte itself has no business reaching a client;
+        # the now-empty line stays, because a timed line with no text is
+        # how LRC ends the previous line's highlight, and dropping those
+        # would leave the last sung line lit through every instrumental
+        # break (see the frontend's own cleanLyricText()).
+        value = (line.get("Text") or "").replace("\x00", "").strip()
+        # Jellyfin times each line in ticks (100ns) from the track's start;
+        # the Subsonic extension wants milliseconds.
+        start = line.get("Start")
+        structured_lines.append(
+            {"start": int(start / 10_000), "value": value} if start is not None else {"value": value}
+        )
+    # Nothing but blanks is not a lyric sheet — answering with those would
+    # stop the frontend from falling back to its third-party providers.
+    if not any(line["value"] for line in structured_lines):
+        return {"lyricsList": {}}
+    return {
+        "lyricsList": {
+            "structuredLyrics": [
+                {
+                    # Jellyfin records no language for lyrics at all, and
+                    # the extension's own placeholder for that is "xxx".
+                    "lang": "xxx",
+                    # IsSynced is Jellyfin's own verdict, but it doesn't
+                    # always reach one: a real server answered with an
+                    # empty Metadata object for a fully timed lyric sheet
+                    # (2026-08-27), so the line-level timings decide it
+                    # whenever the flag is missing.
+                    "synced": bool(metadata.get("IsSynced"))
+                    or any(line.get("Start") for line in lines),
+                    "line": structured_lines,
+                }
+            ]
+        }
+    }
+
+
 # ── Track/Artist Radio + play tracking ───────────────────────────────────────
 
 
@@ -728,6 +879,10 @@ _HANDLERS: dict[str, Callable[[dict, JellyfinClient], Awaitable[dict]]] = {
     "unstar.view": unstar,
     "getPlaylists.view": get_playlists,
     "getPlaylist.view": get_playlist,
+    "getLyricsBySongId.view": get_lyrics_by_song_id,
+    "getUser.view": get_user,
+    "startScan.view": start_scan,
+    "getScanStatus.view": get_scan_status,
     "createPlaylist.view": create_playlist,
     "updatePlaylist.view": update_playlist,
     "deletePlaylist.view": delete_playlist,

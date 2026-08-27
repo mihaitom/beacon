@@ -11,6 +11,7 @@ import httpx
 import pytest
 
 from core import recommendations
+from core.recommendations import rank_similar
 
 
 def _tmp_path(tmp_dir: str) -> str:
@@ -199,7 +200,9 @@ async def test_get_similar_artists_uses_cached_similar_when_fresh():
         ):
             result = await recommendations.get_similar_artists(["Radiohead"])
 
-    assert result == [{"mbid": "x", "name": "Portishead", "score": 50}]
+    # Normalized against this seed's own best, which is this one — see
+    # rank_similar on why the raw count doesn't travel any further.
+    assert result == [{"mbid": "x", "name": "Portishead", "score": 1.0}]
     client.get.assert_not_called()
 
 
@@ -228,7 +231,7 @@ async def test_get_similar_artists_refetches_when_stale():
             )
             result = await recommendations.get_similar_artists(["Radiohead"])
 
-    assert result == [{"mbid": "y", "name": "Fresh", "score": 99}]
+    assert result == [{"mbid": "y", "name": "Fresh", "score": 1.0}]
 
 
 async def test_get_similar_artists_excludes_seed_names():
@@ -282,7 +285,11 @@ async def test_get_similar_artists_dedupes_keeping_higher_score():
             result = await recommendations.get_similar_artists(["A", "B"])
 
     assert len(result) == 1
-    assert result[0]["score"] == 40
+    # One entry, and its score is the sum of two seeds' normalized ones —
+    # each seed's own best result is 1.0 by definition, so an artist that
+    # is the best match under both lands at 2.0. The raw 10 and 40 say
+    # nothing comparable (see rank_similar).
+    assert result[0]["score"] == 2.0
 
 
 async def test_get_similar_artists_respects_limit():
@@ -301,7 +308,8 @@ async def test_get_similar_artists_respects_limit():
             result = await recommendations.get_similar_artists(["Seed"], limit=3)
 
     assert len(result) == 3
-    assert [a["score"] for a in result] == [9, 8, 7]
+    # Normalized against this seed's own best (9), in the same order.
+    assert [round(a["score"], 3) for a in result] == [1.0, round(8 / 9, 3), round(7 / 9, 3)]
 
 
 async def test_get_similar_artists_returns_empty_when_no_seed_resolves():
@@ -843,3 +851,81 @@ def test_artist_links_by_mbid_endpoint(client):
     assert r.status_code == 200
     assert r.json() == {"links": {"mbid-1": {"spotify": "https://open.spotify.com/artist/x"}}}
     fake.assert_awaited_once_with(["mbid-1"])
+
+
+# ── rank_similar ──────────────────────────────────────────────────────────
+# ListenBrainz's raw score counts listening sessions, so it is only
+# meaningful within one seed's own results. Measured live 2026-08-27:
+# Queen's *worst* similar artist scored 736, Toto's *best* scored 348.
+
+
+def test_rank_similar_gives_every_seed_the_same_say():
+    """Ranked on raw scores, a popular seed's entire list outranks every
+    result from a less-listened one — the top ten for Queen and Toto
+    together were ten Queen results and no Toto ones."""
+    queen = [{"name": f"Q{i}", "mbid": f"q{i}", "score": 2342 - i * 20} for i in range(10)]
+    toto = [{"name": f"T{i}", "mbid": f"t{i}", "score": 348 - i * 5} for i in range(10)]
+
+    ranked = rank_similar([queen, toto], set(), 10)
+
+    names = [a["name"] for a in ranked]
+    # Both seeds are properly represented — the exact split follows from
+    # how steeply each one's scores fall off, which is the point: what
+    # matters is that neither list is shut out.
+    assert sum(1 for n in names if n.startswith("Q")) >= 3
+    assert sum(1 for n in names if n.startswith("T")) >= 3
+    # Each seed's best comes out level at the top, whatever its raw count.
+    assert {ranked[0]["name"], ranked[1]["name"]} == {"Q0", "T0"}
+
+
+def test_rank_similar_puts_an_artist_matching_several_seeds_first():
+    # Turning up next to two of somebody's artists is a better reason to
+    # recommend them than being a near-perfect match for one.
+    seed_a = [{"name": "Both", "mbid": "b", "score": 800}, {"name": "Only A", "mbid": "a", "score": 900}]
+    seed_b = [{"name": "Both", "mbid": "b", "score": 80}, {"name": "Only B", "mbid": "c", "score": 90}]
+
+    ranked = rank_similar([seed_a, seed_b], set(), 10)
+
+    assert ranked[0]["name"] == "Both"
+    # Its score is the sum of two normalized ones, so it can exceed the 1.0
+    # ceiling any single-seed match has.
+    assert ranked[0]["score"] > 1
+
+
+def test_rank_similar_counts_a_repeated_name_once_per_seed():
+    """ListenBrainz returns the same act several times when MusicBrainz
+    holds more than one entry for it — 34 of Toto's 134 results. Counting
+    those separately would let a duplicate outrank a genuine two-seed
+    match."""
+    seed = [
+        {"name": "The Beatles", "mbid": "x", "score": 348},
+        {"name": "The Beatles", "mbid": "y", "score": 348},
+        {"name": "Someone", "mbid": "z", "score": 300},
+    ]
+
+    ranked = rank_similar([seed], set(), 10)
+
+    assert [a["name"] for a in ranked] == ["The Beatles", "Someone"]
+    assert ranked[0]["score"] == 1.0
+
+
+def test_rank_similar_leaves_out_the_seeds_themselves():
+    seed = [{"name": "Queen", "mbid": "q", "score": 900}, {"name": "Other", "mbid": "o", "score": 100}]
+
+    ranked = rank_similar([seed], {"queen"}, 10)
+
+    assert [a["name"] for a in ranked] == ["Other"]
+
+
+def test_rank_similar_survives_a_seed_with_nothing_to_offer():
+    # An empty list, and one whose scores are all zero — the normalisation
+    # divides by the best score, which must not be a division by zero.
+    ranked = rank_similar([[], [{"name": "Flat", "mbid": "f", "score": 0}]], set(), 10)
+
+    assert [a["name"] for a in ranked] == ["Flat"]
+
+
+def test_rank_similar_honours_the_limit():
+    seed = [{"name": f"A{i}", "mbid": str(i), "score": 100 - i} for i in range(30)]
+
+    assert len(rank_similar([seed], set(), 5)) == 5

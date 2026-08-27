@@ -77,6 +77,11 @@ interface AuthState {
   credential: string
   sessionId: string
   authenticated: boolean
+  /** Whether this account may run the things a server keeps for its
+   * admins (a library scan — see services/capabilities.ts's libraryScan).
+   * Null until asked, or where the server gave no answer; re-resolved on
+   * every _authenticate(), so it is never persisted. */
+  isAdmin: boolean | null
   health: HealthResponse | null
   loginError: string | null
 }
@@ -96,6 +101,7 @@ export const useAuthStore = defineStore('auth', {
     sessionId: '',
     authenticated: false,
     health: null,
+    isAdmin: null,
     loginError: null,
   }),
 
@@ -104,7 +110,7 @@ export const useAuthStore = defineStore('auth', {
      * services/capabilities.ts. Views should check this instead of
      * comparing serverType directly. */
     capabilities(state): ServerCapabilities {
-      return capabilitiesFor(state.serverType)
+      return capabilitiesFor(state.serverType, state.isAdmin)
     },
   },
 
@@ -155,6 +161,29 @@ export const useAuthStore = defineStore('auth', {
 
       this.health = await getHealth()
       this.authenticated = true
+      await this.resolveAdminRole()
+    },
+
+    /** Asks the server whether this account is an administrator, which
+     * decides whether Settings offers a library rescan at all (see
+     * services/capabilities.ts's libraryScan — the scan is admin-only on
+     * every server Beacon speaks to, so a non-admin pressing it would only
+     * ever get an error back).
+     *
+     * Asked the same way for all three server types: getUser.view is
+     * Subsonic's own call, and the Jellyfin and Plex bridges answer it by
+     * translating it into whatever their server calls the same thing
+     * (Jellyfin's user policy, Plex's owner-only settings endpoint) — so
+     * nothing here needs to know which backend it is talking to.
+     *
+     * Awaited rather than left running in the background, so Settings
+     * renders the right thing the first time instead of briefly showing a
+     * button that then disappears.
+     *
+     * Never throws: isAdmin() answers null for a server that doesn't
+     * support the question, and null deliberately changes nothing. */
+    async resolveAdminRole(): Promise<void> {
+      this.isAdmin = await useLibraryStore().client().isAdmin(this.username)
     },
 
     /** Electron: reads CONNECT_TOKEN/connectUrl from the same connect/.env
@@ -268,8 +297,9 @@ export const useAuthStore = defineStore('auth', {
 
     /** Starts a Plex PIN-linking login — unlike Jellyfin's Quick Connect,
      * there's no server URL to set yet at this point: Plex authenticates
-     * an *account* via plex.tv, not a specific server (see
-     * PLEX_PLAN.md). Returns the code/link to show (ServerLoginView.vue
+     * an *account* via plex.tv, not a specific server, and which servers
+     * that account can reach is only known afterwards. Returns the
+     * code/link to show (ServerLoginView.vue
      * opens authUrl in the system browser) and the PIN id to poll with
      * (see pollPlexAuth()). */
     async startPlexAuth(): Promise<{ code: string; authUrl: string; pinId: number }> {

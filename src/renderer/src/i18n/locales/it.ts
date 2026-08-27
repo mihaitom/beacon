@@ -157,6 +157,7 @@ export default {
     toggleFullscreen: 'Attiva/disattiva schermo intero',
   },
   lyrics: {
+    resumeAutoscroll: 'Segui di nuovo il brano',
     title: 'Testo',
     notFound: 'Nessun testo trovato per questo brano.',
     seekHere: 'Vai a questa riga',
@@ -273,6 +274,8 @@ export default {
     libraryScanHint: 'Fai in modo che Navidrome cerchi file nuovi, modificati o rimossi.',
     rescanLibrary: 'Ripeti scansione libreria',
     scanning: 'Scansione in corso … ({count})',
+    scanningPercent: 'Scansione in corso \u2026 ({percent}%)',
+    scanningPlain: 'Scansione in corso \u2026',
     scanComplete: 'Scansione completata: {count} brani elaborati.',
     scanFailed: 'Impossibile avviare la scansione.',
     libraryRefreshHint:

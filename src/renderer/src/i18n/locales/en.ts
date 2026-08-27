@@ -157,6 +157,7 @@ export default {
     toggleFullscreen: 'Toggle fullscreen',
   },
   lyrics: {
+    resumeAutoscroll: 'Follow the song again',
     title: 'Lyrics',
     notFound: 'No lyrics found for this song.',
     seekHere: 'Jump to this line',
@@ -271,6 +272,8 @@ export default {
     libraryScanHint: 'Have Navidrome scan for new, changed, or removed files.',
     rescanLibrary: 'Rescan library',
     scanning: 'Scanning … ({count})',
+    scanningPercent: 'Scanning \u2026 ({percent}%)',
+    scanningPlain: 'Scanning \u2026',
     scanComplete: 'Scan complete — {count} songs processed.',
     scanFailed: "Couldn't start the scan.",
     libraryRefreshHint:

@@ -165,12 +165,27 @@ export interface LyricsBySongIdResponse {
   lyricsList: { structuredLyrics?: StructuredLyrics[] }
 }
 
+// getUser.view — every Subsonic server answers this for the *caller's own*
+// username (asking about anyone else is an authorization error), which is
+// the only thing Beacon needs it for: whether this account may trigger a
+// library scan (see capabilities.ts's libraryScan).
+export interface UserResponse {
+  user: {
+    username: string
+    adminRole?: boolean
+  }
+}
+
 // startScan.view/getScanStatus.view (Navidrome extension) — count is the
 // running total of items scanned so far, meaningful only while scanning is
-// true (0/absent otherwise).
+// true (0/absent otherwise). The Jellyfin and Plex bridges answer the same
+// two calls but can only report a percentage, never a count: neither server
+// exposes one (see their own get_scan_status()), so they send `progress`
+// and omit `count` rather than inventing a number.
 export interface ScanStatusResponse {
   scanStatus: {
     scanning: boolean
     count?: number
+    progress?: number
   }
 }

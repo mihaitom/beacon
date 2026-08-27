@@ -78,6 +78,21 @@
        - than this exact audio file — this is the escape hatch for "close
        - but consistently early/late", not something most songs need. -->
       <div v-if="lyricsStore.synced" class="lyrics-panel__sync">
+        <!-- Only while autoscroll is off, which is exactly when it means
+         - anything: scrolling by hand hands the list to the reader and
+         - keeps it there (see onManualScroll), and this is how it goes
+         - back to following the song. -->
+        <v-btn
+          v-if="autoscrollPaused && !calibrating"
+          icon="mdi-format-vertical-align-center"
+          :size="mobile ? 'small' : 'x-small'"
+          variant="text"
+          :density="mobile ? 'comfortable' : 'compact'"
+          color="primary"
+          class="lyrics-panel__resume-btn"
+          :title="$t('lyrics.resumeAutoscroll')"
+          @click="resumeAutoscroll"
+        />
         <v-btn
           icon="mdi-target"
           :size="mobile ? 'small' : 'x-small'"
@@ -87,7 +102,7 @@
           :title="$t('lyrics.calibrate')"
           @click="calibrating = !calibrating"
         />
-        <v-divider vertical class="mx-1" />
+        <v-divider vertical />
         <v-btn
           icon="mdi-rewind"
           :size="mobile ? 'small' : 'x-small'"
@@ -115,9 +130,19 @@
       </div>
 
       <div class="lyrics-panel__meta">
-        <span v-if="sourceLabel" class="lyrics-panel__source">{{
-          $t('lyrics.source', { source: sourceLabel })
-        }}</span>
+        <!-- Source and, under it, whoever the sheet names as having written
+         - the song. Those credits arrive as the first few lyric lines,
+         - timed milliseconds apart (see parseLrc.ts's splitOffCredits) —
+         - unreadable there, so they are shown here for as long as the song
+         - plays rather than thrown away. -->
+        <div class="lyrics-panel__attribution">
+          <span v-if="sourceLabel" class="lyrics-panel__source">{{
+            $t('lyrics.source', { source: sourceLabel })
+          }}</span>
+          <span v-for="credit in lyricsStore.credits" :key="credit" class="lyrics-panel__credit">{{
+            credit
+          }}</span>
+        </div>
         <!-- The auto-matched lyrics can be for the wrong edit of a song
          - entirely (not just mistimed) — this is the escape hatch for that,
          - also the main way to find lyrics at all when nothing auto-matched.
@@ -183,12 +208,6 @@ import { FILE_SOURCE, useLyricsStore } from '@/stores/lyrics'
 import type { LyricLine } from '@/services/lyrics/parseLrc'
 import LyricsCandidateList from '@/components/lyrics/LyricsCandidateList.vue'
 
-// How long to leave autoscroll paused after the user manually scrolls/
-// touches the list, before snapping back to whatever line is actually
-// active by then (not waiting for the *next* line change, which could be
-// many seconds away for a long gap between lines).
-const MANUAL_SCROLL_PAUSE_MS = 4000
-
 const SKELETON_WIDTHS = ['70%', '45%', '85%', '55%', '65%', '40%']
 
 export default {
@@ -214,7 +233,6 @@ export default {
   data() {
     return {
       autoscrollPaused: false,
-      resumeTimer: null as ReturnType<typeof setTimeout> | null,
       // First placement after a song's lyrics (re)load jumps instantly
       // instead of animating up from wherever the scroll happened to be.
       skipNextScrollAnimation: true,
@@ -283,6 +301,17 @@ export default {
       const el = this.$refs.scrollEl as HTMLElement | undefined
       if (el) el.scrollTop = 0
     },
+    // Lyrics arriving (or being swapped for a different match) mid-song:
+    // jump straight to where playback already is, without animating up
+    // from the top. activeIndex alone doesn't cover this — it may well be
+    // the same number it already was while the list was still empty, in
+    // which case its watcher below returns early and nothing scrolls until
+    // the *next* line boundary comes round, which is what left freshly
+    // loaded lyrics sitting at line one for up to several seconds.
+    'lyricsStore.lines'() {
+      this.skipNextScrollAnimation = true
+      this.jumpToActive()
+    },
     // immediate: true — without it, this only ever fired on a *change*, so
     // mounting straight into an already-loaded, mid-song position (opening
     // this view partway through a track, now the common case since
@@ -295,7 +324,7 @@ export default {
       immediate: true,
       handler(newIndex: number, oldIndex: number | undefined) {
         if (newIndex < 0 || newIndex === oldIndex) return
-        this.$nextTick(() => this.scrollToActive())
+        this.jumpToActive()
       },
     },
     // Freeze autoscroll for the duration of calibration — the list
@@ -304,18 +333,21 @@ export default {
     // actually is once calibration ends, whether that's from a completed
     // click (onLineClick) or the button being toggled back off.
     calibrating(active: boolean) {
-      if (this.resumeTimer) clearTimeout(this.resumeTimer)
       this.autoscrollPaused = active
       if (!active) {
         this.skipNextScrollAnimation = true
-        this.$nextTick(() => this.scrollToActive())
+        this.jumpToActive()
       }
     },
   },
-  beforeUnmount() {
-    if (this.resumeTimer) clearTimeout(this.resumeTimer)
-  },
   methods: {
+    /** Scrolls once the new lines are actually in the DOM *and* laid out.
+     * nextTick alone isn't enough: it fires when Vue has patched the DOM,
+     * which is before the browser has given those elements a height, and
+     * scrollIntoView() on a zero-height element lands nowhere useful. */
+    jumpToActive() {
+      this.$nextTick(() => requestAnimationFrame(() => this.scrollToActive()))
+    },
     scrollToActive() {
       if (this.autoscrollPaused) return
       const el = (this.$refs.lineRefs as HTMLElement[] | undefined)?.[this.activeIndex]
@@ -325,18 +357,24 @@ export default {
       })
       this.skipNextScrollAnimation = false
     },
+    /** Scrolling by hand takes the list over: autoscroll stops and stays
+     * stopped until it is handed back deliberately (resumeAutoscroll(),
+     * behind the button that appears while it is paused).
+     *
+     * It used to resume itself after a few seconds, which read as the
+     * panel fighting back — you scroll up to read an earlier verse, and
+     * mid-sentence it yanks you to wherever the song has got to. Reading
+     * ahead or back takes as long as it takes. */
     onManualScroll() {
       this.autoscrollPaused = true
-      if (this.resumeTimer) clearTimeout(this.resumeTimer)
-      // While calibrating, the pause above should hold until calibration
-      // itself ends (see the `calibrating` watcher) — not resume on its
-      // own timer mid-attempt.
-      if (this.calibrating) return
-      this.resumeTimer = setTimeout(() => {
-        this.autoscrollPaused = false
-        this.skipNextScrollAnimation = true
-        this.scrollToActive()
-      }, MANUAL_SCROLL_PAUSE_MS)
+    },
+    /** Hands the list back to playback — jumps straight to the line that
+     * is playing rather than animating there, since the point is to get
+     * back to it, not to watch the journey. */
+    resumeAutoscroll() {
+      this.autoscrollPaused = false
+      this.skipNextScrollAnimation = true
+      this.jumpToActive()
     },
     // Offset-adjusted the same way activeIndex is — seeking to the line's
     // raw time would land slightly before/after it whenever a manual sync
@@ -444,13 +482,27 @@ export default {
   width: 6px;
 }
 
-.lyrics-panel__scroll--plain::-webkit-scrollbar-song {
+.lyrics-panel__scroll--plain::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .lyrics-panel__scroll--plain::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.25);
   border-radius: 3px;
+}
+
+/* The immersive view is the full-screen one, where the lyrics *are* the
+ * page — a scrollbar down the side of it reads as chrome bolted onto
+ * artwork. The compact drawer keeps it: that panel is small, sits among
+ * other controls, and unsynced lyrics there need something saying "this
+ * scrolls" (see .lyrics-panel__scroll--plain above). Scrolling itself is
+ * untouched either way. */
+.lyrics-panel--immersive .lyrics-panel__scroll--plain {
+  scrollbar-width: none;
+}
+
+.lyrics-panel--immersive .lyrics-panel__scroll--plain::-webkit-scrollbar {
+  display: none;
 }
 
 .lyrics-panel__pad {
@@ -628,7 +680,10 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  /* Enough room that the icons read as separate controls rather than one
+   * run-together strip — they sit at compact density, which leaves them
+   * almost touching at the 2px this used to have. */
+  gap: 6px;
   padding: 6px 0 2px;
   flex-shrink: 0;
 }
@@ -667,6 +722,29 @@ export default {
   overflow: hidden;
   font-size: 0.7rem;
   color: rgba(255, 255, 255, 0.4);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Source and credits stack, so a song with three of them doesn't push the
+ * picker button off the row. */
+.lyrics-panel__attribution {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+  /* Explicit, not inherited: the panel centres its lyric lines, and
+   * without this the source line drifted to the middle over credits that
+   * are far wider than it is. */
+  text-align: left;
+}
+
+/* Quieter than the source line above it: an attribution worth keeping, not
+ * something competing with the lyrics themselves. */
+.lyrics-panel__credit {
+  overflow: hidden;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.3);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

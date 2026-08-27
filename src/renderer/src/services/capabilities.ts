@@ -34,13 +34,30 @@ export interface ServerCapabilities {
    * own station list for Jellyfin sessions instead (see
    * core/radio_stations.py) — true for both server types. */
   internetRadio: boolean
-  /** Triggering a library rescan from Settings — Navidrome-specific
-   * (startScan.view/getScanStatus.view), not bridged for Jellyfin. */
+  /** Triggering a library rescan from Settings. Two conditions, both
+   * required: the server type has to expose it at all (all three do now —
+   * Navidrome natively, Jellyfin and Plex through their bridges), *and*
+   * this particular account has to be allowed to run one —
+   * every server that offers a scan reserves it for administrators
+   * (`adminOnly` in Navidrome's own route table, RequiresElevation in
+   * Jellyfin's API, an admin token in Plex's). Being an admin is a fact
+   * about the account, not the server type, so it can't live in the
+   * tables below — see capabilitiesFor()'s `isAdmin` argument. */
   libraryScan: boolean
   /** Song/Artist Radio — Navidrome's getSimilarSongs2.view is bridged to
    * Jellyfin's InstantMix (see jellyfin_bridge.py's get_similar_songs2),
    * true for both server types. */
   songRadio: boolean
+  /** Lyrics stored with the audio file itself (getLyricsBySongId.view) —
+   * asked for before connect's own third-party providers, since they
+   * belong to this exact recording rather than to some other edit of a
+   * song with the same name (see stores/lyrics.ts's fetchFileLyrics()).
+   * False for Plex: its bridge has nothing to answer this with (see
+   * media/plex_bridge.py), and without this flag every single track
+   * played there would spend a request finding that out again. Lyrics
+   * themselves still work everywhere — this only decides whether the
+   * file's own copy is worth asking for first. */
+  fileLyrics: boolean
   /** The Stats/"Wrapped" page's playCount-based sections. Relies on
    * scrobble.view actually reaching the server — bridged for Jellyfin via
    * its session-based /Sessions/Playing + /Sessions/Playing/Stopped
@@ -56,6 +73,7 @@ const SUBSONIC_CAPABILITIES: ServerCapabilities = {
   internetRadio: true,
   libraryScan: true,
   songRadio: true,
+  fileLyrics: true,
   playHistoryStats: true,
 }
 
@@ -64,18 +82,25 @@ const JELLYFIN_CAPABILITIES: ServerCapabilities = {
   emptyPlaylistCreation: true,
   personalRating: false,
   internetRadio: true,
-  libraryScan: false,
+  // Bridged onto Jellyfin's own library-scan task (see
+  // jellyfin_bridge.py's start_scan) — server-admin only, which
+  // capabilitiesFor()'s isAdmin argument takes care of.
+  libraryScan: true,
   songRadio: true,
+  // Jellyfin's own /Audio/{id}/Lyrics, which reads what is tagged in the
+  // file or sitting next to it as an .lrc — ordinary user permission, no
+  // server-admin rights needed (see jellyfin_bridge.py's
+  // get_lyrics_by_song_id()).
+  fileLyrics: true,
   playHistoryStats: true,
 }
 
-// Plex Phase B (see PLEX_PLAN.md) bridges read-only browsing — artists/
-// albums/songs/search/cover art — plus internet radio stations (self-
-// hosted, identical logic to Jellyfin's, see media/base.py) and playback.
-// Phase C added personal ratings (setRating.view -> Plex's own PUT
-// /:/rate, its one native personal-marking mechanism for music) and
-// playlist CRUD — a real feature-parity win over Jellyfin, which has no
-// rating scale at all. favorites is false: Plex's core Media Server REST
+// Plex bridges browsing — artists/albums/songs/search/cover art — plus
+// internet radio stations (self-hosted, identical logic to Jellyfin's, see
+// media/base.py), playback, personal ratings (setRating.view -> Plex's own
+// PUT /:/rate, its one native personal-marking mechanism for music) and
+// playlist CRUD. Ratings are a real feature-parity win over Jellyfin,
+// which has no rating scale at all. favorites is false: Plex's core Media Server REST
 // API has no separate boolean favorite to back star.view/unstar.view with
 // (see media/plex_bridge.py's module docstring) — the heart icon and the
 // Favorites nav item/page hide accordingly instead of leading to a
@@ -83,7 +108,7 @@ const JELLYFIN_CAPABILITIES: ServerCapabilities = {
 // Plex's own PUT /:/scrobble, confirmed live against a real server.
 // songRadio is true — bridged onto Plex's own Sonic Analysis
 // (`/library/metadata/{id}/nearest`, confirmed live 2026-08-20 — see
-// media/plex_bridge.py's get_similar_songs2() and PLEX_PLAN.md) — but
+// media/plex_bridge.py's get_similar_songs2()) — but
 // unlike every other true value here, it's not something *this app*
 // controls end to end: Sonic Analysis itself is a Plex Pass-gated feature
 // (confirmed against Plex's own support docs), so a listener without an
@@ -102,13 +127,42 @@ const PLEX_CAPABILITIES: ServerCapabilities = {
   emptyPlaylistCreation: false,
   personalRating: true,
   internetRadio: true,
-  libraryScan: false,
+  // Bridged onto a refresh of the music section (see plex_bridge.py's
+  // start_scan) — owner-only, which capabilitiesFor()'s isAdmin argument
+  // takes care of.
+  libraryScan: true,
   songRadio: true,
+  // Bridged, with one caveat worth knowing: Plex builds a track's lyric
+  // stream from a .lrc file next to the audio and ignores lyrics embedded
+  // in the file's own tags entirely (verified live 2026-08-27), so a
+  // library tagged the way Navidrome and Jellyfin both read happily can
+  // still come up empty here — in which case the third-party lookup takes
+  // over exactly as it does for an untagged track.
+  fileLyrics: true,
   playHistoryStats: true,
 }
 
-export function capabilitiesFor(serverType: string): ServerCapabilities {
-  if (serverType === 'jellyfin') return JELLYFIN_CAPABILITIES
-  if (serverType === 'plex') return PLEX_CAPABILITIES
-  return SUBSONIC_CAPABILITIES
+/**
+ * `isAdmin` is what the signed-in account may do, as the server itself
+ * reports it (see SubsonicClient.isAdmin()) — null means it didn't say, or
+ * hasn't been asked yet.
+ *
+ * Only null and false are told apart deliberately: a server that gives no
+ * answer leaves every capability where the server type put it, because
+ * hiding a working button on a guess is worse than showing one that turns
+ * out to be refused. A definite false is the one case that takes something
+ * away.
+ */
+export function capabilitiesFor(
+  serverType: string,
+  isAdmin: boolean | null = null,
+): ServerCapabilities {
+  const base =
+    serverType === 'jellyfin'
+      ? JELLYFIN_CAPABILITIES
+      : serverType === 'plex'
+        ? PLEX_CAPABILITIES
+        : SUBSONIC_CAPABILITIES
+  if (isAdmin === false) return { ...base, libraryScan: false }
+  return base
 }

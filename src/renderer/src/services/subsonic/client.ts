@@ -10,6 +10,7 @@ import type {
   PlaylistsResponse,
   RawSong,
   ScanStatusResponse,
+  UserResponse,
   SearchResult3Response,
   SimilarSongs2Response,
   Starred2Response,
@@ -46,6 +47,25 @@ function cryptoRandomSalt(): string {
   const bytes = new Uint8Array(6)
   crypto.getRandomValues(bytes)
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/** How far a running library scan has got. Which of the two numbers is
+ * available depends on the server, and neither is guaranteed: Navidrome
+ * counts items, the Jellyfin and Plex bridges report a percentage, and a
+ * server that says nothing leaves both null — see SettingsView.vue, which
+ * shows whichever it has. */
+export interface ScanProgress {
+  scanning: boolean
+  count: number | null
+  percent: number | null
+}
+
+function scanProgress(data: ScanStatusResponse): ScanProgress {
+  return {
+    scanning: data.scanStatus.scanning,
+    count: data.scanStatus.count ?? null,
+    percent: data.scanStatus.progress ?? null,
+  }
 }
 
 export class SubsonicClient {
@@ -210,6 +230,26 @@ export class SubsonicClient {
   async getArtist(id: string): Promise<Artist> {
     const data = await this.get<ArtistResponse>('getArtist.view', { id })
     return mapArtist(data.artist)
+  }
+
+  /** Whether this account may do the things a server reserves for its
+   * administrators — a library scan being the only one Beacon offers (see
+   * startScan() below, `adminOnly` in Navidrome's own route table).
+   *
+   * Null when the server didn't say: getUser.view is standard Subsonic but
+   * not universal across the OpenSubsonic-compatible servers out there,
+   * and a missing answer must not be read as "not an admin" — that would
+   * hide a working button. Callers treat null as "leave it visible".
+   *
+   * Only ever asks about the caller's own username, which is all any
+   * Subsonic server allows here anyway. */
+  async isAdmin(username: string): Promise<boolean | null> {
+    try {
+      const data = await this.get<UserResponse>('getUser.view', { username })
+      return data.user?.adminRole ?? null
+    } catch {
+      return null
+    }
   }
 
   async getPlaylists(): Promise<Playlist[]> {
@@ -391,18 +431,18 @@ export class SubsonicClient {
    * initial status, same shape as getScanStatus() below (Navidrome starts
    * scanning synchronously with this call, so `count` here is already
    * meaningful, not just a stub). */
-  async startScan(fullScan = false): Promise<{ scanning: boolean; count: number }> {
+  async startScan(fullScan = false): Promise<ScanProgress> {
     const data = await this.get<ScanStatusResponse>('startScan.view', {
       fullScan: String(fullScan),
     })
-    return { scanning: data.scanStatus.scanning, count: data.scanStatus.count ?? 0 }
+    return scanProgress(data)
   }
 
   /** Polled while a scan is in progress (see SettingsView.vue) — `scanning`
    * flips back to false once Navidrome's done. */
-  async getScanStatus(): Promise<{ scanning: boolean; count: number }> {
+  async getScanStatus(): Promise<ScanProgress> {
     const data = await this.get<ScanStatusResponse>('getScanStatus.view')
-    return { scanning: data.scanStatus.scanning, count: data.scanStatus.count ?? 0 }
+    return scanProgress(data)
   }
 
   /** Like get(), but also appends one or more repeated-key params (Subsonic's

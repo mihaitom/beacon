@@ -157,6 +157,7 @@ export default {
     toggleFullscreen: 'Basculer le plein écran',
   },
   lyrics: {
+    resumeAutoscroll: 'Suivre à nouveau la chanson',
     title: 'Paroles',
     notFound: 'Aucune parole trouvée pour ce titre.',
     seekHere: 'Aller à cette ligne',
@@ -274,6 +275,8 @@ export default {
       'Demandez à Navidrome de rechercher les fichiers nouveaux, modifiés ou supprimés.',
     rescanLibrary: 'Rescanner la bibliothèque',
     scanning: 'Analyse en cours … ({count})',
+    scanningPercent: 'Analyse en cours \u2026 ({percent}%)',
+    scanningPlain: 'Analyse en cours \u2026',
     scanComplete: 'Analyse terminée — {count} titres traités.',
     scanFailed: "Impossible de démarrer l'analyse.",
     libraryRefreshHint:

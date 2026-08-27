@@ -990,3 +990,264 @@ def test_create_playlist_with_id_removes_one_entry_at_a_time(client, plex_sessio
     assert len(deleted) == 2
     assert deleted[0].endswith("/playlists/5001/items/11")
     assert deleted[1].endswith("/playlists/5001/items/13")
+
+
+# The shape of a real Plex lyric stream, taken verbatim from a live server
+# (2026-08-27): lines already timed in milliseconds, each split into spans
+# that Plex uses for per-word timing.
+_LYRIC_STREAM = {
+    "MediaContainer": {
+        "size": 1,
+        "Lyrics": [
+            {
+                "provider": "com.plexapp.agents.localmedia",
+                "timed": True,
+                "Line": [
+                    {
+                        "startOffset": 13000,
+                        "endOffset": 16310,
+                        "Span": [{"text": "Common love isn't for us", "startOffset": 13000}],
+                    },
+                    {
+                        "startOffset": 16310,
+                        "Span": [{"text": "We created something "}, {"text": "phenomenal"}],
+                    },
+                ],
+            }
+        ],
+    }
+}
+
+
+def _track_with_lyric_stream(stream_key: str = "/library/streams/21182") -> dict:
+    return {
+        "MediaContainer": {
+            "Metadata": [
+                {
+                    "ratingKey": "2978",
+                    "Media": [
+                        {
+                            "Part": [
+                                {
+                                    "Stream": [
+                                        {"id": 1744, "streamType": 2, "codec": "mp3"},
+                                        {"id": 21182, "streamType": 4, "key": stream_key},
+                                    ]
+                                }
+                            ]
+                        }
+                    ],
+                }
+            ]
+        }
+    }
+
+
+def test_get_lyrics_reads_the_tracks_own_lyric_stream(client, plex_session, monkeypatch):
+    fake_client, _calls = _fake_px_client(
+        {
+            "/library/metadata/2978": _track_with_lyric_stream(),
+            "/library/streams/21182": _LYRIC_STREAM,
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getLyricsBySongId.view?id=2978")
+    assert r.status_code == 200
+    lyrics = r.json()["subsonic-response"]["lyricsList"]["structuredLyrics"]
+    assert lyrics[0]["synced"] is True
+    # Plex times lines in milliseconds already, and a line's spans join back
+    # into the one string per line the Subsonic extension expects.
+    assert lyrics[0]["line"] == [
+        {"start": 13000, "value": "Common love isn't for us"},
+        {"start": 16310, "value": "We created something phenomenal"},
+    ]
+
+
+def test_get_lyrics_is_empty_for_a_track_without_a_lyric_stream(
+    client, plex_session, monkeypatch
+):
+    fake_client, _calls = _fake_px_client(
+        {
+            "/library/metadata/21929": {
+                "MediaContainer": {
+                    "Metadata": [
+                        {"Media": [{"Part": [{"Stream": [{"id": 1, "streamType": 2}]}]}]}
+                    ]
+                }
+            }
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getLyricsBySongId.view?id=21929")
+    assert r.status_code == 200
+    body = r.json()["subsonic-response"]
+    assert body["status"] == "ok"
+    assert body["lyricsList"] == {}
+
+
+def test_get_lyrics_survives_a_stream_whose_file_is_gone(client, plex_session, monkeypatch):
+    """Deleting the .lrc leaves the stream listed on the track, serving
+    nothing, until Plex re-examines it (seen live 2026-08-27). That must
+    read as "no lyrics", not as a failure."""
+    fake_client, _calls = _fake_px_client(
+        {
+            "/library/metadata/2978": _track_with_lyric_stream(),
+            "/library/streams/21182": {"MediaContainer": {"size": 0}},
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getLyricsBySongId.view?id=2978")
+    assert r.json()["subsonic-response"]["lyricsList"] == {}
+
+
+def test_get_lyrics_marks_untimed_lyrics_as_unsynced(client, plex_session, monkeypatch):
+    fake_client, _calls = _fake_px_client(
+        {
+            "/library/metadata/2978": _track_with_lyric_stream(),
+            "/library/streams/21182": {
+                "MediaContainer": {
+                    "Lyrics": [{"timed": False, "Line": [{"Span": [{"text": "Just words"}]}]}]
+                }
+            },
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    lyrics = client.get("/rest/getLyricsBySongId.view?id=2978").json()["subsonic-response"][
+        "lyricsList"
+    ]["structuredLyrics"]
+    assert lyrics[0]["synced"] is False
+    # No start key at all rather than a made-up 0.
+    assert lyrics[0]["line"] == [{"value": "Just words"}]
+
+
+def test_get_user_reads_admin_from_what_the_server_allows(client, plex_session, monkeypatch):
+    """Plex has no role to read: a server has exactly one owner and
+    everyone else is a shared user. What separates them is what the server
+    lets them call, so asking for its own settings *is* the test."""
+    fake_client, calls = _fake_px_client({"/:/prefs": {"MediaContainer": {"Setting": []}}})
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getUser.view?username=thomas")
+    assert r.json()["subsonic-response"]["user"] == {"username": "thomas", "adminRole": True}
+    assert calls[0][1].endswith("/:/prefs")
+
+
+def test_get_user_treats_a_refused_settings_call_as_not_admin(client, plex_session, monkeypatch):
+    fake_client, _calls = _fake_px_client()
+    original = fake_client.request
+
+    async def forbidden(method, url, headers=None, params=None):
+        response = await original(method, url, headers=headers, params=params)
+        if url.endswith("/:/prefs"):
+            request = httpx.Request(method, url)
+            response.raise_for_status = MagicMock(
+                side_effect=httpx.HTTPStatusError(
+                    "403", request=request, response=httpx.Response(403, request=request)
+                )
+            )
+        return response
+
+    fake_client.request = forbidden
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getUser.view?username=shared")
+    # A clean answer, not an error: the frontend uses this to decide whether
+    # to offer a rescan at all.
+    assert r.json()["subsonic-response"]["user"]["adminRole"] is False
+
+
+def test_start_scan_refreshes_the_music_section_only(client, plex_session, monkeypatch):
+    """Everything else in a Plex library (films, series) is none of
+    Beacon's business."""
+    fake_client, calls = _fake_px_client(
+        {"/library/sections": {"MediaContainer": {"Directory": [{"key": "5", "type": "artist"}]}}}
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/startScan.view")
+    assert r.json()["subsonic-response"]["scanStatus"] == {"scanning": True}
+    assert any(c[1].endswith("/library/sections/5/refresh") for c in calls)
+
+
+_MUSIC_SECTION = {"MediaContainer": {"Directory": [{"key": "5", "type": "artist"}]}}
+
+
+def test_scan_status_reports_a_running_section_scan(client, plex_session, monkeypatch):
+    fake_client, _calls = _fake_px_client(
+        {
+            "/library/sections": _MUSIC_SECTION,
+            "/activities": {
+                "MediaContainer": {
+                    "Activity": [
+                        {"type": "library.update.item.metadata", "progress": -1},
+                        {
+                            "type": "library.update.section",
+                            "progress": 42,
+                            "Context": {"librarySectionID": "5"},
+                        },
+                    ]
+                }
+            },
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    status = client.get("/rest/getScanStatus.view").json()["subsonic-response"]["scanStatus"]
+    assert status == {"scanning": True, "progress": 42}
+
+
+def test_scan_status_omits_a_progress_plex_cannot_state(client, plex_session, monkeypatch):
+    # -1 is Plex's own "no idea how far along this is".
+    fake_client, _calls = _fake_px_client(
+        {
+            "/library/sections": _MUSIC_SECTION,
+            "/activities": {
+                "MediaContainer": {
+                    "Activity": [{"type": "library.update.section", "progress": -1}]
+                }
+            },
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    status = client.get("/rest/getScanStatus.view").json()["subsonic-response"]["scanStatus"]
+    assert status == {"scanning": True}
+
+
+def test_scan_status_ignores_a_scan_of_another_library(client, plex_session, monkeypatch):
+    """A film library being scanned is not this scan — Beacon would
+    otherwise report a scan it never started and poll until that one ends."""
+    fake_client, _calls = _fake_px_client(
+        {
+            "/library/sections": _MUSIC_SECTION,
+            "/activities": {
+                "MediaContainer": {
+                    "Activity": [
+                        {
+                            "type": "library.update.section",
+                            "progress": 10,
+                            "Context": {"librarySectionID": "9"},
+                        }
+                    ]
+                }
+            },
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    status = client.get("/rest/getScanStatus.view").json()["subsonic-response"]["scanStatus"]
+    assert status == {"scanning": False}
+
+
+def test_scan_status_reports_an_idle_server_as_finished(client, plex_session, monkeypatch):
+    fake_client, _calls = _fake_px_client(
+        {"/library/sections": _MUSIC_SECTION, "/activities": {"MediaContainer": {}}}
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    status = client.get("/rest/getScanStatus.view").json()["subsonic-response"]["scanStatus"]
+    assert status == {"scanning": False}

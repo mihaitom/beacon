@@ -9,12 +9,13 @@
   <v-navigation-drawer
     :model-value="modelValue"
     location="right"
-    width="380"
+    :width="DRAWER_WIDTH"
     temporary
     persistent
     :scrim="false"
     color="#0B0D13"
     class="beacon-drawer"
+    :style="{ insetInlineEnd: sideBySideOffset }"
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <div class="d-flex flex-column fill-height">
@@ -35,6 +36,11 @@
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
+
+// Shared with QueueDrawer.vue, which is the same width by design: the two
+// sit side by side when both are open (see sideBySideOffset), and that
+// only lines up if the offset matches the other one's width exactly.
+const DRAWER_WIDTH = 380
 import { useLyricsStore } from '@/stores/lyrics'
 import LyricsPanel from './LyricsPanel.vue'
 
@@ -49,8 +55,17 @@ export default {
   },
   emits: ['update:modelValue'],
   computed: {
+    DRAWER_WIDTH: () => DRAWER_WIDTH,
     playbackStore() {
       return usePlaybackStore()
+    },
+    /** Slides this one clear of the queue when both are open, instead of
+     * the two stacking invisibly on top of each other — whichever was
+     * rendered last simply covered the other, and closing it revealed a
+     * drawer the user had no reason to expect. The queue keeps the outer
+     * edge because it is the one people leave open. */
+    sideBySideOffset(): string {
+      return this.playbackStore.queueDrawerOpen ? `${DRAWER_WIDTH}px` : '0px'
     },
     currentSong() {
       return this.playbackStore.currentSong

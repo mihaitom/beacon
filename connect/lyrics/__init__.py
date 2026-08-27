@@ -17,7 +17,7 @@ Sub-modules:
 from enum import Enum
 
 from . import lrclib, netease, simpmusic
-from .shared import order_search_results
+from .shared import artist_matches, has_sung_lines, order_search_results
 
 
 class LyricSource(str, Enum):
@@ -28,6 +28,8 @@ class LyricSource(str, Enum):
 
 __all__ = [
     "LyricSource",
+    "artist_matches",
+    "has_sung_lines",
     "lrclib",
     "netease",
     "order_search_results",

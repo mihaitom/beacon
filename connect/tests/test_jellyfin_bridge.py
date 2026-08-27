@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from core import radio_stations
@@ -988,3 +989,268 @@ def test_create_playlist_without_id_still_creates_one(client, jellyfin_session, 
     method, url, _params, json_body = calls[0]
     assert (method, json_body["Name"]) == ("POST", "Fresh")
     assert url.endswith("/Playlists")
+
+
+def test_get_lyrics_returns_the_files_own_synced_lyrics(client, jellyfin_session, monkeypatch):
+    """Jellyfin times lyric lines in ticks from the start of the track; the
+    Subsonic extension the frontend speaks wants milliseconds."""
+    fake_client, _calls = _fake_jf_client(
+        {
+            "/Audio/song-1/Lyrics": {
+                "Metadata": {"IsSynced": True},
+                "Lyrics": [
+                    {"Start": 0, "Text": "First line"},
+                    {"Start": 12_300_000, "Text": "Second line"},
+                ],
+            }
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getLyricsBySongId.view?id=song-1")
+    assert r.status_code == 200
+    lyrics = r.json()["subsonic-response"]["lyricsList"]["structuredLyrics"]
+    assert len(lyrics) == 1
+    assert lyrics[0]["synced"] is True
+    assert lyrics[0]["line"] == [
+        {"start": 0, "value": "First line"},
+        {"start": 1230, "value": "Second line"},
+    ]
+
+
+def test_get_lyrics_marks_untimed_lyrics_as_unsynced(client, jellyfin_session, monkeypatch):
+    fake_client, _calls = _fake_jf_client(
+        {
+            "/Audio/song-1/Lyrics": {
+                "Metadata": {"IsSynced": False},
+                "Lyrics": [{"Text": "Just words"}],
+            }
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getLyricsBySongId.view?id=song-1")
+    lyrics = r.json()["subsonic-response"]["lyricsList"]["structuredLyrics"]
+    assert lyrics[0]["synced"] is False
+    # No start key at all rather than a made-up 0, which would read as
+    # "every line begins at the top of the track".
+    assert lyrics[0]["line"] == [{"value": "Just words"}]
+
+
+def test_get_lyrics_treats_a_track_without_lyrics_as_an_empty_answer(
+    client, jellyfin_session, monkeypatch
+):
+    """Jellyfin answers 404 for a track with no lyrics — the common case,
+    not a failure. Surfacing it as an error would log a warning per track
+    played, for nothing."""
+    fake_client, _calls = _fake_jf_client()
+    original_request = fake_client.request
+
+    async def not_found(method, url, headers=None, params=None, json=None):
+        response = await original_request(method, url, headers=headers, params=params, json=json)
+        if url.endswith("/Lyrics"):
+            response.status_code = 404
+            request = httpx.Request(method, url)
+            response.raise_for_status = MagicMock(
+                side_effect=httpx.HTTPStatusError(
+                    "404", request=request, response=httpx.Response(404, request=request)
+                )
+            )
+        return response
+
+    fake_client.request = not_found
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getLyricsBySongId.view?id=song-1")
+    assert r.status_code == 200
+    body = r.json()["subsonic-response"]
+    assert body["status"] == "ok"
+    assert body["lyricsList"] == {}
+
+
+def test_get_lyrics_drops_the_terminator_line_an_id3_tag_leaves_behind(
+    client, jellyfin_session, monkeypatch
+):
+    """Reading lyrics out of a file's tags leaves Jellyfin's last line as a
+    lone NUL byte, and it reports no Metadata at all for them — both seen
+    live (2026-08-27). The line would otherwise show up as a blank the
+    lyric view scrolls to and sits on, and the missing metadata must not
+    make timed lyrics look untimed."""
+    fake_client, _calls = _fake_jf_client(
+        {
+            "/Audio/song-1/Lyrics": {
+                "Metadata": {},
+                "Lyrics": [
+                    {"Start": 130_000_000, "Text": "Common love isn't for us"},
+                    {"Start": 1_878_600_000, "Text": "\x00"},
+                ],
+            }
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getLyricsBySongId.view?id=song-1")
+    lyrics = r.json()["subsonic-response"]["lyricsList"]["structuredLyrics"]
+    assert lyrics[0]["synced"] is True
+    # The byte is gone; its line stays, because a timed line with no text
+    # is how LRC ends the previous line's highlight.
+    assert lyrics[0]["line"] == [
+        {"start": 13000, "value": "Common love isn't for us"},
+        {"start": 187860, "value": ""},
+    ]
+
+
+def test_get_lyrics_is_empty_when_every_line_turns_out_blank(
+    client, jellyfin_session, monkeypatch
+):
+    fake_client, _calls = _fake_jf_client(
+        {"/Audio/song-1/Lyrics": {"Lyrics": [{"Start": 0, "Text": "\x00"}]}}
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getLyricsBySongId.view?id=song-1")
+    assert r.json()["subsonic-response"]["lyricsList"] == {}
+
+
+# A server's libraries as Jellyfin reports them — music is one of several,
+# which is the whole point of the tests below.
+_LIBRARIES = [
+    {"CollectionType": "movies", "ItemId": "lib-movies", "Name": "Filme"},
+    {"CollectionType": "music", "ItemId": "lib-music", "Name": "Musik", "RefreshStatus": "Idle"},
+    {"CollectionType": "tvshows", "ItemId": "lib-tv", "Name": "Serien"},
+]
+
+
+def test_start_scan_refreshes_music_libraries_only(client, jellyfin_session, monkeypatch):
+    """A server almost always holds films and series too. Jellyfin's own
+    "scan everything" call would drag all of them through a scan because
+    someone pressed a button in a music app."""
+    fake_client, calls = _fake_jf_client({"/Library/VirtualFolders": _LIBRARIES})
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/startScan.view")
+    assert r.json()["subsonic-response"]["scanStatus"] == {"scanning": True}
+
+    refreshes = [c[1] for c in calls if c[0] == "POST" and c[1].endswith("/Refresh")]
+    assert refreshes == ["http://jf:8096/Items/lib-music/Refresh"]
+    assert not any("/Library/Refresh" in c[1] for c in calls), "must not scan the whole server"
+
+
+def test_start_scan_covers_every_music_library(client, jellyfin_session, monkeypatch):
+    fake_client, calls = _fake_jf_client(
+        {
+            "/Library/VirtualFolders": [
+                {"CollectionType": "music", "ItemId": "lib-a"},
+                {"CollectionType": "music", "ItemId": "lib-b"},
+            ]
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    client.get("/rest/startScan.view")
+
+    refreshes = sorted(c[1] for c in calls if c[0] == "POST" and c[1].endswith("/Refresh"))
+    assert refreshes == [
+        "http://jf:8096/Items/lib-a/Refresh",
+        "http://jf:8096/Items/lib-b/Refresh",
+    ]
+
+
+def test_start_scan_says_so_when_there_is_no_music_library(
+    client, jellyfin_session, monkeypatch
+):
+    fake_client, _calls = _fake_jf_client(
+        {"/Library/VirtualFolders": [{"CollectionType": "movies", "ItemId": "lib-movies"}]}
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    body = client.get("/rest/startScan.view").json()["subsonic-response"]
+    assert body["status"] == "failed"
+    assert "music library" in body["error"]["message"]
+
+
+def test_scan_status_reads_the_music_librarys_own_progress(
+    client, jellyfin_session, monkeypatch
+):
+    fake_client, _calls = _fake_jf_client(
+        {
+            "/Library/VirtualFolders": [
+                {"CollectionType": "movies", "ItemId": "lib-movies", "RefreshStatus": "Active"},
+                {
+                    "CollectionType": "music",
+                    "ItemId": "lib-music",
+                    "RefreshStatus": "Active",
+                    "RefreshProgress": 33.6,
+                },
+            ]
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    status = client.get("/rest/getScanStatus.view").json()["subsonic-response"]["scanStatus"]
+    assert status["scanning"] is True
+    # A percentage, since Jellyfin has no count of processed items — and
+    # rounded, because a button reading "33.6%" is noise.
+    assert status["progress"] == 34
+    assert "count" not in status
+
+
+def test_scan_status_averages_across_several_music_libraries(
+    client, jellyfin_session, monkeypatch
+):
+    # Two libraries, one finished: halfway, not done.
+    fake_client, _calls = _fake_jf_client(
+        {
+            "/Library/VirtualFolders": [
+                {"CollectionType": "music", "ItemId": "a", "RefreshStatus": "Idle", "RefreshProgress": 100},
+                {"CollectionType": "music", "ItemId": "b", "RefreshStatus": "Active", "RefreshProgress": 20},
+            ]
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    status = client.get("/rest/getScanStatus.view").json()["subsonic-response"]["scanStatus"]
+    assert status == {"scanning": True, "progress": 60}
+
+
+def test_scan_status_ignores_a_scan_of_some_other_library(
+    client, jellyfin_session, monkeypatch
+):
+    """The films library being scanned by someone else is not this scan
+    finishing — nor is it this scan running."""
+    fake_client, _calls = _fake_jf_client(
+        {
+            "/Library/VirtualFolders": [
+                {"CollectionType": "movies", "ItemId": "lib-movies", "RefreshStatus": "Active"},
+                {"CollectionType": "music", "ItemId": "lib-music", "RefreshStatus": "Idle"},
+            ]
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    status = client.get("/rest/getScanStatus.view").json()["subsonic-response"]["scanStatus"]
+    assert status == {"scanning": False}
+
+
+def test_get_user_reports_whether_the_account_may_scan(client, jellyfin_session, monkeypatch):
+    """Jellyfin has no Subsonic-style role list — what Beacon needs from
+    getUser.view is the one bit deciding whether Settings offers a library
+    rescan, and Jellyfin keeps that in the user's policy."""
+    fake_client, calls = _fake_jf_client(
+        {"/Users/Me": {"Name": "thomas", "Policy": {"IsAdministrator": True}}}
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getUser.view?username=thomas")
+    assert r.json()["subsonic-response"]["user"] == {"username": "thomas", "adminRole": True}
+    # /Users/Me, not /Users/{id}: it answers for whoever the token belongs
+    # to and needs no elevation.
+    assert calls[0][1].endswith("/Users/Me")
+
+
+def test_get_user_reports_an_ordinary_listener_as_such(client, jellyfin_session, monkeypatch):
+    fake_client, _calls = _fake_jf_client({"/Users/Me": {"Name": "rita", "Policy": {}}})
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getUser.view?username=rita")
+    assert r.json()["subsonic-response"]["user"]["adminRole"] is False

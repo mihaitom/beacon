@@ -4,7 +4,7 @@
 
 # Beacon
 
-> A self-hosted music client for Navidrome, Subsonic / OpenSubsonic, and (experimentally) Jellyfin and Plex - with built-in casting to Sonos, AirPlay, Chromecast, and DLNA/UPnP devices.
+> A self-hosted music client for Navidrome, Subsonic / OpenSubsonic, Jellyfin and Plex - with built-in casting to Sonos, AirPlay, Chromecast, and DLNA/UPnP devices.
 
 <p align="center"><sub>Yes, that's just <code>mdi-lighthouse-on</code> tinted amber. I write backend code for a living, not logos. This is as good as the branding gets.</sub></p>
 
@@ -59,7 +59,7 @@ Beacon is `connect` as the actual foundation instead of an add-on - a frontend b
 
 ## Features
 
-- **Sign in with Navidrome, Subsonic/OpenSubsonic, or (experimentally, see below) Jellyfin or Plex**, and stay signed in across restarts. The server-URL field remembers previously used servers (deletable, one by one) so switching between them is one click.
+- **Sign in with Navidrome, Subsonic/OpenSubsonic, Jellyfin or Plex** (see below for what differs per server), and stay signed in across restarts. The server-URL field remembers previously used servers (deletable, one by one) so switching between them is one click.
 - **Browse your library** - Albums, Artists, Tracks, Genres, Playlists, Favorites, and search, all with local filtering across the whole library.
 - **A proper Home** - quick access to what you've been listening to, most played tracks, recently added albums, and real recommendations: a Discover shelf seeded from artists you actually play (via MusicBrainz + ListenBrainz), plus a "New to explore" shelf of similar artists not yet in your library, complete with photos and a link out. Toggleable in Settings.
 - **A Stats page** - library and listening totals, top tracks/artists/albums/genres, format and decade breakdowns.
@@ -93,9 +93,9 @@ Beacon is `connect` as the actual foundation instead of an add-on - a frontend b
 
 They do nothing while you are typing in a field or a dialog is open, and leave a focused button or slider its own keys. The volume keys change the speaker's volume while casting to a single device, the same as the volume slider in the player bar does.
 
-### Jellyfin and Plex support (experimental)
+### Jellyfin and Plex support
 
-Jellyfin and Plex can both be selected as a server type at login. Neither has a Subsonic-compatible API of its own, so the `connect` backend translates Subsonic-shaped requests into real Jellyfin/Plex API calls on the fly (see `connect/media/jellyfin_bridge.py` and `connect/media/plex_bridge.py`) - the frontend doesn't know the difference. Features a given backend has no equivalent for (or that just aren't bridged yet) are hidden automatically rather than shown as dead-end controls. Both paths are newer and less exercised than the Navidrome/Subsonic one.
+Jellyfin and Plex can both be selected as a server type at login. Neither has a Subsonic-compatible API of its own, so the `connect` backend translates Subsonic-shaped requests into real Jellyfin/Plex API calls on the fly (see `connect/media/jellyfin_bridge.py` and `connect/media/plex_bridge.py`) - the frontend doesn't know the difference. Features a given backend has no equivalent for (or that just aren't bridged yet) are hidden automatically rather than shown as dead-end controls. Both paths are newer and less exercised than the Navidrome/Subsonic one, and a couple of things genuinely work differently there - the table below says which. Besides the usual unit tests, which can only check the bridges against Beacon's own understanding of the foreign API, there is a suite that runs them against real servers (`connect/tests/test_bridges_live.py`, excluded from the default test run): playlist creation, reordering, renaming and track add/remove, favorites, the browsing response shapes, library scans and lyrics - against Navidrome as well, since the assumptions Beacon makes about it are just as worth checking. It creates only throwaway playlists and deletes them again. What it does not cover yet is cover art and audio streaming, which take a different code path.
 
 | Feature                                          | Navidrome / Subsonic | Jellyfin | Plex  |
 | ------------------------------------------------- | :-------------------: | :------: | :--------: |
@@ -105,8 +105,13 @@ Jellyfin and Plex can both be selected as a server type at login. Neither has a 
 | Favorites (heart icon)                            |           ✅           |    ✅    |   ❌      |
 | Personal 1-5 star rating                          |           ✅           |    ❌    |   ✅      |
 | Song/Artist Radio and Autoplay                    |           ✅           |    ✅    | ✅ (needs an active Plex Pass) |
-| Create playlists                                  |           ✅           |    ✅    |   ✅      |
-| Trigger a library rescan from Settings            |           ✅           |    ❌    |   ❌      |
+| Create playlists, add/remove/reorder tracks       |           ✅           |    ✅    |   ✅      |
+| Lyrics stored with the file (tags or .lrc)        |           ✅           |    ✅    | ✅ (.lrc only) |
+| Trigger a library rescan from Settings            |     ✅ (admins)     | ✅ (admins) | ✅ (owner) |
+
+Lyrics are a two-step lookup everywhere: whatever is stored with the audio file itself comes first (it belongs to that exact recording), and only if there is none does Beacon search its own third-party providers - so lyrics work on all three, this row is only about the first step. Jellyfin serves the file's own lyrics to any signed-in user, from the tags or from an .lrc next to the track. Plex only reads the .lrc: a `USLT` tag that Navidrome and Jellyfin both pick up produces no lyrics there at all, verified against a live server. Where Plex finds nothing, the third-party lookup takes over exactly as it would for an untagged track.
+
+A library rescan is administrator-only on every server Beacon speaks to - Navidrome marks `startScan` as such in its own route table, Jellyfin's API requires elevation, and Plex's section refresh is owner-only. Beacon asks the server which kind of account is signed in (Subsonic's `getUser.view`, which the two bridges answer by translating it into Jellyfin's user policy and Plex's owner-only settings endpoint) and only offers the button to an administrator; a server that doesn't answer at all leaves it visible rather than hiding something that might have worked. What the button then reports differs: Navidrome counts the tracks it has processed, while Jellyfin and Plex only know a percentage, so that is what gets shown for them.
 
 Song/Artist Radio and Autoplay on Plex are bridged onto Plex's own Sonic Analysis feature (`/library/metadata/{id}/nearest`, the same thing "Play Similar Tracks" uses in every official Plex client) - but Sonic Analysis itself is a Plex Pass-gated feature server-side, confirmed against Plex's own support docs. Without an active Plex Pass, the buttons and the Autoplay toggle are still there, they just quietly return nothing instead of a real mix. Favorites is the one genuine dead end: Plex's core Media Server API has no separate boolean favorite at all - the heart-shaped "Love" seen in Plexamp/mobile is backed by a different, Plex Pass cloud sync API this bridge doesn't talk to, and personal ratings already cover the "mark this" use case for Plex instead.
 
@@ -161,7 +166,7 @@ That's it - Beacon asks for your server URL, username, and password on first lau
 
 ### Requirements
 
-- Navidrome, a Subsonic/OpenSubsonic-compatible server, or Jellyfin/Plex (experimental - see above)
+- Navidrome, a Subsonic/OpenSubsonic-compatible server, or Jellyfin/Plex (see above for what differs)
 - Sonos, AirPlay, Chromecast, and/or DLNA/UPnP devices on the same network as the Docker host, if you want to cast
 - Docker host on Linux (host networking is Linux-only)
 
@@ -234,7 +239,7 @@ Settings -> Playback can cap that choice, and can also apply it to Beacon's own 
 
 ### Why can Beacon feel slower with Jellyfin?
 
-Navidrome/Subsonic is the primary, most-exercised backend. Jellyfin has no Subsonic-compatible API of its own, so `connect` translates every request on the fly into real Jellyfin API calls (see `connect/media/jellyfin_bridge.py`) - and Jellyfin's own API just isn't as optimized for this access pattern as Navidrome's. That combination means library loads and scans can take noticeably longer, especially on a large library (a full track-catalog fetch can take minutes rather than seconds). This is inherent to Jellyfin/the bridge, not something Beacon's UI does differently per backend - see "Jellyfin and Plex support (experimental)" above.
+Navidrome/Subsonic is the primary, most-exercised backend. Jellyfin has no Subsonic-compatible API of its own, so `connect` translates every request on the fly into real Jellyfin API calls (see `connect/media/jellyfin_bridge.py`) - and Jellyfin's own API just isn't as optimized for this access pattern as Navidrome's. That combination means library loads and scans can take noticeably longer, especially on a large library (a full track-catalog fetch can take minutes rather than seconds). This is inherent to Jellyfin/the bridge, not something Beacon's UI does differently per backend - see "Jellyfin and Plex support" above.
 
 ### No devices found
 

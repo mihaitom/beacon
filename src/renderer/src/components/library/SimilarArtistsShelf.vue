@@ -11,8 +11,24 @@
    - (Deezer, or MusicBrainz as a fallback) on the artist's behalf.
    - window.open() is intercepted by main/index.ts's setWindowOpenHandler ->
    - shell.openExternal, same as ServerLoginView.vue's Plex sign-in link. -->
-  <card-shelf v-if="artists.length" :title="title">
-    <div v-for="artist in artists" :key="artist.mbid" class="similar-artists-card">
+  <card-shelf v-if="artists.length || loading" :title="title">
+    <!-- Passed straight through to CardShelf's own header slot: this shelf
+     - is filled by the same request that fills the Discover one (see
+     - HomeView.vue's discoverFromSimilarArtists), so the control for
+     - asking again belongs beside both of them, not just beside one. -->
+    <template #action><slot name="action" /></template>
+    <!-- Placeholder cards matching the real ones' shape, so asking for a
+     - different set doesn't collapse the shelf to nothing and push the rest
+     - of the page up while the lookup runs — the same reason AlbumShelf.vue
+     - has its own. -->
+    <template v-if="loading">
+      <div v-for="n in SKELETON_COUNT" :key="`skeleton-${n}`" class="similar-artists-card">
+        <v-skeleton-loader type="image" width="160" height="160" class="rounded" />
+        <v-skeleton-loader type="text" width="80%" height="20" class="mt-2" />
+        <v-skeleton-loader type="text" width="45%" height="16" />
+      </div>
+    </template>
+    <div v-for="artist in loading ? [] : artists" :key="artist.mbid" class="similar-artists-card">
       <cover-art
         :image-url="artist.imageUrl"
         :size="160"
@@ -62,13 +78,25 @@ export interface SimilarArtistDisplay extends SimilarArtist {
   links: Partial<Record<ExternalLinkKey, string>>
 }
 
+// Enough to fill a row on a normal window without measuring anything —
+// the shelf scrolls horizontally, so overshooting costs nothing but a few
+// placeholders scrolled off the right edge.
+const SKELETON_COUNT = 8
+
 export default {
   name: 'SimilarArtistsShelf',
   components: { CoverArt, CardShelf },
+  computed: {
+    SKELETON_COUNT: () => SKELETON_COUNT,
+  },
   props: {
     title: {
       type: String,
       required: true,
+    },
+    loading: {
+      type: Boolean,
+      default: false,
     },
     artists: {
       type: Array as PropType<SimilarArtistDisplay[]>,

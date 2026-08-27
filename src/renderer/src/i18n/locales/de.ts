@@ -155,6 +155,7 @@ export default {
     toggleFullscreen: 'Vollbild umschalten',
   },
   lyrics: {
+    resumeAutoscroll: 'Wieder dem Song folgen',
     title: 'Songtext',
     notFound: 'Kein Songtext für diesen Song gefunden.',
     seekHere: 'Zu dieser Zeile springen',
@@ -269,6 +270,8 @@ export default {
     libraryScanHint: 'Navidrome nach neuen, geänderten oder entfernten Dateien durchsuchen lassen.',
     rescanLibrary: 'Bibliothek neu scannen',
     scanning: 'Scan läuft … ({count})',
+    scanningPercent: 'Scan l\u00e4uft \u2026 ({percent}%)',
+    scanningPlain: 'Scan l\u00e4uft \u2026',
     scanComplete: 'Scan abgeschlossen — {count} Titel verarbeitet.',
     scanFailed: 'Scan konnte nicht gestartet werden.',
     libraryRefreshHint:

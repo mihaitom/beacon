@@ -11,7 +11,15 @@ from typing import Any
 from fastapi import APIRouter, Depends
 
 from core.auth import require_token
-from lyrics import LyricSource, lrclib, netease, order_search_results, simpmusic
+from lyrics import (
+    LyricSource,
+    artist_matches,
+    has_sung_lines,
+    lrclib,
+    netease,
+    order_search_results,
+    simpmusic,
+)
 
 logger = logging.getLogger("connect.lyrics")
 router = APIRouter(prefix="/lyrics", dependencies=[Depends(require_token)])
@@ -106,39 +114,66 @@ async def auto(
         logger.info(f"[auto] name={name!r} artist={artist!r} -> no search results")
         return None
 
-    best = order_search_results(params, all_results)[0]
-    if best["score"] > MATCH_THRESHOLD:
+    ranked = order_search_results(params, all_results)
+    # The first candidate whose *name* is close enough, not simply the
+    # first one: ranking leads with the recording's length now (see
+    # order_search_results), so the top entry can be one that matches this
+    # exact edit while being titled differently enough to fail the
+    # threshold — in which case the next one down may still be a perfectly
+    # good match. Checking only the top entry used to throw the whole
+    # search away in that case.
+    best = next((r for r in ranked if r["score"] <= MATCH_THRESHOLD), None)
+    if best is None:
+        closest = min(ranked, key=lambda r: r["score"])
         logger.info(
             f"[auto] name={name!r} artist={artist!r} -> best match "
-            f"{best['name']!r}/{best['artist']!r} match={(1 - best['score']) * 100:.0f}% "
+            f"{closest['name']!r}/{closest['artist']!r} match={(1 - closest['score']) * 100:.0f}% "
             f"below threshold {(1 - MATCH_THRESHOLD) * 100:.0f}%, discarding"
         )
         return None
 
-    source = LyricSource(best["source"])
-    try:
-        lyrics = await GET_FETCHERS[source](best["id"])
-    except Exception as e:
-        logger.warning(f"[auto] fetch {source}: {e}")
-        return None
+    # Walks down the acceptable candidates rather than standing or falling
+    # with the first: a match can be the right song and still come back
+    # with no usable words — an empty body, or a "lyric sheet" that is
+    # nothing but the songwriter credits (see has_sung_lines). Those are
+    # skipped in favour of the next candidate, which may well be the same
+    # song from a different source.
+    for candidate in ranked:
+        if candidate["score"] > MATCH_THRESHOLD:
+            break
+        # Checked separately from the score, which is lenient enough to let
+        # a different act through on a similar title — see artist_matches().
+        if not artist_matches(artist, candidate.get("artist")):
+            logger.info(f"[auto] {candidate['name']!r} by {candidate.get('artist')!r}: other artist, next")
+            continue
+        source = LyricSource(candidate["source"])
+        try:
+            lyrics = await GET_FETCHERS[source](candidate["id"])
+        except Exception as e:
+            logger.warning(f"[auto] fetch {source}: {e}")
+            continue
 
-    if not lyrics:
+        if not lyrics:
+            logger.info(f"[auto] {candidate['name']!r} from {source}: no lyrics body, next")
+            continue
+        if not has_sung_lines(lyrics):
+            logger.info(f"[auto] {candidate['name']!r} from {source}: credits only, next")
+            continue
+
         logger.info(
-            f"[auto] name={name!r} artist={artist!r} -> matched but no lyrics body from {source}"
+            f"[auto] name={name!r} artist={artist!r} -> found via {source} "
+            f"(match={(1 - candidate['score']) * 100:.0f}%)"
         )
-        return None
+        return {
+            "artist": candidate["artist"],
+            "id": candidate["id"],
+            "lyrics": lyrics,
+            "name": candidate["name"],
+            "source": candidate["source"],
+        }
 
-    logger.info(
-        f"[auto] name={name!r} artist={artist!r} -> found via {source} "
-        f"(match={(1 - best['score']) * 100:.0f}%)"
-    )
-    return {
-        "artist": best["artist"],
-        "id": best["id"],
-        "lyrics": lyrics,
-        "name": best["name"],
-        "source": best["source"],
-    }
+    logger.info(f"[auto] name={name!r} artist={artist!r} -> no candidate had usable lyrics")
+    return None
 
 
 @router.get("/by-remote-id")

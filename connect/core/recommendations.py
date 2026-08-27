@@ -13,6 +13,8 @@ starts from a plain artist *name*. Two hops:
    (labs.api.listenbrainz.org/similar-artists) takes MBIDs and returns
    community-listening-derived similar artists — no per-user account or
    auth needed at all, unlike a personalized recommendation would require.
+   Its scores are session counts, comparable only within one seed's own
+   results, which is what rank_similar() exists to deal with.
 
 A third, independent lookup (get_artist_images()) enriches whichever of
 those turn out *not* to be in the library (HomeView.vue's own job to
@@ -363,16 +365,60 @@ async def get_similar_artists(seed_names: list[str], limit: int = 30) -> list[di
         _save_cache(cache)
 
     seed_names_lower = {n.strip().lower() for n in seed_names}
+    per_seed = [
+        similar_by_mbid.get(mbid, {}).get("similar", [])
+        for mbid in seed_mbids
+    ]
+    return rank_similar(per_seed, seed_names_lower, limit)
+
+
+def rank_similar(
+    per_seed: list[list[dict]], seed_names_lower: set[str], limit: int
+) -> list[dict]:
+    """Merges one similar-artists list per seed into a single ranking.
+
+    ListenBrainz's raw score is a count of listening sessions, so it says
+    nothing comparable across seeds: measured live (2026-08-27), Queen's
+    *worst* similar artist scored 736 while Toto's *best* scored 348. Rank
+    those together as they come and the whole list belongs to whichever
+    seed is most listened-to overall — the top 10 for those two seeds were
+    ten Queen results and no Toto ones at all.
+
+    So each seed's scores are put on their own 0-1 scale first, which makes
+    "closest to this artist" mean the same thing whoever the artist is.
+    Then an artist appearing under several seeds *adds* those scores up
+    rather than keeping the best one: turning up next to two of somebody's
+    artists is a better reason to recommend them than being a near-perfect
+    match for one.
+
+    Duplicates within a single seed's own list are collapsed first —
+    ListenBrainz returns the same act more than once when MusicBrainz
+    holds several entries for it (34 of Toto's 134 results), and without
+    this those would count two or three times over."""
     merged: dict[str, dict] = {}
-    for mbid in seed_mbids:
-        for artist in similar_by_mbid.get(mbid, {}).get("similar", []):
-            name = artist.get("name")
-            if not name or name.strip().lower() in seed_names_lower:
+    for similar in per_seed:
+        best_per_name: dict[str, dict] = {}
+        for artist in similar:
+            name = (artist.get("name") or "").strip()
+            if not name or name.lower() in seed_names_lower:
                 continue
-            key = name.strip().lower()
-            existing = merged.get(key)
+            key = name.lower()
+            existing = best_per_name.get(key)
             if not existing or artist["score"] > existing["score"]:
-                merged[key] = artist
+                best_per_name[key] = artist
+        if not best_per_name:
+            continue
+
+        top = max(artist["score"] for artist in best_per_name.values()) or 1
+        for key, artist in best_per_name.items():
+            entry = merged.get(key)
+            if not entry:
+                # `score` is the merged, normalized one from here on — the
+                # raw count has served its purpose and would only invite
+                # comparing numbers that aren't comparable.
+                entry = {**artist, "score": 0.0}
+                merged[key] = entry
+            entry["score"] += artist["score"] / top
 
     ranked = sorted(merged.values(), key=lambda a: a["score"], reverse=True)
     return ranked[:limit]
