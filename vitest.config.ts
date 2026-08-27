@@ -23,6 +23,27 @@ export default defineConfig({
         // against jsdom's fake layout without checking anything real).
         exclude: ['**/node_modules/**', '**/*.browser.test.ts'],
         setupFiles: ['src/renderer/src/__tests__/setup.ts'],
+        coverage: {
+            provider: 'v8',
+            // Reported over every renderer source file, not just the ones a
+            // test happened to import — a file nothing covers has to show up
+            // as 0%, otherwise the total only describes the code that is
+            // already tested and rises as coverage gets *narrower*.
+            include: ['src/renderer/src/**/*.{ts,vue}'],
+            exclude: [
+                // Translation tables: thousands of lines of string literals
+                // that no test asserts on directly and that would swamp
+                // every other number in the report.
+                'src/renderer/src/i18n/locales/**',
+                // Type-only modules compile away to nothing executable, so
+                // v8 reports them as 0% forever regardless of use.
+                'src/renderer/src/**/types.ts',
+                // App bootstrap — runs only against a real DOM at startup.
+                'src/renderer/src/main.ts',
+            ],
+            reporter: ['text-summary', 'html'],
+            reportsDirectory: 'coverage/renderer',
+        },
         server: {
             // Vitest externalizes node_modules deps by default (Node requires
             // them directly, bypassing Vite's transform pipeline) — Vuetify's

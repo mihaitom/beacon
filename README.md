@@ -9,18 +9,11 @@
 <p align="center"><sub>Yes, that's just <code>mdi-lighthouse-on</code> tinted amber. I write backend code for a living, not logos. This is as good as the branding gets.</sub></p>
 
 <p align="center">
-  <a href="https://github.com/mihaitom/beacon/actions/workflows/test-python.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/mihaitom/beacon/test-python.yml?branch=main&style=flat-square&label=backend%20tests" alt="Backend tests">
-  </a>
-<a href="https://codecov.io/gh/mihaitom/beacon">
-    <img src="https://codecov.io/gh/mihaitom/beacon/branch/main/graph/badge.svg" alt="Backend coverage">
-  </a>
-  <a href="https://github.com/mihaitom/beacon/actions/workflows/test-frontend.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/mihaitom/beacon/test-frontend.yml?branch=main&style=flat-square&label=frontend%20tests" alt="Frontend tests">
-  </a>
-  <a href="https://github.com/mihaitom/beacon/commits/main">
-    <img src="https://img.shields.io/github/last-commit/mihaitom/beacon?style=flat-square&color=blue" alt="Last commit">
-  </a>
+  <a href="https://github.com/mihaitom/beacon/actions/workflows/test-python.yml"><img src="https://img.shields.io/github/actions/workflow/status/mihaitom/beacon/test-python.yml?branch=main&style=flat-square&label=backend%20tests" alt="Backend tests"></a>
+  <a href="https://codecov.io/gh/mihaitom/beacon"><img src="https://codecov.io/gh/mihaitom/beacon/branch/main/graph/badge.svg" alt="Backend coverage"></a>
+  <a href="https://github.com/mihaitom/beacon/actions/workflows/test-frontend.yml"><img src="https://img.shields.io/github/actions/workflow/status/mihaitom/beacon/test-frontend.yml?branch=main&style=flat-square&label=frontend%20tests" alt="Frontend tests"></a>
+  <a href="https://github.com/mihaitom/beacon/commits/main"><img src="https://img.shields.io/github/last-commit/mihaitom/beacon?style=flat-square&color=blue" alt="Last commit"></a>
+  <a href="https://github.com/mihaitom/beacon/blob/main/LICENSE"><img src="https://img.shields.io/github/license/mihaitom/beacon?style=flat-square" alt="License"></a>
 </p>
 
 > **Development note:** This project is developed with AI assistance, and is covered by an extensive automated test suite. Issue reports are welcome.
