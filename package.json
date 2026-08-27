@@ -1,6 +1,6 @@
 {
   "name": "beacon",
-  "version": "0.1.4",
+  "version": "1.0.0",
   "packageManager": "pnpm@11.5.0",
   "description": "A modern self-hosted music player with Multi-room casting support.",
   "keywords": [

@@ -1,6 +1,6 @@
 [project]
 name = "beacon-connect"
-version = "0.1.4"
+version = "1.0.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
