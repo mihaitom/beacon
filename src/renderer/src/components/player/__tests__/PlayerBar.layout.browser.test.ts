@@ -35,15 +35,12 @@
 //  - control-container was briefly given a fixed width (exactly matching
 //    CenterControls.vue's own ~212px) so SeekBar.vue's width: 100% would
 //    render pixel-identical to the transport buttons above it. That's real
-//    CSS the browser will happily do, but it was chasing a constraint the
-//    reference implementation this whole layout is modeled on (the
-//    original, React-based Feishin) never actually enforces — its own
-//    seek bar deliberately fills nearly the entire shared box while its
-//    transport buttons stay narrower and centered independently within
-//    it. control-container now does the same: it fills its whole grid
-//    track (width: 100%), and only the *box* is centered in the bar, not
-//    each row inside it individually — see ControlContainer.vue's own
-//    comment for the full reasoning.
+//    CSS the browser will happily do, but a seek bar no wider than five
+//    small icon buttons reads as broken rather than aligned, and costs
+//    real precision on a control people aim at. control-container fills
+//    its whole grid track (width: 100%) instead, with only the *box*
+//    centered in the bar, not each row inside it individually — see
+//    ControlContainer.vue's own comment for the full reasoning.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { mount, type VueWrapper } from '@vue/test-utils'

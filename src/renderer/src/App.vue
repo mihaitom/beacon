@@ -3,6 +3,7 @@
   <toast-snackbar />
   <release-notes />
   <update-toast />
+  <keyboard-shortcuts-dialog />
 </template>
 
 <script lang="ts">
@@ -12,6 +13,7 @@ import MobileLayout from '@/layouts/MobileLayout.vue'
 import ToastSnackbar from '@/components/toast.vue'
 import ReleaseNotes from '@/components/releaseNotes.vue'
 import UpdateToast from '@/components/UpdateToast.vue'
+import KeyboardShortcutsDialog from '@/components/KeyboardShortcutsDialog.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { useConnectStore } from '@/stores/connect'
@@ -19,10 +21,11 @@ import { useLibraryStore } from '@/stores/library'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useUpdateStore } from '@/stores/update'
 import { useIsMobileWeb } from '@/composables/useIsMobileWeb'
+import { initKeyboardShortcuts } from '@/services/keyboardShortcuts'
 
 export default {
   name: 'App',
-  components: { ToastSnackbar, ReleaseNotes, UpdateToast },
+  components: { ToastSnackbar, ReleaseNotes, UpdateToast, KeyboardShortcutsDialog },
   // Composition API escape hatch just for useIsMobileWeb() — everything else
   // here stays Options API, matching the rest of the renderer. Refs returned
   // from setup() auto-unwrap when read via `this` below (isMobileWeb, not
@@ -79,6 +82,9 @@ export default {
   },
   created() {
     usePlaybackStore().init()
+    // Window-level, so a shortcut works wherever focus happens to be
+    // (see resolveShortcut() for what it deliberately keeps its hands off).
+    initKeyboardShortcuts()
     // Not gated on media-server auth — same reasoning as the Remote Control
     // status refresh below, just checking GitHub instead of connect. Not
     // awaited: UpdateToast.vue/SettingsView.vue both read the store

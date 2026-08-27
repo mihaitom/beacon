@@ -904,3 +904,89 @@ def test_binary_handler_exception_returns_failed_envelope_not_500(
 
     assert r.status_code == 200
     assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+def test_create_playlist_with_id_reorders_by_moving_after_another_entry(
+    client, plex_session, monkeypatch
+):
+    """The Plex half of the same "replace the song list" call the Jellyfin
+    bridge implements — Plex places an entry by naming the one it should
+    follow rather than by index."""
+    fake_client, calls = _fake_px_client(
+        {
+            "/playlists/5001/items": {
+                "MediaContainer": {
+                    "Metadata": [
+                        {"ratingKey": "1", "playlistItemID": 11},
+                        {"ratingKey": "2", "playlistItemID": 12},
+                        {"ratingKey": "3", "playlistItemID": 13},
+                    ]
+                }
+            }
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    # Track 1 dragged to the end.
+    r = client.get("/rest/createPlaylist.view?playlistId=5001&songId=2&songId=3&songId=1")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "ok"
+
+    assert not [c for c in calls if c[0] == "DELETE"]
+    moves = [c for c in calls if c[0] == "PUT"]
+    assert len(moves) == 1
+    _method, url, params = moves[0]
+    assert url.endswith("/playlists/5001/items/11/move")
+    assert params == {"after": "13"}
+
+
+def test_create_playlist_with_id_moving_to_the_front_sends_no_anchor(
+    client, plex_session, monkeypatch
+):
+    # Plex's own way of saying "first": no `after` at all. Sending one
+    # would put the track second instead.
+    fake_client, calls = _fake_px_client(
+        {
+            "/playlists/5001/items": {
+                "MediaContainer": {
+                    "Metadata": [
+                        {"ratingKey": "1", "playlistItemID": 11},
+                        {"ratingKey": "2", "playlistItemID": 12},
+                    ]
+                }
+            }
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/createPlaylist.view?playlistId=5001&songId=2&songId=1")
+    assert r.status_code == 200
+    move = next(c for c in calls if c[0] == "PUT")
+    assert move[1].endswith("/playlists/5001/items/12/move")
+    assert move[2] == {}
+
+
+def test_create_playlist_with_id_removes_one_entry_at_a_time(client, plex_session, monkeypatch):
+    # Unlike Jellyfin, Plex has no bulk delete — one request per dropped
+    # entry.
+    fake_client, calls = _fake_px_client(
+        {
+            "/playlists/5001/items": {
+                "MediaContainer": {
+                    "Metadata": [
+                        {"ratingKey": "1", "playlistItemID": 11},
+                        {"ratingKey": "2", "playlistItemID": 12},
+                        {"ratingKey": "3", "playlistItemID": 13},
+                    ]
+                }
+            }
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/createPlaylist.view?playlistId=5001&songId=2")
+    assert r.status_code == 200
+    deleted = [c[1] for c in calls if c[0] == "DELETE"]
+    assert len(deleted) == 2
+    assert deleted[0].endswith("/playlists/5001/items/11")
+    assert deleted[1].endswith("/playlists/5001/items/13")

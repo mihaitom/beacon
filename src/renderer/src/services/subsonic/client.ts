@@ -239,6 +239,25 @@ export class SubsonicClient {
     )
   }
 
+  /** Replaces a playlist's songs with exactly this list, in this order —
+   * how reordering is done, since Subsonic has no "move entry" call of its
+   * own (updatePlaylist only appends and removes by position).
+   *
+   * createPlaylist with a playlistId is the API's own documented update
+   * form, and one request that either lands whole or not at all: Navidrome
+   * clears the track list and re-adds these ids inside a single
+   * transaction, so a failure can't leave the playlist half-emptied the
+   * way a remove-everything-then-re-add pair could. Name, visibility and
+   * comment are untouched by it. The Jellyfin/Plex bridges implement the
+   * same call by moving entries into this order (see their own
+   * create_playlist).
+   *
+   * Sends the ids the caller gives it, so callers must pass the playlist's
+   * complete list, not just the part currently on screen. */
+  async setPlaylistSongs(playlistId: string, songIds: string[]): Promise<void> {
+    await this.getMulti('createPlaylist.view', { playlistId }, { songId: songIds })
+  }
+
   async updatePlaylist(id: string, updates: { name?: string; public?: boolean }): Promise<void> {
     const params: Record<string, string> = { playlistId: id }
     if (updates.name !== undefined) params.name = updates.name

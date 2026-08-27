@@ -143,6 +143,11 @@ import { useAutoplayStore } from '@/stores/autoplay'
 import ConnectButton from '@/components/connect/ConnectButton.vue'
 import RemoteControlButton from '@/components/settings/RemoteControlButton.vue'
 import { volumeAfterWheel } from '@/services/volumeWheel'
+import {
+  knownDeviceVolume,
+  recordDeviceVolume,
+  toggleMute as toggleVolumeMute,
+} from '@/services/volumeControl'
 import type { ConnectDeviceRef } from '@/services/connect/types'
 
 export default {
@@ -169,12 +174,6 @@ export default {
       // the device itself/another session" other than asking again. Left
       // null and unused for push-capable types (see pushedDeviceVolume).
       volumePollTimer: null as ReturnType<typeof setInterval> | null,
-      // What to restore to on un-mute — captured right before muting, same
-      // pattern as DeviceListItem.vue's own onToggleMute(). Two separate
-      // fields since local volume (0-1) and device volume (0-100) are on
-      // different scales and muted independently of one another.
-      volumeBeforeMute: 1,
-      deviceVolumeBeforeMute: 50,
       // Scroll that hasn't added up to a whole volume step yet — see
       // volumeAfterWheel().
       volumeWheelCarry: 0,
@@ -248,6 +247,13 @@ export default {
       const target = this.singleActiveTarget
       return target ? this.connectStore.pushedVolumeFor(target.type, target.name) : null
     },
+    // The reading volumeControl.ts holds for this device — how a change
+    // made from the keyboard (M, the volume keys) reaches this slider
+    // without waiting for the next poll or push.
+    sharedDeviceVolume(): number | null {
+      const target = this.singleActiveTarget
+      return target ? knownDeviceVolume(target) : null
+    },
   },
   watch: {
     singleActiveTargetKey: {
@@ -278,6 +284,9 @@ export default {
     pushedDeviceVolume(value: number | null) {
       if (value != null) this.deviceVolume = value
     },
+    sharedDeviceVolume(value: number | null) {
+      if (value != null) this.deviceVolume = value
+    },
   },
   beforeUnmount() {
     clearInterval(this.volumePollTimer ?? undefined)
@@ -286,12 +295,17 @@ export default {
     async fetchDeviceVolume(target: ConnectDeviceRef) {
       const raw = await this.connectStore.getDeviceVolume(target.type, target.name)
       this.deviceVolume = raw == null ? null : Math.round(raw)
+      // Handed over so a keyboard step doesn't repeat this round trip (and
+      // so it works off a current reading rather than a stale one) — see
+      // volumeControl.ts.
+      if (this.deviceVolume != null) recordDeviceVolume(target, this.deviceVolume)
     },
     async onDeviceVolumeChange(value: number) {
       const target = this.singleActiveTarget
       if (!target) return
       const rounded = Math.round(value)
       this.deviceVolume = rounded
+      recordDeviceVolume(target, rounded)
       await this.connectStore.setDeviceVolume(target.type, target.name, rounded)
     },
     // Same branch toggleMute() makes: with exactly one cast target this
@@ -314,22 +328,13 @@ export default {
       if (target) void this.onDeviceVolumeChange(volume)
       else this.playbackStore.setVolume(volume)
     },
-    toggleMute() {
-      if (this.singleActiveTarget) {
-        if (this.deviceVolume === 0) {
-          void this.onDeviceVolumeChange(this.deviceVolumeBeforeMute || 50)
-        } else {
-          this.deviceVolumeBeforeMute = this.deviceVolume ?? 50
-          void this.onDeviceVolumeChange(0)
-        }
-        return
-      }
-      if (this.playbackStore.volume === 0) {
-        this.playbackStore.setVolume(this.volumeBeforeMute || 1)
-      } else {
-        this.volumeBeforeMute = this.playbackStore.volume
-        this.playbackStore.setVolume(0)
-      }
+    // Shared with the M shortcut rather than implemented here (see
+    // volumeControl.ts): the pre-mute volume has to be one value, or
+    // muting with the key and un-muting with this button restores
+    // something the user never set. The slider follows along through
+    // sharedDeviceVolume above.
+    async toggleMute() {
+      await toggleVolumeMute()
     },
   },
 }

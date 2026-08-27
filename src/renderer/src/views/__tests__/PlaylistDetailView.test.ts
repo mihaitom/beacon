@@ -9,6 +9,7 @@ import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import PlaylistDetailView from '../PlaylistDetailView.vue'
 import type { Playlist } from '@/types/library'
+import { makeSong } from '@/stores/__tests__/fixtures'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -50,7 +51,9 @@ async function mountView(id = 'p1') {
         // error-path test below reaches remove()'s catch block, which
         // calls this to show a toast; without a stub that's a TypeError
         // on undefined instead of the failure path actually under test.
-        mocks: { $emitter: { emit: vi.fn() } },
+        // `on`/`off` as well as emit: with songs in the playlist this
+        // also mounts real SongRows, which subscribe to it on mount.
+        mocks: { $emitter: { emit: vi.fn(), on: vi.fn(), off: vi.fn() } },
       },
     },
   )
@@ -114,6 +117,62 @@ describe('PlaylistDetailView', () => {
       // Stays put — a failed delete must not navigate away as if it worked.
       expect(vm.deleteDialog).toBe(true)
       expect(router.currentRoute.value.path).toBe('/playlists/p1')
+    })
+  })
+
+  describe('reordering songs', () => {
+    const songs = [makeSong('a'), makeSong('b'), makeSong('c')]
+
+    async function mountWithSongs() {
+      const library = useLibraryStore()
+      vi.spyOn(library, 'fetchPlaylist').mockResolvedValue(
+        makePlaylist({ songs: [...songs], songCount: songs.length }),
+      )
+      const { wrapper } = await mountView()
+      return {
+        library,
+        vm: wrapper.vm as unknown as {
+          playlist: Playlist
+          onReorder(move: { from: number; to: number }): Promise<void>
+        },
+      }
+    }
+
+    it('saves the whole new order, not just the song that moved', async () => {
+      const { library, vm } = await mountWithSongs()
+      const reorderSpy = vi.spyOn(library, 'reorderPlaylist').mockResolvedValue()
+
+      await vm.onReorder({ from: 0, to: 2 })
+
+      expect(reorderSpy).toHaveBeenCalledWith('p1', ['b', 'c', 'a'])
+    })
+
+    it('moves the row immediately rather than after the round trip', async () => {
+      const { library, vm } = await mountWithSongs()
+      let resolveSave: () => void = () => {}
+      vi.spyOn(library, 'reorderPlaylist').mockReturnValue(
+        new Promise<void>((resolve) => {
+          resolveSave = resolve
+        }),
+      )
+
+      const saving = vm.onReorder({ from: 2, to: 0 })
+      // Still in flight — a drag that only takes effect once the server
+      // answers reads as a drag that didn't take.
+      expect(vm.playlist.songs.map((song) => song.id)).toEqual(['c', 'a', 'b'])
+
+      resolveSave()
+      await saving
+      expect(vm.playlist.songs.map((song) => song.id)).toEqual(['c', 'a', 'b'])
+    })
+
+    it('puts the song back and says so when the save fails', async () => {
+      const { library, vm } = await mountWithSongs()
+      vi.spyOn(library, 'reorderPlaylist').mockRejectedValue(new Error('network error'))
+
+      await vm.onReorder({ from: 0, to: 2 })
+
+      expect(vm.playlist.songs.map((song) => song.id)).toEqual(['a', 'b', 'c'])
     })
   })
 })

@@ -62,18 +62,22 @@ describe('PlayerToolbar', () => {
   })
 
   describe('mute/volume (local playback)', () => {
-    it('mutes to 0 and restores the previous volume on toggle', () => {
+    // Awaited because the mute itself lives in volumeControl.ts now (shared
+    // with the M shortcut, so both remember the same pre-mute volume), and
+    // reading the current volume there can involve a round trip to a cast
+    // device.
+    it('mutes to 0 and restores the previous volume on toggle', async () => {
       const wrapper = mountToolbar()
       const playback = usePlaybackStore()
       const setVolumeSpy = vi.spyOn(playback, 'setVolume')
       playback.volume = 0.6
 
-      const vm = wrapper.vm as unknown as { toggleMute(): void }
-      vm.toggleMute()
+      const vm = wrapper.vm as unknown as { toggleMute(): Promise<void> }
+      await vm.toggleMute()
       expect(setVolumeSpy).toHaveBeenLastCalledWith(0)
 
       playback.volume = 0
-      vm.toggleMute()
+      await vm.toggleMute()
       expect(setVolumeSpy).toHaveBeenLastCalledWith(0.6)
     })
 

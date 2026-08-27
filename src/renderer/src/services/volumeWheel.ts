@@ -5,8 +5,10 @@
 
 /** One step moves the volume by 5% of the slider's own range, whichever
  * scale it happens to be on — 0-1 for local playback, 0-100 for a cast
- * device. */
-const STEP_FRACTION = 0.05
+ * device. Exported so the keyboard shortcuts (see volumeControl.ts) move by
+ * exactly as much as one wheel notch does rather than picking their own
+ * step size. */
+export const STEP_FRACTION = 0.05
 
 /** How much scrolling has to add up before it counts as a step. One notch
  * of a real mouse wheel clears this on its own (browsers report anywhere

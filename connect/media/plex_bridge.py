@@ -67,6 +67,8 @@ from .base import (
     create_internet_radio_station,
     delete_internet_radio_station,
     get_internet_radio_stations,
+    match_entries_to_song_ids,
+    reorder_moves,
     subsonic_envelope,
     subsonic_error,
     update_internet_radio_station,
@@ -561,6 +563,13 @@ def _playlist_item_uri(media: PlexClient, song_ids: list[str]) -> str:
 
 async def create_playlist(params, media: PlexClient) -> dict:
     song_ids = params.getlist("songId")
+    # With a playlistId this is Subsonic's own "update" form of the call —
+    # the playlist's songs become exactly this list, in this order (see
+    # client.ts's setPlaylistSongs).
+    playlist_id = params.get("playlistId")
+    if playlist_id:
+        await _set_playlist_songs(playlist_id, song_ids, media)
+        return {}
     if not song_ids:
         # Unlike Jellyfin, Plex's playlist-creation endpoint has no
         # "empty playlist" form — it always needs a starting uri of at
@@ -578,6 +587,60 @@ async def create_playlist(params, media: PlexClient) -> dict:
         },
     )
     return {}
+
+
+async def _playlist_entries(playlist_id: str, media: PlexClient) -> list[tuple[str, str]]:
+    """(playlistItemID, song id) per entry, in playlist order — the same
+    two-id shape jellyfin_bridge.py's own _playlist_entries returns, and for
+    the same reason: only the per-entry id addresses one specific copy of a
+    song that appears twice."""
+    items = await _px_get(media, f"/playlists/{_quote_id(playlist_id)}/items")
+    entries = items.get("MediaContainer", {}).get("Metadata", [])
+    return [
+        (str(entry["playlistItemID"]), str(entry.get("ratingKey", "")))
+        for entry in entries
+        if entry.get("playlistItemID") is not None
+    ]
+
+
+async def _set_playlist_songs(playlist_id: str, song_ids: list[str], media: PlexClient) -> None:
+    """Makes the playlist hold exactly `song_ids`, in that order — see
+    jellyfin_bridge.py's own _set_playlist_songs for the shape of this;
+    only the calls differ. Plex moves an entry by naming the entry it should
+    follow, so a move to the front sends no `after` at all."""
+    entries = await _playlist_entries(playlist_id, media)
+    matched = match_entries_to_song_ids([song_id for _, song_id in entries], song_ids)
+
+    keep = {entries[position][0] for position in matched if position is not None}
+    stale = [entry_id for entry_id, _ in entries if entry_id not in keep]
+    missing = [
+        song_id for song_id, position in zip(song_ids, matched, strict=True) if position is None
+    ]
+    for entry_id in stale:
+        # No bulk delete here, unlike Jellyfin — one request per entry.
+        await _px_request(
+            "DELETE",
+            media,
+            f"/playlists/{_quote_id(playlist_id)}/items/{_quote_id(entry_id)}",
+        )
+    if missing:
+        await _add_to_playlist(playlist_id, missing, media)
+    if stale or missing:
+        entries = await _playlist_entries(playlist_id, media)
+        matched = match_entries_to_song_ids([song_id for _, song_id in entries], song_ids)
+
+    current = [entry_id for entry_id, _ in entries]
+    target = [entries[position][0] for position in matched if position is not None]
+    for entry_id, _index, after in reorder_moves(current, target):
+        # No `after` at all means "move to the front" — Plex's own way of
+        # saying it.
+        params = {} if after is None else {"after": after}
+        await _px_request(
+            "PUT",
+            media,
+            f"/playlists/{_quote_id(playlist_id)}/items/{_quote_id(entry_id)}/move",
+            params=params,
+        )
 
 
 async def _add_to_playlist(playlist_id: str, song_ids: list[str], media: PlexClient) -> None:

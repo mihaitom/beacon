@@ -65,6 +65,7 @@ Beacon is `connect` as the actual foundation instead of an add-on - a frontend b
 - **A Stats page** - library and listening totals, top tracks/artists/albums/genres, format and decade breakdowns.
 - **Local playback** - queue, shuffle, repeat, seek, volume, multiselect (bulk queue/playlist actions), starring and rating tracks, ReplayGain (track/album gain), synced/unsynced lyrics, a fullscreen Now Playing view, and a real-time frequency visualizer (local playback and casting alike).
 - **Casting to Sonos, AirPlay, Chromecast, and DLNA devices** - including casting to several at once, taking over a device someone else is using (with a confirmation prompt), and per-device volume control. AirPlay 2 pairing is handled for devices that require it (HomePods, Apple TVs). Casting auto-advances through the queue server-side, so it keeps going even if the controlling window is asleep or a phone's screen is locked.
+- **Playlists** - create them (including straight from the current queue), rename, add and remove tracks, and drag tracks into a different order in your own playlists.
 - **Multi-user** - different logins on the same deployment each get independent playback to independent devices at the same time.
 - **Remote Control** - pair a phone to the desktop app over the LAN via QR code or PIN, no app install needed, and control local playback (Now Playing, Queue, Playlists, Tracks, Radio) from it. Electron only - see below.
 - **A responsive mobile web UI** - open the Docker/web deployment directly on a phone's browser and it _is_ the player, no pairing needed.
@@ -73,6 +74,24 @@ Beacon is `connect` as the actual foundation instead of an add-on - a frontend b
 - **Adjustable backend log level** (Trace/Debug/Info/Warning/Error) from Settings, in effect immediately, no restart needed - Debug covers Beacon's own code, Trace also turns on the third-party libraries underneath it (SoCo, pyatv, HTTP clients) for SOAP/HTTP-level detail. `LOG_LEVEL` is the env var fallback for a deployment that never comes up far enough to reach Settings.
 - **Update notifications** - a dismissable/snoozable toast when a new release is out; auto-downloads in the background on Electron, links to the release on the web build.
 - **German, English, Spanish, French, and Italian UI**, detected automatically and switchable anytime in Settings.
+
+### Keyboard shortcuts
+
+| Key | Action |
+| --- | --- |
+| `Space` / `K` | Play / pause |
+| `←` / `→` | Back / forward 5 seconds |
+| `Ctrl` + `←` / `→` | Previous / next track (`Cmd` on macOS) |
+| `↑` / `↓` | Volume up / down |
+| `M` | Mute |
+| `S` | Toggle shuffle |
+| `R` | Cycle repeat mode |
+| `F` | Favorite the current track |
+| `Q` | Show / hide the queue |
+| `0` - `9` | Jump to 0-90% of the track |
+| `?` | Show this list in the app |
+
+They do nothing while you are typing in a field or a dialog is open, and leave a focused button or slider its own keys. The volume keys change the speaker's volume while casting to a single device, the same as the volume slider in the player bar does.
 
 ### Jellyfin and Plex support (experimental)
 

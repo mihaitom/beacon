@@ -109,10 +109,12 @@ const LOAD_SETTLE_MS = 150
 // bursts that now end the moment the scroll moves on, and fills a large
 // grid in half the time six did.
 //
-// For comparison: feishin-connect, which has run through the same kind of
-// proxy without ever producing this, caps nothing at all - it relies purely
-// on the viewport gate and cancellation. This limit is cheap insurance on
-// top of those, not the load-bearing part.
+// The limit is cheap insurance, not the load-bearing part: the viewport
+// gate and the cancellation below are what actually keep the request count
+// down, and a client that only ever fetches covers it is about to show,
+// and stops fetching the moment it isn't, stays well clear of the ceiling
+// on its own. This only bounds what a burst can do before those two take
+// effect.
 export const MAX_CONCURRENT_LOADS = 12
 let inFlight = 0
 const waiting: Array<() => void> = []

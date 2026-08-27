@@ -653,6 +653,17 @@ export const useLibraryStore = defineStore('library', {
       })
     },
 
+    /** Persists a new song order (see the client's setPlaylistSongs()).
+     * Deliberately outside withLoading(): the view has already moved the
+     * row and reverts it itself if this throws, so flipping the shared
+     * loading flag would only make the page it's on flash a loader over a
+     * change that's already visible. Nothing cached needs updating either
+     * — reordering changes neither songCount nor duration, and the songs
+     * themselves are fetched fresh per visit (fetchPlaylist()). */
+    async reorderPlaylist(playlistId: string, songIds: string[]): Promise<void> {
+      await this.client().setPlaylistSongs(playlistId, songIds)
+    },
+
     async updatePlaylist(id: string, updates: { name?: string; public?: boolean }): Promise<void> {
       await this.withLoading(async () => {
         await this.client().updatePlaylist(id, updates)

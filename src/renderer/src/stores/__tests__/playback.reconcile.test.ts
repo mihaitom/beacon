@@ -144,6 +144,53 @@ describe('reconcileFromStatus / adoptCastQueue', () => {
       })
     })
 
+    it("keeps the station's homepage by matching the library, so its logo survives", async () => {
+      // The status carries only a title and a stream URL. Rebuilding the
+      // station from those alone drops the homepage the logo is looked up
+      // from (see radioFaviconUrl), leaving the player bar and Now Playing
+      // on the generic radio icon for the rest of the session.
+      const playback = usePlaybackStore()
+      const library = useLibraryStore()
+      library.radioStations = [
+        {
+          id: 'r1',
+          name: 'Chill FM',
+          streamUrl: 'https://stream.example/chill',
+          homePageUrl: 'https://chill.example',
+        },
+      ]
+
+      await playback.reconcileFromStatus(
+        makeStatus({ radio: { title: 'Chill FM', url: 'https://stream.example/chill' } }),
+      )
+
+      expect(playback.radioStation).toEqual(library.radioStations[0])
+    })
+
+    it('still matches by name when the reported URL is not the stored one', async () => {
+      // A redirect resolved server-side means connect reports the URL it
+      // actually streams from, not the one the station is saved with.
+      const playback = usePlaybackStore()
+      const library = useLibraryStore()
+      library.radioStations = [
+        {
+          id: 'r1',
+          name: 'Chill FM',
+          streamUrl: 'https://stream.example/chill',
+          homePageUrl: 'https://chill.example',
+        },
+      ]
+
+      await playback.reconcileFromStatus(
+        makeStatus({ radio: { title: 'Chill FM', url: 'https://edge7.example/chill.mp3' } }),
+      )
+
+      expect(playback.radioStation?.homePageUrl).toBe('https://chill.example')
+      // The URL actually playing, not the stored one — that's what the
+      // next tick is compared against.
+      expect(playback.radioStation?.streamUrl).toBe('https://edge7.example/chill.mp3')
+    })
+
     it('leaves radioStation untouched (same object) when the same station repeats on the next tick', async () => {
       const playback = usePlaybackStore()
       const status = makeStatus({

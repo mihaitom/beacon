@@ -63,6 +63,9 @@
           :show-play-count="showPlayCount"
           :show-format="showFormat"
           :selection-mode="selectionMode"
+          :reorderable="canReorder"
+          :drag-over-position="dragOverPosition(row.index)"
+          :dragging="dragIndex === row.index"
           :selected="selectedRowKeys.has(row.index)"
           :selected-count="selectedRowKeys.size"
           @play="playSong"
@@ -74,6 +77,11 @@
           @add-to-playlist="addToPlaylist"
           @create-playlist="openCreatePlaylistDialog"
           @toggle-select="toggleSelect"
+          @dragstart="onRowDragStart"
+          @dragover="onRowDragOver"
+          @dragleave="onRowDragLeave"
+          @drop="onRowDrop"
+          @dragend="onRowDragEnd"
         />
       </template>
     </template>
@@ -106,6 +114,9 @@
           :show-play-count="showPlayCount"
           :show-format="showFormat"
           :selection-mode="selectionMode"
+          :reorderable="canReorder"
+          :drag-over-position="dragOverPosition(index)"
+          :dragging="dragIndex === index"
           :selected="selectedRowKeys.has(index)"
           :selected-count="selectedRowKeys.size"
           @play="playSong"
@@ -117,6 +128,11 @@
           @add-to-playlist="addToPlaylist"
           @create-playlist="openCreatePlaylistDialog"
           @toggle-select="toggleSelect"
+          @dragstart="onRowDragStart"
+          @dragover="onRowDragOver"
+          @dragleave="onRowDragLeave"
+          @drop="onRowDrop"
+          @dragend="onRowDragEnd"
         />
       </template>
     </v-virtual-scroll>
@@ -134,6 +150,9 @@
         :show-play-count="showPlayCount"
         :show-format="showFormat"
         :selection-mode="selectionMode"
+        :reorderable="canReorder"
+        :drag-over-position="dragOverPosition(index)"
+        :dragging="dragIndex === index"
         :selected="selectedRowKeys.has(index)"
         :selected-count="selectedRowKeys.size"
         @play="playSong"
@@ -145,6 +164,11 @@
         @add-to-playlist="addToPlaylist"
         @create-playlist="openCreatePlaylistDialog"
         @toggle-select="toggleSelect"
+        @dragstart="onRowDragStart"
+        @dragover="onRowDragOver"
+        @dragleave="onRowDragLeave"
+        @drop="onRowDrop"
+        @dragend="onRowDragEnd"
       />
     </template>
     <infinite-scroll-trigger
@@ -271,7 +295,14 @@ export default {
     // songs — a playlist/search/queue list can mix songs from many
     // different albums, where "disc number" isn't a meaningful grouping.
     groupByDisc: { type: Boolean, default: false },
+    // Playlist detail's own opt-in — rows become draggable and a drop
+    // emits `reorder`. Only ever honoured while the list is in its natural
+    // order (see canReorder): with a column sort active, a row's position
+    // on screen has nothing to do with its position in the playlist, so
+    // dropping it "between two rows" couldn't mean anything.
+    reorderable: { type: Boolean, default: false },
   },
+  emits: ['reorder'],
   data() {
     return {
       sortKey: this.defaultSortKey as SortKey | null,
@@ -305,6 +336,12 @@ export default {
       // same as addToPlaylist()) to seed the new playlist with once
       // confirmCreatePlaylist() actually creates it.
       createPlaylistSongs: [] as Song[],
+      // Drag state for a reorderable list — same three fields (and the
+      // same before/after boundary handling) as QueueDrawer.vue's own
+      // drag-to-reorder, since the interaction is identical.
+      dragIndex: null as number | null,
+      dragOverIndex: null as number | null,
+      dragOverHalf: null as 'before' | 'after' | null,
     }
   },
   computed: {
@@ -328,6 +365,14 @@ export default {
     // queues songs the same way clicking through the list would.
     selectedSongs(): Song[] {
       return this.sortedSongs.filter((_song, index) => this.selectedRowKeys.has(index))
+    },
+    // A column sort reorders what's on screen without touching the
+    // playlist itself, so dragging a row while one is active would be
+    // rearranging a view, not the list — the drag is simply unavailable
+    // until the sort is cleared again (which, in a reorderable list, is
+    // what a third click on the same column does — see onSort()).
+    canReorder(): boolean {
+      return this.reorderable && !this.sortKey
     },
     sortedSongs(): Song[] {
       if (!this.sortKey) return this.songs
@@ -474,9 +519,76 @@ export default {
       if (typeof value === 'string') return value.toLowerCase()
       return value ?? 0
     },
+    // The drag/drop half below mirrors QueueDrawer.vue's, including the
+    // original-index vs. post-removal-index conversion — see its own
+    // comments for why the two differ.
+    dragOverPosition(index: number): 'before' | 'after' | null {
+      return this.dragOverIndex === index ? this.dragOverHalf : null
+    },
+    insertBeforeIndex(index: number, event: DragEvent): number {
+      const row = event.currentTarget as HTMLElement
+      const rect = row.getBoundingClientRect()
+      const isBottomHalf = event.clientY > rect.top + rect.height / 2
+      return isBottomHalf ? index + 1 : index
+    },
+    dropIndex(index: number, event: DragEvent): number {
+      const insertBefore = this.insertBeforeIndex(index, event)
+      return insertBefore > (this.dragIndex ?? 0) ? insertBefore - 1 : insertBefore
+    },
+    onRowDragStart(index: number) {
+      this.dragIndex = index
+    },
+    onRowDragOver({ index, event }: { index: number; event: DragEvent }) {
+      if (index === this.dragIndex) {
+        // No indicator on the row being dragged itself — dropping a song
+        // onto its own position changes nothing.
+        this.dragOverIndex = null
+        this.dragOverHalf = null
+        return
+      }
+      this.dragOverIndex = index
+      this.dragOverHalf = this.insertBeforeIndex(index, event) > index ? 'after' : 'before'
+    },
+    onRowDragLeave(index: number) {
+      if (this.dragOverIndex === index) {
+        this.dragOverIndex = null
+        this.dragOverHalf = null
+      }
+    },
+    onRowDrop({ index, event }: { index: number; event: DragEvent }) {
+      const from = this.dragIndex
+      // Read before clearing: dropIndex() works off dragIndex to convert
+      // the drop boundary into a post-removal position.
+      const to = from === null ? null : this.dropIndex(index, event)
+      this.clearDragState()
+      if (from === null || to === null) return
+      if (to === from) return
+      // The owning view persists this and owns the songs array — with a
+      // column sort impossible here (see canReorder), both indices are
+      // positions in the list it passed in.
+      this.$emit('reorder', { from, to })
+    },
+    onRowDragEnd() {
+      this.clearDragState()
+    },
+    clearDragState() {
+      this.dragIndex = null
+      this.dragOverIndex = null
+      this.dragOverHalf = null
+    },
     onSort(key: SortKey) {
       this.userChangedSort = true
       if (this.sortKey === key) {
+        // A third click drops back to the list's own order, but only where
+        // that order means something the user can act on: in a reorderable
+        // list it's the playlist itself, and it's also the only way back
+        // to being able to drag rows at all (see canReorder). Everywhere
+        // else "unsorted" is just whatever the API happened to return, so
+        // those keep cycling asc/desc as before.
+        if (this.reorderable && this.sortDirection === 'desc') {
+          this.sortKey = null
+          return
+        }
         this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc'
       } else {
         this.sortKey = key

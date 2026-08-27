@@ -218,9 +218,17 @@
 
     <section>
       <h2 class="section-title mb-4">{{ $t('settings.about') }}</h2>
-      <v-btn variant="tonal" prepend-icon="mdi-star-circle-outline" @click="showReleaseNotes">
-        {{ $t('settings.whatsNew') }}
-      </v-btn>
+      <div class="about-actions">
+        <v-btn variant="tonal" prepend-icon="mdi-star-circle-outline" @click="showReleaseNotes">
+          {{ $t('settings.whatsNew') }}
+        </v-btn>
+        <!-- The "?" key opens the same dialog, but nothing on screen says
+         - so — this is where someone who has never pressed it finds out
+         - the shortcuts exist at all. -->
+        <v-btn variant="tonal" prepend-icon="mdi-keyboard-outline" @click="showShortcuts">
+          {{ $t('shortcuts.title') }}
+        </v-btn>
+      </div>
       <div class="status-row mt-4">
         <span class="status-dot" :class="ffmpegFound ? 'status-dot--ok' : 'status-dot--warn'" />
         <span class="text-caption text-medium-emphasis">
@@ -458,6 +466,9 @@ export default {
       await this.authStore.logout()
       this.$router.push('/login')
     },
+    showShortcuts() {
+      this.$emitter.emit('toggleKeyboardShortcuts')
+    },
     showReleaseNotes() {
       this.$emitter.emit('openReleaseNotes')
     },
@@ -679,6 +690,12 @@ export default {
 /* A small lit/unlit signal rather than a full-width alert banner — same
  * "beacon" idea as everything else here, just dialed down to the size the
  * fact actually deserves (ffmpeg being present is the normal case). */
+.about-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .status-row {
   display: flex;
   align-items: center;

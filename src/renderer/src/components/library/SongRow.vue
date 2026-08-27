@@ -1,12 +1,25 @@
 <template>
   <div
     class="song-row d-flex align-center px-2 py-1"
-    :class="{ 'song-row--current': isCurrentSong, 'song-row--selected': selected }"
+    :class="{
+      'song-row--current': isCurrentSong,
+      'song-row--selected': selected,
+      'song-row--reorderable': reorderable,
+      'song-row--drag-over-before': dragOverPosition === 'before',
+      'song-row--drag-over-after': dragOverPosition === 'after',
+      'song-row--dragging': dragging,
+    }"
+    :draggable="reorderable"
     @click="selectionMode && $emit('toggle-select', song, index)"
     @dblclick="$emit('play', song, index)"
     @contextmenu.prevent="openMenu($event)"
     @mouseenter="isHovered = true"
     @mouseleave="isHovered = false"
+    @dragstart="onDragStart"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
+    @dragend="onDragEnd"
   >
     <div class="song-index text-medium-emphasis text-caption">
       <v-checkbox-btn
@@ -248,6 +261,26 @@ export default {
       type: Boolean,
       default: false,
     },
+    // Playlist detail's own opt-in (see SongTable.vue's identical prop) —
+    // the whole row is the drag handle rather than a separate grip, since
+    // every column here has to keep lining up with SongTableHeader.vue and
+    // an extra one would push all of them out of alignment.
+    reorderable: {
+      type: Boolean,
+      default: false,
+    },
+    // Which side of this row a drop would land on — same two-position
+    // indicator QueueRow.vue uses, and for the same reason: one
+    // undifferentiated "drag-over" highlight can't say which side of the
+    // boundary the dragged song is about to land on.
+    dragOverPosition: {
+      type: String as () => 'before' | 'after' | null,
+      default: null,
+    },
+    dragging: {
+      type: Boolean,
+      default: false,
+    },
     // Total number of selected rows in the list (SongTable.vue's
     // selectedRowKeys.size) — only actually used to label the context
     // menu's subheader when this row is itself part of that selection (see
@@ -269,6 +302,11 @@ export default {
     'add-to-playlist',
     'create-playlist',
     'toggle-select',
+    'dragstart',
+    'dragover',
+    'dragleave',
+    'drop',
+    'dragend',
   ],
   data() {
     return {
@@ -324,6 +362,39 @@ export default {
     this.$emitter.off('contextMenuOpened', this.onOtherMenuOpened)
   },
   methods: {
+    // Every one of these is a no-op unless this row was actually made
+    // reorderable — the listeners are bound unconditionally (a template
+    // can't add them conditionally without duplicating the whole element),
+    // so the guard lives here instead. Without it, dragover's
+    // preventDefault() would mark every song row in the app as a drop
+    // target for anything at all, files included.
+    onDragStart(event: DragEvent) {
+      if (!this.reorderable) return
+      // Firefox refuses to start a drag at all without data on it.
+      event.dataTransfer?.setData('text/plain', String(this.index))
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+      this.$emit('dragstart', this.index)
+    },
+    onDragOver(event: DragEvent) {
+      if (!this.reorderable) return
+      // The default action is "reject the drop" — a dragover that isn't
+      // prevented means no drop event ever fires here.
+      event.preventDefault()
+      this.$emit('dragover', { index: this.index, event })
+    },
+    onDragLeave() {
+      if (!this.reorderable) return
+      this.$emit('dragleave', this.index)
+    },
+    onDrop(event: DragEvent) {
+      if (!this.reorderable) return
+      event.preventDefault()
+      this.$emit('drop', { index: this.index, event })
+    },
+    onDragEnd() {
+      if (!this.reorderable) return
+      this.$emit('dragend')
+    },
     onCoverClick() {
       if (this.selectionMode) this.$emit('toggle-select', this.song, this.index)
       else this.$emit('play', this.song, this.index)
@@ -367,6 +438,30 @@ export default {
 
 .song-row:hover {
   background: var(--beacon-hover);
+}
+
+/* Only in a list that can actually be reordered (playlist detail) — the
+ * grab cursor is the only thing announcing that a row can be picked up at
+ * all, since there's no room for a separate handle column. */
+.song-row--reorderable {
+  cursor: grab;
+  transition: opacity 0.15s ease;
+}
+
+/* An inset shadow rather than a border, unlike QueueRow.vue's own drop
+ * indicator: a border would add its 2px to the row's height, and
+ * v-virtual-scroll positions rows off a fixed item-height (see
+ * SongTable.vue), so a long playlist would drift by 2px per row. */
+.song-row--drag-over-before {
+  box-shadow: inset 0 2px 0 0 rgb(var(--v-theme-primary));
+}
+
+.song-row--drag-over-after {
+  box-shadow: inset 0 -2px 0 0 rgb(var(--v-theme-primary));
+}
+
+.song-row--dragging {
+  opacity: 0.4;
 }
 
 .song-row--current {

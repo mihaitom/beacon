@@ -16,12 +16,13 @@ and no way to tell a stalled server apart from a flaky speaker. This
 module measures the loop's own responsiveness continuously, so the next
 occurrence can be attributed rather than guessed at.
 
-Worth measuring here specifically because beacon does real CPU work on
-the loop that the simpler upstream (feishin-connect) never did: the live
-FFT visualizer (core/audio_analysis.py's analyze_pcm(), ~43 numpy
-transforms/sec, called synchronously from _read_pcm()) has no
-asyncio.to_thread() around it, unlike core/waveform.py's peak
-computation, which does.
+Worth measuring here specifically because this backend does real CPU work
+directly on the loop: the live FFT visualizer (core/audio_analysis.py's
+analyze_pcm(), ~43 numpy transforms/sec, called synchronously from
+_read_pcm()) has no asyncio.to_thread() around it, unlike
+core/waveform.py's peak computation, which does. A backend that only
+shuffles bytes between a media server and a speaker would have no reason
+to suspect its own event loop at all.
 """
 
 import asyncio

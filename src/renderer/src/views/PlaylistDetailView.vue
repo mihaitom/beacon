@@ -80,16 +80,22 @@
       </v-card>
     </v-dialog>
 
+    <!-- Only your own playlists: a shared one belongs to whoever made it,
+     - and the server rejects the write anyway (Navidrome answers
+     - createPlaylist for someone else's playlist with a not-authorized
+     - error). -->
     <song-table
       :songs="playlist.songs"
       :queue-whole-list="false"
       :default-sort-key="null"
+      :reorderable="isOwnPlaylist"
       show-cover
       show-album
       show-genre
       show-year
       show-play-count
       show-format
+      @reorder="onReorder"
     />
   </v-container>
   <v-container v-else>
@@ -194,6 +200,38 @@ export default {
       this.playlist.name = name
       this.playlist.public = isPublic
       this.editDialog = false
+    },
+    /** Moves a song and saves the result. The row moves first and is put
+     * back if the save fails — a drag that only takes effect a round trip
+     * later reads as a dropped drag, and the drop position is already
+     * gone from the screen by the time an error could explain itself. */
+    async onReorder({ from, to }: { from: number; to: number }) {
+      const playlist = this.playlist
+      if (!playlist) return
+      const before = [...playlist.songs]
+      const reordered = [...playlist.songs]
+      const [moved] = reordered.splice(from, 1)
+      if (!moved) return
+      reordered.splice(to, 0, moved)
+      playlist.songs = reordered
+      try {
+        await this.libraryStore.reorderPlaylist(
+          playlist.id,
+          reordered.map((song) => song.id),
+        )
+      } catch (error) {
+        // Assigning `before` back wholesale rather than moving the row
+        // back: another change may have landed in between (a song removed
+        // from its own context menu), and this is the state the server
+        // still has either way.
+        playlist.songs = before
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('playlists.reorderFailed'),
+          message: error instanceof Error ? error.message : String(error),
+        })
+        console.error('[playlist-detail] Failed to reorder playlist:', error)
+      }
     },
     async playAll() {
       if (!this.playlist?.songs.length) return

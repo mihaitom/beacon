@@ -818,7 +818,7 @@ def test_scrobble_submission_true_reports_playback_stopped(client, jellyfin_sess
     assert get_calls[0][1].endswith("/Users/u1/Items/song-1")
     post_calls = [c for c in calls if c[0] == "POST"]
     assert len(post_calls) == 1
-    method, url, _params, json_body = post_calls[0]
+    _method, url, _params, json_body = post_calls[0]
     assert url.endswith("/Sessions/Playing/Stopped")
     assert json_body == {"ItemId": "song-1", "PositionTicks": 1_800_000_000, "IsPaused": True}
 
@@ -919,3 +919,72 @@ def test_binary_handler_exception_returns_failed_envelope_not_500(
 
     assert r.status_code == 200
     assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+def test_create_playlist_with_id_reorders_by_moving_the_song_that_moved(
+    client, jellyfin_session, monkeypatch
+):
+    """createPlaylist with a playlistId is Subsonic's update form — the
+    playlist's songs become exactly the list sent, in that order (see
+    client.ts's setPlaylistSongs). Jellyfin has no such call, so the bridge
+    moves entries instead."""
+    fake_client, calls = _fake_jf_client(
+        {
+            "/Playlists/p1/Items": {
+                "Items": [
+                    {"Id": "s1", "PlaylistItemId": "pi-1"},
+                    {"Id": "s2", "PlaylistItemId": "pi-2"},
+                    {"Id": "s3", "PlaylistItemId": "pi-3"},
+                ]
+            }
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    # s1 dragged to the end.
+    r = client.get("/rest/createPlaylist.view?playlistId=p1&songId=s2&songId=s3&songId=s1")
+    assert r.status_code == 200
+    assert r.json()["subsonic-response"]["status"] == "ok"
+
+    # Nothing added or removed — the same songs, in a different order.
+    assert not [c for c in calls if c[0] == "DELETE"]
+    moves = [c for c in calls if c[0] == "POST"]
+    assert len(moves) == 1
+    assert moves[0][1].endswith("/Playlists/p1/Items/pi-1/Move/2")
+
+
+def test_create_playlist_with_id_adds_and_drops_songs_to_match_the_list(
+    client, jellyfin_session, monkeypatch
+):
+    fake_client, calls = _fake_jf_client(
+        {
+            "/Playlists/p1/Items": {
+                "Items": [
+                    {"Id": "s1", "PlaylistItemId": "pi-1"},
+                    {"Id": "s2", "PlaylistItemId": "pi-2"},
+                ]
+            }
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    # s2 gone, s9 new.
+    r = client.get("/rest/createPlaylist.view?playlistId=p1&songId=s1&songId=s9")
+    assert r.status_code == 200
+    delete_call = next(c for c in calls if c[0] == "DELETE")
+    assert delete_call[2]["EntryIds"] == "pi-2"
+    add_call = next(c for c in calls if c[0] == "POST" and c[1].endswith("/Playlists/p1/Items"))
+    assert add_call[2]["Ids"] == "s9"
+
+
+def test_create_playlist_without_id_still_creates_one(client, jellyfin_session, monkeypatch):
+    # The playlistId branch must not swallow the create case — a playlist
+    # created with the same songs would otherwise silently do nothing.
+    fake_client, calls = _fake_jf_client()
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/createPlaylist.view?name=Fresh&songId=s1")
+    assert r.status_code == 200
+    method, url, _params, json_body = calls[0]
+    assert (method, json_body["Name"]) == ("POST", "Fresh")
+    assert url.endswith("/Playlists")
