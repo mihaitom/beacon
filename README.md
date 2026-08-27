@@ -10,15 +10,15 @@
 
 <p align="center">
   <a href="https://github.com/mihaitom/beacon/actions/workflows/test-python.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/mihaitom/beacon/test-python.yml?branch=development&style=flat-square&label=backend%20tests" alt="Backend tests">
+    <img src="https://img.shields.io/github/actions/workflow/status/mihaitom/beacon/test-python.yml?branch=main&style=flat-square&label=backend%20tests" alt="Backend tests">
   </a>
-  <a href="https://codecov.io/gh/mihaitom/beacon">
-    <img src="https://img.shields.io/codecov/c/github/mihaitom/beacon/development?style=flat-square&label=backend%20coverage" alt="Backend coverage">
+<a href="https://codecov.io/gh/mihaitom/beacon">
+    <img src="https://codecov.io/gh/mihaitom/beacon/branch/main/graph/badge.svg" alt="Backend coverage">
   </a>
   <a href="https://github.com/mihaitom/beacon/actions/workflows/test-frontend.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/mihaitom/beacon/test-frontend.yml?branch=development&style=flat-square&label=frontend%20tests" alt="Frontend tests">
+    <img src="https://img.shields.io/github/actions/workflow/status/mihaitom/beacon/test-frontend.yml?branch=main&style=flat-square&label=frontend%20tests" alt="Frontend tests">
   </a>
-  <a href="https://github.com/mihaitom/beacon/commits/development">
+  <a href="https://github.com/mihaitom/beacon/commits/main">
     <img src="https://img.shields.io/github/last-commit/mihaitom/beacon?style=flat-square&color=blue" alt="Last commit">
   </a>
 </p>
@@ -77,19 +77,19 @@ Beacon is `connect` as the actual foundation instead of an add-on - a frontend b
 
 ### Keyboard shortcuts
 
-| Key | Action |
-| --- | --- |
-| `Space` / `K` | Play / pause |
-| `←` / `→` | Back / forward 5 seconds |
+| Key                | Action                                 |
+| ------------------ | -------------------------------------- |
+| `Space` / `K`      | Play / pause                           |
+| `←` / `→`          | Back / forward 5 seconds               |
 | `Ctrl` + `←` / `→` | Previous / next track (`Cmd` on macOS) |
-| `↑` / `↓` | Volume up / down |
-| `M` | Mute |
-| `S` | Toggle shuffle |
-| `R` | Cycle repeat mode |
-| `F` | Favorite the current track |
-| `Q` | Show / hide the queue |
-| `0` - `9` | Jump to 0-90% of the track |
-| `?` | Show this list in the app |
+| `↑` / `↓`          | Volume up / down                       |
+| `M`                | Mute                                   |
+| `S`                | Toggle shuffle                         |
+| `R`                | Cycle repeat mode                      |
+| `F`                | Favorite the current track             |
+| `Q`                | Show / hide the queue                  |
+| `0` - `9`          | Jump to 0-90% of the track             |
+| `?`                | Show this list in the app              |
 
 They do nothing while you are typing in a field or a dialog is open, and leave a focused button or slider its own keys. The volume keys change the speaker's volume while casting to a single device, the same as the volume slider in the player bar does.
 
@@ -97,17 +97,17 @@ They do nothing while you are typing in a field or a dialog is open, and leave a
 
 Jellyfin and Plex can both be selected as a server type at login. Neither has a Subsonic-compatible API of its own, so the `connect` backend translates Subsonic-shaped requests into real Jellyfin/Plex API calls on the fly (see `connect/media/jellyfin_bridge.py` and `connect/media/plex_bridge.py`) - the frontend doesn't know the difference. Features a given backend has no equivalent for (or that just aren't bridged yet) are hidden automatically rather than shown as dead-end controls. Both paths are newer and less exercised than the Navidrome/Subsonic one, and a couple of things genuinely work differently there - the table below says which. Besides the usual unit tests, which can only check the bridges against Beacon's own understanding of the foreign API, there is a suite that runs them against real servers (`connect/tests/test_bridges_live.py`, excluded from the default test run): playlist creation, reordering, renaming and track add/remove, favorites, the browsing response shapes, library scans and lyrics - against Navidrome as well, since the assumptions Beacon makes about it are just as worth checking. It creates only throwaway playlists and deletes them again. What it does not cover yet is cover art and audio streaming, which take a different code path.
 
-| Feature                                          | Navidrome / Subsonic | Jellyfin | Plex  |
-| ------------------------------------------------- | :-------------------: | :------: | :--------: |
-| Library browsing, playlists, casting              |           ✅           |    ✅    |   ✅      |
-| Internet radio stations                           |           ✅           |    ✅    |   ✅      |
-| Play history / Stats page                         |           ✅           |    ✅    |   ✅      |
-| Favorites (heart icon)                            |           ✅           |    ✅    |   ❌      |
-| Personal 1-5 star rating                          |           ✅           |    ❌    |   ✅      |
-| Song/Artist Radio and Autoplay                    |           ✅           |    ✅    | ✅ (needs an active Plex Pass) |
-| Create playlists, add/remove/reorder tracks       |           ✅           |    ✅    |   ✅      |
-| Lyrics stored with the file (tags or .lrc)        |           ✅           |    ✅    | ✅ (.lrc only) |
-| Trigger a library rescan from Settings            |     ✅ (admins)     | ✅ (admins) | ✅ (owner) |
+| Feature                                     | Navidrome / Subsonic |  Jellyfin   |              Plex              |
+| ------------------------------------------- | :------------------: | :---------: | :----------------------------: |
+| Library browsing, playlists, casting        |          ✅          |     ✅      |               ✅               |
+| Internet radio stations                     |          ✅          |     ✅      |               ✅               |
+| Play history / Stats page                   |          ✅          |     ✅      |               ✅               |
+| Favorites (heart icon)                      |          ✅          |     ✅      |               ❌               |
+| Personal 1-5 star rating                    |          ✅          |     ❌      |               ✅               |
+| Song/Artist Radio and Autoplay              |          ✅          |     ✅      | ✅ (needs an active Plex Pass) |
+| Create playlists, add/remove/reorder tracks |          ✅          |     ✅      |               ✅               |
+| Lyrics stored with the file (tags or .lrc)  |          ✅          |     ✅      |         ✅ (.lrc only)         |
+| Trigger a library rescan from Settings      |     ✅ (admins)      | ✅ (admins) |           ✅ (owner)           |
 
 Lyrics are a two-step lookup everywhere: whatever is stored with the audio file itself comes first (it belongs to that exact recording), and only if there is none does Beacon search its own third-party providers - so lyrics work on all three, this row is only about the first step. Jellyfin serves the file's own lyrics to any signed-in user, from the tags or from an .lrc next to the track. Plex only reads the .lrc: a `USLT` tag that Navidrome and Jellyfin both pick up produces no lyrics there at all, verified against a live server. Where Plex finds nothing, the third-party lookup takes over exactly as it would for an untagged track.
 
@@ -160,7 +160,7 @@ That's it - Beacon asks for your server URL, username, and password on first lau
 | `SERVER_LOCK`            | `false`              | When `true`, the login screen shows only username/password - server URL and type are fixed to `SERVER_URL` (or `NAVIDROME_INTERNAL_URL` as a fallback) and `SERVER_TYPE`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `SERVER_TYPE`            | `subsonic`           | What kind of server `SERVER_URL`/`SERVER_LOCK` point at - `subsonic` (covers Navidrome), `jellyfin`, or `plex`. Only meaningful together with `SERVER_LOCK=true`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `ALLOWED_ORIGINS`        | -                    | Extra CORS origins for the Connect API, comma-separated. Not needed in standard Docker deployments - browser and API share the same domain via nginx, so requests are same-origin and CORS never applies. Only relevant if the backend is reached from a different origin than the page.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `LOG_LEVEL`               | -                     | Startup log verbosity - `trace`, `debug`, `info`, `warning`, or `error` (case-insensitive). Prefer the log-level dropdown in Settings instead (same five levels, persisted, in effect immediately, no restart needed) - this is only the fallback for a deployment that never comes up far enough to reach it. `debug` covers Beacon's own code only; `trace` also turns on the third-party libraries underneath it (SoCo, pyatv, `httpx`/`httpcore`, `uvicorn.access`) for SOAP/HTTP-level detail - a lot of output, so reach for it only when actually troubleshooting one of those.                                                                                                                                                                                                                                                                                                                                                    |
+| `LOG_LEVEL`              | -                    | Startup log verbosity - `trace`, `debug`, `info`, `warning`, or `error` (case-insensitive). Prefer the log-level dropdown in Settings instead (same five levels, persisted, in effect immediately, no restart needed) - this is only the fallback for a deployment that never comes up far enough to reach it. `debug` covers Beacon's own code only; `trace` also turns on the third-party libraries underneath it (SoCo, pyatv, `httpx`/`httpcore`, `uvicorn.access`) for SOAP/HTTP-level detail - a lot of output, so reach for it only when actually troubleshooting one of those.                                                                                                                                                                                                                                                                                                                                                     |
 
 > `NAVIDROME_INTERNAL_URL` doesn't need a Docker Compose service name (e.g. `http://navidrome:4533`) - with `network_mode: host` there's no Docker bridge network for that to resolve on. If Navidrome runs on the same host, point this at its directly-reachable address instead, e.g. `http://localhost:4533`.
 
