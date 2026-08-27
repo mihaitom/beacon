@@ -27,8 +27,17 @@ jobs:
               working-directory: connect
               run: uv run --group dev pytest --cov --cov-report=xml --cov-report=term-missing
 
+            # Codecov only accepts tokenless uploads from forks opening a
+            # pull request; a push to our own branches needs the repository
+            # upload token, or it answers "Token required - not valid
+            # tokenless upload" and the badge stays at "unknown". That was
+            # invisible for a long time because fail_ci_if_error below keeps
+            # the job green either way — deliberately, since Codecov being
+            # down is not a reason to fail a test run, but it does mean the
+            # badge is the only thing that ever reports this.
             - name: Upload coverage to Codecov
               uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
               with:
+                  token: ${{ secrets.CODECOV_TOKEN }}
                   files: connect/coverage.xml
                   fail_ci_if_error: false
