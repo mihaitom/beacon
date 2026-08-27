@@ -62,6 +62,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed the Linux app having no icon at all in launchers, taskbars and app menus: it was packaged in a single 1024x1024 size, which the desktop icon standard doesn't define and no launcher looks in. It now ships in the usual sizes from 16 up to 512
 - Fixed how lyrics are matched to a song, which regularly settled on a different recording's words: how long the song actually runs is now part of the decision (an extended version's lyrics on a radio edit start late and drift further apart as it plays), a result credited to a different artist is passed over however closely the title reads, and a "lyric sheet" that turns out to be nothing but songwriter credits is skipped in favour of the next result - or none at all, when that is the truth
 - Fixed stray characters turning up inside lyrics: a control character left over from how they are stored inside a file, which every server passed along, and raw timestamps appearing as though they were part of the words whenever they carried a trailing marker
 

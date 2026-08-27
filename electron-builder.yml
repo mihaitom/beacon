@@ -20,14 +20,22 @@ extraResources:
 # build/icon.png (1024x1024, the mdi-lighthouse-on glyph rendered straight
 # from @mdi/font's own TTF in the app's primary theme color — same source
 # as the DefaultLayout.vue/MobileLayout.vue app-bar icon and the web
-# favicon, just at full resolution instead of downscaled) is the source for
-# all three icons below — build/icons/icon.ico is a real multi-resolution
-# ICO generated from it (16 through 256px, so Windows/AppImage/rofi-style
-# launchers always pick a crisp embedded size instead of one scaled on the
-# fly). win/mac/linux each reference their icon explicitly instead of
-# relying on electron-builder's own default-path lookup + on-the-fly
-# conversion, so what actually gets embedded is exactly this file, not
-# whatever electron-builder's internal converter happens to produce.
+# favicon, just at full resolution instead of downscaled) is the source
+# every icon here is generated from: build/icons/icon.ico is a real
+# multi-resolution ICO (16 through 256px), and build/icons/NxN.png are the
+# freedesktop sizes Linux needs.
+#
+# Linux points at the *directory*, not at icon.png, and that distinction is
+# the whole reason a packaged Linux build shows an icon at all. Handed a
+# single .png, electron-builder ships exactly that one file at exactly its
+# own resolution (see app-builder-lib's iconConverter: "source is already a
+# .png — return as-is with its dimensions"), which put the only copy in
+# hicolor/1024x1024/. No spec-conforming icon lookup ever finds it: the
+# freedesktop hicolor theme declares sizes up to 512x512 and nothing
+# beyond, so a directory it doesn't know about is skipped entirely, and
+# every launcher fell back to a generic icon. Handed a directory, the same
+# converter collects every NxN.png in it — icon.ico is ignored, its name
+# doesn't match — and each one lands in the hicolor size it belongs to.
 
 win:
     icon: build/icons/icon.ico
@@ -71,7 +79,8 @@ mac:
         NSLocalNetworkUsageDescription: 'Local network access is required to discover casting devices (Sonos, Chromecast, DLNA, AirPlay) and to pair Remote Control with your phone.'
 
 linux:
-    icon: build/icon.png
+    # A directory, deliberately — see the icon comment above.
+    icon: build/icons
     target:
         - AppImage
         - deb

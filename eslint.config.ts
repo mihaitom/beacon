@@ -15,7 +15,10 @@ export default defineConfigWithVueTs(
     files: ['**/*.{vue,ts,mts,tsx}'],
   },
 
-  globalIgnores(['**/dist/**', '**/dist-ssr/**', '**/coverage/**']),
+  // out/ is electron-vite's build output, gitignored like dist/ but
+  // missing here — so a local `pnpm build` left `pnpm lint` reporting
+  // errors in bundled, minified vendor code nobody can act on.
+  globalIgnores(['**/dist/**', '**/dist-ssr/**', '**/coverage/**', '**/out/**']),
 
   ...pluginVue.configs['flat/essential'],
   vueTsConfigs.recommended,
