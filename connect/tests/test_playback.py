@@ -605,6 +605,33 @@ def test_play_and_queue_sync_shuffle_repeat_and_original_queue(client, default_s
     assert body["repeat_mode"] == "one"
 
 
+def test_status_reports_autoplay_so_every_client_can_show_the_truth(client, default_session):
+    """Autoplay decides whether the backend tops the queue up on its own
+    (_maybe_autoplay_topup in routes/stream.py), and it only ever changes on
+    /play and /queue. A client that sends neither — a phone doing nothing
+    but transport commands — used to have no way to learn the session was
+    topping up, and showed its own stored setting instead."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+
+    assert client.get("/status").json()["autoplay_enabled"] is False
+
+    with patch.object(default_session.media, "get_track", return_value=track):
+        client.post(
+            "/play",
+            json={"song_ids": ["1"], "queue_index": 0, "autoplay_enabled": True},
+        )
+
+    assert client.get("/status").json()["autoplay_enabled"] is True
+
+    client.post(
+        "/queue",
+        json={"song_ids": ["1"], "queue_index": 0, "autoplay_enabled": False},
+    )
+
+    assert client.get("/status").json()["autoplay_enabled"] is False
+
+
 def test_resume_reuses_cached_content_type_without_reprobing(client, default_session):
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
     track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")

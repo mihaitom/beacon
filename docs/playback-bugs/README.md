@@ -25,14 +25,14 @@ opening every file.
 
 ## Open
 
-- [One device dropping out of a multi-target cast is never surfaced](multi-target-partial-drop-not-surfaced.md) - **OPEN** (code gap unfixed; its original 2026-08-22 trigger is now suspected to be the test-suite leak too)
+- [One device dropping out of a multi-target cast is never surfaced](multi-target-partial-drop-not-surfaced.md) - **OPEN, shelved 2026-08-28** (code gap unfixed; its original 2026-08-22 trigger is now suspected to be the test-suite leak too, and it has not happened since - to be picked up if it ever becomes a real problem, see the file for why there is no small fix)
 
 ## Fixed
 
 - [Cast device drops mid-track - symptom, evidence & ruled-out theories](mid-track-drop-symptom.md) (2026-08-26) - **RESOLVED**; shared diagnostic reference for the two causes below plus the general mitigation
 - [Auto-advance onto a still-playing device drops the next track silently](auto-advance-still-playing-device.md) (2026-08-26) - reattributed to the test-suite leak below, not an independent mechanism after all
 - [Cast device drops mid-track - reverse-proxy 403](mid-track-drop-reverse-proxy-403.md) (2026-08-23)
-- [Cast device drops mid-track - test-suite Sonos-discovery leak](mid-track-drop-test-suite-sonos-leak.md) (2026-08-24, test-suite side) - assessed as probably the whole story, not independently wire-confirmed
+- [Cast device drops mid-track - test-suite Sonos-discovery leak](mid-track-drop-test-suite-sonos-leak.md) (2026-08-24, test-suite side) - assessed as probably the whole story, not independently wire-confirmed; days of ordinary use since, with no recurrence of the symptom (checked 2026-08-28)
 - [The copy tier never checks what the device can actually play](copy-tier-device-limits.md) (2026-08-24)
 - [An event-loop stall of 19.47s, cause unknown](event-loop-stall-19s.md) (2026-08-26, closed on the trigger side - the stalled frame itself was never isolated, see the file)
 - [AirPlay reports nothing when it dies mid-track](fixed-airplay-silent-death.md) (2026-08-26) - the RAM-buffering half of that entry is fixed with it

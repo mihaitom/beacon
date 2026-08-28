@@ -282,6 +282,7 @@ describe('NowPlayingView', () => {
         original_queue: [],
         shuffle: false,
         repeat_mode: 'off' as const,
+        autoplay_enabled: false,
         elapsed: 0,
         ended: false,
         paused: false,

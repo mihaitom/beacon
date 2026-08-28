@@ -8,10 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- The two Discover shelves on Home fill in faster. The suggestions and the artist list are now looked up at the same time instead of one after the other, and the albums behind the matching artists are fetched together rather than one request at a time, only as many as the shelf actually shows
 - Pressing previous now goes back to the previous song for the first five seconds of a track instead of only the first three, so a quick correction after a track change lands on the song you meant rather than restarting the one that just started. Later than that it still restarts the current song, as before
 
 ### Fixed
 
+- Fixed Autoplay reading as off on one device while the queue kept filling up anyway. While casting it is a setting of the listening session, like shuffle and repeat, so every device now shows the same state and switching it off takes effect immediately instead of at the next track. Previously each device only remembered its own setting and the server kept topping the queue up from whichever one had last started playback
+- Fixed the "New artists to explore" shelf on Home showing nothing at all while it loads, then appearing out of nowhere below a page that had already settled. It now shows the same placeholder cards as the shelves above it from the start
 - Fixed music stopping the moment the screen locked, or the browser went to the background, in the mobile web player on a phone or tablet. Playback now carries on, with the track and its controls on the lock screen. What it costs on those devices: the audio visualizer is no longer offered for playback coming out of the phone itself, ReplayGain there applies to casting only, and the volume slider for local playback is gone, since a phone browser never let it do anything anyway and the device's own volume buttons are what changes that level. All three are unchanged while casting, and on the desktop app and in desktop browsers
 - Fixed playback staying completely silent in the mobile web player on iPhone and iPad: pressing play started the track, showed it running and moved the progress bar, but no sound came out until the Now Playing screen happened to be opened. Playing from a desktop browser or the installed app was never affected
 - Fixed the service icons next to an artist's external links (Spotify, Apple Music, TIDAL, YouTube, Deezer, Discogs, MusicBrainz) not showing up at all in the installed desktop app, leaving the row of links without any of their logos - they only ever appeared when running from source or in the Docker build

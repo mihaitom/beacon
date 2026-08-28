@@ -4,7 +4,7 @@
 // albums shelf, leaving "New artists to explore" with no way to ask for
 // different suggestions.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createVuetify } from 'vuetify'
@@ -15,7 +15,8 @@ import { emitter } from '@/emitter'
 import { useLibraryStore } from '@/stores/library'
 import HomeView from '../HomeView.vue'
 import SimilarArtistsShelf from '@/components/library/SimilarArtistsShelf.vue'
-import { getSimilarArtists } from '@/services/connect/recommendations'
+import { getArtistImages, getSimilarArtists } from '@/services/connect/recommendations'
+import type { Album, Artist } from '@/types/library'
 
 vi.mock('@/services/connect/recommendations', () => ({
   getSimilarArtists: vi.fn(async () => []),
@@ -38,7 +39,10 @@ function stubLibrary() {
   } as unknown as ReturnType<typeof library.client>)
 }
 
-async function mountHome() {
+/** `prepare` runs after stubLibrary() and before the component mounts, so
+ * a test can replace the default stubs with its own — created() fires
+ * during mount, so setting them afterwards would be too late. */
+async function mountHome(prepare?: (library: ReturnType<typeof useLibraryStore>) => void) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -49,6 +53,7 @@ async function mountHome() {
   await router.push('/')
   await router.isReady()
   stubLibrary()
+  prepare?.(useLibraryStore())
   const wrapper = mount(HomeView, {
     global: {
       plugins: [vuetify, i18n, router],
@@ -205,5 +210,126 @@ describe('HomeView "New artists to explore"', () => {
     await vm.rerollDiscover(undefined, true, 'artists')
 
     expect(getSimilarArtists).toHaveBeenCalled()
+  })
+})
+
+/** Enough distinct artists to clear MIN_SEED_ARTISTS, so the lookup path
+ * actually runs instead of falling straight through to random albums. */
+function seedAlbums(count = 5): Album[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `al-${i}`,
+    name: `Album ${i}`,
+    artist: `Artist ${i}`,
+    artistId: `ar-${i}`,
+    coverArtId: null,
+    songCount: 1,
+    duration: 100,
+    year: 2024,
+    genre: null,
+    starred: false,
+    rating: 0,
+    songs: [],
+  }))
+}
+
+function ownedArtists(count: number): Artist[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `owned-${i}`,
+    name: `Similar ${i}`,
+    albumCount: 1,
+    coverArtId: null,
+    imageUrl: null,
+    starred: false,
+    rating: 0,
+    albums: [],
+  }))
+}
+
+describe('HomeView Discover loading', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.mocked(getSimilarArtists).mockResolvedValue([])
+    vi.mocked(getArtistImages).mockResolvedValue({})
+  })
+
+  it('shows placeholders in both shelves from the first paint, not once data lands', async () => {
+    // The artists shelf used to have no loading state on the initial load
+    // (only a reroll set one), so it rendered nothing at all and then
+    // appeared out of nowhere below a page that had already settled.
+    vi.mocked(getSimilarArtists).mockReturnValue(new Promise(() => {})) // never settles
+
+    const wrapper = await mountHome((library) => {
+      vi.spyOn(library, 'fetchFrequentAlbums').mockResolvedValue(seedAlbums())
+    })
+    await flushPromises()
+
+    const shelf = wrapper.findComponent(SimilarArtistsShelf)
+    expect(shelf.exists()).toBe(true)
+    expect(shelf.findAllComponents({ name: 'VSkeletonLoader' }).length).toBeGreaterThan(0)
+  })
+
+  it('looks up similar artists without waiting for the artist list first', async () => {
+    // The two feed different halves of the same step; running them one
+    // after the other added a cold artist-cache fetch to how long the
+    // shelves sat empty.
+    await mountHome((library) => {
+      vi.spyOn(library, 'fetchFrequentAlbums').mockResolvedValue(seedAlbums())
+      vi.spyOn(library, 'fetchArtists').mockReturnValue(new Promise(() => {}))
+    })
+    await flushPromises()
+
+    expect(getSimilarArtists).toHaveBeenCalled()
+  })
+
+  it('resolves the owned matches together, and only as many as the shelf shows', async () => {
+    // One request per match, awaited in turn, was the single biggest part
+    // of the wait — on a broad library that list runs several times the
+    // length of the shelf.
+    const matches = ownedArtists(50)
+    vi.mocked(getSimilarArtists).mockResolvedValue(
+      matches.map((artist, i) => ({ name: artist.name, mbid: `mbid-${i}`, score: 1 })),
+    )
+    let inFlight = 0
+    let peak = 0
+    let fetchArtist!: ReturnType<typeof vi.spyOn>
+
+    await mountHome((library) => {
+      vi.spyOn(library, 'fetchFrequentAlbums').mockResolvedValue(seedAlbums())
+      library.artists = matches
+      fetchArtist = vi.spyOn(library, 'fetchArtist').mockImplementation(async (id: string) => {
+        inFlight += 1
+        peak = Math.max(peak, inFlight)
+        await Promise.resolve()
+        inFlight -= 1
+        return { ...matches[0]!, id, albums: [seedAlbums(1)[0]!] }
+      })
+    })
+    await flushPromises()
+
+    // Well past one at a time, and never more than the shelf can show.
+    expect(peak).toBeGreaterThan(1)
+    expect(fetchArtist.mock.calls.length).toBeLessThanOrEqual(20)
+  })
+
+  it('keeps the shelf when one of the matches fails to load', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const matches = ownedArtists(3)
+    vi.mocked(getSimilarArtists).mockResolvedValue(
+      matches.map((artist, i) => ({ name: artist.name, mbid: `mbid-${i}`, score: 1 })),
+    )
+
+    const wrapper = await mountHome((library) => {
+      vi.spyOn(library, 'fetchFrequentAlbums').mockResolvedValue(seedAlbums())
+      library.artists = matches
+      vi.spyOn(library, 'fetchArtist').mockImplementation(async (id: string) => {
+        if (id === 'owned-1') throw new Error('500')
+        return { ...matches[0]!, id, albums: [seedAlbums(1)[0]!] }
+      })
+    })
+    await flushPromises()
+
+    const albums = (wrapper.vm as unknown as { randomAlbums: Album[] }).randomAlbums
+    expect(albums.length).toBeGreaterThan(0)
   })
 })

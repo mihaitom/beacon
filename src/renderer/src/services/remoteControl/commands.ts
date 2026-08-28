@@ -158,8 +158,10 @@ export async function handleRemoteCommand(
       playback.cycleRepeatMode()
       return
     case 'autoplay': {
-      const autoplay = useAutoplayStore()
-      autoplay.setEnabled(!autoplay.enabled)
+      // Through the playback store, not the autoplay one directly: while
+      // casting this has to reach connect too, or the backend keeps topping
+      // the queue up from the value it still holds.
+      playback.setAutoplayEnabled(!useAutoplayStore().enabled)
       return
     }
     case 'queue-jump':

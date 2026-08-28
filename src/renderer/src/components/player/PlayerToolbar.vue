@@ -23,7 +23,7 @@
       variant="text"
       density="comfortable"
       :title="$t('player.autoplay')"
-      @click="autoplayStore.setEnabled(!autoplayStore.enabled)"
+      @click="playbackStore.setAutoplayEnabled(!autoplayStore.enabled)"
     />
     <!-- Electron-only (pairs a phone against *this* desktop window over
      - the LAN) — see App.vue's identical `window.api` gate on the whole

@@ -256,6 +256,16 @@ def build_status_dict(
         "original_queue": st.original_queue,
         "shuffle": st.shuffle,
         "repeat_mode": st.repeat_mode,
+        # Reported for the same reason as the two above: it is a standing
+        # preference of the *session*, and every client sharing it has to be
+        # able to show the truth rather than whatever its own storage
+        # happens to remember. Left out until 2026-08-28, which made the
+        # backend's own top-up (_maybe_autoplay_topup in routes/stream.py)
+        # look like it ignored the setting: this value only ever changes on
+        # /play and /queue, so a phone that had Autoplay off but only ever
+        # sent transport commands never corrected it, watched the queue grow
+        # anyway, and had no way to find out why.
+        "autoplay_enabled": st.autoplay_enabled,
         "elapsed": elapsed,
         "ended": st.track_ended,
         "paused": st.clock.is_paused,

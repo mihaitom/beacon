@@ -255,6 +255,12 @@ export interface ConnectStatus {
   original_queue: string[]
   shuffle: boolean
   repeat_mode: 'off' | 'all' | 'one'
+  /** Whether this session tops its own queue up when it runs low — the
+   * backend acts on this by itself while casting (see routes/stream.py's
+   * _maybe_autoplay_topup), so a client showing its own stored setting
+   * instead of this one can show "off" over a queue that is visibly
+   * growing. Adopted like shuffle/repeat_mode above. */
+  autoplay_enabled: boolean
   elapsed: number
   ended: boolean
   paused: boolean

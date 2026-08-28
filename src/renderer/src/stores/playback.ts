@@ -783,6 +783,16 @@ export const usePlaybackStore = defineStore('playback', {
       // touching the queue) doesn't wait on anything.
       if (this.shuffle !== status.shuffle) this.shuffle = status.shuffle
       if (this.repeatMode !== status.repeat_mode) this.repeatMode = status.repeat_mode
+      // Same treatment, and for a sharper reason: the backend tops the
+      // queue up on its own from this flag (see routes/stream.py's
+      // _maybe_autoplay_topup), so a client left showing its own stored
+      // value reads "off" while songs keep appearing — reported live
+      // 2026-08-28 from a phone that had never sent a /play of its own and
+      // so had never corrected the session's value either.
+      const autoplay = useAutoplayStore()
+      if (autoplay.enabled !== status.autoplay_enabled) {
+        autoplay.setEnabled(status.autoplay_enabled)
+      }
 
       const remoteOriginalIds = status.original_queue
       // See diffCastQueue()'s own comment for why an empty remote
@@ -1292,6 +1302,18 @@ export const usePlaybackStore = defineStore('playback', {
       getAudioEngine().setVolume(volume)
     },
 
+    /** The Autoplay toggle. While casting this is a setting of the session
+     * rather than of this device (see adoptCastQueue(), which adopts it
+     * from the status the same way it does shuffle/repeat), so switching it
+     * has to reach connect right away instead of riding along with whatever
+     * queue update happens to come next — until it does, the backend keeps
+     * topping the queue up from the old value. A no-op beyond the local
+     * store when not casting, since syncCastQueue() returns early then. */
+    setAutoplayEnabled(value: boolean): void {
+      useAutoplayStore().setEnabled(value)
+      this.syncCastQueue()
+    },
+
     /** Settings-driven — applies immediately to local playback (a live Web
      * Audio GainNode, see AudioEngine.setReplayGain()), so switching modes
      * doesn't need a skip to take effect there. Casting can't be updated
@@ -1421,7 +1443,7 @@ export const usePlaybackStore = defineStore('playback', {
           // what actually stops the repeat performance; the toast is what
           // explains why it turned itself off rather than that just being
           // silently confusing.
-          autoplay.setEnabled(false)
+          this.setAutoplayEnabled(false)
           notifyPlexPassRequired('player.autoplay')
           return
         }

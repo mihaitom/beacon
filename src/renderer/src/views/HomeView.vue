@@ -73,7 +73,7 @@
     <album-shelf
       :title="$t('home.discover')"
       :albums="randomAlbums"
-      :loading="loadingDiscover === 'albums'"
+      :loading="discoverAlbumsLoading"
       :play-all-loading="playingAllShelf === 'random'"
       fit-to-screen
       play-on-click
@@ -84,7 +84,7 @@
           icon="mdi-shuffle-variant"
           variant="text"
           size="small"
-          :loading="loadingDiscover === 'albums'"
+          :loading="discoverAlbumsLoading"
           :title="$t('home.reroll')"
           @click="rerollDiscover(undefined, true, 'albums')"
         />
@@ -94,14 +94,14 @@
     <similar-artists-shelf
       :title="$t('home.newArtistsTitle')"
       :artists="newArtistDiscoveries"
-      :loading="loadingDiscover === 'artists'"
+      :loading="discoverArtistsLoading"
     >
       <template #action>
         <v-btn
           icon="mdi-shuffle-variant"
           variant="text"
           size="small"
-          :loading="loadingDiscover === 'artists'"
+          :loading="discoverArtistsLoading"
           :title="$t('home.reroll')"
           @click="rerollDiscover(undefined, true, 'artists')"
         />
@@ -127,7 +127,7 @@ import HeroBand from '@/components/home/HeroBand.vue'
 import AlbumShelf from '@/components/library/AlbumShelf.vue'
 import SimilarArtistsShelf from '@/components/library/SimilarArtistsShelf.vue'
 import SongTable from '@/components/library/SongTable.vue'
-import type { Album, Song } from '@/types/library'
+import type { Album, Artist, Song } from '@/types/library'
 
 // Below this many distinct seed artists, a similar-artist lookup isn't
 // worth the round trip (and the very-first-launch/near-empty-library case
@@ -210,7 +210,12 @@ export default {
       // lookup, or null. One field rather than two booleans: the lookup
       // fills both shelves in one go, so at most one of them can be the
       // one that asked — and it is also the only one that shows the wait.
-      loadingDiscover: null as 'albums' | 'artists' | null,
+      // Which of the two Discover shelves is waiting on the lookup.
+      // 'both' is the initial load, where neither has anything yet —
+      // without it the artists shelf had no loading state to show and
+      // simply wasn't rendered until its first data arrived, appearing
+      // out of nowhere below a page that had already settled.
+      loadingDiscover: null as 'albums' | 'artists' | 'both' | null,
       // The half of a lookup the shelf that asked for it didn't use. One
       // lookup produces both halves (see discoverFromSimilarArtists), and
       // that whole chain — MusicBrainz, ListenBrainz, then Deezer photos
@@ -322,6 +327,12 @@ export default {
         this.playbackStore.radioStation ||
         this.recentAlbums[0]
       )
+    },
+    discoverAlbumsLoading() {
+      return this.loadingDiscover === 'albums' || this.loadingDiscover === 'both'
+    },
+    discoverArtistsLoading() {
+      return this.loadingDiscover === 'artists' || this.loadingDiscover === 'both'
     },
     // Nothing to show yet either way — only true during the initial
     // recentAlbums fetch, and only when there isn't already something
@@ -445,7 +456,7 @@ export default {
         return
       }
 
-      this.loadingDiscover = only ?? 'albums'
+      this.loadingDiscover = only ?? 'both'
       try {
         const albums = seedAlbums ?? this.frequentAlbums
         const seedNames = this.pickSeedArtistNames(albums, force)
@@ -469,6 +480,39 @@ export default {
         this.loadingDiscover = null
       }
     },
+    /** One album from each owned artist among the matches, for the Discover
+     * shelf. Resolved in parallel and only as far as the shelf can show:
+     * this used to await a getArtist call per match, one after the other,
+     * for a list that on a broad library routinely runs several times the
+     * length of the shelf — the single biggest part of how long Home sat
+     * on placeholders. An artist whose detail carries no albums simply
+     * doesn't contribute, so this keeps taking batches until the shelf is
+     * full or the matches run out. A match that fails to load is skipped
+     * rather than taking the whole shelf down with it. */
+    async albumsForOwnedArtists(matches: Artist[]): Promise<Album[]> {
+      const picked: Album[] = []
+      for (
+        let from = 0;
+        from < matches.length && picked.length < DISCOVER_SHELF_SIZE;
+        from += DISCOVER_SHELF_SIZE
+      ) {
+        const batch = matches.slice(from, from + DISCOVER_SHELF_SIZE)
+        const resolved = await Promise.allSettled(
+          batch.map((match) => this.libraryStore.fetchArtist(match.id)),
+        )
+        for (const result of resolved) {
+          if (result.status === 'rejected') {
+            console.error('[home] Discover: artist lookup failed:', result.reason)
+            continue
+          }
+          const albums = result.value.albums
+          if (!albums.length) continue
+          picked.push(albums[Math.floor(Math.random() * albums.length)]!)
+          if (picked.length === DISCOVER_SHELF_SIZE) break
+        }
+      }
+      return picked
+    },
     /** The actual ListenBrainz-backed half of rerollDiscover() — split out
      * so that method's own try/catch has one call to wrap, instead of this
      * whole multi-step pipeline living inline inside it. Partitions the
@@ -481,28 +525,34 @@ export default {
       seedNames: string[],
       only: 'albums' | 'artists' | null = null,
     ): Promise<void> {
-      await this.libraryStore.fetchArtists()
-      // No explicit limit — relies on getSimilarArtists()'s own default
-      // (100, matching the backend's), not a smaller number picked here.
-      // A broad library already owns most of the top-scoring matches, so
-      // the pool has to start wide for enough to survive the "not owned"
-      // partition below.
-      const similar = await getSimilarArtists(seedNames)
+      // Side by side rather than one after the other: the artist list feeds
+      // the partition below and the lookup is the long pole (a
+      // MusicBrainz/ListenBrainz round trip whenever the backend's 24h
+      // cache misses), and neither needs anything from the other. Waiting
+      // out a cold artist cache first added its whole duration to how long
+      // the shelves sat empty.
+      //
+      // No explicit limit on the lookup — relies on getSimilarArtists()'s
+      // own default (100, matching the backend's), not a smaller number
+      // picked here. A broad library already owns most of the top-scoring
+      // matches, so the pool has to start wide for enough to survive the
+      // "not owned" partition below.
+      const [, similar] = await Promise.all([
+        this.libraryStore.fetchArtists(),
+        getSimilarArtists(seedNames),
+      ])
 
-      const owned: Album[] = []
+      // Partitioning is pure bookkeeping against the list already in
+      // memory — the requests it implies come after, so that both halves
+      // can be fetched at once.
+      const ownedMatches: Artist[] = []
       const notOwned: SimilarArtist[] = []
       for (const artist of similar) {
         const match = this.libraryStore.artists.find(
           (a) => a.name.toLowerCase() === artist.name.toLowerCase(),
         )
-        if (!match) {
-          notOwned.push(artist)
-          continue
-        }
-        const full = await this.libraryStore.fetchArtist(match.id)
-        if (full.albums.length) {
-          owned.push(full.albums[Math.floor(Math.random() * full.albums.length)]!)
-        }
+        if (match) ownedMatches.push(match)
+        else notOwned.push(artist)
       }
 
       const notOwnedCapped = notOwned.slice(0, 20)
@@ -515,9 +565,12 @@ export default {
       // straight from ListenBrainz Labs (getSimilarArtists() above), so a
       // name-based lookup would just make the backend redundantly re-derive
       // one it doesn't need to.
-      const [images, linksByMbid] = await Promise.allSettled([
-        getArtistImages(notOwnedCapped.map((a) => a.name)),
-        getArtistLinksByMbid(notOwnedCapped.map((a) => a.mbid)),
+      const [owned, [images, linksByMbid]] = await Promise.all([
+        this.albumsForOwnedArtists(ownedMatches),
+        Promise.allSettled([
+          getArtistImages(notOwnedCapped.map((a) => a.name)),
+          getArtistLinksByMbid(notOwnedCapped.map((a) => a.mbid)),
+        ]),
       ])
       if (images.status === 'rejected') {
         console.error('[home] Artist image lookup failed:', images.reason)

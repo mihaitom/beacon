@@ -41,9 +41,11 @@ ever touched.
 import hashlib
 import os
 import uuid
+from urllib.parse import urlencode
 
 import httpx
 import pytest
+from starlette.requests import Request
 
 from media.jellyfin import JellyfinClient
 from media.plex import PlexClient
@@ -53,17 +55,24 @@ pytestmark = pytest.mark.live
 
 @pytest.fixture(autouse=True)
 async def _fresh_bridge_clients():
-    """Both bridges keep one httpx client for the whole process, which is
-    right in production (a single long-lived event loop) and wrong here:
-    pytest-asyncio gives each test its own loop, so the second test inherits
-    connections bound to the first one's closed loop and dies in teardown
-    with "Event loop is closed". Closing between tests costs one handshake
-    and keeps each test standing on its own."""
+    """Both bridges, and the Subsonic proxy, keep one httpx client for the
+    whole process, which is right in production (a single long-lived event
+    loop) and wrong here: pytest-asyncio gives each test its own loop, so
+    the second test inherits connections bound to the first one's closed
+    loop and dies in teardown with "Event loop is closed". Closing between
+    tests costs one handshake and keeps each test standing on its own.
+
+    routes.proxy belongs in here for the same reason the bridges do, and was
+    added the moment a second test went through it (2026-08-28): on its own
+    the Subsonic stream test passed, and directly after the Subsonic cover
+    test it came back as a 502 reading "Proxy error: Event loop is closed"."""
     from media import jellyfin_bridge, plex_bridge
+    from routes import proxy
 
     yield
     await jellyfin_bridge.close()
     await plex_bridge.close()
+    await proxy.close()
 
 
 def _env(*names: str) -> tuple[str, ...] | None:
@@ -597,3 +606,333 @@ async def test_subsonic_serves_the_files_own_lyrics(subsonic):
     assert entry["line"], "no lyric lines came back"
     starts = [line["start"] for line in entry["line"] if "start" in line]
     assert starts == sorted(starts)
+
+
+# ── Cover art ────────────────────────────────────────────────────────────────
+# The one pair of endpoints that never went through a JSON handler: the
+# browser fetches these as raw <img> src URLs, so they take a Request and
+# answer with a stream rather than an envelope (see either bridge's own
+# "Binary handlers" section). Everything above this point could be checked
+# against the JSON the handlers return; this needs the bytes to actually
+# arrive, which is exactly the part a mock cannot vouch for.
+
+
+def _binary_request(path: str, **query: str) -> Request:
+    """The minimum a binary handler reads off a Request: the query string,
+    the method, and a Range header it doesn't get here."""
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": f"/rest/{path}",
+            "query_string": urlencode(query).encode(),
+            "headers": [],
+        }
+    )
+
+
+async def _read_image(response) -> bytes:
+    """Drains a StreamingResponse's body — also what closes the upstream
+    connection, since the handler only releases it once the iterator is
+    exhausted."""
+    chunks = [chunk async for chunk in response.body_iterator]
+    return b"".join(
+        chunk.encode() if isinstance(chunk, str) else bytes(chunk) for chunk in chunks
+    )
+
+
+def _assert_looks_like_an_image(response, body: bytes) -> None:
+    assert response.status_code == 200, f"cover art came back {response.status_code}"
+    content_type = response.headers.get("content-type", "")
+    assert content_type.startswith("image/"), f"not an image: {content_type!r}"
+    assert len(body) > 1000, f"suspiciously small image: {len(body)} bytes"
+    # A real picture, not an HTML error page the server answered 200 with.
+    assert (
+        body[:3] == b"\xff\xd8\xff"
+        or body[:8] == b"\x89PNG\r\n\x1a\n"
+        or body[:4] == b"RIFF"
+    )
+    # Covers are immutable enough to be worth caching, and both bridges are
+    # supposed to say so when the origin didn't (see apply_image_cache_control).
+    assert response.headers.get("cache-control"), "no cache directive on an image"
+    # Forwarding the upstream length can crash uvicorn when the streamed
+    # byte count differs from it, so neither bridge may pass it on.
+    assert "content-length" not in {k.lower() for k in response.headers}
+
+
+async def test_jellyfin_serves_real_cover_art(jellyfin):
+    from media.jellyfin_bridge import get_album_list2, handle
+
+    albums = (
+        await get_album_list2(_params(type="alphabeticalByName", size="5"), jellyfin)
+    )["albumList2"]["album"]
+    cover_id = next((a["coverArt"] for a in albums if a.get("coverArt")), "")
+    assert cover_id, "no album with cover art came back"
+
+    response = await handle(
+        "getCoverArt.view",
+        _binary_request("getCoverArt.view", id=cover_id, size="300"),
+        jellyfin,
+    )
+
+    _assert_looks_like_an_image(response, await _read_image(response))
+
+
+async def test_plex_serves_real_cover_art(plex):
+    from media.plex_bridge import get_album_list2, handle
+
+    albums = (
+        await get_album_list2(_params(type="alphabeticalByName", size="5"), plex)
+    )["albumList2"]["album"]
+    cover_id = next((a["coverArt"] for a in albums if a.get("coverArt")), "")
+    assert cover_id, "no album with cover art came back"
+
+    response = await handle(
+        "getCoverArt.view",
+        _binary_request("getCoverArt.view", id=cover_id, size="300"),
+        plex,
+    )
+
+    _assert_looks_like_an_image(response, await _read_image(response))
+
+
+async def test_jellyfin_refuses_cover_art_without_an_id(jellyfin):
+    # A Subsonic error envelope, not a 500 with a stack trace — the same
+    # degradation every JSON handler gives.
+    from media.jellyfin_bridge import handle
+
+    response = await handle(
+        "getCoverArt.view", _binary_request("getCoverArt.view"), jellyfin
+    )
+
+    assert (
+        response.status_code == 200
+    )  # Subsonic reports its errors inside the envelope
+    assert b'"code":70' in bytes(response.body)
+
+
+async def test_plex_refuses_cover_art_without_an_id(plex):
+    from media.plex_bridge import handle
+
+    response = await handle(
+        "getCoverArt.view", _binary_request("getCoverArt.view"), plex
+    )
+
+    assert response.status_code == 200
+    assert b'"code":70' in bytes(response.body)
+
+
+# ── Streaming a track ────────────────────────────────────────────────────────
+# The other binary path, and a different one from cover art in two ways worth
+# checking against a real server: the URL is derived per server type (Plex has
+# to look the file's own path up over the network first, Jellyfin builds it
+# from the id), and the Range header is forwarded, which is what makes seeking
+# work at all. Both tests ask for the first kilobyte rather than a whole
+# track — enough to prove bytes flow and that the range survived the trip.
+
+
+async def _read_stream_start(response) -> bytes:
+    """Reads what a ranged request returned, closing the iterator explicitly
+    — the upstream connection is released in the generator's own finally, so
+    abandoning it would leak the connection into the next test."""
+    iterator = response.body_iterator
+    chunks: list[bytes] = []
+    try:
+        async for chunk in iterator:
+            chunks.append(chunk.encode() if isinstance(chunk, str) else bytes(chunk))
+            if sum(len(c) for c in chunks) >= 1024:
+                break
+    finally:
+        await iterator.aclose()
+    return b"".join(chunks)
+
+
+def _assert_streams_audio(response, body: bytes) -> None:
+    # 206, not 200: the handler forwards the Range header, and a server
+    # answering the whole file to a ranged request would mean seeking pulls
+    # the track from the top every time.
+    assert response.status_code == 206, (
+        f"ranged request answered {response.status_code} — seeking would refetch from the start"
+    )
+    assert response.headers.get("content-range"), (
+        "no content-range on a partial response"
+    )
+    content_type = response.headers.get("content-type", "")
+    assert (
+        content_type.startswith("audio/") or content_type == "application/octet-stream"
+    ), f"not audio: {content_type!r}"
+    assert body, "no audio bytes came back"
+    # Same uvicorn hazard as the cover-art path: a forwarded length that
+    # doesn't match what is actually streamed crashes the response.
+    assert "content-length" not in {k.lower() for k in response.headers}
+
+
+def _ranged_request(track_id: str) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/rest/stream.view",
+            "query_string": urlencode({"id": track_id}).encode(),
+            "headers": [(b"range", b"bytes=0-1023")],
+        }
+    )
+
+
+async def _first_track_id(get_album_list2, get_album, client) -> str:
+    albums = (
+        await get_album_list2(_params(type="alphabeticalByName", size="5"), client)
+    )["albumList2"]["album"]
+    assert albums, "no albums came back"
+    album = (await get_album({"id": albums[0]["id"]}, client))["album"]
+    assert album["song"], "album came back with no tracks"
+    return str(album["song"][0]["id"])
+
+
+async def test_jellyfin_streams_a_ranged_slice_of_a_track(jellyfin):
+    from media.jellyfin_bridge import get_album, get_album_list2, handle
+
+    track_id = await _first_track_id(get_album_list2, get_album, jellyfin)
+
+    response = await handle("stream.view", _ranged_request(track_id), jellyfin)
+
+    _assert_streams_audio(response, await _read_stream_start(response))
+
+
+async def test_plex_streams_a_ranged_slice_of_a_track(plex):
+    # Also covers the part that has no Jellyfin equivalent: Plex can only
+    # name a track's real file after fetching its metadata, so this path
+    # makes a blocking lookup that the handler has to keep off the event
+    # loop (see plex_bridge._handle_binary's to_thread).
+    from media.plex_bridge import get_album, get_album_list2, handle
+
+    track_id = await _first_track_id(get_album_list2, get_album, plex)
+
+    response = await handle("stream.view", _ranged_request(track_id), plex)
+
+    _assert_streams_audio(response, await _read_stream_start(response))
+
+
+async def test_jellyfin_refuses_a_stream_without_an_id(jellyfin):
+    from media.jellyfin_bridge import handle
+
+    response = await handle("stream.view", _binary_request("stream.view"), jellyfin)
+
+    assert response.status_code == 200
+    assert b'"code":70' in bytes(response.body)
+
+
+async def test_plex_refuses_a_stream_without_an_id(plex):
+    from media.plex_bridge import handle
+
+    response = await handle("stream.view", _binary_request("stream.view"), plex)
+
+    assert response.status_code == 200
+    assert b'"code":70' in bytes(response.body)
+
+
+# ── Subsonic binaries, through our own proxy ─────────────────────────────────
+# Everything else in this file calls a bridge handler, because Jellyfin and
+# Plex need one. Subsonic doesn't: its binaries go through routes/proxy.py
+# instead, whose header handling is deliberately the opposite of the
+# bridges' — it *keeps* the origin's Content-Length (dropping it only for a
+# compressed body) so the browser gets accurate length and Range support.
+# That difference is only worth anything if the length actually matches what
+# arrives, which is what these check against a real Navidrome.
+
+
+def _subsonic_proxy_request(
+    live: "SubsonicLive", endpoint: str, headers: list[tuple[bytes, bytes]] | None = None, **params
+) -> tuple[Request, str]:
+    """A Request as it reaches _proxy(), plus the target URL proxy_subsonic()
+    would have built for it — auth travels in the query string, the way
+    services/subsonic/client.ts sends it."""
+    salt = uuid.uuid4().hex[:12]
+    token = hashlib.md5(f"{live.password}{salt}".encode()).hexdigest()
+    query = urlencode(
+        {
+            "u": live.username,
+            "t": token,
+            "s": salt,
+            "v": "1.16.1",
+            "c": "beacon-live-tests",
+            **params,
+        }
+    )
+
+    async def receive() -> dict:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": f"/rest/{endpoint}",
+            "query_string": query.encode(),
+            "headers": headers or [],
+        },
+        receive=receive,
+    )
+    # Target without the query string, exactly as proxy_subsonic() builds it
+    # — _proxy() forwards the parameters itself, off the request.
+    return request, f"{live.base_url}/rest/{endpoint}"
+
+
+def _assert_streamed(response) -> None:
+    """_proxy() answers with a JSONResponse on every failure path it has
+    (503 unconfigured, 502 connect error, 504 timeout, 499 disconnect) —
+    without this the test dies on the missing body_iterator instead of
+    saying what the proxy actually reported."""
+    if not hasattr(response, "body_iterator"):
+        pytest.fail(f"proxy answered {response.status_code}: {bytes(response.body)!r}")
+
+
+async def test_subsonic_cover_art_arrives_through_the_proxy(subsonic):
+    from routes.proxy import _proxy
+
+    albums = (await subsonic.call("getAlbumList2.view", type="alphabeticalByName", size="5"))[
+        "albumList2"
+    ]["album"]
+    cover_id = next((a["coverArt"] for a in albums if a.get("coverArt")), "")
+    assert cover_id, "no album with cover art came back"
+
+    request, target = _subsonic_proxy_request(subsonic, "getCoverArt.view", id=cover_id, size="300")
+    response = await _proxy(request, target)
+    _assert_streamed(response)
+    body = await _read_image(response)
+
+    assert response.status_code == 200
+    assert response.headers.get("content-type", "").startswith("image/")
+    assert body[:3] == b"\xff\xd8\xff" or body[:8] == b"\x89PNG\r\n\x1a\n" or body[:4] == b"RIFF"
+    assert response.headers.get("cache-control"), "no cache directive on an image"
+    # Kept here, unlike in the bridges — and only safe to keep while it
+    # describes the body that actually arrives. A mismatch is what crashes
+    # uvicorn with "Response content longer than Content-Length".
+    length = response.headers.get("content-length")
+    if length is not None:
+        assert int(length) == len(body), "declared length does not match what was streamed"
+
+
+async def test_subsonic_streams_a_ranged_slice_through_the_proxy(subsonic):
+    from routes.proxy import _proxy
+
+    songs = (await subsonic.call("getRandomSongs.view", size="1"))["randomSongs"]["song"]
+    assert songs, "library returned no songs"
+
+    request, target = _subsonic_proxy_request(
+        subsonic, "stream.view", headers=[(b"range", b"bytes=0-1023")], id=songs[0]["id"]
+    )
+    response = await _proxy(request, target)
+    _assert_streamed(response)
+    body = await _read_stream_start(response)
+
+    # The Range header has to survive the forward, or seeking refetches the
+    # track from the top every time.
+    assert response.status_code == 206, (
+        f"ranged request answered {response.status_code} — Range did not survive the proxy"
+    )
+    assert response.headers.get("content-range"), "no content-range on a partial response"
+    assert body, "no audio bytes came back"
+    length = response.headers.get("content-length")
+    if length is not None:
+        assert int(length) == len(body), "declared length does not match what was streamed"

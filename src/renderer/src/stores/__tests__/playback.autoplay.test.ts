@@ -1,14 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAutoplayStore } from '../autoplay'
+import { useConnectStore } from '../connect'
 import { useLibraryStore } from '../library'
 import { usePlaybackStore } from '../playback'
+import * as connectPlayback from '@/services/connect/playback'
 import { emitter } from '@/emitter'
 import { i18n } from '@/i18n'
 import type { SubsonicClient } from '@/services/subsonic/client'
-import { makeSong } from './fixtures'
+import { makeSong, makeStatus } from './fixtures'
 
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
+
+vi.mock('@/services/connect/playback', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/connect/playback')>()
+  return { ...actual, updateQueue: vi.fn() }
+})
 
 /** Autoplay tops the queue back up shortly before it would run dry, so
  * playback never just stops on its own — see the store's own
@@ -173,5 +180,75 @@ describe('maybeAutoplay', () => {
     stubSimilar({ songs: [makeSong('x')] })
     await playback.maybeAutoplay()
     expect(playback.queue.map((s) => s.id)).toEqual(['a', 'x'])
+  })
+})
+
+/** Autoplay decides whether the *backend* tops the queue up while casting
+ * (routes/stream.py's _maybe_autoplay_topup), which makes it a setting of
+ * the session rather than of one device. */
+describe('Autoplay while casting', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.mocked(connectPlayback.updateQueue).mockResolvedValue({ status: 'ok' })
+  })
+
+  function castTo(): void {
+    useConnectStore().status = makeStatus({
+      targets: [{ name: 'Living Room', type: 'sonos' }],
+    })
+  }
+
+  it('tells connect the moment it is switched off, not at the next song', async () => {
+    // Until it hears, the backend keeps appending songs from the value it
+    // still holds — which is exactly what "turned it off and the queue kept
+    // growing" looked like.
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a'), makeSong('b')], 0)
+    castTo()
+    useAutoplayStore().enabled = true
+
+    playback.setAutoplayEnabled(false)
+
+    expect(useAutoplayStore().enabled).toBe(false)
+    expect(connectPlayback.updateQueue).toHaveBeenCalledWith(
+      ['a', 'b'],
+      0,
+      expect.objectContaining({ autoplayEnabled: false }),
+    )
+  })
+
+  it('keeps it to this device when nothing is being cast to', () => {
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a')], 0)
+
+    playback.setAutoplayEnabled(true)
+
+    expect(useAutoplayStore().enabled).toBe(true)
+    expect(connectPlayback.updateQueue).not.toHaveBeenCalled()
+  })
+
+  it('adopts what the session reports, rather than trusting its own storage', async () => {
+    // A phone that only ever sent transport commands never corrected the
+    // session's value, so it showed "off" over a queue that was visibly
+    // growing.
+    const playback = usePlaybackStore()
+    const song = makeSong('a')
+    playback.setQueue([song], 0)
+    useAutoplayStore().enabled = false
+
+    await playback.adoptCastQueue(makeStatus({ queue: ['a'], autoplay_enabled: true }))
+
+    expect(useAutoplayStore().enabled).toBe(true)
+  })
+
+  it('adopts it being switched off elsewhere too', async () => {
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a')], 0)
+    useAutoplayStore().enabled = true
+
+    await playback.adoptCastQueue(makeStatus({ queue: ['a'], autoplay_enabled: false }))
+
+    expect(useAutoplayStore().enabled).toBe(false)
   })
 })

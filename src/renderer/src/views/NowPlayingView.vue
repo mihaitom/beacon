@@ -64,7 +64,7 @@
         variant="text"
         density="comfortable"
         :title="$t('player.autoplay')"
-        @click="autoplayStore.setEnabled(!autoplayStore.enabled)"
+        @click="playbackStore.setAutoplayEnabled(!autoplayStore.enabled)"
       />
       <!-- Hidden rather than disabled where there is nothing to visualize:
        - a phone plays without a Web Audio graph so that it keeps going
