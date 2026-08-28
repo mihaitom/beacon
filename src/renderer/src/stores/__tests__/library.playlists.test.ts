@@ -1,0 +1,137 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { useLibraryStore } from '../library'
+import type { SubsonicClient } from '@/services/subsonic/client'
+import type { Playlist } from '@/types/library'
+
+const CACHE_KEY = 'beacon.library-cache'
+
+function makePlaylist(id: string, overrides: Partial<Playlist> = {}): Playlist {
+  return {
+    id,
+    name: `List ${id}`,
+    songCount: 3,
+    duration: 600,
+    public: false,
+    coverArtId: null,
+    owner: 'thomas',
+    songs: [],
+    ...overrides,
+  }
+}
+
+function cachedPlaylists(): Playlist[] {
+  const cache = JSON.parse(localStorage.getItem(CACHE_KEY) ?? '{}') as { playlists?: Playlist[] }
+  return cache.playlists ?? []
+}
+
+function stubClient(
+  overrides: Record<string, unknown> = {},
+): Record<string, ReturnType<typeof vi.fn>> {
+  const client = {
+    getPlaylists: vi.fn().mockResolvedValue([]),
+    createPlaylist: vi.fn().mockResolvedValue(undefined),
+    addToPlaylist: vi.fn().mockResolvedValue(undefined),
+    setPlaylistSongs: vi.fn().mockResolvedValue(undefined),
+    updatePlaylist: vi.fn().mockResolvedValue(undefined),
+    deletePlaylist: vi.fn().mockResolvedValue(undefined),
+    star: vi.fn().mockResolvedValue(undefined),
+    unstar: vi.fn().mockResolvedValue(undefined),
+    getStarred2: vi.fn().mockResolvedValue({ artists: [], albums: [], songs: [] }),
+    search3: vi.fn().mockResolvedValue({ artists: [], albums: [], songs: [] }),
+    ...overrides,
+  } as Record<string, ReturnType<typeof vi.fn>>
+  vi.spyOn(useLibraryStore(), 'client').mockReturnValue(client as unknown as SubsonicClient)
+  return client
+}
+
+describe('library mutations', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('writes a deleted playlist out of the cache, not just out of memory', async () => {
+    // Otherwise the next mount reads the cache-first path and, within the
+    // hour-long TTL, serves the just-deleted playlist straight back.
+    const library = useLibraryStore()
+    stubClient()
+    library.playlists = [makePlaylist('p1'), makePlaylist('p2')]
+
+    await library.deletePlaylist('p1')
+
+    expect(library.playlists.map((p) => p.id)).toEqual(['p2'])
+    expect(cachedPlaylists().map((p) => p.id)).toEqual(['p2'])
+  })
+
+  it('writes a rename through to the cache for the same reason', async () => {
+    const library = useLibraryStore()
+    stubClient()
+    library.playlists = [makePlaylist('p1', { name: 'Old' })]
+
+    await library.updatePlaylist('p1', { name: 'New', public: true })
+
+    expect(library.playlists[0]!.name).toBe('New')
+    expect(library.playlists[0]!.public).toBe(true)
+    expect(cachedPlaylists()[0]!.name).toBe('New')
+  })
+
+  it('refetches the list after adding songs, so the song count is not left stale', async () => {
+    const library = useLibraryStore()
+    const client = stubClient({
+      getPlaylists: vi.fn().mockResolvedValue([makePlaylist('p1', { songCount: 5 })]),
+    })
+    library.playlists = [makePlaylist('p1', { songCount: 3 })]
+
+    await library.addToPlaylist('p1', ['s1', 's2'])
+
+    expect(client.addToPlaylist).toHaveBeenCalledWith('p1', ['s1', 's2'])
+    expect(library.playlists[0]!.songCount).toBe(5)
+  })
+
+  it('reorders without touching the shared loading flag', async () => {
+    // The view has already moved the row and reverts it itself on failure;
+    // flashing a loader over a change that is already visible is wrong.
+    const library = useLibraryStore()
+    const client = stubClient()
+    let loadingDuringCall = false
+    client.setPlaylistSongs!.mockImplementation(() => {
+      loadingDuringCall = library.loading
+      return Promise.resolve()
+    })
+
+    await library.reorderPlaylist('p1', ['b', 'a'])
+
+    expect(client.setPlaylistSongs).toHaveBeenCalledWith('p1', ['b', 'a'])
+    expect(loadingDuringCall).toBe(false)
+  })
+
+  it('unstars something that is starred and stars something that is not', async () => {
+    const library = useLibraryStore()
+    const client = stubClient()
+
+    await library.toggleStar({ id: 's1', starred: true })
+    expect(client.unstar).toHaveBeenCalledWith({
+      id: 's1',
+      albumId: undefined,
+      artistId: undefined,
+    })
+    expect(client.star).not.toHaveBeenCalled()
+
+    await library.toggleStar({ albumId: 'al1', starred: false })
+    expect(client.star).toHaveBeenCalledWith({ id: undefined, albumId: 'al1', artistId: undefined })
+    // Re-read afterwards, so every view showing the starred lists agrees.
+    expect(client.getStarred2).toHaveBeenCalledTimes(2)
+  })
+
+  it('clears the results for an empty search instead of querying for nothing', async () => {
+    const library = useLibraryStore()
+    const client = stubClient()
+    library.searchResults = { artists: [], albums: [], songs: [] }
+
+    await library.search('   ')
+
+    expect(client.search3).not.toHaveBeenCalled()
+  })
+})

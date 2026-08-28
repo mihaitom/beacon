@@ -407,6 +407,7 @@ export const usePlaybackStore = defineStore('playback', {
       return state.currentIndex < state.queue.length - 1
     },
     hasPrevious(state): boolean {
+      if (state.queue.length === 0) return false
       return state.currentIndex > 0 || state.repeatMode === 'all'
     },
     isCasting(): boolean {

@@ -250,3 +250,36 @@ describe('maybeAutoplay peeking', () => {
     expect(playback.queueRevealSeq).toBe(1)
   })
 })
+
+describe('the drawer toggles', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('opens and closes the queue drawer, cancelling any pending peek close', () => {
+    // Routing through setQueueDrawerOpen() is what keeps a stale peek timer
+    // from shutting a drawer the user has just reopened by hand.
+    vi.useFakeTimers()
+    const playback = usePlaybackStore()
+    playback.peekQueueDrawer()
+
+    playback.toggleQueueDrawer()
+    expect(playback.queueDrawerOpen).toBe(false)
+
+    playback.toggleQueueDrawer()
+    expect(playback.queueDrawerOpen).toBe(true)
+
+    vi.advanceTimersByTime(10_000)
+    expect(playback.queueDrawerOpen).toBe(true)
+  })
+
+  it('opens and closes the lyrics drawer', () => {
+    const playback = usePlaybackStore()
+
+    playback.toggleLyricsDrawer()
+    expect(playback.lyricsDrawerOpen).toBe(true)
+
+    playback.toggleLyricsDrawer()
+    expect(playback.lyricsDrawerOpen).toBe(false)
+  })
+})

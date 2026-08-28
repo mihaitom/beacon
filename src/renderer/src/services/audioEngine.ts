@@ -140,7 +140,9 @@ export class AudioEngine {
       // skipping through tracks quickly does. Reporting it would clear the
       // playing state of the track that just *started* correctly.
       if (name === 'AbortError') return
-      this.onError?.(message ?? 'Playback error')
+      // `||`, not `??`: a rejection carrying an empty message is no more
+      // reportable than one carrying none at all.
+      this.onError?.(message || 'Playback error')
     })
   }
 
