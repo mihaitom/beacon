@@ -380,11 +380,13 @@ describe('playback transport', () => {
       expect(engine.play).toHaveBeenCalledWith('https://server.example/stream/b', 0, 1)
     })
 
-    it('goes back a song when pressed right after one started', async () => {
+    it('goes back a song when pressed early on, not just in the first second', async () => {
+      // Reacting to a track change takes a moment; the window has to be
+      // wide enough that the correction lands on the song you meant.
       const playback = usePlaybackStore()
       stubLibraryClient()
       playback.setQueue([makeSong('a'), makeSong('b')], 1)
-      playback.localPosition = 1
+      playback.localPosition = 4
 
       await playback.playPrevious()
 

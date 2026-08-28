@@ -66,7 +66,14 @@
         :title="$t('player.autoplay')"
         @click="autoplayStore.setEnabled(!autoplayStore.enabled)"
       />
+      <!-- Hidden rather than disabled where there is nothing to visualize:
+       - a phone plays without a Web Audio graph so that it keeps going
+       - while the screen is locked (see services/audioEngine.ts), and a
+       - control that could only ever produce empty bars is worse than no
+       - control. Still there while casting, whose data comes from the
+       - backend instead. -->
       <v-btn
+        v-if="visualizerAvailable"
         icon="mdi-equalizer"
         :color="showVisualizer ? 'primary' : undefined"
         variant="text"
@@ -216,6 +223,7 @@ import { radioFaviconUrl } from '@/services/connect/radio'
 import CoverArt from '@/components/library/CoverArt.vue'
 import LyricsPanel from '@/components/lyrics/LyricsPanel.vue'
 import AudioVisualizer from '@/components/player/AudioVisualizer.vue'
+import { getAudioEngine } from '@/services/audioEngine'
 import { extractDominantColor } from '@/services/colorExtractor'
 import { hasTransparency } from '@/services/imageTransparency'
 import type { Song } from '@/types/library'
@@ -354,7 +362,12 @@ export default {
     // here too, but the backend analyzes it like any other cast target
     // now (see that module's docstring for why).
     visualizerAvailable() {
-      return !this.playbackStore.isCasting || !!this.currentSong
+      // Casting reads its frequency data from the backend rather than from
+      // this device's own audio, so it needs no local analyser at all —
+      // which is what makes it available on a phone, where there is none
+      // (see webAudioAllowed() in services/audioEngine.ts).
+      if (this.playbackStore.isCasting) return !!this.currentSong
+      return getAudioEngine().hasAnalyser
     },
     visualizerActive() {
       return this.hasPlayable && this.showVisualizer && this.visualizerAvailable

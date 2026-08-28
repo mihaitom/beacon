@@ -64,36 +64,42 @@
         density="comfortable"
         @click="devicePickerOpen = true"
       />
-      <v-btn
-        :icon="volumeIcon"
-        :disabled="muteDisabled"
-        variant="text"
-        density="comfortable"
-        size="small"
-        @click="toggleMute"
-      />
-      <v-slider
-        v-if="singleActiveTarget"
-        :model-value="deviceVolume ?? 0"
-        :max="100"
-        :step="1"
-        :disabled="deviceVolume == null"
-        density="compact"
-        hide-details
-        @update:model-value="onDeviceVolumeChange"
-      />
-      <v-slider
-        v-else
-        :model-value="playbackStore.volume"
-        :max="1"
-        density="compact"
-        hide-details
-        :disabled="playbackStore.isCasting"
-        @update:model-value="playbackStore.setVolume($event)"
-      />
-      <span class="text-caption text-medium-emphasis mobile-transport__volume-value">{{
-        volumePercentLabel
-      }}</span>
+      <!-- Left out entirely where this device's own level cannot be
+       - changed from here anyway - see volumeControlAvailable. A speaker
+       - being cast to keeps its slider either way, that one is set over
+       - the network. -->
+      <template v-if="volumeControlAvailable">
+        <v-btn
+          :icon="volumeIcon"
+          :disabled="muteDisabled"
+          variant="text"
+          density="comfortable"
+          size="small"
+          @click="toggleMute"
+        />
+        <v-slider
+          v-if="singleActiveTarget"
+          :model-value="deviceVolume ?? 0"
+          :max="100"
+          :step="1"
+          :disabled="deviceVolume == null"
+          density="compact"
+          hide-details
+          @update:model-value="onDeviceVolumeChange"
+        />
+        <v-slider
+          v-else
+          :model-value="playbackStore.volume"
+          :max="1"
+          density="compact"
+          hide-details
+          :disabled="playbackStore.isCasting"
+          @update:model-value="playbackStore.setVolume($event)"
+        />
+        <span class="text-caption text-medium-emphasis mobile-transport__volume-value">{{
+          volumePercentLabel
+        }}</span>
+      </template>
     </div>
 
     <mobile-device-picker v-model="devicePickerOpen" />
@@ -104,6 +110,7 @@
 import { usePlaybackStore } from '@/stores/playback'
 import { useConnectStore } from '@/stores/connect'
 import SongWaveform from '@/components/player/SongWaveform.vue'
+import { getAudioEngine } from '@/services/audioEngine'
 import MobileDevicePicker from './MobileDevicePicker.vue'
 import type { ConnectDeviceRef } from '@/services/connect/types'
 
@@ -157,6 +164,17 @@ export default {
         ? this.deviceVolume === 0
         : this.playbackStore.volume === 0
       return muted ? 'mdi-volume-mute' : 'mdi-volume-high'
+    },
+    /** Whether there is any volume here worth offering a control for. On a
+     * phone the local level cannot be changed from the page at all (the
+     * element's volume is read-only there and the Web Audio graph that
+     * could do it is deliberately absent, see AudioEngine.canSetVolume) —
+     * the system volume buttons own it instead, and a slider that moves
+     * without doing anything is worse than none. Casting to a single
+     * speaker is unrelated: that level is set on the device over the
+     * network. */
+    volumeControlAvailable() {
+      return !!this.singleActiveTarget || getAudioEngine().canSetVolume
     },
     muteDisabled() {
       return this.singleActiveTarget ? this.deviceVolume == null : this.playbackStore.isCasting

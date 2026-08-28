@@ -317,6 +317,8 @@ export default {
     replayGainAlbum: 'Album',
     replayGainHint:
       "Uniformise le volume des enregistrements masterisés différemment — « Titre » normalise chaque morceau individuellement, « Album » préserve les différences de volume au sein d'un album. S'applique à la lecture locale et à la diffusion ; pendant une diffusion en cours, un changement ne prend effet qu'à partir du morceau suivant.",
+    replayGainMobileHint:
+      "Sur cet appareil, cela ne s'applique qu'à la diffusion : la lecture passe ici directement par le navigateur afin de continuer lorsque l'écran est verrouillé, ce qui ne laisse aucun moyen d'ajuster le volume de l'audio en chemin.",
     localQuality: 'Qualité audio (cet appareil)',
     localQualityHint:
       "Ne s'applique qu'à la lecture sur cet appareil et est enregistré ici, pas dans le compte — un téléphone et un ordinateur peuvent donc être réglés différemment. « Original » envoie le fichier tel quel ; MP3 le convertit à la lecture, ce qui économise de la bande passante et rend lisibles des fichiers que le navigateur ne sait pas ouvrir. MP3 est la seule conversion proposée ici, car c'est la seule avec laquelle se déplacer dans le morceau fonctionne de manière fiable. Le changement prend effet à partir du morceau suivant.",

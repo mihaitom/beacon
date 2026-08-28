@@ -56,7 +56,7 @@ Beacon is `connect` as the actual foundation instead of an add-on - a frontend b
 - **Browse your library** - Albums, Artists, Tracks, Genres, Playlists, Favorites, and search, all with local filtering across the whole library.
 - **A proper Home** - quick access to what you've been listening to, most played tracks, recently added albums, and real recommendations: a Discover shelf seeded from artists you actually play (via MusicBrainz + ListenBrainz), plus a "New to explore" shelf of similar artists not yet in your library, complete with photos and a link out. Toggleable in Settings.
 - **A Stats page** - library and listening totals, top tracks/artists/albums/genres, format and decade breakdowns.
-- **Local playback** - queue, shuffle, repeat, seek, volume, multiselect (bulk queue/playlist actions), starring and rating tracks, ReplayGain (track/album gain), synced/unsynced lyrics, a fullscreen Now Playing view, and a real-time frequency visualizer (local playback and casting alike).
+- **Local playback** - queue, shuffle, repeat, seek, volume, multiselect (bulk queue/playlist actions), starring and rating tracks, ReplayGain (track/album gain), synced/unsynced lyrics, a fullscreen Now Playing view, and a real-time frequency visualizer (local playback and casting alike). On phones and tablets, ReplayGain and the visualizer make way for playback that survives a screen lock - see the FAQ.
 - **Casting to Sonos, AirPlay, Chromecast, and DLNA devices** - including casting to several at once, taking over a device someone else is using (with a confirmation prompt), and per-device volume control. AirPlay 2 pairing is handled for devices that require it (HomePods, Apple TVs). Casting auto-advances through the queue server-side, so it keeps going even if the controlling window is asleep or a phone's screen is locked.
 - **Playlists** - create them (including straight from the current queue), rename, add and remove tracks, and drag tracks into a different order in your own playlists.
 - **Multi-user** - different logins on the same deployment each get independent playback to independent devices at the same time.
@@ -246,9 +246,11 @@ That's intentional. Sonos speakers advertise AirPlay 2 but require MFi hardware 
 
 Set the log level to Trace in Settings (or `LOG_LEVEL=trace`, see Environment variables above, if the app never comes up far enough to reach Settings) - Debug only covers Beacon's own code, Trace also turns on the SoCo/pyatv/HTTP libraries actually talking to the device, which is normally what you need for a casting issue. Expect a lot of output either way.
 
-### Why does local playback stop on mobile when I lock the screen?
+### Why is there no visualizer, ReplayGain or volume slider in the mobile web player?
 
-This is a mobile browser/PWA limitation, not something Beacon controls. On iOS, Safari (and Beacon installed as a PWA) suspend audio playback as soon as the screen locks. Android's behavior here is less clear and may differ. **Casting is unaffected** - Sonos/Chromecast/AirPlay/DLNA playback is driven entirely by the `connect` backend, independent of whether a browser tab or phone screen is even open, so locking the screen (or closing the tab) doesn't interrupt a cast already in progress.
+So that the music keeps playing when the screen locks. Both features need the audio routed through the browser's Web Audio graph, and on iOS that same routing is what makes Safari treat the playback as Web Audio, which it suspends the moment the screen locks or the tab goes to the background. A plain audio element is allowed to carry on, lock screen controls included. Phones and tablets therefore play without that graph, which leaves both features out there. The volume slider goes with them: a phone browser makes an audio element's volume read-only, so that slider never did anything there in the first place - the device's own volume buttons are what changes the level. Nothing changes in the desktop app, in a desktop browser, or while casting - the visualizer's data comes from the `connect` backend during a cast, not from the phone, so it works there either way.
+
+**Casting is unaffected by any of this** - Sonos/Chromecast/AirPlay/DLNA playback is driven entirely by the `connect` backend, independent of whether a browser tab or phone screen is even open, so locking the screen (or closing the tab) doesn't interrupt a cast already in progress.
 
 ### Why don't OS media keys / lock screen controls work while casting?
 

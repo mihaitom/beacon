@@ -103,10 +103,13 @@ interface PlaybackState {
   lyricsDrawerOpen: boolean
 }
 
-// Scrubbing backwards restarts the current song instead of jumping to the
-// previous one once you're more than this far in — matches how every other
-// music player's "previous" button behaves.
-const RESTART_THRESHOLD_SECONDS = 3
+// Pressing previous restarts the current song instead of jumping to the
+// previous one once you're more than this far in — the usual behaviour for
+// a music player's "previous" button. Raised from 3s (2026-08-28): a press
+// this early almost always means "I meant the song before this one", and
+// three seconds ran out before a reaction to a track change realistically
+// lands, so the correction restarted the song it was trying to leave.
+const RESTART_THRESHOLD_SECONDS = 5
 
 // maybeAutoplay() tops the queue back up once at most this many songs are
 // left after the current one — 1, not 0, so there's a whole song's worth of

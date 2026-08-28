@@ -11,11 +11,45 @@
 // rounding must not read as "the write didn't take".
 const SEEK_TOLERANCE_SECONDS = 0.5
 
+/** Whether the local <audio> element may be routed through a Web Audio
+ * graph at all — which is what buys the visualizer and ReplayGain, and what
+ * costs playback while the screen is locked.
+ *
+ * WebKit counts an element tapped by createMediaElementSource() as Web
+ * Audio playback and suspends it when the screen locks or the page goes to
+ * the background, where a plain media element is allowed to carry on (with
+ * lock-screen controls, see services/mediaSession.ts). Confirmed against
+ * Navidrome's own web player on 2026-08-28: it builds a context only when
+ * ReplayGain is set to album/track (ui/src/audioplayer/Player.jsx), plays
+ * on through a screen lock with the default 'none', and stops doing so the
+ * moment ReplayGain is switched on. Feishin has the same trade behind a
+ * "use web audio" setting.
+ *
+ * `pointer: coarse` rather than a viewport width: this is about the kind of
+ * device, not the size of the window. It picks out phones and tablets
+ * (including an iPad in landscape, which is wide enough to be reading as a
+ * desktop layout) while leaving a narrow desktop browser window — and a
+ * touch laptop, which has a fine pointer too — with the visualizer they
+ * have no reason to lose. Electron is never affected: window.api only
+ * exists there, nothing locks a desktop app's audio away, and the check is
+ * the same idiom stores/auth.ts uses to tell the two builds apart. */
+function webAudioAllowed(): boolean {
+  try {
+    if (window.api) return true
+    return !window.matchMedia('(pointer: coarse)').matches
+  } catch {
+    // Older browser without matchMedia, or a stubbed-out one: keep the
+    // long-standing behaviour rather than silently dropping features.
+    return true
+  }
+}
+
 export class AudioEngine {
   private readonly audio: HTMLAudioElement
   private audioContext: AudioContext | null = null
   private analyserNode: AnalyserNode | null = null
   private gainNode: GainNode | null = null
+  private volumeNode: GainNode | null = null
   // Undoes the pending 'loadedmetadata' retry armed by load() below, so a
   // newer load()/seek() is never overwritten by the previous one's
   // late-arriving start position.
@@ -48,10 +82,12 @@ export class AudioEngine {
     // visualizer (getAnalyser() below throws, caught by
     // AudioVisualizer.vue's sampleFrequencies()) instead of taking plain
     // <audio> playback down with it.
-    try {
-      this.setupAnalyser()
-    } catch (error) {
-      console.error('[audio-engine] Failed to set up analyser:', error)
+    if (webAudioAllowed()) {
+      try {
+        this.setupAnalyser()
+      } catch (error) {
+        console.error('[audio-engine] Failed to set up analyser:', error)
+      }
     }
     this.audio.addEventListener('timeupdate', () => {
       this.onTimeUpdate?.(this.audio.currentTime)
@@ -129,6 +165,10 @@ export class AudioEngine {
    * anything), and the UI is left showing a playing state with silence
    * behind it. */
   private start(): void {
+    // Every path that makes sound goes through here, which is also the only
+    // place guaranteed to run inside the user gesture that asked for it —
+    // see resumeContext()'s own comment for why that matters.
+    this.resumeContext()
     void this.audio.play().catch((error: unknown) => {
       // Read off the value rather than narrowing by `instanceof Error`:
       // what lands here is a DOMException, which isn't reliably an Error
@@ -146,9 +186,11 @@ export class AudioEngine {
     })
   }
 
-  /** Sets the Web Audio gain applied on top of the element's own volume
-   * (see setVolume()) — the two multiply together, exactly matching
-   * ReplayGain's "gain on top of whatever level you already set" semantics.
+  /** Sets the per-song ReplayGain factor, on its own node ahead of the
+   * listener's volume (see setVolume()) — the two multiply together,
+   * exactly matching ReplayGain's "gain on top of whatever level you
+   * already set" semantics. Assigned rather than ramped, unlike volume:
+   * this changes at a song boundary or a settings toggle, not continuously.
    * A no-op if setupAnalyser() below failed (see its comment): losing
    * ReplayGain then is an acceptable degradation, same as losing the
    * visualizer. */
@@ -158,6 +200,7 @@ export class AudioEngine {
 
   pause(): void {
     this.audio.pause()
+    this.suspendContext()
   }
 
   resume(): void {
@@ -169,6 +212,7 @@ export class AudioEngine {
     this.audio.pause()
     this.audio.removeAttribute('src')
     this.audio.load()
+    this.suspendContext()
   }
 
   seek(position: number): void {
@@ -179,8 +223,26 @@ export class AudioEngine {
     this.audio.currentTime = position
   }
 
+  /** Applied through the Web Audio graph rather than the element's own
+   * `volume`, which iOS makes read-only: writing it there is silently
+   * ignored, so the mobile web player's volume slider moved and changed
+   * nothing at all. Falls back to the element for a build where the graph
+   * failed to come up (see setupAnalyser()) — losing volume control
+   * entirely would be a worse degradation than losing the visualizer.
+   *
+   * Ramped rather than assigned: dragging the slider produces a steady
+   * stream of these, and stepping a gain value discontinuously is audible
+   * as a click on each one. The time constant is short enough to still
+   * read as immediate. */
   setVolume(volume: number): void {
-    this.audio.volume = Math.min(1, Math.max(0, volume))
+    const clamped = Math.min(1, Math.max(0, volume))
+    if (!this.volumeNode || !this.audioContext) {
+      this.audio.volume = clamped
+      return
+    }
+    const now = this.audioContext.currentTime
+    this.volumeNode.gain.cancelScheduledValues(now)
+    this.volumeNode.gain.setTargetAtTime(clamped, now, 0.015)
   }
 
   get isPaused(): boolean {
@@ -194,6 +256,40 @@ export class AudioEngine {
    * true. */
   get hasEnded(): boolean {
     return this.audio.ended
+  }
+
+  /** Wakes the analyser graph's context if the browser started it
+   * suspended. The constructor builds that graph before anything has been
+   * played (see its comment), which means it is created without a user
+   * gesture — and a context created that way starts 'suspended' under the
+   * autoplay policy. Because createMediaElementSource() routes the whole
+   * element through that graph, a suspended context means no sound at all,
+   * not merely no visualizer: the element plays, reports positions, fires
+   * 'ended', and stays silent throughout.
+   *
+   * Chromium resumes such a context by itself after the first gesture, so
+   * the desktop app and the Chromium-based browsers never showed this;
+   * Safari does not, which left the mobile web build silent until someone
+   * opened Now Playing, whose visualizer was the only caller that ever
+   * resumed it (see getAnalyser() below). Calling it from start() as well
+   * is what actually ties the wake-up to pressing play. A no-op on a
+   * running context, and on a build where the graph failed to come up at
+   * all. */
+  private resumeContext(): void {
+    if (this.audioContext?.state === 'suspended') void this.audioContext.resume()
+  }
+
+  /** The counterpart to resumeContext(): the graph only runs while sound is
+   * meant to be coming out of it. Pausing the element on its own leaves the
+   * context rendering from a source that has stopped handing it anything,
+   * which a renderer is free to cover by repeating the last block it did
+   * get — heard once on iOS as the final half-second of a track looping
+   * after pause, until the next play sorted it out. Stopping the context
+   * removes the situation rather than relying on the renderer's choice, and
+   * costs nothing on a platform that handled it correctly anyway, since
+   * every path that starts sound resumes it again (see start()). */
+  private suspendContext(): void {
+    if (this.audioContext?.state === 'running') void this.audioContext.suspend()
   }
 
   /** Wires a Web Audio analyser tapped off this element's output — see the
@@ -239,9 +335,38 @@ export class AudioEngine {
     // raw energy, unaffected by whatever ReplayGain happens to be doing to
     // the actual output level.
     this.gainNode = this.audioContext.createGain()
+    // A second node rather than folding the listener's volume into the one
+    // above: the two are set independently (a song start writes ReplayGain,
+    // the slider writes volume) and sharing a node would mean each one
+    // overwriting the other's factor. Last in the chain, so it applies to
+    // whatever ReplayGain has already done — the same "on top of the level
+    // you set" relationship the two had when volume was still the
+    // element's own (see setVolume()).
+    this.volumeNode = this.audioContext.createGain()
     source.connect(this.analyserNode)
     this.analyserNode.connect(this.gainNode)
-    this.gainNode.connect(this.audioContext.destination)
+    this.gainNode.connect(this.volumeNode)
+    this.volumeNode.connect(this.audioContext.destination)
+  }
+
+  /** Whether this device's own playback volume can be changed at all. The
+   * element's `volume` is read-only on mobile browsers, so the graph's gain
+   * node is the only way to move it there — and on exactly those devices
+   * the graph is deliberately absent (see webAudioAllowed()), which leaves
+   * the system volume buttons as the only control. Surfaces that offer a
+   * volume slider check this rather than showing one that cannot do
+   * anything (MobileTransportControls.vue). */
+  get canSetVolume(): boolean {
+    return this.volumeNode !== null
+  }
+
+  /** Whether a local analyser exists to read from at all — false where
+   * webAudioAllowed() above declined to build the graph, and where building
+   * it failed. NowPlayingView.vue reads this to decide whether offering the
+   * visualizer makes sense; casting doesn't go through here (its frequency
+   * data comes from the backend, see services/connect/visualizer.ts). */
+  get hasAnalyser(): boolean {
+    return this.analyserNode !== null
   }
 
   /** Used by the fullscreen visualizer (AudioVisualizer.vue). Throws if the
@@ -251,12 +376,7 @@ export class AudioEngine {
     if (!this.audioContext || !this.analyserNode) {
       throw new Error('Web Audio analyser unavailable')
     }
-    // Autoplay policy can start a freshly-created context 'suspended' —
-    // harmless to call every time, resume() on an already-running context
-    // is a no-op.
-    if (this.audioContext.state === 'suspended') {
-      void this.audioContext.resume()
-    }
+    this.resumeContext()
     return this.analyserNode
   }
 }

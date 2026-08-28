@@ -314,6 +314,8 @@ export default {
     replayGainAlbum: 'Album',
     replayGainHint:
       'Evens out the volume of differently mastered recordings — "Track" normalizes each song individually, "Album" preserves the volume differences within an album. Applies to both local playback and casting; while already casting, a change only takes effect from the next track.',
+    replayGainMobileHint:
+      'On this device it applies to casting only: playing here goes straight through the browser so that it keeps running while the screen is locked, which leaves no way to adjust the volume of the audio on the way.',
     localQuality: 'Audio quality (this device)',
     localQualityHint:
       'Applies only to playback on this device, and is stored here rather than with your account — so a phone and a desktop can be set differently. "Original" sends the file untouched; MP3 converts it as it plays, which saves bandwidth and makes files playable that the browser otherwise can\'t open. MP3 is the only conversion offered here, because it is the only one that lets you reliably jump around in the track while it plays. A change takes effect from the next track.',

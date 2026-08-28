@@ -8,8 +8,22 @@ import { i18n } from '@/i18n'
 import { useConnectStore } from '@/stores/connect'
 import { usePlaybackStore } from '@/stores/playback'
 import MobileTransportControls from '../MobileTransportControls.vue'
+import { getAudioEngine } from '@/services/audioEngine'
 import type { DeviceType } from '@/services/connect/types'
 import { makeSong, makeStatus } from '@/stores/__tests__/fixtures'
+
+// The volume row asks the engine whether this device's own level can be
+// changed at all. jsdom has no AudioContext, so a real engine would always
+// answer no and hide the row every test below is about.
+vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
+
+/** `true` is a desktop browser, `false` a phone — where the element's
+ * volume is read-only and no Web Audio graph exists to do it instead. */
+function withLocalVolume(available: boolean): void {
+  vi.mocked(getAudioEngine).mockReturnValue({
+    canSetVolume: available,
+  } as unknown as ReturnType<typeof getAudioEngine>)
+}
 
 const vuetify = createVuetify({ components, directives })
 
@@ -39,6 +53,7 @@ function castTo(name: string, type: DeviceType, volume?: number) {
 describe('MobileTransportControls', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    withLocalVolume(true)
   })
 
   afterEach(() => {
@@ -232,6 +247,32 @@ describe('MobileTransportControls', () => {
 
       expect(wrapper.getComponent({ name: 'VSlider' }).props('disabled')).toBe(true)
       expect(button(wrapper, 'mdi-volume-high').disabled).toBe(true)
+    })
+  })
+
+  describe('volume this device cannot change', () => {
+    it('offers no slider on a phone, where only the system buttons can change it', () => {
+      // The element's volume is read-only there and the Web Audio graph
+      // that could do it instead is deliberately absent, so a slider here
+      // would move and change nothing.
+      withLocalVolume(false)
+
+      const wrapper = mountControls()
+
+      expect(wrapper.find('.mdi-volume-high').exists()).toBe(false)
+      expect(wrapper.findAllComponents({ name: 'VSlider' })).toHaveLength(0)
+    })
+
+    it('still offers the speaker slider on that same phone while casting', async () => {
+      // That level is set on the device over the network, so nothing about
+      // this device's own audio applies to it.
+      withLocalVolume(false)
+      castTo('Living Room', 'sonos', 30)
+
+      const wrapper = mountControls()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('.mdi-volume-high').exists()).toBe(true)
     })
   })
 

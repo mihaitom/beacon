@@ -66,7 +66,11 @@ class FakeAnalyser {
 }
 
 class FakeGain {
-  gain = { value: 1 }
+  gain = {
+    value: 1,
+    cancelScheduledValues: vi.fn(),
+    setTargetAtTime: vi.fn(),
+  }
   connect = vi.fn()
 }
 
@@ -74,15 +78,28 @@ class FakeAudioContext {
   static last: FakeAudioContext
 
   state: 'running' | 'suspended' = 'running'
+  currentTime = 0
   destination = {}
   analyser = new FakeAnalyser()
+  /** setupAnalyser() builds these in order: ReplayGain first, the
+   * listener's volume second. */
   gain = new FakeGain()
+  volume = new FakeGain()
   source = { connect: vi.fn() }
 
   createMediaElementSource = vi.fn(() => this.source)
   createAnalyser = vi.fn(() => this.analyser)
-  createGain = vi.fn(() => this.gain)
-  resume = vi.fn()
+  createGain = vi.fn(() => (this.createGain.mock.calls.length === 1 ? this.gain : this.volume))
+  // Both track the state the way a real context does, so a test can play,
+  // pause and play again and have each call see the right one.
+  resume = vi.fn(() => {
+    this.state = 'running'
+    return Promise.resolve()
+  })
+  suspend = vi.fn(() => {
+    this.state = 'suspended'
+    return Promise.resolve()
+  })
 
   constructor() {
     FakeAudioContext.last = this
@@ -97,6 +114,18 @@ describe('AudioEngine', () => {
   let audio: FakeAudio
   let context: FakeAudioContext
   let engine: AudioEngine
+
+  /** The one query webAudioAllowed() asks. jsdom's own matchMedia stub
+   * (see __tests__/setup.ts) answers false to everything, which is the
+   * desktop answer — this is how a test says "touch device" instead. */
+  function pretendTouchDevice(): void {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('coarse'),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+  }
 
   beforeEach(() => {
     vi.stubGlobal('Audio', FakeAudio)
@@ -122,7 +151,8 @@ describe('AudioEngine', () => {
       // graph and never reach the output at all.
       expect(context.source.connect).toHaveBeenCalledWith(context.analyser)
       expect(context.analyser.connect).toHaveBeenCalledWith(context.gain)
-      expect(context.gain.connect).toHaveBeenCalledWith(context.destination)
+      expect(context.gain.connect).toHaveBeenCalledWith(context.volume)
+      expect(context.volume.connect).toHaveBeenCalledWith(context.destination)
     })
 
     it('builds it at construction, before anything has ever played', () => {
@@ -146,6 +176,71 @@ describe('AudioEngine', () => {
       expect(context.resume).not.toHaveBeenCalled()
     })
 
+    it('wakes it on play, not only once someone opens the visualizer', () => {
+      // The graph is built at startup, without a user gesture, so Safari
+      // starts it suspended — and since the element's whole output runs
+      // through it, that means silence rather than just a missing
+      // visualizer. Chromium wakes it by itself after the first gesture,
+      // which is why only the mobile web build ever went quiet.
+      context.state = 'suspended'
+
+      engine.play('song.mp3')
+
+      expect(context.resume).toHaveBeenCalledOnce()
+      expect(audio.play).toHaveBeenCalledOnce()
+    })
+
+    it('wakes it when resuming a paused song too', () => {
+      context.state = 'suspended'
+
+      engine.resume()
+
+      expect(context.resume).toHaveBeenCalledOnce()
+    })
+
+    it('does not wake a context that is already running on every play', () => {
+      engine.play('song.mp3')
+
+      expect(context.resume).not.toHaveBeenCalled()
+    })
+
+    it('is not built on a phone, where it would cost playback at the lock screen', () => {
+      // WebKit suspends a context on lock, and an element routed through
+      // one goes with it — see webAudioAllowed(). A plain element keeps
+      // playing, which matters more on a phone than the visualizer does.
+      pretendTouchDevice()
+
+      const mobile = new AudioEngine()
+
+      expect(mobile.hasAnalyser).toBe(false)
+      // The element itself is untouched, so playback is exactly as usual.
+      expect(() => mobile.play('song.mp3', 30)).not.toThrow()
+      expect(FakeAudio.last.src).toBe('song.mp3')
+      expect(FakeAudio.last.currentTime).toBe(30)
+    })
+
+    it('is built for a desktop browser, narrow window and all', () => {
+      // A resized desktop window is still a mouse-driven desktop browser
+      // with no lock screen to lose playback to.
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: false,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }))
+
+      expect(new AudioEngine().hasAnalyser).toBe(true)
+    })
+
+    it('is built in the desktop app whatever the pointer says', () => {
+      // A touchscreen laptop running the installed app has no reason to
+      // lose the visualizer.
+      pretendTouchDevice()
+      vi.stubGlobal('api', {})
+
+      expect(new AudioEngine().hasAnalyser).toBe(true)
+    })
+
     it('keeps plain playback working where Web Audio setup fails outright', () => {
       const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
       vi.stubGlobal(
@@ -160,10 +255,16 @@ describe('AudioEngine', () => {
       const degraded = new AudioEngine()
 
       expect(logged).toHaveBeenCalled()
+      expect(degraded.hasAnalyser).toBe(false)
       // Only the visualizer and ReplayGain are lost — the element still plays.
       expect(() => degraded.getAnalyser()).toThrow(/unavailable/)
       expect(() => degraded.setReplayGain(0.5)).not.toThrow()
       expect(() => degraded.play('song.mp3')).not.toThrow()
+      // And volume falls back to the element, rather than being lost too.
+      degraded.setVolume(0.25)
+      expect(FakeAudio.last.volume).toBe(0.25)
+      expect(() => degraded.pause()).not.toThrow()
+      expect(() => degraded.stop()).not.toThrow()
     })
   })
 
@@ -381,6 +482,35 @@ describe('AudioEngine', () => {
       expect(audio.src).toBe('song.mp3')
     })
 
+    it('stops the graph on pause, instead of leaving it rendering from a stopped source', () => {
+      // A renderer left in that position may repeat the last block it got —
+      // heard on iOS as the final half-second looping after pause.
+      engine.play('song.mp3')
+      engine.pause()
+
+      expect(context.suspend).toHaveBeenCalledOnce()
+      expect(context.state).toBe('suspended')
+    })
+
+    it('brings it back on the next play', () => {
+      engine.play('song.mp3')
+      engine.pause()
+      context.resume.mockClear()
+
+      engine.resume()
+
+      expect(context.resume).toHaveBeenCalledOnce()
+      expect(context.state).toBe('running')
+    })
+
+    it('leaves an already-stopped graph alone', () => {
+      context.state = 'suspended'
+
+      engine.pause()
+
+      expect(context.suspend).not.toHaveBeenCalled()
+    })
+
     it('detaches the source on stop, so nothing keeps buffering in the background', () => {
       engine.play('song.mp3')
       engine.stop()
@@ -388,6 +518,7 @@ describe('AudioEngine', () => {
       expect(audio.pause).toHaveBeenCalledOnce()
       expect(audio.removeAttribute).toHaveBeenCalledWith('src')
       expect(audio.load).toHaveBeenCalledOnce()
+      expect(context.suspend).toHaveBeenCalledOnce()
     })
 
     it('reports what the element itself says about being paused or finished', () => {
@@ -402,15 +533,38 @@ describe('AudioEngine', () => {
       expect(engine.hasEnded).toBe(true)
     })
 
-    it('keeps the volume within what the element accepts', () => {
+    it('sets the volume through the graph, which iOS lets it change', () => {
+      // The element's own `volume` is read-only there, so writing it is
+      // ignored without any error and the slider moves for nothing.
       engine.setVolume(0.4)
-      expect(audio.volume).toBe(0.4)
 
-      engine.setVolume(2)
+      expect(context.volume.gain.setTargetAtTime).toHaveBeenCalledWith(0.4, 0, expect.any(Number))
+      // Not both: the two would multiply and halve the level twice over.
       expect(audio.volume).toBe(1)
+    })
 
+    it('keeps the volume within range', () => {
+      engine.setVolume(2)
       engine.setVolume(-1)
-      expect(audio.volume).toBe(0)
+
+      const applied = context.volume.gain.setTargetAtTime.mock.calls.map((call) => call[0])
+      expect(applied).toEqual([1, 0])
+    })
+
+    it('ramps rather than steps, so dragging the slider does not click', () => {
+      engine.setVolume(0.5)
+
+      expect(context.volume.gain.cancelScheduledValues).toHaveBeenCalled()
+      expect(context.volume.gain.setTargetAtTime).toHaveBeenCalled()
+    })
+
+    it('keeps the ReplayGain factor on its own node, out of the volume', () => {
+      engine.setVolume(0.5)
+      engine.setReplayGain(0.7)
+
+      // Sharing one node would mean each write wiping out the other.
+      expect(context.gain.gain.value).toBe(0.7)
+      expect(context.volume.gain.setTargetAtTime).toHaveBeenCalledWith(0.5, 0, expect.any(Number))
     })
 
     it('defaults the ReplayGain multiplier per song rather than carrying the last one over', () => {

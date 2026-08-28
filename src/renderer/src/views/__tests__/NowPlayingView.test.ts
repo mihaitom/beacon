@@ -12,7 +12,21 @@ import { useLyricsStore } from '@/stores/lyrics'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import NowPlayingView from '../NowPlayingView.vue'
+import { getAudioEngine } from '@/services/audioEngine'
 import { makeSong } from '@/stores/__tests__/fixtures'
+
+// The view asks the engine whether a local analyser exists at all — jsdom
+// has no AudioContext, so a real one would always answer no and every
+// visualizer case below would be testing the wrong branch.
+vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
+
+/** Stands in for a build where the graph came up (desktop, desktop
+ * browser); `false` is a phone, where it deliberately never does. */
+function withAnalyser(available: boolean): void {
+  vi.mocked(getAudioEngine).mockReturnValue({
+    hasAnalyser: available,
+  } as unknown as ReturnType<typeof getAudioEngine>)
+}
 
 const vuetify = createVuetify({ components, directives })
 
@@ -61,6 +75,7 @@ async function mountView(props: Record<string, unknown> = {}) {
 describe('NowPlayingView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    withAnalyser(true)
     // extractDominantColor()/hasTransparency() only ever run when a song
     // has coverArtId or a radio station has a homePageUrl — every fixture
     // below leaves both unset, so neither the canvas-based color sampler
@@ -163,6 +178,31 @@ describe('NowPlayingView', () => {
   describe('visualizer availability', () => {
     it('is available during local (non-casting) playback', async () => {
       const { wrapper } = await mountWithSongFor()
+      expect((wrapper.vm as unknown as { visualizerAvailable: boolean }).visualizerAvailable).toBe(
+        true,
+      )
+    })
+
+    it('is unavailable locally on a device with no audio graph to read', async () => {
+      // A phone plays without one so that playback survives the screen
+      // locking (see webAudioAllowed() in services/audioEngine.ts), which
+      // leaves nothing to visualize.
+      withAnalyser(false)
+
+      const { wrapper } = await mountWithSongFor()
+
+      expect((wrapper.vm as unknown as { visualizerAvailable: boolean }).visualizerAvailable).toBe(
+        false,
+      )
+    })
+
+    it('is available while casting even with no local graph, its data coming from the backend', async () => {
+      withAnalyser(false)
+      const { wrapper } = await mountWithSongFor()
+      const connect = useConnectStore()
+      connect.status = statusWithTargets([{ name: 'Living Room', type: 'sonos' }])
+      await wrapper.vm.$nextTick()
+
       expect((wrapper.vm as unknown as { visualizerAvailable: boolean }).visualizerAvailable).toBe(
         true,
       )

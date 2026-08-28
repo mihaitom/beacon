@@ -312,6 +312,8 @@ export default {
     replayGainAlbum: 'Album',
     replayGainHint:
       'Gleicht die Lautstärke unterschiedlich lauter Aufnahmen an — „Titel“ normalisiert jeden Song einzeln, „Album“ behält die Lautstärkeunterschiede innerhalb eines Albums bei. Gilt für lokale Wiedergabe und Casting; bei laufendem Casting wirkt eine Änderung erst ab dem nächsten Titel.',
+    replayGainMobileHint:
+      'Auf diesem Gerät gilt es nur fürs Casting: Die Wiedergabe hier läuft direkt über den Browser, damit sie bei gesperrtem Bildschirm weiterspielt — dabei lässt sich die Lautstärke des Tons unterwegs nicht anpassen.',
     localQuality: 'Audioqualität (dieses Gerät)',
     localQualityHint:
       'Gilt nur für die Wiedergabe auf diesem Gerät und ist hier gespeichert, nicht im Konto — Handy und Desktop können also unterschiedlich eingestellt sein. „Original“ sendet die Datei unverändert; MP3 wandelt sie beim Abspielen um, was Bandbreite spart und Dateien abspielbar macht, die der Browser sonst nicht öffnen kann. MP3 ist hier das einzige Umwandlungsformat, weil nur damit das Springen in der laufenden Aufnahme zuverlässig funktioniert. Eine Änderung wirkt ab dem nächsten Titel.',

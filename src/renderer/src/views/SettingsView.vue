@@ -50,6 +50,13 @@
       <p class="text-caption text-medium-emphasis mt-3">
         {{ $t('settings.replayGainHint') }}
       </p>
+      <!-- Local playback on a phone runs without a Web Audio graph, which
+       - is also what ReplayGain needs to change the level (see
+       - webAudioAllowed() in services/audioEngine.ts) — saying so beats a
+       - setting that silently does half of what it claims. -->
+      <p v-if="!hasLocalGain" class="text-caption text-medium-emphasis mt-1">
+        {{ $t('settings.replayGainMobileHint') }}
+      </p>
 
       <p class="text-body-2 font-weight-medium mt-6 mb-2">{{ $t('settings.localQuality') }}</p>
       <div class="quality-row">
@@ -270,6 +277,7 @@ import { useRecommendationsStore } from '@/stores/recommendations'
 import { AUTOPLAY_BATCH_SIZE_OPTIONS, useAutoplayStore } from '@/stores/autoplay'
 import { useUpdateStore } from '@/stores/update'
 import type { ReplayGainMode } from '@/services/replayGain'
+import { getAudioEngine } from '@/services/audioEngine'
 import {
   BITRATES,
   CAST_FORMATS,
@@ -360,6 +368,11 @@ export default {
       set(mode: ReplayGainMode) {
         this.playbackStore.setReplayGainMode(mode)
       },
+    },
+    /** Whether this device can apply ReplayGain to its own playback at all
+     * — it rides on the same Web Audio graph the visualizer does. */
+    hasLocalGain(): boolean {
+      return getAudioEngine().hasAnalyser
     },
     replayGainOptions(): { title: string; value: ReplayGainMode }[] {
       return [

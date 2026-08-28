@@ -316,6 +316,8 @@ export default {
     replayGainAlbum: 'Álbum',
     replayGainHint:
       'Iguala el volumen de grabaciones masterizadas de forma diferente — «Pista» normaliza cada canción individualmente, «Álbum» conserva las diferencias de volumen dentro de un álbum. Se aplica tanto a la reproducción local como a la transmisión; mientras ya se está transmitiendo, un cambio solo tiene efecto a partir de la siguiente pista.',
+    replayGainMobileHint:
+      'En este dispositivo se aplica solo a la transmisión: la reproducción aquí pasa directamente por el navegador para que siga sonando con la pantalla bloqueada, lo que no deja forma de ajustar el volumen del audio por el camino.',
     localQuality: 'Calidad de audio (este dispositivo)',
     localQualityHint:
       'Solo se aplica a la reproducción en este dispositivo y se guarda aquí, no en la cuenta, así que un móvil y un ordenador pueden tener ajustes distintos. «Original» envía el archivo sin modificar; MP3 lo convierte al reproducirse, lo que ahorra ancho de banda y permite reproducir archivos que el navegador no puede abrir. MP3 es la única conversión disponible aquí, porque es la única con la que saltar dentro de la pista funciona de forma fiable. El cambio surte efecto a partir de la siguiente pista.',

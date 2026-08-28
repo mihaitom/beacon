@@ -316,6 +316,8 @@ export default {
     replayGainAlbum: 'Album',
     replayGainHint:
       "Uniforma il volume di registrazioni masterizzate in modo diverso: «Brano» normalizza ogni canzone singolarmente, «Album» mantiene le differenze di volume all'interno di un album. Si applica sia alla riproduzione locale sia alla trasmissione; durante una trasmissione già in corso, una modifica ha effetto solo dal brano successivo.",
+    replayGainMobileHint:
+      "Su questo dispositivo vale solo per la trasmissione: la riproduzione qui passa direttamente dal browser per continuare a suonare a schermo bloccato, il che non lascia modo di regolare il volume dell'audio lungo il percorso.",
     localQuality: 'Qualità audio (questo dispositivo)',
     localQualityHint:
       "Si applica solo alla riproduzione su questo dispositivo ed è salvata qui, non nell'account, quindi telefono e computer possono avere impostazioni diverse. «Originale» invia il file invariato; MP3 lo converte durante la riproduzione, il che riduce la banda usata e rende riproducibili file che il browser altrimenti non apre. MP3 è l'unica conversione offerta qui, perché è l'unica con cui spostarsi all'interno del brano funziona in modo affidabile. La modifica ha effetto dal brano successivo.",
