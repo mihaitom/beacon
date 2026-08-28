@@ -410,8 +410,22 @@ if __name__ == "__main__":
     try:
         # Pass the app object directly — string-based import ("main:app") breaks
         # in PyInstaller bundles because the module loader works differently.
+        #
+        # timeout_graceful_shutdown matters specifically for casting: a device
+        # streaming audio holds an HTTP connection open for as long as the
+        # track plays, and uvicorn's own default is to wait for every open
+        # connection to close by itself before ever running the lifespan
+        # shutdown above — the one that actually calls active_delivery.stop()
+        # to tell the device to stop. Without a limit, quitting mid-cast (e.g.
+        # the packaged Electron app's requestQuit()) waited out the rest of
+        # whatever was playing before the backend process actually exited.
         uvicorn.run(
-            app, host="0.0.0.0", port=PORT, log_config=UVICORN_LOG_CONFIG, reload=False
+            app,
+            host="0.0.0.0",
+            port=PORT,
+            log_config=UVICORN_LOG_CONFIG,
+            reload=False,
+            timeout_graceful_shutdown=3,
         )
     except Exception:
         traceback.print_exc()
