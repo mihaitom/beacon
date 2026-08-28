@@ -399,11 +399,15 @@ async def test_jellyfin_reads_the_files_own_lyrics(jellyfin):
     ][0]
 
     assert entry["line"], "no lyric lines came back"
-    # Timings in milliseconds, ascending, and no line left blank — the NUL
-    # byte Jellyfin appends when reading from an ID3 tag would show up here.
+    # Timings in milliseconds, ascending. A blank *timed* line is allowed —
+    # it is how LRC turns a highlight back off between verses, including
+    # Jellyfin's own trailing terminator line — but the raw NUL byte
+    # Jellyfin appends when reading from an ID3 tag must never survive into
+    # a value, blank or not.
     starts = [line["start"] for line in entry["line"] if "start" in line]
     assert starts == sorted(starts)
-    assert all(line["value"].strip() for line in entry["line"])
+    assert all("\x00" not in line["value"] for line in entry["line"])
+    assert any(line["value"].strip() for line in entry["line"]), "nothing but blank lines"
     if starts:
         assert entry["synced"] is True, "timed lines must be reported as synced"
 
@@ -421,7 +425,7 @@ async def test_plex_reads_the_files_own_lyrics(plex):
     assert entry["line"], "no lyric lines came back"
     starts = [line["start"] for line in entry["line"] if "start" in line]
     assert starts == sorted(starts)
-    assert all(line["value"].strip() for line in entry["line"])
+    assert any(line["value"].strip() for line in entry["line"]), "nothing but blank lines"
 
 
 # ── Library scan + who is asking ─────────────────────────────────────────────
