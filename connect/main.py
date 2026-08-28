@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 # Must run before any core.*/routes.* import below — several of them read
@@ -365,6 +365,25 @@ app.add_middleware(
     # being there.
     expose_headers=["X-Has-Transparency"],
 )
+
+
+@app.middleware("http")
+async def _suppress_shutdown_cancellation(request: Request, call_next):
+    """uvicorn's timeout_graceful_shutdown (see uvicorn.run() below) cancels
+    whatever request is still in flight once it expires — expected, and
+    exactly what makes quitting mid-request prompt instead of waiting the
+    request out. Left to reach uvicorn's own ASGI runner uncaught, that
+    CancelledError gets logged as "Exception in ASGI application" with a
+    full traceback, indistinguishable in the logs from a real crash. Added
+    last, so this ends up the outermost middleware and catches it before it
+    gets that far — the connection is going away either way, so a 503
+    nobody will read is as good a response as any."""
+    try:
+        return await call_next(request)
+    except asyncio.CancelledError:
+        logger.debug(f"[shutdown] Request cancelled: {request.method} {request.url.path}")
+        return Response(status_code=503)
+
 
 app.include_router(stream_router)
 # After stream_router, which owns /stream/{session_id} — a different
