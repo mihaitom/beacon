@@ -3,11 +3,23 @@
  * playback. No Vue reactivity here — the playback store owns state and
  * mirrors what this reports via the callbacks below.
  */
+
+// How far the element's own currentTime may sit from the position load()
+// below asked for before the retry considers the early write to have been
+// dropped. Not an exact comparison: a browser is free to land a seek on a
+// nearby decodable point rather than the exact second requested, and that
+// rounding must not read as "the write didn't take".
+const SEEK_TOLERANCE_SECONDS = 0.5
+
 export class AudioEngine {
   private readonly audio: HTMLAudioElement
   private audioContext: AudioContext | null = null
   private analyserNode: AnalyserNode | null = null
   private gainNode: GainNode | null = null
+  // Undoes the pending 'loadedmetadata' retry armed by load() below, so a
+  // newer load()/seek() is never overwritten by the previous one's
+  // late-arriving start position.
+  private cancelStartPositionRetry: (() => void) | null = null
 
   onTimeUpdate: ((position: number) => void) | null = null
   onEnded: (() => void) | null = null
@@ -64,14 +76,72 @@ export class AudioEngine {
    * always set explicitly rather than silently carrying over the previous
    * song's value. */
   load(url: string, startPosition = 0, gain = 1): void {
+    this.cancelStartPositionRetry?.()
     this.audio.src = url
-    this.audio.currentTime = startPosition
+    this.applyStartPosition(startPosition)
     this.setReplayGain(gain)
+  }
+
+  /** Writes `position` twice: once right now, and once more from
+   * 'loadedmetadata' if the first write didn't stick. Chromium buffers a
+   * currentTime written before metadata has loaded and applies it as soon
+   * as the media is ready — which is what every caller here has always
+   * relied on — while Safari drops that same write (or answers it with
+   * InvalidStateError), leaving the song starting from 0 instead of where
+   * it was restored/handed off from. Keeping the early write rather than
+   * only seeking from the event means the desktop path behaves exactly as
+   * before and the retry is purely additive. */
+  private applyStartPosition(position: number): void {
+    if (position <= 0) return
+    try {
+      this.audio.currentTime = position
+    } catch (error) {
+      // InvalidStateError from writing before metadata exists — expected on
+      // the browsers this retry is for, and not worth surfacing.
+      console.debug('[audio-engine] Deferring start position until metadata:', error)
+    }
+    const retry = (): void => {
+      this.cancelStartPositionRetry = null
+      // Only when the early write above was actually dropped. Anything that
+      // legitimately moved the position since then (see seek()) already
+      // cleared this listener, so a difference here means "never applied",
+      // not "the user moved on".
+      if (Math.abs(this.audio.currentTime - position) > SEEK_TOLERANCE_SECONDS) {
+        this.audio.currentTime = position
+      }
+    }
+    this.audio.addEventListener('loadedmetadata', retry, { once: true })
+    this.cancelStartPositionRetry = () => {
+      this.cancelStartPositionRetry = null
+      this.audio.removeEventListener('loadedmetadata', retry)
+    }
   }
 
   play(url: string, startPosition = 0, gain = 1): void {
     this.load(url, startPosition, gain)
-    void this.audio.play()
+    this.start()
+  }
+
+  /** The single place play() is actually called, so every path that starts
+   * sound reports the same way. The returned promise used to be discarded,
+   * which swallowed the autoplay policy's NotAllowedError entirely: nothing
+   * plays, the element fires no 'error' event (it never failed to *load*
+   * anything), and the UI is left showing a playing state with silence
+   * behind it. */
+  private start(): void {
+    void this.audio.play().catch((error: unknown) => {
+      // Read off the value rather than narrowing by `instanceof Error`:
+      // what lands here is a DOMException, which isn't reliably an Error
+      // subclass everywhere (jsdom's isn't), and losing the real message to
+      // that technicality would defeat the point of catching it at all.
+      const { name, message } = (error ?? {}) as { name?: string; message?: string }
+      // Routine, not a failure: the browser rejects a pending play() as
+      // soon as a new src/load() supersedes it, which is exactly what
+      // skipping through tracks quickly does. Reporting it would clear the
+      // playing state of the track that just *started* correctly.
+      if (name === 'AbortError') return
+      this.onError?.(message ?? 'Playback error')
+    })
   }
 
   /** Sets the Web Audio gain applied on top of the element's own volume
@@ -89,16 +159,21 @@ export class AudioEngine {
   }
 
   resume(): void {
-    void this.audio.play()
+    this.start()
   }
 
   stop(): void {
+    this.cancelStartPositionRetry?.()
     this.audio.pause()
     this.audio.removeAttribute('src')
     this.audio.load()
   }
 
   seek(position: number): void {
+    // Takes over from any start position load() is still waiting to apply —
+    // otherwise a seek made before metadata arrived would be undone by that
+    // retry a moment later.
+    this.cancelStartPositionRetry?.()
     this.audio.currentTime = position
   }
 
@@ -201,6 +276,8 @@ export function getAudioEngine(): AudioEngine {
 // immediately invalidating forces a full reload on any edit here instead.
 if (import.meta.hot) {
   import.meta.hot.accept(() => {
-    import.meta.hot!.invalidate('services/audioEngine.ts holds a singleton instance that cannot be safely hot-reloaded')
+    import.meta.hot!.invalidate(
+      'services/audioEngine.ts holds a singleton instance that cannot be safely hot-reloaded',
+    )
   })
 }
