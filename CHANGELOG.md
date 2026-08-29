@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed the queue stalling at the end of the current song after moving a cast from one speaker to another. The song that was playing finished normally, then the speaker stayed silent for roughly the length of another track before the next one started on its own. Moving a cast now hands position tracking over to the speaker that keeps playing, instead of leaving it on the one that was switched off
 - Fixed a song that Autoplay had just added to the queue occasionally disappearing again and getting replaced by a different one a moment later, when two devices were connected to the same cast session and both topped the queue up around the same time. Only the first addition is kept now
 
 ## [1.0.1] - 2026-08-28

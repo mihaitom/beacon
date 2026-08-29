@@ -292,6 +292,33 @@ POSITION_RESYNC_INTERVAL = 8.0
 POSITION_RESYNC_THRESHOLD = 1.0
 
 
+def _still_targeted(st, candidate) -> bool:
+    """Whether `candidate` is still one of the devices this session plays to.
+
+    play_generation alone cannot answer this. /device-stop swaps
+    active_delivery for whatever is left without touching the clock —
+    nothing about the *stream* changed, only who receives it — so a resync
+    task started for the device that just went away keeps its own
+    generation valid and would go on polling a stopped speaker for the rest
+    of the track. A stopped Sonos answers get_position() with a bare
+    0:00:00, which _resync_position_once() below cannot tell apart from a
+    genuine rewind at the value level, so every tick recalibrated
+    position_offset by the entire elapsed time: elapsed() froze at ~0, and
+    with it the `remaining` that _fire_track_end() re-measures on every
+    poll, which is what auto-advance waits on. Observed on prod 2026-08-29
+    13:09 after moving a cast between rooms (join the new one, stop the old
+    one): position_offset walked from -0.59s to -237.02s in 8s steps, the
+    wait went from 15s to 178.6s, and the speaker sat silent for a full
+    extra track length before the queue moved on.
+    """
+    # No active_delivery answers False on its own: `candidate` is always a
+    # real delivery (the caller picks it out of a delivery list), so it can
+    # never be the None this getattr falls back to.
+    return any(
+        d is candidate for d in getattr(st.active_delivery, "deliveries", [st.active_delivery])
+    )
+
+
 async def _resync_position_once(session: SessionState, candidate, generation: int) -> None:
     """One resync check/correction against `candidate` — split out from
     _resync_position_periodically() below purely so it's directly testable
@@ -321,6 +348,15 @@ async def _resync_position_once(session: SessionState, candidate, generation: in
         logger.debug(
             f"[position-resync] {candidate.target}: superseded while get_position() was "
             f"in flight (generation {generation} -> {st.clock.play_generation}) — discarding"
+        )
+        return
+    # Same race, other axis: /device-stop can drop this candidate out of the
+    # session while the round trip above was in flight, and it leaves
+    # play_generation alone — see _still_targeted().
+    if not _still_targeted(st, candidate):
+        logger.debug(
+            f"[position-resync] {candidate.target}: no longer a target of this session "
+            "while get_position() was in flight — discarding"
         )
         return
     # Frozen right here, immediately after get_position() returns (and the
@@ -435,6 +471,17 @@ async def _resync_position_periodically(session: SessionState, target, generatio
     while True:
         await asyncio.sleep(POSITION_RESYNC_INTERVAL)
         if st.clock.play_generation != generation or not st.is_streaming:
+            return
+        # Retires this task when /device-stop removed `candidate` from the
+        # session — see _still_targeted() for why play_generation above does
+        # not cover that, and what polling a stopped speaker did to
+        # auto-advance. /device-stop starts a fresh task for whatever is
+        # left, so this is a handover, not a loss of resync.
+        if not _still_targeted(st, candidate):
+            logger.info(
+                f"[position-resync] {candidate.target}: no longer a target of this "
+                "session — stopping resync for it"
+            )
             return
         if st.clock.is_paused:
             continue

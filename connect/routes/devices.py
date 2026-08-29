@@ -30,6 +30,7 @@ from delivery import (
     SonosDelivery,
 )
 from media import JellyfinClient, PlexClient, SubsonicClient, server_type_name
+from routes.playback import _resync_position_periodically
 
 logger = logging.getLogger("connect.devices")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -253,6 +254,16 @@ async def stop_device(
             (d for d in candidates if isinstance(d, type_cls) and d.target == name), None
         )
         remaining: list[BaseDelivery] = [d for d in candidates if d is not matched]
+        # Which delivery the session's running _resync_position_periodically()
+        # task is polling: it picks the first position-capable one and holds
+        # onto it for the whole track. If that is the device being stopped
+        # here, that task retires itself on its next wake (see
+        # _still_targeted()) and the remaining devices would be left with no
+        # position resync at all for the rest of the track — so a replacement
+        # gets started below. Any other device going away leaves that task
+        # polling a device it still legitimately owns, and starting a second
+        # one for the same candidate would just double the round trips.
+        resync_candidate = next((d for d in candidates if d.SUPPORTS_POSITION), None)
 
         logger.info(
             f"[device-stop] {device_type}:{name} — remaining: "
@@ -339,6 +350,11 @@ async def stop_device(
                     await new_delivery.play(url, title)
                 except Exception:
                     logger.exception("[device-stop] Restart error")
+
+            if st.is_streaming and matched is not None and resync_candidate is matched:
+                asyncio.create_task(
+                    _resync_position_periodically(session, new_delivery, st.clock.play_generation)
+                )
 
     await session.event_bus.broadcast(build_status_dict(session))
     return {"status": "stopped", "device": name}

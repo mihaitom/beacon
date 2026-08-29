@@ -7,7 +7,13 @@ from unittest.mock import AsyncMock, patch
 
 from core.session import compute_position
 from core.streamer import FALLBACK_FORMAT, OutputFormat
-from delivery import AirPlayDelivery, BaseDelivery, ChromecastDelivery, SonosDelivery
+from delivery import (
+    AirPlayDelivery,
+    BaseDelivery,
+    ChromecastDelivery,
+    DeliveryManager,
+    SonosDelivery,
+)
 from media import SubsonicClient, Track
 from routes.playback import (
     POSITION_RESYNC_THRESHOLD,
@@ -1577,6 +1583,7 @@ def test_resync_position_once_ignores_small_drift(default_session):
     default_session.state.clock.play_start_time = time.time() - 10.0
     default_session.state.clock.position_offset = 0.0
     target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=10.2)):
@@ -1602,6 +1609,7 @@ def test_resync_position_once_ignores_small_drift_on_top_of_large_offset(default
     default_session.state.clock.play_start_time = time.time() - 40.0
     default_session.state.clock.position_offset = -6.0
     target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
     import asyncio
 
     # wall_elapsed ≈ 40.0s; device at 34.3s is delta=-5.7s from that — past
@@ -1622,6 +1630,7 @@ def test_resync_position_once_recalibrates_on_forward_seek(default_session):
     default_session.state.clock.play_start_time = time.time() - 10.0
     default_session.state.clock.position_offset = 0.0
     target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=40.0)):
@@ -1635,6 +1644,7 @@ def test_resync_position_once_recalibrates_on_backward_seek(default_session):
     default_session.state.clock.play_start_time = time.time() - 40.0
     default_session.state.clock.position_offset = 0.0
     target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=10.0)):
@@ -1649,6 +1659,7 @@ def test_resync_position_once_ignores_reading_past_track_duration(default_sessio
     default_session.state.clock.play_start_time = time.time() - 10.0
     default_session.state.clock.position_offset = 0.0
     target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=500.0)):
@@ -1677,6 +1688,7 @@ def test_resync_position_once_ignores_a_reset_to_zero_once_wall_clock_is_past_du
     default_session.state.clock.play_start_time = time.time() - 320.0
     default_session.state.clock.position_offset = -1.07
     target = SonosDelivery("Arbeitszimmer")
+    default_session.state.active_delivery = target
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=0.0)):
@@ -1696,6 +1708,7 @@ def test_resync_position_once_still_recalibrates_a_real_rewind_well_before_durat
     default_session.state.clock.play_start_time = time.time() - 40.0
     default_session.state.clock.position_offset = 0.0
     target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=0.0)):
@@ -1709,6 +1722,7 @@ def test_resync_position_once_ignores_negative_reading(default_session):
     default_session.state.clock.play_start_time = time.time() - 10.0
     default_session.state.clock.position_offset = 0.0
     target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=-1.0)):
@@ -1722,6 +1736,7 @@ def test_resync_position_once_ignores_get_position_failure(default_session):
     default_session.state.clock.play_start_time = time.time() - 10.0
     default_session.state.clock.position_offset = 0.0
     target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(side_effect=OSError("unreachable"))):
@@ -1746,6 +1761,7 @@ def test_resync_position_once_discards_reading_superseded_while_in_flight(defaul
     default_session.state.clock.play_start_time = time.time() - 120.0
     default_session.state.clock.position_offset = 0.0
     target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
     import asyncio
 
     async def stale_get_position() -> float:
@@ -1787,6 +1803,7 @@ def test_resync_position_periodically_stops_on_generation_mismatch(default_sessi
     # the time this task gets to run its first check.
     default_session.state.clock.play_generation = 2
     target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=5.0)) as get_position:
@@ -1821,11 +1838,82 @@ async def test_resync_position_periodically_calls_resync_once_per_interval(
     default_session.state.is_streaming = True
     default_session.state.clock.play_generation = 1
     target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
 
     with patch("routes.playback._resync_position_once", new=AsyncMock()) as resync_once:
         await _run_briefly(_resync_position_periodically(default_session, target, generation=1))
 
     resync_once.assert_awaited()
+
+
+async def test_resync_position_periodically_stops_once_its_device_is_dropped(
+    default_session, monkeypatch
+):
+    """The prod 2026-08-29 13:09 bug: moving a cast from one room to another
+    (join the new one, /device-stop the old one) leaves this task polling the
+    room that was just stopped. It has to retire itself on that, because
+    /device-stop deliberately does not touch play_generation — nothing about
+    the stream changed, only who receives it — so the generation check alone
+    never fires."""
+    monkeypatch.setattr("routes.playback.POSITION_RESYNC_INTERVAL", 0.01)
+    st = default_session.state
+    st.is_streaming = True
+    st.clock.play_generation = 1
+    stopped = SonosDelivery("Arbeitszimmer")
+    remaining = SonosDelivery("Wohnzimmer")
+    st.active_delivery = DeliveryManager.from_deliveries([stopped, remaining])
+
+    with patch("routes.playback._resync_position_once", new=AsyncMock()) as resync_once:
+        # Drop `stopped` out of the session the way /device-stop does.
+        st.active_delivery = remaining
+        await _run_briefly(_resync_position_periodically(default_session, stopped, generation=1))
+
+    resync_once.assert_not_awaited()
+
+
+async def test_resync_position_periodically_keeps_polling_a_device_still_targeted(
+    default_session, monkeypatch
+):
+    """Mirror of the test above — stopping some *other* device must not
+    retire the task for one this session is still playing to."""
+    monkeypatch.setattr("routes.playback.POSITION_RESYNC_INTERVAL", 0.01)
+    st = default_session.state
+    st.is_streaming = True
+    st.clock.play_generation = 1
+    kept = SonosDelivery("Wohnzimmer")
+    st.active_delivery = DeliveryManager.from_deliveries([kept, SonosDelivery("Küche")])
+
+    with patch("routes.playback._resync_position_once", new=AsyncMock()) as resync_once:
+        st.active_delivery = kept
+        await _run_briefly(_resync_position_periodically(default_session, kept, generation=1))
+
+    resync_once.assert_awaited()
+
+
+def test_resync_position_once_discards_a_device_dropped_while_in_flight(default_session):
+    """get_position() is a real device round trip (a fresh SSDP discover,
+    easily a second) — a /device-stop landing inside that window must not
+    recalibrate off the stopped device's reading, same as the generation
+    guard next to it. Without this, the 0:00:00 a stopped Sonos reports
+    would drag position_offset by the whole elapsed time."""
+    st = default_session.state
+    st.is_streaming = True
+    st.current_track = Track("1", "Song", "Artist", 180, "")
+    st.clock.play_start_time = time.time() - 40.0
+    st.clock.position_offset = 0.0
+    stopped = SonosDelivery("Arbeitszimmer")
+    st.active_delivery = stopped
+
+    async def _drop_then_report() -> float:
+        # Exactly what /device-stop does mid-round-trip: hand the session to
+        # the remaining device, leave play_generation alone.
+        st.active_delivery = SonosDelivery("Wohnzimmer")
+        return 0.0
+
+    with patch.object(stopped, "get_position", new=AsyncMock(side_effect=_drop_then_report)):
+        asyncio.run(_resync_position_once(default_session, stopped, 0))
+
+    assert st.clock.position_offset == 0.0
 
 
 def test_resync_position_periodically_skips_polling_while_paused(default_session, monkeypatch):
@@ -1834,6 +1922,7 @@ def test_resync_position_periodically_skips_polling_while_paused(default_session
     default_session.state.clock.play_generation = 1
     default_session.state.clock.is_paused = True
     target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=5.0)) as get_position:
