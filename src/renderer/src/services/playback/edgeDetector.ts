@@ -1,6 +1,6 @@
 /** Edge-detects a boolean's false→true / true→false transition across
  * repeated reads of the same underlying value — behind lastEnded (connect
- * status.ended) and wasCastingActive (connect.isActive) in playback.ts,
+ * status.ended) and wasCastingActive (connect.isActive) in stores/playback.ts,
  * both "did this flip since the last time I looked, not just what is it
  * right now" checks (status.ended stays true on every subsequent status
  * tick until the next song starts, and would otherwise re-trigger

@@ -21,12 +21,12 @@ import type { Artist, RadioStation, Song } from '@/types/library'
 import { emitter } from '@/emitter'
 import { i18n } from '@/i18n'
 import { initMediaSession } from '@/services/mediaSession'
-import { createPositionTracker } from './positionTracker'
-import { createSequenceGuard } from './sequenceGuard'
-import { createKeyedGuard } from './keyedGuard'
-import { createLock } from './lock'
-import { createEdgeDetector } from './edgeDetector'
-import { diffCastQueue } from './queueReconcile'
+import { createPositionTracker } from '@/services/playback/positionTracker'
+import { createSequenceGuard } from '@/services/playback/sequenceGuard'
+import { createKeyedGuard } from '@/services/playback/keyedGuard'
+import { createLock } from '@/services/playback/lock'
+import { createEdgeDetector } from '@/services/playback/edgeDetector'
+import { diffCastQueue } from '@/services/playback/queueReconcile'
 
 // Store actions, not components — no this.$emitter/this.$t here, hence
 // going straight to the underlying singletons those are thin wrappers

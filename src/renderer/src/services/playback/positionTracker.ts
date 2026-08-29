@@ -1,6 +1,6 @@
 /** Smooths cast playback's server-reported position — which only ever moves
  * in ~2s jumps, as often as the connect backend's SSE status ticks (see
- * connect.$subscribe() in playback.ts) — into something that can be read
+ * connect.$subscribe() in stores/playback.ts) — into something that can be read
  * every 200ms without visibly stuttering on the seek bar or leaving lyric
  * line highlighting up to ~2s behind the actual audio. record() anchors to
  * the last real (server-authoritative) position report; extrapolate()

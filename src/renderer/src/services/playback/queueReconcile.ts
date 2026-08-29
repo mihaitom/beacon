@@ -1,4 +1,4 @@
-/** Pure decision logic behind adoptCastQueue() in playback.ts — tells
+/** Pure decision logic behind adoptCastQueue() in stores/playback.ts — tells
  * whether an incoming queue/originalQueue from a connect status tick
  * actually differs from what's already loaded locally, before
  * adoptCastQueue() does any of its own (async, per-song) resolution work. */
