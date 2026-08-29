@@ -1,0 +1,90 @@
+name: (internal) Publish Electron
+
+# Reusable workflow, not meant to be dispatched directly — builds and
+# publishes the Electron desktop app for whichever platform legs the
+# caller's `matrix` input lists. Shared by every "Publish *" workflow that
+# ships the desktop app (publish.yml, publish-electron-all-plattforms.yml,
+# publish-linux.yml, publish-macos.yml, publish-windows.yml): each supplies
+# its own subset of platforms as a JSON array of
+# {os, script, arm64_build_tools?, node_options?} entries (see the `matrix`
+# input below), and the actual build steps are only ever written once here.
+#
+# Callers are expected to `needs:` the job that calls this workflow on
+# their own call to _ensure-release.yml first — not enforced here, since
+# this workflow has no way to see another job's completion from inside
+# itself.
+
+on:
+    workflow_call:
+        inputs:
+            matrix:
+                description: >-
+                    JSON array of {os, script, arm64_build_tools?,
+                    node_options?} entries, one per platform leg to build —
+                    see the individual publish-*.yml callers for the actual
+                    lists and why each one is split out the way it is.
+                    `script` is the pnpm script to run (publish:win/
+                    publish:mac/publish:linux/publish:linux-arm64).
+                    arm64_build_tools (bool) installs a C++ compiler first
+                    (see that step below); node_options is passed through
+                    as NODE_OPTIONS (macOS needs a larger heap, see the
+                    build step below).
+                required: true
+                type: string
+
+env:
+    # Silences a Node20-deprecation warning several of the JS actions below
+    # would otherwise print on every run.
+    FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+    publish:
+        runs-on: ${{ matrix.os }}
+
+        # Required so electron-builder's `--publish always` can create/attach
+        # to the release.
+        permissions:
+            contents: write
+
+        strategy:
+            fail-fast: false
+            matrix: ${{ fromJson(inputs.matrix) }}
+
+        steps:
+            - name: Checkout git repo
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            - name: Install Node and PNPM
+              uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+            # Required for package:connect (`uv run connect/packaging/build-binary.py`).
+            # uv installs the required Python version itself.
+            - name: Install uv
+              uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+            # miniaudio (a pyatv/AirPlay dependency) has no prebuilt wheel for
+            # arm64 on any Linux libc — `uv sync` (invoked by package:connect) has
+            # to compile it from source there, which needs a C++ compiler. Not
+            # needed on any x64 leg (it has a prebuilt wheel) — gated per-leg via
+            # the caller's own `arm64_build_tools` matrix entry rather than an
+            # OS-name check here, since this workflow doesn't otherwise know
+            # which legs are arm64.
+            - name: Install build tools (arm64 native compile)
+              if: matrix.arm64_build_tools
+              run: sudo apt-get update -qq && sudo apt-get install -y build-essential
+
+            - name: Install dependencies
+              run: pnpm install
+
+            - name: Build and Publish releases
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  NODE_OPTIONS: ${{ matrix.node_options }}
+              uses: nick-invision/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.0
+              with:
+                  timeout_minutes: 30
+                  max_attempts: 3
+                  retry_on: error
+                  command: |
+                      pnpm run ${{ matrix.script }}
+                  on_retry_command: pnpm cache delete

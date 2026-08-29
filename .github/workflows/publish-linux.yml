@@ -3,85 +3,27 @@ name: Publish Linux (Manual)
 on: workflow_dispatch
 
 jobs:
-    # See publish.yml's ensure-release job for why this exists: electron-builder's
-    # lookup-then-create check for the release draft isn't atomic, so triggering
-    # this alongside another platform's publish workflow around the same time
-    # can otherwise create a duplicate draft holding only this platform's assets.
     ensure-release:
-        runs-on: ubuntu-latest
         permissions:
             contents: write
-        steps:
-            - name: Checkout git repo
-              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-            - name: Read version
-              id: version
-              run: echo "value=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
-            - name: Ensure draft release exists
-              env:
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              run: |
-                  TAG="v${{ steps.version.outputs.value }}"
-                  gh release view "$TAG" --repo "${{ github.repository }}" \
-                      || gh release create "$TAG" --repo "${{ github.repository }}" \
-                          --title "${{ steps.version.outputs.value }}" --draft --notes ""
+        uses: ./.github/workflows/_ensure-release.yml
 
-    publish:
+    publish-electron:
         needs: ensure-release
-        runs-on: ${{ matrix.os }}
-
-        # Required so electron-builder's `--publish always` can create the release
         permissions:
             contents: write
-
-        # x64 and arm64 each build on their own native runner — the bundled Connect
-        # backend binary is built by PyInstaller during `pnpm run package:connect`
-        # and can't be cross-compiled (arm64 Linux also has no built-in x64 emulation,
-        # so a mismatched binary won't run). Each leg passes an explicit --x64/--arm64
-        # to electron-builder so it only packages its own runner's binary instead
-        # of also attempting the other arch's package (which would otherwise
-        # bundle the wrong-arch connect-server binary).
-        strategy:
-            fail-fast: false
-            matrix:
-                include:
-                    - os: ubuntu-latest
-                      script: publish:linux
-                    - os: ubuntu-24.04-arm
-                      script: publish:linux-arm64
-
-        steps:
-            - name: Checkout git repo
-              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-            - name: Install Node and PNPM
-              uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-
-            # Required for package:connect (`uv run connect/packaging/build-binary.py`).
-            # uv installs the required Python version itself.
-            - name: Install uv
-              uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-
-            - name: Install dependencies
-              run: pnpm install
-
-            # miniaudio (a pyatv/AirPlay dependency) has no prebuilt wheel for
-            # arm64 on any Linux libc — `uv sync` (invoked by package:connect) has
-            # to compile it from source there, which needs a C++ compiler. Not
-            # needed on ubuntu-latest (x64 has a prebuilt wheel), so gated to
-            # just the arm64 leg.
-            - name: Install build tools (arm64 native compile)
-              if: matrix.os == 'ubuntu-24.04-arm'
-              run: sudo apt-get update -qq && sudo apt-get install -y build-essential
-
-            - name: Build and Publish releases
-              env:
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              uses: nick-invision/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.0
-              with:
-                  timeout_minutes: 30
-                  max_attempts: 3
-                  retry_on: error
-                  command: |
-                      pnpm run ${{ matrix.script }}
-                  on_retry_command: pnpm cache delete
+        uses: ./.github/workflows/_publish-electron.yml
+        with:
+            # x64 and arm64 each build on their own native runner — the bundled
+            # Connect backend binary is built by PyInstaller during
+            # `pnpm run package:connect` and can't be cross-compiled (arm64
+            # Linux also has no built-in x64 emulation, so a mismatched binary
+            # won't run). Each leg's own script passes an explicit --x64/--arm64
+            # to electron-builder so it only packages its own runner's binary
+            # instead of also attempting the other arch's package (which would
+            # otherwise bundle the wrong-arch connect-server binary).
+            matrix: |
+                [
+                  {"os": "ubuntu-latest", "script": "publish:linux"},
+                  {"os": "ubuntu-24.04-arm", "script": "publish:linux-arm64", "arm64_build_tools": true}
+                ]

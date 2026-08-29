@@ -1,0 +1,51 @@
+name: (internal) Ensure release draft exists
+
+# Reusable workflow, not meant to be dispatched directly — called as a job
+# by every "Publish *" workflow that needs a GitHub release draft to exist
+# before any platform build starts (publish.yml, publish-electron-
+# all-plattforms.yml, publish-linux.yml, publish-macos.yml,
+# publish-windows.yml).
+#
+# electron-builder's GitHub publisher (releaseType: draft, see
+# electron-builder.yml) looks up the release for the current version's tag
+# and only creates one if none exists yet — but that lookup-then-create
+# isn't atomic, so when multiple platform jobs hit it around the same time
+# (parallel matrix legs, all builds taking a similar number of minutes),
+# each can see "no release yet" and create its own duplicate draft, each
+# holding only its own platform's assets. Creating the release once here,
+# *before* any of the (multi-minute) platform builds start, means every
+# platform job's own lookup always finds it already there and just attaches
+# its assets — no race left to lose. The same protection extends across two
+# *different* publish workflows triggered close together (e.g.
+# publish-windows.yml and publish-macos.yml run back to back), since they
+# both call this same job. Callers make their own platform job(s) wait via
+# `needs: ensure-release` on the job that calls this workflow.
+
+on:
+    workflow_call:
+
+env:
+    # Silences a Node20-deprecation warning several of the JS actions used
+    # across the publish workflows would otherwise print on every run.
+    FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+    contents: write
+
+jobs:
+    ensure-release:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout git repo
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Read version
+              id: version
+              run: echo "value=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+            - name: Ensure draft release exists
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  TAG="v${{ steps.version.outputs.value }}"
+                  gh release view "$TAG" --repo "${{ github.repository }}" \
+                      || gh release create "$TAG" --repo "${{ github.repository }}" \
+                          --title "${{ steps.version.outputs.value }}" --draft --notes ""
