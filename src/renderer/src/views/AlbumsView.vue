@@ -159,9 +159,14 @@ const SKELETON_COUNT = 18
 // QUEUE_VIRTUALIZE_THRESHOLD.
 const ALBUM_VIRTUALIZE_THRESHOLD = 500
 // Must match .album-card's own width (below) and .album-grid's own gap —
-// this is what turns an available pixel width into a column count.
+// this is what turns an available pixel width into a column count. Same
+// pair of values as ArtistsView.vue's and AlbumShelf.vue's: all three lay
+// out the same 160px cards, and this grid showing the very same AlbumCards
+// at a different spacing than the shelves was an oversight, not a design
+// choice. Changing one of the two here without the other silently
+// mis-counts columns rather than looking wrong.
 const ALBUM_ITEM_WIDTH = 160
-const ALBUM_GAP = 16
+const ALBUM_GAP = 20
 // Seed for v-virtual-scroll's row height (160px cover + mt-2 + title line +
 // artist line) — doesn't need to be exact, just close enough that the
 // scrollbar doesn't visibly jump once real rows are measured; see
@@ -354,7 +359,9 @@ export default {
 .album-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  /* Keep in step with ALBUM_GAP in <script>, and with ArtistsView's
+   * .artist-grid / AlbumShelf's own row — see ALBUM_GAP's comment. */
+  gap: 20px;
 }
 
 .album-card {
