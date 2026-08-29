@@ -9,7 +9,6 @@ import {
   type LocalStreamPlan,
   type StreamFormat,
   type StreamQuality,
-  type TranscodeFormat,
 } from '@/services/streamQuality'
 import { useLibraryStore } from './library'
 import { useConnectStore } from './connect'
@@ -27,6 +26,20 @@ import { createKeyedGuard } from '@/services/playback/keyedGuard'
 import { createLock } from '@/services/playback/lock'
 import { createEdgeDetector } from '@/services/playback/edgeDetector'
 import { diffCastQueue } from '@/services/playback/queueReconcile'
+import type { RepeatMode } from '@/services/playback/types'
+import { resolveRadioStation } from '@/services/playback/radioStation'
+import { buildCastQualityPayload, buildCastQueuePayload } from '@/services/playback/castPayload'
+import {
+  clearPersistedPlayback,
+  loadPersisted,
+  readSessionWasPlaying,
+  savePersisted,
+  writeSessionWasPlaying,
+} from '@/services/playback/persistence'
+
+// Re-exported for stores/auth.ts's logout, which has always reached for it
+// here — see persistence.ts for what it does.
+export { clearPersistedPlayback }
 
 // Store actions, not components — no this.$emitter/this.$t here, hence
 // going straight to the underlying singletons those are thin wrappers
@@ -43,8 +56,6 @@ function notifyPlexPassRequired(titleKey: string): void {
     message: i18n.global.t('library.plexPassRequired'),
   })
 }
-
-type RepeatMode = 'off' | 'all' | 'one'
 
 interface PlaybackState {
   originalQueue: Song[]
@@ -223,83 +234,6 @@ const positionTracker = createPositionTracker()
 const SCROBBLE_PERCENT = 0.5
 const SCROBBLE_MAX_SECONDS = 240
 
-// localStorage key for the persisted queue/position snapshot (see init()'s
-// $subscribe and restoreFromStorage()) — lets a reload (or app restart)
-// pick local playback back up close to where it left off, since a reload
-// necessarily destroys the <audio> element and stops it for a moment.
-const PERSIST_KEY = 'beacon.playback'
-
-interface PersistedPlaybackState {
-  queue: Song[]
-  originalQueue: Song[]
-  currentIndex: number
-  radioStation: RadioStation | null
-  shuffle: boolean
-  repeatMode: RepeatMode
-  volume: number
-  replayGainMode: ReplayGainMode
-  localPosition: number
-}
-
-function loadPersisted(): PersistedPlaybackState | null {
-  try {
-    const raw = localStorage.getItem(PERSIST_KEY)
-    return raw ? (JSON.parse(raw) as PersistedPlaybackState) : null
-  } catch {
-    return null
-  }
-}
-
-function savePersisted(snapshot: PersistedPlaybackState): void {
-  try {
-    localStorage.setItem(PERSIST_KEY, JSON.stringify(snapshot))
-  } catch {
-    // Storage full/unavailable — losing resume-on-reload is an acceptable
-    // degradation, not worth surfacing to the user.
-  }
-}
-
-// sessionStorage, deliberately not part of PersistedPlaybackState above —
-// resumeLocalPlayback()'s decision to actually make sound needs to tell a
-// reload apart from a genuine app restart, and localStorage can't do that on
-// its own (it survives both identically). sessionStorage is the platform's
-// own answer to exactly this: it survives a reload of the same window/tab
-// but is gone the moment that window/tab is closed, so it's only ever still
-// there to read back if this boot is a reload of a session that was already
-// running — never on a real restart (a fresh process/window/tab, Electron or
-// web alike). Read once, first thing, in restoreFromStorage() below, before
-// anything in this fresh instance's own life could overwrite it.
-const SESSION_WAS_PLAYING_KEY = 'beacon.playback.session-was-playing'
-
-function readSessionWasPlaying(): boolean {
-  try {
-    return sessionStorage.getItem(SESSION_WAS_PLAYING_KEY) === 'true'
-  } catch {
-    return false
-  }
-}
-
-function writeSessionWasPlaying(wasPlaying: boolean): void {
-  try {
-    sessionStorage.setItem(SESSION_WAS_PLAYING_KEY, String(wasPlaying))
-  } catch {
-    // Same acceptable degradation as savePersisted() above — worst case a
-    // reload no longer resumes audio either, just like a restart already
-    // doesn't.
-  }
-}
-
-/** Called from authStore.logout() — a different Navidrome account signing
- * in afterwards shouldn't inherit the previous one's queue/position (whose
- * stream URLs wouldn't even be valid for the new account anyway). */
-export function clearPersistedPlayback(): void {
-  try {
-    localStorage.removeItem(PERSIST_KEY)
-  } catch {
-    // Nothing to clean up if storage isn't available in the first place.
-  }
-}
-
 let persistTimer: ReturnType<typeof setTimeout> | null = null
 // Whether the sessionStorage marker read at boot (see SESSION_WAS_PLAYING_KEY
 // above) says this is a reload of a session that was already playing — set
@@ -329,13 +263,6 @@ const castingActiveEdge = createEdgeDetector()
 // broadcast" contract intact on this side: acted on once per payload, and a
 // genuinely new interruption arrives as a new object.
 let interruptedPayloadHandled: unknown = null
-
-// Whether resolveRadioStation() has already paid for a station-list fetch
-// this session. Only ever set when the list was empty and a lookup missed,
-// so a station connect reports that genuinely isn't in the library (an
-// ad-hoc URL, another client's station) can't turn every status tick into
-// a request.
-let radioStationsFetched = false
 
 // All the singleton bookkeeping above (endedEdge, the seq/keyed guards,
 // persistTimer, ...) lives outside Pinia's own reactive state, so Vite's
@@ -426,62 +353,13 @@ export const usePlaybackStore = defineStore('playback', {
     replayGainMultiplier(): number {
       return this.currentSong ? calculateReplayGain(this.currentSong, this.replayGainMode) : 1
     },
-    /** The cast quality ceiling in the shape connect's /play expects, or an
-     * empty object when there is none — connect treats both fields missing
-     * as "no ceiling" and behaves exactly as it did before they existed
-     * (see resolve_output_format()), so spreading nothing is the correct
-     * way to say "don't cap this". */
-    castQualityPayload(state): {
-      max_lossy_format?: TranscodeFormat
-      max_lossy_bitrate_kbps?: number
-    } {
-      if (state.castQuality.format === 'original') return {}
-      return {
-        max_lossy_format: state.castQuality.format,
-        max_lossy_bitrate_kbps: state.castQuality.bitrate,
-      }
+    /** See buildCastQualityPayload(). */
+    castQualityPayload(state): ReturnType<typeof buildCastQualityPayload> {
+      return buildCastQualityPayload(state.castQuality)
     },
-    /** The full queue (history included) + current index, plus the standing
-     * shuffle/repeat/originalQueue preferences — everything
-     * connectPlayback.play()/updateQueue() need to both drive connect's own
-     * auto-advance and broadcast the same queue/now-playing/toggle-state to
-     * every other client sharing this session (see
-     * services/connect/playback.ts's own comments). fullQueue is truncated
-     * to history+current (nothing after) under repeat-one: connect would
-     * otherwise auto-advance straight past the very song the user asked to
-     * loop, which only this renderer's own repeat-mode logic
-     * (advanceOnSongEnd() below) knows to keep replaying instead — other
-     * clients briefly not seeing "upcoming" while repeat-one is active is
-     * an acceptable trade for that. Repeat-all's wraparound past the end of
-     * the full list is a similar renderer-only case, left alone here — see
-     * this store's own advanceOnSongEnd(). */
-    castQueuePayload(state): {
-      fullQueue: string[]
-      queueIndex: number
-      originalQueue: string[]
-      shuffle: boolean
-      repeatMode: RepeatMode
-      autoplayEnabled: boolean
-      autoplayBatchSize: number
-    } {
-      const upToCurrent = state.queue.slice(0, state.currentIndex + 1)
-      const songs = state.repeatMode === 'one' ? upToCurrent : state.queue
-      // Told to connect alongside shuffle/repeatMode (not read back from
-      // status the way those are — see adoptCastQueue()) purely so
-      // routes/stream.py's own fallback top-up (maybeAutoplay()'s backend-
-      // side counterpart, for whenever no frontend client is around to run
-      // this one) knows the current setting without needing a whole
-      // separate sync channel for it.
-      const autoplay = useAutoplayStore()
-      return {
-        fullQueue: songs.map((t) => t.id),
-        queueIndex: state.currentIndex,
-        originalQueue: state.originalQueue.map((t) => t.id),
-        shuffle: state.shuffle,
-        repeatMode: state.repeatMode,
-        autoplayEnabled: autoplay.enabled,
-        autoplayBatchSize: autoplay.batchSize,
-      }
+    /** See buildCastQueuePayload(). */
+    castQueuePayload(state): ReturnType<typeof buildCastQueuePayload> {
+      return buildCastQueuePayload(state)
     },
   },
 
@@ -752,7 +630,7 @@ export const usePlaybackStore = defineStore('playback', {
           this.originalQueue = []
           this.queue = []
           this.currentIndex = -1
-          this.radioStation = await this.resolveRadioStation(status.radio.url, status.radio.title)
+          this.radioStation = await resolveRadioStation(status.radio.url, status.radio.title)
         }
         return
       }
@@ -1017,47 +895,6 @@ export const usePlaybackStore = defineStore('playback', {
       if (plexPassRequired) notifyPlexPassRequired('library.artistRadio')
       // peek — see startSongRadio()'s identical comment.
       await this.playSongList(songs, 0, true, true)
-    },
-
-    /** The full station behind what connect reports playing. The status
-     * itself carries only a title and a stream URL (see ConnectStatus's
-     * `radio`), which is everything the player *bar* needs but not enough
-     * for its logo: that is looked up from the station's own homepage (see
-     * radioFaviconUrl), and a station rebuilt without one shows the
-     * generic radio icon in the player bar and Now Playing for as long as
-     * it keeps playing. Matched against the library's own station list
-     * instead — by stream URL, then by name, since connect may report the
-     * URL it actually ended up streaming from rather than the one the
-     * station is stored with.
-     *
-     * Falls back to the bare title/URL pair for a station that genuinely
-     * isn't in the library, which is the same station this used to build
-     * unconditionally. */
-    async resolveRadioStation(streamUrl: string, title: string): Promise<RadioStation> {
-      const library = useLibraryStore()
-      const findKnown = (): RadioStation | undefined =>
-        library.radioStations.find((station) => station.streamUrl === streamUrl) ??
-        library.radioStations.find((station) => station.name === title)
-
-      let known = findKnown()
-      if (!known && !library.radioStations.length && !radioStationsFetched) {
-        // Nothing to match against yet — the list is only loaded when
-        // RadioView is opened, and a session that started casting radio
-        // from another client may never have opened it.
-        radioStationsFetched = true
-        try {
-          await library.fetchRadioStations()
-        } catch (error) {
-          console.error('[playback] Failed to load radio stations:', error)
-        }
-        known = findKnown()
-      }
-      // The reported URL wins over the stored one even on a match: it is
-      // what is actually playing, and it is what the next status tick is
-      // compared against — keeping the stored URL instead would make every
-      // single tick look like a station change and rebuild this (clearing
-      // the queue with it) over and over.
-      return known ? { ...known, streamUrl } : { id: '', name: title, streamUrl, homePageUrl: null }
     },
 
     async playRadioStation(station: RadioStation): Promise<void> {
