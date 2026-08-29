@@ -65,9 +65,7 @@ def test_health_no_server_lock_by_default(client):
     assert r.json()["server_lock"] is None
 
 
-def test_health_reports_server_lock_with_server_url(
-    client, monkeypatch, server_lock_env
-):
+def test_health_reports_server_lock_with_server_url(client, monkeypatch, server_lock_env):
     monkeypatch.setenv("SERVER_LOCK", "true")
     monkeypatch.setenv("SERVER_URL", "https://navidrome.example.com")
     _reload_devices()
@@ -79,9 +77,7 @@ def test_health_reports_server_lock_with_server_url(
     }
 
 
-def test_health_server_lock_falls_back_to_internal_url(
-    client, monkeypatch, server_lock_env
-):
+def test_health_server_lock_falls_back_to_internal_url(client, monkeypatch, server_lock_env):
     monkeypatch.setenv("SERVER_LOCK", "true")
     monkeypatch.setenv("NAVIDROME_INTERNAL_URL", "http://navidrome:4533")
     _reload_devices()
@@ -90,9 +86,7 @@ def test_health_server_lock_falls_back_to_internal_url(
     assert r.json()["server_lock"]["url"] == "http://navidrome:4533"
 
 
-def test_health_prefers_server_url_over_internal_url(
-    client, monkeypatch, server_lock_env
-):
+def test_health_prefers_server_url_over_internal_url(client, monkeypatch, server_lock_env):
     monkeypatch.setenv("SERVER_LOCK", "true")
     monkeypatch.setenv("SERVER_URL", "https://navidrome.example.com")
     monkeypatch.setenv("NAVIDROME_INTERNAL_URL", "http://navidrome:4533")
@@ -129,9 +123,7 @@ def test_health_server_url_alone_without_lock_flag_reports_no_lock(
     assert r.json()["server_lock"] is None
 
 
-def test_health_server_lock_reports_jellyfin_server_type(
-    client, monkeypatch, server_lock_env
-):
+def test_health_server_lock_reports_jellyfin_server_type(client, monkeypatch, server_lock_env):
     monkeypatch.setenv("SERVER_LOCK", "true")
     monkeypatch.setenv("SERVER_URL", "https://jellyfin.example.com")
     monkeypatch.setenv("SERVER_TYPE", "jellyfin")

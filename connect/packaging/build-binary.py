@@ -51,7 +51,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except subprocess.CalledProcessError as e:
-        print(
-            f"[connect] Command failed with exit code {e.returncode}", file=sys.stderr
-        )
+        print(f"[connect] Command failed with exit code {e.returncode}", file=sys.stderr)
         sys.exit(e.returncode)

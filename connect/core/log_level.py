@@ -46,8 +46,13 @@ TRACE = 3
 logging.addLevelName(TRACE, "TRACE")
 
 LEVELS = ("TRACE", "DEBUG", "INFO", "WARNING", "ERROR")
-_NUMERIC = {"TRACE": TRACE, "DEBUG": logging.DEBUG, "INFO": logging.INFO,
-            "WARNING": logging.WARNING, "ERROR": logging.ERROR}
+_NUMERIC = {
+    "TRACE": TRACE,
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+}
 
 _DATA_DIR = os.environ.get("CONNECT_DATA_DIR") or os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))

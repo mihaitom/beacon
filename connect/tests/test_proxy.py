@@ -101,9 +101,9 @@ def test_proxy_strips_authentik_headers_before_forwarding(client, default_sessio
     headers = captured["headers"]
     assert "x-authentik-username" not in {k.lower() for k in headers}
     assert "x-authentik-groups" not in {k.lower() for k in headers}
-    assert headers.get("X-Custom-Header") == "keep-me" or headers.get(
-        "x-custom-header"
-    ) == "keep-me"
+    assert (
+        headers.get("X-Custom-Header") == "keep-me" or headers.get("x-custom-header") == "keep-me"
+    )
 
 
 # ── Repeated query params (Subsonic's list-argument convention) ──────────────

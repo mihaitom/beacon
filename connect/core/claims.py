@@ -105,9 +105,7 @@ class ClaimRegistry:
                 self._claims[key] = Claim(session_id=session_id, claimed_at=time.time())
             return displaced
 
-    async def release(
-        self, target_type: str, name: str, session_id: str | None = None
-    ) -> None:
+    async def release(self, target_type: str, name: str, session_id: str | None = None) -> None:
         """Release (type, name). If session_id is given, only releases when
         that session is the current owner (avoids one session accidentally
         releasing a claim it just lost to a takeover)."""

@@ -120,9 +120,7 @@ def test_claim_many_with_force_displaces_all_conflicting_owners():
     asyncio.run(registry.claim("sonos", "Wohnzimmer", "session-a"))
 
     result = asyncio.run(
-        registry.claim_many(
-            [("sonos", "Küche"), ("sonos", "Wohnzimmer")], "session-b", force=True
-        )
+        registry.claim_many([("sonos", "Küche"), ("sonos", "Wohnzimmer")], "session-b", force=True)
     )
 
     assert result is None

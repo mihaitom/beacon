@@ -256,7 +256,9 @@ async def _jf_request(
         # call; handle()'s own catch-all only sees whatever exception
         # message bubbles up to it, without this request-shape context.
         elapsed = time.monotonic() - started
-        logger.warning(f"[jellyfin-bridge] {method} {url} failed after {elapsed:.2f}s (params={params})")
+        logger.warning(
+            f"[jellyfin-bridge] {method} {url} failed after {elapsed:.2f}s (params={params})"
+        )
         raise
     elapsed = time.monotonic() - started
     if elapsed > 1:
@@ -454,16 +456,25 @@ async def get_starred2(_params: dict, media: JellyfinClient) -> dict:
     # IncludeItemTypes in one call; three guaranteed-correct calls beat one
     # call that might silently only filter the first type.
     songs = await _jf_get(
-        media, f"/Users/{media.user_id}/Items", IncludeItemTypes="Audio",
-        Filters="IsFavorite", Recursive="true",
+        media,
+        f"/Users/{media.user_id}/Items",
+        IncludeItemTypes="Audio",
+        Filters="IsFavorite",
+        Recursive="true",
     )
     albums = await _jf_get(
-        media, f"/Users/{media.user_id}/Items", IncludeItemTypes="MusicAlbum",
-        Filters="IsFavorite", Recursive="true",
+        media,
+        f"/Users/{media.user_id}/Items",
+        IncludeItemTypes="MusicAlbum",
+        Filters="IsFavorite",
+        Recursive="true",
     )
     artists = await _jf_get(
-        media, f"/Users/{media.user_id}/Items", IncludeItemTypes="MusicArtist",
-        Filters="IsFavorite", Recursive="true",
+        media,
+        f"/Users/{media.user_id}/Items",
+        IncludeItemTypes="MusicArtist",
+        Filters="IsFavorite",
+        Recursive="true",
     )
     return {
         "starred2": {
@@ -512,9 +523,7 @@ async def get_playlists(_params: dict, media: JellyfinClient) -> dict:
 async def get_playlist(params: dict, media: JellyfinClient) -> dict:
     playlist_id = params["id"]
     item = await _jf_get(media, f"/Users/{media.user_id}/Items/{_quote_id(playlist_id)}")
-    songs = await _jf_get(
-        media, f"/Playlists/{_quote_id(playlist_id)}/Items", userId=media.user_id
-    )
+    songs = await _jf_get(media, f"/Playlists/{_quote_id(playlist_id)}/Items", userId=media.user_id)
     playlist = _map_playlist(item)
     playlist["entry"] = _map_all(_map_song, songs.get("Items", []))
     return {"playlist": playlist}
@@ -540,9 +549,7 @@ async def _playlist_entries(playlist_id: str, media: JellyfinClient) -> list[tup
     """(PlaylistItemId, song id) per entry, in playlist order. The two ids
     are distinct — the same song added twice is two entries sharing one song
     id, and only the per-entry id addresses a specific one."""
-    items = await _jf_get(
-        media, f"/Playlists/{_quote_id(playlist_id)}/Items", userId=media.user_id
-    )
+    items = await _jf_get(media, f"/Playlists/{_quote_id(playlist_id)}/Items", userId=media.user_id)
     return [
         (entry["PlaylistItemId"], str(entry.get("Id", "")))
         for entry in items.get("Items", [])
@@ -550,9 +557,7 @@ async def _playlist_entries(playlist_id: str, media: JellyfinClient) -> list[tup
     ]
 
 
-async def _set_playlist_songs(
-    playlist_id: str, song_ids: list[str], media: JellyfinClient
-) -> None:
+async def _set_playlist_songs(playlist_id: str, song_ids: list[str], media: JellyfinClient) -> None:
     """Makes the playlist hold exactly `song_ids`, in that order.
 
     Jellyfin has no replace-the-list call, so this removes what's no longer
@@ -615,9 +620,7 @@ async def _remove_from_playlist(
     # obtainable only by listing the playlist first — a narrow race window
     # exists if the playlist changes between this list and the delete below,
     # same as any read-then-act sequence without a lock.
-    items = await _jf_get(
-        media, f"/Playlists/{_quote_id(playlist_id)}/Items", userId=media.user_id
-    )
+    items = await _jf_get(media, f"/Playlists/{_quote_id(playlist_id)}/Items", userId=media.user_id)
     entries = items.get("Items", [])
     entry_ids = [
         entries[i]["PlaylistItemId"]
@@ -778,7 +781,9 @@ async def get_lyrics_by_song_id(params: dict, media: JellyfinClient) -> dict:
         # the Subsonic extension wants milliseconds.
         start = line.get("Start")
         structured_lines.append(
-            {"start": int(start / 10_000), "value": value} if start is not None else {"value": value}
+            {"start": int(start / 10_000), "value": value}
+            if start is not None
+            else {"value": value}
         )
     # Nothing but blanks is not a lyric sheet — answering with those would
     # stop the frontend from falling back to its third-party providers.

@@ -77,9 +77,7 @@ def test_connection_with_audio_consumes_resume_offset(client, default_session):
     assert default_session.state.clock.resume_offset == 0.0
 
 
-def test_abandoned_then_real_connection_preserves_offset_for_the_real_one(
-    client, default_session
-):
+def test_abandoned_then_real_connection_preserves_offset_for_the_real_one(client, default_session):
     """The exact scenario from the bug report: an aborted first connection
     must not cost the real (second) connection its seek offset."""
     _configure_and_set_track(client, default_session)
@@ -95,9 +93,7 @@ def test_abandoned_then_real_connection_preserves_offset_for_the_real_one(
     assert mocked.call_args.kwargs["start_offset"] == 42.0
 
 
-def test_stale_connection_does_not_clear_a_newer_generations_offset(
-    client, default_session
-):
+def test_stale_connection_does_not_clear_a_newer_generations_offset(client, default_session):
     """If a new /seek (bumping play_generation) happens while an old,
     abandoned connection is still in flight, that old connection reaching
     its first chunk must not clobber the new generation's offset."""
@@ -180,9 +176,7 @@ def test_a_fresh_dispatch_is_still_served_from_its_own_offset(client, default_se
     assert st.streamed_generation == st.clock.play_generation
 
 
-def test_a_reconnect_after_playback_ended_is_not_resumed_mid_track(
-    client, default_session
-):
+def test_a_reconnect_after_playback_ended_is_not_resumed_mid_track(client, default_session):
     """is_streaming is False here — the session's playback genuinely ended
     and the device is only now getting round to re-requesting the URL.
     Nothing to resume into."""
@@ -199,7 +193,8 @@ def test_a_reconnect_after_playback_ended_is_not_resumed_mid_track(
 
 
 async def test_active_stream_connections_rolls_back_when_setup_fails_before_streaming(
-    client, default_session,
+    client,
+    default_session,
 ):
     """Regression test: the connection is counted (for
     _mark_disconnected_if_not_reconnected's grace-period check) *before*
@@ -211,10 +206,13 @@ async def test_active_stream_connections_rolls_back_when_setup_fails_before_stre
     _configure_and_set_track(client, default_session)
     before = default_session.state.active_stream_connections
 
-    with patch(
-        "media.subsonic.SubsonicClient.get_stream_url",
-        side_effect=RuntimeError("media server unreachable"),
-    ), pytest.raises(RuntimeError):
+    with (
+        patch(
+            "media.subsonic.SubsonicClient.get_stream_url",
+            side_effect=RuntimeError("media server unreachable"),
+        ),
+        pytest.raises(RuntimeError),
+    ):
         await audio_stream(session_id=default_session.session_id)
 
     assert default_session.state.active_stream_connections == before
@@ -478,9 +476,7 @@ async def test_advance_or_end_autoplay_filters_songs_already_queued(default_sess
     default_session.state.autoplay_enabled = True
     already_queued = Track(id="1", title="Current", artist="Artist", duration=180, cover_art_id="c")
 
-    with patch.object(
-        default_session.media, "get_similar_songs2", return_value=[already_queued]
-    ):
+    with patch.object(default_session.media, "get_similar_songs2", return_value=[already_queued]):
         await _advance_or_end(default_session, generation)
 
     assert default_session.state.queue == ["1"]
@@ -587,7 +583,8 @@ async def test_dispatch_queued_track_passes_its_gain_to_resolve_output_format(de
 
 
 async def test_ffmpeg_failure_mid_stream_reports_not_streaming_without_marking_ended(
-    client, default_session,
+    client,
+    default_session,
 ):
     _configure_and_set_track(client, default_session)
 
@@ -611,7 +608,8 @@ async def test_ffmpeg_failure_mid_stream_reports_not_streaming_without_marking_e
 
 
 async def test_client_disconnect_mid_stream_is_reraised_without_touching_state(
-    client, default_session,
+    client,
+    default_session,
 ):
     _configure_and_set_track(client, default_session)
 
@@ -641,7 +639,8 @@ async def test_client_disconnect_mid_stream_is_reraised_without_touching_state(
 
 
 async def test_is_streaming_revives_once_a_bare_reconnect_produces_audio(
-    client, default_session,
+    client,
+    default_session,
 ):
     """Regression test (2026-08-22): a bare device-initiated reconnect (no
     /play, /seek, or /resume involved — the device just re-requested this
@@ -698,7 +697,8 @@ async def test_a_real_drop_marks_the_broadcast_as_an_interruption(default_sessio
     q = default_session.event_bus.subscribe()
 
     await _mark_disconnected_if_not_reconnected(
-        default_session, my_generation=default_session.state.clock.play_generation,
+        default_session,
+        my_generation=default_session.state.clock.play_generation,
     )
 
     payload = q.get_nowait()
@@ -722,7 +722,8 @@ async def test_a_real_drop_freezes_the_clock_at_its_position(default_session, mo
     default_session.state.clock.play_start_time -= 45.0  # 45s into the track
 
     await _mark_disconnected_if_not_reconnected(
-        default_session, my_generation=default_session.state.clock.play_generation,
+        default_session,
+        my_generation=default_session.state.clock.play_generation,
     )
 
     assert default_session.state.clock.is_paused is True
@@ -735,7 +736,8 @@ async def test_an_ordinary_broadcast_is_not_marked_as_an_interruption(default_se
 
 
 async def test_resume_after_interruption_resumes_from_the_frozen_position(
-    default_session, monkeypatch,
+    default_session,
+    monkeypatch,
 ):
     """Re-dispatch, not restart: _mark_disconnected_if_not_reconnected() froze
     the clock at the moment it declared the drop (the same way /pause does),
@@ -751,7 +753,10 @@ async def test_resume_after_interruption_resumes_from_the_frozen_position(
     default_session.state.current_track = MagicMock(duration=300)
     default_session.state.clock.start(0.0)
     default_session.state.clock.pause(12.5)  # frozen where the drop happened
-    monkeypatch.setattr("routes.stream._current_reconnect_args", lambda s: ("url", "t", "a", None, 300.0, "", "audio/mpeg"))
+    monkeypatch.setattr(
+        "routes.stream._current_reconnect_args",
+        lambda s: ("url", "t", "a", None, 300.0, "", "audio/mpeg"),
+    )
 
     before = default_session.state.clock.play_generation
     assert await _resume_after_interruption(default_session) is True
@@ -764,7 +769,8 @@ async def test_resume_after_interruption_resumes_from_the_frozen_position(
 
 
 async def test_resume_after_interruption_clamps_an_unfrozen_clock_to_track_duration(
-    default_session, monkeypatch,
+    default_session,
+    monkeypatch,
 ):
     """Defensive fallback for a clock that wasn't frozen (shouldn't happen in
     practice - see the function's own docstring, every path that sets
@@ -780,7 +786,10 @@ async def test_resume_after_interruption_clamps_an_unfrozen_clock_to_track_durat
     default_session.state.current_track = MagicMock(duration=300)
     default_session.state.clock.start(0.0)
     default_session.state.clock.play_start_time -= 1000.0  # elapsed() now far past duration
-    monkeypatch.setattr("routes.stream._current_reconnect_args", lambda s: ("url", "t", "a", None, 300.0, "", "audio/mpeg"))
+    monkeypatch.setattr(
+        "routes.stream._current_reconnect_args",
+        lambda s: ("url", "t", "a", None, 300.0, "", "audio/mpeg"),
+    )
 
     assert await _resume_after_interruption(default_session) is True
 
@@ -800,7 +809,10 @@ async def test_resume_after_interruption_reports_a_failed_dispatch(default_sessi
     delivery.play = AsyncMock(side_effect=OSError("unreachable"))
     default_session.state.active_delivery = delivery
     default_session.state.current_track = MagicMock(duration=300)
-    monkeypatch.setattr("routes.stream._current_reconnect_args", lambda s: ("url", "t", "a", None, 300.0, "", "audio/mpeg"))
+    monkeypatch.setattr(
+        "routes.stream._current_reconnect_args",
+        lambda s: ("url", "t", "a", None, 300.0, "", "audio/mpeg"),
+    )
 
     assert await _resume_after_interruption(default_session) is False
 
@@ -856,7 +868,8 @@ async def test_resolve_track_retries_a_transient_failure(default_session, monkey
 
 
 async def test_resolve_track_gives_up_after_a_bounded_number_of_attempts(
-    default_session, monkeypatch,
+    default_session,
+    monkeypatch,
 ):
     """It runs under play_lock, so a genuinely unreachable media server must
     not stall every other playback handler behind an unbounded retry."""
@@ -971,7 +984,8 @@ async def test_mark_interrupted_says_nobody_asked_for_this(default_session):
 
 
 async def test_marks_not_streaming_when_nothing_reconnects_within_the_grace_period(
-    default_session, monkeypatch,
+    default_session,
+    monkeypatch,
 ):
     monkeypatch.setattr("routes.stream.STREAM_DISCONNECT_GRACE_SECONDS", 0.01)
     default_session.state.is_streaming = True
@@ -980,7 +994,8 @@ async def test_marks_not_streaming_when_nothing_reconnects_within_the_grace_peri
     q = default_session.event_bus.subscribe()
 
     await _mark_disconnected_if_not_reconnected(
-        default_session, my_generation=default_session.state.clock.play_generation,
+        default_session,
+        my_generation=default_session.state.clock.play_generation,
     )
 
     assert default_session.state.is_streaming is False
@@ -990,9 +1005,14 @@ async def test_marks_not_streaming_when_nothing_reconnects_within_the_grace_peri
 
 def _snapshot(**over):
     kw = {
-        "label": "OVERWERK — Toccata", "duration": 411, "position": 270.1,
-        "blocked_for": 0.02, "bytes_delivered": 11_400_000, "wall": 270.0,
-        "loop_lag_30s": 0.0, "loop_lag_120s": 0.0,
+        "label": "OVERWERK — Toccata",
+        "duration": 411,
+        "position": 270.1,
+        "blocked_for": 0.02,
+        "bytes_delivered": 11_400_000,
+        "wall": 270.0,
+        "loop_lag_30s": 0.0,
+        "loop_lag_120s": 0.0,
     }
     kw.update(over)
     return DisconnectSnapshot(**kw)
@@ -1043,7 +1063,9 @@ async def test_a_pause_does_not_log_a_drop(default_session, monkeypatch, caplog)
     assert not caplog.records
 
 
-async def test_the_grace_period_still_works_without_a_snapshot(default_session, monkeypatch, caplog):
+async def test_the_grace_period_still_works_without_a_snapshot(
+    default_session, monkeypatch, caplog
+):
     """snapshot is optional — the disconnect handling itself must not
     depend on diagnostic instrumentation being wired up."""
     monkeypatch.setattr("routes.stream.STREAM_DISCONNECT_GRACE_SECONDS", 0.01)
@@ -1052,7 +1074,8 @@ async def test_the_grace_period_still_works_without_a_snapshot(default_session, 
 
     with caplog.at_level(logging.ERROR, logger="connect.stream"):
         await _mark_disconnected_if_not_reconnected(
-            default_session, my_generation=default_session.state.clock.play_generation,
+            default_session,
+            my_generation=default_session.state.clock.play_generation,
         )
 
     assert default_session.state.is_streaming is False
@@ -1060,7 +1083,8 @@ async def test_the_grace_period_still_works_without_a_snapshot(default_session, 
 
 
 async def test_does_not_mark_not_streaming_while_another_connection_is_still_open(
-    default_session, monkeypatch,
+    default_session,
+    monkeypatch,
 ):
     """Multi-target casting (e.g. Chromecast + DLNA at once) can have more
     than one GET /stream connection open for the same session — one
@@ -1076,7 +1100,8 @@ async def test_does_not_mark_not_streaming_while_another_connection_is_still_ope
     q = default_session.event_bus.subscribe()
 
     await _mark_disconnected_if_not_reconnected(
-        default_session, my_generation=default_session.state.clock.play_generation,
+        default_session,
+        my_generation=default_session.state.clock.play_generation,
     )
 
     assert default_session.state.is_streaming is True
@@ -1084,7 +1109,8 @@ async def test_does_not_mark_not_streaming_while_another_connection_is_still_ope
 
 
 async def test_does_not_mark_not_streaming_once_a_newer_generation_took_over(
-    default_session, monkeypatch,
+    default_session,
+    monkeypatch,
 ):
     """A /play, /seek, or /resume landing during the grace period bumps
     play_generation — this stale check must not touch a session that isn't
@@ -1104,7 +1130,8 @@ async def test_does_not_mark_not_streaming_once_a_newer_generation_took_over(
 
 
 async def test_a_finished_track_that_auto_advanced_is_not_a_drop(
-    default_session, monkeypatch,
+    default_session,
+    monkeypatch,
 ):
     """AirPlay closes its GET /stream connection when the track's bytes run
     out, and since it streams incrementally now (see delivery/airplay.py's
@@ -1134,9 +1161,7 @@ async def test_a_finished_track_that_auto_advanced_is_not_a_drop(
     assert await _dispatch_queued_track(default_session, delivery, next_track, 1.0) is True
 
     q = default_session.event_bus.subscribe()
-    await _mark_disconnected_if_not_reconnected(
-        default_session, my_generation=finished_generation
-    )
+    await _mark_disconnected_if_not_reconnected(default_session, my_generation=finished_generation)
 
     assert st.is_streaming is True
     assert q.empty()
@@ -1156,7 +1181,8 @@ async def test_does_not_mark_not_streaming_while_legitimately_paused(default_ses
     q = default_session.event_bus.subscribe()
 
     await _mark_disconnected_if_not_reconnected(
-        default_session, my_generation=default_session.state.clock.play_generation,
+        default_session,
+        my_generation=default_session.state.clock.play_generation,
     )
 
     assert default_session.state.is_streaming is True
@@ -1175,7 +1201,8 @@ async def test_does_not_rebroadcast_when_already_not_streaming(default_session, 
     q = default_session.event_bus.subscribe()
 
     await _mark_disconnected_if_not_reconnected(
-        default_session, my_generation=default_session.state.clock.play_generation,
+        default_session,
+        my_generation=default_session.state.clock.play_generation,
     )
 
     assert q.empty()
@@ -1266,9 +1293,7 @@ def test_playback_duration_prefers_the_measured_length_over_whole_second_metadat
     assert _playback_duration(default_session.state) == pytest.approx(180.73)
 
 
-def test_playback_duration_falls_back_to_metadata_when_nothing_was_probed(
-    client, default_session
-):
+def test_playback_duration_falls_back_to_metadata_when_nothing_was_probed(client, default_session):
     # The forced/probe-failed fallback tiers carry no measured length.
     _configure_and_set_track(client, default_session)
     default_session.state.current_output_format = FALLBACK_FORMAT
@@ -1276,9 +1301,7 @@ def test_playback_duration_falls_back_to_metadata_when_nothing_was_probed(
     assert _playback_duration(default_session.state) == pytest.approx(180.0)
 
 
-def test_playback_duration_ignores_a_measurement_that_disagrees_wildly(
-    client, default_session
-):
+def test_playback_duration_ignores_a_measurement_that_disagrees_wildly(client, default_session):
     """A probe that measured something else entirely (a redirect to a
     different file, a live stream that reported a bogus length) must not be
     able to hold a finished track open — or cut a long one short."""
@@ -1288,9 +1311,7 @@ def test_playback_duration_ignores_a_measurement_that_disagrees_wildly(
     assert _playback_duration(default_session.state) == pytest.approx(180.0)
 
 
-def test_playback_duration_accepts_the_usual_sub_second_disagreement(
-    client, default_session
-):
+def test_playback_duration_accepts_the_usual_sub_second_disagreement(client, default_session):
     # Rounding alone puts these up to a second apart — that's the normal
     # case this exists for, not a suspicious one.
     _configure_and_set_track(client, default_session)
@@ -1299,9 +1320,7 @@ def test_playback_duration_accepts_the_usual_sub_second_disagreement(
     assert _playback_duration(default_session.state) == pytest.approx(180.99)
 
 
-def test_playback_duration_is_zero_for_radio_with_no_known_length(
-    client, default_session
-):
+def test_playback_duration_is_zero_for_radio_with_no_known_length(client, default_session):
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
     default_session.state.current_track = Track(
         id="r", title="Radio", artist="Station", duration=0, cover_art_id=""
@@ -1354,9 +1373,7 @@ async def test_fire_track_end_waits_out_the_last_half_second_instead_of_cutting_
     assert default_session.state.track_ended is True
 
 
-async def test_fire_track_end_repolls_until_the_track_actually_finishes(
-    client, default_session
-):
+async def test_fire_track_end_repolls_until_the_track_actually_finishes(client, default_session):
     """_fire_track_end()'s own wait loop: re-measures the live clock on
     each poll rather than sleeping the original estimate in one go, so a
     mid-wait correction (see its own docstring) gets picked up within one

@@ -89,9 +89,7 @@ async def play_test_tone(session: SessionState = Depends(require_authenticated_s
     st = session.state
     target = st.active_delivery
     if not target:
-        return {
-            "error": "No active delivery — connect a device and start playing something first"
-        }
+        return {"error": "No active delivery — connect a device and start playing something first"}
 
     st.current_track = Track(
         id=TEST_TONE_TRACK_ID,

@@ -17,9 +17,7 @@ from media.jellyfin import (
 _REAL_PING = JellyfinClient.ping
 
 
-def _client(
-    url="http://proxy:9180", internal_url="", token="tok", user_id="u1"
-) -> JellyfinClient:
+def _client(url="http://proxy:9180", internal_url="", token="tok", user_id="u1") -> JellyfinClient:
     return JellyfinClient(url, token=token, user_id=user_id, internal_url=internal_url)
 
 
@@ -220,9 +218,7 @@ def test_ping_hits_authenticated_endpoint_with_token(monkeypatch):
     def fake_get(url, **kwargs):
         captured["url"] = url
         captured["headers"] = kwargs.get("headers")
-        return httpx.Response(
-            200, json={"Id": "user"}, request=httpx.Request("GET", url)
-        )
+        return httpx.Response(200, json={"Id": "user"}, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(JellyfinClient, "ping", _REAL_PING)
     monkeypatch.setattr(http_client, "get", fake_get)
@@ -331,9 +327,7 @@ def test_check_quick_connect_authenticated_true(monkeypatch):
     def fake_get(url, params=None, headers=None, timeout=None):
         assert url == "http://jf:8096/QuickConnect/Connect"
         assert params == {"secret": "sec-1"}
-        return httpx.Response(
-            200, json={"Authenticated": True}, request=httpx.Request("GET", url)
-        )
+        return httpx.Response(200, json={"Authenticated": True}, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(http_client, "get", fake_get)
     assert check_quick_connect_authenticated("http://jf:8096", "sec-1") is True
@@ -341,9 +335,7 @@ def test_check_quick_connect_authenticated_true(monkeypatch):
 
 def test_check_quick_connect_authenticated_false(monkeypatch):
     def fake_get(url, **kwargs):
-        return httpx.Response(
-            200, json={"Authenticated": False}, request=httpx.Request("GET", url)
-        )
+        return httpx.Response(200, json={"Authenticated": False}, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(http_client, "get", fake_get)
     assert check_quick_connect_authenticated("http://jf:8096", "sec-1") is False

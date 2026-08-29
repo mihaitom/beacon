@@ -286,9 +286,7 @@ async def local_stream(
         return JSONResponse({"error": f"Track not available: {e}"}, status_code=502)
 
     info = await _probe_cached(session.session_id, track_id, source_url)
-    args, content_type = lossy_encode_args(
-        fmt, br, info.sample_rate if info else None
-    )
+    args, content_type = lossy_encode_args(fmt, br, info.sample_rate if info else None)
 
     headers = {"Cache-Control": "no-store"}
     status_code = 200

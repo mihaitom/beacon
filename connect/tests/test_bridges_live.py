@@ -204,9 +204,7 @@ async def test_plex_adds_and_removes_playlist_entries(plex, plex_playlist):
 
     # Subsonic removes by position, Plex by per-entry id — the translation
     # in between is what this checks.
-    await update_playlist(
-        MultiParams({"songIndexToRemove": ["1"]}, playlistId=playlist_id), plex
-    )
+    await update_playlist(MultiParams({"songIndexToRemove": ["1"]}, playlistId=playlist_id), plex)
     entries = (await get_playlist({"id": playlist_id}, plex))["playlist"]["entry"]
     assert [e["id"] for e in entries] == [song_ids[0], song_ids[2], extra]
 
@@ -242,9 +240,7 @@ async def test_plex_browsing_returns_usable_shapes(plex):
     first = album["song"][0]
     assert first.get("title") and first.get("duration") is not None
 
-    found = (await search3(_params(query=first["title"][:6], songCount="5"), plex))[
-        "searchResult3"
-    ]
+    found = (await search3(_params(query=first["title"][:6], songCount="5"), plex))["searchResult3"]
     assert isinstance(found.get("song", []), list)
 
 
@@ -283,9 +279,7 @@ async def jellyfin_playlist(jellyfin: JellyfinClient):
         await delete_playlist({"id": created["id"]}, jellyfin)
 
 
-async def test_jellyfin_creates_a_playlist_with_the_songs_it_was_given(
-    jellyfin, jellyfin_playlist
-):
+async def test_jellyfin_creates_a_playlist_with_the_songs_it_was_given(jellyfin, jellyfin_playlist):
     from media.jellyfin_bridge import get_playlist
 
     playlist_id, song_ids = jellyfin_playlist
@@ -301,9 +295,7 @@ async def test_jellyfin_reorders_a_playlist_in_place(jellyfin, jellyfin_playlist
     playlist_id, song_ids = jellyfin_playlist
     reordered = [song_ids[2], song_ids[0], song_ids[1]]
 
-    await create_playlist(
-        MultiParams({"songId": reordered}, playlistId=playlist_id), jellyfin
-    )
+    await create_playlist(MultiParams({"songId": reordered}, playlistId=playlist_id), jellyfin)
 
     entries = (await get_playlist({"id": playlist_id}, jellyfin))["playlist"]["entry"]
     assert [e["id"] for e in entries] == reordered
@@ -315,9 +307,7 @@ async def test_jellyfin_adds_and_removes_playlist_entries(jellyfin, jellyfin_pla
     playlist_id, song_ids = jellyfin_playlist
     extra = (await _jellyfin_song_ids(jellyfin, 4))[3]
 
-    await update_playlist(
-        MultiParams({"songIdToAdd": [extra]}, playlistId=playlist_id), jellyfin
-    )
+    await update_playlist(MultiParams({"songIdToAdd": [extra]}, playlistId=playlist_id), jellyfin)
     entries = (await get_playlist({"id": playlist_id}, jellyfin))["playlist"]["entry"]
     assert [e["id"] for e in entries] == [*song_ids, extra]
 
@@ -418,9 +408,9 @@ async def test_plex_reads_the_files_own_lyrics(plex):
         pytest.skip("PLEX_TEST_LYRICS_ITEM_ID not set")
     from media.plex_bridge import get_lyrics_by_song_id
 
-    entry = (await get_lyrics_by_song_id({"id": item_id}, plex))["lyricsList"][
-        "structuredLyrics"
-    ][0]
+    entry = (await get_lyrics_by_song_id({"id": item_id}, plex))["lyricsList"]["structuredLyrics"][
+        0
+    ]
 
     assert entry["line"], "no lyric lines came back"
     starts = [line["start"] for line in entry["line"] if "start" in line]
@@ -577,7 +567,10 @@ async def test_subsonic_replaces_a_playlists_songs_in_the_order_given(subsonic):
     playlistId. Navidrome does this in one transaction, so a failure cannot
     leave the playlist half-emptied — verified here end to end, including
     that the name and length survive."""
-    songs = [s["id"] for s in (await subsonic.call("getRandomSongs.view", size="3"))["randomSongs"]["song"]]
+    songs = [
+        s["id"]
+        for s in (await subsonic.call("getRandomSongs.view", size="3"))["randomSongs"]["song"]
+    ]
     name = f"Beacon live test {uuid.uuid4().hex[:8]}"
     await subsonic.call("createPlaylist.view", name=name, songId=songs)
     playlists = (await subsonic.call("getPlaylists.view"))["playlists"]["playlist"]
@@ -640,9 +633,7 @@ async def _read_image(response) -> bytes:
     connection, since the handler only releases it once the iterator is
     exhausted."""
     chunks = [chunk async for chunk in response.body_iterator]
-    return b"".join(
-        chunk.encode() if isinstance(chunk, str) else bytes(chunk) for chunk in chunks
-    )
+    return b"".join(chunk.encode() if isinstance(chunk, str) else bytes(chunk) for chunk in chunks)
 
 
 def _assert_looks_like_an_image(response, body: bytes) -> None:
@@ -651,11 +642,7 @@ def _assert_looks_like_an_image(response, body: bytes) -> None:
     assert content_type.startswith("image/"), f"not an image: {content_type!r}"
     assert len(body) > 1000, f"suspiciously small image: {len(body)} bytes"
     # A real picture, not an HTML error page the server answered 200 with.
-    assert (
-        body[:3] == b"\xff\xd8\xff"
-        or body[:8] == b"\x89PNG\r\n\x1a\n"
-        or body[:4] == b"RIFF"
-    )
+    assert body[:3] == b"\xff\xd8\xff" or body[:8] == b"\x89PNG\r\n\x1a\n" or body[:4] == b"RIFF"
     # Covers are immutable enough to be worth caching, and both bridges are
     # supposed to say so when the origin didn't (see apply_image_cache_control).
     assert response.headers.get("cache-control"), "no cache directive on an image"
@@ -667,9 +654,9 @@ def _assert_looks_like_an_image(response, body: bytes) -> None:
 async def test_jellyfin_serves_real_cover_art(jellyfin):
     from media.jellyfin_bridge import get_album_list2, handle
 
-    albums = (
-        await get_album_list2(_params(type="alphabeticalByName", size="5"), jellyfin)
-    )["albumList2"]["album"]
+    albums = (await get_album_list2(_params(type="alphabeticalByName", size="5"), jellyfin))[
+        "albumList2"
+    ]["album"]
     cover_id = next((a["coverArt"] for a in albums if a.get("coverArt")), "")
     assert cover_id, "no album with cover art came back"
 
@@ -685,9 +672,9 @@ async def test_jellyfin_serves_real_cover_art(jellyfin):
 async def test_plex_serves_real_cover_art(plex):
     from media.plex_bridge import get_album_list2, handle
 
-    albums = (
-        await get_album_list2(_params(type="alphabeticalByName", size="5"), plex)
-    )["albumList2"]["album"]
+    albums = (await get_album_list2(_params(type="alphabeticalByName", size="5"), plex))[
+        "albumList2"
+    ]["album"]
     cover_id = next((a["coverArt"] for a in albums if a.get("coverArt")), "")
     assert cover_id, "no album with cover art came back"
 
@@ -705,22 +692,16 @@ async def test_jellyfin_refuses_cover_art_without_an_id(jellyfin):
     # degradation every JSON handler gives.
     from media.jellyfin_bridge import handle
 
-    response = await handle(
-        "getCoverArt.view", _binary_request("getCoverArt.view"), jellyfin
-    )
+    response = await handle("getCoverArt.view", _binary_request("getCoverArt.view"), jellyfin)
 
-    assert (
-        response.status_code == 200
-    )  # Subsonic reports its errors inside the envelope
+    assert response.status_code == 200  # Subsonic reports its errors inside the envelope
     assert b'"code":70' in bytes(response.body)
 
 
 async def test_plex_refuses_cover_art_without_an_id(plex):
     from media.plex_bridge import handle
 
-    response = await handle(
-        "getCoverArt.view", _binary_request("getCoverArt.view"), plex
-    )
+    response = await handle("getCoverArt.view", _binary_request("getCoverArt.view"), plex)
 
     assert response.status_code == 200
     assert b'"code":70' in bytes(response.body)
@@ -758,13 +739,11 @@ def _assert_streams_audio(response, body: bytes) -> None:
     assert response.status_code == 206, (
         f"ranged request answered {response.status_code} — seeking would refetch from the start"
     )
-    assert response.headers.get("content-range"), (
-        "no content-range on a partial response"
-    )
+    assert response.headers.get("content-range"), "no content-range on a partial response"
     content_type = response.headers.get("content-type", "")
-    assert (
-        content_type.startswith("audio/") or content_type == "application/octet-stream"
-    ), f"not audio: {content_type!r}"
+    assert content_type.startswith("audio/") or content_type == "application/octet-stream", (
+        f"not audio: {content_type!r}"
+    )
     assert body, "no audio bytes came back"
     # Same uvicorn hazard as the cover-art path: a forwarded length that
     # doesn't match what is actually streamed crashes the response.
@@ -784,9 +763,9 @@ def _ranged_request(track_id: str) -> Request:
 
 
 async def _first_track_id(get_album_list2, get_album, client) -> str:
-    albums = (
-        await get_album_list2(_params(type="alphabeticalByName", size="5"), client)
-    )["albumList2"]["album"]
+    albums = (await get_album_list2(_params(type="alphabeticalByName", size="5"), client))[
+        "albumList2"
+    ]["album"]
     assert albums, "no albums came back"
     album = (await get_album({"id": albums[0]["id"]}, client))["album"]
     assert album["song"], "album came back with no tracks"

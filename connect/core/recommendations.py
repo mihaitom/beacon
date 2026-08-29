@@ -92,8 +92,7 @@ _LINK_HOSTS = {
 # the broadest possible result set on a self-hosted library that's likely
 # seeded from relatively few, possibly niche, artists.
 _LB_ALGORITHM = (
-    "session_based_days_7500_session_300_contribution_3_threshold_10_"
-    "limit_100_filter_True_skip_30"
+    "session_based_days_7500_session_300_contribution_3_threshold_10_limit_100_filter_True_skip_30"
 )
 
 # Was 30 days — HomeView.vue's own seed selection is now randomized (see
@@ -356,7 +355,8 @@ async def get_similar_artists(seed_names: list[str], limit: int = 30) -> list[di
     stale_or_missing = [
         m
         for m in seed_mbids
-        if m not in similar_by_mbid or now - similar_by_mbid[m]["fetched_at"] >= _SIMILAR_TTL_SECONDS
+        if m not in similar_by_mbid
+        or now - similar_by_mbid[m]["fetched_at"] >= _SIMILAR_TTL_SECONDS
     ]
     if stale_or_missing:
         fresh = await _fetch_similar_batch(stale_or_missing)
@@ -365,16 +365,11 @@ async def get_similar_artists(seed_names: list[str], limit: int = 30) -> list[di
         _save_cache(cache)
 
     seed_names_lower = {n.strip().lower() for n in seed_names}
-    per_seed = [
-        similar_by_mbid.get(mbid, {}).get("similar", [])
-        for mbid in seed_mbids
-    ]
+    per_seed = [similar_by_mbid.get(mbid, {}).get("similar", []) for mbid in seed_mbids]
     return rank_similar(per_seed, seed_names_lower, limit)
 
 
-def rank_similar(
-    per_seed: list[list[dict]], seed_names_lower: set[str], limit: int
-) -> list[dict]:
+def rank_similar(per_seed: list[list[dict]], seed_names_lower: set[str], limit: int) -> list[dict]:
     """Merges one similar-artists list per seed into a single ranking.
 
     ListenBrainz's raw score is a count of listening sessions, so it says

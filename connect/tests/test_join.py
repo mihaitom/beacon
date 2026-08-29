@@ -28,9 +28,7 @@ def test_join_rejected_when_not_streaming(client, default_session):
 
 def test_join_chromecast_plays_and_sets_active(client, default_session, _streaming):
     with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
-        r = client.post(
-            "/join", json={"target_type": "chromecast", "target_name": "TV"}
-        )
+        r = client.post("/join", json={"target_type": "chromecast", "target_name": "TV"})
 
     assert r.json()["status"] == "joined"
     play.assert_awaited_once()
@@ -62,9 +60,7 @@ def test_join_releases_the_claim_when_the_device_fails_to_start(
 
 def test_join_airplay_plays_and_sets_active(client, default_session, _streaming):
     with patch.object(AirPlayDelivery, "play", new=AsyncMock()) as play:
-        r = client.post(
-            "/join", json={"target_type": "airplay", "target_name": "HomePod"}
-        )
+        r = client.post("/join", json={"target_type": "airplay", "target_name": "HomePod"})
 
     assert r.json()["status"] == "joined"
     play.assert_awaited_once()
@@ -73,9 +69,7 @@ def test_join_airplay_plays_and_sets_active(client, default_session, _streaming)
 
 def test_join_dlna_plays_and_sets_active(client, default_session, _streaming):
     with patch.object(DlnaDelivery, "play", new=AsyncMock()) as play:
-        r = client.post(
-            "/join", json={"target_type": "dlna", "target_name": "Receiver"}
-        )
+        r = client.post("/join", json={"target_type": "dlna", "target_name": "Receiver"})
 
     assert r.json()["status"] == "joined"
     play.assert_awaited_once()
@@ -83,9 +77,7 @@ def test_join_dlna_plays_and_sets_active(client, default_session, _streaming):
     assert default_session.state.active_delivery.target == "Receiver"
 
 
-def test_join_chromecast_appends_to_existing_manager(
-    client, default_session, _streaming
-):
+def test_join_chromecast_appends_to_existing_manager(client, default_session, _streaming):
     existing = AirPlayDelivery("HomePod")
     default_session.state.active_delivery = DeliveryManager.from_deliveries([existing])
 
@@ -98,9 +90,7 @@ def test_join_chromecast_appends_to_existing_manager(
     assert any(isinstance(d, ChromecastDelivery) for d in mgr.deliveries)
 
 
-def test_join_chromecast_promotes_single_active_to_manager(
-    client, default_session, _streaming
-):
+def test_join_chromecast_promotes_single_active_to_manager(client, default_session, _streaming):
     default_session.state.active_delivery = AirPlayDelivery("HomePod")
 
     with patch.object(ChromecastDelivery, "play", new=AsyncMock()):
@@ -111,9 +101,7 @@ def test_join_chromecast_promotes_single_active_to_manager(
     assert {type(d) for d in mgr.deliveries} == {AirPlayDelivery, ChromecastDelivery}
 
 
-def test_join_sonos_joins_the_existing_groups_coordinator(
-    client, default_session, _streaming
-):
+def test_join_sonos_joins_the_existing_groups_coordinator(client, default_session, _streaming):
     """The success path test_join_sonos_falls_back_to_individual_play_when_
     group_fails below doesn't reach — that one fails resolving the
     coordinator itself, before ever getting to the new device's own lookup
@@ -129,9 +117,7 @@ def test_join_sonos_joins_the_existing_groups_coordinator(
         return coordinator_dev if self.target == "Küche" else joiner_dev
 
     with patch.object(SonosDelivery, "_get_device", _fake_get_device):
-        r = client.post(
-            "/join", json={"target_type": "sonos", "target_name": "Wohnzimmer"}
-        )
+        r = client.post("/join", json={"target_type": "sonos", "target_name": "Wohnzimmer"})
 
     assert r.json()["status"] == "joined"
     joiner_dev.join.assert_called_once_with(coordinator_dev)
@@ -145,44 +131,32 @@ def test_join_sonos_falls_back_to_individual_play_when_group_fails(
 
     fallback = AsyncMock()
     with (
-        patch.object(
-            SonosDelivery, "_get_device", side_effect=RuntimeError("group failed")
-        ),
+        patch.object(SonosDelivery, "_get_device", side_effect=RuntimeError("group failed")),
         patch.object(SonosDelivery, "play", new=fallback),
     ):
-        r = client.post(
-            "/join", json={"target_type": "sonos", "target_name": "Wohnzimmer"}
-        )
+        r = client.post("/join", json={"target_type": "sonos", "target_name": "Wohnzimmer"})
 
     assert r.json()["status"] == "joined"
     fallback.assert_awaited_once()
 
 
-def test_join_reconnects_to_radio_url_not_stream_proxy(
-    client, default_session, _streaming
-):
+def test_join_reconnects_to_radio_url_not_stream_proxy(client, default_session, _streaming):
     """Radio has no track loaded, so joining an additional device must reuse
     its own URL — the FFmpeg /stream proxy 204s with nothing to play."""
     default_session.state.radio_info = {"title": "Radio FM", "url": "http://stream/radio"}
 
     with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
-        r = client.post(
-            "/join", json={"target_type": "chromecast", "target_name": "TV"}
-        )
+        r = client.post("/join", json={"target_type": "chromecast", "target_name": "TV"})
 
     assert r.json()["status"] == "joined"
     play.assert_awaited_once_with("http://stream/radio", "Radio FM")
 
 
-def test_join_sonos_without_existing_sonos_plays_individually(
-    client, default_session, _streaming
-):
+def test_join_sonos_without_existing_sonos_plays_individually(client, default_session, _streaming):
     default_session.state.active_delivery = None
 
     with patch.object(SonosDelivery, "play", new=AsyncMock()) as play:
-        r = client.post(
-            "/join", json={"target_type": "sonos", "target_name": "Wohnzimmer"}
-        )
+        r = client.post("/join", json={"target_type": "sonos", "target_name": "Wohnzimmer"})
 
     assert r.json()["status"] == "joined"
     play.assert_awaited_once()
@@ -196,9 +170,7 @@ def test_join_rejected_when_target_claimed_by_another_session(client, _streaming
     asyncio.run(claims.claim("chromecast", "TV", "some-other-session"))
 
     with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
-        r = client.post(
-            "/join", json={"target_type": "chromecast", "target_name": "TV"}
-        )
+        r = client.post("/join", json={"target_type": "chromecast", "target_name": "TV"})
 
     body = r.json()
     assert body["error"] == "device_in_use"
@@ -206,9 +178,7 @@ def test_join_rejected_when_target_claimed_by_another_session(client, _streaming
     play.assert_not_awaited()
 
 
-def test_join_with_force_displaces_other_sessions_claim(
-    client, default_session, _streaming
-):
+def test_join_with_force_displaces_other_sessions_claim(client, default_session, _streaming):
     import asyncio
 
     from core.claims import claims
@@ -244,9 +214,7 @@ def test_join_with_force_displaces_other_sessions_claim(
 def test_claim_sets_active_delivery_without_starting_playback(client, default_session):
     from core.claims import claims
 
-    r = client.post(
-        "/claim", json={"targets": [{"name": "TV", "type": "chromecast"}]}
-    )
+    r = client.post("/claim", json={"targets": [{"name": "TV", "type": "chromecast"}]})
 
     assert r.json()["status"] == "claimed"
     # resolve_target() always wraps a `targets` list in a DeliveryManager,
@@ -267,9 +235,7 @@ def test_claim_rejected_without_force_when_claimed_by_another_session(client, de
 
     asyncio.run(claims.claim("chromecast", "TV", "some-other-session"))
 
-    r = client.post(
-        "/claim", json={"targets": [{"name": "TV", "type": "chromecast"}]}
-    )
+    r = client.post("/claim", json={"targets": [{"name": "TV", "type": "chromecast"}]})
 
     body = r.json()
     assert body["error"] == "device_in_use"

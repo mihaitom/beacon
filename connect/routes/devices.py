@@ -107,9 +107,7 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
         internal_url = os.getenv("NAVIDROME_INTERNAL_URL", "")
 
     if _SERVER_LOCK and _LOCKED_URLS and req.url.rstrip("/") not in _LOCKED_URLS:
-        logger.warning(
-            f"[config] Rejected — url outside SERVER_LOCK allow-list: {req.url}"
-        )
+        logger.warning(f"[config] Rejected — url outside SERVER_LOCK allow-list: {req.url}")
         raise HTTPException(
             status_code=403,
             detail="Server URL does not match the locked server for this deployment",
@@ -131,9 +129,7 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
             machine_identifier=req.machine_identifier,
         )
     else:
-        media = SubsonicClient(
-            req.url, credential=req.credential, internal_url=internal_url
-        )
+        media = SubsonicClient(req.url, credential=req.credential, internal_url=internal_url)
 
     # See config_seq's own comment — claimed before the slow ping() below so
     # a second, newer /config call landing while this one is still verifying
@@ -148,12 +144,9 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
     # core/session.py's require_authenticated_session).
     if not await asyncio.to_thread(media.ping):
         logger.warning(
-            f"[config] Rejected — {server_type} server at {req.url} "
-            "did not accept the credential"
+            f"[config] Rejected — {server_type} server at {req.url} did not accept the credential"
         )
-        raise HTTPException(
-            status_code=401, detail="Media server rejected the supplied credential"
-        )
+        raise HTTPException(status_code=401, detail="Media server rejected the supplied credential")
 
     if session.config_seq != seq:
         logger.info(
@@ -216,9 +209,7 @@ async def health(session: SessionState = Depends(get_session)):
         # even pre-auth, and only set at all for a locked deployment). Lets
         # the frontend gate Navidrome/Jellyfin-specific UI correctly even in
         # an unlocked, multi-server deployment (see services/capabilities.ts).
-        "session_server_type": (
-            server_type_name(session.media) if session.authenticated else None
-        ),
+        "session_server_type": (server_type_name(session.media) if session.authenticated else None),
     }
 
 
@@ -251,11 +242,7 @@ async def stop_device(
     async with session.play_lock:
         active = session.state.active_delivery
         candidates = (
-            active.deliveries
-            if isinstance(active, DeliveryManager)
-            else [active]
-            if active
-            else []
+            active.deliveries if isinstance(active, DeliveryManager) else [active] if active else []
         )
         # The actual live instance being stopped, if found — AirPlay in
         # particular needs this: its RAOP stream task/connection live on the
@@ -286,9 +273,7 @@ async def stop_device(
                     logger.debug(f"[device-stop] {name} ist_koordinator={is_coord}")
 
                     if is_coord and remaining:
-                        logger.info(
-                            f"[device-stop] Ungrouping {len(remaining)} follower(s) …"
-                        )
+                        logger.info(f"[device-stop] Ungrouping {len(remaining)} follower(s) …")
                         for rem in remaining:
                             if isinstance(rem, SonosDelivery):
                                 rem_dev = next(
@@ -302,13 +287,9 @@ async def stop_device(
                                 if rem_dev:
                                     try:
                                         await asyncio.to_thread(rem_dev.unjoin)
-                                        logger.debug(
-                                            f"[device-stop] {rem.target} ungrouped"
-                                        )
+                                        logger.debug(f"[device-stop] {rem.target} ungrouped")
                                     except Exception as ex:
-                                        logger.warning(
-                                            f"[device-stop] unjoin {rem.target}: {ex}"
-                                        )
+                                        logger.warning(f"[device-stop] unjoin {rem.target}: {ex}")
                         await asyncio.sleep(0.3)
                         need_restart = True
                     elif not is_coord:
@@ -346,18 +327,12 @@ async def stop_device(
             st.active_delivery = None
         else:
             new_delivery: BaseDelivery | DeliveryManager = (
-                remaining[0]
-                if len(remaining) == 1
-                else DeliveryManager.from_deliveries(remaining)
+                remaining[0] if len(remaining) == 1 else DeliveryManager.from_deliveries(remaining)
             )
             st.active_delivery = new_delivery
 
             if need_restart and st.is_streaming:
-                url = (
-                    st.radio_info["url"]
-                    if st.radio_info
-                    else stream_url(session.session_id)
-                )
+                url = st.radio_info["url"] if st.radio_info else stream_url(session.session_id)
                 title = st.radio_info["title"] if st.radio_info else "Connect"
                 logger.info(f"[device-stop] Restarting stream: {url}")
                 try:

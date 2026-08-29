@@ -62,16 +62,16 @@ async def reap_stale_pairings_once() -> list[str]:
     Returns the device names that were reaped, mainly so tests don't need
     to duplicate this logic to assert on it."""
     now = time.monotonic()
-    stale = [name for name, (_, started_at) in _sessions.items() if now - started_at >= _SESSION_TTL]
+    stale = [
+        name for name, (_, started_at) in _sessions.items() if now - started_at >= _SESSION_TTL
+    ]
     for name in stale:
         pairing, _ = _sessions.pop(name, (None, None))
         if pairing:
             try:
                 await pairing.close()
             except Exception as e:
-                logger.debug(
-                    f"[pairing] closing stale session for '{name}' failed: {e}"
-                )
+                logger.debug(f"[pairing] closing stale session for '{name}' failed: {e}")
         # Opportunistic cleanup for the per-device lock too (see _locks'
         # own comment) — only when nothing currently holds/is waiting on
         # it, so this can never pull a lock out from under a concurrent
@@ -133,10 +133,7 @@ async def start_pairing(req: StartRequest):
             try:
                 await old.close()
             except Exception as e:
-                logger.debug(
-                    f"[pairing] closing previous session for '{req.name}' "
-                    f"failed: {e}"
-                )
+                logger.debug(f"[pairing] closing previous session for '{req.name}' failed: {e}")
 
         logger.info(f"[pairing] Scanning for '{req.name}' to pair...")
         devices = await pyatv.scan(asyncio.get_event_loop(), timeout=10)
@@ -165,8 +162,7 @@ async def start_pairing(req: StartRequest):
                     await pairing.close()
                 except Exception as close_err:
                     logger.debug(
-                        "[pairing] cleanup after failed start for "
-                        f"'{req.name}': {close_err}"
+                        f"[pairing] cleanup after failed start for '{req.name}': {close_err}"
                     )
 
             # pyatv raises a bare KeyError (e.g. "<TlvValue.Salt: 2>") when the device's
@@ -201,8 +197,7 @@ async def start_pairing(req: StartRequest):
 
         _sessions[req.name] = (pairing, time.monotonic())
         logger.info(
-            f"[pairing] Started: '{req.name}' — "
-            f"device_provides_pin={pairing.device_provides_pin}"
+            f"[pairing] Started: '{req.name}' — device_provides_pin={pairing.device_provides_pin}"
         )
         return {
             "device_provides_pin": pairing.device_provides_pin,
@@ -215,9 +210,7 @@ async def finish_pairing(req: FinishRequest):
     session = _sessions.get(req.name)
     if not session:
         return JSONResponse(
-            {
-                "error": f"No active pairing session for '{req.name}'. Call /start first."
-            },
+            {"error": f"No active pairing session for '{req.name}'. Call /start first."},
             status_code=400,
         )
 
@@ -232,10 +225,7 @@ async def finish_pairing(req: FinishRequest):
         try:
             await pairing.close()
         except Exception as close_err:
-            logger.debug(
-                "[pairing] cleanup after failed finish for "
-                f"'{req.name}': {close_err}"
-            )
+            logger.debug(f"[pairing] cleanup after failed finish for '{req.name}': {close_err}")
 
         # 470 = Connection Authorization Required. At this stage (after /start already
         # succeeded), this means the device rejected the entered PIN.
@@ -252,9 +242,7 @@ async def finish_pairing(req: FinishRequest):
     try:
         await pairing.close()
     except Exception as e:
-        logger.debug(
-            f"[pairing] closing finished session for '{req.name}' failed: {e}"
-        )
+        logger.debug(f"[pairing] closing finished session for '{req.name}' failed: {e}")
 
     if not creds:
         return JSONResponse(

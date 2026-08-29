@@ -70,9 +70,7 @@ class SubsonicClient:
         subsonic = data.get("subsonic-response", {})
         if subsonic.get("status") != "ok":
             error = subsonic.get("error", {})
-            raise RuntimeError(
-                f"Subsonic Error {error.get('code')}: {error.get('message')}"
-            )
+            raise RuntimeError(f"Subsonic Error {error.get('code')}: {error.get('message')}")
 
         return subsonic
 

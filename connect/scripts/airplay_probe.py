@@ -39,9 +39,7 @@ async def _scan(loop, name, protocol, timeout):
     devices = await pyatv.scan(loop, timeout=timeout, protocol=protocol)
     match = next((d for d in devices if d.name.lower() == name.lower()), None)
     if match is None:
-        raise SystemExit(
-            f"Device '{name}' not found. Available: {[d.name for d in devices]}"
-        )
+        raise SystemExit(f"Device '{name}' not found. Available: {[d.name for d in devices]}")
     return match
 
 
@@ -138,9 +136,7 @@ def main():
             loop.run_until_complete(do_pair(loop, args.name, args.timeout))
         if args.file:
             loop.run_until_complete(
-                do_stream(
-                    loop, args.name, args.file, args.timeout, args.airplay_version
-                )
+                do_stream(loop, args.name, args.file, args.timeout, args.airplay_version)
             )
     finally:
         loop.close()

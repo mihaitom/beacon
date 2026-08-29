@@ -100,9 +100,7 @@ MAX_PLAUSIBLE_POSITION_LEAD = 15.0
 PROVISIONAL_STARTUP_DELAY = 1.0
 
 
-async def _apply_position_offset(
-    session: SessionState, target, generation: int
-) -> None:
+async def _apply_position_offset(session: SessionState, target, generation: int) -> None:
     """Set `position_offset` for the track that just started playing.
 
     `compute_position()` returns `wall_elapsed + position_offset`. A device
@@ -133,9 +131,7 @@ async def _apply_position_offset(
     fixed = max((d.FIXED_OFFSET for d in deliveries), default=0.0)
     if fixed:
         st.clock.set_fixed_offset(-fixed)
-        logger.debug(
-            f"[lyrics-sync] fixed position_offset={st.clock.position_offset:.2f}s"
-        )
+        logger.debug(f"[lyrics-sync] fixed position_offset={st.clock.position_offset:.2f}s")
         await session.event_bus.broadcast(build_status_dict(session))
         return
 
@@ -158,9 +154,7 @@ async def _apply_position_offset(
         try:
             device_pos = await candidate.get_position()
         except Exception as e:
-            logger.debug(
-                f"[lyrics-sync] {candidate.target}: position read failed: {e}"
-            )
+            logger.debug(f"[lyrics-sync] {candidate.target}: position read failed: {e}")
             continue
         # get_position() above is a real device round trip — a /play, /seek,
         # or /resume landing while it was in flight has by now already reset
@@ -356,9 +350,7 @@ async def _resync_position_once(session: SessionState, candidate, generation: in
     await session.event_bus.broadcast(build_status_dict(session))
 
 
-async def _resync_position_periodically(
-    session: SessionState, target, generation: int
-) -> None:
+async def _resync_position_periodically(session: SessionState, target, generation: int) -> None:
     """Keeps position_offset accurate for as long as this track keeps
     playing, by re-measuring the device's actual position every
     POSITION_RESYNC_INTERVAL and recalibrating (_resync_position_once above)
@@ -541,12 +533,8 @@ async def play_tracks(
     req: PlayRequest, session: SessionState = Depends(require_authenticated_session)
 ):
     if not session.media.base_url:
-        logger.warning(
-            "[play] Rejected: media server not configured (waiting for /config)"
-        )
-        return {
-            "error": "Media server not configured — waiting for /config"
-        }
+        logger.warning("[play] Rejected: media server not configured (waiting for /config)")
+        return {"error": "Media server not configured — waiting for /config"}
     if not req.song_ids:
         return {"error": "No track ID provided"}
 
@@ -556,9 +544,7 @@ async def play_tracks(
         # target.play() dispatch in between a newer request's own check and
         # its device call — see SessionState.play_lock's comment.
         if _is_stale_seq(session, req.seq):
-            logger.info(
-                f"[play] Ignoring superseded request (seq={req.seq} < {session.play_seq})"
-            )
+            logger.info(f"[play] Ignoring superseded request (seq={req.seq} < {session.play_seq})")
             return {"status": "superseded"}
         if req.seq:
             session.play_seq = req.seq
@@ -591,8 +577,7 @@ async def play_tracks(
         start_position = max(0.0, min(req.start_position, float(track.duration)))
         logger.info(
             f"[play] {track.artist} — {track.title} ({track.duration}s) → target={target}"
-            f" seq={req.seq}"
-            + (f" (start {start_position:.1f}s)" if start_position > 0.5 else "")
+            f" seq={req.seq}" + (f" (start {start_position:.1f}s)" if start_position > 0.5 else "")
         )
 
         # Resolved once here and cached on session.state — /stream reads it
@@ -734,9 +719,7 @@ async def play_tracks(
             await session.event_bus.broadcast(build_status_dict(session))
             return {"status": "playing", "stream_url": url}
 
-        asyncio.create_task(
-            _apply_position_offset(session, target, st.clock.play_generation)
-        )
+        asyncio.create_task(_apply_position_offset(session, target, st.clock.play_generation))
         asyncio.create_task(
             _resync_position_periodically(session, target, st.clock.play_generation)
         )
@@ -825,9 +808,7 @@ async def play_url(
         st.queue = []
         st.queue_index = 0
 
-        asyncio.create_task(
-            _apply_position_offset(session, target, st.clock.play_generation)
-        )
+        asyncio.create_task(_apply_position_offset(session, target, st.clock.play_generation))
         asyncio.create_task(
             _resync_position_periodically(session, target, st.clock.play_generation)
         )
@@ -845,12 +826,8 @@ async def pause_playback(session: SessionState = Depends(require_authenticated_s
         # lets the frontend detect the loss and reset to disconnected
         # instead of leaving the play/pause button toggling a phantom
         # session forever with no visible effect.
-        logger.warning(
-            "[pause] Rejected: media server not configured (waiting for /config)"
-        )
-        return {
-            "error": "Media server not configured — waiting for /config"
-        }
+        logger.warning("[pause] Rejected: media server not configured (waiting for /config)")
+        return {"error": "Media server not configured — waiting for /config"}
     async with session.play_lock:
         st = session.state
         if st.active_delivery:
@@ -866,12 +843,8 @@ async def pause_playback(session: SessionState = Depends(require_authenticated_s
 async def resume_playback(session: SessionState = Depends(require_authenticated_session)):
     if not session.media.base_url:
         # See /pause's identical guard above for why this matters.
-        logger.warning(
-            "[resume] Rejected: media server not configured (waiting for /config)"
-        )
-        return {
-            "error": "Media server not configured — waiting for /config"
-        }
+        logger.warning("[resume] Rejected: media server not configured (waiting for /config)")
+        return {"error": "Media server not configured — waiting for /config"}
     async with session.play_lock:
         st = session.state
         if not st.clock.is_paused:
@@ -922,9 +895,7 @@ async def resume_playback(session: SessionState = Depends(require_authenticated_
             # this, periodic resync would silently stop working for good
             # after the *first* pause/resume of any given track.
             asyncio.create_task(
-                _resync_position_periodically(
-                    session, st.active_delivery, st.clock.play_generation
-                )
+                _resync_position_periodically(session, st.active_delivery, st.clock.play_generation)
             )
 
         await session.event_bus.broadcast(build_status_dict(session))
@@ -966,9 +937,7 @@ async def seek_playback(
                 _apply_position_offset(session, st.active_delivery, st.clock.play_generation)
             )
             asyncio.create_task(
-                _resync_position_periodically(
-                    session, st.active_delivery, st.clock.play_generation
-                )
+                _resync_position_periodically(session, st.active_delivery, st.clock.play_generation)
             )
 
         logger.info(f"[seek] ⏩ {position:.1f}s")
@@ -1014,9 +983,7 @@ async def update_queue(
     every edit (see stores/playback.ts's syncCastQueue())."""
     async with session.play_lock:
         if _is_stale_seq(session, req.seq):
-            logger.info(
-                f"[queue] Ignoring superseded request (seq={req.seq} < {session.play_seq})"
-            )
+            logger.info(f"[queue] Ignoring superseded request (seq={req.seq} < {session.play_seq})")
             return {"status": "superseded"}
         if req.seq:
             session.play_seq = req.seq

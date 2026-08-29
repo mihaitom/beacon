@@ -166,9 +166,7 @@ def test_play_fetches_track_and_sets_state(client, default_session):
     assert default_session.state.current_track.title == "Test Song"
 
 
-def test_play_with_start_position_seeds_resume_offset_and_elapsed(
-    client, default_session
-):
+def test_play_with_start_position_seeds_resume_offset_and_elapsed(client, default_session):
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
 
     track = Track(
@@ -280,9 +278,7 @@ def test_play_url_drops_request_with_stale_seq(client, default_session):
 def test_play_returns_error_for_unfetchable_track(client, default_session):
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
 
-    with patch.object(
-        default_session.media, "get_track", side_effect=RuntimeError("not found")
-    ):
+    with patch.object(default_session.media, "get_track", side_effect=RuntimeError("not found")):
         r = client.post("/play", json={"song_ids": ["bad"]})
 
     assert "error" in r.json()
@@ -295,9 +291,7 @@ def test_play_returns_error_for_unfetchable_track(client, default_session):
 # and session.state — see core/streamer.py's resolve_output_format().
 
 
-def test_play_passes_resolved_content_type_to_target_and_caches_it(
-    client, default_session
-):
+def test_play_passes_resolved_content_type_to_target_and_caches_it(client, default_session):
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
     track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
     flac_copy = OutputFormat(
@@ -635,9 +629,7 @@ def test_status_reports_autoplay_so_every_client_can_show_the_truth(client, defa
 def test_resume_reuses_cached_content_type_without_reprobing(client, default_session):
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
     track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
-    aac_copy = OutputFormat(
-        ffmpeg_args=["-acodec", "copy", "-f", "adts"], content_type="audio/aac"
-    )
+    aac_copy = OutputFormat(ffmpeg_args=["-acodec", "copy", "-f", "adts"], content_type="audio/aac")
 
     with (
         patch.object(default_session.media, "get_track", return_value=track),
@@ -653,9 +645,12 @@ def test_resume_reuses_cached_content_type_without_reprobing(client, default_ses
 
     with (
         patch(
-            "routes.playback.resolve_output_format", AsyncMock(side_effect=AssertionError(
-                "resume must not re-probe — it should reuse the cached format"
-            ))
+            "routes.playback.resolve_output_format",
+            AsyncMock(
+                side_effect=AssertionError(
+                    "resume must not re-probe — it should reuse the cached format"
+                )
+            ),
         ),
         patch.object(ChromecastDelivery, "play", new=AsyncMock()) as resume_play,
     ):
@@ -841,9 +836,7 @@ def test_play_url_with_force_displaces_other_sessions_claim(client, default_sess
 # this, spamming Sonos with SetAVTransportURI/Play roughly every 500ms).
 
 
-def test_play_url_does_not_redispatch_same_target_and_url_within_cooldown(
-    client, default_session
-):
+def test_play_url_does_not_redispatch_same_target_and_url_within_cooldown(client, default_session):
     body = {
         "target_name": "TV",
         "target_type": "chromecast",
@@ -876,9 +869,7 @@ def test_play_url_redispatches_once_the_cooldown_has_elapsed(client, default_ses
     assert play_mock.await_count == 2
 
 
-def test_play_url_redispatches_immediately_for_a_different_url(
-    client, default_session
-):
+def test_play_url_redispatches_immediately_for_a_different_url(client, default_session):
     with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play_mock:
         client.post(
             "/play-url",
@@ -902,13 +893,9 @@ def test_play_url_redispatches_immediately_for_a_different_url(
     assert play_mock.await_count == 2
 
 
-def test_play_does_not_redispatch_same_target_and_track_within_cooldown(
-    client, default_session
-):
+def test_play_does_not_redispatch_same_target_and_track_within_cooldown(client, default_session):
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
-    track = Track(
-        id="1", title="Test Song", artist="Test Artist", duration=180, cover_art_id="c"
-    )
+    track = Track(id="1", title="Test Song", artist="Test Artist", duration=180, cover_art_id="c")
     body = {
         "target_name": "TV",
         "target_type": "chromecast",
@@ -924,9 +911,7 @@ def test_play_does_not_redispatch_same_target_and_track_within_cooldown(
     play_mock.assert_awaited_once()
 
 
-def test_stop_clears_dispatch_key_so_the_next_play_is_not_suppressed(
-    client, default_session
-):
+def test_stop_clears_dispatch_key_so_the_next_play_is_not_suppressed(client, default_session):
     """A real /stop between two identical dispatches means the second one is
     a genuine restart, not a runaway duplicate — must not be swallowed just
     because it happens to land inside the cooldown window."""
@@ -967,9 +952,7 @@ def test_stop_wakes_the_visualizer_supervisor(client, default_session):
     its own within a tick; this just makes it immediate — and only after
     is_streaming is already False, which is what it actually reads."""
     notified = []
-    default_session.visualizer.notify = lambda: notified.append(
-        default_session.state.is_streaming
-    )
+    default_session.visualizer.notify = lambda: notified.append(default_session.state.is_streaming)
 
     client.post("/stop")
 
@@ -1371,9 +1354,7 @@ def test_apply_position_offset_returns_when_nothing_supports_position(default_se
     import asyncio
 
     asyncio.run(
-        asyncio.wait_for(
-            _apply_position_offset(default_session, target, generation=1), timeout=1.0
-        )
+        asyncio.wait_for(_apply_position_offset(default_session, target, generation=1), timeout=1.0)
     )
 
     assert default_session.state.clock.position_offset == 0.0
@@ -1775,9 +1756,7 @@ async def test_resync_position_periodically_calls_resync_once_per_interval(
     target = SonosDelivery("Küche")
 
     with patch("routes.playback._resync_position_once", new=AsyncMock()) as resync_once:
-        await _run_briefly(
-            _resync_position_periodically(default_session, target, generation=1)
-        )
+        await _run_briefly(_resync_position_periodically(default_session, target, generation=1))
 
     resync_once.assert_awaited()
 

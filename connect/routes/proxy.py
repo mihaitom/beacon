@@ -66,9 +66,7 @@ _client: httpx.AsyncClient | None = None
 # docs/playback-bugs/fixed-slow-media-lookup-froze-streaming.md). Keeping
 # many more alive, for much longer than the gap between two scroll bursts, is
 # what makes the pool actually behave like a pool under this workload.
-_LIMITS = httpx.Limits(
-    max_connections=100, max_keepalive_connections=100, keepalive_expiry=120.0
-)
+_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=100, keepalive_expiry=120.0)
 
 
 def _get_client() -> httpx.AsyncClient:
@@ -179,9 +177,7 @@ async def _proxy(request: Request, target: str) -> StreamingResponse | JSONRespo
     if "content-encoding" in response.headers:
         skip_resp.add("content-length")
 
-    resp_headers = {
-        k: v for k, v in response.headers.items() if k.lower() not in skip_resp
-    }
+    resp_headers = {k: v for k, v in response.headers.items() if k.lower() not in skip_resp}
     apply_image_cache_control(resp_headers, response.headers.get("content-type"))
 
     async def streamed():
@@ -203,9 +199,7 @@ async def _proxy(request: Request, target: str) -> StreamingResponse | JSONRespo
 
 
 @router.api_route("/rest/{path:path}", methods=_ALL_METHODS)
-async def proxy_subsonic(
-    path: str, request: Request, session: SessionState = Depends(get_session)
-):
+async def proxy_subsonic(path: str, request: Request, session: SessionState = Depends(get_session)):
     # get_session (not require_authenticated_session): nothing calls this
     # for an unconfigured session in practice (stores/auth.ts's
     # _authenticate() relies entirely on /config's own server-side
@@ -238,9 +232,7 @@ async def proxy_subsonic(
 @router.api_route("/auth/{path:path}", methods=_ALL_METHODS)
 async def proxy_auth(path: str, request: Request):
     if not _NAVIDROME_INTERNAL_URL:
-        return JSONResponse(
-            {"error": "NAVIDROME_INTERNAL_URL not configured"}, status_code=503
-        )
+        return JSONResponse({"error": "NAVIDROME_INTERNAL_URL not configured"}, status_code=503)
     return await _proxy(request, f"{_NAVIDROME_INTERNAL_URL}/auth/{path}")
 
 
@@ -250,7 +242,5 @@ async def proxy_auth(path: str, request: Request):
 @router.api_route("/{path:path}", methods=_ALL_METHODS)
 async def proxy_navidrome_api(path: str, request: Request):
     if not _NAVIDROME_INTERNAL_URL:
-        return JSONResponse(
-            {"error": "NAVIDROME_INTERNAL_URL not configured"}, status_code=503
-        )
+        return JSONResponse({"error": "NAVIDROME_INTERNAL_URL not configured"}, status_code=503)
     return await _proxy(request, f"{_NAVIDROME_INTERNAL_URL}/api/{path}")

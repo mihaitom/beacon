@@ -30,9 +30,7 @@ def _reset_rate_limiter():
 
 def _mb_response(url: str, mbid: str | None) -> httpx.Response:
     artists = [{"id": mbid, "score": 100}] if mbid else []
-    return httpx.Response(
-        200, json={"artists": artists}, request=httpx.Request("GET", url)
-    )
+    return httpx.Response(200, json={"artists": artists}, request=httpx.Request("GET", url))
 
 
 def _lb_response(url: str, items: list[dict]) -> httpx.Response:
@@ -168,9 +166,7 @@ async def test_resolve_mbid_does_not_cache_transient_http_failure():
 
             # Recovers on the very next call — not cached, so no stale
             # negative to override.
-            client.get = AsyncMock(
-                side_effect=lambda url, params=None: _mb_response(url, "mbid-1")
-            )
+            client.get = AsyncMock(side_effect=lambda url, params=None: _mb_response(url, "mbid-1"))
             result = await recommendations.resolve_mbid("Radiohead")
             assert result == "mbid-1"
 
@@ -215,7 +211,10 @@ async def test_get_similar_artists_refetches_when_stale():
                 {
                     "mbid_by_name": {"radiohead": "rh-mbid"},
                     "similar_by_mbid": {
-                        "rh-mbid": {"fetched_at": stale_ts, "similar": [{"mbid": "x", "name": "Old", "score": 1}]}
+                        "rh-mbid": {
+                            "fetched_at": stale_ts,
+                            "similar": [{"mbid": "x", "name": "Old", "score": 1}],
+                        }
                     },
                 },
                 f,
@@ -226,7 +225,15 @@ async def test_get_similar_artists_refetches_when_stale():
         ):
             client.get = AsyncMock(
                 side_effect=lambda url, params=None: _lb_response(
-                    url, [{"artist_mbid": "y", "name": "Fresh", "score": 99, "reference_mbid": "rh-mbid"}]
+                    url,
+                    [
+                        {
+                            "artist_mbid": "y",
+                            "name": "Fresh",
+                            "score": 99,
+                            "reference_mbid": "rh-mbid",
+                        }
+                    ],
                 )
             )
             result = await recommendations.get_similar_artists(["Radiohead"])
@@ -353,9 +360,7 @@ async def test_get_artist_images_cache_hit_skips_network():
     with tempfile.TemporaryDirectory() as d:
         path = _tmp_path(d)
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(
-                {"deezer_by_name": {"portishead": {"image": "img", "link": "link"}}}, f
-            )
+            json.dump({"deezer_by_name": {"portishead": {"image": "img", "link": "link"}}}, f)
         with (
             patch.object(recommendations, "_PATH", path),
             patch.object(recommendations, "_client") as client,
@@ -388,9 +393,7 @@ async def test_get_artist_images_fetches_and_caches_on_miss():
             )
             result = await recommendations.get_artist_images(["Portishead"])
 
-        assert result == {
-            "Portishead": {"image": "https://img/1", "link": "https://deezer/1"}
-        }
+        assert result == {"Portishead": {"image": "https://img/1", "link": "https://deezer/1"}}
         with open(path, encoding="utf-8") as f:
             cache = json.load(f)
         assert cache["deezer_by_name"]["portishead"] == {
@@ -470,7 +473,8 @@ async def test_get_artist_images_caches_negative_result_when_no_exact_match():
         ):
             client.get = AsyncMock(
                 side_effect=lambda url, params=None: _deezer_response(
-                    url, [{"name": "Some Other Band", "nb_fan": 1, "picture_medium": "x", "link": "y"}]
+                    url,
+                    [{"name": "Some Other Band", "nb_fan": 1, "picture_medium": "x", "link": "y"}],
                 )
             )
             result = await recommendations.get_artist_images(["Totally Obscure Act"])
@@ -492,7 +496,15 @@ async def test_get_artist_images_fetches_multiple_names_concurrently():
             def fake_get(url, params=None):
                 name = params["q"]
                 return _deezer_response(
-                    url, [{"name": name, "nb_fan": 1, "picture_medium": f"img-{name}", "link": f"link-{name}"}]
+                    url,
+                    [
+                        {
+                            "name": name,
+                            "nb_fan": 1,
+                            "picture_medium": f"img-{name}",
+                            "link": f"link-{name}",
+                        }
+                    ],
                 )
 
             client.get = AsyncMock(side_effect=fake_get)
@@ -508,9 +520,7 @@ async def test_get_artist_images_fetches_multiple_names_concurrently():
 
 
 def _mb_url_rels_response(url: str, relations: list[dict]) -> httpx.Response:
-    return httpx.Response(
-        200, json={"relations": relations}, request=httpx.Request("GET", url)
-    )
+    return httpx.Response(200, json={"relations": relations}, request=httpx.Request("GET", url))
 
 
 def _url_rel(rel_type: str, url: str) -> dict:
@@ -881,8 +891,14 @@ def test_rank_similar_gives_every_seed_the_same_say():
 def test_rank_similar_puts_an_artist_matching_several_seeds_first():
     # Turning up next to two of somebody's artists is a better reason to
     # recommend them than being a near-perfect match for one.
-    seed_a = [{"name": "Both", "mbid": "b", "score": 800}, {"name": "Only A", "mbid": "a", "score": 900}]
-    seed_b = [{"name": "Both", "mbid": "b", "score": 80}, {"name": "Only B", "mbid": "c", "score": 90}]
+    seed_a = [
+        {"name": "Both", "mbid": "b", "score": 800},
+        {"name": "Only A", "mbid": "a", "score": 900},
+    ]
+    seed_b = [
+        {"name": "Both", "mbid": "b", "score": 80},
+        {"name": "Only B", "mbid": "c", "score": 90},
+    ]
 
     ranked = rank_similar([seed_a, seed_b], set(), 10)
 
@@ -910,7 +926,10 @@ def test_rank_similar_counts_a_repeated_name_once_per_seed():
 
 
 def test_rank_similar_leaves_out_the_seeds_themselves():
-    seed = [{"name": "Queen", "mbid": "q", "score": 900}, {"name": "Other", "mbid": "o", "score": 100}]
+    seed = [
+        {"name": "Queen", "mbid": "q", "score": 900},
+        {"name": "Other", "mbid": "o", "score": 100},
+    ]
 
     ranked = rank_similar([seed], {"queen"}, 10)
 

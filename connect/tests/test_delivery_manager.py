@@ -412,9 +412,7 @@ def test_manager_play_all_and_stop_all_delegate_to_play_and_stop():
     asyncio.run(m.play_all("http://stream", "Title"))
     asyncio.run(m.stop_all())
 
-    a.play.assert_awaited_once_with(
-        "http://stream", "Title", "", None, None, "", "audio/mpeg"
-    )
+    a.play.assert_awaited_once_with("http://stream", "Title", "", None, None, "", "audio/mpeg")
     a.stop.assert_awaited_once()
 
 

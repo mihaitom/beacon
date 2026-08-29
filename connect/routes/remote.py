@@ -54,7 +54,11 @@ def _static_dir() -> Path:
     # resource directory — packaging/connect-server.spec bundles static/
     # there (see its `datas`). In dev, this file lives at connect/routes/
     # remote.py, so parent.parent is connect/ itself.
-    base = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
+    base = (
+        Path(sys._MEIPASS)
+        if getattr(sys, "frozen", False)
+        else Path(__file__).resolve().parent.parent
+    )
     return base / "static" / "remote"
 
 
@@ -235,7 +239,9 @@ async def phone_events():
 async def send_command(req: CommandRequest):
     if not remote.renderer_connected:
         raise HTTPException(status_code=503, detail="Beacon is not connected")
-    await remote.command_bus.broadcast({"kind": "command", "type": req.type, "payload": req.payload})
+    await remote.command_bus.broadcast(
+        {"kind": "command", "type": req.type, "payload": req.payload}
+    )
     return JSONResponse({"success": True}, status_code=202)
 
 

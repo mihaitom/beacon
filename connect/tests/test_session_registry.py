@@ -83,9 +83,7 @@ def test_get_session_falls_back_to_default_with_no_header_or_query():
 def test_get_session_prefers_header_over_query():
     from core.session import get_session
 
-    session = asyncio.run(
-        get_session(x_connect_session="from-header", session="from-query")
-    )
+    session = asyncio.run(get_session(x_connect_session="from-header", session="from-query"))
     assert session.session_id == "from-header"
 
 

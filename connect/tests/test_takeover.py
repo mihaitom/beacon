@@ -182,9 +182,7 @@ async def test_displace_target_falls_back_when_owners_play_lock_times_out(caplog
     real_timeout = asyncio.timeout
     try:
         with (
-            patch(
-                "core.session.asyncio.timeout", side_effect=lambda _: real_timeout(0.05)
-            ),
+            patch("core.session.asyncio.timeout", side_effect=lambda _: real_timeout(0.05)),
             caplog.at_level(logging.WARNING, logger="connect.session"),
         ):
             await displace_target(other, "chromecast", "TV")
@@ -224,7 +222,8 @@ def test_displace_target_is_a_noop_when_owner_has_no_active_delivery(default_ses
 
 
 async def test_play_rollback_does_not_clobber_a_concurrent_unlocked_displacement(
-    default_session, caplog,
+    default_session,
+    caplog,
 ):
     """Regression test for a real, documented (if rare) race: /play holds
     its own session's play_lock for its whole dispatch, including its own
@@ -289,9 +288,7 @@ async def test_play_rollback_restores_active_delivery_when_nothing_raced_it(defa
     default_session.state.active_delivery = previous_delivery
 
     req = PlayRequest(song_ids=["1"], target_name="TV", target_type="chromecast")
-    with patch.object(
-        ChromecastDelivery, "play", new=AsyncMock(side_effect=RuntimeError("boom"))
-    ):
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock(side_effect=RuntimeError("boom"))):
         result = await play_tracks(req, default_session)
 
     assert result["error"] == "boom"

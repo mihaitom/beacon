@@ -21,9 +21,7 @@ TIMEOUT = 15.0
 
 async def get_lyrics_by_song_id(song_id: str) -> str | None:
     try:
-        async with httpx.AsyncClient(
-            timeout=TIMEOUT, headers={"User-Agent": USER_AGENT}
-        ) as client:
+        async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": USER_AGENT}) as client:
             r = await client.get(f"{API_URL}/{song_id}")
             r.raise_for_status()
     except httpx.HTTPError as e:
@@ -44,9 +42,7 @@ async def get_search_results(params: dict[str, Any]) -> list[dict[str, Any]] | N
         return None
 
     try:
-        async with httpx.AsyncClient(
-            timeout=TIMEOUT, headers={"User-Agent": USER_AGENT}
-        ) as client:
+        async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": USER_AGENT}) as client:
             r = await client.get(f"{API_URL}/search", params={"q": name})
             r.raise_for_status()
     except httpx.HTTPError as e:

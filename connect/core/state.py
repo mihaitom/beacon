@@ -295,9 +295,7 @@ def resolve_target(
             if previous is not None
             else []
         )
-        return next(
-            (d for d in candidates if isinstance(d, cls) and d.target == name), None
-        )
+        return next((d for d in candidates if isinstance(d, cls) and d.target == name), None)
 
     if targets:
         deliveries: list[BaseDelivery] = []

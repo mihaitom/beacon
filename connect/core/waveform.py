@@ -123,9 +123,7 @@ async def get_waveform(track_id: str, url: str) -> list[float]:
         return []
 
     try:
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=_DECODE_TIMEOUT_SECONDS
-        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_DECODE_TIMEOUT_SECONDS)
     except TimeoutError:
         logger.warning(f"[waveform] Decode timed out for {track_id}")
         proc.kill()
@@ -143,14 +141,10 @@ async def get_waveform(track_id: str, url: str) -> list[float]:
 
     if proc.returncode != 0:
         logger.warning(
-            f"[waveform] ffmpeg failed for {track_id}: "
-            f"{stderr.decode(errors='replace')[:200]}"
+            f"[waveform] ffmpeg failed for {track_id}: {stderr.decode(errors='replace')[:200]}"
         )
         return []
 
     peaks = await asyncio.to_thread(_compute_peaks, stdout)
-    logger.debug(
-        f"[waveform] Computed {len(peaks)} peaks for {track_id} "
-        f"({len(stdout)} PCM bytes)"
-    )
+    logger.debug(f"[waveform] Computed {len(peaks)} peaks for {track_id} ({len(stdout)} PCM bytes)")
     return peaks

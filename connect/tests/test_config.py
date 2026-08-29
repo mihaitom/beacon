@@ -29,9 +29,7 @@ def server_lock_env(monkeypatch):
 
 
 def test_config_sets_subsonic_url(client, default_session):
-    r = client.post(
-        "/config", json={"url": "http://nav:4533", "credential": "token=abc"}
-    )
+    r = client.post("/config", json={"url": "http://nav:4533", "credential": "token=abc"})
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
     assert isinstance(default_session.media, SubsonicClient)
@@ -260,9 +258,7 @@ def test_config_plex_ignores_navidrome_internal_url(
 # ── SERVER_LOCK ──────────────────────────────────────────────────────────────
 
 
-def test_config_rejects_mismatched_url_when_locked(
-    client, monkeypatch, server_lock_env
-):
+def test_config_rejects_mismatched_url_when_locked(client, monkeypatch, server_lock_env):
     monkeypatch.setenv("SERVER_LOCK", "true")
     monkeypatch.setenv("SERVER_URL", "https://navidrome.example.com")
     _reload_devices()
@@ -281,9 +277,7 @@ def test_config_accepts_matching_url_when_locked(
     monkeypatch.setenv("SERVER_URL", "https://navidrome.example.com")
     _reload_devices()
 
-    r = client.post(
-        "/config", json={"url": "https://navidrome.example.com", "credential": "x"}
-    )
+    r = client.post("/config", json={"url": "https://navidrome.example.com", "credential": "x"})
     assert r.status_code == 200
     assert default_session.media.base_url == "https://navidrome.example.com"
 
@@ -294,7 +288,5 @@ def test_config_unenforced_when_lock_flag_unset(client, monkeypatch, server_lock
     monkeypatch.setenv("SERVER_URL", "https://navidrome.example.com")
     _reload_devices()
 
-    r = client.post(
-        "/config", json={"url": "http://anything-else:4533", "credential": "x"}
-    )
+    r = client.post("/config", json={"url": "http://anything-else:4533", "credential": "x"})
     assert r.status_code == 200

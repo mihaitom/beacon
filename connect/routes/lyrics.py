@@ -144,7 +144,9 @@ async def auto(
         # Checked separately from the score, which is lenient enough to let
         # a different act through on a similar title — see artist_matches().
         if not artist_matches(artist, candidate.get("artist")):
-            logger.info(f"[auto] {candidate['name']!r} by {candidate.get('artist')!r}: other artist, next")
+            logger.info(
+                f"[auto] {candidate['name']!r} by {candidate.get('artist')!r}: other artist, next"
+            )
             continue
         source = LyricSource(candidate["source"])
         try:

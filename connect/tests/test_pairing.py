@@ -300,9 +300,7 @@ def test_start_ignores_a_close_error_on_the_old_session_being_replaced(client, d
         patch("pyatv.scan", side_effect=fake_scan),
         patch("pyatv.pair", side_effect=fake_pair),
     ):
-        r = client.post(
-            "/pair/airplay/start", json={"name": "OldCloseErrorDevice", "force": True}
-        )
+        r = client.post("/pair/airplay/start", json={"name": "OldCloseErrorDevice", "force": True})
 
     assert r.status_code == 200
 
@@ -561,12 +559,8 @@ async def test_reap_stale_pairings_calls_reap_once_after_the_interval():
     from unittest.mock import AsyncMock
 
     with (
-        patch(
-            "routes.pairing.asyncio.sleep", side_effect=[None, asyncio.CancelledError()]
-        ),
-        patch.object(
-            routes_pairing, "reap_stale_pairings_once", new=AsyncMock()
-        ) as reap_once_mock,
+        patch("routes.pairing.asyncio.sleep", side_effect=[None, asyncio.CancelledError()]),
+        patch.object(routes_pairing, "reap_stale_pairings_once", new=AsyncMock()) as reap_once_mock,
     ):
         task = asyncio.create_task(routes_pairing.reap_stale_pairings())
         try:

@@ -20,9 +20,7 @@ def test_order_search_results_prefers_exact_match():
         },
         {"artist": "The Artist", "id": "2", "isSync": False, "name": "Exact Song"},
     ]
-    ranked = order_search_results(
-        {"artist": "The Artist", "name": "Exact Song"}, results
-    )
+    ranked = order_search_results({"artist": "The Artist", "name": "Exact Song"}, results)
     assert ranked[0]["id"] == "2"
     assert ranked[0]["score"] < ranked[1]["score"]
 
@@ -165,9 +163,7 @@ def test_has_sung_lines_rejects_a_sheet_that_is_only_credits():
     2026-08-27 on "Drowning in Beauty"): the songwriter and composer, and
     nothing else. Showing those two lines as the lyrics is worse than
     saying there are none."""
-    assert not has_sung_lines(
-        "[00:00.00-1] 作词 : Darryl Reid\n[00:00.00-1] 作曲 : Darryl Reid"
-    )
+    assert not has_sung_lines("[00:00.00-1] 作词 : Darryl Reid\n[00:00.00-1] 作曲 : Darryl Reid")
     assert not has_sung_lines("[ar:Some Artist]\n[ti:Some Title]")
     assert not has_sung_lines("")
 
@@ -195,9 +191,7 @@ def test_parse_sources_falls_back_to_all_when_nothing_recognized():
 
 
 def test_search_groups_results_by_source(client):
-    lrclib_results = AsyncMock(
-        return_value=[{"id": "1", "name": "Song", "source": "lrclib.net"}]
-    )
+    lrclib_results = AsyncMock(return_value=[{"id": "1", "name": "Song", "source": "lrclib.net"}])
     simpmusic_results = AsyncMock(return_value=None)
 
     with patch.dict(
@@ -220,9 +214,7 @@ def test_search_respects_sources_param(client):
         SEARCH_FETCHERS,
         {LyricSource.LRCLIB: lrclib_results, LyricSource.SIMPMUSIC: simpmusic_results},
     ):
-        r = client.get(
-            "/lyrics/search", params={"name": "Song", "sources": "lrclib.net"}
-        )
+        r = client.get("/lyrics/search", params={"name": "Song", "sources": "lrclib.net"})
 
     assert r.status_code == 200
     assert "lrclib.net" in r.json()
@@ -296,9 +288,7 @@ def test_auto_returns_none_when_match_below_threshold(client):
             "source": "lrclib.net",
         }
     ]
-    with patch.dict(
-        SEARCH_FETCHERS, {LyricSource.LRCLIB: AsyncMock(return_value=search_result)}
-    ):
+    with patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: AsyncMock(return_value=search_result)}):
         r = client.get(
             "/lyrics/auto",
             params={"name": "Song", "artist": "Artist", "sources": "lrclib.net"},
@@ -557,9 +547,7 @@ def test_auto_returns_none_when_the_matched_source_has_no_lyrics_body(client):
 def test_by_remote_id_returns_lyrics(client):
     get_fn = AsyncMock(return_value="[00:01.00]La la la")
     with patch.dict(GET_FETCHERS, {LyricSource.LRCLIB: get_fn}):
-        r = client.get(
-            "/lyrics/by-remote-id", params={"source": "lrclib.net", "id": "42"}
-        )
+        r = client.get("/lyrics/by-remote-id", params={"source": "lrclib.net", "id": "42"})
 
     assert r.status_code == 200
     assert r.json() == "[00:01.00]La la la"
@@ -574,9 +562,7 @@ def test_by_remote_id_returns_none_for_unknown_source(client):
 
 def test_by_remote_id_returns_none_when_the_fetch_fails(client, caplog):
     with (
-        patch.dict(
-            GET_FETCHERS, {LyricSource.LRCLIB: AsyncMock(side_effect=RuntimeError("boom"))}
-        ),
+        patch.dict(GET_FETCHERS, {LyricSource.LRCLIB: AsyncMock(side_effect=RuntimeError("boom"))}),
         caplog.at_level(logging.WARNING, logger="connect.lyrics"),
     ):
         r = client.get("/lyrics/by-remote-id", params={"source": "lrclib.net", "id": "42"})

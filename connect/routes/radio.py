@@ -143,9 +143,7 @@ async def _discover_candidates(homepage_url: str) -> list[_Candidate]:
                 parser.feed(html)
                 for href, sizes in parser.links:
                     candidates.append(
-                        _Candidate(
-                            url=urljoin(homepage_url, href), size=_parse_sizes(sizes)
-                        )
+                        _Candidate(url=urljoin(homepage_url, href), size=_parse_sizes(sizes))
                     )
     except httpx.HTTPError as e:
         logger.info(f"[radio-favicon] {homepage_url} unreachable: {e}")
@@ -245,9 +243,7 @@ def _select(candidates: list[_Candidate], min_size: int) -> list[_Candidate]:
 
 
 @router.get("/radio-favicon")
-async def radio_favicon(
-    url: str = Query(...), min_size: int = Query(default=0)
-) -> Response:
+async def radio_favicon(url: str = Query(...), min_size: int = Query(default=0)) -> Response:
     # Same http(s)-only restriction as /play-url's radio URL (routes/
     # playback.py) — this backend has LAN access (that's its whole job),
     # so fetching an arbitrary caller-supplied URL server-side is treated

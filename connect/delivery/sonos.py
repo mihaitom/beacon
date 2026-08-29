@@ -43,8 +43,7 @@ def _cached_device(target: str):
         return None
     if (info.get("zone_name") or "").lower() != target.lower():
         logger.debug(
-            f"[Sonos:{target}] cached device now reports "
-            f"'{info.get('zone_name')}' — rediscovering"
+            f"[Sonos:{target}] cached device now reports '{info.get('zone_name')}' — rediscovering"
         )
         _device_cache.pop(target.lower(), None)
         return None
@@ -106,8 +105,7 @@ class SonosDelivery(BaseDelivery):
                     return d
             except Exception as e:
                 logger.debug(
-                    f"[Sonos:{self.target}] skipping unreadable device "
-                    f"during discovery: {e}"
+                    f"[Sonos:{self.target}] skipping unreadable device during discovery: {e}"
                 )
         available = [d.player_name for d in devices]
         raise RuntimeError(f"Sonos '{self.target}' not found. Available: {available}")
@@ -151,9 +149,7 @@ class SonosDelivery(BaseDelivery):
 
         # DIDL-Lite Metadata
         album_art_tag = (
-            f"<upnp:albumArtURI>{escape(album_art_url)}</upnp:albumArtURI>"
-            if album_art_url
-            else ""
+            f"<upnp:albumArtURI>{escape(album_art_url)}</upnp:albumArtURI>" if album_art_url else ""
         )
         album_tag = f"<upnp:album>{escape(album)}</upnp:album>" if album else ""
         metadata = (
@@ -181,9 +177,7 @@ class SonosDelivery(BaseDelivery):
                 ("CurrentURIMetaData", metadata),
             ],
         )
-        await asyncio.to_thread(
-            device.avTransport.Play, [("InstanceID", 0), ("Speed", 1)]
-        )
+        await asyncio.to_thread(device.avTransport.Play, [("InstanceID", 0), ("Speed", 1)])
         logger.info(f"[Sonos:{self.target}] ✓ playing")
 
     async def _subscribe_to_events(self, device) -> None:

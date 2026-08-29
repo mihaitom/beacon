@@ -27,6 +27,15 @@ dev = [
     "pytest-cov>=7.1.0",
 ]
 
+[tool.ruff]
+# Wider than ruff's default 88, to match how this code is actually written
+# (median line 43 chars, p99 90, longest 113 — hand-wrapped, and already
+# consistent). At 88 the formatter would *add* ~1550 lines and break up 18
+# spots that read better as they are: constant tables whose trailing
+# comments push them a few chars over, and single-expression lambdas in
+# tests. At 100 it removes ~390 lines instead and leaves those alone.
+line-length = 100
+
 [tool.ruff.lint]
 ignore = [
     # `Depends(...)` as an argument default is FastAPI's own dependency-

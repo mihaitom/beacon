@@ -88,9 +88,7 @@ RC_NOTIFY_BODY = (
 
 
 def test_parse_rendering_control_event_reads_master_channel_volume_and_mute():
-    props = upnp_events.parse_rendering_control_event(
-        RC_NOTIFY_BODY.format(volume="35", mute="0")
-    )
+    props = upnp_events.parse_rendering_control_event(RC_NOTIFY_BODY.format(volume="35", mute="0"))
     assert props == {"Volume": "35", "Mute": "0"}
 
 
@@ -98,9 +96,7 @@ def test_parse_rendering_control_event_ignores_lf_rf_channels():
     """Only Master is what GET /device-volume and the slider already mean
     by "this device's volume" — LF/RF only diverge when someone's
     deliberately unbalanced a stereo pair."""
-    props = upnp_events.parse_rendering_control_event(
-        RC_NOTIFY_BODY.format(volume="35", mute="0")
-    )
+    props = upnp_events.parse_rendering_control_event(RC_NOTIFY_BODY.format(volume="35", mute="0"))
     assert "99" not in props.values()
 
 
@@ -207,8 +203,7 @@ async def test_subscribe_returns_none_when_the_device_refuses():
 async def test_subscribe_returns_none_when_no_sid_comes_back():
     with patch.object(upnp_events, "_request", return_value=_headers(None)):
         assert (
-            await upnp_events.subscribe("A", "avtransport", "http://d/evt", "http://me/cb")
-            is None
+            await upnp_events.subscribe("A", "avtransport", "http://d/evt", "http://me/cb") is None
         )
 
 
@@ -329,9 +324,7 @@ def test_callback_url_defaults_to_avtransport():
 def test_notify_endpoint_logs_the_event_and_answers_200(client):
     body = NOTIFY_BODY.format(state="STOPPED", status="ERROR_CANT_CONNECT")
     with patch("routes.upnp.handle_event") as handler:
-        response = client.request(
-            "NOTIFY", "/upnp/events/avtransport/Arbeitszimmer", content=body
-        )
+        response = client.request("NOTIFY", "/upnp/events/avtransport/Arbeitszimmer", content=body)
     assert response.status_code == 200
     handler.assert_called_once()
     assert handler.call_args[0][0] == "Arbeitszimmer"
@@ -362,9 +355,7 @@ async def test_notify_pushes_volume_into_the_claiming_session(client, default_se
     await claims.claim("sonos", "Arbeitszimmer", default_session.session_id)
     body = RC_NOTIFY_BODY.format(volume="42", mute="0")
 
-    response = client.request(
-        "NOTIFY", "/upnp/events/renderingcontrol/Arbeitszimmer", content=body
-    )
+    response = client.request("NOTIFY", "/upnp/events/renderingcontrol/Arbeitszimmer", content=body)
 
     assert response.status_code == 200
     assert default_session.state.device_volumes["sonos:Arbeitszimmer"] == (42, False)
@@ -409,9 +400,7 @@ def test_notify_rendering_control_is_a_no_op_for_an_unclaimed_device(client, def
     raise or fabricate a session's worth of state."""
     body = RC_NOTIFY_BODY.format(volume="42", mute="0")
 
-    response = client.request(
-        "NOTIFY", "/upnp/events/renderingcontrol/NobodysDevice", content=body
-    )
+    response = client.request("NOTIFY", "/upnp/events/renderingcontrol/NobodysDevice", content=body)
 
     assert response.status_code == 200
     assert default_session.state.device_volumes == {}

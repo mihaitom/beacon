@@ -247,9 +247,7 @@ def test_resolve_target_does_not_reuse_different_type():
     from delivery import ChromecastDelivery
 
     first = resolve_target(target_type="airplay", target_name="Living Room")
-    second = resolve_target(
-        target_type="chromecast", target_name="Living Room", previous=first
-    )
+    second = resolve_target(target_type="chromecast", target_name="Living Room", previous=first)
     assert second is not first
     assert isinstance(second, ChromecastDelivery)
 

@@ -99,9 +99,7 @@ def test_get_track_parses_item(monkeypatch):
 
 def test_get_track_raises_when_not_found(monkeypatch):
     def fake_get(url, **kwargs):
-        return httpx.Response(
-            200, json={"MediaContainer": {}}, request=httpx.Request("GET", url)
-        )
+        return httpx.Response(200, json={"MediaContainer": {}}, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(http_client, "get", fake_get)
     with pytest.raises(RuntimeError, match="not found"):
@@ -176,9 +174,9 @@ def test_get_stream_url_resolves_part_key(monkeypatch):
         )
 
     monkeypatch.setattr(http_client, "get", fake_get)
-    url = _client(url="http://proxy:9180", internal_url="http://plex:32400", token="tok").get_stream_url(
-        "9001"
-    )
+    url = _client(
+        url="http://proxy:9180", internal_url="http://plex:32400", token="tok"
+    ).get_stream_url("9001")
     assert url == "http://plex:32400/library/parts/555/file.mp3?X-Plex-Token=tok"
 
 
@@ -254,9 +252,7 @@ def test_create_pin_returns_id_and_code(monkeypatch):
 def test_check_pin_returns_none_while_pending(monkeypatch):
     def fake_get(url, **kwargs):
         assert url == "https://plex.tv/api/v2/pins/42"
-        return httpx.Response(
-            200, json={"authToken": None}, request=httpx.Request("GET", url)
-        )
+        return httpx.Response(200, json={"authToken": None}, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(http_client, "get", fake_get)
     assert check_pin(42) is None
@@ -284,9 +280,7 @@ def test_client_identifier_stable_across_calls(monkeypatch, tmp_path):
 def test_client_identifier_falls_back_gracefully_when_persisting_fails(monkeypatch, tmp_path):
     import media.plex as plex_mod
 
-    monkeypatch.setattr(
-        plex_mod, "_CLIENT_ID_FILE", tmp_path / "no-such-dir" / "client-id"
-    )
+    monkeypatch.setattr(plex_mod, "_CLIENT_ID_FILE", tmp_path / "no-such-dir" / "client-id")
 
     identifier = client_identifier()  # must not raise
 

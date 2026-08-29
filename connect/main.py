@@ -256,9 +256,7 @@ async def lifespan(_: FastAPI):
         logger.error("❌ ffmpeg NOT FOUND — streaming will fail!")
 
     if not _CONNECT_TOKEN:
-        logger.warning(
-            "⚠️  CONNECT_TOKEN explicitly set to empty — the Connect API has no auth!"
-        )
+        logger.warning("⚠️  CONNECT_TOKEN explicitly set to empty — the Connect API has no auth!")
     elif _CONNECT_TOKEN_GENERATED:
         logger.info(
             f"🔒 Token auth enabled (auto-generated, persisted in connect/.connect-token): "

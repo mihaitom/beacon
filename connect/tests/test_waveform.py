@@ -90,7 +90,7 @@ def test_compute_peaks_does_not_wrap_on_the_int16_minimum():
     Python-int implementation could not hit but a vectorized one can."""
     quiet, loud = 100, -32768
     samples = [quiet] * (_PEAK_COUNT * 10)
-    samples[: 10] = [loud] * 10  # the first bucket is full-scale negative
+    samples[:10] = [loud] * 10  # the first bucket is full-scale negative
     peaks = _compute_peaks(array.array("h", samples).tobytes())
     assert peaks[0] == 1.0
     assert peaks[-1] < 0.01
@@ -132,7 +132,7 @@ def test_compute_peaks_is_vectorized_not_per_sample():
     actual = time.perf_counter() - start
 
     assert actual * 5 < boxed, (
-        f"_compute_peaks took {actual*1000:.1f}ms vs {boxed*1000:.1f}ms for a single "
+        f"_compute_peaks took {actual * 1000:.1f}ms vs {boxed * 1000:.1f}ms for a single "
         "boxed pass — it looks per-sample again, which will block the event loop"
     )
 
@@ -236,9 +236,7 @@ def test_waveform_endpoint_returns_peaks(client, default_session):
 async def test_get_waveform_logs_when_the_killed_process_wont_exit_either(caplog):
     """The kill()-then-reap wait must never itself hang the request — bounded
     by its own 5s timeout, logged (not raised) if even that isn't enough."""
-    proc = _FakeWaveformProc(
-        communicate_error=TimeoutError(), wait_error=TimeoutError()
-    )
+    proc = _FakeWaveformProc(communicate_error=TimeoutError(), wait_error=TimeoutError())
 
     with (
         patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),

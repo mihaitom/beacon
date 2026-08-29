@@ -69,9 +69,7 @@ _PROPERTY_RE = re.compile(r"<(\w+)\s+val=\"([^\"]*)\"")
 # /device-volume endpoint and DeviceListItem.vue's slider already mean by
 # "this device's volume" — LF/RF only diverge when someone's deliberately
 # unbalanced a stereo pair, not something either surface exposes.
-_RENDERING_CONTROL_PROPERTY_RE = re.compile(
-    r'<(Volume|Mute)\s+channel="Master"\s+val="([^"]*)"'
-)
+_RENDERING_CONTROL_PROPERTY_RE = re.compile(r'<(Volume|Mute)\s+channel="Master"\s+val="([^"]*)"')
 
 # The properties worth keeping out of a LastChange payload that also
 # carries volume, mute, EQ and a dozen Sonos-specific extensions.

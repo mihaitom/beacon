@@ -44,9 +44,7 @@ def test_concurrent_imports_are_serialized_not_raced():
             import_in_thread("fake_module_c"),
         )
 
-    with patch(
-        "delivery.lazy_import.importlib.import_module", side_effect=fake_import_module
-    ):
+    with patch("delivery.lazy_import.importlib.import_module", side_effect=fake_import_module):
         asyncio.run(_run())
 
     assert not overlap_detected.is_set()

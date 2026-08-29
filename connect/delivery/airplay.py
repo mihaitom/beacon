@@ -42,9 +42,7 @@ async def _fetch_artwork(url: str | None) -> bytes | None:
             resp = await http.get(url)
             resp.raise_for_status()
             if len(resp.content) > _MAX_ARTWORK_BYTES:
-                logger.debug(
-                    f"[AirPlay] Artwork too large ({len(resp.content)}B), skipping"
-                )
+                logger.debug(f"[AirPlay] Artwork too large ({len(resp.content)}B), skipping")
                 return None
             return resp.content
     except (httpx.HTTPError, ValueError) as e:
@@ -206,9 +204,7 @@ class AirPlayDelivery(BaseDelivery):
                 f"[AirPlay:{self.target}] Scanning ({kind}"
                 f"{f', {hosts[0]}' if hosts else ', full'})..."
             )
-            devices = await pyatv.scan(
-                loop, timeout=timeout, protocol=protocol, hosts=hosts
-            )
+            devices = await pyatv.scan(loop, timeout=timeout, protocol=protocol, hosts=hosts)
             return next(
                 (d for d in devices if d.name.lower() == self.target.lower()), None
             ), devices
@@ -219,9 +215,7 @@ class AirPlayDelivery(BaseDelivery):
 
         if match is None:
             available = [d.name for d in devices]
-            raise RuntimeError(
-                f"AirPlay '{self.target}' not found. Available: {available}"
-            )
+            raise RuntimeError(f"AirPlay '{self.target}' not found. Available: {available}")
 
         if stored_creds:
             # AirPlay 2 pairing yields HAP credentials valid for both protocols.
@@ -231,8 +225,7 @@ class AirPlayDelivery(BaseDelivery):
             match.set_credentials(Protocol.AirPlay, stored_creds)
             has_raop = match.set_credentials(Protocol.RAOP, stored_creds)
             logger.info(
-                f"[AirPlay:{self.target}] Found: {match.address} "
-                f"({kind}, raop_creds={has_raop})"
+                f"[AirPlay:{self.target}] Found: {match.address} ({kind}, raop_creds={has_raop})"
             )
         else:
             logger.info(f"[AirPlay:{self.target}] Found: {match.address} ({kind})")
@@ -326,17 +319,13 @@ class AirPlayDelivery(BaseDelivery):
                     # `async with` would tear the stream down before a note
                     # played. Both are closed in the finally instead.
                     http = httpx.AsyncClient(follow_redirects=True, timeout=600.0)
-                    resp = await http.send(
-                        http.build_request("GET", stream_url), stream=True
-                    )
+                    resp = await http.send(http.build_request("GET", stream_url), stream=True)
                     resp.raise_for_status()
                     logger.info(
                         f"[AirPlay:{self.target}] ▶ {title}"
                         f"{' (with artwork)' if metadata.artwork else ''}"
                     )
-                    await captured_atv.stream.stream_file(
-                        _ResponseReader(resp), metadata=metadata
-                    )
+                    await captured_atv.stream.stream_file(_ResponseReader(resp), metadata=metadata)
 
                 logger.info(f"[AirPlay:{self.target}] ✓ stream ended")
 
@@ -358,9 +347,7 @@ class AirPlayDelivery(BaseDelivery):
                     # clean FIN there cannot be told apart from somebody
                     # pressing stop on the speaker, so it waits to see if a
                     # reconnect turns up. A push that failed is unambiguous.
-                    logger.warning(
-                        f"[AirPlay:{self.target}] Device disconnected during stream"
-                    )
+                    logger.warning(f"[AirPlay:{self.target}] Device disconnected during stream")
                     await self._report_playback_error(
                         f"AirPlay device '{self.target}' disconnected mid-track"
                     )
@@ -396,9 +383,7 @@ class AirPlayDelivery(BaseDelivery):
             loop = asyncio.get_event_loop()
             self._atv = await pyatv.connect(conf, loop)
 
-            logger.info(
-                f"[AirPlay:{self.target}] connected — '{title}' (backend: {stream_url})"
-            )
+            logger.info(f"[AirPlay:{self.target}] connected — '{title}' (backend: {stream_url})")
 
             # Capture connection at task-creation time so the finally block
             # closes exactly this instance, even if self._atv is replaced by

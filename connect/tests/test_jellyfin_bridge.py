@@ -229,9 +229,7 @@ async def test_jf_request_logs_when_a_call_takes_over_a_second(
 # ── routes/proxy.py dispatch ─────────────────────────────────────────────────
 
 
-def test_proxy_dispatches_jellyfin_session_to_bridge(
-    client, jellyfin_session, monkeypatch
-):
+def test_proxy_dispatches_jellyfin_session_to_bridge(client, jellyfin_session, monkeypatch):
     fake_client, _calls = _fake_jf_client(
         {
             "/Users/u1/Items/song-1": {
@@ -250,9 +248,7 @@ def test_proxy_dispatches_jellyfin_session_to_bridge(
     assert body["subsonic-response"]["song"]["id"] == "song-1"
 
 
-def test_proxy_dispatches_subsonic_session_to_passthrough(
-    client, default_session, monkeypatch
-):
+def test_proxy_dispatches_subsonic_session_to_passthrough(client, default_session, monkeypatch):
     # default_session (conftest.py) is a SubsonicClient. Force
     # NAVIDROME_INTERNAL_URL empty and reload routes/proxy.py (same pattern as
     # test_proxy.py's _reload_proxy) so the passthrough branch's behavior is
@@ -286,9 +282,7 @@ def test_unbridged_endpoint_returns_failed_envelope(client, jellyfin_session):
     assert "error" in body
 
 
-def test_handler_exception_returns_failed_envelope_not_500(
-    client, jellyfin_session, monkeypatch
-):
+def test_handler_exception_returns_failed_envelope_not_500(client, jellyfin_session, monkeypatch):
     async def broken_request(method, url, headers=None, params=None, json=None):
         raise RuntimeError("boom")
 
@@ -312,7 +306,9 @@ def test_search3_empty_query_omits_search_term(client, jellyfin_session, monkeyp
     fake_client, calls = _fake_jf_client({"/Users/u1/Items": {"Items": []}})
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
-    r = client.get("/rest/search3.view?query=&songCount=3000&albumCount=0&artistCount=0&songOffset=0")
+    r = client.get(
+        "/rest/search3.view?query=&songCount=3000&albumCount=0&artistCount=0&songOffset=0"
+    )
     assert r.status_code == 200
     assert r.json()["subsonic-response"]["status"] == "ok"
     params = calls[0][2]
@@ -333,7 +329,9 @@ def test_search3_maps_song_offset_to_start_index(client, jellyfin_session, monke
     fake_client, calls = _fake_jf_client({"/Users/u1/Items": {"Items": []}})
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
-    client.get("/rest/search3.view?query=&songCount=3000&albumCount=0&artistCount=0&songOffset=3000")
+    client.get(
+        "/rest/search3.view?query=&songCount=3000&albumCount=0&artistCount=0&songOffset=3000"
+    )
     assert calls[0][2]["StartIndex"] == "3000"
 
 
@@ -635,9 +633,7 @@ def test_add_to_playlist_via_update_playlist(client, jellyfin_session, monkeypat
     fake_client, calls = _fake_jf_client()
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
-    r = client.get(
-        "/rest/updatePlaylist.view?playlistId=p1&songIdToAdd=s1&songIdToAdd=s2"
-    )
+    r = client.get("/rest/updatePlaylist.view?playlistId=p1&songIdToAdd=s1&songIdToAdd=s2")
     assert r.status_code == 200
     assert r.json()["subsonic-response"]["status"] == "ok"
     method, url, params, _json = calls[0]
@@ -661,9 +657,7 @@ def test_remove_from_playlist_translates_index_to_playlist_item_id(
     )
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
-    r = client.get(
-        "/rest/updatePlaylist.view?playlistId=p1&songIndexToRemove=1"
-    )
+    r = client.get("/rest/updatePlaylist.view?playlistId=p1&songIndexToRemove=1")
     assert r.status_code == 200
     assert r.json()["subsonic-response"]["status"] == "ok"
     delete_call = next(c for c in calls if c[0] == "DELETE")
@@ -804,7 +798,9 @@ def test_get_similar_songs2_requires_id(client, jellyfin_session):
 
 
 def test_scrobble_submission_true_reports_playback_stopped(client, jellyfin_session, monkeypatch):
-    fake_client, calls = _fake_jf_client({"/Users/u1/Items/song-1": {"RunTimeTicks": 1_800_000_000}})
+    fake_client, calls = _fake_jf_client(
+        {"/Users/u1/Items/song-1": {"RunTimeTicks": 1_800_000_000}}
+    )
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
     r = client.get("/rest/scrobble.view?id=song-1&submission=true")
@@ -1100,9 +1096,7 @@ def test_get_lyrics_drops_the_terminator_line_an_id3_tag_leaves_behind(
     ]
 
 
-def test_get_lyrics_is_empty_when_every_line_turns_out_blank(
-    client, jellyfin_session, monkeypatch
-):
+def test_get_lyrics_is_empty_when_every_line_turns_out_blank(client, jellyfin_session, monkeypatch):
     fake_client, _calls = _fake_jf_client(
         {"/Audio/song-1/Lyrics": {"Lyrics": [{"Start": 0, "Text": "\x00"}]}}
     )
@@ -1156,9 +1150,7 @@ def test_start_scan_covers_every_music_library(client, jellyfin_session, monkeyp
     ]
 
 
-def test_start_scan_says_so_when_there_is_no_music_library(
-    client, jellyfin_session, monkeypatch
-):
+def test_start_scan_says_so_when_there_is_no_music_library(client, jellyfin_session, monkeypatch):
     fake_client, _calls = _fake_jf_client(
         {"/Library/VirtualFolders": [{"CollectionType": "movies", "ItemId": "lib-movies"}]}
     )
@@ -1169,9 +1161,7 @@ def test_start_scan_says_so_when_there_is_no_music_library(
     assert "music library" in body["error"]["message"]
 
 
-def test_scan_status_reads_the_music_librarys_own_progress(
-    client, jellyfin_session, monkeypatch
-):
+def test_scan_status_reads_the_music_librarys_own_progress(client, jellyfin_session, monkeypatch):
     fake_client, _calls = _fake_jf_client(
         {
             "/Library/VirtualFolders": [
@@ -1195,15 +1185,23 @@ def test_scan_status_reads_the_music_librarys_own_progress(
     assert "count" not in status
 
 
-def test_scan_status_averages_across_several_music_libraries(
-    client, jellyfin_session, monkeypatch
-):
+def test_scan_status_averages_across_several_music_libraries(client, jellyfin_session, monkeypatch):
     # Two libraries, one finished: halfway, not done.
     fake_client, _calls = _fake_jf_client(
         {
             "/Library/VirtualFolders": [
-                {"CollectionType": "music", "ItemId": "a", "RefreshStatus": "Idle", "RefreshProgress": 100},
-                {"CollectionType": "music", "ItemId": "b", "RefreshStatus": "Active", "RefreshProgress": 20},
+                {
+                    "CollectionType": "music",
+                    "ItemId": "a",
+                    "RefreshStatus": "Idle",
+                    "RefreshProgress": 100,
+                },
+                {
+                    "CollectionType": "music",
+                    "ItemId": "b",
+                    "RefreshStatus": "Active",
+                    "RefreshProgress": 20,
+                },
             ]
         }
     )
@@ -1213,9 +1211,7 @@ def test_scan_status_averages_across_several_music_libraries(
     assert status == {"scanning": True, "progress": 60}
 
 
-def test_scan_status_ignores_a_scan_of_some_other_library(
-    client, jellyfin_session, monkeypatch
-):
+def test_scan_status_ignores_a_scan_of_some_other_library(client, jellyfin_session, monkeypatch):
     """The films library being scanned by someone else is not this scan
     finishing — nor is it this scan running."""
     fake_client, _calls = _fake_jf_client(

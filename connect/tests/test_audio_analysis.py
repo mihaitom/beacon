@@ -38,7 +38,9 @@ from core.audio_analysis import (
 )
 
 
-def _tone_pcm(freq: float, n: int, sample_rate: int = _SAMPLE_RATE, amplitude: float = 0.8) -> bytes:
+def _tone_pcm(
+    freq: float, n: int, sample_rate: int = _SAMPLE_RATE, amplitude: float = 0.8
+) -> bytes:
     samples = [
         int(amplitude * 32767 * math.sin(2 * math.pi * freq * i / sample_rate)) for i in range(n)
     ]
@@ -343,9 +345,7 @@ async def test_release_frames_keeps_polling_after_pending_drains_mid_stream():
     # frame comes due (but never falls stale — see _MAX_LATENESS_SECONDS)
     # exactly when this says so.
     position = [0.0]
-    analyzer = AudioAnalyzer(
-        elapsed_fn=lambda: position[0], source_url="http://media/track.flac"
-    )
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: position[0], source_url="http://media/track.flac")
     analyzer._pending.append((0.0, _some_bands()))
     analyzer._pending.append((_PREBUFFER_SECONDS, _some_bands()))
     task = asyncio.create_task(analyzer._release_frames())

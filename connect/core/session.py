@@ -206,9 +206,7 @@ def build_status_dict(
     targets = []
     for target_type, name in list_target_pairs(st.active_delivery):
         volume, muted = st.device_volumes.get(f"{target_type}:{name}", (None, None))
-        targets.append(
-            {"name": name, "type": target_type, "volume": volume, "muted": muted}
-        )
+        targets.append({"name": name, "type": target_type, "volume": volume, "muted": muted})
 
     fmt = st.current_output_format
     stream_info = {
@@ -566,9 +564,7 @@ async def reap_once() -> list[str]:
             try:
                 await session.state.active_delivery.stop()
             except Exception as e:
-                logger.debug(
-                    f"[reap] {session.session_id}: stopping device failed: {e}"
-                )
+                logger.debug(f"[reap] {session.session_id}: stopping device failed: {e}")
         await session.visualizer.shutdown()
         await claims.release_all_for_session(session.session_id)
         await registry.remove(session.session_id)

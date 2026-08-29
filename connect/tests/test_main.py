@@ -115,7 +115,8 @@ async def test_periodic_discovery_survives_a_failed_scan_and_keeps_looping(caplo
 def test_lifespan_warns_when_ffmpeg_is_missing(caplog):
     with (
         patch.object(shutil, "which", return_value=None),
-        caplog.at_level(logging.ERROR, logger="connect"),TestClient(main.app)
+        caplog.at_level(logging.ERROR, logger="connect"),
+        TestClient(main.app),
     ):
         pass
 

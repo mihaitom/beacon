@@ -77,9 +77,7 @@ def test_device_stop_returns_error_on_exception(client, default_session):
     default_session.state.is_streaming = True
     default_session.state.active_delivery = ChromecastDelivery("TV")
 
-    with patch.object(
-        ChromecastDelivery, "stop", new=AsyncMock(side_effect=RuntimeError("boom"))
-    ):
+    with patch.object(ChromecastDelivery, "stop", new=AsyncMock(side_effect=RuntimeError("boom"))):
         r = client.post("/device-stop?device_type=chromecast&name=TV")
 
     assert "error" in r.json()
@@ -289,9 +287,7 @@ def test_device_stop_releases_the_claim_even_when_the_stop_call_fails(client, de
 
     asyncio.run(claims.claim("chromecast", "TV", default_session.session_id))
 
-    with patch.object(
-        ChromecastDelivery, "stop", new=AsyncMock(side_effect=RuntimeError("boom"))
-    ):
+    with patch.object(ChromecastDelivery, "stop", new=AsyncMock(side_effect=RuntimeError("boom"))):
         r = client.post("/device-stop?device_type=chromecast&name=TV")
 
     assert "error" in r.json()

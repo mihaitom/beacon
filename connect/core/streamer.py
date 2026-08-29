@@ -163,9 +163,7 @@ _LOSSY_ENCODER_RATES = {
 }
 
 
-def _lossy_sample_rate(
-    fmt: str, source_rate: int | None, max_sample_rate: int | None
-) -> int:
+def _lossy_sample_rate(fmt: str, source_rate: int | None, max_sample_rate: int | None) -> int:
     """Output sample rate for a lossy re-encode of a source at
     `source_rate`, respecting a device's own `max_sample_rate` ceiling.
 
@@ -437,10 +435,7 @@ def _parse_duration(probe_output: bytes) -> float | None:
         return None
     hours, minutes, seconds, fraction = match.groups()
     return (
-        int(hours) * 3600
-        + int(minutes) * 60
-        + int(seconds)
-        + int(fraction) / (10 ** len(fraction))
+        int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(fraction) / (10 ** len(fraction))
     )
 
 
@@ -470,11 +465,7 @@ def _resample_plan(
     ):
         args += ["-ar", str(max_sample_rate)]
         target_sample_rate = max_sample_rate
-    if (
-        max_bit_depth is not None
-        and info.bit_depth is not None
-        and info.bit_depth > max_bit_depth
-    ):
+    if max_bit_depth is not None and info.bit_depth is not None and info.bit_depth > max_bit_depth:
         # FLAC/ALAC sources in practice are 16- or 24-bit; s16 is the only
         # meaningful "smaller" target once 24 itself isn't allowed.
         args += ["-sample_fmt", "s16"]
@@ -497,9 +488,7 @@ def _exceeds_quality_ceiling(
     if not max_lossy_format or not max_lossy_bitrate_kbps:
         return False
     if max_lossy_format not in _LOSSY_ENCODERS:
-        logger.warning(
-            f"[ffmpeg] Ignoring unknown quality ceiling format '{max_lossy_format}'"
-        )
+        logger.warning(f"[ffmpeg] Ignoring unknown quality ceiling format '{max_lossy_format}'")
         return False
     if info.codec in _LOSSLESS_CODECS:
         return True
@@ -519,9 +508,7 @@ def _lossy_ceiling_format(
     handed the device's ceiling and honours it), and its bit depth is
     whatever the encoder produces — `-sample_fmt s16` would be rejected by
     libmp3lame rather than respected."""
-    args, content_type = lossy_encode_args(
-        fmt, bitrate_kbps, info.sample_rate, max_sample_rate
-    )
+    args, content_type = lossy_encode_args(fmt, bitrate_kbps, info.sample_rate, max_sample_rate)
     logger.info(
         f"[ffmpeg] format probe: '{info.codec}' "
         f"{f'{info.bitrate_kbps}kbps ' if info.bitrate_kbps else ''}"
@@ -607,9 +594,7 @@ async def resolve_output_format(
     if info is None:
         return _fallback(REASON_PROBE_FAILED)
     codec = info.codec
-    resample_args, target_rate, target_depth = _resample_plan(
-        info, max_sample_rate, max_bit_depth
-    )
+    resample_args, target_rate, target_depth = _resample_plan(info, max_sample_rate, max_bit_depth)
 
     if _exceeds_quality_ceiling(info, max_lossy_format, max_lossy_bitrate_kbps):
         return _lossy_ceiling_format(
@@ -670,9 +655,7 @@ async def resolve_output_format(
             target_bit_depth=target_depth,
             # Both are true for a resampled one; the device limit is the
             # more specific (and more actionable) of the two, so it wins.
-            transcode_reason=(
-                REASON_DEVICE_LIMIT if resample_args else REASON_LOSSLESS_CONTAINER
-            ),
+            transcode_reason=(REASON_DEVICE_LIMIT if resample_args else REASON_LOSSLESS_CONTAINER),
         )
 
     not_castable = codec == "opus"
@@ -743,9 +726,7 @@ async def stream_tracks(
         if gain != 1.0:
             i_pos = cmd.index("-vn")
             cmd = cmd[:i_pos] + ["-af", f"volume={gain}"] + cmd[i_pos:]
-        logger.debug(
-            f"[ffmpeg] Track {i + 1}/{len(track_urls)} ({fmt.label}): {url[:80]}"
-        )
+        logger.debug(f"[ffmpeg] Track {i + 1}/{len(track_urls)} ({fmt.label}): {url[:80]}")
         logger.debug(f"[ffmpeg] Command: {' '.join(cmd)}")
 
         proc = None
@@ -794,9 +775,7 @@ async def stream_tracks(
                 )
 
         except FileNotFoundError:
-            logger.error(
-                "[ffmpeg] ❌ ffmpeg not found — please install (apk add ffmpeg)"
-            )
+            logger.error("[ffmpeg] ❌ ffmpeg not found — please install (apk add ffmpeg)")
             # Propagate (not a silent `return`) so stream_with_completion()
             # doesn't mistake this for a normal, successful end-of-stream and
             # fire a track-end broadcast — see its matching except clause.

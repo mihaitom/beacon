@@ -15,9 +15,7 @@ def plex_session(reset_state) -> SessionState:
     """Direct equivalent of test_jellyfin_bridge.py's jellyfin_session, but
     with a PlexClient."""
     session = SessionState(DEFAULT_SESSION_ID)
-    session.media = PlexClient(
-        "http://plex:32400", token="tok", internal_url="http://plex:32400"
-    )
+    session.media = PlexClient("http://plex:32400", token="tok", internal_url="http://plex:32400")
     session.authenticated = True
     session_registry._sessions[DEFAULT_SESSION_ID] = session
     return session
@@ -255,7 +253,9 @@ def test_get_album_list2_returns_mapped_albums(client, plex_session, monkeypatch
             },
             "/library/sections/5/all": {
                 "MediaContainer": {
-                    "Metadata": [{"ratingKey": "2001", "title": "Album A", "parentTitle": "Artist A"}]
+                    "Metadata": [
+                        {"ratingKey": "2001", "title": "Album A", "parentTitle": "Artist A"}
+                    ]
                 }
             },
         }
@@ -478,9 +478,7 @@ def test_get_artists_buckets_by_first_letter(client, plex_session, monkeypatch):
     assert index[1]["artist"][0]["name"] == "Beatles"
 
 
-def test_get_artists_derives_album_count_from_bulk_album_listing(
-    client, plex_session, monkeypatch
-):
+def test_get_artists_derives_album_count_from_bulk_album_listing(client, plex_session, monkeypatch):
     # Regression test: Plex's own childCount came back unreliable in
     # practice (every artist card showed "0 albums" — confirmed live
     # 2026-08-17) — album count must come from a real tally over the
@@ -500,7 +498,11 @@ def test_get_artists_derives_album_count_from_bulk_album_listing(
                     "Metadata": [
                         {"ratingKey": "2001", "title": "Album A", "parentRatingKey": "3001"},
                         {"ratingKey": "2002", "title": "Album B", "parentRatingKey": "3001"},
-                        {"ratingKey": "2003", "title": "Other Artist's Album", "parentRatingKey": "9999"},
+                        {
+                            "ratingKey": "2003",
+                            "title": "Other Artist's Album",
+                            "parentRatingKey": "9999",
+                        },
                     ]
                 }
             },
@@ -1064,16 +1066,12 @@ def test_get_lyrics_reads_the_tracks_own_lyric_stream(client, plex_session, monk
     ]
 
 
-def test_get_lyrics_is_empty_for_a_track_without_a_lyric_stream(
-    client, plex_session, monkeypatch
-):
+def test_get_lyrics_is_empty_for_a_track_without_a_lyric_stream(client, plex_session, monkeypatch):
     fake_client, _calls = _fake_px_client(
         {
             "/library/metadata/21929": {
                 "MediaContainer": {
-                    "Metadata": [
-                        {"Media": [{"Part": [{"Stream": [{"id": 1, "streamType": 2}]}]}]}
-                    ]
+                    "Metadata": [{"Media": [{"Part": [{"Stream": [{"id": 1, "streamType": 2}]}]}]}]
                 }
             }
         }
@@ -1206,9 +1204,7 @@ def test_scan_status_omits_a_progress_plex_cannot_state(client, plex_session, mo
         {
             "/library/sections": _MUSIC_SECTION,
             "/activities": {
-                "MediaContainer": {
-                    "Activity": [{"type": "library.update.section", "progress": -1}]
-                }
+                "MediaContainer": {"Activity": [{"type": "library.update.section", "progress": -1}]}
             },
         }
     )

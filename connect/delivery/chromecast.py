@@ -59,8 +59,7 @@ def _get_cached_chromecast(target: str):
             return cast
     except Exception as e:
         logger.debug(
-            f"[Chromecast:{target}] cached device no longer answering ({e}) "
-            "— dropping from cache"
+            f"[Chromecast:{target}] cached device no longer answering ({e}) — dropping from cache"
         )
     _chromecast_cache.pop(target.lower(), None)
     return None
@@ -100,9 +99,7 @@ class ChromecastDelivery(BaseDelivery):
                 return cast
 
         available = [info.friendly_name for info in browser.devices.values()]
-        raise RuntimeError(
-            f"Chromecast '{self.target}' not found. Available: {available}"
-        )
+        raise RuntimeError(f"Chromecast '{self.target}' not found. Available: {available}")
 
     async def play(
         self,

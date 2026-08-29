@@ -597,7 +597,14 @@ def test_quality_ceiling_re_encodes_a_lossless_source():
     )
 
     assert fmt.ffmpeg_args == [
-        "-acodec", "libmp3lame", "-b:a", "192k", "-ar", "44100", "-f", "mp3",
+        "-acodec",
+        "libmp3lame",
+        "-b:a",
+        "192k",
+        "-ar",
+        "44100",
+        "-f",
+        "mp3",
     ]
     assert fmt.content_type == "audio/mpeg"
     assert fmt.transcode_reason == REASON_QUALITY_LIMIT
@@ -924,7 +931,9 @@ class _ConfigurableFakeProc:
     and kill() are all configurable — for exercising the actual byte-yielding
     and failure-handling paths below, not just the command that got built."""
 
-    def __init__(self, stdout_chunks=(b"",), stderr: bytes = b"", returncode: int = 0, kill_error=None):
+    def __init__(
+        self, stdout_chunks=(b"",), stderr: bytes = b"", returncode: int = 0, kill_error=None
+    ):
         self.returncode = returncode
         self.stdout = AsyncMock()
         self.stdout.read = AsyncMock(side_effect=list(stdout_chunks))

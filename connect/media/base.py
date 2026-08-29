@@ -201,7 +201,10 @@ async def create_internet_radio_station(params: dict, _media: object) -> dict:
 async def update_internet_radio_station(params: dict, _media: object) -> dict:
     station_id = params["id"]
     updated = radio_stations.update(
-        station_id, params.get("name", ""), params.get("streamUrl", ""), params.get("homepageUrl", "")
+        station_id,
+        params.get("name", ""),
+        params.get("streamUrl", ""),
+        params.get("homepageUrl", ""),
     )
     if not updated:
         raise ValueError(f"No such radio station: {station_id}")

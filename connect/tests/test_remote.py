@@ -266,17 +266,13 @@ def test_playlists_query_503_when_no_renderer_connected(client):
 
 def test_playlist_by_id_query_503_when_no_renderer_connected(client):
     client.post("/remote/enable")
-    resp = client.get(
-        "/remote/playlists/abc123", headers={"X-Remote-Password": remote.password}
-    )
+    resp = client.get("/remote/playlists/abc123", headers={"X-Remote-Password": remote.password})
     assert resp.status_code == 503
 
 
 def test_radio_stations_query_503_when_no_renderer_connected(client):
     client.post("/remote/enable")
-    resp = client.get(
-        "/remote/radio-stations", headers={"X-Remote-Password": remote.password}
-    )
+    resp = client.get("/remote/radio-stations", headers={"X-Remote-Password": remote.password})
     assert resp.status_code == 503
 
 
@@ -284,9 +280,7 @@ async def test_query_response_resolves_the_matching_pending_query(client):
     client.post("/remote/enable")
     future = remote.new_pending("req-1")
 
-    resp = client.post(
-        "/remote/query-response", json={"request_id": "req-1", "data": {"ok": True}}
-    )
+    resp = client.post("/remote/query-response", json={"request_id": "req-1", "data": {"ok": True}})
 
     assert resp.status_code == 200
     assert await asyncio.wait_for(future, timeout=1.0) == {"ok": True}

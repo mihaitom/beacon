@@ -15,9 +15,7 @@ from typing import Any
 CONNECT_VERSION = "1.0.1"
 
 # Shared across providers — some (e.g. SimpMusic) reject requests without one.
-USER_AGENT = (
-    f"Beacon/{CONNECT_VERSION} (https://github.com/mihaitom/beacon)"
-)
+USER_AGENT = f"Beacon/{CONNECT_VERSION} (https://github.com/mihaitom/beacon)"
 
 
 def _distance(a: str | None, b: str | None) -> float:

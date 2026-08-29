@@ -220,9 +220,7 @@ def test_info_reports_what_the_probe_found(client, default_session):
     }
 
 
-def test_info_says_unknown_rather_than_guessing_when_the_probe_fails(
-    client, default_session
-):
+def test_info_says_unknown_rather_than_guessing_when_the_probe_fails(client, default_session):
     """Deriving a codec from the file extension would fill the panel with
     something that looks like a measurement and isn't."""
     response = _info_request(client, default_session, None)

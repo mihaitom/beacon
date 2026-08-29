@@ -41,6 +41,7 @@ if not any(p[1] == "albumArtURI" for p in MusicTrack.didl_properties_defs):
         ("upnp", "albumArtURI", "O"),
     ]
 
+
 # 2. Resource.to_xml() only ever serializes protocolInfo — every other
 #    constructor param (duration, size, bitrate, ...) is stored on the
 #    instance but never written to the <res> element, even though

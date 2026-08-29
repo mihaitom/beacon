@@ -155,9 +155,7 @@ class JellyfinClient:
 
     def _get(self, path: str, **params) -> dict:
         url = f"{self.internal_url}{path}"
-        response = http_client.get(
-            url, headers=self._auth_header(), params=params, timeout=10
-        )
+        response = http_client.get(url, headers=self._auth_header(), params=params, timeout=10)
         response.raise_for_status()
         return response.json()
 
@@ -169,9 +167,7 @@ class JellyfinClient:
         return Track(
             id=item["Id"],
             title=item.get("Name", "Unknown"),
-            artist=", ".join(artists)
-            if artists
-            else item.get("AlbumArtist", "Unknown"),
+            artist=", ".join(artists) if artists else item.get("AlbumArtist", "Unknown"),
             duration=int((item.get("RunTimeTicks") or 0) / TICKS_PER_SECOND),
             # For Jellyfin the cover art id IS the item id (Primary image endpoint).
             cover_art_id=item["Id"],

@@ -18,18 +18,14 @@ def _unclaimed(device: dict) -> dict:
 
 def test_discover_returns_all_four_device_types(client, default_session):
     sonos = [{"name": "Küche", "ip": "10.0.0.1"}]
-    airplay = [
-        {"name": "HomePod", "address": "10.0.0.2", "model": "X", "needs_pairing": True}
-    ]
+    airplay = [{"name": "HomePod", "address": "10.0.0.2", "model": "X", "needs_pairing": True}]
     chromecast = [{"name": "TV", "host": "10.0.0.3", "model": "Chromecast"}]
     dlna = [{"name": "Receiver", "location": "http://10.0.0.4:1400/desc.xml"}]
 
     with (
         patch("routes.discovery.discover_sonos", new=AsyncMock(return_value=sonos)),
         patch("routes.discovery.discover_airplay", new=AsyncMock(return_value=airplay)),
-        patch(
-            "routes.discovery.discover_chromecast", new=AsyncMock(return_value=chromecast)
-        ),
+        patch("routes.discovery.discover_chromecast", new=AsyncMock(return_value=chromecast)),
         patch("routes.discovery.discover_dlna", new=AsyncMock(return_value=dlna)),
     ):
         r = client.get("/discover")
@@ -64,6 +60,7 @@ def test_discover_all_coalesces_concurrent_callers():
         patch("routes.discovery.discover_chromecast", new=AsyncMock(return_value=[])),
         patch("routes.discovery.discover_dlna", new=AsyncMock(return_value=[])),
     ):
+
         async def _run():
             return await asyncio.gather(discover_all(), discover_all(), discover_all())
 
@@ -175,9 +172,7 @@ def test_discover_logs_a_sonos_scan_error(client, default_session, caplog):
     assert "sonos net error" in caplog.text
 
 
-def test_discover_logs_airplay_chromecast_and_dlna_scan_errors(
-    client, default_session, caplog
-):
+def test_discover_logs_airplay_chromecast_and_dlna_scan_errors(client, default_session, caplog):
     """The other three device types each have their own identical (but
     separately covered) error-logging line. An empty cache (unlike the
     Sonos-specific test above) already forces a synchronous scan on its
@@ -218,7 +213,12 @@ def test_discover_triggers_a_background_rescan_once_the_cache_is_stale(
 
     import routes.discovery as discovery_mod
 
-    state.ctx.discovered = {"sonos": [{"name": "Cached"}], "airplay": [], "chromecast": [], "dlna": []}
+    state.ctx.discovered = {
+        "sonos": [{"name": "Cached"}],
+        "airplay": [],
+        "chromecast": [],
+        "dlna": [],
+    }
     # A scan completed once (has_cache needs a genuine, nonzero timestamp,
     # not 0.0 - see that field's own comment), but long enough ago to be
     # past the rescan floor.

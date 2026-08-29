@@ -44,9 +44,7 @@ class JellyfinLoginRequest(BaseModel):
 @router.post("/jellyfin/login")
 async def jellyfin_login(req: JellyfinLoginRequest):
     try:
-        return await asyncio.to_thread(
-            authenticate_by_name, req.url, req.username, req.password
-        )
+        return await asyncio.to_thread(authenticate_by_name, req.url, req.username, req.password)
     except httpx.HTTPStatusError as e:
         logger.warning(f"[jellyfin-login] {req.url} rejected credentials: {e}")
         raise HTTPException(
@@ -54,9 +52,7 @@ async def jellyfin_login(req: JellyfinLoginRequest):
         ) from e
     except Exception as e:
         logger.warning(f"[jellyfin-login] {req.url} unreachable: {e}")
-        raise HTTPException(
-            status_code=502, detail=f"Jellyfin not reachable: {e}"
-        ) from e
+        raise HTTPException(status_code=502, detail=f"Jellyfin not reachable: {e}") from e
 
 
 class JellyfinQuickConnectInitiateRequest(BaseModel):
@@ -75,9 +71,7 @@ async def jellyfin_quickconnect_initiate(req: JellyfinQuickConnectInitiateReques
         ) from e
     except Exception as e:
         logger.warning(f"[jellyfin-quickconnect] {req.url} unreachable: {e}")
-        raise HTTPException(
-            status_code=502, detail=f"Jellyfin not reachable: {e}"
-        ) from e
+        raise HTTPException(status_code=502, detail=f"Jellyfin not reachable: {e}") from e
 
 
 class JellyfinQuickConnectConnectRequest(BaseModel):
@@ -99,17 +93,13 @@ async def jellyfin_quickconnect_connect(req: JellyfinQuickConnectConnectRequest)
         )
     except Exception as e:
         logger.warning(f"[jellyfin-quickconnect] {req.url} status check failed: {e}")
-        raise HTTPException(
-            status_code=502, detail=f"Jellyfin not reachable: {e}"
-        ) from e
+        raise HTTPException(status_code=502, detail=f"Jellyfin not reachable: {e}") from e
 
     if not authenticated:
         return {"authenticated": False}
 
     try:
-        result = await asyncio.to_thread(
-            authenticate_with_quick_connect, req.url, req.secret
-        )
+        result = await asyncio.to_thread(authenticate_with_quick_connect, req.url, req.secret)
     except httpx.HTTPStatusError as e:
         logger.warning(f"[jellyfin-quickconnect] {req.url} exchange rejected: {e}")
         raise HTTPException(

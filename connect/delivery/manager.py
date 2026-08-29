@@ -106,9 +106,7 @@ class DeliveryManager:
         content_type: str = "audio/mpeg",
     ) -> None:
         """Group Sonos devices so they play in sync (coordinator + followers)."""
-        devices = await asyncio.gather(
-            *[asyncio.to_thread(d._get_device) for d in deliveries]
-        )
+        devices = await asyncio.gather(*[asyncio.to_thread(d._get_device) for d in deliveries])
         coordinator, followers = devices[0], devices[1:]
 
         for f in followers:
@@ -132,19 +130,13 @@ class DeliveryManager:
         )
 
     async def pause(self) -> None:
-        await asyncio.gather(
-            *[d.pause() for d in self.deliveries], return_exceptions=True
-        )
+        await asyncio.gather(*[d.pause() for d in self.deliveries], return_exceptions=True)
 
     async def resume(self) -> None:
-        await asyncio.gather(
-            *[d.resume() for d in self.deliveries], return_exceptions=True
-        )
+        await asyncio.gather(*[d.resume() for d in self.deliveries], return_exceptions=True)
 
     async def stop(self) -> None:
-        await asyncio.gather(
-            *[d.stop() for d in self.deliveries], return_exceptions=True
-        )
+        await asyncio.gather(*[d.stop() for d in self.deliveries], return_exceptions=True)
 
     async def current_uri(self) -> str | None:
         """First target that can answer — play() hands every target in a
@@ -155,9 +147,7 @@ class DeliveryManager:
             try:
                 uri = await delivery.current_uri()
             except Exception as e:
-                logger.debug(
-                    f"[current-uri] {type(delivery).__name__} could not answer: {e}"
-                )
+                logger.debug(f"[current-uri] {type(delivery).__name__} could not answer: {e}")
                 continue
             if uri is not None:
                 return uri

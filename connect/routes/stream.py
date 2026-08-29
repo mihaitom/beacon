@@ -231,9 +231,7 @@ async def _advance_or_end(session: SessionState, my_generation: int) -> None:
     """
     st = session.state
     if not (
-        st.is_streaming
-        and not st.clock.is_paused
-        and st.clock.play_generation == my_generation
+        st.is_streaming and not st.clock.is_paused and st.clock.play_generation == my_generation
     ):
         return
 
@@ -258,9 +256,7 @@ async def _advance_or_end(session: SessionState, my_generation: int) -> None:
             )
             if dispatched:
                 st.queue_index = next_index
-                logger.info(
-                    f"[stream] Auto-advanced to {next_track.artist} — {next_track.title}"
-                )
+                logger.info(f"[stream] Auto-advanced to {next_track.artist} — {next_track.title}")
                 return
 
     logger.info("[stream] Track finished — marking stream complete")
@@ -561,7 +557,8 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
     if not session.state.current_track:
         logger.warning("[stream] No track loaded — returning 204")
         return StreamingResponse(
-            iter([b""]), media_type=session.state.current_output_format.content_type,
+            iter([b""]),
+            media_type=session.state.current_output_format.content_type,
             status_code=204,
         )
 
@@ -646,9 +643,7 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
     def on_track_start(_: int) -> None:
         gain = session.state.current_track_gain
         gain_str = f", gain={gain:.2f}" if gain != 1.0 else ""
-        logger.debug(
-            f"[stream] ▶ {track.artist} — {track.title} ({track.duration}s{gain_str})"
-        )
+        logger.debug(f"[stream] ▶ {track.artist} — {track.title} ({track.duration}s{gain_str})")
 
     async def _fire_track_end(my_generation: int, wait: float) -> None:
         """Fires once ffmpeg (and, for Sonos, the device's own buffered
@@ -691,12 +686,9 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
         rounded up to a poll interval.
         """
         if wait > _TRACK_END_TOLERANCE:
-            logger.info(
-                f"[stream] FFmpeg done early — waiting {wait:.1f}s for playback to finish"
-            )
+            logger.info(f"[stream] FFmpeg done early — waiting {wait:.1f}s for playback to finish")
             while (
-                session.state.clock.play_generation == my_generation
-                and session.state.current_track
+                session.state.clock.play_generation == my_generation and session.state.current_track
             ):
                 remaining = session.state.clock.seconds_until(_playback_duration(session.state))
                 if remaining <= _TRACK_END_TOLERANCE:

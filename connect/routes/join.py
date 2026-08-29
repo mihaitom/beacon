@@ -89,8 +89,7 @@ async def join_stream(
                         joiner = await asyncio.to_thread(new_d._get_device)
                         await asyncio.to_thread(joiner.join, coordinator)
                         logger.info(
-                            f"[join] {req.target_name} joining group of "
-                            f"{existing_sonos[0].target}"
+                            f"[join] {req.target_name} joining group of {existing_sonos[0].target}"
                         )
                     except Exception as e:
                         logger.warning(
@@ -118,9 +117,7 @@ async def join_stream(
             if req.target_name not in existing:
                 st.active_delivery.deliveries.append(new_d)
         elif st.active_delivery:
-            st.active_delivery = DeliveryManager.from_deliveries(
-                [st.active_delivery, new_d]
-            )
+            st.active_delivery = DeliveryManager.from_deliveries([st.active_delivery, new_d])
         else:
             st.active_delivery = new_d
 

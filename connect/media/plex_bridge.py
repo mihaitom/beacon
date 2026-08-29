@@ -238,7 +238,9 @@ def _map_all(mapper: Callable[[dict], dict], items: list[dict]) -> list[dict]:
         try:
             result.append(mapper(item))
         except Exception as e:
-            logger.warning(f"[plex-bridge] Skipping malformed item {item.get('ratingKey', '?')}: {e}")
+            logger.warning(
+                f"[plex-bridge] Skipping malformed item {item.get('ratingKey', '?')}: {e}"
+            )
     return result
 
 
@@ -444,7 +446,6 @@ async def get_lyrics_by_song_id(params: dict, media: PlexClient) -> dict:
             ]
         }
     }
-
 
 
 async def get_similar_songs2(params: dict, media: PlexClient) -> dict:
@@ -937,7 +938,9 @@ async def _handle_binary(
 # ── Entry point ────────────────────────────────────────────────────────────
 
 
-async def handle(path: str, request: Request, media: PlexClient) -> JSONResponse | StreamingResponse:
+async def handle(
+    path: str, request: Request, media: PlexClient
+) -> JSONResponse | StreamingResponse:
     if path in _BINARY_PATHS:
         try:
             return await _handle_binary(path, request, media)

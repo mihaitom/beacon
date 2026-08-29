@@ -42,6 +42,7 @@ decoder to roughly the right spot — the same estimate already carries
 AirPlay's lyrics sync (routes/playback.py, "[lyrics-sync]"), and a frequency
 band tolerates drift far better than a highlighted lyric line does.
 """
+
 import asyncio
 import logging
 import math
@@ -394,9 +395,7 @@ class AudioAnalyzer:
                 while len(self._pcm_buffer) >= window_bytes:
                     window = bytes(self._pcm_buffer[-window_bytes:])
                     bands = analyze_pcm(window)
-                    bands = _smooth_bands(
-                        self._smoothed_bands, bands, _SMOOTHING_TIME_CONSTANT
-                    )
+                    bands = _smooth_bands(self._smoothed_bands, bands, _SMOOTHING_TIME_CONSTANT)
                     self._smoothed_bands = bands
                     self._pending.append((self._pcm_position, bands))
                     self._pcm_position += _FRAME_SECONDS
@@ -453,8 +452,7 @@ class AudioAnalyzer:
             # already finished (a short clip, or this task starting late)
             # since there's nothing further to build a lead from anyway.
             while not self._reading_done and (
-                not self._pending
-                or self._pending[-1][0] - self._pending[0][0] < _PREBUFFER_SECONDS
+                not self._pending or self._pending[-1][0] - self._pending[0][0] < _PREBUFFER_SECONDS
             ):
                 await asyncio.sleep(0.05)
 

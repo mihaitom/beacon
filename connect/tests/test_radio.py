@@ -16,9 +16,7 @@ def _png_bytes(mode: str, transparent_ratio: float = 0.0) -> bytes:
     top) fully transparent, the rest opaque, when mode is RGBA. Ignored for
     RGB (no alpha channel at all)."""
     size = 32
-    img = Image.new(
-        mode, (size, size), (200, 40, 40, 255) if mode == "RGBA" else (200, 40, 40)
-    )
+    img = Image.new(mode, (size, size), (200, 40, 40, 255) if mode == "RGBA" else (200, 40, 40))
     if mode == "RGBA":
         transparent_rows = int(size * transparent_ratio)
         for y in range(transparent_rows):
@@ -36,9 +34,7 @@ def _clear_candidate_cache():
     radio_mod._candidate_cache.clear()
 
 
-def _fake_get_response(
-    status_code=200, content=b"icon-bytes", content_type="image/x-icon"
-):
+def _fake_get_response(status_code=200, content=b"icon-bytes", content_type="image/x-icon"):
     resp = MagicMock()
     resp.status_code = status_code
     resp.content = content
@@ -134,7 +130,7 @@ def test_discover_candidates_stops_reading_past_the_html_byte_cap(client):
 
 def test_radio_favicon_skips_an_unreachable_candidate_and_tries_the_next(client):
     html = (
-        b'<html><head>'
+        b"<html><head>"
         b'<link rel="icon" sizes="16x16" href="/broken.png">'
         b'<link rel="icon" sizes="48x48" href="/good.png">'
         b"</head><body></body></html>"
@@ -156,9 +152,7 @@ def test_radio_favicon_skips_an_unreachable_candidate_and_tries_the_next(client)
 def test_radio_favicon_falls_back_to_favicon_ico_when_homepage_unreachable(client):
     with (
         patch.object(radio_mod._client, "stream", side_effect=httpx.ConnectError("x")),
-        patch.object(
-            radio_mod._client, "get", AsyncMock(return_value=_fake_get_response())
-        ),
+        patch.object(radio_mod._client, "get", AsyncMock(return_value=_fake_get_response())),
     ):
         r = client.get("/radio-favicon", params={"url": "https://example.com"})
     assert r.status_code == 200
@@ -181,9 +175,7 @@ def test_radio_favicon_skips_html_parsing_for_non_html_content_type(client):
     # else entirely — treated the same as "found nothing", not an error.
     mock_get = AsyncMock(return_value=_fake_get_response())
     with (
-        patch.object(
-            radio_mod._client, "stream", _mock_stream(b"", content_type="image/png")
-        ),
+        patch.object(radio_mod._client, "stream", _mock_stream(b"", content_type="image/png")),
         patch.object(radio_mod._client, "get", mock_get),
     ):
         r = client.get("/radio-favicon", params={"url": "https://example.com"})
@@ -230,9 +222,7 @@ def test_radio_favicon_picks_smallest_candidate_meeting_min_size(client):
         patch.object(radio_mod._client, "stream", _mock_stream(html)),
         patch.object(radio_mod._client, "get", mock_get),
     ):
-        client.get(
-            "/radio-favicon", params={"url": "https://example.com", "min_size": 128}
-        )
+        client.get("/radio-favicon", params={"url": "https://example.com", "min_size": 128})
     # 180x180 is the smallest of the three that still meets min_size=128 —
     # no reason to fetch the 512px one when this list row only needs ~128px.
     mock_get.assert_awaited_once_with("https://example.com/180.png")
@@ -250,9 +240,7 @@ def test_radio_favicon_falls_back_to_largest_when_nothing_meets_min_size(client)
         patch.object(radio_mod._client, "stream", _mock_stream(html)),
         patch.object(radio_mod._client, "get", mock_get),
     ):
-        client.get(
-            "/radio-favicon", params={"url": "https://example.com", "min_size": 512}
-        )
+        client.get("/radio-favicon", params={"url": "https://example.com", "min_size": 512})
     mock_get.assert_awaited_once_with("https://example.com/32.png")
 
 
@@ -423,12 +411,8 @@ def test_radio_favicon_reuses_cached_candidates_across_different_min_size(client
         patch.object(radio_mod._client, "stream", stream_spy),
         patch.object(radio_mod._client, "get", mock_get),
     ):
-        client.get(
-            "/radio-favicon", params={"url": "https://example.com", "min_size": 16}
-        )
-        client.get(
-            "/radio-favicon", params={"url": "https://example.com", "min_size": 512}
-        )
+        client.get("/radio-favicon", params={"url": "https://example.com", "min_size": 16})
+        client.get("/radio-favicon", params={"url": "https://example.com", "min_size": 512})
     # Homepage HTML fetched (and parsed) once, reused for the second
     # request's different min_size instead of being fetched again.
     assert stream_spy.call_count == 1

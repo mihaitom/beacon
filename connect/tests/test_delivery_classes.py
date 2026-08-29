@@ -45,7 +45,7 @@ async def test_base_delivery_get_volume_defaults_to_none():
 
 
 async def test_base_delivery_current_uri_defaults_to_none():
-    """"Can't say" is the honest default — a protocol with no transport to
+    """ "Can't say" is the honest default — a protocol with no transport to
     query (AirPlay) must not be mistaken for one reporting "nothing playing".
     See core/session.py's reap_once(), the only caller."""
     assert await _MinimalDelivery("x").current_uri() is None
@@ -63,9 +63,7 @@ async def test_base_delivery_pause_and_resume_default_to_noops():
 def _mock_sonos_device(is_coordinator=True, transport_state="STOPPED"):
     dev = MagicMock()
     dev.is_coordinator = is_coordinator
-    dev.get_current_transport_info.return_value = {
-        "current_transport_state": transport_state
-    }
+    dev.get_current_transport_info.return_value = {"current_transport_state": transport_state}
     return dev
 
 
@@ -99,9 +97,7 @@ def test_sonos_play_includes_album_in_metadata():
     dev = _mock_sonos_device()
     d = SonosDelivery("Küche")
     with patch.object(SonosDelivery, "_get_device", return_value=dev):
-        asyncio.run(
-            d.play("http://stream", "Title", "Artist", None, None, "The Album")
-        )
+        asyncio.run(d.play("http://stream", "Title", "Artist", None, None, "The Album"))
     call_kwargs = dict(dev.avTransport.SetAVTransportURI.call_args.args[0])
     assert "<upnp:album>The Album</upnp:album>" in call_kwargs["CurrentURIMetaData"]
 
@@ -128,9 +124,7 @@ def test_sonos_play_uses_passed_content_type_in_protocol_info():
     dev = _mock_sonos_device()
     d = SonosDelivery("Küche")
     with patch.object(SonosDelivery, "_get_device", return_value=dev):
-        asyncio.run(
-            d.play("http://stream", "Title", "", None, None, "", "audio/flac")
-        )
+        asyncio.run(d.play("http://stream", "Title", "", None, None, "", "audio/flac"))
     xml = dict(dev.avTransport.SetAVTransportURI.call_args.args[0])["CurrentURIMetaData"]
     assert 'protocolInfo="http-get:*:audio/flac:*"' in xml
 
@@ -399,9 +393,7 @@ def test_airplay_play_streams_radio_url_directly():
 
     async def run():
         with (
-            patch.object(
-                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
-            ),
+            patch.object(AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())),
             patch("pyatv.connect", new=AsyncMock(return_value=atv)),
         ):
             await d.play("http://host/radio.mp3", "Title", "Artist")
@@ -452,9 +444,7 @@ def _run_airplay_track(response, atv, on_playback_error=None):
 
     async def run():
         with (
-            patch.object(
-                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
-            ),
+            patch.object(AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())),
             patch("pyatv.connect", new=AsyncMock(return_value=atv)),
             patch("delivery.airplay.httpx.AsyncClient", return_value=client),
         ):
@@ -589,9 +579,7 @@ def test_airplay_tells_the_device_what_is_playing():
 
     async def run():
         with (
-            patch.object(
-                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
-            ),
+            patch.object(AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())),
             patch("pyatv.connect", new=AsyncMock(return_value=atv)),
             patch("delivery.airplay.httpx.AsyncClient", return_value=client),
             patch("delivery.airplay._fetch_artwork", new=AsyncMock(return_value=b"jpeg")),
@@ -628,9 +616,7 @@ def test_airplay_sends_no_empty_strings_as_metadata():
 
     async def run():
         with (
-            patch.object(
-                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
-            ),
+            patch.object(AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())),
             patch("pyatv.connect", new=AsyncMock(return_value=atv)),
             patch("delivery.airplay.httpx.AsyncClient", return_value=client),
             patch("delivery.airplay._fetch_artwork", new=AsyncMock(return_value=None)),
@@ -915,9 +901,7 @@ def test_airplay_play_with_no_stream_url_logs_and_does_nothing():
 
     async def run():
         with (
-            patch.object(
-                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
-            ),
+            patch.object(AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())),
             patch("pyatv.connect", new=AsyncMock(return_value=atv)),
         ):
             await d.play("", "Title")
@@ -935,9 +919,7 @@ def test_airplay_stream_task_cancellation_is_logged_and_swallowed(caplog):
 
     async def run():
         with (
-            patch.object(
-                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
-            ),
+            patch.object(AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())),
             patch("pyatv.connect", new=AsyncMock(return_value=atv)),
             caplog.at_level(logging.INFO, logger="delivery"),
         ):
@@ -961,9 +943,7 @@ def test_airplay_stream_logs_disconnection_without_traceback_for_a_known_teardow
 
     async def run():
         with (
-            patch.object(
-                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
-            ),
+            patch.object(AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())),
             patch("pyatv.connect", new=AsyncMock(return_value=atv)),
             caplog.at_level(logging.WARNING, logger="delivery"),
         ):
@@ -982,9 +962,7 @@ def test_airplay_stream_logs_an_unexpected_error(caplog):
 
     async def run():
         with (
-            patch.object(
-                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
-            ),
+            patch.object(AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())),
             patch("pyatv.connect", new=AsyncMock(return_value=atv)),
             caplog.at_level(logging.ERROR, logger="delivery"),
         ):
@@ -1007,9 +985,7 @@ def test_airplay_stream_swallows_cancellation_during_shielded_teardown():
 
     async def run():
         with (
-            patch.object(
-                AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())
-            ),
+            patch.object(AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())),
             patch("pyatv.connect", new=AsyncMock(return_value=atv)),
             patch.object(
                 AirPlayDelivery,
@@ -1116,9 +1092,7 @@ def test_chromecast_get_device_discovers_and_caches_a_new_device():
     new_cast = _mock_cast()
 
     with (
-        patch(
-            "delivery.chromecast._ensure_cast_browser", return_value=(browser, MagicMock())
-        ),
+        patch("delivery.chromecast._ensure_cast_browser", return_value=(browser, MagicMock())),
         patch("delivery.chromecast._wait_for_discovery"),
         patch("pychromecast.get_chromecast_from_cast_info", return_value=new_cast),
     ):
@@ -1136,9 +1110,7 @@ def test_chromecast_get_device_raises_with_available_names_when_not_found():
     browser.devices = {"uuid-1": other}
 
     with (
-        patch(
-            "delivery.chromecast._ensure_cast_browser", return_value=(browser, MagicMock())
-        ),
+        patch("delivery.chromecast._ensure_cast_browser", return_value=(browser, MagicMock())),
         patch("delivery.chromecast._wait_for_discovery"),
         pytest.raises(RuntimeError, match="Bedroom"),
     ):
@@ -1173,9 +1145,7 @@ def test_chromecast_play_uses_passed_content_type():
     cast = _mock_cast()
     d = ChromecastDelivery("TV")
     with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
-        asyncio.run(
-            d.play("http://stream", "Title", "", None, None, "", "audio/aac")
-        )
+        asyncio.run(d.play("http://stream", "Title", "", None, None, "", "audio/aac"))
     cast.media_controller.play_media.assert_called_once_with(
         "http://stream",
         "audio/aac",
@@ -1201,9 +1171,7 @@ def test_chromecast_play_includes_album_art_and_album_in_metadata():
     cast = _mock_cast()
     d = ChromecastDelivery("TV")
     with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
-        asyncio.run(
-            d.play("http://stream", "Title", "Artist", "http://art.jpg", None, "The Album")
-        )
+        asyncio.run(d.play("http://stream", "Title", "Artist", "http://art.jpg", None, "The Album"))
     call_kwargs = cast.media_controller.play_media.call_args.kwargs
     assert call_kwargs["thumb"] == "http://art.jpg"
     assert call_kwargs["metadata"]["images"] == [{"url": "http://art.jpg"}]
@@ -1287,9 +1255,7 @@ def test_dlna_play_uses_passed_content_type_in_protocol_info():
     device = _mock_dmr_device()
     d = DlnaDelivery("Receiver")
     with patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)):
-        asyncio.run(
-            d.play("http://stream", "Title", "", None, None, "", "audio/flac")
-        )
+        asyncio.run(d.play("http://stream", "Title", "", None, None, "", "audio/flac"))
     xml = device.async_set_transport_uri.call_args.args[2]
     assert 'protocolInfo="http-get:*:audio/flac:*"' in xml
 
@@ -1310,11 +1276,7 @@ def test_dlna_play_includes_album_in_metadata():
     device = _mock_dmr_device()
     d = DlnaDelivery("Receiver")
     with patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)):
-        asyncio.run(
-            d.play(
-                "http://stream", "Title", "Artist", None, None, "The Album"
-            )
-        )
+        asyncio.run(d.play("http://stream", "Title", "Artist", None, None, "The Album"))
     xml = device.async_set_transport_uri.call_args.args[2]
     assert "<upnp:album>The Album</upnp:album>" in xml
 
@@ -1323,9 +1285,7 @@ def test_dlna_play_includes_album_art_url_and_duration_in_metadata():
     device = _mock_dmr_device()
     d = DlnaDelivery("Receiver")
     with patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)):
-        asyncio.run(
-            d.play("http://stream", "Title", "Artist", "http://nav/cover.jpg", 185.0)
-        )
+        asyncio.run(d.play("http://stream", "Title", "Artist", "http://nav/cover.jpg", 185.0))
     xml = device.async_set_transport_uri.call_args.args[2]
     assert "<upnp:albumArtURI>http://nav/cover.jpg</upnp:albumArtURI>" in xml
     assert 'duration="0:03:05"' in xml
