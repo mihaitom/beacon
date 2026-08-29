@@ -124,50 +124,75 @@
       </template>
     </section>
 
-    <section v-if="authStore.capabilities.libraryScan" class="mb-10">
+    <!-- The section itself is unconditional, only what's inside it isn't:
+     - the recommendations toggle at the bottom applies to every server and
+     - every account, while the scan/refresh above it does not (a
+     - non-admin Navidrome account has neither — see
+     - services/capabilities.ts's libraryScan). Gating the whole <section>
+     - on those, as it used to be, would take the toggle away with them. -->
+    <section class="mb-10">
       <h2 class="section-title mb-4">{{ $t('settings.libraryTitle') }}</h2>
-      <p class="text-body-medium text-medium-emphasis mb-4">
-        {{ $t('settings.libraryScanHint') }}
-      </p>
-      <v-btn
-        color="primary"
-        prepend-icon="mdi-refresh"
-        :loading="scanning"
-        :disabled="scanning"
-        @click="rescanLibrary"
-      >
-        {{ scanning ? scanLabel : $t('settings.rescanLibrary') }}
-      </v-btn>
-    </section>
 
-    <!-- Jellyfin has no server-side scan-trigger of its own (see
-     - capabilities.libraryScan) — this instead forces Beacon's own cached
-     - view of the library to refetch now, rather than waiting for
-     - CACHE_TTL_MS. Shows real progress since a large Jellyfin library can
-     - take a couple of minutes (see stores/library.ts's refreshLibrary()). -->
-    <section v-else-if="authStore.serverType === 'jellyfin'" class="mb-10">
-      <h2 class="section-title mb-4">{{ $t('settings.libraryTitle') }}</h2>
-      <p class="text-body-medium text-medium-emphasis mb-4">
-        {{ $t('settings.libraryRefreshHint') }}
-      </p>
-      <v-btn
+      <template v-if="authStore.capabilities.libraryScan">
+        <p class="text-body-medium text-medium-emphasis mb-4">
+          {{ $t('settings.libraryScanHint') }}
+        </p>
+        <v-btn
+          color="primary"
+          prepend-icon="mdi-refresh"
+          :loading="scanning"
+          :disabled="scanning"
+          @click="rescanLibrary"
+        >
+          {{ scanning ? scanLabel : $t('settings.rescanLibrary') }}
+        </v-btn>
+      </template>
+
+      <!-- Jellyfin has no server-side scan-trigger of its own (see
+       - capabilities.libraryScan) — this instead forces Beacon's own cached
+       - view of the library to refetch now, rather than waiting for
+       - CACHE_TTL_MS. Shows real progress since a large Jellyfin library can
+       - take a couple of minutes (see stores/library.ts's refreshLibrary()). -->
+      <template v-else-if="authStore.serverType === 'jellyfin'">
+        <p class="text-body-medium text-medium-emphasis mb-4">
+          {{ $t('settings.libraryRefreshHint') }}
+        </p>
+        <v-btn
+          color="primary"
+          prepend-icon="mdi-refresh"
+          :loading="refreshingLibrary"
+          :disabled="refreshingLibrary"
+          @click="refreshLibrary"
+        >
+          {{ refreshingLibrary ? refreshProgressLabel : $t('settings.refreshLibrary') }}
+        </v-btn>
+        <v-progress-linear
+          v-if="refreshingLibrary"
+          class="mt-3"
+          :indeterminate="refreshProgressPercent === null"
+          :model-value="refreshProgressPercent ?? undefined"
+          color="primary"
+          height="6"
+          rounded
+        />
+      </template>
+
+      <!-- Discover's seed artists come out of the library itself, which is
+       - what puts this here rather than under "advanced" — it is an
+       - everyday setting with a visible effect on Home (see
+       - HomeView.vue), not a diagnostic one like the log level. -->
+      <v-switch
+        :model-value="recommendationsStore.enabled"
         color="primary"
-        prepend-icon="mdi-refresh"
-        :loading="refreshingLibrary"
-        :disabled="refreshingLibrary"
-        @click="refreshLibrary"
-      >
-        {{ refreshingLibrary ? refreshProgressLabel : $t('settings.refreshLibrary') }}
-      </v-btn>
-      <v-progress-linear
-        v-if="refreshingLibrary"
-        class="mt-3"
-        :indeterminate="refreshProgressPercent === null"
-        :model-value="refreshProgressPercent ?? undefined"
-        color="primary"
-        height="6"
-        rounded
+        density="compact"
+        hide-details
+        :class="hasLibraryActions ? 'mt-6' : ''"
+        :label="$t('settings.recommendations')"
+        @update:model-value="recommendationsStore.setEnabled(!!$event)"
       />
+      <p class="text-body-small text-medium-emphasis mt-2">
+        {{ $t('settings.recommendationsHint') }}
+      </p>
     </section>
 
     <section class="mb-10">
@@ -206,19 +231,6 @@
         variant="solo-filled"
         @update:model-value="onLogLevelChange"
       />
-
-      <v-switch
-        :model-value="recommendationsStore.enabled"
-        color="primary"
-        density="compact"
-        hide-details
-        class="mt-4"
-        :label="$t('settings.recommendations')"
-        @update:model-value="recommendationsStore.setEnabled(!!$event)"
-      />
-      <p class="text-body-small text-medium-emphasis mt-2">
-        {{ $t('settings.recommendationsHint') }}
-      </p>
     </section>
 
     <section>
@@ -336,6 +348,14 @@ export default {
     },
     authStore() {
       return useAuthStore()
+    },
+    // Whether the Library section has a scan/refresh control above the
+    // recommendations toggle — a non-admin Navidrome account has neither,
+    // and the toggle is then the section's first element, where the
+    // spacing that separates it from a button above would leave it
+    // hanging well below its own heading.
+    hasLibraryActions(): boolean {
+      return this.authStore.capabilities.libraryScan || this.authStore.serverType === 'jellyfin'
     },
     connectStore() {
       return useConnectStore()
