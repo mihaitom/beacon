@@ -10,9 +10,7 @@
  * a CORS-tainted canvas), or the artwork turns out fully grayscale —
  * callers should fall back to a default color in all of those cases.
  */
-export async function extractDominantColor(
-  url: string,
-): Promise<[number, number, number] | null> {
+export async function extractDominantColor(url: string): Promise<[number, number, number] | null> {
   const SAMPLE_SIZE = 32
 
   return new Promise((resolve) => {

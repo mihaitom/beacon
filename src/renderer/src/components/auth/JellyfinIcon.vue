@@ -1,7 +1,14 @@
 <template>
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="jellyfin-icon">
     <defs>
-      <linearGradient id="jellyfin-icon-gradient" gradientUnits="userSpaceOnUse" x1="110.25" y1="213.3" x2="496.14" y2="436.09">
+      <linearGradient
+        id="jellyfin-icon-gradient"
+        gradientUnits="userSpaceOnUse"
+        x1="110.25"
+        y1="213.3"
+        x2="496.14"
+        y2="436.09"
+      >
         <stop offset="0" stop-color="#AA5CC3" />
         <stop offset="1" stop-color="#00A4DC" />
       </linearGradient>

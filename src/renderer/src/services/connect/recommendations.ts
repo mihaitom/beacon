@@ -61,12 +61,7 @@ export async function getArtistImages(
 // endpoint with its own separate cache; components/library/
 // externalArtistLinks.ts is what merges both into one rendered list.
 export type ArtistLinkService =
-  | 'musicbrainz'
-  | 'spotify'
-  | 'apple_music'
-  | 'tidal'
-  | 'youtube'
-  | 'discogs'
+  'musicbrainz' | 'spotify' | 'apple_music' | 'tidal' | 'youtube' | 'discogs'
 
 export type ArtistLinks = Partial<Record<ArtistLinkService, string>>
 

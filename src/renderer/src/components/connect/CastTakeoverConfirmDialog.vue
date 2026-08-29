@@ -12,7 +12,9 @@
       </v-card-text>
       <v-card-actions>
         <v-spacer />
-        <v-btn variant="text" @click="connectStore.cancelTakeover()">{{ $t('common.cancel') }}</v-btn>
+        <v-btn variant="text" @click="connectStore.cancelTakeover()">{{
+          $t('common.cancel')
+        }}</v-btn>
         <v-btn color="primary" @click="connectStore.confirmTakeover()">{{
           $t('connect.takeOver')
         }}</v-btn>

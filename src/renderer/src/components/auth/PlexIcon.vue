@@ -1,7 +1,10 @@
 <template>
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="700 88 303 281" class="plex-icon">
     <g transform="scale(6.7567568)">
-      <polygon fill="#EBAF00" points="117.9,33.9 104.1,13.5 118.3,13.5 132,33.9 118.3,54.2 104.1,54.2" />
+      <polygon
+        fill="#EBAF00"
+        points="117.9,33.9 104.1,13.5 118.3,13.5 132,33.9 118.3,54.2 104.1,54.2"
+      />
       <polygon fill="#000000" points="135.7,31.6 148,13.5 133.8,13.5 128.7,21" />
     </g>
   </svg>

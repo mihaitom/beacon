@@ -3,7 +3,12 @@
     <div class="d-flex align-center">
       <span>{{ message }}</span>
       <v-spacer />
-      <v-btn v-if="variant === 'api-unreachable'" size="small" variant="text" @click="$emit('retry')">
+      <v-btn
+        v-if="variant === 'api-unreachable'"
+        size="small"
+        variant="text"
+        @click="$emit('retry')"
+      >
         {{ $t('common.retry') }}
       </v-btn>
     </div>

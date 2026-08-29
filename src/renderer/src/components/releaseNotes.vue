@@ -30,7 +30,9 @@
             class="version-select"
           >
           </v-select>
-          <v-chip color="primary" variant="flat">{{ $t('releaseNotes.current', { version: appVersion }) }}</v-chip>
+          <v-chip color="primary" variant="flat">{{
+            $t('releaseNotes.current', { version: appVersion })
+          }}</v-chip>
         </div>
 
         <!-- eslint-disable-next-line vue/no-v-html -- selectedHtml is our own CHANGELOG.md, rendered at build time, never user input -->
@@ -318,7 +320,11 @@ export default defineComponent({
   margin: 0.75rem 0;
   padding: 0.5rem 0.9rem;
   border-left: 3px solid rgb(var(--v-theme-primary));
-  background: color-mix(in srgb, rgb(var(--v-theme-surface)) 95%, rgb(var(--v-theme-on-surface)) 5%);
+  background: color-mix(
+    in srgb,
+    rgb(var(--v-theme-surface)) 95%,
+    rgb(var(--v-theme-on-surface)) 5%
+  );
   border-radius: 0 8px 8px 0;
 }
 

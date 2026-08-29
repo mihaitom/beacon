@@ -1,5 +1,12 @@
 import { join } from 'path'
-import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'fs'
 import { type ChildProcess, spawn } from 'child_process'
 import { randomBytes } from 'crypto'
 import { createConnection, createServer } from 'net'
@@ -270,7 +277,9 @@ function waitForConnectReady(port: number, timeoutMs = 10_000): Promise<void> {
       socket.on('error', () => {
         socket.destroy()
         if (Date.now() >= deadline) {
-          console.error(`[connect] Backend still not reachable on port ${port} after ${timeoutMs}ms — continuing anyway`)
+          console.error(
+            `[connect] Backend still not reachable on port ${port} after ${timeoutMs}ms — continuing anyway`,
+          )
           resolve()
           return
         }

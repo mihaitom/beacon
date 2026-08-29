@@ -11,9 +11,7 @@ import type {
 /** Exchanges a Jellyfin username/password for an AccessToken + user id (see
  * connect/routes/jellyfin_auth.py) — session-less, like /config's own first
  * call, since there's no session to attach this to yet. */
-export async function postJellyfinLogin(
-  req: JellyfinLoginRequest,
-): Promise<JellyfinLoginResponse> {
+export async function postJellyfinLogin(req: JellyfinLoginRequest): Promise<JellyfinLoginResponse> {
   return fetchConnect<JellyfinLoginResponse>('/jellyfin/login', {
     method: 'POST',
     body: req,

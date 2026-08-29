@@ -1,11 +1,6 @@
 <template>
   <div class="top-bar-search" :class="{ 'top-bar-search--expanded': expanded }">
-    <v-btn
-      v-if="!expanded"
-      icon="mdi-magnify"
-      :title="$t('search.label')"
-      @click="expand"
-    />
+    <v-btn v-if="!expanded" icon="mdi-magnify" :title="$t('search.label')" @click="expand" />
     <form v-else class="top-bar-search__form" @submit.prevent="submit">
       <v-text-field
         ref="inputEl"

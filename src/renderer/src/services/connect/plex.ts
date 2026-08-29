@@ -32,9 +32,7 @@ export async function postPlexPinCheck(req: PlexPinCheckRequest): Promise<PlexPi
 
 /** Lists the Plex Media Servers the just-linked account can reach, each
  * with its own server-scoped token — the one actually sent to /config. */
-export async function postPlexResources(
-  req: PlexResourcesRequest,
-): Promise<PlexResourcesResponse> {
+export async function postPlexResources(req: PlexResourcesRequest): Promise<PlexResourcesResponse> {
   return fetchConnect<PlexResourcesResponse>('/plex/resources', {
     method: 'POST',
     body: req,

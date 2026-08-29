@@ -8,7 +8,13 @@
       <v-icon icon="mdi-lighthouse-on" color="primary" size="16" class="ml-3 mr-2 beacon-glow" />
       <v-app-bar-title class="mobile-app-bar__title">Beacon</v-app-bar-title>
       <v-spacer />
-      <v-btn icon="mdi-cog-outline" variant="text" density="comfortable" class="mr-1" @click="$router.push('/settings')" />
+      <v-btn
+        icon="mdi-cog-outline"
+        variant="text"
+        density="comfortable"
+        class="mr-1"
+        @click="$router.push('/settings')"
+      />
     </v-app-bar>
 
     <v-main>
