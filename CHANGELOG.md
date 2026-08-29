@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Various small UI sizing/spacing tweaks (the Albums grid now spaces its covers the same as the album shelves everywhere else, instead of slightly tighter)
 
+### Fixed
+
+- Fixed a song that Autoplay had just added to the queue occasionally disappearing again and getting replaced by a different one a moment later, when two devices were connected to the same cast session and both topped the queue up around the same time. Only the first addition is kept now
+
 ## [1.0.1] - 2026-08-28
 
 ### Changed

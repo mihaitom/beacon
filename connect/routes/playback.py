@@ -59,6 +59,54 @@ def _is_duplicate_dispatch(st: AppState, key: str) -> bool:
     return False
 
 
+# update_queue()'s own dedup window — wide enough to cover a real
+# getSimilarSongs2() round trip to the media server (what separates two
+# racing clients' /queue POSTs, see _is_duplicate_queue_topup()'s own
+# docstring), unlike DUPLICATE_DISPATCH_COOLDOWN above which only needs to
+# catch a tight re-issue loop.
+QUEUE_TOPUP_DEDUP_WINDOW = 8.0
+
+
+def _is_duplicate_queue_topup(st: AppState, prev_queue: list[str], song_ids: list[str]) -> bool:
+    """True if `song_ids` doesn't extend the *current* `prev_queue` (== the
+    live session.state.queue) but does extend the queue as it stood right
+    before the last accepted top-up, within QUEUE_TOPUP_DEDUP_WINDOW.
+
+    Guards specifically against two frontends sharing a cast session both
+    noticing the queue running low off the same mirrored SSE status and
+    independently topping it up: each does its own getSimilarSongs2() round
+    trip and then POSTs its own full queue here, each extension computed
+    against the *same* pre-top-up queue neither has seen the other's edit to
+    yet. Without this, whichever POST takes session.play_lock second
+    silently overwrites the first client's addition (update_queue() is a
+    full replacement, not a merge) — and by the time it arrives, `prev_queue`
+    (now already carrying the first client's addition) no longer matches
+    what the second one actually extended, so comparing against it directly
+    would miss the race entirely. Reported live 2026-08-29 as songs
+    flickering in and out of the queue drawer.
+
+    A tail-extension of the *current* `prev_queue` — a genuinely new top-up,
+    or the very first one — is never a duplicate: it's recorded as the new
+    pre-top-up base and applied normally. Anything that isn't shaped like a
+    top-up at all (a reorder, an insert in the middle, a removal, shuffle
+    toggling the order) always returns False too and is applied exactly as
+    before — this only ever suppresses a second top-up racing the first."""
+
+    def extends(base: list[str]) -> bool:
+        return len(song_ids) > len(base) and song_ids[: len(base)] == base
+
+    if extends(prev_queue):
+        st.last_queue_topup_base = prev_queue
+        st.last_queue_topup_at = time.time()
+        return False
+
+    return (
+        st.last_queue_topup_base is not None
+        and time.time() - st.last_queue_topup_at < QUEUE_TOPUP_DEDUP_WINDOW
+        and extends(st.last_queue_topup_base)
+    )
+
+
 async def _claim_or_takeover(target, session: SessionState, force: bool) -> dict | None:
     """Wraps check_claims()+displace_target(): returns a device_in_use error
     dict on refusal (force=False), otherwise None after stopping delivery for
@@ -980,7 +1028,10 @@ async def update_queue(
 
     A full replacement, not a patch — same shape /play's own song_ids/
     queue_index accept, since a client sends its complete current queue on
-    every edit (see stores/playback.ts's syncCastQueue())."""
+    every edit (see stores/playback.ts's syncCastQueue()). See
+    _is_duplicate_queue_topup()'s own docstring for the one case this
+    doesn't just blindly apply: two clients racing to top up autoplay at
+    once."""
     async with session.play_lock:
         if _is_stale_seq(session, req.seq):
             logger.info(f"[queue] Ignoring superseded request (seq={req.seq} < {session.play_seq})")
@@ -990,6 +1041,9 @@ async def update_queue(
 
         st = session.state
         if st.queue:
+            if _is_duplicate_queue_topup(st, st.queue, req.song_ids):
+                logger.info("[queue] Ignoring duplicate autoplay top-up (a second client raced it)")
+                return {"status": "duplicate"}
             queue_index = req.queue_index if 0 <= req.queue_index < len(req.song_ids) else 0
             st.queue = req.song_ids
             st.queue_index = queue_index

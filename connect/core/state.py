@@ -87,6 +87,26 @@ class AppState:
         # each call stops and restarts the device before it can buffer audio.
         self.last_dispatch_key: str | None = None
         self.last_dispatch_at: float = 0.0
+        # The queue (below) as it stood right *before* the last accepted
+        # autoplay top-up extended it, plus when — see routes/playback.py's
+        # _is_duplicate_queue_topup(). Two frontends sharing a cast session
+        # both mirror the same queue-running-low status and can independently
+        # decide to top it up, each after its own getSimilarSongs2() round
+        # trip, each computing its own extension against that same *pre*-
+        # top-up queue; without this, whichever /queue POST lands second (a
+        # plain full-replacement, same as any other queue edit) silently
+        # clobbers the first client's addition instead of the two merging.
+        # Recording the pre-top-up queue specifically (not just a key derived
+        # from the live one) is what lets the second racer still be
+        # recognized once the first has already landed and moved `queue` on
+        # — by the time it arrives, it no longer extends the *current* queue
+        # at all, only this remembered earlier one. Separate fields from
+        # last_dispatch_key/-_at above rather than sharing them: that pair's
+        # own cooldown is tuned for a misbehaving client re-issuing /play in
+        # a tight loop (sub-second), while this race spans a real
+        # media-server round trip and needs a longer window.
+        self.last_queue_topup_base: list[str] | None = None
+        self.last_queue_topup_at: float = 0.0
         # Format resolved for current_track by routes/playback.py at dispatch
         # time (/play, /resume, /seek) — see core/streamer.py's
         # resolve_output_format(). /stream reads this instead of probing

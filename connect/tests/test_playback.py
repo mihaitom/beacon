@@ -12,6 +12,7 @@ from media import SubsonicClient, Track
 from routes.playback import (
     POSITION_RESYNC_THRESHOLD,
     PROVISIONAL_STARTUP_DELAY,
+    QUEUE_TOPUP_DEDUP_WINDOW,
     _apply_position_offset,
     _resync_position_once,
     _resync_position_periodically,
@@ -499,6 +500,72 @@ def test_update_queue_replaces_the_whole_queue(client, default_session):
     assert r.json()["status"] == "ok"
     assert default_session.state.queue == ["0", "1", "3", "2"]
     assert default_session.state.queue_index == 1
+
+
+def test_update_queue_ignores_duplicate_autoplay_topup(client, default_session):
+    """Two frontends sharing a cast session can both notice the queue
+    running low off the same mirrored SSE status and race to top it up —
+    each does its own getSimilarSongs2() round trip and then POSTs its own
+    full (identically-prefixed) queue here. Without the dedup guard, the
+    second POST to take session.play_lock would silently clobber the
+    first's addition; instead it's dropped and the first client's own
+    top-up stands (see _is_duplicate_queue_topup())."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+
+    with patch.object(default_session.media, "get_track", return_value=track):
+        client.post("/play", json={"song_ids": ["1", "2"]})
+
+    r1 = client.post("/queue", json={"song_ids": ["1", "2", "3"], "queue_index": 0})
+    r2 = client.post("/queue", json={"song_ids": ["1", "2", "4"], "queue_index": 0})
+
+    assert r1.json()["status"] == "ok"
+    assert r2.json()["status"] == "duplicate"
+    assert default_session.state.queue == ["1", "2", "3"]
+
+
+def test_update_queue_still_applies_a_real_edit_right_after_a_topup(client, default_session):
+    """The dedup guard only ever suppresses a *second* extension of the same
+    prior queue — a genuine edit (a reorder, here) that doesn't share that
+    exact shape must still go through untouched, even landing right after a
+    top-up."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+
+    with patch.object(default_session.media, "get_track", return_value=track):
+        client.post("/play", json={"song_ids": ["1", "2"]})
+
+    client.post("/queue", json={"song_ids": ["1", "2", "3"], "queue_index": 0})
+    r = client.post("/queue", json={"song_ids": ["2", "1", "3"], "queue_index": 1})
+
+    assert r.json()["status"] == "ok"
+    assert default_session.state.queue == ["2", "1", "3"]
+
+
+def test_update_queue_stops_suppressing_a_late_racer_once_the_window_passes(
+    client, default_session
+):
+    """A racer's extension of the *pre*-top-up queue is only recognized and
+    dropped as a duplicate within QUEUE_TOPUP_DEDUP_WINDOW of the first
+    top-up landing — arriving late enough after that, it's no longer treated
+    as the same race and goes through like any other edit (see
+    _is_duplicate_queue_topup(); this doesn't claim a request this stale is
+    actually *desirable* to apply, only that the guard's window has to end
+    somewhere rather than remembering one top-up's base forever)."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+
+    with patch.object(default_session.media, "get_track", return_value=track):
+        client.post("/play", json={"song_ids": ["1", "2"]})
+
+    with patch("routes.playback.time.time", return_value=1000.0):
+        client.post("/queue", json={"song_ids": ["1", "2", "3"], "queue_index": 0})
+
+    with patch("routes.playback.time.time", return_value=1000.0 + QUEUE_TOPUP_DEDUP_WINDOW + 1):
+        r = client.post("/queue", json={"song_ids": ["1", "2", "4"], "queue_index": 0})
+
+    assert r.json()["status"] == "ok"
+    assert default_session.state.queue == ["1", "2", "4"]
 
 
 def test_update_queue_advances_play_seq_when_one_is_given(client, default_session):
