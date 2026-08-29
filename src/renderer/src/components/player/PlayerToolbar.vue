@@ -3,18 +3,18 @@
     <v-btn
       v-if="currentSong"
       icon="mdi-script-text-outline"
-      :color="playbackStore.lyricsDrawerOpen ? 'primary' : undefined"
+      :color="drawersStore.lyricsDrawerOpen ? 'primary' : undefined"
       variant="text"
       density="comfortable"
       :title="$t('lyrics.title')"
-      @click="playbackStore.toggleLyricsDrawer()"
+      @click="drawersStore.toggleLyricsDrawer()"
     />
     <v-btn
       icon="mdi-playlist-music"
-      :color="playbackStore.queueDrawerOpen ? 'primary' : undefined"
+      :color="drawersStore.queueDrawerOpen ? 'primary' : undefined"
       variant="text"
       density="comfortable"
-      @click="playbackStore.toggleQueueDrawer()"
+      @click="drawersStore.toggleQueueDrawer()"
     />
     <v-btn
       v-if="authStore.capabilities.songRadio"
@@ -137,6 +137,7 @@
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
+import { useDrawersStore } from '@/stores/drawers'
 import { useConnectStore } from '@/stores/connect'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
@@ -182,6 +183,9 @@ export default {
   computed: {
     playbackStore() {
       return usePlaybackStore()
+    },
+    drawersStore() {
+      return useDrawersStore()
     },
     connectStore() {
       return useConnectStore()

@@ -30,6 +30,7 @@ import 'vuetify/styles'
 import '@mdi/font/css/materialdesignicons.css'
 import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
+import { useDrawersStore } from '@/stores/drawers'
 import QueueDrawer from '../QueueDrawer.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
 
@@ -146,13 +147,13 @@ describe('QueueDrawer scroll-to-current layout', () => {
  * store's own idea of it can never drift apart the way two independently
  * driven refs could. */
 function mountBoundToStore() {
-  const playback = usePlaybackStore()
+  const drawers = useDrawersStore()
   return track(
     mount(
       {
         render: () =>
           h(components.VApp, null, {
-            default: () => h(QueueDrawer, { modelValue: playback.queueDrawerOpen }),
+            default: () => h(QueueDrawer, { modelValue: drawers.queueDrawerOpen }),
           }),
       },
       { attachTo: document.body, global: { plugins: [vuetify, i18n], stubs: REAL_TRANSITIONS } },
@@ -181,8 +182,9 @@ describe('QueueDrawer reveal animation layout', () => {
     await page.viewport(1200, 800)
     setActivePinia(createPinia())
     const playback = usePlaybackStore()
+    const drawers = useDrawersStore()
     playback.setQueue([makeSong('a'), makeSong('b')], 0)
-    playback.peekQueueDrawer() // opens it once, same as any real first peek
+    drawers.peekQueueDrawer(playback.queue) // opens it once, same as any real first peek
     mountBoundToStore()
     await new Promise((resolve) => setTimeout(resolve, 300)) // settle the initial reveal
 
@@ -222,8 +224,9 @@ describe('QueueDrawer reveal animation layout', () => {
     await page.viewport(1200, 800)
     setActivePinia(createPinia())
     const playback = usePlaybackStore()
+    const drawers = useDrawersStore()
     playback.setQueue([makeSong('a'), makeSong('b'), makeSong('c')], 0)
-    playback.peekQueueDrawer() // before mounting, same order as the real app
+    drawers.peekQueueDrawer(playback.queue) // before mounting, same order as the real app
 
     mountBoundToStore()
     const firstRow = document.querySelector('[data-queue-index="0"]') as HTMLElement
@@ -286,14 +289,15 @@ describe('QueueDrawer reveal animation layout', () => {
     await page.viewport(1200, 800)
     setActivePinia(createPinia())
     const playback = usePlaybackStore()
+    const drawers = useDrawersStore()
     playback.setQueue([makeSong('a'), makeSong('b')], 0)
-    playback.peekQueueDrawer() // first Song Radio, before the mount
+    drawers.peekQueueDrawer(playback.queue) // first Song Radio, before the mount
     const host = mountBoundToStore()
     await new Promise((resolve) => setTimeout(resolve, 700)) // let it fully settle
 
     // The peek's own auto-close timer, fast-forwarded — this is what leaves
     // a mounted-but-closed drawer for the next replacement to arrive into.
-    playback.queueDrawerOpen = false
+    drawers.queueDrawerOpen = false
     await host.vm.$nextTick()
     await new Promise((resolve) => setTimeout(resolve, 300))
 
@@ -301,7 +305,7 @@ describe('QueueDrawer reveal animation layout', () => {
     // queue swap and the peek in one synchronous tick, with only the track
     // actually starting left to await afterwards.
     playback.setQueue([makeSong('x'), makeSong('y'), makeSong('z')], 0)
-    playback.peekQueueDrawer()
+    drawers.peekQueueDrawer(playback.queue)
 
     await new Promise((resolve) => setTimeout(resolve, 100)) // inside REVEAL_BASE_DELAY_MS
     const firstRow = revealRow(0)
@@ -321,13 +325,14 @@ describe('QueueDrawer reveal animation layout', () => {
     await page.viewport(1200, 800)
     setActivePinia(createPinia())
     const playback = usePlaybackStore()
+    const drawers = useDrawersStore()
     playback.setQueue([makeSong('a'), makeSong('b')], 0)
-    playback.peekQueueDrawer()
+    drawers.peekQueueDrawer(playback.queue)
     mountBoundToStore()
     await new Promise((resolve) => setTimeout(resolve, 700)) // settled, still open
 
     playback.setQueue([makeSong('x'), makeSong('y'), makeSong('z')], 0)
-    playback.peekQueueDrawer()
+    drawers.peekQueueDrawer(playback.queue)
 
     // Well into the first row's own entrance (no base delay to wait out for
     // an already-open drawer) but still short of ROW_ENTER_TRANSITION_MS

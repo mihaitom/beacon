@@ -44,11 +44,11 @@
       <v-btn
         v-if="currentSong && (compact || isFullscreen)"
         icon="mdi-script-text-outline"
-        :color="playbackStore.lyricsDrawerOpen ? 'primary' : undefined"
+        :color="drawersStore.lyricsDrawerOpen ? 'primary' : undefined"
         variant="text"
         density="comfortable"
         :title="$t('lyrics.title')"
-        @click="playbackStore.toggleLyricsDrawer()"
+        @click="drawersStore.toggleLyricsDrawer()"
       />
       <!-- Same reasoning as the lyrics button just above — PlayerBar.vue's
        - own Autoplay button (next to Queue) is outside .now-playing
@@ -214,6 +214,7 @@
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
+import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
 import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
 import { useLyricsStore } from '@/stores/lyrics'
@@ -299,6 +300,9 @@ export default {
     playbackStore() {
       return usePlaybackStore()
     },
+    drawersStore() {
+      return useDrawersStore()
+    },
     authStore() {
       return useAuthStore()
     },
@@ -335,7 +339,7 @@ export default {
         : 'clamp(180px, min(70cqh, 50cqw), 900px)'
     },
     // Backed by the same store flag PlayerBar's lyrics button drives
-    // (playbackStore.lyricsDrawerOpen) instead of its own local state —
+    // (drawersStore.lyricsDrawerOpen) instead of its own local state —
     // there used to be two independent lyrics toggles (this view's own
     // toolbar button, and PlayerBar's), which was confusing since they
     // controlled two different-looking presentations (this view's inline
@@ -349,10 +353,10 @@ export default {
     // switching to radio.
     showLyrics: {
       get(): boolean {
-        return this.playbackStore.lyricsDrawerOpen
+        return this.drawersStore.lyricsDrawerOpen
       },
       set(value: boolean) {
-        this.playbackStore.lyricsDrawerOpen = value
+        this.drawersStore.lyricsDrawerOpen = value
       },
     },
     // Radio's raw station URL bypasses connect's streaming pipeline

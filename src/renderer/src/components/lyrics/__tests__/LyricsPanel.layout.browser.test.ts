@@ -20,6 +20,7 @@ import 'vuetify/styles'
 import '@mdi/font/css/materialdesignicons.css'
 import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
+import { useDrawersStore } from '@/stores/drawers'
 import { useLyricsStore } from '@/stores/lyrics'
 import NowPlayingView from '@/views/NowPlayingView.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
@@ -55,6 +56,7 @@ async function mountPanel(synced: boolean, lineCount = 12, positionSeconds = 0) 
   })
   wrappers.push(wrapper)
   const playback = usePlaybackStore()
+  const drawers = useDrawersStore()
   playback.setQueue([makeSong('a', { title: 'Harbor Lights', artist: 'The Tide' })], 0)
   // Set before the lines arrive: that is the real sequence — playback is
   // already somewhere in the song when the lyrics finish loading.
@@ -66,7 +68,7 @@ async function mountPanel(synced: boolean, lineCount = 12, positionSeconds = 0) 
     time: i * 4,
     text: `Line ${i + 1}`,
   }))
-  playback.lyricsDrawerOpen = true
+  drawers.lyricsDrawerOpen = true
   await wrapper.vm.$nextTick()
   await new Promise((resolve) => setTimeout(resolve, 150))
   return wrapper

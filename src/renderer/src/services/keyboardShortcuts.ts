@@ -1,4 +1,5 @@
 import { usePlaybackStore } from '@/stores/playback'
+import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
 import { nudgeVolume, toggleMute } from '@/services/volumeControl'
 import { emitter } from '@/emitter'
@@ -207,7 +208,7 @@ async function runShortcut(action: ShortcutAction): Promise<void> {
       await toggleFavorite()
       return
     case 'toggleQueue':
-      playback.toggleQueueDrawer()
+      useDrawersStore().toggleQueueDrawer()
       return
     case 'toggleHelp':
       emitter.emit('toggleKeyboardShortcuts')

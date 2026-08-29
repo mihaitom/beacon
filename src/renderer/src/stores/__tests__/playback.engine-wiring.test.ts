@@ -4,6 +4,7 @@ import { flushPromises } from '@vue/test-utils'
 import { useConnectStore } from '../connect'
 import { useLibraryStore } from '../library'
 import { usePlaybackStore } from '../playback'
+import { useDrawersStore } from '../drawers'
 import { getAudioEngine } from '@/services/audioEngine'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import { makeSong, makeStatus } from './fixtures'
@@ -80,13 +81,14 @@ describe('the store wiring the audio engine', () => {
 
   it('opens with both drawers shut, whatever the last session left open', () => {
     const playback = usePlaybackStore()
-    playback.queueDrawerOpen = true
-    playback.lyricsDrawerOpen = true
+    const drawers = useDrawersStore()
+    drawers.queueDrawerOpen = true
+    drawers.lyricsDrawerOpen = true
 
     playback.init()
 
-    expect(playback.queueDrawerOpen).toBe(false)
-    expect(playback.lyricsDrawerOpen).toBe(false)
+    expect(drawers.queueDrawerOpen).toBe(false)
+    expect(drawers.lyricsDrawerOpen).toBe(false)
   })
 
   it('wires the element up once, however often App.vue calls it', () => {

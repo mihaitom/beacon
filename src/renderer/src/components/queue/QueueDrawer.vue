@@ -16,7 +16,7 @@
     color="#0B0D13"
     class="beacon-drawer"
     @update:model-value="$emit('update:modelValue', $event)"
-    @mouseenter="playbackStore.cancelQueueDrawerAutoClose()"
+    @mouseenter="drawersStore.cancelQueueDrawerAutoClose()"
   >
     <div class="d-flex flex-column fill-height">
       <v-toolbar
@@ -198,6 +198,7 @@
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
+import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
 import QueueRow from './QueueRow.vue'
 import type { Song } from '@/types/library'
@@ -316,6 +317,9 @@ export default {
     playbackStore() {
       return usePlaybackStore()
     },
+    drawersStore() {
+      return useDrawersStore()
+    },
     libraryStore() {
       return useLibraryStore()
     },
@@ -334,8 +338,8 @@ export default {
     // bump purely by virtue of being a computed over reactive state — no
     // separate "did this change" bookkeeping needed.
     revealDelayMap(): Map<Song, number> {
-      const revealSet = new Set(this.playbackStore.queueRevealSongs)
-      const baseDelay = this.playbackStore.queueRevealNeedsOpenDelay ? REVEAL_BASE_DELAY_MS : 0
+      const revealSet = new Set(this.drawersStore.queueRevealSongs)
+      const baseDelay = this.drawersStore.queueRevealNeedsOpenDelay ? REVEAL_BASE_DELAY_MS : 0
       const map = new Map<Song, number>()
       let position = 0
       for (const song of this.playbackStore.queue) {
@@ -360,7 +364,7 @@ export default {
     // `immediate` that first reveal would silently do nothing. `seq === 0`
     // skips the resulting call on a plain first *manual* open, where
     // queueRevealSeq is still sitting at its untouched initial value.
-    'playbackStore.queueRevealSeq': {
+    'drawersStore.queueRevealSeq': {
       handler(seq: number) {
         if (seq === 0) return
         this.startReveal()
@@ -481,7 +485,7 @@ export default {
     // scroll and the cleanup left to do.
     startReveal() {
       const queue = this.playbackStore.queue
-      const isFullQueueReveal = this.playbackStore.queueRevealSongs.length === queue.length
+      const isFullQueueReveal = this.drawersStore.queueRevealSongs.length === queue.length
       // A full-queue replacement leaves .queue-scroll's own scrollTop
       // wherever it happened to be for the *previous* queue, which the new
       // one may not even be tall enough to still justify — scrollToCurrent()
@@ -513,7 +517,7 @@ export default {
       const maxDelay = Math.max(0, ...this.revealDelayMap.values())
       this.revealCleanupTimer = setTimeout(
         () => {
-          this.playbackStore.queueRevealSongs = []
+          this.drawersStore.queueRevealSongs = []
         },
         maxDelay + ROW_ENTER_TRANSITION_MS + 50,
       )

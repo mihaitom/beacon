@@ -58,13 +58,13 @@
      - as before. Reported live 2026-08-26. -->
     <queue-drawer
       v-if="queueDrawerEverOpened"
-      :model-value="queueDrawerFirstMountSettled && playbackStore.queueDrawerOpen"
-      @update:model-value="playbackStore.setQueueDrawerOpen($event)"
+      :model-value="queueDrawerFirstMountSettled && drawersStore.queueDrawerOpen"
+      @update:model-value="drawersStore.setQueueDrawerOpen($event)"
     />
     <lyrics-drawer
       v-if="lyricsDrawerEverOpened"
-      :model-value="onNowPlaying ? false : playbackStore.lyricsDrawerOpen"
-      @update:model-value="playbackStore.lyricsDrawerOpen = $event"
+      :model-value="onNowPlaying ? false : drawersStore.lyricsDrawerOpen"
+      @update:model-value="drawersStore.lyricsDrawerOpen = $event"
     />
     <cast-takeover-confirm-dialog />
   </v-app>
@@ -77,6 +77,7 @@ import LyricsDrawer from '@/components/lyrics/LyricsDrawer.vue'
 import CastTakeoverConfirmDialog from '@/components/connect/CastTakeoverConfirmDialog.vue'
 import TopBarSearch from '@/components/TopBarSearch.vue'
 import { usePlaybackStore } from '@/stores/playback'
+import { useDrawersStore } from '@/stores/drawers'
 import { useAuthStore } from '@/stores/auth'
 
 export default {
@@ -104,11 +105,14 @@ export default {
     playbackStore() {
       return usePlaybackStore()
     },
+    drawersStore() {
+      return useDrawersStore()
+    },
     authStore() {
       return useAuthStore()
     },
     // NowPlayingView.vue renders lyrics inline (its own split-panel
-    // transition) whenever playbackStore.lyricsDrawerOpen is true, driven
+    // transition) whenever drawersStore.lyricsDrawerOpen is true, driven
     // by the same PlayerBar button as this drawer — without this check
     // both would show at once while on that route, one full-panel and one
     // slid out on top of it.
@@ -137,10 +141,10 @@ export default {
     },
   },
   watch: {
-    'playbackStore.queueDrawerOpen'(open: boolean) {
+    'drawersStore.queueDrawerOpen'(open: boolean) {
       if (open) this.queueDrawerEverOpened = true
     },
-    'playbackStore.lyricsDrawerOpen'(open: boolean) {
+    'drawersStore.lyricsDrawerOpen'(open: boolean) {
       if (open) this.lyricsDrawerEverOpened = true
     },
     // Fires exactly once, right after the mount this same tick's v-if

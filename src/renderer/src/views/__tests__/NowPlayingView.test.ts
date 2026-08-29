@@ -7,6 +7,7 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
+import { useDrawersStore } from '@/stores/drawers'
 import { useConnectStore } from '@/stores/connect'
 import { useLyricsStore } from '@/stores/lyrics'
 import { useAuthStore } from '@/stores/auth'
@@ -145,7 +146,7 @@ describe('NowPlayingView', () => {
 
     it('turns showLyrics off again when switching away to no song', async () => {
       const { wrapper, playback } = await mountWithSong()
-      usePlaybackStore().lyricsDrawerOpen = true
+      useDrawersStore().lyricsDrawerOpen = true
       await wrapper.vm.$nextTick()
       expect((wrapper.vm as unknown as { showLyrics: boolean }).showLyrics).toBe(true)
 
@@ -323,7 +324,7 @@ describe('NowPlayingView', () => {
       const { wrapper } = await mountToolbar({ compact: true })
       expect(isAmber(wrapper, 'mdi-script-text-outline')).toBe(false)
 
-      usePlaybackStore().lyricsDrawerOpen = true
+      useDrawersStore().lyricsDrawerOpen = true
       await wrapper.vm.$nextTick()
 
       expect(isAmber(wrapper, 'mdi-script-text-outline')).toBe(true)
@@ -363,7 +364,7 @@ describe('NowPlayingView', () => {
     it('colors the lyrics button on mobile too, where it is the only way to reach lyrics', async () => {
       const { wrapper } = await mountToolbar({ compact: true })
 
-      usePlaybackStore().lyricsDrawerOpen = true
+      useDrawersStore().lyricsDrawerOpen = true
       await wrapper.vm.$nextTick()
 
       expect(isAmber(wrapper, 'mdi-script-text-outline')).toBe(true)

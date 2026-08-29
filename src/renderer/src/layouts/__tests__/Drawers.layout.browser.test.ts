@@ -13,6 +13,7 @@ import 'vuetify/styles'
 import '@mdi/font/css/materialdesignicons.css'
 import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
+import { useDrawersStore } from '@/stores/drawers'
 import { useLyricsStore } from '@/stores/lyrics'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
@@ -68,10 +69,10 @@ describe('queue and lyrics drawers', () => {
     // drawer the user had no reason to expect was there.
     await page.viewport(1400, 900)
     const wrapper = await mountLayout()
-    const playback = usePlaybackStore()
+    const drawersStore = useDrawersStore()
 
-    playback.setQueueDrawerOpen(true)
-    playback.lyricsDrawerOpen = true
+    drawersStore.setQueueDrawerOpen(true)
+    drawersStore.lyricsDrawerOpen = true
     await wrapper.vm.$nextTick()
     await new Promise((resolve) => setTimeout(resolve, 400))
 
@@ -86,9 +87,9 @@ describe('queue and lyrics drawers', () => {
   it('leaves the lyrics drawer at the edge when the queue is closed', async () => {
     await page.viewport(1400, 900)
     const wrapper = await mountLayout()
-    const playback = usePlaybackStore()
+    const drawersStore = useDrawersStore()
 
-    playback.lyricsDrawerOpen = true
+    drawersStore.lyricsDrawerOpen = true
     await wrapper.vm.$nextTick()
     await new Promise((resolve) => setTimeout(resolve, 400))
 

@@ -1,131 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { usePlaybackStore } from '../playback'
+import { useDrawersStore } from '../drawers'
 import { useAutoplayStore } from '../autoplay'
 import { useLibraryStore } from '../library'
 import { makeSong } from './fixtures'
 
-describe('peekQueueDrawer', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-  })
-
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  it('opens the drawer and flags that this call is the one opening it', () => {
-    const playback = usePlaybackStore()
-
-    playback.peekQueueDrawer()
-
-    expect(playback.queueDrawerOpen).toBe(true)
-    // QueueDrawer.vue's own startReveal() reads this to decide whether to
-    // wait out the drawer's opening transition before revealing anything —
-    // only relevant the moment it's actually opening from closed.
-    expect(playback.queueRevealNeedsOpenDelay).toBe(true)
-  })
-
-  it('does not flag an opening delay for a peek while the drawer is already open', () => {
-    const playback = usePlaybackStore()
-    playback.peekQueueDrawer() // first peek: opens it
-    expect(playback.queueRevealNeedsOpenDelay).toBe(true)
-
-    playback.peekQueueDrawer() // second peek: already open, e.g. Play Next mid-browse
-
-    expect(playback.queueDrawerOpen).toBe(true)
-    expect(playback.queueRevealNeedsOpenDelay).toBe(false)
-  })
-
-  it('bumps queueRevealSeq on every call regardless of whether it was already open', () => {
-    const playback = usePlaybackStore()
-
-    playback.peekQueueDrawer()
-    expect(playback.queueRevealSeq).toBe(1)
-
-    playback.peekQueueDrawer()
-    expect(playback.queueRevealSeq).toBe(2)
-  })
-
-  it('flags an opening delay again once the drawer has actually closed in between', () => {
-    const playback = usePlaybackStore()
-    playback.peekQueueDrawer()
-    playback.setQueueDrawerOpen(false)
-
-    playback.peekQueueDrawer()
-
-    expect(playback.queueRevealNeedsOpenDelay).toBe(true)
-  })
-})
-
-// QUEUE_DRAWER_PEEK_MS itself isn't exported (module-private, same as the
-// timer handle it drives) — 4000 here is that same value, not re-derived.
-const QUEUE_DRAWER_PEEK_MS = 4000
-
-describe('peekQueueDrawer auto-close timer', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-    vi.useFakeTimers()
-  })
-
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  it('auto-closes on its own after the peek window, absent anything else happening', () => {
-    const playback = usePlaybackStore()
-    playback.peekQueueDrawer()
-
-    vi.advanceTimersByTime(QUEUE_DRAWER_PEEK_MS - 1)
-    expect(playback.queueDrawerOpen).toBe(true)
-
-    vi.advanceTimersByTime(1)
-    expect(playback.queueDrawerOpen).toBe(false)
-  })
-
-  it('re-arms the countdown when a second peek lands while the first is still pending, instead of closing on the original schedule', () => {
-    // Reported live 2026-08-27: autoplay's own top-up (or any other peek)
-    // arriving partway through an already-open peek's countdown used to
-    // leave that stale timer running untouched — the drawer then closed on
-    // the *original* schedule, potentially right out from under a reveal
-    // that had only just started.
-    const playback = usePlaybackStore()
-    playback.peekQueueDrawer()
-
-    vi.advanceTimersByTime(QUEUE_DRAWER_PEEK_MS - 1000) // 1s left on the original countdown
-    playback.peekQueueDrawer() // a second, independent peek — e.g. autoplay's top-up
-
-    // The original countdown's own deadline passes — still open, because
-    // the second peek reset it rather than leaving it to fire on schedule.
-    vi.advanceTimersByTime(1000)
-    expect(playback.queueDrawerOpen).toBe(true)
-
-    // A full fresh window after the *second* peek, though, does close it.
-    vi.advanceTimersByTime(QUEUE_DRAWER_PEEK_MS - 1000)
-    expect(playback.queueDrawerOpen).toBe(false)
-  })
-
-  it('never arms a close timer for a drawer the user opened manually', () => {
-    const playback = usePlaybackStore()
-    playback.setQueueDrawerOpen(true)
-
-    playback.peekQueueDrawer() // already open — not this call's to auto-close
-
-    vi.advanceTimersByTime(QUEUE_DRAWER_PEEK_MS * 2)
-    expect(playback.queueDrawerOpen).toBe(true)
-  })
-
-  it('does not re-arm after a mouseenter has cancelled the pending close for good', () => {
-    const playback = usePlaybackStore()
-    playback.peekQueueDrawer()
-    playback.cancelQueueDrawerAutoClose() // the user is looking at it right now
-
-    playback.peekQueueDrawer() // more content arrives while they're still there
-
-    vi.advanceTimersByTime(QUEUE_DRAWER_PEEK_MS * 2)
-    expect(playback.queueDrawerOpen).toBe(true)
-  })
-})
+// That the playback store drives the queue drawer at the right moment. The
+// drawer's own behaviour is covered in drawers.test.ts.
 
 describe('playSongList peeking', () => {
   beforeEach(() => {
@@ -134,6 +16,7 @@ describe('playSongList peeking', () => {
 
   it('peeks in the same tick as the queue mutation, before awaiting the track start', async () => {
     const playback = usePlaybackStore()
+    const drawers = useDrawersStore()
     const songs = [makeSong('a'), makeSong('b')]
     // Whatever the state of the queue reveal is by the time the track
     // actually starts is too late to matter — this captures it at the one
@@ -141,8 +24,8 @@ describe('playSongList peeking', () => {
     let seqWhenStartCurrentRan = -1
     let revealedWhenStartCurrentRan: unknown = null
     vi.spyOn(playback, 'startCurrent').mockImplementation(async () => {
-      seqWhenStartCurrentRan = playback.queueRevealSeq
-      revealedWhenStartCurrentRan = playback.queueRevealSongs
+      seqWhenStartCurrentRan = drawers.queueRevealSeq
+      revealedWhenStartCurrentRan = drawers.queueRevealSongs
       return true
     })
 
@@ -159,12 +42,13 @@ describe('playSongList peeking', () => {
 
   it('leaves the drawer alone for a direct pick, which is the default', async () => {
     const playback = usePlaybackStore()
+    const drawers = useDrawersStore()
     vi.spyOn(playback, 'startCurrent').mockResolvedValue(true)
 
     await playback.playSongList([makeSong('a')], 0)
 
-    expect(playback.queueDrawerOpen).toBe(false)
-    expect(playback.queueRevealSeq).toBe(0)
+    expect(drawers.queueDrawerOpen).toBe(false)
+    expect(drawers.queueRevealSeq).toBe(0)
   })
 })
 
@@ -181,6 +65,7 @@ describe('addToQueue / queueNext peeking', () => {
 
   it('addToQueue always peeks, revealing just the songs it appended', () => {
     const playback = usePlaybackStore()
+    const drawers = useDrawersStore()
     const existing = makeSong('a')
     playback.setQueue([existing], 0)
     const [b, c] = [makeSong('b'), makeSong('c')]
@@ -188,13 +73,14 @@ describe('addToQueue / queueNext peeking', () => {
     playback.addToQueue([b, c])
 
     expect(playback.queue).toEqual([existing, b, c])
-    expect(playback.queueDrawerOpen).toBe(true)
-    expect(playback.queueRevealSongs).toEqual([b, c])
-    expect(playback.queueRevealSeq).toBe(1)
+    expect(drawers.queueDrawerOpen).toBe(true)
+    expect(drawers.queueRevealSongs).toEqual([b, c])
+    expect(drawers.queueRevealSeq).toBe(1)
   })
 
   it('queueNext always peeks, revealing just the songs it inserted', () => {
     const playback = usePlaybackStore()
+    const drawers = useDrawersStore()
     const [a, z] = [makeSong('a'), makeSong('z')]
     playback.setQueue([a, z], 0) // z already queued after a — queueNext still inserts right after currentIndex
     const b = makeSong('b')
@@ -202,20 +88,21 @@ describe('addToQueue / queueNext peeking', () => {
     playback.queueNext([b])
 
     expect(playback.queue).toEqual([a, b, z])
-    expect(playback.queueDrawerOpen).toBe(true)
-    expect(playback.queueRevealSongs).toEqual([b])
-    expect(playback.queueRevealSeq).toBe(1)
+    expect(drawers.queueDrawerOpen).toBe(true)
+    expect(drawers.queueRevealSongs).toEqual([b])
+    expect(drawers.queueRevealSeq).toBe(1)
   })
 
   it('queueNext falls back to addToQueue (and still peeks) when nothing is playing yet', () => {
     const playback = usePlaybackStore()
+    const drawers = useDrawersStore()
     const song = makeSong('a')
 
     playback.queueNext([song])
 
     expect(playback.queue).toEqual([song])
-    expect(playback.queueDrawerOpen).toBe(true)
-    expect(playback.queueRevealSongs).toEqual([song])
+    expect(drawers.queueDrawerOpen).toBe(true)
+    expect(drawers.queueRevealSongs).toEqual([song])
   })
 })
 
@@ -232,6 +119,7 @@ describe('maybeAutoplay peeking', () => {
 
   it('peeks the drawer on the songs it silently adds once the queue is about to run out', async () => {
     const playback = usePlaybackStore()
+    const drawers = useDrawersStore()
     const autoplay = useAutoplayStore()
     const library = useLibraryStore()
     autoplay.enabled = true
@@ -245,41 +133,8 @@ describe('maybeAutoplay peeking', () => {
     await playback.maybeAutoplay()
 
     expect(playback.queue).toEqual([seed, b, c])
-    expect(playback.queueDrawerOpen).toBe(true)
-    expect(playback.queueRevealSongs).toEqual([b, c])
-    expect(playback.queueRevealSeq).toBe(1)
-  })
-})
-
-describe('the drawer toggles', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-  })
-
-  it('opens and closes the queue drawer, cancelling any pending peek close', () => {
-    // Routing through setQueueDrawerOpen() is what keeps a stale peek timer
-    // from shutting a drawer the user has just reopened by hand.
-    vi.useFakeTimers()
-    const playback = usePlaybackStore()
-    playback.peekQueueDrawer()
-
-    playback.toggleQueueDrawer()
-    expect(playback.queueDrawerOpen).toBe(false)
-
-    playback.toggleQueueDrawer()
-    expect(playback.queueDrawerOpen).toBe(true)
-
-    vi.advanceTimersByTime(10_000)
-    expect(playback.queueDrawerOpen).toBe(true)
-  })
-
-  it('opens and closes the lyrics drawer', () => {
-    const playback = usePlaybackStore()
-
-    playback.toggleLyricsDrawer()
-    expect(playback.lyricsDrawerOpen).toBe(true)
-
-    playback.toggleLyricsDrawer()
-    expect(playback.lyricsDrawerOpen).toBe(false)
+    expect(drawers.queueDrawerOpen).toBe(true)
+    expect(drawers.queueRevealSongs).toEqual([b, c])
+    expect(drawers.queueRevealSeq).toBe(1)
   })
 })

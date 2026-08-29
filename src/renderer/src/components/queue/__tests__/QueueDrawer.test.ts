@@ -6,6 +6,7 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
+import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
 import QueueDrawer from '../QueueDrawer.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
@@ -113,9 +114,10 @@ describe('QueueDrawer', () => {
     // the new row's delay starts at 0 rather than REVEAL_BASE_DELAY_MS.
     vi.useFakeTimers()
     const playback = usePlaybackStore()
+    const drawers = useDrawersStore()
     playback.setQueue([makeSong('a'), makeSong('b')], 0)
     const wrapper = mountDrawer()
-    playback.peekQueueDrawer() // opens it once, same as any real first peek
+    drawers.peekQueueDrawer(playback.queue) // opens it once, same as any real first peek
     await vi.advanceTimersByTimeAsync(1000)
     await wrapper.vm.$nextTick()
 
@@ -131,7 +133,7 @@ describe('QueueDrawer', () => {
     // entrance has actually finished (30 + ROW_ENTER_TRANSITION_MS + 50).
     await vi.advanceTimersByTimeAsync(380)
     await wrapper.vm.$nextTick()
-    expect(playback.queueRevealSongs).toEqual([])
+    expect(drawers.queueRevealSongs).toEqual([])
     expect(revealDelays(wrapper)).toEqual([undefined, undefined, undefined, undefined])
   })
 
@@ -151,15 +153,16 @@ describe('QueueDrawer', () => {
     // because it's currently inert here specifically.
     vi.useFakeTimers()
     const playback = usePlaybackStore()
+    const drawers = useDrawersStore()
     playback.setQueue([makeSong('a'), makeSong('b'), makeSong('c')], 0)
-    playback.peekQueueDrawer()
+    drawers.peekQueueDrawer(playback.queue)
 
     const wrapper = mountDrawer()
     await wrapper.vm.$nextTick()
 
     expect(revealDelays(wrapper)).toEqual(['200ms', '230ms', '260ms'])
     expect(wrapper.find('.queue-scroll').exists()).toBe(true)
-    expect(wrapper.vm.playbackStore.queueRevealSeq).toBeGreaterThan(0)
+    expect(wrapper.vm.drawersStore.queueRevealSeq).toBeGreaterThan(0)
   })
 
   it('shows the clear-all button once there is more than one song, and clears the queue after its staggered fade-out', async () => {

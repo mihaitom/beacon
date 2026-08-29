@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useLibraryStore } from '../library'
 import { usePlaybackStore } from '../playback'
+import { useDrawersStore } from '../drawers'
 import { getAudioEngine } from '@/services/audioEngine'
 import { emitter } from '@/emitter'
 import { i18n } from '@/i18n'
@@ -93,12 +94,13 @@ describe('server-picked mixes', () => {
 
     it('shows what it picked, since nobody chose these songs song by song', async () => {
       const playback = usePlaybackStore()
+      const drawers = useDrawersStore()
       stubSimilar({ songs: [makeSong('x')] })
 
       await playback.startSongRadio(makeSong('seed'))
 
-      expect(playback.queueDrawerOpen).toBe(true)
-      expect(playback.queueRevealSeq).toBeGreaterThan(0)
+      expect(drawers.queueDrawerOpen).toBe(true)
+      expect(drawers.queueRevealSeq).toBeGreaterThan(0)
     })
 
     it('explains that this server needs a Plex Pass for it', async () => {

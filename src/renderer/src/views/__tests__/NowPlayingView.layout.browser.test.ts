@@ -24,6 +24,7 @@ import 'vuetify/styles'
 import '@mdi/font/css/materialdesignicons.css'
 import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
+import { useDrawersStore } from '@/stores/drawers'
 import { useLyricsStore } from '@/stores/lyrics'
 import NowPlayingView from '../NowPlayingView.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
@@ -88,6 +89,7 @@ const LYRIC_LINES = [
 async function mountWithSongAndLyrics(compact = false) {
   const mounted = await mountView({ compact })
   const playback = usePlaybackStore()
+  const drawers = useDrawersStore()
   playback.setQueue(
     [makeSong('a', { title: 'Harbor Lights', artist: 'The Tide', album: 'Slow Return' })],
     0,
@@ -96,7 +98,7 @@ async function mountWithSongAndLyrics(compact = false) {
   vi.spyOn(lyrics, 'ensureLoaded').mockResolvedValue()
   lyrics.synced = true
   lyrics.lines = LYRIC_LINES
-  playback.lyricsDrawerOpen = true
+  drawers.lyricsDrawerOpen = true
   await mounted.wrapper.vm.$nextTick()
   return mounted
 }

@@ -36,6 +36,7 @@
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
+import { useDrawersStore } from '@/stores/drawers'
 
 // Shared with QueueDrawer.vue, which is the same width by design: the two
 // sit side by side when both are open (see sideBySideOffset), and that
@@ -59,13 +60,16 @@ export default {
     playbackStore() {
       return usePlaybackStore()
     },
+    drawersStore() {
+      return useDrawersStore()
+    },
     /** Slides this one clear of the queue when both are open, instead of
      * the two stacking invisibly on top of each other — whichever was
      * rendered last simply covered the other, and closing it revealed a
      * drawer the user had no reason to expect. The queue keeps the outer
      * edge because it is the one people leave open. */
     sideBySideOffset(): string {
-      return this.playbackStore.queueDrawerOpen ? `${DRAWER_WIDTH}px` : '0px'
+      return this.drawersStore.queueDrawerOpen ? `${DRAWER_WIDTH}px` : '0px'
     },
     currentSong() {
       return this.playbackStore.currentSong
