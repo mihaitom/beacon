@@ -109,7 +109,7 @@ async def join_stream(
             # without releasing it here, check_claims() above leaves the
             # device locked to this session (device_in_use for everyone
             # else) with nothing actually playing on it.
-            logger.error(f"[join] Delivery error: {e}", exc_info=True)
+            logger.exception("[join] Delivery error")
             await _release_claims(new_d, session)
             return {"error": str(e)}
 

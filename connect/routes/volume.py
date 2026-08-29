@@ -116,7 +116,7 @@ async def get_device_volume(
             return {"volume": volume}
         if device_type == "chromecast":
             cast = await asyncio.to_thread(ChromecastDelivery(name)._get_device)
-            return {"volume": int(round(cast.status.volume_level * 100))}
+            return {"volume": round(cast.status.volume_level * 100)}
         if device_type == "dlna":
             volume = await DlnaDelivery(name).get_volume()
             if volume is None:

@@ -68,8 +68,10 @@ async def reap_stale_pairings_once() -> list[str]:
         if pairing:
             try:
                 await pairing.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(
+                    f"[pairing] closing stale session for '{name}' failed: {e}"
+                )
         # Opportunistic cleanup for the per-device lock too (see _locks'
         # own comment) — only when nothing currently holds/is waiting on
         # it, so this can never pull a lock out from under a concurrent
@@ -130,8 +132,11 @@ async def start_pairing(req: StartRequest):
         if old:
             try:
                 await old.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(
+                    f"[pairing] closing previous session for '{req.name}' "
+                    f"failed: {e}"
+                )
 
         logger.info(f"[pairing] Scanning for '{req.name}' to pair...")
         devices = await pyatv.scan(asyncio.get_event_loop(), timeout=10)
@@ -158,8 +163,11 @@ async def start_pairing(req: StartRequest):
             if pairing is not None:
                 try:
                     await pairing.close()
-                except Exception:
-                    pass
+                except Exception as close_err:
+                    logger.debug(
+                        "[pairing] cleanup after failed start for "
+                        f"'{req.name}': {close_err}"
+                    )
 
             # pyatv raises a bare KeyError (e.g. "<TlvValue.Salt: 2>") when the device's
             # pair-setup response is missing fields. This happens when the device still
@@ -223,8 +231,11 @@ async def finish_pairing(req: FinishRequest):
         _sessions.pop(req.name, None)
         try:
             await pairing.close()
-        except Exception:
-            pass
+        except Exception as close_err:
+            logger.debug(
+                "[pairing] cleanup after failed finish for "
+                f"'{req.name}': {close_err}"
+            )
 
         # 470 = Connection Authorization Required. At this stage (after /start already
         # succeeded), this means the device rejected the entered PIN.
@@ -240,8 +251,10 @@ async def finish_pairing(req: FinishRequest):
     _sessions.pop(req.name, None)
     try:
         await pairing.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(
+            f"[pairing] closing finished session for '{req.name}' failed: {e}"
+        )
 
     if not creds:
         return JSONResponse(

@@ -114,7 +114,7 @@ async def play_test_tone(session: SessionState = Depends(require_authenticated_s
     try:
         await target.play(url, "Test Tone", "Debug", None, float(_DURATION_S), "")
     except Exception as e:
-        logger.error(f"[debug] play-test-tone delivery error: {e}", exc_info=True)
+        logger.exception("[debug] play-test-tone delivery error")
         return {"error": str(e)}
 
     asyncio.create_task(_apply_position_offset(session, target, st.clock.play_generation))

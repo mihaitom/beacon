@@ -12,6 +12,13 @@ if git diff --cached --name-only | grep -qE '^(src/renderer/|vitest\.config\.ts|
 fi
 
 if git diff --cached --name-only | grep -q '^connect/'; then
+  # Lint first — it answers in seconds, the suite takes ~40s. Note this
+  # deliberately checks all of connect/, not just the staged files: ruff's
+  # findings are cheap enough to re-derive wholesale, and a per-file run
+  # would miss the case where editing one module breaks an import in
+  # another. `ruff format` is *not* checked here — see TODO.md.
+  echo "→ connect/ changed — linting…"
+  (cd connect && uv run --group dev ruff check .) || exit 1
   echo "→ connect/ changed — running the Python test suite…"
   (cd connect && uv run --group dev pytest) || exit 1
 fi

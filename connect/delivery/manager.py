@@ -7,8 +7,8 @@ from core.log_level import is_at_least
 
 from .base import BaseDelivery
 from .chromecast import _ensure_cast_browser, _wait_for_discovery
-from .lazy_import import import_in_thread
 from .dlna import UnsupportedDlnaDevice, _create_dmr_device, _location_cache
+from .lazy_import import import_in_thread
 from .sonos import SonosDelivery
 
 logger = logging.getLogger("delivery")
@@ -154,7 +154,10 @@ class DeliveryManager:
         for delivery in self.deliveries:
             try:
                 uri = await delivery.current_uri()
-            except Exception:
+            except Exception as e:
+                logger.debug(
+                    f"[current-uri] {type(delivery).__name__} could not answer: {e}"
+                )
                 continue
             if uri is not None:
                 return uri

@@ -23,9 +23,9 @@ from media import Track
 from routes.stream import (
     DisconnectSnapshot,
     _advance_or_end,
-    _playback_duration,
     _dispatch_queued_track,
     _mark_disconnected_if_not_reconnected,
+    _playback_duration,
     _resolve_track,
     _resume_after_interruption,
     audio_stream,

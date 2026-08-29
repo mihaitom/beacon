@@ -104,8 +104,11 @@ class SonosDelivery(BaseDelivery):
                     # Return the actual device; callers handle grouping themselves
                     _device_cache[self.target.lower()] = d
                     return d
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(
+                    f"[Sonos:{self.target}] skipping unreadable device "
+                    f"during discovery: {e}"
+                )
         available = [d.player_name for d in devices]
         raise RuntimeError(f"Sonos '{self.target}' not found. Available: {available}")
 

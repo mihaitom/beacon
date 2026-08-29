@@ -32,10 +32,10 @@ from core.log_level import apply as _apply_log_level
 from core.log_level import initial_level as _initial_log_level
 from core.log_level import is_at_least
 from core.loop_health import monitor_loop_lag
-from core.upnp_events import renew_due_subscriptions
 from core.remote import reap_stale_remote, remote
 from core.session import reap_stale_sessions, registry
 from core.state import PORT, get_local_ip
+from core.upnp_events import renew_due_subscriptions
 from media import jellyfin_bridge, plex_bridge
 from routes.debug import router as debug_router
 from routes.devices import router as devices_router

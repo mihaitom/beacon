@@ -807,8 +807,8 @@ async def stream_tracks(
             if proc:
                 try:
                     proc.kill()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"[ffmpeg] kill after cancellation failed: {e}")
             if stderr_task:
                 stderr_task.cancel()
             raise  # propagate so stream_with_completion skips the track-end broadcast
@@ -818,8 +818,8 @@ async def stream_tracks(
             if proc:
                 try:
                     proc.kill()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"[ffmpeg] kill after error failed: {e}")
             # Propagate rather than `continue` — a genuine ffmpeg failure
             # (crash, decode error) is not a natural end either; see the
             # FileNotFoundError branch above for why this matters.

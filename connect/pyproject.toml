@@ -36,6 +36,36 @@ ignore = [
     # framework's own convention here would make every handler worse to
     # read for no actual safety gain.
     "B008",
+    # Catching bare `Exception` is this backend's deliberate failure mode,
+    # not an oversight. Everything below routes/ and delivery/ talks to
+    # hardware and servers that fail in ways no exception hierarchy covers:
+    # a speaker drops off the network mid-track, a Jellyfin instance restarts
+    # during a cover-art fetch, pyatv raises a bare KeyError when a HomePod's
+    # pair-setup response is short a field. The rule the codebase actually
+    # follows is "catch everything, log it, degrade" — a bridge handler turns
+    # any failure into a Subsonic error envelope instead of a 500, and a
+    # cast delivery that dies must never take the session down with it.
+    # Verified 2026-08-29: every one of the 63 flagged sites logs or
+    # otherwise surfaces its exception; none swallow silently (the ones that
+    # did were fixed in the same pass). S110/S112 — the rules for an except
+    # branch that is genuinely empty — stay enabled, and are the real guard
+    # here: catching broadly is fine, catching and saying nothing is not.
+    "BLE001",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test-only relaxations. Both rules are real in production code and stay
+# enabled there; inside tests they flag the shape of the test itself, not a
+# defect in what it covers.
+"tests/**" = [
+    # Nested `with` for stacked mocks. A test that patches four collaborators
+    # reads better as four indented `with patch(...)` lines than as one
+    # combined statement wrapped across the same number of lines anyway.
+    "SIM117",
+    # Blocking `open()` inside an async test. pytest-asyncio runs each test
+    # in its own loop with nothing else scheduled on it, so a synchronous
+    # read of a fixture file blocks nobody.
+    "ASYNC230",
 ]
 
 [tool.pytest.ini_options]

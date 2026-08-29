@@ -466,8 +466,8 @@ async def displace_target(owner_session: SessionState, target_type: str, name: s
 
     try:
         await lost.stop()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"[displace] stopping displaced delivery failed: {e}")
 
     await owner_session.event_bus.broadcast(build_status_dict(owner_session, displaced=True))
 
@@ -565,8 +565,10 @@ async def reap_once() -> list[str]:
         if session.state.active_delivery and await _device_is_still_ours(session):
             try:
                 await session.state.active_delivery.stop()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(
+                    f"[reap] {session.session_id}: stopping device failed: {e}"
+                )
         await session.visualizer.shutdown()
         await claims.release_all_for_session(session.session_id)
         await registry.remove(session.session_id)

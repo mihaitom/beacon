@@ -57,8 +57,11 @@ def _get_cached_chromecast(target: str):
     try:
         if cast.socket_client.is_connected:
             return cast
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(
+            f"[Chromecast:{target}] cached device no longer answering ({e}) "
+            "— dropping from cache"
+        )
     _chromecast_cache.pop(target.lower(), None)
     return None
 

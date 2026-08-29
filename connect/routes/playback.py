@@ -157,7 +157,10 @@ async def _apply_position_offset(
             return
         try:
             device_pos = await candidate.get_position()
-        except Exception:
+        except Exception as e:
+            logger.debug(
+                f"[lyrics-sync] {candidate.target}: position read failed: {e}"
+            )
             continue
         # get_position() above is a real device round trip — a /play, /seek,
         # or /resume landing while it was in flight has by now already reset

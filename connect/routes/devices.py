@@ -327,7 +327,7 @@ async def stop_device(
                 await (matched or AirPlayDelivery(name)).stop()
 
         except Exception as e:
-            logger.error(f"[device-stop] {name}: {e}", exc_info=True)
+            logger.exception(f"[device-stop] {name}")
             # The device's own stop() call failing (offline, network timeout,
             # a discovery error) shouldn't leave it locked to this session
             # forever — same reasoning as /play's/_join's own claim release
@@ -362,8 +362,8 @@ async def stop_device(
                 logger.info(f"[device-stop] Restarting stream: {url}")
                 try:
                     await new_delivery.play(url, title)
-                except Exception as e:
-                    logger.error(f"[device-stop] Restart error: {e}", exc_info=True)
+                except Exception:
+                    logger.exception("[device-stop] Restart error")
 
     await session.event_bus.broadcast(build_status_dict(session))
     return {"status": "stopped", "device": name}
