@@ -1,6 +1,17 @@
 pnpm exec lint-staged
 
 if git diff --cached --name-only | grep -qE '^(src/|tsconfig.*\.json)'; then
+  # lint-staged above already formatted the staged files; this checks all of
+  # src/, which is what catches drift in files nobody happens to be touching.
+  # That gap is how src/main and src/preload sat unformatted for months —
+  # they simply never showed up in a commit. --check only, same reasoning as
+  # the connect/ block below: a hook that rewrites files mid-commit would
+  # stage something the user never saw.
+  echo "→ src/ changed — checking formatting…"
+  pnpm format:check || {
+    echo "  ✗ formatting — run: pnpm format"
+    exit 1
+  }
   echo "→ src/ changed — type-checking…"
   pnpm type-check || exit 1
 fi
