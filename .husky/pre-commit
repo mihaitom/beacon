@@ -16,9 +16,16 @@ if git diff --cached --name-only | grep -q '^connect/'; then
   # deliberately checks all of connect/, not just the staged files: ruff's
   # findings are cheap enough to re-derive wholesale, and a per-file run
   # would miss the case where editing one module breaks an import in
-  # another. `ruff format` is *not* checked here — see TODO.md.
+  # another.
   echo "→ connect/ changed — linting…"
   (cd connect && uv run --group dev ruff check .) || exit 1
+  # --check only: a hook that rewrites files under the user mid-commit would
+  # stage something they never saw. On failure `ruff format connect/` fixes
+  # it in one step, which the message below says out loud.
+  (cd connect && uv run --group dev ruff format --check .) || {
+    echo "  ✗ formatting — run: (cd connect && uv run --group dev ruff format .)"
+    exit 1
+  }
   echo "→ connect/ changed — running the Python test suite…"
   (cd connect && uv run --group dev pytest) || exit 1
 fi

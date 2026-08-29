@@ -1,0 +1,15 @@
+# Commits listed here are skipped by `git blame`, so a line's blame points at
+# whoever last changed it in substance rather than at a bulk reformat.
+#
+# Only add commits that provably changed no behaviour — a formatter run, a
+# mass rename. Never a refactor, however mechanical it looked.
+#
+# Local setup (once per clone; the file alone has no effect):
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub and GitLab pick this file up automatically, no setup needed.
+
+# 2026-08-29 Refactor test code for improved readability and consistency
+# ruff format across connect/ at line-length 100 (see connect/pyproject.toml
+# for why not the default 88). Layout only, verified by comparing the parsed
+# AST of every touched file before and after.
+023cfbd375aa16894fac6694b5f4f0f8e95a724b
