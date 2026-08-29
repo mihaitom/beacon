@@ -39,7 +39,7 @@
 
       <div
         v-if="allDevices.length === 0 && !connectStore.isScanning"
-        class="text-body-2 text-medium-emphasis pa-2"
+        class="text-body-medium text-medium-emphasis pa-2"
       >
         {{ $t('connect.noDevicesFound') }}
       </div>

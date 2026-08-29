@@ -6,7 +6,7 @@
       </div>
       <div class="eyebrow-label mt-3">{{ $t('auth.welcomeBack') }}</div>
       <h1 class="display-title login-title">Beacon</h1>
-      <div class="text-body-2 text-medium-emphasis mt-1">{{ $t('auth.chooseServer') }}</div>
+      <div class="text-body-medium text-medium-emphasis mt-1">{{ $t('auth.chooseServer') }}</div>
     </div>
 
     <div v-if="checkingLock" class="d-flex justify-center my-6">
@@ -113,14 +113,14 @@
                   inputmode="url"
                 >
                   <template #item="{ item, props: itemProps }">
-                    <v-list-item v-bind="itemProps" :title="item.raw" class="login-server-url-item">
+                    <v-list-item v-bind="itemProps" :title="item" class="login-server-url-item">
                       <template #append>
                         <v-btn
                           icon="mdi-close"
                           size="small"
                           variant="text"
                           :title="$t('common.close')"
-                          @click.stop="forgetServerUrl(item.raw)"
+                          @click.stop="forgetServerUrl(item)"
                         />
                       </template>
                     </v-list-item>
@@ -129,7 +129,7 @@
                 <!-- Read-only, not just hidden — still worth showing which server
                  - this actually is, same reasoning as SettingsView.vue's own
                  - read-only server display post-login. -->
-                <p v-else-if="locked" class="text-caption text-medium-emphasis mb-4">
+                <p v-else-if="locked" class="text-body-small text-medium-emphasis mb-4">
                   {{ $t('auth.serverLocked', { url: serverUrl }) }}
                 </p>
 
@@ -163,12 +163,12 @@
                 <template v-if="selectedServerType === 'plex'">
                   <p
                     v-if="!plexWaiting && !plexPickingServer"
-                    class="text-body-2 text-medium-emphasis mb-4"
+                    class="text-body-medium text-medium-emphasis mb-4"
                   >
                     {{ $t('auth.plexHint') }}
                   </p>
                   <template v-else-if="plexPickingServer">
-                    <p class="text-body-2 text-medium-emphasis mb-3">
+                    <p class="text-body-medium text-medium-emphasis mb-3">
                       {{ $t('auth.plexChooseServer') }}
                     </p>
                     <button
@@ -182,7 +182,7 @@
                     </button>
                   </template>
                   <div v-else class="quick-connect-panel mb-4">
-                    <p class="text-body-2 text-medium-emphasis mb-2">
+                    <p class="text-body-medium text-medium-emphasis mb-2">
                       {{ $t('auth.plexWaitingHint') }}
                     </p>
                     <v-progress-linear
@@ -195,11 +195,11 @@
                   </div>
                 </template>
                 <template v-else-if="quickConnectMode">
-                  <p v-if="!quickConnectCode" class="text-body-2 text-medium-emphasis mb-4">
+                  <p v-if="!quickConnectCode" class="text-body-medium text-medium-emphasis mb-4">
                     {{ $t('auth.quickConnectHint') }}
                   </p>
                   <div v-else class="quick-connect-panel mb-4">
-                    <p class="text-body-2 text-medium-emphasis mb-2">
+                    <p class="text-body-medium text-medium-emphasis mb-2">
                       {{ $t('auth.quickConnectApproveHint') }}
                     </p>
                     <div class="quick-connect-code">{{ quickConnectCode }}</div>

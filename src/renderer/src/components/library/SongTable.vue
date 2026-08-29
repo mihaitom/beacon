@@ -47,7 +47,7 @@
     </template>
     <template v-else-if="showDiscGroups">
       <template v-for="group in discGroups" :key="group.discNumber">
-        <div class="disc-header text-caption text-medium-emphasis">
+        <div class="disc-header text-body-small text-medium-emphasis">
           {{ $t('library.disc', { number: group.discNumber }) }}
         </div>
         <song-row

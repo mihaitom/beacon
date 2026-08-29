@@ -21,8 +21,8 @@
       />
     </div>
     <div class="min-width-0 flex-grow-1">
-      <div class="text-body-1 text-truncate playlist-row__name">{{ playlist.name }}</div>
-      <div class="text-caption text-medium-emphasis text-truncate">{{ meta }}</div>
+      <div class="text-body-large text-truncate playlist-row__name">{{ playlist.name }}</div>
+      <div class="text-body-small text-medium-emphasis text-truncate">{{ meta }}</div>
     </div>
     <v-icon
       v-if="playlist.public"

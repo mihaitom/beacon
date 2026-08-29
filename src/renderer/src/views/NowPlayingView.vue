@@ -157,15 +157,15 @@
                 <router-link
                   v-if="currentSong"
                   :to="`/artists/${currentSong.artistId}`"
-                  class="text-h6 text-medium-emphasis now-playing__artist-link mb-2"
+                  class="text-title-large text-medium-emphasis now-playing__artist-link mb-2"
                 >
                   {{ currentSong.artist }}
                 </router-link>
-                <div v-else class="text-h6 text-medium-emphasis mb-2" />
+                <div v-else class="text-title-large text-medium-emphasis mb-2" />
                 <router-link
                   v-if="currentSong"
                   :to="`/albums/${currentSong.albumId}`"
-                  class="text-body-2 text-medium-emphasis now-playing__album-link"
+                  class="text-body-medium text-medium-emphasis now-playing__album-link"
                 >
                   {{ currentSong.album }}
                 </router-link>
@@ -1087,10 +1087,14 @@ export default {
 }
 
 /* .now-playing__info .now-playing__artist-link (compound), not the class
- * alone — Vuetify's own .text-h6 utility (also on this element, see the
- * template) is a single class at the same specificity, so without a
- * compound selector to outrank it, whichever of the two happens to be
- * later in the built stylesheet wins, not necessarily this one. */
+ * alone. Under Vuetify 3 this was load-bearing: .text-title-large (then
+ * .text-h6, also on this element — see the template) was a single class
+ * at the same specificity, so without a compound selector to outrank it,
+ * whichever of the two landed later in the built stylesheet won. Vuetify
+ * 4 puts its utilities in a cascade layer, and this scoped rule is
+ * unlayered, so it now wins on that alone regardless of specificity —
+ * the compound selector is belt-and-braces rather than required. Kept
+ * because it costs nothing and stops the question being reopened. */
 .now-playing__info .now-playing__artist-link {
   font-size: clamp(0.9rem, min(3.4cqw, 4.5cqh), 1.5rem);
   /* Block, not the anchor's default inline — inline elements ignore

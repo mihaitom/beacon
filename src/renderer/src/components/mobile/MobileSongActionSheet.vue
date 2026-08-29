@@ -7,8 +7,8 @@
       <div class="mobile-song-actions__header d-flex align-center">
         <cover-art :cover-art-id="song.coverArtId" :size="40" class="mr-3" />
         <div class="min-width-0">
-          <div class="text-body-2 text-truncate">{{ song.title }}</div>
-          <div class="text-caption text-medium-emphasis text-truncate">{{ song.artist }}</div>
+          <div class="text-body-medium text-truncate">{{ song.title }}</div>
+          <div class="text-body-small text-medium-emphasis text-truncate">{{ song.artist }}</div>
         </div>
       </div>
       <v-list v-if="!playlistPicker" density="compact">

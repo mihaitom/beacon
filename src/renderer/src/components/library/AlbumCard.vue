@@ -27,15 +27,15 @@
     <router-link
       v-if="playOnClick"
       :to="`/albums/${album.id}`"
-      class="album-card-title text-body-2 mt-2 text-truncate"
+      class="album-card-title text-body-medium mt-2 text-truncate"
       @click.stop
     >
       {{ album.name }}
     </router-link>
-    <div v-else class="album-card-title text-body-2 mt-2 text-truncate">{{ album.name }}</div>
+    <div v-else class="album-card-title text-body-medium mt-2 text-truncate">{{ album.name }}</div>
     <router-link
       :to="`/artists/${album.artistId}`"
-      class="album-card-artist text-caption text-medium-emphasis text-truncate"
+      class="album-card-artist text-body-small text-medium-emphasis text-truncate"
       @click.stop
     >
       {{ album.artist }}

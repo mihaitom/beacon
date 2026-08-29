@@ -22,18 +22,18 @@
       @dragstart="$emit('dragstart', $event)"
       @dragend="$emit('dragend')"
     />
-    <div class="queue-row__index text-caption text-medium-emphasis">
+    <div class="queue-row__index text-body-small text-medium-emphasis">
       <v-icon v-if="isCurrent" icon="mdi-volume-high" size="14" color="primary" />
       <template v-else>{{ index + 1 }}</template>
     </div>
     <cover-art :cover-art-id="song.coverArtId" :size="36" class="queue-row__cover mx-2" />
     <div class="queue-row__info min-width-0 flex-grow-1">
-      <div class="text-body-2 text-truncate" :class="{ 'text-primary': isCurrent }">
+      <div class="text-body-medium text-truncate" :class="{ 'text-primary': isCurrent }">
         {{ song.title }}
       </div>
-      <div class="text-caption text-medium-emphasis text-truncate">{{ song.artist }}</div>
+      <div class="text-body-small text-medium-emphasis text-truncate">{{ song.artist }}</div>
     </div>
-    <span class="text-caption text-medium-emphasis queue-row__duration">{{
+    <span class="text-body-small text-medium-emphasis queue-row__duration">{{
       formattedDuration
     }}</span>
     <v-btn

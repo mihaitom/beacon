@@ -5,7 +5,7 @@
   >
     <v-card class="mobile-device-picker">
       <div class="mobile-device-picker__header">
-        <span class="text-subtitle-1">{{ $t('mobile.playOn') }}</span>
+        <span class="text-body-large">{{ $t('mobile.playOn') }}</span>
         <v-spacer />
         <v-btn
           variant="flat"
@@ -54,7 +54,7 @@
 
         <div
           v-if="allDevices.length === 0 && !connectStore.isScanning"
-          class="text-body-2 text-medium-emphasis pa-4"
+          class="text-body-medium text-medium-emphasis pa-4"
         >
           {{ $t('connect.noDevicesFound') }}
         </div>

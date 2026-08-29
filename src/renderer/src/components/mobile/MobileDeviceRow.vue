@@ -9,11 +9,11 @@
       <v-icon v-else :icon="typeIcon" size="20" />
 
       <div class="mobile-device-row__info min-width-0">
-        <div class="text-body-2 text-truncate">{{ device.name }}</div>
-        <div v-if="needsPairing" class="text-caption text-medium-emphasis text-truncate">
+        <div class="text-body-medium text-truncate">{{ device.name }}</div>
+        <div v-if="needsPairing" class="text-body-small text-medium-emphasis text-truncate">
           {{ $t('mobile.needsPairing') }}
         </div>
-        <div v-else-if="claimedByOther" class="text-caption device-row__claimed text-truncate">
+        <div v-else-if="claimedByOther" class="text-body-small device-row__claimed text-truncate">
           {{
             device.in_use_by_name
               ? $t('connect.inUseBy', { name: device.in_use_by_name })
@@ -53,7 +53,7 @@
         style="flex: 1"
         @update:model-value="onVolumeChange"
       />
-      <span class="text-caption text-medium-emphasis mobile-device-row__volume-value">{{
+      <span class="text-body-small text-medium-emphasis mobile-device-row__volume-value">{{
         volume != null ? `${volume}%` : '–'
       }}</span>
     </div>

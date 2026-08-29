@@ -36,7 +36,7 @@
         fallback-icon="mdi-account-music"
         class="similar-artists-card-art"
       />
-      <div class="similar-artists-card-name text-body-2 mt-2 text-truncate">
+      <div class="similar-artists-card-name text-body-medium mt-2 text-truncate">
         {{ artist.name }}
       </div>
       <div class="similar-artists-card-links">

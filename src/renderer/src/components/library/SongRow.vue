@@ -21,7 +21,7 @@
     @drop="onDrop"
     @dragend="onDragEnd"
   >
-    <div class="song-index text-medium-emphasis text-caption">
+    <div class="song-index text-medium-emphasis text-body-small">
       <v-checkbox-btn
         v-if="selectionMode || isHovered"
         :model-value="selected"
@@ -45,12 +45,12 @@
       @click.stop="onCoverClick"
     />
     <div class="song-title min-width-0">
-      <div class="text-body-2 text-truncate" :class="{ 'text-primary': isCurrentSong }">
+      <div class="text-body-medium text-truncate" :class="{ 'text-primary': isCurrentSong }">
         {{ song.title }}
       </div>
       <router-link
         :to="`/artists/${song.artistId}`"
-        class="song-artist-link text-caption text-medium-emphasis text-truncate"
+        class="song-artist-link text-body-small text-medium-emphasis text-truncate"
         @click.stop
       >
         {{ song.artist }}
@@ -59,25 +59,25 @@
     <div v-if="showAlbum" class="song-album">
       <router-link
         :to="`/albums/${song.albumId}`"
-        class="song-album-link text-caption text-medium-emphasis text-truncate"
+        class="song-album-link text-body-small text-medium-emphasis text-truncate"
         @click.stop
       >
         {{ song.album }}
       </router-link>
     </div>
-    <div v-if="showGenre" class="song-genre text-caption text-medium-emphasis text-truncate">
+    <div v-if="showGenre" class="song-genre text-body-small text-medium-emphasis text-truncate">
       {{ song.genre || '—' }}
     </div>
-    <div v-if="showYear" class="song-year text-caption text-medium-emphasis">
+    <div v-if="showYear" class="song-year text-body-small text-medium-emphasis">
       {{ song.year || '—' }}
     </div>
-    <div v-if="showPlayCount" class="song-playcount text-caption text-medium-emphasis">
+    <div v-if="showPlayCount" class="song-playcount text-body-small text-medium-emphasis">
       {{ song.playCount }}
     </div>
-    <div v-if="showFormat" class="song-format text-caption text-medium-emphasis text-truncate">
+    <div v-if="showFormat" class="song-format text-body-small text-medium-emphasis text-truncate">
       {{ formattedFormat }}
     </div>
-    <div class="song-duration text-caption text-medium-emphasis">
+    <div class="song-duration text-body-small text-medium-emphasis">
       {{ formattedDuration }}
     </div>
     <div class="song-actions d-flex align-center">

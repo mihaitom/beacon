@@ -28,7 +28,9 @@
 
       <lyrics-panel v-if="currentSong" variant="compact" class="flex-grow-1" />
       <v-list-item v-else>
-        <span class="text-medium-emphasis text-body-2">{{ $t('nowPlaying.nothingPlaying') }}</span>
+        <span class="text-medium-emphasis text-body-medium">{{
+          $t('nowPlaying.nothingPlaying')
+        }}</span>
       </v-list-item>
     </div>
   </v-navigation-drawer>

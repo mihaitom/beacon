@@ -26,18 +26,21 @@
         :class="{ 'cursor-pointer': !isMyActiveTarget && !claimedByOther }"
         @click="onInfoClick"
       >
-        <div class="text-body-2 text-truncate" :class="{ 'text-primary': isMyActiveTarget }">
+        <div class="text-body-medium text-truncate" :class="{ 'text-primary': isMyActiveTarget }">
           {{ device.name }}
         </div>
         <template v-if="claimedByOther">
-          <div class="text-caption device-row__claimed text-truncate">
+          <div class="text-body-small device-row__claimed text-truncate">
             {{
               device.in_use_by_name
                 ? $t('connect.inUseBy', { name: device.in_use_by_name })
                 : $t('connect.inUseByUnknown')
             }}
           </div>
-          <div v-if="device.in_use_by_song" class="text-caption text-medium-emphasis text-truncate">
+          <div
+            v-if="device.in_use_by_song"
+            class="text-body-small text-medium-emphasis text-truncate"
+          >
             {{ device.in_use_by_song }}
           </div>
         </template>
@@ -92,7 +95,7 @@
           @update:model-value="onVolumeChange"
           @wheel="onVolumeWheel"
         />
-        <span class="text-caption text-medium-emphasis volume-value">{{
+        <span class="text-body-small text-medium-emphasis volume-value">{{
           volume != null ? `${volume}%` : '–'
         }}</span>
       </div>

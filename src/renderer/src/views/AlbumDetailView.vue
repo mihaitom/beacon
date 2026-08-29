@@ -13,7 +13,7 @@
       <template #subtitle>
         <router-link
           :to="`/artists/${album.artistId}`"
-          class="text-subtitle-1 detail-header__subtitle-link"
+          class="text-body-large detail-header__subtitle-link"
         >
           {{ album.artist }}
         </router-link>

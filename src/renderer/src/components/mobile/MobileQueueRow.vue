@@ -10,16 +10,16 @@
     }"
     @click="!dragging && $emit('play')"
   >
-    <div class="mobile-queue-row__index text-caption text-medium-emphasis">
+    <div class="mobile-queue-row__index text-body-small text-medium-emphasis">
       <v-icon v-if="isCurrent" icon="mdi-volume-high" size="14" color="primary" />
       <template v-else>{{ index + 1 }}</template>
     </div>
     <cover-art :cover-art-id="song.coverArtId" :size="40" class="mx-2 flex-shrink-0" />
     <div class="min-width-0 flex-grow-1">
-      <div class="text-body-2 text-truncate" :class="{ 'text-primary': isCurrent }">
+      <div class="text-body-medium text-truncate" :class="{ 'text-primary': isCurrent }">
         {{ song.title }}
       </div>
-      <div class="text-caption text-medium-emphasis text-truncate">{{ song.artist }}</div>
+      <div class="text-body-small text-medium-emphasis text-truncate">{{ song.artist }}</div>
     </div>
     <v-btn
       icon="mdi-close"

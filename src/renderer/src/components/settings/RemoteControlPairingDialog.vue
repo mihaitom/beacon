@@ -9,7 +9,7 @@
          - feature anywhere in the app now that it's gone from there. Shown
          - unconditionally (not just the non-regenerate branch below) since
          - it explains the feature itself, not the current pairing code. -->
-        <p class="text-body-2 text-medium-emphasis mb-4">{{ $t('remoteControl.hint') }}</p>
+        <p class="text-body-medium text-medium-emphasis mb-4">{{ $t('remoteControl.hint') }}</p>
         <v-alert
           v-if="store.needsRegenerate"
           type="info"
@@ -24,7 +24,7 @@
             <canvas ref="qrCanvas" />
           </div>
           <p class="pin-display text-center">{{ formattedPin }}</p>
-          <p class="text-body-2 text-medium-emphasis text-center mb-4">
+          <p class="text-body-medium text-medium-emphasis text-center mb-4">
             {{ $t('remoteControl.pairHint') }}
           </p>
           <v-text-field

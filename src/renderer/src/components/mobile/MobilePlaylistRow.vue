@@ -7,8 +7,8 @@
       class="mr-3 flex-shrink-0"
     />
     <div class="min-width-0 flex-grow-1">
-      <div class="text-body-1 text-truncate">{{ playlist.name }}</div>
-      <div class="text-caption text-medium-emphasis text-truncate">{{ meta }}</div>
+      <div class="text-body-large text-truncate">{{ playlist.name }}</div>
+      <div class="text-body-small text-medium-emphasis text-truncate">{{ meta }}</div>
     </div>
     <!-- Always visible — no hover state to reveal it on touch (this is what
      - made the desktop PlaylistRow.vue unusable here, see the mobile plan's

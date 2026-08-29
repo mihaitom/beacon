@@ -63,7 +63,9 @@
         @update:model-value="playbackStore.setVolume($event)"
         @wheel="onVolumeWheel"
       />
-      <span class="text-caption text-medium-emphasis volume-value">{{ volumePercentLabel }}</span>
+      <span class="text-body-small text-medium-emphasis volume-value">{{
+        volumePercentLabel
+      }}</span>
     </template>
     <!-- While volumeCollapsed, the slider/label above don't render at all
      - — this activator (not itself the mute toggle, unlike the expanded
@@ -126,7 +128,7 @@
             @update:model-value="playbackStore.setVolume($event)"
             @wheel="onVolumeWheel"
           />
-          <span class="text-caption text-medium-emphasis volume-value">{{
+          <span class="text-body-small text-medium-emphasis volume-value">{{
             volumePercentLabel
           }}</span>
         </v-card-text>

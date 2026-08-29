@@ -190,7 +190,7 @@
       </template>
 
       <v-list-item v-else>
-        <span class="text-medium-emphasis text-body-2">{{ $t('queue.empty') }}</span>
+        <span class="text-medium-emphasis text-body-medium">{{ $t('queue.empty') }}</span>
       </v-list-item>
     </div>
   </v-navigation-drawer>

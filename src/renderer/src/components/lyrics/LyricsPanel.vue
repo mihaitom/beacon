@@ -193,7 +193,7 @@
     <v-bottom-sheet v-if="mobile" v-model="mobilePickerOpen" @update:model-value="onPickerToggle">
       <v-card class="lyrics-panel__mobile-sheet">
         <div class="lyrics-panel__mobile-sheet-header">
-          <span class="text-subtitle-1">{{ $t('lyrics.pickMatch') }}</span>
+          <span class="text-body-large">{{ $t('lyrics.pickMatch') }}</span>
         </div>
         <lyrics-candidate-list />
       </v-card>

@@ -41,7 +41,7 @@
     </div>
 
     <div class="d-flex align-center mb-2" style="gap: 10px">
-      <span class="text-caption text-medium-emphasis mobile-transport__time">{{
+      <span class="text-body-small text-medium-emphasis mobile-transport__time">{{
         formatTime(seekPreviewPosition ?? playbackStore.localPosition)
       }}</span>
       <song-waveform
@@ -51,7 +51,7 @@
         @update:model-value="seekPreviewPosition = $event"
         @end="onSeekEnd"
       />
-      <span class="text-caption text-medium-emphasis mobile-transport__time text-right">{{
+      <span class="text-body-small text-medium-emphasis mobile-transport__time text-right">{{
         formatTime(playbackStore.duration)
       }}</span>
     </div>
@@ -96,7 +96,7 @@
           :disabled="playbackStore.isCasting"
           @update:model-value="playbackStore.setVolume($event)"
         />
-        <span class="text-caption text-medium-emphasis mobile-transport__volume-value">{{
+        <span class="text-body-small text-medium-emphasis mobile-transport__volume-value">{{
           volumePercentLabel
         }}</span>
       </template>

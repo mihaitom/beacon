@@ -1,8 +1,28 @@
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
+/* Vuetify 4 ships all of its own CSS inside cascade layers, and an
+ * unlayered rule beats a layered one however specific that one is. The
+ * reset below used to simply lose to Vuetify's own
+ * `.v-container { margin-inline: auto }` on specificity (`*` is 0-0-0);
+ * unlayered, it would now silently win against every margin any Vuetify
+ * component sets for itself — observed while upgrading, as every
+ * `v-container` in the app snapping from centered to hard against the
+ * left edge, and vertical rhythm collapsing wherever a component relies
+ * on its own margin.
+ *
+ * Declaring the layer order here restores the old relationship. This
+ * file is imported before `vuetify/styles` (see main.ts), which is what
+ * makes this declaration the authoritative one. Only the reset goes in a
+ * layer — everything below stays unlayered on purpose, so the app's own
+ * chrome keeps overriding Vuetify as it always did. */
+@layer base, vuetify-core, vuetify-components, vuetify-overrides, vuetify-utilities,
+  vuetify-final;
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+  }
 }
 
 /* Scrolling stays functional everywhere — only the visual scrollbar chrome

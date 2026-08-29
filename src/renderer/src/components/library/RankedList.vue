@@ -16,15 +16,15 @@
         class="ranked-list__cover"
       />
       <div class="ranked-list__info">
-        <div class="text-body-2 text-truncate">{{ item.label }}</div>
-        <div v-if="item.sublabel" class="text-caption text-medium-emphasis text-truncate">
+        <div class="text-body-medium text-truncate">{{ item.label }}</div>
+        <div v-if="item.sublabel" class="text-body-small text-medium-emphasis text-truncate">
           {{ item.sublabel }}
         </div>
         <div class="ranked-list__bar-song">
           <div class="ranked-list__bar-fill" :style="{ width: `${barWidth(item)}%` }" />
         </div>
       </div>
-      <span class="ranked-list__value text-caption text-medium-emphasis">
+      <span class="ranked-list__value text-body-small text-medium-emphasis">
         <v-icon v-if="valueIcon" :icon="valueIcon" size="12" class="ranked-list__value-icon" />
         {{ item.valueLabel }}
       </span>

@@ -22,10 +22,10 @@
       class="mr-3 flex-shrink-0"
     />
     <div class="min-width-0 flex-grow-1">
-      <div class="text-body-2 text-truncate">
+      <div class="text-body-medium text-truncate">
         {{ currentSong?.title ?? playbackStore.radioStation?.name }}
       </div>
-      <div class="text-caption text-medium-emphasis text-truncate">
+      <div class="text-body-small text-medium-emphasis text-truncate">
         {{ currentSong?.artist ?? '' }}
       </div>
     </div>

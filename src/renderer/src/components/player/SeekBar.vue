@@ -1,6 +1,6 @@
 <template>
   <div class="seek-bar" style="gap: 8px">
-    <span class="text-caption text-medium-emphasis" style="width: 40px">{{
+    <span class="text-body-small text-medium-emphasis" style="width: 40px">{{
       formatTime(seekPreviewPosition ?? playbackStore.localPosition)
     }}</span>
     <song-waveform
@@ -10,7 +10,7 @@
       @update:model-value="seekPreviewPosition = $event"
       @end="onSeekEnd"
     />
-    <span class="text-caption text-medium-emphasis" style="width: 40px">{{
+    <span class="text-body-small text-medium-emphasis" style="width: 40px">{{
       formatTime(playbackStore.duration)
     }}</span>
   </div>

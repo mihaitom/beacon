@@ -52,7 +52,7 @@
         :play-on-click="playOnClick"
       />
     </div>
-    <div v-else class="text-caption text-medium-emphasis">{{ $t('home.nothingToShow') }}</div>
+    <div v-else class="text-body-small text-medium-emphasis">{{ $t('home.nothingToShow') }}</div>
   </section>
 </template>
 

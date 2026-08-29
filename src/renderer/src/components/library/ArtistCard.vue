@@ -14,8 +14,8 @@
         @click.stop="toggleStar"
       />
     </div>
-    <div class="artist-card-name text-body-2 mt-2 text-truncate">{{ artist.name }}</div>
-    <div class="text-caption text-medium-emphasis text-truncate">
+    <div class="artist-card-name text-body-medium mt-2 text-truncate">{{ artist.name }}</div>
+    <div class="text-body-small text-medium-emphasis text-truncate">
       {{ artist.albumCount }}
       {{ artist.albumCount === 1 ? $t('library.album1') : $t('library.albumsN') }}
     </div>

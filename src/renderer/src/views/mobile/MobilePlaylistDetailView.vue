@@ -9,7 +9,7 @@
       />
       <div class="min-width-0 flex-grow-1">
         <h1 class="page-title text-truncate">{{ playlist.name }}</h1>
-        <div class="text-caption text-medium-emphasis">
+        <div class="text-body-small text-medium-emphasis">
           {{ $t('playlists.songCount', { count: playlist.songCount }) }}
         </div>
       </div>

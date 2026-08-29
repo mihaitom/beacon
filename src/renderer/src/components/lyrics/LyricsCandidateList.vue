@@ -4,7 +4,7 @@
       <v-progress-circular indeterminate size="18" width="2" />
     </v-list-item>
     <v-list-item v-else-if="!hasCandidates" disabled>
-      <v-list-item-title class="text-medium-emphasis text-body-2">
+      <v-list-item-title class="text-medium-emphasis text-body-medium">
         {{ $t('lyrics.noCandidates') }}
       </v-list-item-title>
     </v-list-item>

@@ -32,7 +32,7 @@
 
     <section class="mb-10">
       <h2 class="section-title mb-4">{{ $t('settings.playbackTitle') }}</h2>
-      <p class="text-body-2 font-weight-medium mb-2">{{ $t('settings.replayGain') }}</p>
+      <p class="text-body-medium font-weight-medium mb-2">{{ $t('settings.replayGain') }}</p>
       <div class="segmented-control" role="radiogroup" :aria-label="$t('settings.replayGain')">
         <button
           v-for="option in replayGainOptions"
@@ -47,18 +47,18 @@
           {{ option.title }}
         </button>
       </div>
-      <p class="text-caption text-medium-emphasis mt-3">
+      <p class="text-body-small text-medium-emphasis mt-3">
         {{ $t('settings.replayGainHint') }}
       </p>
       <!-- Local playback on a phone runs without a Web Audio graph, which
        - is also what ReplayGain needs to change the level (see
        - webAudioAllowed() in services/audioEngine.ts) — saying so beats a
        - setting that silently does half of what it claims. -->
-      <p v-if="!hasLocalGain" class="text-caption text-medium-emphasis mt-1">
+      <p v-if="!hasLocalGain" class="text-body-small text-medium-emphasis mt-1">
         {{ $t('settings.replayGainMobileHint') }}
       </p>
 
-      <p class="text-body-2 font-weight-medium mt-6 mb-2">{{ $t('settings.localQuality') }}</p>
+      <p class="text-body-medium font-weight-medium mt-6 mb-2">{{ $t('settings.localQuality') }}</p>
       <div class="quality-row">
         <v-select
           :model-value="playbackStore.localQuality.format"
@@ -80,10 +80,10 @@
           "
         />
       </div>
-      <p class="text-caption text-medium-emphasis mt-3">
+      <p class="text-body-small text-medium-emphasis mt-3">
         {{ $t('settings.localQualityHint') }}
       </p>
-      <p class="text-body-2 font-weight-medium mt-6 mb-2">{{ $t('settings.castQuality') }}</p>
+      <p class="text-body-medium font-weight-medium mt-6 mb-2">{{ $t('settings.castQuality') }}</p>
       <div class="quality-row">
         <v-select
           :model-value="playbackStore.castQuality.format"
@@ -105,12 +105,12 @@
           "
         />
       </div>
-      <p class="text-caption text-medium-emphasis mt-3">
+      <p class="text-body-small text-medium-emphasis mt-3">
         {{ $t('settings.castQualityHint') }}
       </p>
 
       <template v-if="authStore.capabilities.songRadio">
-        <p class="text-body-2 font-weight-medium mt-6 mb-2">{{ $t('settings.autoplay') }}</p>
+        <p class="text-body-medium font-weight-medium mt-6 mb-2">{{ $t('settings.autoplay') }}</p>
         <v-select
           :model-value="autoplayStore.batchSize"
           :items="autoplayBatchSizeOptions"
@@ -118,7 +118,7 @@
           hide-details
           @update:model-value="autoplayStore.setBatchSize($event)"
         />
-        <p class="text-caption text-medium-emphasis mt-3">
+        <p class="text-body-small text-medium-emphasis mt-3">
           {{ $t('settings.autoplayHint') }}
         </p>
       </template>
@@ -126,7 +126,7 @@
 
     <section v-if="authStore.capabilities.libraryScan" class="mb-10">
       <h2 class="section-title mb-4">{{ $t('settings.libraryTitle') }}</h2>
-      <p class="text-body-2 text-medium-emphasis mb-4">
+      <p class="text-body-medium text-medium-emphasis mb-4">
         {{ $t('settings.libraryScanHint') }}
       </p>
       <v-btn
@@ -147,7 +147,7 @@
      - take a couple of minutes (see stores/library.ts's refreshLibrary()). -->
     <section v-else-if="authStore.serverType === 'jellyfin'" class="mb-10">
       <h2 class="section-title mb-4">{{ $t('settings.libraryTitle') }}</h2>
-      <p class="text-body-2 text-medium-emphasis mb-4">
+      <p class="text-body-medium text-medium-emphasis mb-4">
         {{ $t('settings.libraryRefreshHint') }}
       </p>
       <v-btn
@@ -172,14 +172,14 @@
 
     <section class="mb-10">
       <h2 class="section-title mb-4">{{ $t('settings.storageTitle') }}</h2>
-      <p class="text-body-2 text-medium-emphasis mb-4">
+      <p class="text-body-medium text-medium-emphasis mb-4">
         {{ $t('settings.clearCacheHint') }}
       </p>
       <v-btn variant="tonal" prepend-icon="mdi-broom" @click="clearCache">
         {{ $t('settings.clearCache') }}
       </v-btn>
 
-      <p class="text-body-2 text-medium-emphasis mt-6 mb-4">
+      <p class="text-body-medium text-medium-emphasis mt-6 mb-4">
         {{ $t('settings.resetAirplayHint') }}
       </p>
       <v-btn
@@ -194,7 +194,7 @@
 
     <section class="mb-10">
       <h2 class="section-title mb-4">{{ $t('settings.advancedTitle') }}</h2>
-      <p class="text-body-2 text-medium-emphasis mb-4">
+      <p class="text-body-medium text-medium-emphasis mb-4">
         {{ $t('settings.logLevelHint') }}
       </p>
       <v-select
@@ -216,7 +216,7 @@
         :label="$t('settings.recommendations')"
         @update:model-value="recommendationsStore.setEnabled(!!$event)"
       />
-      <p class="text-caption text-medium-emphasis mt-2">
+      <p class="text-body-small text-medium-emphasis mt-2">
         {{ $t('settings.recommendationsHint') }}
       </p>
     </section>
@@ -236,11 +236,11 @@
       </div>
       <div class="status-row mt-4">
         <span class="status-dot" :class="ffmpegFound ? 'status-dot--ok' : 'status-dot--warn'" />
-        <span class="text-caption text-medium-emphasis">
+        <span class="text-body-small text-medium-emphasis">
           {{ ffmpegFound ? $t('settings.ffmpegFound') : $t('settings.ffmpegMissing') }}
         </span>
       </div>
-      <p class="text-caption text-medium-emphasis mt-1">
+      <p class="text-body-small text-medium-emphasis mt-1">
         {{ $t('settings.version', { version: appVersion }) }}
       </p>
       <v-alert

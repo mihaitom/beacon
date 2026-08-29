@@ -6,10 +6,10 @@
   >
     <cover-art :cover-art-id="song.coverArtId" :size="44" class="mr-3 flex-shrink-0" />
     <div class="min-width-0 flex-grow-1">
-      <div class="text-body-2 text-truncate" :class="{ 'text-primary': isCurrentSong }">
+      <div class="text-body-medium text-truncate" :class="{ 'text-primary': isCurrentSong }">
         {{ song.title }}
       </div>
-      <div class="text-caption text-medium-emphasis text-truncate">{{ song.artist }}</div>
+      <div class="text-body-small text-medium-emphasis text-truncate">{{ song.artist }}</div>
     </div>
     <v-btn
       v-if="authStore.capabilities.favorites"

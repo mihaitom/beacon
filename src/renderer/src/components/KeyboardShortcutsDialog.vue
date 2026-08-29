@@ -16,7 +16,7 @@
             <dd class="shortcut-label">{{ $t(entry.labelKey) }}</dd>
           </template>
         </dl>
-        <p class="shortcuts-hint text-caption text-medium-emphasis">
+        <p class="shortcuts-hint text-body-small text-medium-emphasis">
           {{ $t('shortcuts.hint') }}
         </p>
       </v-card-text>

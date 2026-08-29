@@ -18,18 +18,18 @@
       class="cover mr-3"
     />
     <div class="min-width-0">
-      <div class="text-body-2 text-truncate">
+      <div class="text-body-medium text-truncate">
         {{ currentSong?.title ?? playbackStore.radioStation?.name ?? $t('player.nothingPlaying') }}
       </div>
       <router-link
         v-if="currentSong"
         :to="`/artists/${currentSong.artistId}`"
-        class="text-caption text-medium-emphasis text-truncate artist-link"
+        class="text-body-small text-medium-emphasis text-truncate artist-link"
         @click.stop
       >
         {{ currentSong.artist }}
       </router-link>
-      <div v-else class="text-caption text-medium-emphasis text-truncate" />
+      <div v-else class="text-body-small text-medium-emphasis text-truncate" />
     </div>
     <v-btn
       v-if="currentSong && authStore.capabilities.favorites"
