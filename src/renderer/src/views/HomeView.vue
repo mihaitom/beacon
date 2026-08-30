@@ -127,6 +127,7 @@ import HeroBand from '@/components/home/HeroBand.vue'
 import AlbumShelf from '@/components/library/AlbumShelf.vue'
 import SimilarArtistsShelf from '@/components/library/SimilarArtistsShelf.vue'
 import SongTable from '@/components/library/SongTable.vue'
+import { accountScopedKey } from '@/services/accountKey'
 import type { Album, Artist, Song } from '@/types/library'
 
 // Below this many distinct seed artists, a similar-artist lookup isn't
@@ -165,7 +166,7 @@ interface SeedCache {
 
 function loadSeedCache(): SeedCache | null {
   try {
-    const raw = localStorage.getItem(SEED_CACHE_KEY)
+    const raw = localStorage.getItem(accountScopedKey(SEED_CACHE_KEY))
     return raw ? (JSON.parse(raw) as SeedCache) : null
   } catch {
     return null
@@ -174,7 +175,7 @@ function loadSeedCache(): SeedCache | null {
 
 function saveSeedCache(cache: SeedCache): void {
   try {
-    localStorage.setItem(SEED_CACHE_KEY, JSON.stringify(cache))
+    localStorage.setItem(accountScopedKey(SEED_CACHE_KEY), JSON.stringify(cache))
   } catch {
     // Non-critical — worst case just re-randomizes next load instead of
     // reusing this pick.

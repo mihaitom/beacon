@@ -65,8 +65,30 @@ export async function login(pin) {
   return password;
 }
 
+/** Resolves only once the renderer has actually applied the command — see
+ * routes/remote.py's send_command(). Callers that have somewhere to show
+ * the outcome (sheet.js's action sheet) await it; everything else should
+ * use fireCommand() below rather than dropping the promise on the floor. */
 export function sendCommand(type, payload = {}) {
   return request('/remote/command', { method: 'POST', body: { type, payload } });
+}
+
+/** Fire-and-forget counterpart for the many call sites with no UI of their
+ * own to report into — a transport button, a volume slider, a queue row.
+ * Since sendCommand() started blocking on the renderer's ack it also
+ * started *rejecting* (504 when the renderer never answered, 502 when it
+ * answered with an error), and calling it bare left those as unhandled
+ * promise rejections with the person who tapped seeing nothing at all.
+ * Not silent: the banner keeps "that didn't happen" from looking like
+ * "Beacon ignored me". */
+export function fireCommand(type, payload = {}) {
+  sendCommand(type, payload).catch((error) => {
+    // Already handled globally — request() dispatches its own event and
+    // app.js sends the user back to the login screen.
+    if (error instanceof UnauthorizedError) return;
+    console.error('[remote] Command failed:', type, error);
+    window.dispatchEvent(new CustomEvent('beacon-remote-command-failed'));
+  });
 }
 
 export function fetchSongs(search, offset, limit) {

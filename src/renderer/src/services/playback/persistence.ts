@@ -11,6 +11,7 @@
 
 import type { RadioStation, Song } from '@/types/library'
 import type { ReplayGainMode } from '@/services/replayGain'
+import { accountScopedKey } from '@/services/accountKey'
 import type { RepeatMode } from './types'
 
 // localStorage key for the persisted queue/position snapshot (see init()'s
@@ -33,7 +34,7 @@ export interface PersistedPlaybackState {
 
 export function loadPersisted(): PersistedPlaybackState | null {
   try {
-    const raw = localStorage.getItem(PERSIST_KEY)
+    const raw = localStorage.getItem(accountScopedKey(PERSIST_KEY))
     return raw ? (JSON.parse(raw) as PersistedPlaybackState) : null
   } catch {
     return null
@@ -42,7 +43,7 @@ export function loadPersisted(): PersistedPlaybackState | null {
 
 export function savePersisted(snapshot: PersistedPlaybackState): void {
   try {
-    localStorage.setItem(PERSIST_KEY, JSON.stringify(snapshot))
+    localStorage.setItem(accountScopedKey(PERSIST_KEY), JSON.stringify(snapshot))
   } catch {
     // Storage full/unavailable — losing resume-on-reload is an acceptable
     // degradation, not worth surfacing to the user.
@@ -79,12 +80,16 @@ export function writeSessionWasPlaying(wasPlaying: boolean): void {
   }
 }
 
-/** Called from authStore.logout() — a different Navidrome account signing
- * in afterwards shouldn't inherit the previous one's queue/position (whose
- * stream URLs wouldn't even be valid for the new account anyway). */
+/** Called from authStore.logout() — the account signing in afterwards
+ * shouldn't inherit the previous one's queue/position (whose stream URLs
+ * wouldn't even be valid for a different account anyway). Now that
+ * PERSIST_KEY is account-scoped, a *different* account logging in already
+ * can't see this one's snapshot at all — but the account signing out is
+ * still allowed to explicitly clear its own, e.g. the desktop's "log out
+ * and forget me" case, so this stays. */
 export function clearPersistedPlayback(): void {
   try {
-    localStorage.removeItem(PERSIST_KEY)
+    localStorage.removeItem(accountScopedKey(PERSIST_KEY))
   } catch {
     // Nothing to clean up if storage isn't available in the first place.
   }

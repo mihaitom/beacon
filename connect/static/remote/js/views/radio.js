@@ -1,4 +1,4 @@
-import { sendCommand, fetchRadioStations } from '../api.js';
+import { fireCommand, fetchRadioStations } from '../api.js';
 import { registerRoute } from '../router.js';
 import { createArt } from '../art.js';
 
@@ -24,7 +24,7 @@ export function renderRadio(root) {
         main.innerHTML = `<div class="row-title">${escapeHtml(station.name)}</div>`;
         row.appendChild(main);
 
-        row.addEventListener('click', () => sendCommand('play-radio-station', { stationId: station.id }));
+        row.addEventListener('click', () => fireCommand('play-radio-station', { stationId: station.id }));
         list.appendChild(row);
       }
     })

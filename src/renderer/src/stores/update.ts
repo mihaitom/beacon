@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { checkForUpdate } from '@/services/updateCheck'
+import { accountScopedKey } from '@/services/accountKey'
 
 const DISMISSED_VERSION_KEY = 'beacon.update-dismissed-version'
 const SNOOZED_UNTIL_KEY = 'beacon.update-snoozed-until'
@@ -29,8 +30,8 @@ export const useUpdateStore = defineStore('update', {
     available: false,
     latestVersion: null,
     releaseUrl: null,
-    dismissedVersion: localStorage.getItem(DISMISSED_VERSION_KEY),
-    snoozedUntil: Number(localStorage.getItem(SNOOZED_UNTIL_KEY) ?? 0),
+    dismissedVersion: localStorage.getItem(accountScopedKey(DISMISSED_VERSION_KEY)),
+    snoozedUntil: Number(localStorage.getItem(accountScopedKey(SNOOZED_UNTIL_KEY)) ?? 0),
   }),
   getters: {
     /** Whether UpdateToast.vue should actually be showing right now —
@@ -58,14 +59,23 @@ export const useUpdateStore = defineStore('update', {
     dismiss(): void {
       if (!this.latestVersion) return
       this.dismissedVersion = this.latestVersion
-      localStorage.setItem(DISMISSED_VERSION_KEY, this.latestVersion)
+      localStorage.setItem(accountScopedKey(DISMISSED_VERSION_KEY), this.latestVersion)
     },
     /** "Remind me later" — re-shows after SNOOZE_DURATION_MS regardless of
      * which version is latest by then, unlike dismiss() which is pinned to
      * one specific version string. */
     snooze(): void {
       this.snoozedUntil = Date.now() + SNOOZE_DURATION_MS
-      localStorage.setItem(SNOOZED_UNTIL_KEY, String(this.snoozedUntil))
+      localStorage.setItem(accountScopedKey(SNOOZED_UNTIL_KEY), String(this.snoozedUntil))
+    },
+    /** Re-derives dismissedVersion/snoozedUntil for whichever account is
+     * *actually* logged in — see services/accountKey.ts's onAccountChange().
+     * This store gets created at app boot (App.vue's created()), before
+     * login/restore() has resolved an account, so the state() read above
+     * runs too early to see the real account's own dismiss/snooze state. */
+    reload(): void {
+      this.dismissedVersion = localStorage.getItem(accountScopedKey(DISMISSED_VERSION_KEY))
+      this.snoozedUntil = Number(localStorage.getItem(accountScopedKey(SNOOZED_UNTIL_KEY)) ?? 0)
     },
   },
 })

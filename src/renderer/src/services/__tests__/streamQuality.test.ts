@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { setActivePinia, createPinia } from 'pinia'
 import {
   BITRATES,
   bitrateFor,
@@ -18,6 +19,11 @@ describe('streamQuality', () => {
   const KEY = 'beacon.quality'
 
   beforeEach(() => {
+    // load()/save() now go through accountScopedKey() (services/
+    // accountKey.ts), which needs an active Pinia to read auth state from
+    // — no account is set up here, so it resolves to the plain, unscoped
+    // key, same as before this existed.
+    setActivePinia(createPinia())
     localStorage.clear()
     vi.restoreAllMocks()
   })

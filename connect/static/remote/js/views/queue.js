@@ -1,4 +1,4 @@
-import { sendCommand } from '../api.js';
+import { fireCommand } from '../api.js';
 import { registerRoute } from '../router.js';
 import { state, subscribe } from '../state.js';
 import { createArt } from '../art.js';
@@ -66,7 +66,7 @@ export function renderQueue(root) {
 
     const main = document.createElement('div');
     main.className = 'row-main';
-    main.addEventListener('click', () => sendCommand('queue-jump', { index }));
+    main.addEventListener('click', () => fireCommand('queue-jump', { index }));
     main.innerHTML = `<div class="row-title">${escapeHtml(song.title)}</div><div class="row-subtitle">${escapeHtml(song.artist || '')}</div>`;
     row.appendChild(main);
 
@@ -75,7 +75,7 @@ export function renderQueue(root) {
     removeBtn.innerHTML = '<i class="mdi mdi-close"></i>';
     removeBtn.addEventListener('click', (event) => {
       event.stopPropagation();
-      sendCommand('queue-remove', { index });
+      fireCommand('queue-remove', { index });
     });
     row.appendChild(removeBtn);
 
@@ -183,7 +183,7 @@ export function renderQueue(root) {
     if (dragFrom === null || !dragEl) return;
     const to = Number(dragEl.dataset.index);
     dragEl.classList.remove('dragging');
-    if (to !== dragFrom) sendCommand('queue-reorder', { from: dragFrom, to });
+    if (to !== dragFrom) fireCommand('queue-reorder', { from: dragFrom, to });
     dragFrom = null;
     dragEl = null;
     // Deliberately not re-rendering here: the drag already moved the row's

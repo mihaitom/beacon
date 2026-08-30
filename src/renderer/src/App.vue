@@ -22,6 +22,7 @@ import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useUpdateStore } from '@/stores/update'
 import { useIsMobileWeb } from '@/composables/useIsMobileWeb'
 import { initKeyboardShortcuts } from '@/services/keyboardShortcuts'
+import { initAccountScopedStores } from '@/services/accountScopedStores'
 
 export default {
   name: 'App',
@@ -81,6 +82,11 @@ export default {
     },
   },
   created() {
+    // Before anything else touches an account-scoped store below — sets up
+    // the watcher that fixes their state up once the real account is known
+    // (see that module's own comment for why this can't just be a
+    // one-time read at store-creation time).
+    initAccountScopedStores()
     usePlaybackStore().init()
     // Window-level, so a shortcut works wherever focus happens to be
     // (see resolveShortcut() for what it deliberately keeps its hands off).

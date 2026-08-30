@@ -48,6 +48,18 @@ router = APIRouter(prefix="/remote")
 # for the renderer to answer via POST /query-response before giving up.
 QUERY_TIMEOUT = 8.0
 
+# Commands get their own, much longer budget. A query is a library lookup
+# the renderer answers in milliseconds, but a command is only acked once
+# it has actually *finished*, and several of them wait on a real device
+# handshake first: cast-to-many (and play-song while casting) runs through
+# playback.applyTargets(), i.e. a UPnP/Chromecast/AirPlay connect, which
+# routinely takes longer than a library query ever would. Timing those out
+# at QUERY_TIMEOUT would be the worst of both worlds — the phone gets a
+# 504 and re-enables its buttons for a command that in fact succeeded, so
+# the next tap fires it a second time, which is exactly the double action
+# acking was introduced to prevent.
+COMMAND_TIMEOUT = 45.0
+
 
 def _static_dir() -> Path:
     # PyInstaller (onedir or onefile) sets sys._MEIPASS to the bundle's
@@ -253,7 +265,7 @@ async def send_command(req: CommandRequest):
         {"kind": "command", "request_id": request_id, "type": req.type, "payload": req.payload}
     )
     try:
-        result = await asyncio.wait_for(future, timeout=QUERY_TIMEOUT)
+        result = await asyncio.wait_for(future, timeout=COMMAND_TIMEOUT)
     except TimeoutError:
         raise HTTPException(status_code=504, detail="Beacon did not respond in time")
     finally:

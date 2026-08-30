@@ -1,4 +1,6 @@
 import { defineStore } from 'pinia'
+import { accountScopedKey } from '@/services/accountKey'
+import { pushAccountSettings } from '@/services/connect/accountSettings'
 
 // Mirrors connect/lyrics/__init__.py's LyricSource values exactly — these
 // travel as-is in the `sources` query param routes/lyrics.py parses back
@@ -23,8 +25,15 @@ const ENABLED_KEY = 'beacon.lyrics-providers'
 // build actually recognizes rather than trusted outright; if that leaves
 // nothing recognizable, it's treated the same as never having configured
 // it at all, not as an explicit opt-out.
+//
+// Account-scoped despite also being server-synced (see setEnabled()
+// below): the sync only ever carries a value the server has actually
+// seen, so an account that has never synced would otherwise silently
+// inherit the previous account's selection on this device — including an
+// explicit "no third-party lyrics lookups at all" opt-out, which would
+// leave the new account with no lyrics and no visible reason why.
 function loadEnabled(): LyricProvider[] {
-  const stored = localStorage.getItem(ENABLED_KEY)
+  const stored = localStorage.getItem(accountScopedKey(ENABLED_KEY))
   if (stored === null) return [...LYRIC_PROVIDERS]
   try {
     const raw = JSON.parse(stored) as unknown
@@ -51,11 +60,20 @@ export const useLyricsProvidersStore = defineStore('lyricsProviders', {
     setEnabled(value: LyricProvider[]): void {
       this.enabled = value
       try {
-        localStorage.setItem(ENABLED_KEY, JSON.stringify(value))
+        localStorage.setItem(accountScopedKey(ENABLED_KEY), JSON.stringify(value))
       } catch {
         // Non-critical — worst case the preference doesn't survive to the
         // next launch.
       }
+      // Best-effort account sync — see services/connect/accountSettings.ts.
+      void pushAccountSettings({ lyricsProviders: value }).catch(() => {})
+    },
+
+    /** Re-reads this account's own stored value — state() only ever runs
+     * once, at app boot, before login has resolved who's logged in. Wired
+     * up from services/accountScopedStores.ts. */
+    reloadForAccount(): void {
+      this.enabled = loadEnabled()
     },
   },
 })

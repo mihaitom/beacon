@@ -1,4 +1,4 @@
-import { sendCommand, fetchPlaylists, fetchPlaylist } from '../api.js';
+import { fireCommand, fetchPlaylists, fetchPlaylist } from '../api.js';
 import { renderSongRow } from '../song-row.js';
 import { navigate, registerRoute } from '../router.js';
 import { createArt } from '../art.js';
@@ -46,7 +46,7 @@ export function renderPlaylistDetail(root, params) {
       playAllBtn.className = 'btn btn-primary';
       playAllBtn.textContent = 'Play All';
       playAllBtn.style.marginBottom = '12px';
-      playAllBtn.addEventListener('click', () => sendCommand('play-playlist', { playlistId: playlist.id }));
+      playAllBtn.addEventListener('click', () => fireCommand('play-playlist', { playlistId: playlist.id }));
       header.appendChild(playAllBtn);
       container.appendChild(header);
 
@@ -55,7 +55,7 @@ export function renderPlaylistDetail(root, params) {
       songs.forEach((song, index) => {
         list.appendChild(
           renderSongRow(song, {
-            onPlay: () => sendCommand('play-playlist', { playlistId: playlist.id, startIndex: index }),
+            onPlay: () => fireCommand('play-playlist', { playlistId: playlist.id, startIndex: index }),
           }),
         );
       });

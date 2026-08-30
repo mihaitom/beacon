@@ -227,6 +227,7 @@ import AudioVisualizer from '@/components/player/AudioVisualizer.vue'
 import { getAudioEngine } from '@/services/audioEngine'
 import { extractDominantColor } from '@/services/colorExtractor'
 import { hasTransparency } from '@/services/imageTransparency'
+import { accountScopedKey } from '@/services/accountKey'
 import type { Song } from '@/types/library'
 
 // Warm amber — the same signal color the app is named after (see main.ts's
@@ -241,7 +242,7 @@ const SHOW_VISUALIZER_KEY = 'beacon.showVisualizer'
 function readShowVisualizer(): boolean {
   try {
     // Absent (never toggled before) defaults to shown.
-    return localStorage.getItem(SHOW_VISUALIZER_KEY) !== 'false'
+    return localStorage.getItem(accountScopedKey(SHOW_VISUALIZER_KEY)) !== 'false'
   } catch {
     return true
   }
@@ -474,7 +475,7 @@ export default {
     },
     showVisualizer(value: boolean) {
       try {
-        localStorage.setItem(SHOW_VISUALIZER_KEY, String(value))
+        localStorage.setItem(accountScopedKey(SHOW_VISUALIZER_KEY), String(value))
       } catch {
         // Non-critical — worst case the preference doesn't survive to the
         // next launch.

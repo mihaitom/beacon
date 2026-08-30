@@ -53,12 +53,18 @@ import { defineComponent } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { emitter } from '@/emitter'
 import { useAuthStore } from '@/stores/auth'
+import { accountScopedKey } from '@/services/accountKey'
 import changelogRaw from '../../../../CHANGELOG.md?raw'
 import packageJson from '../../../../package.json'
 
 const md = new MarkdownIt({ html: false, linkify: true })
 
-const STORAGE_PREFIX = 'releaseNotesSeen'
+// beacon. prefix added when this became account-scoped (see storageKey()
+// below) — matches every other settings key's convention. A returning user
+// sees the "what's new" dialog once more after this change, since the old
+// un-prefixed key isn't picked up by accountScopedKey()'s migration; a
+// one-time, low-stakes cost for the consistency.
+const STORAGE_PREFIX = 'beacon.releaseNotesSeen'
 
 type ChangelogEntry = {
   version: string
@@ -130,7 +136,7 @@ export default defineComponent({
       return this.selectedEntry ? md.render(this.selectedEntry.body) : ''
     },
     storageKey(): string {
-      return `${STORAGE_PREFIX}:${this.appVersion}`
+      return accountScopedKey(`${STORAGE_PREFIX}:${this.appVersion}`)
     },
     authStore() {
       return useAuthStore()

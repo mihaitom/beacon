@@ -8,7 +8,7 @@
 // are independent of that pending selection — they reflect what's actually
 // playing right now (state.js's snapshot.casting), not what's checked.
 
-import { sendCommand, fetchDevices, fetchDeviceVolume } from './api.js';
+import { fireCommand, fetchDevices, fetchDeviceVolume } from './api.js';
 import { state } from './state.js';
 import { paintRange } from './range.js';
 
@@ -98,7 +98,7 @@ export async function openDevicePicker() {
     stopRow.className = 'device-row-stop';
     stopRow.innerHTML = '<i class="mdi mdi-cast-off"></i><span>Stop all</span>';
     stopRow.addEventListener('click', () => {
-      sendCommand('cast-stop');
+      fireCommand('cast-stop');
       close();
     });
     list.appendChild(stopRow);
@@ -107,7 +107,7 @@ export async function openDevicePicker() {
   const localRow = document.createElement('button');
   localRow.innerHTML = '<i class="mdi mdi-speaker"></i><span>This device</span>';
   localRow.addEventListener('click', () => {
-    sendCommand('cast-stop');
+    fireCommand('cast-stop');
     close();
   });
   list.appendChild(localRow);
@@ -182,7 +182,7 @@ export async function openDevicePicker() {
         .catch(() => {});
       slider.addEventListener('input', () => paintRange(slider));
       slider.addEventListener('change', () => {
-        sendCommand('set-device-volume', { deviceType: device.type, name: device.name, volume: Number(slider.value) });
+        fireCommand('set-device-volume', { deviceType: device.type, name: device.name, volume: Number(slider.value) });
       });
     }
   }
@@ -196,7 +196,7 @@ export async function openDevicePicker() {
         const [deviceType, ...rest] = key.split(':');
         return { deviceType, name: rest.join(':') };
       });
-      sendCommand('cast-to-many', { targets });
+      fireCommand('cast-to-many', { targets });
     }
     close();
   });

@@ -1,4 +1,4 @@
-import { login, getStoredPassword, setStoredPassword, clearStoredPassword, connectEvents, fetchInitialState, sendCommand } from './js/api.js';
+import { login, getStoredPassword, setStoredPassword, clearStoredPassword, connectEvents, fetchInitialState, fireCommand } from './js/api.js';
 import { setSnapshot, setConnected, subscribe } from './js/state.js';
 import { startRouter } from './js/router.js';
 
@@ -25,6 +25,20 @@ const loginScreen = document.getElementById('login-screen');
 const appScreen = document.getElementById('app-screen');
 const disconnectedBanner = document.getElementById('disconnected-banner');
 const interruptedBanner = document.getElementById('interrupted-banner');
+const commandErrorBanner = document.getElementById('command-error-banner');
+
+// api.js's fireCommand() raises this for the call sites that have nowhere
+// of their own to report into (transport buttons, the volume slider, queue
+// rows). A tap that quietly did nothing is worse than a failed one that
+// says so — the natural response to the former is to tap again, which is
+// how a "next" turns into a double skip. Auto-hides: this is a report on
+// one action, not a state the app is stuck in like the two banners above.
+let commandErrorTimer = null;
+window.addEventListener('beacon-remote-command-failed', () => {
+  commandErrorBanner.classList.remove('hidden');
+  clearTimeout(commandErrorTimer);
+  commandErrorTimer = setTimeout(() => commandErrorBanner.classList.add('hidden'), 4000);
+});
 
 // Nothing resumes on its own: from the server's side a speaker that stopped
 // by itself and one somebody stopped are indistinguishable, so this asks
@@ -32,7 +46,7 @@ const interruptedBanner = document.getElementById('interrupted-banner');
 // for the same snapshot field.
 interruptedBanner.addEventListener('click', () => {
   interruptedBanner.classList.add('hidden');
-  sendCommand('resume-interrupted');
+  fireCommand('resume-interrupted');
 });
 
 subscribe((s) => {

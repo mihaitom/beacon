@@ -37,6 +37,7 @@ from core.session import reap_stale_sessions, registry
 from core.state import PORT, get_local_ip
 from core.upnp_events import renew_due_subscriptions
 from media import jellyfin_bridge, plex_bridge
+from routes.account_settings import router as account_settings_router
 from routes.debug import router as debug_router
 from routes.devices import router as devices_router
 from routes.discovery import discover_all
@@ -396,6 +397,7 @@ app.include_router(discovery_router)
 app.include_router(volume_router)
 app.include_router(join_router)
 app.include_router(log_level_router)
+app.include_router(account_settings_router)
 app.include_router(pairing_router)
 app.include_router(lyrics_router)
 app.include_router(waveform_router)

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { usePlaybackStore } from '../playback'
-import { BITRATES } from '@/services/streamQuality'
+import { useAuthStore } from '../auth'
+import { BITRATES, save } from '@/services/streamQuality'
 import { makeSong } from './fixtures'
 
 /** The quality settings as the store exposes them. The cast half is the
@@ -136,5 +137,27 @@ describe('playbackStore quality settings', () => {
 
     setActivePinia(createPinia())
     expect(usePlaybackStore().localQuality).toEqual({ format: 'aac', bitrate: 128 })
+  })
+
+  /** reloadAccountScoped() is what services/accountScopedStores.ts's
+   * onAccountChange() wiring calls once the real account resolves — this
+   * store gets created at app boot, before login, so setLocalQuality()
+   * writing under this account's own key while the *store's* live state
+   * still holds whatever the pre-login create-time read found is exactly
+   * the bug reloadAccountScoped() fixes. */
+  it('reloadAccountScoped() picks up this account own previously-saved quality', () => {
+    const playback = usePlaybackStore()
+    const auth = useAuthStore()
+    auth.serverType = 'subsonic'
+    auth.serverUrl = 'https://music.example.com'
+    auth.username = 'alice'
+    // Simulates alice's own quality having been saved in an earlier
+    // session, under her own scoped key — accountScopedKey() resolves the
+    // same key for the same account.
+    save({ local: { format: 'opus', bitrate: 96 }, cast: { format: 'original', bitrate: 192 } })
+
+    playback.reloadAccountScoped()
+
+    expect(playback.localQuality).toEqual({ format: 'opus', bitrate: 96 })
   })
 })

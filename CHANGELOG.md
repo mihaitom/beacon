@@ -6,12 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added a setting for which lyrics providers Beacon may ask. Lyrics stored with the song file itself are always tried first and never leave your server; the three internet providers (lrclib.net, NetEase, SimpMusic) are all on by default and can be switched off individually, or all of them at once, if you'd rather a song's title, artist, album and duration never be sent anywhere. Turning a provider back on takes effect right away, including for songs that had already come up empty
+- Added account settings that follow the person rather than the device: the language, the personalized-recommendations toggle, the lyrics providers above and how many songs Autoplay adds per top-up. In the Docker/web version they are kept with your account on the Beacon server, so every device signed in to that instance (a desktop browser, a phone, the phone remote) picks up a change at its next login instead of each one keeping its own answer. The desktop app carries its own Beacon inside the installation, so there the four are remembered per account on that machine and don't travel to another computer. Either way, settings that are genuinely about one device (audio quality, the saved queue, cached artwork) deliberately stay put
+
 ### Changed
 
+- Settings that stay on a device are now kept separately per account. Two accounts sharing one computer or browser no longer see each other's audio quality, saved queue, cached library or dismissed update notice - each starts from its own. Whatever is set today is carried over to the account that's logged in the first time you run this version
+- On the phone remote, an action now waits until Beacon has actually carried it out. The action sheet keeps its spinner and stays disabled until then rather than closing immediately, and a short message appears if something didn't get through. Previously a tap that hadn't landed yet looked exactly like one that had, which made it easy to add the same song to the queue twice
+- The log level under Settings' Advanced section is now only offered to accounts that are also allowed to trigger a library scan, the same rule the scan button itself already followed
 - Various small UI sizing/spacing tweaks (the Albums grid now spaces its covers the same as the album shelves everywhere else, instead of slightly tighter)
 
 ### Fixed
 
+- Fixed the personalized recommendations toggle missing from Settings altogether for accounts that aren't allowed to trigger a library scan, such as a regular non-admin Navidrome account. It applies to every account and every server, and is now shown to all of them
 - Fixed the queue stalling at the end of the current song after moving a cast from one speaker to another. The song that was playing finished normally, then the speaker stayed silent for roughly the length of another track before the next one started on its own. Moving a cast now hands position tracking over to the speaker that keeps playing, instead of leaving it on the one that was switched off
 - Fixed a song that Autoplay had just added to the queue occasionally disappearing again and getting replaced by a different one a moment later, when two devices were connected to the same cast session and both topped the queue up around the same time. Only the first addition is kept now
 

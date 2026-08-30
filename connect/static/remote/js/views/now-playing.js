@@ -1,4 +1,4 @@
-import { sendCommand } from '../api.js';
+import { fireCommand } from '../api.js';
 import { registerRoute } from '../router.js';
 import { state, subscribe } from '../state.js';
 import { openDevicePicker } from '../devices.js';
@@ -133,12 +133,12 @@ export function renderNowPlaying(root) {
   render(state);
 
   castBtn.addEventListener('click', () => void openDevicePicker());
-  playBtn.addEventListener('click', () => sendCommand('toggle-play'));
-  root.querySelector('#np-prev').addEventListener('click', () => sendCommand('previous'));
-  root.querySelector('#np-next').addEventListener('click', () => sendCommand('next'));
-  shuffleBtn.addEventListener('click', () => sendCommand('shuffle'));
-  repeatBtn.addEventListener('click', () => sendCommand('repeat'));
-  autoplayBtn.addEventListener('click', () => sendCommand('autoplay'));
+  playBtn.addEventListener('click', () => fireCommand('toggle-play'));
+  root.querySelector('#np-prev').addEventListener('click', () => fireCommand('previous'));
+  root.querySelector('#np-next').addEventListener('click', () => fireCommand('next'));
+  shuffleBtn.addEventListener('click', () => fireCommand('shuffle'));
+  repeatBtn.addEventListener('click', () => fireCommand('repeat'));
+  autoplayBtn.addEventListener('click', () => fireCommand('autoplay'));
 
   seek.addEventListener('input', () => {
     seeking = true;
@@ -146,7 +146,7 @@ export function renderNowPlaying(root) {
     paintRange(seek);
   });
   seek.addEventListener('change', () => {
-    sendCommand('seek', { position: Number(seek.value) });
+    fireCommand('seek', { position: Number(seek.value) });
     seeking = false;
   });
 
@@ -155,7 +155,7 @@ export function renderNowPlaying(root) {
     paintRange(volume);
   });
   volume.addEventListener('change', () => {
-    sendCommand('volume', { volume: Number(volume.value) / 100 });
+    fireCommand('volume', { volume: Number(volume.value) / 100 });
     volumeDragging = false;
   });
 
@@ -166,7 +166,7 @@ export function renderNowPlaying(root) {
     if (current !== 0) volumeBeforeMute = current;
     volume.value = String(next);
     paintRange(volume);
-    sendCommand('volume', { volume: next / 100 });
+    fireCommand('volume', { volume: next / 100 });
   });
 
   return unsubscribe;

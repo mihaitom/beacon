@@ -4,6 +4,7 @@ import importlib
 import json
 import os
 import tempfile
+import threading
 from pathlib import Path
 from unittest.mock import patch
 
@@ -145,3 +146,69 @@ def test_connect_data_dir_env_var_overrides_default_path():
                 assert reloaded._PATH == os.path.join(d, "airplay_credentials.json")
             finally:
                 importlib.reload(credentials)  # restore original module state
+
+
+# ── Durability: this one file holds *every* paired device's credential ───
+
+
+def test_an_interrupted_write_leaves_the_previous_file_intact(monkeypatch):
+    """The real durability property, exercised the way it actually breaks:
+    a write that dies partway (crash, full disk). Written into a temp file
+    and moved into place with os.replace(), so the live file is either the
+    old one or the new one — a truncate-in-place would have emptied it and
+    unpaired every speaker along with the failed write."""
+    with tempfile.TemporaryDirectory() as d:
+        with patch.object(credentials, "_PATH", _tmp_path(d)):
+            credentials.save("HomePod", "creds-a")
+
+            def boom(*args, **kwargs):
+                raise OSError("No space left on device")
+
+            monkeypatch.setattr(credentials.json, "dump", boom)
+            credentials.save("Apple TV", "creds-b")  # must not raise
+            monkeypatch.undo()
+
+            assert credentials.get("HomePod") == "creds-a"
+            assert not os.path.exists(f"{credentials._PATH}.tmp")
+
+
+def test_save_does_not_unpair_everything_when_the_store_is_unreadable():
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with patch.object(credentials, "_PATH", path):
+            credentials.save("HomePod", "creds-a")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write('{"trunca')  # e.g. a crash mid-write by an older build
+
+            credentials.save("Apple TV", "creds-b")
+
+            # HomePod's credential was in the damaged half either way. What
+            # must not happen is losing it *silently*: the unreadable copy
+            # is kept for recovery instead of being overwritten.
+            assert credentials.get("Apple TV") == "creds-b"
+            with open(f"{path}.corrupt", encoding="utf-8") as f:
+                assert f.read() == '{"trunca'
+
+
+def test_concurrent_saves_do_not_lose_each_other():
+    """routes/pairing.py can finish one pairing while another request
+    unpairs a different speaker, and save()/delete() are read-modify-write
+    over a shared file — without the lock the later write would be built on
+    a copy read before the earlier one landed."""
+    names = [f"Speaker {i}" for i in range(20)]
+    barrier = threading.Barrier(len(names))
+
+    with tempfile.TemporaryDirectory() as d:
+        with patch.object(credentials, "_PATH", _tmp_path(d)):
+
+            def pair(name: str) -> None:
+                barrier.wait()
+                credentials.save(name, f"creds-{name}")
+
+            threads = [threading.Thread(target=pair, args=(n,)) for n in names]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            assert sorted(credentials.list_paired()) == sorted(names)

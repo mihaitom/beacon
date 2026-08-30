@@ -1,4 +1,6 @@
 import { defineStore } from 'pinia'
+import { accountScopedKey } from '@/services/accountKey'
+import { pushAccountSettings } from '@/services/connect/accountSettings'
 
 const ENABLED_KEY = 'beacon.recommendations-enabled'
 
@@ -27,11 +29,20 @@ export const useRecommendationsStore = defineStore('recommendations', {
     setEnabled(value: boolean): void {
       this.enabled = value
       try {
-        localStorage.setItem(ENABLED_KEY, String(value))
+        localStorage.setItem(accountScopedKey(ENABLED_KEY), String(value))
       } catch {
         // Non-critical — worst case the preference doesn't survive to the
         // next launch.
       }
+      // Best-effort account sync — see services/connect/accountSettings.ts.
+      void pushAccountSettings({ recommendationsEnabled: value }).catch(() => {})
+    },
+
+    /** Re-reads this account's own stored value — state() only ever runs
+     * once, at app boot, before login has resolved who's logged in. Wired
+     * up from services/accountScopedStores.ts. */
+    reloadForAccount(): void {
+      this.enabled = loadEnabled()
     },
   },
 })

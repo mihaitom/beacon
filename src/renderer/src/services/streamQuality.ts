@@ -23,6 +23,8 @@
  *   still winning over both.
  */
 
+import { accountScopedKey } from '@/services/accountKey'
+
 export type StreamFormat = 'original' | 'mp3' | 'aac' | 'opus'
 
 /** The formats that actually name an encoder — i.e. everything except
@@ -89,11 +91,17 @@ const DEFAULTS = {
 }
 
 /**
- * Deliberately not the `beacon.playback` snapshot the queue lives in:
- * that one is wiped on logout (see clearPersistedPlayback()), because a
- * different account's queue and stream URLs must not carry over. A quality
- * preference belongs to the device and its connection, not to the account,
- * and should survive signing out.
+ * Account+device scoped, via accountScopedKey() below — a quality
+ * preference is tied to *this* device's connection (the phone on mobile
+ * data and the desktop on the LAN have no reason to agree, see this
+ * module's own docstring), so it isn't the `beacon.playback` snapshot's
+ * kind of per-account state that gets wiped outright on logout (see
+ * clearPersistedPlayback()). But two different people sharing this same
+ * device can still want different tradeoffs, so it's namespaced by account
+ * too: switching back to an account you'd already configured this device
+ * for still finds your own choice waiting, while a different account
+ * logging in afterward gets its own independent (default) value instead of
+ * silently inheriting yours.
  */
 const STORAGE_KEY = 'beacon.quality'
 
@@ -115,7 +123,7 @@ function sanitize(value: unknown, fallback: StreamQuality): StreamQuality {
 
 export function load(): StreamQualitySettings {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(accountScopedKey(STORAGE_KEY))
     const parsed = raw ? JSON.parse(raw) : {}
     return {
       local: sanitize(parsed?.local, DEFAULTS.local),
@@ -131,7 +139,7 @@ export function load(): StreamQualitySettings {
 
 export function save(settings: StreamQualitySettings): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+    localStorage.setItem(accountScopedKey(STORAGE_KEY), JSON.stringify(settings))
   } catch {
     // Storage full/unavailable — the setting still applies for this
     // session, it just won't survive a reload. Not worth a dialog.

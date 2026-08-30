@@ -224,13 +224,23 @@ def test_command_503_when_no_renderer_connected(client):
     assert resp.status_code == 503
 
 
+def test_command_timeout_is_more_generous_than_a_query_timeout():
+    # Commands are acked only once they've actually *finished*, and
+    # cast-to-many (or play-song while casting) waits on a real
+    # UPnP/Chromecast/AirPlay handshake first — far longer than any library
+    # query. Sharing QUERY_TIMEOUT would 504 a command that in fact
+    # succeeded, and the phone re-enabling its buttons on that 504 is how a
+    # single tap becomes a double action.
+    assert remote_routes.COMMAND_TIMEOUT > remote_routes.QUERY_TIMEOUT
+
+
 def test_command_504_on_timeout(client, monkeypatch):
     # Same reasoning/pattern as test_songs_query_504_on_timeout below —
     # send_command() now blocks on the same pending-Future relay _query()
     # does (see that endpoint's own comment), so the terminating case worth
     # covering at the HTTP level is the timeout, not a success that would
     # need a renderer to actually answer it (see this module's docstring).
-    monkeypatch.setattr(remote_routes, "QUERY_TIMEOUT", 0.05)
+    monkeypatch.setattr(remote_routes, "COMMAND_TIMEOUT", 0.05)
     client.post("/remote/enable")
     remote.renderer_connected = True
     resp = client.post(

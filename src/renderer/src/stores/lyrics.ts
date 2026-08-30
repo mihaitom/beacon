@@ -5,6 +5,7 @@ import { fromStructuredLyrics, parseLyrics, type LyricLine } from '@/services/ly
 import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
 import { useLyricsProvidersStore } from '@/stores/lyricsProviders'
+import { accountScopedKey } from '@/services/accountKey'
 import type { Song } from '@/types/library'
 
 // Source id for a song's own embedded/ID3-tag lyrics (getLyricsBySongId.view)
@@ -103,10 +104,9 @@ let inFlightSongId: string | null = null
 function loadPersistedCache(): Record<string, CacheEntry> {
   if (!persistedCache) {
     try {
-      persistedCache = JSON.parse(localStorage.getItem(CACHE_KEY) ?? '{}') as Record<
-        string,
-        CacheEntry
-      >
+      persistedCache = JSON.parse(
+        localStorage.getItem(accountScopedKey(CACHE_KEY)) ?? '{}',
+      ) as Record<string, CacheEntry>
     } catch {
       persistedCache = {}
     }
@@ -122,7 +122,7 @@ function writeCacheEntry(songId: string, entry: CacheEntry): void {
   // otherwise fire on every single play.
   all[songId] = 'negative' in entry ? entry : { ...entry, cachedAt: Date.now() }
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(all))
+    localStorage.setItem(accountScopedKey(CACHE_KEY), JSON.stringify(all))
   } catch {
     // Storage full/disabled — the in-memory entry above still serves this
     // session; losing the persisted copy just means a refetch next launch.
@@ -148,17 +148,32 @@ export function shouldRecheckFile(entry: CachedPositive, now = Date.now()): bool
 export function clearLyricsCache(): void {
   persistedCache = {}
   try {
-    localStorage.removeItem(CACHE_KEY)
+    localStorage.removeItem(accountScopedKey(CACHE_KEY))
   } catch {
     // Nothing to clean up if storage isn't available in the first place.
   }
+}
+
+/** Drops the in-memory cache/in-flight guard so the next read picks up
+ * whatever is under the now-current account's own key — unlike
+ * clearLyricsCache() above, this doesn't touch localStorage at all: there
+ * may be real data already waiting there for this account, it just wasn't
+ * loaded under the *previous* account's in-memory singleton (see this
+ * module's own comment on persistedCache). Wired up once from
+ * services/accountScopedStores.ts via accountKey.ts's onAccountChange(). */
+export function reloadLyricsCacheForAccount(): void {
+  persistedCache = null
+  inFlightSongId = null
 }
 
 const OFFSETS_KEY = 'beacon.lyricsOffsets'
 
 function readStoredOffset(songId: string): number {
   try {
-    const all = JSON.parse(localStorage.getItem(OFFSETS_KEY) ?? '{}') as Record<string, number>
+    const all = JSON.parse(localStorage.getItem(accountScopedKey(OFFSETS_KEY)) ?? '{}') as Record<
+      string,
+      number
+    >
     return all[songId] ?? 0
   } catch {
     return 0
@@ -167,10 +182,13 @@ function readStoredOffset(songId: string): number {
 
 function writeStoredOffset(songId: string, offset: number): void {
   try {
-    const all = JSON.parse(localStorage.getItem(OFFSETS_KEY) ?? '{}') as Record<string, number>
+    const all = JSON.parse(localStorage.getItem(accountScopedKey(OFFSETS_KEY)) ?? '{}') as Record<
+      string,
+      number
+    >
     if (offset === 0) delete all[songId]
     else all[songId] = offset
-    localStorage.setItem(OFFSETS_KEY, JSON.stringify(all))
+    localStorage.setItem(accountScopedKey(OFFSETS_KEY), JSON.stringify(all))
   } catch {
     // Losing a saved offset on write failure (e.g. storage full/disabled)
     // isn't worth surfacing — the in-memory value for this session still works.

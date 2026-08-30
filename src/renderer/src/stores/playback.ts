@@ -1379,6 +1379,26 @@ export const usePlaybackStore = defineStore('playback', {
       this.$reset()
     },
 
+    /** Re-derives account-scoped local state — the persisted queue/position
+     * snapshot, and the local/cast quality preference — for whichever
+     * account is *actually* logged in. See services/accountKey.ts's
+     * onAccountChange(): this store gets created at app boot (App.vue's
+     * created() calling init()), before login/restore() has resolved an
+     * account, so restoreFromStorage()/state()'s own loadStreamQuality()
+     * call run too early to see the real account's own data. Deliberately
+     * does *not* call decideLocalResume()/resumeLocalPlayback() itself —
+     * only restore()'s own attemptLocalResumeAfterAuth() (auth.ts) decides
+     * whether to actually start audio, and only for a silent boot restore,
+     * never a fresh login (see that call site's own comment) — this only
+     * repopulates state, exactly like restoreFromStorage() already does. */
+    reloadAccountScoped(): void {
+      this.restoreFromStorage()
+      const quality = loadStreamQuality()
+      this.localQuality = quality.local
+      this.castQuality = quality.cast
+      getAudioEngine().setVolume(this.volume)
+    },
+
     /** Hands the currently loaded local song/radio off to the given cast
      * targets, or just claims them ahead of playback if nothing is loaded
      * yet — called by ConnectDevicePicker's "Connect"/"Add" action. Routed

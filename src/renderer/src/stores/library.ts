@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { useAuthStore } from './auth'
 import { SubsonicClient } from '@/services/subsonic/client'
+import { accountScopedKey } from '@/services/accountKey'
 import type { Album, Artist, Genre, Playlist, RadioStation, Song } from '@/types/library'
 
 // Default cap for fetchTopSongsForArtist() below — exported so
@@ -43,7 +44,7 @@ const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
 
 function loadLibraryCache(): LibraryCacheSnapshot {
   try {
-    const raw = localStorage.getItem(LIBRARY_CACHE_KEY)
+    const raw = localStorage.getItem(accountScopedKey(LIBRARY_CACHE_KEY))
     return raw ? (JSON.parse(raw) as LibraryCacheSnapshot) : {}
   } catch {
     return {}
@@ -63,7 +64,7 @@ function saveLibraryCacheField<K extends LibraryCacheField>(
     const current = loadLibraryCache()
     current[field] = value
     current.fetchedAt = { ...current.fetchedAt, [field]: Date.now() }
-    localStorage.setItem(LIBRARY_CACHE_KEY, JSON.stringify(current))
+    localStorage.setItem(accountScopedKey(LIBRARY_CACHE_KEY), JSON.stringify(current))
   } catch {
     // Quota exceeded (a large library's full song catalog can run several
     // MB) or storage unavailable — falling back to fetching fresh every
@@ -75,7 +76,7 @@ function saveLibraryCacheField<K extends LibraryCacheField>(
  * leak into whoever logs in next, same reasoning as clearPersistedPlayback(). */
 export function clearLibraryCache(): void {
   try {
-    localStorage.removeItem(LIBRARY_CACHE_KEY)
+    localStorage.removeItem(accountScopedKey(LIBRARY_CACHE_KEY))
   } catch {
     // Nothing to clean up if storage isn't available in the first place.
   }

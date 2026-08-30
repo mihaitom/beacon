@@ -2,7 +2,7 @@
 // detail), with a "…" action sheet (Play, Play Next, Add to Queue, Start
 // Song Radio).
 
-import { sendCommand } from './api.js';
+import { fireCommand, sendCommand } from './api.js';
 import { openActionSheet } from './sheet.js';
 import { createArt } from './art.js';
 
@@ -14,7 +14,7 @@ export function renderSongRow(song, { onPlay } = {}) {
 
   const main = document.createElement('div');
   main.className = 'row-main';
-  main.addEventListener('click', () => (onPlay ? onPlay() : sendCommand('play-song', { songId: song.id })));
+  main.addEventListener('click', () => (onPlay ? onPlay() : fireCommand('play-song', { songId: song.id })));
 
   const title = document.createElement('div');
   title.className = 'row-title';
