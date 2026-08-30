@@ -224,11 +224,13 @@ class PlaybackClock:
         return self.position_offset
 
     def set_fixed_offset(self, offset: float) -> None:
-        """Set a constant position_offset directly (AirPlay has no position
-        feedback, so it gets a fixed startup-buffering estimate instead of
-        calibrate()). Applied immediately, not blended — same "authoritative
+        """Set a constant position_offset directly, for the cases with no
+        measurement to calibrate() against: the provisional guess applied
+        while the first real reading is still being waited for, and a
+        delivery that declares a FIXED_OFFSET because it can offer nothing
+        better. Applied immediately, not blended — same "authoritative
         reset" reasoning as start()/seek_to() above; unlike calibrate(),
-        this is only ever called once, right as a track starts, not as a
-        background correction mid-track."""
+        this is only ever called as a track starts, not as a background
+        correction mid-track."""
         self.position_offset = offset
         self._slew_start_time = None

@@ -6,11 +6,19 @@ from collections.abc import Awaitable, Callable
 
 class BaseDelivery(ABC):
     # Fixed startup-buffering delay (seconds) between the wall-clock position
-    # tracked by the server and what's actually audible on the device. Used
-    # for protocols that don't expose real playback position (e.g. AirPlay).
+    # tracked by the server and what's actually audible on the device. For a
+    # protocol that can neither report a position nor have one derived for
+    # it — no delivery here is in that position any more (AirPlay was the
+    # last, see AirPlayDelivery.get_position()), but the mechanism stays as
+    # the honest fallback for one that turns out to be.
     FIXED_OFFSET: float = 0.0
 
-    # True if get_position() returns a real device-side position.
+    # True if get_position() answers with something worth calibrating
+    # against. Every delivery but AirPlay reads that off the device, which
+    # is the real thing; AirPlay's is worked out from what it has pushed
+    # and stays an approximation the device never confirms (see
+    # AirPlayDelivery.get_position()). Both are better than a constant,
+    # which is all this flag claims.
     SUPPORTS_POSITION: bool = False
 
     # Highest sample rate (Hz) / bit depth this device class is known to

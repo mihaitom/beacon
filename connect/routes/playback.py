@@ -136,15 +136,14 @@ async def _release_claims(target, session: SessionState) -> None:
 # see _apply_position_offset().
 MAX_PLAUSIBLE_POSITION_LEAD = 15.0
 
-# Rough guess applied immediately for devices with real position feedback
-# (Sonos/Chromecast/DLNA), before the actual per-device measurement below
-# has had a chance to complete — that can take a couple of seconds (the
-# polling loop only checks every 0.5s), and starting from "no delay" for
-# that whole gap is almost always more wrong than a reasonable guess, since
-# practically every cast protocol has *some* startup buffering. Splitting
-# the difference between "no delay" and AirPlay's own permanent fixed
-# estimate (2.0s, the one case with no better option than a guess like
-# this at all) — overwritten the moment a real measurement lands.
+# Rough guess applied immediately, before the actual per-device
+# measurement below has had a chance to complete — that can take a couple
+# of seconds (the polling loop only checks every 0.5s), and starting from
+# "no delay" for that whole gap is almost always more wrong than a
+# reasonable guess, since practically every cast protocol has *some*
+# startup buffering. Roughly splits the difference between "no delay" and
+# the couple of seconds a slow-starting device takes — overwritten the
+# moment a real measurement lands.
 PROVISIONAL_STARTUP_DELAY = 1.0
 
 
@@ -153,14 +152,16 @@ async def _apply_position_offset(session: SessionState, target, generation: int)
 
     `compute_position()` returns `wall_elapsed + position_offset`. A device
     that's buffering lags behind the wall clock, so `position_offset` is
-    normally negative (e.g. -2s for AirPlay's startup buffer). This is what
-    keeps the lyrics view in sync with what's actually audible.
+    normally negative (a second or two, depending on the target). This is
+    what keeps the lyrics view in sync with what's actually audible.
 
-    AirPlay has no position feedback, so it gets a fixed startup-buffering
-    estimate (FIXED_OFFSET, a positive "delay" magnitude). Sonos/Chromecast
-    expose real device position — poll briefly once to measure the actual
-    delay, then keep it constant for the rest of the track (re-buffering
-    mid-track is not accounted for).
+    Every delivery here can answer where playback is — read off the device
+    for Sonos/Chromecast/DLNA, derived from what has been pushed for AirPlay
+    — so the normal path is to poll briefly once, measure the actual delay,
+    then keep it constant for the rest of the track (re-buffering mid-track
+    is left to _resync_position_periodically()). A delivery declaring a
+    FIXED_OFFSET instead short-circuits that with its own estimate; none
+    currently does, and one that did would be saying it has nothing better.
     """
     st = session.state
     deliveries = getattr(target, "deliveries", [target])
@@ -448,9 +449,10 @@ async def _resync_position_periodically(session: SessionState, target, generatio
     /stop in particular has no reference to this task to cancel even if it
     wanted to, same as it has none for _apply_position_offset()'s task.
 
-    Only ever meaningful for SUPPORTS_POSITION deliveries (Sonos/Chromecast/
-    DLNA) — AirPlay's FIXED_OFFSET estimate has no position feedback to
-    resync against, same restriction _apply_position_offset() has.
+    Only ever meaningful for SUPPORTS_POSITION deliveries — which is all of
+    them now, AirPlay included (see AirPlayDelivery.get_position()) — same
+    restriction _apply_position_offset() has. A delivery falling back to a
+    FIXED_OFFSET has nothing to resync against and is skipped here.
 
     Unlike that one-shot calibration's MAX_PLAUSIBLE_POSITION_LEAD guard
     (device position *ahead* of the wall clock is treated as a stale

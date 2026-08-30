@@ -19,7 +19,12 @@ from delivery import (
     DlnaDelivery,
     SonosDelivery,
 )
-from delivery.airplay import _MAX_ARTWORK_BYTES, _fetch_artwork, _ResponseReader
+from delivery.airplay import (
+    _MAX_ARTWORK_BYTES,
+    _RAOP_LATENCY_SECONDS,
+    _fetch_artwork,
+    _ResponseReader,
+)
 
 # ── BaseDelivery defaults (pause/resume are no-ops, position/volume unknown) ──
 
@@ -378,6 +383,90 @@ def test_airplay_pause_stops_the_stream():
 
     atv.close.assert_called_once()
     assert d._atv is None
+
+
+def test_airplay_reports_a_position_instead_of_a_fixed_estimate():
+    """AirPlay used to declare FIXED_OFFSET = 2.0 and no position at all.
+    Both halves matter: a leftover FIXED_OFFSET would short-circuit
+    routes/playback.py's calibration before it ever polls the position this
+    class now derives (see
+    test_apply_position_offset_measures_airplay_instead_of_estimating)."""
+    assert AirPlayDelivery.SUPPORTS_POSITION is True
+    assert AirPlayDelivery.FIXED_OFFSET == 0.0
+
+
+def _atv_with_sent_position(position: float) -> MagicMock:
+    """A connected atv whose RAOP stream has sent `position` seconds."""
+    atv = MagicMock()
+    atv.stream.get.return_value.playback_manager.context.position = position
+    return atv
+
+
+async def test_airplay_position_subtracts_the_protocol_latency():
+    """What pyatv counts is what has been *sent*; RAOP plays each packet a
+    fixed latency later, so the audible position is that much behind. Getting
+    this backwards (or skipping it) is the whole failure mode this exists to
+    prevent — lyrics would run _RAOP_LATENCY_SECONDS ahead of the music."""
+    d = AirPlayDelivery("HomePod")
+    d._atv = _atv_with_sent_position(10.0)
+
+    assert await d.get_position() == pytest.approx(10.0 - _RAOP_LATENCY_SECONDS)
+
+
+async def test_airplay_position_is_none_before_anything_is_audible():
+    """The first _RAOP_LATENCY_SECONDS of a stream have been sent but not
+    yet played. None ("no reading yet") rather than 0.0 or a negative: the
+    caller keeps polling for a usable reading, where a 0 would read as a
+    device sitting at the very start of the track and get calibrated as if
+    it were real."""
+    d = AirPlayDelivery("HomePod")
+    d._atv = _atv_with_sent_position(0.4)
+
+    assert await d.get_position() is None
+
+
+async def test_airplay_position_is_none_without_a_connection():
+    assert await AirPlayDelivery("HomePod").get_position() is None
+
+
+async def test_airplay_position_falls_back_to_metadata_when_pyatv_internals_move():
+    """The float comes from pyatv's RAOP implementation classes rather than
+    its documented interface, so a rename there must degrade to the public
+    `metadata.playing()` instead of losing the position entirely. That one
+    truncates to whole seconds, hence the half second added back — the true
+    value is uniformly somewhere in the second that was cut off."""
+    d = AirPlayDelivery("HomePod")
+    atv = MagicMock()
+    # No playback_manager any more, exactly as a renamed attribute would look.
+    atv.stream.get.return_value = MagicMock(spec=[])
+    atv.metadata.playing = AsyncMock(return_value=MagicMock(position=10))
+    d._atv = atv
+
+    assert await d.get_position() == pytest.approx(10.5 - _RAOP_LATENCY_SECONDS)
+
+
+async def test_airplay_position_is_none_when_nothing_is_playing():
+    """An idle RAOP session answers with position=None — must stay None
+    rather than become a bare 0.5 from the truncation correction."""
+    d = AirPlayDelivery("HomePod")
+    atv = MagicMock()
+    atv.stream.get.return_value = MagicMock(spec=[])
+    atv.metadata.playing = AsyncMock(return_value=MagicMock(position=None))
+    d._atv = atv
+
+    assert await d.get_position() is None
+
+
+async def test_airplay_position_survives_the_connection_being_torn_down():
+    """Every accessor on a closed atv raises, and get_position() is polled
+    from a background task that can easily land mid-teardown. Must answer
+    "can't say" rather than take that task down with it."""
+    d = AirPlayDelivery("HomePod")
+    atv = MagicMock()
+    atv.stream.get.side_effect = RuntimeError("connection closed")
+    d._atv = atv
+
+    assert await d.get_position() is None
 
 
 def test_airplay_play_streams_radio_url_directly():

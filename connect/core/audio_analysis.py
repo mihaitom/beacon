@@ -32,15 +32,16 @@ excluded here too, on two grounds that both turned out not to hold up: it
 was believed to push a whole track into the device ahead of time (fixed
 2026-08-26 — see docs/playback-bugs/fixed-airplay-silent-death.md, the
 _ResponseReader half — AirPlay streams incrementally like everything else
-now), and its playback clock is a fixed estimate rather than something
-calibrated against the device (see PlaybackClock.set_fixed_offset()), which
-remains true but turns out not to matter here: this module never taps the
-bytes on their way to the device in the first place (see above), it decodes
-the source itself and seeks to clock.elapsed() regardless of which delivery
-is playing, so the estimate only has to be good enough to seek a fresh
-decoder to roughly the right spot — the same estimate already carries
-AirPlay's lyrics sync (routes/playback.py, "[lyrics-sync]"), and a frequency
-band tolerates drift far better than a highlighted lyric line does.
+now), and its playback clock was a fixed estimate rather than something
+calibrated against playback. The second stopped being true as well when
+AirPlayDelivery grew a get_position(), but it never mattered here anyway:
+this module does not tap the bytes on their way to the device (see above),
+it decodes the source itself and seeks to clock.elapsed() regardless of
+which delivery is playing, so the clock only has to be good enough to seek
+a fresh decoder to roughly the right spot — whatever carries AirPlay's
+lyrics sync (routes/playback.py, "[lyrics-sync]") is more than good enough
+for that, a frequency band tolerating drift far better than a highlighted
+lyric line does.
 """
 
 import asyncio

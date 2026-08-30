@@ -25,6 +25,16 @@ _MAX_ARTWORK_BYTES = 2 * 1024 * 1024
 # The track plays without a cover if this runs out; it never fails the play.
 _ARTWORK_TIMEOUT_SECONDS = 5.0
 
+# What RAOP itself defines as the delay between a frame being handed to the
+# network and the device playing it: `22050 + sample_rate` frames (pyatv's
+# StreamContext), which at the 44.1kHz this delivery caps its input to
+# (MAX_SAMPLE_RATE_HZ below) works out to exactly this. Unlike the flat
+# estimate that used to stand in for it, this is not a guess about the
+# device's buffer: RAOP stamps every packet with the time it must be played
+# (`rtptime = head_ts - (start_ts - latency)`), so this is the delay the
+# device has agreed to honour, not one measured off it afterwards.
+_RAOP_LATENCY_SECONDS = (22050 + 44100) / 44100
+
 
 async def _fetch_artwork(url: str | None) -> bytes | None:
     """Raw JPEG bytes for `url`, or None if it can't be had.
@@ -153,9 +163,18 @@ class AirPlayDelivery(BaseDelivery):
     The stream task runs in the background until stop() is called.
     """
 
-    # AirPlay/RAOP gives no position feedback. Empirically the device's
-    # buffering adds roughly this much delay before audio is audible.
-    FIXED_OFFSET: float = 2.0
+    # The device never reports its position, but we do not need it to: we
+    # push this stream ourselves, and pyatv counts what has gone out — see
+    # get_position(), which turns that into the audible position. What
+    # stood here before was FIXED_OFFSET = 2.0, a single constant covering
+    # two different delays: RAOP's fixed 1.5s protocol latency, and a
+    # variable one nothing was accounting for — the wall clock starts at
+    # dispatch, but not a frame leaves until ffmpeg has produced its first
+    # bytes, which takes longer for some tracks and formats than others.
+    # Measuring covers both, per track, and notices when the send loop
+    # falls behind real time mid-track (pyatv's "Too slow to keep up"),
+    # which a constant by definition never could.
+    SUPPORTS_POSITION: bool = True
     # Classic AirPlay/RAOP's real ceiling — 16-bit/44.1kHz, matching CD
     # quality and nothing past it (AirPlay 2 raised this on newer hardware,
     # but pyatv's classic RAOP path this delivery uses does not negotiate
@@ -422,3 +441,81 @@ class AirPlayDelivery(BaseDelivery):
         if atv:
             await self._close_atv(atv)
         logger.info(f"[AirPlay:{self.target}] stopped")
+
+    async def get_position(self) -> float | None:
+        """Where playback has most likely got to, in seconds, or None while
+        nothing should be audible yet.
+
+        Worth being clear about what this is not: a DLNA renderer or a Sonos
+        answers this by reporting its own position, and if the device is
+        somewhere else than it claims, that is the device lying. Nothing
+        here is read off the device at all. pyatv paces its sending to real
+        time and counts the frames that have gone out; that count is the
+        *sent* position, deliberately excluding latency (see
+        StreamContext.position's own comment), and RAOP defines what is
+        audible as lagging it by _RAOP_LATENCY_SECONDS, so that comes off
+        here. A device buffering differently than the protocol says would
+        make this wrong, and there is no way from here to find that out.
+
+        It is still worth having over the flat estimate it replaced. The
+        part that varies — how long ffmpeg takes to produce the first bytes,
+        during which the wall clock runs but not a frame has left — lands in
+        this number per track instead of being averaged into a constant, and
+        a send loop falling behind real time mid-track (pyatv's "Too slow to
+        keep up") shows up here where a constant could never have shown it.
+
+        None rather than 0.0 before the first frame is audible: the caller
+        polls for a few seconds waiting for a usable reading, and a 0 would
+        read as a device sitting at the very start of the track rather than
+        one that has not begun playing at all.
+        """
+        atv = self._atv
+        if atv is None:
+            return None
+        try:
+            sent = await self._sent_position(atv)
+        except Exception as e:
+            # Includes the connection being torn down under us: every
+            # accessor on a closed atv raises. Never a reason to fail the
+            # caller — it treats None as "cannot say right now" and asks
+            # again.
+            logger.debug(f"[AirPlay:{self.target}] No position available: {e}")
+            return None
+        if sent is None:
+            return None
+        audible = sent - _RAOP_LATENCY_SECONDS
+        return audible if audible > 0 else None
+
+    async def _sent_position(self, atv) -> float | None:
+        """How far pyatv has got sending the current stream, in seconds.
+
+        Asked two ways, because they trade precision against how much of
+        pyatv's public surface they lean on.
+
+        Preferred is the RAOP stream's own StreamContext, which carries it
+        as a float. Every attribute on the way there is a public, named one,
+        but the classes they hang off are protocol implementation rather
+        than pyatv's documented interface — hence the fallback rather than
+        letting a future rename take the position away entirely.
+
+        That fallback is `metadata.playing()`, which is the documented
+        interface, and reaches RAOP at all only because stream_file() takes
+        Metadata over for the duration of the stream — without that a paired
+        AirPlay 2 device would answer from its HAP metadata instead, which
+        knows nothing about a stream we are pushing. It truncates to whole
+        seconds (Playing.position is an int), so half a second goes back on:
+        the true value is uniformly somewhere in the second that was cut,
+        and adding its midpoint turns a consistently-low reading into an
+        unbiased one instead.
+        """
+        Protocol = (await import_in_thread("pyatv.const")).Protocol
+
+        try:
+            raop = atv.stream.get(Protocol.RAOP)
+            if raop is not None:
+                return float(raop.playback_manager.context.position)
+        except AttributeError as e:
+            logger.debug(f"[AirPlay:{self.target}] Falling back to metadata position: {e}")
+
+        position = (await atv.metadata.playing()).position
+        return None if position is None else position + 0.5

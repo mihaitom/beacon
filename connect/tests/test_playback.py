@@ -1329,17 +1329,63 @@ def test_resume_still_uses_stream_proxy_for_a_regular_track(client, default_sess
 # ── _apply_position_offset ──────────────────────────────────────────────────────
 
 
-def test_apply_position_offset_fixed_for_airplay(default_session):
+class _FixedOffsetDelivery(BaseDelivery):
+    """A delivery that can only estimate its own delay. No real one does any
+    more — AirPlay was the last, and now derives a position from what it has
+    pushed — but FIXED_OFFSET stays as the fallback for a protocol that
+    can't, so its branch keeps its own coverage rather than riding on
+    whichever delivery happens to use it."""
+
+    FIXED_OFFSET: float = 2.0
+
+    async def play(self, *args, **kwargs) -> None:
+        pass
+
+    async def stop(self) -> None:
+        pass
+
+
+def test_apply_position_offset_uses_a_declared_fixed_offset(default_session):
     default_session.state.is_streaming = True
     default_session.state.clock.play_start_time = time.time()
+    default_session.state.clock.play_generation = 1
+
+    target = _FixedOffsetDelivery("estimating-device")
+    import asyncio
+
+    asyncio.run(_apply_position_offset(default_session, target, generation=1))
+
+    assert default_session.state.clock.position_offset == -_FixedOffsetDelivery.FIXED_OFFSET
+
+
+def test_apply_position_offset_measures_airplay_instead_of_estimating(default_session):
+    """Regression guard for the switch away from AirPlay's FIXED_OFFSET.
+
+    AirPlay derives a real position now (see AirPlayDelivery.get_position()),
+    so it must take the *measuring* branch. The trap this guards against is
+    the half-done version of that change: keeping a FIXED_OFFSET alongside
+    the new get_position() short-circuits _apply_position_offset() before it
+    ever polls, and the measurement is silently never used.
+
+    The numbers are picked so a measured offset can't be mistaken for
+    either of the two constants that would otherwise produce one: 3s of
+    wall clock against a device 0.5s in lands near -3.0, which is neither
+    the old FIXED_OFFSET (-2.0, what a leftover estimate would give) nor
+    PROVISIONAL_STARTUP_DELAY (-1.0, what polling that never got a reading
+    would leave behind)."""
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_start_time = time.time() - 3.0
     default_session.state.clock.play_generation = 1
 
     target = AirPlayDelivery("HomePod")
     import asyncio
 
-    asyncio.run(_apply_position_offset(default_session, target, generation=1))
+    with patch.object(target, "get_position", new=AsyncMock(return_value=0.5)):
+        asyncio.run(_apply_position_offset(default_session, target, generation=1))
 
-    assert default_session.state.clock.position_offset == -AirPlayDelivery.FIXED_OFFSET
+    # ~3.5s of wall clock by the time the first poll lands (incl. the 0.5s
+    # poll delay) against a device 0.5s in.
+    assert -3.3 < default_session.state.clock.position_offset < -2.7
 
 
 def test_apply_position_offset_calibrates_for_sonos(default_session):
@@ -1407,10 +1453,9 @@ def test_apply_position_offset_calibrates_correctly_with_start_position(
 
 
 def test_apply_position_offset_returns_when_nothing_supports_position(default_session):
-    """No FIXED_OFFSET (AirPlay's estimate-based path) and no
-    SUPPORTS_POSITION delivery either — nothing this function can do
-    anything with, must give up immediately rather than loop forever
-    waiting for a reading that can never come."""
+    """Neither a declared FIXED_OFFSET nor a SUPPORTS_POSITION delivery —
+    nothing this function can do anything with, must give up immediately
+    rather than loop forever waiting for a reading that can never come."""
 
     class _NoPositionDelivery(BaseDelivery):
         async def play(self, *args, **kwargs) -> None:
@@ -1516,17 +1561,17 @@ def test_apply_position_offset_discards_stale_reading_that_arrives_after_being_s
 
 
 def test_apply_position_offset_abandons_fixed_offset_branch_on_track_change(default_session):
-    """The AirPlay/FIXED_OFFSET branch must honor the same generation guard
-    as the SUPPORTS_POSITION branch below it — a stale task from a
-    superseded generation must not stomp the *current* track's clock with a
-    delay estimate meant for a track that isn't playing anymore."""
+    """The FIXED_OFFSET branch must honor the same generation guard as the
+    SUPPORTS_POSITION branch below it — a stale task from a superseded
+    generation must not stomp the *current* track's clock with a delay
+    estimate meant for a track that isn't playing anymore."""
     default_session.state.is_streaming = True
     default_session.state.clock.play_start_time = time.time()
     # A new /play already bumped the generation by the time this task gets
     # to run — same setup as test_apply_position_offset_abandons_on_track_change.
     default_session.state.clock.play_generation = 2
 
-    target = AirPlayDelivery("HomePod")
+    target = _FixedOffsetDelivery("estimating-device")
     import asyncio
 
     asyncio.run(_apply_position_offset(default_session, target, generation=1))
@@ -1781,12 +1826,12 @@ def test_resync_position_once_discards_reading_superseded_while_in_flight(defaul
     assert default_session.state.clock.position_offset == 0.0
 
 
-def test_resync_position_periodically_returns_immediately_for_airplay(default_session):
+def test_resync_position_periodically_returns_immediately_without_position(default_session):
     """No SUPPORTS_POSITION delivery at all -> must return before ever
     sleeping/polling, not loop forever waiting for a reading that can never
-    come (AirPlay has no position feedback — see FIXED_OFFSET instead)."""
+    come (such a delivery declares a FIXED_OFFSET instead)."""
     default_session.state.is_streaming = True
-    target = AirPlayDelivery("HomePod")
+    target = _FixedOffsetDelivery("estimating-device")
     import asyncio
 
     asyncio.run(
