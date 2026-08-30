@@ -49,7 +49,7 @@ class VisualizerFeed:
 
     `analyzer` is what GET /visualizer reads frames from, and is None
     whenever nothing should be analyzed — nobody watching, nothing playing,
-    or playing to a target that can't be analyzed (AirPlay/radio, see
+    or playing to a target that can't be analyzed (radio, see
     should_analyze()). The route re-reads it on every iteration rather than
     capturing it once, since it's replaced on every track change and seek.
     """

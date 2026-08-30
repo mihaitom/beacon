@@ -874,7 +874,7 @@ async def visualizer_events(session: SessionState = Depends(get_session)):
     analyzer is re-read every iteration (not captured once) since it's
     replaced on every track change and seek, and is None whenever nothing
     analyzable is playing (nothing streaming at all, or streaming to
-    AirPlay/radio) — those periods just heartbeat with no data, same as this
+    radio) — those periods just heartbeat with no data, same as this
     producing nothing is the frontend's own signal to render nothing rather
     than a fake idle animation."""
     feed = session.visualizer
