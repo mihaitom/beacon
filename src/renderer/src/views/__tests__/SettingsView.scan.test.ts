@@ -108,3 +108,38 @@ describe('SettingsView recommendations toggle placement', () => {
     expect(library?.text()).toContain(label())
   })
 })
+
+/** The Advanced section is the log-level dropdown and nothing else — for a
+ * non-admin account (capabilities.logLevelControl) it has to disappear
+ * entirely, not just lose its control, or they'd see an empty "Advanced"
+ * heading. */
+describe('SettingsView advanced section gating', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  function mountWith(isAdmin: boolean) {
+    const auth = useAuthStore()
+    auth.isAdmin = isAdmin
+    auth.serverType = 'subsonic'
+    return mount(SettingsView, {
+      global: {
+        plugins: [vuetify, i18n],
+        mocks: { $emitter: { emit: vi.fn(), on: vi.fn(), off: vi.fn() } },
+        stubs: { ConnectButton: true, RemoteControlButton: true },
+      },
+    })
+  }
+
+  it('shows the advanced section to an admin', () => {
+    const wrapper = mountWith(true)
+
+    expect(wrapper.text()).toContain(i18n.global.t('settings.advancedTitle'))
+  })
+
+  it('hides the advanced section entirely from a non-admin', () => {
+    const wrapper = mountWith(false)
+
+    expect(wrapper.text()).not.toContain(i18n.global.t('settings.advancedTitle'))
+  })
+})

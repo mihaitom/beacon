@@ -309,6 +309,14 @@ export default {
     recommendations: 'Consigli personalizzati',
     recommendationsHint:
       'Scopri nella Home usa artisti simili a quello che ascolti davvero, risolti tramite MusicBrainz e ListenBrainz — questo condivide uno o due nomi di artisti della libreria con questi servizi. Disattivato torna ad album casuali.',
+    lyricsProvidersTitle: 'Provider di testi',
+    lyricsProvidersHint:
+      'I testi salvati nel file del brano stesso vengono sempre provati per primi e non lasciano mai il tuo server. Per impostazione predefinita ogni provider qui sotto è attivo — deseleziona quelli a cui preferisci che Beacon non invii titolo, artista, album e durata di un brano.',
+    lyricsProviders: 'Provider di terze parti',
+    lyricsProvidersEmptyHint:
+      'Nessun provider selezionato — vengono mostrati solo i testi salvati nel file stesso.',
+    lyricsProvidersActiveHint:
+      'Quando il file non contiene testi, il titolo, l’artista, l’album e la durata del brano vengono inviati ai provider selezionati per trovare una corrispondenza.',
     playbackTitle: 'Riproduzione',
     replayGain: 'ReplayGain',
     replayGainOff: 'Disattivato',

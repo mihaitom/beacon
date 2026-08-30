@@ -64,6 +64,18 @@ export interface ServerCapabilities {
    * reporting (see jellyfin_bridge.py's scrobble) for a real accumulating
    * per-play count. */
   playHistoryStats: boolean
+  /** Settings' "Advanced" section (log-level dropdown) — not actually a
+   * media-server capability (it's app-level, see routes/log_level.py's own
+   * docstring), reusing this table anyway because it's the one place that
+   * already threads isAdmin through to a view via capabilitiesFor(), and a
+   * second gating mechanism for one flag isn't worth it. True for every
+   * server type; libraryScan's isAdmin===false branch below takes it away
+   * the same way it takes the scan button away — connect has no way to
+   * check this server-side (POST /log-level only carries CONNECT_TOKEN, an
+   * instance-wide secret every client already has, not an admin proof — see
+   * that route's own docstring), so this is UI-gating, not real
+   * enforcement, same caveat as libraryScan's. */
+  logLevelControl: boolean
 }
 
 const SUBSONIC_CAPABILITIES: ServerCapabilities = {
@@ -75,6 +87,7 @@ const SUBSONIC_CAPABILITIES: ServerCapabilities = {
   songRadio: true,
   fileLyrics: true,
   playHistoryStats: true,
+  logLevelControl: true,
 }
 
 const JELLYFIN_CAPABILITIES: ServerCapabilities = {
@@ -93,6 +106,7 @@ const JELLYFIN_CAPABILITIES: ServerCapabilities = {
   // get_lyrics_by_song_id()).
   fileLyrics: true,
   playHistoryStats: true,
+  logLevelControl: true,
 }
 
 // Plex bridges browsing — artists/albums/songs/search/cover art — plus
@@ -140,6 +154,7 @@ const PLEX_CAPABILITIES: ServerCapabilities = {
   // over exactly as it does for an untagged track.
   fileLyrics: true,
   playHistoryStats: true,
+  logLevelControl: true,
 }
 
 /**
@@ -163,6 +178,6 @@ export function capabilitiesFor(
       : serverType === 'plex'
         ? PLEX_CAPABILITIES
         : SUBSONIC_CAPABILITIES
-  if (isAdmin === false) return { ...base, libraryScan: false }
+  if (isAdmin === false) return { ...base, libraryScan: false, logLevelControl: false }
   return base
 }

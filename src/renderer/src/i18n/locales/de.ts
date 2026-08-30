@@ -305,6 +305,14 @@ export default {
     recommendations: 'Personalisierte Empfehlungen',
     recommendationsHint:
       'Discover auf der Startseite nutzt Artists, die deinem tatsächlichen Hörverhalten ähnlich sind, aufgelöst über MusicBrainz und ListenBrainz — dabei werden ein, zwei Artist-Namen aus der Bibliothek an diese Dienste übermittelt. Aus fällt zurück auf zufällige Alben.',
+    lyricsProvidersTitle: 'Songtext-Anbieter',
+    lyricsProvidersHint:
+      'Im Song selbst gespeicherte Songtexte werden immer zuerst versucht und verlassen nie deinen Server. Standardmäßig ist jeder Anbieter unten aktiviert — deaktivier jeden, an den Beacon Titel, Artist, Album und Dauer eines Songs nicht schicken soll.',
+    lyricsProviders: 'Externe Anbieter',
+    lyricsProvidersEmptyHint:
+      'Kein Anbieter ausgewählt — es werden nur Songtexte aus der Datei selbst angezeigt.',
+    lyricsProvidersActiveHint:
+      'Enthält die Datei keinen Songtext, werden Titel, Artist, Album und Dauer des Songs an die ausgewählten Anbieter geschickt, um einen Treffer zu finden.',
     playbackTitle: 'Wiedergabe',
     replayGain: 'ReplayGain',
     replayGainOff: 'Aus',

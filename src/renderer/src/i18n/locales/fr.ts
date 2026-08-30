@@ -310,6 +310,14 @@ export default {
     recommendations: 'Recommandations personnalisées',
     recommendationsHint:
       "Découvrir sur l'accueil utilise des artistes similaires à ce que vous écoutez réellement, résolus via MusicBrainz et ListenBrainz — cela partage un ou deux noms d'artistes de la bibliothèque avec ces services. Désactivé revient à des albums aléatoires.",
+    lyricsProvidersTitle: 'Fournisseurs de paroles',
+    lyricsProvidersHint:
+      "Les paroles enregistrées dans le fichier de la chanson lui-même sont toujours essayées en premier et ne quittent jamais votre serveur. Chaque fournisseur ci-dessous est activé par défaut — désélectionnez ceux auxquels vous préférez que Beacon n'envoie pas le titre, l'artiste, l'album et la durée d'une chanson.",
+    lyricsProviders: 'Fournisseurs tiers',
+    lyricsProvidersEmptyHint:
+      'Aucun fournisseur sélectionné — seules les paroles enregistrées dans le fichier lui-même sont affichées.',
+    lyricsProvidersActiveHint:
+      "Quand le fichier n'a pas de paroles, le titre, l'artiste, l'album et la durée de la chanson sont envoyés aux fournisseurs sélectionnés pour trouver une correspondance.",
     playbackTitle: 'Lecture',
     replayGain: 'ReplayGain',
     replayGainOff: 'Désactivé',

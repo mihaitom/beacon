@@ -4,6 +4,7 @@ import type { LyricSearchResult } from '@/services/connect/types'
 import { fromStructuredLyrics, parseLyrics, type LyricLine } from '@/services/lyrics/parseLrc'
 import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
+import { useLyricsProvidersStore } from '@/stores/lyricsProviders'
 import type { Song } from '@/types/library'
 
 // Source id for a song's own embedded/ID3-tag lyrics (getLyricsBySongId.view)
@@ -295,30 +296,49 @@ export const useLyricsStore = defineStore('lyrics', {
       inFlightSongId = song.id
       try {
         let positive = await fetchFileLyrics(song)
+        // Only actually asked once something is enabled — every provider,
+        // by default (see stores/lyricsProviders.ts's own comment), but
+        // Settings can empty that out. `queriedProviders` (not just
+        // `positive`) decides below whether a miss is worth caching:
+        // skipping the lookup entirely isn't the same fact as asking and
+        // getting nothing back, and caching it as a negative would leave a
+        // song stuck showing "no lyrics" for NEGATIVE_TTL_MS after someone
+        // changes their provider selection, for a lookup that was never
+        // actually tried with the new selection.
+        let queriedProviders = false
         if (!positive) {
-          const result = await autoLyrics({
-            name: song.title,
-            artist: song.artist,
-            album: song.album,
-            duration: song.duration,
-          })
-          const parsed = result ? parseLyrics(result.lyrics) : null
-          // Lines, not just a result: a sheet can come back holding
-          // nothing but the songwriter credits, which parseLyrics moves
-          // out of the lyrics (see splitOffCredits). Two names are not a
-          // song, and recording them as a hit would leave the panel
-          // claiming a source for lyrics it doesn't have.
-          if (result && parsed && parsed.lines.length > 0) {
-            positive = {
-              synced: parsed.synced,
-              lines: parsed.lines,
-              credits: parsed.credits,
-              source: result.source,
-              remoteId: result.id,
+          const enabledSources = useLyricsProvidersStore().enabled
+          if (enabledSources.length > 0) {
+            queriedProviders = true
+            const result = await autoLyrics(
+              {
+                name: song.title,
+                artist: song.artist,
+                album: song.album,
+                duration: song.duration,
+              },
+              enabledSources,
+            )
+            const parsed = result ? parseLyrics(result.lyrics) : null
+            // Lines, not just a result: a sheet can come back holding
+            // nothing but the songwriter credits, which parseLyrics moves
+            // out of the lyrics (see splitOffCredits). Two names are not a
+            // song, and recording them as a hit would leave the panel
+            // claiming a source for lyrics it doesn't have.
+            if (result && parsed && parsed.lines.length > 0) {
+              positive = {
+                synced: parsed.synced,
+                lines: parsed.lines,
+                credits: parsed.credits,
+                source: result.source,
+                remoteId: result.id,
+              }
             }
           }
         }
-        writeCacheEntry(song.id, positive ?? { negative: true, cachedAt: Date.now() })
+        if (positive || queriedProviders) {
+          writeCacheEntry(song.id, positive ?? { negative: true, cachedAt: Date.now() })
+        }
         // A newer song may have started while this was in flight — don't
         // let a slower, stale response overwrite what's actually playing now.
         if (this.songId !== song.id) return

@@ -307,6 +307,14 @@ export default {
     recommendations: 'Personalized recommendations',
     recommendationsHint:
       'Discover on Home uses artists similar to what you actually listen to, resolved via MusicBrainz and ListenBrainz — this shares a library artist name or two with those services. Off falls back to random albums.',
+    lyricsProvidersTitle: 'Lyrics providers',
+    lyricsProvidersHint:
+      "Lyrics stored with the song file itself are always tried first and never leave your server. Every provider below is enabled by default — deselect any you'd rather Beacon not send a song's title, artist, album, and duration to.",
+    lyricsProviders: 'Third-party providers',
+    lyricsProvidersEmptyHint:
+      'No providers selected — only lyrics stored in the file itself are shown.',
+    lyricsProvidersActiveHint:
+      "When the file has no lyrics, the song's title, artist, album, and duration are sent to the selected provider(s) to find a match.",
     playbackTitle: 'Playback',
     replayGain: 'ReplayGain',
     replayGainOff: 'Off',

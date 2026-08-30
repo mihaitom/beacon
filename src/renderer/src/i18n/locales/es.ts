@@ -309,6 +309,14 @@ export default {
     recommendations: 'Recomendaciones personalizadas',
     recommendationsHint:
       'Descubrir en Inicio usa artistas similares a lo que realmente escuchas, resueltos a través de MusicBrainz y ListenBrainz — esto comparte uno o dos nombres de artistas de la biblioteca con esos servicios. Desactivado vuelve a álbumes aleatorios.',
+    lyricsProvidersTitle: 'Proveedores de letras',
+    lyricsProvidersHint:
+      'Las letras guardadas en el propio archivo de la canción siempre se intentan primero y nunca salen de tu servidor. Todos los proveedores están activados por defecto — desactiva aquellos a los que prefieras que Beacon no envíe el título, artista, álbum y duración de una canción.',
+    lyricsProviders: 'Proveedores externos',
+    lyricsProvidersEmptyHint:
+      'Ningún proveedor seleccionado — solo se muestran las letras guardadas en el propio archivo.',
+    lyricsProvidersActiveHint:
+      'Cuando el archivo no tiene letra, se envían el título, artista, álbum y duración de la canción a los proveedores seleccionados para encontrar una coincidencia.',
     playbackTitle: 'Reproducción',
     replayGain: 'ReplayGain',
     replayGainOff: 'Desactivado',

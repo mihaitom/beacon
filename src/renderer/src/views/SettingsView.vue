@@ -195,6 +195,36 @@
       </p>
     </section>
 
+    <!-- Opt-out, same convention as recommendations' toggle above — see
+     - stores/lyricsProviders.ts's own comment on why every provider is
+     - selected by default. Empty is still a valid, deliberate state (fully
+     - opted out), not an error, so the hint below explains what it means
+     - rather than the select complaining about it. -->
+    <section class="mb-10">
+      <h2 class="section-title mb-4">{{ $t('settings.lyricsProvidersTitle') }}</h2>
+      <p class="text-body-medium text-medium-emphasis mb-4">
+        {{ $t('settings.lyricsProvidersHint') }}
+      </p>
+      <v-select
+        :model-value="lyricsProvidersStore.enabled"
+        :items="lyricProviders"
+        :label="$t('settings.lyricsProviders')"
+        variant="solo-filled"
+        multiple
+        chips
+        closable-chips
+        hide-details
+        @update:model-value="lyricsProvidersStore.setEnabled($event)"
+      />
+      <p class="text-body-small text-medium-emphasis mt-2">
+        {{
+          lyricsProvidersStore.enabled.length === 0
+            ? $t('settings.lyricsProvidersEmptyHint')
+            : $t('settings.lyricsProvidersActiveHint')
+        }}
+      </p>
+    </section>
+
     <section class="mb-10">
       <h2 class="section-title mb-4">{{ $t('settings.storageTitle') }}</h2>
       <p class="text-body-medium text-medium-emphasis mb-4">
@@ -217,7 +247,11 @@
       </v-btn>
     </section>
 
-    <section class="mb-10">
+    <!-- Unlike the library section above, this one has nothing else in it —
+     - the whole section (title included) is gated, not just the control,
+     - or a non-admin would see an empty "Advanced" heading with nothing
+     - under it. See services/capabilities.ts's logLevelControl. -->
+    <section v-if="authStore.capabilities.logLevelControl" class="mb-10">
       <h2 class="section-title mb-4">{{ $t('settings.advancedTitle') }}</h2>
       <p class="text-body-medium text-medium-emphasis mb-4">
         {{ $t('settings.logLevelHint') }}
@@ -286,6 +320,7 @@ import { clearLyricsCache } from '@/stores/lyrics'
 import { getLocale, setLocale, type SupportedLocale } from '@/i18n'
 import { getLogLevel, setLogLevel, type LogLevel } from '@/services/connect/logLevel'
 import { useRecommendationsStore } from '@/stores/recommendations'
+import { LYRIC_PROVIDERS, useLyricsProvidersStore } from '@/stores/lyricsProviders'
 import { AUTOPLAY_BATCH_SIZE_OPTIONS, useAutoplayStore } from '@/stores/autoplay'
 import { useUpdateStore } from '@/stores/update'
 import type { ReplayGainMode } from '@/services/replayGain'
@@ -372,6 +407,12 @@ export default {
     recommendationsStore() {
       return useRecommendationsStore()
     },
+    lyricsProvidersStore() {
+      return useLyricsProvidersStore()
+    },
+    lyricProviders() {
+      return LYRIC_PROVIDERS
+    },
     autoplayStore() {
       return useAutoplayStore()
     },
@@ -457,7 +498,10 @@ export default {
   created() {
     this.serverUrl = this.authStore.serverUrl
     this.username = this.authStore.username
-    void this.loadLogLevel()
+    // Skip the fetch entirely for an account that can't see the control
+    // this feeds (capabilities.logLevelControl) — no point asking connect
+    // for something nobody here can act on.
+    if (this.authStore.capabilities.logLevelControl) void this.loadLogLevel()
   },
   beforeUnmount() {
     if (this.scanTimer) clearTimeout(this.scanTimer)

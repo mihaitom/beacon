@@ -60,10 +60,38 @@ describe('capabilitiesFor', () => {
     expect(capabilitiesFor('subsonic').libraryScan).toBe(true)
   })
 
-  it('changes nothing but the rescan, whatever the account is', () => {
-    const { libraryScan: _admin, ...adminRest } = capabilitiesFor('subsonic', true)
-    const { libraryScan: _plain, ...plainRest } = capabilitiesFor('subsonic', false)
+  it('changes nothing but the rescan and the log-level control, whatever the account is', () => {
+    const {
+      libraryScan: _adminScan,
+      logLevelControl: _adminLog,
+      ...adminRest
+    } = capabilitiesFor('subsonic', true)
+    const {
+      libraryScan: _plainScan,
+      logLevelControl: _plainLog,
+      ...plainRest
+    } = capabilitiesFor('subsonic', false)
 
     expect(adminRest).toEqual(plainRest)
+  })
+
+  it('offers the log-level control on every server type, to an admin', () => {
+    // Not a media-server capability at all (see ServerCapabilities'
+    // logLevelControl doc comment) — true everywhere the way libraryScan
+    // is, for the same isAdmin reason.
+    expect(capabilitiesFor('subsonic', true).logLevelControl).toBe(true)
+    expect(capabilitiesFor('jellyfin', true).logLevelControl).toBe(true)
+    expect(capabilitiesFor('plex', true).logLevelControl).toBe(true)
+  })
+
+  it('takes the log-level control away from an account that is not an admin', () => {
+    expect(capabilitiesFor('subsonic', false).logLevelControl).toBe(false)
+    expect(capabilitiesFor('jellyfin', false).logLevelControl).toBe(false)
+    expect(capabilitiesFor('plex', false).logLevelControl).toBe(false)
+  })
+
+  it('leaves the log-level control alone while the server has not said either way', () => {
+    expect(capabilitiesFor('subsonic', null).logLevelControl).toBe(true)
+    expect(capabilitiesFor('subsonic').logLevelControl).toBe(true)
   })
 })

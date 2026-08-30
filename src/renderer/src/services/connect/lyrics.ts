@@ -19,9 +19,18 @@ function buildParams(query: LyricsQuery, extra: Record<string, string> = {}): UR
 
 /** Best-match lyrics for a song (connect/routes/lyrics.py's /lyrics/auto)
  * — what the playback UI actually uses, see stores/lyrics.ts. Null when
- * nothing matched well enough (MATCH_THRESHOLD on the backend). */
-export async function autoLyrics(query: LyricsQuery): Promise<AutoLyricsResult | null> {
-  const params = buildParams(query)
+ * nothing matched well enough (MATCH_THRESHOLD on the backend). `sources`
+ * restricts which third-party providers get queried — stores/lyrics.ts
+ * only calls this at all once stores/lyricsProviders.ts has at least one
+ * enabled, and passes exactly that list through, same as searchLyrics()
+ * below already does. An empty/omitted list falls back to every source on
+ * the backend (_parse_sources), which is why the frontend never calls this
+ * without first checking there's something to pass. */
+export async function autoLyrics(
+  query: LyricsQuery,
+  sources?: string[],
+): Promise<AutoLyricsResult | null> {
+  const params = buildParams(query, sources?.length ? { sources: sources.join(',') } : {})
   return fetchConnect<AutoLyricsResult | null>(`/lyrics/auto?${params.toString()}`)
 }
 
