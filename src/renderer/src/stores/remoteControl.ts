@@ -6,6 +6,7 @@ import {
   sendRemoteKeepalive,
   pushRemoteState,
   respondToRemoteQuery,
+  respondToRemoteCommand,
 } from '@/services/remoteControl/http'
 import { RemoteAgentEventSource } from '@/services/remoteControl/agent'
 import {
@@ -169,7 +170,18 @@ export const useRemoteControlStore = defineStore('remoteControl', {
       const auth = useAuthStore()
       agentSource = new RemoteAgentEventSource(auth.apiUrl, auth.connectToken)
       agentSource.onCommand = (message) => {
+        // POST /remote/command (routes/remote.py) now blocks the phone's
+        // request on this ack instead of returning as soon as it's
+        // broadcast — see that endpoint's own comment. handleRemoteCommand
+        // itself already swallows the failures worth swallowing (a
+        // not-found song, a failed device switch, ...), so `error` here
+        // only ever fires for something it didn't anticipate.
         void handleRemoteCommand(message.type, message.payload)
+          .then(() => respondToRemoteCommand(message.request_id, { success: true }))
+          .catch((error) => {
+            console.error('[remoteControl] Failed to handle command:', error)
+            return respondToRemoteCommand(message.request_id, { error: String(error) })
+          })
       }
       agentSource.onQuery = (message) => {
         void resolveRemoteQuery(message.type, message.payload)

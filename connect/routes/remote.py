@@ -237,12 +237,30 @@ async def phone_events():
 
 @router.post("/command", dependencies=[Depends(require_remote_password)])
 async def send_command(req: CommandRequest):
+    """Blocks until the renderer has actually applied the command (or timed
+    out) instead of the previous fire-and-forget 202 — a phone tapping
+    "Next" twice in a row had no way to know the first tap had landed
+    before firing the second. Reuses the exact same pending-Future
+    machinery _query() already relies on below (and the *same*
+    /query-response endpoint the renderer answers it through — the future
+    doesn't care whether the data it's resolved with came from a query or
+    a command, so there was no reason to duplicate the relay for this)."""
     if not remote.renderer_connected:
         raise HTTPException(status_code=503, detail="Beacon is not connected")
+    request_id = uuid.uuid4().hex
+    future = remote.new_pending(request_id)
     await remote.command_bus.broadcast(
-        {"kind": "command", "type": req.type, "payload": req.payload}
+        {"kind": "command", "request_id": request_id, "type": req.type, "payload": req.payload}
     )
-    return JSONResponse({"success": True}, status_code=202)
+    try:
+        result = await asyncio.wait_for(future, timeout=QUERY_TIMEOUT)
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Beacon did not respond in time")
+    finally:
+        remote.drop_pending(request_id)
+    if isinstance(result, dict) and result.get("error"):
+        raise HTTPException(status_code=502, detail=str(result["error"]))
+    return JSONResponse({"success": True}, status_code=200)
 
 
 async def _query(query_type: str, payload: dict) -> dict:

@@ -45,7 +45,6 @@ async function request(path, options = {}) {
     const text = await response.text().catch(() => '');
     throw new Error(`Request failed (${response.status}): ${text}`);
   }
-  if (response.status === 202) return {};
   return response.json();
 }
 

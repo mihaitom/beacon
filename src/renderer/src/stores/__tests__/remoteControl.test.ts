@@ -19,6 +19,7 @@ vi.mock('@/services/remoteControl/http', async (importOriginal) => {
     sendRemoteKeepalive: vi.fn(),
     pushRemoteState: vi.fn(),
     respondToRemoteQuery: vi.fn(),
+    respondToRemoteCommand: vi.fn(),
   }
 })
 
@@ -39,7 +40,9 @@ vi.mock('@/services/remoteControl/commands', async (importOriginal) => {
 // class so startAgent()'s wiring can be exercised directly.
 class FakeAgent {
   static instances: FakeAgent[] = []
-  onCommand: ((message: { type: string; payload: Record<string, unknown> }) => void) | null = null
+  onCommand:
+    | ((message: { request_id: string; type: string; payload: Record<string, unknown> }) => void)
+    | null = null
   onQuery:
     | ((message: { request_id: string; type: string; payload: Record<string, unknown> }) => void)
     | null = null
@@ -72,7 +75,8 @@ describe('remoteControl store', () => {
     vi.mocked(remoteHttp.sendRemoteKeepalive).mockReset().mockResolvedValue(undefined)
     vi.mocked(remoteHttp.pushRemoteState).mockReset().mockResolvedValue(undefined)
     vi.mocked(remoteHttp.respondToRemoteQuery).mockReset().mockResolvedValue(undefined)
-    vi.mocked(commands.handleRemoteCommand).mockClear()
+    vi.mocked(remoteHttp.respondToRemoteCommand).mockReset().mockResolvedValue(undefined)
+    vi.mocked(commands.handleRemoteCommand).mockReset().mockResolvedValue(undefined)
     vi.mocked(commands.resolveRemoteQuery).mockClear()
     FakeAgent.instances = []
     // A plain `function`, not an arrow — mockImplementation() invokes this
@@ -225,7 +229,7 @@ describe('remoteControl store', () => {
       expect(FakeAgent.instances).toHaveLength(1)
     })
 
-    it('routes an incoming command to handleRemoteCommand()', async () => {
+    it('routes an incoming command to handleRemoteCommand() and acks it', async () => {
       vi.mocked(remoteHttp.enableRemoteControl).mockResolvedValue({
         password: 'secret',
         pin: '1',
@@ -236,10 +240,33 @@ describe('remoteControl store', () => {
       await store.enable()
       const agent = FakeAgent.instances[0]!
 
-      agent.onCommand?.({ type: 'next', payload: { foo: 'bar' } })
+      agent.onCommand?.({ request_id: 'req-2', type: 'next', payload: { foo: 'bar' } })
+      await Promise.resolve()
       await Promise.resolve()
 
       expect(commands.handleRemoteCommand).toHaveBeenCalledWith('next', { foo: 'bar' })
+      expect(remoteHttp.respondToRemoteCommand).toHaveBeenCalledWith('req-2', { success: true })
+    })
+
+    it('acks a command with an error when handleRemoteCommand() rejects', async () => {
+      vi.mocked(remoteHttp.enableRemoteControl).mockResolvedValue({
+        password: 'secret',
+        pin: '1',
+        lan_ip: '',
+        port: 0,
+      })
+      const store = useRemoteControlStore()
+      await store.enable()
+      const agent = FakeAgent.instances[0]!
+      vi.mocked(commands.handleRemoteCommand).mockRejectedValueOnce(new Error('boom'))
+
+      agent.onCommand?.({ request_id: 'req-3', type: 'next', payload: {} })
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(remoteHttp.respondToRemoteCommand).toHaveBeenCalledWith('req-3', {
+        error: 'Error: boom',
+      })
     })
 
     it('resolves an incoming query and posts the answer back', async () => {

@@ -224,7 +224,13 @@ def test_command_503_when_no_renderer_connected(client):
     assert resp.status_code == 503
 
 
-def test_command_accepted_when_renderer_connected(client):
+def test_command_504_on_timeout(client, monkeypatch):
+    # Same reasoning/pattern as test_songs_query_504_on_timeout below —
+    # send_command() now blocks on the same pending-Future relay _query()
+    # does (see that endpoint's own comment), so the terminating case worth
+    # covering at the HTTP level is the timeout, not a success that would
+    # need a renderer to actually answer it (see this module's docstring).
+    monkeypatch.setattr(remote_routes, "QUERY_TIMEOUT", 0.05)
     client.post("/remote/enable")
     remote.renderer_connected = True
     resp = client.post(
@@ -232,7 +238,7 @@ def test_command_accepted_when_renderer_connected(client):
         json={"type": "toggle-play", "payload": {}},
         headers={"X-Remote-Password": remote.password},
     )
-    assert resp.status_code == 202
+    assert resp.status_code == 504
 
 
 def test_songs_query_504_on_timeout(client, monkeypatch):

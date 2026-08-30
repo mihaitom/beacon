@@ -8,6 +8,7 @@
 
 export interface RemoteCommandMessage {
   kind: 'command'
+  request_id: string
   type: string
   payload: Record<string, unknown>
 }

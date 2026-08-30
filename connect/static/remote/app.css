@@ -472,6 +472,12 @@ h2.section-title { font-size: 1.1rem; margin: 4px 0 10px; }
 
 .sheet button:active { background: var(--surface-2); }
 
+/* Every button in the sheet is disabled while one action's onSelect() is
+ * in flight (sheet.js) — the default disabled styling for a plain
+ * unstyled <button> here (background: none, no border) is otherwise
+ * indistinguishable from enabled. */
+.sheet button:disabled { opacity: 0.5; }
+
 .sheet-icon { font-size: 1.2rem; margin-right: 14px; color: var(--text-muted); }
 
 .sheet-header {

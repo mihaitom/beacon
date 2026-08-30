@@ -49,3 +49,18 @@ export function respondToRemoteQuery(requestId: string, data: unknown): Promise<
     body: { request_id: requestId, data },
   })
 }
+
+/** Acks a phone-issued command relayed via agent.ts's onCommand(), once
+ * handleRemoteCommand() has actually applied it — POST /remote/command
+ * (routes/remote.py) blocks on this the same way a query blocks on
+ * respondToRemoteQuery() above; it's the identical relay; this is just a
+ * name at the call site that says what's actually being answered. */
+export function respondToRemoteCommand(
+  requestId: string,
+  data: { error: string } | { success: true },
+): Promise<void> {
+  return fetchConnect<void>('/remote/query-response', {
+    method: 'POST',
+    body: { request_id: requestId, data },
+  })
+}
