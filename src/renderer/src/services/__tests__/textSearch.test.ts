@@ -38,4 +38,24 @@ describe('matchesAllTerms', () => {
   it('collapses repeated whitespace between words', () => {
     expect(matchesAllTerms('Michael   Jackson', 'Bad', 'Michael Jackson')).toBe(true)
   })
+
+  describe('accent-insensitivity', () => {
+    // The reported bug: "La Revolution" (typed without the accent) found
+    // nothing against a title actually stored as "La Rèvolution".
+    it('finds an accented title from an unaccented query', () => {
+      expect(matchesAllTerms('La Revolution', 'La Rèvolution', 'Some Artist', 'Some Album')).toBe(
+        true,
+      )
+    })
+
+    it('finds an unaccented title from an accented query too', () => {
+      expect(matchesAllTerms('Rèvolution', 'La Revolution', 'Some Artist', 'Some Album')).toBe(true)
+    })
+
+    it('matches regardless of which specific accent is used', () => {
+      expect(matchesAllTerms('cafe', 'Café')).toBe(true)
+      expect(matchesAllTerms('resume', 'Résumé')).toBe(true)
+      expect(matchesAllTerms('naive', 'Naïve')).toBe(true)
+    })
+  })
 })
