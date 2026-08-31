@@ -30,16 +30,19 @@
         </div>
       </div>
       <div v-else-if="hasContent" class="hero-body">
-        <!-- Same "click the artwork to play" affordance as AlbumCard.vue's
-         - playOnClick and SongRow.vue's cover — this one already has a
-         - dedicated play button next to it, so this is a shortcut for that,
-         - not the only way to trigger it. -->
+        <!-- Whichever of the two the hero is currently showing: the
+         - artwork of something playing opens Now Playing (see coverTo),
+         - and the "nothing playing, here's your most recent album"
+         - fallback keeps AlbumCard.vue's/SongRow.vue's own "click the
+         - artwork to play" affordance. Either way it is a shortcut for
+         - something already reachable next to it — the play button, or the
+         - player bar's own artwork — never the only way there. -->
         <cover-art
           :cover-art-id="coverId"
           :image-url="imageUrl"
           :size="132"
           class="hero-cover cover-shadow hero-cover--clickable"
-          @click="$emit('play')"
+          @click="onCoverClick"
         />
         <div class="hero-info min-width-0">
           <div class="eyebrow-label mb-1">{{ eyebrow }}</div>
@@ -125,6 +128,14 @@ export default {
     // playing, `title` is the *song's* name instead, which has no page of
     // its own in this app to link to.
     titleTo: { type: String as PropType<string | null>, default: null },
+    // Where clicking the artwork goes, when it leads anywhere: Now Playing
+    // while something is actually playing. Null in the "nothing playing,
+    // here's your most recent album" state, where the artwork keeps its
+    // older meaning and starts that album — Now Playing would have nothing
+    // to show there, and the artwork on screen is a suggestion rather than
+    // something already loaded. HomeView.vue decides which state it is in,
+    // same division of labour as titleTo above.
+    coverTo: { type: String as PropType<string | null>, default: null },
     // Plain-text-only fallback subtitle (radio's "Internet Radio" label) —
     // used only when neither artistName nor albumName is given below.
     subtitle: { type: String, default: '' },
@@ -155,6 +166,12 @@ export default {
     backdropUrl(): string | null {
       if (this.coverId) return useLibraryStore().client().coverArtUrl(this.coverId, 300)
       return this.imageUrl
+    },
+  },
+  methods: {
+    onCoverClick() {
+      if (this.coverTo) this.$router.push(this.coverTo)
+      else this.$emit('play')
     },
   },
   watch: {

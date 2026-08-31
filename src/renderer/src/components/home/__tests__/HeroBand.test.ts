@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createVuetify } from 'vuetify'
@@ -17,12 +17,15 @@ function makeRouter() {
       { path: '/', component: { template: '<div />' } },
       { path: '/artists/:id', component: { template: '<div />' } },
       { path: '/albums/:id', component: { template: '<div />' } },
+      { path: '/now-playing', component: { template: '<div />' } },
     ],
   })
 }
 
+let router: ReturnType<typeof makeRouter>
+
 async function mountBand(props: Record<string, unknown> = {}) {
-  const router = makeRouter()
+  router = makeRouter()
   await router.push('/')
   await router.isReady()
   return mount(HeroBand, {
@@ -132,5 +135,37 @@ describe('HeroBand', () => {
         false,
       )
     })
+  })
+})
+
+describe('HeroBand artwork click', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('opens Now Playing when the artwork is of something actually playing', async () => {
+    const wrapper = await mountBand({ coverTo: '/now-playing' })
+
+    await wrapper.find('.hero-cover').trigger('click')
+    // router.push resolves asynchronously — isReady() only covers the
+    // *initial* navigation and would pass before this one has landed.
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/now-playing')
+    // Navigating instead of starting playback — the artwork is a picture
+    // of what is already playing, and the play/pause pill next to it is
+    // still the way to stop or restart it.
+    expect(wrapper.emitted('play')).toBeUndefined()
+  })
+
+  it('still plays when there is nothing playing to navigate to', async () => {
+    // The "nothing playing, here's your most recent album" state: the
+    // artwork is a suggestion, and Now Playing would have nothing to show.
+    const wrapper = await mountBand()
+
+    await wrapper.find('.hero-cover').trigger('click')
+
+    expect(wrapper.emitted('play')).toHaveLength(1)
+    expect(router.currentRoute.value.path).toBe('/')
   })
 })

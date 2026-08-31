@@ -6,6 +6,7 @@
       :eyebrow="heroEyebrow"
       :title="heroTitle"
       :title-to="heroTitleTo"
+      :cover-to="heroCoverTo"
       :subtitle="heroSubtitle"
       :artist-name="heroArtistName"
       :artist-id="heroArtistId"
@@ -281,6 +282,17 @@ export default {
     // "the thing the play button plays".
     heroTitleTo(): string | null {
       return null
+    },
+    // Where the hero's artwork leads. Now Playing whenever there is
+    // actually something playing — the same shortcut the player bar's own
+    // artwork already offers, and the artwork here is a picture of that
+    // exact thing. Null in the third state (nothing playing, showing the
+    // most recent album instead): the artwork there is a *suggestion*, so
+    // it keeps its older "click to play this" meaning, and Now Playing
+    // would have had nothing to show anyway.
+    heroCoverTo(): string | null {
+      const playing = this.playbackStore.currentSong || this.playbackStore.radioStation
+      return playing ? '/now-playing' : null
     },
     // Plain-text-only fallback (HeroBand.vue only falls back to this when
     // heroArtistName is null, i.e. the radio case below).

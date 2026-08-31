@@ -64,6 +64,39 @@ describe('HomeView hero', () => {
     vi.restoreAllMocks()
   })
 
+  describe('where the hero artwork leads', () => {
+    it('points at Now Playing while a song is playing', async () => {
+      const wrapper = await mountHome()
+      usePlaybackStore().setQueue([makeSong('a')], 0)
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.getComponent(HeroBand).props('coverTo')).toBe('/now-playing')
+    })
+
+    it('points at Now Playing for a radio station too', async () => {
+      const wrapper = await mountHome()
+      usePlaybackStore().radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.getComponent(HeroBand).props('coverTo')).toBe('/now-playing')
+    })
+
+    it('points nowhere for the "here is your most recent album" fallback', async () => {
+      // Nothing is playing, so Now Playing would be empty — the artwork
+      // keeps its older "click to play this" meaning there instead.
+      const wrapper = await mountHome()
+      await wrapper.vm.$nextTick()
+
+      expect(usePlaybackStore().currentSong).toBeNull()
+      expect(wrapper.getComponent(HeroBand).props('coverTo')).toBeNull()
+    })
+  })
+
   describe('when a Song Radio can be started from the hero', () => {
     it('offers it while a song is playing', async () => {
       const wrapper = await mountHome()

@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- On Home, clicking the artwork of whatever is playing opens the Now Playing screen, the same shortcut the player bar's artwork already offers. When nothing is playing and Home is showing your most recent album instead, clicking it still starts that album, as before
 - Settings that stay on a device are now kept separately per account. Two accounts sharing one computer or browser no longer see each other's audio quality, saved queue, cached library or dismissed update notice - each starts from its own. Whatever is set today is carried over to the account that's logged in the first time you run this version
 - On the phone remote, an action now waits until Beacon has actually carried it out. The action sheet keeps its spinner and stays disabled until then rather than closing immediately, and a short message appears if something didn't get through. Previously a tap that hadn't landed yet looked exactly like one that had, which made it easy to add the same song to the queue twice
 - The log level under Settings' Advanced section is now only offered to accounts that are also allowed to trigger a library scan, the same rule the scan button itself already followed
