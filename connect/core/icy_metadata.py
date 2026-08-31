@@ -33,7 +33,15 @@ from lyrics.shared import USER_AGENT
 logger = logging.getLogger("connect.icy_metadata")
 
 _TIMEOUT = httpx.Timeout(10.0, read=None)  # metadata trickles in for as long as the station plays
-_client = httpx.AsyncClient(timeout=_TIMEOUT, headers={"User-Agent": USER_AGENT})
+# follow_redirects, unlike most of this codebase's other httpx clients: a
+# station's published URL is very often a load balancer that 302s to
+# whichever node answers today (rockantenne.de's own mp3channels host hands
+# out s1/s2/s5/s6-webradio.* per request). Without this, every single
+# connection attempt raises on the redirect instead of ever reaching the
+# audio, so a perfectly working station looks permanently unreachable.
+_client = httpx.AsyncClient(
+    timeout=_TIMEOUT, headers={"User-Agent": USER_AGENT}, follow_redirects=True
+)
 
 _TITLE_RE = re.compile(rb"StreamTitle='(.*?)';", re.DOTALL)
 
@@ -43,6 +51,11 @@ _TITLE_RE = re.compile(rb"StreamTitle='(.*?)';", re.DOTALL)
 # waiting on this one to resume within any particular time, so there's no
 # reason for it to hammer a struggling server.
 _RECONNECT_DELAY_SECONDS = 5.0
+
+# ...and how far that backs off while the failures keep coming. A station
+# that can't be reached now is usually still unreachable in five seconds,
+# and this watch runs for as long as the radio plays - potentially hours.
+_MAX_RECONNECT_DELAY_SECONDS = 60.0
 
 
 async def _watch_once(url: str, on_title_change: Callable[[str], None]) -> bool:
@@ -73,18 +86,48 @@ async def _watch_once(url: str, on_title_change: Callable[[str], None]) -> bool:
     return True
 
 
+def _reconnect_delay(consecutive_failures: int) -> float:
+    """How long to wait before the next attempt. The backoff applies to a
+    run of *failures* only: a stream that connected fine and simply ended
+    (a station restarting its encoder, say) waits the base delay every
+    time, however often it happens. The exponent is capped before the
+    shift rather than after, so an hours-long outage doesn't compute
+    2**(very large) just to throw the result away."""
+    steps = min(max(consecutive_failures - 1, 0), 10)
+    return min(_RECONNECT_DELAY_SECONDS * 2**steps, _MAX_RECONNECT_DELAY_SECONDS)
+
+
 async def watch(url: str, on_title_change: Callable[[str], None]) -> None:
     """Runs until cancelled — see SessionState.start_radio_metadata_watch()/
     stop_radio_metadata_watch() for the lifecycle that starts and cancels
     this. `on_title_change` is called with a fresh, non-empty title every
     time the stream's own tag changes; never called at all for a station
     with no ICY support."""
+    failures = 0
+    last_failure: str | None = None
     while True:
         try:
             worth_retrying = await _watch_once(url, on_title_change)
+            failures = 0
+            last_failure = None
         except httpx.HTTPError as e:
-            logger.info(f"[icy-metadata] {url} unreachable: {type(e).__name__}: {e}")
+            # First line only: httpx's own HTTPStatusError message is three
+            # lines long (the status, the redirect target, a docs link), and
+            # this is a routine background retry, not something anyone needs
+            # a paragraph about.
+            failure = f"{type(e).__name__}: {str(e).splitlines()[0]}"
+            # A run of identical failures is one piece of information, not
+            # one per attempt - a station that is down stays down, and this
+            # keeps retrying for the whole time the radio plays. Only the
+            # first of a run is worth an INFO line; the repeats stay
+            # available at debug level for anyone actually chasing one.
+            logger.log(
+                logging.DEBUG if failure == last_failure else logging.INFO,
+                f"[icy-metadata] {url} unreachable: {failure}",
+            )
+            last_failure = failure
+            failures += 1
             worth_retrying = True
         if not worth_retrying:
             return
-        await asyncio.sleep(_RECONNECT_DELAY_SECONDS)
+        await asyncio.sleep(_reconnect_delay(failures))

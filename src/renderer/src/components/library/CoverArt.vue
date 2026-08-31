@@ -205,6 +205,13 @@ export default {
       // isn't allowed to read its bytes (see SubsonicClient.isProxyUrl).
       // Mutually exclusive with objectUrl.
       directUrl: null as string | null,
+      // Whether this cover is currently within LAZY_ROOT_MARGIN of the
+      // viewport, as last reported by the observer below. Kept separately
+      // rather than asked for on demand, because the observer is deliberately
+      // torn down the moment it has nothing left to decide (see
+      // setObjectUrl/queueLoad) — this keeps its final answer, which stays
+      // true for a cover that simply never leaves the screen.
+      inView: false,
       observer: null as IntersectionObserver | null,
       settleTimer: null as number | null,
       holdsLoadSlot: false,
@@ -261,11 +268,20 @@ export default {
       // A different cover entirely — drop what's on screen and fetch the new
       // one if this instance had already earned its place (an always-visible
       // instance like the player bar's own art, on every track change).
-      const wasShowing = this.displaySrc !== null || this.holdsLoadSlot
+      //
+      // `inView` is what covers the boot race described above, and it is the
+      // only one of the three that does: an instance whose *first* attempt
+      // failed is showing nothing and holds no slot, so the other two are
+      // both false exactly when a retry is most needed. Nothing else would
+      // ever start one either — an IntersectionObserver only reports
+      // *changes*, and a cover that has been sitting in the viewport since
+      // it mounted (the player bar's own art, for the whole life of the app)
+      // never produces another entry to react to.
+      const shouldLoad = this.displaySrc !== null || this.holdsLoadSlot || this.inView
       this.abortLoad()
       this.setObjectUrl(null)
       this.directUrl = null
-      if (wasShowing) this.queueLoad()
+      if (shouldLoad) this.queueLoad()
     },
   },
   mounted() {
@@ -277,12 +293,15 @@ export default {
     // trusted here.
     const target = this.rootElement()
     if (typeof IntersectionObserver === 'undefined' || !target) {
+      this.inView = true
       this.queueLoad()
       return
     }
     this.observer = new IntersectionObserver(
       (entries) => {
-        if (entries[entries.length - 1]?.isIntersecting) {
+        const isIntersecting = entries[entries.length - 1]?.isIntersecting ?? false
+        this.inView = isIntersecting
+        if (isIntersecting) {
           this.startSettle()
         } else {
           this.cancelSettle()

@@ -463,4 +463,56 @@ describe('CoverArt', () => {
     expect(requests).toHaveLength(MAX + 1)
     expect(requests[MAX]!.url).toContain('cover-queued-2')
   })
+
+  // Regression tests for a second real bug (2026-08-31): after a first
+  // attempt that failed, an always-visible cover - the player bar's own art
+  // - stayed empty for the rest of the app's life. The watcher below only
+  // re-loaded a cover that was showing something or already fetching, and a
+  // failed one is neither; the observer, meanwhile, only ever reports
+  // *changes*, and a cover that never leaves the viewport produces no
+  // further entry to react to. In the packaged app the first attempt fails
+  // routinely: the persisted queue is restored synchronously at startup
+  // (playback store init()), so the bar renders a cover art URL built from
+  // an auth store that has no credential yet.
+
+  it('retries after auth catches up on a cover whose first attempt failed', async () => {
+    useAuthStore().$patch({ connectUrl: 'http://beacon.test', credential: '' })
+    const wrapper = await scrollIntoRest(mountCover({ coverArtId: 'cover-1' }))
+    requests[0]!.fail()
+    await flush()
+    expect(hasImage(wrapper)).toBe(false)
+
+    useAuthStore().$patch({ credential: 'u=thomas&t=abc&s=def' })
+    await flush()
+
+    expect(requests).toHaveLength(2)
+    requests[1]!.succeed()
+    await flush()
+    expect(hasImage(wrapper)).toBe(true)
+  })
+
+  it('retries on the next track after a failed attempt, rather than staying empty', async () => {
+    const wrapper = await scrollIntoRest(mountCover({ coverArtId: 'cover-1' }))
+    requests[0]!.fail()
+    await flush()
+
+    await wrapper.setProps({ coverArtId: 'cover-2' })
+    await flush()
+
+    expect(requests).toHaveLength(2)
+    expect(requests[1]!.url).toContain('cover-2')
+  })
+
+  it('still fetches nothing for a cover that is off screen when its candidates change', async () => {
+    const wrapper = mountCover({ coverArtId: 'cover-1' })
+    lastObserver().emit(true)
+    vi.advanceTimersByTime(20)
+    lastObserver().emit(false) // scrolled past before it ever settled
+
+    await wrapper.setProps({ coverArtId: 'cover-2' })
+    vi.advanceTimersByTime(5000)
+    await flush()
+
+    expect(requests).toHaveLength(0)
+  })
 })

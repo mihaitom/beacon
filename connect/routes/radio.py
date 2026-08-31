@@ -172,7 +172,7 @@ async def _discover_candidates(homepage_url: str) -> list[_Candidate]:
                         _Candidate(url=urljoin(homepage_url, href), size=_parse_sizes(sizes))
                     )
     except httpx.HTTPError as e:
-        logger.info(f"[radio-favicon] {homepage_url} unreachable: {e}")
+        logger.info(f"[radio-favicon] {homepage_url} unreachable: {type(e).__name__}: {e}")
 
     # The implicit browser convention (no <link> needed) — always included
     # as the last resort, even when the HTML fetch above found nothing (or
@@ -287,7 +287,7 @@ async def _try_candidate(candidate: _Candidate) -> Response | None:
     try:
         resp = await _client.get(candidate.url)
     except httpx.HTTPError as e:
-        logger.info(f"[radio-favicon] {candidate.url} unreachable: {e}")
+        logger.info(f"[radio-favicon] {candidate.url} unreachable: {type(e).__name__}: {e}")
         return None
 
     content_type = resp.headers.get("content-type", "")

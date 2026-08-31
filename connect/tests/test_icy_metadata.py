@@ -1,6 +1,7 @@
 """Tests for core/icy_metadata.py — reading a radio stream's ICY
 "now playing" tag."""
 
+import logging
 from contextlib import asynccontextmanager
 from unittest.mock import MagicMock, patch
 
@@ -159,3 +160,104 @@ class TestWatch:
 
         assert call_count == 2
         assert titles == ["Artist - Track", "Artist - Track"]
+
+    async def test_follows_the_redirect_a_load_balancing_station_answers_with(self):
+        # A station's published URL is very often a load balancer that 302s
+        # to whichever node answers this particular request
+        # (rockantenne.de's own hands out s1/s2/s5/s6-webradio.*). This used
+        # to raise on the redirect instead of ever reaching the audio, so a
+        # working station looked permanently unreachable and said so in the
+        # log every five seconds for as long as it played.
+        metaint = 8
+        chunk = _icy_block(b"a" * metaint, "Artist - Track")
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.host == "balancer":
+                return httpx.Response(302, headers={"location": "http://node/stream"})
+            return httpx.Response(200, headers={"icy-metaint": str(metaint)}, content=chunk)
+
+        # Built off the real client's own setting rather than hardcoding
+        # True — this asserts the module is configured to get through a
+        # redirect, not that a client built here happens to be.
+        client = httpx.AsyncClient(
+            transport=httpx.MockTransport(handler),
+            follow_redirects=icy_mod._client.follow_redirects,
+        )
+        titles = []
+        async with client:
+            with patch.object(icy_mod, "_client", client):
+                await icy_mod._watch_once("http://balancer/stream", titles.append)
+
+        assert titles == ["Artist - Track"]
+
+
+class TestWatchFailureHandling:
+    """A watch runs for the whole time a station plays, potentially hours,
+    and reconnects on every failure — so what it does when a station simply
+    can't be reached decides whether the log stays readable."""
+
+    @staticmethod
+    def _failing_stream(error: Exception):
+        """Stands in for _client.stream(...), which raises at call time —
+        before `async with` ever gets to enter anything."""
+
+        def stream(method, url, headers=None):
+            raise error
+
+        return stream
+
+    async def _run_until(self, error: Exception, attempts: int) -> list[float]:
+        """Lets watch() fail `attempts` times, returning the delay it slept
+        for after each. watch() has no other exit condition while a station
+        keeps failing, hence the sentinel."""
+        delays: list[float] = []
+
+        class _StopTest(Exception):
+            pass
+
+        async def fake_sleep(seconds):
+            delays.append(seconds)
+            if len(delays) >= attempts:
+                raise _StopTest()
+
+        with (
+            patch.object(icy_mod._client, "stream", self._failing_stream(error)),
+            patch.object(icy_mod.asyncio, "sleep", fake_sleep),
+        ):
+            try:
+                await icy_mod.watch("http://station", lambda t: None)
+            except _StopTest:
+                pass
+        return delays
+
+    async def test_logs_a_run_of_identical_failures_once_not_once_per_attempt(self, caplog):
+        with caplog.at_level(logging.DEBUG, logger="connect.icy_metadata"):
+            await self._run_until(httpx.ConnectError("All connection attempts failed"), 4)
+
+        info = [r for r in caplog.records if r.levelno == logging.INFO]
+        assert len(info) == 1
+        assert "All connection attempts failed" in info[0].message
+        # The repeats aren't thrown away, just demoted out of the way.
+        assert len([r for r in caplog.records if r.levelno == logging.DEBUG]) == 3
+
+    async def test_logs_one_line_per_failure_not_the_libraries_own_three(self, caplog):
+        # httpx's HTTPStatusError message is three lines (the status, the
+        # redirect target, a docs link) - one routine background retry used
+        # to take three lines of log.
+        error = httpx.HTTPStatusError(
+            "Redirect response '302 Found' for url 'http://station'\n"
+            "Redirect location: 'http://node'\n"
+            "For more information check: https://example.test",
+            request=httpx.Request("GET", "http://station"),
+            response=httpx.Response(302),
+        )
+        with caplog.at_level(logging.INFO, logger="connect.icy_metadata"):
+            await self._run_until(error, 2)
+
+        assert len(caplog.records) == 1
+        assert "\n" not in caplog.records[0].message
+        assert "For more information check" not in caplog.records[0].message
+
+    async def test_backs_off_instead_of_reconnecting_every_five_seconds_forever(self):
+        delays = await self._run_until(httpx.ConnectError("nope"), 6)
+        assert delays == [5.0, 10.0, 20.0, 40.0, 60.0, 60.0]

@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed the album cover next to the song title in the player bar staying empty for the whole session in the installed app. When Beacon starts up with a saved queue, the bar is drawn before the connection to your server is ready, so that very first cover can't load - and nothing ever tried again, not even on the next track. It now retries as soon as the connection is there, and again on every track change
 - Fixed the personalized recommendations toggle missing from Settings altogether for accounts that aren't allowed to trigger a library scan, such as a regular non-admin Navidrome account. It applies to every account and every server, and is now shown to all of them
 - Fixed the filter box on Songs, Albums, Artists, Genres and Playlists not finding a title, artist or album when the typed text left out an accent the source used, such as searching "revolution" for a song actually named "La Rèvolution". Works the other way round too, and regardless of which specific accent is involved
 - Fixed the stream-info panel (in the cast device picker) claiming a cast radio station was being transcoded to MP3, regardless of the audio quality chosen for casting. Radio is never transcoded by Beacon - it hands the station's own stream straight to the target device - so the panel now shows nothing while radio plays, same as it already did during local playback
