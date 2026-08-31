@@ -84,4 +84,10 @@ export interface RadioStation {
   name: string
   streamUrl: string
   homePageUrl: string | null
+  // Radio Browser's own favicon URL (RadioBrowserStation.favicon) — only
+  // ever set for a station played straight out of RadioView.vue's discover
+  // dialog without being added first (see playBrowsedStation()'s own
+  // comment); a saved/library station has no equivalent and relies on
+  // homePageUrl scraping instead (see radioFaviconUrl()'s own docstring).
+  favicon?: string
 }

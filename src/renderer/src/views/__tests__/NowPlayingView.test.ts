@@ -174,6 +174,21 @@ describe('NowPlayingView', () => {
       expect(wrapper.find('.now-playing__artist-link').exists()).toBe(false)
       expect(wrapper.find('.now-playing__album-link').exists()).toBe(false)
     })
+
+    it("shows the station's own now-playing tag in place of the artist link", async () => {
+      const { wrapper } = await mountView()
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: '',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      playback.radioNowPlaying = 'Artist - Track'
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.get('.now-playing__radio-tag').text()).toBe('Artist - Track')
+    })
   })
 
   describe('visualizer availability', () => {

@@ -29,6 +29,11 @@ import { createEdgeDetector } from '@/services/playback/edgeDetector'
 import { diffCastQueue } from '@/services/playback/queueReconcile'
 import type { RepeatMode } from '@/services/playback/types'
 import { resolveRadioStation } from '@/services/playback/radioStation'
+import {
+  fetchRadioMetadata,
+  startRadioMetadataWatch,
+  stopRadioMetadataWatch,
+} from '@/services/connect/radioMetadata'
 import { buildCastQualityPayload, buildCastQueuePayload } from '@/services/playback/castPayload'
 import {
   clearPersistedPlayback,
@@ -96,6 +101,14 @@ interface PlaybackState {
    */
   activeLocalStream: LocalStreamPlan | null
   radioStation: RadioStation | null
+  /** The current station's own ICY "now playing" tag (services/connect/
+   * radioMetadata.ts) — null both before the backend's watch has seen one
+   * yet and for a station with no ICY support at all; callers don't need
+   * to tell those apart (see fetchRadioMetadata()'s own docstring).
+   * Reset to null everywhere radioStation itself changes, so a stale
+   * title from the *previous* station never lingers even briefly on
+   * screen while the poll below catches up to the new one. */
+  radioNowPlaying: string | null
   initialized: boolean
 }
 
@@ -279,6 +292,7 @@ export const usePlaybackStore = defineStore('playback', {
       castQuality: quality.cast,
       activeLocalStream: null,
       radioStation: null,
+      radioNowPlaying: null,
       initialized: false,
     }
   },
@@ -421,6 +435,27 @@ export const usePlaybackStore = defineStore('playback', {
         this.localPosition = positionTracker.extrapolate(performance.now(), this.duration)
       }, 200)
 
+      // Polls this session's ICY "now playing" tag (services/connect/
+      // radioMetadata.ts) for whichever station is current - pushed from
+      // the connect backend's own background watch, not derived locally,
+      // since a plain HTML5 <audio> element never sees it at all itself.
+      // A no-op whenever no radio is playing, same as the position-
+      // smoothing interval above, so this is cheap to just leave running
+      // for the app's whole lifetime rather than starting/stopping it
+      // around every radio play/stop.
+      setInterval(() => {
+        const station = this.radioStation
+        if (!station) return
+        fetchRadioMetadata()
+          .then((title) => {
+            // The station may have changed while this was in flight - a
+            // stale answer for the *previous* one must never overwrite
+            // this one's (already-reset-to-null) title.
+            if (this.radioStation?.streamUrl === station.streamUrl) this.radioNowPlaying = title
+          })
+          .catch(() => {})
+      }, 8000)
+
       // Keeps the persisted snapshot fresh so a reload always has something
       // recent to resume from. Debounced — this fires on every playback
       // mutation, including the ~4x/sec local position tick, so writing on
@@ -529,6 +564,7 @@ export const usePlaybackStore = defineStore('playback', {
         if (restoredWasPlaying) {
           getAudioEngine().play(this.radioStation.streamUrl)
           this.isPlaying = true
+          startRadioMetadataWatch(this.radioStation.streamUrl)
         }
         return
       }
@@ -558,7 +594,10 @@ export const usePlaybackStore = defineStore('playback', {
       // Casting is over; there is nothing left to resume on a device.
       this.castInterrupted = false
       if (this.radioStation) {
-        if (this.isPlaying) getAudioEngine().play(this.radioStation.streamUrl)
+        if (this.isPlaying) {
+          getAudioEngine().play(this.radioStation.streamUrl)
+          startRadioMetadataWatch(this.radioStation.streamUrl)
+        }
         return
       }
       const song = this.currentSong
@@ -588,6 +627,7 @@ export const usePlaybackStore = defineStore('playback', {
           this.queue = []
           this.currentIndex = -1
           this.radioStation = await resolveRadioStation(status.radio.url, status.radio.title)
+          this.radioNowPlaying = null
         }
         return
       }
@@ -682,6 +722,10 @@ export const usePlaybackStore = defineStore('playback', {
         // state as-is rather than adopting a queue with a hole in it; the
         // next status tick tries again.
         if (neededIds.some((id) => !resolvedById.has(id))) return
+        if (this.radioStation) {
+          stopRadioMetadataWatch()
+          this.radioNowPlaying = null
+        }
         this.radioStation = null
         if (!queueMatches) this.queue = remoteQueueIds.map((id) => resolvedById.get(id)!)
         if (!originalMatches)
@@ -706,6 +750,10 @@ export const usePlaybackStore = defineStore('playback', {
      * always started on track 1 in its original, unshuffled position,
      * shuffle only kicking in from the second song onward. */
     setQueue(songs: Song[], startIndex = 0, pinFirst = true): void {
+      if (this.radioStation) {
+        stopRadioMetadataWatch()
+        this.radioNowPlaying = null
+      }
       this.radioStation = null
       this.originalQueue = [...songs]
       // Unshuffled, this.queue is `songs` in the same order, so startIndex
@@ -860,7 +908,14 @@ export const usePlaybackStore = defineStore('playback', {
       this.queue = []
       this.currentIndex = -1
       this.radioStation = station
+      this.radioNowPlaying = null
       this.localPosition = 0
+      // Local playback never otherwise touches the connect backend at all
+      // (see services/connect/radioMetadata.ts's own docstring) - the
+      // casting branch below also starts one on its own via /play-url, so
+      // this call is a harmless, idempotent repeat there rather than a
+      // second, redundant watch.
+      startRadioMetadataWatch(station.streamUrl)
 
       if (connect.isActive) {
         await connectPlayback.playUrl(station.streamUrl, station.name, {
@@ -1366,13 +1421,17 @@ export const usePlaybackStore = defineStore('playback', {
     async stop(): Promise<void> {
       const connect = useConnectStore()
       if (connect.isActive) {
+        // Also stops this session's radio-metadata watch on the backend,
+        // if one was running — see routes/playback.py's /stop.
         await connectPlayback.stop()
       } else {
         getAudioEngine().stop()
+        if (this.radioStation) stopRadioMetadataWatch()
       }
       this.isPlaying = false
       this.localPosition = 0
       this.bufferedPosition = 0
+      this.radioNowPlaying = null
     },
 
     /** Called from authStore.logout() — without this, the queue/currentSong

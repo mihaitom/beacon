@@ -1,4 +1,6 @@
-"""routes/radio.py — GET /radio-favicon
+"""routes/radio.py — GET /radio-favicon, GET /radio-browser/search,
+GET /radio-browser/countries, POST /radio-browser/click/{stationuuid},
+POST /radio-metadata/start, POST /radio-metadata/stop, GET /radio-metadata
 
 Internet radio stations are Navidrome's own resource (createInternetRadioStation
 etc., proxied straight through routes/proxy.py) and have no favicon concept of
@@ -6,8 +8,29 @@ their own. This fetches one directly from a station's homepage_url on the
 frontend's behalf — an <img src> can't do this itself (the station's homepage is
 on a third-party host with no CORS allowance for this app, and a direct browser
 fetch would also leak the browsing user's own IP to every radio station's host on
-every single radio list render, not just once from here).
-"""
+every single radio list render, not just once from here). The optional `hint`
+query param is an already-known favicon URL (Radio Browser hands one back with
+every search result — see core/radio_browser.py) to try before falling back
+to scraping the homepage, still through this same proxy for the identical
+IP-leak reason.
+
+The /radio-browser/* group is unrelated to any of that — a thin HTTP wrapper
+around core/radio_browser.py's lookup against the public Radio Browser
+directory, for RadioView.vue's "browse stations" dialog: /search to find a
+station to add in the first place (rather than requiring a stream URL typed
+in by hand), /countries to back that dialog's country filter dropdown with
+values Radio Browser actually recognizes (see core/radio_browser.py's own
+docstring for why there is no equivalent /languages).
+
+/radio-metadata/* is unrelated to either of those too — a thin wrapper
+around core/session.py's start_radio_metadata_watch()/
+stop_radio_metadata_watch(), for a station's ICY "now playing" tag (see
+core/icy_metadata.py's own docstring for the protocol and why a plain
+HTML5 `<audio>` element can never read it itself). /start and /stop are
+called explicitly by the frontend for every radio play/stop, local
+playback included — /play-url already starts one for casting on its own,
+but local playback never calls that at all, so it has no other hook to
+piggyback on."""
 
 import base64
 import binascii
@@ -20,10 +43,13 @@ from urllib.parse import unquote_to_bytes, urljoin, urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from PIL import Image, UnidentifiedImageError
+from pydantic import BaseModel
 
 from core.auth import require_token
+from core.radio_browser import list_countries, register_click, search_stations
+from core.session import SessionState, require_authenticated_session
 
 logger = logging.getLogger("connect.radio")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -242,16 +268,72 @@ def _select(candidates: list[_Candidate], min_size: int) -> list[_Candidate]:
     return meets + remainder
 
 
+async def _try_candidate(candidate: _Candidate) -> Response | None:
+    """Fetches and validates one candidate, or None for anything wrong with
+    it (unreachable, too large, not actually an image) — the shared shape
+    both the cascade below and the Radio Browser favicon hint use, so a
+    dead link is handled exactly one way regardless of which list it came
+    from."""
+    if candidate.url.startswith("data:"):
+        # Nothing to fetch — see _decode_data_uri()'s own comment.
+        decoded = _decode_data_uri(candidate.url)
+        if decoded is None:
+            return None
+        content, content_type = decoded
+        if len(content) > _MAX_BYTES or not content_type.startswith("image/"):
+            return None
+        return _favicon_response(content, content_type)
+
+    try:
+        resp = await _client.get(candidate.url)
+    except httpx.HTTPError as e:
+        logger.info(f"[radio-favicon] {candidate.url} unreachable: {e}")
+        return None
+
+    content_type = resp.headers.get("content-type", "")
+    if (
+        resp.status_code != 200
+        or len(resp.content) > _MAX_BYTES
+        or not content_type.startswith("image/")
+    ):
+        return None
+
+    return _favicon_response(resp.content, content_type)
+
+
 @router.get("/radio-favicon")
-async def radio_favicon(url: str = Query(...), min_size: int = Query(default=0)) -> Response:
+async def radio_favicon(
+    # Optional: a station played straight out of the discover dialog
+    # without being added can carry a `hint` but no homepage at all (see
+    # RadioStation.favicon's own comment in types/library.ts) — `hint` alone
+    # is still enough to resolve a favicon for one of those, see below.
+    url: str = Query(default=""),
+    min_size: int = Query(default=0),
+    hint: str = Query(default=""),
+) -> Response:
     # Same http(s)-only restriction as /play-url's radio URL (routes/
     # playback.py) — this backend has LAN access (that's its whole job),
     # so fetching an arbitrary caller-supplied URL server-side is treated
     # with the same care there as here, not a new/different trust level.
-    if not url.lower().startswith(("http://", "https://")):
+    # Only enforced when a homepage was actually given — see `url`'s own
+    # comment above for why an empty one is valid too.
+    if url and (not url.lower().startswith(("http://", "https://")) or not urlparse(url).netloc):
         return Response(status_code=400)
-    if not urlparse(url).netloc:
-        return Response(status_code=400)
+
+    # `hint` is Radio Browser's own `favicon` field (see core/radio_browser.py's
+    # _to_station()) — it already named the right icon, so there's no reason
+    # to pay for scraping `url`'s homepage at all unless this turns out to
+    # be broken. Still routed through this same backend rather than a
+    # direct <img src> in RadioView.vue: that would leak the browsing
+    # user's own IP to the station's favicon host, exactly what this whole
+    # proxy exists to avoid for the homepage-scrape path below.
+    if hint.lower().startswith(("http://", "https://")):
+        fetched = await _try_candidate(_Candidate(url=hint, size=0))
+        if fetched is not None:
+            return fetched
+
+    if not url:
+        return Response(status_code=404)
 
     candidates = await _discover_candidates(url)
 
@@ -260,30 +342,80 @@ async def radio_favicon(url: str = Query(...), min_size: int = Query(default=0))
     # response, ...) shouldn't sink the whole lookup when there's another
     # perfectly good candidate right behind it.
     for candidate in _select(candidates, min_size):
-        if candidate.url.startswith("data:"):
-            # Nothing to fetch — see _decode_data_uri()'s own comment.
-            decoded = _decode_data_uri(candidate.url)
-            if decoded is None:
-                continue
-            content, content_type = decoded
-            if len(content) > _MAX_BYTES or not content_type.startswith("image/"):
-                continue
-            return _favicon_response(content, content_type)
-
-        try:
-            resp = await _client.get(candidate.url)
-        except httpx.HTTPError as e:
-            logger.info(f"[radio-favicon] {candidate.url} unreachable: {e}")
-            continue
-
-        content_type = resp.headers.get("content-type", "")
-        if (
-            resp.status_code != 200
-            or len(resp.content) > _MAX_BYTES
-            or not content_type.startswith("image/")
-        ):
-            continue
-
-        return _favicon_response(resp.content, content_type)
+        fetched = await _try_candidate(candidate)
+        if fetched is not None:
+            return fetched
 
     return Response(status_code=404)
+
+
+@router.get("/radio-browser/search")
+async def radio_browser_search(
+    name: str = Query(default=""),
+    limit: int = Query(default=30),
+    # Repeatable (?countrycode=DE&countrycode=FR) — RadioView.vue's country
+    # select is multi-select, and search_stations() fans a list of more
+    # than one of these out into its own request per code (see that
+    # function's own docstring for why).
+    countrycode: list[str] = Query(default=[]),
+    order: str = Query(default="votes"),
+):
+    # No early return for a blank name here — see search_stations()'s own
+    # docstring for why that's a real, intended request (the dialog's
+    # initial "browse top stations" view before anyone has typed anything),
+    # not something to short-circuit the way it would be for a local filter
+    # field.
+    stations = await search_stations(
+        name.strip(), limit=limit, countrycodes=countrycode or None, order=order
+    )
+    if stations is None:
+        # Every mirror was unreachable — distinct from a real, empty
+        # result (see search_stations()'s own docstring), and worth a
+        # different message in RadioView.vue's dialog than "no stations
+        # found for that name".
+        return JSONResponse({"error": "Radio Browser is unreachable"}, status_code=502)
+    return {"stations": stations}
+
+
+@router.get("/radio-browser/countries")
+async def radio_browser_countries():
+    countries = await list_countries()
+    if countries is None:
+        return JSONResponse({"error": "Radio Browser is unreachable"}, status_code=502)
+    return {"countries": countries}
+
+
+@router.post("/radio-browser/click/{stationuuid}")
+async def radio_browser_click(stationuuid: str) -> dict:
+    # Fire-and-forget from the caller's perspective — see register_click()'s
+    # own docstring for why nothing here is worth failing the request over.
+    await register_click(stationuuid)
+    return {"ok": True}
+
+
+class RadioMetadataStartRequest(BaseModel):
+    url: str
+
+
+@router.post("/radio-metadata/start")
+async def start_radio_metadata(
+    body: RadioMetadataStartRequest,
+    session: SessionState = Depends(require_authenticated_session),
+) -> dict:
+    session.start_radio_metadata_watch(body.url)
+    return {"status": "ok"}
+
+
+@router.post("/radio-metadata/stop")
+async def stop_radio_metadata(
+    session: SessionState = Depends(require_authenticated_session),
+) -> dict:
+    session.stop_radio_metadata_watch()
+    return {"status": "ok"}
+
+
+@router.get("/radio-metadata")
+async def get_radio_metadata(
+    session: SessionState = Depends(require_authenticated_session),
+) -> dict:
+    return {"title": session.radio_title}

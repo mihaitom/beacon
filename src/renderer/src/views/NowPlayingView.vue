@@ -161,6 +161,12 @@
                 >
                   {{ currentSong.artist }}
                 </router-link>
+                <div
+                  v-else-if="playbackStore.radioNowPlaying"
+                  class="text-title-large text-medium-emphasis now-playing__radio-tag mb-2"
+                >
+                  {{ playbackStore.radioNowPlaying }}
+                </div>
                 <div v-else class="text-title-large text-medium-emphasis mb-2" />
                 <router-link
                   v-if="currentSong"
@@ -392,10 +398,16 @@ export default {
     // routes/radio.py's _select()), same reasoning as PlayerBar's own
     // radioFaviconSrc but with more headroom given how large this renders.
     radioFaviconSrc(): string | null {
-      const homePageUrl = this.playbackStore.radioStation?.homePageUrl
-      if (!homePageUrl) return null
+      const station = this.playbackStore.radioStation
+      if (!station?.homePageUrl && !station?.favicon) return null
       const auth = useAuthStore()
-      return radioFaviconUrl(auth.apiUrl, auth.connectToken, homePageUrl, 512)
+      return radioFaviconUrl(
+        auth.apiUrl,
+        auth.connectToken,
+        station.homePageUrl ?? '',
+        512,
+        station.favicon ?? '',
+      )
     },
     colorTriplet(): string {
       return this.extractedColor ?? FALLBACK_COLOR
@@ -1113,6 +1125,13 @@ export default {
   overflow-wrap: break-word;
 }
 
+/* Radio's own equivalent of the artist link above (a station has no
+ * artist/album) — same sizing, just never a link. */
+.now-playing__radio-tag {
+  font-size: clamp(0.9rem, min(3.4cqw, 4.5cqh), 1.5rem);
+  overflow-wrap: break-word;
+}
+
 .now-playing__artist-link:hover,
 .now-playing__album-link:hover {
   color: rgb(var(--v-theme-primary));
@@ -1180,6 +1199,10 @@ export default {
 }
 
 .now-playing--compact .now-playing__info .now-playing__artist-link {
+  font-size: clamp(0.8rem, min(2.4cqw, 3.2cqh), 1.5rem);
+}
+
+.now-playing--compact .now-playing__radio-tag {
   font-size: clamp(0.8rem, min(2.4cqw, 3.2cqh), 1.5rem);
 }
 

@@ -3,10 +3,16 @@ import { createPinia, setActivePinia } from 'pinia'
 import { usePlaybackStore } from '../playback'
 import { useLibraryStore } from '../library'
 import { getAudioEngine } from '@/services/audioEngine'
+import * as radioMetadata from '@/services/connect/radioMetadata'
 import { makeSong } from './fixtures'
 
 vi.mock('@/services/audioEngine', () => ({
   getAudioEngine: vi.fn(),
+}))
+vi.mock('@/services/connect/radioMetadata', () => ({
+  startRadioMetadataWatch: vi.fn(),
+  stopRadioMetadataWatch: vi.fn(),
+  fetchRadioMetadata: vi.fn().mockResolvedValue(null),
 }))
 
 // resumeLocalPlayback() tells a reload (sessionStorage survives it) apart
@@ -21,6 +27,7 @@ describe('resumeLocalPlayback', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     sessionStorage.clear()
+    vi.clearAllMocks()
     vi.mocked(getAudioEngine).mockReturnValue({
       load: vi.fn(),
       play: vi.fn(),
@@ -80,6 +87,7 @@ describe('resumeLocalPlayback', () => {
     expect(engine.load).not.toHaveBeenCalled()
     expect(engine.play).not.toHaveBeenCalled()
     expect(playback.isPlaying).toBe(false)
+    expect(radioMetadata.startRadioMetadataWatch).not.toHaveBeenCalled()
   })
 
   it('reconnects a restored radio station on a reload of a session that was already playing', async () => {
@@ -98,5 +106,10 @@ describe('resumeLocalPlayback', () => {
     const engine = getAudioEngine()
     expect(engine.play).toHaveBeenCalledWith('https://stream.example/chill')
     expect(playback.isPlaying).toBe(true)
+    // Local playback never otherwise reaches the connect backend at all —
+    // see services/connect/radioMetadata.ts's own docstring.
+    expect(radioMetadata.startRadioMetadataWatch).toHaveBeenCalledWith(
+      'https://stream.example/chill',
+    )
   })
 })

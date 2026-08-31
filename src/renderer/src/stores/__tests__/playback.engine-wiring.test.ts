@@ -6,6 +6,7 @@ import { useLibraryStore } from '../library'
 import { usePlaybackStore } from '../playback'
 import { useDrawersStore } from '../drawers'
 import { getAudioEngine } from '@/services/audioEngine'
+import * as radioMetadata from '@/services/connect/radioMetadata'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import { makeSong, makeStatus } from './fixtures'
 
@@ -13,6 +14,11 @@ vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
 // Reaches for navigator.mediaSession, which jsdom has no implementation of
 // — and what it wires is covered by services/mediaSession.ts's own tests.
 vi.mock('@/services/mediaSession', () => ({ initMediaSession: vi.fn() }))
+vi.mock('@/services/connect/radioMetadata', () => ({
+  startRadioMetadataWatch: vi.fn(),
+  stopRadioMetadataWatch: vi.fn(),
+  fetchRadioMetadata: vi.fn().mockResolvedValue(null),
+}))
 
 /** Only the callback sinks matter here: init() assigns them, and these
  * tests then call them the way the real <audio> element's events would. */
@@ -242,6 +248,11 @@ describe('the store wiring the audio engine', () => {
       await playback.handOffToLocalPlayback()
 
       expect(engine.play).toHaveBeenCalledWith('https://stream.example/chill')
+      // Local playback never otherwise reaches the connect backend at all
+      // — see services/connect/radioMetadata.ts's own docstring.
+      expect(radioMetadata.startRadioMetadataWatch).toHaveBeenCalledWith(
+        'https://stream.example/chill',
+      )
     })
 
     it('clears the offer to resume, there being no device left to resume on', async () => {
@@ -260,6 +271,64 @@ describe('the store wiring the audio engine', () => {
 
       expect(engine.play).not.toHaveBeenCalled()
       expect(engine.load).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('the radio now-playing poll', () => {
+    it('picks up the backend-reported title while a station is playing', async () => {
+      const playback = usePlaybackStore()
+      playback.init()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue('Artist - Track')
+
+      await vi.advanceTimersByTimeAsync(8000)
+
+      expect(playback.radioNowPlaying).toBe('Artist - Track')
+    })
+
+    it('never polls while nothing is playing', async () => {
+      const playback = usePlaybackStore()
+      playback.init()
+
+      await vi.advanceTimersByTimeAsync(8000)
+
+      expect(radioMetadata.fetchRadioMetadata).not.toHaveBeenCalled()
+    })
+
+    it('discards a stale answer for a station that has since changed', async () => {
+      const playback = usePlaybackStore()
+      playback.init()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      let resolveFirst: (title: string | null) => void = () => {}
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve
+          }),
+      )
+
+      await vi.advanceTimersByTimeAsync(8000)
+      // The station changes while that poll is still in flight.
+      playback.radioStation = {
+        id: 'r2',
+        name: 'Jazz FM',
+        streamUrl: 'https://stream.example/jazz',
+        homePageUrl: null,
+      }
+      resolveFirst('Old Artist - Old Track')
+      await flushPromises()
+
+      expect(playback.radioNowPlaying).toBeNull()
     })
   })
 })

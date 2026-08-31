@@ -47,7 +47,12 @@ function updateMetadata(): void {
   const playback = usePlaybackStore()
   const song = playback.currentSong
   const radio = playback.radioStation
-  const key = song ? `song:${song.id}` : radio ? `radio:${radio.name}` : null
+  // The station's own ICY "now playing" tag (services/connect/
+  // radioMetadata.ts) - shown as the "artist" the same lock-screen/media-
+  // widget surfaces this whole service targets would show for a song,
+  // since a station has no artist field of its own to put there instead.
+  const nowPlaying = radio ? playback.radioNowPlaying : null
+  const key = song ? `song:${song.id}` : radio ? `radio:${radio.name}:${nowPlaying ?? ''}` : null
   if (key === lastMetadataKey) return
   lastMetadataKey = key
 
@@ -68,7 +73,7 @@ function updateMetadata(): void {
 
   navigator.mediaSession.metadata = new MediaMetadata({
     title: song?.title ?? radio?.name ?? '',
-    artist: song?.artist ?? '',
+    artist: song?.artist ?? nowPlaying ?? '',
     album: song?.album ?? '',
     artwork,
   })

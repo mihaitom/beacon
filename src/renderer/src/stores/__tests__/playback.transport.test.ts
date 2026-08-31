@@ -6,10 +6,16 @@ import { useLibraryStore } from '../library'
 import { usePlaybackStore } from '../playback'
 import { getAudioEngine } from '@/services/audioEngine'
 import * as connectPlayback from '@/services/connect/playback'
+import * as radioMetadata from '@/services/connect/radioMetadata'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import { makeSong, makeStatus } from './fixtures'
 
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
+vi.mock('@/services/connect/radioMetadata', () => ({
+  startRadioMetadataWatch: vi.fn(),
+  stopRadioMetadataWatch: vi.fn(),
+  fetchRadioMetadata: vi.fn().mockResolvedValue(null),
+}))
 
 // Everything the transport actions dispatch to a cast session. The rest of
 // the module stays real so useConnectStore()'s own imports keep working —
@@ -494,6 +500,49 @@ describe('playback transport', () => {
       expect(engine.stop).not.toHaveBeenCalled()
       expect(playback.isPlaying).toBe(false)
     })
+
+    it('stops the radio-metadata watch when stopping local radio playback', async () => {
+      const playback = usePlaybackStore()
+      await playback.playRadioStation({
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      })
+
+      await playback.stop()
+
+      expect(radioMetadata.stopRadioMetadataWatch).toHaveBeenCalledOnce()
+      expect(playback.radioNowPlaying).toBeNull()
+    })
+
+    it("leaves the radio-metadata watch to the backend's own /stop while casting", async () => {
+      const playback = usePlaybackStore()
+      castTo()
+      await playback.playRadioStation({
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      })
+      vi.mocked(radioMetadata.stopRadioMetadataWatch).mockClear()
+
+      await playback.stop()
+
+      // /play-url already started it server-side (see routes/playback.py) —
+      // connectPlayback.stop() (mocked above) is what tells the backend's
+      // own /stop to tear it back down, not a second call from here.
+      expect(radioMetadata.stopRadioMetadataWatch).not.toHaveBeenCalled()
+    })
+
+    it('does not call stopRadioMetadataWatch when no radio was playing', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('a')], 0)
+
+      await playback.stop()
+
+      expect(radioMetadata.stopRadioMetadataWatch).not.toHaveBeenCalled()
+    })
   })
 
   describe('radio', () => {
@@ -514,6 +563,12 @@ describe('playback transport', () => {
       expect(playback.radioStation).toEqual(station)
       expect(engine.play).toHaveBeenCalledWith('https://stream.example/chill')
       expect(playback.isPlaying).toBe(true)
+      // Local playback never otherwise reaches the connect backend at all
+      // — see services/connect/radioMetadata.ts's own docstring for why
+      // this needs its own explicit call.
+      expect(radioMetadata.startRadioMetadataWatch).toHaveBeenCalledWith(
+        'https://stream.example/chill',
+      )
     })
 
     it('hands the raw stream URL to the cast targets, bypassing the library', async () => {
@@ -533,6 +588,32 @@ describe('playback transport', () => {
         expect.objectContaining({ targets: [{ name: 'Living Room', type: 'sonos' }] }),
       )
       expect(engine.play).not.toHaveBeenCalled()
+    })
+
+    it('stops the radio-metadata watch when a song queue replaces the playing station', async () => {
+      const playback = usePlaybackStore()
+      await playback.playRadioStation({
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      })
+      vi.mocked(radioMetadata.stopRadioMetadataWatch).mockClear()
+
+      playback.setQueue([makeSong('a')], 0)
+
+      expect(playback.radioStation).toBeNull()
+      expect(playback.radioNowPlaying).toBeNull()
+      expect(radioMetadata.stopRadioMetadataWatch).toHaveBeenCalledOnce()
+    })
+
+    it('does not call stopRadioMetadataWatch replacing a song queue with another', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('a')], 0)
+
+      playback.setQueue([makeSong('b')], 0)
+
+      expect(radioMetadata.stopRadioMetadataWatch).not.toHaveBeenCalled()
     })
   })
 

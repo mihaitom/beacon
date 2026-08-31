@@ -18,6 +18,7 @@ from fastapi import Header, HTTPException, Query
 from delivery import BaseDelivery, DeliveryManager
 from media import MediaClient, SubsonicClient
 
+from . import icy_metadata
 from .claims import claims
 from .loop_health import peak_lag
 from .state import AppState, EventBus, delivery_class_for, list_target_pairs, stream_url
@@ -86,9 +87,51 @@ class SessionState:
         # ng.conf.template) — it identifies "a request from this deployment's
         # frontend", not "a logged-in media-server user".
         self.authenticated: bool = False
+        # This session's radio "now playing" tag (ICY StreamTitle) and the
+        # background task reading it off the stream - see
+        # start_radio_metadata_watch()/stop_radio_metadata_watch() below.
+        self.radio_title: str | None = None
+        self._radio_metadata_url: str | None = None
+        self._radio_metadata_task: asyncio.Task | None = None
 
     def touch(self) -> None:
         self.last_seen = time.time()
+
+    def start_radio_metadata_watch(self, url: str) -> None:
+        """Called from routes/radio.py's own /radio-metadata/start (local
+        playback - see core/icy_metadata.py's own docstring for why that
+        needs an explicit call at all) and from /play-url (casting radio -
+        already knows the URL there). Idempotent for the same URL, so a
+        casting client's periodic /play-url retries (see PlayUrlRequest's
+        own force/seq handling) don't restart the watch, and each dropping
+        the previous one, every time. Not idempotent against a task that
+        has already finished, though — a station with no ICY support at
+        all returns for good on its own (see icy_metadata.watch()'s own
+        docstring), and a done task is exactly what a still-current URL
+        looks like right after that, correctly never restarted; a task
+        that instead died from an unexpected exception is retried the
+        same way, rather than silently staying dead forever."""
+        if (
+            self._radio_metadata_url == url
+            and self._radio_metadata_task is not None
+            and not self._radio_metadata_task.done()
+        ):
+            return
+        self.stop_radio_metadata_watch()
+        self._radio_metadata_url = url
+        self._radio_metadata_task = asyncio.create_task(
+            icy_metadata.watch(url, self._set_radio_title)
+        )
+
+    def stop_radio_metadata_watch(self) -> None:
+        if self._radio_metadata_task is not None:
+            self._radio_metadata_task.cancel()
+            self._radio_metadata_task = None
+        self._radio_metadata_url = None
+        self.radio_title = None
+
+    def _set_radio_title(self, title: str) -> None:
+        self.radio_title = title
 
 
 class SessionRegistry:
@@ -566,6 +609,7 @@ async def reap_once() -> list[str]:
             except Exception as e:
                 logger.debug(f"[reap] {session.session_id}: stopping device failed: {e}")
         await session.visualizer.shutdown()
+        session.stop_radio_metadata_watch()
         await claims.release_all_for_session(session.session_id)
         await registry.remove(session.session_id)
         reaped.append(session.session_id)

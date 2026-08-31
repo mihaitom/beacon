@@ -103,4 +103,38 @@ describe('SongInfo', () => {
       expect(wrapper.find('.mdi-heart-outline').exists()).toBe(false)
     })
   })
+
+  describe('a radio station is playing', () => {
+    it("shows the station's own now-playing tag as the second line", async () => {
+      const { wrapper } = await mountInfo()
+      usePlaybackStore().radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      usePlaybackStore().radioNowPlaying = 'Artist - Track'
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.text()).toContain('Chill FM')
+      expect(wrapper.text()).toContain('Artist - Track')
+    })
+
+    it('still shows a favicon for a station played without a homepage, via its Radio Browser hint', async () => {
+      const { wrapper } = await mountInfo()
+      usePlaybackStore().radioStation = {
+        id: 'uuid-1',
+        name: 'Example FM',
+        streamUrl: 'http://example.com/stream',
+        homePageUrl: null,
+        favicon: 'https://cdn.example/icon.png',
+      }
+      await wrapper.vm.$nextTick()
+
+      const coverArt = wrapper.findComponent({ name: 'CoverArt' })
+      const imageUrl = coverArt.props('imageUrl') as string
+      expect(imageUrl).not.toContain('url=')
+      expect(imageUrl).toContain('hint=https%3A%2F%2Fcdn.example%2Ficon.png')
+    })
+  })
 })

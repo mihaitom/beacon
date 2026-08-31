@@ -20,6 +20,7 @@ from routes.playback import (
     PROVISIONAL_STARTUP_DELAY,
     QUEUE_TOPUP_DEDUP_WINDOW,
     _apply_position_offset,
+    _guess_radio_content_type,
     _resync_position_once,
     _resync_position_periodically,
 )
@@ -171,6 +172,47 @@ def test_play_fetches_track_and_sets_state(client, default_session):
     assert default_session.state.is_streaming is True
     assert default_session.state.current_track is not None
     assert default_session.state.current_track.title == "Test Song"
+
+
+def test_play_stops_the_radio_metadata_watch_when_switching_from_radio(client, default_session):
+    """A cast session switching from radio to a song still goes through
+    /play (never /play-url again) - see routes/playback.py's own comment on
+    st.radio_info there."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()):
+        client.post(
+            "/play-url",
+            json={
+                "target_name": "TV",
+                "target_type": "chromecast",
+                "title": "Test",
+                "url": "https://example.com/stream.mp3",
+            },
+        )
+    assert default_session.state.radio_info is not None
+
+    track = Track(id="1", title="Test Song", artist="Test Artist", duration=180)
+    with (
+        patch.object(default_session.media, "get_track", return_value=track),
+        patch.object(default_session, "stop_radio_metadata_watch") as stop,
+    ):
+        r = client.post("/play", json={"song_ids": ["1"]})
+
+    assert r.status_code == 200
+    stop.assert_called_once()
+
+
+def test_play_does_not_touch_the_radio_metadata_watch_when_nothing_was_playing(
+    client, default_session
+):
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Test Song", artist="Test Artist", duration=180)
+    with (
+        patch.object(default_session.media, "get_track", return_value=track),
+        patch.object(default_session, "stop_radio_metadata_watch") as stop,
+    ):
+        client.post("/play", json={"song_ids": ["1"]})
+    stop.assert_not_called()
 
 
 def test_play_with_start_position_seeds_resume_offset_and_elapsed(client, default_session):
@@ -812,6 +854,68 @@ def test_play_url_accepts_https_scheme(client, default_session):
     play.assert_awaited_once()
 
 
+def test_play_url_starts_the_radio_metadata_watch(client, default_session):
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch.object(default_session, "start_radio_metadata_watch") as start,
+    ):
+        client.post(
+            "/play-url",
+            json={
+                "target_name": "TV",
+                "target_type": "chromecast",
+                "title": "Test",
+                "url": "https://example.com/stream.mp3",
+            },
+        )
+    start.assert_called_once_with("https://example.com/stream.mp3")
+
+
+# ── radio content-type guessing ──────────────────────────────────────────────
+# Regression coverage for a Sonos speaker refusing an AAC stream outright
+# (UPnP ERROR_UNSUPPORTED_FORMAT) after every delivery's play() defaulted
+# content_type to "audio/mpeg" regardless of what the radio URL actually
+# was — see _guess_radio_content_type()'s own docstring.
+
+
+def test_guess_radio_content_type_from_known_extensions():
+    assert _guess_radio_content_type("https://x.example/stream.aac") == "audio/aac"
+    assert _guess_radio_content_type("https://x.example/stream.mp3") == "audio/mpeg"
+    assert _guess_radio_content_type("https://x.example/stream.ogg") == "audio/ogg"
+    assert _guess_radio_content_type("https://x.example/stream.opus") == "audio/ogg"
+    assert _guess_radio_content_type("https://x.example/stream.flac") == "audio/flac"
+
+
+def test_guess_radio_content_type_defaults_to_mp3_for_no_or_unknown_extension():
+    # The common case — most Icecast mounts carry no extension at all — and
+    # the same fallback delivery/base.py's own play() already used, so
+    # nothing regresses for a URL this can't say anything more specific about.
+    assert _guess_radio_content_type("https://x.example/live") == "audio/mpeg"
+    assert _guess_radio_content_type("https://x.example/stream.weird") == "audio/mpeg"
+
+
+def test_guess_radio_content_type_ignores_a_query_string():
+    assert _guess_radio_content_type("https://x.example/stream.aac?token=abc&t=1") == "audio/aac"
+
+
+def test_play_url_passes_the_guessed_content_type_to_the_delivery(client, default_session):
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
+        client.post(
+            "/play-url",
+            json={
+                "target_name": "TV",
+                "target_type": "chromecast",
+                "title": "OWR International",
+                "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/OWR_INTERNATIONAL_ADP.aac",
+            },
+        )
+    play.assert_awaited_once_with(
+        "https://playerservices.streamtheworld.com/api/livestream-redirect/OWR_INTERNATIONAL_ADP.aac",
+        "OWR International",
+        content_type="audio/aac",
+    )
+
+
 def test_play_url_releases_the_claim_when_delivery_fails(client, default_session):
     """See /play's identical comment: a failed dispatch must not leave the
     device locked to this session (device_in_use for every other client)
@@ -1017,6 +1121,12 @@ def test_stop_resets_state(client, default_session):
     assert r.json()["status"] == "stopped"
     assert default_session.state.is_streaming is False
     assert default_session.state.current_track is None
+
+
+def test_stop_stops_the_radio_metadata_watch(client, default_session):
+    with patch.object(default_session, "stop_radio_metadata_watch") as stop:
+        client.post("/stop")
+    stop.assert_called_once()
 
 
 def test_stop_wakes_the_visualizer_supervisor(client, default_session):
@@ -1309,6 +1419,26 @@ def test_seek_while_playing_reconnects_to_radio_url(client, default_session):
 
     play.assert_awaited_once_with(
         "http://stream/radio", "Radio FM", "", None, None, "", "audio/mpeg"
+    )
+
+
+def test_resume_reconnects_with_the_guessed_content_type_for_an_aac_station(
+    client, default_session
+):
+    # Same regression as test_play_url_passes_the_guessed_content_type_to_the_delivery,
+    # for the reconnect path — a resume/seek must not revert an AAC station
+    # back to the wrong "audio/mpeg" declaration that started this.
+    default_session.media = SubsonicClient("http://nav")
+    default_session.state.is_streaming = True
+    default_session.state.radio_info = {"title": "Radio FM", "url": "http://stream/radio.aac"}
+    default_session.state.active_delivery = ChromecastDelivery("TV")
+    default_session.state.clock.is_paused = True
+
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
+        client.post("/resume")
+
+    play.assert_awaited_once_with(
+        "http://stream/radio.aac", "Radio FM", "", None, None, "", "audio/aac"
     )
 
 

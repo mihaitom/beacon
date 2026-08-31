@@ -299,6 +299,145 @@ async def test_reap_stale_sessions_calls_reap_once_after_the_interval():
     reap_once_mock.assert_awaited_once()
 
 
+# ── radio metadata watch lifecycle ──────────────────────────────────────────
+
+
+async def _hang_forever(url, on_title_change):
+    """Stands in for core.icy_metadata.watch() — a real one only ever
+    returns when cancelled or when the station has nothing more to say
+    (see that module's own tests), neither of which these lifecycle tests
+    care about; they only care whether SessionState starts/cancels the
+    right task."""
+    await asyncio.sleep(3600)
+
+
+def test_start_radio_metadata_watch_starts_a_cancellable_background_task():
+    from unittest.mock import patch
+
+    from core.session import SessionState
+
+    async def run():
+        session = SessionState("s")
+        with patch("core.session.icy_metadata.watch", new=_hang_forever):
+            session.start_radio_metadata_watch("http://station/a")
+            assert session._radio_metadata_task is not None
+            assert not session._radio_metadata_task.done()
+
+    asyncio.run(run())
+
+
+def test_start_radio_metadata_watch_is_a_no_op_for_the_same_url():
+    """See its own docstring - a casting client's periodic /play-url
+    retries must not restart (and so briefly drop) the watch every time."""
+    from unittest.mock import patch
+
+    from core.session import SessionState
+
+    async def run():
+        session = SessionState("s")
+        with patch("core.session.icy_metadata.watch", new=_hang_forever):
+            session.start_radio_metadata_watch("http://station/a")
+            first_task = session._radio_metadata_task
+            session.start_radio_metadata_watch("http://station/a")
+            assert session._radio_metadata_task is first_task
+
+    asyncio.run(run())
+
+
+def test_start_radio_metadata_watch_retries_a_task_that_already_finished():
+    """A station with no ICY support returns for good on its own (see
+    icy_metadata.watch()'s own docstring) - correctly never restarted for
+    that same, still-uninteresting URL. A task that instead died from an
+    unexpected exception looks identical from here (also done()), and must
+    not be mistaken for "still running" and left dead forever."""
+    from unittest.mock import patch
+
+    from core.session import SessionState
+
+    async def already_done(url, on_title_change):
+        return
+
+    async def run():
+        session = SessionState("s")
+        with patch("core.session.icy_metadata.watch", new=already_done):
+            session.start_radio_metadata_watch("http://station/a")
+            await asyncio.sleep(0)  # let the task actually finish
+            first_task = session._radio_metadata_task
+            assert first_task.done()
+
+            session.start_radio_metadata_watch("http://station/a")
+
+            assert session._radio_metadata_task is not first_task
+
+    asyncio.run(run())
+
+
+def test_start_radio_metadata_watch_restarts_for_a_different_url():
+    from unittest.mock import patch
+
+    from core.session import SessionState
+
+    async def run():
+        session = SessionState("s")
+        with patch("core.session.icy_metadata.watch", new=_hang_forever):
+            session.start_radio_metadata_watch("http://station/a")
+            first_task = session._radio_metadata_task
+            session.start_radio_metadata_watch("http://station/b")
+            assert session._radio_metadata_task is not first_task
+            assert first_task.cancelled() or first_task.cancelling()
+
+    asyncio.run(run())
+
+
+def test_stop_radio_metadata_watch_cancels_the_task_and_clears_the_title():
+    from unittest.mock import patch
+
+    from core.session import SessionState
+
+    async def run():
+        session = SessionState("s")
+        with patch("core.session.icy_metadata.watch", new=_hang_forever):
+            session.start_radio_metadata_watch("http://station/a")
+            session._set_radio_title("Artist - Track")
+            task = session._radio_metadata_task
+
+            session.stop_radio_metadata_watch()
+
+            assert session.radio_title is None
+            assert session._radio_metadata_task is None
+            assert task.cancelled() or task.cancelling()
+
+    asyncio.run(run())
+
+
+def test_stop_radio_metadata_watch_is_a_harmless_no_op_when_nothing_is_running():
+    from core.session import SessionState
+
+    session = SessionState("s")
+    session.stop_radio_metadata_watch()  # must not raise
+    assert session.radio_title is None
+
+
+def test_reap_once_cancels_a_running_radio_metadata_watch():
+    from unittest.mock import patch
+
+    from core.session import reap_once, registry
+
+    session, _ = _stale_session("stale-radio", None)
+
+    async def run():
+        with patch("core.session.icy_metadata.watch", new=_hang_forever):
+            session.start_radio_metadata_watch("http://station/a")
+            task = session._radio_metadata_task
+
+            await reap_once()
+
+            assert registry.get("stale-radio") is None
+            assert task.cancelled() or task.cancelling()
+
+    asyncio.run(run())
+
+
 # ── track_label ────────────────────────────────────────────────────────────────
 
 

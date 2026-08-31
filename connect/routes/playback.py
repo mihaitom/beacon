@@ -3,9 +3,11 @@
 import asyncio
 import copy
 import logging
+import os
 import time
 from collections.abc import Awaitable, Callable
 from typing import Literal
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -511,6 +513,38 @@ def _current_track_play_args(
     )
 
 
+# Every delivery's own play() defaults content_type to this when nothing
+# more specific is known (see delivery/base.py) — right for the common case
+# (an extension-less Icecast mountpoint, almost always MP3) but wrong often
+# enough to matter for anything else: a Sonos speaker refused an AAC stream
+# outright (UPnP ERROR_UNSUPPORTED_FORMAT) after being told via DIDL
+# protocolInfo to expect MP3, which is exactly what handing every radio URL
+# through with no content_type at all used to do here.
+_CONTENT_TYPE_FOR_EXTENSION: dict[str, str] = {
+    ".mp3": "audio/mpeg",
+    ".aac": "audio/aac",
+    ".adts": "audio/aac",
+    ".m4a": "audio/mp4",
+    ".ogg": "audio/ogg",
+    ".oga": "audio/ogg",
+    ".opus": "audio/ogg",
+    ".flac": "audio/flac",
+    ".wav": "audio/wav",
+}
+
+
+def _guess_radio_content_type(url: str) -> str:
+    """A best-effort content type for an arbitrary radio stream URL, from
+    its file extension. Nothing short of actually probing the stream (which
+    /play-url deliberately doesn't do - see its own comment on handing the
+    URL straight to the device) can be exact, but a URL that names its own
+    format at all is worth believing over the blanket "audio/mpeg" guess
+    every delivery's play() otherwise falls back to on its own (see
+    delivery/base.py)."""
+    suffix = os.path.splitext(urlparse(url).path)[1].lower()
+    return _CONTENT_TYPE_FOR_EXTENSION.get(suffix, "audio/mpeg")
+
+
 def _current_reconnect_args(
     session: SessionState,
 ) -> tuple[str, str, str, str | None, float | None, str, str]:
@@ -525,7 +559,8 @@ def _current_reconnect_args(
     — the track hasn't changed, so there's no need to probe again."""
     st = session.state
     if st.radio_info:
-        return st.radio_info["url"], st.radio_info["title"], "", None, None, "", "audio/mpeg"
+        content_type = _guess_radio_content_type(st.radio_info["url"])
+        return st.radio_info["url"], st.radio_info["title"], "", None, None, "", content_type
     title, artist, album_art_url, duration, album = _current_track_play_args(session)
     return (
         stream_url(session.session_id),
@@ -737,6 +772,8 @@ async def play_tracks(
         st.current_track_gain = req.gain
         st.current_output_format = output_format
         st.is_streaming = True
+        if st.radio_info is not None:
+            session.stop_radio_metadata_watch()
         st.radio_info = None
         st.clock.start(start_position)
         st.track_ended = False
@@ -883,7 +920,9 @@ async def play_url(
 
         if not _is_duplicate_dispatch(st, f"play-url:{target}:{req.url}"):
             try:
-                await target.play(req.url, req.title)
+                await target.play(
+                    req.url, req.title, content_type=_guess_radio_content_type(req.url)
+                )
             except Exception as e:
                 logger.exception("[play-url] Delivery error")
                 # See /play's identical comment — don't leave the device locked
@@ -895,6 +934,11 @@ async def play_url(
         st.current_output_format = FALLBACK_FORMAT
         st.is_streaming = True
         st.radio_info = {"title": req.title, "url": req.url}
+        # See core/icy_metadata.py's own docstring - a cast radio play is
+        # the one radio path that already reaches this backend on its own,
+        # so its "now playing" watch starts right here rather than needing
+        # an extra call from the frontend the way local playback does.
+        session.start_radio_metadata_watch(req.url)
         st.clock.start()
         st.track_ended = False
         st.active_delivery = target
@@ -1117,6 +1161,7 @@ async def stop_playback(session: SessionState = Depends(require_authenticated_se
         st.current_track = None
         st.current_output_format = FALLBACK_FORMAT
         st.radio_info = None
+        session.stop_radio_metadata_watch()
         st.active_delivery = None
         st.last_dispatch_key = None
         st.queue = []

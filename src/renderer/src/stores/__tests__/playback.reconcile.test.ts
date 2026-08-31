@@ -6,6 +6,7 @@ import { useConnectStore } from '../connect'
 import { usePlaybackStore } from '../playback'
 import { emitter } from '@/emitter'
 import * as connectPlayback from '@/services/connect/playback'
+import * as radioMetadata from '@/services/connect/radioMetadata'
 import type { PlayResponse } from '@/services/connect/types'
 import { makeSong, makeStatus } from './fixtures'
 
@@ -16,6 +17,11 @@ vi.mock('@/services/connect/playback', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/connect/playback')>()
   return { ...actual, play: vi.fn() }
 })
+vi.mock('@/services/connect/radioMetadata', () => ({
+  startRadioMetadataWatch: vi.fn(),
+  stopRadioMetadataWatch: vi.fn(),
+  fetchRadioMetadata: vi.fn().mockResolvedValue(null),
+}))
 
 describe('cast interruption', () => {
   beforeEach(() => {
@@ -111,6 +117,7 @@ describe('reconcileFromStatus / adoptCastQueue', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.mocked(connectPlayback.play).mockReset()
+    vi.mocked(radioMetadata.stopRadioMetadataWatch).mockClear()
   })
 
   describe('radio', () => {
@@ -203,6 +210,33 @@ describe('reconcileFromStatus / adoptCastQueue', () => {
 
       expect(playback.radioStation).toBe(stationAfterFirstTick)
     })
+
+    it('resets radioNowPlaying so a stale title from the previous station never lingers', async () => {
+      const playback = usePlaybackStore()
+      await playback.reconcileFromStatus(
+        makeStatus({ radio: { title: 'Chill FM', url: 'https://stream.example/chill' } }),
+      )
+      playback.radioNowPlaying = 'Old Artist - Old Track'
+
+      await playback.reconcileFromStatus(
+        makeStatus({ radio: { title: 'Jazz FM', url: 'https://stream.example/jazz' } }),
+      )
+
+      expect(playback.radioNowPlaying).toBeNull()
+    })
+
+    it('leaves radioNowPlaying alone when the same station repeats on the next tick', async () => {
+      const playback = usePlaybackStore()
+      const status = makeStatus({
+        radio: { title: 'Chill FM', url: 'https://stream.example/chill' },
+      })
+      await playback.reconcileFromStatus(status)
+      playback.radioNowPlaying = 'Artist - Track'
+
+      await playback.reconcileFromStatus(status)
+
+      expect(playback.radioNowPlaying).toBe('Artist - Track')
+    })
   })
 
   describe('the in-flight local song switch race', () => {
@@ -286,6 +320,40 @@ describe('reconcileFromStatus / adoptCastQueue', () => {
   })
 
   describe('adoptCastQueue', () => {
+    it('stops the radio-metadata watch when the session switches from radio to a song queue', async () => {
+      const playback = usePlaybackStore()
+      const library = useLibraryStore()
+      const a = makeSong('a')
+      library.allSongs = [a]
+      playback.radioStation = {
+        id: '',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      playback.radioNowPlaying = 'Artist - Track'
+
+      await playback.reconcileFromStatus(
+        makeStatus({
+          current_song: {
+            id: 'a',
+            artist: '',
+            album: '',
+            cover_art_url: null,
+            duration: 180,
+            title: 'Song a',
+          },
+          queue: ['a'],
+          original_queue: ['a'],
+          current_song_index: 0,
+        }),
+      )
+
+      expect(playback.radioStation).toBeNull()
+      expect(playback.radioNowPlaying).toBeNull()
+      expect(radioMetadata.stopRadioMetadataWatch).toHaveBeenCalledOnce()
+    })
+
     it('updates only currentIndex, keeping existing Song references, when the remote queue already matches', async () => {
       const playback = usePlaybackStore()
       playback.setQueue([makeSong('a'), makeSong('b')], 0)

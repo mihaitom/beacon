@@ -3,3 +3,7 @@
 .v-btn {
   text-transform: uppercase;
 }
+
+.v-dialog .v-card {
+  padding: 0.5rem;
+}

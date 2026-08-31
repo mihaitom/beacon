@@ -29,6 +29,12 @@
       >
         {{ currentSong.artist }}
       </router-link>
+      <div
+        v-else-if="playbackStore.radioNowPlaying"
+        class="text-body-small text-medium-emphasis text-truncate"
+      >
+        {{ playbackStore.radioNowPlaying }}
+      </div>
       <div v-else class="text-body-small text-medium-emphasis text-truncate" />
     </div>
     <v-btn
@@ -74,10 +80,16 @@ export default {
     // free to just be smaller than that if that's all the station's
     // homepage actually declares (see routes/radio.py's _select()).
     radioFaviconSrc(): string | null {
-      const homePageUrl = this.playbackStore.radioStation?.homePageUrl
-      if (!homePageUrl) return null
+      const station = this.playbackStore.radioStation
+      if (!station?.homePageUrl && !station?.favicon) return null
       const auth = useAuthStore()
-      return radioFaviconUrl(auth.apiUrl, auth.connectToken, homePageUrl, 96)
+      return radioFaviconUrl(
+        auth.apiUrl,
+        auth.connectToken,
+        station.homePageUrl ?? '',
+        96,
+        station.favicon ?? '',
+      )
     },
     hasPlayable() {
       return this.currentSong != null || this.playbackStore.radioStation != null

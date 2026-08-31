@@ -1,4 +1,5 @@
-"""Tests for routes/radio.py — GET /radio-favicon."""
+"""Tests for routes/radio.py — GET /radio-favicon, POST /radio-metadata/start,
+POST /radio-metadata/stop, GET /radio-metadata."""
 
 import io
 from contextlib import asynccontextmanager
@@ -71,6 +72,85 @@ def test_radio_favicon_rejects_non_http_scheme(client):
 def test_radio_favicon_rejects_url_without_host(client):
     r = client.get("/radio-favicon", params={"url": "http://"})
     assert r.status_code == 400
+
+
+def test_radio_favicon_404s_when_neither_url_nor_hint_is_given(client):
+    r = client.get("/radio-favicon")
+    assert r.status_code == 404
+
+
+def test_radio_favicon_404s_when_url_is_missing_and_the_hint_is_broken(client):
+    with patch.object(radio_mod._client, "get", AsyncMock(side_effect=httpx.ConnectError("x"))):
+        r = client.get("/radio-favicon", params={"hint": "https://cdn.example/dead.png"})
+    assert r.status_code == 404
+
+
+# ── Radio Browser's own favicon hint ─────────────────────────────────────────
+
+
+def test_radio_favicon_uses_the_hint_with_no_homepage_at_all(client):
+    """A station played straight out of the discover dialog without being
+    added can have a Radio Browser favicon hint but no homepage (see
+    RadioStation.favicon in types/library.ts) — the hint alone must still
+    resolve, with no homepage ever scraped and no 400 for the missing url."""
+    hint_response = _fake_get_response(content=b"hinted-icon-bytes", content_type="image/png")
+    mock_stream = MagicMock(side_effect=AssertionError("should not scrape a homepage"))
+    with (
+        patch.object(radio_mod._client, "stream", mock_stream),
+        patch.object(radio_mod._client, "get", AsyncMock(return_value=hint_response)),
+    ):
+        r = client.get("/radio-favicon", params={"hint": "https://cdn.example/icon.png"})
+    assert r.status_code == 200
+    assert r.content == b"hinted-icon-bytes"
+    mock_stream.assert_not_called()
+
+
+def test_radio_favicon_uses_the_hint_without_scraping_the_homepage(client):
+    hint_response = _fake_get_response(content=b"hinted-icon-bytes", content_type="image/png")
+    mock_stream = MagicMock(side_effect=AssertionError("should not scrape the homepage"))
+    with (
+        patch.object(radio_mod._client, "stream", mock_stream),
+        patch.object(radio_mod._client, "get", AsyncMock(return_value=hint_response)),
+    ):
+        r = client.get(
+            "/radio-favicon",
+            params={"url": "https://example.com", "hint": "https://cdn.example/icon.png"},
+        )
+    assert r.status_code == 200
+    assert r.content == b"hinted-icon-bytes"
+    mock_stream.assert_not_called()
+
+
+def test_radio_favicon_falls_back_to_the_homepage_when_the_hint_is_broken(client):
+    good_response = _fake_get_response(content=b"scraped-icon-bytes", content_type="image/png")
+    mock_get = AsyncMock(side_effect=[httpx.ConnectError("dead hint"), good_response])
+    with (
+        patch.object(radio_mod._client, "stream", side_effect=httpx.ConnectError("x")),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get(
+            "/radio-favicon",
+            params={"url": "https://example.com", "hint": "https://cdn.example/dead.png"},
+        )
+    assert r.status_code == 200
+    assert r.content == b"scraped-icon-bytes"
+
+
+def test_radio_favicon_ignores_a_non_http_hint(client):
+    mock_get = AsyncMock(return_value=_fake_get_response())
+    with (
+        patch.object(radio_mod._client, "stream", side_effect=httpx.ConnectError("x")),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get(
+            "/radio-favicon",
+            params={"url": "https://example.com", "hint": "javascript:alert(1)"},
+        )
+    assert r.status_code == 200
+    # Only the favicon.ico fallback was ever requested — the hint itself
+    # was never handed to httpx.
+    for call in mock_get.call_args_list:
+        assert call.args[0] != "javascript:alert(1)"
 
 
 # ── No declared icon → implicit /favicon.ico fallback ───────────────────────
@@ -471,3 +551,104 @@ def test_radio_favicon_reports_transparency_header_false(client):
         r = client.get("/radio-favicon", params={"url": "https://example.com"})
     assert r.status_code == 200
     assert r.headers["x-has-transparency"] == "false"
+
+
+# ── /radio-browser/search, /radio-browser/countries, /radio-browser/click ───
+
+
+def test_radio_browser_search_browses_with_defaults_when_nothing_is_given(client):
+    # No name typed yet — the dialog's initial "top stations" view (see
+    # core/radio_browser.py's search_stations() docstring), not something
+    # the route short-circuits away the way a local filter field would.
+    with patch.object(radio_mod, "search_stations", AsyncMock(return_value=[])) as search:
+        r = client.get("/radio-browser/search")
+    assert r.status_code == 200
+    assert r.json() == {"stations": []}
+    search.assert_called_once_with("", limit=30, countrycodes=None, order="votes")
+
+
+def test_radio_browser_search_returns_what_core_found(client):
+    stations = [{"stationuuid": "abc", "name": "Example FM", "url": "http://example.com/stream"}]
+    with patch.object(radio_mod, "search_stations", AsyncMock(return_value=stations)) as search:
+        r = client.get(
+            "/radio-browser/search",
+            params={"name": "example", "limit": 5, "countrycode": "DE", "order": "clickcount"},
+        )
+    assert r.status_code == 200
+    assert r.json() == {"stations": stations}
+    search.assert_called_once_with("example", limit=5, countrycodes=["DE"], order="clickcount")
+
+
+def test_radio_browser_search_accepts_more_than_one_country(client):
+    with patch.object(radio_mod, "search_stations", AsyncMock(return_value=[])) as search:
+        r = client.get(
+            "/radio-browser/search",
+            params=[("name", "example"), ("countrycode", "DE"), ("countrycode", "FR")],
+        )
+    assert r.status_code == 200
+    search.assert_called_once_with("example", limit=30, countrycodes=["DE", "FR"], order="votes")
+
+
+def test_radio_browser_search_reports_502_when_every_mirror_is_unreachable(client):
+    with patch.object(radio_mod, "search_stations", AsyncMock(return_value=None)):
+        r = client.get("/radio-browser/search", params={"name": "example"})
+    assert r.status_code == 502
+
+
+def test_radio_browser_countries_returns_what_core_found(client):
+    countries = [{"name": "Germany", "code": "DE"}]
+    with patch.object(radio_mod, "list_countries", AsyncMock(return_value=countries)):
+        r = client.get("/radio-browser/countries")
+    assert r.status_code == 200
+    assert r.json() == {"countries": countries}
+
+
+def test_radio_browser_countries_reports_502_when_every_mirror_is_unreachable(client):
+    with patch.object(radio_mod, "list_countries", AsyncMock(return_value=None)):
+        r = client.get("/radio-browser/countries")
+    assert r.status_code == 502
+
+
+def test_radio_browser_click_registers_and_never_fails_the_request(client):
+    with patch.object(radio_mod, "register_click", AsyncMock()) as register:
+        r = client.post("/radio-browser/click/abc-123")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+    register.assert_called_once_with("abc-123")
+
+
+# ── /radio-metadata/* ────────────────────────────────────────────────────────
+
+
+def test_radio_metadata_start_requires_an_authenticated_session(client):
+    # No default_session fixture here - the session backing `client`'s
+    # requests was never authenticated at all.
+    r = client.post("/radio-metadata/start", json={"url": "http://station"})
+    assert r.status_code == 401
+
+
+def test_radio_metadata_start_starts_the_sessions_watch(client, default_session):
+    with patch.object(default_session, "start_radio_metadata_watch") as start:
+        r = client.post("/radio-metadata/start", json={"url": "http://station"})
+    assert r.status_code == 200
+    start.assert_called_once_with("http://station")
+
+
+def test_radio_metadata_stop_stops_the_sessions_watch(client, default_session):
+    with patch.object(default_session, "stop_radio_metadata_watch") as stop:
+        r = client.post("/radio-metadata/stop")
+    assert r.status_code == 200
+    stop.assert_called_once()
+
+
+def test_radio_metadata_returns_the_sessions_current_title(client, default_session):
+    default_session.radio_title = "Artist - Track"
+    r = client.get("/radio-metadata")
+    assert r.status_code == 200
+    assert r.json() == {"title": "Artist - Track"}
+
+
+def test_radio_metadata_returns_null_before_anything_has_been_seen(client, default_session):
+    r = client.get("/radio-metadata")
+    assert r.status_code == 200
+    assert r.json() == {"title": None}
