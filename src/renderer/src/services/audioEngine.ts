@@ -11,6 +11,22 @@
 // rounding must not read as "the write didn't take".
 const SEEK_TOLERANCE_SECONDS = 0.5
 
+// MediaError.MEDIA_ERR_NETWORK — hardcoded rather than read off the global,
+// which jsdom does not define. The only one of the four MediaError codes
+// worth an automatic reconnect: the browser had already established the
+// stream was playable and lost the connection while fetching more of it,
+// exactly what a cellular dead spot looks like. The other three (aborted,
+// decode, src-not-supported) would just fail the same way again.
+const MEDIA_ERR_NETWORK = 2
+
+// How many times reconnectOnDrop() below retries a dropped connection
+// before giving up and reporting a real error, and how the wait between
+// attempts grows (1s, 2s, 4s, 8s, capped at 8s) — long enough to ride out a
+// few-second tunnel or dead spot without hammering the server on a
+// connection that isn't coming back.
+const MAX_RECONNECT_ATTEMPTS = 5
+const MAX_RECONNECT_DELAY_SECONDS = 8
+
 /** Whether the local <audio> element may be routed through a Web Audio
  * graph at all — which is what buys the visualizer and ReplayGain, and what
  * costs playback while the screen is locked.
@@ -54,11 +70,25 @@ export class AudioEngine {
   // newer load()/seek() is never overwritten by the previous one's
   // late-arriving start position.
   private cancelStartPositionRetry: (() => void) | null = null
+  // Reconnect bookkeeping for reconnectOnDrop() below: the url and position
+  // to resume from, how many attempts have been made since the last
+  // successful 'playing', and the pending backoff timer (if any).
+  private reconnectUrl: string | null = null
+  private lastKnownPosition = 0
+  private reconnectAttempts = 0
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
   onTimeUpdate: ((position: number) => void) | null = null
   onEnded: (() => void) | null = null
   onError: ((message: string) => void) | null = null
   onDurationChange: ((duration: number) => void) | null = null
+  /** How far the *currently playing* stretch of audio is buffered ahead of
+   * the playhead, in the same seconds as onTimeUpdate — what the seek bar
+   * paints as the lighter "buffered but not yet played" band alongside the
+   * played/unplayed one it already drew. See reportBuffered() for why this
+   * is the end of the buffered range containing currentTime rather than
+   * just the last one. */
+  onBufferedChange: ((end: number) => void) | null = null
 
   constructor() {
     this.audio = new Audio()
@@ -67,6 +97,13 @@ export class AudioEngine {
     // ever read back silence — connect's CORSMiddleware (main.py) already
     // allows the app's own origin, so this is safe to set unconditionally.
     this.audio.crossOrigin = 'anonymous'
+    // Explicit rather than relying on the browser default: an omitted
+    // `preload` leaves some browsers (mobile Chrome on cellular in
+    // particular) buffering only just enough to start, which turns a
+    // several-second reception gap into an audible dropout even though
+    // routes/local_stream.py's ffmpeg pipeline is already sending as fast
+    // as it can and would happily fill a much bigger buffer.
+    this.audio.preload = 'auto'
     // Builds the analyser graph now, at app startup, rather than lazily on
     // AudioVisualizer.vue's first frame (which used to live inside
     // getAnalyser() below). createMediaElementSource() reroutes this
@@ -90,17 +127,109 @@ export class AudioEngine {
       }
     }
     this.audio.addEventListener('timeupdate', () => {
+      this.lastKnownPosition = this.audio.currentTime
       this.onTimeUpdate?.(this.audio.currentTime)
     })
     this.audio.addEventListener('ended', () => {
       this.onEnded?.()
     })
+    // A successful reconnect lands here, same as any other stream actually
+    // starting to play — resetting the count is what lets the *next* drop
+    // get the same five attempts rather than picking up where this one left
+    // off.
+    this.audio.addEventListener('playing', () => {
+      this.reconnectAttempts = 0
+    })
     this.audio.addEventListener('error', () => {
+      const code = (this.audio.error as { code?: number } | null)?.code
+      if (code === MEDIA_ERR_NETWORK && this.reconnectUrl !== null) {
+        this.reconnectOnDrop()
+        return
+      }
+      this.reconnectUrl = null
       this.onError?.(this.audio.error?.message ?? 'Playback error')
     })
     this.audio.addEventListener('durationchange', () => {
       if (Number.isFinite(this.audio.duration)) this.onDurationChange?.(this.audio.duration)
     })
+    // 'progress' is what fires as the browser actually receives more of the
+    // stream — 'timeupdate' only moves with playback and would report a
+    // buffered end that hasn't advanced in seconds. 'seeked' covers landing
+    // on a spot that was already buffered from an earlier stretch of the
+    // same file, which needs no new network activity and so fires no
+    // 'progress' of its own.
+    this.audio.addEventListener('progress', () => {
+      this.reportBuffered()
+    })
+    this.audio.addEventListener('seeked', () => {
+      this.reportBuffered()
+    })
+  }
+
+  /** Reports the end of whichever buffered range currently contains the
+   * playhead — not simply the last range reported at all, since a seek can
+   * leave an earlier, now-abandoned range sitting in `buffered` alongside
+   * the new one actually being fetched. Reporting that stale range's end
+   * would draw a buffered band in the wrong place, or one that extends
+   * past a gap the playhead would actually stall at. Reports 0 when
+   * nothing covers the current position (nothing buffered there yet, most
+   * often right after a reconnectOnDrop() retry). */
+  private reportBuffered(): void {
+    const { buffered, currentTime } = this.audio
+    let end = 0
+    for (let i = 0; i < buffered.length; i++) {
+      if (buffered.start(i) <= currentTime && currentTime <= buffered.end(i)) {
+        end = buffered.end(i)
+        break
+      }
+    }
+    this.onBufferedChange?.(end)
+  }
+
+  /** Reconnects after a dropped (not merely slow) connection — see
+   * MEDIA_ERR_NETWORK's own comment for why only that error code lands
+   * here. Retries the same url from the last position timeupdate reported,
+   * with a growing backoff, and gives up after MAX_RECONNECT_ATTEMPTS by
+   * reporting a real error same as before this existed. Deliberately quiet
+   * while retrying — no onError call, so a brief tunnel doesn't flip the
+   * UI out of "playing" for what is, from the listener's chair, a
+   * half-second gap in the sound. */
+  private reconnectOnDrop(): void {
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      const url = this.reconnectUrl
+      this.reconnectUrl = null
+      console.error(`[audio-engine] Giving up reconnecting to ${url} after dropped connection`)
+      this.onError?.('Playback error: connection lost')
+      return
+    }
+    this.reconnectAttempts++
+    const delaySeconds = Math.min(2 ** (this.reconnectAttempts - 1), MAX_RECONNECT_DELAY_SECONDS)
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      const url = this.reconnectUrl
+      if (url === null) return
+      this.cancelStartPositionRetry?.()
+      this.audio.src = url
+      this.applyStartPosition(this.lastKnownPosition)
+      this.onBufferedChange?.(0)
+      // A rejected play() here needs no handling of its own: a connection
+      // that still isn't back fires the element's own 'error' event just
+      // as the first attempt did, which re-enters this same method for the
+      // next backoff step.
+      void this.audio.play().catch(() => {})
+    }, delaySeconds * 1000)
+  }
+
+  /** Drops any in-flight reconnect attempt — called wherever playback is
+   * meant to actually stop, so a backoff timer from a drop several seconds
+   * ago never resurrects sound the user (or the next track) already moved
+   * on from. */
+  private cancelReconnect(): void {
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this.reconnectUrl = null
   }
 
   /** Loads `url` at `startPosition` without starting playback — used to
@@ -113,9 +242,17 @@ export class AudioEngine {
    * song's value. */
   load(url: string, startPosition = 0, gain = 1): void {
     this.cancelStartPositionRetry?.()
+    this.cancelReconnect()
+    this.reconnectUrl = url
+    this.reconnectAttempts = 0
+    this.lastKnownPosition = startPosition
     this.audio.src = url
     this.applyStartPosition(startPosition)
     this.setReplayGain(gain)
+    // Otherwise the seek bar would flash the previous song's buffered band
+    // for a moment before the new stream's first 'progress' event corrects
+    // it — nothing is buffered on a src that has not started loading yet.
+    this.onBufferedChange?.(0)
   }
 
   /** Writes `position` twice: once right now, and once more from
@@ -199,6 +336,11 @@ export class AudioEngine {
   }
 
   pause(): void {
+    // An explicit pause means "stop", not "give up trying to reconnect and
+    // then stop" — without this a backoff timer left over from a drop just
+    // before the pause could still land its retry and resume sound the
+    // user asked to have paused.
+    this.cancelReconnect()
     this.audio.pause()
     this.suspendContext()
   }
@@ -209,6 +351,7 @@ export class AudioEngine {
 
   stop(): void {
     this.cancelStartPositionRetry?.()
+    this.cancelReconnect()
     this.audio.pause()
     this.audio.removeAttribute('src')
     this.audio.load()
@@ -220,6 +363,7 @@ export class AudioEngine {
     // otherwise a seek made before metadata arrived would be undone by that
     // retry a moment later.
     this.cancelStartPositionRetry?.()
+    this.lastKnownPosition = position
     this.audio.currentTime = position
   }
 

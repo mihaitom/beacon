@@ -184,6 +184,30 @@ describe('MobileTransportControls', () => {
       await wrapper.vm.$nextTick()
       expect(wrapper.getComponent({ name: 'SongWaveform' }).props('disabled')).toBe(true)
     })
+
+    it('passes the buffered position through, but not while casting or on radio', async () => {
+      const wrapper = mountControls()
+      const playback = usePlaybackStore()
+      playback.queue = [makeSong('1')]
+      playback.currentIndex = 0
+      playback.bufferedPosition = 42
+      await wrapper.vm.$nextTick()
+      expect(wrapper.getComponent({ name: 'SongWaveform' }).props('buffered')).toBe(42)
+
+      castTo('Living Room', 'sonos')
+      await wrapper.vm.$nextTick()
+      expect(wrapper.getComponent({ name: 'SongWaveform' }).props('buffered')).toBe(0)
+
+      useConnectStore().status = null
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Some Radio',
+        streamUrl: 'http://x',
+        homePageUrl: null,
+      }
+      await wrapper.vm.$nextTick()
+      expect(wrapper.getComponent({ name: 'SongWaveform' }).props('buffered')).toBe(0)
+    })
   })
 
   describe('cast button', () => {

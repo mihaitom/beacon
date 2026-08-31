@@ -17,6 +17,11 @@ import { getWaveform } from '@/services/connect/waveform'
 // the two player-adjacent visualizations.
 const PLAYED_COLOR = 'rgba(245, 169, 78, 0.85)'
 const UNPLAYED_COLOR = 'rgba(255, 255, 255, 0.22)'
+// A bit lighter than UNPLAYED_COLOR — the band between the playhead and how
+// far the stream is actually buffered, so a spotty connection reads as "some
+// of this is already downloaded" rather than looking identical to the part
+// nothing has fetched at all yet.
+const BUFFERED_COLOR = 'rgba(255, 255, 255, 0.4)'
 const MARKER_COLOR = 'rgba(255, 255, 255, 0.9)'
 
 export default {
@@ -28,6 +33,10 @@ export default {
     modelValue: { type: Number, required: true },
     duration: { type: Number, required: true },
     disabled: { type: Boolean, default: false },
+    // How far ahead of modelValue the stream is buffered, in the same
+    // seconds — 0 (the default) paints no band at all, which is right for
+    // casting and radio, neither of which has a local buffer to show.
+    buffered: { type: Number, default: 0 },
   },
   emits: ['update:modelValue', 'end'],
   data() {
@@ -62,6 +71,9 @@ export default {
       this.paint()
     },
     duration() {
+      this.paint()
+    },
+    buffered() {
       this.paint()
     },
   },
@@ -159,6 +171,12 @@ export default {
 
       const playedRatio = this.duration > 0 ? this.modelValue / this.duration : 0
       const playedX = playedRatio * width
+      // Clamped to playedX: a stale buffered figure lagging behind a seek
+      // that just jumped past it must never paint the band *behind* the
+      // playhead instead of ahead of it.
+      const bufferedRatio =
+        this.duration > 0 ? Math.max(this.buffered, this.modelValue) / this.duration : 0
+      const bufferedX = Math.min(width, bufferedRatio * width)
       // Baseline sits a bit above the component's actual bottom edge
       // instead of bars touching it directly.
       const bottomPadding = height * 0.12
@@ -169,6 +187,10 @@ export default {
         // baseline still reads as "this is a seek bar" rather than nothing.
         ctx.fillStyle = UNPLAYED_COLOR
         ctx.fillRect(0, baseline - 2, width, 2)
+        if (bufferedX > 0) {
+          ctx.fillStyle = BUFFERED_COLOR
+          ctx.fillRect(0, baseline - 2, bufferedX, 2)
+        }
         return
       }
 
@@ -185,7 +207,7 @@ export default {
         // Only the upper half — bars grow up from a bottom baseline
         // instead of mirroring above/below a center line.
         const barHeight = Math.max(1, this.peaks[i]! * baseline * 0.9)
-        ctx.fillStyle = x < playedX ? PLAYED_COLOR : UNPLAYED_COLOR
+        ctx.fillStyle = x < playedX ? PLAYED_COLOR : x < bufferedX ? BUFFERED_COLOR : UNPLAYED_COLOR
         ctx.fillRect(x, baseline - barHeight, Math.max(0.5, barWidth - gap), barHeight)
       }
 

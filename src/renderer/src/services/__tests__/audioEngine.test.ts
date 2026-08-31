@@ -1,6 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AudioEngine, getAudioEngine } from '@/services/audioEngine'
 
+/** Stands in for the real TimeRanges a browser reports on `audio.buffered`
+ * — enough of the interface for reportBuffered() to walk. */
+class FakeTimeRanges {
+  constructor(private readonly ranges: [number, number][]) {}
+
+  get length(): number {
+    return this.ranges.length
+  }
+
+  start(i: number): number {
+    return this.ranges[i]![0]
+  }
+
+  end(i: number): number {
+    return this.ranges[i]![1]
+  }
+}
+
 /** Stands in for the <audio> element the engine builds in its constructor.
  * `dropWritesBeforeMetadata` is the whole point of it: Safari discards a
  * currentTime written before 'loadedmetadata' (the desktop browsers buffer
@@ -10,12 +28,18 @@ class FakeAudio extends EventTarget {
   static last: FakeAudio
 
   src = ''
+  preload = ''
   crossOrigin: string | null = null
   volume = 1
   paused = true
   ended = false
-  error: { message: string } | null = null
+  error: { message: string; code?: number } | null = null
   duration = Number.NaN
+  buffered: FakeTimeRanges = new FakeTimeRanges([])
+
+  setBuffered(ranges: [number, number][]): void {
+    this.buffered = new FakeTimeRanges(ranges)
+  }
 
   dropWritesBeforeMetadata = false
   metadataLoaded = false
@@ -265,6 +289,227 @@ describe('AudioEngine', () => {
       expect(FakeAudio.last.volume).toBe(0.25)
       expect(() => degraded.pause()).not.toThrow()
       expect(() => degraded.stop()).not.toThrow()
+    })
+  })
+
+  describe('preload', () => {
+    it('hints the browser to buffer ahead rather than the bare minimum', () => {
+      // Left to some browsers' own default (mobile Chrome on cellular in
+      // particular), a bigger buffer than the connection strictly needs
+      // right now is exactly what rides out a brief reception gap.
+      expect(audio.preload).toBe('auto')
+    })
+  })
+
+  describe('buffered reporting', () => {
+    it('reports the end of the buffered range that actually contains the playhead', () => {
+      const onBufferedChange = vi.fn()
+      engine.play('song.mp3')
+      onBufferedChange.mockClear() // load()'s own initial 0 report
+      engine.onBufferedChange = onBufferedChange
+      audio.settleAt(10)
+      audio.setBuffered([[0, 30]])
+
+      audio.dispatchEvent(new Event('progress'))
+
+      expect(onBufferedChange).toHaveBeenCalledWith(30)
+    })
+
+    it('ignores a stale range the playhead has already moved past', () => {
+      const onBufferedChange = vi.fn()
+      engine.play('song.mp3')
+      engine.onBufferedChange = onBufferedChange
+      audio.settleAt(50)
+      // The first range is left over from before a seek — reporting its
+      // end (20) would draw the buffered band behind the playhead.
+      audio.setBuffered([
+        [0, 20],
+        [45, 80],
+      ])
+
+      audio.dispatchEvent(new Event('progress'))
+
+      expect(onBufferedChange).toHaveBeenCalledWith(80)
+    })
+
+    it('reports 0 when nothing covers the current position yet', () => {
+      const onBufferedChange = vi.fn()
+      engine.play('song.mp3')
+      engine.onBufferedChange = onBufferedChange
+      audio.settleAt(50)
+      audio.setBuffered([[0, 20]])
+
+      audio.dispatchEvent(new Event('progress'))
+
+      expect(onBufferedChange).toHaveBeenCalledWith(0)
+    })
+
+    it('updates on a seek into an already-buffered stretch, which fires no progress event of its own', () => {
+      const onBufferedChange = vi.fn()
+      engine.play('song.mp3')
+      engine.onBufferedChange = onBufferedChange
+      audio.setBuffered([[0, 100]])
+      audio.settleAt(60)
+
+      audio.dispatchEvent(new Event('seeked'))
+
+      expect(onBufferedChange).toHaveBeenCalledWith(100)
+    })
+
+    it('resets to 0 the moment a new track loads, before anything of it is buffered', () => {
+      engine.play('first.mp3')
+      audio.setBuffered([[0, 200]])
+      const onBufferedChange = vi.fn()
+      engine.onBufferedChange = onBufferedChange
+
+      engine.play('second.mp3')
+
+      expect(onBufferedChange).toHaveBeenCalledWith(0)
+    })
+  })
+
+  describe('connection drop', () => {
+    // MediaError.MEDIA_ERR_NETWORK — the only code the engine treats as
+    // worth an automatic reconnect (see the module's own constant).
+    const NETWORK_ERROR_CODE = 2
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    function dropConnection(): void {
+      audio.error = { message: 'network error', code: NETWORK_ERROR_CODE }
+      audio.dispatchEvent(new Event('error'))
+    }
+
+    it('reconnects from the last reported position instead of reporting an error straight away', async () => {
+      const onError = vi.fn()
+      engine.onError = onError
+      engine.play('song.mp3')
+      audio.settleAt(42)
+      audio.dispatchEvent(new Event('timeupdate'))
+      audio.play.mockClear()
+
+      dropConnection()
+      expect(onError).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(audio.src).toBe('song.mp3')
+      expect(audio.currentTime).toBe(42)
+      expect(audio.play).toHaveBeenCalledOnce()
+    })
+
+    it('reports the buffer as empty again once a reconnect actually retries', async () => {
+      const onBufferedChange = vi.fn()
+      engine.play('song.mp3')
+      audio.setBuffered([[0, 200]])
+      engine.onBufferedChange = onBufferedChange
+
+      dropConnection()
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(onBufferedChange).toHaveBeenCalledWith(0)
+    })
+
+    it('backs off between attempts instead of hammering the server', async () => {
+      engine.play('song.mp3')
+      audio.play.mockClear()
+
+      dropConnection()
+      await vi.advanceTimersByTimeAsync(999)
+      expect(audio.play).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(audio.play).toHaveBeenCalledOnce()
+    })
+
+    it('gives up after repeated drops and reports a real error', async () => {
+      const onError = vi.fn()
+      engine.onError = onError
+      engine.play('song.mp3')
+
+      // Five attempts, each covered by its own (growing, capped) backoff —
+      // none of them a real reconnect, since the fake never fires 'playing'.
+      for (let i = 0; i < 5; i++) {
+        dropConnection()
+        await vi.advanceTimersByTimeAsync(8000)
+      }
+      expect(onError).not.toHaveBeenCalled()
+
+      dropConnection()
+      expect(onError).toHaveBeenCalledWith('Playback error: connection lost')
+    })
+
+    it('resets the attempt count once a reconnect actually succeeds', async () => {
+      const onError = vi.fn()
+      engine.onError = onError
+      engine.play('song.mp3')
+
+      dropConnection()
+      await vi.advanceTimersByTimeAsync(1000)
+      audio.dispatchEvent(new Event('playing'))
+
+      // A fresh set of five attempts, not one more on top of the first —
+      // still no error, where four extra attempts on the same budget would
+      // have exhausted it.
+      for (let i = 0; i < 5; i++) {
+        dropConnection()
+        await vi.advanceTimersByTimeAsync(8000)
+      }
+      expect(onError).not.toHaveBeenCalled()
+    })
+
+    it('reports a non-network error immediately, without retrying', () => {
+      const onError = vi.fn()
+      engine.onError = onError
+      engine.play('song.mp3')
+      audio.play.mockClear()
+
+      // MediaError.MEDIA_ERR_DECODE — retrying gets the same failure again.
+      audio.error = { message: 'decode failed', code: 3 }
+      audio.dispatchEvent(new Event('error'))
+
+      expect(onError).toHaveBeenCalledWith('decode failed')
+      expect(audio.play).not.toHaveBeenCalled()
+    })
+
+    it('does not resurrect playback a pause already stopped', async () => {
+      engine.play('song.mp3')
+      dropConnection()
+      engine.pause()
+      audio.play.mockClear()
+
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      expect(audio.play).not.toHaveBeenCalled()
+    })
+
+    it('does not resurrect playback once stop() moved on', async () => {
+      engine.play('song.mp3')
+      dropConnection()
+      engine.stop()
+      audio.play.mockClear()
+
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      expect(audio.play).not.toHaveBeenCalled()
+    })
+
+    it('does not carry a reconnect over to the next track', async () => {
+      engine.play('first.mp3')
+      dropConnection()
+      engine.play('second.mp3')
+      audio.play.mockClear()
+
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      expect(audio.play).not.toHaveBeenCalled()
+      expect(audio.src).toBe('second.mp3')
     })
   })
 

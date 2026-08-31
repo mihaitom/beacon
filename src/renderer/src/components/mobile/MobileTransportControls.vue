@@ -47,6 +47,7 @@
       <song-waveform
         :model-value="seekPreviewPosition ?? playbackStore.localPosition"
         :duration="playbackStore.duration"
+        :buffered="bufferedPosition"
         :disabled="!hasPlayable || !!playbackStore.radioStation"
         @update:model-value="seekPreviewPosition = $event"
         @end="onSeekEnd"
@@ -141,6 +142,12 @@ export default {
     },
     hasPlayable() {
       return this.playbackStore.currentSong != null || this.playbackStore.radioStation != null
+    },
+    // Same reasoning as SeekBar.vue's identical computed: no local buffer
+    // to show while casting or playing radio.
+    bufferedPosition() {
+      if (this.playbackStore.isCasting || this.playbackStore.radioStation) return 0
+      return this.playbackStore.bufferedPosition
     },
     repeatIcon() {
       return this.playbackStore.repeatMode === 'one' ? 'mdi-repeat-once' : 'mdi-repeat'

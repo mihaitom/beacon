@@ -6,6 +6,7 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
+import { useConnectStore } from '@/stores/connect'
 import SeekBar from '../SeekBar.vue'
 
 const vuetify = createVuetify({ components, directives })
@@ -50,5 +51,34 @@ describe('SeekBar', () => {
 
     expect(seekSpy).toHaveBeenCalledWith(90)
     expect(vm.seekPreviewPosition).toBeNull()
+  })
+
+  describe('bufferedPosition', () => {
+    it('passes the store value through for ordinary local playback', () => {
+      const wrapper = mountSeekBar()
+      usePlaybackStore().bufferedPosition = 42
+
+      expect((wrapper.vm as unknown as { bufferedPosition: number }).bufferedPosition).toBe(42)
+    })
+
+    it('reports 0 while casting, which buffers on the device itself', () => {
+      const wrapper = mountSeekBar()
+      usePlaybackStore().bufferedPosition = 42
+      useConnectStore().status = { targets: [{ name: 'Living Room', type: 'sonos' }] } as never
+
+      expect((wrapper.vm as unknown as { bufferedPosition: number }).bufferedPosition).toBe(0)
+    })
+
+    it('reports 0 for a radio station, which has no stable position to buffer against', () => {
+      const wrapper = mountSeekBar()
+      const playback = usePlaybackStore()
+      playback.bufferedPosition = 42
+      playback.radioStation = {
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+      } as never
+
+      expect((wrapper.vm as unknown as { bufferedPosition: number }).bufferedPosition).toBe(0)
+    })
   })
 })

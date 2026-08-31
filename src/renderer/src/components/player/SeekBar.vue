@@ -6,6 +6,7 @@
     <song-waveform
       :model-value="seekPreviewPosition ?? playbackStore.localPosition"
       :duration="playbackStore.duration"
+      :buffered="bufferedPosition"
       :disabled="!hasPlayable || !!playbackStore.radioStation"
       @update:model-value="seekPreviewPosition = $event"
       @end="onSeekEnd"
@@ -43,6 +44,14 @@ export default {
     },
     hasPlayable() {
       return this.playbackStore.currentSong != null || this.playbackStore.radioStation != null
+    },
+    // 0 while casting or playing radio — neither has a local buffer this
+    // app can see (a cast device buffers on its own end, radio has no
+    // stable seekable position to draw the band against), same reasoning
+    // as the :disabled check above.
+    bufferedPosition() {
+      if (this.playbackStore.isCasting || this.playbackStore.radioStation) return 0
+      return this.playbackStore.bufferedPosition
     },
   },
   methods: {

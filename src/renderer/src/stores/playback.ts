@@ -68,6 +68,11 @@ interface PlaybackState {
    * playback is dispatched or stopped by any other route. */
   castInterrupted: boolean
   localPosition: number
+  /** How far the current local stream is buffered ahead of localPosition —
+   * see services/audioEngine.ts's onBufferedChange for how this is
+   * derived. Always 0 while casting, which buffers on the device itself,
+   * out of this app's reach. */
+  bufferedPosition: number
   duration: number
   volume: number
   shuffle: boolean
@@ -258,6 +263,7 @@ export const usePlaybackStore = defineStore('playback', {
       isPlaying: false,
       castInterrupted: false,
       localPosition: 0,
+      bufferedPosition: 0,
       duration: 0,
       volume: 1,
       shuffle: false,
@@ -339,6 +345,9 @@ export const usePlaybackStore = defineStore('playback', {
       }
       engine.onDurationChange = (duration) => {
         if (!this.isCasting) this.duration = duration
+      }
+      engine.onBufferedChange = (end) => {
+        if (!this.isCasting) this.bufferedPosition = end
       }
       engine.onEnded = () => {
         if (!this.isCasting) void this.advanceOnSongEnd()
@@ -1363,6 +1372,7 @@ export const usePlaybackStore = defineStore('playback', {
       }
       this.isPlaying = false
       this.localPosition = 0
+      this.bufferedPosition = 0
     },
 
     /** Called from authStore.logout() — without this, the queue/currentSong
