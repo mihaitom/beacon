@@ -1,19 +1,31 @@
 <template>
   <div class="seek-bar" style="gap: 8px">
-    <span class="text-body-small text-medium-emphasis" style="width: 40px">{{
-      formatTime(seekPreviewPosition ?? playbackStore.localPosition)
-    }}</span>
-    <song-waveform
-      :model-value="seekPreviewPosition ?? playbackStore.localPosition"
-      :duration="playbackStore.duration"
-      :buffered="bufferedPosition"
-      :disabled="!hasPlayable || !!playbackStore.radioStation"
-      @update:model-value="seekPreviewPosition = $event"
-      @end="onSeekEnd"
-    />
-    <span class="text-body-small text-medium-emphasis" style="width: 40px">{{
-      formatTime(playbackStore.duration)
-    }}</span>
+    <!-- Radio has no position or length a bar could honestly represent
+     - (see SongWaveform.vue's own comment on why it stopped trying) — an
+     - elapsed-time readout replaces the whole label/bar/label row instead
+     - of leaving a dead, maxed-out bar sitting there. -->
+    <span
+      v-if="playbackStore.radioStation"
+      class="text-body-small text-medium-emphasis seek-bar__live"
+      >{{ $t('player.liveRadio', { time: formatTime(playbackStore.localPosition) }) }}</span
+    >
+    <template v-else>
+      <span class="text-body-small text-medium-emphasis" style="width: 40px">{{
+        formatTime(seekPreviewPosition ?? playbackStore.localPosition)
+      }}</span>
+      <song-waveform
+        :model-value="seekPreviewPosition ?? playbackStore.localPosition"
+        :duration="playbackStore.duration"
+        :buffered="bufferedPosition"
+        :disabled="!hasPlayable"
+        :dimmed="!hasPlayable"
+        @update:model-value="seekPreviewPosition = $event"
+        @end="onSeekEnd"
+      />
+      <span class="text-body-small text-medium-emphasis" style="width: 40px">{{
+        formatTime(playbackStore.duration)
+      }}</span>
+    </template>
   </div>
 </template>
 
@@ -45,12 +57,11 @@ export default {
     hasPlayable() {
       return this.playbackStore.currentSong != null || this.playbackStore.radioStation != null
     },
-    // 0 while casting or playing radio — neither has a local buffer this
-    // app can see (a cast device buffers on its own end, radio has no
-    // stable seekable position to draw the band against), same reasoning
-    // as the :disabled check above.
+    // 0 while casting, which buffers on the device itself, out of this
+    // app's reach. Radio no longer reaches this at all — the template
+    // above swaps the whole bar out for the live-elapsed label instead.
     bufferedPosition() {
-      if (this.playbackStore.isCasting || this.playbackStore.radioStation) return 0
+      if (this.playbackStore.isCasting) return 0
       return this.playbackStore.bufferedPosition
     },
   },
@@ -95,5 +106,13 @@ export default {
   justify-content: space-between;
   min-width: var(--control-container-min-width, 220px);
   width: 100%;
+}
+
+.seek-bar__live {
+  width: 100%;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>

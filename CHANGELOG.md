@@ -19,10 +19,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The log level under Settings' Advanced section is now only offered to accounts that are also allowed to trigger a library scan, the same rule the scan button itself already followed
 - While casting to an AirPlay device, the song position Beacon works with now follows how much of the song it has actually handed over, instead of assuming the same fixed delay for every track. It stays an approximation either way, since AirPlay speakers never report where they are in a song, unlike Sonos, Chromecast and DLNA speakers, which do and which Beacon goes by
 - Various small UI sizing/spacing tweaks (the Albums grid now spaces its covers the same as the album shelves everywhere else, instead of slightly tighter)
+- While playing an internet radio station, the seek bar now shows how long it's been running instead of a disabled progress bar with no real position or length to show
 
 ### Fixed
 
 - Fixed the personalized recommendations toggle missing from Settings altogether for accounts that aren't allowed to trigger a library scan, such as a regular non-admin Navidrome account. It applies to every account and every server, and is now shown to all of them
+- Fixed the stream-info panel (in the cast device picker) claiming a cast radio station was being transcoded to MP3, regardless of the audio quality chosen for casting. Radio is never transcoded by Beacon - it hands the station's own stream straight to the target device - so the panel now shows nothing while radio plays, same as it already did during local playback
 - Fixed the queue stalling at the end of the current song after moving a cast from one speaker to another. The song that was playing finished normally, then the speaker stayed silent for roughly the length of another track before the next one started on its own. Moving a cast now hands position tracking over to the speaker that keeps playing, instead of leaving it on the one that was switched off
 - Fixed a song that Autoplay had just added to the queue occasionally disappearing again and getting replaced by a different one a moment later, when two devices were connected to the same cast session and both topped the queue up around the same time. Only the first addition is kept now
 

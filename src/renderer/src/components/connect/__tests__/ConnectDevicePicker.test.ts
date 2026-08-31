@@ -337,5 +337,36 @@ describe('ConnectDevicePicker', () => {
 
       expect(wrapper.findComponent({ name: 'StreamInfoSection' }).exists()).toBe(true)
     })
+
+    describe('the divider above it', () => {
+      it('is hidden before a track has ever loaded, same as the section below it', () => {
+        const wrapper = mountPicker()
+
+        expect(wrapper.find('.v-divider').exists()).toBe(false)
+      })
+
+      it('is shown once casting to a device, which always has something to describe', () => {
+        useConnectStore().status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+        const wrapper = mountPicker()
+
+        expect(wrapper.find('.v-divider').exists()).toBe(true)
+      })
+
+      it('is hidden again while radio plays, which the section never describes', async () => {
+        useConnectStore().status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+        const wrapper = mountPicker()
+        expect(wrapper.find('.v-divider').exists()).toBe(true)
+
+        usePlaybackStore().radioStation = {
+          id: 'r1',
+          name: 'Chill FM',
+          streamUrl: 'https://stream.example/chill',
+          homePageUrl: null,
+        }
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('.v-divider').exists()).toBe(false)
+      })
+    })
   })
 })

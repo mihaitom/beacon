@@ -135,6 +135,7 @@ export default {
     mute: 'Silenciar',
     volume: 'Volumen',
     autoplay: 'Reproducción automática',
+    liveRadio: 'En directo · {time}',
   },
   shortcuts: {
     title: 'Atajos de teclado',

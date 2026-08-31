@@ -117,6 +117,34 @@ function formatKhz(hz: number): string {
   return `${Number.isInteger(khz) ? khz : khz.toFixed(1)} kHz`
 }
 
+/** Whether this panel has anything to describe at all. Nothing is loaded
+ * before the first track, and a radio station has no local stream of ours
+ * behind it (the URL is the station's own) — in both cases the panel says
+ * nothing rather than describing a stream that isn't there.
+ *
+ * The radio check applies while casting too, not just locally: /play-url
+ * (routes/playback.py) hands the target the station's raw URL directly and
+ * leaves `current_output_format` on the generic mp3 fallback purely as
+ * bookkeeping, never actually running it through the transcode pipeline
+ * that field describes. Without this, the panel reported "transcoding to
+ * MP3" for every cast radio station regardless of the quality setting, and
+ * a "connected"/lag reading that reflects connections to connect's own
+ * /stream proxy, which radio never uses either — none of stream_info means
+ * anything here.
+ *
+ * Exported (not just this component's own `hasStream` computed) so
+ * ConnectDevicePicker.vue can decide whether the divider above this
+ * section has anything below it to separate from — one answer, asked in
+ * two places, rather than two conditions that could quietly drift apart. */
+export function hasStreamInfo(): boolean {
+  const playback = usePlaybackStore()
+  if (playback.radioStation) return false
+  return (
+    useConnectStore().isActive ||
+    (playback.currentSong?.id != null && playback.activeLocalStream !== null)
+  )
+}
+
 export default {
   name: 'StreamInfoSection',
   data() {
@@ -150,13 +178,10 @@ export default {
     activePlan(): LocalStreamPlan | null {
       return this.playbackStore.activeLocalStream
     },
-    /** Whether there is anything to describe at all. Nothing is loaded
-     * before the first track, and a radio station has no local stream of
-     * ours behind it (the URL is the station's own) — in both cases the
-     * panel says nothing rather than describing a stream that isn't
-     * there. */
+    // See hasStreamInfo() above for the actual logic and why it lives
+    // there instead of only here.
     hasStream(): boolean {
-      return this.isCasting || (this.currentSongId !== null && this.activePlan !== null)
+      return hasStreamInfo()
     },
     transcoding(): boolean {
       if (this.isCasting) return this.castInfo.transcoding

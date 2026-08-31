@@ -80,7 +80,7 @@
         />
       </template>
 
-      <v-divider class="my-2" />
+      <v-divider v-if="showStreamInfo" class="my-2" />
       <stream-info-section />
     </v-card-text>
     <v-card-actions class="connect-picker__actions">
@@ -120,7 +120,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import ConnectErrorBanner from './ConnectErrorBanner.vue'
 import DeviceListItem from './DeviceListItem.vue'
 import AirplayPairingDialog from './AirplayPairingDialog.vue'
-import StreamInfoSection from './StreamInfoSection.vue'
+import StreamInfoSection, { hasStreamInfo } from './StreamInfoSection.vue'
 import type { DeviceType, DiscoveredDevice } from '@/services/connect/types'
 
 interface DeviceEntry {
@@ -168,6 +168,12 @@ export default {
     },
     authStore() {
       return useAuthStore()
+    },
+    // Whether stream-info-section actually renders anything below the
+    // divider — see hasStreamInfo()'s own comment (StreamInfoSection.vue)
+    // for why that answer lives there rather than being re-derived here.
+    showStreamInfo(): boolean {
+      return hasStreamInfo()
     },
     // Grouped by type (fixed order, see TYPE_ORDER) with each group sorted
     // alphabetically by name — the per-device type label this replaced is

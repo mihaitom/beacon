@@ -441,9 +441,8 @@ describe('StreamInfoSection', () => {
     })
 
     it('says nothing at all before a track has been loaded', async () => {
-      // Nothing is playing, so there is no stream to describe — including
-      // for a radio station, whose URL is the station's own and never
-      // passes through connect.
+      // Nothing is playing, so there is no stream to describe. See the
+      // 'radio' describe below for that other case that says nothing.
       useConnectStore().status = makeStatus()
       const wrapper = mountSection()
       await flushPromises()
@@ -503,6 +502,41 @@ describe('StreamInfoSection', () => {
       await flushPromises()
 
       expect(wrapper.vm.sourceLine).toBeNull()
+    })
+  })
+
+  describe('radio', () => {
+    function setRadio() {
+      usePlaybackStore().radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+    }
+
+    it('says nothing while casting, even though stream_info still holds the generic mp3 fallback', () => {
+      // /play-url (routes/playback.py) hands the target the station's raw
+      // URL directly and never runs it through the transcode pipeline —
+      // `stream_info` here is just leftover bookkeeping from before radio
+      // started, not a description of what the device is actually getting.
+      // Before this was fixed, the panel reported "transcoding to MP3" for
+      // every cast radio station regardless of the quality setting.
+      setStreamInfo({}) // the fallback defaults: label 'mp3-192k (fallback)', transcoding true
+      setRadio()
+
+      const wrapper = mountSection()
+
+      expect(wrapper.find('.stream-info-section').exists()).toBe(false)
+    })
+
+    it('says nothing locally either, same as before a track has ever loaded', () => {
+      useConnectStore().status = makeStatus()
+      setRadio()
+
+      const wrapper = mountSection()
+
+      expect(wrapper.find('.stream-info-section').exists()).toBe(false)
     })
   })
 })

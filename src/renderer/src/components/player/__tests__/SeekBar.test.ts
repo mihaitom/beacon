@@ -68,17 +68,37 @@ describe('SeekBar', () => {
 
       expect((wrapper.vm as unknown as { bufferedPosition: number }).bufferedPosition).toBe(0)
     })
+  })
 
-    it('reports 0 for a radio station, which has no stable position to buffer against', () => {
+  describe('radio', () => {
+    it('replaces the bar with an elapsed-time readout instead of a dead, maxed-out bar', async () => {
       const wrapper = mountSeekBar()
       const playback = usePlaybackStore()
-      playback.bufferedPosition = 42
+      playback.localPosition = 754 // 12:34
       playback.radioStation = {
         name: 'Chill FM',
         streamUrl: 'https://stream.example/chill',
       } as never
+      await wrapper.vm.$nextTick()
 
-      expect((wrapper.vm as unknown as { bufferedPosition: number }).bufferedPosition).toBe(0)
+      expect(wrapper.find('song-waveform-stub').exists()).toBe(false)
+      expect(wrapper.text()).toContain('Live · 12:34')
+    })
+
+    it('shows the bar again once radio stops', async () => {
+      const wrapper = mountSeekBar()
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+      } as never
+      await wrapper.vm.$nextTick()
+
+      playback.radioStation = null
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('song-waveform-stub').exists()).toBe(true)
+      expect(wrapper.text()).not.toContain('Live')
     })
   })
 })

@@ -134,6 +134,7 @@ export default {
     mute: 'Muto',
     volume: 'Volume',
     autoplay: 'Autoplay',
+    liveRadio: 'In diretta · {time}',
   },
   shortcuts: {
     title: 'Scorciatoie da tastiera',

@@ -2,7 +2,7 @@
   <canvas
     ref="canvasEl"
     class="song-waveform"
-    :class="{ 'song-waveform--disabled': disabled }"
+    :class="{ 'song-waveform--disabled': disabled, 'song-waveform--dimmed': dimmed }"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
@@ -32,11 +32,20 @@ export default {
     // seekPreviewPosition/onSeekEnd logic doesn't need to change at all.
     modelValue: { type: Number, required: true },
     duration: { type: Number, required: true },
+    // Blocks dragging — set for radio too, since there is nothing a drag
+    // could seek to (see songId below), without implying the bar has
+    // nothing worth showing (see `dimmed`, which is what used to be tied
+    // to this).
     disabled: { type: Boolean, default: false },
     // How far ahead of modelValue the stream is buffered, in the same
     // seconds — 0 (the default) paints no band at all, which is right for
     // casting and radio, neither of which has a local buffer to show.
     buffered: { type: Number, default: 0 },
+    // The faded look for "nothing is playing at all" — kept separate from
+    // `disabled` because radio is also non-draggable but very much has
+    // something to show (see paint()'s no-peaks branch): how long it's
+    // been playing, against the last library track's length.
+    dimmed: { type: Boolean, default: false },
   },
   emits: ['update:modelValue', 'end'],
   data() {
@@ -169,8 +178,11 @@ export default {
       ctx.clearRect(0, 0, width, height)
       if (width <= 0 || height <= 0) return
 
+      // Clamped to the canvas width so a position that ever lands past
+      // duration (rounding, mostly) reads as fully played instead of
+      // drawing a marker off the visible edge.
       const playedRatio = this.duration > 0 ? this.modelValue / this.duration : 0
-      const playedX = playedRatio * width
+      const playedX = Math.min(width, playedRatio * width)
       // Clamped to playedX: a stale buffered figure lagging behind a seek
       // that just jumped past it must never paint the band *behind* the
       // playhead instead of ahead of it.
@@ -183,14 +195,23 @@ export default {
       const baseline = height - bottomPadding
 
       if (this.peaks.length === 0) {
-        // Loading, or nothing to show (disabled/no song) — a flat
-        // baseline still reads as "this is a seek bar" rather than nothing.
+        // A real track whose own waveform just hasn't loaded yet — radio
+        // never reaches here at all now (see SeekBar.vue/
+        // MobileTransportControls.vue, which swap this component out
+        // entirely for a live-elapsed label instead of mounting it with
+        // nothing honest to draw).
         ctx.fillStyle = UNPLAYED_COLOR
         ctx.fillRect(0, baseline - 2, width, 2)
-        if (bufferedX > 0) {
+        if (bufferedX > playedX) {
           ctx.fillStyle = BUFFERED_COLOR
-          ctx.fillRect(0, baseline - 2, bufferedX, 2)
+          ctx.fillRect(playedX, baseline - 2, bufferedX - playedX, 2)
         }
+        if (playedX > 0) {
+          ctx.fillStyle = PLAYED_COLOR
+          ctx.fillRect(0, baseline - 2, playedX, 2)
+        }
+        ctx.fillStyle = MARKER_COLOR
+        ctx.fillRect(Math.min(width - 1.5, playedX), 0, 1.5, height)
         return
       }
 
@@ -238,6 +259,9 @@ export default {
 
 .song-waveform--disabled {
   cursor: default;
+}
+
+.song-waveform--dimmed {
   opacity: 0.4;
 }
 </style>

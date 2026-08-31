@@ -134,6 +134,7 @@ export default {
     mute: 'Muet',
     volume: 'Volume',
     autoplay: 'Lecture automatique',
+    liveRadio: 'En direct · {time}',
   },
   shortcuts: {
     title: 'Raccourcis clavier',

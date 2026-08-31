@@ -41,20 +41,30 @@
     </div>
 
     <div class="d-flex align-center mb-2" style="gap: 10px">
-      <span class="text-body-small text-medium-emphasis mobile-transport__time">{{
-        formatTime(seekPreviewPosition ?? playbackStore.localPosition)
-      }}</span>
-      <song-waveform
-        :model-value="seekPreviewPosition ?? playbackStore.localPosition"
-        :duration="playbackStore.duration"
-        :buffered="bufferedPosition"
-        :disabled="!hasPlayable || !!playbackStore.radioStation"
-        @update:model-value="seekPreviewPosition = $event"
-        @end="onSeekEnd"
-      />
-      <span class="text-body-small text-medium-emphasis mobile-transport__time text-right">{{
-        formatTime(playbackStore.duration)
-      }}</span>
+      <!-- See SeekBar.vue's identical swap for why radio replaces the
+       - whole row instead of showing a bar with nothing to represent. -->
+      <span
+        v-if="playbackStore.radioStation"
+        class="text-body-small text-medium-emphasis mobile-transport__live"
+        >{{ $t('player.liveRadio', { time: formatTime(playbackStore.localPosition) }) }}</span
+      >
+      <template v-else>
+        <span class="text-body-small text-medium-emphasis mobile-transport__time">{{
+          formatTime(seekPreviewPosition ?? playbackStore.localPosition)
+        }}</span>
+        <song-waveform
+          :model-value="seekPreviewPosition ?? playbackStore.localPosition"
+          :duration="playbackStore.duration"
+          :buffered="bufferedPosition"
+          :disabled="!hasPlayable"
+          :dimmed="!hasPlayable"
+          @update:model-value="seekPreviewPosition = $event"
+          @end="onSeekEnd"
+        />
+        <span class="text-body-small text-medium-emphasis mobile-transport__time text-right">{{
+          formatTime(playbackStore.duration)
+        }}</span>
+      </template>
     </div>
 
     <div class="d-flex align-center" style="gap: 10px">
@@ -144,9 +154,11 @@ export default {
       return this.playbackStore.currentSong != null || this.playbackStore.radioStation != null
     },
     // Same reasoning as SeekBar.vue's identical computed: no local buffer
-    // to show while casting or playing radio.
+    // to show while casting, which buffers on the device itself. Radio no
+    // longer reaches this at all — the template above swaps the whole bar
+    // out for the live-elapsed label instead.
     bufferedPosition() {
-      if (this.playbackStore.isCasting || this.playbackStore.radioStation) return 0
+      if (this.playbackStore.isCasting) return 0
       return this.playbackStore.bufferedPosition
     },
     repeatIcon() {
@@ -288,6 +300,14 @@ export default {
 .mobile-transport__time {
   width: 36px;
   flex-shrink: 0;
+}
+
+.mobile-transport__live {
+  width: 100%;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .text-right {

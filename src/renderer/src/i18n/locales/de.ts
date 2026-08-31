@@ -132,6 +132,7 @@ export default {
     mute: 'Stummschalten',
     volume: 'Lautstärke',
     autoplay: 'Autoplay',
+    liveRadio: 'Live · {time}',
   },
   shortcuts: {
     title: 'Tastenkürzel',

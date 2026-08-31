@@ -165,7 +165,7 @@ describe('MobileTransportControls', () => {
       expect(wrapper.findAll('.mobile-transport__time')[0]!.text()).toBe('0:10')
     })
 
-    it('is disabled without a track, and for radio, which has nothing to seek within', async () => {
+    it('is disabled without a track', async () => {
       const wrapper = mountControls()
       const playback = usePlaybackStore()
       expect(wrapper.getComponent({ name: 'SongWaveform' }).props('disabled')).toBe(true)
@@ -174,18 +174,9 @@ describe('MobileTransportControls', () => {
       playback.currentIndex = 0
       await wrapper.vm.$nextTick()
       expect(wrapper.getComponent({ name: 'SongWaveform' }).props('disabled')).toBe(false)
-
-      playback.radioStation = {
-        id: 'r1',
-        name: 'Some Radio',
-        streamUrl: 'http://x',
-        homePageUrl: null,
-      }
-      await wrapper.vm.$nextTick()
-      expect(wrapper.getComponent({ name: 'SongWaveform' }).props('disabled')).toBe(true)
     })
 
-    it('passes the buffered position through, but not while casting or on radio', async () => {
+    it('passes the buffered position through, but not while casting', async () => {
       const wrapper = mountControls()
       const playback = usePlaybackStore()
       playback.queue = [makeSong('1')]
@@ -197,8 +188,12 @@ describe('MobileTransportControls', () => {
       castTo('Living Room', 'sonos')
       await wrapper.vm.$nextTick()
       expect(wrapper.getComponent({ name: 'SongWaveform' }).props('buffered')).toBe(0)
+    })
 
-      useConnectStore().status = null
+    it('swaps the bar for a live-elapsed readout while radio plays, which has nothing to seek within', async () => {
+      const wrapper = mountControls()
+      const playback = usePlaybackStore()
+      playback.localPosition = 754 // 12:34
       playback.radioStation = {
         id: 'r1',
         name: 'Some Radio',
@@ -206,7 +201,14 @@ describe('MobileTransportControls', () => {
         homePageUrl: null,
       }
       await wrapper.vm.$nextTick()
-      expect(wrapper.getComponent({ name: 'SongWaveform' }).props('buffered')).toBe(0)
+
+      expect(wrapper.findComponent({ name: 'SongWaveform' }).exists()).toBe(false)
+      expect(wrapper.text()).toContain('Live · 12:34')
+
+      playback.radioStation = null
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.findComponent({ name: 'SongWaveform' }).exists()).toBe(true)
     })
   })
 

@@ -134,6 +134,7 @@ export default {
     mute: 'Mute',
     volume: 'Volume',
     autoplay: 'Autoplay',
+    liveRadio: 'Live · {time}',
   },
   shortcuts: {
     title: 'Keyboard shortcuts',
