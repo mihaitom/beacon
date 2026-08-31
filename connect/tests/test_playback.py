@@ -5,7 +5,8 @@ import contextlib
 import time
 from unittest.mock import AsyncMock, patch
 
-from core.session import compute_position
+from core.session import build_status_dict, compute_position
+from core.stream_format import ProbedStream, content_type_from_extension
 from core.streamer import FALLBACK_FORMAT, OutputFormat
 from delivery import (
     AirPlayDelivery,
@@ -20,7 +21,6 @@ from routes.playback import (
     PROVISIONAL_STARTUP_DELAY,
     QUEUE_TOPUP_DEDUP_WINDOW,
     _apply_position_offset,
-    _guess_radio_content_type,
     _resync_position_once,
     _resync_position_periodically,
 )
@@ -871,49 +871,118 @@ def test_play_url_starts_the_radio_metadata_watch(client, default_session):
     start.assert_called_once_with("https://example.com/stream.mp3")
 
 
+# ── playlist-file radio URLs ─────────────────────────────────────────────────
+# Regression coverage for a Sonos answering a bare `UPnP Error 800` with
+# nothing pointing at the cause: the station's URL was a .m3u playlist file
+# naming where the audio really is, not the audio (see
+# core/playlist_url.py). Resolved here rather than trusted from the caller
+# because getting it wrong is invisible from the device's side.
+
+
+def test_play_url_resolves_a_playlist_url_before_handing_it_to_the_device(client, default_session):
+    stream = "http://dispatcher.rndfnk.com/br/br24/live/mp3/mid"
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play,
+        patch("routes.playback.resolve_stream_url", new=AsyncMock(return_value=stream)) as resolve,
+        patch.object(default_session, "start_radio_metadata_watch") as start,
+    ):
+        r = client.post(
+            "/play-url",
+            json={
+                "target_name": "TV",
+                "target_type": "chromecast",
+                "title": "B5 aktuell",
+                "url": "http://streams.br.de/b5aktuell_2.m3u",
+            },
+        )
+
+    resolve.assert_awaited_once_with("http://streams.br.de/b5aktuell_2.m3u")
+    play.assert_awaited_once_with(stream, "B5 aktuell", content_type="audio/mpeg")
+    # Everything downstream has to agree on the resolved URL, or a
+    # reconnect replays the playlist file and the status reports a
+    # different station than the one the device was given.
+    assert default_session.state.radio_info["url"] == stream
+    start.assert_called_once_with(stream)
+    assert r.json()["url"] == stream
+
+
+def test_play_url_reports_the_resolved_url_so_the_client_can_match_it(client, default_session):
+    """The frontend compares its own station's URL against what the status
+    reports; a mismatch makes every status tick look like a station change.
+    """
+    stream = "http://dispatcher.rndfnk.com/br/br24/live/mp3/mid"
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch("routes.playback.resolve_stream_url", new=AsyncMock(return_value=stream)),
+    ):
+        client.post(
+            "/play-url",
+            json={
+                "target_name": "TV",
+                "target_type": "chromecast",
+                "title": "B5 aktuell",
+                "url": "http://streams.br.de/b5aktuell_2.m3u",
+            },
+        )
+
+    assert build_status_dict(default_session)["radio"]["url"] == stream
+
+
 # ── radio content-type guessing ──────────────────────────────────────────────
 # Regression coverage for a Sonos speaker refusing an AAC stream outright
 # (UPnP ERROR_UNSUPPORTED_FORMAT) after every delivery's play() defaulted
 # content_type to "audio/mpeg" regardless of what the radio URL actually
-# was — see _guess_radio_content_type()'s own docstring.
+# was — see content_type_from_extension()'s own docstring.
 
 
 def test_guess_radio_content_type_from_known_extensions():
-    assert _guess_radio_content_type("https://x.example/stream.aac") == "audio/aac"
-    assert _guess_radio_content_type("https://x.example/stream.mp3") == "audio/mpeg"
-    assert _guess_radio_content_type("https://x.example/stream.ogg") == "audio/ogg"
-    assert _guess_radio_content_type("https://x.example/stream.opus") == "audio/ogg"
-    assert _guess_radio_content_type("https://x.example/stream.flac") == "audio/flac"
+    assert content_type_from_extension("https://x.example/stream.aac") == "audio/aac"
+    assert content_type_from_extension("https://x.example/stream.mp3") == "audio/mpeg"
+    assert content_type_from_extension("https://x.example/stream.ogg") == "audio/ogg"
+    assert content_type_from_extension("https://x.example/stream.opus") == "audio/ogg"
+    assert content_type_from_extension("https://x.example/stream.flac") == "audio/flac"
 
 
 def test_guess_radio_content_type_defaults_to_mp3_for_no_or_unknown_extension():
     # The common case — most Icecast mounts carry no extension at all — and
     # the same fallback delivery/base.py's own play() already used, so
     # nothing regresses for a URL this can't say anything more specific about.
-    assert _guess_radio_content_type("https://x.example/live") == "audio/mpeg"
-    assert _guess_radio_content_type("https://x.example/stream.weird") == "audio/mpeg"
+    assert content_type_from_extension("https://x.example/live") == "audio/mpeg"
+    assert content_type_from_extension("https://x.example/stream.weird") == "audio/mpeg"
 
 
 def test_guess_radio_content_type_ignores_a_query_string():
-    assert _guess_radio_content_type("https://x.example/stream.aac?token=abc&t=1") == "audio/aac"
+    assert content_type_from_extension("https://x.example/stream.aac?token=abc&t=1") == "audio/aac"
 
 
-def test_play_url_passes_the_guessed_content_type_to_the_delivery(client, default_session):
-    with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
+def test_play_url_announces_the_content_type_the_station_itself_declares(client, default_session):
+    """The regression this whole path exists for, one layer deeper than it
+    used to be: the URL says `.aac`, the server says `audio/aacp` (HE-AAC),
+    and announcing the extension's own `audio/aac` is what a Sonos rejects
+    with ERROR_UNSUPPORTED_FORMAT — for a stream it plays fine once told
+    the truth. See core/stream_format.py."""
+    url = "https://playerservices.streamtheworld.com/api/livestream-redirect/OWR_INTERNATIONAL_ADP.aac"
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play,
+        patch(
+            "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/aacp"))
+        ) as probe,
+    ):
         client.post(
             "/play-url",
             json={
                 "target_name": "TV",
                 "target_type": "chromecast",
                 "title": "OWR International",
-                "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/OWR_INTERNATIONAL_ADP.aac",
+                "url": url,
             },
         )
-    play.assert_awaited_once_with(
-        "https://playerservices.streamtheworld.com/api/livestream-redirect/OWR_INTERNATIONAL_ADP.aac",
-        "OWR International",
-        content_type="audio/aac",
-    )
+
+    probe.assert_awaited_once_with(url)
+    play.assert_awaited_once_with(url, "OWR International", content_type="audio/aacp")
+    # Recorded so every later reconnect/join announces the same thing
+    # rather than probing again or falling back to the guess.
+    assert default_session.state.radio_info["content_type"] == "audio/aacp"
 
 
 def test_play_url_releases_the_claim_when_delivery_fails(client, default_session):
@@ -935,7 +1004,14 @@ def test_play_url_releases_the_claim_when_delivery_fails(client, default_session
             },
         )
 
-    assert r.json() == {"error": "unreachable"}
+    # Classified rather than the library's raw text — see
+    # delivery/errors.py. The technical line still travels as `detail`.
+    assert r.json() == {
+        "error": "delivery_failed",
+        "reason": "unknown",
+        "device": "TV",
+        "detail": "unreachable",
+    }
     assert claims.owner_of("chromecast", "TV") is None
 
 
@@ -1344,7 +1420,14 @@ def test_resume_returns_an_error_when_the_delivery_reconnect_fails(client, defau
     ):
         r = client.post("/resume")
 
-    assert r.json() == {"error": "unreachable"}
+    # Classified rather than the library's raw text — see
+    # delivery/errors.py. The technical line still travels as `detail`.
+    assert r.json() == {
+        "error": "delivery_failed",
+        "reason": "unknown",
+        "device": "TV",
+        "detail": "unreachable",
+    }
 
 
 def test_seek_returns_an_error_when_the_delivery_reconnect_fails(client, default_session):
@@ -1357,7 +1440,14 @@ def test_seek_returns_an_error_when_the_delivery_reconnect_fails(client, default
     ):
         r = client.post("/seek", json={"position": 30.0})
 
-    assert r.json() == {"error": "unreachable"}
+    # Classified rather than the library's raw text — see
+    # delivery/errors.py. The technical line still travels as `detail`.
+    assert r.json() == {
+        "error": "delivery_failed",
+        "reason": "unknown",
+        "device": "TV",
+        "detail": "unreachable",
+    }
 
 
 # ── /seek with position_offset ────────────────────────────────────────────────

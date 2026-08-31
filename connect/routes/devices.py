@@ -21,6 +21,7 @@ from core.session import (
     require_authenticated_session,
 )
 from core.state import stream_url
+from core.stream_format import FALLBACK_CONTENT_TYPE, radio_content_type
 from delivery import (
     AirPlayDelivery,
     BaseDelivery,
@@ -345,9 +346,17 @@ async def stop_device(
             if need_restart and st.is_streaming:
                 url = st.radio_info["url"] if st.radio_info else stream_url(session.session_id)
                 title = st.radio_info["title"] if st.radio_info else "Connect"
+                # The station's own type, as probed when it started playing — a
+                # device joining an AAC station mid-play needs telling the same
+                # thing the first one was, or it refuses the stream the first one
+                # is happily playing (see core/stream_format.py). A queued track
+                # keeps play()'s own default, which is what it always used.
+                content_type = (
+                    radio_content_type(st.radio_info) if st.radio_info else FALLBACK_CONTENT_TYPE
+                )
                 logger.info(f"[device-stop] Restarting stream: {url}")
                 try:
-                    await new_delivery.play(url, title)
+                    await new_delivery.play(url, title, content_type=content_type)
                 except Exception:
                     logger.exception("[device-stop] Restart error")
 

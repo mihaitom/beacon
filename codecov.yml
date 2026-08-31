@@ -1,0 +1,46 @@
+# Two independent test suites report into one Codecov project: the Python
+# backend under connect/ and the Vue renderer under src/renderer/. They are
+# uploaded by two separate workflows, so they need flags to be told apart -
+# without them, whichever upload lands second on a commit looks like a
+# correction of the first, and the badge ends up describing only that half.
+#
+# carryforward is the part that is easy to get wrong here. Both workflows
+# are path-filtered (see their own `on: paths:` blocks), so a push touching
+# only connect/ never runs the frontend job at all. Without carryforward
+# Codecov would read that missing report as "the frontend now covers
+# nothing" and the badge would collapse to 0% on every backend-only commit.
+# With it, the last known frontend report is carried onto the new commit
+# until a run actually produces a new one.
+flags:
+    backend:
+        paths:
+            - connect/
+        carryforward: true
+    frontend:
+        paths:
+            - src/renderer/
+        carryforward: true
+
+coverage:
+    status:
+        # Informational only, on purpose: a coverage drop is worth seeing on
+        # a pull request, but this project decides what to test by what the
+        # change actually risks (see the repo's own testing habits), not by
+        # defending a number - so it must never be the thing that blocks a
+        # merge.
+        project:
+            default:
+                informational: true
+            backend:
+                flags: [backend]
+                informational: true
+            frontend:
+                flags: [frontend]
+                informational: true
+        patch:
+            default:
+                informational: true
+
+comment:
+    layout: flags, files
+    require_changes: true

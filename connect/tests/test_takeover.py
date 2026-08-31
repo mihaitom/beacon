@@ -267,7 +267,10 @@ async def test_play_rollback_does_not_clobber_a_concurrent_unlocked_displacement
     with caplog.at_level(logging.WARNING, logger="connect.session"):
         result, _ = await asyncio.gather(_run_play(), _run_displace())
 
-    assert result["error"] == "device unreachable"
+    # Classified now, with the library's own text kept as `detail` — see
+    # delivery/errors.py.
+    assert result["error"] == "delivery_failed"
+    assert result["detail"] == "device unreachable"
     # The takeover that landed *during* the failed dispatch must survive
     # the rollback, not get silently restored to the pre-dispatch snapshot.
     assert default_session.state.active_delivery is None
@@ -291,5 +294,6 @@ async def test_play_rollback_restores_active_delivery_when_nothing_raced_it(defa
     with patch.object(ChromecastDelivery, "play", new=AsyncMock(side_effect=RuntimeError("boom"))):
         result = await play_tracks(req, default_session)
 
-    assert result["error"] == "boom"
+    assert result["error"] == "delivery_failed"
+    assert result["detail"] == "boom"
     assert default_session.state.active_delivery is previous_delivery

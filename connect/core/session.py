@@ -213,7 +213,10 @@ def compute_position(session: SessionState) -> float:
 
 
 def build_status_dict(
-    session: SessionState, displaced: bool = False, interrupted: bool = False
+    session: SessionState,
+    displaced: bool = False,
+    interrupted: bool = False,
+    delivery_error: dict | None = None,
 ) -> dict:
     """Build the full status payload shared by /status and SSE /events.
 
@@ -230,7 +233,14 @@ def build_status_dict(
     that into a toast offering to pick playback back up. A one-shot flag on
     the payload rather than state on the session, deliberately: there is
     nothing to clear afterwards, and a client connecting later should not be
-    told about an interruption it never witnessed."""
+    told about an interruption it never witnessed.
+
+    `delivery_error` is a third one of the same shape, for the one failure
+    that has no request to answer: a device that accepted what it was
+    given and then reported on its own event channel that it isn't playing
+    it (see routes/upnp.py). Same body delivery/errors.py builds for a
+    failed dispatch, so the frontend has one thing to understand rather
+    than two."""
     elapsed = compute_position(session)
     st = session.state
 
@@ -316,6 +326,7 @@ def build_status_dict(
         "total_songs": len(st.queue),
         "displaced": displaced,
         "interrupted": interrupted,
+        "delivery_error": delivery_error,
     }
 
 

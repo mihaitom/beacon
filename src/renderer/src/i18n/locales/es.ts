@@ -204,6 +204,17 @@ export default {
     authError: 'La sesión de Connect no está autenticada. Vuelve a iniciar sesión.',
     ffmpegMissing: 'Falta ffmpeg en el backend de Connect — la transmisión no funcionará sin él.',
     unknownError: 'Error desconocido.',
+    // Keyed by connect/delivery/errors.py's REASON_* constants — a
+    // dispatch that reached the device and didn't start playing.
+    deliveryFailed: {
+      rejected:
+        '«{device}» rechazó esta transmisión. El dispositivo no puede reproducir ese formato o esa dirección.',
+      busy: '«{device}» está ocupado con otra cosa y rechazó iniciar la reproducción.',
+      unreachable: 'No se pudo contactar con «{device}». ¿Está encendido y en la misma red?',
+      station_refused:
+        'La propia emisora rechazó la conexión. Beacon no pudo ni pasarla a «{device}» ni convertirla; probablemente la dirección de la emisora ya no sea válida',
+      unknown: 'Falló la reproducción en «{device}».',
+    },
     pairDeviceTitle: 'Emparejar "{name}"',
     pairPinPrompt: 'El dispositivo muestra un PIN — introdúcelo:',
     pairConfirmPrompt: 'Confirma en el dispositivo y luego haz clic en "Hecho".',
@@ -233,6 +244,7 @@ export default {
         replay_gain: 'ReplayGain',
         quality_limit: 'Límite de calidad',
         browser_unsupported: 'Formato del navegador',
+        device_rejected_stream: 'Rechazado',
       },
       reasons: {
         device_limit: 'La fuente supera la calidad que admite este dispositivo',
@@ -244,6 +256,8 @@ export default {
         replay_gain: 'ReplayGain está activo, por lo que no se puede enviar el archivo tal cual',
         quality_limit: 'La fuente supera el límite de calidad fijado en los ajustes',
         browser_unsupported: 'El navegador no puede reproducir el formato de origen',
+        device_rejected_stream:
+          'El dispositivo rechazó la transmisión original de la emisora, así que Beacon la convierte',
       },
     },
   },

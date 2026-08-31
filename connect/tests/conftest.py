@@ -101,6 +101,31 @@ def _stub_output_format(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _stub_stream_probe(monkeypatch):
+    """/play-url asks the station itself what it sends and whether it is
+    serving at all (see core/stream_format.py) — a real HTTP request to
+    whatever URL a test happens to use. Left unstubbed, the suite reaches
+    out to the internet: `https://example.com/stream.mp3`, which most
+    playback tests use as a stand-in, really does answer 404, and every one
+    of them started failing on a station that "refused the connection".
+
+    Stubbed to the same answer the pre-probe code would have guessed from
+    the URL's extension, so tests that don't care about formats behave as
+    they always did. Tests that exercise probing itself
+    (test_stream_format.py) call it directly, and the ones about /play-url's
+    own handling of it override this fixture.
+
+    Deliberately not a network *block*: the point is one predictable answer,
+    not a failure a test would then have to interpret."""
+    from core.stream_format import ProbedStream, content_type_from_extension
+
+    async def _fake_probe(url, client=None):
+        return ProbedStream(content_type_from_extension(url))
+
+    monkeypatch.setattr("routes.playback.probe_stream", _fake_probe)
+
+
+@pytest.fixture(autouse=True)
 def reset_state():
     """Wipe all runtime state before each test so tests are isolated: the
     session registry (all per-user playback state), the claim registry, the

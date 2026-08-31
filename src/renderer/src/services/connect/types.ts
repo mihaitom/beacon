@@ -53,11 +53,28 @@ export interface DeviceInUseError {
   owner: string
 }
 
+/** A dispatch that reached the device and didn't start playing.
+ *
+ * `reason` is a stable key from connect/delivery/errors.py's own REASON_*
+ * constants, deliberately coarse: a UPnP fault code says which layer
+ * refused, not why, and the backend won't invent detail the speaker never
+ * gave. `detail` is the library's raw text ("UPnP Error 800 received:
+ * from 10.2.2.112") — the technical line under the message, never the
+ * message itself. */
+export interface DeliveryFailedError {
+  error: 'delivery_failed'
+  reason: 'rejected' | 'busy' | 'unreachable' | 'station_refused' | 'unknown'
+  /** The speaker's own name, or every name in the group — see that
+   * module's device_label() for why a group names all of them. */
+  device: string
+  detail: string
+}
+
 export interface GenericError {
   error: string
 }
 
-export type ConnectError = DeviceInUseError | GenericError
+export type ConnectError = DeviceInUseError | DeliveryFailedError | GenericError
 
 export function isConnectError(value: unknown): value is ConnectError {
   return typeof value === 'object' && value !== null && 'error' in value
@@ -65,6 +82,10 @@ export function isConnectError(value: unknown): value is ConnectError {
 
 export function isDeviceInUseError(value: unknown): value is DeviceInUseError {
   return isConnectError(value) && (value as DeviceInUseError).error === 'device_in_use'
+}
+
+export function isDeliveryFailedError(value: unknown): value is DeliveryFailedError {
+  return isConnectError(value) && (value as DeliveryFailedError).error === 'delivery_failed'
 }
 
 export interface HealthResponse {
@@ -274,6 +295,13 @@ export interface ConnectStatus {
   // playback off to local speakers, since the user didn't ask to stop
   // casting, another session just took the device.
   displaced: boolean
+  /** Set only on the single status tick fired when a device reported, on
+   * its own event channel, that what it was given isn't playing and
+   * Beacon had nothing left to try (see connect/routes/upnp.py). The one
+   * failure with no request to answer — everything else surfaces as the
+   * error body of whatever call caused it. Same shape as
+   * DeliveryFailedError so it reads the same way. */
+  delivery_error: DeliveryFailedError | null
   // True only on the single status tick fired when a cast device dropped its
   // connection and never came back — see connect/routes/stream.py's
   // _mark_disconnected_if_not_reconnected(). Distinct from `displaced`: this

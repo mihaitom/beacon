@@ -617,6 +617,28 @@ def test_radio_browser_click_registers_and_never_fails_the_request(client):
     register.assert_called_once_with("abc-123")
 
 
+# ── /radio-stream-url ────────────────────────────────────────────────────────
+# Local playback never otherwise reaches this backend, so this endpoint is
+# the only place it can have a .m3u/.pls station URL resolved - see
+# core/playlist_url.py. The casting path does the same inside /play-url.
+
+
+def test_radio_stream_url_returns_what_the_playlist_points_at(client):
+    stream = "http://dispatcher.rndfnk.com/br/br24/live/mp3/mid"
+    with patch.object(radio_mod, "resolve_stream_url", new=AsyncMock(return_value=stream)) as r:
+        response = client.get("/radio-stream-url?url=http://streams.br.de/b5aktuell_2.m3u")
+    assert response.status_code == 200
+    assert response.json() == {"url": stream}
+    r.assert_awaited_once_with("http://streams.br.de/b5aktuell_2.m3u")
+
+
+def test_radio_stream_url_hands_back_a_plain_stream_url_unchanged(client):
+    url = "http://mp3channels.webradio.rockantenne.de/rockantenne"
+    response = client.get(f"/radio-stream-url?url={url}")
+    assert response.status_code == 200
+    assert response.json() == {"url": url}
+
+
 # ── /radio-metadata/* ────────────────────────────────────────────────────────
 
 

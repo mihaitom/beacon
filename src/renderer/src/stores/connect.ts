@@ -16,6 +16,7 @@ import { stop as apiStop } from '@/services/connect/playback'
 import { ConnectEventSource } from '@/services/connect/events'
 import { ConnectApiError } from '@/services/connect/http'
 import { isDeviceInUseError } from '@/services/connect/types'
+import { connectErrorMessage } from '@/services/connect/errorMessage'
 import type {
   ConnectDeviceRef,
   ConnectStatus,
@@ -29,6 +30,11 @@ interface ConnectErrors {
   authError: boolean
   ffmpegMissing: boolean
   message: string | null
+  /** The raw text behind `message` where there is one — see
+   * services/connect/errorMessage.ts. Shown under the message in smaller
+   * type rather than folded into it: a listener reads the sentence, and
+   * whoever they ask about it reads this. */
+  detail: string | null
 }
 
 interface ConnectState {
@@ -62,7 +68,13 @@ export const useConnectStore = defineStore('connect', {
     paired: [],
     isScanning: false,
     connected: false,
-    errors: { apiUnreachable: false, authError: false, ffmpegMissing: false, message: null },
+    errors: {
+      apiUnreachable: false,
+      authError: false,
+      ffmpegMissing: false,
+      message: null,
+      detail: null,
+    },
     pendingTakeover: null,
   }),
 
@@ -113,10 +125,26 @@ export const useConnectStore = defineStore('connect', {
   },
 
   actions: {
+    /** Records a failure in the one shape ConnectDevicePicker.vue renders.
+     * Centralized rather than stringified at each call site, so a
+     * classified delivery failure reads as a real sentence everywhere
+     * rather than only wherever someone remembered to translate it — see
+     * services/connect/errorMessage.ts. */
+    setError(error: unknown): void {
+      const { message, detail } = connectErrorMessage(error)
+      this.errors.message = message
+      this.errors.detail = detail
+    },
+
+    clearError(): void {
+      this.errors.message = null
+      this.errors.detail = null
+    },
+
     async withTakeoverHandling(action: (force: boolean) => Promise<void>): Promise<void> {
       try {
         await action(false)
-        this.errors.message = null
+        this.clearError()
       } catch (error) {
         if (error instanceof ConnectApiError && isDeviceInUseError(error.body)) {
           this.pendingTakeover = {
@@ -126,7 +154,7 @@ export const useConnectStore = defineStore('connect', {
           }
           return
         }
-        this.errors.message = error instanceof Error ? error.message : String(error)
+        this.setError(error)
         throw error
       }
     },
@@ -137,7 +165,7 @@ export const useConnectStore = defineStore('connect', {
       this.pendingTakeover = null
       try {
         await pending.retry()
-        this.errors.message = null
+        this.clearError()
         // Without this, the device list still shows the pre-takeover
         // owner/song until something else happens to trigger a refresh
         // (opening the picker again, the next background rescan) — the
@@ -150,7 +178,7 @@ export const useConnectStore = defineStore('connect', {
         // without it, a failed forced retry (device went offline, someone
         // else claimed it in the meantime) just closed the dialog with no
         // feedback at all.
-        this.errors.message = error instanceof Error ? error.message : String(error)
+        this.setError(error)
       }
     },
 
@@ -171,7 +199,7 @@ export const useConnectStore = defineStore('connect', {
         this.errors.apiUnreachable = false
       } catch (error) {
         this.errors.apiUnreachable = true
-        this.errors.message = error instanceof Error ? error.message : String(error)
+        this.setError(error)
       } finally {
         if (fresh) this.isScanning = false
       }
@@ -251,6 +279,17 @@ export const useConnectStore = defineStore('connect', {
       eventSource = new ConnectEventSource(auth.apiUrl, auth.connectToken, auth.sessionId)
       eventSource.onStatus = (status) => {
         this.status = status
+        // The one failure that never had a request to answer: a device
+        // that accepted what it was given and then reported on its own
+        // event channel that it isn't playing it, with nothing left for
+        // the backend to try (see connect/routes/upnp.py). Without this
+        // the speaker just goes quiet and the UI still says "playing".
+        // A one-shot flag on a single broadcast, exactly like
+        // `interrupted` — set it once, here, where each new payload
+        // arrives, rather than anywhere that re-reads the same payload.
+        if (status.delivery_error) {
+          this.setError(new ConnectApiError('delivery_failed', status.delivery_error))
+        }
       }
       eventSource.onConnectionChange = (connected) => {
         this.connected = connected

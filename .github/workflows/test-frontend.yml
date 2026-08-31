@@ -38,8 +38,29 @@ jobs:
             - name: Check formatting
               run: pnpm format:check
 
+            # With coverage, so the same run that gates the PR also feeds
+            # the badge — a second, uncovered run would only be slower and
+            # could disagree with this one.
             - name: Run unit tests (jsdom)
-              run: pnpm test:unit
+              run: pnpm test:unit:coverage
+
+            # Flagged, because this repository uploads two independent
+            # reports to one Codecov project (see .github/workflows/
+            # test-python.yml for the other). Without flags the second
+            # upload of a commit looks like a correction of the first and
+            # the badge shows whichever landed last over its own files
+            # only. See codecov.yml for the carryforward that keeps a
+            # backend-only push from reading as "frontend coverage
+            # vanished" — this workflow deliberately doesn't run for one.
+            - name: Upload coverage to Codecov
+              uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+              with:
+                  token: ${{ secrets.CODECOV_TOKEN }}
+                  files: coverage/renderer/lcov.info
+                  flags: frontend
+                  # Same reasoning as the backend job's: Codecov being down
+                  # is not a reason to fail a test run.
+                  fail_ci_if_error: false
 
             # Only the layout suite (vitest.browser.config.ts) needs a real
             # browser — installed here rather than unconditionally on every

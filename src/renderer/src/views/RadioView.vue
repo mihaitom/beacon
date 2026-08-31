@@ -157,7 +157,6 @@
               :label="$t('radio.discoverCountryLabel')"
               :placeholder="$t('radio.discoverAnyCountry')"
               variant="solo-filled"
-              density="compact"
               hide-details
               clearable
               class="radio-view__browse-country"
@@ -635,7 +634,11 @@ export default {
 }
 
 /* The search field gets most of the row; the country select only needs
- * enough width for a country name. */
+ * enough width for a country name. Both are left at Vuetify's default
+ * density on purpose — the two sit side by side in one row, and a
+ * `density="compact"` on only one of them made it visibly the shorter box
+ * of the pair, with its own label and value crowded together at the top
+ * while the field beside it had them properly spaced. */
 .radio-view__browse-search {
   flex: 2;
   min-width: 0;

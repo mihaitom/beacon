@@ -430,6 +430,7 @@ describe('remoteControl store', () => {
         total_songs: 0,
         displaced: false,
         interrupted: false,
+        delivery_error: null,
       }
       const getVolumeSpy = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
       await store.enable()
@@ -502,6 +503,7 @@ describe('remoteControl store', () => {
         total_songs: 0,
         displaced: false,
         interrupted: false,
+        delivery_error: null,
       }
       vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
       await store.enable()
@@ -578,6 +580,7 @@ describe('remoteControl store', () => {
         total_songs: 0,
         displaced: false,
         interrupted: false,
+        delivery_error: null,
       }
       const getVolumeSpy = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
       await store.enable()

@@ -284,7 +284,12 @@ def test_device_stop_sonos_restart_uses_the_radio_url_when_a_radio_station_is_ac
     ):
         client.post("/device-stop?device_type=sonos&name=Küche")
 
-    follower_delivery.play.assert_awaited_once_with("https://radio.example/stream", "Jazz FM")
+    # Told the station's own type (falling back to the extension guess when
+    # none was recorded) rather than play()'s audio/mpeg default — see
+    # core/stream_format.py's radio_content_type().
+    follower_delivery.play.assert_awaited_once_with(
+        "https://radio.example/stream", "Jazz FM", content_type="audio/mpeg"
+    )
 
 
 def test_device_stop_sonos_restart_failure_is_logged_not_raised(client, default_session, caplog):

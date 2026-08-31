@@ -24,7 +24,9 @@ from fastapi import APIRouter, Request, Response
 from core.claims import claims
 from core.session import build_status_dict, registry
 from core.state import PORT, get_local_ip
-from core.upnp_events import handle_event, parse_rendering_control_event
+from core.upnp_events import handle_event, parse_rendering_control_event, problem_in
+from delivery.errors import transport_error_response
+from routes.playback import retry_radio_via_proxy
 
 logger = logging.getLogger("connect.upnp")
 router = APIRouter()
@@ -78,6 +80,48 @@ async def _handle_rendering_control_event(label: str, body: str) -> None:
     await session.event_bus.broadcast(build_status_dict(session))
 
 
+async def _handle_transport_problem(label: str, problem: str) -> None:
+    """A device reporting, on its own event channel, that what it was given
+    isn't playing.
+
+    Only radio ever gets acted on here, and only once. A Sonos accepts a
+    station's URI, answers the /play-url call successfully, and *then*
+    reports ERROR_UNSUPPORTED_FORMAT (a format it won't decode) or
+    ERROR_ACCESS_DENIED (an https URL on someone else's host) moments
+    later — so there is no failure at the point anyone is still waiting on
+    a response, and until now the listener saw nothing at all while the
+    speaker sat silent. Beacon re-encodes the station and points the
+    device at that instead; see retry_radio_via_proxy() for why one retry
+    fixes both refusals without telling them apart.
+
+    A queued track is deliberately left alone: its own GET /stream
+    connection closing is what routes/stream.py already watches for, and a
+    second, overlapping recovery path for the same event would fight it.
+
+    Anything not currently claimed by a session is a no-op — the same
+    "nothing to update" case _handle_rendering_control_event() has."""
+    session_id = claims.owner_of("sonos", label)
+    if session_id is None:
+        return
+    session = registry.get(session_id)
+    if session is None:
+        return
+    st = session.state
+    if not st.radio_info or st.radio_info.get("proxied") or st.active_delivery is None:
+        return
+
+    logger.info(f"[upnp] {label} refused the station ({problem}) — re-encoding it")
+    if not await retry_radio_via_proxy(session, st.active_delivery):
+        # Nothing left to try. Tell the client rather than leaving a silent
+        # speaker and a UI that still says "playing" — this is the one
+        # path where the failure never reached a request's own response.
+        await session.event_bus.broadcast(
+            build_status_dict(
+                session, delivery_error=transport_error_response(problem, st.active_delivery)
+            )
+        )
+
+
 @router.api_route(_CALLBACK_PREFIX + "/{service}/{label}", methods=["NOTIFY"])
 async def upnp_event(service: str, label: str, request: Request) -> Response:
     """UPnP's own method name, not POST — Starlette routes arbitrary HTTP
@@ -97,7 +141,10 @@ async def upnp_event(service: str, label: str, request: Request) -> Response:
         if service == "renderingcontrol":
             await _handle_rendering_control_event(label, body)
         else:
-            handle_event(label, body)
+            properties = handle_event(label, body)
+            problem = problem_in(properties) if properties else None
+            if problem:
+                await _handle_transport_problem(label, problem)
     except Exception:
         # Never let a parse failure reach the device as a 5xx — see above.
         logger.exception(f"[upnp] Failed to handle a {service} event from {label}")

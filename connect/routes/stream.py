@@ -25,7 +25,7 @@ from core.state import (
     stream_url,
     test_tone_url,
 )
-from core.streamer import resolve_output_format, stream_tracks
+from core.streamer import FALLBACK_FORMAT, resolve_output_format, stream_tracks
 
 from .playback import (
     POSITION_RESYNC_INTERVAL,
@@ -542,6 +542,60 @@ async def audio_stream_head(session_id: str = DEFAULT_SESSION_ID):
     return Response(
         media_type=session.state.current_output_format.content_type,
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.head("/stream/radio/{session_id}")
+async def radio_stream_head(session_id: str = DEFAULT_SESSION_ID):
+    """Answered without starting ffmpeg, exactly like /stream's own HEAD
+    above — a Sonos probes the URL before it will play it, and a route that
+    only answers GET returns 405 to that probe. The speaker then reports
+    ERROR_CORRUPT_FILE / ERROR_NO_PLAYABLE_CONTENT for a stream it never
+    actually opened, which is a genuinely confusing thing to debug."""
+    await registry.get_or_create(session_id)
+    return Response(
+        media_type=FALLBACK_FORMAT.content_type,
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/stream/radio/{session_id}")
+async def radio_stream(session_id: str = DEFAULT_SESSION_ID):
+    """A radio station re-encoded to plain MP3 over http, for a device that
+    refused the station's own stream.
+
+    Beacon hands a station's bytes straight to the device by default and
+    only points one here once that has demonstrably failed — see
+    /play-url's retry and routes/upnp.py, which is where the failure is
+    actually noticed for a Sonos (it accepts the URI, then reports
+    ERROR_UNSUPPORTED_FORMAT or ERROR_ACCESS_DENIED on its own event
+    channel moments later). Going through here fixes both of the reasons
+    seen so far at once: the format becomes MP3, and the transport becomes
+    plain http from this machine rather than https to a stranger's host.
+
+    No token, and the session id in the path, for exactly the reason
+    /stream below has neither: the device dialling back in can't send one.
+
+    Deliberately *not* counted in active_stream_connections. That counter
+    drives the mid-track drop detection in _mark_disconnected_if_not_
+    reconnected(), which is built around tracks that end; radio has no
+    track loaded at all (session.state.current_track stays None for it)
+    and never produces the transitions that logic reasons about."""
+    session = await registry.get_or_create(session_id)
+    radio_info = session.state.radio_info
+    if not radio_info:
+        # Same shape as /stream's own no-track answer: a device that
+        # reconnects after radio already stopped gets a clean end, not a
+        # stalled connection.
+        logger.warning("[stream] No radio station loaded — returning 204")
+        return StreamingResponse(
+            iter([b""]), media_type=FALLBACK_FORMAT.content_type, status_code=204
+        )
+
+    logger.info(f"[stream] Re-encoding radio for {session_id}: {radio_info['url'][:80]}")
+    return StreamingResponse(
+        stream_tracks([radio_info["url"]]),
+        media_type=FALLBACK_FORMAT.content_type,
     )
 
 

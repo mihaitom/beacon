@@ -3,17 +3,17 @@
 import asyncio
 import copy
 import logging
-import os
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from typing import Literal
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from core.auth import require_token
 from core.claims import claims
+from core.playlist_url import resolve_stream_url
 from core.session import (
     SessionState,
     build_status_dict,
@@ -29,10 +29,17 @@ from core.state import (
     AppState,
     audio_capability_limits,
     list_target_pairs,
+    radio_stream_url,
     resolve_target,
     stream_url,
 )
-from core.streamer import FALLBACK_FORMAT, resolve_output_format
+from core.stream_format import probe_stream, radio_content_type
+from core.streamer import (
+    FALLBACK_FORMAT,
+    REASON_DEVICE_REJECTED_STREAM,
+    resolve_output_format,
+)
+from delivery.errors import REASON_STATION_REFUSED, delivery_error_response, device_label
 
 logger = logging.getLogger("connect.playback")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -513,36 +520,45 @@ def _current_track_play_args(
     )
 
 
-# Every delivery's own play() defaults content_type to this when nothing
-# more specific is known (see delivery/base.py) — right for the common case
-# (an extension-less Icecast mountpoint, almost always MP3) but wrong often
-# enough to matter for anything else: a Sonos speaker refused an AAC stream
-# outright (UPnP ERROR_UNSUPPORTED_FORMAT) after being told via DIDL
-# protocolInfo to expect MP3, which is exactly what handing every radio URL
-# through with no content_type at all used to do here.
-_CONTENT_TYPE_FOR_EXTENSION: dict[str, str] = {
-    ".mp3": "audio/mpeg",
-    ".aac": "audio/aac",
-    ".adts": "audio/aac",
-    ".m4a": "audio/mp4",
-    ".ogg": "audio/ogg",
-    ".oga": "audio/ogg",
-    ".opus": "audio/ogg",
-    ".flac": "audio/flac",
-    ".wav": "audio/wav",
-}
+async def retry_radio_via_proxy(session: SessionState, target) -> bool:
+    """Point a device at Beacon's own re-encoded copy of the station it
+    just refused. Returns whether it started.
 
+    Two very different refusals reach here, and this fixes both without
+    having to tell them apart: a format the device won't decode
+    (ERROR_UNSUPPORTED_FORMAT for an `audio/aacp` station), and a
+    transport it won't use (ERROR_ACCESS_DENIED for an https URL on
+    someone else's host — seen on a plain MP3, so not a format problem at
+    all). Through /stream/radio it is MP3 over http from this machine
+    either way.
 
-def _guess_radio_content_type(url: str) -> str:
-    """A best-effort content type for an arbitrary radio stream URL, from
-    its file extension. Nothing short of actually probing the stream (which
-    /play-url deliberately doesn't do - see its own comment on handing the
-    URL straight to the device) can be exact, but a URL that names its own
-    format at all is worth believing over the blanket "audio/mpeg" guess
-    every delivery's play() otherwise falls back to on its own (see
-    delivery/base.py)."""
-    suffix = os.path.splitext(urlparse(url).path)[1].lower()
-    return _CONTENT_TYPE_FOR_EXTENSION.get(suffix, "audio/mpeg")
+    Only ever a second attempt, never the first: Beacon hands a station's
+    own bytes to the device by default, and pays the re-encode only for a
+    station that has actually been refused. `proxied` marks that it has
+    happened so a device that refuses even this doesn't loop — see the
+    guard at both call sites."""
+    st = session.state
+    if not st.radio_info or st.radio_info.get("proxied"):
+        return False
+
+    url = radio_stream_url(session.session_id)
+    logger.info(f"[play-url] {target} refused the station — retrying via {url}")
+    try:
+        await target.play(url, st.radio_info["title"], content_type=FALLBACK_FORMAT.content_type)
+    except Exception:
+        logger.exception("[play-url] Re-encoded retry failed too")
+        return False
+
+    st.radio_info = {**st.radio_info, "proxied": True, "content_type": FALLBACK_FORMAT.content_type}
+    # What the stream-info panel reads — the listener sees that Beacon is
+    # re-encoding and why, rather than a station that silently sounds
+    # different from the one they picked (see StreamInfoSection.vue and
+    # core/streamer.py's REASON_DEVICE_REJECTED_STREAM).
+    st.current_output_format = replace(
+        FALLBACK_FORMAT, transcode_reason=REASON_DEVICE_REJECTED_STREAM
+    )
+    await session.event_bus.broadcast(build_status_dict(session))
+    return True
 
 
 def _current_reconnect_args(
@@ -559,7 +575,7 @@ def _current_reconnect_args(
     — the track hasn't changed, so there's no need to probe again."""
     st = session.state
     if st.radio_info:
-        content_type = _guess_radio_content_type(st.radio_info["url"])
+        content_type = radio_content_type(st.radio_info)
         return st.radio_info["url"], st.radio_info["title"], "", None, None, "", content_type
     title, artist, album_art_url, duration, album = _current_track_play_args(session)
     return (
@@ -846,7 +862,7 @@ async def play_tracks(
                     # this session (device_in_use for everyone else) with
                     # nothing actually playing on it.
                     await _release_claims(target, session)
-                    return {"error": str(e)}
+                    return delivery_error_response(e, target)
 
         if not target:
             logger.info(f"[play] No target — stream available at {url}")
@@ -918,27 +934,85 @@ async def play_url(
 
         st = session.state
 
-        if not _is_duplicate_dispatch(st, f"play-url:{target}:{req.url}"):
+        # A station published as a .m3u/.pls is a text file naming where the
+        # audio really is, and no device can play that (see
+        # core/playlist_url.py). Beacon's own frontend already sends a
+        # resolved URL, which makes this a no-op there - it is here for
+        # every other caller, and because getting it wrong looks like a bare
+        # `UPnP Error 800` from the speaker with nothing pointing at the
+        # cause. Everything below deliberately uses the resolved URL, so
+        # what a reconnect replays and what the status reports are the same
+        # thing the device was actually given.
+        url = await resolve_stream_url(req.url)
+        # Captured before anything below writes it: retry_radio_via_proxy()
+        # reads radio_info to know which station to re-encode, so it has to
+        # be set before the dispatch — and rolled back with everything else
+        # if nothing ends up playing.
+        previous_radio_info = st.radio_info
+        # Asked of the station rather than guessed from its file extension:
+        # a `.aac` URL is routinely served as `audio/aacp` (HE-AAC), and
+        # announcing the extension's own `audio/aac` is what a Sonos
+        # rejects with ERROR_UNSUPPORTED_FORMAT — for a stream it plays
+        # fine once told the truth. See core/stream_format.py; the
+        # extension guess is still the fallback there.
+        probed = await probe_stream(url)
+        if probed.refused:
+            # The station answered Beacon's own probe with a 4xx. It will
+            # answer the device the same way, and re-encoding it can't
+            # help either — ffmpeg has to fetch the very same URL. Said
+            # plainly here instead of letting the speaker fail on it and
+            # the re-encode fail behind that, which is what a listener was
+            # left to interpret: a speaker reporting ERROR_ACCESS_DENIED,
+            # then ERROR_CORRUPT_FILE for the empty re-encode, reads as if
+            # the *speaker* were broken.
+            #
+            # Only the handful of codes that mean the station itself said
+            # no (see _REFUSED_STATUSES) — a timeout, a refused connection
+            # or a 5xx still dispatch as before, since a station can be
+            # slow or briefly broken and play fine anyway, and refusing to
+            # try would be worse than trying and failing.
+            logger.info(f"[play-url] {url} refused the connection — not dispatching")
+            st.radio_info = previous_radio_info
+            await _release_claims(target, session)
+            return {
+                "error": "delivery_failed",
+                "reason": REASON_STATION_REFUSED,
+                "device": device_label(target),
+                "detail": probed.detail or url,
+            }
+        content_type = probed.content_type
+
+        st.radio_info = {"title": req.title, "url": url, "content_type": content_type}
+
+        if not _is_duplicate_dispatch(st, f"play-url:{target}:{url}"):
             try:
-                await target.play(
-                    req.url, req.title, content_type=_guess_radio_content_type(req.url)
-                )
+                await target.play(url, req.title, content_type=content_type)
             except Exception as e:
                 logger.exception("[play-url] Delivery error")
-                # See /play's identical comment — don't leave the device locked
-                # to this session when nothing actually started playing on it.
-                await _release_claims(target, session)
-                return {"error": str(e)}
+                # A device that refuses the station outright gets one more
+                # chance, at Beacon's own re-encoded copy — see
+                # retry_radio_via_proxy() for the two very different
+                # refusals this covers.
+                if not await retry_radio_via_proxy(session, target):
+                    st.radio_info = previous_radio_info
+                    # See /play's identical comment — don't leave the device
+                    # locked to this session when nothing actually started
+                    # playing on it.
+                    await _release_claims(target, session)
+                    return delivery_error_response(e, target)
 
         st.current_track = None
-        st.current_output_format = FALLBACK_FORMAT
+        # Left alone when the retry above already set it to the re-encoding
+        # format — overwriting here would hide the transcode from the panel
+        # that exists to show it.
+        if not st.radio_info.get("proxied"):
+            st.current_output_format = FALLBACK_FORMAT
         st.is_streaming = True
-        st.radio_info = {"title": req.title, "url": req.url}
         # See core/icy_metadata.py's own docstring - a cast radio play is
         # the one radio path that already reaches this backend on its own,
         # so its "now playing" watch starts right here rather than needing
         # an extra call from the frontend the way local playback does.
-        session.start_radio_metadata_watch(req.url)
+        session.start_radio_metadata_watch(url)
         st.clock.start()
         st.track_ended = False
         st.active_delivery = target
@@ -954,7 +1028,7 @@ async def play_url(
             _resync_position_periodically(session, target, st.clock.play_generation)
         )
         await session.event_bus.broadcast(build_status_dict(session))
-        return {"status": "playing", "url": req.url}
+        return {"status": "playing", "url": url}
 
 
 @router.post("/pause")
@@ -1013,9 +1087,11 @@ async def resume_playback(session: SessionState = Depends(require_authenticated_
             except Exception as e:
                 # Match /play's contract: a JSON {"error": ...} body, not an
                 # unhandled exception surfacing as a 500 (the device may have
-                # gone unreachable while paused).
+                # gone unreachable while paused), and classified the same way
+                # so a reconnect failure reads as well as a first dispatch's
+                # does (see delivery/errors.py).
                 logger.exception("[resume] Delivery error")
-                return {"error": str(e)}
+                return delivery_error_response(e, st.active_delivery)
 
             # The reconnect above starts a *fresh* stream (FFmpeg output
             # restarts near 0 again), re-incurring the device's startup-
@@ -1065,7 +1141,7 @@ async def seek_playback(
             except Exception as e:
                 # See /resume's identical comment.
                 logger.exception("[seek] Delivery error")
-                return {"error": str(e)}
+                return delivery_error_response(e, st.active_delivery)
             # The reconnect above starts a *fresh* stream (FFmpeg output restarts
             # near 0 again), which re-incurs the device's startup-buffering delay
             # — same as a brand new /play. Without recalibrating here,

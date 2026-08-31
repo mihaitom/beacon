@@ -41,7 +41,10 @@ export default defineConfig({
                 // App bootstrap — runs only against a real DOM at startup.
                 'src/renderer/src/main.ts',
             ],
-            reporter: ['text-summary', 'html'],
+            // lcov as well as the human-readable pair: the CI job uploads
+            // it to Codecov (see .github/workflows/test-frontend.yml), which
+            // has no way to read a text summary or an HTML directory.
+            reporter: ['text-summary', 'html', 'lcov'],
             reportsDirectory: 'coverage/renderer',
         },
         server: {

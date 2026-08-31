@@ -30,9 +30,12 @@
         density="compact"
         closable
         class="mb-2"
-        @click:close="connectStore.errors.message = null"
+        @click:close="connectStore.clearError()"
       >
         {{ connectStore.errors.message }}
+        <div v-if="connectStore.errors.detail" class="connect-error-detail">
+          {{ connectStore.errors.detail }}
+        </div>
       </v-alert>
 
       <v-progress-linear v-if="connectStore.isScanning" indeterminate class="mb-2" />
@@ -319,6 +322,17 @@ export default {
 </script>
 
 <style scoped>
+/* The library's own text behind the message above (a UPnP fault code, a
+ * socket error) — present so it can be read out to whoever is asked about
+ * it, deliberately quiet enough not to compete with the sentence that
+ * actually tells the listener what happened. */
+.connect-error-detail {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  opacity: 0.7;
+  word-break: break-word;
+}
+
 /* Same dark-chrome system as QueueDrawer.vue/LyricsDrawer.vue's own
  * .beacon-drawer/.beacon-drawer__toolbar (Vue scoped styles don't share
  * across components just by reusing a class name, so this redeclares it

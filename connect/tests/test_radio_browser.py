@@ -353,6 +353,45 @@ class TestListCountries:
         called_url = client.get.call_args.args[0]
         assert called_url == "https://de1.api.radio-browser.info/json/countries"
 
+    async def test_keeps_one_row_per_country_when_a_mirror_lists_it_twice(self):
+        # Which mirror answers is decided per request by DNS, and some of
+        # them file the same country under two spellings of the same ISO
+        # code - two rows a person can't tell apart in the dropdown. The
+        # weaker spellings are listed first here on purpose: the entry
+        # stations are actually filed under has to win, not whichever one
+        # the mirror happened to put at the top.
+        radio_browser._cached_servers = ["de1.api.radio-browser.info"]
+        radio_browser._cached_servers_at = time.monotonic()
+        raw = [
+            {"name": "Deutschland", "iso_3166_1": "DE", "stationcount": 12},
+            {"name": "germany", "iso_3166_1": "XD", "stationcount": 3},
+            {"name": "Germany", "iso_3166_1": "DE", "stationcount": 6000},
+        ]
+
+        with patch.object(radio_browser, "_client") as client:
+            client.get = AsyncMock(return_value=_list_response(raw))
+            result = await radio_browser.list_countries()
+
+        assert result == [{"name": "Germany", "code": "DE"}]
+
+    async def test_drops_a_country_with_no_iso_code_rather_than_offering_a_dead_filter(self):
+        # `countrycode=""` is no filter at all, so such a row silently
+        # behaves as "any country" while claiming to be a specific one -
+        # and sits directly under the real entry as an apparent duplicate.
+        radio_browser._cached_servers = ["de1.api.radio-browser.info"]
+        radio_browser._cached_servers_at = time.monotonic()
+        raw = [
+            {"name": "Germany", "iso_3166_1": "DE", "stationcount": 6000},
+            {"name": "Germany", "iso_3166_1": "", "stationcount": 4},
+            {"name": "Narnia", "stationcount": 9},
+        ]
+
+        with patch.object(radio_browser, "_client") as client:
+            client.get = AsyncMock(return_value=_list_response(raw))
+            result = await radio_browser.list_countries()
+
+        assert result == [{"name": "Germany", "code": "DE"}]
+
     async def test_caches_within_the_ttl(self):
         radio_browser._cached_servers = ["de1.api.radio-browser.info"]
         radio_browser._cached_servers_at = time.monotonic()

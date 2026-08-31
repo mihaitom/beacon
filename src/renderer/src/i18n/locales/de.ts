@@ -201,6 +201,17 @@ export default {
     authError: 'Connect-Session nicht authentifiziert. Bitte neu anmelden.',
     ffmpegMissing: 'ffmpeg fehlt auf dem Connect-Backend — Casting funktioniert nicht ohne.',
     unknownError: 'Unbekannter Fehler.',
+    // Keyed by connect/delivery/errors.py's REASON_* constants — a
+    // dispatch that reached the device and didn't start playing.
+    deliveryFailed: {
+      rejected:
+        '„{device}“ hat diesen Stream abgelehnt. Das Gerät kann das Format oder die Adresse nicht wiedergeben.',
+      busy: '„{device}“ ist gerade anderweitig beschäftigt und hat die Wiedergabe abgelehnt.',
+      unreachable: '„{device}“ war nicht erreichbar. Ist es eingeschaltet und im selben Netzwerk?',
+      station_refused:
+        'Der Sender selbst hat die Verbindung abgelehnt. Beacon konnte ihn weder an „{device}“ weiterreichen noch umwandeln - die Adresse des Senders stimmt vermutlich nicht mehr',
+      unknown: 'Die Wiedergabe auf „{device}“ ist fehlgeschlagen.',
+    },
     pairDeviceTitle: '„{name}“ koppeln',
     pairPinPrompt: 'Auf dem Gerät wird eine PIN angezeigt — bitte eingeben:',
     pairConfirmPrompt: 'Bitte am Gerät bestätigen, dann „Fertig“ klicken.',
@@ -230,6 +241,7 @@ export default {
         replay_gain: 'ReplayGain',
         quality_limit: 'Qualitätsgrenze',
         browser_unsupported: 'Browser-Format',
+        device_rejected_stream: 'Gerät abgelehnt',
       },
       reasons: {
         device_limit: 'Quelle liegt über der Qualität, die dieses Gerät unterstützt',
@@ -240,6 +252,8 @@ export default {
         replay_gain: 'ReplayGain ist aktiv, dadurch ist unverändertes Senden nicht möglich',
         quality_limit: 'Quelle liegt über der in den Einstellungen gewählten Qualitätsgrenze',
         browser_unsupported: 'Quellformat kann vom Browser nicht abgespielt werden',
+        device_rejected_stream:
+          'Das Gerät hat den Stream des Senders abgelehnt, Beacon wandelt ihn deshalb um',
       },
     },
   },

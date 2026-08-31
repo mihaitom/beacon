@@ -538,5 +538,30 @@ describe('StreamInfoSection', () => {
 
       expect(wrapper.find('.stream-info-section').exists()).toBe(false)
     })
+
+    it('does describe a station the device refused and connect re-encoded', () => {
+      // The one radio case with a real transcode behind it: the speaker
+      // wouldn't take the station's own stream, so connect runs it through
+      // the very pipeline this panel reports on. Hiding that would leave a
+      // listener wondering why the station sounds different.
+      setStreamInfo({ transcoding: true, transcode_reason: 'device_rejected_stream' })
+      setRadio()
+
+      const wrapper = mountSection()
+
+      expect(wrapper.find('.stream-info-section').exists()).toBe(true)
+      expect(wrapper.vm.reasonKey).toBe('device_rejected_stream')
+    })
+
+    it('still says nothing for a station playing straight through', () => {
+      // Matched on the reason specifically, not on `transcoding` — that
+      // stays true for every cast station purely as bookkeeping.
+      setStreamInfo({ transcoding: true, transcode_reason: 'device_limit' })
+      setRadio()
+
+      const wrapper = mountSection()
+
+      expect(wrapper.find('.stream-info-section').exists()).toBe(false)
+    })
   })
 })

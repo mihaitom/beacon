@@ -249,6 +249,20 @@ def stream_url(session_id: str) -> str:
     return f"http://{get_local_ip()}:{PORT}/stream/{session_id}"
 
 
+def radio_stream_url(session_id: str) -> str:
+    """Where a device fetches a *re-encoded* radio station from.
+
+    Plain http on the LAN, like stream_url() above, which is half of why
+    this route exists at all: a station published over https on someone
+    else's host is refused outright by some devices (a Sonos answers
+    ERROR_ACCESS_DENIED), and one in a format they won't take is refused
+    the same way (ERROR_UNSUPPORTED_FORMAT). Both disappear when the bytes
+    come from here as MP3 over http instead — see routes/stream.py's
+    radio_stream() and the retry in routes/playback.py that switches to
+    it."""
+    return f"http://{get_local_ip()}:{PORT}/stream/radio/{session_id}"
+
+
 # Track id of routes/debug.py's synthesized test tone — not a real library
 # track, so anything that would otherwise resolve a track id against the
 # media server has to special-case it (routes/stream.py and

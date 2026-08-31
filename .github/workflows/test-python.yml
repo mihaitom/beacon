@@ -53,4 +53,5 @@ jobs:
               with:
                   token: ${{ secrets.CODECOV_TOKEN }}
                   files: connect/coverage.xml
+                  flags: backend
                   fail_ci_if_error: false

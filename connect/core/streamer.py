@@ -328,6 +328,12 @@ REASON_REPLAY_GAIN = "replay_gain"  # copying rules out the volume filter Replay
 REASON_LOSSLESS_CONTAINER = "lossless_container"  # lossless, but not in a castable container
 REASON_CODEC_NOT_CASTABLE = "codec_not_castable"  # decodable, deliberately not copied (opus)
 REASON_CODEC_UNKNOWN = "codec_unknown"  # nothing recognized it
+# Radio only, and not a property of the audio at all: the device refused
+# the station's own stream (see routes/upnp.py and /play-url's own retry),
+# so Beacon re-encodes it to plain MP3 and serves that instead. Beacon
+# hands a station's bytes straight to the device by default and only ends
+# up here once that has demonstrably failed.
+REASON_DEVICE_REJECTED_STREAM = "device_rejected_stream"
 
 
 def _fallback(reason: str, duration: float | None = None) -> OutputFormat:

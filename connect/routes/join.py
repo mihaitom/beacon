@@ -16,6 +16,7 @@ from core.session import (
     require_authenticated_session,
 )
 from core.state import find_sonos, resolve_target, stream_url
+from core.stream_format import FALLBACK_CONTENT_TYPE, radio_content_type
 from delivery import (
     AirPlayDelivery,
     BaseDelivery,
@@ -78,6 +79,12 @@ async def join_stream(
         # than the FFmpeg /stream proxy, which 204s with no track loaded.
         url = st.radio_info["url"] if st.radio_info else stream_url(session.session_id)
         title = st.radio_info["title"] if st.radio_info else "Connect"
+        # The station's own type, as probed when it started playing — a
+        # device joining an AAC station mid-play needs telling the same
+        # thing the first one was, or it refuses the stream the first one
+        # is happily playing (see core/stream_format.py). A queued track
+        # keeps play()'s own default, which is what it always used.
+        content_type = radio_content_type(st.radio_info) if st.radio_info else FALLBACK_CONTENT_TYPE
         logger.info(f"[join] {req.target_type}:{req.target_name} → {url}")
 
         try:
@@ -95,11 +102,11 @@ async def join_stream(
                         logger.warning(
                             f"[join] Group join failed ({e}), falling back to individual stream"
                         )
-                        await new_d.play(url, title)
+                        await new_d.play(url, title, content_type=content_type)
                 else:
-                    await new_d.play(url, title)
+                    await new_d.play(url, title, content_type=content_type)
             else:
-                await new_d.play(url, title)
+                await new_d.play(url, title, content_type=content_type)
         except Exception as e:
             # Unlike the inner try/except above (a group-join attempt
             # falling back to an individual stream, not a hard failure),

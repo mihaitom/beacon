@@ -7,6 +7,7 @@ import { usePlaybackStore } from '../playback'
 import { getAudioEngine } from '@/services/audioEngine'
 import * as connectPlayback from '@/services/connect/playback'
 import * as radioMetadata from '@/services/connect/radioMetadata'
+import { resolveRadioStreamUrl } from '@/services/connect/radio'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import { makeSong, makeStatus } from './fixtures'
 
@@ -16,6 +17,13 @@ vi.mock('@/services/connect/radioMetadata', () => ({
   stopRadioMetadataWatch: vi.fn(),
   fetchRadioMetadata: vi.fn().mockResolvedValue(null),
 }))
+
+// Only resolveRadioStreamUrl is used from here; the rest of the module
+// (radioFaviconUrl) stays real, same pattern as connect/playback below.
+vi.mock('@/services/connect/radio', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/connect/radio')>()
+  return { ...actual, resolveRadioStreamUrl: vi.fn() }
+})
 
 // Everything the transport actions dispatch to a cast session. The rest of
 // the module stays real so useConnectStore()'s own imports keep working —
@@ -99,6 +107,9 @@ describe('playback transport', () => {
     vi.mocked(connectPlayback.stop).mockResolvedValue(undefined)
     vi.mocked(connectPlayback.playUrl).mockResolvedValue({ status: 'playing' })
     vi.mocked(connectPlayback.updateQueue).mockResolvedValue({ status: 'ok' })
+    // Pass-through by default — the overwhelmingly common case, and what
+    // the real thing does for any URL that isn't a playlist file.
+    vi.mocked(resolveRadioStreamUrl).mockImplementation(async (url) => url)
   })
 
   describe('nextIndex', () => {
@@ -569,6 +580,46 @@ describe('playback transport', () => {
       expect(radioMetadata.startRadioMetadataWatch).toHaveBeenCalledWith(
         'https://stream.example/chill',
       )
+    })
+
+    // A station published as a .m3u/.pls names where its audio really is
+    // rather than being it — a Sonos answers `UPnP Error 800` and a browser's
+    // <audio> simply fails to load. Resolved once here and used everywhere
+    // below, so what this store holds matches what connect reports (see
+    // playRadioStation()'s own comment on reconcileFromStatus()).
+    it('plays what a playlist-file station actually points at, not the playlist', async () => {
+      const playback = usePlaybackStore()
+      const stream = 'http://dispatcher.rndfnk.com/br/br24/live/mp3/mid'
+      vi.mocked(resolveRadioStreamUrl).mockResolvedValue(stream)
+
+      await playback.playRadioStation({
+        id: 'r1',
+        name: 'B5 aktuell',
+        streamUrl: 'http://streams.br.de/b5aktuell_2.m3u',
+        homePageUrl: null,
+      })
+
+      expect(engine.play).toHaveBeenCalledWith(stream)
+      expect(radioMetadata.startRadioMetadataWatch).toHaveBeenCalledWith(stream)
+      expect(playback.radioStation?.streamUrl).toBe(stream)
+      // Everything else about the station is untouched.
+      expect(playback.radioStation?.name).toBe('B5 aktuell')
+    })
+
+    it('casts what a playlist-file station points at, not the playlist', async () => {
+      const playback = usePlaybackStore()
+      const stream = 'http://dispatcher.rndfnk.com/br/br24/live/mp3/mid'
+      vi.mocked(resolveRadioStreamUrl).mockResolvedValue(stream)
+      castTo()
+
+      await playback.playRadioStation({
+        id: 'r1',
+        name: 'B5 aktuell',
+        streamUrl: 'http://streams.br.de/b5aktuell_2.m3u',
+        homePageUrl: null,
+      })
+
+      expect(connectPlayback.playUrl).toHaveBeenCalledWith(stream, 'B5 aktuell', expect.anything())
     })
 
     it('hands the raw stream URL to the cast targets, bypassing the library', async () => {

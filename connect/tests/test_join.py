@@ -140,6 +140,25 @@ def test_join_sonos_falls_back_to_individual_play_when_group_fails(
     fallback.assert_awaited_once()
 
 
+def test_join_tells_a_late_device_the_stations_own_content_type(
+    client, default_session, _streaming
+):
+    """A station probed as AAC when it started (see core/stream_format.py)
+    has to be announced as AAC to every device that joins later too."""
+    default_session.state.radio_info = {
+        "title": "OWR International",
+        "url": "http://stream/owr.aac",
+        "content_type": "audio/aacp",
+    }
+
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
+        client.post("/join", json={"target_type": "chromecast", "target_name": "TV"})
+
+    play.assert_awaited_once_with(
+        "http://stream/owr.aac", "OWR International", content_type="audio/aacp"
+    )
+
+
 def test_join_reconnects_to_radio_url_not_stream_proxy(client, default_session, _streaming):
     """Radio has no track loaded, so joining an additional device must reuse
     its own URL — the FFmpeg /stream proxy 204s with nothing to play."""
@@ -149,7 +168,9 @@ def test_join_reconnects_to_radio_url_not_stream_proxy(client, default_session, 
         r = client.post("/join", json={"target_type": "chromecast", "target_name": "TV"})
 
     assert r.json()["status"] == "joined"
-    play.assert_awaited_once_with("http://stream/radio", "Radio FM")
+    # A station with no recorded type falls back to the extension guess,
+    # which is exactly what every join did before this.
+    play.assert_awaited_once_with("http://stream/radio", "Radio FM", content_type="audio/mpeg")
 
 
 def test_join_sonos_without_existing_sonos_plays_individually(client, default_session, _streaming):

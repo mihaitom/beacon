@@ -48,6 +48,7 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel
 
 from core.auth import require_token
+from core.playlist_url import resolve_stream_url
 from core.radio_browser import list_countries, register_click, search_stations
 from core.session import SessionState, require_authenticated_session
 
@@ -391,6 +392,20 @@ async def radio_browser_click(stationuuid: str) -> dict:
     # own docstring for why nothing here is worth failing the request over.
     await register_click(stationuuid)
     return {"ok": True}
+
+
+@router.get("/radio-stream-url")
+async def radio_stream_url(url: str = Query(...)) -> dict:
+    """The playable audio URL behind a station's own URL - see
+    core/playlist_url.py for why a station published as a .m3u/.pls needs
+    one at all. Called by the frontend before *local* playback, which never
+    otherwise reaches this backend and so has nowhere else to have this
+    done; the casting path resolves it inside /play-url itself.
+
+    Always answers with a URL, never an error: a playlist that can't be
+    read hands back the original, so the caller is exactly where it would
+    have been without asking."""
+    return {"url": await resolve_stream_url(url)}
 
 
 class RadioMetadataStartRequest(BaseModel):

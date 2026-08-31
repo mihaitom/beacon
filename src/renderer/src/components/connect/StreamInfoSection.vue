@@ -132,16 +132,29 @@ function formatKhz(hz: number): string {
  * /stream proxy, which radio never uses either — none of stream_info means
  * anything here.
  *
+ * The one radio case that *does* have something to describe is when the
+ * device refused the station's own stream and connect fell back to
+ * re-encoding it (core/streamer.py's REASON_DEVICE_REJECTED_STREAM) —
+ * then there genuinely is a transcode, running through the very pipeline
+ * this panel reports on, and hiding it would leave a listener wondering
+ * why the station sounds different from the one they picked. Matched on
+ * that reason specifically rather than on `transcoding`, which stays true
+ * for every cast station purely as the bookkeeping described above.
+ *
  * Exported (not just this component's own `hasStream` computed) so
  * ConnectDevicePicker.vue can decide whether the divider above this
  * section has anything below it to separate from — one answer, asked in
  * two places, rather than two conditions that could quietly drift apart. */
+export const RADIO_REENCODED_REASON = 'device_rejected_stream'
+
 export function hasStreamInfo(): boolean {
   const playback = usePlaybackStore()
-  if (playback.radioStation) return false
+  const connect = useConnectStore()
+  if (playback.radioStation) {
+    return connect.status?.stream_info?.transcode_reason === RADIO_REENCODED_REASON
+  }
   return (
-    useConnectStore().isActive ||
-    (playback.currentSong?.id != null && playback.activeLocalStream !== null)
+    connect.isActive || (playback.currentSong?.id != null && playback.activeLocalStream !== null)
   )
 }
 

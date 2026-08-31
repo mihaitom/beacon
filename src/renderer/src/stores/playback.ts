@@ -34,6 +34,7 @@ import {
   startRadioMetadataWatch,
   stopRadioMetadataWatch,
 } from '@/services/connect/radioMetadata'
+import { resolveRadioStreamUrl } from '@/services/connect/radio'
 import { buildCastQualityPayload, buildCastQueuePayload } from '@/services/playback/castPayload'
 import {
   clearPersistedPlayback,
@@ -904,10 +905,20 @@ export const usePlaybackStore = defineStore('playback', {
 
     async playRadioStation(station: RadioStation): Promise<void> {
       const connect = useConnectStore()
+      // A station published as a .m3u/.pls names where its audio really is
+      // rather than being it (see services/connect/radio.ts) — resolved
+      // once, here, and used for everything below. Deliberately not left to
+      // the backend alone even though /play-url resolves it too: the
+      // station this store holds has to carry the same URL connect ends up
+      // reporting in its status, or reconcileFromStatus() reads every
+      // single tick as a station change and rebuilds the station over and
+      // over. Costs a round trip only for a URL that actually looks like a
+      // playlist.
+      const streamUrl = await resolveRadioStreamUrl(station.streamUrl)
       this.originalQueue = []
       this.queue = []
       this.currentIndex = -1
-      this.radioStation = station
+      this.radioStation = { ...station, streamUrl }
       this.radioNowPlaying = null
       this.localPosition = 0
       // Local playback never otherwise touches the connect backend at all
@@ -915,14 +926,14 @@ export const usePlaybackStore = defineStore('playback', {
       // casting branch below also starts one on its own via /play-url, so
       // this call is a harmless, idempotent repeat there rather than a
       // second, redundant watch.
-      startRadioMetadataWatch(station.streamUrl)
+      startRadioMetadataWatch(streamUrl)
 
       if (connect.isActive) {
-        await connectPlayback.playUrl(station.streamUrl, station.name, {
+        await connectPlayback.playUrl(streamUrl, station.name, {
           targets: connect.activeTargets,
         })
       } else {
-        getAudioEngine().play(station.streamUrl)
+        getAudioEngine().play(streamUrl)
       }
       this.isPlaying = true
     },

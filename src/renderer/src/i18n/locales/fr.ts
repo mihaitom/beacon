@@ -204,6 +204,17 @@ export default {
     ffmpegMissing:
       'ffmpeg est manquant sur le backend Connect — la diffusion ne fonctionnera pas sans lui.',
     unknownError: 'Erreur inconnue.',
+    // Keyed by connect/delivery/errors.py's REASON_* constants — a
+    // dispatch that reached the device and didn't start playing.
+    deliveryFailed: {
+      rejected:
+        "« {device} » a refusé ce flux. L'appareil ne peut pas lire ce format ou cette adresse.",
+      busy: '« {device} » est occupé par autre chose et a refusé de démarrer la lecture.',
+      unreachable: '« {device} » est injoignable. Est-il allumé et sur le même réseau ?',
+      station_refused:
+        "La station elle-même a refusé la connexion. Beacon n'a pu ni la transmettre à « {device} » ni la convertir - son adresse n'est probablement plus valable",
+      unknown: 'La lecture sur « {device} » a échoué.',
+    },
     pairDeviceTitle: 'Associer « {name} »',
     pairPinPrompt: "L'appareil affiche un code PIN — veuillez le saisir :",
     pairConfirmPrompt: "Veuillez confirmer sur l'appareil, puis cliquez sur « Terminé ».",
@@ -233,6 +244,7 @@ export default {
         replay_gain: 'ReplayGain',
         quality_limit: 'Limite de qualité',
         browser_unsupported: 'Format navigateur',
+        device_rejected_stream: 'Refusé',
       },
       reasons: {
         device_limit: 'La source dépasse la qualité prise en charge par cet appareil',
@@ -244,6 +256,8 @@ export default {
         replay_gain: "ReplayGain est actif, ce qui empêche d'envoyer le fichier tel quel",
         quality_limit: 'La source dépasse la limite de qualité définie dans les réglages',
         browser_unsupported: 'Le navigateur ne peut pas lire le format source',
+        device_rejected_stream:
+          "L'appareil a refusé le flux d'origine de la station, Beacon le convertit donc",
       },
     },
   },

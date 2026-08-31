@@ -137,6 +137,14 @@ def _to_station(raw: dict) -> dict:
     preferred over the raw, station-submitted `url`, falling back to it
     only where a mirror hasn't resolved one yet.
 
+    That resolution is best-effort on Radio Browser's side and quietly
+    isn't always done: "B5 aktuell" hands back its own .m3u playlist as
+    `url_resolved`, with `codec: UNKNOWN` as the only hint that nothing was
+    actually decoded - while a second entry for the same station resolves
+    cleanly. So a URL from here is no more trustworthy than one typed in by
+    hand, and playback resolves it again itself; see core/playlist_url.py
+    for what happens to a device handed a playlist file.
+
     `country` (not `countrycode`) here is purely for display - see this
     module's own docstring for why that's fine despite the field being
     marked deprecated: Radio Browser generates it straight from
@@ -262,15 +270,51 @@ def _to_picklist_entry(raw: dict) -> dict:
     return {"name": raw.get("name") or "", "code": raw.get("iso_3166_1") or ""}
 
 
+def _dedupe_picklist(raw_entries: list[dict]) -> list[dict]:
+    """One row per country, however many the mirror sent.
+
+    Radio Browser is a community database behind a pool of independently
+    maintained mirrors, and which one answers is decided per request by DNS
+    (see _discover_servers()) - so the same dropdown can be built from a
+    different mirror's data on the next lookup. Some of them hand back the
+    same country more than once: the same ISO code under two spellings, or
+    the same name under an empty code alongside the real one. Both read as
+    a plain duplicate in a dropdown, and the empty-code one is worse than
+    useless - picking it sends no filter at all, so it silently behaves as
+    "any country" while claiming to be one.
+
+    Deduped on both keys for that reason, keeping whichever entry claims
+    the most stations, since that is the one a mirror with a split record
+    actually files stations under."""
+    seen_codes: set[str] = set()
+    seen_names: set[str] = set()
+    unique: list[dict] = []
+    # Highest station count first, so it is the one each key is claimed by.
+    for raw in sorted(raw_entries, key=lambda r: r.get("stationcount", 0), reverse=True):
+        entry = _to_picklist_entry(raw)
+        # An entry with no ISO code can't drive the `countrycode` filter it
+        # exists to feed - dropped outright rather than deduped against.
+        if not entry["name"] or not entry["code"]:
+            continue
+        code_key, name_key = entry["code"].casefold(), entry["name"].casefold()
+        if code_key in seen_codes or name_key in seen_names:
+            continue
+        seen_codes.add(code_key)
+        seen_names.add(name_key)
+        unique.append(entry)
+    unique.sort(key=lambda e: e["name"].lower())
+    return unique
+
+
 async def list_countries() -> list[dict] | None:
     """{name, code} for every country Radio Browser has stations for, `code`
     being the ISO 3166-1 value search_stations()'s own `countrycode` filter
     expects. Filtered to entries with at least one station (a `stationcount`
-    of 0 would just be a dead-end filter choice) and sorted by name for a
-    dropdown a person scans by eye. Cached - a stale answer here on a fresh-
-    lookup failure is harmless (see _discover_servers()'s identical
-    reasoning): which countries exist doesn't change while a request or two
-    fails."""
+    of 0 would just be a dead-end filter choice), deduplicated (see
+    _dedupe_picklist()) and sorted by name for a dropdown a person scans by
+    eye. Cached - a stale answer here on a fresh-lookup failure is harmless
+    (see _discover_servers()'s identical reasoning): which countries exist
+    doesn't change while a request or two fails."""
     global _cached_countries, _cached_countries_at
     now = time.monotonic()
     if _cached_countries is not None and now - _cached_countries_at < _PICKLIST_CACHE_TTL:
@@ -291,12 +335,9 @@ async def list_countries() -> list[dict] | None:
         data = r.json()
         if not isinstance(data, list):
             continue
-        entries = [
-            _to_picklist_entry(raw)
-            for raw in data
-            if raw.get("name") and raw.get("stationcount", 0) > 0
-        ]
-        entries.sort(key=lambda e: e["name"].lower())
+        entries = _dedupe_picklist(
+            [raw for raw in data if isinstance(raw, dict) and raw.get("stationcount", 0) > 0]
+        )
         _cached_countries = entries
         _cached_countries_at = now
         return entries

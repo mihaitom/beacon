@@ -60,6 +60,7 @@ export function makeStatus(overrides: Partial<ConnectStatus> = {}): ConnectStatu
     total_songs: 0,
     displaced: false,
     interrupted: false,
+    delivery_error: null,
     ...overrides,
   }
 }

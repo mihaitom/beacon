@@ -203,6 +203,16 @@ export default {
     authError: 'Connect session not authenticated. Please log in again.',
     ffmpegMissing: "ffmpeg is missing on the Connect backend — casting won't work without it.",
     unknownError: 'Unknown error.',
+    // Keyed by connect/delivery/errors.py's REASON_* constants — a
+    // dispatch that reached the device and didn't start playing.
+    deliveryFailed: {
+      rejected: "“{device}” refused this stream. The device can't play that format or address.",
+      busy: '“{device}” is busy with something else and refused to start playing.',
+      unreachable: '“{device}” could not be reached. Is it powered on and on the same network?',
+      station_refused:
+        "The station itself refused the connection. Beacon could neither pass it to “{device}” nor convert it - the station's address is most likely out of date",
+      unknown: 'Playback on “{device}” failed.',
+    },
     pairDeviceTitle: 'Pair "{name}"',
     pairPinPrompt: 'The device is showing a PIN — please enter it:',
     pairConfirmPrompt: 'Please confirm on the device, then click "Done".',
@@ -232,6 +242,7 @@ export default {
         replay_gain: 'ReplayGain',
         quality_limit: 'Quality limit',
         browser_unsupported: 'Browser format',
+        device_rejected_stream: 'Device refused',
       },
       reasons: {
         device_limit: "Source is beyond this device's supported quality",
@@ -242,6 +253,8 @@ export default {
         replay_gain: 'ReplayGain is applied, which rules out sending the file as-is',
         quality_limit: 'Source is above the quality limit set in Settings',
         browser_unsupported: 'Source format cannot be played by the browser',
+        device_rejected_stream:
+          "The device refused the station's own stream, so Beacon converts it",
       },
     },
   },
