@@ -1,16 +1,18 @@
 import type { VisualizerFrame } from './types'
+import { ReconnectingEventSource } from './reconnectingEventSource'
 
 /**
- * Wraps the native EventSource against GET /visualizer — real-time
- * frequency-band frames for AudioVisualizer.vue's 'cast' mode, produced by
+ * Wraps GET /visualizer (via ReconnectingEventSource — see that file for why
+ * a plain EventSource isn't enough) — real-time frequency-band frames for
+ * AudioVisualizer.vue's 'cast' mode, produced by
  * connect/core/audio_analysis.py. Only ever emits while casting to a
  * Sonos/DLNA/Chromecast target; the connection sits idle (heartbeats only,
  * no onFrame calls) the rest of the time. Mirrors ConnectEventSource
- * (services/connect/events.ts) exactly — same auth-via-query-param
- * reasoning (EventSource can't send custom headers).
+ * (services/connect/events.ts) — same auth-via-query-param reasoning
+ * (EventSource can't send custom headers).
  */
 export class VisualizerEventSource {
-  private source: EventSource | null = null
+  private source: ReconnectingEventSource | null = null
 
   onFrame: ((frame: VisualizerFrame) => void) | null = null
 
@@ -23,20 +25,25 @@ export class VisualizerEventSource {
   start(): void {
     if (this.source) return
     const params = new URLSearchParams({ token: this.connectToken, session: this.sessionId })
-    this.source = new EventSource(`${this.connectUrl}/visualizer?${params.toString()}`)
-    this.source.onmessage = (event) => {
-      try {
-        const frame = JSON.parse(event.data) as VisualizerFrame
-        this.onFrame?.(frame)
-      } catch {
-        // Heartbeat/idle comments never reach onmessage — this only
-        // catches a genuinely malformed data payload.
-      }
-    }
+    this.source = new ReconnectingEventSource(
+      `${this.connectUrl}/visualizer?${params.toString()}`,
+      {
+        onMessage: (event) => {
+          try {
+            const frame = JSON.parse(event.data) as VisualizerFrame
+            this.onFrame?.(frame)
+          } catch {
+            // Heartbeat/idle comments never reach onmessage — this only
+            // catches a genuinely malformed data payload.
+          }
+        },
+      },
+    )
+    this.source.start()
   }
 
   stop(): void {
-    this.source?.close()
+    this.source?.stop()
     this.source = null
   }
 }
