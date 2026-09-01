@@ -3,6 +3,7 @@
     <hero-band
       :greeting="greeting"
       :cover-id="heroCoverId"
+      :image-url="heroImageUrl"
       :eyebrow="heroEyebrow"
       :title="heroTitle"
       :title-to="heroTitleTo"
@@ -129,6 +130,7 @@ import AlbumShelf from '@/components/library/AlbumShelf.vue'
 import SimilarArtistsShelf from '@/components/library/SimilarArtistsShelf.vue'
 import SongTable from '@/components/library/SongTable.vue'
 import { accountScopedKey } from '@/services/accountKey'
+import { radioFaviconUrl } from '@/services/connect/radio'
 import type { Album, Artist, Song } from '@/types/library'
 
 // Below this many distinct seed artists, a similar-artist lookup isn't
@@ -258,7 +260,28 @@ export default {
     },
     heroCoverId() {
       if (this.playbackStore.currentSong) return this.playbackStore.currentSong.coverArtId
+      // Radio has its own artwork (see heroImageUrl below), never the
+      // fallback album's — without this branch, HeroBand.vue's own
+      // coverId-before-imageUrl priority (see its coverUrl computed) would
+      // show whatever was playing before the station started, since
+      // heroImageUrl is only consulted when this is null.
+      if (this.playbackStore.radioStation) return null
       return this.recentAlbums[0]?.coverArtId ?? null
+    },
+    // SongInfo.vue's radioFaviconSrc, duplicated rather than shared: that
+    // one reads size 96 for its 48px box (headroom for high-DPI), this one
+    // wants size 96 for HeroBand's larger artwork under the same reasoning,
+    // and neither is a natural fit for the other's component.
+    heroImageUrl(): string | null {
+      const station = this.playbackStore.radioStation
+      if (!station?.homePageUrl && !station?.favicon) return null
+      return radioFaviconUrl(
+        this.authStore.apiUrl,
+        this.authStore.connectToken,
+        station.homePageUrl ?? '',
+        96,
+        station.favicon ?? '',
+      )
     },
     heroEyebrow() {
       if (this.playbackStore.currentSong) {

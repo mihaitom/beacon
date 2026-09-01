@@ -121,11 +121,13 @@ class SubsonicClient:
         params = {"id": track_id, **self._auth_params()}
         return f"{self.internal_url}/rest/stream.view?{urlencode(params)}"
 
-    def get_cover_art_url(self, cover_art_id: str, internal: bool = False) -> str | None:
+    def get_cover_art_url(
+        self, cover_art_id: str, internal: bool = False, size: int = 300
+    ) -> str | None:
         if not cover_art_id or not self.base_url:
             return None
         base = self.internal_url if internal else self.base_url
-        params = {"id": cover_art_id, "size": 300, **self._auth_params()}
+        params = {"id": cover_art_id, "size": size, **self._auth_params()}
         return f"{base}/rest/getCoverArt.view?{urlencode(params)}"
 
     def ping(self) -> bool:

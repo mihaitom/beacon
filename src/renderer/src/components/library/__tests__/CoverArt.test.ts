@@ -6,7 +6,15 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { useAuthStore } from '@/stores/auth'
+import { fetchCoverArtBatched } from '@/services/connect/coverArtBatch'
 import CoverArt, { MAX_CONCURRENT_LOADS as MAX } from '../CoverArt.vue'
+
+// Mocked at this boundary (not the underlying fetch/http layer) so this
+// file tests exactly what it's meant to: CoverArt.vue's own settle/queue/
+// cancel/retry logic, independent of how fetchCoverArtBatched happens to
+// group requests together on the wire — that grouping has its own tests in
+// services/connect/__tests__/coverArtBatch.test.ts.
+vi.mock('@/services/connect/coverArtBatch', () => ({ fetchCoverArtBatched: vi.fn() }))
 
 const vuetify = createVuetify({ components, directives })
 
@@ -51,11 +59,12 @@ function lastObserver(): FakeIntersectionObserver {
   return observer
 }
 
-/** One fetch the component started, which the test decides the fate of —
- * whether it succeeds, fails, or is still on the wire when the cover is
- * scrolled away. */
+/** One cover-art request the component started, which the test decides the
+ * fate of — whether it succeeds, fails (no art for this id, distinct from
+ * being aborted), or is still pending when the cover is scrolled away. */
 interface Request {
-  url: string
+  id: string
+  size: number
   aborted: boolean
   done: boolean
   succeed(): void
@@ -68,26 +77,25 @@ function inFlight(): Request[] {
   return requests.filter((r) => !r.aborted && !r.done)
 }
 
-function fakeFetch(url: string, init?: RequestInit): Promise<Response> {
-  return new Promise<Response>((resolve, reject) => {
+function fakeFetchCoverArtBatched(id: string, size: number, signal: AbortSignal): Promise<Blob> {
+  return new Promise<Blob>((resolve, reject) => {
     const request: Request = {
-      url,
+      id,
+      size,
       aborted: false,
       done: false,
       succeed() {
         request.done = true
-        resolve({ ok: true, blob: async () => new Blob(['img']) } as Response)
+        resolve(new Blob(['img']))
       },
       fail() {
         request.done = true
-        resolve({ ok: false, status: 404 } as Response)
+        reject(new Error(`No cover art for ${id}`))
       },
     }
-    init?.signal?.addEventListener('abort', () => {
+    signal.addEventListener('abort', () => {
       request.aborted = true
-      const error = new Error('aborted')
-      error.name = 'AbortError'
-      reject(error)
+      reject(new DOMException('aborted', 'AbortError'))
     })
     requests.push(request)
   })
@@ -148,7 +156,7 @@ describe('CoverArt', () => {
     requests = []
     FakeIntersectionObserver.instances = []
     vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
-    vi.stubGlobal('fetch', vi.fn(fakeFetch))
+    vi.mocked(fetchCoverArtBatched).mockImplementation(fakeFetchCoverArtBatched)
     // jsdom has neither, and the component's whole point is that it holds
     // the image itself rather than letting <img src> fetch it.
     let n = 0
@@ -180,7 +188,7 @@ describe('CoverArt', () => {
 
   it('fetches and shows a cover the scroll comes to rest on', async () => {
     const wrapper = await scrollIntoRest(mountCover())
-    expect(requests[0]!.url).toContain('getCoverArt.view')
+    expect(requests[0]!.id).toBe('cover-1')
 
     requests[0]!.succeed()
     await flush()
@@ -238,7 +246,7 @@ describe('CoverArt', () => {
 
     wrapper.findComponent({ name: 'VImg' }).vm.$emit('error')
     await flush()
-    expect(requests[0]!.url).toContain('getCoverArt.view')
+    expect(requests[0]!.id).toBe('cover-1')
 
     requests[0]!.succeed()
     await flush()
@@ -429,7 +437,7 @@ describe('CoverArt', () => {
     // racing at once for what is still a single instance.
     expect(requests).toHaveLength(2)
     expect(requests[0]!.aborted).toBe(true)
-    expect(requests[1]!.url).toContain('cover-2')
+    expect(requests[1]!.id).toBe('cover-2')
     expect(inFlight()).toHaveLength(1)
   })
 
@@ -461,7 +469,7 @@ describe('CoverArt', () => {
     await flush()
 
     expect(requests).toHaveLength(MAX + 1)
-    expect(requests[MAX]!.url).toContain('cover-queued-2')
+    expect(requests[MAX]!.id).toBe('cover-queued-2')
   })
 
   // Regression tests for a second real bug (2026-08-31): after a first
@@ -500,7 +508,7 @@ describe('CoverArt', () => {
     await flush()
 
     expect(requests).toHaveLength(2)
-    expect(requests[1]!.url).toContain('cover-2')
+    expect(requests[1]!.id).toBe('cover-2')
   })
 
   it('still fetches nothing for a cover that is off screen when its candidates change', async () => {

@@ -627,7 +627,11 @@ export const usePlaybackStore = defineStore('playback', {
           this.originalQueue = []
           this.queue = []
           this.currentIndex = -1
-          this.radioStation = await resolveRadioStation(status.radio.url, status.radio.title)
+          this.radioStation = await resolveRadioStation(
+            status.radio.url,
+            status.radio.title,
+            this.radioStation,
+          )
           this.radioNowPlaying = null
         }
         return

@@ -65,6 +65,7 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import { useLibraryStore } from '@/stores/library'
+import { fetchCoverArtBatched } from '@/services/connect/coverArtBatch'
 
 // Starts the request a little before the cover actually scrolls into view,
 // so it's already there (or close to it) by the time it would otherwise pop
@@ -142,6 +143,18 @@ function releaseLoadSlot(): void {
   const next = waiting.shift()
   if (next) next()
   else inFlight -= 1
+}
+
+/** A candidate with no coverArtId to batch by — reached for any `imageUrl`
+ * that queueLoad's isProxyUrl check decided IS worth fetching-and-holding
+ * rather than handing to a plain <img> (a same-origin one, e.g. a radio
+ * station's favicon, built by services/connect/radio.ts's radioFaviconUrl
+ * and passed in by SongInfo.vue/NowPlayingView.vue/HeroBand.vue — not just
+ * a defensive branch for a case this component itself never produces). */
+async function fetchDirect(url: string, signal: AbortSignal): Promise<Blob> {
+  const response = await fetch(url, { signal, priority: 'low' } as RequestInit)
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  return response.blob()
 }
 
 export default {
@@ -234,14 +247,22 @@ export default {
     fetchSize(): number {
       return typeof this.size === 'number' ? this.size : 640
     },
-    candidates(): string[] {
+    // coverArtId is only ever set on the entry built from this.coverArtId
+    // (never on imageUrl's) — loadCandidates() uses it to tell which
+    // network path a given candidate needs (see fetchCoverArtBatched vs
+    // fetchDirect above).
+    candidates(): Array<{ url: string; coverArtId: string | null }> {
       const coverArtUrl = this.coverArtId
         ? useLibraryStore().client().coverArtUrl(this.coverArtId, this.fetchSize)
         : null
-      return [this.imageUrl, coverArtUrl].filter((u): u is string => !!u)
+      const entries: Array<{ url: string; coverArtId: string | null } | null> = [
+        this.imageUrl ? { url: this.imageUrl, coverArtId: null } : null,
+        coverArtUrl ? { url: coverArtUrl, coverArtId: this.coverArtId } : null,
+      ]
+      return entries.filter((e): e is { url: string; coverArtId: string | null } => e !== null)
     },
     url(): string | null {
-      return this.candidates[this.failedCount] ?? null
+      return this.candidates[this.failedCount]?.url ?? null
     },
     /** What the <img> actually shows: an image this component fetched and
      * holds in memory, or one a foreign host is loading directly. */
@@ -421,18 +442,22 @@ export default {
     async loadCandidates(): Promise<void> {
       try {
         while (this.url) {
+          const candidate = this.candidates[this.failedCount]!
           const controller = new AbortController()
           this.controller = controller
           try {
-            // Low priority: cover art is the least urgent thing the app ever
-            // asks for, and should never be queued ahead of the data the
-            // page is actually made of (or of a stream being set up).
-            const response = await fetch(this.url, {
-              signal: controller.signal,
-              priority: 'low',
-            } as RequestInit)
-            if (!response.ok) throw new Error(`HTTP ${response.status}`)
-            const blob = await response.blob()
+            // Batched (grouped with whatever else settles in the same
+            // ~20ms window — see coverArtBatch.ts) for a real coverArtId;
+            // fetchDirect for anything else this component fetches and
+            // holds that has no id to batch by (see its own comment). Low
+            // priority isn't meaningful for the batched path (it's one POST
+            // request, not an image fetch the browser could deprioritize)
+            // — cover art already being the least urgent thing the app
+            // asks for is what the settle delay and slot queue above are
+            // for instead.
+            const blob = candidate.coverArtId
+              ? await fetchCoverArtBatched(candidate.coverArtId, this.fetchSize, controller.signal)
+              : await fetchDirect(candidate.url, controller.signal)
             this.setObjectUrl(URL.createObjectURL(blob))
             return
           } catch (error) {

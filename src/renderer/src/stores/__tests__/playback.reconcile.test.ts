@@ -198,6 +198,54 @@ describe('reconcileFromStatus / adoptCastQueue', () => {
       expect(playback.radioStation?.streamUrl).toBe('https://edge7.example/chill.mp3')
     })
 
+    it("keeps a Radio Browser station's favicon across a resolved-URL rebuild, since it can never match the library", async () => {
+      // A station played straight out of RadioView.vue's discover dialog
+      // (playBrowsedStation()) is deliberately never saved to
+      // library.radioStations, so it can never be recovered by the
+      // library-match branch above — and connect routinely reports back a
+      // different final stream URL (a redirect, or a .m3u/.pls resolved to
+      // what's inside it), which is exactly what triggers a rebuild here.
+      // Losing the favicon on that rebuild left the player bar and Now
+      // Playing on the generic radio icon for the rest of the session, on
+      // essentially every browsed-station play — reported live 2026-09-01.
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: '',
+        name: 'Found FM',
+        streamUrl: 'https://browsed.example/found',
+        homePageUrl: null,
+        favicon: 'https://cdn.example/found.png',
+      }
+
+      await playback.reconcileFromStatus(
+        makeStatus({
+          radio: { title: 'Found FM', url: 'https://edge3.example/found.mp3' },
+        }),
+      )
+
+      expect(playback.radioStation?.favicon).toBe('https://cdn.example/found.png')
+      expect(playback.radioStation?.streamUrl).toBe('https://edge3.example/found.mp3')
+    })
+
+    it('does not carry a favicon over to a genuinely different station', async () => {
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: '',
+        name: 'Found FM',
+        streamUrl: 'https://browsed.example/found',
+        homePageUrl: null,
+        favicon: 'https://cdn.example/found.png',
+      }
+
+      await playback.reconcileFromStatus(
+        makeStatus({
+          radio: { title: 'Somewhere Else FM', url: 'https://edge3.example/other.mp3' },
+        }),
+      )
+
+      expect(playback.radioStation?.favicon).toBeUndefined()
+    })
+
     it('leaves radioStation untouched (same object) when the same station repeats on the next tick', async () => {
       const playback = usePlaybackStore()
       const status = makeStatus({

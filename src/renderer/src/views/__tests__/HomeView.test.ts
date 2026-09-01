@@ -97,6 +97,58 @@ describe('HomeView hero', () => {
     })
   })
 
+  describe('hero artwork for a playing radio station', () => {
+    it("shows the station's own favicon, not the last-played album's cover", async () => {
+      // Reported live 2026-09-01: heroCoverId used to fall straight through
+      // to recentAlbums[0] whenever currentSong was null, radio included —
+      // so the hero kept showing whatever was playing before the station
+      // started, and HeroBand.vue's own `imageUrl` prop (its fallback for
+      // exactly this) was never even bound.
+      const wrapper = await mountHome()
+      usePlaybackStore().radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: 'https://chill.example',
+      }
+      await wrapper.vm.$nextTick()
+
+      const hero = wrapper.getComponent(HeroBand)
+      expect(hero.props('coverId')).toBeNull()
+      expect(hero.props('imageUrl')).toContain('/radio-favicon?')
+      expect(hero.props('imageUrl')).toContain('url=https%3A%2F%2Fchill.example')
+    })
+
+    it('falls back to the Radio Browser favicon hint when there is no homepage', async () => {
+      const wrapper = await mountHome()
+      usePlaybackStore().radioStation = {
+        id: '',
+        name: 'Found FM',
+        streamUrl: 'https://browsed.example/found',
+        homePageUrl: null,
+        favicon: 'https://cdn.example/found.png',
+      }
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.getComponent(HeroBand).props('imageUrl')).toContain(
+        'hint=https%3A%2F%2Fcdn.example%2Ffound.png',
+      )
+    })
+
+    it('shows no image at all for a station with neither a homepage nor a favicon hint', async () => {
+      const wrapper = await mountHome()
+      usePlaybackStore().radioStation = {
+        id: 'r1',
+        name: 'Plain FM',
+        streamUrl: 'https://stream.example/plain',
+        homePageUrl: null,
+      }
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.getComponent(HeroBand).props('imageUrl')).toBeNull()
+    })
+  })
+
   describe('when a Song Radio can be started from the hero', () => {
     it('offers it while a song is playing', async () => {
       const wrapper = await mountHome()

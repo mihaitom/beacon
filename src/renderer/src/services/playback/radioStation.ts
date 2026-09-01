@@ -27,10 +27,28 @@ let radioStationsFetched = false
  * URL it actually ended up streaming from rather than the one the
  * station is stored with.
  *
- * Falls back to the bare title/URL pair for a station that genuinely
- * isn't in the library, which is the same station this used to build
- * unconditionally. */
-export async function resolveRadioStation(streamUrl: string, title: string): Promise<RadioStation> {
+ * `previous` is whatever this client already had for the station that was
+ * playing right before this call — reconcileFromStatus()'s own
+ * this.radioStation, from the moment before it's overwritten with this
+ * function's result. A station played straight out of RadioView.vue's
+ * discover dialog (playBrowsedStation()) is deliberately never saved (see
+ * that function's own comment), so it can never match the library lookup
+ * above — and connect routinely reports back a stream URL that differs
+ * from the one that was dispatched (a redirect followed, or a .m3u/.pls
+ * playlist resolved to the address inside it — see routes/radio.py), which
+ * is exactly the condition that makes reconcileFromStatus() call this in
+ * the first place. Without `previous`, that "same station, different final
+ * URL" case looked identical to a genuine station change and lost the
+ * artwork (and any other Radio Browser-only fields) it was dispatched
+ * with, on essentially every browsed-station play, not some edge case —
+ * reported live 2026-09-01. Matched by name, the one field that survives a
+ * resolved URL and is still meaningful for an unsaved station (it has no
+ * id to compare instead). */
+export async function resolveRadioStation(
+  streamUrl: string,
+  title: string,
+  previous: RadioStation | null,
+): Promise<RadioStation> {
   const library = useLibraryStore()
   const findKnown = (): RadioStation | undefined =>
     library.radioStations.find((station) => station.streamUrl === streamUrl) ??
@@ -54,5 +72,7 @@ export async function resolveRadioStation(streamUrl: string, title: string): Pro
   // compared against — keeping the stored URL instead would make every
   // single tick look like a station change and rebuild this (clearing
   // the queue with it) over and over.
-  return known ? { ...known, streamUrl } : { id: '', name: title, streamUrl, homePageUrl: null }
+  if (known) return { ...known, streamUrl }
+  if (previous?.name === title) return { ...previous, streamUrl }
+  return { id: '', name: title, streamUrl, homePageUrl: null }
 }

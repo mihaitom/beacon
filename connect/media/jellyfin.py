@@ -215,11 +215,13 @@ class JellyfinClient:
             f"?{urlencode({'api_key': self.token})}"
         )
 
-    def get_cover_art_url(self, cover_art_id: str, internal: bool = False) -> str | None:
+    def get_cover_art_url(
+        self, cover_art_id: str, internal: bool = False, size: int = 300
+    ) -> str | None:
         if not cover_art_id or not self.base_url:
             return None
         base = self.internal_url if internal else self.base_url
-        return f"{base}/Items/{quote(cover_art_id, safe='')}/Images/Primary?maxHeight=300"
+        return f"{base}/Items/{quote(cover_art_id, safe='')}/Images/Primary?maxHeight={size}"
 
     def ping(self) -> bool:
         """Verifies the token actually authenticates — hits an endpoint that

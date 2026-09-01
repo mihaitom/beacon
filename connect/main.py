@@ -38,6 +38,7 @@ from core.state import PORT, get_local_ip
 from core.upnp_events import renew_due_subscriptions
 from media import jellyfin_bridge, plex_bridge
 from routes.account_settings import router as account_settings_router
+from routes.coverart import router as coverart_router
 from routes.debug import router as debug_router
 from routes.devices import router as devices_router
 from routes.discovery import discover_all
@@ -403,6 +404,7 @@ app.include_router(lyrics_router)
 app.include_router(waveform_router)
 app.include_router(radio_router)
 app.include_router(recommendations_router)
+app.include_router(coverart_router)
 app.include_router(upnp_router)
 # Diagnostic-only (routes/debug.py) — registered at Debug log level or
 # louder (see _INITIAL_LOG_LEVEL's own comment), not something a real

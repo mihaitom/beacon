@@ -54,12 +54,21 @@ class MediaClient(Protocol):
 
     def get_stream_url(self, track_id: str) -> str: ...
 
-    def get_cover_art_url(self, cover_art_id: str, internal: bool = False) -> str | None:
+    def get_cover_art_url(
+        self, cover_art_id: str, internal: bool = False, size: int = 300
+    ) -> str | None:
         """`internal=True` returns a URL reachable by LAN cast devices
         (Sonos/Chromecast/AirPlay/DLNA) fetching it directly — the default
         (False) is for the browser's own display, which may not be able to
         reach the same address (see routes/playback.py's device-facing call
-        vs core/session.py's SSE-facing one)."""
+        vs core/session.py's SSE-facing one). `size` is honored by Subsonic
+        and Jellyfin; PlexClient accepts and ignores it, always returning
+        its one fixed thumbnail size — its browser-facing single-cover path
+        never plumbed a size through either (see media/plex_bridge.py's
+        _handle_binary), so this isn't a regression, just not (yet)
+        implemented there. Accepting the parameter anyway means a caller
+        that treats every MediaClient the same doesn't need to special-case
+        Plex just to avoid a TypeError."""
         ...
 
     def ping(self) -> bool: ...

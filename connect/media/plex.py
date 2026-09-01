@@ -325,7 +325,12 @@ class PlexClient:
             raise RuntimeError(f"Plex track {track_id} has no playable Part")
         return f"{self.internal_url}{part_key}?X-Plex-Token={quote(self.token, safe='')}"
 
-    def get_cover_art_url(self, cover_art_id: str, internal: bool = False) -> str | None:
+    def get_cover_art_url(
+        self, cover_art_id: str, internal: bool = False, size: int = 300
+    ) -> str | None:
+        # size: accepted for parity with SubsonicClient/JellyfinClient (see
+        # MediaClient.get_cover_art_url's docstring) but not otherwise used —
+        # Plex always returns its one fixed thumbnail size.
         if not cover_art_id or not self.base_url:
             return None
         base = self.internal_url if internal else self.base_url
