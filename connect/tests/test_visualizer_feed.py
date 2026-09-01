@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.state import TEST_TONE_TRACK_ID
-from core.visualizer_feed import VisualizerFeed
+from core.visualizer_feed import _ASSUMED_DEVICE_LEAD_SECONDS, VisualizerFeed, _FirstByteClock
 from delivery import AirPlayDelivery, SonosDelivery
 from media.base import Track
 
@@ -270,6 +270,190 @@ async def test_no_analysis_for_radio(casting_session, fake_analyzer):
     await _settle(feed)
     try:
         assert fake_analyzer == []
+    finally:
+        await feed.shutdown()
+
+
+# ── _FirstByteClock — radio's elapsed_fn ────────────────────────────────────
+# Regression coverage for two real bugs found live 2026-09-01: zeroing at
+# construction (attach time) instead of the first actual byte made every
+# frame permanently "late" and get dropped (a visualizer stuck at ~0.5fps);
+# and zero lead at all read as playing ahead of the audio actually coming
+# out of the speaker ("massiv out of sync"), once the first bug stopped
+# hiding it.
+
+
+class _FakeSource:
+    def __init__(self, chunks: list[bytes]):
+        self._chunks = list(chunks)
+
+    async def read(self, n: int) -> bytes:
+        return self._chunks.pop(0) if self._chunks else b""
+
+
+class TestFirstByteClock:
+    def test_elapsed_is_zero_before_any_read_at_all(self):
+        clock = _FirstByteClock()
+        assert clock.elapsed() == 0.0
+
+    async def test_empty_reads_do_not_start_the_clock(self):
+        clock = _FirstByteClock()
+        source = clock.wrap(_FakeSource([b"", b"", b""]))
+
+        for _ in range(3):
+            assert await source.read(4096) == b""
+        assert clock.elapsed() == 0.0
+
+    async def test_zeroes_on_the_first_non_empty_read_not_on_construction(self):
+        # Construction happens well before anything is actually read (a
+        # stand-in for the relay's own fetch/demux/ffmpeg/queue latency) —
+        # elapsed() must count from the read, not from construction, which
+        # never calls time.monotonic() at all (see _FirstByteClock.__init__).
+        clock = _FirstByteClock()  # no monotonic() call yet
+        times = iter([104.0, 106.0 + _ASSUMED_DEVICE_LEAD_SECONDS])
+        with patch("core.visualizer_feed.time.monotonic", side_effect=lambda: next(times)):
+            source = clock.wrap(_FakeSource([b"real-data"]))
+            assert await source.read(4096) == b"real-data"  # marks at t=104
+
+            assert clock.elapsed() == pytest.approx(2.0)
+
+    async def test_only_the_first_read_marks_the_clock(self):
+        # mark() itself only calls time.monotonic() once — the guard that
+        # makes the second read a no-op short-circuits before it would call
+        # it again, so this sequence has one entry per *actual* call, not
+        # one per read.
+        times = iter([101.0, 101.0 + _ASSUMED_DEVICE_LEAD_SECONDS])
+        with patch("core.visualizer_feed.time.monotonic", side_effect=lambda: next(times)):
+            clock = _FirstByteClock()
+            source = clock.wrap(_FakeSource([b"first", b"second"]))
+            await source.read(4096)  # marks at t=101
+            await source.read(4096)  # must NOT re-mark
+
+            assert clock.elapsed() == pytest.approx(0.0)
+
+    async def test_clamps_at_zero_rather_than_going_negative(self):
+        # Real time hasn't advanced past the assumed device lead yet —
+        # elapsed() must read 0, not a negative "already playing" value.
+        times = iter([100.0, 100.5])
+        with patch("core.visualizer_feed.time.monotonic", side_effect=lambda: next(times)):
+            clock = _FirstByteClock()
+            source = clock.wrap(_FakeSource([b"data"]))
+            await source.read(4096)
+
+            assert clock.elapsed() == 0.0
+
+
+# ── radio, routed through core/radio_relay.py's shared relay ───────────────
+
+
+class _FakeRelay:
+    """subscribe_pcm()/unsubscribe_pcm() — see core/radio_relay.py's
+    PcmSubscription. A subscription is always available immediately (no
+    "not ready yet" state to fake here): the relay hands out a queue-backed
+    subscription the moment it's asked, whether or not its ffmpeg has
+    started producing bytes into it yet — the analyzer just blocks on its
+    first read() until real data arrives, same as it would for a real,
+    momentarily-quiet pipe."""
+
+    def __init__(self, url: str, pcm_subscription=None):
+        self.url = url
+        self._pcm_subscription = pcm_subscription if pcm_subscription is not None else object()
+        self.unsubscribed_pcm: list[object] = []
+
+    def subscribe_pcm(self):
+        return self._pcm_subscription
+
+    def unsubscribe_pcm(self, subscription):
+        self.unsubscribed_pcm.append(subscription)
+
+
+async def test_analysis_starts_for_relayed_radio(casting_session, fake_analyzer):
+    casting_session.state.current_track = None
+    casting_session.state.radio_info = {"title": "FIP", "url": "http://radio/stream"}
+    pcm_subscription = object()
+    casting_session.radio_relay = _FakeRelay(
+        "http://radio/stream", pcm_subscription=pcm_subscription
+    )
+    feed = casting_session.visualizer
+    feed.subscribe()
+    await _settle(feed)
+    try:
+        assert len(fake_analyzer) == 1
+        # Wrapped in a _FirstByteClock-backed source, not handed straight
+        # through — see that class's own docstring for why the clock has
+        # to zero on the first real read rather than on attach.
+        pcm_source = fake_analyzer[0].kwargs["pcm_source"]
+        assert pcm_source._source is pcm_subscription
+        # No track to decode a second time — this is the one thing that
+        # tells AudioAnalyzer.start() to read from pcm_source instead of
+        # spawning its own ffmpeg (see its own docstring).
+        assert fake_analyzer[0].kwargs.get("source_url", "") == ""
+    finally:
+        await feed.shutdown()
+
+
+async def test_relayed_radio_wires_a_cleanup_that_unsubscribes_from_the_relay(
+    casting_session, fake_analyzer
+):
+    """AudioAnalyzer's cleanup callback (see its own `cleanup` parameter,
+    invoked once at the end of a real stop()) is how the relay learns this
+    analyzer is gone — without it, a left-behind subscription queue would
+    sit in RadioRelay._pcm_subscribers forever, quietly leaking one per
+    analyzer restart (track/station change, subscriber churn) for the life
+    of the session. fake_analyzer replaces AudioAnalyzer itself (its real
+    stop() has its own direct test in test_audio_analysis.py), so this
+    checks the callback visualizer_feed.py hands it is the right one by
+    invoking it directly, the way a real stop() would."""
+    casting_session.state.current_track = None
+    casting_session.state.radio_info = {"title": "FIP", "url": "http://radio/stream"}
+    relay = _FakeRelay("http://radio/stream")
+    casting_session.radio_relay = relay
+    feed = casting_session.visualizer
+    feed.subscribe()
+    await _settle(feed)
+    assert relay.unsubscribed_pcm == []
+
+    fake_analyzer[0].kwargs["cleanup"]()
+
+    assert relay.unsubscribed_pcm == [relay._pcm_subscription]
+    await feed.shutdown()
+
+
+async def test_relayed_radio_still_respects_the_deliverable_target_types_gate(
+    casting_session, fake_analyzer
+):
+    """should_analyze() (device-type gating) still applies to a relayed
+    station — being relayed doesn't make every delivery type analyzable.
+    No active delivery at all is the simplest way to fail that gate (same
+    as test_should_analyze_false_for_no_targets at the pure-function
+    level, exercised here through the actual VisualizerFeed gate)."""
+    casting_session.state.current_track = None
+    casting_session.state.radio_info = {"title": "FIP", "url": "http://radio/stream"}
+    casting_session.radio_relay = _FakeRelay("http://radio/stream")
+    casting_session.state.active_delivery = None
+    feed = casting_session.visualizer
+    feed.subscribe()
+    await _settle(feed)
+    try:
+        assert fake_analyzer == []
+    finally:
+        await feed.shutdown()
+
+
+async def test_a_relayed_radio_analyzer_stops_when_playback_stops(casting_session, fake_analyzer):
+    casting_session.state.current_track = None
+    casting_session.state.radio_info = {"title": "FIP", "url": "http://radio/stream"}
+    casting_session.radio_relay = _FakeRelay("http://radio/stream")
+    feed = casting_session.visualizer
+    feed.subscribe()
+    await _settle(feed)
+    assert len(fake_analyzer) == 1
+
+    casting_session.state.is_streaming = False
+    feed.notify()
+    await _settle(feed)
+    try:
+        fake_analyzer[0].stop.assert_awaited_once()
     finally:
         await feed.shutdown()
 

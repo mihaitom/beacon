@@ -461,6 +461,38 @@ async def test_start_logs_and_leaves_no_tasks_when_ffmpeg_is_missing(caplog):
     assert analyzer._release_task is None
 
 
+async def test_start_with_a_pcm_source_never_spawns_ffmpeg():
+    """core/visualizer_feed.py's radio branch — reads from an already-open
+    PCM stream (core/radio_relay.py's RadioRelay) instead of decoding a
+    track a second time."""
+    pcm_source = MagicMock()
+    pcm_source.read = AsyncMock(return_value=b"")
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, pcm_source=pcm_source)
+    exec_mock = AsyncMock()
+
+    with patch("asyncio.create_subprocess_exec", exec_mock):
+        await analyzer.start()
+    try:
+        exec_mock.assert_not_awaited()
+        assert analyzer._proc is None
+        assert analyzer._reader_task is not None
+        assert analyzer._release_task is not None
+    finally:
+        analyzer._reader_task.cancel()
+        analyzer._release_task.cancel()
+
+
+async def test_read_pcm_reads_from_the_given_pcm_source_when_present():
+    pcm = _tone_pcm(440, _FFT_SIZE)
+    pcm_source = MagicMock()
+    pcm_source.read = AsyncMock(side_effect=[pcm, b""])
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, pcm_source=pcm_source)
+
+    await analyzer._read_pcm()
+
+    assert analyzer._pending  # produced at least one frame, straight from pcm_source
+
+
 # ── AudioAnalyzer._read_pcm — decode/FFT/windowing ───────────────────────────
 
 
@@ -576,3 +608,17 @@ async def test_stop_is_safe_before_start_ever_ran():
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
 
     await analyzer.stop()  # must not raise
+
+
+async def test_stop_calls_cleanup_exactly_once_even_if_stop_runs_twice():
+    """core/visualizer_feed.py's radio branch relies on this to unsubscribe
+    from core/radio_relay.py's RadioRelay — called more than once would
+    double-remove (harmless there, since RadioRelay.unsubscribe_pcm() is
+    itself idempotent) but is still worth pinning down as exactly-once."""
+    cleanup = MagicMock()
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, pcm_source=MagicMock(), cleanup=cleanup)
+
+    await analyzer.stop()
+    await analyzer.stop()
+
+    cleanup.assert_called_once()

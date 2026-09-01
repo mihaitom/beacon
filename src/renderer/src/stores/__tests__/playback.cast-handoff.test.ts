@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useConnectStore } from '../connect'
 import { useLibraryStore } from '../library'
 import { usePlaybackStore } from '../playback'
+import { useRadioSettingsStore } from '../radioSettings'
 import { getAudioEngine } from '@/services/audioEngine'
 import * as connectPlayback from '@/services/connect/playback'
 import type { SubsonicClient } from '@/services/subsonic/client'
@@ -119,6 +120,26 @@ describe('castTo', () => {
     )
     expect(connectPlayback.play).not.toHaveBeenCalled()
     expect(playback.isPlaying).toBe(true)
+  })
+
+  it('passes the radio-cast-directly setting through on a handoff', async () => {
+    useRadioSettingsStore().setCastDirectly(true)
+    const playback = usePlaybackStore()
+    playback.radioStation = {
+      id: 'r1',
+      name: 'Chill FM',
+      streamUrl: 'https://stream.example/chill',
+      homePageUrl: null,
+    }
+    playback.isPlaying = true
+
+    await playback.castTo([kitchen])
+
+    expect(connectPlayback.playUrl).toHaveBeenCalledWith(
+      'https://stream.example/chill',
+      'Chill FM',
+      expect.objectContaining({ castDirectly: true }),
+    )
   })
 
   it('keeps a paused radio handoff paused too', async () => {

@@ -5,6 +5,7 @@ import { initAccountScopedStores } from '../accountScopedStores'
 import { fetchAccountSettings } from '@/services/connect/accountSettings'
 import { useAuthStore } from '@/stores/auth'
 import { useRecommendationsStore } from '@/stores/recommendations'
+import { useRadioSettingsStore } from '@/stores/radioSettings'
 import { useLyricsProvidersStore, LYRIC_PROVIDERS } from '@/stores/lyricsProviders'
 import { useAutoplayStore, DEFAULT_AUTOPLAY_BATCH_SIZE } from '@/stores/autoplay'
 import { browserLocale, getLocale } from '@/i18n'
@@ -40,6 +41,7 @@ describe('accountScopedStores — pull on account change', () => {
       recommendationsEnabled: false,
       lyricsProviders: ['lrclib.net'],
       autoplayBatchSize: 20,
+      castRadioDirectly: true,
     })
     initAccountScopedStores()
 
@@ -50,6 +52,21 @@ describe('accountScopedStores — pull on account change', () => {
     expect(useRecommendationsStore().enabled).toBe(false)
     expect(useLyricsProvidersStore().enabled).toEqual(['lrclib.net'])
     expect(useAutoplayStore().batchSize).toBe(20)
+    expect(useRadioSettingsStore().castDirectly).toBe(true)
+  })
+
+  it('ignores a non-boolean castRadioDirectly flag', async () => {
+    vi.mocked(fetchAccountSettings).mockResolvedValue({
+      castRadioDirectly: 'true' as unknown as boolean,
+    })
+    initAccountScopedStores()
+
+    signIn()
+    await nextTick()
+    await vi.waitFor(() => expect(fetchAccountSettings).toHaveBeenCalled())
+    await nextTick()
+
+    expect(useRadioSettingsStore().castDirectly).toBe(false)
   })
 
   it('leaves a field the server has never seen at its current local value', async () => {
@@ -166,6 +183,7 @@ describe('accountScopedStores — local reload on account change', () => {
     useLyricsProvidersStore().setEnabled([])
     useAutoplayStore().setBatchSize(30)
     useAutoplayStore().setEnabled(true)
+    useRadioSettingsStore().setCastDirectly(true)
 
     initAccountScopedStores()
     useAuthStore().username = 'bob'
@@ -175,6 +193,7 @@ describe('accountScopedStores — local reload on account change', () => {
     expect(useLyricsProvidersStore().enabled).toEqual([...LYRIC_PROVIDERS])
     expect(useAutoplayStore().batchSize).toBe(DEFAULT_AUTOPLAY_BATCH_SIZE)
     expect(useAutoplayStore().enabled).toBe(false)
+    expect(useRadioSettingsStore().castDirectly).toBe(false)
   })
 
   it('does not let a second account inherit the first one language', async () => {

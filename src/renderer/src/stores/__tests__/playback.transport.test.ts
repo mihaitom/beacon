@@ -4,6 +4,7 @@ import { flushPromises } from '@vue/test-utils'
 import { useConnectStore } from '../connect'
 import { useLibraryStore } from '../library'
 import { usePlaybackStore } from '../playback'
+import { useRadioSettingsStore } from '../radioSettings'
 import { getAudioEngine } from '@/services/audioEngine'
 import * as connectPlayback from '@/services/connect/playback'
 import * as radioMetadata from '@/services/connect/radioMetadata'
@@ -639,6 +640,25 @@ describe('playback transport', () => {
         expect.objectContaining({ targets: [{ name: 'Living Room', type: 'sonos' }] }),
       )
       expect(engine.play).not.toHaveBeenCalled()
+    })
+
+    it('passes the radio-cast-directly setting through to /play-url', async () => {
+      useRadioSettingsStore().setCastDirectly(true)
+      const playback = usePlaybackStore()
+      castTo()
+
+      await playback.playRadioStation({
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      })
+
+      expect(connectPlayback.playUrl).toHaveBeenCalledWith(
+        'https://stream.example/chill',
+        'Chill FM',
+        expect.objectContaining({ castDirectly: true }),
+      )
     })
 
     it('stops the radio-metadata watch when a song queue replaces the playing station', async () => {

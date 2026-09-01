@@ -250,7 +250,18 @@ describe('NowPlayingView', () => {
       )
     })
 
-    it('is unavailable casting radio (no current song at all)', async () => {
+    it('is unavailable casting radio (no current song, and no reliable way to sync it)', async () => {
+      // The backend *can* decode a real PCM stream for relayed radio now
+      // (core/radio_relay.py, core/visualizer_feed.py's radio branch) —
+      // briefly wired up here too on 2026-09-01, then deliberately backed
+      // out. A Sonos reports position 0.00s for a continuous stream, so
+      // there is no device feedback to calibrate the analyzer's clock
+      // against (unlike a track, via PlaybackClock's position-resync) —
+      // only a guessed constant lead, which measured live as roughly a
+      // second off and station-dependent. A visualizer that's confidently
+      // wrong is worse than one that's honestly absent, so this stays
+      // false until there's either real position feedback or a lead
+      // trustworthy enough not to need per-station guessing.
       const { wrapper } = await mountView()
       const playback = usePlaybackStore()
       const connect = useConnectStore()

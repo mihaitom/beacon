@@ -672,7 +672,13 @@ export default {
       }
     },
     async onHeroPlay() {
-      if (this.playbackStore.currentSong) {
+      // Radio has no currentSong (see routes/playback.py's /play-url) but
+      // is just as much "something already playing" as a song is — same
+      // check heroCoverTo()/heroHasContent() already make. Missing this
+      // branch fell through to the "nothing playing, here's your most
+      // recent album" case below and started that instead of toggling the
+      // station — reported live 2026-09-01.
+      if (this.playbackStore.currentSong || this.playbackStore.radioStation) {
         await this.playbackStore.togglePlay()
         return
       }

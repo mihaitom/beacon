@@ -49,10 +49,21 @@ import logging
 import math
 from collections import deque
 from collections.abc import Callable
+from typing import Protocol, runtime_checkable
 
 import numpy as np
 
 logger = logging.getLogger("connect.audio_analysis")
+
+
+@runtime_checkable
+class PcmSource(Protocol):
+    """What AudioAnalyzer needs from a `pcm_source` — a real
+    asyncio.StreamReader (unused today, kept for type-compatibility) or
+    core/radio_relay.py's PcmSubscription both satisfy this."""
+
+    async def read(self, n: int) -> bytes: ...
+
 
 # Mono PCM at the same rate the Web Audio API's AnalyserNode typically sees
 # in 'local' mode (the browser's default AudioContext sample rate) — Nyquist
@@ -328,14 +339,29 @@ class AudioAnalyzer:
     server's own URL for the track (MediaClient.get_stream_url()), decoded
     here independently of whatever is being sent to the device — see the
     module docstring for why. `gain` mirrors the ReplayGain applied to that
-    real stream."""
+    real stream.
+
+    `pcm_source`, when given, replaces both `source_url` and this class's
+    own ffmpeg entirely: start() reads PCM straight from it instead of
+    spawning a decoder. The one caller that uses this is
+    core/visualizer_feed.py's radio branch, reading from
+    core/radio_relay.py's RadioRelay — radio has no per-listener track to
+    decode a second time (the whole reason this class decodes its own copy
+    for a track, see the module docstring), so it instead taps the one
+    shared PCM stream the relay already produces. `elapsed_fn` for that
+    case must NOT be the session clock: a station has no position to seek
+    to, so `start_offset` is always 0 there, and every attach (including
+    one that joins minutes into an already-playing station) starts from
+    "now" — see visualizer_feed.py's own comment on why."""
 
     def __init__(
         self,
         elapsed_fn: Callable[[], float],
-        source_url: str,
+        source_url: str = "",
         start_offset: float = 0.0,
         gain: float = 1.0,
+        pcm_source: PcmSource | None = None,
+        cleanup: Callable[[], None] | None = None,
     ) -> None:
         self.frames: asyncio.Queue[list[float]] = asyncio.Queue(maxsize=8)
         # (content_position, bands) pairs already computed but not yet
@@ -345,6 +371,13 @@ class AudioAnalyzer:
         self._source_url = source_url
         self._start_offset = start_offset
         self._gain = gain
+        self._pcm_source = pcm_source
+        # Called once, at the end of stop() — the pcm_source case's own way
+        # to let its caller release whatever handed this source out (see
+        # core/visualizer_feed.py's radio branch: RadioRelay.unsubscribe_pcm()).
+        # Unused/None for the plain-ffmpeg case, which owns and cleans up
+        # its own process directly below instead.
+        self._cleanup = cleanup
         self._proc: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task | None = None
         self._release_task: asyncio.Task | None = None
@@ -358,6 +391,10 @@ class AudioAnalyzer:
         self._reading_done = False
 
     async def start(self) -> None:
+        if self._pcm_source is not None:
+            self._reader_task = asyncio.create_task(self._read_pcm())
+            self._release_task = asyncio.create_task(self._release_frames())
+            return
         try:
             self._proc = await asyncio.create_subprocess_exec(
                 *_decode_cmd(self._source_url, self._start_offset, self._gain),
@@ -384,12 +421,13 @@ class AudioAnalyzer:
         window. This is what keeps the emission rate at _HOP_SIZE's cadence
         regardless of how large _FFT_SIZE (the frequency resolution) is —
         see both constants' own comments."""
-        assert self._proc and self._proc.stdout
+        pcm = self._pcm_source or (self._proc.stdout if self._proc else None)
+        assert pcm is not None
         window_bytes = _FFT_SIZE * 2  # 16-bit samples
         hop_bytes = _HOP_SIZE * 2
         try:
             while True:
-                data = await self._proc.stdout.read(4096)
+                data = await pcm.read(4096)
                 if not data:
                     break
                 self._pcm_buffer.extend(data)
@@ -496,6 +534,9 @@ class AudioAnalyzer:
                 self._proc.kill()
             except ProcessLookupError:
                 pass
+        if self._cleanup is not None:
+            cleanup, self._cleanup = self._cleanup, None
+            cleanup()
 
 
 # Kept here (rather than only in a docstring) so both

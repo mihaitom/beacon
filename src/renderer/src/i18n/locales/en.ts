@@ -348,6 +348,9 @@ export default {
     qualityBitrate: 'Bitrate',
     qualityBitrateItem: '{value} kbps',
     qualityOriginal: 'Original (untouched)',
+    castRadioDirectly: 'Send radio straight to the device',
+    castRadioDirectlyHint:
+      "Beacon routes cast radio through its own backend by default, so the device, the visualizer and the now-playing title all share one fetch of the station. Turned on, the device connects to the station directly instead — playback then keeps going even if Beacon restarts, at the cost of the visualizer and the risk that some devices refuse the station's own stream.",
     autoplay: 'Autoplay',
     autoplayBatchSizeItem: '{count} songs',
     autoplayHint:

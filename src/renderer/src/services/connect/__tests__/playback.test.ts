@@ -119,6 +119,26 @@ describe('connect playback dispatch', () => {
     })
   })
 
+  describe('playUrl', () => {
+    it('omits cast_directly entirely when not given, so connect keeps its own default (relayed)', async () => {
+      const { playUrl } = await freshModule()
+
+      await playUrl('https://stream.example/chill', 'Chill FM')
+
+      expect(body()).not.toHaveProperty('cast_directly')
+    })
+
+    it('passes cast_directly through when the caller has an opinion either way', async () => {
+      const { playUrl } = await freshModule()
+
+      await playUrl('https://stream.example/chill', 'Chill FM', { castDirectly: true })
+      await playUrl('https://stream.example/chill', 'Chill FM', { castDirectly: false })
+
+      expect(body(0)).toMatchObject({ cast_directly: true })
+      expect(body(1)).toMatchObject({ cast_directly: false })
+    })
+  })
+
   describe('the dispatch sequence', () => {
     it('rises with every dispatch, so an older one arriving late cannot win', async () => {
       const { play } = await freshModule()

@@ -109,6 +109,19 @@
         {{ $t('settings.castQualityHint') }}
       </p>
 
+      <v-switch
+        :model-value="radioSettingsStore.castDirectly"
+        color="primary"
+        density="compact"
+        hide-details
+        class="radio-direct-switch"
+        :label="$t('settings.castRadioDirectly')"
+        @update:model-value="radioSettingsStore.setCastDirectly(!!$event)"
+      />
+      <p class="setting-hint">
+        {{ $t('settings.castRadioDirectlyHint') }}
+      </p>
+
       <template v-if="authStore.capabilities.songRadio">
         <p class="text-body-medium font-weight-medium mt-6 mb-2">{{ $t('settings.autoplay') }}</p>
         <v-select
@@ -321,6 +334,7 @@ import { getLocale, type SupportedLocale } from '@/i18n'
 import { setLocale } from '@/services/localeSetting'
 import { getLogLevel, setLogLevel, type LogLevel } from '@/services/connect/logLevel'
 import { useRecommendationsStore } from '@/stores/recommendations'
+import { useRadioSettingsStore } from '@/stores/radioSettings'
 import { LYRIC_PROVIDERS, useLyricsProvidersStore } from '@/stores/lyricsProviders'
 import { AUTOPLAY_BATCH_SIZE_OPTIONS, useAutoplayStore } from '@/stores/autoplay'
 import { useUpdateStore } from '@/stores/update'
@@ -407,6 +421,9 @@ export default {
     },
     recommendationsStore() {
       return useRecommendationsStore()
+    },
+    radioSettingsStore() {
+      return useRadioSettingsStore()
     },
     lyricsProvidersStore() {
       return useLyricsProvidersStore()
@@ -681,6 +698,32 @@ export default {
 </script>
 
 <style scoped>
+/* Separates the radio-routing switch from the cast-quality block above it,
+ * which is a different decision entirely rather than a further detail of
+ * the same one. */
+.radio-direct-switch {
+  margin-top: 24px;
+}
+
+/* The explanatory line under a control — quieter and smaller than the
+ * setting it belongs to, so a section reads as label-then-explanation
+ * rather than two equal lines. Values match Vuetify's own body-small /
+ * medium-emphasis, deliberately: the other hints on this page still use
+ * those, and one that sat a hair off would read as a mistake rather than
+ * a choice. */
+.setting-hint {
+  margin-top: 8px;
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.3333333333;
+  letter-spacing: 0.0333333333em;
+  color: color-mix(
+    in srgb,
+    rgb(var(--v-theme-on-background)) calc(var(--v-medium-emphasis-opacity) * 100%),
+    transparent
+  );
+}
+
 /* Format and bitrate side by side, with the format wider — it carries the
  * actual decision, while the bitrate is a number that needs no room. Wraps
  * on a narrow window (the mobile web build) instead of squeezing both into

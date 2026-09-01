@@ -18,12 +18,14 @@ finds no owner and is dropped, same as a stray AVTransport one.
 """
 
 import logging
+import time
 
 from fastapi import APIRouter, Request, Response
 
 from core.claims import claims
-from core.session import build_status_dict, registry
-from core.state import PORT, get_local_ip
+from core.session import SessionState, build_status_dict, registry
+from core.state import PORT, get_local_ip, radio_dispatch_url
+from core.stream_format import radio_content_type
 from core.upnp_events import handle_event, parse_rendering_control_event, problem_in
 from delivery.errors import transport_error_response
 from routes.playback import retry_radio_via_proxy
@@ -32,6 +34,14 @@ logger = logging.getLogger("connect.upnp")
 router = APIRouter()
 
 _CALLBACK_PREFIX = "/upnp/events"
+
+# How rarely a relayed station may be redispatched to the same device after
+# a transport failure — see _redispatch_relayed_station() for why this is a
+# cooldown rather than the one-shot guard the re-encode path uses. Long
+# enough that an unrecoverable relay can't turn recovery into a busy loop,
+# short enough that a listener whose speaker dropped out during a station
+# reconnect gets it back on its own rather than reaching for the app.
+_RELAY_REDISPATCH_COOLDOWN_SECONDS = 30.0
 
 # Renderers vary in how much they send; a LastChange document with a full
 # Sonos property set is a few KB. This is far above that and exists only so
@@ -84,15 +94,31 @@ async def _handle_transport_problem(label: str, problem: str) -> None:
     """A device reporting, on its own event channel, that what it was given
     isn't playing.
 
-    Only radio ever gets acted on here, and only once. A Sonos accepts a
-    station's URI, answers the /play-url call successfully, and *then*
-    reports ERROR_UNSUPPORTED_FORMAT (a format it won't decode) or
+    Only radio *direct to the device* (PlayUrlRequest.cast_directly=True —
+    see routes/playback.py) ever gets acted on here, and only once. A Sonos
+    accepts a station's URI, answers the /play-url call successfully, and
+    *then* reports ERROR_UNSUPPORTED_FORMAT (a format it won't decode) or
     ERROR_ACCESS_DENIED (an https URL on someone else's host) moments
     later — so there is no failure at the point anyone is still waiting on
     a response, and until now the listener saw nothing at all while the
     speaker sat silent. Beacon re-encodes the station and points the
     device at that instead; see retry_radio_via_proxy() for why one retry
     fixes both refusals without telling them apart.
+
+    A relayed station (the default — core/radio_relay.py) takes a different
+    route out of here, _redispatch_relayed_station(): the device already
+    only ever sees Beacon's own honest MP3 stream there, so neither refusal
+    reason applies and there is nothing to re-encode it into.
+    retry_radio_via_proxy() must not run for one — it would redispatch the
+    exact same relay URL while wrongly marking radio_info as
+    "proxied"/"device rejected", which then blocks any recovery from ever
+    running again for this station, permanently, the next time the device's
+    connection drops (found live 2026-09-01, chasing a *different* bug: a
+    relayed station whose device connection kept dropping for a real
+    reason — RadioRelay leaving its PCM output undrained and stalling its
+    own ffmpeg — looped through here, marked itself "proxied" on the first
+    drop, and would have gone permanently silent on a second one even after
+    that root cause was fixed).
 
     A queued track is deliberately left alone: its own GET /stream
     connection closing is what routes/stream.py already watches for, and a
@@ -107,7 +133,12 @@ async def _handle_transport_problem(label: str, problem: str) -> None:
     if session is None:
         return
     st = session.state
-    if not st.radio_info or st.radio_info.get("proxied") or st.active_delivery is None:
+    if not st.radio_info or st.active_delivery is None:
+        return
+    if st.radio_info.get("relayed"):
+        await _redispatch_relayed_station(session, label, problem)
+        return
+    if st.radio_info.get("proxied"):
         return
 
     logger.info(f"[upnp] {label} refused the station ({problem}) — re-encoding it")
@@ -115,6 +146,54 @@ async def _handle_transport_problem(label: str, problem: str) -> None:
         # Nothing left to try. Tell the client rather than leaving a silent
         # speaker and a UI that still says "playing" — this is the one
         # path where the failure never reached a request's own response.
+        await session.event_bus.broadcast(
+            build_status_dict(
+                session, delivery_error=transport_error_response(problem, st.active_delivery)
+            )
+        )
+
+
+async def _redispatch_relayed_station(session: SessionState, label: str, problem: str) -> None:
+    """A relayed station's own recovery: point the device back at the same
+    relay endpoint it already had.
+
+    That is not the no-op it looks like. The relay outlives any one device
+    connection (see core/radio_relay.py) and keeps reconnecting to the
+    station on its own, so the usual reason a device ends up here is that
+    it ran its buffer dry during one of those reconnects and gave up on its
+    HTTP connection — with audio flowing again by the time this runs.
+    Without a redispatch the speaker stays silent until the listener
+    restarts playback by hand, which is what excluding relayed stations
+    from recovery entirely used to mean.
+
+    Rate-limited rather than one-shot, and deliberately so: `proxied`'s
+    "only ever once" guard is right for a re-encode (a device that refuses
+    Beacon's MP3 will refuse it again), but wrong here, where each drop is
+    a fresh transport failure that may well succeed on the next attempt.
+    The cooldown is what keeps a genuinely broken relay from turning this
+    into the redispatch loop the exclusion was originally added to stop —
+    an unrecoverable one now costs one retry every
+    _RELAY_REDISPATCH_COOLDOWN_SECONDS instead of as fast as the device can
+    report failures."""
+    st = session.state
+    assert st.radio_info is not None and st.active_delivery is not None
+    now = time.monotonic()
+    if now - session.last_radio_redispatch < _RELAY_REDISPATCH_COOLDOWN_SECONDS:
+        logger.debug(f"[upnp] {label} reported {problem} again — still in redispatch cooldown")
+        return
+    session.last_radio_redispatch = now
+
+    url = radio_dispatch_url(session.session_id, st.radio_info)
+    logger.info(f"[upnp] {label} lost the relayed station ({problem}) — redispatching {url}")
+    try:
+        await st.active_delivery.play(
+            url, st.radio_info["title"], content_type=radio_content_type(st.radio_info)
+        )
+    except Exception:
+        logger.exception("[upnp] Redispatching the relayed station failed")
+        # Same reasoning as the re-encode path below — this failure never
+        # reached any request's own response, so the client only learns
+        # about it here.
         await session.event_bus.broadcast(
             build_status_dict(
                 session, delivery_error=transport_error_response(problem, st.active_delivery)

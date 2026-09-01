@@ -29,6 +29,7 @@ from core.state import (
     AppState,
     audio_capability_limits,
     list_target_pairs,
+    radio_dispatch_url,
     radio_stream_url,
     resolve_target,
     stream_url,
@@ -576,7 +577,8 @@ def _current_reconnect_args(
     st = session.state
     if st.radio_info:
         content_type = radio_content_type(st.radio_info)
-        return st.radio_info["url"], st.radio_info["title"], "", None, None, "", content_type
+        url = radio_dispatch_url(session.session_id, st.radio_info)
+        return url, st.radio_info["title"], "", None, None, "", content_type
     title, artist, album_art_url, duration, album = _current_track_play_args(session)
     return (
         stream_url(session.session_id),
@@ -790,6 +792,7 @@ async def play_tracks(
         st.is_streaming = True
         if st.radio_info is not None:
             session.stop_radio_metadata_watch()
+            await session.stop_radio_relay()
         st.radio_info = None
         st.clock.start(start_position)
         st.track_ended = False
@@ -887,6 +890,17 @@ class PlayUrlRequest(BaseModel):
     force: bool = False
     # See PlayRequest.seq.
     seq: int = 0
+    # The opt-in exception: False (default) routes the station through
+    # Beacon's own relay (core/radio_relay.py), which is what makes casting
+    # a station cost exactly one fetch of it instead of up to three (the
+    # device itself, an independent ICY watch, and — only once a device has
+    # refused the raw stream — retry_radio_via_proxy() re-fetching it again
+    # per target). True skips the relay and hands the device the station's
+    # own URL directly, same as every version before this field existed;
+    # retry_radio_via_proxy() remains that mode's fallback for a device
+    # that refuses it. Frontend setting: account-scoped, see
+    # services/connect/accountSettings.ts's castRadioDirectly.
+    cast_directly: bool = False
 
 
 @router.post("/play-url")
@@ -982,19 +996,71 @@ async def play_url(
             }
         content_type = probed.content_type
 
-        st.radio_info = {"title": req.title, "url": url, "content_type": content_type}
+        # Relayed (default) routes the device at Beacon's own relay
+        # (core/radio_relay.py) instead of the station directly — one fetch
+        # of the station feeds every cast target's audio, the visualizer,
+        # and the ICY title watch below at once. The relay has to be up
+        # before dispatch, unlike the direct mode's ICY watch (started only
+        # after a successful dispatch, further down): dispatch itself needs
+        # to know where the relay's device-audio actually is.
+        relayed = not req.cast_directly
+        dispatch_url = url
+        dispatch_content_type = content_type
+        if relayed:
+            relay = await session.start_radio_relay(url, content_type)
+            if relay.connected:
+                dispatch_url = radio_stream_url(session.session_id)
+                dispatch_content_type = relay.device_content_type
+            else:
+                # The relay never got as far as a running ffmpeg (the
+                # station refused this second connection, or never answered
+                # — probe_radio_stream() above used a connection of its own,
+                # and some stations allow exactly one at a time). Pointing
+                # the device at /stream/radio anyway would answer 200 with a
+                # body that stays silent indefinitely, which reads as a
+                # broken speaker rather than a station problem. Fall back to
+                # what "direct to device" does instead: hand over the
+                # station's own URL, which keeps retry_radio_via_proxy()
+                # available as that mode's own fallback.
+                logger.warning(f"[play-url] Relay for {url[:80]} never connected — going direct")
+                await session.stop_radio_relay()
+                relayed = False
+        else:
+            await session.stop_radio_relay()
 
+        st.radio_info = {
+            "title": req.title,
+            "url": url,
+            "content_type": content_type,
+            "relayed": relayed,
+        }
+
+        # Keyed on the station's own url, not dispatch_url: when relayed,
+        # dispatch_url is always this session's fixed relay endpoint
+        # regardless of which station is behind it, so keying on it instead
+        # would make switching stations in quick succession look like a
+        # duplicate of the previous one and silently skip the redispatch —
+        # the device would keep pointing at a relay connection that
+        # start_radio_relay() has, by then, already torn down.
         if not _is_duplicate_dispatch(st, f"play-url:{target}:{url}"):
             try:
-                await target.play(url, req.title, content_type=content_type)
+                await target.play(dispatch_url, req.title, content_type=dispatch_content_type)
             except Exception as e:
                 logger.exception("[play-url] Delivery error")
-                # A device that refuses the station outright gets one more
-                # chance, at Beacon's own re-encoded copy — see
-                # retry_radio_via_proxy() for the two very different
-                # refusals this covers.
-                if not await retry_radio_via_proxy(session, target):
+                # Direct mode's own fallback: a device that refuses the raw
+                # station gets one more chance at Beacon's re-encoded copy —
+                # see retry_radio_via_proxy() for the two very different
+                # refusals this covers. Not reachable when already relayed:
+                # dispatch_url is already Beacon's own copy, so a device
+                # refusing that has nothing further to retry into.
+                if relayed or not await retry_radio_via_proxy(session, target):
                     st.radio_info = previous_radio_info
+                    if relayed:
+                        # Nothing is playing through it any more — see
+                        # start_radio_relay()'s own note on this not
+                        # attempting to resurrect whatever station (if any)
+                        # was relaying successfully before this call.
+                        await session.stop_radio_relay()
                     # See /play's identical comment — don't leave the device
                     # locked to this session when nothing actually started
                     # playing on it.
@@ -1008,11 +1074,22 @@ async def play_url(
         if not st.radio_info.get("proxied"):
             st.current_output_format = FALLBACK_FORMAT
         st.is_streaming = True
-        # See core/icy_metadata.py's own docstring - a cast radio play is
-        # the one radio path that already reaches this backend on its own,
-        # so its "now playing" watch starts right here rather than needing
-        # an extra call from the frontend the way local playback does.
-        session.start_radio_metadata_watch(url)
+        if relayed:
+            # Superseded by the relay's own ICY parsing (same fetch, same
+            # _set_radio_title callback) — stop whatever independent watch
+            # might already be running for this session. stores/playback.ts's
+            # playRadioStation() always calls /radio-metadata/start once,
+            # even when about to cast (local playback needs it and casting
+            # doesn't know that in advance) — left running here, that would
+            # be exactly the second connection per station this mode exists
+            # to avoid.
+            session.stop_radio_metadata_watch()
+        else:
+            # See core/icy_metadata.py's own docstring - a cast radio play is
+            # the one radio path that already reaches this backend on its own,
+            # so its "now playing" watch starts right here rather than needing
+            # an extra call from the frontend the way local playback does.
+            session.start_radio_metadata_watch(url)
         st.clock.start()
         st.track_ended = False
         st.active_delivery = target
@@ -1238,6 +1315,7 @@ async def stop_playback(session: SessionState = Depends(require_authenticated_se
         st.current_output_format = FALLBACK_FORMAT
         st.radio_info = None
         session.stop_radio_metadata_watch()
+        await session.stop_radio_relay()
         st.active_delivery = None
         st.last_dispatch_key = None
         st.queue = []

@@ -263,6 +263,20 @@ def radio_stream_url(session_id: str) -> str:
     return f"http://{get_local_ip()}:{PORT}/stream/radio/{session_id}"
 
 
+def radio_dispatch_url(session_id: str, radio_info: dict) -> str:
+    """Where a device should actually connect for `radio_info` — Beacon's
+    own relay (core/radio_relay.py) when this station is routed through it
+    (the default — see routes/playback.py's PlayUrlRequest.cast_directly),
+    the station's own URL for the opt-in "direct to device" exception.
+
+    Every place that dispatches or reconnects a device to whatever radio
+    station is current (routes/join.py, routes/devices.py's device-stop
+    restart, routes/playback.py's _current_reconnect_args) goes through
+    this rather than reading radio_info["url"] directly, so "relayed"
+    only has to be understood in one place."""
+    return radio_stream_url(session_id) if radio_info.get("relayed") else radio_info["url"]
+
+
 # Track id of routes/debug.py's synthesized test tone — not a real library
 # track, so anything that would otherwise resolve a track id against the
 # media server has to special-case it (routes/stream.py and

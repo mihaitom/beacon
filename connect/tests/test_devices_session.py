@@ -350,3 +350,66 @@ def test_device_stop_releases_the_claim_even_when_the_stop_call_fails(client, de
 
     assert "error" in r.json()
     assert claims.owner_of("chromecast", "TV") is None
+
+
+class _FakeRelay:
+    def __init__(self):
+        self.url = "http://example.com/stream.mp3"
+        self.stopped = False
+
+    async def stop(self):
+        self.stopped = True
+
+
+def test_device_stop_tears_down_a_radio_relay_when_it_was_the_last_device(client, default_session):
+    """A queued track needs no equivalent — its ffmpeg lives inside the
+    device's own GET /stream connection and dies with it — but a relay
+    outlives every connection to it, so without this it keeps fetching the
+    station and holding its ffmpeg open until the session is reaped. That
+    is exactly the per-station cost the relay exists to pay only once."""
+    relay = _FakeRelay()
+    default_session.state.is_streaming = True
+    default_session.state.active_delivery = ChromecastDelivery("TV")
+    default_session.state.radio_info = {
+        "title": "Test",
+        "url": relay.url,
+        "content_type": "audio/mpeg",
+        "relayed": True,
+    }
+    default_session.radio_relay = relay
+
+    with patch.object(ChromecastDelivery, "stop", new=AsyncMock()):
+        r = client.post("/device-stop?device_type=chromecast&name=TV")
+
+    assert r.json()["status"] == "stopped"
+    assert relay.stopped is True
+    assert default_session.radio_relay is None
+    # Cleared rather than left as "relayed" with no relay behind it —
+    # nothing can reach it again anyway, since /join refuses a session that
+    # is not streaming.
+    assert default_session.state.radio_info is None
+
+
+def test_device_stop_keeps_the_relay_while_another_device_is_still_casting(client, default_session):
+    relay = _FakeRelay()
+    remaining_sonos = SonosDelivery("Küche")
+    default_session.state.is_streaming = True
+    default_session.state.active_delivery = DeliveryManager.from_deliveries(
+        [ChromecastDelivery("TV"), remaining_sonos]
+    )
+    default_session.state.radio_info = {
+        "title": "Test",
+        "url": relay.url,
+        "content_type": "audio/mpeg",
+        "relayed": True,
+    }
+    default_session.radio_relay = relay
+
+    with (
+        patch.object(ChromecastDelivery, "stop", new=AsyncMock()),
+        patch.object(SonosDelivery, "play", new=AsyncMock()),
+    ):
+        client.post("/device-stop?device_type=chromecast&name=TV")
+
+    assert relay.stopped is False
+    assert default_session.radio_relay is relay

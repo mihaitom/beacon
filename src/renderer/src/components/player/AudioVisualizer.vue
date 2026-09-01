@@ -80,8 +80,10 @@ export default {
     // 'cast' has real data too, but from the backend instead (see
     // services/connect/visualizer.ts) — NowPlayingView.vue only mounts this
     // component at all when casting to a target that can actually produce
-    // that data (not AirPlay/radio — see its own visualizerAvailable), so
-    // by the time this component exists, 'cast' here is always meaningful.
+    // that data (not radio — see its own visualizerAvailable for why,
+    // deliberately, even though the backend can technically decode one
+    // now), so by the time this component exists, 'cast' here is always
+    // meaningful.
     mode(): 'local' | 'cast' | 'idle' {
       if (!this.active) return 'idle' // fading out — no need for real data
       if (!this.playbackStore.isPlaying) return 'idle'

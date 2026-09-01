@@ -185,5 +185,16 @@ def radio_content_type(radio_info: dict) -> str:
 
     Falls back to the extension guess for a session whose radio_info was
     written before the type was recorded, which is what every caller did
-    unconditionally until now."""
+    unconditionally until now.
+
+    A relayed station (radio_info["relayed"] — see core/radio_relay.py) is
+    always MP3 on the device side regardless of what the station itself
+    sends: RadioRelay's own ffmpeg always muxes into an MP3 container,
+    whether or not it also re-encodes into one (see its _device_output_args()).
+    The probed content_type recorded below is the *station's* real type,
+    not what a relayed device actually receives — reusing it here for a
+    relayed station would tell a device connecting to /stream/radio that
+    it's getting, say, AAC, when it never does."""
+    if radio_info.get("relayed"):
+        return "audio/mpeg"
     return radio_info.get("content_type") or content_type_from_extension(radio_info["url"])

@@ -13,6 +13,10 @@ export interface AccountSettingsPayload {
   recommendationsEnabled?: boolean
   lyricsProviders?: string[]
   autoplayBatchSize?: number
+  // The opt-out for casting radio straight to the device instead of
+  // through Beacon's own relay (core/radio_relay.py) — see
+  // stores/radioSettings.ts. Absent/false is the default (relayed).
+  castRadioDirectly?: boolean
 }
 
 function identity(): { server_type: string; server_url: string; username: string } {

@@ -19,6 +19,7 @@ from core.claims import claims
 from core.stream_format import ProbedStream
 from core.streamer import REASON_DEVICE_REJECTED_STREAM
 from delivery import ChromecastDelivery, SonosDelivery
+from routes import upnp
 from routes.playback import retry_radio_via_proxy
 
 STATION = "https://playerservices.streamtheworld.com/OWR.aac"
@@ -111,6 +112,7 @@ class TestPlayUrlRetries:
                     "target_type": "chromecast",
                     "title": "OWR International",
                     "url": STATION,
+                    "cast_directly": True,
                 },
             )
 
@@ -246,6 +248,41 @@ class TestRadioStreamRoute:
         r = client.get(f"/stream/radio/{default_session.session_id}")
         assert r.status_code == 204
 
+    def test_subscribes_to_the_relay_instead_of_re_fetching_when_one_is_running(
+        self, client, radio_playing
+    ):
+        """The default (relayed) case — routes/playback.py's /play-url
+        already started core/radio_relay.py's RadioRelay for this station;
+        this connection must be one more subscriber to it, not a second,
+        independent fetch (see stream_tracks not being touched at all
+        here, unlike the fallback test above)."""
+
+        class FakeRelay:
+            device_content_type = "audio/mpeg"
+
+            def subscribe_audio(self):
+                q = asyncio.Queue()
+                q.put_nowait(b"relayed-audio")
+                q.put_nowait(None)
+                return q
+
+            def unsubscribe_audio(self, q):
+                self.unsubscribed = q
+
+        relay = FakeRelay()
+        radio_playing.radio_relay = relay
+
+        def must_not_run(*args, **kwargs):  # pragma: no cover
+            raise AssertionError("must subscribe to the relay, not fetch the station again")
+
+        with patch("routes.stream.stream_tracks", must_not_run):
+            r = client.get(f"/stream/radio/{radio_playing.session_id}")
+
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("audio/mpeg")
+        assert r.content == b"relayed-audio"
+        assert relay.unsubscribed is not None
+
 
 # The NOTIFY body a Sonos actually posts back — the interesting values live
 # in a LastChange document that is XML-escaped inside the outer XML.
@@ -312,6 +349,52 @@ class TestTransportProblemTriggersTheRetry:
                 content=_NOTIFY_BODY.format(status="ERROR_ACCESS_DENIED"),
             )
         play.assert_not_awaited()
+
+    def _report_problem(self, client, status="ERROR_LOST_CONNECTION"):
+        return client.request(
+            "NOTIFY",
+            "/upnp/events/avtransport/Arbeitszimmer",
+            content=_NOTIFY_BODY.format(status=status),
+        )
+
+    def test_redispatches_a_relayed_station_without_marking_it_proxied(self, client, claimed):
+        """retry_radio_via_proxy() has nothing to switch a relayed station
+        *to* — the device is already on Beacon's own relay URL — and
+        marking radio_info "proxied" would block recovery from ever running
+        again for this station (see routes/upnp.py's
+        _handle_transport_problem() docstring for the real incident that
+        guards against). The relay outlives the device's connection though,
+        so pointing the device back at the same URL is a real recovery: it
+        reconnects to a relay that is very likely serving audio again."""
+        claimed.state.radio_info = {**claimed.state.radio_info, "relayed": True}
+        with patch.object(SonosDelivery, "play", new=AsyncMock()) as play:
+            self._report_problem(client)
+        play.assert_awaited_once()
+        assert play.await_args.args[0].endswith(f"/stream/radio/{claimed.session_id}")
+        assert claimed.state.radio_info.get("proxied") is not True
+
+    def test_does_not_redispatch_a_relayed_station_again_within_the_cooldown(self, client, claimed):
+        """The cooldown is what keeps an unrecoverable relay from turning
+        recovery into a redispatch loop — a device reporting failure as
+        fast as it can must not be answered at the same rate."""
+        claimed.state.radio_info = {**claimed.state.radio_info, "relayed": True}
+        with patch.object(SonosDelivery, "play", new=AsyncMock()) as play:
+            self._report_problem(client)
+            self._report_problem(client)
+            self._report_problem(client)
+        play.assert_awaited_once()
+
+    def test_redispatches_a_relayed_station_again_once_the_cooldown_has_passed(
+        self, client, claimed
+    ):
+        """A drop half an hour later is a fresh failure, not the same one —
+        unlike `proxied`, this guard has to expire."""
+        claimed.state.radio_info = {**claimed.state.radio_info, "relayed": True}
+        with patch.object(SonosDelivery, "play", new=AsyncMock()) as play:
+            self._report_problem(client)
+            claimed.last_radio_redispatch -= upnp._RELAY_REDISPATCH_COOLDOWN_SECONDS + 1
+            self._report_problem(client)
+        assert play.await_count == 2
 
     def test_leaves_a_queued_track_to_the_stream_connection_watcher(self, client, claimed):
         """A track's own GET /stream closing is what routes/stream.py

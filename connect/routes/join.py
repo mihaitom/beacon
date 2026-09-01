@@ -15,7 +15,7 @@ from core.session import (
     registry,
     require_authenticated_session,
 )
-from core.state import find_sonos, resolve_target, stream_url
+from core.state import find_sonos, radio_dispatch_url, resolve_target, stream_url
 from core.stream_format import FALLBACK_CONTENT_TYPE, radio_content_type
 from delivery import (
     AirPlayDelivery,
@@ -77,7 +77,11 @@ async def join_stream(
         # Radio has no track loaded (session.state.current_track stays None
         # for it — see /play-url), so it must join on its own raw URL rather
         # than the FFmpeg /stream proxy, which 204s with no track loaded.
-        url = st.radio_info["url"] if st.radio_info else stream_url(session.session_id)
+        url = (
+            radio_dispatch_url(session.session_id, st.radio_info)
+            if st.radio_info
+            else stream_url(session.session_id)
+        )
         title = st.radio_info["title"] if st.radio_info else "Connect"
         # The station's own type, as probed when it started playing — a
         # device joining an AAC station mid-play needs telling the same

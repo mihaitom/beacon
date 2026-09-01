@@ -30,6 +30,7 @@ import { useUpdateStore } from '@/stores/update'
 import { usePlaybackStore } from '@/stores/playback'
 import { reloadLyricsCacheForAccount } from '@/stores/lyrics'
 import { useRecommendationsStore } from '@/stores/recommendations'
+import { useRadioSettingsStore } from '@/stores/radioSettings'
 import {
   useLyricsProvidersStore,
   LYRIC_PROVIDERS,
@@ -84,6 +85,10 @@ async function pullAccountSettings(): Promise<void> {
       // Sanitized inside setBatchSize() — see its comment there.
       useAutoplayStore().setBatchSize(remote.autoplayBatchSize)
     }
+
+    if (typeof remote.castRadioDirectly === 'boolean') {
+      useRadioSettingsStore().setCastDirectly(remote.castRadioDirectly)
+    }
   } catch (error) {
     // Best-effort — connect being briefly unreachable shouldn't block using
     // the app with whatever's already local.
@@ -100,6 +105,7 @@ export function initAccountScopedStores(): void {
     useRecommendationsStore().reloadForAccount()
     useLyricsProvidersStore().reloadForAccount()
     useAutoplayStore().reloadForAccount()
+    useRadioSettingsStore().reloadForAccount()
     void pullAccountSettings()
   })
 }

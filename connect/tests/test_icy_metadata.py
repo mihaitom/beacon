@@ -43,6 +43,57 @@ def _mock_stream(headers: dict, chunks: list[bytes]):
     return stream
 
 
+class TestIcyDemuxer:
+    """IcyDemuxer is what _watch_once() now delegates to, and the only
+    thing core/radio_relay.py's RadioRelay reuses from this module - these
+    exercise the audio-byte return value directly, which _watch_once()
+    itself never needed and so never had its own test coverage for."""
+
+    def test_returns_the_audio_bytes_and_reports_the_title(self):
+        metaint = 8
+        block = icy_mod.IcyDemuxer(metaint, (titles := []).append)
+
+        audio = block.feed(_icy_block(b"a" * metaint, "Artist - Track"))
+
+        assert audio == b"a" * metaint
+        assert titles == ["Artist - Track"]
+
+    def test_holds_back_audio_until_a_split_metadata_block_completes(self):
+        metaint = 8
+        titles = []
+        demuxer = icy_mod.IcyDemuxer(metaint, titles.append)
+        whole = _icy_block(b"a" * metaint, "Artist - Track")
+        first_half, second_half = whole[:10], whole[10:]
+
+        audio_1 = demuxer.feed(first_half)
+        assert titles == []  # metadata block not complete yet
+        audio_2 = demuxer.feed(second_half)
+
+        assert audio_1 + audio_2 == b"a" * metaint
+        assert titles == ["Artist - Track"]
+
+    def test_passes_through_audio_across_several_silent_blocks(self):
+        metaint = 4
+        demuxer = icy_mod.IcyDemuxer(metaint, lambda _: None)
+        chunk = (
+            _icy_block(b"a" * metaint, None)
+            + _icy_block(b"b" * metaint, None)
+            + _icy_block(b"c" * metaint, None)
+        )
+
+        audio = demuxer.feed(chunk)
+
+        assert audio == b"aaaabbbbcccc"
+
+    def test_never_calls_back_for_a_zero_length_metadata_block(self):
+        metaint = 4
+        demuxer = icy_mod.IcyDemuxer(metaint, (titles := []).append)
+
+        demuxer.feed(_icy_block(b"x" * metaint, None))
+
+        assert titles == []
+
+
 class TestWatchOnce:
     async def test_gives_up_immediately_when_the_station_declares_no_metaint(self):
         stream = _mock_stream({}, [b"whatever"])

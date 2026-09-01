@@ -58,6 +58,46 @@ _RECONNECT_DELAY_SECONDS = 5.0
 _MAX_RECONNECT_DELAY_SECONDS = 60.0
 
 
+class IcyDemuxer:
+    """Incremental ICY demultiplexer: feed it raw response chunks
+    (audio and metadata interleaved every `metaint` bytes, per the ICY
+    protocol — see this module's own docstring), get pure audio bytes back
+    and `on_title_change` fired for each StreamTitle actually found.
+
+    Split out of what used to be _watch_once()'s own inline loop so
+    core/radio_relay.py's RadioRelay — which needs the audio bytes this
+    module has only ever thrown away — can reuse the exact same metaint-
+    parsing logic instead of a second, drifting copy of it."""
+
+    def __init__(self, metaint: int, on_title_change: Callable[[str], None]) -> None:
+        self._metaint = metaint
+        self._on_title_change = on_title_change
+        self._buf = bytearray()
+
+    def feed(self, chunk: bytes) -> bytes:
+        """Returns the audio bytes now ready to emit — not simply `chunk`
+        itself, since the audio/metadata boundary rarely lands on a chunk
+        edge; some of it may still be held back in the internal buffer
+        until a later feed() completes the block currently in progress."""
+        self._buf.extend(chunk)
+        audio = bytearray()
+        while len(self._buf) >= self._metaint + 1:
+            length = self._buf[self._metaint] * 16
+            if len(self._buf) < self._metaint + 1 + length:
+                break
+            audio += self._buf[: self._metaint]
+            if length:
+                match = _TITLE_RE.search(
+                    bytes(self._buf[self._metaint + 1 : self._metaint + 1 + length])
+                )
+                if match:
+                    title = match.group(1).decode("utf-8", errors="replace").strip()
+                    if title:
+                        self._on_title_change(title)
+            del self._buf[: self._metaint + 1 + length]
+        return bytes(audio)
+
+
 async def _watch_once(url: str, on_title_change: Callable[[str], None]) -> bool:
     """One connection attempt. Returns False when the station never even
     declared `icy-metaint` (nothing to retry - it isn't going to start
@@ -69,20 +109,9 @@ async def _watch_once(url: str, on_title_change: Callable[[str], None]) -> bool:
         if metaint <= 0:
             return False
 
-        buf = bytearray()
+        demuxer = IcyDemuxer(metaint, on_title_change)
         async for chunk in resp.aiter_bytes():
-            buf.extend(chunk)
-            while len(buf) >= metaint + 1:
-                length = buf[metaint] * 16
-                if len(buf) < metaint + 1 + length:
-                    break
-                if length:
-                    match = _TITLE_RE.search(bytes(buf[metaint + 1 : metaint + 1 + length]))
-                    if match:
-                        title = match.group(1).decode("utf-8", errors="replace").strip()
-                        if title:
-                            on_title_change(title)
-                del buf[: metaint + 1 + length]
+            demuxer.feed(chunk)  # audio bytes discarded — this watch only wants titles
     return True
 
 

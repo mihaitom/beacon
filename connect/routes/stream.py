@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 
 from fastapi import APIRouter, Depends
@@ -11,6 +12,7 @@ from fastapi.responses import Response, StreamingResponse
 
 from core.auth import require_token
 from core.loop_health import peak_lag
+from core.radio_relay import RadioRelay
 from core.session import (
     DEFAULT_SESSION_ID,
     SessionState,
@@ -592,11 +594,44 @@ async def radio_stream(session_id: str = DEFAULT_SESSION_ID):
             iter([b""]), media_type=FALLBACK_FORMAT.content_type, status_code=204
         )
 
+    relay = session.radio_relay
+    if relay is not None:
+        # The default (relayed) case — core/radio_relay.py already fetched
+        # this station once; this connection is just one more subscriber to
+        # its device-audio fan-out, same as any other cast target's own
+        # connection here (multi-target casting subscribes more than once).
+        logger.info(f"[stream] Serving relayed radio for {session_id}: {radio_info['url'][:80]}")
+        return StreamingResponse(_relayed_radio_audio(relay), media_type=relay.device_content_type)
+
+    # Direct mode's own fallback (PlayUrlRequest.cast_directly=True) — a
+    # device that refused the station's raw stream gets Beacon's own
+    # re-encoded copy instead, fetched fresh for this one connection. See
+    # retry_radio_via_proxy() in routes/playback.py, the only caller that
+    # ever points a device here while in that mode.
     logger.info(f"[stream] Re-encoding radio for {session_id}: {radio_info['url'][:80]}")
     return StreamingResponse(
         stream_tracks([radio_info["url"]]),
         media_type=FALLBACK_FORMAT.content_type,
     )
+
+
+async def _relayed_radio_audio(relay: RadioRelay) -> AsyncGenerator[bytes]:
+    """One subscriber's view of the relay's device-audio fan-out — ends on
+    a `None` sentinel (the relay stopped for good, see RadioRelay.stop())
+    or, same as any other StreamingResponse generator, when the caller
+    (the device) disconnects and this generator itself is cancelled/closed,
+    which is what the `finally` below actually always runs for in
+    practice: a relay usually outlives any one connection to it, ending
+    long after a device has already moved on."""
+    queue = relay.subscribe_audio()
+    try:
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                return
+            yield chunk
+    finally:
+        relay.unsubscribe_audio(queue)
 
 
 @router.get("/stream")

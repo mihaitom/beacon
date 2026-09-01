@@ -866,6 +866,7 @@ def test_play_url_starts_the_radio_metadata_watch(client, default_session):
                 "target_type": "chromecast",
                 "title": "Test",
                 "url": "https://example.com/stream.mp3",
+                "cast_directly": True,
             },
         )
     start.assert_called_once_with("https://example.com/stream.mp3")
@@ -893,6 +894,7 @@ def test_play_url_resolves_a_playlist_url_before_handing_it_to_the_device(client
                 "target_type": "chromecast",
                 "title": "B5 aktuell",
                 "url": "http://streams.br.de/b5aktuell_2.m3u",
+                "cast_directly": True,
             },
         )
 
@@ -975,6 +977,7 @@ def test_play_url_announces_the_content_type_the_station_itself_declares(client,
                 "target_type": "chromecast",
                 "title": "OWR International",
                 "url": url,
+                "cast_directly": True,
             },
         )
 
@@ -1131,6 +1134,7 @@ def test_play_url_redispatches_immediately_for_a_different_url(client, default_s
                 "target_type": "chromecast",
                 "title": "Test",
                 "url": "http://example.com/stream.mp3",
+                "cast_directly": True,
             },
         )
         client.post(
@@ -1140,6 +1144,7 @@ def test_play_url_redispatches_immediately_for_a_different_url(client, default_s
                 "target_type": "chromecast",
                 "title": "Other",
                 "url": "http://example.com/other.mp3",
+                "cast_directly": True,
             },
         )
 

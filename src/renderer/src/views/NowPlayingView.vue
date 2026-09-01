@@ -366,12 +366,26 @@ export default {
         this.drawersStore.lyricsDrawerOpen = value
       },
     },
-    // Radio's raw station URL bypasses connect's streaming pipeline
-    // entirely, so there's no track for the backend to analyze (see
-    // connect/core/audio_analysis.py's should_analyze()) and nothing
-    // honest to show but a fake animation. AirPlay used to be excluded
-    // here too, but the backend analyzes it like any other cast target
-    // now (see that module's docstring for why).
+    // Radio has no track for the backend to analyze while casting (see
+    // routes/playback.py's /play-url) and nothing honest to show but a
+    // fake animation — still true in practice even though casting a
+    // station is routed through connect's own relay by default now
+    // (core/radio_relay.py), which *does* decode a real PCM stream this
+    // could tap (core/visualizer_feed.py's own radio branch, wired up and
+    // tested — see AudioAnalyzer's pcm_source parameter). Deliberately not
+    // used here: a Sonos reports position 0.00s for a continuous stream,
+    // so there is no device feedback to calibrate the analyzer's clock
+    // against the way tracks get via PlaybackClock's own position-resync —
+    // only a guessed constant lead (core/visualizer_feed.py's
+    // _ASSUMED_DEVICE_LEAD_SECONDS), which measured live 2026-09-01 as
+    // roughly a second off and station-dependent. Decided against shipping
+    // a visualizer that's confidently wrong rather than honestly absent —
+    // revisit only with either real position feedback or an offset
+    // trustworthy enough not to need per-station guessing. AirPlay used to
+    // be excluded here too, but the backend analyzes it like any other
+    // cast target now (see that module's docstring for why) — a *track*
+    // cast to AirPlay has the same PlaybackClock calibration as any other
+    // target, so it isn't affected by any of this.
     visualizerAvailable() {
       // Casting reads its frequency data from the backend rather than from
       // this device's own audio, so it needs no local analyser at all —

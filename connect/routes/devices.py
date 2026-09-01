@@ -20,7 +20,7 @@ from core.session import (
     get_session,
     require_authenticated_session,
 )
-from core.state import stream_url
+from core.state import radio_dispatch_url, stream_url
 from core.stream_format import FALLBACK_CONTENT_TYPE, radio_content_type
 from delivery import (
     AirPlayDelivery,
@@ -337,6 +337,19 @@ async def stop_device(
         if not remaining:
             st.is_streaming = False
             st.active_delivery = None
+            # Radio's own teardown, matching /stop's (see stop_playback()).
+            # A queued track needs no equivalent — its ffmpeg lives inside
+            # the device's own GET /stream connection and dies with it —
+            # but a relay does not: it keeps fetching the station and
+            # holding its ffmpeg open until the session is reaped, which is
+            # exactly the per-station cost the relay exists to avoid paying
+            # more than once. radio_info goes with it rather than lingering
+            # as "relayed" with no relay behind it; nothing can reach it
+            # again anyway, since /join refuses a session that isn't
+            # streaming.
+            st.radio_info = None
+            session.stop_radio_metadata_watch()
+            await session.stop_radio_relay()
         else:
             new_delivery: BaseDelivery | DeliveryManager = (
                 remaining[0] if len(remaining) == 1 else DeliveryManager.from_deliveries(remaining)
@@ -344,7 +357,11 @@ async def stop_device(
             st.active_delivery = new_delivery
 
             if need_restart and st.is_streaming:
-                url = st.radio_info["url"] if st.radio_info else stream_url(session.session_id)
+                url = (
+                    radio_dispatch_url(session.session_id, st.radio_info)
+                    if st.radio_info
+                    else stream_url(session.session_id)
+                )
                 title = st.radio_info["title"] if st.radio_info else "Connect"
                 # The station's own type, as probed when it started playing — a
                 # device joining an AAC station mid-play needs telling the same

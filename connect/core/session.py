@@ -21,6 +21,7 @@ from media import MediaClient, SubsonicClient
 from . import icy_metadata
 from .claims import claims
 from .loop_health import peak_lag
+from .radio_relay import RadioRelay
 from .state import AppState, EventBus, delivery_class_for, list_target_pairs, stream_url
 from .visualizer_feed import VisualizerFeed
 
@@ -93,6 +94,20 @@ class SessionState:
         self.radio_title: str | None = None
         self._radio_metadata_url: str | None = None
         self._radio_metadata_task: asyncio.Task | None = None
+        # The shared relay a radio station routed through Beacon's own
+        # backend runs on (core/radio_relay.py) — None whenever radio isn't
+        # playing, or is playing "direct to device" (the opt-in exception,
+        # see routes/playback.py's PlayUrlRequest.cast_directly). Mutually
+        # exclusive with _radio_metadata_task above: a relayed station
+        # reports its own title changes (via the same _set_radio_title
+        # callback) instead of a second, independent ICY watch.
+        self.radio_relay: RadioRelay | None = None
+        # time.monotonic() of the last recovery redispatch of a relayed
+        # station — see routes/upnp.py's _redispatch_relayed_station(),
+        # which rate-limits itself off this. Zeroed whenever the relay
+        # itself changes, so a fresh station starts with a fresh allowance
+        # rather than inheriting the previous one's cooldown.
+        self.last_radio_redispatch: float = 0.0
 
     def touch(self) -> None:
         self.last_seen = time.time()
@@ -132,6 +147,25 @@ class SessionState:
 
     def _set_radio_title(self, title: str) -> None:
         self.radio_title = title
+
+    async def start_radio_relay(self, url: str, content_type: str) -> RadioRelay:
+        """Starts (or, for a different station, restarts) the shared relay
+        — see core/radio_relay.py. Idempotent for the same URL, same
+        reasoning as start_radio_metadata_watch()."""
+        if self.radio_relay is not None and self.radio_relay.url == url:
+            return self.radio_relay
+        await self.stop_radio_relay()
+        relay = RadioRelay(url, content_type, self._set_radio_title)
+        await relay.start()
+        self.radio_relay = relay
+        self.last_radio_redispatch = 0.0
+        return relay
+
+    async def stop_radio_relay(self) -> None:
+        if self.radio_relay is not None:
+            relay, self.radio_relay = self.radio_relay, None
+            self.last_radio_redispatch = 0.0
+            await relay.stop()
 
 
 class SessionRegistry:
@@ -621,6 +655,7 @@ async def reap_once() -> list[str]:
                 logger.debug(f"[reap] {session.session_id}: stopping device failed: {e}")
         await session.visualizer.shutdown()
         session.stop_radio_metadata_watch()
+        await session.stop_radio_relay()
         await claims.release_all_for_session(session.session_id)
         await registry.remove(session.session_id)
         reaped.append(session.session_id)

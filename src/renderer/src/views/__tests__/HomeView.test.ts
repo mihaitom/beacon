@@ -180,6 +180,53 @@ describe('HomeView hero', () => {
     })
   })
 
+  describe('pressing play on the hero', () => {
+    it('toggles the playing radio station instead of starting the last album', async () => {
+      // Reported live 2026-09-01: onHeroPlay() only checked currentSong,
+      // which is always null for radio (see routes/playback.py's
+      // /play-url) — falling through to the "nothing playing" branch and
+      // starting recentAlbums[0] instead of toggling the station.
+      const wrapper = await mountHome()
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      await wrapper.vm.$nextTick()
+      const toggleSpy = vi.spyOn(playback, 'togglePlay').mockResolvedValue()
+      const playSongListSpy = vi.spyOn(playback, 'playSongList')
+
+      await wrapper.getComponent(HeroBand).vm.$emit('play')
+
+      expect(toggleSpy).toHaveBeenCalledOnce()
+      expect(playSongListSpy).not.toHaveBeenCalled()
+    })
+
+    it('still starts the most recent album when nothing is playing at all', async () => {
+      const wrapper = await mountHome()
+      const playback = usePlaybackStore()
+      const library = useLibraryStore()
+      vi.spyOn(library, 'fetchAlbum').mockResolvedValue({
+        id: 'album-1',
+        songs: [makeSong('a')],
+      } as unknown as Awaited<ReturnType<typeof library.fetchAlbum>>)
+      const playSongListSpy = vi.spyOn(playback, 'playSongList').mockResolvedValue()
+      // fetchRecentlyPlayedAlbums is stubbed to [] by mountHome()'s
+      // stubLibrary(), so seed recentAlbums directly the way the real
+      // fetch result would have.
+      ;(wrapper.vm as unknown as { recentAlbums: unknown[] }).recentAlbums = [
+        { id: 'album-1', name: 'Some Album' },
+      ]
+      await wrapper.vm.$nextTick()
+
+      await wrapper.getComponent(HeroBand).vm.$emit('play')
+
+      expect(playSongListSpy).toHaveBeenCalled()
+    })
+  })
+
   describe('starting it', () => {
     async function mountWithSong() {
       const wrapper = await mountHome()

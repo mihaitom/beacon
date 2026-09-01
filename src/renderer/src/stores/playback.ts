@@ -14,6 +14,7 @@ import { useLibraryStore } from './library'
 import { useConnectStore } from './connect'
 import { useAuthStore } from './auth'
 import { useAutoplayStore } from './autoplay'
+import { useRadioSettingsStore } from './radioSettings'
 import { useDrawersStore } from './drawers'
 import * as connectPlayback from '@/services/connect/playback'
 import type { ConnectDeviceRef, ConnectStatus, PlayResponse } from '@/services/connect/types'
@@ -935,6 +936,7 @@ export const usePlaybackStore = defineStore('playback', {
       if (connect.isActive) {
         await connectPlayback.playUrl(streamUrl, station.name, {
           targets: connect.activeTargets,
+          castDirectly: useRadioSettingsStore().castDirectly,
         })
       } else {
         getAudioEngine().play(streamUrl)
@@ -1558,6 +1560,7 @@ export const usePlaybackStore = defineStore('playback', {
           const response = await connectPlayback.playUrl(station.streamUrl, station.name, {
             targets,
             force: f,
+            castDirectly: useRadioSettingsStore().castDirectly,
           })
           // Superseded by a newer dispatch — another client sharing this
           // connect session, most likely (see startCurrent()'s identical

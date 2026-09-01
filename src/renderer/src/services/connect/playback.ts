@@ -125,7 +125,7 @@ export async function play(songId: string, options: PlayOptions = {}): Promise<P
 export async function playUrl(
   url: string,
   title: string,
-  options: { targets?: ConnectDeviceRef[]; force?: boolean } = {},
+  options: { targets?: ConnectDeviceRef[]; force?: boolean; castDirectly?: boolean } = {},
 ): Promise<PlayResponse> {
   return fetchConnect<PlayResponse>('/play-url', {
     method: 'POST',
@@ -135,6 +135,10 @@ export async function playUrl(
       targets: options.targets?.map((t) => ({ name: t.name, type: t.type })),
       force: options.force ?? false,
       seq: nextSeq(),
+      // See connect/routes/playback.py's PlayUrlRequest.cast_directly —
+      // omitted keeps the backend's own default (false, i.e. relayed)
+      // rather than this call site needing to know it.
+      ...(options.castDirectly !== undefined ? { cast_directly: options.castDirectly } : {}),
     },
   })
 }
