@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import delivery.manager as manager_mod
 from delivery import (
     AirPlayDelivery,
     ChromecastDelivery,
@@ -14,6 +15,24 @@ from delivery import (
     DlnaDelivery,
     SonosDelivery,
 )
+
+
+@pytest.fixture(autouse=True)
+def _sonos_dedup_enabled(monkeypatch):
+    """Pin the Sonos-as-AirPlay/Sonos-as-DLNA dedup filters on for every test
+    here.
+
+    manager._debug_enabled() reads the app's *persisted* log level (see
+    core/log_level.py), which lives outside the repo — so with Debug
+    selected in Settings on the machine running the suite, the filters
+    switch themselves off and every test asserting they filter fails,
+    while the same code passes on a machine set to Info. Found exactly
+    that way on 2026-09-03. The two tests that cover the debug behaviour
+    monkeypatch this back to True themselves; theirs runs after this one
+    and wins.
+    """
+    monkeypatch.setattr(manager_mod, "_debug_enabled", lambda: False)
+
 
 # ── from_deliveries / list_targets ────────────────────────────────────────────
 
