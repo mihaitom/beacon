@@ -157,6 +157,9 @@ export default {
     nothingPlaying: 'No se está reproduciendo nada ahora mismo.',
     toggleVisualizer: 'Mostrar/ocultar visualizador',
     toggleFullscreen: 'Alternar pantalla completa',
+    reducedMotionToastTitle: 'Visualizador',
+    reducedMotionToastMessage:
+      'No se muestra porque tu sistema tiene activada la opción "Reducir movimiento".',
   },
   lyrics: {
     resumeAutoscroll: 'Volver a seguir la canción',

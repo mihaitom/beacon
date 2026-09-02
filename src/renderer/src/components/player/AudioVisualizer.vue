@@ -105,7 +105,16 @@ export default {
     this.resizeObserver.observe(this.$el)
     this.resizeCanvas()
     if (this.reducedMotion) {
-      this.renderFrame()
+      // Bars would otherwise render one static frame and then never move
+      // again (see the removed renderFrame() call here and in
+      // resizeCanvas()) — with no ongoing animation, that reads as a broken
+      // visualizer rather than a deliberately motion-free one, so skip the
+      // paint entirely and say why instead.
+      this.$emitter.emit('toast', {
+        level: 'information',
+        title: this.$t('nowPlaying.reducedMotionToastTitle'),
+        message: this.$t('nowPlaying.reducedMotionToastMessage'),
+      })
     } else {
       this.rafId = requestAnimationFrame(this.draw)
     }
@@ -141,7 +150,6 @@ export default {
       const ratio = window.devicePixelRatio || 1
       canvas.width = Math.max(1, Math.round(rect.width * ratio))
       canvas.height = Math.max(1, Math.round(rect.height * ratio))
-      if (this.reducedMotion) this.renderFrame()
     },
     draw() {
       this.rafId = requestAnimationFrame(this.draw)

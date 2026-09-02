@@ -156,6 +156,8 @@ export default {
     nothingPlaying: 'Nothing is playing right now.',
     toggleVisualizer: 'Show/hide visualizer',
     toggleFullscreen: 'Toggle fullscreen',
+    reducedMotionToastTitle: 'Visualizer',
+    reducedMotionToastMessage: 'Not shown because your system has "Reduce Motion" turned on.',
   },
   lyrics: {
     resumeAutoscroll: 'Follow the song again',

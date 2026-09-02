@@ -156,6 +156,8 @@ export default {
     nothingPlaying: "Rien n'est en cours de lecture actuellement.",
     toggleVisualizer: 'Afficher/masquer le visualiseur',
     toggleFullscreen: 'Basculer le plein écran',
+    reducedMotionToastTitle: 'Visualiseur',
+    reducedMotionToastMessage: 'Non affiché car votre système a activé « Réduire les animations ».',
   },
   lyrics: {
     resumeAutoscroll: 'Suivre à nouveau la chanson',

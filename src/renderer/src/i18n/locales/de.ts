@@ -154,6 +154,9 @@ export default {
     nothingPlaying: 'Nichts spielt gerade.',
     toggleVisualizer: 'Visualisierung ein-/ausblenden',
     toggleFullscreen: 'Vollbild umschalten',
+    reducedMotionToastTitle: 'Visualizer',
+    reducedMotionToastMessage:
+      'Wird nicht angezeigt, weil in deinem System „Bewegung reduzieren“ aktiviert ist.',
   },
   lyrics: {
     resumeAutoscroll: 'Wieder dem Song folgen',

@@ -156,6 +156,9 @@ export default {
     nothingPlaying: "Al momento non c'è nulla in riproduzione.",
     toggleVisualizer: 'Mostra/nascondi visualizzatore',
     toggleFullscreen: 'Attiva/disattiva schermo intero',
+    reducedMotionToastTitle: 'Visualizzatore',
+    reducedMotionToastMessage:
+      'Non visualizzato perché nel tuo sistema è attivata l\'opzione "Riduci movimento".',
   },
   lyrics: {
     resumeAutoscroll: 'Segui di nuovo il brano',
