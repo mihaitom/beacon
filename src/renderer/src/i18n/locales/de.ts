@@ -195,6 +195,7 @@ export default {
     interruptedOn: '{device} hat die Verbindung beendet.',
     interruptedResume: 'Fortsetzen',
     interruptedResumeFailed: 'Fortsetzen fehlgeschlagen.',
+    searchingDevices: 'Geräte werden gesucht …',
     noDevicesFound: 'Keine Geräte gefunden.',
     inUseBy: 'Belegt von {name}',
     inUseByUnknown: 'Belegt von jemand anderem',

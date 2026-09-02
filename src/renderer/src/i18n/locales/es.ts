@@ -198,6 +198,7 @@ export default {
     interruptedOn: '{device} cerró la conexión.',
     interruptedResume: 'Reanudar',
     interruptedResumeFailed: 'No se pudo reanudar la reproducción.',
+    searchingDevices: 'Buscando dispositivos …',
     noDevicesFound: 'No se encontraron dispositivos.',
     inUseBy: 'En uso por {name}',
     inUseByUnknown: 'En uso por otra persona',

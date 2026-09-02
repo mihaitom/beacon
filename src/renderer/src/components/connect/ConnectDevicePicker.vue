@@ -38,13 +38,14 @@
         </div>
       </v-alert>
 
-      <v-progress-linear v-if="connectStore.isScanning" indeterminate class="mb-2" />
-
-      <div
-        v-if="allDevices.length === 0 && !connectStore.isScanning"
-        class="text-body-medium text-medium-emphasis pa-2"
-      >
-        {{ $t('connect.noDevicesFound') }}
+      <!-- No separate progress bar: the rescan button below carries the
+       - spinner, and this line is the only place an empty card needs to
+       - say anything at all. It covers the first scan after login too,
+       - which blocks for the full sweep (see refreshDevices()). -->
+      <div v-if="allDevices.length === 0" class="text-body-medium text-medium-emphasis pa-2">
+        {{
+          connectStore.isScanning ? $t('connect.searchingDevices') : $t('connect.noDevicesFound')
+        }}
       </div>
 
       <!-- Local playback as a real entry rather than "nothing ticked",
@@ -87,7 +88,14 @@
       <stream-info-section />
     </v-card-text>
     <v-card-actions class="connect-picker__actions">
-      <v-btn size="small" variant="text" @click="connectStore.refreshDevices(true)">
+      <v-btn
+        class="connect-picker__rescan"
+        size="small"
+        variant="text"
+        :loading="connectStore.isScanning"
+        :disabled="connectStore.isScanning"
+        @click="connectStore.refreshDevices(true)"
+      >
         {{ $t('connect.rescan') }}
       </v-btn>
       <v-spacer />

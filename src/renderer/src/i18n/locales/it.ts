@@ -197,6 +197,7 @@ export default {
     interruptedOn: '{device} ha chiuso la connessione.',
     interruptedResume: 'Riprendi',
     interruptedResumeFailed: 'Impossibile riprendere la riproduzione.',
+    searchingDevices: 'Ricerca dispositivi …',
     noDevicesFound: 'Nessun dispositivo trovato.',
     inUseBy: 'In uso da {name}',
     inUseByUnknown: 'In uso da qualcun altro',

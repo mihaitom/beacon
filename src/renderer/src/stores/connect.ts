@@ -42,6 +42,11 @@ interface ConnectState {
   status: ConnectStatus | null
   paired: string[]
   isScanning: boolean
+  /** Whether a device list has ever come back. Gates the "first scan"
+   * half of isScanning below — deliberately not derived from `devices`
+   * being non-empty, since a network with genuinely no speakers on it
+   * completes a real scan with four empty lists. */
+  hasScanned: boolean
   connected: boolean
   errors: ConnectErrors
   pendingTakeover: { device: ConnectDeviceRef; owner: string; retry: () => Promise<void> } | null
@@ -67,6 +72,7 @@ export const useConnectStore = defineStore('connect', {
     status: null,
     paired: [],
     isScanning: false,
+    hasScanned: false,
     connected: false,
     errors: {
       apiUnreachable: false,
@@ -84,6 +90,20 @@ export const useConnectStore = defineStore('connect', {
     },
     isActive(): boolean {
       return this.activeTargets.length > 0
+    },
+    // Which device types report a real, trustworthy position for radio
+    // while casting — see connect/core/radio_position.py. AirPlay is
+    // excluded even though it supports position for *tracks*: it has none
+    // to poll for radio at all. Sonos included since 2026-09-02: its own
+    // http:// radio dispatch already gives it a real, live-polled position
+    // (see delivery/sonos.py's own comment) — no ICY marker injection
+    // needed. Centralized here for the same reason as
+    // isVolumePushCapable() above — NowPlayingView.vue's visualizerAvailable
+    // is the one consumer today, but any second one should agree with it
+    // rather than growing its own copy of this set.
+    isRadioPositionCapable() {
+      return (type: DeviceType): boolean =>
+        type === 'chromecast' || type === 'dlna' || type === 'sonos'
     },
     // Which device types push their volume/mute into `status.targets`
     // instead of only ever needing to be polled for it - a
@@ -187,21 +207,32 @@ export const useConnectStore = defineStore('connect', {
     },
 
     async refreshDevices(fresh = false): Promise<void> {
-      // Only a real rescan (fresh=true, the picker's "Scan again" button)
-      // flips this — it drives the picker's progress bar. The cheap
-      // fresh=false refreshes (ConnectDevicePicker.vue's 4s background
-      // poll, confirmTakeover() above) just re-annotate the already-cached
-      // list and shouldn't flash a "scanning" indicator on every tick; that
-      // used to make the whole device list visibly jitter every 4s.
-      if (fresh) this.isScanning = true
+      // Two things count as "scanning" for the UI, both of which really do
+      // keep the caller waiting on a full SSDP/mDNS sweep:
+      //   - an explicit rescan (fresh=true, the pickers' rescan button)
+      //   - the very first refresh of the session (App.vue fires one on
+      //     login). The backend has no device cache yet then, so even this
+      //     fresh=false call blocks for the whole scan (see routes/
+      //     discovery.py's has_cache branch) — several seconds during which
+      //     the pickers used to sit on "No devices found" with no sign that
+      //     anything was still happening.
+      // Every later fresh=false refresh (ConnectDevicePicker.vue's 4s
+      // background poll, confirmTakeover() above) only re-annotates the
+      // already-cached list and must not flash an indicator on every tick;
+      // that used to make the whole device list visibly jitter every 4s.
+      const showProgress = fresh || !this.hasScanned
+      if (showProgress) this.isScanning = true
       try {
         this.devices = await getDiscover(fresh)
+        // Only on success: while every attempt so far has failed, the next
+        // one is still the first real scan as far as the user is concerned.
+        this.hasScanned = true
         this.errors.apiUnreachable = false
       } catch (error) {
         this.errors.apiUnreachable = true
         this.setError(error)
       } finally {
-        if (fresh) this.isScanning = false
+        if (showProgress) this.isScanning = false
       }
     },
 

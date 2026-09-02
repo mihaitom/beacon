@@ -196,6 +196,7 @@ export default {
     interruptedOn: '{device} ended the connection.',
     interruptedResume: 'Resume',
     interruptedResumeFailed: 'Could not resume playback.',
+    searchingDevices: 'Looking for devices …',
     noDevicesFound: 'No devices found.',
     inUseBy: 'In use by {name}',
     inUseByUnknown: 'In use by someone else',

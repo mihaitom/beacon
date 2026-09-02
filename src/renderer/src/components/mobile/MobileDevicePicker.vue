@@ -7,6 +7,23 @@
       <div class="mobile-device-picker__header">
         <span class="text-body-large">{{ $t('mobile.playOn') }}</span>
         <v-spacer />
+        <!-- Icon-only, unlike ConnectDevicePicker.vue's labelled button:
+         - the header already carries "Done", and two text buttons side by
+         - side on a phone read as two equally weighted choices when only
+         - one of them closes the sheet. Its own spinner matters more here
+         - than on desktop, since the centred one below only appears while
+         - there is nothing in the list yet. -->
+        <v-btn
+          class="mobile-device-picker__rescan"
+          variant="text"
+          size="small"
+          icon="mdi-refresh"
+          density="comfortable"
+          :aria-label="$t('connect.rescan')"
+          :loading="connectStore.isScanning"
+          :disabled="connectStore.isScanning"
+          @click="connectStore.refreshDevices(true)"
+        />
         <v-btn
           variant="flat"
           size="small"
@@ -19,7 +36,7 @@
 
       <div
         v-if="connectStore.isScanning && allDevices.length === 0"
-        class="d-flex justify-center pa-6"
+        class="mobile-device-picker__scanning"
       >
         <v-progress-circular indeterminate color="primary" />
       </div>
@@ -200,7 +217,18 @@ export default {
 .mobile-device-picker__header {
   display: flex;
   align-items: center;
+  gap: 4px;
   padding: 16px 16px 8px;
+}
+
+.mobile-device-picker__rescan {
+  color: rgba(var(--v-theme-on-surface), 0.7);
+}
+
+.mobile-device-picker__scanning {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
 }
 
 /* Destructive action (stops every active cast target) — colored to read

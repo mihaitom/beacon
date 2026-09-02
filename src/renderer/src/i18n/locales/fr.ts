@@ -196,6 +196,7 @@ export default {
     interruptedOn: '{device} a fermé la connexion.',
     interruptedResume: 'Reprendre',
     interruptedResumeFailed: 'Impossible de reprendre la lecture.',
+    searchingDevices: "Recherche d'appareils …",
     noDevicesFound: 'Aucun appareil trouvé.',
     inUseBy: 'Utilisé par {name}',
     inUseByUnknown: "Utilisé par quelqu'un d'autre",

@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
+import { VBtn } from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useConnectStore } from '@/stores/connect'
@@ -94,20 +95,37 @@ describe('ConnectDevicePicker', () => {
     expect(refreshSpy).toHaveBeenCalledWith(true)
   })
 
-  it('shows a scanning progress bar while isScanning is true', async () => {
+  it('says an empty list is still being scanned rather than empty', async () => {
     const connect = useConnectStore()
     const wrapper = mountPicker()
 
-    // Not just `.v-progress-linear` — v-card itself always renders one
-    // internally for its own (unrelated, unused here) `loading` prop, so a
-    // bare class/name match finds that regardless of isScanning. `.mb-2` is
-    // this component's own explicit v-if'd one.
-    expect(wrapper.find('.v-progress-linear.mb-2').exists()).toBe(false)
+    expect(wrapper.text()).toContain('No devices found')
 
     connect.isScanning = true
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('.v-progress-linear.mb-2').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Looking for devices')
+    expect(wrapper.text()).not.toContain('No devices found')
+  })
+
+  it('kicks off a fresh scan from the rescan button, and locks it while one runs', async () => {
+    const connect = useConnectStore()
+    const wrapper = mountPicker()
+    const refreshSpy = vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+
+    const rescan = wrapper.getComponent<typeof VBtn>('.connect-picker__rescan')
+    await rescan.trigger('click')
+
+    expect(refreshSpy).toHaveBeenCalledWith(true)
+
+    // Disabled while scanning, so a second click can't start an overlapping
+    // scan whose earlier-finishing sibling would clear isScanning — and drop
+    // the spinner — while the later one is still running.
+    connect.isScanning = true
+    await wrapper.vm.$nextTick()
+
+    expect(rescan.props('loading')).toBe(true)
+    expect(rescan.props('disabled')).toBe(true)
   })
 
   describe('selection and connecting', () => {
