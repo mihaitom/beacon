@@ -254,6 +254,122 @@ describe('CoverArt', () => {
     expect(wrapper.html()).toContain('blob:cover-1')
   })
 
+  describe('retrying a cover that failed for a reason that passes', () => {
+    // A radio station's logo is served by this app's own backend, so unlike
+    // an artist photo on a foreign CDN it goes through the fetch path.
+    const FAVICON = 'http://beacon.test/radio-favicon?url=https%3A%2F%2Fstation.test'
+
+    function mockFetch(...outcomes: Array<number | 'network' | 'ok'>) {
+      const calls: string[] = []
+      const fetchMock = vi.fn(async (url: string) => {
+        calls.push(url)
+        const outcome = outcomes[calls.length - 1] ?? outcomes.at(-1)!
+        if (outcome === 'network') throw new TypeError('Failed to fetch')
+        if (outcome === 'ok') {
+          return { ok: true, status: 200, blob: async () => new Blob(['img']) } as never
+        }
+        return { ok: false, status: outcome, blob: async () => new Blob([]) } as never
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      return calls
+    }
+
+    it('comes back after a backend that was briefly unreachable', async () => {
+      // The reported symptom, five rounds deep: the station logo in the
+      // player bar and on Home stayed empty. One failed attempt was all it
+      // took, and nothing ever started another — a list row gets a fresh
+      // try on the next scroll past it, but a radio logo's candidates only
+      // change when the station does, i.e. not for hours.
+      const calls = mockFetch(503, 'ok')
+      const wrapper = await scrollIntoRest(mountCover({ coverArtId: null, imageUrl: FAVICON }))
+
+      expect(calls).toHaveLength(1)
+      expect(hasImage(wrapper)).toBe(false)
+
+      vi.advanceTimersByTime(2000)
+      await flush()
+
+      expect(calls).toHaveLength(2)
+      expect(hasImage(wrapper)).toBe(true)
+    })
+
+    it('retries a request that never reached the server at all', async () => {
+      const calls = mockFetch('network', 'ok')
+      const wrapper = await scrollIntoRest(mountCover({ coverArtId: null, imageUrl: FAVICON }))
+
+      vi.advanceTimersByTime(2000)
+      await flush()
+
+      expect(calls).toHaveLength(2)
+      expect(hasImage(wrapper)).toBe(true)
+    })
+
+    it('does not retry a cover the server says is not there', async () => {
+      // A 404 is a settled answer. Retrying it would be a poll against
+      // something that will not change, once per cover, in views that hold
+      // hundreds of them.
+      const calls = mockFetch(404)
+      await scrollIntoRest(mountCover({ coverArtId: null, imageUrl: FAVICON }))
+
+      vi.advanceTimersByTime(60000)
+      await flush()
+
+      expect(calls).toHaveLength(1)
+    })
+
+    it('gives up after the backoff is exhausted', async () => {
+      const calls = mockFetch(503)
+      await scrollIntoRest(mountCover({ coverArtId: null, imageUrl: FAVICON }))
+
+      for (const delay of [2000, 8000, 30000]) {
+        vi.advanceTimersByTime(delay)
+        await flush()
+      }
+      expect(calls).toHaveLength(4)
+
+      vi.advanceTimersByTime(300000)
+      await flush()
+      expect(calls).toHaveLength(4)
+    })
+
+    it('drops a pending retry when the cover is unmounted', async () => {
+      const calls = mockFetch(503)
+      const wrapper = await scrollIntoRest(mountCover({ coverArtId: null, imageUrl: FAVICON }))
+
+      unmount(wrapper)
+      vi.advanceTimersByTime(60000)
+      await flush()
+
+      expect(calls).toHaveLength(1)
+    })
+
+    it('starts a new cover off with a full retry budget', async () => {
+      const calls = mockFetch(503, 503, 503, 503, 503, 'ok')
+      const wrapper = await scrollIntoRest(mountCover({ coverArtId: null, imageUrl: FAVICON }))
+      for (const delay of [2000, 8000, 30000]) {
+        vi.advanceTimersByTime(delay)
+        await flush()
+      }
+      expect(calls).toHaveLength(4)
+
+      // A different station — its logo must not inherit the exhausted
+      // budget of the one before it, so its own first failure still earns
+      // a retry.
+      await wrapper.setProps({ imageUrl: `${FAVICON}&v=2` })
+      await flush()
+      vi.advanceTimersByTime(200)
+      await flush()
+      expect(calls).toHaveLength(5)
+      expect(hasImage(wrapper)).toBe(false)
+
+      vi.advanceTimersByTime(2000)
+      await flush()
+
+      expect(calls).toHaveLength(6)
+      expect(hasImage(wrapper)).toBe(true)
+    })
+  })
+
   it('loads immediately where there is no IntersectionObserver', async () => {
     // jsdom, or a browser old enough to lack it: a cover that never appears
     // would be a worse failure than one requested too eagerly.

@@ -70,6 +70,17 @@ import { fetchCoverArtBatched } from '@/services/connect/coverArtBatch'
 // Starts the request a little before the cover actually scrolls into view,
 // so it's already there (or close to it) by the time it would otherwise pop
 // in, rather than only starting the fetch as it crosses the viewport edge.
+// How long to wait before trying again after a cover failed for a reason
+// that could plausibly succeed on a retry (see isTransient below). Without
+// this, a single failed attempt left the cover empty until its candidates
+// changed — which for a list row is the next scroll past it, but for the
+// player bar's or Home's radio logo is the next station change, i.e. for as
+// long as the station keeps playing. A backend restart, a timeout or one
+// 500 therefore read as a permanently missing logo. Backing off and giving
+// up after three keeps that from turning into a poll against something
+// that is genuinely never coming back.
+const RETRY_DELAYS_MS = [2000, 8000, 30000]
+
 const LAZY_ROOT_MARGIN = '400px 0px'
 
 // How long a cover has to stay within that margin before it is requested at
@@ -151,9 +162,40 @@ function releaseLoadSlot(): void {
  * station's favicon, built by services/connect/radio.ts's radioFaviconUrl
  * and passed in by SongInfo.vue/NowPlayingView.vue/HeroBand.vue — not just
  * a defensive branch for a case this component itself never produces). */
+/** A failed cover fetch, carrying the status it failed with — `undefined`
+ * for a request that never got an answer at all (offline, connection
+ * reset, a backend restarting mid-request). Both shapes matter: only the
+ * status tells a "this cover does not exist" apart from a "this cover
+ * could not be reached just now". */
+class CoverFetchError extends Error {
+  constructor(readonly status?: number) {
+    super(`Cover fetch failed${status === undefined ? '' : ` (HTTP ${status})`}`)
+    this.name = 'CoverFetchError'
+  }
+}
+
+/** Whether failing this way is worth another attempt later. A 404 means
+ * the image genuinely isn't there and never will be; anything the server
+ * couldn't answer (5xx), asked us to slow down for (408/429), or that
+ * never reached it at all is a condition that passes. */
+function isTransient(error: unknown): boolean {
+  if ((error as Error)?.name === 'AbortError') return false
+  if (!(error instanceof CoverFetchError)) return true
+  if (error.status === undefined) return true
+  return error.status >= 500 || error.status === 408 || error.status === 429
+}
+
 async function fetchDirect(url: string, signal: AbortSignal): Promise<Blob> {
-  const response = await fetch(url, { signal, priority: 'low' } as RequestInit)
-  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  let response: Response
+  try {
+    response = await fetch(url, { signal, priority: 'low' } as RequestInit)
+  } catch (error) {
+    // An aborted fetch must stay an AbortError — loadCandidates() tells its
+    // two abort cases apart by name, and neither is a failure of this URL.
+    if ((error as Error)?.name === 'AbortError') throw error
+    throw new CoverFetchError()
+  }
+  if (!response.ok) throw new CoverFetchError(response.status)
   return response.blob()
 }
 
@@ -229,6 +271,12 @@ export default {
       settleTimer: null as number | null,
       holdsLoadSlot: false,
       cancelQueued: null as (() => void) | null,
+      // How many times this cover has already been retried after a
+      // transient failure — indexes RETRY_DELAYS_MS, and being past its end
+      // is what stops the retrying. Reset on success and whenever the
+      // candidates change (a different cover starts with a clean budget).
+      retryCount: 0,
+      retryTimer: null as number | null,
     }
   },
   computed: {
@@ -286,6 +334,8 @@ export default {
     // these two props specifically.
     candidates() {
       this.failedCount = 0
+      this.cancelRetry()
+      this.retryCount = 0
       // A different cover entirely — drop what's on screen and fetch the new
       // one if this instance had already earned its place (an always-visible
       // instance like the player bar's own art, on every track change).
@@ -338,6 +388,7 @@ export default {
     // Everything this cover still owns has to go with it: a pending timer, a
     // queued place, an in-flight request, its slot, and its object URL.
     this.cancelSettle()
+    this.cancelRetry()
     this.abortLoad()
     this.releaseSlot()
     this.setObjectUrl(null)
@@ -381,9 +432,16 @@ export default {
       this.cancelQueued?.()
       this.cancelQueued = null
       if (!this.displaySrc) {
+        this.cancelRetry()
         this.abortLoad()
         this.releaseSlot()
       }
+    },
+
+    cancelRetry() {
+      if (this.retryTimer === null) return
+      window.clearTimeout(this.retryTimer)
+      this.retryTimer = null
     },
     queueLoad() {
       const url = this.url
@@ -440,6 +498,11 @@ export default {
      * a cover whose first URL 404s (a missing artist photo, see imageUrl)
      * doesn't have to queue again for its fallback. */
     async loadCandidates(): Promise<void> {
+      // Whether anything that went wrong this time round could plausibly go
+      // right later — the difference between "this cover does not exist"
+      // and "this cover could not be reached just now", which is what
+      // decides whether the run below is worth repeating.
+      let retryable = false
       try {
         while (this.url) {
           const candidate = this.candidates[this.failedCount]!
@@ -459,6 +522,7 @@ export default {
               ? await fetchCoverArtBatched(candidate.coverArtId, this.fetchSize, controller.signal)
               : await fetchDirect(candidate.url, controller.signal)
             this.setObjectUrl(URL.createObjectURL(blob))
+            this.retryCount = 0
             return
           } catch (error) {
             if ((error as Error)?.name === 'AbortError') {
@@ -478,6 +542,7 @@ export default {
               // so failedCount is untouched.
               if (!this.holdsLoadSlot) return
             } else {
+              retryable = retryable || isTransient(error)
               this.failedCount += 1
             }
           } finally {
@@ -487,6 +552,37 @@ export default {
       } finally {
         this.releaseSlot()
       }
+
+      // Every candidate is spent. If any of them failed for a reason that
+      // passes, come back to it — a cover that is on screen for hours (the
+      // player bar's artwork, Home's hero, a radio station's logo) would
+      // otherwise stay empty for the whole time on the strength of one bad
+      // moment, since nothing else ever starts another attempt: the
+      // candidates watcher only fires on a genuine cover change, and the
+      // IntersectionObserver only reports movement this cover isn't doing.
+      this.scheduleRetry(retryable)
+    },
+
+    /** Queues one more run of the candidate list after a backing-off delay,
+     * up to RETRY_DELAYS_MS.length times. Deliberately silent about
+     * anything that failed for good (a 404 artist photo, an album with no
+     * art): retrying those would be a poll against an answer that will not
+     * change, once per cover, in a view that holds hundreds of them. */
+    scheduleRetry(retryable: boolean) {
+      if (!retryable || this.displaySrc) return
+      const delay = RETRY_DELAYS_MS[this.retryCount]
+      if (delay === undefined) return
+      this.retryCount += 1
+      this.cancelRetry()
+      this.retryTimer = window.setTimeout(() => {
+        this.retryTimer = null
+        // Re-check rather than trust the state from when this was queued:
+        // between then and now the cover may have arrived by another route,
+        // or stopped being wanted at all.
+        if (this.displaySrc || !this.candidates.length) return
+        this.failedCount = 0
+        this.queueLoad()
+      }, delay)
     },
     abortLoad() {
       this.controller?.abort()
