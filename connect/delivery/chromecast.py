@@ -114,7 +114,18 @@ class ChromecastDelivery(BaseDelivery):
         # duration accepted for interface parity with BaseDelivery.play() but
         # not yet wired up here — not part of the DLNA missing-duration fix
         # this parameter was added for (see dlna.py).
+        import pychromecast
+
         cast = await asyncio.to_thread(self._get_device)
+        # Some receivers (e.g. Google TV's own home-screen "Media Player")
+        # already declare support for the media namespace while running a
+        # non-default app, so play_media() below would send LOAD there
+        # instead of to the Default Media Receiver — and that app silently
+        # drops it (no error, no HTTP request ever reaches our stream_url).
+        # start_app() only actually launches when a different app is
+        # running, so this is a no-op once the Default Media Receiver is
+        # already active.
+        await asyncio.to_thread(cast.start_app, pychromecast.APP_MEDIA_RECEIVER)
         mc = cast.media_controller
         metadata = {"metadataType": 3, "title": title, "artist": artist}
         if album_art_url:

@@ -1230,6 +1230,24 @@ def test_chromecast_play_calls_media_controller():
     cast.media_controller.block_until_active.assert_called_once_with(10)
 
 
+def test_chromecast_play_switches_to_default_media_receiver_before_loading():
+    """Regression test: some receivers (e.g. Google TV's own home-screen
+    "Media Player") stay running and silently swallow LOAD instead of
+    playing, because they also declare support for the media namespace so
+    pychromecast never switches away from them on its own. play() must
+    force the switch itself before calling play_media()."""
+    import pychromecast
+
+    cast = _mock_cast()
+    d = ChromecastDelivery("TV")
+    with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
+        asyncio.run(d.play("http://stream", "Title"))
+
+    cast.start_app.assert_called_once_with(pychromecast.APP_MEDIA_RECEIVER)
+    call_names = [c[0] for c in cast.mock_calls]
+    assert call_names.index("start_app") < call_names.index("media_controller.play_media")
+
+
 def test_chromecast_play_uses_passed_content_type():
     cast = _mock_cast()
     d = ChromecastDelivery("TV")

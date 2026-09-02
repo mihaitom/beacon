@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed casting to some Chromecast devices (e.g. a Google TV) staying completely silent, with no error shown anywhere. Those devices can keep their own app running instead of switching to the one that actually plays what's sent to it, and were accepting the request without ever starting playback. Beacon now explicitly switches the device into playback mode first
 - Fixed the live-update connection (used for playback status and the cast visualizer) retrying indefinitely, every couple of seconds and without slowing down, whenever it couldn't stay connected - which on an unstable connection (mobile data, a flaky WiFi hop) was frequent enough to look like an attack to security software guarding a self-hosted Beacon exposed to the internet, occasionally getting a real user's own IP address banned by it. It now waits progressively longer between attempts, and pauses entirely while the device is offline, resuming as soon as it's back
 - Fixed a radio station's logo disappearing from the player bar and Now Playing screen shortly after starting it, for any station played straight from the "Discover stations" search rather than one already saved to your list. The generic radio icon showed instead, for the rest of that station's playback
 - Fixed the Home screen's hero card showing whatever album had played last, instead of the radio station's own logo, while a station is playing
