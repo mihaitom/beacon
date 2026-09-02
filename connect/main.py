@@ -8,6 +8,7 @@ Startup:
 import asyncio
 import logging
 import os
+import re
 import shutil
 import traceback
 from contextlib import asynccontextmanager
@@ -340,6 +341,7 @@ app = FastAPI(
     openapi_url=None,
     redoc_url=None,
 )
+_ALLOWED_ORIGIN_REGEX = r"http://localhost(:[0-9]+)?"
 _ALLOWED_ORIGINS_ENV = os.getenv("ALLOWED_ORIGINS", "")
 _ALLOWED_ORIGINS: list[str] = (
     [o.strip() for o in _ALLOWED_ORIGINS_ENV.split(",") if o.strip()]
@@ -356,7 +358,7 @@ app.add_middleware(
     allow_headers=["*"],
     allow_methods=["*"],
     allow_origins=_ALLOWED_ORIGINS,
-    allow_origin_regex=r"http://localhost(:[0-9]+)?",
+    allow_origin_regex=_ALLOWED_ORIGIN_REGEX,
     # Response headers are hidden from JS on a CORS response unless
     # explicitly exposed, even though they're already visible in the raw
     # HTTP response — routes/radio.py's X-Has-Transparency is read by
@@ -367,22 +369,58 @@ app.add_middleware(
 )
 
 
+def _cors_headers(request: Request) -> dict[str, str]:
+    """The CORS headers CORSMiddleware would have put on this response, for
+    the two error paths below that never reach it.
+
+    Both are raised *outside* it: Starlette's add_middleware() inserts at
+    the front of the stack, so the middleware registered last (the one
+    below) is the outermost one, and anything it answers itself skips every
+    middleware within — CORSMiddleware included. A browser then sees a real
+    HTTP response with no Access-Control-Allow-Origin on it and reports
+    "blocked by CORS policy" instead of the 500/503 that actually happened,
+    which is a considerably worse thing to have to debug than the error
+    itself. Mirrors the allow_origins/allow_origin_regex pair configured
+    above; there is nothing to mirror for credentials, which are off."""
+    origin = request.headers.get("origin")
+    if not origin:
+        return {}
+    if origin not in _ALLOWED_ORIGINS and not re.fullmatch(_ALLOWED_ORIGIN_REGEX, origin):
+        return {}
+    return {"Access-Control-Allow-Origin": origin, "Vary": "Origin"}
+
+
 @app.middleware("http")
-async def _suppress_shutdown_cancellation(request: Request, call_next):
-    """uvicorn's timeout_graceful_shutdown (see uvicorn.run() below) cancels
-    whatever request is still in flight once it expires — expected, and
-    exactly what makes quitting mid-request prompt instead of waiting the
-    request out. Left to reach uvicorn's own ASGI runner uncaught, that
-    CancelledError gets logged as "Exception in ASGI application" with a
-    full traceback, indistinguishable in the logs from a real crash. Added
-    last, so this ends up the outermost middleware and catches it before it
-    gets that far — the connection is going away either way, so a 503
-    nobody will read is as good a response as any."""
+async def _outermost_error_boundary(request: Request, call_next):
+    """Turns the two ways a request can end without a route's own answer
+    into ordinary HTTP responses, both carrying CORS headers (see
+    _cors_headers() for why they have to be added by hand here).
+
+    CancelledError: uvicorn's timeout_graceful_shutdown (see uvicorn.run()
+    below) cancels whatever request is still in flight once it expires —
+    expected, and exactly what makes quitting mid-request prompt instead of
+    waiting the request out. Left to reach uvicorn's own ASGI runner
+    uncaught, it gets logged as "Exception in ASGI application" with a full
+    traceback, indistinguishable in the logs from a real crash. Added last,
+    so this ends up the outermost middleware and catches it before it gets
+    that far.
+
+    Anything else: a genuine bug in a route. Starlette's own
+    ServerErrorMiddleware would answer it with a 500 too, but from *outside*
+    the CORS middleware — so a crash in any route reached from the browser
+    surfaced as a misleading CORS error rather than as the 500 it is. Logged
+    with its traceback here, since answering it ourselves is what stops
+    ServerErrorMiddleware from doing that logging."""
     try:
         return await call_next(request)
     except asyncio.CancelledError:
         logger.debug(f"[shutdown] Request cancelled: {request.method} {request.url.path}")
-        return Response(status_code=503)
+        # The connection is going away either way, so a 503 nobody will
+        # read is as good a response as any.
+        return Response(status_code=503, headers=_cors_headers(request))
+    except Exception:
+        logger.exception(f"Unhandled error in {request.method} {request.url.path}")
+        return Response(status_code=500, headers=_cors_headers(request))
 
 
 app.include_router(stream_router)

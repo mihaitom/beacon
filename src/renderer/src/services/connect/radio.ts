@@ -24,6 +24,25 @@ import { fetchConnect } from './http'
  * tries `hint` before it ever needs a homepage to scrape. Call this at all
  * only once at least one of the two is present — see the callers' own
  * guards. */
+/** Bumped to walk away from cache entries a previous version of this app
+ * left behind. It is part of the URL, so raising it gives every station's
+ * logo a cache key nothing has stored yet.
+ *
+ * Why it was needed once: /radio-favicon is cached for a week, and its
+ * response only carries Access-Control-Allow-Origin when the request had
+ * an Origin. It did not send `Vary: Origin` alongside, so a fetch without
+ * one (an <img src>, a non-browser client) left a cacheable entry with no
+ * CORS headers that the browser was then entitled to hand to this app's
+ * own fetch() — which rejects it as "No 'Access-Control-Allow-Origin'
+ * header is present", with no request going out at all. The backend now
+ * always sends Vary (see _favicon_response in connect/routes/radio.py),
+ * but that only governs entries stored from now on: anyone who already
+ * had a poisoned one would have kept a blank station logo for up to a
+ * week, through restarts, with nothing in the app able to fix it. Raise
+ * this only for that kind of reason — a new value throws away every
+ * user's correctly cached logos too. */
+export const RADIO_FAVICON_CACHE_VERSION = '2'
+
 export function radioFaviconUrl(
   apiUrl: string,
   token: string,
@@ -36,6 +55,7 @@ export function radioFaviconUrl(
   if (minSize > 0) params.set('min_size', String(minSize))
   if (hint) params.set('hint', hint)
   if (token) params.set('token', token)
+  params.set('v', RADIO_FAVICON_CACHE_VERSION)
   return `${apiUrl}/radio-favicon?${params.toString()}`
 }
 

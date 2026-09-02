@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchConnect } from '../http'
-import { radioFaviconUrl, resolveRadioStreamUrl } from '../radio'
+import { RADIO_FAVICON_CACHE_VERSION, radioFaviconUrl, resolveRadioStreamUrl } from '../radio'
 
 vi.mock('../http', () => ({ fetchConnect: vi.fn() }))
 
@@ -8,8 +8,21 @@ describe('radioFaviconUrl', () => {
   it('builds the plain homepage-only URL when nothing else is given', () => {
     const url = radioFaviconUrl('https://api.example', 'tok', 'https://station.example')
     expect(url).toBe(
-      'https://api.example/radio-favicon?url=https%3A%2F%2Fstation.example&token=tok',
+      'https://api.example/radio-favicon?url=https%3A%2F%2Fstation.example&token=tok' +
+        `&v=${RADIO_FAVICON_CACHE_VERSION}`,
     )
+  })
+
+  it('always carries the cache version, so a bump walks away from stale entries', () => {
+    // Not just cosmetic: a poisoned cache entry (see the constant's own
+    // comment) is unreachable from the app in every other way, and the
+    // only lever left is asking for a URL nothing has stored yet.
+    for (const url of [
+      radioFaviconUrl('https://api.example', 'tok', 'https://station.example'),
+      radioFaviconUrl('https://api.example', '', '', 96, 'https://cdn.example/icon.png'),
+    ]) {
+      expect(new URL(url).searchParams.get('v')).toBe(RADIO_FAVICON_CACHE_VERSION)
+    }
   })
 
   it('adds min_size only when positive', () => {

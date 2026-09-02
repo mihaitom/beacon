@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import type { Song } from '@/types/library'
 import type { DeviceType, DiscoveredDevice } from '@/services/connect/types'
+import { RADIO_FAVICON_CACHE_VERSION } from '@/services/connect/radio'
 
 export interface RemoteSong {
   id: string
@@ -68,6 +69,8 @@ export function remoteRadioFaviconUrl(homePageUrl: string | null, minSize = 0): 
   if (!base) return null
   const params = new URLSearchParams({ url: homePageUrl, password: base.password })
   if (minSize > 0) params.set('min_size', String(minSize))
+  // Same handler, so the same stale-cache problem — see RADIO_FAVICON_CACHE_VERSION.
+  params.set('v', RADIO_FAVICON_CACHE_VERSION)
   return `${base.origin}/remote/radio-favicon?${params.toString()}`
 }
 

@@ -324,6 +324,243 @@ def test_radio_favicon_falls_back_to_largest_when_nothing_meets_min_size(client)
     mock_get.assert_awaited_once_with("https://example.com/32.png")
 
 
+# ── Measuring what was actually fetched ──────────────────────────────────────
+
+
+def _sized_png(edge: int) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", (edge, edge), (10, 20, 30)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_radio_favicon_scrapes_the_homepage_when_the_hint_is_too_small(client):
+    """Radio Browser's favicon field carries no size, and is very often a
+    16/32px browser favicon — taking it on trust was what put a visibly
+    soft logo behind NowPlayingView's artwork."""
+    html = b'<html><head><link rel="icon" href="/256.png" sizes="256x256"></head></html>'
+    responses = {
+        "https://cdn.example/tiny.png": _fake_get_response(
+            content=_sized_png(32), content_type="image/png"
+        ),
+        "https://example.com/256.png": _fake_get_response(
+            content=_sized_png(256), content_type="image/png"
+        ),
+    }
+    mock_get = AsyncMock(side_effect=lambda url: responses[url])
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get(
+            "/radio-favicon",
+            params={
+                "url": "https://example.com",
+                "hint": "https://cdn.example/tiny.png",
+                "min_size": 96,
+            },
+        )
+    assert r.status_code == 200
+    assert r.content == _sized_png(256)
+
+
+def test_radio_favicon_keeps_the_hint_when_the_homepage_has_nothing_larger(client):
+    """Searching on is only worth it if it finds something better — when it
+    doesn't, the too-small hint is still the best answer available, not a
+    404 and not whichever candidate happened to be tried last."""
+    html = b'<html><head><link rel="icon" href="/16.png" sizes="16x16"></head></html>'
+    responses = {
+        "https://cdn.example/tiny.png": _fake_get_response(
+            content=_sized_png(48), content_type="image/png"
+        ),
+        "https://example.com/16.png": _fake_get_response(
+            content=_sized_png(16), content_type="image/png"
+        ),
+        "https://example.com/favicon.ico": _fake_get_response(
+            content=_sized_png(16), content_type="image/png"
+        ),
+    }
+    mock_get = AsyncMock(side_effect=lambda url: responses[url])
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get(
+            "/radio-favicon",
+            params={
+                "url": "https://example.com",
+                "hint": "https://cdn.example/tiny.png",
+                "min_size": 512,
+            },
+        )
+    assert r.status_code == 200
+    assert r.content == _sized_png(48)
+
+
+def test_radio_favicon_measures_past_an_overstated_declaration(client):
+    """A <link sizes="512x512"> pointing at a 32px file used to end the
+    search on the strength of the claim alone."""
+    # 128 is the smallest declaration that clears min_size=96, so _select()
+    # tries the liar first — which is the whole point: the file behind it
+    # is 32px, and only measuring it reveals that.
+    html = (
+        b"<html><head>"
+        b'<link rel="icon" href="/liar.png" sizes="128x128">'
+        b'<link rel="icon" href="/real.png" sizes="256x256">'
+        b"</head></html>"
+    )
+    responses = {
+        "https://example.com/liar.png": _fake_get_response(
+            content=_sized_png(32), content_type="image/png"
+        ),
+        "https://example.com/real.png": _fake_get_response(
+            content=_sized_png(256), content_type="image/png"
+        ),
+    }
+    mock_get = AsyncMock(side_effect=lambda url: responses[url])
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com", "min_size": 96})
+    assert r.status_code == 200
+    assert r.content == _sized_png(256)
+
+
+def test_radio_favicon_stops_fetching_once_nothing_declared_can_beat_what_it_has(client):
+    """The size a candidate declares is still a usable upper bound: one that
+    promises less than what is already in hand is not worth downloading to
+    find that out."""
+    html = (
+        b"<html><head>"
+        b'<link rel="icon" href="/64.png" sizes="64x64">'
+        b'<link rel="icon" href="/16.png" sizes="16x16">'
+        b"</head></html>"
+    )
+    mock_get = AsyncMock(
+        return_value=_fake_get_response(content=_sized_png(64), content_type="image/png")
+    )
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com", "min_size": 512})
+    assert r.status_code == 200
+    mock_get.assert_awaited_once_with("https://example.com/64.png")
+
+
+def test_radio_favicon_gives_up_after_the_fetch_budget(client):
+    """A page declaring a long list of icons that all turn out too small
+    must not turn one request into a dozen outbound fetches."""
+    links = b"".join(
+        b'<link rel="icon" href="/i%d.png" sizes="%dx%d">' % (i, 300 - i, 300 - i)
+        for i in range(12)
+    )
+    html = b"<html><head>" + links + b"</head></html>"
+    mock_get = AsyncMock(
+        return_value=_fake_get_response(content=_sized_png(8), content_type="image/png")
+    )
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com", "min_size": 512})
+    assert r.status_code == 200
+    assert mock_get.await_count == radio_mod._MAX_FETCHES
+
+
+def test_radio_favicon_treats_svg_as_meeting_any_size(client):
+    """An SVG scales losslessly, so it satisfies min_size without PIL ever
+    being able to measure it."""
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"></svg>'
+    mock_get = AsyncMock(return_value=_fake_get_response(content=svg, content_type="image/svg+xml"))
+    mock_stream = MagicMock(side_effect=AssertionError("should not scrape the homepage"))
+    with (
+        patch.object(radio_mod._client, "stream", mock_stream),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get(
+            "/radio-favicon",
+            params={
+                "url": "https://example.com",
+                "hint": "https://cdn.example/logo.svg",
+                "min_size": 512,
+            },
+        )
+    assert r.status_code == 200
+    assert r.content == svg
+
+
+def test_radio_favicon_default_min_size_still_costs_one_fetch(client):
+    """Nothing is ever "too small" at min_size=0, so a caller that doesn't
+    care must not pay for the extra searching this added."""
+    hint = _fake_get_response(content=_sized_png(16), content_type="image/png")
+    mock_get = AsyncMock(return_value=hint)
+    mock_stream = MagicMock(side_effect=AssertionError("should not scrape the homepage"))
+    with (
+        patch.object(radio_mod._client, "stream", mock_stream),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get(
+            "/radio-favicon",
+            params={"url": "https://example.com", "hint": "https://cdn.example/tiny.png"},
+        )
+    assert r.status_code == 200
+    mock_get.assert_awaited_once()
+
+
+# ── Malformed candidates must never reach the caller as a 500 ────────────────
+
+
+def test_radio_favicon_skips_an_href_that_cannot_be_resolved(client):
+    """urljoin() itself raises on a stray "//[" — one broken <link> in a
+    station's HTML used to escape the route as an unhandled exception,
+    which the browser then reports as a CORS error rather than a 500."""
+    html = (
+        b"<html><head>"
+        b'<link rel="icon" href="//[">'
+        b'<link rel="icon" href="/good.png" sizes="128x128">'
+        b"</head></html>"
+    )
+    good = _fake_get_response(content=_sized_png(128), content_type="image/png")
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", AsyncMock(return_value=good)),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com", "min_size": 96})
+    assert r.status_code == 200
+    assert r.content == _sized_png(128)
+
+
+def test_radio_favicon_skips_a_candidate_httpx_refuses_to_request(client):
+    """httpx.InvalidURL is deliberately not an httpx.HTTPError, so it used
+    to escape the per-candidate except clause."""
+    html = b'<html><head><link rel="icon" href="/icon.png" sizes="128x128"></head></html>'
+    good = _fake_get_response(content=_sized_png(128), content_type="image/png")
+    calls = []
+
+    async def _get(url):
+        calls.append(url)
+        if len(calls) == 1:
+            raise httpx.InvalidURL("no host")
+        return good
+
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", AsyncMock(side_effect=_get)),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com", "min_size": 96})
+    assert r.status_code == 200
+    assert r.content == _sized_png(128)
+
+
+def test_has_transparency_survives_a_decompression_bomb():
+    """PIL raises DecompressionBombError, which subclasses Exception
+    directly — a hostile favicon must not be able to 500 the route."""
+    png = _png_bytes("RGBA", transparent_ratio=1.0)
+    with patch.object(radio_mod.Image, "open", side_effect=Image.DecompressionBombError("boom")):
+        assert radio_mod._has_transparency(png) is False
+
+
 # ── Cascading fallback on a bad candidate ────────────────────────────────────
 
 
@@ -674,3 +911,23 @@ def test_radio_metadata_returns_null_before_anything_has_been_seen(client, defau
     r = client.get("/radio-metadata")
     assert r.status_code == 200
     assert r.json() == {"title": None}
+
+
+# ── Cache correctness across Origin ──────────────────────────────────────────
+
+
+def test_radio_favicon_varies_on_origin_even_without_one(client):
+    """The response is cacheable for a week, and whether it carries CORS
+    headers depends on the request's Origin — so it must vary on Origin
+    whether or not this particular request had one. Without that, a fetch
+    without an Origin (an <img src>, a non-browser client) leaves a cache
+    entry with no Access-Control-Allow-Origin that the browser may then
+    serve to the app's own fetch(), failing it as a CORS error with no
+    request ever going out — for as long as the entry lives."""
+    icon = _fake_get_response(content=_sized_png(64), content_type="image/png")
+    with patch.object(radio_mod._client, "get", AsyncMock(return_value=icon)):
+        r = client.get("/radio-favicon", params={"hint": "https://cdn.example/icon.png"})
+
+    assert r.status_code == 200
+    assert "origin" in r.headers["vary"].lower()
+    assert r.headers["cache-control"] == radio_mod._CACHE_CONTROL

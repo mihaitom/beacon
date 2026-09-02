@@ -65,6 +65,14 @@ _client = httpx.AsyncClient(follow_redirects=True, timeout=5.0)
 # into memory.
 _MAX_BYTES = 512 * 1024
 
+# How many icons a single request may actually download while looking for
+# one that meets min_size. Only reached when candidate after candidate
+# turns out to be too small or dead — the common case is one fetch (a
+# hint, or the first declared icon) — but a page is free to declare an
+# arbitrarily long list of them, and waiting on all of those is worse for
+# the caller than answering with the best of the first few.
+_MAX_FETCHES = 5
+
 # How much of the homepage's own HTML is read looking for <link rel="icon">
 # tags — favicon declarations live in <head>, which on virtually every real
 # site is well within this, so there's no need to risk reading (and every
@@ -169,9 +177,17 @@ async def _discover_candidates(homepage_url: str) -> list[_Candidate]:
                 parser = _IconLinkParser()
                 parser.feed(html)
                 for href, sizes in parser.links:
-                    candidates.append(
-                        _Candidate(url=urljoin(homepage_url, href), size=_parse_sizes(sizes))
-                    )
+                    # urljoin parses `href` and raises for a malformed one
+                    # ("Invalid IPv6 URL" for a stray "//[", say). One
+                    # broken <link> in a station's HTML is no reason to
+                    # fail the whole lookup — skip it like any other dead
+                    # candidate and keep the good ones.
+                    try:
+                        resolved = urljoin(homepage_url, href)
+                    except ValueError:
+                        logger.info(f"[radio-favicon] {homepage_url}: unusable icon href {href!r}")
+                        continue
+                    candidates.append(_Candidate(url=resolved, size=_parse_sizes(sizes)))
     except httpx.HTTPError as e:
         logger.info(f"[radio-favicon] {homepage_url} unreachable: {type(e).__name__}: {e}")
 
@@ -217,7 +233,10 @@ def _has_transparency(content: bytes) -> bool:
             histogram = alpha.histogram()
             transparent = sum(histogram[:32])
             return transparent / (img.width * img.height) >= _MIN_TRANSPARENT_RATIO
-    except (UnidentifiedImageError, OSError, ValueError):
+    # DecompressionBombError is none of the three (it subclasses Exception
+    # directly) and is exactly what a hostile or just badly-made icon
+    # triggers — a station's favicon must never be able to 500 this route.
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
         return False
 
 
@@ -244,13 +263,74 @@ def _decode_data_uri(uri: str) -> tuple[bytes, str] | None:
     return content, media_type or "application/octet-stream"
 
 
-def _favicon_response(content: bytes, content_type: str) -> Response:
+# What an SVG counts as when ranking fetched icons by size — it scales
+# losslessly to whatever is asked for, so it satisfies any min_size. Same
+# value _parse_sizes() gives a declared sizes="any" for the same reason.
+_SCALABLE_PIXELS = 100_000
+
+
+def _pixel_size(content: bytes, content_type: str) -> int:
+    """The real edge length of a fetched icon, as opposed to whatever size
+    its <link> tag claimed (or, for a Radio Browser `hint`, claimed
+    nothing at all). Reads only the image header, so it costs nothing
+    beyond what is already in memory.
+
+    0 for anything undecodable — an unknown size must never beat a known
+    one when picking the best icon below, and _select()'s ordering already
+    treats 0 as the weakest candidate."""
+    if content_type.startswith("image/svg"):
+        return _SCALABLE_PIXELS
+    try:
+        with Image.open(io.BytesIO(content)) as img:
+            return max(img.width, img.height)
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        return 0
+
+
+@dataclass
+class _Fetched:
+    """One icon that was actually retrieved and measured, kept as data
+    rather than turned into a Response straight away so the caller can
+    still compare it against a later, larger one before committing."""
+
+    content: bytes
+    content_type: str
+    #: Edge length in pixels: what the bytes actually measure, falling back
+    #: to what the candidate's <link sizes> declared when they can't be
+    #: measured at all (an image format PIL doesn't know). Measuring only
+    #: overrules a declaration when it genuinely knows better — a format we
+    #: can't read is no reason to distrust what the page said about it.
+    pixels: int
+
+
+def _favicon_response(fetched: _Fetched) -> Response:
     return Response(
-        content=content,
-        media_type=content_type,
+        content=fetched.content,
+        media_type=fetched.content_type,
         headers={
             "Cache-Control": _CACHE_CONTROL,
-            "X-Has-Transparency": "true" if _has_transparency(content) else "false",
+            # Set here rather than left to CORSMiddleware, which only adds
+            # it when the request carried an Origin at all. Anything that
+            # fetches this URL without one — an <img src>, a non-browser
+            # client — got a cacheable 200 with no Vary and no
+            # Access-Control-Allow-Origin, and the browser is then entitled
+            # to serve that same entry to a later fetch() from the app,
+            # which fails it as "No 'Access-Control-Allow-Origin' header is
+            # present" without a request ever leaving the machine. With a
+            # week of max-age below, one such fetch poisoned the station's
+            # logo for a week, survived every reload (a normal one reads
+            # the disk cache) and looked for all the world like a CORS
+            # misconfiguration on a backend that was answering correctly.
+            #
+            # A request that *does* carry an Origin ends up with
+            # "Vary: Origin, Origin", since CORSMiddleware appends its own.
+            # Harmless — a repeated field value is well-formed and every
+            # cache reads it as the single field name it repeats — and
+            # preferable to the alternative, which is making this response
+            # depend on inspecting the request to guess what the middleware
+            # is about to do.
+            "Vary": "Origin",
+            "X-Has-Transparency": "true" if _has_transparency(fetched.content) else "false",
         },
     )
 
@@ -269,12 +349,12 @@ def _select(candidates: list[_Candidate], min_size: int) -> list[_Candidate]:
     return meets + remainder
 
 
-async def _try_candidate(candidate: _Candidate) -> Response | None:
-    """Fetches and validates one candidate, or None for anything wrong with
-    it (unreachable, too large, not actually an image) — the shared shape
-    both the cascade below and the Radio Browser favicon hint use, so a
-    dead link is handled exactly one way regardless of which list it came
-    from."""
+async def _try_candidate(candidate: _Candidate) -> _Fetched | None:
+    """Fetches, validates and measures one candidate, or None for anything
+    wrong with it (unreachable, too large, not actually an image) — the
+    shared shape both the cascade below and the Radio Browser favicon hint
+    use, so a dead link is handled exactly one way regardless of which list
+    it came from."""
     if candidate.url.startswith("data:"):
         # Nothing to fetch — see _decode_data_uri()'s own comment.
         decoded = _decode_data_uri(candidate.url)
@@ -283,11 +363,14 @@ async def _try_candidate(candidate: _Candidate) -> Response | None:
         content, content_type = decoded
         if len(content) > _MAX_BYTES or not content_type.startswith("image/"):
             return None
-        return _favicon_response(content, content_type)
+        return _Fetched(content, content_type, _pixel_size(content, content_type) or candidate.size)
 
     try:
         resp = await _client.get(candidate.url)
-    except httpx.HTTPError as e:
+    # InvalidURL is deliberately not an httpx.HTTPError, so it needs naming
+    # separately — a candidate URL httpx refuses to even build a request
+    # from is just another dead candidate, not a reason to fail the lookup.
+    except (httpx.HTTPError, httpx.InvalidURL) as e:
         logger.info(f"[radio-favicon] {candidate.url} unreachable: {type(e).__name__}: {e}")
         return None
 
@@ -299,7 +382,9 @@ async def _try_candidate(candidate: _Candidate) -> Response | None:
     ):
         return None
 
-    return _favicon_response(resp.content, content_type)
+    return _Fetched(
+        resp.content, content_type, _pixel_size(resp.content, content_type) or candidate.size
+    )
 
 
 @router.get("/radio-favicon")
@@ -321,31 +406,66 @@ async def radio_favicon(
     if url and (not url.lower().startswith(("http://", "https://")) or not urlparse(url).netloc):
         return Response(status_code=400)
 
+    # Best icon retrieved so far, kept across both stages below so a
+    # too-small one is still returned when nothing better turns up.
+    best: _Fetched | None = None
+
     # `hint` is Radio Browser's own `favicon` field (see core/radio_browser.py's
     # _to_station()) — it already named the right icon, so there's no reason
-    # to pay for scraping `url`'s homepage at all unless this turns out to
-    # be broken. Still routed through this same backend rather than a
-    # direct <img src> in RadioView.vue: that would leak the browsing
-    # user's own IP to the station's favicon host, exactly what this whole
-    # proxy exists to avoid for the homepage-scrape path below.
+    # to pay for scraping `url`'s homepage at all when it is big enough.
+    # Still routed through this same backend rather than a direct <img src>
+    # in RadioView.vue: that would leak the browsing user's own IP to the
+    # station's favicon host, exactly what this whole proxy exists to avoid
+    # for the homepage-scrape path below.
     if hint.lower().startswith(("http://", "https://")):
-        fetched = await _try_candidate(_Candidate(url=hint, size=0))
-        if fetched is not None:
-            return fetched
+        best = await _try_candidate(_Candidate(url=hint, size=0))
+        # Radio Browser's field carries no size with it, and what it points
+        # at is very often a 16/32px browser favicon — fine for a list row,
+        # visibly soft blown up to NowPlayingView's artwork. Measuring it
+        # (rather than taking it on trust, as this used to) is what makes
+        # the homepage worth scraping for something better. With the
+        # default min_size=0 nothing is ever "too small", so a caller that
+        # doesn't care still pays for exactly one fetch, as before.
+        if best is not None and best.pixels >= min_size:
+            return _favicon_response(best)
 
-    if not url:
-        return Response(status_code=404)
+    if url:
+        # Cascades through the candidates (best declared match for min_size
+        # first) — one dead link (a declared icon that 404s, an oversized/
+        # wrong-type response, ...) shouldn't sink the whole lookup when
+        # there's another perfectly good candidate right behind it.
+        #
+        # Keeps going past the first *usable* one until one actually meets
+        # min_size, since a declared sizes="" (or a plain /favicon.ico,
+        # which declares nothing at all) says nothing about what the file
+        # really is. Bounded by _MAX_FETCHES so a page declaring a long
+        # list of dead icons can't turn one request into a dozen fetches.
+        fetches = 0
+        for candidate in _select(await _discover_candidates(url), min_size):
+            if fetches >= _MAX_FETCHES:
+                break
+            # Its own <link sizes> already promises nothing better than
+            # what is in hand — downloading it could only confirm that.
+            # Only skippable because the declaration is a *claim about a
+            # size*: a candidate that declares nothing (size 0) says
+            # nothing about being smaller either, so it still gets fetched
+            # and measured.
+            if best is not None and 0 < candidate.size <= best.pixels:
+                continue
+            fetches += 1
+            fetched = await _try_candidate(candidate)
+            if fetched is None:
+                continue
+            if fetched.pixels >= min_size:
+                return _favicon_response(fetched)
+            # Nothing meets the request yet — hold on to the largest, so
+            # the answer is the closest thing available rather than
+            # whichever dead-end happened to come last.
+            if best is None or fetched.pixels > best.pixels:
+                best = fetched
 
-    candidates = await _discover_candidates(url)
-
-    # Cascades through every candidate (best match for min_size first) —
-    # one dead link (a declared icon that 404s, an oversized/wrong-type
-    # response, ...) shouldn't sink the whole lookup when there's another
-    # perfectly good candidate right behind it.
-    for candidate in _select(candidates, min_size):
-        fetched = await _try_candidate(candidate)
-        if fetched is not None:
-            return fetched
+    if best is not None:
+        return _favicon_response(best)
 
     return Response(status_code=404)
 

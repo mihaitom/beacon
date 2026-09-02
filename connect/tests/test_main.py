@@ -8,7 +8,9 @@ import logging
 import shutil
 from unittest.mock import patch
 
+from fastapi import Request
 from fastapi.testclient import TestClient
+from starlette.routing import Route
 
 import main
 from main import _asyncio_exception_handler, _periodic_discovery, _ShortNameFilter
@@ -199,3 +201,50 @@ def test_debug_router_absent_at_the_default_info_level(monkeypatch, tmp_path):
         assert resp.status_code == 401
     finally:
         importlib.reload(main)
+
+
+# ── CORS headers on errors raised outside the CORS middleware ────────────────
+
+
+async def _boom(_request):
+    raise RuntimeError("route blew up")
+
+
+def test_unhandled_route_error_still_carries_cors_headers(client):
+    """Starlette's add_middleware() inserts at the front, so the error
+    boundary registered last sits *outside* CORSMiddleware. Without adding
+    the headers by hand there, a crashed route reached the browser with no
+    Access-Control-Allow-Origin on it and was reported as "blocked by CORS
+    policy" — sending whoever debugged it after a CORS misconfiguration
+    that isn't there, instead of the 500 that actually happened."""
+    # Inserted at the front, not appended: proxy_router's catch-all
+    # `/{path:path}` is registered near the end and would otherwise answer
+    # this path first (see main.py's own comment above the include_router
+    # calls).
+    # client.app, not main.app: the reload tests above rebind main.app to a
+    # freshly imported instance, while this fixture's client keeps serving
+    # the one it was created with.
+    app = client.app
+    app.router.routes.insert(0, Route("/_test-boom", _boom, methods=["GET"]))
+    try:
+        resp = client.get("/_test-boom", headers={"Origin": "http://localhost:5173"})
+    finally:
+        app.router.routes = [
+            r for r in app.router.routes if getattr(r, "path", None) != "/_test-boom"
+        ]
+    assert resp.status_code == 500
+    assert resp.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_error_response_offers_no_cors_headers_to_a_disallowed_origin():
+    """The hand-added headers must mirror the configured policy, not hand
+    out an allowance the CORS middleware itself would have refused."""
+    request = Request({"type": "http", "headers": [(b"origin", b"https://evil.example")]})
+    assert main._cors_headers(request) == {}
+
+
+def test_error_response_has_no_cors_headers_without_an_origin():
+    """A non-browser caller (curl, the phone remote) sends no Origin, and a
+    response to one has no business carrying an allowance."""
+    request = Request({"type": "http", "headers": []})
+    assert main._cors_headers(request) == {}

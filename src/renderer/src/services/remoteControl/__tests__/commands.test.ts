@@ -15,6 +15,7 @@ import {
 import { makeSong, makeStatus } from '@/stores/__tests__/fixtures'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import type { Playlist, RadioStation, Artist } from '@/types/library'
+import { RADIO_FAVICON_CACHE_VERSION } from '@/services/connect/radio'
 
 // library.client() constructs a fresh SubsonicClient per call (see
 // stores/library.ts) — spying on a specific instance's method is pointless
@@ -630,7 +631,7 @@ describe('phone-scoped media URLs (remoteCoverArtUrl / remoteRadioFaviconUrl)', 
     expect(remoteRadioFaviconUrl('https://station.example')).toBe(
       `${window.location.origin}/remote/radio-favicon?url=${encodeURIComponent(
         'https://station.example',
-      )}&password=secret`,
+      )}&password=secret&v=${RADIO_FAVICON_CACHE_VERSION}`,
     )
     expect(remoteRadioFaviconUrl('https://station.example', 32)).toContain('min_size=32')
   })
