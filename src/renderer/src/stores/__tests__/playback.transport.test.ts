@@ -583,6 +583,26 @@ describe('playback transport', () => {
       )
     })
 
+    // Regression test: status.current_song is always null for radio, so
+    // nothing else ever clears whatever `duration` held from the last
+    // track played, and positionTracker.extrapolate() then clamps every
+    // 200ms tick to that stale number instead of leaving live elapsed
+    // unclamped — the seek bar's "Live · {time}" label sticking on the
+    // previous track's duration. Reported live 2026-09-02.
+    it('clears the leftover track duration so live elapsed is not clamped to it', async () => {
+      const playback = usePlaybackStore()
+      playback.duration = 195
+
+      await playback.playRadioStation({
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      })
+
+      expect(playback.duration).toBe(0)
+    })
+
     // A station published as a .m3u/.pls names where its audio really is
     // rather than being it — a Sonos answers `UPnP Error 800` and a browser's
     // <audio> simply fails to load. Resolved once here and used everywhere

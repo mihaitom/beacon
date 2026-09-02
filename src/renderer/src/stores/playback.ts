@@ -926,6 +926,20 @@ export const usePlaybackStore = defineStore('playback', {
       this.radioStation = { ...station, streamUrl }
       this.radioNowPlaying = null
       this.localPosition = 0
+      // Radio has no track duration — status.current_song is always null
+      // for it, so nothing else ever clears whatever this held from the
+      // last track played, and positionTracker.extrapolate() (see its own
+      // comment) then clamps every 200ms tick to that stale number instead
+      // of leaving live elapsed unclamped. Reported live 2026-09-02 as the
+      // seek bar's "Live · {time}" label sticking on the last track's
+      // duration, only flickering to the real value on each ~2s SSE tick
+      // (positionTracker.extrapolate() runs unclamped in between those,
+      // right up until the next tick re-clamps it).
+      this.duration = 0
+      // Same reasoning as startCurrent()'s identical reset() call — without
+      // it, extrapolation would keep advancing from the last track's final
+      // anchor until the first real radio status tick corrects it.
+      positionTracker.reset()
       // Local playback never otherwise touches the connect backend at all
       // (see services/connect/radioMetadata.ts's own docstring) - the
       // casting branch below also starts one on its own via /play-url, so
