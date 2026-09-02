@@ -25,10 +25,21 @@ The tradeoff is one extra read of the track from the media server for as
 long as the visualizer stays open — from the current position onward, not
 the track's beginning, and paced at roughly 1x real time (see _decode_cmd()).
 
-Still skipped for radio only now (see should_analyze(), which
-core/visualizer_feed.py gates on) — a station URL goes straight to the
-device, with no track and no position to seek to at all. AirPlay used to be
-excluded here too, on two grounds that both turned out not to hold up: it
+should_analyze() (which core/visualizer_feed.py gates *track* analysis on)
+still excludes radio — a station has no track and nothing to seek a fresh
+decoder to. Radio gets analyzed too, since 2026-09-02/03, but through a
+separate path (VisualizerFeed._start_radio_analyzer()) that also lands
+here: `source_url` is then the station's own URL (core/radio_relay.py's
+`url`, the same one that relay itself fetches, decoded here a *second*
+independent time — this class never taps that relay's own device-audio
+output, for the same reason a track isn't tapped either, see below) and
+`elapsed_fn` is the cast device's own reported position
+(core/radio_position.py's RadioPositionTracker) rather than a session
+clock, since a live stream has no track-relative position for a session
+clock to track in the first place. `start_offset` is always 0 for radio:
+there's nothing to seek to, only "start decoding from here, now". AirPlay
+used to be excluded here too, on two grounds that both turned out not to
+hold up: it
 was believed to push a whole track into the device ahead of time (fixed
 2026-08-26 — see docs/playback-bugs/fixed-airplay-silent-death.md, the
 _ResponseReader half — AirPlay streams incrementally like everything else
@@ -47,23 +58,14 @@ lyric line does.
 import asyncio
 import logging
 import math
+import time
 from collections import deque
 from collections.abc import Callable
-from typing import Protocol, runtime_checkable
+from contextlib import suppress
 
 import numpy as np
 
 logger = logging.getLogger("connect.audio_analysis")
-
-
-@runtime_checkable
-class PcmSource(Protocol):
-    """What AudioAnalyzer needs from a `pcm_source` — a real
-    asyncio.StreamReader (unused today, kept for type-compatibility) or
-    core/radio_relay.py's PcmSubscription both satisfy this."""
-
-    async def read(self, n: int) -> bytes: ...
-
 
 # Mono PCM at the same rate the Web Audio API's AnalyserNode typically sees
 # in 'local' mode (the browser's default AudioContext sample rate) — Nyquist
@@ -77,24 +79,28 @@ _SAMPLE_RATE = 44100
 
 
 def _decode_cmd(source_url: str, start_offset: float, gain: float) -> list[str]:
-    """Decode-only ffmpeg over the media server's own copy of the track,
-    seeked to `start_offset` — the track position this analysis run starts
-    at, which for a visualizer opened mid-track is simply wherever playback
-    already is.
+    """Decode-only ffmpeg over `source_url` — the media server's own copy of
+    a track, seeked to `start_offset` (the track position this analysis run
+    starts at, which for a visualizer opened mid-track is simply wherever
+    playback already is), or "pipe:0" for radio, whose bytes are written to
+    this process's stdin from the relay's own fan-out instead of fetched
+    (see AudioAnalyzer's `source_queue`). `start_offset` is always 0 for
+    that case — there is nothing to seek to on a live stream.
 
     Deliberately carries no -readrate pacing of its own (unlike
     core/streamer.py's command, see _READRATE_ARGS there): _read_pcm() stops
     reading stdout once it's _MAX_LOOKAHEAD_SECONDS ahead of playback,
     ffmpeg blocks on its own write as soon as the pipe buffer fills, and the
-    whole pipeline behind it — the HTTP fetch from the media server included
-    — stalls with it. So the extra read averages ~1x real time on its own,
-    without a second pacing mechanism that would then have to be kept in
-    agreement with that one.
+    whole pipeline behind it — the HTTP fetch from the media server or
+    station included — stalls with it. So the extra read averages ~1x real
+    time on its own, without a second pacing mechanism that would then have
+    to be kept in agreement with that one.
 
     `gain` is the same ReplayGain multiplier the real stream is encoded with
     (see core/streamer.py's stream_tracks()), applied here too so band
     levels match what the device is actually playing rather than the
-    untouched file.
+    untouched file — always 1.0 (no filter added) for radio, which has no
+    such concept.
     """
     # -ss before -i, same as stream_tracks() — input-side seeking, which
     # skips straight to the right point instead of decoding everything
@@ -239,6 +245,31 @@ _PREBUFFER_SECONDS = 0.3
 # cushion against real hiccups while keeping the steady-state FFT rate
 # close to the ~43/s it's sized for.
 _MAX_LOOKAHEAD_SECONDS = 3.0
+# How far *behind* the clock a live source may fall before this run gives
+# up on the backlog and rejoins at the current moment instead.
+#
+# Only for a piped (live) source. A track is a file: decode outruns real
+# time by a wide margin, so a backlog is genuinely temporary and working
+# through it is both possible and correct. A live station is the opposite
+# — nothing arrives faster than real time, so a run that falls behind can
+# never catch up by decoding, and every frame it computes on the way is
+# already too late to release (_MAX_LATENESS_SECONDS). It would spend that
+# whole stretch running analyze_pcm() at full speed on audio destined to
+# be dropped, starving the loop device audio is paced on. Reported live
+# 2026-09-03 as speaker dropouts plus a permanently frozen visualizer,
+# after a 10s device scan was enough to open the gap in the first place.
+#
+# Comfortably above ordinary jitter (_MAX_LATENESS_SECONDS is 0.15s, and a
+# poll-driven clock steps in ~0.5s increments), so this only fires on a
+# real stall, not on the usual unevenness.
+_LIVE_RESYNC_BEHIND_SECONDS = 2.0
+# How long a single hold-off may last on a live source before the loop
+# re-checks the clock — see _wait_out_lookahead().
+_STALL_RECHECK_SECONDS = 1.0
+# How long decode has to be held before saying so. Comfortably longer than
+# an ordinary hold-off (which is bounded by _MAX_LOOKAHEAD_SECONDS worth of
+# lead), so this only fires when the clock behind it really has stopped.
+_STALL_REPORT_AFTER_SECONDS = 5.0
 # How far past its own moment a frame may still be released, before
 # _release_frames() drops it instead. Decode normally runs comfortably ahead
 # of playback (see _MAX_LOOKAHEAD_SECONDS), so this only ever comes up at
@@ -332,27 +363,28 @@ class AudioAnalyzer:
     doesn't also arrive at the frontend in a burst.
 
     `elapsed_fn` should be the session's calibrated PlaybackClock.elapsed()
-    (track-relative seconds, corrected for the device's real startup-
-    buffering delay — see core/playback_clock.py), not a fixed bitrate
-    timeline: it's both what `start_offset` is read from at construction and
-    what every frame is then released against. `source_url` is the media
-    server's own URL for the track (MediaClient.get_stream_url()), decoded
-    here independently of whatever is being sent to the device — see the
-    module docstring for why. `gain` mirrors the ReplayGain applied to that
-    real stream.
+    for a track (track-relative seconds, corrected for the device's real
+    startup-buffering delay — see core/playback_clock.py) or, for radio,
+    core/radio_position.py's RadioPositionTracker-derived clock — not a
+    fixed bitrate timeline either way: it's both what `start_offset` is
+    read from at construction and what every frame is then released
+    against. `source_url` is the media server's own URL for a track
+    (MediaClient.get_stream_url()) or the station's own URL for radio
+    (core/radio_relay.py's RadioRelay.url), decoded here independently of
+    whatever is being sent to the device — see the module docstring for
+    why. `gain` mirrors the ReplayGain applied to a track's real stream;
+    unused (default 1.0) for radio, which has no such concept.
 
-    `pcm_source`, when given, replaces both `source_url` and this class's
-    own ffmpeg entirely: start() reads PCM straight from it instead of
-    spawning a decoder. The one caller that uses this is
-    core/visualizer_feed.py's radio branch, reading from
-    core/radio_relay.py's RadioRelay — radio has no per-listener track to
-    decode a second time (the whole reason this class decodes its own copy
-    for a track, see the module docstring), so it instead taps the one
-    shared PCM stream the relay already produces. `elapsed_fn` for that
-    case must NOT be the session clock: a station has no position to seek
-    to, so `start_offset` is always 0 there, and every attach (including
-    one that joins minutes into an already-playing station) starts from
-    "now" — see visualizer_feed.py's own comment on why."""
+    `on_first_byte`, when given, is called once the first PCM bytes have
+    actually been decoded. Used only by core/visualizer_feed.py's radio
+    fallback clock (_FirstByteClock, for a target with no
+    RadioPositionTracker) — a station fetch's own connection/first-response
+    latency varies enough that a wall clock zeroed at construction instead
+    of first byte would permanently misjudge every frame as late, past
+    _MAX_LATENESS_SECONDS, for good. Unused by the track case and by
+    radio's normal (RadioPositionTracker-backed) clock, both of which
+    already tolerate arbitrary decode startup latency some other way — see
+    _PREBUFFER_SECONDS/_MAX_LATENESS_SECONDS for the track case."""
 
     def __init__(
         self,
@@ -360,8 +392,8 @@ class AudioAnalyzer:
         source_url: str = "",
         start_offset: float = 0.0,
         gain: float = 1.0,
-        pcm_source: PcmSource | None = None,
-        cleanup: Callable[[], None] | None = None,
+        on_first_byte: Callable[[], None] | None = None,
+        source_queue: "asyncio.Queue[bytes | None] | None" = None,
     ) -> None:
         self.frames: asyncio.Queue[list[float]] = asyncio.Queue(maxsize=8)
         # (content_position, bands) pairs already computed but not yet
@@ -369,15 +401,12 @@ class AudioAnalyzer:
         # whole track's worth (each entry is _BAND_COUNT floats).
         self._pending: deque[tuple[float, list[float]]] = deque()
         self._source_url = source_url
+        self._source_queue = source_queue
+        self._input_task: asyncio.Task | None = None
         self._start_offset = start_offset
         self._gain = gain
-        self._pcm_source = pcm_source
-        # Called once, at the end of stop() — the pcm_source case's own way
-        # to let its caller release whatever handed this source out (see
-        # core/visualizer_feed.py's radio branch: RadioRelay.unsubscribe_pcm()).
-        # Unused/None for the plain-ffmpeg case, which owns and cleans up
-        # its own process directly below instead.
-        self._cleanup = cleanup
+        self._on_first_byte = on_first_byte
+        self._first_byte_seen = False
         self._proc: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task | None = None
         self._release_task: asyncio.Task | None = None
@@ -389,24 +418,71 @@ class AudioAnalyzer:
         self._elapsed_fn = elapsed_fn
         self._pcm_position = start_offset
         self._reading_done = False
+        # When the current decode hold-off began, and whether it has
+        # already been reported — see _wait_out_lookahead().
+        self._stalled_since: float | None = None
+        self._stall_reported = False
 
     async def start(self) -> None:
-        if self._pcm_source is not None:
-            self._reader_task = asyncio.create_task(self._read_pcm())
-            self._release_task = asyncio.create_task(self._release_frames())
-            return
+        piped = self._source_queue is not None
         try:
             self._proc = await asyncio.create_subprocess_exec(
-                *_decode_cmd(self._source_url, self._start_offset, self._gain),
-                stdin=asyncio.subprocess.DEVNULL,
+                *_decode_cmd(
+                    "pipe:0" if piped else self._source_url, self._start_offset, self._gain
+                ),
+                stdin=asyncio.subprocess.PIPE if piped else asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
         except FileNotFoundError:
             logger.warning("[audio-analysis] ffmpeg not found — visualizer data disabled")
             return
+        if piped:
+            self._input_task = asyncio.create_task(self._write_input())
         self._reader_task = asyncio.create_task(self._read_pcm())
         self._release_task = asyncio.create_task(self._release_frames())
+
+    async def _write_input(self) -> None:
+        """Feeds `source_queue` into this process's own ffmpeg stdin — the
+        radio path, where the bytes come from core/radio_relay.py's
+        device-audio fan-out rather than from a fetch of this analyzer's
+        own.
+
+        That fan-out is the whole point: it is the *same* byte stream the
+        cast device is being sent, so a given moment of audio means the
+        same thing to both. Fetching the station a second time instead
+        (which this used to do) looks equivalent and is not — a station
+        hands every new client a burst of already-elapsed audio to fill
+        its buffer with, seconds' worth and station-dependent, so the
+        second fetch's "first byte" is not the same moment as the relay's
+        current one and nothing downstream can tell by how much.
+
+        Still a separate ffmpeg from the relay's own, which is what keeps
+        the stall this replaced from coming back: the queue is bounded and
+        the fan-out drops into a full one rather than blocking (see
+        _fan_out()), so however slowly this reads, it can only ever cost
+        itself frames — never the device's audio."""
+        queue = self._source_queue
+        stdin = self._proc.stdin if self._proc else None
+        if queue is None or stdin is None:
+            return
+        try:
+            while True:
+                chunk = await queue.get()
+                if chunk is None:  # relay stopped for good
+                    break
+                stdin.write(chunk)
+                await stdin.drain()
+        except (asyncio.CancelledError, BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as e:
+            # Same reasoning as _read_pcm()'s own warning below: once this
+            # stops, ffmpeg sees EOF and the visualizer goes dark for the
+            # rest of the station with no other trace of why.
+            logger.warning(f"[audio-analysis] input writer stopped: {e}")
+        finally:
+            with suppress(Exception):
+                stdin.close()
 
     async def _read_pcm(self) -> None:
         """Decodes and FFTs as fast as the decoder produces PCM, up to
@@ -421,7 +497,7 @@ class AudioAnalyzer:
         window. This is what keeps the emission rate at _HOP_SIZE's cadence
         regardless of how large _FFT_SIZE (the frequency resolution) is —
         see both constants' own comments."""
-        pcm = self._pcm_source or (self._proc.stdout if self._proc else None)
+        pcm = self._proc.stdout if self._proc else None
         assert pcm is not None
         window_bytes = _FFT_SIZE * 2  # 16-bit samples
         hop_bytes = _HOP_SIZE * 2
@@ -430,6 +506,10 @@ class AudioAnalyzer:
                 data = await pcm.read(4096)
                 if not data:
                     break
+                if not self._first_byte_seen:
+                    self._first_byte_seen = True
+                    if self._on_first_byte is not None:
+                        self._on_first_byte()
                 self._pcm_buffer.extend(data)
                 while len(self._pcm_buffer) >= window_bytes:
                     window = bytes(self._pcm_buffer[-window_bytes:])
@@ -460,10 +540,21 @@ class AudioAnalyzer:
                 # decoder's own stdout pipe; once that (small, kernel-sized)
                 # buffer fills, ffmpeg's own write() blocks and it stops
                 # burning CPU too, rather than continuing to decode+FFT
-                # content nobody's close to needing yet.
+                # content nobody's close to needing yet. Applies to radio's
+                # own ffmpeg exactly the same as a track's: a live station's
+                # own server can burst too (see core/radio_relay.py's
+                # docstring), and this is what turns that burst back into a
+                # steady decode rate here as well — this analyzer's ffmpeg
+                # has no pipe in common with anything else any more (see
+                # this class's own module-level docstring history), so
+                # pausing it can no longer stall device audio the way it
+                # once could when radio shared the relay's own ffmpeg.
                 lookahead = self._pcm_position - self._elapsed_fn()
                 if lookahead > _MAX_LOOKAHEAD_SECONDS:
-                    await asyncio.sleep(lookahead - _MAX_LOOKAHEAD_SECONDS)
+                    await self._wait_out_lookahead(lookahead)
+                else:
+                    self._stalled_since = None
+                    self._resync_if_behind()
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -477,6 +568,67 @@ class AudioAnalyzer:
             logger.warning(f"[audio-analysis] reader stopped: {e}")
         finally:
             self._reading_done = True
+
+    async def _wait_out_lookahead(self, lookahead: float) -> None:
+        """Hold off decoding while far enough ahead — see
+        _MAX_LOOKAHEAD_SECONDS.
+
+        Capped for a live source rather than sleeping off the whole excess
+        in one go. The excess is measured against a clock this analyzer
+        doesn't control, and a clock that stops (a device that stops
+        reporting its position, a poll that hangs behind some other
+        request to the same speaker) makes that excess arbitrarily large.
+        Sleeping it out wholesale means not reading stdout for that long
+        either, so ffmpeg blocks on its own write, _write_input() blocks in
+        drain() behind it, and the run is wedged well past the moment the
+        clock recovers. Re-checking every _STALL_RECHECK_SECONDS costs one
+        comparison and lets it resume the moment there is something to
+        resume to.
+
+        A file source keeps the old behaviour: its clock is the session's
+        own calibrated one, and its decode genuinely does run far enough
+        ahead for a single long sleep to be the right call."""
+        live = self._source_queue is not None
+        delay = lookahead - _MAX_LOOKAHEAD_SECONDS
+        if not live:
+            await asyncio.sleep(delay)
+            return
+        now = time.monotonic()
+        if self._stalled_since is None:
+            self._stalled_since = now
+        elif now - self._stalled_since > _STALL_REPORT_AFTER_SECONDS and not self._stall_reported:
+            # Once per stall, not once per check — this is a diagnosis for a
+            # clock that isn't advancing, and repeating it every second
+            # would bury the rest of the log while it lasts.
+            self._stall_reported = True
+            logger.warning(
+                f"[audio-analysis] decode held for "
+                f"{now - self._stalled_since:.1f}s: content_position="
+                f"{self._pcm_position:.2f}s but the playback clock reads "
+                f"{self._elapsed_fn():.2f}s and is not advancing — frames cannot be "
+                "released until it does"
+            )
+        await asyncio.sleep(min(delay, _STALL_RECHECK_SECONDS))
+
+    def _resync_if_behind(self) -> None:
+        """Rejoin a live source at the clock's current moment when this run
+        has fallen too far behind it — see _LIVE_RESYNC_BEHIND_SECONDS. A
+        no-op for a file source, and for anything within ordinary jitter.
+
+        Whatever is already queued goes with it: those frames describe
+        audio the device played while this was stalled, so releasing them
+        now would be showing the past."""
+        if self._source_queue is None:
+            return
+        behind = self._elapsed_fn() - self._pcm_position
+        if behind <= _LIVE_RESYNC_BEHIND_SECONDS:
+            return
+        logger.info(
+            f"[audio-analysis] {behind:.1f}s behind on a live source — "
+            "skipping the backlog and rejoining now"
+        )
+        self._pending.clear()
+        self._pcm_position = self._elapsed_fn()
 
     async def _release_frames(self) -> None:
         """Drip-feeds `_pending` into `frames` one at a time, each held
@@ -511,6 +663,22 @@ class AudioAnalyzer:
                 # _MAX_LATENESS_SECONDS. Dropped rather than sent, so
                 # catching up costs nothing visible.
                 if remaining < -_MAX_LATENESS_SECONDS:
+                    # Yields even though there's real work queued right
+                    # behind it — a `continue` straight back to the top
+                    # with `_pending` still non-empty and every entry
+                    # equally "too late" (the exact shape a permanently
+                    # mis-calibrated elapsed_fn produces, not just an
+                    # ordinary catch-up burst) would otherwise spin this
+                    # whole loop synchronously, popping and dropping with
+                    # no await between iterations at all, for as long as
+                    # that holds — starving every *other* task sharing this
+                    # event loop, device audio streaming included. Reported
+                    # live 2026-09-02 as stuttering device audio traced to
+                    # core/visualizer_feed.py's own elapsed_fn/
+                    # content_position mismatch bug; this is defense in
+                    # depth against that class of bug recurring, not a fix
+                    # for a specific one.
+                    await asyncio.sleep(0)
                     continue
                 if self.frames.full():
                     self.frames.get_nowait()  # drop oldest — always show freshest
@@ -525,6 +693,8 @@ class AudioAnalyzer:
         fresh run at the new position supersedes this one. Safe to call on
         an analyzer whose start() never got as far as a process (ffmpeg
         missing), and safe to call twice."""
+        if self._input_task:
+            self._input_task.cancel()
         if self._reader_task:
             self._reader_task.cancel()
         if self._release_task:
@@ -534,9 +704,6 @@ class AudioAnalyzer:
                 self._proc.kill()
             except ProcessLookupError:
                 pass
-        if self._cleanup is not None:
-            cleanup, self._cleanup = self._cleanup, None
-            cleanup()
 
 
 # Kept here (rather than only in a docstring) so both

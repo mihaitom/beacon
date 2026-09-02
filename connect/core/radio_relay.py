@@ -15,59 +15,56 @@ reconnects. This relay fetches the station once (with `Icy-MetaData: 1`,
 same as icy_metadata.py's own watch()), demultiplexes the ICY metadata
 inline via IcyDemuxer — shared with icy_metadata.py so the metaint-parsing
 logic exists exactly once — and feeds the pure audio bytes into one ffmpeg
-process with two outputs:
+process with a single output:
 
-    ffmpeg -readrate 1 ... -i pipe:0 -vn -map 0:a <device args> pipe:1 \\
-                               -map 0:a -ac 1 -ar 44100 -f s16le pipe:<fd>
+    ffmpeg -readrate 1 ... -i pipe:0 -vn -map 0:a <device args> pipe:1
 
 `-readrate` (core/streamer.py's own pacing, reused as-is — see
 _start_ffmpeg()'s comment) is what keeps this real-time: nothing upstream
 paces the station fetch itself, and a server flushing its own send buffer
-in bursts would otherwise run straight through to both outputs — and the
-device — as a burst too.
+in bursts would otherwise run straight through to the device as a burst
+too.
 
 `pipe:1` (device audio — copy-tier MP3 when the station already is MP3,
 re-encoded 192k MP3 otherwise, see _device_output_args()) is fanned out to
 however many cast targets are subscribed (subscribe_audio()/
 unsubscribe_audio() — multi-target casting already exists, see
 PlayUrlRequest.targets, and without a fan-out "one fetch" would only be
-true for a single target). The PCM output feeds core/audio_analysis.py's
-AudioAnalyzer via core/visualizer_feed.py through the same kind of
-always-draining fan-out (subscribe_pcm()/unsubscribe_pcm()) — see
-_drain_pcm()'s own docstring for why "always", not just "whenever someone
-has the visualizer open": both outputs come from the *same* ffmpeg process,
-so a PCM side nobody drains fills its small OS pipe buffer and blocks
-ffmpeg's writes entirely within about a second, which stalls device audio
-too. Confirmed live 2026-09-01: a Sonos casting Antenne Bayern with no
-visualizer subscriber reported ERROR_LOST_CONNECTION roughly 10s after
-dispatch — the speaker's own buffered-audio/starvation-detection delay, not
-the stall itself, which happens almost immediately once ffmpeg's PCM write
-blocks. Beacon's own retry (upnp.py sees the transport error, /play-url's
-retry_radio_via_proxy() re-dispatches the same relay URL) then hit the
-exact same stall again, looping. (routes/upnp.py's own
-_handle_transport_problem() no longer calls retry_radio_via_proxy() for a
-relayed station at all, for a related but separate reason — see its own
-docstring.)
+true for a single target). The fan-out reads from a queue that lives on
+the RadioRelay instance itself, not from a specific ffmpeg run's pipe
+directly — so a subscriber added before a reconnect keeps receiving data
+automatically once _run_once() reconnects and starts draining into that
+very same queue, no special handling needed on either side.
 
-Both fan-outs read from queues that live on the RadioRelay instance itself,
-not from a specific ffmpeg run's pipe directly — so a subscriber (device or
-visualizer) added before a reconnect keeps receiving data automatically
-once _run_once() reconnects and starts draining into the very same queues,
-no special handling needed on either side.
+This used to have a second, PCM output feeding core/audio_analysis.py's
+AudioAnalyzer for the radio visualizer, fanned out the same "always
+drained, subscriber or not" way as this device-audio side still is —
+necessarily so, since both outputs came from the *same* ffmpeg process,
+and a PCM side nobody drained filled its small OS pipe buffer and blocked
+ffmpeg's writes entirely within about a second, stalling *device* audio
+too (confirmed live 2026-09-01: a Sonos casting Antenne Bayern with no
+visualizer open reported ERROR_LOST_CONNECTION roughly 10s later). That
+"always drained" requirement turned out to be a standing liability rather
+than a one-time fix, though: every bug in the visualizer's own decode/
+pacing logic (see core/audio_analysis.py's and core/visualizer_feed.py's
+own change history, 2026-09-02/03) was one step away from stalling this
+side of the same pipe again, and repeatedly did. Removed 2026-09-03 —
+the radio visualizer now decodes the station a second time with its own,
+completely independent ffmpeg process (core/audio_analysis.py's
+`source_url` path, the same one tracks already use), the same way track
+analysis has never shared a decoder with track delivery. A bug in that
+analyzer can now, at worst, make its own visualizer wrong or laggy — it
+has no pipe left in common with device audio to ever stall again.
 
 Verified against a real station (ROCK ANTENNE, 2026-09-01): -acodec copy
 loses nothing measurable (624000 bytes of station audio in, 623639 out —
-the difference is one truncated trailing frame), and the PCM branch decodes
-alongside it without disturbing that (that measurement had a visualizer
-subscriber attached throughout, which is why the pipe-blocking bug above
-wasn't caught until the no-subscriber case was hit live).
+the difference is one truncated trailing frame).
 """
 
 import asyncio
-import contextlib
 import logging
-import os
 from collections.abc import Callable
+from contextlib import suppress
 
 import httpx
 
@@ -125,9 +122,6 @@ _FALLBACK_DEVICE_ARGS = [
 ]
 _MP3_CONTENT_TYPE = "audio/mpeg"
 
-_PCM_SAMPLE_RATE = 44100
-_PCM_ARGS = ["-ac", "1", "-ar", str(_PCM_SAMPLE_RATE), "-f", "s16le"]
-
 # Generous on purpose, now that a burst is possible (see -flush_packets
 # above for why one shouldn't normally happen any more, and this is the
 # backstop for whatever burst still gets through it): at the 8KiB chunks
@@ -138,6 +132,27 @@ _PCM_ARGS = ["-ac", "1", "-ar", str(_PCM_SAMPLE_RATE), "-f", "s16le"]
 # overflow it and start dropping real audio bytes, which reads as
 # stutter, not silence.
 _AUDIO_QUEUE_MAXSIZE = 4000
+
+# The same fan-out, for a subscriber that would rather skip forward than
+# fall behind: the visualizer's analyzer (core/visualizer_feed.py). A
+# device must never lose a byte, so its queue is sized to outlast any
+# burst — but for analysis, old audio is worthless. Buffering minutes of
+# it and then racing to "catch up" is actively harmful: the catch-up runs
+# with no pacing at all (_read_pcm()'s own lookahead cap only throttles
+# running *ahead*, and a backlog is the other direction), so it decodes
+# and FFTs at full CPU speed for as long as the backlog lasts, starving
+# the event loop that device audio is also being paced on. Reported live
+# 2026-09-03: a 10s device scan was enough to put the analyzer behind, and
+# the recovery from it produced audible dropouts on the speaker plus a
+# visualizer that stayed frozen — every frame it computed afterwards was
+# minutes late and got dropped by _release_frames().
+#
+# A few seconds is all analysis can use. Beyond that the oldest bytes are
+# dropped, not the newest (see _fan_out_audio()), so this subscriber stays
+# at the live edge instead of accumulating a debt it can never usefully
+# repay.
+_ANALYSIS_QUEUE_MAXSIZE = 48
+
 
 # How long start() waits for the first connection attempt to resolve one
 # way or the other before giving up on it. Not a timeout on the fetch
@@ -156,8 +171,8 @@ def _send_sentinel(q: "asyncio.Queue[bytes | None]") -> None:
     good". Has to arrive even on a queue that is already full, or the
     subscriber blocked on it never learns to stop waiting — and a full
     queue is an entirely expected state here, not an anomaly:
-    _fan_out_audio()/_drain_pcm() let a slow subscriber's queue fill
-    rather than stalling everyone else behind it. Dropping the oldest
+    _fan_out_audio() lets a slow subscriber's queue fill rather than
+    stalling everyone else behind it. Dropping the oldest
     chunk to make room costs a reader that is already that far behind
     nothing it could still have played in time. (`get_nowait()` cannot
     fail after `full()` — there is no await between them for anything else
@@ -174,24 +189,6 @@ def _device_output_args(content_type: str) -> tuple[list[str], str]:
     return _FALLBACK_DEVICE_ARGS, _MP3_CONTENT_TYPE
 
 
-class PcmSubscription:
-    """A visualizer's own view of the PCM fan-out — adapts a
-    Queue[bytes | None] to the plain async `.read(n)` interface
-    core/audio_analysis.py's AudioAnalyzer already expects from a decoder's
-    stdout, so that class doesn't need to know it's reading from a fan-out
-    queue rather than a real pipe. `n` is accepted (matching that
-    interface) but ignored — chunk boundaries here are whatever
-    _drain_pcm() happened to read, same as they'd be from a real pipe."""
-
-    def __init__(self, queue: "asyncio.Queue[bytes | None]") -> None:
-        self.queue = queue
-
-    async def read(self, n: int = -1) -> bytes:
-        del n
-        chunk = await self.queue.get()
-        return chunk or b""
-
-
 class RadioRelay:
     """Not reentrant across stations — core/session.py stops whatever relay
     already exists before starting a new one for a different URL, the same
@@ -206,8 +203,11 @@ class RadioRelay:
         self._fetch_task: asyncio.Task | None = None
         self._audio_fanout_task: asyncio.Task | None = None
         self._audio_subscribers: list[asyncio.Queue[bytes | None]] = []
-        self._pcm_drain_task: asyncio.Task | None = None
-        self._pcm_subscribers: list[asyncio.Queue[bytes | None]] = []
+        # id() of the subscribers that asked for `lossy` — an asyncio.Queue
+        # isn't hashable-by-value in a way that would make a set of the
+        # queues themselves any clearer, and identity is exactly the
+        # question being asked.
+        self._lossy_subscribers: set[int] = set()
         # Set once the first connection attempt has either produced a
         # running ffmpeg or given up — see start().
         self._started = asyncio.Event()
@@ -242,8 +242,6 @@ class RadioRelay:
             self._fetch_task.cancel()
         if self._audio_fanout_task:
             self._audio_fanout_task.cancel()
-        if self._pcm_drain_task:
-            self._pcm_drain_task.cancel()
         if self._proc:
             try:
                 self._proc.kill()
@@ -252,15 +250,21 @@ class RadioRelay:
         for q in self._audio_subscribers:
             _send_sentinel(q)
         self._audio_subscribers.clear()
-        for q in self._pcm_subscribers:
-            _send_sentinel(q)
-        self._pcm_subscribers.clear()
 
-    def subscribe_audio(self) -> "asyncio.Queue[bytes | None]":
-        """One more device-audio reader — see routes/stream.py's
-        radio_stream(). A `None` read from the queue means the relay has
-        stopped for good; there is nothing more to send."""
-        q: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=_AUDIO_QUEUE_MAXSIZE)
+    def subscribe_audio(self, *, lossy: bool = False) -> "asyncio.Queue[bytes | None]":
+        """One more reader of the same audio the devices get — see
+        routes/stream.py's radio_stream(). A `None` read from the queue
+        means the relay has stopped for good; there is nothing more to
+        send.
+
+        `lossy` is for a subscriber that wants the live edge rather than
+        every byte: it gets a small queue whose *oldest* entries are
+        dropped when it can't keep up, instead of a large one whose newest
+        are. Only the visualizer's analyzer asks for this — see
+        _ANALYSIS_QUEUE_MAXSIZE. A device never does: a gap in its audio is
+        audible."""
+        maxsize = _ANALYSIS_QUEUE_MAXSIZE if lossy else _AUDIO_QUEUE_MAXSIZE
+        q: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=maxsize)
         if self._stopped:
             # Subscribing to an already-stopped relay is a real race, not a
             # caller mistake: radio_stream() reads session.radio_relay and
@@ -274,26 +278,14 @@ class RadioRelay:
             q.put_nowait(None)
             return q
         self._audio_subscribers.append(q)
+        if lossy:
+            self._lossy_subscribers.add(id(q))
         return q
 
     def unsubscribe_audio(self, q: "asyncio.Queue[bytes | None]") -> None:
         if q in self._audio_subscribers:
             self._audio_subscribers.remove(q)
-
-    def subscribe_pcm(self) -> PcmSubscription:
-        """The visualizer's PCM source (core/visualizer_feed.py) — see
-        _drain_pcm()'s docstring for why this exists as a subscription
-        (always drained) rather than handing out the raw pipe reader."""
-        q: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=_AUDIO_QUEUE_MAXSIZE)
-        if self._stopped:
-            q.put_nowait(None)  # same race as subscribe_audio() — see there
-            return PcmSubscription(q)
-        self._pcm_subscribers.append(q)
-        return PcmSubscription(q)
-
-    def unsubscribe_pcm(self, subscription: PcmSubscription) -> None:
-        if subscription.queue in self._pcm_subscribers:
-            self._pcm_subscribers.remove(subscription.queue)
+        self._lossy_subscribers.discard(id(q))
 
     async def _run(self) -> None:
         failures = 0
@@ -330,15 +322,11 @@ class RadioRelay:
             metaint = int(resp.headers.get("icy-metaint") or "0")
             demuxer = IcyDemuxer(metaint, self._on_title_change) if metaint > 0 else None
 
-            proc, pcm_reader = await self._start_ffmpeg()
+            proc = await self._start_ffmpeg()
             self.connected = True
             self._started.set()
             assert proc.stdout is not None and proc.stdin is not None
             self._audio_fanout_task = asyncio.create_task(self._fan_out_audio(proc.stdout))
-            # Started unconditionally, subscriber or not — see this
-            # method's own docstring for why leaving the PCM side unread
-            # would stall device audio too, not just the visualizer.
-            self._pcm_drain_task = asyncio.create_task(self._drain_pcm(pcm_reader))
             try:
                 async for chunk in resp.aiter_bytes():
                     audio = demuxer.feed(chunk) if demuxer is not None else chunk
@@ -357,20 +345,8 @@ class RadioRelay:
                     pass
                 if self._audio_fanout_task:
                     await self._audio_fanout_task
-                if self._pcm_drain_task:
-                    await self._pcm_drain_task
 
-    async def _start_ffmpeg(self) -> tuple[asyncio.subprocess.Process, asyncio.StreamReader]:
-        pcm_r, pcm_w = os.pipe()
-        # Wrapped straight away so a single close() owns the read end from
-        # here on — every failure path below has to release both ends, and
-        # _run() retries this indefinitely (every 5-60s, for as long as the
-        # radio plays), so leaking a pair per attempt would eventually
-        # exhaust the whole process's file descriptors, not just this
-        # relay's. A failing spawn is a real case, not a theoretical one:
-        # core/audio_analysis.py's start() handles "no ffmpeg on PATH"
-        # explicitly for exactly the same reason.
-        pcm_file = os.fdopen(pcm_r, "rb", buffering=0)
+    async def _start_ffmpeg(self) -> asyncio.subprocess.Process:
         cmd = [
             "ffmpeg",
             "-hide_banner",
@@ -408,36 +384,15 @@ class RadioRelay:
             "0:a",
             *self._device_args,
             "pipe:1",
-            "-map",
-            "0:a",
-            *_PCM_ARGS,
-            f"pipe:{pcm_w}",
         ]
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-                pass_fds=(pcm_w,),
-            )
-        except BaseException:
-            pcm_file.close()
-            raise
-        finally:
-            os.close(pcm_w)  # this process's own copy — ffmpeg holds its own via pass_fds
-        loop = asyncio.get_running_loop()
-        reader = asyncio.StreamReader()
-        protocol = asyncio.StreamReaderProtocol(reader)
-        try:
-            await loop.connect_read_pipe(lambda: protocol, pcm_file)
-        except BaseException:
-            pcm_file.close()
-            with contextlib.suppress(ProcessLookupError):
-                proc.kill()
-            raise
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
         self._proc = proc
-        return proc, reader
+        return proc
 
     async def _fan_out_audio(self, stdout: asyncio.StreamReader) -> None:
         """Reads the device-audio output once and copies each chunk to
@@ -455,33 +410,15 @@ class RadioRelay:
                     try:
                         q.put_nowait(chunk)
                     except asyncio.QueueFull:
-                        pass  # a slow device falls behind rather than blocking the others
-        except asyncio.CancelledError:
-            pass
-
-    async def _drain_pcm(self, pcm: asyncio.StreamReader) -> None:
-        """Reads the PCM output continuously, whether or not anyone is
-        subscribed (core/visualizer_feed.py only subscribes while someone
-        actually has the visualizer open) — both of this process's outputs
-        come from the *same* ffmpeg, so leaving this side unread fills its
-        small OS pipe buffer and blocks ffmpeg's writes entirely once that
-        happens, which stalls device audio too, not just the visualizer.
-        Confirmed live 2026-09-01: exactly this stall, on a station cast
-        with no visualizer open, reported by the device as
-        ERROR_LOST_CONNECTION roughly every 10s (the device's own
-        buffered-audio/starvation-detection delay) as Beacon kept
-        redispatching into the same stall. With no subscriber, chunks are
-        simply read and discarded — see _fan_out_audio() for the identical
-        always-drain shape this mirrors, one output earlier."""
-        try:
-            while True:
-                chunk = await pcm.read(4096)
-                if not chunk:
-                    return
-                for q in list(self._pcm_subscribers):
-                    try:
-                        q.put_nowait(chunk)
-                    except asyncio.QueueFull:
-                        pass
+                        if id(q) not in self._lossy_subscribers:
+                            continue  # a slow device falls behind rather than blocking the others
+                        # Lossy subscriber: make room by discarding what it
+                        # has not read yet, so it resumes at the live edge
+                        # instead of working through a backlog. See
+                        # _ANALYSIS_QUEUE_MAXSIZE.
+                        with suppress(asyncio.QueueEmpty):
+                            q.get_nowait()
+                        with suppress(asyncio.QueueFull):
+                            q.put_nowait(chunk)
         except asyncio.CancelledError:
             pass

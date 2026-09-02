@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import core.audio_analysis as audio_analysis_mod
 from core.audio_analysis import (
     _BAND_COUNT,
     _FFT_SIZE,
@@ -407,6 +408,30 @@ async def test_release_frames_drops_frames_playback_has_already_passed():
             task.cancel()
 
 
+async def test_release_frames_yields_between_consecutive_drops():
+    """Regression test, reported live 2026-09-02 as stuttering *device*
+    audio: a permanently mis-calibrated elapsed_fn (the bug fixed the same
+    day in core/visualizer_feed.py's _start_radio_analyzer()) makes *every*
+    pending frame read as impossibly late forever, not just an ordinary
+    catch-up burst — and the drop branch used to `continue` straight back
+    to the top with no await at all, so as long as _pending kept refilling
+    (which _read_pcm() does continuously for radio), this loop span
+    synchronously popping and dropping, starving every other task sharing
+    the event loop, device audio streaming included. Defense in depth
+    against that class of bug recurring, not a fix for a specific one —
+    see that fix's own comment."""
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 100.0, source_url="http://media/track.flac")
+    for i in range(5):
+        analyzer._pending.append((float(i), [1.0] * _BAND_COUNT))  # all ~100s late
+    analyzer._reading_done = True
+    with patch("asyncio.sleep", new=AsyncMock()) as sleep_mock:
+        await asyncio.wait_for(analyzer._release_frames(), timeout=1.0)
+
+    assert sleep_mock.await_count >= 5
+    assert all(call.args[0] == 0 for call in sleep_mock.await_args_list)
+    assert list(analyzer.frames._queue) == []
+
+
 # ── AudioAnalyzer.start() ────────────────────────────────────────────────────
 
 
@@ -459,38 +484,6 @@ async def test_start_logs_and_leaves_no_tasks_when_ffmpeg_is_missing(caplog):
     assert "ffmpeg not found" in caplog.text
     assert analyzer._reader_task is None
     assert analyzer._release_task is None
-
-
-async def test_start_with_a_pcm_source_never_spawns_ffmpeg():
-    """core/visualizer_feed.py's radio branch — reads from an already-open
-    PCM stream (core/radio_relay.py's RadioRelay) instead of decoding a
-    track a second time."""
-    pcm_source = MagicMock()
-    pcm_source.read = AsyncMock(return_value=b"")
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, pcm_source=pcm_source)
-    exec_mock = AsyncMock()
-
-    with patch("asyncio.create_subprocess_exec", exec_mock):
-        await analyzer.start()
-    try:
-        exec_mock.assert_not_awaited()
-        assert analyzer._proc is None
-        assert analyzer._reader_task is not None
-        assert analyzer._release_task is not None
-    finally:
-        analyzer._reader_task.cancel()
-        analyzer._release_task.cancel()
-
-
-async def test_read_pcm_reads_from_the_given_pcm_source_when_present():
-    pcm = _tone_pcm(440, _FFT_SIZE)
-    pcm_source = MagicMock()
-    pcm_source.read = AsyncMock(side_effect=[pcm, b""])
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, pcm_source=pcm_source)
-
-    await analyzer._read_pcm()
-
-    assert analyzer._pending  # produced at least one frame, straight from pcm_source
 
 
 # ── AudioAnalyzer._read_pcm — decode/FFT/windowing ───────────────────────────
@@ -548,6 +541,47 @@ async def test_read_pcm_pauses_once_decoding_gets_too_far_ahead_of_playback():
 
     assert sleep_mock.await_count >= 1
     assert sleep_mock.await_args.args[0] > 0
+
+
+async def test_read_pcm_calls_on_first_byte_once_the_first_non_empty_chunk_lands():
+    """core/visualizer_feed.py's radio fallback clock (_FirstByteClock, for
+    a target with no RadioPositionTracker) is driven by this hook rather
+    than by wrapping the PCM source itself — radio's own ffmpeg (spawned
+    via source_url, same as a track) has no wrapper to hook into, only its
+    stdout."""
+    pcm = _tone_pcm(440, _FFT_SIZE)
+    analyzer = _fake_analyzer_with_stdout(elapsed_fn=lambda: 0.0, stdout_chunks=[pcm, b""])
+    on_first_byte = MagicMock()
+    analyzer._on_first_byte = on_first_byte
+
+    await analyzer._read_pcm()
+
+    on_first_byte.assert_called_once()
+
+
+async def test_read_pcm_does_not_call_on_first_byte_for_an_empty_read():
+    analyzer = _fake_analyzer_with_stdout(elapsed_fn=lambda: 0.0, stdout_chunks=[b""])
+    on_first_byte = MagicMock()
+    analyzer._on_first_byte = on_first_byte
+
+    await analyzer._read_pcm()
+
+    on_first_byte.assert_not_called()
+
+
+async def test_read_pcm_calls_on_first_byte_only_once_across_multiple_chunks():
+    n_samples = _FFT_SIZE + 2 * _HOP_SIZE
+    pcm = _tone_pcm(440, n_samples)
+    half = len(pcm) // 2
+    analyzer = _fake_analyzer_with_stdout(
+        elapsed_fn=lambda: 0.0, stdout_chunks=[pcm[:half], pcm[half:], b""]
+    )
+    on_first_byte = MagicMock()
+    analyzer._on_first_byte = on_first_byte
+
+    await analyzer._read_pcm()
+
+    on_first_byte.assert_called_once()
 
 
 async def test_read_pcm_swallows_cancellation():
@@ -610,15 +644,206 @@ async def test_stop_is_safe_before_start_ever_ran():
     await analyzer.stop()  # must not raise
 
 
-async def test_stop_calls_cleanup_exactly_once_even_if_stop_runs_twice():
-    """core/visualizer_feed.py's radio branch relies on this to unsubscribe
-    from core/radio_relay.py's RadioRelay — called more than once would
-    double-remove (harmless there, since RadioRelay.unsubscribe_pcm() is
-    itself idempotent) but is still worth pinning down as exactly-once."""
-    cleanup = MagicMock()
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, pcm_source=MagicMock(), cleanup=cleanup)
+# ── Piped source (radio: the relay's own device-audio fan-out) ───────────────
 
-    await analyzer.stop()
+
+class _FakeStdin:
+    """asyncio's StreamWriter surface AudioAnalyzer._write_input() actually
+    uses — enough to see what reached ffmpeg and whether EOF was sent."""
+
+    def __init__(self) -> None:
+        self.written = bytearray()
+        self.closed = False
+
+    def write(self, data: bytes) -> None:
+        self.written.extend(data)
+
+    async def drain(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeProc:
+    def __init__(self) -> None:
+        self.stdin = _FakeStdin()
+        self.stdout = _EmptyStdout()
+        self.killed = False
+
+    def kill(self) -> None:
+        self.killed = True
+
+
+class _EmptyStdout:
+    """Never yields PCM, so _read_pcm() ends immediately and these tests
+    stay about the input side."""
+
+    async def read(self, _n: int) -> bytes:
+        return b""
+
+
+async def test_piped_source_decodes_from_stdin_not_a_second_fetch():
+    """The radio path feeds AudioAnalyzer the same bytes the device is
+    being sent, from core/radio_relay.py's fan-out, instead of fetching the
+    station a second time. A second fetch cannot be lined up with the
+    device at all: a station greets each new client with a burst of
+    already-elapsed audio to prime its buffer, seconds' worth and
+    station-dependent, so "first byte" means something different on each
+    connection. Reported live 2026-09-03 as the visualizer running 5-10s
+    behind the speaker."""
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_queue=queue)
+    with patch("core.audio_analysis.asyncio.create_subprocess_exec") as spawn:
+        spawn.return_value = _FakeProc()
+        await analyzer.start()
+    cmd = spawn.call_args.args
+    assert "pipe:0" in cmd
+    assert spawn.call_args.kwargs["stdin"] is asyncio.subprocess.PIPE
     await analyzer.stop()
 
-    cleanup.assert_called_once()
+
+async def test_piped_source_forwards_the_queue_into_ffmpeg_stdin():
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+    proc = _FakeProc()
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_queue=queue)
+    with patch("core.audio_analysis.asyncio.create_subprocess_exec", return_value=proc):
+        await analyzer.start()
+    queue.put_nowait(b"station-bytes")
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert b"station-bytes" in bytes(proc.stdin.written)
+    await analyzer.stop()
+
+
+async def test_piped_source_closes_stdin_when_the_relay_stops():
+    """A None in the queue means the relay has stopped for good — ffmpeg
+    needs the EOF, or it sits waiting on a stdin nothing will ever feed."""
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+    proc = _FakeProc()
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_queue=queue)
+    with patch("core.audio_analysis.asyncio.create_subprocess_exec", return_value=proc):
+        await analyzer.start()
+    queue.put_nowait(None)
+    for _ in range(4):
+        await asyncio.sleep(0)
+    assert proc.stdin.closed
+    await analyzer.stop()
+
+
+async def test_a_url_source_still_gets_no_stdin():
+    """The track path is unchanged — it has a real URL to decode and
+    nothing to write in."""
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.mp3")
+    with patch("core.audio_analysis.asyncio.create_subprocess_exec") as spawn:
+        spawn.return_value = _FakeProc()
+        await analyzer.start()
+    assert "http://media/track.mp3" in spawn.call_args.args
+    assert spawn.call_args.kwargs["stdin"] is asyncio.subprocess.DEVNULL
+    await analyzer.stop()
+
+
+async def test_a_live_source_rejoins_instead_of_working_through_a_backlog():
+    """A live station cannot be caught up with by decoding — nothing
+    arrives faster than real time. Working through the backlog anyway runs
+    analyze_pcm() at full speed on audio already too late to release,
+    starving the loop device audio is paced on: heard live 2026-09-03 as
+    speaker dropouts alongside a permanently frozen visualizer."""
+    clock = 0.0
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: clock, source_queue=queue)
+    analyzer._pending.extend([(1.0, [0.0]), (2.0, [0.0])])
+    analyzer._pcm_position = 5.0
+    clock = 60.0  # a stall put the clock 55s ahead of what has been decoded
+
+    analyzer._resync_if_behind()
+
+    assert analyzer._pcm_position == 60.0
+    assert not analyzer._pending
+
+
+async def test_a_live_source_tolerates_ordinary_jitter():
+    """Only a real stall resyncs — a poll-driven clock steps in ~0.5s
+    increments, and treating that as a stall would throw frames away
+    constantly."""
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 1.0, source_queue=queue)
+    analyzer._pending.append((0.4, [0.0]))
+    analyzer._pcm_position = 0.5  # half a second behind
+
+    analyzer._resync_if_behind()
+
+    assert analyzer._pcm_position == 0.5
+    assert len(analyzer._pending) == 1
+
+
+async def test_a_file_source_never_skips_its_backlog():
+    """A track is a file: decode outruns real time, so a backlog really is
+    temporary and skipping it would drop audio that is about to be needed."""
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 60.0, source_url="http://media/track.mp3")
+    analyzer._pending.append((1.0, [0.0]))
+    analyzer._pcm_position = 5.0
+
+    analyzer._resync_if_behind()
+
+    assert analyzer._pcm_position == 5.0
+    assert len(analyzer._pending) == 1
+
+
+async def test_a_live_hold_off_is_capped_so_a_stopped_clock_cannot_wedge_the_run():
+    """The excess is measured against a clock this analyzer doesn't own. If
+    that clock stops, the excess is arbitrarily large — and sleeping it out
+    in one go means not reading stdout for that long either, so ffmpeg
+    blocks on its write and _write_input() blocks behind it. The run stays
+    wedged well past the moment the clock recovers."""
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_queue=queue)
+    analyzer._pcm_position = 600.0  # clock stopped ten minutes ago
+
+    slept: list[float] = []
+
+    async def _record(delay: float) -> None:
+        slept.append(delay)
+
+    with patch("core.audio_analysis.asyncio.sleep", _record):
+        await analyzer._wait_out_lookahead(600.0 - 0.0)
+
+    assert slept == [audio_analysis_mod._STALL_RECHECK_SECONDS]
+
+
+async def test_a_file_hold_off_still_sleeps_off_the_whole_lead():
+    """A track's clock is the session's own calibrated one and its decode
+    really does run far ahead — one long sleep is right there."""
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 10.0, source_url="http://media/track.mp3")
+    slept: list[float] = []
+
+    async def _record(delay: float) -> None:
+        slept.append(delay)
+
+    with patch("core.audio_analysis.asyncio.sleep", _record):
+        await analyzer._wait_out_lookahead(30.0)
+
+    assert slept == [30.0 - audio_analysis_mod._MAX_LOOKAHEAD_SECONDS]
+
+
+async def test_a_stalled_clock_is_reported_once_not_every_check(caplog):
+    """The point is diagnosing a clock that isn't advancing; repeating it
+    every second would bury the rest of the log for as long as it lasts."""
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_queue=queue)
+    analyzer._pcm_position = 60.0
+    clock = iter([100.0, 100.0 + 9, 100.0 + 18, 100.0 + 27])
+
+    async def _noop(_delay: float) -> None:
+        pass
+
+    with (
+        caplog.at_level(logging.WARNING, logger="connect.audio"),
+        patch("core.audio_analysis.time.monotonic", side_effect=lambda: next(clock)),
+        patch("core.audio_analysis.asyncio.sleep", _noop),
+    ):
+        for _ in range(4):
+            await analyzer._wait_out_lookahead(60.0)
+
+    stalls = [r for r in caplog.records if "decode held for" in r.message]
+    assert len(stalls) == 1

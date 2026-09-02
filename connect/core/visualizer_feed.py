@@ -29,10 +29,11 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from .audio_analysis import AudioAnalyzer, PcmSource, should_analyze
+from .audio_analysis import AudioAnalyzer, should_analyze
 from .state import TEST_TONE_TRACK_ID, list_target_pairs, test_tone_url
 
 if TYPE_CHECKING:  # avoids a session <-> visualizer_feed import cycle at runtime
+    from .radio_position import RadioPositionTracker
     from .session import SessionState
 
 logger = logging.getLogger("connect.visualizer")
@@ -66,15 +67,18 @@ _ASSUMED_DEVICE_LEAD_SECONDS = 3.0
 
 
 class _FirstByteClock:
-    """elapsed_fn for a radio AudioAnalyzer. Zero until wrap()'s returned
-    source's first non-empty read, not from construction — attaching a PCM
-    subscription and the relay actually having produced a byte for it are
-    not the same moment (the relay's own fetch/demux/ffmpeg/queue pipeline
-    still has to run first, a gap that varies by station). Zeroing at
-    construction counted that gap as already-elapsed content time, so
-    every frame this analyzer ever produced started life "late" by exactly
-    that amount — past _MAX_LATENESS_SECONDS (0.15s) for good, since the
-    gap doesn't shrink over time. core/audio_analysis.py's
+    """elapsed_fn for a radio AudioAnalyzer with no RadioPositionTracker to
+    drive it (a target type radio_position.py doesn't cover — see
+    _start_radio_analyzer()'s own comment on when this fallback is actually
+    reached today). Zero until mark() (passed to AudioAnalyzer as
+    `on_first_byte`) fires on this run's first decoded PCM, not from
+    construction — spawning this analyzer's own ffmpeg and it actually
+    having produced a byte are not the same moment (its own connect/first-
+    response latency still has to elapse, a gap that varies by station).
+    Zeroing at construction counted that gap as already-elapsed content
+    time, so every frame this analyzer ever produced started life "late" by
+    exactly that amount — past _MAX_LATENESS_SECONDS (0.15s) for good,
+    since the gap doesn't shrink over time. core/audio_analysis.py's
     _release_frames() drops a frame that late rather than releasing it
     stale, so the practical effect was a visualizer stuck at whatever rare
     frame happened to land inside that 150ms window by chance — reported
@@ -86,9 +90,6 @@ class _FirstByteClock:
     def __init__(self) -> None:
         self._first_byte_at: float | None = None
 
-    def wrap(self, source: PcmSource) -> PcmSource:
-        return _ClockedPcmSource(source, self)
-
     def mark(self) -> None:
         if self._first_byte_at is None:
             self._first_byte_at = time.monotonic()
@@ -99,16 +100,88 @@ class _FirstByteClock:
         return max(0.0, time.monotonic() - self._first_byte_at - _ASSUMED_DEVICE_LEAD_SECONDS)
 
 
-class _ClockedPcmSource:
-    def __init__(self, source: PcmSource, clock: _FirstByteClock) -> None:
-        self._source = source
-        self._clock = clock
+class _OffsetTrackerClock:
+    """elapsed_fn for a radio AudioAnalyzer backed by a
+    core/radio_position.py RadioPositionTracker — see
+    VisualizerFeed._start_radio_analyzer()'s own comment for why the raw
+    tracker value needs an offset at all (it's the device's *absolute*
+    position, content_position is relative to this one subscription's own
+    start).
 
-    async def read(self, n: int) -> bytes:
-        data = await self._source.read(n)
-        if data:
-            self._clock.mark()
-        return data
+    Also smooths the tracker's own ~0.5s poll cadence into something
+    continuous, the same reason stores/playback/positionTracker.ts exists
+    on the frontend side for the exact same kind of stepped value: without
+    it, elapsed_fn only actually changes once per poll, so
+    _release_frames() only ever finds a frame due right at that instant —
+    everything else sits waiting for the next poll to unblock it, capping
+    the effective frame rate at roughly the poll rate (~2fps) instead of
+    the ~43fps this is sized for. Reported live 2026-09-02, right after
+    the offset fix above finally got real frames releasing at all.
+
+    Only extrapolates once `tracker.ready` — before that, the device may
+    still be sitting in its own startup stall (raw value not really
+    moving), and extrapolating forward through that would grow a number
+    with nothing real behind it, exactly the failure mode
+    core/radio_position.py's own RadioPositionTracker.elapsed_fn() was
+    built to avoid at the source. A raw (unsmoothed, but still
+    offset-corrected) step is what this returns until then — no worse
+    than before this class existed, since nothing is really happening yet
+    either way.
+
+    Monotonic once extrapolating: a fresh poll only ever moves the anchor
+    *forward*, never back, even if the newly-polled raw value reads below
+    what was already being extrapolated (that itself running a hair ahead
+    of the device's real rate is expected jitter, not a rewind — radio
+    never plays backward). Snapping down to a lower raw value would freeze
+    _release_frames() until content_position caught back down to match,
+    on top of whatever real gap already existed — reported live
+    2026-09-02 as the visualizer visibly running fast for a stretch and
+    then freezing for 0.5-1s, repeating roughly every poll: exactly this
+    round-trip of over-extrapolating and then snapping back."""
+
+    def __init__(self, tracker: RadioPositionTracker) -> None:
+        self._tracker = tracker
+        self._baseline: float | None = None
+        self._last_value: float | None = None
+        self._last_seen_at: float = 0.0
+
+    def mark(self) -> None:
+        """Passed to AudioAnalyzer as `on_first_byte`. The baseline has to
+        be the device's position at the moment this analyzer's *first
+        decoded byte* exists, not at the moment it was constructed:
+        content_position counts from that first byte, while the tracker
+        keeps climbing through ffmpeg's spawn and the relay's first
+        hand-off in between. Taking it at construction charged that gap to
+        content time, leaving every frame of the run that much ahead of
+        the device — the same mistake _FirstByteClock exists to avoid, and
+        the reason that class's own comment about the tracker "having
+        nothing to zero" was wrong: the tracker needs no zeroing, but the
+        baseline drawn from it still has to be taken at the right
+        moment."""
+        if self._baseline is None:
+            self._baseline = self._tracker.elapsed_fn()
+
+    def elapsed(self) -> float:
+        if self._baseline is None:
+            # Nothing decoded yet, so no frame can be due: content_position
+            # starts at 0 and _release_frames() holds back anything above
+            # elapsed. Judging that first frame against a baseline that
+            # doesn't exist yet is exactly what mark() prevents.
+            return 0.0
+        raw = max(0.0, self._tracker.elapsed_fn() - self._baseline)
+        if not self._tracker.ready:
+            return raw
+        now = time.monotonic()
+        if self._last_value is None:
+            self._last_value = raw
+            self._last_seen_at = now
+            return raw
+        extrapolated = self._last_value + (now - self._last_seen_at)
+        if raw >= extrapolated:
+            self._last_value = raw
+            self._last_seen_at = now
+            return raw
+        return extrapolated
 
 
 class VisualizerFeed:
@@ -133,6 +206,10 @@ class VisualizerFeed:
         # supervisor restarts analysis whenever this no longer matches what's
         # actually playing — see _target_key().
         self._key: tuple[int, str] | None = None
+        # The relay fan-out subscription a radio run holds, so _stop_analyzer()
+        # can hand it back — a queue left subscribed keeps being filled with
+        # audio nobody decodes any more, for as long as the station plays.
+        self._audio_queue: asyncio.Queue[bytes | None] | None = None
         self.analyzer: AudioAnalyzer | None = None
 
     def subscribe(self) -> None:
@@ -206,7 +283,28 @@ class VisualizerFeed:
             return (st.clock.play_generation, st.current_track.id)
         relay = self._session.radio_relay
         if st.radio_info and relay is not None:
-            return (st.clock.play_generation, f"radio:{relay.url}")
+            # The tracker's identity is part of what is being analyzed, not
+            # an implementation detail: _start_radio_analyzer() takes its
+            # clock's baseline from whichever RadioPositionTracker is
+            # current at that moment, and routes/playback.py's /play-url
+            # replaces that tracker on every dispatch. A re-dispatch of the
+            # *same* station at the *same* play_generation therefore leaves
+            # a running analyzer holding the previous tracker — which stops
+            # itself on the generation check it no longer matches and
+            # freezes at its last reading, so the clock reads a flat 0.00s
+            # (max(0, frozen - baseline)) and no frame is ever released
+            # again. Including it here restarts analysis against the new
+            # tracker instead, with a fresh baseline.
+            #
+            # Not hypothetical, and not rare: a Sonos auto-pauses and
+            # resumes seconds into its own radio dispatch as a routine part
+            # of that flow (see core/radio_position.py), so this happened
+            # on essentially every station start. Reported live 2026-09-03
+            # as a visualizer that froze and never recovered, with
+            # "[audio-analysis] decode held ... the playback clock reads
+            # 0.00s and is not advancing" naming it exactly.
+            tracker = self._session.radio_position_tracker
+            return (st.clock.play_generation, f"radio:{relay.url}:{id(tracker)}")
         return None
 
     async def _supervise(self) -> None:
@@ -291,68 +389,129 @@ class VisualizerFeed:
         )
 
     async def _start_radio_analyzer(self, key: tuple[int, str]) -> None:
-        """Currently unreachable from the shipped frontend, deliberately —
-        NowPlayingView.vue's visualizerAvailable never lets the visualizer
-        mount for radio while casting, so GET /visualizer is never
-        subscribed for it and _target_key()'s radio branch never returns
-        non-None in practice. Not dead code to delete, though: this class
-        and everything below it works, is unit-tested, and stays as the
-        real implementation for whenever there's a trustworthy clock to
-        drive it with — see _FirstByteClock's own docstring for why there
-        currently isn't one. Decided live 2026-09-01, after actually
-        shipping this once and measuring it: a Sonos gives no real
+        """Reachable for Chromecast/DLNA/Sonos since 2026-09-02 — see
+        core/radio_position.py's module docstring. _FirstByteClock below
+        now only runs as a defensive fallback (kept, not deleted, in case
+        a target with no RadioPositionTracker ever reaches here — AirPlay,
+        or a future protocol not yet added to
+        core/state.py's first_radio_position_delivery()). Original
+        decision, live 2026-09-01 after actually shipping the
+        _FirstByteClock-only version and measuring it: a Sonos cast over
+        the "real" radio URI scheme (x-rincon-mp3radio://) gives no real
         position feedback for a continuous stream, only a guessed constant
         lead was available to compensate for the device's own buffering,
         and that measured roughly a second off and station-dependent — a
         visualizer that's confidently wrong lost out to one that's
-        honestly absent.
+        honestly absent. Chromecast/DLNA/Sonos (over the http:// dispatch
+        Beacon actually uses, see delivery/sonos.py's own comment) don't
+        have that problem: all three report a real, stable position once
+        past their own startup buffer (measured live 2026-09-02, see
+        core/radio_position.py), so they get a real clock instead of a
+        guess.
 
-        Taps core/radio_relay.py's shared PCM stream instead of
-        decoding anything itself — see AudioAnalyzer's own docstring on
-        its pcm_source parameter for why, and why elapsed_fn here is a
-        wall clock rather than the session's PlaybackClock.
+        Decodes the station a second time with its own, independent ffmpeg
+        (AudioAnalyzer's `source_url` path — the same one track analysis
+        already uses) rather than tapping core/radio_relay.py's device-audio
+        fan-out — see that module's own docstring for why: a bug in this
+        analyzer's own decode/pacing used to be one step away from stalling
+        the *device's* audio too, since both shared one ffmpeg process.
+        Removed 2026-09-03 after that happened repeatedly (see this
+        function's own change history below); this analyzer now has no
+        pipe in common with device audio to ever stall again.
 
         `start_offset` is always 0: a station has no track position to
         seek to, so every attach — including one that joins minutes into
-        an already-playing station — starts from whatever byte the relay
-        hands over next, tagged as "now" rather than "however far into the
-        station this technically is".
+        an already-playing station — starts decoding from whatever this
+        analyzer's own fresh connection to the station happens to be at,
+        tagged as "now" rather than "however far into the station this
+        technically is".
 
-        That clock is zeroed on the *first byte this subscription actually
-        receives* (see _FirstByteClock below), not on attach — attaching
-        and the first byte arriving are not the same moment: subscribe_pcm()
-        returns immediately, but the relay's own fetch/demux/ffmpeg/queue
-        pipeline still has to produce something before this analyzer sees
-        a single sample. Zeroing at attach counted that (variable, station-
-        dependent) gap as already-elapsed content time — every frame this
-        analyzer ever produced then started life "late" by exactly that
-        gap, past _MAX_LATENESS_SECONDS (0.15s) for good, and
-        _release_frames() drops a frame that late rather than releasing it
-        stale. Reported live 2026-09-01 as a visualizer stuck around
-        "0.5fps" (only the rare frame landing within 150ms of real time by
-        chance survived) — worse on some stations than others, exactly
-        matching a fetch-latency-dependent bug rather than a pacing one."""
+        _FirstByteClock's own clock is zeroed on the *first PCM byte this
+        analyzer's own ffmpeg actually decodes*, not on construction —
+        spawning that ffmpeg and it actually producing a byte are not the
+        same moment: its own connect/first-response latency still has to
+        elapse, a gap that varies by station. Zeroing at construction
+        counted that (variable, station-dependent) gap as already-elapsed
+        content time — every frame this analyzer ever produced then started
+        life "late" by exactly that gap, past _MAX_LATENESS_SECONDS (0.15s)
+        for good, and _release_frames() drops a frame that late rather than
+        releasing it stale. Reported live 2026-09-01 as a visualizer stuck
+        around "0.5fps" (only the rare frame landing within 150ms of real
+        time by chance survived) — worse on some stations than others,
+        exactly matching a fetch-latency-dependent bug rather than a pacing
+        one. RadioPositionTracker.elapsed_fn() doesn't need that fix at
+        all — it reports the device's own real position directly, nothing
+        to zero."""
         relay = self._session.radio_relay
         if relay is None:
             return
         if self._target_key() != key:
             return
-        # Subscribes to the relay's always-drained PCM fan-out (see
-        # RadioRelay._drain_pcm()'s own docstring for why "always" matters
-        # here) rather than a raw pipe reader — unsubscribe_pcm() below is
-        # this analyzer's own cleanup, wired through AudioAnalyzer's
-        # cleanup callback so it fires exactly once, whenever this run ends
-        # for any reason (track/station change, last subscriber leaving,
-        # shutdown).
-        subscription = relay.subscribe_pcm()
-        clock = _FirstByteClock()
+        tracker = self._session.radio_position_tracker
+        if tracker is not None:
+            # tracker.elapsed_fn() is the device's *absolute* position
+            # (since its own dispatch) — content_position below is relative
+            # to *this analyzer's own fresh decode* instead (always starts
+            # at "now", position 0, even one joining minutes into an
+            # already-playing station). Without this baseline, opening the
+            # visualizer any time after the device already had a real
+            # position (which includes every reconnect/reload of an
+            # already-playing radio session, not just "joined late" in the
+            # everyday sense) permanently offset elapsed_fn ahead of
+            # content_position by exactly that amount — every frame
+            # computed forever after read as impossibly late, so
+            # _release_frames() never released a single one, only dropped,
+            # in a tight loop with no yield between drops (see that
+            # function's own comment) once _read_pcm() had anything queued
+            # to drop. Reported live 2026-09-02 as stuttering *device*
+            # audio (this loop starving the whole event loop, not just the
+            # visualizer, back when this analyzer's decode still shared a
+            # pipe with device audio at all), a permanently blank/0.5fps
+            # visualizer, and the visualizer only ever working when opened
+            # before casting started (the one case this offset happens to
+            # already be ~0 by coincidence).
+            # Smoothed by _OffsetTrackerClock, not read straight through —
+            # see that class's own docstring for why a raw, offset-corrected
+            # step (only actually changing once per RadioPositionTracker
+            # poll, ~every 0.5s) caps the effective frame rate at roughly
+            # the poll rate instead of the ~43fps this is sized for.
+            clock = _OffsetTrackerClock(tracker)
+            elapsed_fn = clock.elapsed
+            on_first_byte = clock.mark
+        else:
+            fallback = _FirstByteClock()
+            elapsed_fn = fallback.elapsed
+            on_first_byte = fallback.mark
+        # The relay's own device-audio fan-out, not a second fetch of the
+        # station: these are the very bytes the device is being sent, so a
+        # given moment of audio means the same thing on both sides. A
+        # second fetch (what this did until now) cannot be lined up at all
+        # — a station greets every new client with a burst of
+        # already-elapsed audio to prime its buffer with, seconds' worth
+        # and station-dependent, so this analyzer's "first byte" was
+        # simply an unknown distance behind what the device was playing.
+        # Reported live 2026-09-03 as the visualizer running 5-10s behind
+        # the speaker, varying by station.
+        #
+        # Bounded queue, and _fan_out() drops into a full one rather than
+        # blocking (see core/radio_relay.py) — so this cannot stall device
+        # audio the way sharing the relay's *ffmpeg* once did, which is the
+        # whole reason that sharing was removed. Decoding stays in this
+        # analyzer's own separate process.
+        # lossy=True: analysis wants the live edge, never a backlog. See
+        # core/radio_relay.py's _ANALYSIS_QUEUE_MAXSIZE for what working
+        # through one costs — full-speed decode+FFT starving the event loop
+        # device audio is paced on, and every frame it produces too late to
+        # release anyway.
+        queue = relay.subscribe_audio(lossy=True)
         analyzer = AudioAnalyzer(
-            elapsed_fn=clock.elapsed,
-            pcm_source=clock.wrap(subscription),
-            cleanup=lambda: relay.unsubscribe_pcm(subscription),
+            elapsed_fn=elapsed_fn,
+            source_queue=queue,
+            on_first_byte=on_first_byte,
         )
         await analyzer.start()
         self.analyzer = analyzer
+        self._audio_queue = queue
         logger.debug(f"[visualizer] Radio analysis started (generation={key[0]})")
 
     async def _stop_analyzer(self) -> None:
@@ -360,4 +519,21 @@ class VisualizerFeed:
             return
         analyzer, self.analyzer = self.analyzer, None
         await analyzer.stop()
+        queue, self._audio_queue = self._audio_queue, None
+        if queue is not None:
+            relay = self._session.radio_relay
+            if relay is not None:
+                relay.unsubscribe_audio(queue)
+
+    def is_watching_radio(self) -> bool:
+        """Whether an AudioAnalyzer is actually running for radio right
+        now — i.e. GET /visualizer has a subscriber and playback is radio,
+        not just "radio is casting to a capable target". Read by
+        core/radio_position.py's RadioPositionTracker to decide its own
+        poll cadence: sub-second updates only matter while something is
+        actually consuming elapsed_fn() at visualizer frame rate. Nobody
+        watching leaves only the (one-shot, latching) radio_buffering flag
+        needing this tracker at all, which tolerates a far slower cadence
+        — see that module's own comment on why this exists."""
+        return self.analyzer is not None and self._session.state.current_track is None
         logger.debug("[visualizer] Analysis stopped")
