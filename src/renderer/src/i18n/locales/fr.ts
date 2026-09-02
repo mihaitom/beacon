@@ -135,6 +135,7 @@ export default {
     volume: 'Volume',
     autoplay: 'Lecture automatique',
     liveRadio: 'En direct · {time}',
+    radioBuffering: 'Mise en mémoire tampon…',
   },
   shortcuts: {
     title: 'Raccourcis clavier',

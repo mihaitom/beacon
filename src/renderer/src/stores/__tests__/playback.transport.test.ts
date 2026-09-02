@@ -178,6 +178,29 @@ describe('playback transport', () => {
       expect(playback.isPlaying).toBe(true)
     })
 
+    it('starts radio via play(), not resume(), when nothing was loaded yet', async () => {
+      // Regression: resumeLocalPlayback() deliberately never loads radio
+      // into the engine after a plain app restart (not a reload of an
+      // already-playing session) — there's no position to preload a live
+      // stream to. A bare engine.resume() then had no src to resume at
+      // all and silently did nothing, reported live 2026-09-02 as "could
+      // not start local playback" after a reload.
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      playback.isPlaying = false
+
+      await playback.togglePlay()
+
+      expect(engine.resume).not.toHaveBeenCalled()
+      expect(engine.play).toHaveBeenCalledWith('https://stream.example/chill')
+      expect(playback.isPlaying).toBe(true)
+    })
+
     it('restarts a track that already played to the end, which resume() cannot', async () => {
       const playback = usePlaybackStore()
       stubLibraryClient()

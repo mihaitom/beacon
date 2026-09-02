@@ -3,12 +3,24 @@
     <!-- Radio has no position or length a bar could honestly represent
      - (see SongWaveform.vue's own comment on why it stopped trying) — an
      - elapsed-time readout replaces the whole label/bar/label row instead
-     - of leaving a dead, maxed-out bar sitting there. -->
-    <span
-      v-if="playbackStore.radioStation"
-      class="text-body-small text-medium-emphasis seek-bar__live"
-      >{{ $t('player.liveRadio', { time: formatTime(playbackStore.localPosition) }) }}</span
-    >
+     - of leaving a dead, maxed-out bar sitting there. While
+     - playbackStore.radioBuffering (Chromecast/DLNA target still filling
+     - its own startup buffer, see connect/core/radio_position.py), that
+     - readout would just be a frozen or misleading time, so a buffering
+     - state replaces it instead — same v-progress-linear idiom
+     - ConnectDevicePicker.vue uses for its own device scan. -->
+    <div v-if="playbackStore.radioStation" class="seek-bar__live-wrap">
+      <v-progress-linear v-if="playbackStore.radioBuffering" indeterminate height="2" rounded />
+      <span class="text-body-small text-medium-emphasis seek-bar__live">
+        <template v-if="playbackStore.radioBuffering">
+          <v-icon size="14">mdi-timer-sand</v-icon>
+          {{ $t('player.radioBuffering') }}
+        </template>
+        <template v-else>{{
+          $t('player.liveRadio', { time: formatTime(playbackStore.localPosition) })
+        }}</template>
+      </span>
+    </div>
     <template v-else>
       <span class="text-body-small text-medium-emphasis" style="width: 40px">{{
         formatTime(seekPreviewPosition ?? playbackStore.localPosition)
@@ -108,11 +120,19 @@ export default {
   width: 100%;
 }
 
+.seek-bar__live-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .seek-bar__live {
   width: 100%;
   min-height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
 }
 </style>

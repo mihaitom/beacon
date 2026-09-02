@@ -220,6 +220,7 @@
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
+import { useConnectStore } from '@/stores/connect'
 import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
 import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
@@ -366,32 +367,33 @@ export default {
         this.drawersStore.lyricsDrawerOpen = value
       },
     },
-    // Radio has no track for the backend to analyze while casting (see
-    // routes/playback.py's /play-url) and nothing honest to show but a
-    // fake animation — still true in practice even though casting a
-    // station is routed through connect's own relay by default now
-    // (core/radio_relay.py), which *does* decode a real PCM stream this
-    // could tap (core/visualizer_feed.py's own radio branch, wired up and
-    // tested — see AudioAnalyzer's pcm_source parameter). Deliberately not
-    // used here: a Sonos reports position 0.00s for a continuous stream,
-    // so there is no device feedback to calibrate the analyzer's clock
-    // against the way tracks get via PlaybackClock's own position-resync —
-    // only a guessed constant lead (core/visualizer_feed.py's
-    // _ASSUMED_DEVICE_LEAD_SECONDS), which measured live 2026-09-01 as
-    // roughly a second off and station-dependent. Decided against shipping
-    // a visualizer that's confidently wrong rather than honestly absent —
-    // revisit only with either real position feedback or an offset
-    // trustworthy enough not to need per-station guessing. AirPlay used to
-    // be excluded here too, but the backend analyzes it like any other
-    // cast target now (see that module's docstring for why) — a *track*
-    // cast to AirPlay has the same PlaybackClock calibration as any other
-    // target, so it isn't affected by any of this.
+    // Radio has no track for the backend to analyze while casting to
+    // AirPlay (see routes/playback.py's /play-url) and nothing honest to
+    // show but a fake animation, even though casting a station is routed
+    // through connect's own relay by default now (core/radio_relay.py),
+    // which *does* decode a real PCM stream this could tap
+    // (core/visualizer_feed.py's own radio branch, wired up and tested —
+    // see AudioAnalyzer's pcm_source parameter). AirPlay has no position
+    // to poll for radio at all, so it still gets the "honestly absent"
+    // treatment decided live 2026-09-01, after shipping a guessed-constant
+    // version and measuring it roughly a second off and station-dependent.
+    // Chromecast/DLNA/Sonos are different: all three were measured live
+    // 2026-09-02 to report a real, stable position for radio once past
+    // their own startup buffer — see connect/core/radio_position.py — so
+    // they get the real analyzer instead of the "absent" fallback. Sonos
+    // specifically needs its own http:// radio dispatch for this (see
+    // delivery/sonos.py's own comment) — the "real" x-rincon-mp3radio://
+    // URI scheme reports position 0.00s for a continuous stream instead.
     visualizerAvailable() {
       // Casting reads its frequency data from the backend rather than from
       // this device's own audio, so it needs no local analyser at all —
       // which is what makes it available on a phone, where there is none
       // (see webAudioAllowed() in services/audioEngine.ts).
-      if (this.playbackStore.isCasting) return !!this.currentSong
+      if (this.playbackStore.isCasting) {
+        if (this.currentSong) return true
+        const connectStore = useConnectStore()
+        return connectStore.activeTargets.some((t) => connectStore.isRadioPositionCapable(t.type))
+      }
       return getAudioEngine().hasAnalyser
     },
     visualizerActive() {

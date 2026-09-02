@@ -286,6 +286,12 @@ export interface ConnectStatus {
   ended: boolean
   paused: boolean
   radio: { title: string; url: string } | null
+  // True only while casting radio to a Chromecast/DLNA target whose own
+  // position hasn't shown real movement yet — see
+  // connect/core/radio_position.py. False for everything else (local
+  // playback, Sonos/AirPlay, a track instead of radio, or nothing
+  // playing) — same as before this field existed.
+  radio_buffering: boolean
   streaming: boolean
   targets: ConnectStatusTarget[]
   total_songs: number

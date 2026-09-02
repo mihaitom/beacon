@@ -135,6 +135,7 @@ export default {
     volume: 'Volume',
     autoplay: 'Autoplay',
     liveRadio: 'Live · {time}',
+    radioBuffering: 'Buffering…',
   },
   shortcuts: {
     title: 'Keyboard shortcuts',

@@ -133,6 +133,7 @@ export default {
     volume: 'Lautstärke',
     autoplay: 'Autoplay',
     liveRadio: 'Live · {time}',
+    radioBuffering: 'Puffert…',
   },
   shortcuts: {
     title: 'Tastenkürzel',

@@ -425,6 +425,7 @@ describe('remoteControl store', () => {
         ended: false,
         paused: false,
         radio: null,
+        radio_buffering: false,
         streaming: false,
         targets: [{ name: 'Kitchen', type: 'sonos' }],
         total_songs: 0,
@@ -498,6 +499,7 @@ describe('remoteControl store', () => {
         ended: false,
         paused: false,
         radio: null,
+        radio_buffering: false,
         streaming: false,
         targets: [{ name: 'Kitchen', type: 'sonos' }],
         total_songs: 0,
@@ -573,6 +575,7 @@ describe('remoteControl store', () => {
         ended: false,
         paused: false,
         radio: null,
+        radio_buffering: false,
         streaming: false,
         // No volume field yet — the first tick still has nothing pushed,
         // same gap DeviceListItem.vue's always-on-activation fetch covers.

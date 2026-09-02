@@ -250,18 +250,14 @@ describe('NowPlayingView', () => {
       )
     })
 
-    it('is unavailable casting radio (no current song, and no reliable way to sync it)', async () => {
-      // The backend *can* decode a real PCM stream for relayed radio now
-      // (core/radio_relay.py, core/visualizer_feed.py's radio branch) —
-      // briefly wired up here too on 2026-09-01, then deliberately backed
-      // out. A Sonos reports position 0.00s for a continuous stream, so
-      // there is no device feedback to calibrate the analyzer's clock
-      // against (unlike a track, via PlaybackClock's position-resync) —
-      // only a guessed constant lead, which measured live as roughly a
-      // second off and station-dependent. A visualizer that's confidently
-      // wrong is worse than one that's honestly absent, so this stays
-      // false until there's either real position feedback or a lead
-      // trustworthy enough not to need per-station guessing.
+    it('is available casting radio to Sonos, which reports a real position via its http:// dispatch', async () => {
+      // A Sonos cast over the "real" radio URI scheme (x-rincon-mp3radio://)
+      // reports position 0.00s for a continuous stream, no device feedback
+      // to calibrate against — but delivery/sonos.py deliberately dispatches
+      // radio over plain http:// instead (see its own comment), which makes
+      // Sonos treat it like a regular file and report a real, live position.
+      // Confirmed live 2026-09-02 (device=6.00s at wall=8.08s) — see
+      // connect/core/radio_position.py's module docstring.
       const { wrapper } = await mountView()
       const playback = usePlaybackStore()
       const connect = useConnectStore()
@@ -275,7 +271,91 @@ describe('NowPlayingView', () => {
       await wrapper.vm.$nextTick()
 
       expect((wrapper.vm as unknown as { visualizerAvailable: boolean }).visualizerAvailable).toBe(
+        true,
+      )
+    })
+
+    it('is unavailable casting radio to AirPlay (no position to poll at all)', async () => {
+      const { wrapper } = await mountView()
+      const playback = usePlaybackStore()
+      const connect = useConnectStore()
+      playback.radioStation = {
+        id: '',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      connect.status = statusWithTargets([{ name: 'Living Room', type: 'airplay' }])
+      await wrapper.vm.$nextTick()
+
+      expect((wrapper.vm as unknown as { visualizerAvailable: boolean }).visualizerAvailable).toBe(
         false,
+      )
+    })
+
+    it('is available casting radio to Chromecast, which reports a real position', async () => {
+      // Measured live 2026-09-02 (connect/scripts/icy_sync_probe.py against
+      // a real device): Chromecast's own reported position is real and
+      // stable once past its own startup buffer — see
+      // connect/core/radio_position.py.
+      const { wrapper } = await mountView()
+      const playback = usePlaybackStore()
+      const connect = useConnectStore()
+      playback.radioStation = {
+        id: '',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      connect.status = statusWithTargets([{ name: 'Living Room', type: 'chromecast' }])
+      await wrapper.vm.$nextTick()
+
+      expect((wrapper.vm as unknown as { visualizerAvailable: boolean }).visualizerAvailable).toBe(
+        true,
+      )
+    })
+
+    it('is available casting radio to DLNA, which reports a real position', async () => {
+      const { wrapper } = await mountView()
+      const playback = usePlaybackStore()
+      const connect = useConnectStore()
+      playback.radioStation = {
+        id: '',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      connect.status = statusWithTargets([{ name: 'TV', type: 'dlna' }])
+      await wrapper.vm.$nextTick()
+
+      expect((wrapper.vm as unknown as { visualizerAvailable: boolean }).visualizerAvailable).toBe(
+        true,
+      )
+    })
+
+    it('is available casting radio when only one of several targets is position-capable', async () => {
+      // Multi-target casting can mix protocols (e.g. AirPlay and a
+      // Chromecast at once) — the backend picks the first position-capable
+      // delivery as its reference (core/state.py's
+      // first_radio_position_delivery()), so the frontend should agree
+      // that's enough to make the visualizer worth showing.
+      const { wrapper } = await mountView()
+      const playback = usePlaybackStore()
+      const connect = useConnectStore()
+      playback.radioStation = {
+        id: '',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      connect.status = statusWithTargets([
+        { name: 'Living Room', type: 'airplay' },
+        { name: 'Kitchen', type: 'chromecast' },
+      ])
+      await wrapper.vm.$nextTick()
+
+      expect((wrapper.vm as unknown as { visualizerAvailable: boolean }).visualizerAvailable).toBe(
+        true,
       )
     })
 
@@ -314,6 +394,7 @@ describe('NowPlayingView', () => {
         ended: false,
         paused: false,
         radio: null,
+        radio_buffering: false,
         streaming: false,
         targets: targets as never,
         total_songs: 0,

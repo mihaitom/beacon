@@ -136,6 +136,7 @@ export default {
     volume: 'Volumen',
     autoplay: 'Reproducción automática',
     liveRadio: 'En directo · {time}',
+    radioBuffering: 'Almacenando en búfer…',
   },
   shortcuts: {
     title: 'Atajos de teclado',

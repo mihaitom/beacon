@@ -55,6 +55,7 @@ export function makeStatus(overrides: Partial<ConnectStatus> = {}): ConnectStatu
     ended: false,
     paused: false,
     radio: null,
+    radio_buffering: false,
     streaming: false,
     targets: [],
     total_songs: 0,

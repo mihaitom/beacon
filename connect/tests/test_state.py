@@ -331,6 +331,62 @@ def test_find_sonos_returns_none_from_empty():
     assert result == []
 
 
+# ── first_radio_position_delivery ───────────────────────────────────────────
+# Chromecast/DLNA/Sonos all report a real, live position for radio (see
+# core/radio_position.py's module docstring) — AirPlay does not.
+
+
+def test_first_radio_position_delivery_picks_chromecast():
+    from core.state import first_radio_position_delivery
+    from delivery import ChromecastDelivery
+
+    d = ChromecastDelivery("Wohnzimmer")
+    assert first_radio_position_delivery(d) is d
+
+
+def test_first_radio_position_delivery_picks_dlna():
+    from core.state import first_radio_position_delivery
+    from delivery import DlnaDelivery
+
+    d = DlnaDelivery("TV")
+    assert first_radio_position_delivery(d) is d
+
+
+def test_first_radio_position_delivery_picks_sonos():
+    """Confirmed live 2026-09-02: delivery/sonos.py's http:// radio
+    dispatch already gives Sonos a real position, no ICY marker injection
+    needed — see core/radio_position.py's module docstring."""
+    from core.state import first_radio_position_delivery
+    from delivery import SonosDelivery
+
+    d = SonosDelivery("Küche")
+    assert first_radio_position_delivery(d) is d
+
+
+def test_first_radio_position_delivery_returns_none_for_airplay_only():
+    from core.state import first_radio_position_delivery
+    from delivery import AirPlayDelivery
+
+    assert first_radio_position_delivery(AirPlayDelivery("HomePod")) is None
+
+
+def test_first_radio_position_delivery_returns_none_for_empty():
+    from core.state import first_radio_position_delivery
+
+    assert first_radio_position_delivery(None) is None
+
+
+def test_first_radio_position_delivery_picks_first_capable_from_mixed_manager():
+    from core.state import first_radio_position_delivery
+    from delivery import AirPlayDelivery, ChromecastDelivery, DeliveryManager, SonosDelivery
+
+    s = SonosDelivery("Küche")
+    manager = DeliveryManager.from_deliveries(
+        [AirPlayDelivery("HomePod"), s, ChromecastDelivery("TV")]
+    )
+    assert first_radio_position_delivery(manager) is s
+
+
 # ── audio_capability_limits ─────────────────────────────────────────────────
 
 

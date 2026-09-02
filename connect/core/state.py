@@ -366,6 +366,61 @@ def find_sonos(active: BaseDelivery | DeliveryManager | None) -> list[SonosDeliv
     return []
 
 
+def first_radio_position_delivery(
+    active: BaseDelivery | DeliveryManager | None,
+) -> ChromecastDelivery | DlnaDelivery | SonosDelivery | None:
+    """The first Chromecast/DLNA/Sonos delivery in `active`, if any — the
+    reference device for core/radio_position.py's RadioPositionTracker.
+    Same "pick the first SUPPORTS_POSITION delivery" pragmatism as
+    routes/playback.py's _apply_position_offset() uses for multi-target
+    casts. AirPlay is excluded even though it also sets SUPPORTS_POSITION
+    — see core/radio_position.py's own module docstring for why. Sonos
+    included since 2026-09-02: delivery/sonos.py's http:// radio dispatch
+    already gives it a real, live-polled position (confirmed live,
+    device=6.00s at wall=8.08s) — no ICY marker injection needed, the same
+    poll-and-wait-for-movement approach this module already does for
+    Chromecast/DLNA just works."""
+    deliveries = (
+        active.deliveries
+        if isinstance(active, DeliveryManager)
+        else [active]
+        if active is not None
+        else []
+    )
+    return next(
+        (d for d in deliveries if isinstance(d, (ChromecastDelivery, DlnaDelivery, SonosDelivery))),
+        None,
+    )
+
+
+def is_still_targeted(
+    active_delivery: BaseDelivery | DeliveryManager | None, candidate: BaseDelivery
+) -> bool:
+    """Whether `candidate` is still one of the devices a session plays to.
+
+    play_generation alone cannot answer this. /device-stop swaps
+    active_delivery for whatever is left without touching the clock —
+    nothing about the *stream* changed, only who receives it — so a resync
+    (or position-tracking) task started for the device that just went away
+    keeps its own generation valid and would go on polling a stopped
+    speaker for the rest of the track. A stopped Sonos answers
+    get_position() with a bare 0:00:00, which routes/playback.py's
+    _resync_position_once() cannot tell apart from a genuine rewind at the
+    value level, so every tick recalibrated position_offset by the entire
+    elapsed time: elapsed() froze at ~0, and with it the `remaining` that
+    _fire_track_end() re-measures on every poll, which is what auto-advance
+    waits on. Observed on prod 2026-08-29 13:09 after moving a cast between
+    rooms (join the new one, stop the old one): position_offset walked from
+    -0.59s to -237.02s in 8s steps, the wait went from 15s to 178.6s, and
+    the speaker sat silent for a full extra track length before the queue
+    moved on.
+    """
+    # No active_delivery answers False on its own: `candidate` is always a
+    # real delivery (the caller picks it out of a delivery list), so it can
+    # never be the None this getattr falls back to.
+    return any(d is candidate for d in getattr(active_delivery, "deliveries", [active_delivery]))
+
+
 def audio_capability_limits(
     delivery: BaseDelivery | DeliveryManager | None,
 ) -> tuple[int | None, int | None]:

@@ -111,6 +111,12 @@ interface PlaybackState {
    * title from the *previous* station never lingers even briefly on
    * screen while the poll below catches up to the new one. */
   radioNowPlaying: string | null
+  /** True only while casting radio to a Chromecast/DLNA target whose own
+   * position hasn't shown real movement yet — see connect/core/
+   * radio_position.py. Drives the "still buffering" state on the seek
+   * bar's live-time label (SeekBar.vue/MobileTransportControls.vue)
+   * instead of a frozen or misleading elapsed time. */
+  radioBuffering: boolean
   initialized: boolean
 }
 
@@ -295,6 +301,7 @@ export const usePlaybackStore = defineStore('playback', {
       activeLocalStream: null,
       radioStation: null,
       radioNowPlaying: null,
+      radioBuffering: false,
       initialized: false,
     }
   },
@@ -417,6 +424,7 @@ export const usePlaybackStore = defineStore('playback', {
         if (!status || !activeNow) return
 
         this.isPlaying = status.streaming && !status.paused
+        this.radioBuffering = status.radio_buffering
         this.localPosition = status.elapsed
         positionTracker.record(status.elapsed, performance.now())
         if (status.current_song) this.duration = status.current_song.duration
@@ -925,6 +933,12 @@ export const usePlaybackStore = defineStore('playback', {
       this.currentIndex = -1
       this.radioStation = { ...station, streamUrl }
       this.radioNowPlaying = null
+      // Cleared here rather than left to the first SSE tick — that first
+      // tick is itself delayed by however long /play-url's own dispatch
+      // takes, and a stale true/false from whatever this session was doing
+      // a moment ago (a different station, a track) would otherwise show
+      // for that whole gap.
+      this.radioBuffering = false
       this.localPosition = 0
       // Radio has no track duration — status.current_song is always null
       // for it, so nothing else ever clears whatever this held from the
@@ -1099,6 +1113,19 @@ export const usePlaybackStore = defineStore('playback', {
           // <audio> element doesn't reliably restart it, so do a proper
           // restart instead, same as switchToIndex()/startCurrent() elsewhere.
           await this.startCurrent()
+        } else if (this.radioStation) {
+          // resumeLocalPlayback() deliberately never loads radio into the
+          // engine after a plain app restart (not restoredWasPlaying) — see
+          // its own comment: there's no position to preload a live stream
+          // to. engine.resume() below assumes something was already
+          // loaded, which a track always is (resumeLocalPlayback() calls
+          // load() unconditionally for one) but radio in that case is not
+          // — resume() on an <audio> element with no src at all silently
+          // did nothing. Radio has no "resume from where it paused" to
+          // preserve either way, so restarting the live connection is the
+          // same action whether something was loaded or not.
+          getAudioEngine().play(this.radioStation.streamUrl)
+          this.isPlaying = true
         } else {
           engine.resume()
           this.isPlaying = true

@@ -14,13 +14,14 @@ from pydantic import BaseModel
 
 from core.auth import require_token
 from core.claims import claims
+from core.radio_position import RadioPositionTracker
 from core.session import (
     SessionState,
     build_status_dict,
     get_session,
     require_authenticated_session,
 )
-from core.state import radio_dispatch_url, stream_url
+from core.state import first_radio_position_delivery, radio_dispatch_url, stream_url
 from core.stream_format import FALLBACK_CONTENT_TYPE, radio_content_type
 from delivery import (
     AirPlayDelivery,
@@ -381,6 +382,31 @@ async def stop_device(
                 asyncio.create_task(
                     _resync_position_periodically(session, new_delivery, st.clock.play_generation)
                 )
+
+            # Same handover, for core/radio_position.py's tracker (radio
+            # only, and only when the removed device was the one it was
+            # actually polling — matched is the delivery instance being
+            # stopped, radio_position_tracker.delivery is what the tracker
+            # holds, and they can differ from resync_candidate above since
+            # this only ever tracks Chromecast/DLNA, not every
+            # SUPPORTS_POSITION type).
+            tracker = session.radio_position_tracker
+            if (
+                st.is_streaming
+                and st.radio_info
+                and matched is not None
+                and tracker is not None
+                and tracker.delivery is matched
+            ):
+                replacement = first_radio_position_delivery(new_delivery)
+                if replacement is not None:
+                    new_tracker = RadioPositionTracker(
+                        session, replacement, st.clock.play_generation
+                    )
+                    new_tracker.start()
+                    session.radio_position_tracker = new_tracker
+                else:
+                    session.radio_position_tracker = None
 
     await session.event_bus.broadcast(build_status_dict(session))
     return {"status": "stopped", "device": name}

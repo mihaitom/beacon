@@ -1373,6 +1373,61 @@ def test_resume_schedules_immediate_position_offset_recalibration(client, defaul
     )
 
 
+def test_resume_restarts_radio_position_tracker_at_the_new_generation(client, default_session):
+    """Regression test, reported live 2026-09-02: PlaybackClock.resume()
+    bumps play_generation, the same way seek_to() does — and
+    core/radio_position.py's RadioPositionTracker self-terminates the
+    instant it notices a generation mismatch (see its own docstring),
+    exactly like _resync_position_periodically does. Without restarting it
+    here, a pause/resume during a radio dispatch (observed live: a Sonos
+    auto-pauses/resumes seconds into its own dispatch, apparently routine)
+    leaves the tracker dead for good — radio_buffering stuck True forever
+    even though playback resumes completely normally."""
+    default_session.media = SubsonicClient("http://nav")
+    default_session.state.is_streaming = True
+    default_session.state.radio_info = {"title": "Chill FM", "url": "http://stream.example"}
+    default_session.state.active_delivery = SonosDelivery("Küche")
+    default_session.state.clock.pause(0.0)
+
+    with (
+        patch.object(SonosDelivery, "play", new=AsyncMock()),
+        patch("routes.playback._apply_position_offset", new=AsyncMock()),
+        patch("routes.playback._resync_position_periodically", new=AsyncMock()),
+        patch("routes.playback.RadioPositionTracker") as tracker_cls,
+    ):
+        r = client.post("/resume")
+
+    assert r.status_code == 200
+    tracker_cls.assert_called_once_with(
+        default_session,
+        default_session.state.active_delivery,
+        default_session.state.clock.play_generation,
+    )
+    tracker_cls.return_value.start.assert_called_once()
+    assert default_session.radio_position_tracker is tracker_cls.return_value
+
+
+def test_resume_does_not_touch_radio_position_tracker_for_a_track(client, default_session):
+    """The tracker is radio-only (st.radio_info) — a track resume must not
+    construct one at all."""
+    default_session.media = SubsonicClient("http://nav")
+    default_session.state.is_streaming = True
+    default_session.state.current_track = Track("1", "Song", "Artist", 180, "")
+    default_session.state.active_delivery = SonosDelivery("Küche")
+    default_session.state.clock.pause(30.0)
+
+    with (
+        patch.object(SonosDelivery, "play", new=AsyncMock()),
+        patch("routes.playback._apply_position_offset", new=AsyncMock()),
+        patch("routes.playback._resync_position_periodically", new=AsyncMock()),
+        patch("routes.playback.RadioPositionTracker") as tracker_cls,
+    ):
+        r = client.post("/resume")
+
+    assert r.status_code == 200
+    tracker_cls.assert_not_called()
+
+
 def test_pause_without_configured_media_returns_error(client, default_session):
     """A session that never received /config — e.g. freshly re-created after
     the backend reaped the previous one during a long idle period (see

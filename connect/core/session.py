@@ -21,6 +21,7 @@ from media import MediaClient, SubsonicClient
 from . import icy_metadata
 from .claims import claims
 from .loop_health import peak_lag
+from .radio_position import RadioPositionTracker
 from .radio_relay import RadioRelay
 from .state import AppState, EventBus, delivery_class_for, list_target_pairs, stream_url
 from .visualizer_feed import VisualizerFeed
@@ -102,6 +103,15 @@ class SessionState:
         # reports its own title changes (via the same _set_radio_title
         # callback) instead of a second, independent ICY watch.
         self.radio_relay: RadioRelay | None = None
+        # Polls a Chromecast/DLNA target's own reported position while
+        # radio is casting to it — see core/radio_position.py's module
+        # docstring for why only those two protocols, and why one tracker
+        # serves both the radio visualizer's clock and the "still
+        # buffering" status flag. None whenever radio isn't casting to a
+        # target that qualifies (including Sonos/AirPlay, and not casting
+        # at all) — routes/playback.py's /play-url is the only place this
+        # gets set to something else, replacing whatever was here before.
+        self.radio_position_tracker: RadioPositionTracker | None = None
         # time.monotonic() of the last recovery redispatch of a relayed
         # station — see routes/upnp.py's _redispatch_relayed_station(),
         # which rate-limits itself off this. Zeroed whenever the relay
@@ -162,6 +172,14 @@ class SessionState:
         return relay
 
     async def stop_radio_relay(self) -> None:
+        # radio_position_tracker (core/radio_position.py) shares this exact
+        # lifetime boundary — both represent "radio is currently casting"
+        # and tear down together, at every call site this already has.
+        # Unconditional, not nested in the guard below: the tracker doesn't
+        # need a relay to exist (it polls the device directly), so it can
+        # be set even in cast_directly mode, where radio_relay itself never
+        # is.
+        self.radio_position_tracker = None
         if self.radio_relay is not None:
             relay, self.radio_relay = self.radio_relay, None
             self.last_radio_redispatch = 0.0
@@ -355,6 +373,14 @@ def build_status_dict(
         "ended": st.track_ended,
         "paused": st.clock.is_paused,
         "radio": st.radio_info,
+        # True only while a Chromecast/DLNA radio target's own position
+        # hasn't shown real movement yet — see core/radio_position.py.
+        # False whenever there's no tracker at all (local playback, Sonos/
+        # AirPlay, a track instead of radio, or nothing playing), same as
+        # before this field existed.
+        "radio_buffering": bool(
+            session.radio_position_tracker and not session.radio_position_tracker.ready
+        ),
         "streaming": st.is_streaming,
         "targets": targets,
         "total_songs": len(st.queue),
