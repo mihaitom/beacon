@@ -139,11 +139,42 @@ class _OffsetTrackerClock:
     then freezing for 0.5-1s, repeating roughly every poll: exactly this
     round-trip of over-extrapolating and then snapping back."""
 
-    def __init__(self, tracker: RadioPositionTracker) -> None:
-        self._tracker = tracker
+    def __init__(self, session: SessionState) -> None:
+        self._session = session
+        self._tracker: RadioPositionTracker | None = None
         self._baseline: float | None = None
         self._last_value: float | None = None
         self._last_seen_at: float = 0.0
+        # The last value handed out, so a tracker swap can carry on from it
+        # rather than restarting the count — see _rebase_if_tracker_changed().
+        self._last_elapsed: float = 0.0
+
+    def _rebase_if_tracker_changed(self, tracker: RadioPositionTracker) -> None:
+        """Follow whichever RadioPositionTracker the session currently
+        holds, rather than the one that existed when this run started.
+
+        routes/playback.py's /play-url replaces that tracker on every
+        dispatch, and a Sonos re-dispatches seconds into its own flow as a
+        matter of routine. A clock pinned to the previous one reads its
+        frozen last value forever — a flat 0.00s once the baseline is
+        subtracted — and no frame is ever released again.
+
+        Rebasing keeps the value continuous across the swap: content
+        position keeps counting through it, so resetting to zero here would
+        leave every already-decoded frame stranded in the future. The new
+        tracker starting from 0 simply holds this clock still until the
+        device is playing again, which is exactly right."""
+        if tracker is self._tracker:
+            return
+        self._tracker = tracker
+        if self._baseline is None:
+            # Nothing decoded yet — mark() still owns the first baseline,
+            # and taking one here would put it back at construction time,
+            # which is the very thing mark() exists to avoid.
+            return
+        self._baseline = tracker.elapsed_fn() - self._last_elapsed
+        self._last_value = None
+        self._last_seen_at = 0.0
 
     def mark(self) -> None:
         """Passed to AudioAnalyzer as `on_first_byte`. The baseline has to
@@ -158,29 +189,43 @@ class _OffsetTrackerClock:
         nothing to zero" was wrong: the tracker needs no zeroing, but the
         baseline drawn from it still has to be taken at the right
         moment."""
-        if self._baseline is None:
-            self._baseline = self._tracker.elapsed_fn()
+        tracker = self._session.radio_position_tracker
+        if self._baseline is None and tracker is not None:
+            self._tracker = tracker
+            self._baseline = tracker.elapsed_fn()
+            self._last_elapsed = 0.0
 
     def elapsed(self) -> float:
+        tracker = self._session.radio_position_tracker
+        if tracker is None:
+            # Radio stopped casting to a tracked target — hold the last
+            # value rather than snapping to zero, which would strand every
+            # decoded frame in the future.
+            return self._last_elapsed
+        self._rebase_if_tracker_changed(tracker)
         if self._baseline is None:
             # Nothing decoded yet, so no frame can be due: content_position
             # starts at 0 and _release_frames() holds back anything above
             # elapsed. Judging that first frame against a baseline that
             # doesn't exist yet is exactly what mark() prevents.
             return 0.0
-        raw = max(0.0, self._tracker.elapsed_fn() - self._baseline)
-        if not self._tracker.ready:
+        raw = max(0.0, tracker.elapsed_fn() - self._baseline)
+        if not tracker.ready:
+            self._last_elapsed = raw
             return raw
         now = time.monotonic()
         if self._last_value is None:
             self._last_value = raw
             self._last_seen_at = now
+            self._last_elapsed = raw
             return raw
         extrapolated = self._last_value + (now - self._last_seen_at)
         if raw >= extrapolated:
             self._last_value = raw
             self._last_seen_at = now
+            self._last_elapsed = raw
             return raw
+        self._last_elapsed = extrapolated
         return extrapolated
 
 
@@ -283,28 +328,7 @@ class VisualizerFeed:
             return (st.clock.play_generation, st.current_track.id)
         relay = self._session.radio_relay
         if st.radio_info and relay is not None:
-            # The tracker's identity is part of what is being analyzed, not
-            # an implementation detail: _start_radio_analyzer() takes its
-            # clock's baseline from whichever RadioPositionTracker is
-            # current at that moment, and routes/playback.py's /play-url
-            # replaces that tracker on every dispatch. A re-dispatch of the
-            # *same* station at the *same* play_generation therefore leaves
-            # a running analyzer holding the previous tracker — which stops
-            # itself on the generation check it no longer matches and
-            # freezes at its last reading, so the clock reads a flat 0.00s
-            # (max(0, frozen - baseline)) and no frame is ever released
-            # again. Including it here restarts analysis against the new
-            # tracker instead, with a fresh baseline.
-            #
-            # Not hypothetical, and not rare: a Sonos auto-pauses and
-            # resumes seconds into its own radio dispatch as a routine part
-            # of that flow (see core/radio_position.py), so this happened
-            # on essentially every station start. Reported live 2026-09-03
-            # as a visualizer that froze and never recovered, with
-            # "[audio-analysis] decode held ... the playback clock reads
-            # 0.00s and is not advancing" naming it exactly.
-            tracker = self._session.radio_position_tracker
-            return (st.clock.play_generation, f"radio:{relay.url}:{id(tracker)}")
+            return (st.clock.play_generation, f"radio:{relay.url}")
         return None
 
     async def _supervise(self) -> None:
@@ -475,7 +499,7 @@ class VisualizerFeed:
             # step (only actually changing once per RadioPositionTracker
             # poll, ~every 0.5s) caps the effective frame rate at roughly
             # the poll rate instead of the ~43fps this is sized for.
-            clock = _OffsetTrackerClock(tracker)
+            clock = _OffsetTrackerClock(self._session)
             elapsed_fn = clock.elapsed
             on_first_byte = clock.mark
         else:

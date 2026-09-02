@@ -351,10 +351,19 @@ class _FakeTracker:
         return self.position
 
 
+class _TrackerHolder:
+    """Stands in for the session, whose radio_position_tracker the clock
+    follows rather than pinning one at construction — /play-url replaces it
+    on every dispatch."""
+
+    def __init__(self, tracker: _FakeTracker | None) -> None:
+        self.radio_position_tracker = tracker
+
+
 class TestOffsetTrackerClock:
     def test_subtracts_the_baseline_captured_on_the_first_decoded_byte(self):
         tracker = _FakeTracker(position=60.0)
-        clock = _OffsetTrackerClock(tracker)
+        clock = _OffsetTrackerClock(_TrackerHolder(tracker))
         clock.mark()
 
         assert clock.elapsed() == 0.0
@@ -367,7 +376,7 @@ class TestOffsetTrackerClock:
         of the device — reported live 2026-09-03 alongside the second-fetch
         problem, and the half of it that no change of source can fix."""
         tracker = _FakeTracker(position=60.0)
-        clock = _OffsetTrackerClock(tracker)
+        clock = _OffsetTrackerClock(_TrackerHolder(tracker))
 
         assert clock.elapsed() == 0.0
         tracker.position = 62.0  # 2s of ffmpeg startup, still nothing decoded
@@ -385,7 +394,7 @@ class TestOffsetTrackerClock:
         real behind it. A raw, unsmoothed step is what this returns
         instead, until `ready` says the device is genuinely moving."""
         tracker = _FakeTracker(position=0.0, ready=False)
-        clock = _OffsetTrackerClock(tracker)
+        clock = _OffsetTrackerClock(_TrackerHolder(tracker))
         clock.mark()
         times = iter([100.0, 105.0, 110.0])
         with patch("core.visualizer_feed.time.monotonic", side_effect=lambda: next(times)):
@@ -399,7 +408,7 @@ class TestOffsetTrackerClock:
 
     def test_extrapolates_forward_between_polls_once_ready(self):
         tracker = _FakeTracker(position=10.0, ready=True)
-        clock = _OffsetTrackerClock(tracker)
+        clock = _OffsetTrackerClock(_TrackerHolder(tracker))
         clock.mark()
         times = iter([100.0, 100.2, 100.4])
         with patch("core.visualizer_feed.time.monotonic", side_effect=lambda: next(times)):
@@ -414,7 +423,7 @@ class TestOffsetTrackerClock:
         RadioPositionTracker.elapsed_fn() one layer down, this class's own
         raw input."""
         tracker = _FakeTracker(position=10.0, ready=True)
-        clock = _OffsetTrackerClock(tracker)
+        clock = _OffsetTrackerClock(_TrackerHolder(tracker))
         clock.mark()
         times = iter([100.0, 100.3, 100.3, 100.35])
         with patch("core.visualizer_feed.time.monotonic", side_effect=lambda: next(times)):
@@ -438,7 +447,7 @@ class TestOffsetTrackerClock:
         the visualizer running fast for a stretch and then freezing for
         0.5-1s, repeating roughly every poll."""
         tracker = _FakeTracker(position=10.0, ready=True)
-        clock = _OffsetTrackerClock(tracker)
+        clock = _OffsetTrackerClock(_TrackerHolder(tracker))
         clock.mark()
         tracker.position = 10.5
         times = iter([100.0, 100.4])
@@ -759,40 +768,48 @@ async def test_unsubscribing_below_zero_cannot_strand_a_running_analyzer(
         await feed.shutdown()
 
 
-async def test_a_replaced_position_tracker_restarts_analysis(casting_session, fake_analyzer):
+async def test_a_replaced_position_tracker_is_followed_without_a_restart(
+    casting_session, fake_analyzer
+):
     """/play-url puts a fresh RadioPositionTracker on the session for every
     dispatch, and a Sonos re-dispatches the same station at the same
-    play_generation as a routine part of its own flow. An analyzer left
-    running then holds the previous tracker, which stops itself on the
-    generation check and freezes at its last reading — the clock reads a
-    flat 0.00s from then on and no frame is ever released again. Reported
-    live 2026-09-03, named exactly by the stalled-clock warning in
-    core/audio_analysis.py."""
+    play_generation as a routine part of its own flow. A clock pinned to
+    the tracker it started with reads that one's frozen last value forever
+    — a flat 0.00s after the baseline — and no frame is ever released
+    again. Reported live 2026-09-03, named exactly by the stalled-clock
+    warning in core/audio_analysis.py.
+
+    Followed rather than restarted: tearing the analyzer down would respawn
+    ffmpeg and drop everything decoded so far, on an event that happens
+    every station start. Identity is not usable as a restart key either —
+    CPython reuses id() of a freed object, so the replacement can land on
+    the address the previous one just vacated."""
     casting_session.state.current_track = None
     casting_session.state.radio_info = {"title": "FIP", "url": "http://radio/stream"}
     casting_session.radio_relay = _FakeRelay("http://radio/stream")
-    first = MagicMock()
-    first.elapsed_fn.return_value = 30.0
+    first = _FakeTracker(position=30.0, ready=True)
     casting_session.radio_position_tracker = first
     feed = casting_session.visualizer
     feed.subscribe()
     await _settle(feed)
     try:
         assert len(fake_analyzer) == 1
+        elapsed_fn = fake_analyzer[0].kwargs["elapsed_fn"]
+        fake_analyzer[0].kwargs["on_first_byte"]()
+        first.position = 34.0
+        assert elapsed_fn() == pytest.approx(4.0, abs=0.2)
 
-        # Same station, same generation — only the tracker is new.
-        second = MagicMock()
-        second.elapsed_fn.return_value = 0.0
-        casting_session.radio_position_tracker = second
+        # Same station, same generation — only the tracker is new, and it
+        # starts from zero the way a fresh dispatch does.
+        casting_session.radio_position_tracker = _FakeTracker(position=0.0, ready=True)
         feed.notify()
         await _settle(feed)
 
-        assert len(fake_analyzer) == 2
-        # The new run's baseline comes from the new tracker, so its clock
-        # starts from zero and climbs rather than sitting at a flat 0.00.
-        elapsed_fn = fake_analyzer[1].kwargs["elapsed_fn"]
-        fake_analyzer[1].kwargs["on_first_byte"]()
-        second.elapsed_fn.return_value = 4.0
-        assert elapsed_fn() == pytest.approx(4.0)
+        assert len(fake_analyzer) == 1  # no respawn
+        # Continuous across the swap: content position keeps counting, so a
+        # reset to zero here would strand every decoded frame in the future.
+        assert elapsed_fn() == pytest.approx(4.0, abs=0.2)
+        casting_session.radio_position_tracker.position = 3.0
+        assert elapsed_fn() == pytest.approx(7.0, abs=0.2)
     finally:
         await feed.shutdown()
