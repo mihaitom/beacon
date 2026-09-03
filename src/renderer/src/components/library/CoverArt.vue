@@ -31,7 +31,7 @@
         <v-skeleton-loader type="image" class="cover-art-skeleton" />
       </template>
     </v-img>
-    <v-skeleton-loader v-else-if="url" type="image" class="cover-art-skeleton" />
+    <v-skeleton-loader v-else-if="current" type="image" class="cover-art-skeleton" />
     <v-icon v-else :size="iconSizeCss(0.6)" :icon="fallbackIcon" />
   </v-avatar>
   <!-- v-img is sized as 100%/100% of this box, not its own copy of `size`
@@ -55,7 +55,7 @@
         <v-skeleton-loader type="image" class="cover-art-skeleton" />
       </template>
     </v-img>
-    <v-skeleton-loader v-else-if="url" type="image" class="cover-art-skeleton" />
+    <v-skeleton-loader v-else-if="current" type="image" class="cover-art-skeleton" />
     <div v-else class="cover-art-fallback">
       <v-icon :size="iconSizeCss(0.5)" :icon="fallbackIcon" />
     </div>
@@ -66,6 +66,8 @@
 import type { PropType } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { fetchCoverArtBatched } from '@/services/connect/coverArtBatch'
+import { fetchRadioFaviconBatched, NoRadioFaviconError } from '@/services/connect/radioFaviconBatch'
+import type { RadioFaviconRequest } from '@/services/connect/radio'
 
 // Starts the request a little before the cover actually scrolls into view,
 // so it's already there (or close to it) by the time it would otherwise pop
@@ -156,12 +158,21 @@ function releaseLoadSlot(): void {
   else inFlight -= 1
 }
 
-/** A candidate with no coverArtId to batch by — reached for any `imageUrl`
- * that queueLoad's isProxyUrl check decided IS worth fetching-and-holding
- * rather than handing to a plain <img> (a same-origin one, e.g. a radio
- * station's favicon, built by services/connect/radio.ts's radioFaviconUrl
- * and passed in by SongInfo.vue/NowPlayingView.vue/HeroBand.vue — not just
- * a defensive branch for a case this component itself never produces). */
+/** One thing this component could show, in the order it will try them.
+ * Exactly one of the three routes is taken per candidate:
+ *
+ *   - `favicon` — a radio station's logo, resolved in a batch with every
+ *     other station on screen (radioFaviconBatch.ts),
+ *   - `coverArtId` — album art, batched the same way (coverArtBatch.ts),
+ *   - neither — a plain URL, either fetched and held under an
+ *     AbortController or, on a foreign host, handed straight to <img>
+ *     (see queueLoad). */
+interface Candidate {
+  url: string
+  coverArtId: string | null
+  favicon: RadioFaviconRequest | null
+}
+
 /** A failed cover fetch, carrying the status it failed with — `undefined`
  * for a request that never got an answer at all (offline, connection
  * reset, a backend restarting mid-request). Both shapes matter: only the
@@ -180,6 +191,10 @@ class CoverFetchError extends Error {
  * never reached it at all is a condition that passes. */
 function isTransient(error: unknown): boolean {
   if ((error as Error)?.name === 'AbortError') return false
+  // A settled "this station has no logo", not a failure to repeat — the
+  // batch endpoint says so explicitly (see NoRadioFaviconError), and
+  // retrying it would be a poll against an answer that will not change.
+  if (error instanceof NoRadioFaviconError) return false
   if (!(error instanceof CoverFetchError)) return true
   if (error.status === undefined) return true
   return error.status >= 500 || error.status === 408 || error.status === 429
@@ -242,6 +257,16 @@ export default {
       type: Boolean,
       default: false,
     },
+    /** A radio station's logo to resolve, instead of an image URL. Batched
+     * with every other station on screen rather than fetched one URL at a
+     * time — see radioFaviconBatch.ts for why that distinction matters
+     * enough to be its own prop. Tried before coverArtId, same as imageUrl,
+     * and mutually exclusive with it in practice (a station has no album
+     * art and a song has no homepage). */
+    radioFavicon: {
+      type: Object as PropType<RadioFaviconRequest | null>,
+      default: null,
+    },
     /** Icon shown when there's no cover (and no imageUrl fallback either) —
      * albums/songs want the generic record icon, but other kinds of
      * covers (playlists, ...) read oddly with that, so it's overridable. */
@@ -249,6 +274,27 @@ export default {
       type: String,
       default: 'mdi-album',
     },
+  },
+  emits: {
+    /** A resolved radio logo turned out to be a shape floating on
+     * transparency rather than a filled rectangle. NowPlayingView.vue drops
+     * its card treatment (shadow, background box) for one that is — boxing
+     * a transparent PNG in a card built for opaque album art shows the
+     * app's own background through the "card" as a muddy tint.
+     *
+     * Emitted rather than sampled by the parent: the answer arrives with
+     * the image in the same batch entry, and asking for it separately meant
+     * a second request per station against a URL already in hand. */
+    transparency: (value: boolean) => typeof value === 'boolean',
+    /** What this cover is actually showing now — an object URL for an image
+     * it fetched and holds, a plain URL for one a foreign host is loading
+     * directly, or null while there is nothing. HeroBand.vue paints its
+     * blurred backdrop from it: a radio logo has no URL of its own to
+     * derive one from any more (it is resolved in a batch, not fetched from
+     * an address), and reporting what loaded is both what still works for
+     * that and what keeps the backdrop from being painted from a URL that
+     * turned out to 404. */
+    loaded: (src: string | null) => src === null || typeof src === 'string',
   },
   data() {
     return {
@@ -306,22 +352,26 @@ export default {
     fetchSize(): number {
       return typeof this.size === 'number' ? this.size : 640
     },
-    // coverArtId is only ever set on the entry built from this.coverArtId
-    // (never on imageUrl's) — loadCandidates() uses it to tell which
-    // network path a given candidate needs (see fetchCoverArtBatched vs
-    // fetchDirect above).
-    candidates(): Array<{ url: string; coverArtId: string | null }> {
+    // Each entry carries what decides its network path (see Candidate) —
+    // loadCandidates() reads that rather than trying to tell the routes
+    // apart by inspecting the URL.
+    candidates(): Candidate[] {
       const coverArtUrl = this.coverArtId
         ? useLibraryStore().client().coverArtUrl(this.coverArtId, this.fetchSize)
         : null
-      const entries: Array<{ url: string; coverArtId: string | null } | null> = [
-        this.imageUrl ? { url: this.imageUrl, coverArtId: null } : null,
-        coverArtUrl ? { url: coverArtUrl, coverArtId: this.coverArtId } : null,
+      const entries: Array<Candidate | null> = [
+        this.radioFavicon ? { url: '', coverArtId: null, favicon: this.radioFavicon } : null,
+        this.imageUrl ? { url: this.imageUrl, coverArtId: null, favicon: null } : null,
+        coverArtUrl ? { url: coverArtUrl, coverArtId: this.coverArtId, favicon: null } : null,
       ]
-      return entries.filter((e): e is { url: string; coverArtId: string | null } => e !== null)
+      return entries.filter((e): e is Candidate => e !== null)
     },
-    url(): string | null {
-      return this.candidates[this.failedCount]?.url ?? null
+    /** What is being tried right now, or null once every candidate is
+     * spent. A radio favicon has no URL of its own to stand in for this —
+     * it is identified by what it asks for, not by where it lives — which
+     * is why this is the candidate itself rather than a URL string. */
+    current(): Candidate | null {
+      return this.candidates[this.failedCount] ?? null
     },
     /** What the <img> actually shows: an image this component fetched and
      * holds in memory, or one a foreign host is loading directly. */
@@ -330,6 +380,9 @@ export default {
     },
   },
   watch: {
+    displaySrc(src: string | null) {
+      this.$emit('loaded', src)
+    },
     // candidates() also depends on useLibraryStore().client(), which reads
     // the *current* auth store state on every call — not just imageUrl/
     // coverArtId. If this component's first render happens to race ahead of
@@ -455,16 +508,22 @@ export default {
       this.retryTimer = null
     },
     queueLoad() {
-      const url = this.url
-      if (!url) return
-      // A foreign host (artist photo, radio favicon) can't be fetched from
-      // JS at all — no CORS headers, so reading the bytes is forbidden even
-      // though rendering them isn't. Those go straight to <img>, unqueued
-      // and uncancellable: neither matters for them, since they don't touch
-      // the media server or the proxy in front of it, and they appear a
-      // handful at a time rather than by the screenful.
-      if (!useLibraryStore().client().isProxyUrl(url)) {
-        this.directUrl = url
+      const candidate = this.current
+      if (!candidate) return
+      // A foreign host (an artist photo arriving as a pre-signed CDN URL)
+      // can't be fetched from JS at all — no CORS headers, so reading the
+      // bytes is forbidden even though rendering them isn't. Those go
+      // straight to <img>, unqueued and uncancellable: neither matters for
+      // them, since they don't touch the media server or the proxy in front
+      // of it, and they appear a handful at a time rather than by the
+      // screenful. A batched candidate is never one of these — it has no
+      // URL the browser could load on its own.
+      if (
+        !candidate.favicon &&
+        !candidate.coverArtId &&
+        !useLibraryStore().client().isProxyUrl(candidate.url)
+      ) {
+        this.directUrl = candidate.url
         this.observer?.disconnect()
         this.observer = null
         return
@@ -478,7 +537,7 @@ export default {
       this.cancelQueued?.()
       this.cancelQueued = null
       // Already running (holdsLoadSlot true) — loadCandidates()'s own
-      // while(this.url) loop picks up the new candidate itself once
+      // while(this.current) loop picks up the new candidate itself once
       // abortLoad() unblocks it (see that method's AbortError branch),
       // still inside the one slot it already holds. Requesting a second
       // slot here would instead run two overlapping loadCandidates() calls
@@ -505,6 +564,25 @@ export default {
       this.failedCount += 1
       this.queueLoad()
     },
+    /** The one place a candidate's network path is chosen. Batched
+     * (grouped with whatever else settles in the same ~20ms window) for a
+     * radio logo and for a real coverArtId; a plain fetch for anything
+     * else this component holds. Low priority isn't meaningful on the
+     * batched paths — they are one POST each, not an image fetch the
+     * browser could deprioritize — and cover art already being the least
+     * urgent thing the app asks for is what the settle delay and the slot
+     * queue above are for instead. */
+    async fetchCandidate(candidate: Candidate, signal: AbortSignal): Promise<Blob> {
+      if (candidate.favicon) {
+        const favicon = await fetchRadioFaviconBatched(candidate.favicon, signal)
+        this.$emit('transparency', favicon.transparent)
+        return favicon.blob
+      }
+      if (candidate.coverArtId) {
+        return fetchCoverArtBatched(candidate.coverArtId, this.fetchSize, signal)
+      }
+      return fetchDirect(candidate.url, signal)
+    },
     /** Works down the candidate list within the one slot it was granted, so
      * a cover whose first URL 404s (a missing artist photo, see imageUrl)
      * doesn't have to queue again for its fallback. */
@@ -515,23 +593,12 @@ export default {
       // decides whether the run below is worth repeating.
       let retryable = false
       try {
-        while (this.url) {
-          const candidate = this.candidates[this.failedCount]!
+        while (this.current) {
+          const candidate = this.current
           const controller = new AbortController()
           this.controller = controller
           try {
-            // Batched (grouped with whatever else settles in the same
-            // ~20ms window — see coverArtBatch.ts) for a real coverArtId;
-            // fetchDirect for anything else this component fetches and
-            // holds that has no id to batch by (see its own comment). Low
-            // priority isn't meaningful for the batched path (it's one POST
-            // request, not an image fetch the browser could deprioritize)
-            // — cover art already being the least urgent thing the app
-            // asks for is what the settle delay and slot queue above are
-            // for instead.
-            const blob = candidate.coverArtId
-              ? await fetchCoverArtBatched(candidate.coverArtId, this.fetchSize, controller.signal)
-              : await fetchDirect(candidate.url, controller.signal)
+            const blob = await this.fetchCandidate(candidate, controller.signal)
             this.setObjectUrl(URL.createObjectURL(blob))
             this.retryCount = 0
             return
@@ -548,7 +615,7 @@ export default {
               // no-op while holdsLoadSlot is still true (see queueLoad()'s
               // own comment) — the new candidate is only ever going to be
               // picked up here, by falling through to this loop's own
-              // while(this.url) re-check, still inside the one slot this
+              // while(this.current) re-check, still inside the one slot this
               // call already holds. Not a failure of this URL either way,
               // so failedCount is untouched.
               if (!this.holdsLoadSlot) return

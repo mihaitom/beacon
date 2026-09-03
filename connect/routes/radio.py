@@ -1,6 +1,7 @@
-"""routes/radio.py — GET /radio-favicon, GET /radio-browser/search,
-GET /radio-browser/countries, POST /radio-browser/click/{stationuuid},
-POST /radio-metadata/start, POST /radio-metadata/stop, GET /radio-metadata
+"""routes/radio.py — GET /radio-favicon, POST /radio-favicon/batch,
+GET /radio-browser/search, GET /radio-browser/countries,
+POST /radio-browser/click/{stationuuid}, POST /radio-metadata/start,
+POST /radio-metadata/stop, GET /radio-metadata
 
 Internet radio stations are Navidrome's own resource (createInternetRadioStation
 etc., proxied straight through routes/proxy.py) and have no favicon concept of
@@ -12,7 +13,9 @@ every single radio list render, not just once from here). The optional `hint`
 query param is an already-known favicon URL (Radio Browser hands one back with
 every search result — see core/radio_browser.py) to try before falling back
 to scraping the homepage, still through this same proxy for the identical
-IP-leak reason.
+IP-leak reason. /radio-favicon/batch answers the same question for a whole
+list in one request — see its own docstring for why a per-station <img src>
+is a problem worth solving even though each individual request is correct.
 
 The /radio-browser/* group is unrelated to any of that — a thin HTTP wrapper
 around core/radio_browser.py's lookup against the public Radio Browser
@@ -38,6 +41,7 @@ import binascii
 import io
 import logging
 import time
+import weakref
 from collections import OrderedDict
 from dataclasses import dataclass
 from html.parser import HTMLParser
@@ -47,7 +51,7 @@ import httpx
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, Response
 from PIL import Image, UnidentifiedImageError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.auth import require_token
 from core.playlist_url import resolve_stream_url
@@ -344,6 +348,21 @@ class _Fetched:
     #: overrules a declaration when it genuinely knows better — a format we
     #: can't read is no reason to distrust what the page said about it.
     pixels: int
+    #: Filled in on first ask by _transparency() below, not at construction:
+    #: _has_transparency() decodes the whole image, and a resolved icon is
+    #: kept (see _result_cache) and asked for repeatedly — once per single
+    #: response and once per batch entry it appears in.
+    transparent: bool | None = None
+
+
+def _transparency(fetched: _Fetched) -> bool:
+    """Whether this icon is a logo floating on transparency rather than a
+    filled rectangle — NowPlayingView.vue drops the card treatment (shadow,
+    background box) for one that is, see its radioIconIsTransparent.
+    Memoized on the icon itself, since resolved icons are cached and reused."""
+    if fetched.transparent is None:
+        fetched.transparent = _has_transparency(fetched.content)
+    return fetched.transparent
 
 
 def _cache_headers(cache_control: str) -> dict[str, str]:
@@ -385,7 +404,7 @@ def _favicon_response(fetched: _Fetched) -> Response:
         media_type=fetched.content_type,
         headers={
             **_cache_headers(_CACHE_CONTROL),
-            "X-Has-Transparency": "true" if _has_transparency(fetched.content) else "false",
+            "X-Has-Transparency": "true" if _transparency(fetched) else "false",
         },
     )
 
@@ -448,25 +467,29 @@ async def _try_candidate(candidate: _Candidate) -> _Fetched | None:
     return _Fetched(resp.content, content_type, pixels or candidate.size)
 
 
-@router.get("/radio-favicon")
-async def radio_favicon(
-    # Optional: a station played straight out of the discover dialog
-    # without being added can carry a `hint` but no homepage at all (see
-    # RadioStation.favicon's own comment in types/library.ts) — `hint` alone
-    # is still enough to resolve a favicon for one of those, see below.
-    url: str = Query(default=""),
-    min_size: int = Query(default=0),
-    hint: str = Query(default=""),
-) -> Response:
-    # Same http(s)-only restriction as /play-url's radio URL (routes/
-    # playback.py) — this backend has LAN access (that's its whole job),
-    # so fetching an arbitrary caller-supplied URL server-side is treated
-    # with the same care there as here, not a new/different trust level.
-    # Only enforced when a homepage was actually given — see `url`'s own
-    # comment above for why an empty one is valid too.
-    if url and (not url.lower().startswith(("http://", "https://")) or not urlparse(url).netloc):
-        return Response(status_code=400)
+# ── resolving a station's icon, and keeping the answer ───────────────────
+#
+# Everything below this line exists to answer the same question — "what is
+# this station's logo?" — for two callers with very different shapes: a
+# single <img src> (GET /radio-favicon) and a whole list at once (POST
+# /radio-favicon/batch). They share one resolver, one cache and one
+# concurrency budget, so which one a screen happens to use changes only how
+# many HTTP requests cross the network, never how much work this backend or
+# a station's own server does.
 
+
+def _homepage_is_usable(url: str) -> bool:
+    """Same http(s)-only restriction as /play-url's radio URL (routes/
+    playback.py) — this backend has LAN access (that's its whole job), so
+    fetching an arbitrary caller-supplied URL server-side is treated with
+    the same care there as here, not a new/different trust level."""
+    return url.lower().startswith(("http://", "https://")) and bool(urlparse(url).netloc)
+
+
+async def _resolve_favicon(url: str, hint: str, min_size: int) -> _Fetched | None:
+    """The actual lookup: the best icon at least min_size across the hint
+    and the homepage's own declarations, the largest thing found if nothing
+    reaches it, or None if there is nothing at all."""
     # Best icon retrieved so far, kept across both stages below so a
     # too-small one is still returned when nothing better turns up.
     best: _Fetched | None = None
@@ -488,7 +511,7 @@ async def radio_favicon(
         # default min_size=0 nothing is ever "too small", so a caller that
         # doesn't care still pays for exactly one fetch, as before.
         if best is not None and best.pixels >= min_size:
-            return _favicon_response(best)
+            return best
 
     if url:
         # Cascades through the candidates (best declared match for min_size
@@ -524,17 +547,259 @@ async def radio_favicon(
             if fetched is None:
                 continue
             if fetched.pixels >= min_size:
-                return _favicon_response(fetched)
+                return fetched
             # Nothing meets the request yet — hold on to the largest, so
             # the answer is the closest thing available rather than
             # whichever dead-end happened to come last.
             if best is None or fetched.pixels > best.pixels:
                 best = fetched
 
-    if best is not None:
-        return _favicon_response(best)
+    return best
 
-    return Response(status_code=404)
+
+# How long a resolved icon is kept in memory. Matches _CACHE_CONTROL: the
+# browser is told a hit is good for a week, so there is nothing to be
+# gained by expiring our own copy sooner — and a miss is kept for the
+# shorter _NEGATIVE_CACHE_CONTROL window, same reasoning as there.
+#
+# Unlike the browser's cache this one is shared by every client and every
+# icon size, which is what makes the batch endpoint below cheap: a list of
+# fifty stations resolves each station's homepage once, not once per client
+# and not again on the next visit.
+_RESULT_CACHE_TTL = 604800.0
+_RESULT_NEGATIVE_TTL = 21600.0
+
+# Icons are small (_MAX_BYTES caps one at 512 KB) but a large library of
+# stations at several sizes each is not, so the cache is bounded by what it
+# actually holds rather than by a count, and gives up its least recently
+# used entries first.
+_RESULT_CACHE_MAX_BYTES = 24 * 1024 * 1024
+
+# How many station lookups may run at once. Each one can mean a homepage
+# fetch plus up to _MAX_FETCHES icon fetches against a third-party host, so
+# this is as much politeness towards the stations as it is protection for
+# this backend: a batch of fifty must not become fifty simultaneous
+# scrapes.
+_MAX_CONCURRENT_RESOLVES = 8
+
+_ResultKey = tuple[str, str, int]
+
+_result_cache: OrderedDict[_ResultKey, tuple[float, _Fetched | None]] = OrderedDict()
+_result_cache_bytes = 0
+# One in-flight resolution per key, so the same station asked for by two
+# screens (or two clients) at the same moment is looked up once.
+_inflight: dict[_ResultKey, asyncio.Task[_Fetched | None]] = {}
+
+# Per event loop, not one module-level Semaphore: a Semaphore binds itself
+# to the loop it first has to wait on, and this module is imported once
+# while a test suite runs a short-lived loop per request. Weak-keyed so a
+# finished loop takes its semaphore with it.
+_resolve_slots: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _slots() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    semaphore = _resolve_slots.get(loop)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(_MAX_CONCURRENT_RESOLVES)
+        _resolve_slots[loop] = semaphore
+    return semaphore
+
+
+def _cache_drop(key: _ResultKey) -> None:
+    global _result_cache_bytes
+    entry = _result_cache.pop(key, None)
+    if entry is not None and entry[1] is not None:
+        _result_cache_bytes -= len(entry[1].content)
+
+
+def _cache_get(key: _ResultKey) -> tuple[bool, _Fetched | None]:
+    """(whether this key is cached at all, what it resolved to) — the two
+    have to be separate, since a cached *miss* is a real answer worth
+    keeping and is also None."""
+    entry = _result_cache.get(key)
+    if entry is None:
+        return False, None
+    expires, value = entry
+    if time.monotonic() >= expires:
+        _cache_drop(key)
+        return False, None
+    _result_cache.move_to_end(key)
+    return True, value
+
+
+def _cache_put(key: _ResultKey, value: _Fetched | None) -> None:
+    global _result_cache_bytes
+    _cache_drop(key)
+    ttl = _RESULT_CACHE_TTL if value is not None else _RESULT_NEGATIVE_TTL
+    _result_cache[key] = (time.monotonic() + ttl, value)
+    if value is not None:
+        _result_cache_bytes += len(value.content)
+    while _result_cache_bytes > _RESULT_CACHE_MAX_BYTES and len(_result_cache) > 1:
+        _cache_drop(next(iter(_result_cache)))
+
+
+async def _resolve_and_store(key: _ResultKey) -> _Fetched | None:
+    url, hint, min_size = key
+    try:
+        async with _slots():
+            fetched = await _resolve_favicon(url, hint, min_size)
+    except Exception:
+        # Deliberately not cached: an unexpected failure says nothing about
+        # whether this station has an icon, and caching it as "no" would
+        # hide the logo for the whole negative TTL over one bad moment.
+        logger.exception(f"[radio-favicon] resolving {url or hint} failed")
+        return None
+    finally:
+        _inflight.pop(key, None)
+    _cache_put(key, fetched)
+    return fetched
+
+
+def _resolution(key: _ResultKey) -> asyncio.Task[_Fetched | None]:
+    """The task resolving this key, started if nobody else has. Never
+    raises, so a caller that walks away (a disconnected client, a batch
+    that hit its deadline) leaves a task that still finishes and still
+    fills the cache, rather than one whose exception nobody retrieves."""
+    task = _inflight.get(key)
+    if task is None:
+        task = asyncio.ensure_future(_resolve_and_store(key))
+        _inflight[key] = task
+    return task
+
+
+async def _resolve_cached(key: _ResultKey) -> _Fetched | None:
+    hit, value = _cache_get(key)
+    if hit:
+        return value
+    # Shielded: this awaits a task that may be shared with other requests,
+    # and one client giving up must not cancel the lookup the others are
+    # still waiting on.
+    return await asyncio.shield(_resolution(key))
+
+
+@router.get("/radio-favicon")
+async def radio_favicon(
+    # Optional: a station played straight out of the discover dialog
+    # without being added can carry a `hint` but no homepage at all (see
+    # RadioStation.favicon's own comment in types/library.ts) — `hint` alone
+    # is still enough to resolve a favicon for one of those, see below.
+    url: str = Query(default=""),
+    min_size: int = Query(default=0),
+    hint: str = Query(default=""),
+) -> Response:
+    # Only enforced when a homepage was actually given — see `url`'s own
+    # comment above for why an empty one is valid too.
+    if url and not _homepage_is_usable(url):
+        return _no_favicon_response(400)
+
+    fetched = await _resolve_cached((url, hint, min_size))
+    if fetched is None:
+        return _no_favicon_response(404)
+    return _favicon_response(fetched)
+
+
+# One screenful of station rows, generously — the same cap and the same
+# reasoning as routes/coverart.py's _MAX_IDS, which this endpoint is
+# modelled on.
+_MAX_BATCH_STATIONS = 200
+
+# How long a batch waits for the icons it had to look up before answering
+# with what it has. Long enough that a station whose homepage responds
+# promptly makes it into the first answer, short enough that one dead host
+# (which costs the full 5s client timeout, possibly several times over)
+# can never hold up the rest of the list.
+#
+# Whatever misses the deadline is not thrown away: its lookup keeps running
+# and lands in _result_cache, so the caller's follow-up batch is a cache
+# hit rather than a repeat of the work.
+_BATCH_DEADLINE = 2.5
+
+
+class FaviconBatchStation(BaseModel):
+    """One station in a batch. `key` is the caller's own handle for it and
+    is echoed back verbatim — the client groups its own pending requests by
+    it (see services/connect/radioFaviconBatch.ts), and nothing here needs
+    to know how it is built."""
+
+    key: str
+    url: str = ""
+    hint: str = ""
+    min_size: int = 0
+
+
+class FaviconBatchRequest(BaseModel):
+    stations: list[FaviconBatchStation] = Field(default_factory=list)
+
+
+def _batch_entry(fetched: _Fetched | None) -> dict[str, object] | None:
+    if fetched is None:
+        return None
+    encoded = base64.b64encode(fetched.content).decode("ascii")
+    return {
+        "data_url": f"data:{fetched.content_type};base64,{encoded}",
+        # Carried in the payload rather than left to a second request for
+        # the header version of the same answer (services/
+        # imageTransparency.ts): that request exists only to read one
+        # response header, and it is a per-station round trip this endpoint
+        # is specifically here to remove.
+        "transparent": _transparency(fetched),
+    }
+
+
+@router.post("/radio-favicon/batch")
+async def radio_favicon_batch(request: FaviconBatchRequest) -> JSONResponse:
+    """Resolves a whole list of station logos in one request.
+
+    Why this exists: a radio list renders one <img> per station, each under
+    its own one-off URL carrying that station's homepage. Fifty of those in
+    the second after a view opens is a burst of fifty distinct paths from
+    one IP — the shape a probe/crawl detector is built to catch, and the
+    one that got a real user banned by the reverse proxy's IPS (see
+    _NEGATIVE_CACHE_CONTROL, and routes/coverart.py for the same story on
+    cover art). One POST is one path, whatever the list holds.
+
+    `results` maps each caller key to its icon, or to null for a station
+    that genuinely has none. `pending` lists the keys whose lookup did not
+    finish inside _BATCH_DEADLINE and are worth asking for again shortly —
+    the work continues in the background, so the next ask is a cache hit.
+    A key appears in exactly one of the two."""
+    results: dict[str, dict[str, object] | None] = {}
+    started: dict[str, asyncio.Task[_Fetched | None]] = {}
+
+    for station in request.stations[:_MAX_BATCH_STATIONS]:
+        # A repeated key is the caller asking twice for one thing; one
+        # answer settles both (see the client's own per-key grouping).
+        if station.key in results or station.key in started:
+            continue
+        url = station.url if _homepage_is_usable(station.url) else ""
+        if not url and not station.hint:
+            # Nothing to go on at all — a definite "no icon", not an error,
+            # and worth saying so rather than leaving the caller to retry.
+            results[station.key] = None
+            continue
+        key = (url, station.hint, station.min_size)
+        hit, value = _cache_get(key)
+        if hit:
+            results[station.key] = _batch_entry(value)
+            continue
+        started[station.key] = _resolution(key)
+
+    if started:
+        # Not asyncio.gather: the point is to wait *up to* the deadline and
+        # leave whatever is still running running. wait() cancels nothing.
+        await asyncio.wait(started.values(), timeout=_BATCH_DEADLINE)
+
+    pending = []
+    for caller_key, task in started.items():
+        if task.done() and not task.cancelled():
+            results[caller_key] = _batch_entry(task.result())
+        else:
+            pending.append(caller_key)
+
+    return JSONResponse({"results": results, "pending": pending})
 
 
 @router.get("/radio-browser/search")

@@ -9,6 +9,7 @@ import { i18n } from '@/i18n'
 import { useConnectStore } from '@/stores/connect'
 import { usePlaybackStore } from '@/stores/playback'
 import ConnectDevicePicker from '../ConnectDevicePicker.vue'
+import { _resetPollGate, noteResponseStatus } from '@/services/connect/pollGate'
 import type { DiscoverResponse } from '@/services/connect/types'
 import { makeStatus } from '@/stores/__tests__/fixtures'
 
@@ -46,11 +47,19 @@ describe('ConnectDevicePicker', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.useFakeTimers()
+    // Module state that outlives a test, both of them — a leftover backoff
+    // or a hidden document would silently stop the polling tests below.
+    _resetPollGate()
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'visible',
+      configurable: true,
+    })
   })
 
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+    _resetPollGate()
   })
 
   it('shows "no devices found" when the scan came back empty', () => {
@@ -286,6 +295,35 @@ describe('ConnectDevicePicker', () => {
 
     wrapper.unmount()
     refreshSpy.mockClear()
+    await vi.advanceTimersByTimeAsync(8000)
+    expect(refreshSpy).not.toHaveBeenCalled()
+  })
+
+  it('skips the poll while the app is being denied, and resumes when it stops', async () => {
+    // Nothing can arrive during a ban, but the asking is what keeps the
+    // ban's own bucket topped up — see pollGate.ts.
+    const connect = useConnectStore()
+    const refreshSpy = vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+    mountPicker()
+
+    noteResponseStatus(403, { get: () => null }, null)
+    await vi.advanceTimersByTimeAsync(8000)
+    expect(refreshSpy).not.toHaveBeenCalled()
+
+    noteResponseStatus(200, { get: () => null }, null)
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(refreshSpy).toHaveBeenCalled()
+  })
+
+  it('skips the poll while nobody can see the picker', async () => {
+    const connect = useConnectStore()
+    const refreshSpy = vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+    mountPicker()
+
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'hidden',
+      configurable: true,
+    })
     await vi.advanceTimersByTimeAsync(8000)
     expect(refreshSpy).not.toHaveBeenCalled()
   })

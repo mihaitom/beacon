@@ -26,17 +26,21 @@
         @click="play(station)"
       >
         <template #prepend>
-          <!-- CoverArt.vue's imageUrl prop already does exactly what a
-           - station favicon needs: try the given URL, fall back to
-           - fallback-icon on load failure, and — the actual reason to use
-           - it here rather than a hand-rolled <img>+<v-icon> pair — always
-           - render the *same* v-avatar-wrapped markup either way. A bare
-           - <img> vs a bare <v-icon> directly in VListItem's prepend slot
-           - used to get different spacing before the title text, since
+          <!-- CoverArt.vue's radioFavicon prop already does exactly what a
+           - station favicon needs: resolve the logo, fall back to
+           - fallback-icon when there isn't one, and — the actual reason to
+           - use it here rather than a hand-rolled <img>+<v-icon> pair —
+           - always render the *same* v-avatar-wrapped markup either way. A
+           - bare <img> vs a bare <v-icon> directly in VListItem's prepend
+           - slot used to get different spacing before the title text, since
            - VListItem sizes that slot differently depending on what kind
-           - of content it recognizes inside it. -->
+           - of content it recognizes inside it.
+           -
+           - It also batches: this list renders one of these per station,
+           - and a screenful of separate logo requests is the traffic shape
+           - that got a real user's IP banned (see radioFaviconBatch.ts). -->
           <cover-art
-            :image-url="station.homePageUrl ? faviconUrl(station.homePageUrl, 32) : null"
+            :radio-favicon="station.homePageUrl ? faviconRequest(station.homePageUrl, 32) : null"
             :size="24"
             rounded
             fallback-icon="mdi-radio"
@@ -225,7 +229,11 @@
                 @click="playBrowsedStation(item)"
               >
                 <cover-art
-                  :image-url="item.homepage ? faviconUrl(item.homepage, 48, item.favicon) : null"
+                  :radio-favicon="
+                    item.homepage || item.favicon
+                      ? faviconRequest(item.homepage, 48, item.favicon)
+                      : null
+                  "
                   :size="40"
                   rounded
                   fallback-icon="mdi-radio"
@@ -313,9 +321,8 @@
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
-import { useAuthStore } from '@/stores/auth'
 import { accountScopedKey } from '@/services/accountKey'
-import { radioFaviconUrl } from '@/services/connect/radio'
+import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import {
   listRadioBrowserCountries,
   registerRadioBrowserClick,
@@ -498,9 +505,8 @@ export default {
     },
   },
   methods: {
-    faviconUrl(homePageUrl: string, minSize = 0, hint = ''): string {
-      const auth = useAuthStore()
-      return radioFaviconUrl(auth.apiUrl, auth.connectToken, homePageUrl, minSize, hint)
+    faviconRequest(homePageUrl: string, minSize = 0, hint = ''): RadioFaviconRequest {
+      return radioFaviconRequest(homePageUrl ?? '', minSize, hint ?? '')
     },
     play(station: RadioStation) {
       void usePlaybackStore().playRadioStation(station)

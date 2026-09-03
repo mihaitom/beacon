@@ -286,8 +286,13 @@ describe('RadioView', () => {
       await wrapper.vm.$nextTick()
 
       const coverArt = wrapper.findComponent({ name: 'CoverArt' })
-      const imageUrl = coverArt.props('imageUrl') as string
-      expect(imageUrl).toContain('hint=https%3A%2F%2Fcdn.example%2Ficon.png')
+      expect(coverArt.props('radioFavicon')).toEqual({
+        homePageUrl: 'https://example.com',
+        hint: 'https://cdn.example/icon.png',
+        // 48 rounded up to the small step, so every list row in the app
+        // shares one lookup per station — see faviconSizeStep().
+        minSize: 64,
+      })
     })
 
     it('gives a long station name a single-line, truncated cell with the full name in a tooltip', async () => {

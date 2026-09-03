@@ -16,7 +16,7 @@
     />
     <cover-art
       v-else-if="playbackStore.radioStation"
-      :image-url="radioFaviconSrc"
+      :radio-favicon="radioFavicon"
       :size="40"
       fallback-icon="mdi-radio"
       class="mr-3 flex-shrink-0"
@@ -46,8 +46,7 @@
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
-import { useAuthStore } from '@/stores/auth'
-import { radioFaviconUrl } from '@/services/connect/radio'
+import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import CoverArt from '@/components/library/CoverArt.vue'
 
 export default {
@@ -63,11 +62,10 @@ export default {
     hasPlayable() {
       return this.currentSong != null || this.playbackStore.radioStation != null
     },
-    radioFaviconSrc(): string | null {
-      const homePageUrl = this.playbackStore.radioStation?.homePageUrl
-      if (!homePageUrl) return null
-      const auth = useAuthStore()
-      return radioFaviconUrl(auth.apiUrl, auth.connectToken, homePageUrl, 96)
+    radioFavicon(): RadioFaviconRequest | null {
+      const station = this.playbackStore.radioStation
+      if (!station?.homePageUrl && !station?.favicon) return null
+      return radioFaviconRequest(station.homePageUrl ?? '', 96, station.favicon ?? '')
     },
   },
 }

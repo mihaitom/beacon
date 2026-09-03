@@ -36,6 +36,7 @@ import {
   stopRadioMetadataWatch,
 } from '@/services/connect/radioMetadata'
 import { resolveRadioStreamUrl } from '@/services/connect/radio'
+import { pollingAllowed } from '@/services/connect/pollGate'
 import { buildCastQualityPayload, buildCastQueuePayload } from '@/services/playback/castPayload'
 import {
   clearPersistedPlayback,
@@ -453,7 +454,7 @@ export const usePlaybackStore = defineStore('playback', {
       // smoothing interval above, so this is cheap to just leave running
       // for the app's whole lifetime rather than starting/stopping it
       // around every radio play/stop.
-      setInterval(() => {
+      const pollRadioMetadata = () => {
         const station = this.radioStation
         if (!station) return
         fetchRadioMetadata()
@@ -464,7 +465,20 @@ export const usePlaybackStore = defineStore('playback', {
             if (this.radioStation?.streamUrl === station.streamUrl) this.radioNowPlaying = title
           })
           .catch(() => {})
+      }
+      setInterval(() => {
+        // Skipped while the window is hidden or the app is being denied by
+        // whatever sits in front of the backend (see pollGate.ts). Nothing
+        // renders this title but SongInfo.vue, so a hidden window was
+        // asking for it several hundred times an hour for nobody.
+        if (pollingAllowed()) pollRadioMetadata()
       }, 8000)
+      // ...which would leave a stale title on screen for up to one interval
+      // on the way back, so the return is what refreshes it rather than the
+      // next tick after it.
+      document.addEventListener('visibilitychange', () => {
+        if (pollingAllowed()) pollRadioMetadata()
+      })
 
       // Keeps the persisted snapshot fresh so a reload always has something
       // recent to resume from. Debounced — this fires on every playback

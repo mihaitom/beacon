@@ -17,6 +17,7 @@ import {
 } from '@/services/remoteControl/commands'
 import { usePlaybackStore } from './playback'
 import { useConnectStore } from './connect'
+import { isBackingOff } from '@/services/connect/pollGate'
 import { useAuthStore } from './auth'
 import { useAutoplayStore } from './autoplay'
 
@@ -312,7 +313,14 @@ export const useRemoteControlStore = defineStore('remoteControl', {
         }
       }
       void poll()
-      deviceVolumePollTimer = setInterval(() => void poll(), DEVICE_VOLUME_POLL_INTERVAL_MS)
+      deviceVolumePollTimer = setInterval(() => {
+        // isBackingOff() rather than pollGate.ts's full pollingAllowed():
+        // the consumer of this reading is the *phone*, so a hidden desktop
+        // window is no reason to stop producing it. Being denied by
+        // whatever sits in front of the backend is — the reading cannot
+        // arrive anyway, and asking keeps the denial alive.
+        if (!isBackingOff()) void poll()
+      }, DEVICE_VOLUME_POLL_INTERVAL_MS)
     },
 
     /** Called right after commands.ts successfully applies a phone-initiated

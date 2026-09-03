@@ -3,7 +3,7 @@
     <hero-band
       :greeting="greeting"
       :cover-id="heroCoverId"
-      :image-url="heroImageUrl"
+      :radio-favicon="heroRadioFavicon"
       :eyebrow="heroEyebrow"
       :title="heroTitle"
       :title-to="heroTitleTo"
@@ -130,7 +130,7 @@ import AlbumShelf from '@/components/library/AlbumShelf.vue'
 import SimilarArtistsShelf from '@/components/library/SimilarArtistsShelf.vue'
 import SongTable from '@/components/library/SongTable.vue'
 import { accountScopedKey } from '@/services/accountKey'
-import { radioFaviconUrl } from '@/services/connect/radio'
+import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import type { Album, Artist, Song } from '@/types/library'
 
 // Below this many distinct seed artists, a similar-artist lookup isn't
@@ -268,20 +268,15 @@ export default {
       if (this.playbackStore.radioStation) return null
       return this.recentAlbums[0]?.coverArtId ?? null
     },
-    // SongInfo.vue's radioFaviconSrc, duplicated rather than shared: that
+    // SongInfo.vue's radioFavicon, duplicated rather than shared: that
     // one reads size 96 for its 48px box (headroom for high-DPI), this one
     // wants size 96 for HeroBand's larger artwork under the same reasoning,
-    // and neither is a natural fit for the other's component.
-    heroImageUrl(): string | null {
+    // and neither is a natural fit for the other's component. They resolve
+    // to the same request, so the two share one lookup and one answer.
+    heroRadioFavicon(): RadioFaviconRequest | null {
       const station = this.playbackStore.radioStation
       if (!station?.homePageUrl && !station?.favicon) return null
-      return radioFaviconUrl(
-        this.authStore.apiUrl,
-        this.authStore.connectToken,
-        station.homePageUrl ?? '',
-        96,
-        station.favicon ?? '',
-      )
+      return radioFaviconRequest(station.homePageUrl ?? '', 96, station.favicon ?? '')
     },
     heroEyebrow() {
       if (this.playbackStore.currentSong) {

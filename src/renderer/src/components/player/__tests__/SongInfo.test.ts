@@ -132,9 +132,11 @@ describe('SongInfo', () => {
       await wrapper.vm.$nextTick()
 
       const coverArt = wrapper.findComponent({ name: 'CoverArt' })
-      const imageUrl = coverArt.props('imageUrl') as string
-      expect(imageUrl).not.toContain('url=')
-      expect(imageUrl).toContain('hint=https%3A%2F%2Fcdn.example%2Ficon.png')
+      expect(coverArt.props('radioFavicon')).toEqual({
+        homePageUrl: '',
+        hint: 'https://cdn.example/icon.png',
+        minSize: 512,
+      })
     })
   })
 })

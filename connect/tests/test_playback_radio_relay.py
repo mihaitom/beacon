@@ -161,9 +161,7 @@ def test_a_failed_switch_does_not_leave_the_previous_station_claiming_a_relay_th
         _play_url(client, title="First", url="http://example.com/first.mp3")
 
     with (
-        patch.object(
-            ChromecastDelivery, "play", new=AsyncMock(side_effect=RuntimeError("nope"))
-        ),
+        patch.object(ChromecastDelivery, "play", new=AsyncMock(side_effect=RuntimeError("nope"))),
         patch(
             "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/mpeg"))
         ),

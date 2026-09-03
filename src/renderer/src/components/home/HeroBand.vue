@@ -40,9 +40,11 @@
         <cover-art
           :cover-art-id="coverId"
           :image-url="imageUrl"
+          :radio-favicon="radioFavicon"
           :size="132"
           class="hero-cover cover-shadow hero-cover--clickable"
           @click="onCoverClick"
+          @loaded="loadedSrc = $event"
         />
         <div class="hero-info min-width-0">
           <div class="eyebrow-label mb-1">{{ eyebrow }}</div>
@@ -110,6 +112,7 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import CoverArt from '@/components/library/CoverArt.vue'
+import type { RadioFaviconRequest } from '@/services/connect/radio'
 import { useLibraryStore } from '@/stores/library'
 import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
 
@@ -120,6 +123,9 @@ export default {
     greeting: { type: String, required: true },
     coverId: { type: String as PropType<string | null>, default: null },
     imageUrl: { type: String as PropType<string | null>, default: null },
+    /** A radio station's logo, resolved in a batch rather than fetched from
+     * a URL — see CoverArt.vue's own prop of the same name. */
+    radioFavicon: { type: Object as PropType<RadioFaviconRequest | null>, default: null },
     eyebrow: { type: String, default: '' },
     title: { type: String, default: '' },
     // Route for the title itself — only meaningful when `title` names an
@@ -160,12 +166,22 @@ export default {
   },
   emits: ['play', 'song-radio'],
   data() {
-    return { backdrop: createBackdropLayers() }
+    return {
+      backdrop: createBackdropLayers(),
+      // Whatever <cover-art> ended up showing, reported by it. Null until
+      // something has actually loaded.
+      loadedSrc: null as string | null,
+    }
   },
   computed: {
+    // Both of the URL-shaped sources can be turned into a backdrop
+    // directly, so those are up as soon as the cover is rather than after
+    // it. A radio logo is the one that can't: it is resolved in a batch
+    // rather than fetched from an address, and there is no URL to blur
+    // until <cover-art> reports the one it ended up showing.
     backdropUrl(): string | null {
       if (this.coverId) return useLibraryStore().client().coverArtUrl(this.coverId, 300)
-      return this.imageUrl
+      return this.imageUrl ?? this.loadedSrc
     },
   },
   methods: {

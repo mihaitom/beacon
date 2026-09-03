@@ -43,6 +43,64 @@ import { fetchConnect } from './http'
  * user's correctly cached logos too. */
 export const RADIO_FAVICON_CACHE_VERSION = '2'
 
+/** The only sizes actually asked for, whatever a caller passes.
+ *
+ * min_size is part of the answer's identity — in the browser's cache, in
+ * the backend's own (routes/radio.py's _result_cache) and in the batch
+ * endpoint's grouping — so every distinct value a caller invents is another
+ * separate lookup and another separate cached copy of one station's logo.
+ * The callers' natural sizes are 32 (RadioView's list row), 48 (the browse
+ * dialog), 96 (PlayerBar/Home) and 512 (NowPlayingView): four keys for
+ * what is, at most, two genuinely different images.
+ *
+ * Rounding *up* to the next step keeps that from costing anything visible —
+ * an icon is only ever displayed smaller than it was asked for. The pairing
+ * is deliberate rather than even: 96 shares the large step with 512 because
+ * PlayerBar and NowPlayingView show the *same* station at the same time, so
+ * one shared entry there is a request saved rather than a bigger download
+ * for nothing. */
+const FAVICON_SIZE_STEPS = [64, 512]
+
+export function faviconSizeStep(minSize: number): number {
+  // 0 means "whatever you find" and is not a size to round up — asking for
+  // 64 instead would make the backend keep looking past the first usable
+  // icon for a caller that said it did not care.
+  if (minSize <= 0) return 0
+  return FAVICON_SIZE_STEPS.find((step) => step >= minSize) ?? minSize
+}
+
+/** Everything the backend needs to resolve one station's logo. The shape
+ * fetchRadioFaviconBatched() takes (radioFaviconBatch.ts) and what
+ * radioFaviconKey() identifies a station by. */
+export interface RadioFaviconRequest {
+  homePageUrl: string
+  hint: string
+  minSize: number
+}
+
+export function radioFaviconRequest(
+  homePageUrl: string,
+  minSize = 0,
+  hint = '',
+): RadioFaviconRequest {
+  return { homePageUrl, hint, minSize: faviconSizeStep(minSize) }
+}
+
+/** Identifies one resolved logo. Carries the cache version for the same
+ * reason the URL does — an in-memory entry from before a bump is as stale
+ * as a stored one. */
+export function radioFaviconKey(request: RadioFaviconRequest): string {
+  return [RADIO_FAVICON_CACHE_VERSION, request.minSize, request.homePageUrl, request.hint].join(
+    '\u0000',
+  )
+}
+
+/** The single-icon URL. Still the right shape for anything that can only
+ * hand a URL to an <img> and has no batching available to it — the phone's
+ * remote-control UI (services/remoteControl/commands.ts) — but the app's
+ * own views go through fetchRadioFaviconBatched() instead: a radio list
+ * renders one of these per station, and fifty distinct URLs in the second
+ * a view opens is the request shape that got a real user's IP banned. */
 export function radioFaviconUrl(
   apiUrl: string,
   token: string,
@@ -52,7 +110,8 @@ export function radioFaviconUrl(
 ): string {
   const params = new URLSearchParams()
   if (homePageUrl) params.set('url', homePageUrl)
-  if (minSize > 0) params.set('min_size', String(minSize))
+  const step = faviconSizeStep(minSize)
+  if (step > 0) params.set('min_size', String(step))
   if (hint) params.set('hint', hint)
   if (token) params.set('token', token)
   params.set('v', RADIO_FAVICON_CACHE_VERSION)

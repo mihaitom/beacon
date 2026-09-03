@@ -1,3 +1,5 @@
+import { backoffRemainingMs } from './pollGate'
+
 const INITIAL_RETRY_MS = 2000
 const MAX_RETRY_MS = 30000
 
@@ -73,10 +75,17 @@ export class ReconnectingEventSource {
       return
     }
     const jitter = 0.8 + Math.random() * 0.4
+    // An EventSource that keeps being refused is the one connection in the
+    // app that reconnects on its own schedule regardless of what anything
+    // else has learned, so it is also the one most able to keep a ban
+    // alive single-handedly. While the app is backing off (see
+    // pollGate.ts), wait that out first — this is a delay on top of the
+    // ordinary backoff, never a shortening of it.
+    const delay = Math.max(this.retryDelay * jitter, backoffRemainingMs())
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null
       this.open()
-    }, this.retryDelay * jitter)
+    }, delay)
     this.retryDelay = Math.min(this.retryDelay * 2, MAX_RETRY_MS)
   }
 

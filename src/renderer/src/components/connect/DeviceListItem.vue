@@ -106,6 +106,7 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import { useConnectStore } from '@/stores/connect'
+import { pollingAllowed } from '@/services/connect/pollGate'
 import { volumeAfterWheel } from '@/services/volumeWheel'
 import { useAuthStore } from '@/stores/auth'
 import AirplayIcon from './AirplayIcon.vue'
@@ -220,7 +221,13 @@ export default {
           // still needs one real round trip — see pushedVolume's comment.
           this.fetchVolume()
           if (!this.connectStore.isVolumePushCapable(this.type)) {
-            this.volumePollTimer = setInterval(() => this.fetchVolume(), 4000)
+            // Skipped while the window is hidden or the app is being
+            // denied by whatever sits in front of the backend — see
+            // pollGate.ts. The timer keeps ticking rather than being torn
+            // down and rebuilt, so the reading resumes on its own.
+            this.volumePollTimer = setInterval(() => {
+              if (pollingAllowed()) this.fetchVolume()
+            }, 4000)
           }
         }
       },

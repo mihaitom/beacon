@@ -1,5 +1,6 @@
 import { useAuthStore } from '@/stores/auth'
 import { isConnectError } from './types'
+import { noteResponseStatus } from './pollGate'
 
 export class ConnectApiError extends Error {
   constructor(
@@ -94,6 +95,11 @@ export async function fetchConnect<T>(
   if (!response.ok) {
     const text = await response.text()
     const detail = extractDetail(text)
+    // A 403 with no `detail` is something in front of this backend refusing
+    // us, not the backend itself — see pollGate.ts, which stands the app's
+    // background polling down until the refusal stops rather than letting
+    // it keep the refusal alive.
+    noteResponseStatus(response.status, response.headers, detail)
     // Always includes the actual URL hit — a bare "404" with an empty body
     // and no `detail` (FastAPI's own 404s always carry a JSON `detail`)
     // means the request never reached the connect backend's app at all —
@@ -108,6 +114,8 @@ export async function fetchConnect<T>(
       text,
     )
   }
+
+  noteResponseStatus(response.status, response.headers, null)
 
   const data = (await response.json()) as T
   // A "device_in_use"/generic error can arrive with HTTP 200 — see

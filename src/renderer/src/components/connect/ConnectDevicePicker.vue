@@ -126,6 +126,7 @@
 
 <script lang="ts">
 import { useConnectStore } from '@/stores/connect'
+import { pollingAllowed } from '@/services/connect/pollGate'
 import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
 import ConnectErrorBanner from './ConnectErrorBanner.vue'
@@ -258,7 +259,13 @@ export default {
     // claim/song annotations for the already-cached device list (see
     // routes/discovery.py's _annotate_claims()) rather than doing a real
     // mDNS/SSDP rescan — same 4s cadence as DeviceListItem.vue's volume poll.
-    this.devicesPollTimer = setInterval(() => this.connectStore.refreshDevices(), 4000)
+    // Not while the window is hidden or the app is being denied by
+    // whatever sits in front of the backend — see pollGate.ts. Nobody can
+    // be watching a picker in a hidden window, and a re-annotation nothing
+    // renders is the kind of steady baseline that keeps a ban alive.
+    this.devicesPollTimer = setInterval(() => {
+      if (pollingAllowed()) void this.connectStore.refreshDevices()
+    }, 4000)
   },
   beforeUnmount() {
     if (this.devicesPollTimer) clearInterval(this.devicesPollTimer)

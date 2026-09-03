@@ -115,8 +115,11 @@ describe('HomeView hero', () => {
 
       const hero = wrapper.getComponent(HeroBand)
       expect(hero.props('coverId')).toBeNull()
-      expect(hero.props('imageUrl')).toContain('/radio-favicon?')
-      expect(hero.props('imageUrl')).toContain('url=https%3A%2F%2Fchill.example')
+      expect(hero.props('radioFavicon')).toEqual({
+        homePageUrl: 'https://chill.example',
+        hint: '',
+        minSize: 512,
+      })
     })
 
     it('falls back to the Radio Browser favicon hint when there is no homepage', async () => {
@@ -130,9 +133,9 @@ describe('HomeView hero', () => {
       }
       await wrapper.vm.$nextTick()
 
-      expect(wrapper.getComponent(HeroBand).props('imageUrl')).toContain(
-        'hint=https%3A%2F%2Fcdn.example%2Ffound.png',
-      )
+      expect(wrapper.getComponent(HeroBand).props('radioFavicon')).toMatchObject({
+        hint: 'https://cdn.example/found.png',
+      })
     })
 
     it('shows no image at all for a station with neither a homepage nor a favicon hint', async () => {
@@ -145,7 +148,7 @@ describe('HomeView hero', () => {
       }
       await wrapper.vm.$nextTick()
 
-      expect(wrapper.getComponent(HeroBand).props('imageUrl')).toBeNull()
+      expect(wrapper.getComponent(HeroBand).props('radioFavicon')).toBeNull()
     })
   })
 

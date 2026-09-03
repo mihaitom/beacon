@@ -12,7 +12,7 @@
     />
     <cover-art
       v-else-if="playbackStore.radioStation"
-      :image-url="radioFaviconSrc"
+      :radio-favicon="radioFavicon"
       :size="48"
       fallback-icon="mdi-radio"
       class="cover mr-3"
@@ -54,7 +54,7 @@
 import { usePlaybackStore } from '@/stores/playback'
 import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
-import { radioFaviconUrl } from '@/services/connect/radio'
+import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import CoverArt from '@/components/library/CoverArt.vue'
 
 export default {
@@ -79,17 +79,10 @@ export default {
     // benefits from headroom on a high-DPI display, and the source is
     // free to just be smaller than that if that's all the station's
     // homepage actually declares (see routes/radio.py's _select()).
-    radioFaviconSrc(): string | null {
+    radioFavicon(): RadioFaviconRequest | null {
       const station = this.playbackStore.radioStation
       if (!station?.homePageUrl && !station?.favicon) return null
-      const auth = useAuthStore()
-      return radioFaviconUrl(
-        auth.apiUrl,
-        auth.connectToken,
-        station.homePageUrl ?? '',
-        96,
-        station.favicon ?? '',
-      )
+      return radioFaviconRequest(station.homePageUrl ?? '', 96, station.favicon ?? '')
     },
     hasPlayable() {
       return this.currentSong != null || this.playbackStore.radioStation != null

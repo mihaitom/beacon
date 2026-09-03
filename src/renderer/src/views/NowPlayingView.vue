@@ -143,10 +143,11 @@
                 <cover-art
                   v-else
                   contain
-                  :image-url="radioFaviconSrc"
+                  :radio-favicon="radioFavicon"
                   :size="artSize"
                   fallback-icon="mdi-radio"
                   :class="radioIconIsTransparent ? 'radio-cover-art--transparent' : 'cover-shadow'"
+                  @transparency="radioIconIsTransparent = $event"
                 />
               </div>
 
@@ -228,13 +229,12 @@ import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop
 import { useLyricsStore } from '@/stores/lyrics'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
-import { radioFaviconUrl } from '@/services/connect/radio'
+import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import CoverArt from '@/components/library/CoverArt.vue'
 import LyricsPanel from '@/components/lyrics/LyricsPanel.vue'
 import AudioVisualizer from '@/components/player/AudioVisualizer.vue'
 import { getAudioEngine } from '@/services/audioEngine'
 import { extractDominantColor } from '@/services/colorExtractor'
-import { hasTransparency } from '@/services/imageTransparency'
 import { accountScopedKey } from '@/services/accountKey'
 import type { Song } from '@/types/library'
 
@@ -282,10 +282,10 @@ export default {
       // "r, g, b" — kept as a CSS-ready string so the two computed styles
       // below don't each redo the same join().
       extractedColor: null as string | null,
-      // Set by the radioFaviconSrc watcher below, once hasTransparency() has
-      // actually sampled the image — false (normal card treatment) until
-      // then, so there's no flash of the transparent-icon styling before
-      // the icon itself has even loaded.
+      // Reported by <cover-art> once the logo has actually arrived and the
+      // backend's own reading of it came with it — false (normal card
+      // treatment) until then, so there's no flash of the transparent-icon
+      // styling before the icon itself has even loaded.
       radioIconIsTransparent: false,
       // Two stacked layers, only one shown at a time, so a song change
       // crossfades between cover arts instead of popping — see
@@ -413,18 +413,13 @@ export default {
     // The biggest single spot in the whole app for one of these — 512 asks
     // for whatever's largest a station's homepage actually declares (see
     // routes/radio.py's _select()), same reasoning as PlayerBar's own
-    // radioFaviconSrc but with more headroom given how large this renders.
-    radioFaviconSrc(): string | null {
+    // radioFavicon but with more headroom given how large this renders.
+    // Both land on the same size step (see faviconSizeStep), so the two
+    // views showing one station at once cost one lookup between them.
+    radioFavicon(): RadioFaviconRequest | null {
       const station = this.playbackStore.radioStation
       if (!station?.homePageUrl && !station?.favicon) return null
-      const auth = useAuthStore()
-      return radioFaviconUrl(
-        auth.apiUrl,
-        auth.connectToken,
-        station.homePageUrl ?? '',
-        512,
-        station.favicon ?? '',
-      )
+      return radioFaviconRequest(station.homePageUrl ?? '', 512, station.favicon ?? '')
     },
     colorTriplet(): string {
       return this.extractedColor ?? FALLBACK_COLOR
@@ -455,16 +450,11 @@ export default {
         showBackdrop(this.backdrop, url)
       },
     },
-    radioFaviconSrc: {
-      immediate: true,
-      async handler(url: string | null) {
-        this.radioIconIsTransparent = false
-        if (!url) return
-        const transparent = await hasTransparency(url)
-        // The station may have changed again while this sampled the image
-        // — don't let a stale result overwrite whatever's current now.
-        if (url === this.radioFaviconSrc) this.radioIconIsTransparent = transparent
-      },
+    // A different station's logo is a different shape — drop the previous
+    // one's treatment the moment the station changes, rather than carrying
+    // it until the new logo arrives and <cover-art> reports its own.
+    radioFavicon() {
+      this.radioIconIsTransparent = false
     },
     // Also fires the instant lyrics are actually opened, in case the
     // currentSong watcher below hasn't resolved yet (a fresh song whose
@@ -1062,9 +1052,10 @@ export default {
   z-index: 1;
 }
 
-/* Applied instead of cover-shadow once hasTransparency()
- * (services/imageTransparency.ts) has actually sampled the loaded favicon
- * and found it meaningfully transparent — drops CoverArt.vue's own default
+/* Applied instead of cover-shadow once the loaded favicon has arrived and
+ * <cover-art> reported it meaningfully transparent (the backend measures
+ * it, see routes/radio.py's _has_transparency) — drops CoverArt.vue's own
+ * default
  * card background (a faint white tint meant for genuinely art-less
  * placeholders) too, so a logo that's just floating on transparency shows
  * as exactly that instead of getting boxed in a card whose background

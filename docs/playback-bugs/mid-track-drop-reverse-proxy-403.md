@@ -121,6 +121,13 @@ improvements.**
    the proxy this is protecting, and they appear a handful at a time rather
    than by the screenful. `SubsonicClient.isProxyUrl()` draws the line.
 
+   **Wrong about radio favicons, corrected 2026-09-03.** They are *not* on
+   a foreign host: they come through this backend's own `/radio-favicon`,
+   which exists precisely so a station never sees the user's IP. So they do
+   cross the proxy, and a radio list is a screenful of them rather than a
+   handful. That is a second, independent route into the same ban — see
+   [the radio-logo entry](radio-favicon-4xx-ban.md).
+
    Note what none of this is: the settle
    delay added the same day decides *which* covers load, not how many at a
    time, and on its own it did not prevent the outage — the reproduction at

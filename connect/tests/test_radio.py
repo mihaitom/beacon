@@ -1,7 +1,9 @@
-"""Tests for routes/radio.py — GET /radio-favicon, POST /radio-metadata/start,
-POST /radio-metadata/stop, GET /radio-metadata."""
+"""Tests for routes/radio.py — GET /radio-favicon, POST /radio-favicon/batch,
+POST /radio-metadata/start, POST /radio-metadata/stop, GET /radio-metadata."""
 
+import asyncio
 import io
+import json
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -29,10 +31,21 @@ def _png_bytes(mode: str, transparent_ratio: float = 0.0) -> bytes:
 
 
 @pytest.fixture(autouse=True)
-def _clear_candidate_cache():
-    radio_mod._candidate_cache.clear()
+def _clear_favicon_caches():
+    """Both of routes/radio.py's process-wide caches, before and after every
+    test. Leaving either populated makes the *next* test silently pass (or
+    fail) on an answer this one resolved — the result cache especially, since
+    it short-circuits the mocked fetches entirely."""
+    _reset()
     yield
+    _reset()
+
+
+def _reset():
     radio_mod._candidate_cache.clear()
+    radio_mod._result_cache.clear()
+    radio_mod._result_cache_bytes = 0
+    radio_mod._inflight.clear()
 
 
 def _fake_get_response(status_code=200, content=b"icon-bytes", content_type="image/x-icon"):
@@ -1012,3 +1025,249 @@ def test_radio_favicon_varies_on_origin_even_without_one(client):
     assert r.status_code == 200
     assert "origin" in r.headers["vary"].lower()
     assert r.headers["cache-control"] == radio_mod._CACHE_CONTROL
+
+
+# ── Cacheable misses ─────────────────────────────────────────────────────────
+#
+# A miss that nothing may cache is re-asked on every render, which is what
+# turned every station without a findable icon into a permanent stream of
+# 4xx from one IP and got that IP banned by the reverse proxy's IPS. See
+# routes/radio.py's _NEGATIVE_CACHE_CONTROL.
+
+
+def test_radio_favicon_404_is_cacheable_and_varies_on_origin(client):
+    with patch.object(radio_mod._client, "get", AsyncMock(side_effect=httpx.ConnectError("x"))):
+        r = client.get("/radio-favicon", params={"hint": "https://cdn.example/dead.png"})
+    assert r.status_code == 404
+    assert r.headers["cache-control"] == radio_mod._NEGATIVE_CACHE_CONTROL
+    assert "origin" in r.headers["vary"].lower()
+
+
+def test_radio_favicon_400_is_cacheable_and_varies_on_origin(client):
+    r = client.get("/radio-favicon", params={"url": "file:///etc/passwd"})
+    assert r.status_code == 400
+    assert r.headers["cache-control"] == radio_mod._NEGATIVE_CACHE_CONTROL
+    assert "origin" in r.headers["vary"].lower()
+
+
+def test_radio_favicon_misses_expire_sooner_than_hits():
+    """A station with no icon today may put one up tomorrow, and unlike a
+    hit there is nothing on screen to show the answer has gone stale."""
+    assert radio_mod._RESULT_NEGATIVE_TTL < radio_mod._RESULT_CACHE_TTL
+
+
+# ── Result cache ─────────────────────────────────────────────────────────────
+
+
+def test_radio_favicon_resolves_a_station_once_across_requests(client):
+    icon = _fake_get_response(content=_sized_png(64), content_type="image/png")
+    mock_get = AsyncMock(return_value=icon)
+    with patch.object(radio_mod._client, "get", mock_get):
+        first = client.get("/radio-favicon", params={"hint": "https://cdn.example/icon.png"})
+        second = client.get("/radio-favicon", params={"hint": "https://cdn.example/icon.png"})
+    assert first.content == second.content
+    # The second request was answered from _result_cache — the station's own
+    # host was not asked again.
+    assert mock_get.call_count == 1
+
+
+def test_radio_favicon_caches_a_miss_so_it_is_not_re_resolved(client):
+    mock_get = AsyncMock(side_effect=httpx.ConnectError("x"))
+    with patch.object(radio_mod._client, "get", mock_get):
+        first = client.get("/radio-favicon", params={"hint": "https://cdn.example/dead.png"})
+        second = client.get("/radio-favicon", params={"hint": "https://cdn.example/dead.png"})
+    assert first.status_code == second.status_code == 404
+    assert mock_get.call_count == 1
+
+
+def test_radio_favicon_keeps_sizes_of_one_station_apart(client):
+    """min_size is part of the cache key: a 64px answer must never be handed
+    to a caller that asked for something big enough for NowPlayingView."""
+    html = b'<html><head><link rel="icon" href="/logo.png" sizes="512x512"></head></html>'
+    small = _fake_get_response(content=_sized_png(64), content_type="image/png")
+    large = _fake_get_response(content=_sized_png(512), content_type="image/png")
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", AsyncMock(side_effect=[small, large])),
+    ):
+        first = client.get("/radio-favicon", params={"url": "https://example.com", "min_size": 16})
+        second = client.get(
+            "/radio-favicon", params={"url": "https://example.com", "min_size": 512}
+        )
+    assert first.content != second.content
+
+
+def test_result_cache_evicts_the_least_recently_used_entry_when_over_budget():
+    big = radio_mod._RESULT_CACHE_MAX_BYTES // 2 + 1
+    first = radio_mod._Fetched(b"x" * big, "image/png", 64)
+    second = radio_mod._Fetched(b"y" * big, "image/png", 64)
+    radio_mod._cache_put(("a", "", 0), first)
+    radio_mod._cache_put(("b", "", 0), second)
+    assert radio_mod._cache_get(("a", "", 0)) == (False, None)
+    assert radio_mod._cache_get(("b", "", 0)) == (True, second)
+
+
+def test_result_cache_forgets_an_entry_it_has_outlived():
+    fetched = radio_mod._Fetched(b"icon", "image/png", 64)
+    radio_mod._cache_put(("a", "", 0), fetched)
+    later = radio_mod.time.monotonic() + radio_mod._RESULT_CACHE_TTL + 1
+    with patch.object(radio_mod.time, "monotonic", return_value=later):
+        assert radio_mod._cache_get(("a", "", 0)) == (False, None)
+
+
+async def test_one_lookup_is_shared_by_everyone_asking_for_it_at_once():
+    """Two screens (or two clients) opening on the same station must scrape
+    that station's homepage once between them, not once each."""
+    started = 0
+
+    async def slow_resolve(url, hint, min_size):
+        nonlocal started
+        started += 1
+        await asyncio.sleep(0.01)
+        return radio_mod._Fetched(b"icon", "image/png", 64)
+
+    with patch.object(radio_mod, "_resolve_favicon", slow_resolve):
+        both = await asyncio.gather(
+            radio_mod._resolve_cached(("https://example.com", "", 0)),
+            radio_mod._resolve_cached(("https://example.com", "", 0)),
+        )
+    assert started == 1
+    assert both[0] is both[1]
+
+
+async def test_a_failed_lookup_is_not_cached_as_a_missing_icon():
+    """An unexpected error says nothing about whether the station has an
+    icon — caching it as "no" would blank the logo for the whole negative
+    TTL over one bad moment."""
+    with patch.object(radio_mod, "_resolve_favicon", AsyncMock(side_effect=RuntimeError("boom"))):
+        assert await radio_mod._resolve_cached(("https://example.com", "", 0)) is None
+    assert radio_mod._cache_get(("https://example.com", "", 0)) == (False, None)
+
+
+# ── POST /radio-favicon/batch ────────────────────────────────────────────────
+
+
+def test_favicon_batch_returns_the_icon_and_its_transparency(client):
+    icon = _fake_get_response(content=_png_bytes("RGBA", 0.5), content_type="image/png")
+    with patch.object(radio_mod._client, "get", AsyncMock(return_value=icon)):
+        r = client.post(
+            "/radio-favicon/batch",
+            json={"stations": [{"key": "s1", "hint": "https://cdn.example/icon.png"}]},
+        )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pending"] == []
+    entry = body["results"]["s1"]
+    assert entry["data_url"].startswith("data:image/png;base64,")
+    # Carried in the payload so NowPlayingView doesn't need a second request
+    # against the same URL just to read one response header.
+    assert entry["transparent"] is True
+
+
+def test_favicon_batch_returns_null_for_a_station_with_nothing_to_go_on(client):
+    r = client.post("/radio-favicon/batch", json={"stations": [{"key": "s1"}]})
+    assert r.json() == {"results": {"s1": None}, "pending": []}
+
+
+def test_favicon_batch_returns_null_for_a_station_whose_icon_cannot_be_found(client):
+    with patch.object(radio_mod._client, "get", AsyncMock(side_effect=httpx.ConnectError("x"))):
+        r = client.post(
+            "/radio-favicon/batch",
+            json={"stations": [{"key": "s1", "hint": "https://cdn.example/dead.png"}]},
+        )
+    assert r.json() == {"results": {"s1": None}, "pending": []}
+
+
+def test_favicon_batch_ignores_a_non_http_homepage_but_still_uses_the_hint(client):
+    """Same http(s)-only restriction as the single-icon route, but a bad
+    homepage must not throw away a perfectly good hint alongside it."""
+    icon = _fake_get_response(content=_sized_png(64), content_type="image/png")
+    with patch.object(radio_mod._client, "get", AsyncMock(return_value=icon)):
+        r = client.post(
+            "/radio-favicon/batch",
+            json={
+                "stations": [
+                    {"key": "s1", "url": "file:///etc/passwd", "hint": "https://cdn.example/i.png"}
+                ]
+            },
+        )
+    assert r.json()["results"]["s1"] is not None
+
+
+def test_favicon_batch_answers_a_repeated_key_once(client):
+    icon = _fake_get_response(content=_sized_png(64), content_type="image/png")
+    mock_get = AsyncMock(return_value=icon)
+    with patch.object(radio_mod._client, "get", mock_get):
+        r = client.post(
+            "/radio-favicon/batch",
+            json={
+                "stations": [
+                    {"key": "s1", "hint": "https://cdn.example/icon.png"},
+                    {"key": "s1", "hint": "https://cdn.example/icon.png"},
+                ]
+            },
+        )
+    assert list(r.json()["results"]) == ["s1"]
+    assert mock_get.call_count == 1
+
+
+def test_favicon_batch_caps_how_many_stations_it_answers(client):
+    over = radio_mod._MAX_BATCH_STATIONS + 5
+    r = client.post(
+        "/radio-favicon/batch",
+        json={"stations": [{"key": f"s{i}"} for i in range(over)]},
+    )
+    assert len(r.json()["results"]) == radio_mod._MAX_BATCH_STATIONS
+
+
+async def test_favicon_batch_reports_a_slow_lookup_as_pending_and_finishes_it_anyway():
+    """One dead host costs the full client timeout, several times over — it
+    must not hold up the rest of the list. What misses the deadline keeps
+    running, so the caller's follow-up batch is a cache hit rather than a
+    repeat of the work."""
+    release = asyncio.Event()
+
+    async def slow_resolve(url, hint, min_size):
+        await release.wait()
+        return radio_mod._Fetched(b"late-icon", "image/png", 64)
+
+    request = radio_mod.FaviconBatchRequest(
+        stations=[radio_mod.FaviconBatchStation(key="s1", hint="https://cdn.example/icon.png")]
+    )
+    with (
+        patch.object(radio_mod, "_resolve_favicon", slow_resolve),
+        patch.object(radio_mod, "_BATCH_DEADLINE", 0.01),
+    ):
+        first = await radio_mod.radio_favicon_batch(request)
+        assert json.loads(first.body) == {"results": {}, "pending": ["s1"]}
+
+        release.set()
+        second = await radio_mod.radio_favicon_batch(request)
+
+    assert json.loads(second.body)["pending"] == []
+    assert json.loads(second.body)["results"]["s1"]["data_url"].startswith("data:image/png;base64,")
+
+
+async def test_favicon_batch_and_the_single_icon_route_share_one_lookup():
+    """Whether a screen asks one at a time or a list at once must change
+    only how many HTTP requests cross the network, never how much work a
+    station's own server is put to."""
+    calls = 0
+
+    async def counting_resolve(url, hint, min_size):
+        nonlocal calls
+        calls += 1
+        return radio_mod._Fetched(_sized_png(64), "image/png", 64)
+
+    with patch.object(radio_mod, "_resolve_favicon", counting_resolve):
+        await radio_mod.radio_favicon_batch(
+            radio_mod.FaviconBatchRequest(
+                stations=[radio_mod.FaviconBatchStation(key="s1", hint="https://cdn.example/i.png")]
+            )
+        )
+        response = await radio_mod.radio_favicon(
+            url="", min_size=0, hint="https://cdn.example/i.png"
+        )
+
+    assert response.status_code == 200
+    assert calls == 1

@@ -85,6 +85,23 @@ describe('HeroBand', () => {
       expect(rendered[firstActive]!.image).toContain('one.jpg')
     })
 
+    it('paints a radio logo from what the cover reported, having no URL of its own', async () => {
+      // A station logo is resolved in a batch rather than fetched from an
+      // address (see radioFaviconBatch.ts), so there is nothing to blur
+      // until <cover-art> says what it ended up showing.
+      const wrapper = await mountBand({
+        radioFavicon: { homePageUrl: 'https://station.example', hint: '', minSize: 512 },
+      })
+      expect(layers(wrapper).every((layer) => !layer.image.includes('url('))).toBe(true)
+
+      wrapper.findComponent({ name: 'CoverArt' }).vm.$emit('loaded', 'blob:the-logo')
+      await wrapper.vm.$nextTick()
+
+      const active = layers(wrapper).filter((layer) => layer.active)
+      expect(active).toHaveLength(1)
+      expect(active[0]!.image).toContain('blob:the-logo')
+    })
+
     it('fades the very first artwork in rather than waiting for a second one', async () => {
       // The watcher is immediate — without that, nothing would be active
       // until the hero changed once.

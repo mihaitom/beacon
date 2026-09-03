@@ -633,6 +633,8 @@ describe('phone-scoped media URLs (remoteCoverArtUrl / remoteRadioFaviconUrl)', 
         'https://station.example',
       )}&password=secret&v=${RADIO_FAVICON_CACHE_VERSION}`,
     )
-    expect(remoteRadioFaviconUrl('https://station.example', 32)).toContain('min_size=32')
+    // Rounded up to the shared size step, so the phone reuses the answer the
+    // desktop's own list row already had the backend resolve.
+    expect(remoteRadioFaviconUrl('https://station.example', 32)).toContain('min_size=64')
   })
 })

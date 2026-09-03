@@ -7,6 +7,12 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { useAuthStore } from '@/stores/auth'
 import { fetchCoverArtBatched } from '@/services/connect/coverArtBatch'
+import {
+  fetchRadioFaviconBatched,
+  NoRadioFaviconError,
+  type RadioFavicon,
+} from '@/services/connect/radioFaviconBatch'
+import { radioFaviconRequest } from '@/services/connect/radio'
 import CoverArt, { MAX_CONCURRENT_LOADS as MAX } from '../CoverArt.vue'
 
 // Mocked at this boundary (not the underlying fetch/http layer) so this
@@ -15,6 +21,15 @@ import CoverArt, { MAX_CONCURRENT_LOADS as MAX } from '../CoverArt.vue'
 // group requests together on the wire — that grouping has its own tests in
 // services/connect/__tests__/coverArtBatch.test.ts.
 vi.mock('@/services/connect/coverArtBatch', () => ({ fetchCoverArtBatched: vi.fn() }))
+
+// Same boundary for a radio station's logo, and NoRadioFaviconError has to
+// stay the real class: the component tells "this station has no logo" apart
+// from "the backend could not be reached" by instanceof, and a stubbed
+// stand-in would make that distinction untestable here.
+vi.mock('@/services/connect/radioFaviconBatch', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/connect/radioFaviconBatch')>()),
+  fetchRadioFaviconBatched: vi.fn(),
+}))
 
 const vuetify = createVuetify({ components, directives })
 
@@ -658,6 +673,77 @@ describe('CoverArt', () => {
       await flush()
 
       expect(wrapper.findComponent({ name: 'VImg' }).props('cover')).toBe(false)
+    })
+  })
+
+  describe('a radio station logo', () => {
+    const station = radioFaviconRequest('https://station.example', 96)
+
+    function resolveFavicon(favicon: Partial<RadioFavicon> = {}) {
+      vi.mocked(fetchRadioFaviconBatched).mockResolvedValue({
+        blob: new Blob(['logo']),
+        transparent: false,
+        ...favicon,
+      })
+    }
+
+    it('is resolved in a batch, never fetched from a URL of its own', async () => {
+      // One request per station is the traffic shape that got a real user's
+      // IP banned — see radioFaviconBatch.ts.
+      resolveFavicon()
+      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      await scrollIntoRest(mountCover({ coverArtId: null, radioFavicon: station }))
+
+      expect(fetchRadioFaviconBatched).toHaveBeenCalledWith(station, expect.any(AbortSignal))
+      expect(fetchSpy).not.toHaveBeenCalled()
+      fetchSpy.mockRestore()
+    })
+
+    it('reports the transparency that came with it', async () => {
+      resolveFavicon({ transparent: true })
+      const wrapper = await scrollIntoRest(mountCover({ coverArtId: null, radioFavicon: station }))
+
+      expect(wrapper.emitted('transparency')).toEqual([[true]])
+    })
+
+    it('reports what it ended up showing, so a backdrop can be painted from it', async () => {
+      resolveFavicon()
+      const wrapper = await scrollIntoRest(mountCover({ coverArtId: null, radioFavicon: station }))
+
+      const loaded = wrapper.emitted('loaded')
+      expect(loaded?.at(-1)).toEqual([expect.stringContaining('blob:')])
+    })
+
+    it('gives up on a station that has no logo instead of retrying it', async () => {
+      // A settled answer, not a bad moment: retrying it would be a poll
+      // against something that will not change, once per station, in a view
+      // that holds a listful of them.
+      vi.mocked(fetchRadioFaviconBatched).mockRejectedValue(new NoRadioFaviconError())
+      await scrollIntoRest(mountCover({ coverArtId: null, radioFavicon: station }))
+      vi.mocked(fetchRadioFaviconBatched).mockClear()
+
+      vi.advanceTimersByTime(120_000)
+      await flush()
+
+      expect(fetchRadioFaviconBatched).not.toHaveBeenCalled()
+    })
+
+    it('comes back to one the backend simply could not resolve just now', async () => {
+      vi.mocked(fetchRadioFaviconBatched).mockRejectedValue(new Error('still resolving'))
+      await scrollIntoRest(mountCover({ coverArtId: null, radioFavicon: station }))
+      vi.mocked(fetchRadioFaviconBatched).mockClear()
+
+      vi.advanceTimersByTime(5000)
+      await flush()
+
+      expect(fetchRadioFaviconBatched).toHaveBeenCalled()
+    })
+
+    it('falls through to the album cover behind it when there is one', async () => {
+      vi.mocked(fetchRadioFaviconBatched).mockRejectedValue(new NoRadioFaviconError())
+      await scrollIntoRest(mountCover({ coverArtId: 'cover-1', radioFavicon: station }))
+
+      expect(inFlight().map((r) => r.id)).toEqual(['cover-1'])
     })
   })
 })

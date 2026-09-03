@@ -1,4 +1,5 @@
 import { fetchConnect } from './http'
+import { dataUrlToBlob } from './dataUrl'
 
 interface PendingRequest {
   resolve: (blob: Blob) => void
@@ -136,19 +137,4 @@ function settle(
     if (blob) request.resolve(blob)
     else request.reject(error)
   }
-}
-
-// Decoded by hand (not `await (await fetch(dataUrl)).blob()`) so this never
-// touches the global fetch — a `data:` URL isn't a real network request,
-// and routing it through fetch anyway would make every batched cover show
-// up as a second, synthetic "request" to anything (including a test) that
-// observes fetch calls to account for network activity.
-function dataUrlToBlob(dataUrl: string): Blob {
-  const commaIndex = dataUrl.indexOf(',')
-  const header = dataUrl.slice(0, commaIndex)
-  const mime = /data:(.*?);base64/.exec(header)?.[1] ?? 'application/octet-stream'
-  const binary = atob(dataUrl.slice(commaIndex + 1))
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return new Blob([bytes], { type: mime })
 }

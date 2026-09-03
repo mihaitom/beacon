@@ -141,6 +141,7 @@
 import { usePlaybackStore } from '@/stores/playback'
 import { useDrawersStore } from '@/stores/drawers'
 import { useConnectStore } from '@/stores/connect'
+import { pollingAllowed } from '@/services/connect/pollGate'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import ConnectButton from '@/components/connect/ConnectButton.vue'
@@ -280,8 +281,14 @@ export default {
           // first paint still needs one real round trip.
           this.fetchDeviceVolume(this.singleActiveTarget)
           if (!this.connectStore.isVolumePushCapable(this.singleActiveTarget.type)) {
+            // Skipped while the window is hidden or the app is being
+            // denied by whatever sits in front of the backend — see
+            // pollGate.ts. The timer keeps ticking rather than being torn
+            // down and rebuilt, so the reading resumes on its own.
             this.volumePollTimer = setInterval(() => {
-              if (this.singleActiveTarget) this.fetchDeviceVolume(this.singleActiveTarget)
+              if (this.singleActiveTarget && pollingAllowed()) {
+                this.fetchDeviceVolume(this.singleActiveTarget)
+              }
             }, 4000)
           }
         }
