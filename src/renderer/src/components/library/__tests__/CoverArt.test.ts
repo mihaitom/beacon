@@ -639,4 +639,25 @@ describe('CoverArt', () => {
 
     expect(requests).toHaveLength(0)
   })
+
+  describe('how the image fills its box', () => {
+    it('crops to fill by default, because album art is square', async () => {
+      const wrapper = await scrollIntoRest(mountCover())
+      requests[0]!.succeed()
+      await flush()
+
+      expect(wrapper.findComponent({ name: 'VImg' }).props('cover')).toBe(true)
+    })
+
+    it('fits the whole image when asked, for art that is not square', async () => {
+      // A radio station's logo is whatever shape the station made it,
+      // frequently a wide banner — cropping one to a square cuts the name
+      // off its own logo.
+      const wrapper = await scrollIntoRest(mountCover({ contain: true }))
+      requests[0]!.succeed()
+      await flush()
+
+      expect(wrapper.findComponent({ name: 'VImg' }).props('cover')).toBe(false)
+    })
+  })
 })

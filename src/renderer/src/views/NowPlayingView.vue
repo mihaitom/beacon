@@ -142,6 +142,7 @@
                  - than a clean logo. -->
                 <cover-art
                   v-else
+                  contain
                   :image-url="radioFaviconSrc"
                   :size="artSize"
                   fallback-icon="mdi-radio"

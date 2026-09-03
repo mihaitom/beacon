@@ -23,7 +23,7 @@
       :src="displaySrc"
       width="100%"
       height="100%"
-      cover
+      :cover="!contain"
       eager
       @error="onImageError"
     >
@@ -47,7 +47,7 @@
       :src="displaySrc"
       width="100%"
       height="100%"
-      cover
+      :cover="!contain"
       eager
       @error="onImageError"
     >
@@ -228,6 +228,17 @@ export default {
       default: 160,
     },
     rounded: {
+      type: Boolean,
+      default: false,
+    },
+    /** Fit the whole image inside the box instead of filling it by cropping.
+     * Off by default: album and playlist art is square, so filling is both
+     * correct and what keeps a grid looking like a grid. A radio station's
+     * logo is the exception — it is whatever shape the station made it,
+     * frequently a wide banner, and cropping one to a square cuts the name
+     * off its own logo (reported live 2026-09-03 on the Now Playing
+     * screen). */
+    contain: {
       type: Boolean,
       default: false,
     },
