@@ -32,11 +32,13 @@ playback included — /play-url already starts one for casting on its own,
 but local playback never calls that at all, so it has no other hook to
 piggyback on."""
 
+import asyncio
 import base64
 import binascii
 import io
 import logging
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from urllib.parse import unquote_to_bytes, urljoin, urlparse
@@ -79,11 +81,23 @@ _MAX_FETCHES = 5
 # caller waiting on) an entire multi-MB page just to find them.
 _MAX_HTML_BYTES = 256 * 1024
 
-# Browser-side cache only — this backend doesn't keep its own copy of the
-# actual image, so there's nothing to invalidate here if a station's
-# homepage favicon changes; the browser will just refetch after this
-# expires.
 _CACHE_CONTROL = "public, max-age=604800"
+
+# What "this station has no usable icon" is cached as. Shorter than a
+# successful lookup deliberately: a station that has no icon today may put
+# one up tomorrow, and unlike a hit there is nothing on screen to tell the
+# user their logo is stale.
+#
+# That this exists at all is the point. A 404 with no cache directive is
+# re-requested on every single render, so every station without a findable
+# icon became a permanent, repeating 404 — one per station, per view, per
+# reload. A burst of those, each under its own one-off URL, is precisely
+# the shape an IPS/WAF probe scenario counts (CrowdSec's http-probing
+# leaks a bucket of 4xx responses per source IP), and it is what got a
+# legitimate user's own IP banned after RADIO_FAVICON_CACHE_VERSION was
+# raised and every previously cached hit turned into a miss at once. See
+# docs/playback-bugs/radio-favicon-4xx-ban.md.
+_NEGATIVE_CACHE_CONTROL = "public, max-age=21600"
 
 # rel values that plausibly point at a usable icon. Deliberately broad
 # (mask-icon is normally a monochrome SVG meant for Safari's pinned-tab
@@ -103,6 +117,19 @@ _ICON_RELS = {
 class _Candidate:
     url: str
     size: int  # 0 = unknown/unspecified
+    # False only for the implicit /favicon.ico fallback below — its size=1
+    # exists purely to sort it after every *declared* icon (see
+    # _discover_candidates()'s own comment), not as a real claim about its
+    # dimensions, so the "already have something at least this big" skip in
+    # radio_favicon() below must never treat it as one.
+    is_declared_size: bool = True
+    # True for a <link rel="mask-icon"> — see _ICON_RELS' own comment: a
+    # monochrome silhouette meant to be recolored by Safari's own CSS
+    # masking, not a real likeness of the station's logo at all. Read by
+    # _try_candidate() to keep it from claiming _SCALABLE_PIXELS the way a
+    # genuine logo SVG does — being vector doesn't make a silhouette a
+    # *good* result, just a scalable one.
+    is_mask_icon: bool = False
 
 
 def _parse_sizes(sizes: str) -> int:
@@ -128,7 +155,7 @@ class _IconLinkParser(HTMLParser):
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.links: list[tuple[str, str]] = []  # (href, sizes)
+        self.links: list[tuple[str, str, bool]] = []  # (href, sizes, is_mask_icon)
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag != "link":
@@ -137,7 +164,7 @@ class _IconLinkParser(HTMLParser):
         rel = (values.get("rel") or "").strip().lower()
         href = values.get("href")
         if rel in _ICON_RELS and href:
-            self.links.append((href, values.get("sizes", "")))
+            self.links.append((href, values.get("sizes", ""), rel == "mask-icon"))
 
 
 # Parsed candidate lists (not the image bytes themselves — those still go
@@ -176,7 +203,7 @@ async def _discover_candidates(homepage_url: str) -> list[_Candidate]:
                 html = b"".join(chunks).decode("utf-8", errors="ignore")
                 parser = _IconLinkParser()
                 parser.feed(html)
-                for href, sizes in parser.links:
+                for href, sizes, is_mask_icon in parser.links:
                     # urljoin parses `href` and raises for a malformed one
                     # ("Invalid IPv6 URL" for a stray "//[", say). One
                     # broken <link> in a station's HTML is no reason to
@@ -187,7 +214,11 @@ async def _discover_candidates(homepage_url: str) -> list[_Candidate]:
                     except ValueError:
                         logger.info(f"[radio-favicon] {homepage_url}: unusable icon href {href!r}")
                         continue
-                    candidates.append(_Candidate(url=resolved, size=_parse_sizes(sizes)))
+                    candidates.append(
+                        _Candidate(
+                            url=resolved, size=_parse_sizes(sizes), is_mask_icon=is_mask_icon
+                        )
+                    )
     except httpx.HTTPError as e:
         logger.info(f"[radio-favicon] {homepage_url} unreachable: {type(e).__name__}: {e}")
 
@@ -199,7 +230,7 @@ async def _discover_candidates(homepage_url: str) -> list[_Candidate]:
     # tag at all is a slightly stronger signal of being an intentional,
     # reasonable-quality icon than the bare convention path is) but is
     # never mistaken for "no candidate at all".
-    candidates.append(_Candidate(url=f"{root}/favicon.ico", size=1))
+    candidates.append(_Candidate(url=f"{root}/favicon.ico", size=1, is_declared_size=False))
 
     _candidate_cache[homepage_url] = (time.monotonic(), candidates)
     return candidates
@@ -269,17 +300,29 @@ def _decode_data_uri(uri: str) -> tuple[bytes, str] | None:
 _SCALABLE_PIXELS = 100_000
 
 
-def _pixel_size(content: bytes, content_type: str) -> int:
+def _pixel_size(content: bytes, content_type: str, scalable: bool = True) -> int:
     """The real edge length of a fetched icon, as opposed to whatever size
     its <link> tag claimed (or, for a Radio Browser `hint`, claimed
     nothing at all). Reads only the image header, so it costs nothing
     beyond what is already in memory.
 
-    0 for anything undecodable — an unknown size must never beat a known
-    one when picking the best icon below, and _select()'s ordering already
-    treats 0 as the weakest candidate."""
+    `scalable=False` (only ever passed for a mask-icon — see
+    _Candidate.is_mask_icon) keeps an SVG from claiming _SCALABLE_PIXELS:
+    that bonus exists because a vector image satisfies any min_size, which
+    is true of a mask-icon's geometry too, but it is a monochrome
+    silhouette by convention, not a real likeness of the station's logo at
+    any resolution. Without this, one being fetched anywhere in the
+    cascade (see radio_favicon()) short-circuited the whole search the
+    moment it was measured — instantly "meeting" even a very large
+    min_size and winning over an actual full-color icon already in hand,
+    which is what a station's colorful logo looked like it had lost all
+    its color to. Reported live 2026-09-03.
+
+    0 for anything undecodable, and for a non-scalable SVG — an unknown
+    size must never beat a known one when picking the best icon below, and
+    _select()'s ordering already treats 0 as the weakest candidate."""
     if content_type.startswith("image/svg"):
-        return _SCALABLE_PIXELS
+        return _SCALABLE_PIXELS if scalable else 0
     try:
         with Image.open(io.BytesIO(content)) as img:
             return max(img.width, img.height)
@@ -303,36 +346,54 @@ class _Fetched:
     pixels: int
 
 
+def _cache_headers(cache_control: str) -> dict[str, str]:
+    """The headers every answer from this route carries, hit or miss.
+
+    Both parts matter, and a miss needs them just as much as a hit does: a
+    404 nothing is allowed to cache is re-asked on every render, which is
+    what turned a station without a findable icon into a permanent stream
+    of 4xx from one IP (see _NEGATIVE_CACHE_CONTROL)."""
+    return {
+        "Cache-Control": cache_control,
+        # Set here rather than left to CORSMiddleware, which only adds it
+        # when the request carried an Origin at all. Anything that fetches
+        # this URL without one — an <img src>, a non-browser client — got a
+        # cacheable 200 with no Vary and no Access-Control-Allow-Origin, and
+        # the browser is then entitled to serve that same entry to a later
+        # fetch() from the app, which fails it as "No
+        # 'Access-Control-Allow-Origin' header is present" without a request
+        # ever leaving the machine. Against a week of max-age, one such
+        # fetch poisoned the station's logo for a week, survived every
+        # reload (a normal one reads the disk cache) and looked for all the
+        # world like a CORS misconfiguration on a backend that was answering
+        # correctly.
+        #
+        # A request that *does* carry an Origin ends up with
+        # "Vary: Origin, Origin", since CORSMiddleware appends its own.
+        # Harmless — a repeated field value is well-formed and every cache
+        # reads it as the single field name it repeats — and preferable to
+        # the alternative, which is making this response depend on
+        # inspecting the request to guess what the middleware is about to
+        # do.
+        "Vary": "Origin",
+    }
+
+
 def _favicon_response(fetched: _Fetched) -> Response:
     return Response(
         content=fetched.content,
         media_type=fetched.content_type,
         headers={
-            "Cache-Control": _CACHE_CONTROL,
-            # Set here rather than left to CORSMiddleware, which only adds
-            # it when the request carried an Origin at all. Anything that
-            # fetches this URL without one — an <img src>, a non-browser
-            # client — got a cacheable 200 with no Vary and no
-            # Access-Control-Allow-Origin, and the browser is then entitled
-            # to serve that same entry to a later fetch() from the app,
-            # which fails it as "No 'Access-Control-Allow-Origin' header is
-            # present" without a request ever leaving the machine. With a
-            # week of max-age below, one such fetch poisoned the station's
-            # logo for a week, survived every reload (a normal one reads
-            # the disk cache) and looked for all the world like a CORS
-            # misconfiguration on a backend that was answering correctly.
-            #
-            # A request that *does* carry an Origin ends up with
-            # "Vary: Origin, Origin", since CORSMiddleware appends its own.
-            # Harmless — a repeated field value is well-formed and every
-            # cache reads it as the single field name it repeats — and
-            # preferable to the alternative, which is making this response
-            # depend on inspecting the request to guess what the middleware
-            # is about to do.
-            "Vary": "Origin",
+            **_cache_headers(_CACHE_CONTROL),
             "X-Has-Transparency": "true" if _has_transparency(fetched.content) else "false",
         },
     )
+
+
+def _no_favicon_response(status_code: int) -> Response:
+    """A lookup that found nothing (404) or was asked something malformed
+    (400). Cacheable on purpose — see _NEGATIVE_CACHE_CONTROL."""
+    return Response(status_code=status_code, headers=_cache_headers(_NEGATIVE_CACHE_CONTROL))
 
 
 def _select(candidates: list[_Candidate], min_size: int) -> list[_Candidate]:
@@ -363,7 +424,8 @@ async def _try_candidate(candidate: _Candidate) -> _Fetched | None:
         content, content_type = decoded
         if len(content) > _MAX_BYTES or not content_type.startswith("image/"):
             return None
-        return _Fetched(content, content_type, _pixel_size(content, content_type) or candidate.size)
+        pixels = _pixel_size(content, content_type, scalable=not candidate.is_mask_icon)
+        return _Fetched(content, content_type, pixels or candidate.size)
 
     try:
         resp = await _client.get(candidate.url)
@@ -382,9 +444,8 @@ async def _try_candidate(candidate: _Candidate) -> _Fetched | None:
     ):
         return None
 
-    return _Fetched(
-        resp.content, content_type, _pixel_size(resp.content, content_type) or candidate.size
-    )
+    pixels = _pixel_size(resp.content, content_type, scalable=not candidate.is_mask_icon)
+    return _Fetched(resp.content, content_type, pixels or candidate.size)
 
 
 @router.get("/radio-favicon")
@@ -447,10 +508,16 @@ async def radio_favicon(
             # Its own <link sizes> already promises nothing better than
             # what is in hand — downloading it could only confirm that.
             # Only skippable because the declaration is a *claim about a
-            # size*: a candidate that declares nothing (size 0) says
-            # nothing about being smaller either, so it still gets fetched
-            # and measured.
-            if best is not None and 0 < candidate.size <= best.pixels:
+            # size*: a candidate that declares nothing (size 0), or whose
+            # size is a sort-order sentinel rather than a real claim (the
+            # implicit /favicon.ico fallback — see _Candidate.is_declared_size),
+            # says nothing about being smaller either, so it still gets
+            # fetched and measured.
+            if (
+                best is not None
+                and candidate.is_declared_size
+                and 0 < candidate.size <= best.pixels
+            ):
                 continue
             fetches += 1
             fetched = await _try_candidate(candidate)

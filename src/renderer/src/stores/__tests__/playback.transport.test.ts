@@ -536,6 +536,17 @@ describe('playback transport', () => {
       expect(playback.isPlaying).toBe(false)
     })
 
+    it('clears a stale buffering flag along with everything else', async () => {
+      // Same reasoning as handOffToLocalPlayback()'s identical reset —
+      // nothing is casting any more to still be filling a startup buffer.
+      const playback = usePlaybackStore()
+      playback.radioBuffering = true
+
+      await playback.stop()
+
+      expect(playback.radioBuffering).toBe(false)
+    })
+
     it('stops the radio-metadata watch when stopping local radio playback', async () => {
       const playback = usePlaybackStore()
       await playback.playRadioStation({

@@ -15,7 +15,7 @@ const ENABLED_KEY = 'beacon.recommendations-enabled'
 // to call the endpoint in the first place.
 function loadEnabled(): boolean {
   try {
-    return localStorage.getItem(ENABLED_KEY) !== 'false'
+    return localStorage.getItem(accountScopedKey(ENABLED_KEY)) !== 'false'
   } catch {
     return true
   }

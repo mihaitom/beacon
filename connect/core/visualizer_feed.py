@@ -34,6 +34,7 @@ from .state import TEST_TONE_TRACK_ID, list_target_pairs, test_tone_url
 
 if TYPE_CHECKING:  # avoids a session <-> visualizer_feed import cycle at runtime
     from .radio_position import RadioPositionTracker
+    from .radio_relay import RadioRelay
     from .session import SessionState
 
 logger = logging.getLogger("connect.visualizer")
@@ -148,6 +149,9 @@ class _OffsetTrackerClock:
         # The last value handed out, so a tracker swap can carry on from it
         # rather than restarting the count — see _rebase_if_tracker_changed().
         self._last_elapsed: float = 0.0
+        # Set once mark() fires, even if no tracker was available at that
+        # exact moment — see _try_set_baseline().
+        self._first_byte_seen: bool = False
 
     def _rebase_if_tracker_changed(self, tracker: RadioPositionTracker) -> None:
         """Follow whichever RadioPositionTracker the session currently
@@ -189,11 +193,28 @@ class _OffsetTrackerClock:
         nothing to zero" was wrong: the tracker needs no zeroing, but the
         baseline drawn from it still has to be taken at the right
         moment."""
+        self._first_byte_seen = True
+        self._try_set_baseline()
+
+    def _try_set_baseline(self) -> None:
+        """The actual baseline-taking behind mark() — also retried from
+        elapsed(). A station change or /stop can clear
+        session.radio_position_tracker in the narrow window between this
+        analyzer's first decoded byte and mark() reading it, which used to
+        mean no baseline was *ever* taken for that run: mark() only fires
+        once, and _rebase_if_tracker_changed() only rebases an *existing*
+        baseline. Retrying this from elapsed() closes that gap — the
+        baseline still lands as close to first-byte as a tracker being
+        available allows, instead of freezing this clock at 0.0 for the
+        rest of the run."""
+        if self._baseline is not None or not self._first_byte_seen:
+            return
         tracker = self._session.radio_position_tracker
-        if self._baseline is None and tracker is not None:
-            self._tracker = tracker
-            self._baseline = tracker.elapsed_fn()
-            self._last_elapsed = 0.0
+        if tracker is None:
+            return
+        self._tracker = tracker
+        self._baseline = tracker.elapsed_fn()
+        self._last_elapsed = 0.0
 
     def elapsed(self) -> float:
         tracker = self._session.radio_position_tracker
@@ -203,6 +224,8 @@ class _OffsetTrackerClock:
             # decoded frame in the future.
             return self._last_elapsed
         self._rebase_if_tracker_changed(tracker)
+        if self._baseline is None:
+            self._try_set_baseline()
         if self._baseline is None:
             # Nothing decoded yet, so no frame can be due: content_position
             # starts at 0 and _release_frames() holds back anything above
@@ -247,6 +270,11 @@ class VisualizerFeed:
         # leaving, or a handler that just changed playback state and doesn't
         # want to wait out _SUPERVISE_INTERVAL for it to be noticed.
         self._wake = asyncio.Event()
+        # Set alongside _wake whenever the subscriber count changes, so
+        # core/radio_position.py's RadioPositionTracker can react to
+        # is_watching_radio() flipping without waiting out its own current
+        # sleep first — see that module's _poll_interval().
+        self.watch_changed = asyncio.Event()
         # What `analyzer` was started for: (play_generation, track id). The
         # supervisor restarts analysis whenever this no longer matches what's
         # actually playing — see _target_key().
@@ -254,7 +282,13 @@ class VisualizerFeed:
         # The relay fan-out subscription a radio run holds, so _stop_analyzer()
         # can hand it back — a queue left subscribed keeps being filled with
         # audio nobody decodes any more, for as long as the station plays.
+        # Paired with the relay it was actually taken out on: a station
+        # change replaces session.radio_relay with a fresh RadioRelay before
+        # the old analyzer is torn down, so unsubscribing from whatever
+        # relay is *current* at teardown time can silently miss — the
+        # subscription lives on the old relay, not the new one.
         self._audio_queue: asyncio.Queue[bytes | None] | None = None
+        self._audio_relay: RadioRelay | None = None
         self.analyzer: AudioAnalyzer | None = None
 
     def subscribe(self) -> None:
@@ -266,6 +300,7 @@ class VisualizerFeed:
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._supervise())
         self._wake.set()
+        self.watch_changed.set()
 
     def unsubscribe(self) -> None:
         """One fewer client is watching. Analysis stops as soon as the
@@ -275,6 +310,7 @@ class VisualizerFeed:
         the count negative and strand the analyzer running forever."""
         self._subscribers = max(0, self._subscribers - 1)
         self._wake.set()
+        self.watch_changed.set()
 
     def notify(self) -> None:
         """Tell the supervisor something about playback just changed, so it
@@ -406,6 +442,12 @@ class VisualizerFeed:
             gain=st.current_track_gain,
         )
         await analyzer.start()
+        if not analyzer.started:
+            # Spawn failed (see AudioAnalyzer.start()) — leave self._key
+            # unset so the next supervisor tick retries instead of staying
+            # stuck on this generation forever.
+            self._key = None
+            return
         self.analyzer = analyzer
         logger.debug(
             f"[visualizer] Analysis started at {position:.1f}s — {track.artist} — "
@@ -433,15 +475,19 @@ class VisualizerFeed:
         core/radio_position.py), so they get a real clock instead of a
         guess.
 
-        Decodes the station a second time with its own, independent ffmpeg
-        (AudioAnalyzer's `source_url` path — the same one track analysis
-        already uses) rather than tapping core/radio_relay.py's device-audio
-        fan-out — see that module's own docstring for why: a bug in this
-        analyzer's own decode/pacing used to be one step away from stalling
-        the *device's* audio too, since both shared one ffmpeg process.
-        Removed 2026-09-03 after that happened repeatedly (see this
-        function's own change history below); this analyzer now has no
-        pipe in common with device audio to ever stall again.
+        Taps core/radio_relay.py's own device-audio fan-out (subscribe_
+        audio(lossy=True) below — the same bytes the cast target gets, not
+        a second fetch of the station) but decodes them with its own,
+        independent ffmpeg (AudioAnalyzer's `source_queue` path) rather
+        than ever sharing *that relay's* ffmpeg process — see that
+        module's own docstring for why: a bug in this analyzer's own
+        decode/pacing used to be one step away from stalling the
+        *device's* audio too, back when both outputs came from the same
+        ffmpeg process. Removed 2026-09-03 after that happened repeatedly
+        (see this function's own change history below); this analyzer now
+        has no pipe in common with device audio to ever stall again — at
+        worst a bug here drops frames into its own, separately-bounded
+        queue (_ANALYSIS_QUEUE_MAXSIZE) instead.
 
         `start_offset` is always 0: a station has no track position to
         seek to, so every attach — including one that joins minutes into
@@ -534,8 +580,17 @@ class VisualizerFeed:
             on_first_byte=on_first_byte,
         )
         await analyzer.start()
+        if not analyzer.started:
+            # Spawn failed (see AudioAnalyzer.start()) — hand the
+            # subscription back rather than leaking it, and leave self._key
+            # unset so the next supervisor tick retries instead of staying
+            # stuck on this generation forever.
+            relay.unsubscribe_audio(queue)
+            self._key = None
+            return
         self.analyzer = analyzer
         self._audio_queue = queue
+        self._audio_relay = relay
         logger.debug(f"[visualizer] Radio analysis started (generation={key[0]})")
 
     async def _stop_analyzer(self) -> None:
@@ -544,10 +599,10 @@ class VisualizerFeed:
         analyzer, self.analyzer = self.analyzer, None
         await analyzer.stop()
         queue, self._audio_queue = self._audio_queue, None
-        if queue is not None:
-            relay = self._session.radio_relay
-            if relay is not None:
-                relay.unsubscribe_audio(queue)
+        relay, self._audio_relay = self._audio_relay, None
+        if queue is not None and relay is not None:
+            relay.unsubscribe_audio(queue)
+        logger.debug("[visualizer] Analysis stopped")
 
     def is_watching_radio(self) -> bool:
         """Whether an AudioAnalyzer is actually running for radio right
@@ -560,4 +615,3 @@ class VisualizerFeed:
         needing this tracker at all, which tolerates a far slower cadence
         — see that module's own comment on why this exists."""
         return self.analyzer is not None and self._session.state.current_track is None
-        logger.debug("[visualizer] Analysis stopped")

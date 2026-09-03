@@ -121,9 +121,13 @@ class RadioPositionTracker:
         self._baseline: float | None = None
         self._baseline_set_at: float = 0.0
         self.ready = False
+        # Held so the poll loop can't be silently garbage-collected mid-run
+        # — asyncio only keeps a weak reference to a task once nothing else
+        # holds a strong one.
+        self._task: asyncio.Task | None = None
 
     def start(self) -> None:
-        asyncio.create_task(self._run())
+        self._task = asyncio.create_task(self._run())
 
     def elapsed_fn(self) -> float:
         """Cheap, synchronous — the last polled position, held constant
@@ -136,7 +140,18 @@ class RadioPositionTracker:
     async def _run(self) -> None:
         try:
             while True:
-                await asyncio.sleep(self._poll_interval())
+                # Waiting on VisualizerFeed.watch_changed rather than a
+                # plain sleep(self._poll_interval()) lets a subscriber
+                # arriving mid-sleep cut a still-in-flight 8s idle wait
+                # short — see _poll_interval() and that event's own
+                # comment. A timeout is the common case (nothing watching
+                # yet, or already past the interval).
+                watch_changed = self._session.visualizer.watch_changed
+                try:
+                    await asyncio.wait_for(watch_changed.wait(), self._poll_interval())
+                except TimeoutError:
+                    pass
+                watch_changed.clear()
                 if not await self._poll_once():
                     return
         except asyncio.CancelledError:

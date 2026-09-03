@@ -285,6 +285,22 @@ describe('reconcileFromStatus / adoptCastQueue', () => {
 
       expect(playback.radioNowPlaying).toBe('Artist - Track')
     })
+
+    it("resets duration so a track's stale length never clamps the live radio clock", async () => {
+      // The same bug playRadioStation() itself guards against (see its own
+      // comment): another client switching this shared session to radio is
+      // what reaches this branch instead of that one — without this reset,
+      // positionTracker.extrapolate() keeps clamping live elapsed to
+      // whatever track duration was left over from before the switch.
+      const playback = usePlaybackStore()
+      playback.duration = 240
+
+      await playback.reconcileFromStatus(
+        makeStatus({ radio: { title: 'Chill FM', url: 'https://stream.example/chill' } }),
+      )
+
+      expect(playback.duration).toBe(0)
+    })
   })
 
   describe('the in-flight local song switch race', () => {

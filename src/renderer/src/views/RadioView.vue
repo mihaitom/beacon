@@ -287,6 +287,8 @@
                 icon="mdi-plus"
                 variant="text"
                 size="small"
+                :loading="addingStationuuids.has(item.stationuuid)"
+                :disabled="addingStationuuids.has(item.stationuuid)"
                 @click="addBrowsedStation(item)"
               />
             </template>
@@ -406,10 +408,18 @@ export default {
       // dialog opens, not cross-referenced against libraryStore.radioStations
       // (Radio Browser results carry no id that overlaps a saved station's).
       addedStationuuids: new Set<string>(),
+      // Which results have a saveRadioStation() call in flight right now —
+      // see addBrowsedStation()'s own comment on why the add button needs
+      // this on top of addedStationuuids.
+      addingStationuuids: new Set<string>(),
       // Guards a slow search response landing after a newer query already
       // superseded it — same shape as SongWaveform.vue's fetchedSongId
       // guard, just a counter instead of an id since queries aren't unique.
       browseSeq: 0,
+      // Set for the span of openBrowse()'s own reset-to-defaults — see its
+      // own comment on why the browseQuery/browseOrder watchers below have
+      // to check it.
+      suppressBrowseReset: false,
     }
   },
   computed: {
@@ -472,6 +482,7 @@ export default {
   },
   watch: {
     browseQuery() {
+      if (this.suppressBrowseReset) return
       clearTimeout(browseDebounceTimer)
       browseDebounceTimer = setTimeout(() => this.runBrowseSearch(), 400)
     },
@@ -481,6 +492,7 @@ export default {
       void this.runBrowseSearch()
     },
     browseOrder() {
+      if (this.suppressBrowseReset) return
       clearTimeout(browseDebounceTimer)
       void this.runBrowseSearch()
     },
@@ -530,6 +542,16 @@ export default {
     },
     openBrowse() {
       clearTimeout(browseDebounceTimer)
+      // Reopening after a non-default query/order left over from the last
+      // visit resets both below, and each is watched — without this guard,
+      // the browseOrder watcher fired its own immediate runBrowseSearch()
+      // and the (debounced, but still eventually firing) browseQuery one
+      // queued a second, on top of the explicit call this method already
+      // makes at the end. Three redundant requests to Radio Browser's
+      // third-party API for what should be exactly one. Cleared once this
+      // method's own synchronous reset has had its chance to reach both
+      // watchers — see their own checks.
+      this.suppressBrowseReset = true
       this.browseQuery = ''
       // browseCountry is deliberately left alone — see its own data()
       // comment for why that one filter survives across dialog opens.
@@ -546,6 +568,9 @@ export default {
       // that's a real, intended call) rather than a blank dialog until the
       // person types something.
       void this.runBrowseSearch()
+      void this.$nextTick(() => {
+        this.suppressBrowseReset = false
+      })
     },
     loadBrowseFilterOptions() {
       // Already loaded from a previous time this dialog was opened this
@@ -597,9 +622,21 @@ export default {
       return result.bitrate ? `${result.codec}, ${result.bitrate} kbps` : result.codec
     },
     async addBrowsedStation(result: RadioBrowserStation) {
-      await this.libraryStore.saveRadioStation(result.name, result.url, result.homepage)
-      this.addedStationuuids.add(result.stationuuid)
-      registerRadioBrowserClick(result.stationuuid)
+      // addedStationuuids only gains this row once saveRadioStation()
+      // actually resolves, so the button stays a plain (still-clickable)
+      // plus icon for the whole round trip — a second click/tap before
+      // the first save lands fired a second, concurrent save, creating a
+      // duplicate saved station. This guard is what addingStationuuids
+      // (see its own comment) exists for.
+      if (this.addingStationuuids.has(result.stationuuid)) return
+      this.addingStationuuids.add(result.stationuuid)
+      try {
+        await this.libraryStore.saveRadioStation(result.name, result.url, result.homepage)
+        this.addedStationuuids.add(result.stationuuid)
+        registerRadioBrowserClick(result.stationuuid)
+      } finally {
+        this.addingStationuuids.delete(result.stationuuid)
+      }
     },
     // A one-off listen, deliberately not going through saveRadioStation —
     // this plays the same way song radio does (see playRadioStation()'s

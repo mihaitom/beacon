@@ -1038,6 +1038,17 @@ async def play_url(
                         # attempting to resurrect whatever station (if any)
                         # was relaying successfully before this call.
                         await session.stop_radio_relay()
+                        # start_radio_relay() above already tore down that
+                        # previous station's own relay too, as part of
+                        # switching to this one (it stops whatever's running
+                        # for any *different* URL before starting the new
+                        # one) — so the rollback above just claimed a
+                        # station is still relayed when its relay in fact no
+                        # longer exists. Left uncorrected, the status/UI
+                        # would report a live relay indefinitely, until some
+                        # unrelated later /play-url happened to fix it.
+                        if st.radio_info is not None:
+                            st.radio_info = {**st.radio_info, "relayed": False}
                     # See /play's identical comment — don't leave the device
                     # locked to this session when nothing actually started
                     # playing on it.

@@ -140,6 +140,43 @@ def test_tears_down_the_relay_when_the_device_refuses_it(client, default_session
     assert default_session.state.radio_info is None
 
 
+def test_a_failed_switch_does_not_leave_the_previous_station_claiming_a_relay_that_is_gone(
+    client, default_session
+):
+    """start_radio_relay() for the new station tears down the previous
+    one's relay before the new dispatch is even attempted (see that
+    method's own docstring) — so when the dispatch then fails and rolls
+    radio_info back to the previous station, that station's own relay no
+    longer exists either. Reporting it as still "relayed" would claim a
+    live relay nothing backs any more, until some unrelated later
+    /play-url happened to fix it — see core/state.py's radio_dispatch_url()
+    for what actually breaks were a consumer to trust that flag."""
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch(
+            "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/mpeg"))
+        ),
+        patch("core.session.RadioRelay", FakeRelay),
+    ):
+        _play_url(client, title="First", url="http://example.com/first.mp3")
+
+    with (
+        patch.object(
+            ChromecastDelivery, "play", new=AsyncMock(side_effect=RuntimeError("nope"))
+        ),
+        patch(
+            "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/mpeg"))
+        ),
+        patch("core.session.RadioRelay", FakeRelay),
+    ):
+        r = _play_url(client, title="Second", url="http://example.com/second.mp3")
+
+    assert r.json()["error"] == "delivery_failed"
+    assert default_session.state.radio_info["url"] == "http://example.com/first.mp3"
+    assert default_session.state.radio_info["relayed"] is False
+    assert default_session.radio_relay is None
+
+
 def test_a_second_station_stops_the_first_relay_and_starts_a_new_one(client, default_session):
     with (
         patch.object(ChromecastDelivery, "play", new=AsyncMock()),

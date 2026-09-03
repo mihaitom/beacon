@@ -604,6 +604,15 @@ export const usePlaybackStore = defineStore('playback', {
       // Casting is over; there is nothing left to resume on a device.
       this.castInterrupted = false
       if (this.radioStation) {
+        // Casting is what radioBuffering describes (a cast target still
+        // filling its own startup buffer — see SeekBar.vue's own comment);
+        // local playback has no equivalent stall to report, and the SSE
+        // handler that normally clears this on the way down (playback.ts's
+        // own $subscribe) has already stopped running by the time this
+        // runs (`!activeNow` short-circuits it first). Left stale, the
+        // "Buffering…" indicator it drives would otherwise stick forever
+        // once audio has clearly already started.
+        this.radioBuffering = false
         if (this.isPlaying) {
           getAudioEngine().play(this.radioStation.streamUrl)
           startRadioMetadataWatch(this.radioStation.streamUrl)
@@ -642,6 +651,15 @@ export const usePlaybackStore = defineStore('playback', {
             this.radioStation,
           )
           this.radioNowPlaying = null
+          // Same reset playRadioStation() does, and for the identical
+          // reason (see its own comment): another client switching this
+          // shared session to radio takes this branch instead of that one,
+          // and without it this client's stale track duration keeps
+          // clamping positionTracker.extrapolate()'s live elapsed between
+          // SSE ticks — the same stuck-duration bug, just reached from the
+          // remote-initiated path.
+          this.duration = 0
+          positionTracker.reset()
         }
         return
       }
@@ -1490,6 +1508,11 @@ export const usePlaybackStore = defineStore('playback', {
       this.localPosition = 0
       this.bufferedPosition = 0
       this.radioNowPlaying = null
+      // Same reasoning as handOffToLocalPlayback()'s identical reset —
+      // nothing is casting (or playing at all) any more to still be
+      // filling a startup buffer, and the SSE handler that normally clears
+      // this stopped updating the moment casting became inactive.
+      this.radioBuffering = false
     },
 
     /** Called from authStore.logout() — without this, the queue/currentSong

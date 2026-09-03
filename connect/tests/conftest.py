@@ -1,5 +1,7 @@
 """Shared fixtures for Connect API tests."""
 
+import ipaddress
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -150,6 +152,86 @@ def reset_state():
     remote_module.remote._lockout_until.clear()
     remote_module.remote._lockout_strikes.clear()
     yield
+
+
+def _reaches_real_hardware(host: str) -> bool:
+    """True for anything a raw socket.connect() could use to reach an
+    actual device on this LAN.
+
+    Every delivery class in this codebase (Sonos, DLNA, Chromecast,
+    AirPlay) addresses a device by the literal IP discovery handed back,
+    never a hostname - so a private or link-local unicast address is where
+    real hardware in the room actually lives, and a multicast address is
+    SSDP/mDNS, the protocols those same devices are discovered over. A
+    public address is categorically not a device on this network, no
+    matter what it is: core/state.py's get_local_ip() connects to one
+    (8.8.8.8) purely to read back the outbound interface's own address via
+    getsockname(), a standard trick that works because a UDP connect()
+    only consults the local routing table - it never actually puts a
+    packet on the wire, so there is nothing there to protect against.
+
+    A bare hostname (not a literal IP) is blocked by the same conservative
+    default as before it: nothing in this codebase's device path ever
+    produces one, so a test reaching one is almost always a forgotten
+    mock, not a real device - no reason to start trusting it now."""
+    if host == "localhost":
+        return False
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return True
+    if addr.is_loopback:
+        return False
+    return addr.is_private or addr.is_link_local or addr.is_multicast or addr.is_reserved
+
+
+@pytest.fixture(autouse=True)
+def _no_real_device_network(monkeypatch):
+    """Fail any attempt to open a socket to a real device on this LAN, for
+    every test in the suite.
+
+    The dev machine shares its /24 with real Sonos, AirPlay and DLNA
+    hardware, and the suite drives the very code whose job is to talk to
+    them. _block_real_sonos_discovery above closes one hole - soco's SSDP
+    search - but a delivery that already has an address reaches it over
+    plain HTTP without going through discovery at all: DlnaDelivery's SOAP
+    calls, SonosDelivery.get_position(), the UPnP subscription renewals.
+    Any of those left uncovered by a test's own mocks lands on the
+    speaker that is actually playing music in the room. Reported live
+    2026-08-24 (playback stopped the moment the suite ran) and again
+    2026-09-03 (audible dropouts that tracked pytest runs).
+
+    Scoped to what _reaches_real_hardware() above actually calls a device
+    (private/link-local/multicast) rather than every non-loopback address:
+    an earlier version blocked outbound sockets wholesale, which also
+    caught core/state.py's get_local_ip() - a harmless local-routing-table
+    UDP trick that never reaches the network at all - and broke the app's
+    own startup (main.py's lifespan) under every test using the `client`
+    fixture. Reported live 2026-09-03.
+
+    Sockets rather than any one HTTP client, because there are several in
+    play (httpx, soco's own requests, pychromecast) and they all end up
+    here. Loopback stays open: TestClient's ASGI transport doesn't use a
+    socket at all, but some libraries still open one to talk to
+    themselves, and nothing there can reach the network.
+
+    A test that legitimately needs a connection this still blocks should
+    mock the call it is exercising - that is what this makes unmissable,
+    by failing loudly instead of quietly reaching hardware."""
+    import socket
+
+    real_connect = socket.socket.connect
+
+    def _guarded(self, address, *args, **kwargs):
+        host = address[0] if isinstance(address, tuple) else address
+        if isinstance(host, str) and not _reaches_real_hardware(host):
+            return real_connect(self, address, *args, **kwargs)
+        raise AssertionError(
+            f"test tried to open a socket to {host!r} — real hardware lives on this "
+            "network; mock the call being exercised instead"
+        )
+
+    monkeypatch.setattr(socket.socket, "connect", _guarded)
 
 
 @pytest.fixture

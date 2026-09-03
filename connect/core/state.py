@@ -379,7 +379,12 @@ def first_radio_position_delivery(
     already gives it a real, live-polled position (confirmed live,
     device=6.00s at wall=8.08s) — no ICY marker injection needed, the same
     poll-and-wait-for-movement approach this module already does for
-    Chromecast/DLNA just works."""
+    Chromecast/DLNA just works.
+
+    stores/connect.ts's isRadioPositionCapable() has to be kept in sync BY
+    HAND with the isinstance check below — nothing ties the two together,
+    and this is not exposed to the frontend as data it could read instead.
+    Check that function too if this list ever changes."""
     deliveries = (
         active.deliveries
         if isinstance(active, DeliveryManager)

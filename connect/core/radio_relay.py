@@ -49,12 +49,16 @@ than a one-time fix, though: every bug in the visualizer's own decode/
 pacing logic (see core/audio_analysis.py's and core/visualizer_feed.py's
 own change history, 2026-09-02/03) was one step away from stalling this
 side of the same pipe again, and repeatedly did. Removed 2026-09-03 —
-the radio visualizer now decodes the station a second time with its own,
-completely independent ffmpeg process (core/audio_analysis.py's
-`source_url` path, the same one tracks already use), the same way track
-analysis has never shared a decoder with track delivery. A bug in that
-analyzer can now, at worst, make its own visualizer wrong or laggy — it
-has no pipe left in common with device audio to ever stall again.
+the radio visualizer still taps this relay's device-audio fan-out
+(subscribe_audio()/unsubscribe_audio() above, `lossy=True`), the same
+bytes the cast target gets, but decodes them through its own, completely
+separate ffmpeg process (core/audio_analysis.py's `source_queue` path)
+instead of ever touching this module's own ffmpeg or its stdout pipe. A
+full analysis queue now just drops its oldest buffered chunk to make room
+for the newest one instead of blocking anything upstream (see
+_fan_out_audio()'s own comment), so a bug in that analyzer can at worst
+make its own visualizer wrong or laggy — it has no
+pipe left in common with device audio to ever stall again.
 
 Verified against a real station (ROCK ANTENNE, 2026-09-01): -acodec copy
 loses nothing measurable (624000 bytes of station audio in, 623639 out —

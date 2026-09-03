@@ -101,6 +101,12 @@ export const useConnectStore = defineStore('connect', {
     // isVolumePushCapable() above — NowPlayingView.vue's visualizerAvailable
     // is the one consumer today, but any second one should agree with it
     // rather than growing its own copy of this set.
+    //
+    // This set has to be kept in sync BY HAND with
+    // connect/core/state.py's first_radio_position_delivery() — nothing
+    // ties the two together, and the backend does not expose this as data
+    // for the frontend to read instead. Check that function first if this
+    // set ever needs to change.
     isRadioPositionCapable() {
       return (type: DeviceType): boolean =>
         type === 'chromecast' || type === 'dlna' || type === 'sonos'

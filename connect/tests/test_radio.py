@@ -321,7 +321,14 @@ def test_radio_favicon_falls_back_to_largest_when_nothing_meets_min_size(client)
         patch.object(radio_mod._client, "get", mock_get),
     ):
         client.get("/radio-favicon", params={"url": "https://example.com", "min_size": 512})
-    mock_get.assert_awaited_once_with("https://example.com/32.png")
+    # 16px is skipped outright (it declares less than the 32px already in
+    # hand), but the implicit /favicon.ico fallback is still tried after —
+    # its own declared size is a sort-order sentinel, not a real claim, so
+    # it's never skipped that way.
+    assert [call.args[0] for call in mock_get.await_args_list] == [
+        "https://example.com/32.png",
+        "https://example.com/favicon.ico",
+    ]
 
 
 # ── Measuring what was actually fetched ──────────────────────────────────────
@@ -426,6 +433,32 @@ def test_radio_favicon_measures_past_an_overstated_declaration(client):
     assert r.content == _sized_png(256)
 
 
+def test_radio_favicon_still_tries_favicon_ico_after_a_smaller_declared_icon(client):
+    """The implicit /favicon.ico fallback declares size=1 purely to sort
+    after every real declaration (see _Candidate.is_declared_size) — that
+    sentinel must never be mistaken for a genuine "this is smaller" claim,
+    or the one candidate meant to catch exactly this case (a station with
+    only a small declared icon, but a much bigger real favicon.ico) never
+    gets tried at all."""
+    html = b'<html><head><link rel="icon" href="/16.png" sizes="16x16"></head></html>'
+    responses = {
+        "https://example.com/16.png": _fake_get_response(
+            content=_sized_png(16), content_type="image/png"
+        ),
+        "https://example.com/favicon.ico": _fake_get_response(
+            content=_sized_png(256), content_type="image/png"
+        ),
+    }
+    mock_get = AsyncMock(side_effect=lambda url: responses[url])
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com", "min_size": 96})
+    assert r.status_code == 200
+    assert r.content == _sized_png(256)
+
+
 def test_radio_favicon_stops_fetching_once_nothing_declared_can_beat_what_it_has(client):
     """The size a candidate declares is still a usable upper bound: one that
     promises less than what is already in hand is not worth downloading to
@@ -445,7 +478,14 @@ def test_radio_favicon_stops_fetching_once_nothing_declared_can_beat_what_it_has
     ):
         r = client.get("/radio-favicon", params={"url": "https://example.com", "min_size": 512})
     assert r.status_code == 200
-    mock_get.assert_awaited_once_with("https://example.com/64.png")
+    # 16px is skipped outright (it declares less than the 64px already in
+    # hand), but the implicit /favicon.ico fallback is still tried after —
+    # its own declared size is a sort-order sentinel, not a real claim, so
+    # it's never skipped that way.
+    assert [call.args[0] for call in mock_get.await_args_list] == [
+        "https://example.com/64.png",
+        "https://example.com/favicon.ico",
+    ]
 
 
 def test_radio_favicon_gives_up_after_the_fetch_budget(client):
@@ -488,6 +528,47 @@ def test_radio_favicon_treats_svg_as_meeting_any_size(client):
         )
     assert r.status_code == 200
     assert r.content == svg
+
+
+def test_radio_favicon_does_not_let_a_mask_icon_svg_win_on_scalability_alone(client):
+    """A <link rel="mask-icon"> is a monochrome silhouette meant for
+    Safari's own CSS masking, not a real likeness of the station's logo —
+    see _ICON_RELS' own comment. Treating it as satisfying any min_size the
+    way a genuine logo SVG does (both being vector) let it short-circuit
+    the search and win over an actual full-color icon already in hand,
+    which looked exactly like the station's colorful logo had lost all its
+    color. Reported live 2026-09-03."""
+    html = (
+        b"<html><head>"
+        b'<link rel="apple-touch-icon" href="/logo.png" sizes="180x180">'
+        b'<link rel="mask-icon" href="/mask.svg" color="#5bbad5">'
+        b"</head></html>"
+    )
+    responses = {
+        "https://example.com/logo.png": _fake_get_response(
+            content=_sized_png(180), content_type="image/png"
+        ),
+        "https://example.com/mask.svg": _fake_get_response(
+            content=b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"></svg>',
+            content_type="image/svg+xml",
+        ),
+        # The implicit /favicon.ico fallback is always in the candidate
+        # list too (see _discover_candidates()) and sorts ahead of the
+        # mask-icon here (declared size 1 vs 0) — undecodable, so it falls
+        # back to that declared size and never threatens the 180px best.
+        "https://example.com/favicon.ico": _fake_get_response(),
+    }
+    mock_get = AsyncMock(side_effect=lambda url: responses[url])
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com", "min_size": 512})
+    assert r.status_code == 200
+    # Neither meets min_size=512 — the real, full-color 180px icon is still
+    # the best available answer, not the mask-icon SVG that would have
+    # "met" it purely by being vector.
+    assert r.content == _sized_png(180)
 
 
 def test_radio_favicon_default_min_size_still_costs_one_fetch(client):

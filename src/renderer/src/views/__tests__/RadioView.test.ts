@@ -26,6 +26,7 @@ interface RadioViewInstance {
   browseDialog: boolean
   countryOptions: { name: string; code: string }[]
   openBrowse(): void
+  addBrowsedStation(result: RadioBrowserStation): Promise<void>
 }
 
 function makeResult(overrides: Partial<RadioBrowserStation> = {}): RadioBrowserStation {
@@ -120,6 +121,33 @@ describe('RadioView', () => {
       expect(radioBrowser.listRadioBrowserCountries).toHaveBeenCalledOnce()
     })
 
+    it('fires exactly one search on reopen, even after a non-default query/order last time', async () => {
+      // browseQuery/browseOrder both reset to their defaults in
+      // openBrowse(), and both are watched — a search that a watcher fired
+      // off the back of that reset (only observable when the previous
+      // value was non-default, i.e. actually changed) used to run
+      // alongside openBrowse()'s own explicit call, on top of whichever
+      // debounced browseQuery search was still pending.
+      const wrapper = mountRadioView()
+      await openAndSettle(wrapper)
+      instanceOf(wrapper).browseQuery = 'jazz'
+      await vi.advanceTimersByTimeAsync(400)
+      instanceOf(wrapper).browseOrder = 'clickcount'
+      await flushPromises()
+      vi.mocked(radioBrowser.searchRadioBrowser).mockClear()
+
+      instanceOf(wrapper).openBrowse()
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(400)
+
+      expect(radioBrowser.searchRadioBrowser).toHaveBeenCalledTimes(1)
+      expect(radioBrowser.searchRadioBrowser).toHaveBeenCalledWith({
+        name: '',
+        countrycodes: [],
+        order: 'votes',
+      })
+    })
+
     it('does not search again until the typing debounce settles', async () => {
       const wrapper = mountRadioView()
       await openAndSettle(wrapper)
@@ -191,6 +219,31 @@ describe('RadioView', () => {
         'https://example.com',
       )
       expect(radioBrowser.registerRadioBrowserClick).toHaveBeenCalledWith('uuid-1')
+    })
+
+    it('ignores a second add while the first save is still in flight', async () => {
+      // The add button has no disabled state of its own until this fix —
+      // a double-click/double-tap before the first saveRadioStation() call
+      // resolved fired a second, concurrent one, creating a duplicate
+      // saved station for the same result.
+      vi.mocked(radioBrowser.searchRadioBrowser).mockResolvedValue([makeResult()])
+      let resolveSave: () => void = () => {}
+      vi.spyOn(useLibraryStore(), 'saveRadioStation').mockReturnValue(
+        new Promise((resolve) => {
+          resolveSave = resolve
+        }),
+      )
+      const wrapper = mountRadioView()
+      await openAndSettle(wrapper)
+      await wrapper.vm.$nextTick()
+
+      const result = makeResult()
+      const first = instanceOf(wrapper).addBrowsedStation(result)
+      const second = instanceOf(wrapper).addBrowsedStation(result)
+      resolveSave()
+      await Promise.all([first, second])
+
+      expect(useLibraryStore().saveRadioStation).toHaveBeenCalledTimes(1)
     })
 
     it('plays a result directly without saving it', async () => {

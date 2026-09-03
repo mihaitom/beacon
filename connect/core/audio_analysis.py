@@ -29,11 +29,15 @@ should_analyze() (which core/visualizer_feed.py gates *track* analysis on)
 still excludes radio — a station has no track and nothing to seek a fresh
 decoder to. Radio gets analyzed too, since 2026-09-02/03, but through a
 separate path (VisualizerFeed._start_radio_analyzer()) that also lands
-here: `source_url` is then the station's own URL (core/radio_relay.py's
-`url`, the same one that relay itself fetches, decoded here a *second*
-independent time — this class never taps that relay's own device-audio
-output, for the same reason a track isn't tapped either, see below) and
-`elapsed_fn` is the cast device's own reported position
+here, and unlike a track it *is* tapped: `source_queue` (not `source_url`)
+is a subscription to core/radio_relay.py's own device-audio fan-out — the
+same bytes the cast target is being sent, not a second independent fetch
+of the station. What's still true of a track applies here too, just one
+level down: this class never taps the relay's *ffmpeg process itself* (see
+core/radio_relay.py's own docstring for why sharing one used to stall
+device audio too) — only the bytes already flowing out of it, decoded by
+a private ffmpeg of this analyzer's own. `elapsed_fn` is the cast device's
+own reported position
 (core/radio_position.py's RadioPositionTracker) rather than a session
 clock, since a live stream has no track-relative position for a session
 clock to track in the first place. `start_offset` is always 0 for radio:
@@ -369,11 +373,14 @@ class AudioAnalyzer:
     fixed bitrate timeline either way: it's both what `start_offset` is
     read from at construction and what every frame is then released
     against. `source_url` is the media server's own URL for a track
-    (MediaClient.get_stream_url()) or the station's own URL for radio
-    (core/radio_relay.py's RadioRelay.url), decoded here independently of
-    whatever is being sent to the device — see the module docstring for
-    why. `gain` mirrors the ReplayGain applied to a track's real stream;
-    unused (default 1.0) for radio, which has no such concept.
+    (MediaClient.get_stream_url()), decoded here independently of whatever
+    is being sent to the device. `source_queue` is radio's own path
+    instead: a subscription to core/radio_relay.py's device-audio fan-out
+    (the same bytes the cast target gets), fed into this analyzer's own
+    separate ffmpeg via stdin rather than decoded from a URL — see the
+    module docstring's radio paragraph for why. `gain` mirrors the
+    ReplayGain applied to a track's real stream; unused (default 1.0) for
+    radio, which has no such concept.
 
     `on_first_byte`, when given, is called once the first PCM bytes have
     actually been decoded. Used only by core/visualizer_feed.py's radio
@@ -422,6 +429,11 @@ class AudioAnalyzer:
         # already been reported — see _wait_out_lookahead().
         self._stalled_since: float | None = None
         self._stall_reported = False
+        # Whether start() actually got as far as a running process — checked
+        # by core/visualizer_feed.py to tell a working analyzer apart from
+        # one that swallowed a spawn failure below, since both look the same
+        # from the outside (an AudioAnalyzer instance) otherwise.
+        self.started = False
 
     async def start(self) -> None:
         piped = self._source_queue is not None
@@ -434,9 +446,22 @@ class AudioAnalyzer:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
-        except FileNotFoundError:
-            logger.warning("[audio-analysis] ffmpeg not found — visualizer data disabled")
+        except OSError as e:
+            # Not just FileNotFoundError (ffmpeg missing): fd/process-limit
+            # exhaustion and permission errors raise other OSError subclasses
+            # here too, and letting those propagate used to escape
+            # visualizer_feed.py's supervisor loop uncaught, leaking the
+            # subscription it had already taken out and thrashing the
+            # supervisor task. Handling every spawn failure the same way
+            # keeps that loop in control regardless of which one happened;
+            # FileNotFoundError keeps its own specific message since "not
+            # installed" and "spawn failed" call for different fixes.
+            if isinstance(e, FileNotFoundError):
+                logger.warning("[audio-analysis] ffmpeg not found — visualizer data disabled")
+            else:
+                logger.warning(f"[audio-analysis] Failed to start ffmpeg: {e}")
             return
+        self.started = True
         if piped:
             self._input_task = asyncio.create_task(self._write_input())
         self._reader_task = asyncio.create_task(self._read_pcm())
@@ -554,6 +579,11 @@ class AudioAnalyzer:
                     await self._wait_out_lookahead(lookahead)
                 else:
                     self._stalled_since = None
+                    # Own the reset, not just the flag mark above — without
+                    # this a second, later stall in the same run stayed
+                    # silent forever, contradicting this warning's own
+                    # "once per stall, not once per check" comment.
+                    self._stall_reported = False
                     self._resync_if_behind()
         except asyncio.CancelledError:
             pass

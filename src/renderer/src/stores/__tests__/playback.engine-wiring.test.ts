@@ -255,6 +255,26 @@ describe('the store wiring the audio engine', () => {
       )
     })
 
+    it('clears a stale buffering flag, there being no cast target left to still be filling one', async () => {
+      // The SSE handler that normally clears this stops updating it the
+      // moment casting becomes inactive (see playback.ts's own
+      // `!activeNow` early return) — without this, SeekBar.vue/
+      // MobileTransportControls.vue keep showing "Buffering…" forever
+      // despite local audio already playing.
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      playback.radioBuffering = true
+
+      await playback.handOffToLocalPlayback()
+
+      expect(playback.radioBuffering).toBe(false)
+    })
+
     it('clears the offer to resume, there being no device left to resume on', async () => {
       const playback = usePlaybackStore()
       playback.castInterrupted = true
