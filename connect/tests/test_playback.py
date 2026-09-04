@@ -1407,6 +1407,39 @@ def test_resume_restarts_radio_position_tracker_at_the_new_generation(client, de
     assert default_session.radio_position_tracker is tracker_cls.return_value
 
 
+def test_resume_skips_radio_position_tracker_for_relayed_sonos(client, default_session):
+    """Regression test, reported live 2026-09-04: delivery/sonos.py's own
+    _dispatch_uri() rewrites Beacon's own relay URL onto Sonos's
+    x-rincon-mp3radio:// scheme (added to fix Sonos-only dropouts while
+    relayed — see that function's own docstring), and a Sonos dispatched
+    that way reports position 0.00s for the whole run. Restarting the
+    tracker here anyway would leave radio_buffering stuck True forever
+    instead of it simply never existing — the same fallback Sonos radio
+    had before 2026-09-02, now deliberately reinstated for exactly this
+    case (see core/state.py's first_radio_position_delivery())."""
+    default_session.media = SubsonicClient("http://nav")
+    default_session.state.is_streaming = True
+    default_session.state.radio_info = {
+        "title": "Chill FM",
+        "url": "http://stream.example",
+        "relayed": True,
+    }
+    default_session.state.active_delivery = SonosDelivery("Küche")
+    default_session.state.clock.pause(0.0)
+
+    with (
+        patch.object(SonosDelivery, "play", new=AsyncMock()),
+        patch("routes.playback._apply_position_offset", new=AsyncMock()),
+        patch("routes.playback._resync_position_periodically", new=AsyncMock()),
+        patch("routes.playback.RadioPositionTracker") as tracker_cls,
+    ):
+        r = client.post("/resume")
+
+    assert r.status_code == 200
+    tracker_cls.assert_not_called()
+    assert default_session.radio_position_tracker is None
+
+
 def test_resume_does_not_touch_radio_position_tracker_for_a_track(client, default_session):
     """The tracker is radio-only (st.radio_info) — a track resume must not
     construct one at all."""
@@ -2119,6 +2152,79 @@ def test_resync_position_periodically_returns_immediately_without_position(defau
             _resync_position_periodically(default_session, target, generation=1), timeout=1.0
         )
     )
+
+
+def test_resync_position_periodically_skips_a_relayed_sonos(default_session):
+    """Regression coverage: delivery/sonos.py's own _dispatch_uri() rewrites
+    a beacon-hosted radio URL onto x-rincon-mp3radio:// (2026-09-04, fixing
+    Sonos-only audio dropouts while relayed), and a Sonos dispatched that
+    way reports position 0.00s for the whole run. Recalibrating position_
+    offset against that constant every POSITION_RESYNC_INTERVAL would pin
+    elapsed() near 0 forever — must return immediately instead, without
+    ever polling get_position() at all."""
+    default_session.state.is_streaming = True
+    default_session.state.radio_info = {"title": "Chill FM", "url": "http://x", "relayed": True}
+    target = SonosDelivery("Küche")
+
+    with patch.object(target, "get_position", new=AsyncMock(return_value=0.0)) as get_position:
+        asyncio.run(
+            asyncio.wait_for(
+                _resync_position_periodically(default_session, target, generation=1), timeout=1.0
+            )
+        )
+    get_position.assert_not_called()
+
+
+def test_resync_position_periodically_skips_a_proxied_sonos(default_session):
+    """Same as above, for the direct-cast retry fallback
+    (retry_radio_via_proxy()) that also ends up pointing a Sonos at
+    Beacon's own endpoint without `relayed` itself being true."""
+    default_session.state.is_streaming = True
+    default_session.state.radio_info = {"title": "Chill FM", "url": "http://x", "proxied": True}
+    target = SonosDelivery("Küche")
+
+    with patch.object(target, "get_position", new=AsyncMock(return_value=0.0)) as get_position:
+        asyncio.run(
+            asyncio.wait_for(
+                _resync_position_periodically(default_session, target, generation=1), timeout=1.0
+            )
+        )
+    get_position.assert_not_called()
+
+
+async def test_resync_position_periodically_still_polls_a_direct_cast_sonos(default_session):
+    """The one case that must keep working: direct-cast (PlayUrlRequest.
+    cast_directly) keeps plain http:// and real position feedback."""
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_generation = 1
+    default_session.state.radio_info = {"title": "Chill FM", "url": "http://x", "relayed": False}
+    target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
+
+    with (
+        patch("routes.playback.POSITION_RESYNC_INTERVAL", 0.01),
+        patch("routes.playback._resync_position_once", new=AsyncMock()) as resync_once,
+    ):
+        await _run_briefly(_resync_position_periodically(default_session, target, generation=1))
+    resync_once.assert_called()
+
+
+async def test_resync_position_periodically_still_polls_a_sonos_playing_a_track(default_session):
+    """radio_info is None for a queued track — the skip must not
+    accidentally apply there, Sonos tracks always use plain http:// and
+    have always had real position feedback."""
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_generation = 1
+    default_session.state.radio_info = None
+    target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
+
+    with (
+        patch("routes.playback.POSITION_RESYNC_INTERVAL", 0.01),
+        patch("routes.playback._resync_position_once", new=AsyncMock()) as resync_once,
+    ):
+        await _run_briefly(_resync_position_periodically(default_session, target, generation=1))
+    resync_once.assert_called()
 
 
 def test_resync_position_periodically_stops_on_generation_mismatch(default_session, monkeypatch):

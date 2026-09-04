@@ -16,6 +16,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.session import build_status_dict
+from core.visualizer_feed import ASSUMED_DEVICE_LEAD_SECONDS
+from delivery import ChromecastDelivery, SonosDelivery
 from routes.stream import status_events, visualizer_events
 
 
@@ -126,6 +128,10 @@ async def test_visualizer_forwards_a_frame_from_the_active_analyzer(default_sess
     analyzer = MagicMock()
     analyzer.frames = asyncio.Queue()
     analyzer.frames.put_nowait([1.0, 2.0, 3.0])
+    # Not what this test is about — see the "debug" section below for
+    # last_release_debug coverage. A bare MagicMock's attribute is
+    # truthy/non-None by default, which json.dumps() can't serialize.
+    analyzer.last_release_debug = None
     default_session.visualizer.analyzer = analyzer
 
     resp = await visualizer_events(session=default_session)
@@ -136,6 +142,94 @@ async def test_visualizer_forwards_a_frame_from_the_active_analyzer(default_sess
         await gen.aclose()
 
     assert frame == f"data: {json.dumps({'bands': [1.0, 2.0, 3.0]})}\n\n"
+
+
+async def test_visualizer_includes_debug_when_the_analyzer_has_one(default_session):
+    """core/audio_analysis.py's AudioAnalyzer.last_release_debug — the
+    debug overlay's own data, radio only (see that attribute's own
+    docstring for why a track never sets it)."""
+    analyzer = MagicMock()
+    analyzer.frames = asyncio.Queue()
+    analyzer.frames.put_nowait([1.0])
+    analyzer.last_release_debug = (12.34, 12.1)
+    # Not what this test is about — see the lead-specific test below. Same
+    # MagicMock-attribute pitfall as last_release_debug above.
+    analyzer.last_release_lead = None
+    default_session.visualizer.analyzer = analyzer
+
+    resp = await visualizer_events(session=default_session)
+    gen = resp.body_iterator
+    try:
+        frame = await gen.__anext__()
+    finally:
+        await gen.aclose()
+
+    assert (
+        frame
+        == f"data: {json.dumps({'bands': [1.0], 'debug': {'visualizer': 12.34, 'cast': 12.1}})}\n\n"
+    )
+
+
+async def test_visualizer_includes_lead_when_the_analyzer_has_one(default_session):
+    """Radio-relayed-Sonos only — see AudioAnalyzer.last_release_lead's own
+    comment for why the delta above can't tell "still the fixed guess"
+    apart from "a real measurement landed" without this."""
+    analyzer = MagicMock()
+    analyzer.frames = asyncio.Queue()
+    analyzer.frames.put_nowait([1.0])
+    analyzer.last_release_debug = (12.34, 12.1)
+    analyzer.last_release_lead = (4.7, False)
+    default_session.visualizer.analyzer = analyzer
+
+    resp = await visualizer_events(session=default_session)
+    gen = resp.body_iterator
+    try:
+        frame = await gen.__anext__()
+    finally:
+        await gen.aclose()
+
+    payload = json.loads(frame.removeprefix("data: ").rstrip("\n"))
+    assert payload["debug"]["lead"] == {"seconds": 4.7, "measured": False}
+
+
+async def test_visualizer_omits_lead_when_the_analyzer_has_none(default_session):
+    """The track case, and radio via Chromecast/DLNA/direct-Sonos (a real
+    device position, nothing fixed/measured to report) — omitted from the
+    payload entirely rather than sent as null, same convention as `debug`
+    itself for a track."""
+    analyzer = MagicMock()
+    analyzer.frames = asyncio.Queue()
+    analyzer.frames.put_nowait([1.0])
+    analyzer.last_release_debug = (12.34, 12.1)
+    analyzer.last_release_lead = None
+    default_session.visualizer.analyzer = analyzer
+
+    resp = await visualizer_events(session=default_session)
+    gen = resp.body_iterator
+    try:
+        frame = await gen.__anext__()
+    finally:
+        await gen.aclose()
+
+    payload = json.loads(frame.removeprefix("data: ").rstrip("\n"))
+    assert "lead" not in payload["debug"]
+
+
+async def test_visualizer_omits_debug_for_a_track(default_session):
+    analyzer = MagicMock()
+    analyzer.frames = asyncio.Queue()
+    analyzer.frames.put_nowait([1.0])
+    analyzer.last_release_debug = None
+    default_session.visualizer.analyzer = analyzer
+
+    resp = await visualizer_events(session=default_session)
+    gen = resp.body_iterator
+    try:
+        frame = await gen.__anext__()
+    finally:
+        await gen.aclose()
+
+    assert "debug" not in json.loads(frame.removeprefix("data: ").rstrip("\n"))
 
 
 async def test_visualizer_heartbeats_while_the_active_analyzer_has_no_frame_yet(default_session):
@@ -172,6 +266,7 @@ async def test_visualizer_switches_from_idle_to_forwarding_once_a_track_starts_a
         analyzer = MagicMock()
         analyzer.frames = asyncio.Queue()
         analyzer.frames.put_nowait([4.0])
+        analyzer.last_release_debug = None  # see the other test's identical note
         default_session.visualizer.analyzer = analyzer
 
         frame = await gen.__anext__()
@@ -228,3 +323,69 @@ async def test_visualizer_releases_its_subscription_on_cancellation(default_sess
             await gen.athrow(asyncio.CancelledError())
 
     assert feed._subscribers == 0
+
+
+# ── radio_buffering ─────────────────────────────────────────────────────────
+# See core/session.py's radio_is_buffering() for the two ways the backend
+# knows a cast device is still filling its own startup buffer, and why the
+# second one had to exist at all.
+
+
+def _casting_radio(session, delivery=None):
+    st = session.state
+    st.radio_info = {"url": "http://station/live", "title": "Some Station", "relayed": True}
+    st.is_streaming = True
+    st.active_delivery = delivery or SonosDelivery("Küche")
+    st.clock.start()
+    return st
+
+
+def test_radio_buffering_follows_the_tracker_when_there_is_one(default_session):
+    _casting_radio(default_session, ChromecastDelivery("Wohnzimmer"))
+    tracker = MagicMock()
+    tracker.ready = False
+    default_session.radio_position_tracker = tracker
+    assert build_status_dict(default_session)["radio_buffering"] is True
+    tracker.ready = True
+    assert build_status_dict(default_session)["radio_buffering"] is False
+
+
+def test_radio_buffering_covers_a_relayed_sonos_that_has_no_tracker(default_session):
+    """The case that used to report False for the whole run, on the device
+    with the largest measured buffer of the three: a relayed Sonos is
+    excluded from position tracking entirely (it reports a flat 0.00s over
+    x-rincon-mp3radio://), so `not tracker` read as "done buffering" and the
+    seek bar counted up from 0:00 while the speaker was still silent."""
+    st = _casting_radio(default_session)
+    default_session.radio_position_tracker = None
+    assert build_status_dict(default_session)["radio_buffering"] is True
+    # ...and clears once the device's own expected lead has elapsed.
+    st.clock.play_start_time -= ASSUMED_DEVICE_LEAD_SECONDS + 0.5
+    assert build_status_dict(default_session)["radio_buffering"] is False
+
+
+def test_radio_buffering_prefers_a_measured_lag_over_the_fixed_guess(default_session):
+    """Once the ICY round trip has measured this device's real buffer, the
+    indicator clears when that says audio starts — the same measurement
+    _FirstByteClock paces the visualizer with, so the two agree."""
+    st = _casting_radio(default_session)
+    default_session.radio_position_tracker = None
+    default_session.radio_icy_measured_lag = 1.0
+    st.clock.play_start_time -= 2.0  # past the measurement, well short of the guess
+    assert build_status_dict(default_session)["radio_buffering"] is False
+
+
+def test_radio_buffering_is_false_for_local_playback(default_session):
+    """No cast device in the picture — the browser's own <audio> handles
+    its own buffering and nothing here should claim otherwise."""
+    st = _casting_radio(default_session)
+    st.active_delivery = None
+    default_session.radio_position_tracker = None
+    assert build_status_dict(default_session)["radio_buffering"] is False
+
+
+def test_radio_buffering_is_false_while_paused(default_session):
+    st = _casting_radio(default_session)
+    default_session.radio_position_tracker = None
+    st.clock.is_paused = True
+    assert build_status_dict(default_session)["radio_buffering"] is False

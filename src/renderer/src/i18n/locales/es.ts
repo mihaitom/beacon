@@ -358,7 +358,7 @@ export default {
     qualityOriginal: 'Original (sin modificar)',
     castRadioDirectly: 'Enviar la radio directamente al dispositivo',
     castRadioDirectlyHint:
-      'Por defecto, Beacon enruta la radio emitida a través de su propio backend, para que el dispositivo, el visualizador y el título de reproducción compartan una sola conexión a la emisora. Activado, el dispositivo se conecta directamente a la emisora — la reproducción sigue aunque Beacon se reinicie, a costa del visualizador y con el riesgo de que algún dispositivo rechace la emisión de la emisora.',
+      'Por defecto, Beacon enruta la radio emitida a través de su propio backend, para que el dispositivo y el título de reproducción compartan una sola conexión a la emisora. Activado, el dispositivo se conecta directamente a la emisora — la reproducción sigue aunque Beacon se reinicie, con el riesgo de que algún dispositivo rechace la emisión de la emisora.',
     autoplay: 'Reproducción automática',
     autoplayBatchSizeItem: '{count} canciones',
     autoplayHint:

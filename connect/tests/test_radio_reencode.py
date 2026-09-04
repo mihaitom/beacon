@@ -11,11 +11,13 @@ else's host — reported for a plain MP3, so not a format problem at all).
 """
 
 import asyncio
+import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from core.claims import claims
+from core.icy_metadata import IcyDemuxer, strip_pulse
 from core.stream_format import ProbedStream
 from core.streamer import REASON_DEVICE_REJECTED_STREAM
 from delivery import ChromecastDelivery, SonosDelivery
@@ -282,6 +284,142 @@ class TestRadioStreamRoute:
         assert r.headers["content-type"].startswith("audio/mpeg")
         assert r.content == b"relayed-audio"
         assert relay.unsubscribed is not None
+
+
+class TestRadioStreamIcy:
+    """routes/stream.py's own Icy-MetaData: 1 handling — see
+    core/icy_metadata.py's IcyMuxer docstring for the live symptom this
+    responds to (Sonos dropping out only when relayed through Beacon,
+    theorised to be picking a smaller, file-like buffer for a URL that
+    carries none of the ICY signalling the station's own does)."""
+
+    def test_no_icy_metaint_header_without_the_request_header(self, client, radio_playing):
+        """The overwhelming majority of requests here — a plain player, or
+        a device that never asked — must see byte-for-byte the same stream
+        as before this existed."""
+
+        async def fake_stream(urls, *args, **kwargs):
+            yield b"audio"
+
+        with patch("routes.stream.stream_tracks", fake_stream):
+            r = client.get(f"/stream/radio/{radio_playing.session_id}")
+
+        assert "icy-metaint" not in r.headers
+        assert "icy-name" not in r.headers
+        assert r.content == b"audio"
+
+    def test_icy_metaint_and_name_headers_when_requested(self, client, radio_playing):
+        async def fake_stream(urls, *args, **kwargs):
+            yield b"audio"
+
+        with (
+            patch("routes.stream.stream_tracks", fake_stream),
+            patch("routes.stream.DEVICE_METAINT", 4),
+        ):
+            r = client.get(
+                f"/stream/radio/{radio_playing.session_id}", headers={"Icy-MetaData": "1"}
+            )
+
+        assert r.headers["icy-metaint"] == "4"
+        # radio_playing's own fixture sets radio_info["title"] — the
+        # station's name, not the now-playing tag (see radio_stream()'s
+        # own comment on that distinction).
+        assert r.headers["icy-name"] == "OWR International"
+
+    def test_muxed_body_demuxes_back_to_the_original_audio_and_title(self, client, radio_playing):
+        radio_playing.radio_title = "Artist - Track"
+
+        async def fake_stream(urls, *args, **kwargs):
+            # Two chunks, neither aligned to metaint=4 on its own — only
+            # their 12-byte total is, so the round-trip below recovers
+            # everything instead of a real stream's last partial window
+            # legitimately staying buffered with nothing to complete it.
+            yield b"012"
+            yield b"3456789ab"
+
+        with (
+            patch("routes.stream.stream_tracks", fake_stream),
+            patch("routes.stream.DEVICE_METAINT", 4),
+        ):
+            r = client.get(
+                f"/stream/radio/{radio_playing.session_id}", headers={"Icy-MetaData": "1"}
+            )
+
+        demuxer = IcyDemuxer(4, (titles := []).append)
+        assert demuxer.feed(r.content) == b"0123456789ab"
+        # strip_pulse: what goes out carries core/icy_metadata.py's invisible
+        # pulse mark on alternating windows (pulsed_title(), which has its own
+        # tests). Which window a given request lands in is wall-clock luck, so
+        # asserting the raw title here would pass or fail by the second. What
+        # this test is about is the station's real title surviving the
+        # mux/demux round trip, which holds either way.
+        assert [strip_pulse(t) for t in titles] == ["Artist - Track"]
+
+    def test_relayed_stream_is_muxed_too(self, client, radio_playing):
+        """The relayed path (core/radio_relay.py) is a separate code path
+        from the direct re-encode fallback above — both must answer
+        Icy-MetaData: 1, since a real Sonos radio dispatch goes through
+        this one by default."""
+
+        class FakeRelay:
+            device_content_type = "audio/mpeg"
+
+            def subscribe_audio(self):
+                q = asyncio.Queue()
+                q.put_nowait(b"relayed-data")  # 12 bytes — a clean multiple of metaint=4
+                q.put_nowait(None)
+                return q
+
+            def unsubscribe_audio(self, q):
+                pass
+
+        radio_playing.radio_relay = FakeRelay()
+
+        with patch("routes.stream.DEVICE_METAINT", 4):
+            r = client.get(
+                f"/stream/radio/{radio_playing.session_id}", headers={"Icy-MetaData": "1"}
+            )
+
+        assert r.headers["icy-metaint"] == "4"
+        demuxer = IcyDemuxer(4, lambda _: None)
+        assert demuxer.feed(r.content) == b"relayed-data"
+
+    def test_records_the_injection_for_the_upnp_round_trip_measurement(self, client, radio_playing):
+        """See core/session.py's radio_icy_pending_injection and
+        routes/upnp.py's _handle_stream_title_echo() — the other end of
+        this, matching the title back up once the device echoes it."""
+        radio_playing.radio_title = "Artist - Track"
+
+        async def fake_stream(urls, *args, **kwargs):
+            yield b"0123"  # exactly one metaint=4 block
+
+        before = time.monotonic()
+        with (
+            patch("routes.stream.stream_tracks", fake_stream),
+            patch("routes.stream.DEVICE_METAINT", 4),
+        ):
+            client.get(f"/stream/radio/{radio_playing.session_id}", headers={"Icy-MetaData": "1"})
+        after = time.monotonic()
+
+        pending = radio_playing.radio_icy_pending_injection
+        assert pending is not None
+        title, injected_at = pending
+        assert strip_pulse(title) == "Artist - Track"  # see the pulse note above
+        assert before <= injected_at <= after
+
+    def test_does_not_record_an_injection_when_icy_was_not_requested(self, client, radio_playing):
+        radio_playing.radio_title = "Artist - Track"
+
+        async def fake_stream(urls, *args, **kwargs):
+            yield b"0123"
+
+        with (
+            patch("routes.stream.stream_tracks", fake_stream),
+            patch("routes.stream.DEVICE_METAINT", 4),
+        ):
+            client.get(f"/stream/radio/{radio_playing.session_id}")
+
+        assert radio_playing.radio_icy_pending_injection is None
 
 
 # The NOTIFY body a Sonos actually posts back — the interesting values live

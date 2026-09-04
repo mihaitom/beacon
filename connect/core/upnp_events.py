@@ -30,6 +30,7 @@ no equivalent failure mode to guard against.
 """
 
 import asyncio
+import html
 import logging
 import re
 import time
@@ -86,6 +87,19 @@ _KEPT_PROPERTIES = (
 # ERROR_CANT_CONNECT, and the spec allows vendor values) is the device
 # reporting a problem it will not otherwise tell us about.
 _HEALTHY_STATUS = "OK"
+
+# The ICY title a renderer echoes back once it's actually playing it, inside
+# CurrentTrackMetaData's own DIDL-Lite XML — not a `val="..."` property like
+# _PROPERTY_RE above matches, but element text nested one layer deeper (that
+# whole DIDL blob is itself the *value* of one such property). Sonos's own
+# field first (r:streamContent — confirmed live via scripts/icy_sync_probe.py
+# against real hardware), a generic DLNA renderer's dc:title second, same
+# choice and same order as that script makes. Matched against
+# parse_stream_title_echo()'s own extra unescape pass, not
+# _unescape_last_change()'s output directly — see that function for why
+# this needs one escape layer more than every other parser here.
+_STREAM_CONTENT_RE = re.compile(r"<r:streamContent>(.*?)</r:streamContent>", re.DOTALL)
+_DC_TITLE_RE = re.compile(r"<dc:title>(.*?)</dc:title>", re.DOTALL)
 
 
 @dataclass
@@ -197,6 +211,50 @@ def parse_event(body: str) -> dict[str, str]:
         if name in _KEPT_PROPERTIES and value:
             found[name] = value
     return found
+
+
+def parse_stream_title_echo(body: str) -> str | None:
+    """The ICY title a renderer is currently echoing back as actually
+    playing, or None if this NOTIFY doesn't carry one at all — most don't,
+    LastChange fires on plenty of properties that have nothing to do with
+    metadata. See routes/upnp.py's own handler for what this is used for
+    (core/session.py's radio_icy_pending_injection/radio_icy_measured_lag)
+    and why: a relayed Sonos (delivery/sonos.py's own x-rincon-mp3radio://
+    dispatch) has no other live position signal any more.
+
+    Needs one escape layer more than every other parser in this module, and
+    that is the whole reason the ICY round-trip measurement never once
+    landed against real hardware. The properties parse_event() reads sit
+    directly in the LastChange, escaped once; the title read here sits
+    inside the *DIDL* that is itself the escaped `val=` of
+    CurrentTrackMetaData, so a real NOTIFY carries `<r:streamContent>` at
+    two escape levels (`&amp;lt;r:streamContent&amp;gt;`).
+    _unescape_last_change()'s two `&lt;`-passes cannot reach that: neither
+    of them matches `&amp;lt;` at all, and its single trailing `&amp;`-pass
+    only reduces it to `&lt;` — never to `<`. Every real echo therefore
+    parsed as None, radio_icy_pending_injection was never consumed, and
+    radio_icy_measured_lag stayed None for the entire life of the feature
+    (visualizer_feed.py's own debug overlay reporting "guessed" forever was
+    exactly this). The unit tests missed it because their fixture escaped
+    the DIDL once, into a LastChange whose surrounding markup was already
+    written out as literal entities — putting the DIDL one escape level
+    shallower than any renderer actually sends it.
+
+    html.unescape() rather than another hand-rolled pass, here and on the
+    extracted title: it resolves `&apos;`/`&#39;` and numeric entities too,
+    which a title match has to survive (apostrophes are extremely common in
+    track titles, and a title that comes back unescaped differently than it
+    went out simply fails routes/upnp.py's exact-match check and is
+    discarded). The title needs its own pass because the two above only
+    resolve the two *structural* layers — the text inside the DIDL is still
+    escaped once at that point, so a station's "Simon &amp; Garfunkel"
+    would otherwise be compared as "Simon &amp;amp; Garfunkel"."""
+    text = html.unescape(_unescape_last_change(body))
+    match = _STREAM_CONTENT_RE.search(text) or _DC_TITLE_RE.search(text)
+    if match is None:
+        return None
+    title = html.unescape(match.group(1)).strip()
+    return title or None
 
 
 def parse_rendering_control_event(body: str) -> dict[str, str]:

@@ -26,12 +26,49 @@ export interface PositionTracker {
   extrapolate(now: number, duration: number): number
 }
 
+/** How far backwards a fresh server position may pull the displayed one
+ * before it is taken at face value instead of being held.
+ *
+ * Small corrections that go the wrong way are ordinary noise: the backend's
+ * own position-resync recalibrates `position_offset` against the device's
+ * reported position (connect/routes/playback.py) and slews the correction
+ * in over two seconds, so a status tick landing mid-slew legitimately reads
+ * a little below the previous one. Letting those through makes the counter
+ * visibly tick backwards for no reason a listener can act on.
+ *
+ * Anything larger is a real move — a seek, a track change, someone pressing
+ * previous on the speaker's own remote — and must be followed immediately.
+ * Comfortably above the backend's own POSITION_RESYNC_THRESHOLD (1.0s), so
+ * a correction it considered worth applying is never swallowed here. */
+const MAX_SMOOTHED_REWIND_SECONDS = 1.5
+
 export function createPositionTracker(): PositionTracker {
   let lastElapsed: number | null = null
   let lastElapsedAt = 0
 
   return {
     record(elapsed, now) {
+      // Hold, rather than snap back, for a small backwards correction —
+      // see MAX_SMOOTHED_REWIND_SECONDS. Compared against the *extrapolated*
+      // position, not the last recorded one: that's the number actually on
+      // screen, and it has kept advancing since the previous tick.
+      //
+      // The backend's own _OffsetTrackerClock (connect/core/visualizer_feed.py)
+      // has this same rule for the same reason — the cast visualizer's clock
+      // never follows a poll backwards either. This side had no equivalent, so
+      // every backwards correction reached the seek bar unfiltered.
+      if (lastElapsed !== null) {
+        const onScreen = lastElapsed + (now - lastElapsedAt) / 1000
+        const rewind = onScreen - elapsed
+        if (rewind > 0 && rewind <= MAX_SMOOTHED_REWIND_SECONDS) {
+          // Re-anchor at the held value, not the reported one, so the
+          // counter stalls for the length of the correction and then
+          // carries on rather than replaying that stretch.
+          lastElapsed = onScreen
+          lastElapsedAt = now
+          return
+        }
+      }
       lastElapsed = elapsed
       lastElapsedAt = now
     },

@@ -22,7 +22,7 @@ from .manager import (
     discover_dlna,
     discover_sonos,
 )
-from .sonos import SonosDelivery
+from .sonos import SonosDelivery, is_beacon_hosted_radio_uri
 
 __all__ = [
     "AirPlayDelivery",
@@ -36,4 +36,5 @@ __all__ = [
     "discover_chromecast",
     "discover_dlna",
     "discover_sonos",
+    "is_beacon_hosted_radio_uri",
 ]

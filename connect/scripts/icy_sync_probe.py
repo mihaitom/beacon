@@ -3,7 +3,7 @@ surrounding audio becomes *audible*, or already when it reads it off the wire?
 
 That one question decides whether ICY marker injection can measure a cast
 device's playback lag well enough to drive the radio visualizer's clock (see
-core/visualizer_feed.py's _ASSUMED_DEVICE_LEAD_SECONDS, a guess this would
+core/visualizer_feed.py's ASSUMED_DEVICE_LEAD_SECONDS, a guess this would
 replace with a measurement). Nothing else about the idea matters until it is
 answered, and it cannot be answered by reading documentation.
 

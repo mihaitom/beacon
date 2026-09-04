@@ -398,10 +398,28 @@ async def stop_device(
                 and tracker is not None
                 and tracker.delivery is matched
             ):
-                replacement = first_radio_position_delivery(new_delivery)
+                # Recomputed rather than reusing `url` above: that one only
+                # exists inside the need_restart branch, and this check
+                # doesn't share that guard — st.radio_info is already known
+                # truthy here (the `and st.radio_info` above), so this is
+                # exactly what a fresh dispatch to this station would use.
+                replacement = first_radio_position_delivery(
+                    new_delivery, radio_dispatch_url(session.session_id, st.radio_info)
+                )
                 if replacement is not None:
+                    # started_at carried over from the tracker being
+                    # replaced, not defaulted to now: `replacement` is a
+                    # device that has been playing this same station all
+                    # along and is *not* re-dispatched here, so its buffer
+                    # filled back when the outgoing tracker was created.
+                    # Without this, buffer_lag() reads negative for it and
+                    # the visualizer loses its lag correction for the rest
+                    # of the session — see that method's own comment.
                     new_tracker = RadioPositionTracker(
-                        session, replacement, st.clock.play_generation
+                        session,
+                        replacement,
+                        st.clock.play_generation,
+                        started_at=tracker.started_at,
                     )
                     new_tracker.start()
                     session.radio_position_tracker = new_tracker

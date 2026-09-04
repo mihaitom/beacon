@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from typing import TYPE_CHECKING
 
@@ -49,29 +50,113 @@ _SUPERVISE_INTERVAL = 0.5
 # A track's visualizer clock (st.clock, see PlaybackClock) is calibrated
 # against the *device's own reported position* — routes/playback.py's
 # position-resync — so it already accounts for however long the device
-# buffers before content becomes audible. Radio has no equivalent: a Sonos
-# reports position 0.00s for a continuous stream (nothing for
-# _resync_position_periodically to calibrate against), so there is no way
-# to measure a real device's lead the way tracks do. This is a fixed
-# estimate instead, same spirit as core/streamer.py's own LOOKAHEAD_SECONDS
-# assumption about how far a cast device's connection can legitimately run
-# ahead of what it's actually playing, but not the same number — that one
-# bounds how far *content dispatch* is allowed to lead, this one guesses
-# how far *this analyzer's clock* needs to lag to match what's actually
-# audible. Unverified against a real device by design (there is no
-# feedback signal to verify it against) — expect to have to tune this
-# empirically: still visibly ahead of the audio, raise it; now behind,
-# lower it. Reported live 2026-09-01: with no lead at all (0.0), a
-# perfectly smooth visualizer still read as playing "in the future"
-# relative to the speaker, badly enough to notice immediately.
-_ASSUMED_DEVICE_LEAD_SECONDS = 3.0
+# buffers before content becomes audible. Radio has no equivalent whenever
+# nothing can report a real position back (see this constant's own history
+# below), so this is a fixed estimate instead, same spirit as
+# core/streamer.py's own LOOKAHEAD_SECONDS assumption about how far a cast
+# device's connection can legitimately run ahead of what it's actually
+# playing, but not the same number — that one bounds how far *content
+# dispatch* is allowed to lead, this one guesses how far *this analyzer's
+# clock* needs to lag to match what's actually audible.
+#
+# Was an unverified guess (3.0s) until 2026-09-04, when delivery/sonos.py's
+# own x-rincon-mp3radio:// dispatch (see _dispatch_uri()'s docstring — added
+# to fix Sonos-only audio dropouts while relayed, a *device*-side buffering
+# problem, unrelated to this constant) made _FirstByteClock the *common*
+# case for Sonos radio again rather than the rare fallback it was between
+# 2026-09-02 and then (real position feedback traded away for the same
+# reason it was avoided in the first place — see core/state.py's
+# first_radio_position_delivery()). Reusing the old 3.0s guess as-is read
+# as "syncing to completely different content" (reported live) — not
+# surprising, once actually measured: scripts/icy_sync_probe.py against a
+# real Sonos on this exact x-rincon-mp3radio:// dispatch (2026-09-04) put
+# the device's own lag at 4.699-4.994s (median 4.724s), comfortably outside
+# the old guess. Still an estimate, not a live measurement — a real device
+# lag that drifts session-to-session or station-to-station has no feedback
+# signal here to correct for it, unlike Chromecast/DLNA's own
+# RadioPositionTracker-backed clock — so this may need retuning again if a
+# station or a firmware update shifts the real number. Reported live
+# 2026-09-01: with no lead at all (0.0), a perfectly smooth visualizer
+# still read as playing "in the future" relative to the speaker, badly
+# enough to notice immediately — a reason to round up rather than down if
+# this ever needs adjusting again.
+ASSUMED_DEVICE_LEAD_SECONDS = 4.7
+
+# Per-clock corrections, added on top of whatever each clock measures.
+#
+# Two separate values, not one, because the error is not the same on both
+# paths — and the split falls exactly on the code boundary. Observed live
+# 2026-09-05 against routes/debug.py's beep station: the visualizer ran
+# ahead of the audio on every target, but Sonos differed from Chromecast
+# and DLNA, while those two behaved alike. Chromecast and DLNA are the same
+# path (_OffsetTrackerClock, fed by RadioPositionTracker polling the
+# device's own reported position); Sonos is the other one (_FirstByteClock,
+# fed by an ICY title echoed back over UPnP eventing). An error that tracks
+# the path rather than the device is a property of how each path derives
+# its lead, so one shared number would only ever be right for one of them.
+#
+# What each is correcting for is not established. A device needing a moment
+# after its last reported position before sound leaves it would explain
+# some of it, but not why two quite different devices (a Chromecast handing
+# off over HDMI, a generic DLNA renderer) land in the same place while a
+# Sonos does not. The honest description is a per-path calibration whose
+# cause is still open — most likely in how each lead relates to this
+# analyzer's own decode start, since everything downstream of that is
+# shared by all three.
+#
+# Both default to 0 — deliberately, and that is a retraction. The first
+# figure measured this way (about a second, 2026-09-05) came from watching
+# routes/debug.py's beep station back when every beep was the same pitch,
+# which makes "a second early" and "an interval minus a second late" the
+# same observation. The number could not distinguish them, so it was not a
+# measurement, and shipping it as a default would bake a guess into every
+# install. The beep station now cycles through distinct pitches precisely so
+# the reading is unambiguous (see _TONE_SEQUENCE_HZ there); whoever runs it
+# sets these from what they actually see, and 0 until then means the clocks
+# behave exactly as their own measurements say.
+#
+# Both read per call so trying a value needs no restart: watch the station,
+# adjust, watch again.
+_LEAD_CORRECTION_DEFAULT = 0.0
+FIRST_BYTE_LEAD_CORRECTION_ENV = "BEACON_LEAD_CORRECTION_SONOS"
+TRACKER_LEAD_CORRECTION_ENV = "BEACON_LEAD_CORRECTION_TRACKER"
+
+
+def _lead_correction(env_var: str) -> float:
+    """Seconds to add for one clock. A value that isn't a number falls back
+    rather than raising — these are calibration aids, and a typo in one must
+    not take radio casting down with it."""
+    raw = os.environ.get(env_var)
+    if raw is None:
+        return _LEAD_CORRECTION_DEFAULT
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning(
+            f"[visualizer] {env_var}={raw!r} is not a number — using {_LEAD_CORRECTION_DEFAULT}s"
+        )
+        return _LEAD_CORRECTION_DEFAULT
+
+
+def first_byte_lead_correction() -> float:
+    """For _FirstByteClock — the ICY-lead path, i.e. a relayed Sonos."""
+    return _lead_correction(FIRST_BYTE_LEAD_CORRECTION_ENV)
+
+
+def tracker_lead_correction() -> float:
+    """For _OffsetTrackerClock — the polled-position path, i.e. Chromecast
+    and DLNA, which were observed behaving alike and unlike Sonos."""
+    return _lead_correction(TRACKER_LEAD_CORRECTION_ENV)
 
 
 class _FirstByteClock:
     """elapsed_fn for a radio AudioAnalyzer with no RadioPositionTracker to
-    drive it (a target type radio_position.py doesn't cover — see
-    _start_radio_analyzer()'s own comment on when this fallback is actually
-    reached today). Zero until mark() (passed to AudioAnalyzer as
+    drive it — a target type radio_position.py doesn't cover at all
+    (AirPlay), or one it deliberately excludes for a specific dispatch (a
+    relayed Sonos since 2026-09-04, see ASSUMED_DEVICE_LEAD_SECONDS' own
+    history and core/state.py's first_radio_position_delivery()) — see
+    _start_radio_analyzer()'s own comment for the current split. Zero
+    until mark() (passed to AudioAnalyzer as
     `on_first_byte`) fires on this run's first decoded PCM, not from
     construction — spawning this analyzer's own ffmpeg and it actually
     having produced a byte are not the same moment (its own connect/first-
@@ -85,10 +170,40 @@ class _FirstByteClock:
     frame happened to land inside that 150ms window by chance — reported
     live 2026-09-01 as "0.5fps", worse on some stations than others,
     exactly matching a fetch-latency-dependent bug rather than a pacing
-    one. Also subtracts _ASSUMED_DEVICE_LEAD_SECONDS — see that constant's
-    own comment for the separate problem that fixes."""
+    one. Also subtracts a device lead — ASSUMED_DEVICE_LEAD_SECONDS by
+    default, or session.radio_icy_measured_lag once a real one exists (see
+    elapsed()) — see that constant's own comment for the separate problem
+    the subtraction itself fixes.
 
-    def __init__(self) -> None:
+    The lead is the fixed estimate, adjustable via
+    first_byte_lead_correction(). It is deliberately *not* taken from
+    session.radio_icy_measured_lag, though that measurement still runs and
+    is still logged — routes/upnp.py keeps producing it, because seeing it
+    is useful, and because it is the only visibility there is into what the
+    device reports.
+
+    Driving the clock from it was tried and measured, and it made the sync
+    worse. Four consecutive runs against a real Sonos on 2026-09-05 produced
+    16.63s, 3.48s, 3.01s and 1.43s, and a station restart moved it again —
+    while the uncalibrated fixed estimate stayed the closest match by ear
+    throughout. Every sample also came out *below* the real figure, which
+    fits how the signal is produced: a device reports a StreamTitle once it
+    has decoded the block carrying it, which is earlier than playing it, so
+    the round trip understates the lead by whatever the device's own output
+    stage adds.
+
+    That downward bias is what makes the estimator worse the harder it
+    works. Keeping the smallest sample is the right shape for noise that can
+    only overshoot (Sonos's own event moderation, which produced the 16.63s
+    reading) — but with a bias that only ever undershoots, the minimum
+    chases it, and every additional sample drags the lead further from the
+    truth. The 8-second marker pulse added to supply more samples (see
+    core/icy_metadata.py's pulsed_title()) therefore accelerated the drift
+    rather than converging it. A measurement that degrades with more data is
+    not measuring the quantity it is being read as."""
+
+    def __init__(self, session: SessionState) -> None:
+        self._session = session
         self._first_byte_at: float | None = None
 
     def mark(self) -> None:
@@ -98,7 +213,34 @@ class _FirstByteClock:
     def elapsed(self) -> float:
         if self._first_byte_at is None:
             return 0.0
-        return max(0.0, time.monotonic() - self._first_byte_at - _ASSUMED_DEVICE_LEAD_SECONDS)
+        lead, _ = self._lead()
+        return max(0.0, time.monotonic() - self._first_byte_at - lead)
+
+    def _lead(self) -> tuple[float, bool]:
+        """(lead to use, whether it's a live ICY measurement).
+
+        Always the fixed estimate now — the ICY round trip is measured and
+        logged, but no longer steers this clock. See the class docstring for
+        the measurements that retired it.
+        """
+        return (ASSUMED_DEVICE_LEAD_SECONDS + first_byte_lead_correction(), False)
+
+    def debug_lead(self) -> tuple[float, bool]:
+        """(lead currently in use, whether it's a live ICY measurement) —
+        the same value elapsed() itself uses, exposed for GET /visualizer's
+        debug overlay (core/audio_analysis.py's
+        AudioAnalyzer.last_release_lead) so a listener can tell "still the
+        fixed guess" apart from "a real measurement landed" — the whole
+        reason this overlay was built in the first place, per the exact
+        question live 2026-09-05: seeing -4.7s on the delta overlay alone
+        doesn't say whether that's the constant being echoed back (nothing
+        measured yet) or a coincidence.
+
+        Reads through _lead() rather than the session field directly, so
+        the overlay reports the lead actually in effect — a later, differing
+        measurement landing on the session is deliberately not adopted, and
+        showing it here would describe a clock this run isn't using."""
+        return self._lead()
 
 
 class _OffsetTrackerClock:
@@ -138,7 +280,23 @@ class _OffsetTrackerClock:
     on top of whatever real gap already existed — reported live
     2026-09-02 as the visualizer visibly running fast for a stretch and
     then freezing for 0.5-1s, repeating roughly every poll: exactly this
-    round-trip of over-extrapolating and then snapping back."""
+    round-trip of over-extrapolating and then snapping back.
+
+    Folds in RadioPositionTracker.buffer_lag() once it's measurable — see
+    _apply_measured_lag(). Without it, `raw` above reduces algebraically to
+    plain wall-clock time since mark() regardless of the device's own
+    buffering delay: for a steady-state device, elapsed_fn() at any later
+    moment equals its value at mark() plus however much wall time has
+    passed, so subtracting the two cancels that delay out of the result
+    instead of preserving it. That is invisible in a unit test that only
+    checks the *shape* of the output (which is exactly right — smoothed,
+    monotonic, forward-only) but not its absolute lag against real device
+    audio, and it was invisible live too, for the same reason: a visualizer
+    that free-runs fast doesn't look broken by itself, it looks broken next
+    to the speaker. Reported live 2026-09-03/04 as the cast visualizer
+    running seconds ahead of the actual audio — worst on Chromecast (~10-11s
+    own startup buffer, see core/radio_position.py's module docstring),
+    smaller but still audible on DLNA and Sonos."""
 
     def __init__(self, session: SessionState) -> None:
         self._session = session
@@ -152,6 +310,12 @@ class _OffsetTrackerClock:
         # Set once mark() fires, even if no tracker was available at that
         # exact moment — see _try_set_baseline().
         self._first_byte_seen: bool = False
+        # Whether this run's _baseline already has the current tracker's
+        # measured buffer_lag() folded in — see _apply_measured_lag(). Reset
+        # whenever the tracker itself changes (_rebase_if_tracker_changed()),
+        # since a swapped-in tracker can belong to a different device with
+        # its own, differently-lagging buffer.
+        self._lag_applied: bool = False
 
     def _rebase_if_tracker_changed(self, tracker: RadioPositionTracker) -> None:
         """Follow whichever RadioPositionTracker the session currently
@@ -171,6 +335,12 @@ class _OffsetTrackerClock:
         if tracker is self._tracker:
             return
         self._tracker = tracker
+        # A new tracker means a new device (or the same device re-dispatched
+        # from scratch) with its own buffer_lag() to measure — whatever was
+        # folded into _baseline for the old one no longer applies. Cleared
+        # unconditionally, not just in the branch below: _try_set_baseline()
+        # must not skip the fold for a first-ever baseline either.
+        self._lag_applied = False
         if self._baseline is None:
             # Nothing decoded yet — mark() still owns the first baseline,
             # and taking one here would put it back at construction time,
@@ -191,8 +361,11 @@ class _OffsetTrackerClock:
         the device — the same mistake _FirstByteClock exists to avoid, and
         the reason that class's own comment about the tracker "having
         nothing to zero" was wrong: the tracker needs no zeroing, but the
-        baseline drawn from it still has to be taken at the right
-        moment."""
+        baseline drawn from it still has to be taken at the right moment —
+        and, since that fix alone still left the device's own buffering
+        delay cancelled out of the result (see this class's own docstring
+        and _apply_measured_lag()), corrected for that too, once it's
+        measurable."""
         self._first_byte_seen = True
         self._try_set_baseline()
 
@@ -232,6 +405,7 @@ class _OffsetTrackerClock:
             # elapsed. Judging that first frame against a baseline that
             # doesn't exist yet is exactly what mark() prevents.
             return 0.0
+        self._apply_measured_lag(tracker)
         raw = max(0.0, tracker.elapsed_fn() - self._baseline)
         if not tracker.ready:
             self._last_elapsed = raw
@@ -250,6 +424,59 @@ class _OffsetTrackerClock:
             return raw
         self._last_elapsed = extrapolated
         return extrapolated
+
+    def _apply_measured_lag(self, tracker: RadioPositionTracker) -> None:
+        """Fold RadioPositionTracker.buffer_lag() into _baseline, once it's
+        actually measurable — i.e. once `tracker.ready`, same gate that
+        method uses itself.
+
+        Without this, _baseline is exactly what _try_set_baseline() /
+        _rebase_if_tracker_changed() leave it at: the device's own (already
+        lagging) reported position, taken once. `raw` in elapsed() is then
+        `tracker.elapsed_fn() - _baseline`, and for a device playing at
+        real-time speed that reduces to plain wall-clock time since the
+        baseline was taken — do the algebra: elapsed_fn() at any later
+        moment is (baseline_value + buffer_lag) - buffer_lag +
+        wall_time_since = baseline_value + wall_time_since, so the lag term
+        cancels out of the subtraction instead of surviving it. Every frame
+        this clock ever releases would then be exactly `lag` seconds ahead
+        of what the device is actually playing — reported live 2026-09-03/
+        04, worst on Chromecast (~10-11s of its own startup buffer, see
+        core/radio_position.py's module docstring for the measured numbers)
+        but present on DLNA and Sonos too, just by less.
+
+        Adding the measured lag to _baseline instead keeps that quantity in
+        the subtraction: `raw` becomes tracker.elapsed_fn() - (baseline +
+        lag), i.e. exactly `lag` seconds *behind* where it would otherwise
+        read, until the device (and content_position, decode having spent
+        that same stretch paused against its own lookahead cap — see
+        core/audio_analysis.py's _MAX_LOOKAHEAD_SECONDS) genuinely catches
+        up to it. That is a one-time, real hold at the point this first
+        applies (typically right as `ready` flips, seconds into the run) —
+        the visualizer staying dark that long is correct, not a bug: none
+        of this content was actually audible yet either.
+
+        Applied once per baseline (see _lag_applied and its own reset in
+        _rebase_if_tracker_changed()), not re-applied on every call even
+        though buffer_lag() itself is a live measurement that could in
+        principle be read again and again: a real device's own buffering
+        delay is a steady pipeline constant for the run, not something
+        expected to wander, and re-adding a slightly different reading
+        later would jump _baseline (and so elapsed()'s output) by that
+        difference for no benefit — the same class of visible glitch the
+        monotonic-extrapolation logic above exists to avoid for tracker
+        jitter generally."""
+        if self._lag_applied:
+            return
+        lag = tracker.buffer_lag()
+        if lag is None:
+            return
+        # Plus the output stage the device does not report — the same term
+        # _FirstByteClock adds to its own, unrelated measurement, for the
+        # reason spelled out at VISUALIZER_LEAD_CORRECTION_ENV: a polled position
+        # is where the decoder is, not where the sound is.
+        self._baseline += lag + tracker_lead_correction()
+        self._lag_applied = True
 
 
 class VisualizerFeed:
@@ -440,6 +667,17 @@ class VisualizerFeed:
             source_url=source_url,
             start_offset=position,
             gain=st.current_track_gain,
+            # Same function as elapsed_fn above, not a stand-in for a
+            # "second opinion" the way radio's own has one — see
+            # AudioAnalyzer's own docstring for why that's fine (still
+            # meaningful) rather than redundant: GET /visualizer's debug
+            # overlay comparing content_position against a *live* re-read
+            # of this still surfaces a real backlog in this analyzer's own
+            # release pipeline, or in SSE/render delivery further out, even
+            # when the two clocks feeding it are identical by construction.
+            # Reported live 2026-09-05: the listener wanting the overlay
+            # available for track casts too, not just Sonos radio.
+            debug_cast_elapsed_fn=lambda: st.clock.elapsed(),
         )
         await analyzer.start()
         if not analyzer.started:
@@ -455,25 +693,37 @@ class VisualizerFeed:
         )
 
     async def _start_radio_analyzer(self, key: tuple[int, str]) -> None:
-        """Reachable for Chromecast/DLNA/Sonos since 2026-09-02 — see
-        core/radio_position.py's module docstring. _FirstByteClock below
-        now only runs as a defensive fallback (kept, not deleted, in case
-        a target with no RadioPositionTracker ever reaches here — AirPlay,
-        or a future protocol not yet added to
-        core/state.py's first_radio_position_delivery()). Original
-        decision, live 2026-09-01 after actually shipping the
-        _FirstByteClock-only version and measuring it: a Sonos cast over
-        the "real" radio URI scheme (x-rincon-mp3radio://) gives no real
-        position feedback for a continuous stream, only a guessed constant
-        lead was available to compensate for the device's own buffering,
-        and that measured roughly a second off and station-dependent — a
-        visualizer that's confidently wrong lost out to one that's
-        honestly absent. Chromecast/DLNA/Sonos (over the http:// dispatch
-        Beacon actually uses, see delivery/sonos.py's own comment) don't
-        have that problem: all three report a real, stable position once
-        past their own startup buffer (measured live 2026-09-02, see
-        core/radio_position.py), so they get a real clock instead of a
-        guess.
+        """Reachable for Chromecast/DLNA always, and for Sonos when cast
+        directly to the station (see core/radio_position.py's module
+        docstring) — see that clock-picking `if` below for the exact split.
+        _FirstByteClock is the fallback for everything else: AirPlay (never
+        covered here at all), and, since 2026-09-04, a *relayed* Sonos too.
+
+        That last one is a reversal, not an oversight. Original decision,
+        live 2026-09-01 after actually shipping the _FirstByteClock-only
+        version and measuring it: a Sonos cast over the "real" radio URI
+        scheme (x-rincon-mp3radio://) gives no real position feedback for a
+        continuous stream, only a guessed constant lead was available to
+        compensate for the device's own buffering, and that measured
+        roughly a second off and station-dependent — a visualizer that's
+        confidently wrong lost out to one that's honestly absent.
+        Chromecast/DLNA/Sonos (all three, briefly, over the http:// dispatch
+        delivery/sonos.py used to always use for radio) then didn't have
+        that problem: all three reported a real, stable position once past
+        their own startup buffer (measured live 2026-09-02, see core/
+        radio_position.py), so all three got a real clock instead of a
+        guess — until delivery/sonos.py's own _dispatch_uri() went back to
+        x-rincon-mp3radio:// for a relayed Sonos specifically, 2026-09-04,
+        to fix audio dropouts that http:// dispatch caused only for Sonos
+        (device-side buffering, an unrelated problem from this clock's own)
+        — trading the real position feedback back away for exactly the
+        device it was originally measured to be missing from. core/state.py's
+        first_radio_position_delivery() is what keeps a relayed Sonos from
+        even getting a RadioPositionTracker any more, so this class's own
+        "no tracker" branch below is reached for it again, same as before
+        2026-09-02 — now calibrated against the freshly re-measured number
+        (ASSUMED_DEVICE_LEAD_SECONDS' own history) instead of the original,
+        looser one.
 
         Taps core/radio_relay.py's own device-audio fan-out (subscribe_
         audio(lossy=True) below — the same bytes the cast target gets, not
@@ -548,10 +798,15 @@ class VisualizerFeed:
             clock = _OffsetTrackerClock(self._session)
             elapsed_fn = clock.elapsed
             on_first_byte = clock.mark
+            # No fixed/measured lead concept for a real, live-polled device
+            # position — see _OffsetTrackerClock's own docstring for why
+            # Chromecast/DLNA (and Sonos cast directly) never needed one.
+            debug_lead_fn = None
         else:
-            fallback = _FirstByteClock()
+            fallback = _FirstByteClock(self._session)
             elapsed_fn = fallback.elapsed
             on_first_byte = fallback.mark
+            debug_lead_fn = fallback.debug_lead
         # The relay's own device-audio fan-out, not a second fetch of the
         # station: these are the very bytes the device is being sent, so a
         # given moment of audio means the same thing on both sides. A
@@ -578,6 +833,15 @@ class VisualizerFeed:
             elapsed_fn=elapsed_fn,
             source_queue=queue,
             on_first_byte=on_first_byte,
+            # See AudioAnalyzer's own docstring for what this drives
+            # (GET /visualizer's debug overlay) — the *other* clock radio
+            # has for "where is playback", independent of whichever one
+            # (elapsed_fn, above) this analyzer's own delivery is paced by.
+            debug_cast_elapsed_fn=lambda: self._session.state.clock.elapsed(),
+            # None whenever elapsed_fn is _OffsetTrackerClock's (a real
+            # device position, no lead to report on) — only _FirstByteClock
+            # has one worth surfacing. See AudioAnalyzer.last_release_lead.
+            debug_lead_fn=debug_lead_fn,
         )
         await analyzer.start()
         if not analyzer.started:

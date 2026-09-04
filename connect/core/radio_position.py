@@ -113,7 +113,13 @@ class RadioPositionTracker:
     exact gap immediately, every time.
     """
 
-    def __init__(self, session: SessionState, delivery: BaseDelivery, generation: int) -> None:
+    def __init__(
+        self,
+        session: SessionState,
+        delivery: BaseDelivery,
+        generation: int,
+        started_at: float | None = None,
+    ) -> None:
         self._session = session
         self.delivery = delivery
         self._generation = generation
@@ -121,6 +127,23 @@ class RadioPositionTracker:
         self._baseline: float | None = None
         self._baseline_set_at: float = 0.0
         self.ready = False
+        # Wall-clock reference for buffer_lag() below — "the moment this
+        # station was dispatched to the device". monotonic(), like every
+        # other timestamp in this class, not time.time() — this is only
+        # ever compared against other monotonic() reads, never persisted or
+        # shown to a user, so it doesn't need wall-clock meaning.
+        #
+        # Defaults to now, which is right for every call site that builds a
+        # tracker immediately after actually dispatching (routes/playback.py's
+        # /play-url, /resume and /seek all do). routes/devices.py's
+        # /device-stop does not: it hands tracking over to a device that has
+        # been playing all along and is not re-dispatched, so it passes that
+        # device's real dispatch time through instead (see `started_at` in
+        # this class's own `started_at` property). Defaulting there would put
+        # `_started_at` at `now` while `_position` is already minutes in,
+        # making buffer_lag() negative — see that method for what silently
+        # went wrong downstream.
+        self._started_at = time.monotonic() if started_at is None else started_at
         # Held so the poll loop can't be silently garbage-collected mid-run
         # — asyncio only keeps a weak reference to a task once nothing else
         # holds a strong one.
@@ -129,6 +152,13 @@ class RadioPositionTracker:
     def start(self) -> None:
         self._task = asyncio.create_task(self._run())
 
+    @property
+    def started_at(self) -> float:
+        """This tracker's dispatch reference, for a caller building a
+        replacement tracker for a device that is still playing the same
+        dispatch — see __init__'s `started_at` and routes/devices.py."""
+        return self._started_at
+
     def elapsed_fn(self) -> float:
         """Cheap, synchronous — the last polled position, held constant
         between polls rather than extrapolated. Extrapolating during the
@@ -136,6 +166,53 @@ class RadioPositionTracker:
         nothing real behind it yet — precisely the failure mode the
         Chromecast measurement this module is built from ruled out."""
         return self._position
+
+    def buffer_lag(self) -> float | None:
+        """How far behind wall-clock-time-since-dispatch the device's own
+        reported position currently runs — i.e. a live measurement of this
+        specific device's own startup-buffering delay, for
+        core/visualizer_feed.py's _OffsetTrackerClock to fold into its
+        baseline (see that class's own comment on why the naive baseline it
+        used before this method existed silently cancelled this same
+        quantity back out instead of preserving it).
+
+        None until `ready`: before that, the device is still sitting in its
+        own startup stall (elapsed_fn() not really moving yet — see that
+        method's own comment), so "time since dispatch minus position"
+        isn't a stable buffering delay yet, just however far into that
+        stall the device happens to be at this exact instant. Once ready,
+        this device has settled into playing at real-time speed, and the
+        gap becomes a genuine, steady per-device constant — Chromecast's
+        own decode+HDMI pipeline, DLNA's own render buffer, or Sonos's own
+        buffer over the http:// dispatch delivery/sonos.py uses (all three
+        measured live via scripts/icy_sync_probe.py, see this module's own
+        docstring for the numbers) — not something that should keep
+        drifting the caller's baseline around for the rest of the run on
+        ordinary poll jitter, which is why the caller applies this once
+        rather than calling it on every frame.
+
+        None, rather than 0.0, when the arithmetic comes out negative —
+        `self._started_at` is a proxy for the real dispatch moment, not the
+        moment itself (see its own comment), and a negative result means
+        that proxy is simply wrong for this tracker, not that the device
+        has no buffering delay.
+
+        That distinction is load-bearing, because one call site breaks the
+        proxy outright: routes/devices.py's /device-stop builds a
+        replacement tracker for a device that is *already playing* and was
+        never re-dispatched, so `_started_at` is `now` while `_position` is
+        already however many minutes into the station. Flooring that at
+        0.0 handed _OffsetTrackerClock._apply_measured_lag() a lag of zero
+        — which it then folds in and latches (`_lag_applied`) permanently,
+        losing the correction for the rest of the session and leaving the
+        visualizer running the device's whole buffer ahead of the audio, up
+        to the ~10-11s a Chromecast alone accounts for. Returning None
+        instead simply leaves that fold un-applied, so it is retried on
+        every later call and lands as soon as a usable measurement exists."""
+        if not self.ready:
+            return None
+        lag = time.monotonic() - self._started_at - self._position
+        return lag if lag > 0 else None
 
     async def _run(self) -> None:
         try:

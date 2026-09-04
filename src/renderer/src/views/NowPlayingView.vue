@@ -215,8 +215,23 @@
       class="now-playing__visualizer-row"
       :class="{ 'now-playing__visualizer-row--visible': visualizerMounted }"
     >
-      <audio-visualizer v-if="visualizerMounted" :active="visualizerActive" />
+      <audio-visualizer
+        v-if="visualizerMounted"
+        :active="visualizerActive"
+        @debug-frame="visualizerDebug = $event"
+      />
     </div>
+
+    <!-- Positioned in .now-playing's own layout (which is already
+     - `position: relative`, see its own CSS), not inside <audio-visualizer>
+     - or .now-playing__visualizer-row above — see VisualizerDebugOverlay's
+     - own comment for why living inside AudioVisualizer either covered the
+     - bars or compressed them, reported live 2026-09-05 both times. This
+     - way it can never do either: it takes no layout space from the
+     - visualizer row at all, floating over whatever's underneath instead
+     - (the artwork/backdrop area, not the bars themselves, for the
+     - top-left corner this actually renders in). -->
+    <visualizer-debug-overlay :debug="visualizerDebug" class="now-playing__visualizer-debug" />
   </div>
 </template>
 
@@ -233,6 +248,8 @@ import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connec
 import CoverArt from '@/components/library/CoverArt.vue'
 import LyricsPanel from '@/components/lyrics/LyricsPanel.vue'
 import AudioVisualizer from '@/components/player/AudioVisualizer.vue'
+import VisualizerDebugOverlay from '@/components/player/VisualizerDebugOverlay.vue'
+import type { VisualizerFrame } from '@/services/connect/types'
 import { getAudioEngine } from '@/services/audioEngine'
 import { extractDominantColor } from '@/services/colorExtractor'
 import { accountScopedKey } from '@/services/accountKey'
@@ -263,7 +280,7 @@ const VISUALIZER_HIDE_DELAY_MS = 400
 
 export default {
   name: 'NowPlayingView',
-  components: { CoverArt, LyricsPanel, AudioVisualizer },
+  components: { CoverArt, LyricsPanel, AudioVisualizer, VisualizerDebugOverlay },
   props: {
     // Set by MobileNowPlayingView.vue — this view's own sizing (artSize
     // below, plus the .now-playing--compact overrides in <style>) assumes
@@ -287,6 +304,11 @@ export default {
       // treatment) until then, so there's no flash of the transparent-icon
       // styling before the icon itself has even loaded.
       radioIconIsTransparent: false,
+      // <audio-visualizer>'s own 'debug-frame' event, forwarded straight
+      // through to <visualizer-debug-overlay> — see that component's own
+      // comment for why it's rendered here instead of inside
+      // <audio-visualizer> itself.
+      visualizerDebug: null as VisualizerFrame['debug'] | null,
       // Two stacked layers, only one shown at a time, so a song change
       // crossfades between cover arts instead of popping — see
       // services/crossfadeBackdrop.ts for why one element can't do this.
@@ -375,16 +397,18 @@ export default {
     // which *does* decode a real PCM stream this could tap
     // (core/visualizer_feed.py's own radio branch, wired up and tested —
     // see AudioAnalyzer's pcm_source parameter). AirPlay has no position
-    // to poll for radio at all, so it still gets the "honestly absent"
-    // treatment decided live 2026-09-01, after shipping a guessed-constant
-    // version and measuring it roughly a second off and station-dependent.
-    // Chromecast/DLNA/Sonos are different: all three were measured live
-    // 2026-09-02 to report a real, stable position for radio once past
-    // their own startup buffer — see connect/core/radio_position.py — so
-    // they get the real analyzer instead of the "absent" fallback. Sonos
-    // specifically needs its own http:// radio dispatch for this (see
-    // delivery/sonos.py's own comment) — the "real" x-rincon-mp3radio://
-    // URI scheme reports position 0.00s for a continuous stream instead.
+    // to poll for radio at all, so it gets the "honestly absent" treatment
+    // decided live 2026-09-01, after shipping a guessed-constant version
+    // and measuring it roughly a second off and station-dependent.
+    // Chromecast/DLNA/Sonos would be different — all three were measured
+    // live 2026-09-02 to report a real, stable position for radio once past
+    // their own startup buffer (see connect/core/radio_position.py) — but
+    // isRadioPositionCapable() below currently answers false for all of
+    // them regardless: connect.ts's own RADIO_VISUALIZER_ENABLED flag,
+    // flipped off 2026-09-04 after days spent unable to keep this in sync
+    // with the audio a cast device actually plays. They fall into the same
+    // "honestly absent" treatment as AirPlay until that flag flips back —
+    // see connect.ts for the full reasoning.
     visualizerAvailable() {
       // Casting reads its frequency data from the backend rather than from
       // this device's own audio, so it needs no local analyser at all —
@@ -643,6 +667,22 @@ export default {
   z-index: 2;
   display: flex;
   gap: 4px;
+}
+
+/* Mirrors .now-playing__toolbar's own corner placement (opposite side, so
+ * the two never collide) — see VisualizerDebugOverlay's own comment for
+ * why this lives here rather than inside <audio-visualizer>/the visualizer
+ * row: this way it takes no layout space from the bars at all, in a corner
+ * they don't reach into either. Applied straight to
+ * <visualizer-debug-overlay>'s own root (class fallthrough) — that root is
+ * itself v-if'd (nothing rendered, not just hidden, while there's no debug
+ * frame to show), so there's no empty positioned element left over to
+ * worry about eating clicks the rest of the time. */
+.now-playing__visualizer-debug {
+  position: absolute;
+  bottom: 180px;
+  left: 24px;
+  z-index: 2;
 }
 
 /* Row 1 of .now-playing's grid (minmax(0, 1fr), see above) — takes up
@@ -1191,6 +1231,17 @@ export default {
    * flip-card container query below) reached noticeably into the artwork
    * underneath instead of staying clear of it in the corner. */
   flex-direction: column;
+}
+
+.now-playing--compact .now-playing__visualizer-debug {
+  /* bottom: auto is load-bearing, not tidying: the desktop rule above sets
+   * bottom: 180px, and an absolutely positioned box with height: auto and
+   * *both* offsets given gets stretched to span between them. Adding top
+   * alone turned this small badge into a tall dark column of its own
+   * translucent background, straight down the artwork. */
+  top: 8px;
+  bottom: auto;
+  left: 8px;
 }
 
 .now-playing--compact .now-playing__visualizer-row--visible {

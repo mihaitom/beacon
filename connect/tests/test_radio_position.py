@@ -10,13 +10,16 @@ from core.radio_position import RadioPositionTracker
 from delivery import ChromecastDelivery
 
 
-def _tracker(session, target=None):
+def _tracker(session, target=None, started_at=None):
     delivery = target or ChromecastDelivery("Wohnzimmer")
     session.state.active_delivery = delivery
     session.state.is_streaming = True
     session.state.clock.start(0.0)
     generation = session.state.clock.play_generation
-    return RadioPositionTracker(session, delivery, generation), delivery
+    return (
+        RadioPositionTracker(session, delivery, generation, started_at=started_at),
+        delivery,
+    )
 
 
 def test_first_reading_sets_baseline_without_becoming_ready(default_session):
@@ -237,3 +240,71 @@ def test_elapsed_fn_holds_last_value_without_extrapolating(default_session):
     time.sleep(0.05)
     after = tracker.elapsed_fn()
     assert before == after == 3.0
+
+
+# ── buffer_lag() — measuring the device's own startup-buffering delay ──────
+# For core/visualizer_feed.py's _OffsetTrackerClock to fold into its
+# baseline instead of, as before this method existed, silently cancelling
+# it back out of the result — see that class's own docstring and
+# _apply_measured_lag() for the bug this replaces (reported live
+# 2026-09-03/04: the radio visualizer running seconds ahead of the actual
+# audio, worst on Chromecast's own ~10-11s startup buffer).
+
+
+def test_buffer_lag_is_none_until_ready(default_session):
+    """Before `ready`, the device is still sitting in its own startup
+    stall — "wall time since dispatch minus position" isn't a stable
+    buffering delay yet at that point, just however far into the stall the
+    device happens to be."""
+    tracker, delivery = _tracker(default_session)
+    with patch.object(delivery, "get_position", new=AsyncMock(return_value=0.0)):
+        asyncio.run(tracker._poll_once())
+    assert tracker.ready is False
+    assert tracker.buffer_lag() is None
+
+
+def test_buffer_lag_measures_wall_time_since_dispatch_minus_position(default_session):
+    """Not run through _poll_once()/asyncio.run(): patching time.monotonic
+    globally (this module imports the `time` module itself, not individual
+    names from it, so the patch reaches every caller process-wide) would
+    also patch asyncio's own event-loop clock out from under it. Setting
+    the polled state directly is equivalent here — buffer_lag() only reads
+    `ready`/`_position`, it doesn't care how they got there."""
+    tracker, _ = _tracker(default_session)  # _started_at set here, unpatched
+    tracker._position = 2.0
+    tracker.ready = True
+    with patch("core.radio_position.time.monotonic", return_value=tracker._started_at + 12.0):
+        # 12s of wall time since dispatch, the device reports only 2.0s
+        # actually played by then: a 10.0s buffering delay, right in the
+        # Chromecast range measured live (see this module's own docstring).
+        assert tracker.buffer_lag() == pytest.approx(10.0)
+
+
+def test_buffer_lag_is_none_when_it_would_come_out_negative(default_session):
+    """A negative result means `_started_at` is simply wrong for this
+    tracker, not that the device has no buffering delay — so this reports
+    "no measurement", not zero.
+
+    The difference matters downstream: _OffsetTrackerClock._apply_measured_
+    lag() folds the first value it gets in and latches it permanently, so a
+    0.0 here would discard the correction for the whole session, while None
+    just leaves it to be retried."""
+    tracker, _ = _tracker(default_session)
+    tracker._position = 5.0
+    tracker.ready = True
+    with patch("core.radio_position.time.monotonic", return_value=tracker._started_at + 0.5):
+        assert tracker.buffer_lag() is None
+
+
+def test_buffer_lag_uses_a_handed_over_started_at(default_session):
+    """routes/devices.py's /device-stop builds a replacement tracker for a
+    device that has been playing all along and is never re-dispatched.
+    Defaulting `_started_at` to now there would make buffer_lag() negative
+    forever (position already minutes in, reference just created), so that
+    call site passes the outgoing tracker's own reference through."""
+    original, _ = _tracker(default_session)
+    handover, _ = _tracker(default_session, started_at=original.started_at)
+    handover._position = 300.0
+    handover.ready = True
+    with patch("core.radio_position.time.monotonic", return_value=original.started_at + 304.7):
+        assert handover.buffer_lag() == pytest.approx(4.7)

@@ -15,6 +15,7 @@ from delivery import (
     DeliveryManager,
     DlnaDelivery,
     SonosDelivery,
+    is_beacon_hosted_radio_uri,
 )
 from media import Track
 
@@ -273,8 +274,23 @@ def radio_dispatch_url(session_id: str, radio_info: dict) -> str:
     station is current (routes/join.py, routes/devices.py's device-stop
     restart, routes/playback.py's _current_reconnect_args) goes through
     this rather than reading radio_info["url"] directly, so "relayed"
-    only has to be understood in one place."""
-    return radio_stream_url(session_id) if radio_info.get("relayed") else radio_info["url"]
+    only has to be understood in one place.
+
+    "proxied" counts the same as "relayed" here, and used to be missed:
+    routes/playback.py's retry_radio_via_proxy() points a device at
+    radio_stream_url() after it has *refused* the station's own stream
+    (ERROR_UNSUPPORTED_FORMAT / ERROR_ACCESS_DENIED, see routes/upnp.py),
+    and records that as radio_info["proxied"] while "relayed" stays False.
+    Reading only "relayed" therefore sent every later reconnect — a
+    /resume, a /seek, a device-stop restart, a second client joining —
+    straight back to the URL the device had already rejected. It also fed
+    the wrong answer to core/state.py's own first_radio_position_delivery()
+    (that device *is* rewritten onto x-rincon-mp3radio:// and does report a
+    flat 0.00s, so it must be excluded from position tracking, and wasn't).
+    routes/playback.py's /play-url already special-cased this inline rather
+    than fixing it here; that call site can now just use this."""
+    beacon_hosted = radio_info.get("relayed") or radio_info.get("proxied")
+    return radio_stream_url(session_id) if beacon_hosted else radio_info["url"]
 
 
 # Track id of routes/debug.py's synthesized test tone — not a real library
@@ -368,6 +384,7 @@ def find_sonos(active: BaseDelivery | DeliveryManager | None) -> list[SonosDeliv
 
 def first_radio_position_delivery(
     active: BaseDelivery | DeliveryManager | None,
+    dispatch_url: str = "",
 ) -> ChromecastDelivery | DlnaDelivery | SonosDelivery | None:
     """The first Chromecast/DLNA/Sonos delivery in `active`, if any — the
     reference device for core/radio_position.py's RadioPositionTracker.
@@ -381,6 +398,24 @@ def first_radio_position_delivery(
     poll-and-wait-for-movement approach this module already does for
     Chromecast/DLNA just works.
 
+    `dispatch_url` is whatever's actually being (or about to be) handed to
+    target.play() for this station — every caller already has it in scope
+    (radio_dispatch_url()'s own return value, or the dispatch_url a fresh
+    /play-url computed). Sonos is skipped here whenever
+    delivery.is_beacon_hosted_radio_uri(dispatch_url) is true: delivery/
+    sonos.py's own _dispatch_uri() rewrites exactly that URL onto Sonos's
+    x-rincon-mp3radio:// scheme (see its own docstring for why, added
+    2026-09-04 after IcyMuxer alone wasn't enough to fix Sonos-only
+    dropouts while relayed), and a Sonos dispatched that way reports
+    position 0.00s for the entire run — polling it would just leave
+    radio_buffering stuck True forever instead of ever clearing, which is
+    worse than the pre-2026-09-02 fallback (no tracker, no indicator) this
+    now deliberately reproduces for exactly that one case. Chromecast/DLNA
+    are never rewritten this way and stay included regardless of
+    `dispatch_url` — omitted entirely (empty string, the default) only by
+    a caller that hasn't settled on a URL yet, which then simply gets the
+    pre-2026-09-04 behaviour (Sonos included) rather than an error.
+
     stores/connect.ts's isRadioPositionCapable() has to be kept in sync BY
     HAND with the isinstance check below — nothing ties the two together,
     and this is not exposed to the frontend as data it could read instead.
@@ -392,10 +427,13 @@ def first_radio_position_delivery(
         if active is not None
         else []
     )
-    return next(
-        (d for d in deliveries if isinstance(d, (ChromecastDelivery, DlnaDelivery, SonosDelivery))),
-        None,
-    )
+    skip_sonos = is_beacon_hosted_radio_uri(dispatch_url)
+    for d in deliveries:
+        if isinstance(d, SonosDelivery) and skip_sonos:
+            continue
+        if isinstance(d, (ChromecastDelivery, DlnaDelivery, SonosDelivery)):
+            return d
+    return None
 
 
 def is_still_targeted(

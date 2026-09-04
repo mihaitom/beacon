@@ -317,11 +317,39 @@ export interface ConnectStatus {
 }
 
 // One GET /visualizer frame — see connect/core/audio_analysis.py. Only ever
-// arrives while casting to a target that route's should_analyze() allows
-// (Sonos/DLNA/Chromecast, not AirPlay/radio); AudioVisualizer.vue's 'cast'
-// mode is the only consumer.
+// arrives while casting to a target analyzable at all (Sonos/DLNA/
+// Chromecast/AirPlay for a queued track; radio too, while relayed through
+// Beacon's own backend — see core/audio_analysis.py's own module
+// docstring); AudioVisualizer.vue's 'cast' mode is the only consumer.
 export interface VisualizerFrame {
   bands: number[]
+  // Debug-overlay data (AudioVisualizer.vue, gated on the account's log
+  // level being DEBUG/TRACE) — both track and radio casts carry one, see
+  // core/audio_analysis.py's AudioAnalyzer.last_release_debug for what
+  // these two numbers are and why they're worth comparing. Absent until
+  // the analyzer has actually released its first frame.
+  debug?: {
+    // What the visualizer's own clock believes it's currently showing —
+    // seconds since this analyzer run started, not wall-clock time.
+    visualizer: number
+    // What the general cast-playback clock (the same one behind the
+    // ordinary running-time display) believes, re-based to the same zero
+    // point as `visualizer` above so the two are directly comparable.
+    cast: number
+    // Radio-relayed-Sonos only (core/audio_analysis.py's
+    // AudioAnalyzer.last_release_lead) — the device-buffering estimate
+    // baked into `visualizer` above, and whether it's a live measurement
+    // (core/upnp_events.py's ICY round-trip) or still the fixed guess.
+    // Absent for everything else: a track, or radio via Chromecast/DLNA/
+    // direct-cast Sonos, none of which have a fixed/measured lead concept
+    // — see that Python attribute's own docstring for why `visualizer`
+    // vs. `cast` alone can't tell the two apart on its own for this one
+    // case.
+    lead?: {
+      seconds: number
+      measured: boolean
+    }
+  }
 }
 
 export interface PlayResponse {

@@ -14,9 +14,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core import visualizer_feed
 from core.state import TEST_TONE_TRACK_ID
 from core.visualizer_feed import (
-    _ASSUMED_DEVICE_LEAD_SECONDS,
+    ASSUMED_DEVICE_LEAD_SECONDS,
     VisualizerFeed,
     _FirstByteClock,
     _OffsetTrackerClock,
@@ -107,6 +108,28 @@ async def test_subscribing_starts_analysis_of_what_is_playing(casting_session, f
         assert feed.analyzer is fake_analyzer[0]
         fake_analyzer[0].start.assert_awaited_once()
         assert fake_analyzer[0].kwargs["source_url"] == "http://nav/stream/track-1"
+    finally:
+        await feed.shutdown()
+
+
+async def test_track_analyzer_passes_the_general_clock_as_the_debug_cast_elapsed_fn(
+    casting_session, fake_analyzer
+):
+    """GET /visualizer's debug overlay isn't radio-only — see core/audio_
+    analysis.py's AudioAnalyzer docstring for why a track still benefits
+    from this even though elapsed_fn is already the same function: it
+    still surfaces a real backlog in this analyzer's own release pipeline,
+    or in SSE/render delivery, that content_position vs. a *live* re-read
+    of the same clock would otherwise hide. Reported live 2026-09-05: the
+    listener wanting it available for track casts, not just Sonos radio."""
+    feed = casting_session.visualizer
+    feed.subscribe()
+    await _settle(feed)
+    try:
+        debug_cast_elapsed_fn = fake_analyzer[0].kwargs["debug_cast_elapsed_fn"]
+        assert debug_cast_elapsed_fn() == pytest.approx(
+            casting_session.state.clock.elapsed(), abs=0.05
+        )
     finally:
         await feed.shutdown()
 
@@ -288,9 +311,31 @@ async def test_no_analysis_for_radio(casting_session, fake_analyzer):
 # hiding it.
 
 
+def test_assumed_device_lead_matches_the_measured_sonos_value():
+    """Not a behavior test — every test below reads the constant
+    symbolically and would pass regardless of its value. A tripwire
+    instead, so an edit that quietly drifts this back toward the old,
+    unverified 3.0s guess (see the constant's own history — it went stale
+    the moment a *relayed* Sonos became this class's common case again,
+    2026-09-04) doesn't go unnoticed: this is the value
+    scripts/icy_sync_probe.py actually measured against real Sonos
+    hardware on the x-rincon-mp3radio:// dispatch delivery/sonos.py now
+    uses for that case."""
+    assert ASSUMED_DEVICE_LEAD_SECONDS == 4.7
+
+
+class _LagHolder:
+    """Stands in for the session — _FirstByteClock only ever reads
+    radio_icy_measured_lag off it (see that class's own docstring for why
+    it's read fresh on every elapsed() call rather than captured once)."""
+
+    def __init__(self, lag: float | None = None) -> None:
+        self.radio_icy_measured_lag = lag
+
+
 class TestFirstByteClock:
     def test_elapsed_is_zero_before_any_read_at_all(self):
-        clock = _FirstByteClock()
+        clock = _FirstByteClock(_LagHolder())
         assert clock.elapsed() == 0.0
 
     def test_zeroes_on_mark_not_on_construction(self):
@@ -299,8 +344,8 @@ class TestFirstByteClock:
         # connect/first-response latency) — elapsed() must count from
         # mark(), not from construction, which never calls
         # time.monotonic() at all (see _FirstByteClock.__init__).
-        clock = _FirstByteClock()  # no monotonic() call yet
-        times = iter([104.0, 106.0 + _ASSUMED_DEVICE_LEAD_SECONDS])
+        clock = _FirstByteClock(_LagHolder())  # no monotonic() call yet
+        times = iter([104.0, 106.0 + ASSUMED_DEVICE_LEAD_SECONDS])
         with patch("core.visualizer_feed.time.monotonic", side_effect=lambda: next(times)):
             clock.mark()  # marks at t=104
 
@@ -311,20 +356,126 @@ class TestFirstByteClock:
         # makes a later call a no-op short-circuits before it would call it
         # again, so this sequence has one entry per *actual* call, not one
         # per mark().
-        times = iter([101.0, 101.0 + _ASSUMED_DEVICE_LEAD_SECONDS])
+        times = iter([101.0, 101.0 + ASSUMED_DEVICE_LEAD_SECONDS])
         with patch("core.visualizer_feed.time.monotonic", side_effect=lambda: next(times)):
-            clock = _FirstByteClock()
+            clock = _FirstByteClock(_LagHolder())
             clock.mark()  # marks at t=101
             clock.mark()  # must NOT re-mark
 
             assert clock.elapsed() == pytest.approx(0.0)
+
+    def test_the_measured_icy_lag_does_not_steer_this_clock(self):
+        """Retracted after measuring it. Four consecutive runs against a
+        real Sonos on 2026-09-05 gave 16.63s, 3.48s, 3.01s and 1.43s for the
+        same setup, a station restart moved it again, and the uncalibrated
+        fixed estimate stayed the closest match by ear throughout — so a
+        measurement sitting on the session must not pull the lead around."""
+        holder = _LagHolder(lag=2.0)
+        times = iter([100.0, 106.0])
+        with patch("core.visualizer_feed.time.monotonic", side_effect=lambda: next(times)):
+            clock = _FirstByteClock(holder)
+            clock.mark()  # marks at t=100
+
+            # 6s of wall time minus the fixed 4.7s estimate, not the 2.0s
+            # sitting in radio_icy_measured_lag.
+            assert clock.elapsed() == pytest.approx(6.0 - ASSUMED_DEVICE_LEAD_SECONDS)
+
+    def test_a_lag_landing_mid_run_does_not_move_the_clock(self):
+        """The failure mode this prevents is specifically a *drifting* one:
+        every ICY sample comes out below the real figure (a device reports a
+        title once decoded, which is earlier than played), so the
+        session-wide minimum sinks as more samples arrive. Following it made
+        the sync worse the longer a station played."""
+        holder = _LagHolder(lag=None)
+        times = iter([100.0, 103.0, 106.0])
+        with patch("core.visualizer_feed.time.monotonic", side_effect=lambda: next(times)):
+            clock = _FirstByteClock(holder)
+            clock.mark()  # marks at t=100
+            assert clock.elapsed() == pytest.approx(max(0.0, 3.0 - ASSUMED_DEVICE_LEAD_SECONDS))
+
+            holder.radio_icy_measured_lag = 1.5
+            # Same clock, same run — and the same lead as before.
+            assert clock.elapsed() == pytest.approx(6.0 - ASSUMED_DEVICE_LEAD_SECONDS)
+
+    def test_the_correction_shifts_the_fixed_estimate(self):
+        """What is left to calibrate with, now that the measurement is out
+        of the loop — see first_byte_lead_correction()."""
+        monkey = pytest.MonkeyPatch()
+        monkey.setenv(visualizer_feed.FIRST_BYTE_LEAD_CORRECTION_ENV, "0.8")
+        times = iter([100.0, 106.0])
+        try:
+            with patch("core.visualizer_feed.time.monotonic", side_effect=lambda: next(times)):
+                clock = _FirstByteClock(_LagHolder(lag=None))
+                clock.mark()
+                assert clock.elapsed() == pytest.approx(6.0 - (ASSUMED_DEVICE_LEAD_SECONDS + 0.8))
+        finally:
+            monkey.undo()
+
+    def test_debug_lead_reports_the_fixed_guess_when_nothing_is_measured(self):
+        clock = _FirstByteClock(_LagHolder(lag=None))
+        assert clock.debug_lead() == (ASSUMED_DEVICE_LEAD_SECONDS, False)
+
+    def test_debug_lead_reports_the_estimate_even_when_a_measurement_exists(self):
+        """The overlay has to name the lead the clock is *using*. Reporting
+        a measurement that no longer steers anything would send whoever
+        reads it looking for a cause in the wrong place — which is the one
+        job this overlay has."""
+        clock = _FirstByteClock(_LagHolder(lag=2.31))
+        assert clock.debug_lead() == (ASSUMED_DEVICE_LEAD_SECONDS, False)
+
+    def test_the_fixed_guess_is_not_given_the_output_latency_twice(self):
+        """ASSUMED_DEVICE_LEAD_SECONDS was itself calibrated by ear against
+        real audio, so the output stage is already inside it. Adding
+        first_byte_lead_correction() on top would double-count it — and that is
+        an easy mistake to make when wiring a correction into both
+        branches."""
+        clock = _FirstByteClock(_LagHolder(lag=None))
+        assert clock.debug_lead() == (ASSUMED_DEVICE_LEAD_SECONDS, False)
+
+
+class TestLeadCorrections:
+    """See core/visualizer_feed.py's _LEAD_CORRECTION_DEFAULT — one value per
+    clock, because the error was observed to track the code path rather than
+    the device: Chromecast and DLNA (both _OffsetTrackerClock) behaved alike
+    and unlike Sonos (_FirstByteClock)."""
+
+    def test_both_default_to_no_correction(self, monkeypatch):
+        """A retraction, not an oversight. The first figure measured this
+        way came from a beep station whose beeps were all the same pitch,
+        which cannot tell "early" from "a whole interval late" — so it was
+        never a measurement, and defaulting to it would bake a guess into
+        every install."""
+        monkeypatch.delenv(visualizer_feed.FIRST_BYTE_LEAD_CORRECTION_ENV, raising=False)
+        monkeypatch.delenv(visualizer_feed.TRACKER_LEAD_CORRECTION_ENV, raising=False)
+        assert visualizer_feed.first_byte_lead_correction() == 0.0
+        assert visualizer_feed.tracker_lead_correction() == 0.0
+
+    def test_each_path_is_configured_independently(self, monkeypatch):
+        """One shared number would only ever be right for one of the two."""
+        monkeypatch.setenv(visualizer_feed.FIRST_BYTE_LEAD_CORRECTION_ENV, "1.2")
+        monkeypatch.setenv(visualizer_feed.TRACKER_LEAD_CORRECTION_ENV, "0.4")
+        assert visualizer_feed.first_byte_lead_correction() == pytest.approx(1.2)
+        assert visualizer_feed.tracker_lead_correction() == pytest.approx(0.4)
+
+    def test_a_negative_correction_is_allowed(self, monkeypatch):
+        """The direction isn't known in advance — a clock running *late*
+        needs its lead reduced, and refusing that would make half the
+        calibration range unreachable."""
+        monkeypatch.setenv(visualizer_feed.TRACKER_LEAD_CORRECTION_ENV, "-0.8")
+        assert visualizer_feed.tracker_lead_correction() == pytest.approx(-0.8)
+
+    def test_a_non_numeric_value_falls_back_instead_of_raising(self, monkeypatch):
+        """A calibration aid must not be able to take radio casting down
+        with it over a typo."""
+        monkeypatch.setenv(visualizer_feed.FIRST_BYTE_LEAD_CORRECTION_ENV, "about a second")
+        assert visualizer_feed.first_byte_lead_correction() == 0.0
 
     def test_clamps_at_zero_rather_than_going_negative(self):
         # Real time hasn't advanced past the assumed device lead yet —
         # elapsed() must read 0, not a negative "already playing" value.
         times = iter([100.0, 100.5])
         with patch("core.visualizer_feed.time.monotonic", side_effect=lambda: next(times)):
-            clock = _FirstByteClock()
+            clock = _FirstByteClock(_LagHolder())
             clock.mark()
 
             assert clock.elapsed() == 0.0
@@ -343,12 +494,28 @@ class TestFirstByteClock:
 
 
 class _FakeTracker:
-    def __init__(self, position: float = 0.0, ready: bool = False) -> None:
+    def __init__(
+        self, position: float = 0.0, ready: bool = False, lag: float | None = None
+    ) -> None:
         self.position = position
         self.ready = ready
+        # None by default — every existing test below constructs a tracker
+        # this way and must keep seeing the pre-buffer_lag() behaviour
+        # unchanged; only TestOffsetTrackerClockBufferLag sets this.
+        self._lag = lag
+        # Lets TestOffsetTrackerClockBufferLag.test_lag_is_applied_only_once
+        # assert this was queried exactly once, without depending on the
+        # numeric interplay between the fold and the extrapolation smoothing.
+        self.buffer_lag_calls = 0
 
     def elapsed_fn(self) -> float:
         return self.position
+
+    def buffer_lag(self) -> float | None:
+        # Mirrors core/radio_position.py's own gate — RadioPositionTracker.
+        # buffer_lag() also returns None until `ready`.
+        self.buffer_lag_calls += 1
+        return self._lag if self.ready else None
 
 
 class _TrackerHolder:
@@ -460,6 +627,133 @@ class TestOffsetTrackerClock:
             assert clock.elapsed() == pytest.approx(0.9)
 
 
+# ── _OffsetTrackerClock — folding RadioPositionTracker.buffer_lag() into the
+# baseline ────────────────────────────────────────────────────────────────
+# Regression coverage for the bug found live 2026-09-03/04, after the whole
+# radio-visualizer architecture switched to tapping the relay's own device-
+# audio fan-out with a private ffmpeg (see core/audio_analysis.py's module
+# docstring): the tests above establish that _OffsetTrackerClock's baseline
+# subtraction fixes the *absolute-vs-relative* offset problem, but on their
+# own they also describe (see e.g. test_reads_zero_until_the_first_byte_is_
+# marked's "content_position 0 is *now*") a clock that, algebraically,
+# reduces to plain wall-clock time since mark() once a device is playing
+# steadily — the device's own startup-buffering delay cancels out of
+# `tracker.elapsed_fn() - baseline` instead of surviving it, so every frame
+# this clock ever released came out exactly that many seconds ahead of what
+# the device was actually playing. Worst on Chromecast (~10-11s of its own
+# startup buffer measured live, see core/radio_position.py's module
+# docstring), smaller but still audible on DLNA and Sonos.
+class TestOffsetTrackerClockBufferLag:
+    def test_lag_shifts_the_baseline_once_ready(self):
+        tracker = _FakeTracker(position=0.0, ready=False)
+        clock = _OffsetTrackerClock(_TrackerHolder(tracker))
+        clock.mark()  # baseline = 0.0, device still buffering
+
+        tracker.position = 2.0
+        tracker.ready = True
+        tracker._lag = 8.0  # this device's own measured startup buffer
+
+        # Without the fix, raw would be max(0, 2.0 - 0.0) = 2.0 here —
+        # content already "due" despite the 8s the device is known to have
+        # spent buffering before any of it became audible. With the fix,
+        # the lag folds into the baseline first: 2.0 - (0.0 + 8.0) clamps
+        # to 0.0 — correctly still nothing due, since none of this content
+        # is audible yet either.
+        assert clock.elapsed() == 0.0
+
+    def test_output_latency_is_folded_in_alongside_the_measured_lag(self):
+        """The Chromecast half of the 2026-09-05 report. A polled position
+        says where the device's *decoder* is; the output stage after it —
+        HDMI hand-off, an amplifier, a TV — reports nothing and is invisible
+        to any protocol-level measurement. Reported live: the visualizer ran
+        about a second ahead of the audio on Chromecast in the same way it
+        did on Sonos, which shares no measurement code with this path at
+        all. Two independent methods do not acquire the same bias by
+        chance, so the correction belongs here rather than in either
+        measurement."""
+        tracker = _FakeTracker(position=0.0, ready=False)
+        clock = _OffsetTrackerClock(_TrackerHolder(tracker))
+        clock.mark()  # baseline = 0.0
+
+        tracker.position = 5.5
+        tracker.ready = True
+        tracker._lag = 5.0
+
+        # baseline becomes 0.0 + 5.0 + tracker_lead_correction(). With the
+        # default of 0 that is 5.5 - 5.0 = 0.5s of content already due.
+        assert clock.elapsed() == pytest.approx(0.5)
+
+        # Configured, it shifts the baseline by exactly that much more —
+        # 5.5 - (5.0 + 0.5) = 0.0, nothing due yet.
+        monkey = pytest.MonkeyPatch()
+        monkey.setenv(visualizer_feed.TRACKER_LEAD_CORRECTION_ENV, "0.5")
+        try:
+            fresh = _OffsetTrackerClock(_TrackerHolder(tracker))
+            fresh.mark()
+            assert fresh.elapsed() == 0.0
+        finally:
+            monkey.undo()
+
+    def test_lag_is_applied_only_once(self):
+        """A device's own buffering delay is a steady pipeline constant for
+        the run (Chromecast's own decode+HDMI pipeline, DLNA's own render
+        buffer, Sonos's own buffer over the http:// dispatch delivery/
+        sonos.py uses) — not something expected to wander, and re-adding a
+        later reading of it would keep compounding onto _baseline forever
+        instead of settling once. buffer_lag() itself is only ever queried
+        the one time this needs it, not on every elapsed() call."""
+        tracker = _FakeTracker(position=10.0, ready=True, lag=8.0)
+        clock = _OffsetTrackerClock(_TrackerHolder(tracker))
+        clock.mark()
+
+        with patch("core.visualizer_feed.time.monotonic", return_value=100.0):
+            clock.elapsed()
+        tracker.position = 15.0
+        with patch("core.visualizer_feed.time.monotonic", return_value=103.0):
+            clock.elapsed()
+        tracker.position = 20.0
+        with patch("core.visualizer_feed.time.monotonic", return_value=106.0):
+            clock.elapsed()
+
+        assert tracker.buffer_lag_calls == 1
+
+    def test_no_lag_measured_yet_behaves_exactly_as_before(self):
+        """buffer_lag() reads None until the tracker's own `ready` fires —
+        see RadioPositionTracker.buffer_lag(). Nothing here should change
+        _OffsetTrackerClock's behaviour before that point; this is the same
+        scenario TestOffsetTrackerClock's own tests already cover in more
+        detail, stated once more explicitly for this class."""
+        tracker = _FakeTracker(position=60.0, ready=False)
+        clock = _OffsetTrackerClock(_TrackerHolder(tracker))
+        clock.mark()
+
+        assert clock.elapsed() == 0.0
+        tracker.position = 64.0
+        assert clock.elapsed() == pytest.approx(4.0)
+
+    def test_swapping_trackers_measures_the_new_devices_own_lag(self):
+        """A device dropping out of a multi-target radio cast
+        (routes/devices.py's device-stop) can hand this clock a different
+        RadioPositionTracker without tearing the whole analyzer down — see
+        _rebase_if_tracker_changed(). The new device's own buffering delay
+        must be measured and folded in independently of whatever the old
+        one's was, not inherited from it and not skipped."""
+        old_tracker = _FakeTracker(position=10.0, ready=True, lag=8.0)
+        holder = _TrackerHolder(old_tracker)
+        clock = _OffsetTrackerClock(holder)
+        clock.mark()
+        assert clock.elapsed() == 0.0  # folds old_tracker's 8.0s lag in
+
+        new_tracker = _FakeTracker(position=1.0, ready=True, lag=2.0)
+        holder.radio_position_tracker = new_tracker
+        # Continuity carries elapsed() on from wherever it left off on the
+        # old tracker; the very next call still folds in the *new*
+        # tracker's own, smaller lag rather than keeping the old one or
+        # applying none at all.
+        assert clock.elapsed() == pytest.approx(0.0)
+        assert new_tracker.buffer_lag_calls == 1
+
+
 class TestIsWatchingRadio:
     """VisualizerFeed.is_watching_radio() — read by
     core/radio_position.py's RadioPositionTracker to decide its own poll
@@ -565,6 +859,70 @@ async def test_relayed_radio_falls_back_to_first_byte_clock_with_no_tracker(
         await feed.shutdown()
 
 
+async def test_relayed_radio_passes_the_general_clock_as_the_debug_cast_elapsed_fn(
+    casting_session, fake_analyzer
+):
+    """GET /visualizer's debug overlay (core/audio_analysis.py's
+    AudioAnalyzer.last_release_debug) — radio's own elapsed_fn (whichever
+    clock above actually paces this analyzer's delivery) is never itself
+    the general session clock, unlike the track case, so there's always a
+    second, independent one worth comparing it against here."""
+    casting_session.state.current_track = None
+    casting_session.state.radio_info = {"title": "FIP", "url": "http://radio/stream"}
+    casting_session.radio_relay = _FakeRelay("http://radio/stream")
+    casting_session.state.clock.start(0.0)
+    feed = casting_session.visualizer
+    feed.subscribe()
+    await _settle(feed)
+    try:
+        debug_cast_elapsed_fn = fake_analyzer[0].kwargs["debug_cast_elapsed_fn"]
+        assert debug_cast_elapsed_fn() == pytest.approx(
+            casting_session.state.clock.elapsed(), abs=0.05
+        )
+    finally:
+        await feed.shutdown()
+
+
+async def test_relayed_radio_with_no_tracker_passes_a_debug_lead_fn(casting_session, fake_analyzer):
+    """The _FirstByteClock fallback (no RadioPositionTracker — a relayed
+    Sonos, since 2026-09-04) is the only clock with a fixed/measured lead
+    worth reporting — see AudioAnalyzer.last_release_lead's own comment."""
+    casting_session.state.current_track = None
+    casting_session.state.radio_info = {"title": "FIP", "url": "http://radio/stream"}
+    casting_session.radio_relay = _FakeRelay("http://radio/stream")
+    casting_session.radio_position_tracker = None
+    feed = casting_session.visualizer
+    feed.subscribe()
+    await _settle(feed)
+    try:
+        debug_lead_fn = fake_analyzer[0].kwargs["debug_lead_fn"]
+        assert debug_lead_fn() == (ASSUMED_DEVICE_LEAD_SECONDS, False)
+    finally:
+        await feed.shutdown()
+
+
+async def test_relayed_radio_with_a_real_tracker_passes_no_debug_lead_fn(
+    casting_session, fake_analyzer
+):
+    """Chromecast/DLNA/direct-Sonos — a real, live-polled device position
+    has no fixed/measured lead concept at all (see _OffsetTrackerClock's
+    own docstring)."""
+    casting_session.state.current_track = None
+    casting_session.state.radio_info = {"title": "FIP", "url": "http://radio/stream"}
+    casting_session.radio_relay = _FakeRelay("http://radio/stream")
+    tracker = MagicMock()
+    tracker.elapsed_fn.return_value = 0.0
+    tracker.buffer_lag.return_value = None
+    casting_session.radio_position_tracker = tracker
+    feed = casting_session.visualizer
+    feed.subscribe()
+    await _settle(feed)
+    try:
+        assert fake_analyzer[0].kwargs["debug_lead_fn"] is None
+    finally:
+        await feed.shutdown()
+
+
 async def test_relayed_radio_offsets_tracker_elapsed_fn_to_subscription_start(
     casting_session, fake_analyzer
 ):
@@ -589,6 +947,11 @@ async def test_relayed_radio_offsets_tracker_elapsed_fn_to_subscription_start(
     casting_session.radio_relay = _FakeRelay("http://radio/stream")
     tracker = MagicMock()
     tracker.elapsed_fn.return_value = 60.0  # already 60s in when this analyzer starts
+    # Not what this test is about — see TestOffsetTrackerClockBufferLag for
+    # buffer_lag() coverage. Without this, a bare MagicMock's `ready` and
+    # `buffer_lag()` are both truthy/non-None by default, so
+    # _apply_measured_lag() would fold a MagicMock into a float baseline.
+    tracker.buffer_lag.return_value = None
     casting_session.radio_position_tracker = tracker
     feed = casting_session.visualizer
     feed.subscribe()

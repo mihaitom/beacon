@@ -246,6 +246,201 @@ async def test_release_frames_sends_first_pending_frame_immediately():
         task.cancel()
 
 
+async def test_release_frames_last_release_debug_is_none_without_a_cast_clock():
+    """No cast clock at all — last_release_debug stays None regardless of
+    what's playing. Nothing currently constructs an AudioAnalyzer this way
+    (both VisualizerFeed call sites pass debug_cast_elapsed_fn now), but the
+    parameter stays optional — see AudioAnalyzer's own docstring."""
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
+    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._reading_done = True
+    task = asyncio.create_task(analyzer._release_frames())
+    try:
+        await asyncio.sleep(0.05)
+        assert analyzer.last_release_debug is None
+    finally:
+        task.cancel()
+
+
+async def test_release_frames_sets_last_release_debug_when_given_a_cast_clock():
+    """GET /visualizer's debug overlay — see AudioAnalyzer's own docstring
+    on debug_cast_elapsed_fn. For a track both clocks are already
+    track-absolute, so neither is re-based and agreeing clocks read as 0."""
+    cast_elapsed = 45.0
+    analyzer = AudioAnalyzer(
+        elapsed_fn=lambda: 45.0,
+        source_url="http://media/track.flac",
+        start_offset=45.0,  # opened 45s into an already-playing track
+        debug_cast_elapsed_fn=lambda: cast_elapsed,
+    )
+    analyzer._pending.append((45.0, _some_bands()))
+    analyzer._reading_done = True
+    task = asyncio.create_task(analyzer._release_frames())
+    try:
+        await asyncio.sleep(0.05)
+        assert analyzer.last_release_debug == (45.0, 45.0)
+    finally:
+        task.cancel()
+
+
+async def test_release_frames_debug_shows_a_real_lag_instead_of_a_baselined_zero():
+    """The regression this overlay exists to catch, and used to be
+    structurally incapable of showing.
+
+    Both sides were re-based at the first *released* frame, which made
+    frame one read (0.00, 0.00) by construction and everything after it
+    pure relative drift — so a radio visualizer running the device's whole
+    buffer ahead of the audio still displayed a delta of 0.00, the lead
+    having been absorbed into the baseline before any frame came out.
+
+    Here the cast clock is 4.7s further along than the content this run is
+    releasing (exactly a relayed Sonos's own measured buffer), and that has
+    to be visible."""
+    analyzer = AudioAnalyzer(
+        elapsed_fn=lambda: 0.0,
+        source_url="",
+        debug_cast_elapsed_fn=lambda: 4.7,
+    )
+    # What _read_pcm() records right after on_first_byte() — the cast clock
+    # at this run's own zero. Radio's content_position counts from there.
+    analyzer._debug_baseline = 0.0
+    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._reading_done = True
+    task = asyncio.create_task(analyzer._release_frames())
+    try:
+        await asyncio.sleep(0.05)
+        assert analyzer.last_release_debug == (0.0, 4.7)
+    finally:
+        task.cancel()
+
+
+async def test_release_frames_debug_baseline_re_bases_a_late_opened_radio_run():
+    """Radio's content_position is relative to *this* analyzer's own decode
+    (0 at first byte — a station has no absolute position to seek to) while
+    the cast clock has been running since /play-url. Without the first-byte
+    baseline a visualizer opened ten minutes into a station would report a
+    -600s "delta" that means nothing at all."""
+    analyzer = AudioAnalyzer(
+        elapsed_fn=lambda: 0.0,
+        source_url="",
+        debug_cast_elapsed_fn=lambda: 600.0,
+    )
+    analyzer._debug_baseline = 600.0  # cast clock at this run's first byte
+    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._reading_done = True
+    task = asyncio.create_task(analyzer._release_frames())
+    try:
+        await asyncio.sleep(0.05)
+        assert analyzer.last_release_debug == (0.0, 0.0)
+    finally:
+        task.cancel()
+
+
+async def test_release_frames_last_release_lead_is_none_without_a_lead_fn():
+    """The common case — a track, or radio via Chromecast/DLNA/direct-
+    Sonos, none of which have a fixed/measured lead concept at all (see
+    AudioAnalyzer's own docstring on debug_lead_fn)."""
+    analyzer = AudioAnalyzer(
+        elapsed_fn=lambda: 0.0,
+        source_url="http://media/track.flac",
+        debug_cast_elapsed_fn=lambda: 0.0,
+    )
+    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._reading_done = True
+    task = asyncio.create_task(analyzer._release_frames())
+    try:
+        await asyncio.sleep(0.05)
+        assert analyzer.last_release_lead is None
+    finally:
+        task.cancel()
+
+
+async def test_release_frames_sets_last_release_lead_when_given_a_lead_fn():
+    """core/visualizer_feed.py's _FirstByteClock.debug_lead() — the only
+    clock with one, wired only for a relayed Sonos (no RadioPositionTracker
+    — see AudioAnalyzer's own docstring)."""
+    analyzer = AudioAnalyzer(
+        elapsed_fn=lambda: 0.0,
+        source_url="http://media/track.flac",
+        debug_cast_elapsed_fn=lambda: 0.0,
+        debug_lead_fn=lambda: (4.7, False),
+    )
+    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._reading_done = True
+    task = asyncio.create_task(analyzer._release_frames())
+    try:
+        await asyncio.sleep(0.05)
+        assert analyzer.last_release_lead == (4.7, False)
+    finally:
+        task.cancel()
+
+
+async def test_release_frames_lead_updates_live_once_a_real_measurement_lands():
+    # Same two-frames-queued-up-front shape as the cast-clock progression
+    # test below, for the same reason (see its own comment).
+    playback_elapsed = 0.0
+    lead: tuple[float, bool] = (4.7, False)
+    analyzer = AudioAnalyzer(
+        elapsed_fn=lambda: playback_elapsed,
+        source_url="http://media/track.flac",
+        debug_cast_elapsed_fn=lambda: 0.0,
+        debug_lead_fn=lambda: lead,
+    )
+    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._pending.append((1.0, _some_bands()))
+    task = asyncio.create_task(analyzer._release_frames())
+    try:
+        await asyncio.sleep(0.05)
+        assert analyzer.last_release_lead == (4.7, False)
+        playback_elapsed = 1.0
+        lead = (2.31, True)
+        # The "not due yet" branch caps its own sleep at 0.5s (see
+        # _release_frames()) before re-checking.
+        await asyncio.sleep(0.55)
+        assert analyzer.last_release_lead == (2.31, True)
+    finally:
+        task.cancel()
+
+
+async def test_release_frames_debug_cast_position_advances_with_the_cast_clock():
+    # Both frames queued up front (spread 5.0s, past _PREBUFFER_SECONDS)
+    # rather than relying on _reading_done — that flag ends this loop the
+    # instant _pending next drains, before a frame appended after the fact
+    # would ever be seen. elapsed_fn tracks whatever content_position
+    # should be due — this test is about debug_cast_elapsed_fn's own
+    # progression, not _release_frames()'s ordinary due/late pacing
+    # (covered elsewhere).
+    playback_elapsed = 5.0
+    cast_elapsed = 100.0
+    analyzer = AudioAnalyzer(
+        elapsed_fn=lambda: playback_elapsed,
+        source_url="http://media/track.flac",
+        debug_cast_elapsed_fn=lambda: cast_elapsed,
+    )
+    analyzer._debug_baseline = 100.0  # what _read_pcm() records at first byte
+    analyzer._pending.append((5.0, _some_bands()))
+    analyzer._pending.append((10.0, _some_bands()))
+    task = asyncio.create_task(analyzer._release_frames())
+    try:
+        await asyncio.sleep(0.05)
+        # Only the first frame is due so far. content_position raw (5.0);
+        # the cast clock re-based to this run's first byte (100.0 - 100.0).
+        assert analyzer.last_release_debug == (5.0, 0.0)
+        playback_elapsed = 10.0
+        cast_elapsed = 102.5
+        # The "not due yet" branch caps its own sleep at 0.5s (see
+        # _release_frames()) before re-checking — has to be given at least
+        # that long to notice the new values above, not just a token delay.
+        await asyncio.sleep(0.55)
+        # content_position 10.0 raw; cast 102.5 - 100.0 = 2.5. The two
+        # diverging by 2.5s is exactly what this overlay is for — under the
+        # old both-sides-baselined scheme it read (5.0, 2.5) and the
+        # absolute gap was invisible.
+        assert analyzer.last_release_debug == (10.0, 2.5)
+    finally:
+        task.cancel()
+
+
 async def test_release_frames_holds_back_frames_ahead_of_playback():
     # The actual bug report: analysis (decode+FFT) can run well ahead of
     # real time and used to release frames in the same bursty pattern it

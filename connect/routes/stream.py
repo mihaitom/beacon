@@ -7,10 +7,11 @@ import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response, StreamingResponse
 
 from core.auth import require_token
+from core.icy_metadata import DEVICE_METAINT, IcyMuxer, pulsed_title
 from core.loop_health import peak_lag
 from core.radio_relay import RadioRelay
 from core.session import (
@@ -562,7 +563,7 @@ async def radio_stream_head(session_id: str = DEFAULT_SESSION_ID):
 
 
 @router.get("/stream/radio/{session_id}")
-async def radio_stream(session_id: str = DEFAULT_SESSION_ID):
+async def radio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
     """A radio station re-encoded to plain MP3 over http, for a device that
     refused the station's own stream.
 
@@ -582,7 +583,18 @@ async def radio_stream(session_id: str = DEFAULT_SESSION_ID):
     drives the mid-track drop detection in _mark_disconnected_if_not_
     reconnected(), which is built around tracks that end; radio has no
     track loaded at all (session.state.current_track stays None for it)
-    and never produces the transitions that logic reasons about."""
+    and never produces the transitions that logic reasons about.
+
+    Answers `Icy-MetaData: 1` (core/icy_metadata.py's `IcyMuxer`) the same
+    way the original station would, whether relayed or re-encoded here:
+    without it, every device connecting to *this* URL instead of the
+    station's own saw a stream with no ICY signalling on it at all, even
+    though the station itself has it and Beacon is already parsing that
+    same signal one layer up (core/radio_relay.py's own IcyDemuxer use, for
+    the now-playing title) — a plausible reason a device picks a smaller,
+    file-like read-ahead buffer for this URL than it would for the
+    station's own, since it has nothing here telling it otherwise. See
+    IcyMuxer's own docstring for the live report this responds to."""
     session = await registry.get_or_create(session_id)
     radio_info = session.state.radio_info
     if not radio_info:
@@ -594,6 +606,53 @@ async def radio_stream(session_id: str = DEFAULT_SESSION_ID):
             iter([b""]), media_type=FALLBACK_FORMAT.content_type, status_code=204
         )
 
+    wants_icy = request.headers.get("icy-metadata") == "1"
+    headers = {"icy-metaint": str(DEVICE_METAINT)} if wants_icy else {}
+    # icy-name: the *station's* name (radio_info["title"], set once at
+    # dispatch — see routes/playback.py's /play-url), not the "now playing"
+    # tag the injected StreamTitle blocks below carry — same distinction a
+    # real Icecast server's own icy-name/StreamTitle draw.
+    if wants_icy and radio_info.get("title"):
+        headers["icy-name"] = _latin1_header_value(radio_info["title"])
+
+    def current_title() -> str | None:
+        # session.radio_title (core/session.py), not radio_info["title"] —
+        # kept live by whichever ICY watch is actually running for this
+        # dispatch (core/radio_relay.py's when relayed, core/icy_metadata.py's
+        # own watch() otherwise — see session.start_radio_relay()/
+        # start_radio_metadata_watch()), read fresh on every block so a
+        # title change reaches a device already connected here.
+        #
+        # Pulsed (core/icy_metadata.py's pulsed_title()) so the device sees
+        # a change on a steady cadence rather than only when the station
+        # changes song — that cadence is what the round-trip measurement
+        # below actually needs, see that function. The station's real title
+        # is still what's sent and what a listener sees; the pulse only
+        # appends an invisible mark on alternating windows, and a genuine
+        # title change is still a measurement point in its own right.
+        return pulsed_title(session.radio_title, time.monotonic())
+
+    def record_injection(title: str) -> None:
+        # See IcyMuxer's own `on_inject` doc and core/session.py's
+        # radio_icy_pending_injection for the round-trip measurement this
+        # feeds — routes/upnp.py reads it back once the device's own
+        # AVTransport eventing echoes the same title. Not gated on which
+        # device is actually connecting (this route has no way to know):
+        # only a real Sonos NOTIFY for this session ever consumes it, so a
+        # non-Sonos connection recording one here is simply never read.
+        #
+        # Only a title that is new to the *session* starts a measurement.
+        # IcyMuxer fires on_inject whenever the title is new to *its own*
+        # connection, which is the right rule for the ICY stream itself (a
+        # device joining mid-song must be told what is playing) but the
+        # wrong one for timing: a Sonos opens several connections per cast,
+        # and each new one re-armed this at "now" for a title the device had
+        # already been playing for a while. See radio_icy_last_injected.
+        if session.radio_icy_last_injected == title:
+            return
+        session.radio_icy_last_injected = title
+        session.radio_icy_pending_injection = (title, time.monotonic())
+
     relay = session.radio_relay
     if relay is not None:
         # The default (relayed) case — core/radio_relay.py already fetched
@@ -601,7 +660,12 @@ async def radio_stream(session_id: str = DEFAULT_SESSION_ID):
         # its device-audio fan-out, same as any other cast target's own
         # connection here (multi-target casting subscribes more than once).
         logger.info(f"[stream] Serving relayed radio for {session_id}: {radio_info['url'][:80]}")
-        return StreamingResponse(_relayed_radio_audio(relay), media_type=relay.device_content_type)
+        audio = _relayed_radio_audio(relay)
+        if wants_icy:
+            audio = _muxed_icy_audio(
+                audio, IcyMuxer(DEVICE_METAINT, current_title, record_injection)
+            )
+        return StreamingResponse(audio, media_type=relay.device_content_type, headers=headers)
 
     # Direct mode's own fallback (PlayUrlRequest.cast_directly=True) — a
     # device that refused the station's raw stream gets Beacon's own
@@ -609,10 +673,28 @@ async def radio_stream(session_id: str = DEFAULT_SESSION_ID):
     # retry_radio_via_proxy() in routes/playback.py, the only caller that
     # ever points a device here while in that mode.
     logger.info(f"[stream] Re-encoding radio for {session_id}: {radio_info['url'][:80]}")
-    return StreamingResponse(
-        stream_tracks([radio_info["url"]]),
-        media_type=FALLBACK_FORMAT.content_type,
-    )
+    audio = stream_tracks([radio_info["url"]])
+    if wants_icy:
+        audio = _muxed_icy_audio(audio, IcyMuxer(DEVICE_METAINT, current_title, record_injection))
+    return StreamingResponse(audio, media_type=FALLBACK_FORMAT.content_type, headers=headers)
+
+
+def _latin1_header_value(text: str) -> str:
+    """`text` reduced to something that can actually go in an HTTP header.
+
+    Starlette encodes header values as latin-1, and a station name is
+    arbitrary user-facing text straight out of the radio directory. Putting
+    one in unchecked raised UnicodeEncodeError *inside the handler* for any
+    station whose name isn't latin-1 representable — every Cyrillic, Greek
+    or CJK name, and plenty of Latin-script ones too (an en dash or an
+    ellipsis in the name is enough). The device got a 500 and no audio at
+    all, and only ever when it asked for ICY, which in practice meant Sonos.
+
+    Replaced rather than dropped or percent-encoded: this header is only
+    ever shown as a station label on a device's own display, so a name that
+    survives with a few placeholder characters is strictly better than one
+    that takes the whole stream down with it."""
+    return text.encode("latin-1", "replace").decode("latin-1")
 
 
 async def _relayed_radio_audio(relay: RadioRelay) -> AsyncGenerator[bytes]:
@@ -632,6 +714,18 @@ async def _relayed_radio_audio(relay: RadioRelay) -> AsyncGenerator[bytes]:
             yield chunk
     finally:
         relay.unsubscribe_audio(queue)
+
+
+async def _muxed_icy_audio(audio: AsyncGenerator[bytes], muxer: IcyMuxer) -> AsyncGenerator[bytes]:
+    """Splices ICY metadata blocks into `audio` via `muxer` — see that
+    class's own docstring. A thin wrapper around whichever audio source
+    radio_stream() is already using, rather than teaching either
+    _relayed_radio_audio() or core/streamer.py's stream_tracks() about ICY
+    themselves: only a device that actually asked for it
+    (`Icy-MetaData: 1`) is ever routed through this at all, and neither
+    audio source needs to know or care either way."""
+    async for chunk in audio:
+        yield muxer.feed(chunk)
 
 
 @router.get("/stream")
@@ -979,7 +1073,32 @@ async def visualizer_events(session: SessionState = Depends(get_session)):
                     continue
                 try:
                     bands = await asyncio.wait_for(analyzer.frames.get(), timeout=1.0)
-                    yield f"data: {json.dumps({'bands': bands})}\n\n"
+                    payload: dict = {"bands": bands}
+                    # (visualizer_position, cast_position) as of the most
+                    # recently *released* frame — see AudioAnalyzer.
+                    # last_release_debug's own comment. Not guaranteed to be
+                    # exactly the frame `bands` above came from (this queue
+                    # can hold a few at once, and _release_frames() may have
+                    # moved on to a later one by the time this line reads
+                    # it) — close enough for AudioVisualizer.vue's debug
+                    # overlay, not meant as a precise per-frame timestamp.
+                    # None only when nothing wired up a cast clock at all
+                    # (not currently reachable — both track and radio do,
+                    # see VisualizerFeed), in which case this key is simply
+                    # omitted rather than sent as null — one fewer thing the
+                    # frontend has to tell apart from "not debugging at all".
+                    debug = analyzer.last_release_debug
+                    if debug is not None:
+                        debug_payload = {"visualizer": debug[0], "cast": debug[1]}
+                        # Radio-relayed-Sonos only — see AudioAnalyzer.
+                        # last_release_lead's own comment for why the delta
+                        # above can't tell "still the fixed guess" apart
+                        # from "a real measurement landed" on its own.
+                        lead = analyzer.last_release_lead
+                        if lead is not None:
+                            debug_payload["lead"] = {"seconds": lead[0], "measured": lead[1]}
+                        payload["debug"] = debug_payload
+                    yield f"data: {json.dumps(payload)}\n\n"
                 except TimeoutError:
                     yield ": heartbeat\n\n"
         except asyncio.CancelledError:

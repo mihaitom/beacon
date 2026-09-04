@@ -354,7 +354,7 @@ export default {
     qualityOriginal: 'Original (unverändert)',
     castRadioDirectly: 'Radio direkt an das Gerät senden',
     castRadioDirectlyHint:
-      'Standardmäßig leitet Beacon gecastetes Radio über sein eigenes Backend, damit Gerät, Visualizer und Titelanzeige sich einen einzigen Abruf der Station teilen. Aktiviert, verbindet sich das Gerät stattdessen direkt mit der Station — die Wiedergabe läuft dann weiter, auch wenn Beacon neu startet, dafür ohne Visualizer-Daten und mit dem Risiko, dass manche Geräte den Stream ablehnen.',
+      'Standardmäßig leitet Beacon gecastetes Radio über sein eigenes Backend, damit Gerät und Titelanzeige sich einen einzigen Abruf der Station teilen. Aktiviert, verbindet sich das Gerät stattdessen direkt mit der Station — die Wiedergabe läuft dann weiter, auch wenn Beacon neu startet, mit dem Risiko, dass manche Geräte den Stream ablehnen.',
     autoplay: 'Autoplay',
     autoplayBatchSizeItem: '{count} Songs',
     autoplayHint:

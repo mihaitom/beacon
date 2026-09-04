@@ -4,11 +4,13 @@
      - (see SongWaveform.vue's own comment on why it stopped trying) — an
      - elapsed-time readout replaces the whole label/bar/label row instead
      - of leaving a dead, maxed-out bar sitting there. While
-     - playbackStore.radioBuffering (Chromecast/DLNA target still filling
-     - its own startup buffer, see connect/core/radio_position.py), that
-     - readout would just be a frozen or misleading time, so a buffering
-     - state replaces it instead — same v-progress-linear idiom
-     - ConnectDevicePicker.vue uses for its own device scan. -->
+     - playbackStore.radioBuffering (any cast target still filling its own
+     - startup buffer — see connect/core/session.py's radio_is_buffering()
+     - for the two ways the backend knows that, including the Sonos case
+     - this used to miss entirely), that readout would just be a frozen or
+     - misleading time, so a buffering state replaces it instead — same
+     - v-progress-linear idiom ConnectDevicePicker.vue uses for its own
+     - device scan. -->
     <div v-if="playbackStore.radioStation" class="seek-bar__live-wrap">
       <v-progress-linear v-if="playbackStore.radioBuffering" indeterminate height="2" rounded />
       <span class="text-body-small text-medium-emphasis seek-bar__live">

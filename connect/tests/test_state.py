@@ -387,6 +387,56 @@ def test_first_radio_position_delivery_picks_first_capable_from_mixed_manager():
     assert first_radio_position_delivery(manager) is s
 
 
+# ── first_radio_position_delivery — Sonos skipped when dispatched over
+# x-rincon-mp3radio:// ──────────────────────────────────────────────────────
+# delivery/sonos.py's own _dispatch_uri() rewrites Beacon's own re-served
+# radio URL onto that scheme (added 2026-09-04, see its own docstring) — a
+# Sonos dispatched that way reports position 0.00s for the whole run, so
+# polling it would leave radio_buffering stuck True forever instead of
+# clearing. Chromecast/DLNA are never rewritten this way and stay included
+# regardless.
+
+_BEACON_RADIO_URL = "http://10.0.0.5:9181/stream/radio/abc123"
+_STATION_URL = "http://stream.example.com/live.mp3"
+
+
+def test_first_radio_position_delivery_skips_sonos_when_beacon_hosted():
+    from core.state import first_radio_position_delivery
+    from delivery import SonosDelivery
+
+    d = SonosDelivery("Küche")
+    assert first_radio_position_delivery(d, _BEACON_RADIO_URL) is None
+
+
+def test_first_radio_position_delivery_still_picks_sonos_for_a_stations_own_url():
+    """Direct-cast (PlayUrlRequest.cast_directly) keeps plain http:// and
+    real position feedback — only Beacon's own endpoint triggers the
+    scheme swap this skip exists for."""
+    from core.state import first_radio_position_delivery
+    from delivery import SonosDelivery
+
+    d = SonosDelivery("Küche")
+    assert first_radio_position_delivery(d, _STATION_URL) is d
+
+
+def test_first_radio_position_delivery_falls_through_to_chromecast_when_sonos_skipped():
+    from core.state import first_radio_position_delivery
+    from delivery import ChromecastDelivery, DeliveryManager, SonosDelivery
+
+    s = SonosDelivery("Küche")
+    c = ChromecastDelivery("TV")
+    manager = DeliveryManager.from_deliveries([s, c])
+    assert first_radio_position_delivery(manager, _BEACON_RADIO_URL) is c
+
+
+def test_first_radio_position_delivery_returns_none_for_sonos_only_when_beacon_hosted():
+    from core.state import first_radio_position_delivery
+    from delivery import DeliveryManager, SonosDelivery
+
+    manager = DeliveryManager.from_deliveries([SonosDelivery("Küche"), SonosDelivery("Bad")])
+    assert first_radio_position_delivery(manager, _BEACON_RADIO_URL) is None
+
+
 # ── audio_capability_limits ─────────────────────────────────────────────────
 
 

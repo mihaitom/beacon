@@ -37,6 +37,19 @@ interface ConnectErrors {
   detail: string | null
 }
 
+// Feature flag: the radio-casting visualizer (backend plumbing in
+// connect/core/visualizer_feed.py's radio branch and
+// connect/core/radio_position.py) still doesn't stay in sync with the
+// audio a cast device is actually playing after several days spent on it
+// - most recently, delivery/sonos.py's own 2026-09-04 revert back to
+// x-rincon-mp3radio:// (needed to fix a Sonos audio-dropout problem, see
+// its own docstring) took away the live position Sonos briefly had for
+// this too. Flipped off here on 2026-09-04 rather than pulled out of the
+// codebase, since the rest of the plumbing is otherwise in place and
+// tested - flip back to `true` once the sync problem actually has a fix.
+// The only consumer is isRadioPositionCapable() below.
+const RADIO_VISUALIZER_ENABLED = false
+
 interface ConnectState {
   devices: DiscoverResponse
   status: ConnectStatus | null
@@ -91,13 +104,18 @@ export const useConnectStore = defineStore('connect', {
     isActive(): boolean {
       return this.activeTargets.length > 0
     },
-    // Which device types report a real, trustworthy position for radio
-    // while casting — see connect/core/radio_position.py. AirPlay is
-    // excluded even though it supports position for *tracks*: it has none
-    // to poll for radio at all. Sonos included since 2026-09-02: its own
-    // http:// radio dispatch already gives it a real, live-polled position
-    // (see delivery/sonos.py's own comment) — no ICY marker injection
-    // needed. Centralized here for the same reason as
+    // Which device types would make the fullscreen radio visualizer
+    // available — see connect/core/radio_position.py — gated off
+    // altogether right now by RADIO_VISUALIZER_ENABLED above, so this
+    // always answers false regardless of type until that flag flips back.
+    // AirPlay would stay excluded even then: it supports position for
+    // *tracks* but has none to poll for radio at all. Sonos, Chromecast and
+    // DLNA do report one, Sonos calibrated against a fixed estimate rather
+    // than a live position while relayed (core/visualizer_feed.py's
+    // _FirstByteClock) since delivery/sonos.py's own _dispatch_uri() went
+    // back to x-rincon-mp3radio:// for that case on 2026-09-04, to fix a
+    // Sonos-only audio-dropout problem unrelated to this — see that
+    // function's own docstring. Centralized here for the same reason as
     // isVolumePushCapable() above — NowPlayingView.vue's visualizerAvailable
     // is the one consumer today, but any second one should agree with it
     // rather than growing its own copy of this set.
@@ -109,7 +127,7 @@ export const useConnectStore = defineStore('connect', {
     // set ever needs to change.
     isRadioPositionCapable() {
       return (type: DeviceType): boolean =>
-        type === 'chromecast' || type === 'dlna' || type === 'sonos'
+        RADIO_VISUALIZER_ENABLED && (type === 'chromecast' || type === 'dlna' || type === 'sonos')
     },
     // Which device types push their volume/mute into `status.targets`
     // instead of only ever needing to be polled for it - a

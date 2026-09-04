@@ -358,7 +358,7 @@ export default {
     qualityOriginal: 'Original (inchangé)',
     castRadioDirectly: "Envoyer la radio directement à l'appareil",
     castRadioDirectlyHint:
-      "Par défaut, Beacon route la radio diffusée via son propre backend, pour que l'appareil, le visualiseur et le titre en cours partagent une seule connexion à la station. Activé, l'appareil se connecte directement à la station — la lecture continue même si Beacon redémarre, au prix du visualiseur et avec le risque que certains appareils refusent le flux de la station.",
+      "Par défaut, Beacon route la radio diffusée via son propre backend, pour que l'appareil et le titre en cours partagent une seule connexion à la station. Activé, l'appareil se connecte directement à la station — la lecture continue même si Beacon redémarre, avec le risque que certains appareils refusent le flux de la station.",
     autoplay: 'Lecture automatique',
     autoplayBatchSizeItem: '{count} morceaux',
     autoplayHint:

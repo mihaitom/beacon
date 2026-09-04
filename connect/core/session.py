@@ -24,7 +24,7 @@ from .loop_health import peak_lag
 from .radio_position import RadioPositionTracker
 from .radio_relay import RadioRelay
 from .state import AppState, EventBus, delivery_class_for, list_target_pairs, stream_url
-from .visualizer_feed import VisualizerFeed
+from .visualizer_feed import ASSUMED_DEVICE_LEAD_SECONDS, VisualizerFeed
 
 logger = logging.getLogger("connect.session")
 
@@ -112,6 +112,58 @@ class SessionState:
         # at all) — routes/playback.py's /play-url is the only place this
         # gets set to something else, replacing whatever was here before.
         self.radio_position_tracker: RadioPositionTracker | None = None
+        # ICY StreamTitle round-trip measurement — the live position signal
+        # a relayed Sonos gets *instead* of RadioPositionTracker (see that
+        # module's own docstring for why x-rincon-mp3radio:// dispatch,
+        # delivery/sonos.py's own _dispatch_uri(), leaves it without one).
+        # (title, time.monotonic() it was actually injected) for whatever
+        # titled ICY block core/icy_metadata.py's IcyMuxer most recently
+        # sent this device — routes/upnp.py's AVTransport NOTIFY handler
+        # consumes (clears) this the moment a matching echo arrives, so one
+        # injection is only ever measured once. Shares the small,
+        # accepted cross-talk risk of any single session-scoped field: a
+        # multi-target cast where more than one device asks for ICY could
+        # have one device's injection matched against another's echo — not
+        # currently reachable in practice (only Sonos, over this one
+        # dispatch, has ever been observed asking for it at all — see
+        # scripts/icy_sync_probe.py), and the failure mode if it ever
+        # happens is a stale/never-updated lag estimate, not a wrong
+        # *audio* moment.
+        self.radio_icy_pending_injection: tuple[str, float] | None = None
+        # The title most recently recorded into radio_icy_pending_injection
+        # above, session-wide rather than per connection. IcyMuxer's own
+        # `_last_sent` cannot answer this: there is one muxer per device
+        # connection, each starting from None, so every *new* connection
+        # re-sends whatever title is currently playing as though it had just
+        # changed. A Sonos opens several connections per cast (six, in one
+        # scripts/icy_sync_probe.py run), and each of those re-armed the
+        # pending measurement at "now" while the device had been playing
+        # that same title for a while already — the next routine NOTIFY
+        # carrying it then measured an arbitrary interval that has nothing
+        # to do with any buffer. Only a title that is new to the *session*
+        # marks a real "this became audible just now" moment worth timing.
+        self.radio_icy_last_injected: str | None = None
+        # The *smallest* plausible round-trip lag measured so far, in
+        # seconds — what core/visualizer_feed.py's _FirstByteClock reads
+        # once at least one has landed; None (falls back to that class's own
+        # fixed guess) until then.
+        #
+        # Smallest, not most recent: an echo says "the device is currently
+        # reporting this title", not "the device started playing it just
+        # now". Sonos moderates its own AVTransport eventing heavily and
+        # will happily go half a minute without sending anything, so an
+        # individual measurement can only ever come out *too large* — never
+        # too small, since the device cannot report a title before playing
+        # it. That makes the minimum the estimator, and every later sample
+        # only able to improve it. scripts/icy_sync_probe.py reached the
+        # same conclusion against real hardware and says so in its own
+        # output ("min delta ... <- the estimator would use this", "spread
+        # -> event moderation. The plan's min-estimator eats it"); only the
+        # min part never made it into this side. Measured live 2026-09-05
+        # without it: a single routine state=PLAYING NOTIFY, 26s after the
+        # previous event, produced a "lag" of 16.63s for a device whose real
+        # buffer is under five.
+        self.radio_icy_measured_lag: float | None = None
         # time.monotonic() of the last recovery redispatch of a relayed
         # station — see routes/upnp.py's _redispatch_relayed_station(),
         # which rate-limits itself off this. Zeroed whenever the relay
@@ -180,6 +232,9 @@ class SessionState:
         # be set even in cast_directly mode, where radio_relay itself never
         # is.
         self.radio_position_tracker = None
+        self.radio_icy_pending_injection = None
+        self.radio_icy_last_injected = None
+        self.radio_icy_measured_lag = None
         if self.radio_relay is not None:
             relay, self.radio_relay = self.radio_relay, None
             self.last_radio_redispatch = 0.0
@@ -262,6 +317,55 @@ def compute_position(session: SessionState) -> float:
     if st.current_track:
         return min(elapsed, float(st.current_track.duration))
     return elapsed
+
+
+def radio_is_buffering(session: SessionState) -> bool:
+    """Whether a cast device is still filling its own startup buffer for the
+    station currently playing — build_status_dict()'s `radio_buffering`,
+    which SeekBar.vue swaps in for its live-elapsed readout.
+
+    Two ways of knowing, because only some devices tell us. A
+    RadioPositionTracker (core/radio_position.py) is the real answer where
+    one exists: it watches the device's own reported position and latches
+    `ready` the moment it actually starts moving.
+
+    Where none exists, this falls back to elapsed time against the expected
+    device lead. That case used to just report False, which read as "done
+    buffering" — and since 2026-09-04 it is the *normal* case for a relayed
+    Sonos, the device with the largest measured buffer of the three
+    (4.7-5.0s, see core/visualizer_feed.py's ASSUMED_DEVICE_LEAD_SECONDS):
+    core/state.py's first_radio_position_delivery() excludes it from
+    position tracking entirely, because over x-rincon-mp3radio:// it reports
+    a flat 0.00s. So the seek bar went straight to counting up from 0:00
+    while the speaker was still silent — the indicator was missing on
+    exactly the cast that needs it most. AirPlay lands here too, having no
+    radio position to poll at all.
+
+    radio_icy_measured_lag first, the fixed guess only until one exists —
+    same order, and the same live measurement, _FirstByteClock uses for the
+    visualizer's own pacing, so the indicator clears when that clock says
+    audio starts rather than at some separately-guessed moment.
+
+    Local playback is never "buffering" here: there is no cast device in
+    the picture, and the browser's own <audio> element handles its own."""
+    st = session.state
+    if not st.radio_info or not st.is_streaming or st.clock.is_paused:
+        return False
+    tracker = session.radio_position_tracker
+    if tracker is not None:
+        return not tracker.ready
+    if st.active_delivery is None:
+        return False
+    lead = session.radio_icy_measured_lag
+    if lead is None:
+        lead = ASSUMED_DEVICE_LEAD_SECONDS
+    # elapsed_since_stream_start(), not elapsed(): this is wall time since
+    # the device was last (re)dispatched, which is what the device's own
+    # buffer fills against. It re-zeroes on /resume and /seek, correctly —
+    # a device that reconnects re-incurs that same startup buffer, and a
+    # Sonos auto-pause/resume seconds into its own dispatch is routine (see
+    # core/radio_position.py).
+    return st.clock.elapsed_since_stream_start() < lead
 
 
 def build_status_dict(
@@ -373,14 +477,10 @@ def build_status_dict(
         "ended": st.track_ended,
         "paused": st.clock.is_paused,
         "radio": st.radio_info,
-        # True only while a Chromecast/DLNA radio target's own position
-        # hasn't shown real movement yet — see core/radio_position.py.
-        # False whenever there's no tracker at all (local playback, Sonos/
-        # AirPlay, a track instead of radio, or nothing playing), same as
-        # before this field existed.
-        "radio_buffering": bool(
-            session.radio_position_tracker and not session.radio_position_tracker.ready
-        ),
+        # True while a cast device is still filling its own startup buffer
+        # for the current station — see radio_is_buffering() for the two
+        # ways of knowing that, and why the second one had to be added.
+        "radio_buffering": radio_is_buffering(session),
         "streaming": st.is_streaming,
         "targets": targets,
         "total_songs": len(st.queue),

@@ -358,7 +358,7 @@ export default {
     qualityOriginal: 'Originale (invariato)',
     castRadioDirectly: 'Inviare la radio direttamente al dispositivo',
     castRadioDirectlyHint:
-      "Per impostazione predefinita Beacon instrada la radio trasmessa tramite il proprio backend, così dispositivo, visualizzatore e titolo in riproduzione condividono un'unica connessione alla stazione. Se attivato, il dispositivo si collega direttamente alla stazione — la riproduzione continua anche se Beacon si riavvia, a costo del visualizzatore e con il rischio che alcuni dispositivi rifiutino il flusso della stazione.",
+      "Per impostazione predefinita Beacon instrada la radio trasmessa tramite il proprio backend, così dispositivo e titolo in riproduzione condividono un'unica connessione alla stazione. Se attivato, il dispositivo si collega direttamente alla stazione — la riproduzione continua anche se Beacon si riavvia, con il rischio che alcuni dispositivi rifiutino il flusso della stazione.",
     autoplay: 'Autoplay',
     autoplayBatchSizeItem: '{count} brani',
     autoplayHint:

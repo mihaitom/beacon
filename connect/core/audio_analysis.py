@@ -391,7 +391,42 @@ class AudioAnalyzer:
     _MAX_LATENESS_SECONDS, for good. Unused by the track case and by
     radio's normal (RadioPositionTracker-backed) clock, both of which
     already tolerate arbitrary decode startup latency some other way — see
-    _PREBUFFER_SECONDS/_MAX_LATENESS_SECONDS for the track case."""
+    _PREBUFFER_SECONDS/_MAX_LATENESS_SECONDS for the track case.
+
+    `debug_cast_elapsed_fn`, when given, is a *second* clock — core/
+    session.py's `SessionState.state.clock.elapsed()`, the same one driving
+    the ordinary "running since" position display — read alongside
+    `elapsed_fn` on every released frame purely for GET /visualizer's own
+    debug overlay (see last_release_debug). Both VisualizerFeed call sites
+    pass one, since 2026-09-05 (originally radio-only — the listener asked
+    for it everywhere, not just Sonos radio, after the radio-only version
+    proved useful): for a track, elapsed_fn already *is* the same function
+    (VisualizerFeed._start_track_analyzer() uses st.clock.elapsed()
+    directly for both), so it isn't independent there the way it is for
+    radio — see last_release_debug's own comment for why the comparison is
+    still meaningful anyway (a pipeline backlog, not a calibration gap, is
+    what it can reveal in that case). For radio, elapsed_fn is instead
+    core/visualizer_feed.py's own _OffsetTrackerClock/_FirstByteClock —
+    correct by construction to keep this analyzer's own delivery smooth,
+    but never independently checked against what the rest of the app
+    believes playback position is until this existed. Reported live
+    2026-09-04: the listener suspecting exactly that kind of gap
+    ("visualizer zeigt sofort an, während audio dann um paar sekunden
+    später kommt") but having no way to confirm it beyond ear and eye.
+
+    `debug_lead_fn`, when given, is core/visualizer_feed.py's own
+    _FirstByteClock.debug_lead() — only that clock has a fixed/measured
+    device lead worth reporting at all (see last_release_lead). Added
+    2026-09-05, the same day as debug_cast_elapsed_fn above: comparing
+    `visualizer` against `cast` for a relayed Sonos always reads close to
+    `-lead` by construction (both ultimately trace back to the same wall
+    clock once RadioPositionTracker is excluded for that case — see core/
+    state.py's first_radio_position_delivery()), so the delta alone cannot
+    tell "the fixed guess is being echoed back, nothing measured yet" apart
+    from "a real ICY round-trip measurement happens to agree with it" —
+    the exact question live 2026-09-05, after seeing a delta of exactly
+    -4.7s (ASSUMED_DEVICE_LEAD_SECONDS' own value) and no way to tell
+    which of those two it was without reading server logs."""
 
     def __init__(
         self,
@@ -401,6 +436,8 @@ class AudioAnalyzer:
         gain: float = 1.0,
         on_first_byte: Callable[[], None] | None = None,
         source_queue: "asyncio.Queue[bytes | None] | None" = None,
+        debug_cast_elapsed_fn: Callable[[], float] | None = None,
+        debug_lead_fn: Callable[[], tuple[float, bool]] | None = None,
     ) -> None:
         self.frames: asyncio.Queue[list[float]] = asyncio.Queue(maxsize=8)
         # (content_position, bands) pairs already computed but not yet
@@ -423,6 +460,39 @@ class AudioAnalyzer:
         # fresh AudioAnalyzer instance.
         self._smoothed_bands: list[float] | None = None
         self._elapsed_fn = elapsed_fn
+        # Optional second, *independent* clock — see last_release_debug's
+        # own comment for what this is for and why it's a separate function
+        # from elapsed_fn rather than reusing that one's own value.
+        self._debug_cast_elapsed_fn = debug_cast_elapsed_fn
+        # The cast clock's reading at this run's *first decoded byte*, which
+        # is where content_position's own zero sits for radio. Captured in
+        # _read_pcm() right after on_first_byte(), so both clocks are read
+        # at the same instant. Stays 0.0 for a track (no on_first_byte at
+        # all), which is correct: content_position is track-absolute there
+        # and needs no re-basing. See _release_frames() for why this must
+        # NOT be taken at the first released frame instead.
+        self._debug_baseline: float = 0.0
+        # (visualizer_position, cast_position) for the most recently
+        # released frame, in a common reference frame — see
+        # _release_frames()'s own comment for how, and GET /visualizer
+        # (routes/stream.py) for the only reader. None whenever
+        # debug_cast_elapsed_fn wasn't given at all (nothing currently
+        # constructs an AudioAnalyzer that way — both VisualizerFeed call
+        # sites pass one — but the parameter stays optional rather than
+        # required, since a future caller with genuinely nothing to compare
+        # against shouldn't be forced to invent one).
+        self.last_release_debug: tuple[float, float] | None = None
+        # Optional third callable — core/visualizer_feed.py's
+        # _FirstByteClock.debug_lead(), the only clock with a fixed/measured
+        # lead worth reporting at all (a real device position, from either
+        # RadioPositionTracker or the general track clock, has nothing like
+        # it — see that method's own docstring). None for everything else.
+        self._debug_lead_fn = debug_lead_fn
+        # (lead in use, whether it's a live ICY measurement) as of the most
+        # recently released frame — see debug_lead_fn's own comment and
+        # GET /visualizer (routes/stream.py) for the only reader. None
+        # whenever debug_lead_fn wasn't given.
+        self.last_release_lead: tuple[float, bool] | None = None
         self._pcm_position = start_offset
         self._reading_done = False
         # When the current decode hold-off began, and whether it has
@@ -535,6 +605,15 @@ class AudioAnalyzer:
                     self._first_byte_seen = True
                     if self._on_first_byte is not None:
                         self._on_first_byte()
+                    # Right after on_first_byte(), not before: the radio
+                    # clocks zero themselves in there (core/visualizer_
+                    # feed.py's _FirstByteClock.mark()/_OffsetTrackerClock.
+                    # mark()), and this baseline has to be the cast clock's
+                    # reading at the same instant those do. See
+                    # _debug_baseline's own comment for why the baseline
+                    # moved here from the first *released* frame.
+                    if self._debug_cast_elapsed_fn is not None:
+                        self._debug_baseline = self._debug_cast_elapsed_fn()
                 self._pcm_buffer.extend(data)
                 while len(self._pcm_buffer) >= window_bytes:
                     window = bytes(self._pcm_buffer[-window_bytes:])
@@ -710,6 +789,50 @@ class AudioAnalyzer:
                     # for a specific one.
                     await asyncio.sleep(0)
                     continue
+                if self._debug_cast_elapsed_fn is not None:
+                    # content_position raw on the left, cast clock re-based
+                    # to first byte on the right — the two are then in the
+                    # same reference frame and their difference is the real,
+                    # *absolute* lag this overlay exists to show.
+                    #
+                    # Both sides used to be re-based here instead, at the
+                    # first frame this run ever released. That made the
+                    # overlay structurally incapable of showing the one
+                    # number it was built for: frame one reads (0.00, 0.00)
+                    # by construction, and everything after it is pure
+                    # relative drift. A radio visualizer running the full
+                    # device lead ahead of the audio — the exact complaint
+                    # this was added for on 2026-09-04 — still displayed
+                    # Δ +0.00s, because the lead had already been absorbed
+                    # into the baseline before the first frame came out.
+                    # It contradicted last_release_lead's own docstring too,
+                    # which asserts the delta "always reads close to -lead
+                    # by construction"; that was true only before the
+                    # content baseline was added.
+                    #
+                    # The cast clock still needs its baseline, and taking it
+                    # at first byte is what makes it honest: for radio,
+                    # content_position is relative to *this* analyzer's own
+                    # decode (0 at first byte, since a station has no
+                    # absolute position to seek to) while the cast clock has
+                    # been running since /play-url, so without it a
+                    # visualizer opened ten minutes into a station would
+                    # read a -600s "delta" that means nothing. For a track
+                    # both sides are already track-absolute and there is no
+                    # on_first_byte at all, so _debug_baseline stays 0.0 and
+                    # this reduces to the plain content-vs-cast comparison —
+                    # which is exactly right, and also fixes the 2026-09-05
+                    # report of a large constant delta on a track opened
+                    # mid-playback (that one came from re-basing only the
+                    # cast side, comparing an absolute number against a
+                    # re-based one).
+                    self.last_release_debug = (
+                        round(content_position, 2),
+                        round(self._debug_cast_elapsed_fn() - self._debug_baseline, 2),
+                    )
+                if self._debug_lead_fn is not None:
+                    lead, measured = self._debug_lead_fn()
+                    self.last_release_lead = (round(lead, 2), measured)
                 if self.frames.full():
                     self.frames.get_nowait()  # drop oldest — always show freshest
                 self.frames.put_nowait(bands)

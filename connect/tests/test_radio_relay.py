@@ -442,3 +442,22 @@ async def test_start_ffmpeg_builds_the_expected_single_output_command():
     assert cmd[cmd.index("-readrate") + 1] == "1"
     # -readrate is an input option — must sit before -i to apply to it.
     assert cmd.index("-readrate") < cmd.index("-i")
+
+
+# ── SessionState.stop_radio_relay() — radio_icy_* fields share
+# radio_position_tracker's own lifetime boundary ────────────────────────────
+
+
+async def test_stop_radio_relay_clears_the_icy_round_trip_fields(default_session):
+    """core/session.py's own comment: radio_position_tracker "shares this
+    exact lifetime boundary" with a relay — the ICY round-trip fields added
+    2026-09-04 (core/session.py's radio_icy_pending_injection/radio_icy_
+    measured_lag) need the same treatment, or a stale measurement from a
+    previous station could leak into a fresh one's visualizer clock."""
+    default_session.radio_icy_pending_injection = ("Old Title", 123.0)
+    default_session.radio_icy_measured_lag = 3.2
+
+    await default_session.stop_radio_relay()
+
+    assert default_session.radio_icy_pending_injection is None
+    assert default_session.radio_icy_measured_lag is None

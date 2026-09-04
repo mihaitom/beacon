@@ -94,6 +94,120 @@ class TestIcyDemuxer:
         assert titles == []
 
 
+class TestIcyMuxer:
+    """The mirror image of IcyDemuxer, for routes/stream.py's own re-served
+    radio endpoints — see IcyMuxer's own docstring for why this exists.
+    Round-trips through IcyDemuxer/`_icy_block()` where useful, since that's
+    the exact framing a real device (or this module's own demuxer) expects
+    back out."""
+
+    def test_no_title_known_yet_emits_zero_length_blocks(self):
+        metaint = 4
+        muxer = icy_mod.IcyMuxer(metaint, lambda: None)
+
+        out = muxer.feed(b"a" * metaint)
+
+        assert out == _icy_block(b"a" * metaint, None)
+
+    def test_emits_a_real_block_for_the_current_title(self):
+        metaint = 8
+        muxer = icy_mod.IcyMuxer(metaint, lambda: "Artist - Track")
+
+        out = muxer.feed(b"a" * metaint)
+
+        assert out == _icy_block(b"a" * metaint, "Artist - Track")
+
+    def test_does_not_repeat_an_unchanged_title(self):
+        """Same convention a real station follows and IcyDemuxer.feed()
+        already expects on the way in: a block is only a real StreamTitle
+        payload the tick the title *changes*, zero-length every other
+        tick — repeating the full payload every block would work too, but
+        the whole point of the convention is not paying for that."""
+        metaint = 4
+        muxer = icy_mod.IcyMuxer(metaint, lambda: "Artist - Track")
+
+        first = muxer.feed(b"a" * metaint)
+        second = muxer.feed(b"b" * metaint)
+
+        assert first == _icy_block(b"a" * metaint, "Artist - Track")
+        assert second == _icy_block(b"b" * metaint, None)
+
+    def test_a_later_title_change_is_picked_up(self):
+        metaint = 4
+        titles = iter(["First Title", "First Title", "Second Title"])
+        muxer = icy_mod.IcyMuxer(metaint, lambda: next(titles))
+
+        blocks = [muxer.feed(b"a" * metaint) for _ in range(3)]
+
+        assert blocks[0] == _icy_block(b"a" * metaint, "First Title")
+        assert blocks[1] == _icy_block(b"a" * metaint, None)
+        assert blocks[2] == _icy_block(b"a" * metaint, "Second Title")
+
+    def test_boundaries_do_not_need_to_line_up_with_feed_calls(self):
+        """Same reason IcyDemuxer.feed() buffers on the way in: a chunk
+        from the relay's own fan-out (8KiB reads, core/radio_relay.py) has
+        no reason to land exactly on a metaint boundary."""
+        metaint = 6
+        muxer = icy_mod.IcyMuxer(metaint, lambda: None)
+
+        out = b"".join(muxer.feed(bytes([b])) for b in range(metaint * 2))
+
+        assert out == _icy_block(bytes(range(metaint)), None) + _icy_block(
+            bytes(range(metaint, metaint * 2)), None
+        )
+
+    def test_round_trips_through_icy_demuxer(self):
+        """The actual contract: whatever this produces, a real device's own
+        ICY parser (or this module's own IcyDemuxer, standing in for one)
+        must be able to read straight back — audio bytes recovered exactly,
+        and every title change reported once."""
+        metaint = 5
+        titles = iter(["Song A", "Song A", "Song B", "Song B"])
+        muxer = icy_mod.IcyMuxer(metaint, lambda: next(titles))
+        source = [b"12345", b"67890", b"abcde", b"fghij"]
+
+        muxed = b"".join(muxer.feed(chunk) for chunk in source)
+
+        demuxer = icy_mod.IcyDemuxer(metaint, (seen := []).append)
+        audio = demuxer.feed(muxed)
+
+        assert audio == b"".join(source)
+        assert seen == ["Song A", "Song B"]
+
+    def test_on_inject_fires_only_for_real_title_changes(self):
+        """routes/stream.py's own record_injection() (and, downstream,
+        routes/upnp.py's ICY round-trip measurement) only cares about real
+        title changes — not the zero-length "nothing changed" blocks that
+        make up the overwhelming majority of them."""
+        metaint = 4
+        titles = iter(["Song A", "Song A", "Song A", "Song B"])
+        injected = []
+        muxer = icy_mod.IcyMuxer(metaint, lambda: next(titles), injected.append)
+
+        for _ in range(4):
+            muxer.feed(b"a" * metaint)
+
+        assert injected == ["Song A", "Song B"]
+
+    def test_on_inject_is_never_called_for_a_none_title(self):
+        metaint = 4
+        muxer = icy_mod.IcyMuxer(metaint, lambda: None, (injected := []).append)
+
+        muxer.feed(b"a" * metaint)
+
+        assert injected == []
+
+    def test_works_without_an_on_inject_callback(self):
+        """The default (None) — most callers of IcyMuxer don't care about
+        this at all, and omitting it must not raise."""
+        metaint = 4
+        muxer = icy_mod.IcyMuxer(metaint, lambda: "Title")
+
+        out = muxer.feed(b"a" * metaint)
+
+        assert out == _icy_block(b"a" * metaint, "Title")
+
+
 class TestWatchOnce:
     async def test_gives_up_immediately_when_the_station_declares_no_metaint(self):
         stream = _mock_stream({}, [b"whatever"])

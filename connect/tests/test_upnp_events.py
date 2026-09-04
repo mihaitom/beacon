@@ -1,6 +1,7 @@
 """Tests for core/upnp_events.py and routes/upnp.py — letting a cast device
 report its own transport state instead of only ever being polled."""
 
+import html
 import logging
 import time
 import urllib.error
@@ -9,7 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
-from core import upnp_events
+from core import icy_metadata, upnp_events
+from core.icy_metadata import ICY_PULSE_SECONDS, pulsed_title, strip_pulse
 from routes.upnp import callback_url_for
 
 # A NOTIFY body shaped like a real one: the interesting values live in a
@@ -68,6 +70,89 @@ def test_parse_event_drops_empty_values():
 
 def test_parse_event_returns_empty_for_an_unparseable_body():
     assert upnp_events.parse_event("not xml at all") == {}
+
+
+# ── parse_stream_title_echo ──────────────────────────────────────────────────
+# CurrentTrackMetaData's own value is a DIDL-Lite document, escaped once more
+# than the properties parse_event() reads — see parse_stream_title_echo()'s
+# own comment on the escape depth that costs, and on the bug this fixture
+# used to hide by getting that depth wrong.
+
+
+def _stream_content_notify(title: str, tag: str = "r:streamContent") -> str:
+    """A NOTIFY body at the escape depth a real renderer actually sends.
+
+    Built by escaping twice, deliberately, rather than writing the outer
+    markup out as literal `&lt;`-entities with a once-escaped DIDL dropped
+    into it: those two look almost identical but put the DIDL one level
+    apart, and this fixture used to do the latter. That made every
+    `<r:streamContent>` reachable by a single unescape layer, so
+    parse_stream_title_echo() passed here while returning None for every
+    real echo a Sonos ever sent — the ICY round-trip lag was never measured
+    once in production and the whole test file stayed green. Escaping the
+    same way the device does is what keeps the two from drifting apart
+    again."""
+    didl = f"<DIDL-Lite><item><{tag}>{title}</{tag}></item></DIDL-Lite>"
+    last_change = (
+        f'<Event><InstanceID val="0"><CurrentTrackMetaData val="{html.escape(didl)}"/>'
+        "</InstanceID></Event>"
+    )
+    return (
+        "<e:propertyset><e:property><LastChange>"
+        f"{html.escape(last_change)}"
+        "</LastChange></e:property></e:propertyset>"
+    )
+
+
+def test_parse_stream_title_echo_reads_sonos_own_field():
+    body = _stream_content_notify("MARK 001")
+    assert upnp_events.parse_stream_title_echo(body) == "MARK 001"
+
+
+def test_parse_stream_title_echo_falls_back_to_dc_title():
+    """A generic DLNA renderer puts the ICY title in dc:title instead —
+    same field icy_sync_probe.py falls back to."""
+    body = _stream_content_notify("MARK 002", tag="dc:title")
+    assert upnp_events.parse_stream_title_echo(body) == "MARK 002"
+
+
+def test_parse_stream_title_echo_prefers_streamcontent_over_dc_title():
+    didl = (
+        "<DIDL-Lite><item>"
+        "<dc:title>Connect</dc:title>"
+        "<r:streamContent>MARK 003</r:streamContent>"
+        "</item></DIDL-Lite>"
+    )
+    last_change = f'<Event><CurrentTrackMetaData val="{html.escape(didl)}"/></Event>'
+    body = (
+        "<e:propertyset><e:property><LastChange>"
+        f"{html.escape(last_change)}"
+        "</LastChange></e:property></e:propertyset>"
+    )
+    assert upnp_events.parse_stream_title_echo(body) == "MARK 003"
+
+
+def test_parse_stream_title_echo_survives_ampersands_and_apostrophes():
+    """The echoed title is compared byte-for-byte against what IcyMuxer
+    injected (routes/upnp.py's _handle_stream_title_echo()), so a title
+    that comes back still carrying entities simply fails that check and the
+    measurement is thrown away. Both characters below are ordinary in real
+    track titles, and `&` in particular sits at a *third* escape level here
+    — one deeper than the markup around it."""
+    body = _stream_content_notify("Simon &amp; Garfunkel - Don&apos;t")
+    assert upnp_events.parse_stream_title_echo(body) == "Simon & Garfunkel - Don't"
+
+
+def test_parse_stream_title_echo_returns_none_without_one():
+    """Most NOTIFYs carry no title change at all — LastChange fires on
+    plenty of properties that have nothing to do with metadata."""
+    body = NOTIFY_BODY.format(state="PLAYING", status="OK")
+    assert upnp_events.parse_stream_title_echo(body) is None
+
+
+def test_parse_stream_title_echo_returns_none_for_an_empty_title():
+    body = _stream_content_notify("")
+    assert upnp_events.parse_stream_title_echo(body) is None
 
 
 # ── parse_rendering_control_event ───────────────────────────────────────────
@@ -346,6 +431,103 @@ def test_notify_endpoint_still_answers_200_when_handling_raises(client):
     assert response.status_code == 200
 
 
+# ── routes/upnp.py — ICY StreamTitle round-trip (_handle_stream_title_echo) ──
+# The live counterpart to scripts/icy_sync_probe.py's own one-off
+# measurement — see core/session.py's radio_icy_pending_injection/
+# radio_icy_measured_lag and core/visualizer_feed.py's _FirstByteClock for
+# the two ends of this.
+
+
+async def test_notify_measures_the_round_trip_when_the_echo_matches(client, default_session):
+    from core.claims import claims
+
+    await claims.claim("sonos", "Arbeitszimmer", default_session.session_id)
+    injected_at = time.monotonic() - 2.5
+    default_session.radio_icy_pending_injection = ("MARK 001", injected_at)
+    body = _stream_content_notify("MARK 001")
+
+    response = client.request("NOTIFY", "/upnp/events/avtransport/Arbeitszimmer", content=body)
+
+    assert response.status_code == 200
+    assert default_session.radio_icy_measured_lag == pytest.approx(2.5, abs=0.5)
+    # Consumed — a later, unrelated NOTIFY must not re-match the same
+    # injection a second time.
+    assert default_session.radio_icy_pending_injection is None
+
+
+async def test_notify_ignores_an_echo_that_does_not_match_whats_pending(client, default_session):
+    from core.claims import claims
+
+    await claims.claim("sonos", "Arbeitszimmer", default_session.session_id)
+    pending = ("MARK 001", time.monotonic())
+    default_session.radio_icy_pending_injection = pending
+    body = _stream_content_notify("a stale, different title")
+
+    client.request("NOTIFY", "/upnp/events/avtransport/Arbeitszimmer", content=body)
+
+    assert default_session.radio_icy_measured_lag is None
+    # Still pending, untouched — a later NOTIFY carrying the real echo must
+    # still be able to match it.
+    assert default_session.radio_icy_pending_injection == pending
+
+
+async def test_notify_is_a_no_op_with_nothing_pending(client, default_session):
+    from core.claims import claims
+
+    await claims.claim("sonos", "Arbeitszimmer", default_session.session_id)
+    body = _stream_content_notify("MARK 001")
+
+    response = client.request("NOTIFY", "/upnp/events/avtransport/Arbeitszimmer", content=body)
+
+    assert response.status_code == 200
+    assert default_session.radio_icy_measured_lag is None
+
+
+async def test_notify_ignores_a_non_positive_measured_lag(client, default_session):
+    """A stale/out-of-order NOTIFY, or a clock oddity, must not overwrite a
+    perfectly good previous measurement (or set a nonsensical one) — see
+    _handle_stream_title_echo()'s own comment."""
+    from core.claims import claims
+
+    await claims.claim("sonos", "Arbeitszimmer", default_session.session_id)
+    default_session.radio_icy_measured_lag = 5.0
+    # Injected "in the future" relative to when the NOTIFY handling itself
+    # runs — an artificial way to force lag <= 0 without depending on real
+    # timing.
+    default_session.radio_icy_pending_injection = ("MARK 001", time.monotonic() + 100.0)
+    body = _stream_content_notify("MARK 001")
+
+    client.request("NOTIFY", "/upnp/events/avtransport/Arbeitszimmer", content=body)
+
+    assert default_session.radio_icy_measured_lag == 5.0  # untouched
+    # Still consumed either way — a non-positive result is still a result,
+    # not "try again with the same injection".
+    assert default_session.radio_icy_pending_injection is None
+
+
+def test_notify_stream_title_echo_is_a_no_op_for_an_unclaimed_device(client):
+    """Same "nothing to update" case _handle_rendering_control_event() has
+    — a stray/unsolicited NOTIFY, or a device nobody currently casts radio
+    to."""
+    body = _stream_content_notify("MARK 001")
+    response = client.request("NOTIFY", "/upnp/events/avtransport/Nobody", content=body)
+    assert response.status_code == 200
+
+
+async def test_notify_stream_title_echo_is_a_no_op_for_a_claim_with_no_live_session(client):
+    """A claim can outlive the session that made it (see core/claims.py) —
+    same "nothing to update" shape as an unclaimed device, just one step
+    further along."""
+    from core.claims import claims
+
+    await claims.claim("sonos", "Ghost", "a-session-id-that-does-not-exist")
+    body = _stream_content_notify("MARK 001")
+
+    response = client.request("NOTIFY", "/upnp/events/avtransport/Ghost", content=body)
+
+    assert response.status_code == 200
+
+
 # ── routes/upnp.py — RenderingControl (volume/mute push) ────────────────────
 
 
@@ -410,3 +592,127 @@ def upnp_events_max() -> int:
     from routes.upnp import _MAX_BODY_BYTES
 
     return _MAX_BODY_BYTES
+
+
+# ── ICY round-trip estimation ───────────────────────────────────────────────
+# See routes/upnp.py's _handle_stream_title_echo() and core/session.py's
+# radio_icy_measured_lag: an echo is an upper bound on the device's buffer,
+# never a reading, so the estimate is the smallest plausible sample.
+
+
+async def _notify(client, session, title):
+    from core.claims import claims
+
+    await claims.claim("sonos", "Arbeitszimmer", session.session_id)
+    client.request(
+        "NOTIFY",
+        "/upnp/events/avtransport/Arbeitszimmer",
+        content=_stream_content_notify(title),
+    )
+
+
+async def test_notify_keeps_the_smallest_sample_not_the_newest(client, default_session):
+    """Sonos moderates its own eventing and can go half a minute without
+    sending anything, so a later sample is routinely far too large. It can
+    never be too small — a device cannot report a title it has not played —
+    so the minimum is the estimator, exactly as scripts/icy_sync_probe.py
+    concluded against real hardware."""
+    default_session.radio_icy_pending_injection = ("A", time.monotonic() - 4.7)
+    await _notify(client, default_session, "A")
+    assert default_session.radio_icy_measured_lag == pytest.approx(4.7, abs=0.5)
+
+    default_session.radio_icy_pending_injection = ("B", time.monotonic() - 9.0)
+    await _notify(client, default_session, "B")
+    assert default_session.radio_icy_measured_lag == pytest.approx(4.7, abs=0.5)
+
+    default_session.radio_icy_pending_injection = ("C", time.monotonic() - 2.2)
+    await _notify(client, default_session, "C")
+    assert default_session.radio_icy_measured_lag == pytest.approx(2.2, abs=0.5)
+
+
+async def test_notify_discards_an_implausible_sample_rather_than_adopting_it(
+    client, default_session
+):
+    """The live 2026-09-05 failure: one routine state=PLAYING NOTIFY, 26s
+    after the previous event, produced a 16.63s "round trip" for a device
+    whose real buffer is under five. The min-estimator alone cannot help a
+    *first* sample, so an implausible one is thrown away and the fixed guess
+    stays in place instead."""
+    default_session.radio_icy_pending_injection = ("A", time.monotonic() - 16.63)
+    await _notify(client, default_session, "A")
+    assert default_session.radio_icy_measured_lag is None
+
+
+async def test_notify_discards_a_sample_too_fast_to_be_playback(client, default_session):
+    """icy_sync_probe.py, verbatim: "min < 1s -> reports on read. Dead end,
+    the number is network latency." """
+    default_session.radio_icy_pending_injection = ("A", time.monotonic() - 0.2)
+    await _notify(client, default_session, "A")
+    assert default_session.radio_icy_measured_lag is None
+
+
+async def test_notify_matches_an_echo_that_dropped_the_pulse_mark(client, default_session):
+    """A device is free to normalise core/icy_metadata.py's invisible pulse
+    mark away before reporting the title back. One that does simply stops
+    producing the extra measurement points — it must not also lose the ones
+    a genuine title change produces."""
+    default_session.radio_icy_pending_injection = (
+        pulsed_title("Artist - Song", ICY_PULSE_SECONDS),  # an odd window: marked
+        time.monotonic() - 4.7,
+    )
+    await _notify(client, default_session, "Artist - Song")  # echoed back unmarked
+    assert default_session.radio_icy_measured_lag == pytest.approx(4.7, abs=0.5)
+
+
+# ── pulsed_title ────────────────────────────────────────────────────────────
+
+
+def test_pulsed_title_does_nothing_unless_switched_on(monkeypatch):
+    """Off by default. It exists to supply the ICY round-trip measurement
+    with samples, and that measurement no longer steers anything — leaving
+    it on would push a metadata update to every connected device every 8
+    seconds for a number nothing consumes."""
+    monkeypatch.delenv(icy_metadata.ICY_PULSE_ENV, raising=False)
+    assert pulsed_title("Artist - Song", ICY_PULSE_SECONDS * 1.5) == "Artist - Song"
+    assert pulsed_title("Artist - Song", ICY_PULSE_SECONDS * 2.5) == "Artist - Song"
+
+
+def test_pulsed_title_alternates_on_the_pulse_cadence(monkeypatch):
+    """Switched on, it gives a device something that changed on a steady
+    rhythm — the only way to get more than one round-trip sample per song
+    out of an ordinary station, which is what anyone re-investigating this
+    would want."""
+    monkeypatch.setenv(icy_metadata.ICY_PULSE_ENV, "1")
+    marked = pulsed_title("Artist - Song", ICY_PULSE_SECONDS * 1.5)
+    plain = pulsed_title("Artist - Song", ICY_PULSE_SECONDS * 2.5)
+    assert plain == "Artist - Song"
+    assert marked != plain
+    assert strip_pulse(marked) == plain
+
+
+def test_pulsed_title_is_invisible_and_survives_the_echo_parse(monkeypatch):
+    monkeypatch.setenv(icy_metadata.ICY_PULSE_ENV, "1")
+    """The mark is what a Sonos shows on its own display, so it has to add
+    nothing a listener can see — and it has to come back out of a NOTIFY
+    intact, or the exact-match check would reject every marked echo."""
+    marked = pulsed_title("Artist - Song", ICY_PULSE_SECONDS)
+    assert marked.strip() == marked  # str.strip() must not eat the mark
+    assert marked.replace("\u200b", "") == "Artist - Song"
+    assert upnp_events.parse_stream_title_echo(_stream_content_notify(marked)) == marked
+
+
+def test_pulsed_title_is_phase_aligned_across_connections(monkeypatch):
+    monkeypatch.setenv(icy_metadata.ICY_PULSE_ENV, "1")
+    """Derived from the clock, not counted per muxer: there is one IcyMuxer
+    per device connection, and a per-connection counter would give each its
+    own phase — several connections would then inject conflicting titles and
+    an injection from one would be paired with an echo belonging to another."""
+    now = 123.456
+    assert pulsed_title("A", now) == pulsed_title("A", now)
+
+
+def test_pulsed_title_passes_an_absent_title_through():
+    """Nothing to pulse yet — a bare mark on its own would be a title where
+    the station has none."""
+    assert pulsed_title(None, ICY_PULSE_SECONDS) is None
+    assert pulsed_title("", ICY_PULSE_SECONDS) == ""

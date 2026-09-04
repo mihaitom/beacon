@@ -57,11 +57,16 @@ describe('positionTracker (property-based)', () => {
     )
   })
 
-  it('a fresh record() always re-anchors, discarding whatever extrapolation was in flight before it', () => {
+  it('a fresh record() re-anchors outright whenever it is not a small backwards correction', () => {
     // This is the exact shape of the "0:00 stuck" / "stale position"
     // changelog bugs: a correction (record()) landing mid-flight must win
     // outright, never get blended with or overridden by extrapolation from
     // the anchor it's replacing.
+    //
+    // The one exception is a *small* backwards step, which is held instead
+    // — see MAX_SMOOTHED_REWIND_SECONDS in positionTracker.ts. Excluded
+    // here rather than weakening the assertion, so this keeps saying
+    // exactly what it always did about every other case.
     fc.assert(
       fc.property(
         elapsedArb,
@@ -72,8 +77,68 @@ describe('positionTracker (property-based)', () => {
           const tracker = createPositionTracker()
           tracker.record(firstElapsed, base)
           const correctionAt = base + dt
+          const onScreen = firstElapsed + dt / 1000
+          const rewind = onScreen - secondElapsed
+          fc.pre(rewind <= 0 || rewind > 1.5)
           tracker.record(secondElapsed, correctionAt)
           expect(tracker.extrapolate(correctionAt, 0)).toBe(secondElapsed)
+        },
+      ),
+    )
+  })
+
+  it('a small backwards correction holds the displayed position instead of rewinding it', () => {
+    // The seek bar's time counter visibly ticking backwards, reported live.
+    // The backend slews a recalibrated position_offset in over two seconds
+    // (connect/core/playback_clock.py), so a status tick landing mid-slew
+    // legitimately reads a little below the previous one — that must not
+    // reach the display.
+    fc.assert(
+      fc.property(
+        elapsedArb,
+        fc.double({ min: 0.01, max: 1.5, noNaN: true }),
+        nowArb,
+        dtMsArb,
+        (elapsed, rewind, base, dt) => {
+          const tracker = createPositionTracker()
+          tracker.record(elapsed, base)
+          const correctionAt = base + dt
+          const onScreen = tracker.extrapolate(correctionAt, 0)
+          tracker.record(onScreen - rewind, correctionAt)
+          expect(tracker.extrapolate(correctionAt, 0)).toBeCloseTo(onScreen, 6)
+        },
+      ),
+    )
+  })
+
+  it('the displayed position never goes backward across an arbitrary run of small corrections', () => {
+    // The invariant that actually matters to a listener, stated directly:
+    // whatever sequence of ticks the backend sends, as long as each one is
+    // within the smoothing window, what is on screen only ever advances.
+    fc.assert(
+      fc.property(
+        elapsedArb,
+        nowArb,
+        fc.array(
+          fc.record({
+            dt: fc.integer({ min: 1, max: 4000 }),
+            drift: fc.double({ min: -1.5, max: 1.5, noNaN: true }),
+          }),
+          { maxLength: 40 },
+        ),
+        (elapsed, base, ticks) => {
+          const tracker = createPositionTracker()
+          tracker.record(elapsed, base)
+          let now = base
+          let previous = tracker.extrapolate(now, 0)
+          for (const { dt, drift } of ticks) {
+            now += dt
+            const seen = tracker.extrapolate(now, 0)
+            tracker.record(seen + drift, now)
+            const after = tracker.extrapolate(now, 0)
+            expect(after).toBeGreaterThanOrEqual(previous - 1e-9)
+            previous = after
+          }
         },
       ),
     )

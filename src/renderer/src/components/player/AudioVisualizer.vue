@@ -7,6 +7,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { getAudioEngine } from '@/services/audioEngine'
 import { VisualizerEventSource } from '@/services/connect/visualizer'
+import type { VisualizerFrame } from '@/services/connect/types'
 
 // 60 bars, logarithmically spaced from 20Hz to 22050Hz — works out to
 // roughly 1/6-octave bands (log2(22050/20)/60 ≈ 0.168 octaves/bar, close
@@ -57,6 +58,17 @@ export default {
       default: true,
     },
   },
+  // 'debug-frame': this run's latest debug payload (or null, once 'cast'
+  // mode ends) — see VisualizerFrame's own comment for what it carries.
+  // Deliberately not rendered here: an earlier version drew it as a canvas
+  // sibling inside this component, which either sat on top of the bars
+  // (covering them) or took real layout space away from them (visibly
+  // compressing them, reported live 2026-09-05) no matter how it was laid
+  // out — this component's own box is exactly the bars' box, with nothing
+  // to spare. NowPlayingView.vue owns VisualizerDebugOverlay.vue instead,
+  // positioned absolutely in its *own* layout, decoupled from this
+  // component's size entirely.
+  emits: ['debug-frame'],
   data() {
     return {
       heights: Array.from({ length: BAR_COUNT }, () => IDLE_HEIGHT) as number[],
@@ -133,8 +145,9 @@ export default {
         auth.connectToken,
         auth.sessionId,
       )
-      this.visualizerEvents.onFrame = (frame) => {
+      this.visualizerEvents.onFrame = (frame: VisualizerFrame) => {
         this.castBands = frame.bands
+        this.$emit('debug-frame', frame.debug ?? null)
       }
       this.visualizerEvents.start()
     },
@@ -142,6 +155,7 @@ export default {
       this.visualizerEvents?.stop()
       this.visualizerEvents = null
       this.castBands = null
+      this.$emit('debug-frame', null)
     },
     resizeCanvas() {
       const canvas = this.$refs.canvasEl as HTMLCanvasElement | undefined

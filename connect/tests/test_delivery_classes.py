@@ -11,6 +11,7 @@ from pyatv.const import Protocol
 
 import delivery.chromecast as _chromecast_mod
 import delivery.dlna as _dlna_mod
+import delivery.sonos as _sonos_mod
 from core.state import ctx
 from delivery import (
     AirPlayDelivery,
@@ -132,6 +133,82 @@ def test_sonos_play_uses_passed_content_type_in_protocol_info():
         asyncio.run(d.play("http://stream", "Title", "", None, None, "", "audio/flac"))
     xml = dict(dev.avTransport.SetAVTransportURI.call_args.args[0])["CurrentURIMetaData"]
     assert 'protocolInfo="http-get:*:audio/flac:*"' in xml
+
+
+# ── SonosDelivery._dispatch_uri() — the x-rincon-mp3radio:// scheme swap ────
+# Reported live 2026-09-04: Sonos radio still dropping out only when relayed
+# through Beacon, buffer measured at ~1s, even after IcyMuxer (see
+# core/icy_metadata.py) added ICY signalling to the audio itself. This is
+# the second attempt — telling Sonos via the URI scheme it dispatches
+# rather than only via what's interleaved into the stream.
+
+
+class TestSonosDispatchUri:
+    def test_recognizes_beacons_own_radio_endpoint(self):
+        assert _sonos_mod.is_beacon_hosted_radio_uri("http://10.0.0.5:9181/stream/radio/abc")
+
+    def test_does_not_recognize_a_stations_own_url(self):
+        assert not _sonos_mod.is_beacon_hosted_radio_uri("http://stream.example.com/live.mp3")
+
+    def test_does_not_recognize_a_track_stream_url(self):
+        """/stream/<session> (a queued track) is not /stream/radio/<session>
+        — the two must not be conflated, or a track cast to Sonos would get
+        rewritten onto a scheme meant for a never-ending live source."""
+        assert not _sonos_mod.is_beacon_hosted_radio_uri("http://10.0.0.5:9181/stream/abc")
+
+    def test_swaps_scheme_for_beacons_own_endpoint(self):
+        assert (
+            _sonos_mod._dispatch_uri("http://10.0.0.5:9181/stream/radio/abc")
+            == "x-rincon-mp3radio://10.0.0.5:9181/stream/radio/abc"
+        )
+
+    def test_leaves_a_stations_own_url_untouched(self):
+        url = "http://wdr-1live-live.icecast.wdr.de/wdr/1live/live/mp3/128/stream.mp3"
+        assert _sonos_mod._dispatch_uri(url) == url
+
+    def test_leaves_a_track_url_untouched(self):
+        url = "http://10.0.0.5:9181/stream/abc"
+        assert _sonos_mod._dispatch_uri(url) == url
+
+
+def test_sonos_play_rewrites_beacons_own_radio_url_to_x_rincon_scheme():
+    dev = _mock_sonos_device()
+    d = SonosDelivery("Küche")
+    beacon_url = "http://10.0.0.5:9181/stream/radio/abc123"
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        asyncio.run(d.play(beacon_url, "Title"))
+    call_kwargs = dict(dev.avTransport.SetAVTransportURI.call_args.args[0])
+    rewritten = "x-rincon-mp3radio://10.0.0.5:9181/stream/radio/abc123"
+    assert call_kwargs["CurrentURI"] == rewritten
+    assert rewritten in call_kwargs["CurrentURIMetaData"]
+    # protocolInfo is unaffected — a Sonos dispatched this way still
+    # fetches over plain HTTP under the hood, see _dispatch_uri()'s own
+    # docstring for why this is only ever a buffering hint, not a real
+    # transport change.
+    assert 'protocolInfo="http-get:*:audio/mpeg:*"' in call_kwargs["CurrentURIMetaData"]
+
+
+def test_sonos_play_leaves_a_stations_own_radio_url_as_plain_http():
+    """Direct-cast (PlayUrlRequest.cast_directly) already gets Sonos's
+    native radio buffer with no help — confirmed live by the listener's own
+    A/B test — so this must not touch a URL that isn't Beacon's own."""
+    dev = _mock_sonos_device()
+    d = SonosDelivery("Küche")
+    station_url = "http://wdr-1live-live.icecast.wdr.de/wdr/1live/live/mp3/128/stream.mp3"
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        asyncio.run(d.play(station_url, "Title"))
+    call_kwargs = dict(dev.avTransport.SetAVTransportURI.call_args.args[0])
+    assert call_kwargs["CurrentURI"] == station_url
+
+
+def test_sonos_play_leaves_a_queued_tracks_url_as_plain_http():
+    dev = _mock_sonos_device()
+    d = SonosDelivery("Küche")
+    track_url = "http://10.0.0.5:9181/stream/abc123"
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        asyncio.run(d.play(track_url, "Title"))
+    call_kwargs = dict(dev.avTransport.SetAVTransportURI.call_args.args[0])
+    assert call_kwargs["CurrentURI"] == track_url
 
 
 def test_sonos_pause_resume_stop_delegate_to_device():

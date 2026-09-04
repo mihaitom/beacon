@@ -23,10 +23,16 @@ import time
 from fastapi import APIRouter, Request, Response
 
 from core.claims import claims
+from core.icy_metadata import strip_pulse
 from core.session import SessionState, build_status_dict, registry
 from core.state import PORT, get_local_ip, radio_dispatch_url
 from core.stream_format import radio_content_type
-from core.upnp_events import handle_event, parse_rendering_control_event, problem_in
+from core.upnp_events import (
+    handle_event,
+    parse_rendering_control_event,
+    parse_stream_title_echo,
+    problem_in,
+)
 from delivery.errors import transport_error_response
 from routes.playback import retry_radio_via_proxy
 
@@ -47,6 +53,27 @@ _RELAY_REDISPATCH_COOLDOWN_SECONDS = 30.0
 # Sonos property set is a few KB. This is far above that and exists only so
 # a misbehaving (or hostile) sender cannot stream an unbounded body at us.
 _MAX_BODY_BYTES = 256 * 1024
+
+# The range an ICY round-trip sample has to fall in to be treated as a real
+# measurement of a device's own startup buffer at all — see
+# _handle_stream_title_echo(), and core/session.py's radio_icy_measured_lag
+# for why samples can only ever err on the high side.
+#
+# The lower bound is scripts/icy_sync_probe.py's own reading of its results,
+# verbatim: "min < 1s -> reports on read. Dead end, the number is network
+# latency." A device that echoes a title that fast is reporting what it has
+# *received*, not what it is playing, and that number describes the LAN, not
+# a buffer.
+#
+# The upper bound covers every device this has been measured against with
+# room to spare — Sonos over x-rincon-mp3radio:// at 4.7-5.0s, DLNA at
+# 5.4-5.6s, Chromecast (the largest) at 10.6-11.0s. It exists because the
+# min-estimator alone cannot help the *first* sample: with nothing better to
+# compare against, one 16.63s artefact of Sonos's event moderation would
+# stand as the estimate until a better sample happened along, and title
+# changes on a radio station are minutes apart. Discarding it instead leaves
+# the fixed guess in place, which is far closer to right.
+_PLAUSIBLE_ICY_LAG = (1.0, 12.0)
 
 
 def callback_url_for(label: str, service: str = "avtransport") -> str:
@@ -88,6 +115,89 @@ async def _handle_rendering_control_event(label: str, body: str) -> None:
         muted = properties["Mute"] != "0"
     session.state.device_volumes[key] = (volume, muted)
     await session.event_bus.broadcast(build_status_dict(session))
+
+
+async def _handle_stream_title_echo(label: str, body: str) -> None:
+    """Sonos's own confirmation that a specific ICY title (core/icy_
+    metadata.py's IcyMuxer, injected into its own fetch of Beacon's radio
+    endpoint) has actually become audible — see core/session.py's
+    radio_icy_pending_injection/radio_icy_measured_lag and core/
+    visualizer_feed.py's _FirstByteClock for what reads the result.
+
+    The gap between injecting a title and this device reporting the same
+    one back over its own AVTransport eventing is a *bound* on its own
+    buffering delay — the exact technique scripts/icy_sync_probe.py
+    validated against real hardware, now running for the whole lifetime of
+    an ordinary cast instead. Needed at all only because delivery/sonos.py's
+    own x-rincon-mp3radio:// dispatch (added to fix Sonos-only dropouts
+    while relayed) reports position 0.00s for the entire run, the one live
+    signal Chromecast/DLNA still get from RadioPositionTracker.
+
+    A bound, not a reading, and only ever an upper one — which is why
+    core/session.py's radio_icy_measured_lag keeps the smallest sample
+    rather than the newest. An echo means "the device is currently
+    reporting this title", not "it started playing it just now": a device
+    cannot report a title before it plays it (so no sample can come out too
+    small), but Sonos moderates its own eventing heavily and may simply not
+    send anything for a while (so any sample can come out far too large).
+    Measured live 2026-09-05: a single routine state=PLAYING NOTIFY, 26s
+    after the previous event on the same unchanged URI, yielded 16.63s for
+    a device whose real buffer is under five — the probe script's own
+    output had already said as much ("min delta ... <- the estimator would
+    use this", "spread -> event moderation. The plan's min-estimator eats
+    it"); only the min part had never made it over here.
+
+    A no-op whenever there's nothing to match: no title in this NOTIFY at
+    all (most don't carry one — LastChange fires on plenty that have
+    nothing to do with metadata), nothing currently pending for this
+    session, the pending title doesn't match what echoed back (a stale
+    echo of an older title, someone else's injection — see
+    radio_icy_pending_injection's own comment on that small, accepted
+    cross-talk risk), or the sample falls outside _PLAUSIBLE_ICY_LAG."""
+    echoed = parse_stream_title_echo(body)
+    if not echoed:
+        return
+    session_id = claims.owner_of("sonos", label)
+    if session_id is None:
+        return
+    session = registry.get(session_id)
+    if session is None:
+        return
+    pending = session.radio_icy_pending_injection
+    if pending is None:
+        return
+    # strip_pulse on the pending side as well: core/icy_metadata.py's
+    # pulsed_title() appends an invisible mark on alternating windows to
+    # give this measurement a steady cadence, and a device is free to
+    # normalise that away before reporting the title back. One that does
+    # simply stops producing the extra measurement points — it must not
+    # also lose the ones a genuine title change produces.
+    if echoed != pending[0] and echoed != strip_pulse(pending[0]):
+        return
+    lag = time.monotonic() - pending[1]
+    session.radio_icy_pending_injection = None
+    low, high = _PLAUSIBLE_ICY_LAG
+    if not low <= lag <= high:
+        logger.info(
+            f"[upnp] {label}: ICY round trip implausible — lag={lag:.2f}s outside "
+            f"{low:.1f}-{high:.1f}s, discarded (title={echoed!r})"
+        )
+        return
+    # Stored raw, as the round trip it is. What the device does *after*
+    # reporting the title — its own output stage — is not part of this
+    # measurement and is not corrected for here: the same shortfall applies
+    # to Chromecast's polled position, which never touches this code path at
+    # all, so it belongs to the clock that consumes both. See
+    # core/visualizer_feed.py's visualizer_lead_correction().
+    previous = session.radio_icy_measured_lag
+    if previous is not None and previous <= lag:
+        logger.debug(
+            f"[upnp] {label}: ICY round trip {lag:.2f}s not better than the "
+            f"{previous:.2f}s already measured — keeping that (title={echoed!r})"
+        )
+        return
+    session.radio_icy_measured_lag = lag
+    logger.info(f"[upnp] {label}: ICY round trip measured — lag={lag:.2f}s (title={echoed!r})")
 
 
 async def _handle_transport_problem(label: str, problem: str) -> None:
@@ -224,6 +334,7 @@ async def upnp_event(service: str, label: str, request: Request) -> Response:
             problem = problem_in(properties) if properties else None
             if problem:
                 await _handle_transport_problem(label, problem)
+            await _handle_stream_title_echo(label, body)
     except Exception:
         # Never let a parse failure reach the device as a 5xx — see above.
         logger.exception(f"[upnp] Failed to handle a {service} event from {label}")
