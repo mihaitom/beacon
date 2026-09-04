@@ -45,6 +45,76 @@ describe('taking over a device someone else is using', () => {
     expect(join).toHaveBeenCalledWith(kitchen, false)
   })
 
+  it('reports whether the action actually went through', async () => {
+    const connect = useConnectStore()
+    vi.mocked(join).mockResolvedValueOnce(undefined)
+    expect(await connect.joinDevice(kitchen)).toBe(true)
+
+    vi.mocked(join).mockRejectedValueOnce(deviceInUse())
+    // False, not a throw: the target was never reached, and a caller
+    // mid-way through a larger change (playbackStore.applyTargets()) has
+    // to stop rather than carry on against a set it never applied.
+    expect(await connect.joinDevice(kitchen)).toBe(false)
+  })
+
+  it('skips the confirmation entirely for an already-forced join', async () => {
+    const connect = useConnectStore()
+    vi.mocked(join).mockResolvedValue(undefined)
+
+    expect(await connect.joinDevice(kitchen, true)).toBe(true)
+
+    // The decision to take the device over is already made — the phone
+    // remote makes it up front, since it has no dialog to ask with (see
+    // services/remoteControl/commands.ts).
+    expect(join).toHaveBeenCalledWith(kitchen, true)
+    expect(connect.pendingTakeover).toBeNull()
+  })
+
+  it('throws a forced join that fails instead of parking a dialog', async () => {
+    const connect = useConnectStore()
+    vi.mocked(join).mockRejectedValue(deviceInUse())
+
+    await expect(connect.joinDevice(kitchen, true)).rejects.toThrow()
+
+    // Nothing left to confirm: force already said yes, so a conflict here
+    // is a real failure and has to be reported as one.
+    expect(connect.pendingTakeover).toBeNull()
+    expect(connect.errors.message).not.toBeNull()
+  })
+
+  it('swaps in a wider retry when the conflict came out of a larger change', async () => {
+    const connect = useConnectStore()
+    vi.mocked(join).mockRejectedValue(deviceInUse())
+    await connect.joinDevice(kitchen)
+
+    const wider = vi.fn().mockResolvedValue(undefined)
+    connect.setTakeoverRetry(wider)
+    await connect.confirmTakeover()
+
+    // Replaying only the join that conflicted would leave the rest of
+    // applyTargets()'s desired set — the removals above all — unapplied.
+    expect(wider).toHaveBeenCalled()
+  })
+
+  it('leaves setTakeoverRetry alone when nothing is pending', () => {
+    const connect = useConnectStore()
+    connect.setTakeoverRetry(vi.fn())
+    expect(connect.pendingTakeover).toBeNull()
+  })
+
+  it('records a failed device stop instead of failing silently', async () => {
+    const { deviceStop } = await import('@/services/connect/devices')
+    const connect = useConnectStore()
+    vi.mocked(deviceStop).mockRejectedValue(new Error('speaker went away'))
+
+    await expect(connect.stopDevice('sonos', 'Kitchen')).rejects.toThrow()
+
+    // The backend releases the claim whether or not the stop worked (see
+    // routes/devices.py), so silence here leaves a speaker playing with
+    // nothing saying so.
+    expect(connect.errors.message).not.toBeNull()
+  })
+
   it('retries with force once the user confirms, and refreshes what the list shows', async () => {
     // Without the refresh the device list keeps showing the previous owner
     // until something else happens to reload it.

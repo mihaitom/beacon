@@ -195,7 +195,7 @@ describe('ConnectDevicePicker', () => {
       expect(wrapper.get('.connect-picker__actions').text()).toContain('Stop all')
     })
 
-    it('applies the checked set as the desired targets and re-syncs on success', async () => {
+    it('applies the checked set as the desired targets', async () => {
       const wrapper = mountPicker()
       const applySpy = vi.spyOn(usePlaybackStore(), 'applyTargets').mockResolvedValue()
       const items = wrapper.findAllComponents(DeviceListItemStub)
@@ -211,10 +211,37 @@ describe('ConnectDevicePicker', () => {
         { name: 'Kitchen', type: 'sonos' },
         { name: 'Living Room', type: 'sonos' },
       ])
-      // Re-seeded from the (still empty, since applyTargets is mocked)
-      // live targets rather than simply cleared.
+      // Not re-seeded from the live targets here (still empty, since
+      // applyTargets is mocked — but in production the SSE stream that
+      // feeds them has no ordering guarantee against the HTTP calls that
+      // just returned either). Reading them back at this point re-ticks a
+      // device the apply just removed, which is what made a device switch
+      // visibly flicker. The checkboxes stay where the user put them...
       expect(wrapper.findAllComponents(DeviceListItemStub).map((i) => i.props('selected'))).toEqual(
-        [false, false],
+        [true, true],
+      )
+      // ...and the apply button is gone, because nothing is unapplied.
+      expect(wrapper.get('.connect-picker__actions').text()).not.toContain('Apply')
+    })
+
+    it('re-seeds from the live targets once the status actually catches up', async () => {
+      const connect = useConnectStore()
+      const wrapper = mountPicker()
+      vi.spyOn(usePlaybackStore(), 'applyTargets').mockResolvedValue()
+      const items = wrapper.findAllComponents(DeviceListItemStub)
+      await items[0]!.vm.$emit('update:selected', true)
+      await wrapper.get('.connect-picker__actions').findAll('button').at(-1)!.trigger('click')
+      await wrapper.vm.$nextTick()
+
+      // The other client's cast, a device dropping, or simply this apply's
+      // own status frame landing late — either way the applied selection
+      // must give way to reality, since the user has no unapplied edit
+      // left to protect.
+      connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos' }] })
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.findAllComponents(DeviceListItemStub).map((i) => i.props('selected'))).toEqual(
+        [false, true],
       )
     })
 
@@ -230,15 +257,35 @@ describe('ConnectDevicePicker', () => {
     })
   })
 
-  it('take-over from a row forces castTo() for just that device', async () => {
+  it('take-over from a row adds that device to what is already playing', async () => {
     const connect = useConnectStore()
-    connect.devices = makeDevices({ sonos: [{ name: 'Kitchen' }] })
+    connect.devices = makeDevices({ sonos: [{ name: 'Kitchen' }, { name: 'Living Room' }] })
+    connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos' }] })
     const wrapper = mountPicker()
-    const castToSpy = vi.spyOn(usePlaybackStore(), 'castTo').mockResolvedValue()
+    await wrapper.vm.$nextTick()
+    const applySpy = vi.spyOn(usePlaybackStore(), 'applyTargets').mockResolvedValue()
 
     await wrapper.getComponent(DeviceListItemStub).vm.$emit('take-over')
+    await wrapper.vm.$nextTick()
 
-    expect(castToSpy).toHaveBeenCalledWith([{ name: 'Kitchen', type: 'sonos' }], true)
+    // A claimed row's checkbox is inert (DeviceListItem.vue's onToggle()),
+    // so this button is the only way to pick such a device — going through
+    // castTo(), which replaces the whole target set, made it the only way
+    // to lose every other speaker at the same time.
+    expect(applySpy).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({ name: 'Living Room', type: 'sonos' }),
+        { name: 'Kitchen', type: 'sonos' },
+      ],
+      true,
+    )
+    // Ticked even though the checkbox was never touched, and counted as
+    // applied — not as an edit still waiting for the apply button.
+    expect(wrapper.findAllComponents(DeviceListItemStub).map((i) => i.props('selected'))).toEqual([
+      true,
+      true,
+    ])
+    expect(wrapper.get('.connect-picker__actions').text()).not.toContain('Apply')
   })
 
   it('stop-all is only shown while casting, and calls connectStore.stopAll()', async () => {

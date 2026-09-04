@@ -43,18 +43,20 @@
     <div class="d-flex align-center mb-2" style="gap: 10px">
       <!-- See SeekBar.vue's identical swap for why radio replaces the
        - whole row instead of showing a bar with nothing to represent, and
-       - for the buffering state (playbackStore.radioBuffering). -->
-      <div v-if="playbackStore.radioStation" class="mobile-transport__live-wrap">
-        <v-progress-linear v-if="playbackStore.radioBuffering" indeterminate height="2" rounded />
-        <span class="text-body-small text-medium-emphasis mobile-transport__live">
-          <template v-if="playbackStore.radioBuffering">
-            <v-icon size="14">mdi-timer-sand</v-icon>
-            {{ $t('player.radioBuffering') }}
-          </template>
-          <template v-else>{{
-            $t('player.liveRadio', { time: formatTime(playbackStore.localPosition) })
-          }}</template>
-        </span>
+       - for the buffering state (playbackStore.radioBuffering) — one row
+       - either way, no separate stacked bar row, so it never shoves the
+       - transport buttons above around when buffering starts or ends. -->
+      <div v-if="playbackStore.radioStation" class="mobile-transport__live">
+        <v-progress-linear
+          v-if="playbackStore.radioBuffering"
+          indeterminate
+          height="4"
+          rounded
+          color="primary"
+        />
+        <span v-else class="text-body-small text-medium-emphasis">{{
+          $t('player.liveRadio', { time: formatTime(playbackStore.localPosition) })
+        }}</span>
       </div>
       <template v-else>
         <span class="text-body-small text-medium-emphasis mobile-transport__time">{{
@@ -317,20 +319,12 @@ export default {
   flex-shrink: 0;
 }
 
-.mobile-transport__live-wrap {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
 .mobile-transport__live {
   width: 100%;
   min-height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
 }
 
 .text-right {

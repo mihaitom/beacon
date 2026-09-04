@@ -375,7 +375,7 @@ describe('handleRemoteCommand', () => {
     it('joins an added device rather than dropping the one already casting', async () => {
       const connect = useConnectStore()
       connect.status = makeStatus({ targets: [{ type: 'sonos', name: 'Kitchen' }] })
-      const joinSpy = vi.spyOn(connect, 'joinDevice').mockResolvedValue()
+      const joinSpy = vi.spyOn(connect, 'joinDevice').mockResolvedValue(true)
       const castSpy = vi.spyOn(usePlaybackStore(), 'castTo').mockResolvedValue()
 
       await handleRemoteCommand('cast-to-many', {
@@ -385,7 +385,11 @@ describe('handleRemoteCommand', () => {
         ],
       })
 
-      expect(joinSpy).toHaveBeenCalledWith({ type: 'sonos', name: 'Living Room' })
+      // force=true reaches the join, not just the fresh-cast path: the
+      // phone has no takeover dialog, so a conflict swallowed into
+      // pendingTakeover would strand this request on a confirmation the
+      // phone can never give.
+      expect(joinSpy).toHaveBeenCalledWith({ type: 'sonos', name: 'Living Room' }, true)
       expect(castSpy).not.toHaveBeenCalled()
     })
 

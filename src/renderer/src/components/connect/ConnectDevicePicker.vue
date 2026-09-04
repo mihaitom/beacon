@@ -163,11 +163,13 @@ export default {
     return {
       selectedKeys: new Set<string>(),
       connecting: false,
-      // What the active target set was when this picker last synced itself.
-      // The diff against selectedKeys is what "is there anything to apply"
-      // means, and it also lets an outside change (another client casting,
-      // a device dropping) re-seed the checkboxes while the user has not
-      // touched them — see syncFromActiveTargets().
+      // What the checked set was when this picker last agreed with
+      // reality — seeded from the live targets (syncFromActiveTargets())
+      // and re-marked whenever an apply goes through. The diff against
+      // selectedKeys is what "the user has an unapplied edit" means: it
+      // gates the apply button, and it is what stops an outside change
+      // (another client casting, a device dropping) from re-seeding the
+      // checkboxes out from under someone mid-edit.
       appliedKeys: new Set<string>(),
       pairingOpen: false,
       pairingDeviceName: '',
@@ -214,19 +216,27 @@ export default {
         (t: { name: string; type: string }) => `${t.type}:${t.name}`,
       )
     },
-    /** True once the checked set differs from what is actually casting —
-     * i.e. there is something for the apply button to do. Covers removals
-     * as well as additions, which is the whole point of applying as one
-     * step (see playbackStore.applyTargets()). */
     /** Whether the checked set has been touched since it was last seeded
-     * from reality. Distinct from hasPendingChanges(): after applying,
-     * both go false; while an outside change lands mid-edit, only this one
-     * stays true and protects the in-progress selection. */
+     * from — or marked applied against — reality. Two jobs: it protects an
+     * in-progress selection from being re-seeded out from under the user
+     * by an outside change (see the activeKeys watcher), and it is the
+     * local half of hasPendingChanges() below. */
     userHasEdited(): boolean {
       if (this.appliedKeys.size !== this.selectedKeys.size) return true
       return [...this.selectedKeys].some((key) => !this.appliedKeys.has(key))
     },
     hasPendingChanges(): boolean {
+      // Both halves, and the first one carries most of the weight: the
+      // second compares against the live targets, which arrive over SSE
+      // with no ordering guarantee against the calls that just returned —
+      // on its own it makes the apply button flash straight back after a
+      // successful apply, until the status catches up. userHasEdited is
+      // settled locally the moment the apply lands, so it closes that
+      // window. The live comparison still earns its place for the case it
+      // was written for: an edit that another client happens to make first
+      // (same device ticked here and cast there) is no longer anything for
+      // this button to do.
+      if (!this.userHasEdited) return false
       const active = new Set(this.activeKeys)
       if (active.size !== this.selectedKeys.size) return true
       return [...this.selectedKeys].some((key) => !active.has(key))
@@ -292,7 +302,20 @@ export default {
         // an already-running session castTo() would replace the targets
         // rather than reconcile them. See applyTargets()'s own docstring.
         await usePlaybackStore().applyTargets(targets)
-        this.syncFromActiveTargets()
+        // Deliberately not syncFromActiveTargets(): activeTargets comes off
+        // the SSE stream, which has no ordering guarantee against the HTTP
+        // calls that just returned — re-seeding from it here can read a
+        // status that still lists the device this very call removed, and
+        // visibly re-tick its checkbox until the next tick corrects it.
+        // Marking the applied set instead leaves the checkboxes where the
+        // user put them and hands the re-seed back to the activeKeys
+        // watcher, which runs when reality actually lands.
+        //
+        // Skipped while a takeover is pending: applyTargets() stopped
+        // short and is waiting on the dialog, so this selection is still
+        // unapplied — claiming otherwise would drop the apply button out
+        // from under a user who then cancels the dialog.
+        if (!this.connectStore.pendingTakeover) this.appliedKeys = new Set(this.selectedKeys)
       } catch {
         // A device-in-use conflict already opened the takeover dialog (see
         // castTo()/withTakeoverHandling()); any other failure already set
@@ -302,8 +325,27 @@ export default {
         this.connecting = false
       }
     },
+    /** Claim a device another session is holding, *in addition to*
+     * whatever is already playing. Not castTo(), which replaces the whole
+     * target set: since a claimed row's checkbox is inert
+     * (DeviceListItem.vue's onToggle()), this button is the only way to
+     * pick such a device at all, and going through castTo() made that the
+     * only way to lose every other speaker at the same time. */
     async takeOver(entry: DeviceEntry) {
-      await usePlaybackStore().castTo([{ name: entry.device.name, type: entry.type }], true)
+      const target = { name: entry.device.name, type: entry.type }
+      const key = `${entry.type}:${entry.device.name}`
+      try {
+        await usePlaybackStore().applyTargets([...this.connectStore.activeTargets, target], true)
+        // The row reads its tick from the staged selection, not from the
+        // live targets, so a takeover that bypassed the checkbox has to
+        // put it there itself — on both sets, since this is applied, not
+        // an edit waiting for the apply button.
+        this.selectedKeys = new Set(this.selectedKeys).add(key)
+        this.appliedKeys = new Set(this.appliedKeys).add(key)
+      } catch {
+        // Already recorded on connectStore.errors and rendered by the
+        // v-alert above — same reasoning as connectSelected()'s catch.
+      }
     },
     async stopAll() {
       await this.connectStore.stopAll()

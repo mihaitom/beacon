@@ -185,10 +185,22 @@ export const useConnectStore = defineStore('connect', {
       this.errors.detail = null
     },
 
-    async withTakeoverHandling(action: (force: boolean) => Promise<void>): Promise<void> {
+    /** Runs `action`, turning a device-in-use conflict into a pending
+     * takeover instead of an exception.
+     *
+     * Returns true when the action actually went through, false when it hit
+     * a conflict and `pendingTakeover` is now waiting on the user. That
+     * return value matters: a conflict resolves *later*, if at all, so a
+     * caller that treats a false here as success carries on against a
+     * target set that was never reached — which is exactly how switching
+     * to a busy device used to stop the device you were already playing
+     * on (see playbackStore.applyTargets()). Anything that isn't a
+     * conflict is still recorded and rethrown. */
+    async withTakeoverHandling(action: (force: boolean) => Promise<void>): Promise<boolean> {
       try {
         await action(false)
         this.clearError()
+        return true
       } catch (error) {
         if (error instanceof ConnectApiError && isDeviceInUseError(error.body)) {
           this.pendingTakeover = {
@@ -196,11 +208,21 @@ export const useConnectStore = defineStore('connect', {
             owner: error.body.owner,
             retry: () => action(true),
           }
-          return
+          return false
         }
         this.setError(error)
         throw error
       }
+    },
+
+    /** Swaps in what "Take over" actually retries, for a caller whose
+     * conflict came out of one step of a larger, multi-call change.
+     * applyTargets() is the only such caller: replaying just the one join
+     * that conflicted would leave the rest of its desired set unapplied,
+     * so it re-runs the whole apply forced instead. A no-op when nothing
+     * is pending — the conflict already resolved itself. */
+    setTakeoverRetry(retry: () => Promise<void>): void {
+      if (this.pendingTakeover) this.pendingTakeover.retry = retry
     },
 
     async confirmTakeover(): Promise<void> {
@@ -260,16 +282,55 @@ export const useConnectStore = defineStore('connect', {
       }
     },
 
-    async joinDevice(target: ConnectDeviceRef): Promise<void> {
-      await this.withTakeoverHandling((force) => join(target, force))
+    /** Adds one device to the running stream. Returns whether it actually
+     * joined — see withTakeoverHandling() for why the caller has to care.
+     *
+     * `force` skips the conflict handling entirely rather than routing
+     * through it: the caller has already decided to take the device over
+     * (the phone remote always has — it has no confirm dialog of its own,
+     * see services/remoteControl/commands.ts), so there is no conflict
+     * left to detect and a forced join that fails is a real failure. */
+    async joinDevice(target: ConnectDeviceRef, force = false): Promise<boolean> {
+      if (force) {
+        try {
+          await join(target, true)
+          this.clearError()
+          return true
+        } catch (error) {
+          this.setError(error)
+          throw error
+        }
+      }
+      return this.withTakeoverHandling((f) => join(target, f))
     },
 
-    async claimDevices(targets: ConnectDeviceRef[]): Promise<void> {
-      await this.withTakeoverHandling((force) => claim(targets, force))
+    async claimDevices(targets: ConnectDeviceRef[], force = false): Promise<boolean> {
+      if (force) {
+        try {
+          await claim(targets, true)
+          this.clearError()
+          return true
+        } catch (error) {
+          this.setError(error)
+          throw error
+        }
+      }
+      return this.withTakeoverHandling((f) => claim(targets, f))
     },
 
+    /** Stops one device without touching the others. Records the failure
+     * before rethrowing, like every other device action here: a stop that
+     * doesn't take is not cosmetic — the backend releases the claim
+     * regardless (see routes/devices.py), so silence here leaves the user
+     * with a speaker still playing and nothing saying so. */
     async stopDevice(deviceType: DeviceType, name: string): Promise<void> {
-      await deviceStop(deviceType, name)
+      try {
+        await deviceStop(deviceType, name)
+        this.clearError()
+      } catch (error) {
+        this.setError(error)
+        throw error
+      }
     },
 
     async stopAll(): Promise<void> {

@@ -135,7 +135,6 @@ export default {
     volume: 'Volume',
     autoplay: 'Autoplay',
     liveRadio: 'In diretta · {time}',
-    radioBuffering: 'Buffering in corso…',
   },
   shortcuts: {
     title: 'Scorciatoie da tastiera',
@@ -374,6 +373,8 @@ export default {
   playlists: {
     reorderFailed: 'Impossibile salvare il nuovo ordine',
     title: 'Playlist',
+    playlist1: 'playlist',
+    playlistsN: 'playlist',
     newPlaylist: 'Nuova',
     createTitle: 'Nuova playlist',
     noPlaylistsYet: 'Nessuna playlist ancora.',
@@ -391,6 +392,8 @@ export default {
   },
   radio: {
     title: 'Radio',
+    station1: 'stazione',
+    stationsN: 'stazioni',
     addStation: 'Aggiungi stazione',
     discoverStations: 'Scopri stazioni',
     discoverTitle: 'Scopri stazioni radio',
@@ -418,6 +421,7 @@ export default {
     streamUrl: 'URL dello stream',
     homePageUrl: 'URL della homepage',
     noStationsYet: 'Nessuna stazione radio salvata ancora.',
+    noStationsForQuery: 'Nessuna stazione per "{query}".',
   },
   favorites: {
     title: 'Preferiti',

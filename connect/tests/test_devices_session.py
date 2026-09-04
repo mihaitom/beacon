@@ -98,10 +98,19 @@ def test_device_stop_dlna_branch(client, default_session):
 # ── Sonos branch — coordinator/follower ungrouping, restart on the rest ─────
 
 
-def _fake_soco_device(name: str, is_coordinator: bool = True) -> MagicMock:
+def _fake_soco_device(
+    name: str, is_coordinator: bool = True, coordinator: MagicMock | None = None
+) -> MagicMock:
+    """A stand-in SoCo device. `coordinator` is the device this one follows;
+    left out, it coordinates its own group of one, which is what a standalone
+    Sonos actually reports — and what /device-stop now uses to tell a real
+    follower (silenced when its coordinator stops, so it needs re-dispatching)
+    apart from an unrelated speaker playing its own stream."""
     device = MagicMock()
     device.player_name = name
+    device.uid = f"uid:{name}"
     device.is_coordinator = is_coordinator
+    device.group.coordinator = coordinator if coordinator is not None else device
     return device
 
 
@@ -159,7 +168,9 @@ def test_device_stop_sonos_coordinator_ungroups_followers_and_restarts_the_strea
     coordinator) and the stream restarts on them, instead of the whole
     group falling silent along with the one device the user deselected."""
     raw_coordinator = _fake_soco_device("Küche", is_coordinator=True)
-    raw_follower = _fake_soco_device("Wohnzimmer", is_coordinator=False)
+    raw_follower = _fake_soco_device(
+        "Wohnzimmer", is_coordinator=False, coordinator=raw_coordinator
+    )
     coordinator_delivery = SonosDelivery("Küche")
     follower_delivery = SonosDelivery("Wohnzimmer")
     follower_delivery.play = AsyncMock()
@@ -182,6 +193,93 @@ def test_device_stop_sonos_coordinator_ungroups_followers_and_restarts_the_strea
     assert default_session.state.is_streaming is True
 
 
+def test_device_stop_leaves_an_unrelated_standalone_sonos_alone(client, default_session):
+    """The device-switching regression: a Sonos playing its own stream is
+    its own coordinator, so `is_coordinator and remaining` was true for it
+    too — every other active Sonos got unjoined and re-dispatched whenever
+    one was stopped, an audible restart on a speaker the user never
+    touched. Only speakers actually grouped behind the stopped coordinator
+    lose their audio with it, and only those may be restarted."""
+    raw_stopped = _fake_soco_device("Küche", is_coordinator=True)
+    raw_other = _fake_soco_device("Wohnzimmer", is_coordinator=True)  # own group of one
+    stopped_delivery = SonosDelivery("Küche")
+    other_delivery = SonosDelivery("Wohnzimmer")
+    other_delivery.play = AsyncMock()
+    default_session.state.is_streaming = True
+    default_session.state.active_delivery = DeliveryManager.from_deliveries(
+        [stopped_delivery, other_delivery]
+    )
+
+    with (
+        patch("soco.discover", return_value=[raw_stopped, raw_other]),
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        r = client.post("/device-stop?device_type=sonos&name=Küche")
+
+    assert r.json()["status"] == "stopped"
+    raw_stopped.stop.assert_called_once()
+    raw_other.unjoin.assert_not_called()
+    other_delivery.play.assert_not_awaited()
+    assert default_session.state.active_delivery is other_delivery
+
+
+def test_device_stop_resolves_sonos_through_the_delivery_cache(client, default_session):
+    """A bare soco.discover() here is a network-wide SSDP sweep that blocks
+    a worker thread for the whole discovery timeout while this handler holds
+    play_lock — every /play, /pause and /seek on the session waits it out,
+    right in the middle of a device switch. delivery/sonos.py's own cache
+    answers the same question with one unicast request."""
+    from delivery import sonos as sonos_module
+
+    cached = _fake_soco_device("Küche", is_coordinator=True)
+    cached.get_speaker_info.return_value = {"zone_name": "Küche"}
+    sonos_module._device_cache["küche"] = cached
+
+    default_session.state.is_streaming = True
+    default_session.state.active_delivery = SonosDelivery("Küche")
+
+    with patch("soco.discover") as discover:
+        r = client.post("/device-stop?device_type=sonos&name=Küche")
+
+    assert r.json()["status"] == "stopped"
+    discover.assert_not_called()
+    cached.stop.assert_called_once()
+
+
+def test_device_stop_drops_the_device_even_when_stopping_it_failed(client, default_session):
+    """The claim is released either way (see the handler), so leaving the
+    device in active_delivery makes /status report a target this session no
+    longer owns — the picker re-ticks its checkbox from that and the two
+    disagree about who has the speaker."""
+    from core.claims import claims
+
+    remaining_sonos = SonosDelivery("Küche")
+    default_session.state.is_streaming = True
+    default_session.state.active_delivery = DeliveryManager.from_deliveries(
+        [ChromecastDelivery("TV"), remaining_sonos]
+    )
+
+    with patch.object(ChromecastDelivery, "stop", new=AsyncMock(side_effect=RuntimeError("boom"))):
+        r = client.post("/device-stop?device_type=chromecast&name=TV")
+
+    assert r.json()["error"] == "boom"
+    assert claims.owner_of("chromecast", "TV") is None
+    assert default_session.state.active_delivery is remaining_sonos
+    assert default_session.state.is_streaming is True
+
+
+def test_device_stop_clears_state_when_the_last_device_failed_to_stop(client, default_session):
+    default_session.state.is_streaming = True
+    default_session.state.active_delivery = ChromecastDelivery("TV")
+
+    with patch.object(ChromecastDelivery, "stop", new=AsyncMock(side_effect=RuntimeError("boom"))):
+        r = client.post("/device-stop?device_type=chromecast&name=TV")
+
+    assert r.json()["error"] == "boom"
+    assert default_session.state.active_delivery is None
+    assert default_session.state.is_streaming is False
+
+
 def test_device_stop_hands_position_resync_over_to_the_remaining_device(client, default_session):
     """The other half of the prod 2026-08-29 13:09 bug: the running resync
     task polls whichever position-capable device came first, and retires
@@ -189,7 +287,9 @@ def test_device_stop_hands_position_resync_over_to_the_remaining_device(client, 
     replacement started here, the device still playing would go without
     position resync for the rest of the track."""
     raw_coordinator = _fake_soco_device("Arbeitszimmer", is_coordinator=True)
-    raw_follower = _fake_soco_device("Wohnzimmer", is_coordinator=False)
+    raw_follower = _fake_soco_device(
+        "Wohnzimmer", is_coordinator=False, coordinator=raw_coordinator
+    )
     coordinator_delivery = SonosDelivery("Arbeitszimmer")
     follower_delivery = SonosDelivery("Wohnzimmer")
     follower_delivery.play = AsyncMock()
@@ -216,7 +316,9 @@ def test_device_stop_does_not_start_a_second_resync_for_an_untouched_device(
     *not* polling leaves that task alive and still valid, so starting
     another one here would only double the device round trips."""
     raw_coordinator = _fake_soco_device("Arbeitszimmer", is_coordinator=True)
-    raw_follower = _fake_soco_device("Wohnzimmer", is_coordinator=False)
+    raw_follower = _fake_soco_device(
+        "Wohnzimmer", is_coordinator=False, coordinator=raw_coordinator
+    )
     coordinator_delivery = SonosDelivery("Arbeitszimmer")
     follower_delivery = SonosDelivery("Wohnzimmer")
     coordinator_delivery.play = AsyncMock()
@@ -237,7 +339,9 @@ def test_device_stop_does_not_start_a_second_resync_for_an_untouched_device(
 
 def test_device_stop_sonos_survives_a_follower_that_wont_ungroup(client, default_session, caplog):
     raw_coordinator = _fake_soco_device("Küche", is_coordinator=True)
-    raw_follower = _fake_soco_device("Wohnzimmer", is_coordinator=False)
+    raw_follower = _fake_soco_device(
+        "Wohnzimmer", is_coordinator=False, coordinator=raw_coordinator
+    )
     raw_follower.unjoin.side_effect = RuntimeError("network hiccup")
     coordinator_delivery = SonosDelivery("Küche")
     follower_delivery = SonosDelivery("Wohnzimmer")
@@ -265,7 +369,9 @@ def test_device_stop_sonos_restart_uses_the_radio_url_when_a_radio_station_is_ac
     client, default_session
 ):
     raw_coordinator = _fake_soco_device("Küche", is_coordinator=True)
-    raw_follower = _fake_soco_device("Wohnzimmer", is_coordinator=False)
+    raw_follower = _fake_soco_device(
+        "Wohnzimmer", is_coordinator=False, coordinator=raw_coordinator
+    )
     coordinator_delivery = SonosDelivery("Küche")
     follower_delivery = SonosDelivery("Wohnzimmer")
     follower_delivery.play = AsyncMock()
@@ -294,7 +400,9 @@ def test_device_stop_sonos_restart_uses_the_radio_url_when_a_radio_station_is_ac
 
 def test_device_stop_sonos_restart_failure_is_logged_not_raised(client, default_session, caplog):
     raw_coordinator = _fake_soco_device("Küche", is_coordinator=True)
-    raw_follower = _fake_soco_device("Wohnzimmer", is_coordinator=False)
+    raw_follower = _fake_soco_device(
+        "Wohnzimmer", is_coordinator=False, coordinator=raw_coordinator
+    )
     coordinator_delivery = SonosDelivery("Küche")
     follower_delivery = SonosDelivery("Wohnzimmer")
     follower_delivery.play = AsyncMock(side_effect=RuntimeError("device busy"))

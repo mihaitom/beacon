@@ -105,7 +105,7 @@ describe('cast interruption', () => {
   it('drops a pending interruption when playback is dispatched somewhere else', async () => {
     const playback = usePlaybackStore()
     playback.castInterrupted = true
-    vi.spyOn(useConnectStore(), 'claimDevices').mockResolvedValue()
+    vi.spyOn(useConnectStore(), 'claimDevices').mockResolvedValue(true)
 
     await playback.castTo([])
 

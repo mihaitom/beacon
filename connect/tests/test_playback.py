@@ -215,6 +215,95 @@ def test_play_does_not_touch_the_radio_metadata_watch_when_nothing_was_playing(
     stop.assert_not_called()
 
 
+def test_play_with_paused_claims_the_target_without_dispatching(client, default_session):
+    """Picking a speaker while paused. None of these cast protocols has a
+    "load without playing", so this was a /play followed straight by a
+    /pause — a burst of sound on the speaker the listener just picked, and
+    a GET /stream connection the following /resume throws away anyway."""
+    from core.claims import claims
+
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Test Song", artist="Test Artist", duration=180)
+
+    with (
+        patch.object(default_session.media, "get_track", return_value=track),
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play,
+    ):
+        r = client.post(
+            "/play",
+            json={
+                "song_ids": ["1"],
+                "start_position": 42.0,
+                "paused": True,
+                "target_name": "TV",
+                "target_type": "chromecast",
+            },
+        )
+
+    assert r.json()["status"] == "paused"
+    play.assert_not_awaited()
+    st = default_session.state
+    # Everything an ordinary paused session has: the track loaded, the
+    # speaker claimed and reported as a target, the clock frozen exactly
+    # where playback is meant to pick up.
+    assert st.current_track is not None
+    assert st.is_streaming is True
+    assert st.clock.is_paused is True
+    assert st.clock.resume_offset == 42.0
+    assert compute_position(default_session) == 42.0
+    assert claims.owner_of("chromecast", "TV") == default_session.session_id
+    assert build_status_dict(default_session)["targets"] == [
+        {"name": "TV", "type": "chromecast", "volume": None, "muted": None}
+    ]
+
+
+def test_resume_dispatches_a_target_claimed_by_a_paused_play(client, default_session):
+    """The other half: /resume replays active_delivery from scratch, which
+    is what actually starts the speaker reserved above."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Test Song", artist="Test Artist", duration=180)
+
+    with (
+        patch.object(default_session.media, "get_track", return_value=track),
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play,
+    ):
+        client.post(
+            "/play",
+            json={
+                "song_ids": ["1"],
+                "start_position": 42.0,
+                "paused": True,
+                "target_name": "TV",
+                "target_type": "chromecast",
+            },
+        )
+        play.assert_not_awaited()
+        client.post("/resume")
+
+    play.assert_awaited_once()
+    assert default_session.state.clock.is_paused is False
+    # From where it was reserved, not from the top of the track.
+    assert default_session.state.clock.resume_offset == 42.0
+
+
+def test_play_without_paused_still_dispatches(client, default_session):
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Test Song", artist="Test Artist", duration=180)
+
+    with (
+        patch.object(default_session.media, "get_track", return_value=track),
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play,
+    ):
+        r = client.post(
+            "/play",
+            json={"song_ids": ["1"], "target_name": "TV", "target_type": "chromecast"},
+        )
+
+    assert r.json()["status"] == "playing"
+    play.assert_awaited_once()
+    assert default_session.state.clock.is_paused is False
+
+
 def test_play_with_start_position_seeds_resume_offset_and_elapsed(client, default_session):
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
 

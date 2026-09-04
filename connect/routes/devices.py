@@ -216,6 +216,50 @@ async def health(session: SessionState = Depends(get_session)):
     }
 
 
+async def _group_followers_of(
+    coordinator_dev, remaining: list[BaseDelivery]
+) -> list[tuple[SonosDelivery, object]]:
+    """The Sonos deliveries in `remaining` that are actually grouped behind
+    `coordinator_dev`, paired with their resolved SoCo device.
+
+    Stopping a Sonos coordinator silences everything grouped behind it, so
+    those speakers have to be unjoined and re-dispatched first (see
+    /device-stop). Every other Sonos has its own independent stream and must
+    be left alone: a speaker not in this group is its own coordinator, and
+    restarting it is an audible gap on a device the user never touched.
+
+    A device whose group can't be read is counted as a follower — that is
+    the conservative half of the trade: a redundant restart is a stutter, a
+    missed one is a speaker that goes quiet and stays quiet.
+    """
+
+    def _follows(rem_dev) -> bool:
+        try:
+            group = rem_dev.group
+            if group is None or group.coordinator is None:
+                return False
+            return group.coordinator.uid == coordinator_dev.uid
+        except Exception as ex:
+            logger.warning(
+                f"[device-stop] Could not read {getattr(rem_dev, 'player_name', '?')}'s group "
+                f"({ex}) — treating it as a follower"
+            )
+            return True
+
+    followers: list[tuple[SonosDelivery, object]] = []
+    for rem in remaining:
+        if not isinstance(rem, SonosDelivery):
+            continue
+        try:
+            rem_dev = await asyncio.to_thread(rem._get_device)
+        except Exception as ex:
+            logger.warning(f"[device-stop] Could not resolve follower {rem.target}: {ex}")
+            continue
+        if await asyncio.to_thread(_follows, rem_dev):
+            followers.append((rem, rem_dev))
+    return followers
+
+
 @router.post("/device-stop")
 async def stop_device(
     device_type: str,
@@ -273,36 +317,57 @@ async def stop_device(
         )
 
         need_restart = False
+        # Set instead of returned early on: a device that refused to stop
+        # must still be taken out of active_delivery below, since its claim
+        # is released either way — otherwise /status keeps reporting a
+        # target this session no longer owns, the picker re-ticks its
+        # checkbox from that, and the frontend and the claim registry
+        # disagree about who has the speaker. Reported at the end.
+        stop_error: str | None = None
         try:
             if device_type == "sonos":
-                import soco as _soco
+                # Resolved through the delivery's own cache
+                # (delivery/sonos.py's _cached_device()) rather than a bare
+                # soco.discover(): a full SSDP sweep here blocks a worker
+                # thread for the whole discovery timeout while this handler
+                # holds play_lock, so every /play, /pause and /seek on this
+                # session waits it out — right in the middle of a device
+                # switch, which is exactly when the frontend fires them.
+                # See SonosDelivery._get_device()'s own docstring for the
+                # multicast cost this cache exists to avoid.
+                stopped = matched if isinstance(matched, SonosDelivery) else SonosDelivery(name)
+                try:
+                    target_dev = await asyncio.to_thread(stopped._get_device)
+                except Exception as ex:
+                    target_dev = None
+                    logger.warning(f"[device-stop] Sonos '{name}' not found on network: {ex}")
 
-                all_soco = await asyncio.to_thread(lambda: list(_soco.discover() or []))
-                target_dev = next(
-                    (d for d in all_soco if d.player_name.lower() == name.lower()), None
-                )
                 if target_dev:
                     is_coord = await asyncio.to_thread(lambda: target_dev.is_coordinator)
-                    logger.debug(f"[device-stop] {name} ist_koordinator={is_coord}")
+                    logger.debug(f"[device-stop] {name} is_coordinator={is_coord}")
 
-                    if is_coord and remaining:
-                        logger.info(f"[device-stop] Ungrouping {len(remaining)} follower(s) …")
-                        for rem in remaining:
-                            if isinstance(rem, SonosDelivery):
-                                rem_dev = next(
-                                    (
-                                        d
-                                        for d in all_soco
-                                        if d.player_name.lower() == rem.target.lower()
-                                    ),
-                                    None,
-                                )
-                                if rem_dev:
-                                    try:
-                                        await asyncio.to_thread(rem_dev.unjoin)
-                                        logger.debug(f"[device-stop] {rem.target} ungrouped")
-                                    except Exception as ex:
-                                        logger.warning(f"[device-stop] unjoin {rem.target}: {ex}")
+                    # Only the devices actually following *this* coordinator
+                    # — a standalone Sonos is its own coordinator, so
+                    # `is_coord and remaining` alone was true whenever any
+                    # second Sonos was still active, and each of those got
+                    # unjoined and re-dispatched below even though it was
+                    # playing its own independent stream. That is an audible
+                    # restart on a speaker the user never touched, and it is
+                    # what made switching between two Sonos speakers stutter.
+                    followers = (
+                        await _group_followers_of(target_dev, remaining)
+                        if is_coord and remaining
+                        else []
+                    )
+
+                    if followers:
+                        logger.info(f"[device-stop] Ungrouping {len(followers)} follower(s) …")
+                        for rem, rem_dev in followers:
+                            try:
+                                await asyncio.to_thread(rem_dev.unjoin)
+                                logger.debug(f"[device-stop] {rem.target} ungrouped")
+                            except Exception as ex:
+                                logger.warning(f"[device-stop] unjoin {rem.target}: {ex}")
                         await asyncio.sleep(0.3)
                         need_restart = True
                     elif not is_coord:
@@ -311,8 +376,6 @@ async def stop_device(
 
                     await asyncio.to_thread(target_dev.stop)
                     logger.info(f"[device-stop] {name} stopped")
-                else:
-                    logger.warning(f"[device-stop] Sonos '{name}' not found on network")
             elif device_type == "chromecast":
                 await ChromecastDelivery(name).stop()
             elif device_type == "dlna":
@@ -322,16 +385,14 @@ async def stop_device(
 
         except Exception as e:
             logger.exception(f"[device-stop] {name}")
-            # The device's own stop() call failing (offline, network timeout,
-            # a discovery error) shouldn't leave it locked to this session
-            # forever — same reasoning as /play's/_join's own claim release
-            # on a failed dispatch (see routes/playback.py's
-            # _release_claims()), just for the opposite direction: without
-            # this, /discover kept reporting device_in_use for a device that
-            # was never confirmed to still be playing anything.
-            await claims.release(device_type, name, session.session_id)
-            return {"error": str(e)}
+            stop_error = str(e)
 
+        # Released whether or not the stop itself worked — same reasoning as
+        # /play's and /join's own claim release on a failed dispatch (see
+        # routes/playback.py's _release_claims()), just for the opposite
+        # direction: without this, /discover kept reporting device_in_use
+        # for a device that was never confirmed to still be playing
+        # anything.
         await claims.release(device_type, name, session.session_id)
 
         st = session.state
@@ -427,4 +488,6 @@ async def stop_device(
                     session.radio_position_tracker = None
 
     await session.event_bus.broadcast(build_status_dict(session))
+    if stop_error:
+        return {"error": stop_error}
     return {"status": "stopped", "device": name}

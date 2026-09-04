@@ -101,6 +101,84 @@ def test_join_chromecast_promotes_single_active_to_manager(client, default_sessi
     assert {type(d) for d in mgr.deliveries} == {AirPlayDelivery, ChromecastDelivery}
 
 
+def test_join_reserves_instead_of_dispatching_while_paused(client, default_session, _streaming):
+    """None of these cast protocols has a "load without playing", so a device
+    dispatched into a paused session starts making sound — the user's pause
+    undone by adding a speaker, or by switching to one. Everything that
+    starts playback again re-dispatches the whole target set anyway
+    (/resume, /seek, /play), so the device only has to be *in* it by then."""
+    from core.claims import claims
+
+    default_session.state.clock.pause(42.0)
+
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
+        r = client.post("/join", json={"target_type": "chromecast", "target_name": "TV"})
+
+    assert r.json()["status"] == "reserved"
+    play.assert_not_awaited()
+    # Reserved means reserved: claimed, and part of the target set every
+    # client's /status reports and the next /resume dispatches to.
+    assert claims.owner_of("chromecast", "TV") == default_session.session_id
+    assert isinstance(default_session.state.active_delivery, ChromecastDelivery)
+    assert default_session.state.active_delivery.target == "TV"
+
+
+def test_resume_dispatches_a_device_reserved_while_paused(client, default_session, _streaming):
+    """The other half of the reservation: /resume replays active_delivery
+    from scratch, which is what actually gets the reserved device playing.
+    Without that, reserving would just be a device that never starts."""
+    from media import SubsonicClient
+
+    default_session.media = SubsonicClient("http://nav")
+    default_session.state.clock.pause(42.0)
+
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
+        client.post("/join", json={"target_type": "chromecast", "target_name": "TV"})
+        play.assert_not_awaited()
+        r = client.post("/resume")
+
+    assert r.json() == {"paused": False}
+    play.assert_awaited_once()
+
+
+def test_join_while_paused_keeps_an_existing_target(client, default_session, _streaming):
+    existing = SonosDelivery("Kitchen")
+    default_session.state.active_delivery = existing
+    default_session.state.clock.pause(10.0)
+
+    r = client.post("/join", json={"target_type": "chromecast", "target_name": "TV"})
+
+    assert r.json()["status"] == "reserved"
+    active = default_session.state.active_delivery
+    assert isinstance(active, DeliveryManager)
+    assert [d.target for d in active.deliveries] == ["Kitchen", "TV"]
+
+
+def test_join_matches_an_existing_target_on_type_as_well_as_name(
+    client, default_session, _streaming
+):
+    """Two protocols can legitimately reach the same speaker under the same
+    name, which is exactly why every device key in the frontend is
+    `type:name`. Matching on the name alone silently dropped the second."""
+    default_session.state.active_delivery = SonosDelivery("Kitchen")
+    default_session.state.clock.pause(10.0)
+
+    client.post("/join", json={"target_type": "airplay", "target_name": "Kitchen"})
+
+    active = default_session.state.active_delivery
+    assert isinstance(active, DeliveryManager)
+    assert [type(d) for d in active.deliveries] == [SonosDelivery, AirPlayDelivery]
+
+
+def test_join_does_not_add_the_same_target_twice(client, default_session, _streaming):
+    default_session.state.active_delivery = ChromecastDelivery("TV")
+    default_session.state.clock.pause(10.0)
+
+    client.post("/join", json={"target_type": "chromecast", "target_name": "TV"})
+
+    assert isinstance(default_session.state.active_delivery, ChromecastDelivery)
+
+
 def test_join_sonos_joins_the_existing_groups_coordinator(client, default_session, _streaming):
     """The success path test_join_sonos_falls_back_to_individual_play_when_
     group_fails below doesn't reach — that one fails resolving the

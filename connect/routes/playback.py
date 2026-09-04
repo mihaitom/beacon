@@ -672,6 +672,22 @@ class PlayRequest(BaseModel):
     # Take over any target already claimed by another session instead of
     # refusing (Phase 2 — the user confirmed a takeover dialog).
     force: bool = False
+    # Load the track and claim the targets, but do not start playing: the
+    # listener is paused right now and picked a speaker, so the speaker
+    # should be theirs and silent until they press play.
+    #
+    # None of these cast protocols has a "load without playing", so the
+    # frontend used to /play and then immediately /pause — a burst of sound
+    # on the speaker the user just picked, plus a GET /stream connection
+    # and its FFmpeg run that the following /resume throws away, since
+    # /resume re-dispatches active_delivery from scratch anyway. Everything
+    # else this endpoint does (resolving the output format, the queue, the
+    # claims, active_delivery, the clock) happens exactly as it otherwise
+    # would, so /resume, /seek, /join and every client's /status see a
+    # perfectly ordinary paused session. Same reservation /join makes for
+    # the already-casting case, and the same trade: the device is only
+    # proven reachable once playback actually starts.
+    paused: bool = False
     # Strictly increasing per-session dispatch counter — see SessionState.
     # play_seq's comment. 0 (the default) opts out of the staleness check.
     seq: int = 0
@@ -842,6 +858,11 @@ async def play_tracks(
             await session.stop_radio_relay()
         st.radio_info = None
         st.clock.start(start_position)
+        if req.paused:
+            # Frozen exactly where it was told to start. start() above has
+            # just zeroed position_offset, so resume_offset comes out at
+            # start_position — which is what /resume dispatches from.
+            st.clock.pause(start_position)
         st.track_ended = False
         st.active_delivery = target
         # Captured right after the write above — see active_delivery_seq's
@@ -862,7 +883,7 @@ async def play_tracks(
         st.autoplay_enabled = req.autoplay_enabled
         st.autoplay_batch_size = req.autoplay_batch_size
 
-        if target:
+        if target and not req.paused:
             # internal=True: fetched directly by the cast device, not the browser —
             # see MediaClient.get_cover_art_url's docstring.
             album_art_url = session.media.get_cover_art_url(track.cover_art_id, internal=True)
@@ -918,6 +939,15 @@ async def play_tracks(
             logger.info(f"[play] No target — stream available at {url}")
             await session.event_bus.broadcast(build_status_dict(session))
             return {"status": "playing", "stream_url": url}
+
+        if req.paused:
+            # No dispatch happened, so there is nothing to calibrate against
+            # and nothing to resync with — both tasks below poll the device
+            # for a position it has no reason to have. /resume starts its
+            # own pair when it actually dispatches.
+            logger.info(f"[play] Paused — {target} holds the track without playing it")
+            await session.event_bus.broadcast(build_status_dict(session))
+            return {"status": "paused", "stream_url": url}
 
         asyncio.create_task(_apply_position_offset(session, target, st.clock.play_generation))
         asyncio.create_task(

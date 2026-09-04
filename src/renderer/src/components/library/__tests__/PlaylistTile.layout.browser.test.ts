@@ -1,4 +1,4 @@
-// Real-browser test for PlaylistRow.vue's cover play-overlay — run via
+// Real-browser test for PlaylistTile.vue's cover play-overlay — run via
 // `pnpm test:layout`. What's checked (Vuetify's own icon-button sizing
 // overridden via CSS, opacity-on-hover) is scoped CSS jsdom neither
 // applies nor lays out, so a jsdom version would pass however (or
@@ -14,7 +14,7 @@ import * as directives from 'vuetify/directives'
 import 'vuetify/styles'
 import '@mdi/font/css/materialdesignicons.css'
 import { i18n } from '@/i18n'
-import PlaylistRow from '../PlaylistRow.vue'
+import PlaylistTile from '../PlaylistTile.vue'
 import type { Playlist } from '@/types/library'
 
 const vuetify = createVuetify({ components, directives })
@@ -34,8 +34,8 @@ function makePlaylist(overrides: Partial<Playlist> = {}): Playlist {
   }
 }
 
-function mountRow() {
-  const wrapper = mount(PlaylistRow, {
+function mountTile() {
+  const wrapper = mount(PlaylistTile, {
     props: { playlist: makePlaylist() },
     attachTo: document.body,
     global: { plugins: [vuetify, i18n] },
@@ -44,7 +44,7 @@ function mountRow() {
   return wrapper
 }
 
-describe('PlaylistRow cover play-overlay layout', () => {
+describe('PlaylistTile cover play-overlay layout', () => {
   afterEach(() => {
     for (const wrapper of wrappers.splice(0)) wrapper.unmount()
     document.body.innerHTML = ''
@@ -52,10 +52,10 @@ describe('PlaylistRow cover play-overlay layout', () => {
 
   it('exactly fills the cover art, not a smaller circle floating in a corner of it', async () => {
     await page.viewport(1200, 800)
-    mountRow()
+    mountTile()
 
-    const cover = document.querySelector('.playlist-row__cover-wrap')!.getBoundingClientRect()
-    const overlay = document.querySelector('.playlist-row__play-overlay')!.getBoundingClientRect()
+    const cover = document.querySelector('.playlist-tile__cover-wrap')!.getBoundingClientRect()
+    const overlay = document.querySelector('.playlist-tile__play-overlay')!.getBoundingClientRect()
 
     expect(overlay.width).toBeCloseTo(cover.width, 0)
     expect(overlay.height).toBeCloseTo(cover.height, 0)
@@ -63,14 +63,14 @@ describe('PlaylistRow cover play-overlay layout', () => {
     expect(overlay.left).toBeCloseTo(cover.left, 0)
   })
 
-  it('is invisible until the row is hovered', async () => {
+  it('is invisible until the tile is hovered', async () => {
     await page.viewport(1200, 800)
-    mountRow()
+    mountTile()
 
-    const overlay = document.querySelector('.playlist-row__play-overlay') as HTMLElement
+    const overlay = document.querySelector('.playlist-tile__play-overlay') as HTMLElement
     expect(getComputedStyle(overlay).opacity).toBe('0')
 
-    await userEvent.hover(document.querySelector('.playlist-row')!)
+    await userEvent.hover(document.querySelector('.playlist-tile')!)
     // The 0.15s opacity transition is a running animation while mid-flight
     // — read after it settles rather than immediately on hover() resolving.
     await new Promise((resolve) => setTimeout(resolve, 250))

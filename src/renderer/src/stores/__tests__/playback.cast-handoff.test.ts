@@ -22,8 +22,13 @@ let engine: { play: ReturnType<typeof vi.fn>; pause: ReturnType<typeof vi.fn> }
 
 /** castTo() is the handoff from this device's own speakers to a cast
  * target: it stops the local element, sends the queue and position over,
- * and has to keep a paused session paused (connect's /play always starts
- * the device playing — there is no "load paused" for these protocols). */
+ * and has to keep a paused session paused. None of these cast protocols
+ * has a "load without playing" of its own, so for a song that is a
+ * reservation the backend makes on its behalf (`paused: true` — the track
+ * is loaded and the speaker claimed, and the next /resume starts it); for
+ * radio it is still a dispatch followed by a real /pause, since whether a
+ * station plays on a given device is only found out by trying and the
+ * automatic fall back to re-encoding it is part of that attempt. */
 describe('castTo', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -57,6 +62,7 @@ describe('castTo', () => {
         fullQueue: ['a', 'b'],
         queueIndex: 1,
         force: false,
+        paused: false,
       }),
     )
     expect(playback.isPlaying).toBe(true)
@@ -72,16 +78,24 @@ describe('castTo', () => {
     expect(engine.pause).toHaveBeenCalledOnce()
   })
 
-  it('pauses the device right back when the handoff came from a paused player', async () => {
-    // Without this, picking a speaker while paused silently resumed
-    // playback the user had deliberately stopped.
+  it('reserves the speaker instead of playing when the player was paused', async () => {
+    // Without keeping it paused at all, picking a speaker silently resumed
+    // playback the user had deliberately stopped. Doing it by dispatching
+    // and then pausing, which is how that was fixed first, is a moment of
+    // the song out loud on the speaker just picked, plus a stream
+    // connection the following /resume throws away.
     const playback = usePlaybackStore()
     playback.setQueue([makeSong('a')], 0)
     playback.isPlaying = false
+    vi.mocked(connectPlayback.play).mockResolvedValue({ status: 'paused' })
 
     await playback.castTo([kitchen])
 
-    expect(connectPlayback.pause).toHaveBeenCalledOnce()
+    expect(connectPlayback.play).toHaveBeenCalledWith(
+      'a',
+      expect.objectContaining({ paused: true }),
+    )
+    expect(connectPlayback.pause).not.toHaveBeenCalled()
     expect(playback.isPlaying).toBe(false)
     // Nothing was playing here, so there was nothing to silence either.
     expect(engine.pause).not.toHaveBeenCalled()
@@ -179,7 +193,7 @@ describe('castTo', () => {
 
   it('just claims the devices when there is nothing loaded to hand over', async () => {
     const playback = usePlaybackStore()
-    const claim = vi.spyOn(useConnectStore(), 'claimDevices').mockResolvedValue(undefined)
+    const claim = vi.spyOn(useConnectStore(), 'claimDevices').mockResolvedValue(true)
 
     await playback.castTo([kitchen])
 

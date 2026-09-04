@@ -1,10 +1,20 @@
 <template>
   <v-container fluid>
     <detail-header fallback-icon="mdi-playlist-music" :title="$t('playlists.title')">
+      <template v-if="filteredPlaylists.length" #meta>
+        {{ filteredPlaylists.length }}
+        {{
+          filteredPlaylists.length === 1 ? $t('playlists.playlist1') : $t('playlists.playlistsN')
+        }}
+      </template>
       <template v-if="authStore.capabilities.emptyPlaylistCreation" #actions>
-        <v-btn prepend-icon="mdi-plus" variant="tonal" @click="createDialog = true">{{
-          $t('playlists.newPlaylist')
-        }}</v-btn>
+        <v-btn
+          prepend-icon="mdi-plus"
+          color="primary"
+          rounded="pill"
+          @click="createDialog = true"
+          >{{ $t('playlists.newPlaylist') }}</v-btn
+        >
       </template>
     </detail-header>
 
@@ -27,8 +37,8 @@
 
     <template v-if="personalPlaylists.length">
       <h2 class="section-title mb-2">{{ $t('playlists.personal') }}</h2>
-      <div class="playlist-list mb-6">
-        <playlist-row
+      <div class="playlists-view__grid mb-6">
+        <playlist-tile
           v-for="playlist in personalPlaylists"
           :key="playlist.id"
           :playlist="playlist"
@@ -39,8 +49,8 @@
 
     <template v-if="globalPlaylists.length">
       <h2 class="section-title mb-2">{{ $t('playlists.global') }}</h2>
-      <div class="playlist-list">
-        <playlist-row
+      <div class="playlists-view__grid">
+        <playlist-tile
           v-for="playlist in globalPlaylists"
           :key="playlist.id"
           :playlist="playlist"
@@ -90,7 +100,7 @@ import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
-import PlaylistRow from '@/components/library/PlaylistRow.vue'
+import PlaylistTile from '@/components/library/PlaylistTile.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
 import type { Playlist } from '@/types/library'
 
@@ -98,7 +108,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'PlaylistsView',
-  components: { DetailHeader, PlaylistRow, StickyFilter },
+  components: { DetailHeader, PlaylistTile, StickyFilter },
   data() {
     return {
       createDialog: false,
@@ -166,9 +176,12 @@ export default {
 </script>
 
 <style scoped>
-.playlist-list {
+/* Same wrapping-tile-grid rhythm as RadioView.vue's own .radio-view__grid
+ * — one shared "grid of bordered tiles" look for both, in place of the
+ * plain single-column list this used to be. */
+.playlists-view__grid {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-wrap: wrap;
+  gap: 14px;
 }
 </style>

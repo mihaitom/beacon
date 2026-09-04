@@ -134,6 +134,25 @@ export default {
     connectStore() {
       return useConnectStore()
     },
+    activeKeys(): string[] {
+      return this.connectStore.activeTargets.map(
+        (t: { name: string; type: string }) => `${t.type}:${t.name}`,
+      )
+    },
+    /** Whether what's ticked still matches what was last seeded from
+     * reality. Drives two things: "Done" on an untouched sheet just closes
+     * it (validated against the LAN remote's devices.js — "Wenn keine
+     * Änderung ist, dann soll done nur das overlay schließen."), and the
+     * watcher below only re-seeds while this is true, so a live change
+     * never discards a selection someone is in the middle of making. Same
+     * split ConnectDevicePicker.vue makes between userHasEdited and
+     * hasPendingChanges. */
+    selectionUnchanged(): boolean {
+      return (
+        this.selectedKeys.size === this.initialKeys.size &&
+        [...this.selectedKeys].every((key) => this.initialKeys.has(key))
+      )
+    },
     deviceGroups(): DeviceGroup[] {
       const d = this.connectStore.devices
       const byType: Record<DeviceType, DiscoveredDevice[]> = {
@@ -155,17 +174,37 @@ export default {
     },
   },
   watch: {
-    modelValue(open: boolean) {
-      if (!open) return
-      void this.connectStore.refreshDevices()
-      const activeKeys = this.connectStore.activeTargets.map((t) => `${t.type}:${t.name}`)
-      this.selectedKeys = new Set(activeKeys)
-      this.initialKeys = new Set(activeKeys)
+    // immediate, so a sheet that is already open when it mounts seeds too
+    // — the sheet is normally mounted closed and toggled, but relying on
+    // that leaves the ticks empty in every other case.
+    modelValue: {
+      immediate: true,
+      handler(open: boolean) {
+        if (!open) return
+        void this.connectStore.refreshDevices()
+        this.seedFromActiveTargets()
+      },
+    },
+    // Keeps an open sheet honest about what is actually casting — another
+    // client taking a device, one dropping off the network, or this
+    // sheet's own "Take over" landing. Without it the sheet only ever
+    // seeded on open, so anything happening afterwards left the ticks
+    // describing a target set that no longer existed, and "Done" then
+    // applied that stale set as if it were the user's intent. Skipped
+    // while the selection has been edited, so it never overwrites an
+    // in-progress choice.
+    activeKeys() {
+      if (!this.modelValue || !this.selectionUnchanged) return
+      this.seedFromActiveTargets()
     },
   },
   methods: {
     key(entry: DeviceEntry): string {
       return `${entry.type}:${entry.device.name}`
+    },
+    seedFromActiveTargets() {
+      this.selectedKeys = new Set(this.activeKeys)
+      this.initialKeys = new Set(this.activeKeys)
     },
     toggle(entry: DeviceEntry) {
       const key = this.key(entry)
@@ -173,12 +212,6 @@ export default {
       if (next.has(key)) next.delete(key)
       else next.add(key)
       this.selectedKeys = next
-    },
-    selectionUnchanged(): boolean {
-      return (
-        this.selectedKeys.size === this.initialKeys.size &&
-        [...this.selectedKeys].every((key) => this.initialKeys.has(key))
-      )
     },
     // Releases every active cast target — local playback then picks up on
     // its own (see stores/playback.ts's connect.$subscribe handler), the
@@ -190,24 +223,63 @@ export default {
       this.$emit('update:modelValue', false)
     },
     // Mirrors ConnectDevicePicker.vue's own takeOver() — immediate,
-    // single-device, force=true, and deliberately doesn't close the sheet
-    // (the row's own state flips once activeTargets updates, same as
-    // desktop's hover-button doesn't close its popover either).
+    // forced, and deliberately doesn't close the sheet (the row's own
+    // state flips once activeTargets updates, same as desktop's
+    // hover-button doesn't close its popover either). Adds to the active
+    // targets rather than replacing them: a claimed row's tap is inert
+    // (MobileDeviceRow.vue's onRowClick()), so this button is the only way
+    // to pick such a device, and it must not be the only way to lose every
+    // other speaker at the same time.
     async takeOver(entry: DeviceEntry) {
-      await usePlaybackStore().castTo([{ type: entry.type, name: entry.device.name }], true)
+      const target = { type: entry.type, name: entry.device.name }
+      try {
+        await usePlaybackStore().applyTargets([...this.connectStore.activeTargets, target], true)
+        // Ticks the row itself: an unedited sheet re-seeds from the new
+        // targets via the watcher above, but an edited one deliberately
+        // doesn't, and this device is applied either way.
+        const key = this.key(entry)
+        this.selectedKeys = new Set(this.selectedKeys).add(key)
+        this.initialKeys = new Set(this.initialKeys).add(key)
+      } catch {
+        this.reportError()
+      }
     },
     async done() {
-      if (!this.selectionUnchanged()) {
+      if (!this.selectionUnchanged) {
         const targets = [...this.selectedKeys].map((key) => {
           const [deviceType, ...rest] = key.split(':')
           return { type: deviceType as DeviceType, name: rest.join(':') }
         })
-        // applyTargets(), not castTo(): this picker already collected a
-        // desired *end state*, and castTo() would re-dispatch every device
-        // in it, including ones already playing. See its own docstring.
-        await usePlaybackStore().applyTargets(targets)
+        try {
+          // applyTargets(), not castTo(): this picker already collected a
+          // desired *end state*, and castTo() would re-dispatch every
+          // device in it, including ones already playing. See its own
+          // docstring.
+          await usePlaybackStore().applyTargets(targets)
+        } catch {
+          // The sheet has no error surface of its own, and it stays open
+          // on failure so the selection is still there to retry from —
+          // without this, "Done" simply did nothing visible and the
+          // rejection went unhandled.
+          this.reportError()
+          return
+        }
+        // A conflict left the takeover dialog open (MobileLayout.vue
+        // mounts one) — closing the sheet out from under it would hide
+        // which device the question is about.
+        if (this.connectStore.pendingTakeover) return
       }
       this.$emit('update:modelValue', false)
+    },
+    /** Surfaces whatever the store just recorded — the desktop picker
+     * renders connectStore.errors inline, this sheet has nowhere to put
+     * them, so they go to the same toast every other mobile failure uses. */
+    reportError() {
+      this.$emitter.emit('toast', {
+        level: 'error',
+        title: this.$t('connect.title'),
+        message: this.connectStore.errors.message ?? this.$t('connect.unknownError'),
+      })
     },
   },
 }

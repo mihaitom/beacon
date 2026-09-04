@@ -2,26 +2,30 @@
   <div class="seek-bar" style="gap: 8px">
     <!-- Radio has no position or length a bar could honestly represent
      - (see SongWaveform.vue's own comment on why it stopped trying) — an
-     - elapsed-time readout replaces the whole label/bar/label row instead
-     - of leaving a dead, maxed-out bar sitting there. While
+     - elapsed-time readout replaces the whole label/bar row instead of
+     - leaving a dead, maxed-out bar sitting there. While
      - playbackStore.radioBuffering (any cast target still filling its own
      - startup buffer — see connect/core/session.py's radio_is_buffering()
      - for the two ways the backend knows that, including the Sonos case
-     - this used to miss entirely), that readout would just be a frozen or
-     - misleading time, so a buffering state replaces it instead — same
-     - v-progress-linear idiom ConnectDevicePicker.vue uses for its own
-     - device scan. -->
-    <div v-if="playbackStore.radioStation" class="seek-bar__live-wrap">
-      <v-progress-linear v-if="playbackStore.radioBuffering" indeterminate height="2" rounded />
-      <span class="text-body-small text-medium-emphasis seek-bar__live">
-        <template v-if="playbackStore.radioBuffering">
-          <v-icon size="14">mdi-timer-sand</v-icon>
-          {{ $t('player.radioBuffering') }}
-        </template>
-        <template v-else>{{
-          $t('player.liveRadio', { time: formatTime(playbackStore.localPosition) })
-        }}</template>
-      </span>
+     - this used to miss entirely), the elapsed time would just be frozen
+     - or misleading, so the same row swaps to an indeterminate bar instead
+     - — same idiom ConnectDevicePicker.vue uses for its own device scan.
+     - Deliberately just the bar, no label/icon alongside it (dropped
+     - 2026-09-04): a second, stacked row for that text used to appear only
+     - while buffering, which shoved the transport controls above around
+     - every time buffering started or ended. One row, always this same
+     - height, whichever of the two it's showing. -->
+    <div v-if="playbackStore.radioStation" class="seek-bar__live">
+      <v-progress-linear
+        v-if="playbackStore.radioBuffering"
+        indeterminate
+        height="4"
+        rounded
+        color="primary"
+      />
+      <span v-else class="text-body-small text-medium-emphasis">{{
+        $t('player.liveRadio', { time: formatTime(playbackStore.localPosition) })
+      }}</span>
     </div>
     <template v-else>
       <span class="text-body-small text-medium-emphasis" style="width: 40px">{{
@@ -122,19 +126,11 @@ export default {
   width: 100%;
 }
 
-.seek-bar__live-wrap {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
 .seek-bar__live {
   width: 100%;
   min-height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
 }
 </style>

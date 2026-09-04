@@ -1,62 +1,85 @@
 <template>
   <v-container fluid>
-    <div class="radio-view__header">
-      <h1 class="page-title">{{ $t('radio.title') }}</h1>
-      <v-spacer />
-      <v-btn
-        v-if="discoverEnabled"
-        prepend-icon="mdi-compass-outline"
-        variant="text"
-        @click="openBrowse"
-        >{{ $t('radio.discoverStations') }}</v-btn
-      >
-      <v-btn prepend-icon="mdi-plus" variant="tonal" @click="openCreate">{{
-        $t('radio.addStation')
-      }}</v-btn>
-    </div>
+    <!-- Hero treatment, same as AlbumsView.vue/ArtistsView.vue/SongsView.vue
+     - use for their own top-level browse headers, in place of the plain
+     - title-bar-plus-buttons row this used to be — Radio is exactly the
+     - same kind of "top-level library screen" those are, and standing out
+     - as the one that didn't get it read as an oversight more than a
+     - deliberate difference. No cover/backdrop of its own (no single piece
+     - of art represents "your radio stations" the way an album's own cover
+     - does), so this is fallback-icon only, same as PlaylistsView.vue's
+     - identical case. -->
+    <detail-header fallback-icon="mdi-radio" :title="$t('radio.title')">
+      <template v-if="libraryStore.radioStations.length" #meta>
+        {{ libraryStore.radioStations.length }}
+        {{ libraryStore.radioStations.length === 1 ? $t('radio.station1') : $t('radio.stationsN') }}
+      </template>
+      <!-- Wrapped, not two bare siblings — see AlbumsView.vue's identical
+       - .detail-header__actions-row/comment for why. -->
+      <template #actions>
+        <div class="detail-header__actions-row">
+          <v-btn prepend-icon="mdi-plus" color="primary" rounded="pill" @click="openCreate">{{
+            $t('radio.addStation')
+          }}</v-btn>
+          <v-btn
+            v-if="discoverEnabled"
+            prepend-icon="mdi-compass-outline"
+            rounded="pill"
+            variant="tonal"
+            @click="openBrowse"
+            >{{ $t('radio.discoverStations') }}</v-btn
+          >
+        </div>
+      </template>
+    </detail-header>
+
+    <!-- Only worth offering once there's more than a handful to search
+     - through — same threshold reasoning as SongsView.vue's own filter
+     - field, just against a saved-station list that's usually much shorter
+     - than a song library. Filters this view's own saved stations only;
+     - the Discover dialog below has its own independent search against
+     - Radio Browser's directory instead of this one. -->
+    <sticky-filter v-if="libraryStore.radioStations.length > 8">
+      <v-text-field
+        v-model="filterQuery"
+        :label="$t('search.label')"
+        prepend-inner-icon="mdi-magnify"
+        variant="solo-filled"
+        density="compact"
+        clearable
+        class="mb-4"
+        style="max-width: 320px"
+      />
+    </sticky-filter>
 
     <v-progress-circular v-if="libraryStore.loading" indeterminate class="mb-4" />
 
-    <v-list v-if="libraryStore.radioStations.length" class="beacon-list">
-      <v-list-item
-        v-for="station in libraryStore.radioStations"
+    <!-- A wrapping grid of RadioStationCard's own horizontal tiles, not the
+     - plain single-column list this used to be, and not AlbumsView.vue/
+     - ArtistsView.vue's own big-cover-on-top card either — see that
+     - component's own comment for why it deliberately looks like neither.
+     - Batching still applies exactly as before: CoverArt.vue's own
+     - request-batching is what keeps a whole screen of these to one
+     - favicon round trip rather than one per card (see
+     - radioFaviconBatch.ts) — the layout didn't change that, only how each
+     - station looks. -->
+    <div v-if="filteredStations.length" class="radio-view__grid">
+      <radio-station-card
+        v-for="station in filteredStations"
         :key="station.id"
-        :title="station.name"
-        :subtitle="station.streamUrl"
-        @click="play(station)"
-      >
-        <template #prepend>
-          <!-- CoverArt.vue's radioFavicon prop already does exactly what a
-           - station favicon needs: resolve the logo, fall back to
-           - fallback-icon when there isn't one, and — the actual reason to
-           - use it here rather than a hand-rolled <img>+<v-icon> pair —
-           - always render the *same* v-avatar-wrapped markup either way. A
-           - bare <img> vs a bare <v-icon> directly in VListItem's prepend
-           - slot used to get different spacing before the title text, since
-           - VListItem sizes that slot differently depending on what kind
-           - of content it recognizes inside it.
-           -
-           - It also batches: this list renders one of these per station,
-           - and a screenful of separate logo requests is the traffic shape
-           - that got a real user's IP banned (see radioFaviconBatch.ts). -->
-          <cover-art
-            :radio-favicon="station.homePageUrl ? faviconRequest(station.homePageUrl, 32) : null"
-            :size="24"
-            rounded
-            fallback-icon="mdi-radio"
-            class="mr-3"
-          />
-        </template>
-        <template #append>
-          <v-btn icon="mdi-play" variant="text" @click.stop="play(station)" />
-          <v-btn icon="mdi-pencil-outline" variant="text" @click.stop="openEdit(station)" />
-          <v-btn icon="mdi-delete-outline" variant="text" @click.stop="remove(station)" />
-        </template>
-      </v-list-item>
-    </v-list>
+        :station="station"
+        @play="play"
+        @edit="openEdit"
+        @delete="remove"
+      />
+    </div>
 
     <v-alert v-else-if="!libraryStore.loading" type="info" variant="tonal">
-      {{ $t('radio.noStationsYet') }}
+      {{
+        debouncedQuery
+          ? $t('radio.noStationsForQuery', { query: debouncedQuery })
+          : $t('radio.noStationsYet')
+      }}
     </v-alert>
 
     <v-dialog v-model="createDialog" max-width="420">
@@ -331,6 +354,10 @@ import {
   type RadioBrowserStation,
 } from '@/services/connect/radioBrowser'
 import CoverArt from '@/components/library/CoverArt.vue'
+import DetailHeader from '@/components/library/DetailHeader.vue'
+import RadioStationCard from '@/components/library/RadioStationCard.vue'
+import StickyFilter from '@/components/StickyFilter.vue'
+import { matchesAllTerms } from '@/services/textSearch'
 import type { RadioStation } from '@/types/library'
 
 // Same account+device scoping as services/streamQuality.ts's own settings —
@@ -374,13 +401,19 @@ function saveBrowseCountry(code: string | null): void {
 // that came right after it.
 let browseDebounceTimer: ReturnType<typeof setTimeout> | undefined
 
+// Separate from browseDebounceTimer above — this one debounces filterQuery
+// (this view's own saved-station search) rather than browseQuery (the
+// Discover dialog's independent search against Radio Browser), same
+// module-level-timer reasoning as that one's own comment.
+let filterDebounceTimer: ReturnType<typeof setTimeout> | undefined
+
 // Credited in the discover dialog's own footer — Radio Browser is what the
 // whole feature is built on top of, not something to leave unattributed.
 const RADIO_BROWSER_HOMEPAGE = 'https://www.radio-browser.info/'
 
 export default {
   name: 'RadioView',
-  components: { CoverArt },
+  components: { CoverArt, DetailHeader, RadioStationCard, StickyFilter },
   props: {
     // false only from MobileRadioView.vue — the discover table is a
     // desktop-only surface by design, not something trimmed down for a
@@ -395,6 +428,13 @@ export default {
       formName: '',
       formStreamUrl: '',
       formHomePageUrl: '',
+      filterQuery: '',
+      // filteredStations reads this instead of filterQuery directly, so
+      // filtering doesn't run synchronously on every keystroke — see the
+      // identical pattern (and its rationale) in SongsView.vue/
+      // PlaylistsView.vue. Also what the empty-state alert checks, to tell
+      // "no stations saved at all" from "none of them match this search".
+      debouncedQuery: '',
       browseDialog: false,
       browseQuery: '',
       // Loaded once here, not reset in openBrowse() — see this component's
@@ -432,6 +472,13 @@ export default {
   computed: {
     libraryStore() {
       return useLibraryStore()
+    },
+    filteredStations(): RadioStation[] {
+      const query = this.debouncedQuery
+      if (!query.trim()) return this.libraryStore.radioStations
+      return this.libraryStore.radioStations.filter((station: RadioStation) =>
+        matchesAllTerms(query, station.name),
+      )
     },
     browseHasNoResults(): boolean {
       return !this.browseLoading && !this.browseError && this.browseResults.length === 0
@@ -488,6 +535,12 @@ export default {
     this.libraryStore.fetchRadioStations()
   },
   watch: {
+    filterQuery(value: string | null) {
+      clearTimeout(filterDebounceTimer)
+      filterDebounceTimer = setTimeout(() => {
+        this.debouncedQuery = value ?? ''
+      }, 200)
+    },
     browseQuery() {
       if (this.suppressBrowseReset) return
       clearTimeout(browseDebounceTimer)
@@ -663,11 +716,25 @@ export default {
 </script>
 
 <style scoped>
-.radio-view__header {
+/* Same wrapped-actions treatment as AlbumsView.vue's identical class/
+ * comment — DetailHeader.vue's own .detail-header__actions only ever had
+ * margin-top before (every prior single-button consumer didn't need more),
+ * no gap/wrap for the two pills sitting side by side here. */
+.detail-header__actions-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 16px;
+}
+
+.radio-view__grid {
+  display: flex;
+  flex-wrap: wrap;
+  /* Tighter than AlbumsView.vue's own .album-grid/ArtistsView.vue's
+   * .artist-grid (20px) — RadioStationCard.vue is a compact horizontal
+   * tile, not a big square cover, and 20px between tiles that short read
+   * as gappy rather than airy. */
+  gap: 14px;
 }
 
 .radio-view__browse-row {

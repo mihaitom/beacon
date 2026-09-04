@@ -21,7 +21,7 @@ describe('playbackStore.applyTargets', () => {
     const connect = useConnectStore()
     const playback = usePlaybackStore()
     return {
-      join: vi.spyOn(connect, 'joinDevice').mockResolvedValue(),
+      join: vi.spyOn(connect, 'joinDevice').mockResolvedValue(true),
       stop: vi.spyOn(connect, 'stopDevice').mockResolvedValue(),
       stopAll: vi.spyOn(connect, 'stopAll').mockResolvedValue(),
       castTo: vi.spyOn(playback, 'castTo').mockResolvedValue(),
@@ -63,7 +63,7 @@ describe('playbackStore.applyTargets', () => {
     // Kitchen, which kept playing to the end of the track and then went
     // silent.
     expect(s.join).toHaveBeenCalledOnce()
-    expect(s.join).toHaveBeenCalledWith(living)
+    expect(s.join).toHaveBeenCalledWith(living, false)
     expect(s.castTo).not.toHaveBeenCalled()
     expect(s.stop).not.toHaveBeenCalled()
   })
@@ -83,7 +83,10 @@ describe('playbackStore.applyTargets', () => {
     withActive([kitchen])
     const s = spies()
     const order: string[] = []
-    s.join.mockImplementation(async () => void order.push('join'))
+    s.join.mockImplementation(async () => {
+      order.push('join')
+      return true
+    })
     s.stop.mockImplementation(async () => void order.push('stop'))
 
     await s.playback.applyTargets([living])
@@ -125,6 +128,65 @@ describe('playbackStore.applyTargets', () => {
     expect(s.stopAll).not.toHaveBeenCalled()
   })
 
+  it('passes force through to each join, not just to a fresh cast', async () => {
+    withActive([kitchen])
+    const s = spies()
+
+    await s.playback.applyTargets([kitchen, living], true)
+
+    // The phone remote always forces (it has no confirm dialog of its
+    // own — see services/remoteControl/commands.ts). force used to reach
+    // only the fresh-cast branch, so a switch made from the phone while
+    // something was already casting silently parked a takeover dialog on
+    // the desktop instead.
+    expect(s.join).toHaveBeenCalledWith(living, true)
+  })
+
+  it('does not stop the old device when the new one hit a takeover conflict', async () => {
+    withActive([kitchen])
+    const connect = useConnectStore()
+    const s = spies()
+    // What withTakeoverHandling() does with a device_in_use: no throw, a
+    // pending takeover, and false for "this did not actually happen".
+    s.join.mockImplementation(async () => {
+      connect.pendingTakeover = {
+        device: living,
+        owner: 'someone else',
+        retry: async () => {},
+      }
+      return false
+    })
+
+    await s.playback.applyTargets([living])
+
+    // Kitchen must keep playing. Stopping it here left no targets at all
+    // without the `displaced` flag that tells the frontend to go quiet, so
+    // playback jumped to the local speakers — and confirming the takeover
+    // afterwards then found no stream left to join (routes/join.py refuses
+    // a session that is not streaming).
+    expect(s.stop).not.toHaveBeenCalled()
+  })
+
+  it('retries the whole apply, forced, once the takeover is confirmed', async () => {
+    withActive([kitchen])
+    const connect = useConnectStore()
+    const s = spies()
+    s.join.mockImplementationOnce(async () => {
+      connect.pendingTakeover = { device: living, owner: 'x', retry: async () => {} }
+      return false
+    })
+
+    await s.playback.applyTargets([living])
+
+    const applySpy = vi.spyOn(s.playback, 'applyTargets')
+    await connect.pendingTakeover!.retry()
+
+    // Not just a replay of the one join that conflicted: that would leave
+    // the rest of the desired set — the removals in particular — unapplied
+    // forever.
+    expect(applySpy).toHaveBeenCalledWith([living], true)
+  })
+
   it('matches on type as well as name', async () => {
     withActive([kitchen])
     const s = spies()
@@ -135,7 +197,7 @@ describe('playbackStore.applyTargets', () => {
     // Same name, different protocol: a genuinely different target, not the
     // one already casting.
     expect(s.join).toHaveBeenCalledOnce()
-    expect(s.join).toHaveBeenCalledWith(airplayKitchen)
+    expect(s.join).toHaveBeenCalledWith(airplayKitchen, false)
     expect(s.stop).not.toHaveBeenCalled()
   })
 })

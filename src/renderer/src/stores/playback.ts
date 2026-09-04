@@ -1632,6 +1632,10 @@ export const usePlaybackStore = defineStore('playback', {
       // the user had deliberately paused.
       const wasPlaying = this.isPlaying
       if (this.radioStation) {
+        // Radio dispatches even when paused, unlike the track branch below
+        // — see connectPlayback.play()'s `paused` option for why, and for
+        // what that costs here: a moment of the station on the speaker
+        // before the /pause lands.
         const station = this.radioStation
         const play = async (f: boolean) => {
           if (this.isPlaying) getAudioEngine().pause() // local pauses, connect takes over
@@ -1681,15 +1685,17 @@ export const usePlaybackStore = defineStore('playback', {
             repeatMode,
             autoplayEnabled,
             autoplayBatchSize,
+            // Handed over as a reservation rather than as playback when
+            // this device was paused: the speaker is claimed and holds the
+            // track, and the next /resume is what starts it. This used to
+            // be a dispatch followed by connectPlayback.pause() below,
+            // which the speaker plays an audible moment of — see that
+            // option's own comment.
+            paused: !wasPlaying,
           })
           // See the radio branch's identical check above.
           if (response.status === 'superseded') return
-          if (wasPlaying) {
-            this.isPlaying = true
-          } else {
-            await connectPlayback.pause()
-            this.isPlaying = false
-          }
+          this.isPlaying = wasPlaying
         }
         if (force) await play(true)
         else await connect.withTakeoverHandling(play)
@@ -1716,6 +1722,20 @@ export const usePlaybackStore = defineStore('playback', {
      * device to another, and an empty set is not a neutral intermediate
      * state — it hands playback straight back to local speakers, which is
      * audible and is exactly what made "switch devices" unusable before.
+     *
+     * A join that can't go through abandons the removals with it, for the
+     * same reason. Two ways that happens, and neither may be allowed to
+     * fall through to the second loop: a hard failure throws out of here,
+     * and a device claimed by another session comes back as `false` with
+     * connect.pendingTakeover now waiting on the user's confirmation (see
+     * withTakeoverHandling()). Carrying on past either one stops the
+     * device that *is* playing on behalf of one that never started —
+     * playback drops to local speakers mid-switch, and confirming the
+     * takeover afterwards then finds no stream left to join at all
+     * (routes/join.py refuses a session that isn't streaming). So the
+     * takeover's retry is swapped for a full, forced re-apply: it picks up
+     * whatever this pass already joined and finishes the rest, removals
+     * included.
      */
     async applyTargets(desired: ConnectDeviceRef[], force = false): Promise<void> {
       const connect = useConnectStore()
@@ -1737,7 +1757,11 @@ export const usePlaybackStore = defineStore('playback', {
       const desiredKeys = new Set(desired.map(key))
       const activeKeys = new Set(active.map(key))
       for (const target of desired.filter((t) => !activeKeys.has(key(t)))) {
-        await connect.joinDevice(target)
+        const joined = await connect.joinDevice(target, force)
+        if (!joined) {
+          connect.setTakeoverRetry(() => this.applyTargets(desired, true))
+          return
+        }
       }
       for (const target of active.filter((t) => !desiredKeys.has(key(t)))) {
         await connect.stopDevice(target.type, target.name)

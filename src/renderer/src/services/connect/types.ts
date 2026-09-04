@@ -358,7 +358,11 @@ export interface PlayResponse {
   // and playback.ts's dispatchSeq. No stream_url in that case; callers don't
   // need to act on it, since whatever superseded this one already updated
   // state correctly.
-  status: 'playing' | 'superseded'
+  // 'paused': the dispatch was a reservation — the track is loaded and the
+  // targets are claimed, but nothing is playing, because the caller asked
+  // for that (see PlayOptions.paused and connect/routes/playback.py's
+  // PlayRequest.paused). The next /resume is what actually starts it.
+  status: 'playing' | 'paused' | 'superseded'
   stream_url?: string
 }
 

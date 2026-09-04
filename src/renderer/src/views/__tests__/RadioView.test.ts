@@ -10,6 +10,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import RadioView from '../RadioView.vue'
 import * as radioBrowser from '@/services/connect/radioBrowser'
 import type { RadioBrowserStation } from '@/services/connect/radioBrowser'
+import type { RadioStation } from '@/types/library'
 
 vi.mock('@/services/connect/radioBrowser', () => ({
   searchRadioBrowser: vi.fn(),
@@ -50,14 +51,35 @@ function makeResult(overrides: Partial<RadioBrowserStation> = {}): RadioBrowserS
   }
 }
 
+function makeStations(count: number): RadioStation[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `s${i}`,
+    name: `Station ${i}`,
+    streamUrl: `https://stream.example/${i}`,
+    homePageUrl: null,
+  }))
+}
+
 function mountRadioView() {
   return mount(RadioView, {
-    global: { plugins: [vuetify, i18n], stubs: { CoverArt: true } },
+    global: {
+      plugins: [vuetify, i18n],
+      // StickyFilter.vue uses a real IntersectionObserver, which jsdom
+      // doesn't implement — unrelated to what's under test here (see
+      // SongsView.test.ts's identical stub/comment).
+      stubs: { CoverArt: true, StickyFilter: true },
+    },
     // v-dialog teleports its content out of the component tree — without
     // this it's beyond both the wrapper's and document.querySelector's
     // reach (see KeyboardShortcutsDialog.test.ts's identical comment).
     attachTo: document.body,
   })
+}
+
+async function withFilterQuery(wrapper: ReturnType<typeof mountRadioView>, query: string) {
+  const vm = wrapper.vm as unknown as { debouncedQuery: string }
+  vm.debouncedQuery = query
+  await wrapper.vm.$nextTick()
 }
 
 function instanceOf(wrapper: ReturnType<typeof mountRadioView>): RadioViewInstance {
@@ -92,6 +114,47 @@ describe('RadioView', () => {
     vi.useRealTimers()
     vi.restoreAllMocks()
     document.body.innerHTML = ''
+  })
+
+  describe('saved-station search', () => {
+    it('hides the search field for a short list not worth searching', () => {
+      useLibraryStore().radioStations = makeStations(3)
+      const wrapper = mountRadioView()
+
+      expect(wrapper.findComponent({ name: 'StickyFilter' }).exists()).toBe(false)
+    })
+
+    it('offers a search field once there are enough stations to search through', () => {
+      useLibraryStore().radioStations = makeStations(9)
+      const wrapper = mountRadioView()
+
+      expect(wrapper.findComponent({ name: 'StickyFilter' }).exists()).toBe(true)
+    })
+
+    it('filters the grid by name', async () => {
+      useLibraryStore().radioStations = makeStations(9)
+      const wrapper = mountRadioView()
+
+      expect(wrapper.findAllComponents({ name: 'RadioStationCard' })).toHaveLength(9)
+
+      await withFilterQuery(wrapper, 'Station 3')
+
+      const cards = wrapper.findAllComponents({ name: 'RadioStationCard' })
+      expect(cards).toHaveLength(1)
+      expect(cards[0]!.props('station').name).toBe('Station 3')
+    })
+
+    it('tells "nothing saved yet" apart from "nothing matches this search"', async () => {
+      const noneYet = mountRadioView()
+      expect(noneYet.text()).toContain('No radio stations saved yet')
+
+      useLibraryStore().radioStations = makeStations(9)
+      const wrapper = mountRadioView()
+      await withFilterQuery(wrapper, 'nothing matches this')
+
+      expect(wrapper.text()).toContain('No stations for "nothing matches this"')
+      expect(wrapper.text()).not.toContain('No radio stations saved yet')
+    })
   })
 
   describe('discover dialog', () => {
@@ -285,7 +348,13 @@ describe('RadioView', () => {
       await openAndSettle(wrapper)
       await wrapper.vm.$nextTick()
 
-      const coverArt = wrapper.findComponent({ name: 'CoverArt' })
+      // Not the first CoverArt in the tree — DetailHeader.vue's own hero
+      // renders one too (its plain fallback-icon, no radioFavicon prop at
+      // all), so this picks out the browse table's own by the prop under
+      // test actually being set.
+      const coverArt = wrapper
+        .findAllComponents({ name: 'CoverArt' })
+        .find((c) => c.props('radioFavicon') != null)!
       expect(coverArt.props('radioFavicon')).toEqual({
         homePageUrl: 'https://example.com',
         hint: 'https://cdn.example/icon.png',

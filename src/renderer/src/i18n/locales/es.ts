@@ -136,7 +136,6 @@ export default {
     volume: 'Volumen',
     autoplay: 'Reproducción automática',
     liveRadio: 'En directo · {time}',
-    radioBuffering: 'Almacenando en búfer…',
   },
   shortcuts: {
     title: 'Atajos de teclado',
@@ -374,6 +373,8 @@ export default {
   playlists: {
     reorderFailed: 'No se pudo guardar el nuevo orden',
     title: 'Listas de reproducción',
+    playlist1: 'lista de reproducción',
+    playlistsN: 'listas de reproducción',
     newPlaylist: 'Nueva',
     createTitle: 'Nueva lista de reproducción',
     noPlaylistsYet: 'Todavía no hay listas de reproducción.',
@@ -391,6 +392,8 @@ export default {
   },
   radio: {
     title: 'Radio',
+    station1: 'emisora',
+    stationsN: 'emisoras',
     addStation: 'Añadir emisora',
     discoverStations: 'Descubrir emisoras',
     discoverTitle: 'Descubrir emisoras de radio',
@@ -419,6 +422,7 @@ export default {
     streamUrl: 'URL de transmisión',
     homePageUrl: 'URL de la página principal',
     noStationsYet: 'Todavía no hay emisoras de radio guardadas.',
+    noStationsForQuery: 'No hay emisoras para "{query}".',
   },
   favorites: {
     title: 'Favoritos',

@@ -38,6 +38,34 @@ class JoinRequest(BaseModel):
     force: bool = False
 
 
+def _add_target(st, new_d: BaseDelivery) -> None:
+    """Fold `new_d` into the session's active delivery, promoting a single
+    delivery to a DeliveryManager on the way. Shared by both of /join's
+    paths, the reservation and the real dispatch, so the two can never
+    disagree about what the target set now is.
+
+    Matched on type *and* target name: two protocols can legitimately reach
+    the same speaker under the same name (an AirPlay and a Sonos "Kitchen"
+    are different targets, which is exactly why every device key in the
+    frontend is `type:name`), and matching on the name alone silently
+    dropped the second one.
+    """
+    if isinstance(st.active_delivery, DeliveryManager):
+        current = st.active_delivery.deliveries
+    elif st.active_delivery:
+        current = [st.active_delivery]
+    else:
+        current = []
+    if any(isinstance(d, type(new_d)) and d.target == new_d.target for d in current):
+        return
+    if isinstance(st.active_delivery, DeliveryManager):
+        st.active_delivery.deliveries.append(new_d)
+    elif st.active_delivery:
+        st.active_delivery = DeliveryManager.from_deliveries([st.active_delivery, new_d])
+    else:
+        st.active_delivery = new_d
+
+
 @router.post("/join")
 async def join_stream(
     req: JoinRequest, session: SessionState = Depends(require_authenticated_session)
@@ -73,6 +101,32 @@ async def join_stream(
             owner_session = registry.get(owner)
             if owner_session:
                 await displace_target(owner_session, target_type, name)
+
+        # Nothing to dispatch to a device joining a *paused* session: it
+        # only has to be in active_delivery by the time playback starts
+        # again, and everything that starts it re-dispatches the whole set
+        # from scratch — /resume and /seek replay active_delivery.play()
+        # (routes/playback.py), /play and /play-url build a fresh target
+        # from the request. /seek already works exactly this way, and
+        # deliberately touches no device at all while paused.
+        #
+        # Dispatching now and pausing a moment later, which is what this
+        # did, costs a burst of sound on the speaker the user just picked
+        # (none of these protocols has a "load without playing"), a GET
+        # /stream connection and its FFmpeg run that the very next /resume
+        # throws away, and — for a second Sonos — an ad-hoc group join that
+        # DeliveryManager.play() would then redo properly on its own.
+        #
+        # The trade is that the device is only proven reachable when
+        # playback actually starts, rather than here: a reservation cannot
+        # fail the way a dispatch can. That is the same contract /claim has
+        # always had, and the failure still surfaces — as a delivery error
+        # naming the speaker, on the /resume that could not reach it.
+        if st.clock.is_paused:
+            logger.info(f"[join] Session is paused — {req.target_name} reserved, not dispatched")
+            _add_target(st, new_d)
+            await session.event_bus.broadcast(build_status_dict(session))
+            return {"status": "reserved", "device": req.target_name}
 
         # Radio has no track loaded (session.state.current_track stays None
         # for it — see /play-url), so it must join on its own raw URL rather
@@ -123,14 +177,7 @@ async def join_stream(
             await _release_claims(new_d, session)
             return {"error": str(e)}
 
-        if isinstance(st.active_delivery, DeliveryManager):
-            existing = {d.target for d in st.active_delivery.deliveries}
-            if req.target_name not in existing:
-                st.active_delivery.deliveries.append(new_d)
-        elif st.active_delivery:
-            st.active_delivery = DeliveryManager.from_deliveries([st.active_delivery, new_d])
-        else:
-            st.active_delivery = new_d
+        _add_target(st, new_d)
 
     await session.event_bus.broadcast(build_status_dict(session))
     return {"status": "joined", "device": req.target_name}

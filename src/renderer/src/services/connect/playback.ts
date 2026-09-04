@@ -7,6 +7,19 @@ interface PlayOptions {
   gain?: number
   startPosition?: number
   force?: boolean
+  /** Claim the targets and load the track without starting playback — for
+   * picking a speaker while the listener is paused. None of these cast
+   * protocols has a "load without playing" of its own, so this used to be
+   * a /play followed straight by a /pause, which the speaker plays an
+   * audible moment of. See connect/routes/playback.py's PlayRequest.paused.
+   *
+   * Only /play takes this. Radio (playUrl() below) still dispatches:
+   * whether a station is even playable on a given device is only found out
+   * by trying, and the automatic fall back to re-encoding it (see
+   * retry_radio_via_proxy()) is part of that dispatch — deferring it to
+   * /resume, which has no such fallback, would trade a moment of sound for
+   * stations that no longer play at all. */
+  paused?: boolean
   /** The full queue — already-played history included, not just what's
    * upcoming — with `songId` at `fullQueue[queueIndex]` (caller's
    * responsibility to keep the two consistent). connect stores this
@@ -108,6 +121,7 @@ export async function play(songId: string, options: PlayOptions = {}): Promise<P
       gain: options.gain ?? 1.0,
       start_position: options.startPosition ?? 0,
       force: options.force ?? false,
+      paused: options.paused ?? false,
       seq: nextSeq(),
       // Left out entirely rather than sent as null when there is no
       // ceiling — connect reads "both absent" as "don't cap", and a

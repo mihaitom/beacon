@@ -239,21 +239,25 @@ export async function handleRemoteCommand(
       }
       const targets = raw.map((t) => ({ type: t.deviceType as DeviceType, name: t.name }))
       try {
-        // force=true, always — playback.castTo()'s force=false path routes
-        // through connect.withTakeoverHandling(), which *swallows* a
-        // device_in_use conflict into `connect.pendingTakeover` instead of
-        // throwing (the desktop's takeover-confirm dialog reacts to that
-        // state; the phone has no UI for it, so that call would just silently
-        // no-op here). The phone already saw "in use by X" in the device
-        // list before picking it (see devices-request below), so checking a
-        // claimed device is explicit intent to take over — no separate
-        // confirm step — the same outcome a desktop user gets by confirming
-        // that dialog.
-        // applyTargets() reconciles instead of replacing, so picking a
+        // force=true, always. Without it the conflict-handling path applies:
+        // it *swallows* a device_in_use into `connect.pendingTakeover`
+        // instead of throwing, which is right for the desktop (its
+        // takeover-confirm dialog reacts to that state) and useless here —
+        // the phone has no such UI, so the request would silently do
+        // nothing while a confirm dialog it can't see waits on the desktop.
+        // The phone already saw "in use by X" in the device list before
+        // picking it (see devices-request below), so checking a claimed
+        // device is explicit intent to take over — no separate confirm
+        // step — the same outcome a desktop user gets by confirming that
+        // dialog. applyTargets() passes this through to both of its paths,
+        // the fresh cast and the per-device joins of an edit; it used to
+        // reach only the former, which is how a phone-side device switch
+        // could still end up parked on a confirm dialog over on the
+        // desktop.
+        //
+        // applyTargets() also reconciles instead of replacing, so picking a
         // second speaker on the phone joins it rather than dropping the
-        // first — the same fix the desktop picker needed. force=true still
-        // applies to the fresh-cast path inside it; see below for why the
-        // phone always takes over.
+        // first — the same fix the desktop picker needed.
         await playback.applyTargets(targets, true)
       } catch (error) {
         console.error('[remoteControl] Failed to update cast targets:', error)
