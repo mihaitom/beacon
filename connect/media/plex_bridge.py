@@ -61,6 +61,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from . import apply_image_cache_control
 from .base import (
+    artwork_id,
     create_internet_radio_station,
     delete_internet_radio_station,
     get_internet_radio_stations,
@@ -157,6 +158,28 @@ def _map_user_rating(item: dict) -> int | None:
     return round(rating / 2)
 
 
+def _cover_art_id(item: dict, rating_key) -> str:
+    """`rating_key` with the version Plex puts in its own artwork path, so
+    that replacing the art produces a different cover art id rather than the
+    same one pointing at a new picture — see media/base.py's artwork_id for
+    why every cache in the path depends on that.
+
+    Plex writes the path as `/library/metadata/<key>/thumb/<changed-at>`,
+    and hands it out as `thumb` on the item itself and as `parentThumb` on
+    its children. Only a path that actually belongs to `rating_key` is used:
+    a track carries both its own (empty, tracks essentially never have art)
+    and its album's, and it is the album's key this ends up pointing at."""
+    key = str(rating_key)
+    for attribute in ("thumb", "parentThumb"):
+        path = item.get(attribute) or ""
+        if f"/metadata/{key}/" not in path:
+            continue
+        version = path.rsplit("/", 1)[-1]
+        if version.isdigit():
+            return artwork_id(key, version)
+    return key
+
+
 def _map_song(item: dict) -> dict:
     media_list = item.get("Media") or []
     media0 = media_list[0] if media_list else {}
@@ -168,7 +191,7 @@ def _map_song(item: dict) -> dict:
         "duration": int((item.get("duration") or 0) / 1000),
         # Tracks rarely carry their own art — the album's usually does,
         # same fallback as PlexClient.get_track().
-        "coverArt": str(item.get("parentRatingKey") or item["ratingKey"]),
+        "coverArt": _cover_art_id(item, item.get("parentRatingKey") or item["ratingKey"]),
         "playCount": item.get("viewCount", 0),
     }
     if item.get("index") is not None:
@@ -200,7 +223,7 @@ def _map_album(item: dict) -> dict:
         "id": str(item["ratingKey"]),
         "name": item.get("title", "Unknown"),
         "artist": item.get("parentTitle", "Unknown"),
-        "coverArt": str(item["ratingKey"]),
+        "coverArt": _cover_art_id(item, item["ratingKey"]),
         "songCount": item.get("leafCount") or 0,
         "duration": int((item.get("duration") or 0) / 1000),
     }
@@ -221,7 +244,7 @@ def _map_artist(item: dict) -> dict:
     artist = {
         "id": str(item["ratingKey"]),
         "name": item.get("title", "Unknown"),
-        "coverArt": str(item["ratingKey"]),
+        "coverArt": _cover_art_id(item, item["ratingKey"]),
         "albumCount": item.get("childCount") or 0,
     }
     user_rating = _map_user_rating(item)
@@ -666,7 +689,7 @@ def _map_playlist(item: dict) -> dict:
         "name": item.get("title", "Unknown"),
         "songCount": item.get("leafCount") or 0,
         "duration": int((item.get("duration") or 0) / 1000),
-        "coverArt": str(item["ratingKey"]),
+        "coverArt": _cover_art_id(item, item["ratingKey"]),
         "public": False,
     }
 

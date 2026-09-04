@@ -16,11 +16,13 @@ export default defineConfig({
     test: {
         environment: 'jsdom',
         include: ['src/renderer/src/**/__tests__/**/*.test.ts'],
-        // *.browser.test.ts (see vitest.browser.config.ts) needs real CSS
-        // layout — container queries, clamp(), the flip-card's 3D
-        // transform — none of which jsdom actually computes. Excluded here
-        // so this project doesn't also try to run them (they'd "pass"
-        // against jsdom's fake layout without checking anything real).
+        // *.browser.test.ts (see vitest.browser.config.ts) needs a real
+        // browser — CSS layout jsdom doesn't compute (container queries,
+        // clamp(), the flip-card's 3D transform), or an IndexedDB it
+        // doesn't have at all. Excluded here so this project doesn't also
+        // try to run them (they'd "pass" against jsdom's fake layout, or
+        // fail outright on the missing API, without checking anything
+        // real).
         exclude: ['**/node_modules/**', '**/*.browser.test.ts'],
         setupFiles: ['src/renderer/src/__tests__/setup.ts'],
         coverage: {

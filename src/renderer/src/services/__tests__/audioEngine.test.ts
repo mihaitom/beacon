@@ -511,6 +511,77 @@ describe('AudioEngine', () => {
       expect(audio.play).not.toHaveBeenCalled()
       expect(audio.src).toBe('second.mp3')
     })
+
+    // onReconnectStateChange - what stores/playback.ts's own
+    // onReconnectStateChange wiring turns into radioBuffering for a local
+    // radio station (see that file's own comment for why this stayed
+    // unreported until now: a dropped connection used to retry in complete
+    // silence, same as it still deliberately does for a song).
+    describe('onReconnectStateChange', () => {
+      it('fires true as soon as a drop starts retrying, before the retry lands', () => {
+        const onReconnectStateChange = vi.fn()
+        engine.onReconnectStateChange = onReconnectStateChange
+        engine.play('song.mp3')
+
+        dropConnection()
+
+        expect(onReconnectStateChange).toHaveBeenCalledWith(true)
+      })
+
+      it('fires false once a reconnect actually succeeds', async () => {
+        const onReconnectStateChange = vi.fn()
+        engine.onReconnectStateChange = onReconnectStateChange
+        engine.play('song.mp3')
+
+        dropConnection()
+        await vi.advanceTimersByTimeAsync(1000)
+        onReconnectStateChange.mockClear()
+        audio.dispatchEvent(new Event('playing'))
+
+        expect(onReconnectStateChange).toHaveBeenCalledWith(false)
+      })
+
+      it('fires false once it gives up, alongside onError', async () => {
+        const onReconnectStateChange = vi.fn()
+        engine.onReconnectStateChange = onReconnectStateChange
+        engine.play('song.mp3')
+
+        for (let i = 0; i < 5; i++) {
+          dropConnection()
+          await vi.advanceTimersByTimeAsync(8000)
+        }
+        onReconnectStateChange.mockClear()
+        dropConnection()
+
+        expect(onReconnectStateChange).toHaveBeenCalledWith(false)
+      })
+
+      it('fires false when a pause cancels a pending retry', () => {
+        const onReconnectStateChange = vi.fn()
+        engine.onReconnectStateChange = onReconnectStateChange
+        engine.play('song.mp3')
+
+        dropConnection()
+        onReconnectStateChange.mockClear()
+        engine.pause()
+
+        expect(onReconnectStateChange).toHaveBeenCalledWith(false)
+      })
+
+      it('does not fire on an ordinary play with nothing to reconnect from', () => {
+        const onReconnectStateChange = vi.fn()
+        engine.onReconnectStateChange = onReconnectStateChange
+
+        engine.play('song.mp3')
+        audio.dispatchEvent(new Event('playing'))
+
+        // Still called - 'playing' unconditionally reports "not
+        // reconnecting" (see the engine's own comment) - but never with
+        // true, since nothing ever dropped.
+        expect(onReconnectStateChange).toHaveBeenCalledWith(false)
+        expect(onReconnectStateChange).not.toHaveBeenCalledWith(true)
+      })
+    })
   })
 
   describe('element events', () => {

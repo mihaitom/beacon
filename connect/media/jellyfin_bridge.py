@@ -37,11 +37,13 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from . import apply_image_cache_control
 from .base import (
+    artwork_id,
     create_internet_radio_station,
     delete_internet_radio_station,
     get_internet_radio_stations,
     match_entries_to_song_ids,
     reorder_moves,
+    split_artwork_id,
     subsonic_envelope,
     subsonic_error,
     update_internet_radio_station,
@@ -84,6 +86,16 @@ def _is_favorite(item: dict) -> bool:
     return bool((item.get("UserData") or {}).get("IsFavorite"))
 
 
+def _cover_art_id(item: dict) -> str:
+    """The item's id with its Primary image tag attached, so that replacing
+    the image in Jellyfin produces a different cover art id rather than the
+    same one pointing at a new picture — see media/base.py's artwork_id for
+    why every cache in the path depends on that. Jellyfin sends ImageTags on
+    every item response that has artwork at all; an item without one keeps
+    the bare id."""
+    return artwork_id(item["Id"], (item.get("ImageTags") or {}).get("Primary"))
+
+
 def _map_song(item: dict) -> dict:
     artists = item.get("Artists") or []
     media_sources = item.get("MediaSources") or []
@@ -94,8 +106,10 @@ def _map_song(item: dict) -> dict:
         "artist": ", ".join(artists) if artists else item.get("AlbumArtist", "Unknown"),
         "album": item.get("Album", ""),
         "duration": int((item.get("RunTimeTicks") or 0) / TICKS_PER_SECOND),
-        # Cover art id IS the item id for Jellyfin (see JellyfinClient.get_track).
-        "coverArt": item["Id"],
+        # Cover art id IS the item id for Jellyfin (see
+        # JellyfinClient.get_track), plus the image's own tag — see
+        # _cover_art_id.
+        "coverArt": _cover_art_id(item),
         "playCount": (item.get("UserData") or {}).get("PlayCount", 0),
     }
     if item.get("IndexNumber") is not None:
@@ -157,7 +171,7 @@ def _map_album(item: dict) -> dict:
         "id": item["Id"],
         "name": item.get("Name", "Unknown"),
         "artist": item.get("AlbumArtist") or (", ".join(artists) if artists else "Unknown"),
-        "coverArt": item["Id"],
+        "coverArt": _cover_art_id(item),
         "songCount": item.get("ChildCount") or 0,
         "duration": int((item.get("RunTimeTicks") or 0) / TICKS_PER_SECOND),
     }
@@ -177,7 +191,7 @@ def _map_artist(item: dict) -> dict:
     artist = {
         "id": item["Id"],
         "name": item.get("Name", "Unknown"),
-        "coverArt": item["Id"],
+        "coverArt": _cover_art_id(item),
         "albumCount": item.get("ChildCount") or 0,
     }
     if _is_favorite(item):
@@ -196,7 +210,7 @@ def _map_playlist(item: dict) -> dict:
         "name": item.get("Name", "Unknown"),
         "songCount": item.get("ChildCount") or 0,
         "duration": int((item.get("RunTimeTicks") or 0) / TICKS_PER_SECOND),
-        "coverArt": item["Id"],
+        "coverArt": _cover_art_id(item),
         "public": False,
     }
 
@@ -957,10 +971,13 @@ async def _handle_binary(
         if not cover_id:
             return subsonic_error(70, "No cover art id supplied")
         size = params.get("size", "300")
+        item_id, version = split_artwork_id(cover_id)
         url = (
-            f"{media.internal_url}/Items/{_quote_id(cover_id)}/Images/Primary"
+            f"{media.internal_url}/Items/{_quote_id(item_id)}/Images/Primary"
             f"?maxHeight={quote(size, safe='')}"
         )
+        if version:
+            url += f"&tag={quote(version, safe='')}"
     else:  # stream.view
         track_id = params.get("id", "")
         if not track_id:

@@ -17,7 +17,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from core.claims import claims
-from core.icy_metadata import IcyDemuxer, strip_pulse
+from core.icy_metadata import ICY_ROUND_TRIP_ENV, IcyDemuxer, strip_pulse
+from core.session import radio_is_buffering
 from core.stream_format import ProbedStream
 from core.streamer import REASON_DEVICE_REJECTED_STREAM
 from delivery import ChromecastDelivery, SonosDelivery
@@ -384,10 +385,33 @@ class TestRadioStreamIcy:
         demuxer = IcyDemuxer(4, lambda _: None)
         assert demuxer.feed(r.content) == b"relayed-data"
 
-    def test_records_the_injection_for_the_upnp_round_trip_measurement(self, client, radio_playing):
+    def test_does_not_record_an_injection_by_default(self, client, radio_playing, monkeypatch):
+        """Off by default since ICY_ROUND_TRIP_ENV — nothing functional is
+        left reading the result (see that constant's own comment), so an
+        ordinary title change no longer arms a measurement, pulsed or not."""
+        monkeypatch.delenv(ICY_ROUND_TRIP_ENV, raising=False)
+        radio_playing.radio_title = "Artist - Track"
+
+        async def fake_stream(urls, *args, **kwargs):
+            yield b"0123"  # exactly one metaint=4 block
+
+        with (
+            patch("routes.stream.stream_tracks", fake_stream),
+            patch("routes.stream.DEVICE_METAINT", 4),
+        ):
+            client.get(f"/stream/radio/{radio_playing.session_id}", headers={"Icy-MetaData": "1"})
+
+        assert radio_playing.radio_icy_pending_injection is None
+
+    def test_records_the_injection_for_the_upnp_round_trip_measurement(
+        self, client, radio_playing, monkeypatch
+    ):
         """See core/session.py's radio_icy_pending_injection and
         routes/upnp.py's _handle_stream_title_echo() — the other end of
-        this, matching the title back up once the device echoes it."""
+        this, matching the title back up once the device echoes it. Only
+        with ICY_ROUND_TRIP_ENV switched back on — see the test right above
+        for the now-default off case."""
+        monkeypatch.setenv(ICY_ROUND_TRIP_ENV, "1")
         radio_playing.radio_title = "Artist - Track"
 
         async def fake_stream(urls, *args, **kwargs):
@@ -545,3 +569,58 @@ class TestTransportProblemTriggersTheRetry:
                 content=_NOTIFY_BODY.format(status="ERROR_ACCESS_DENIED"),
             )
         play.assert_not_awaited()
+
+    def test_shows_buffering_again_once_redispatched(self, client, claimed):
+        """Reported live 2026-09-04: a relayed Sonos losing its connection
+        and being redispatched re-incurs its own startup-buffering delay
+        same as any fresh /play-url — but the seek bar kept showing "Live"
+        ticking straight through it rather than "Buffering…", because
+        nothing here re-based elapsed_since_stream_start() to reflect that
+        the device is starting fresh. See _redispatch_relayed_station()'s
+        own comment for why restream_from(), not a generation bump, is the
+        fix."""
+        claimed.state.radio_info = {**claimed.state.radio_info, "relayed": True}
+        claimed.state.clock.start()
+        # Long enough since the *original* dispatch that the old,
+        # never-re-based elapsed_since_stream_start() would already read
+        # well past ASSUMED_DEVICE_LEAD_SECONDS on its own — the bug this
+        # guards against wasn't "never buffers", it was "stops buffering
+        # immediately regardless of how fresh the redispatch actually is".
+        claimed.state.clock.play_start_time -= 120.0
+        assert radio_is_buffering(claimed) is False
+
+        with patch.object(SonosDelivery, "play", new=AsyncMock()):
+            self._report_problem(client)
+
+        assert radio_is_buffering(claimed) is True
+
+    def test_does_not_move_the_displayed_position_on_redispatch(self, client, claimed):
+        """restream_from() re-bases the *stream-start* reference only —
+        elapsed() itself, what the seek bar's "Live · {time}" label
+        actually shows, must keep reading the same value it did a moment
+        ago. A real jump here would be its own, worse bug: the displayed
+        time skipping backward for a redispatch nobody but Beacon knows
+        happened."""
+        claimed.state.radio_info = {**claimed.state.radio_info, "relayed": True}
+        claimed.state.clock.start()
+        claimed.state.clock.play_start_time -= 120.0
+        before = claimed.state.clock.elapsed()
+
+        with patch.object(SonosDelivery, "play", new=AsyncMock()):
+            self._report_problem(client)
+
+        assert claimed.state.clock.elapsed() == pytest.approx(before, abs=1.0)
+
+    def test_a_failed_redispatch_leaves_buffering_alone(self, client, claimed):
+        """No fresh dispatch actually reached the device, so there is
+        nothing for it to buffer — re-basing the clock here would just
+        make the seek bar lie about a redispatch that never happened."""
+        claimed.state.radio_info = {**claimed.state.radio_info, "relayed": True}
+        claimed.state.clock.start()
+        claimed.state.clock.play_start_time -= 120.0
+        assert radio_is_buffering(claimed) is False
+
+        with patch.object(SonosDelivery, "play", new=AsyncMock(side_effect=RuntimeError("boom"))):
+            self._report_problem(client)
+
+        assert radio_is_buffering(claimed) is False

@@ -34,6 +34,42 @@ def subsonic_error(code: int, message: str) -> JSONResponse:
     )
 
 
+# ── Artwork identity ─────────────────────────────────────────────────────────
+# A cover art id has to change when the picture behind it changes. Every cache
+# in the path is keyed by that id — the browser's two (services/connect/
+# coverArtBatch.ts and artworkStore.ts), connect's own (routes/coverart.py),
+# and whatever the media server keeps — so an id that stays the same across a
+# re-tag means every one of them keeps serving the old picture until it
+# expires. That is what decides how long artwork may be cached at all, which
+# is why it is worth a few lines here: with a version in the id, replacing a
+# cover produces a *different* id, the new picture is fetched because nothing
+# has ever seen that id before, and the old entry ages out unused.
+#
+# Navidrome does this on its own (its ids read `al-<id>_<last-modified>`), so
+# nothing is needed for Subsonic-shaped servers. Jellyfin and Plex hand out
+# bare item ids and keep the version elsewhere in the same payload —
+# `ImageTags.Primary` and the trailing segment of `thumb` respectively — so
+# their bridges attach it here, in the same shape Navidrome already uses.
+
+
+def artwork_id(item_id: str, version: str | None) -> str:
+    """`item_id` with `version` attached, or unchanged when there is none to
+    attach (an item with no artwork at all, or a payload that didn't carry
+    the field)."""
+    return f"{item_id}_{version}" if version else item_id
+
+
+def split_artwork_id(cover_art_id: str) -> tuple[str, str | None]:
+    """The reverse: (item id, version). Tolerates an id with no version —
+    one from an older build's saved queue, or one of the few places a
+    bridge only has the bare key to work with — so an unversioned id keeps
+    resolving exactly as it did before."""
+    item_id, separator, version = cover_art_id.rpartition("_")
+    if not separator or not item_id or not version:
+        return cover_art_id, None
+    return item_id, version
+
+
 @dataclass
 class Track:
     id: str

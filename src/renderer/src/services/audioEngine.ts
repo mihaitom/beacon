@@ -89,6 +89,17 @@ export class AudioEngine {
    * is the end of the buffered range containing currentTime rather than
    * just the last one. */
   onBufferedChange: ((end: number) => void) | null = null
+  /** Fires around reconnectOnDrop() below — true the moment a dropped
+   * connection starts (re)trying, false once it either lands ('playing') or
+   * gives up (onError below). Deliberately a separate signal from onError:
+   * a song's own reconnect stays silent on purpose (see reconnectOnDrop()'s
+   * own comment) and this callback is only acted on for radio (see
+   * stores/playback.ts's own onReconnectStateChange, which no-ops unless
+   * playbackStore.radioStation is set) — a live station has no "buffered
+   * ahead" cushion a song's own bigger local buffer rides out, so a dropped
+   * connection there is audible right away, and was previously reported as
+   * nothing worse than "Live" ticking straight through it. */
+  onReconnectStateChange: ((reconnecting: boolean) => void) | null = null
 
   constructor() {
     this.audio = new Audio()
@@ -136,9 +147,13 @@ export class AudioEngine {
     // A successful reconnect lands here, same as any other stream actually
     // starting to play — resetting the count is what lets the *next* drop
     // get the same five attempts rather than picking up where this one left
-    // off.
+    // off. Also the "we're not reconnecting anymore" half of
+    // onReconnectStateChange — fired unconditionally (not just after a
+    // real drop) since a plain, non-reconnect play() starting normally is
+    // exactly the "not reconnecting" state that callback describes too.
     this.audio.addEventListener('playing', () => {
       this.reconnectAttempts = 0
+      this.onReconnectStateChange?.(false)
     })
     this.audio.addEventListener('error', () => {
       const code = (this.audio.error as { code?: number } | null)?.code
@@ -199,9 +214,11 @@ export class AudioEngine {
       const url = this.reconnectUrl
       this.reconnectUrl = null
       console.error(`[audio-engine] Giving up reconnecting to ${url} after dropped connection`)
+      this.onReconnectStateChange?.(false)
       this.onError?.('Playback error: connection lost')
       return
     }
+    this.onReconnectStateChange?.(true)
     this.reconnectAttempts++
     const delaySeconds = Math.min(2 ** (this.reconnectAttempts - 1), MAX_RECONNECT_DELAY_SECONDS)
     this.reconnectTimer = setTimeout(() => {
@@ -228,6 +245,11 @@ export class AudioEngine {
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
+      // Only when a wait/retry was actually cancelled — a plain pause with
+      // nothing pending has nothing to clear, and calling this on every
+      // pause/stop/load regardless would fire "not reconnecting" far more
+      // than the handful of call sites that could actually be mid-backoff.
+      this.onReconnectStateChange?.(false)
     }
     this.reconnectUrl = null
   }

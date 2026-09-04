@@ -157,6 +157,7 @@ That's it - Beacon asks for your server URL, username, and password on first lau
 | `SERVER_TYPE`            | `subsonic`           | What kind of server `SERVER_URL`/`SERVER_LOCK` point at - `subsonic` (covers Navidrome), `jellyfin`, or `plex`. Only meaningful together with `SERVER_LOCK=true`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `ALLOWED_ORIGINS`        | -                    | Extra CORS origins for the Connect API, comma-separated. Not needed in standard Docker deployments - browser and API share the same domain via nginx, so requests are same-origin and CORS never applies. Only relevant if the backend is reached from a different origin than the page.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `LOG_LEVEL`              | -                    | Startup log verbosity - `trace`, `debug`, `info`, `warning`, or `error` (case-insensitive). Prefer the log-level dropdown in Settings instead (same five levels, persisted, in effect immediately, no restart needed) - this is only the fallback for a deployment that never comes up far enough to reach it. `debug` covers Beacon's own code only; `trace` also turns on the third-party libraries underneath it (SoCo, pyatv, `httpx`/`httpcore`, `uvicorn.access`) for SOAP/HTTP-level detail - a lot of output, so reach for it only when actually troubleshooting one of those.                                                                                                                                                                                                                                                                                                                                                     |
+| `COVER_CACHE_MB`         | `128`                | How much memory (in MB) Beacon may use to keep cover art and artist photos it has already fetched, so a second device, a browser reload or a view you come back to is answered without going to the music server again. Enough for roughly 5,000 albums at the default. Lower it on a small NAS, raise it for a very large library; the cache gives up whatever was looked at longest ago first, so a smaller value costs speed on old covers, never correctness. See [Artwork caching](#artwork-caching) below for a recommendation by library size.                                                                                                                                                                                                                                                                                                                                                                                      |
 
 > `NAVIDROME_INTERNAL_URL` doesn't need a Docker Compose service name (e.g. `http://navidrome:4533`) - with `network_mode: host` there's no Docker bridge network for that to resolve on. If Navidrome runs on the same host, point this at its directly-reachable address instead, e.g. `http://localhost:4533`.
 
@@ -203,6 +204,46 @@ pnpm run build:web   # or vite's own dev server for local development
 ```
 
 The bare web build talks to a separately-running Connect backend (`cd connect && uv run python main.py`) - see `docker-compose.yaml`'s comments and `connect/.env.example` for the environment variables it reads.
+
+---
+
+## Artwork caching
+
+Cover art is the one thing Beacon asks for by the hundred: a single library view coming to rest can put sixty covers on screen at once, and each of them would otherwise be a request that crosses your reverse proxy twice. Beacon therefore does two things with artwork - it asks for a whole screenful in one request instead of one request per image, and it keeps what it got.
+
+There are three caches, in the order a cover is looked for:
+
+| Cache                        | Size   | Kept for                                           | Adjustable       |
+| ---------------------------- | ------ | -------------------------------------------------- | ---------------- |
+| Browser, in memory           | 32 MB  | until the tab is closed                            | no               |
+| Browser, on disk (IndexedDB) | 250 MB | 30 days                                            | no               |
+| Beacon server, in memory     | 128 MB | 30 days (10 minutes for "this album has no cover") | `COVER_CACHE_MB` |
+
+The server cache is shared by everyone using that Beacon instance, so a second person, a second device or a browser reload is answered from it without the music server being asked again. Artwork is requested at four fixed resolutions (64, 160, 320 and 640 pixels) rather than at each place's exact size, so one cover is stored once for a whole group of views instead of separately for each.
+
+### How much memory to give the server cache
+
+Roughly 25 MB holds a thousand albums' covers at the sizes normal browsing asks for. The table below sizes `COVER_CACHE_MB` so that an entire library fits, which is the comfortable case rather than the necessary one:
+
+| Library                       | `COVER_CACHE_MB` |
+| ----------------------------- | ---------------- |
+| up to ~2,000 albums           | `64`             |
+| ~2,000 to ~5,000 albums       | `128` (default)  |
+| ~5,000 to ~10,000 albums      | `256`            |
+| larger than that              | `512`            |
+| small NAS, memory tight       | `32`             |
+
+Two things to keep in mind when picking a number:
+
+- **Too small only ever costs speed.** Whatever was looked at longest ago is dropped first, and a dropped cover is simply fetched again the next time it is shown. Half of the recommended value is a perfectly reasonable setting; it just means the covers you visit rarely come back over the network.
+- **More people does not mean more memory.** A cover is the same picture whoever is logged in, so several people browsing the same library share one set of entries. Only browsing _different_ parts of a large library at the same time widens what has to be held at once.
+
+### Things worth knowing
+
+- **Re-tagged artwork catches up by itself, and does not wait for anything to expire.** A cover art identifier carries the version of the picture behind it: Navidrome does that on its own, and Beacon does the same for Jellyfin and Plex (taking it from the image tag and the artwork path respectively). Replacing a cover therefore produces a _different_ identifier, one no cache has ever seen, so the new picture is fetched the next time it is shown and the old entry is simply never asked for again. The 30 days above are the backstop for the case where that does not hold - a Subsonic-compatible server whose identifiers stay the same across a re-tag - not the mechanism.
+- **Switching accounts clears the browser's caches** immediately, both the one in memory and the one on disk - cover identifiers are only unique within one music server.
+- **The desktop app keeps nothing on disk.** Its window loads from a `file://` address, where Chromium refuses IndexedDB outright. It makes no practical difference: the desktop app carries its own Beacon backend, whose cache is on the same machine and answers instantly. The same fallback applies to a browser in private mode or with site data blocked - Beacon uses its memory cache and the server's, and nothing breaks.
+- **Nothing is written that says an image does not exist.** An album without a cover is remembered for the session and on the server for ten minutes, but never on disk, so artwork added by a later library scan shows up rather than being hidden behind a stale "there is none".
 
 ---
 

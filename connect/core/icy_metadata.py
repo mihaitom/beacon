@@ -159,6 +159,30 @@ def _pulse_enabled() -> bool:
     return os.environ.get(ICY_PULSE_ENV, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+# Whether routes/stream.py's record_injection() arms a round-trip
+# measurement at all, pulse or no pulse. ICY_PULSE_ENV above only ever
+# controlled the *artificial* extra samples; an ordinary station title
+# change (no mark involved) still armed one regardless, which is what kept
+# producing routes/upnp.py's "ICY round trip ... discarded/measured" log
+# lines — including the "implausible" ones — for a value nothing has
+# consumed since the visualizer stopped reading it (see
+# core/visualizer_feed.py's _FirstByteClock docstring for why driving the
+# clock from this was tried and made sync worse, not better). Same
+# off-by-default, one-env-var-to-revisit shape as ICY_PULSE_ENV, and for the
+# same reason: kept rather than deleted, since re-enabling it is the
+# quickest way back to real device data if core/session.py's
+# radio_is_buffering() (the one remaining functional reader — everything
+# else already treats this as pure diagnostics) ever needs revisiting too.
+ICY_ROUND_TRIP_ENV = "BEACON_ICY_ROUND_TRIP"
+
+
+def icy_round_trip_measurement_enabled() -> bool:
+    """Whether routes/stream.py's record_injection() should arm a
+    measurement at all — see ICY_ROUND_TRIP_ENV. Read per call, same as
+    _pulse_enabled(), so it can be switched on mid-session."""
+    return os.environ.get(ICY_ROUND_TRIP_ENV, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def pulsed_title(title: str | None, now: float) -> str | None:
     """`title` with the pulse mark appended on every other
     ICY_PULSE_SECONDS window, so a device sees the title "change" on a

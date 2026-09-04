@@ -380,6 +380,19 @@ export const usePlaybackStore = defineStore('playback', {
         console.error('[playback]', message)
         this.isPlaying = false
       }
+      // Radio only, same as radioBuffering's own cast-side source (SSE
+      // status.radio_buffering, set above) — a song's own reconnect stays
+      // silent on purpose (see audioEngine.ts's reconnectOnDrop() comment),
+      // so this leaves radioBuffering alone whenever there's no station to
+      // report it for. Without this, a dropped local radio connection kept
+      // showing "Live · {elapsed}" straight through the gap — silently
+      // retrying and, once reconnected, picking the elapsed counter back up
+      // from the position it dropped at (see applyStartPosition()) — rather
+      // than the buffering indicator a listener actually hearing the gap
+      // would expect.
+      engine.onReconnectStateChange = (reconnecting) => {
+        if (!this.isCasting && this.radioStation) this.radioBuffering = reconnecting
+      }
 
       // OS media keys / lock-screen / GNOME-KDE media widget — see that
       // service's own comment. Works the same whether casting or playing
@@ -426,9 +439,23 @@ export const usePlaybackStore = defineStore('playback', {
 
         this.isPlaying = status.streaming && !status.paused
         this.radioBuffering = status.radio_buffering
-        this.localPosition = status.elapsed
-        positionTracker.record(status.elapsed, performance.now())
         if (status.current_song) this.duration = status.current_song.duration
+        // Through the tracker, never straight from status.elapsed: the
+        // smoothing interval below reads that same tracker, so writing the
+        // raw value here as well put two disagreeing numbers on screen in
+        // turn — the raw one for the ~200ms until the next interval tick,
+        // the smoothed one for the rest of the ~2s until the next status
+        // tick. As long as the two agreed to within a second that stayed
+        // invisible behind formatTime()'s rounding; once the tracker was
+        // carrying any real lead (see positionTracker.ts's CATCH_UP_SECONDS)
+        // it read as the counter jumping a second or two backwards and
+        // forwards, twice per status tick, with the lyrics highlight
+        // following it. Ordered after the duration above so a tick that
+        // brings a new song's length clamps against that one, not the
+        // previous song's.
+        const now = performance.now()
+        positionTracker.record(status.elapsed, now)
+        this.localPosition = positionTracker.extrapolate(now, this.duration)
         this.checkScrobbleThreshold()
 
         void this.reconcileFromStatus(status)

@@ -33,6 +33,7 @@ interface WiredEngine {
   onEnded: (() => void) | null
   onError: ((message: string) => void) | null
   onDurationChange: ((duration: number) => void) | null
+  onReconnectStateChange: ((reconnecting: boolean) => void) | null
 }
 
 let engine: WiredEngine
@@ -66,6 +67,7 @@ describe('the store wiring the audio engine', () => {
       onEnded: null,
       onError: null,
       onDurationChange: null,
+      onReconnectStateChange: null,
     }
     vi.mocked(getAudioEngine).mockReturnValue(
       engine as unknown as ReturnType<typeof getAudioEngine>,
@@ -143,6 +145,31 @@ describe('the store wiring the audio engine', () => {
 
       expect(playback.localPosition).toBe(90)
     })
+
+    it('never lets a status tick reading a little below the counter pull it backwards', async () => {
+      // The backend slews a recalibrated position_offset in over two seconds
+      // (connect/core/playback_clock.py), so a tick landing mid-slew reads
+      // below the previous one — smoothed away by positionTracker, which
+      // this must go through rather than writing status.elapsed straight to
+      // the display. It used to do both, which showed the raw value for the
+      // ~200ms until the smoothing interval overwrote it again: the seek
+      // bar's counter (and the lyrics highlight following it) jumping back
+      // and forth twice per tick.
+      const playback = usePlaybackStore()
+      playback.init()
+      const connect = useConnectStore()
+      const target = { name: 'Living Room', type: 'sonos' as const }
+
+      connect.status = makeStatus({ targets: [target], streaming: true, elapsed: 30 })
+      await flushPromises()
+      const before = playback.localPosition
+      expect(before).toBeCloseTo(30)
+
+      connect.status = makeStatus({ targets: [target], streaming: true, elapsed: 29.5 })
+      await flushPromises()
+
+      expect(playback.localPosition).toBeGreaterThanOrEqual(before)
+    })
   })
 
   describe('duration', () => {
@@ -205,6 +232,62 @@ describe('the store wiring the audio engine', () => {
 
     expect(playback.isPlaying).toBe(false)
     expect(logged).toHaveBeenCalled()
+  })
+
+  describe('radio reconnect buffering', () => {
+    it('shows buffering while a local radio stream is retrying a dropped connection', () => {
+      const playback = usePlaybackStore()
+      playback.init()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+
+      engine.onReconnectStateChange?.(true)
+
+      expect(playback.radioBuffering).toBe(true)
+
+      engine.onReconnectStateChange?.(false)
+
+      expect(playback.radioBuffering).toBe(false)
+    })
+
+    it('leaves a song reconnect silent, there being no station to report it for', () => {
+      // Matches audioEngine.ts's own reconnectOnDrop() comment: a song's
+      // reconnect stays quiet on purpose, so this callback firing for one
+      // must not surface anything.
+      const playback = usePlaybackStore()
+      playback.init()
+      playback.setQueue([makeSong('a')], 0)
+      playback.radioBuffering = false
+
+      engine.onReconnectStateChange?.(true)
+
+      expect(playback.radioBuffering).toBe(false)
+    })
+
+    it('leaves the cast-reported buffering flag alone while casting', () => {
+      // radioBuffering while casting is server-authoritative (the SSE
+      // status tick, see playback.ts's own $subscribe handler) - the local
+      // element is not even the thing making sound then, so its own
+      // reconnects say nothing about whether the cast target is buffering.
+      const playback = usePlaybackStore()
+      playback.init()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      castTo()
+      playback.radioBuffering = true
+
+      engine.onReconnectStateChange?.(false)
+
+      expect(playback.radioBuffering).toBe(true)
+    })
   })
 
   describe('handOffToLocalPlayback', () => {

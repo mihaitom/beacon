@@ -19,7 +19,12 @@
     />
     <div class="min-width-0">
       <div class="text-body-medium text-truncate">
-        {{ currentSong?.title ?? playbackStore.radioStation?.name ?? $t('player.nothingPlaying') }}
+        {{
+          currentSong?.title ??
+          playbackStore.radioNowPlaying ??
+          playbackStore.radioStation?.name ??
+          $t('player.nothingPlaying')
+        }}
       </div>
       <router-link
         v-if="currentSong"
@@ -29,11 +34,18 @@
       >
         {{ currentSong.artist }}
       </router-link>
+      <!-- Station name, not the ICY tag — swapped with the top label above
+       - so the tag (what's actually playing right now) is the prominent
+       - one and the station is secondary, same as NowPlayingView.vue's own
+       - swap for consistency. Only shown once there's a tag to go with it
+       - (mirrors the top label's own fallback chain above); with no tag the
+       - station name already sits up there, so repeating it here would
+       - just be noise. -->
       <div
         v-else-if="playbackStore.radioNowPlaying"
         class="text-body-small text-medium-emphasis text-truncate"
       >
-        {{ playbackStore.radioNowPlaying }}
+        {{ playbackStore.radioStation?.name }}
       </div>
       <div v-else class="text-body-small text-medium-emphasis text-truncate" />
     </div>

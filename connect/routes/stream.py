@@ -11,7 +11,12 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response, StreamingResponse
 
 from core.auth import require_token
-from core.icy_metadata import DEVICE_METAINT, IcyMuxer, pulsed_title
+from core.icy_metadata import (
+    DEVICE_METAINT,
+    IcyMuxer,
+    icy_round_trip_measurement_enabled,
+    pulsed_title,
+)
 from core.loop_health import peak_lag
 from core.radio_relay import RadioRelay
 from core.session import (
@@ -641,6 +646,12 @@ async def radio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
         # only a real Sonos NOTIFY for this session ever consumes it, so a
         # non-Sonos connection recording one here is simply never read.
         #
+        # Off by default — see icy_round_trip_measurement_enabled()'s own
+        # comment for why arming one is no longer worth doing on every
+        # title change (pulsed or, as here, a real one) now that nothing
+        # functional is left reading the result.
+        if not icy_round_trip_measurement_enabled():
+            return
         # Only a title that is new to the *session* starts a measurement.
         # IcyMuxer fires on_inject whenever the title is new to *its own*
         # connection, which is the right rule for the ICY stream itself (a

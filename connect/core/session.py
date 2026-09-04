@@ -341,10 +341,15 @@ def radio_is_buffering(session: SessionState) -> bool:
     exactly the cast that needs it most. AirPlay lands here too, having no
     radio position to poll at all.
 
-    radio_icy_measured_lag first, the fixed guess only until one exists —
-    same order, and the same live measurement, _FirstByteClock uses for the
-    visualizer's own pacing, so the indicator clears when that clock says
-    audio starts rather than at some separately-guessed moment.
+    radio_icy_measured_lag first if one exists, the fixed guess otherwise —
+    but as of core/icy_metadata.py's ICY_ROUND_TRIP_ENV that measurement is
+    no longer armed by default, so this now normally means the fixed guess
+    every time. Not a loss: core/visualizer_feed.py's _FirstByteClock
+    docstring has the measurement itself (noisy, and biased low in a way
+    that gets *worse* with more samples) tried and rejected for the exact
+    same "how long is this device's own startup buffer" question, in favor
+    of that same fixed guess. Re-enabling the env var brings this back too,
+    for whoever next wants the real device data over the guess.
 
     Local playback is never "buffering" here: there is no cast device in
     the picture, and the browser's own <audio> element handles its own."""

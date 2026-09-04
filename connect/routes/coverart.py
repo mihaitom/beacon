@@ -22,21 +22,50 @@ fourth connection pool of this endpoint's own.
 
 Response is base64 JSON rather than a binary/multipart reply, deliberately:
 it keeps the wire format one plain object callers already know how to parse,
-at the cost of ~33% more bytes than raw binary would be - a fine trade for
-thumbnail-sized images, not one worth making for the full audio stream this
-specifically doesn't touch.
+at the cost of ~33% more bytes than raw binary would be - a fine trade
+for thumbnail-sized images, not one worth making for the full audio stream
+this specifically doesn't touch.
+
+Answers are cached in memory (see _cache below), which is what a POST costs
+this endpoint that the plain image GET it replaced got for free: a POST is
+never cached by the browser, by a reverse proxy, or by anything else on the
+way, so without a cache here every re-visit of a view re-fetched every cover
+from the media server. The cache is shared by every session, so a second
+client (or a browser reload, which starts with an empty in-page cache — the
+shape this was most visible in on the Docker deployment) is answered from
+memory rather than from the media server.
+
+`image_urls` covers the other half of the app's artwork: artist photos,
+which the media server hands out as ready-made URLs, frequently on a
+third-party CDN. Those used to go straight into an <img> tag, one request
+per artist to a foreign host, uncancellable and outside every limit this
+endpoint exists to impose. Fetching them here puts them under the same
+batching, the same cache and the same concurrency ceiling as everything
+else.
 """
 
 import asyncio
 import base64
 import logging
+import os
+import time
+import weakref
+from collections import OrderedDict
 
+import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from core.auth import require_token
 from core.session import SessionState, require_authenticated_session
-from media import JellyfinClient, PlexClient, jellyfin_bridge, plex_bridge
+from media import (
+    JellyfinClient,
+    MediaClient,
+    PlexClient,
+    jellyfin_bridge,
+    plex_bridge,
+    server_type_name,
+)
 from routes.proxy import _get_client as _get_subsonic_client
 
 logger = logging.getLogger("connect.coverart")
@@ -46,15 +75,79 @@ router = APIRouter(dependencies=[Depends(require_token)])
 # One screenful of covers, generously - well above what a real batch (grouped
 # by ~20ms client-side, see coverArtBatch.ts) ever actually contains. This
 # only guards against a malformed/adversarial request, not real usage.
+# Applied to each of the two lists separately.
 _MAX_IDS = 200
 # Mirrors CoverArt.vue's own MAX_CONCURRENT_LOADS - same reasoning: bound how
-# many origin requests one batch fires at once, not the batch's total size.
+# many origin requests are in flight at once, not the batch's total size.
+# Process-wide rather than per request, so three clients browsing at the same
+# time still add up to this and not to three times it.
 _CONCURRENCY = 12
 _DEFAULT_SIZE = 300
+
+# How long a fetched image is kept. Long, because expiry is not what keeps
+# artwork current: a cover art id carries the version of the picture behind
+# it (Navidrome's own ids do, and media/base.py's artwork_id gives Jellyfin's
+# and Plex's the same property), so re-tagging an album produces a *different*
+# id — fetched immediately because nothing has ever seen it, while the entry
+# here ages out unused. What the expiry actually covers is the case where
+# that doesn't hold: a Subsonic-compatible server with unversioned ids, or an
+# id a bridge could only build without its version. A month is short enough
+# to be a real backstop for those and long enough that normal use never
+# re-fetches a cover it already has. Matches the Cache-Control the proxied
+# image path hands the browser (media/__init__.py's _IMAGE_CACHE_CONTROL) —
+# there is nothing to gain from expiring our own copy sooner than the copy
+# the browser is allowed to keep.
+_CACHE_TTL = 30 * 86400.0
+# A miss is kept far more briefly: "this album has no art" is frequently a
+# library scan that hasn't finished yet, and remembering it for a day would
+# hide artwork that appeared minutes later. Long enough to stop a view full
+# of art-less songs from re-asking the media server on every render, short
+# enough to notice.
+_NEGATIVE_CACHE_TTL = 600.0
+# Bounded by what it actually holds rather than by a count, since one entry
+# is anything from a 5 KB thumbnail to a full-size artist photo, and gives
+# up its least recently used entries first.
+#
+# 128 MB of base64 is roughly 96 MB of image data — around eight thousand
+# grid-sized thumbnails, which covers a large library's albums outright
+# rather than only the ones recently looked at. Configurable because this is
+# the one number here that costs a self-hosted install something real: it is
+# resident memory in this process, and an installation on a small NAS may
+# want less, while one serving several people at once may want more.
+_CACHE_MAX_BYTES = int(os.getenv("COVER_CACHE_MB", "128")) * 1024 * 1024
+
+# Foreign artist photos, which no media-server client covers. Same reasoning
+# as routes/proxy.py's own client: one pooled client instead of a connection
+# setup per image.
+_image_client = httpx.AsyncClient(follow_redirects=True, timeout=10.0)
+
+# What an entry is keyed by: (scope, ref, size). `scope` separates one media
+# server's cover ids from another's (they are only unique within a server),
+# and _URL_SCOPE holds the artist photos, whose full URL is already globally
+# unique and whose size we don't get to choose.
+_URL_SCOPE = "url"
+_Key = tuple[str, str, int]
+
+_cache: OrderedDict[_Key, tuple[float, str | None]] = OrderedDict()
+_cache_bytes = 0
+# One in-flight fetch per key, so the same cover asked for by two clients at
+# the same moment (or by two views of the same session) is fetched once.
+_inflight: dict[_Key, asyncio.Task[str | None]] = {}
+
+# Per event loop, not one module-level Semaphore: a Semaphore binds itself to
+# the loop it first has to wait on, and this module is imported once while a
+# test suite runs a short-lived loop per request. Weak-keyed so a finished
+# loop takes its semaphore with it.
+_fetch_slots: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = (
+    weakref.WeakKeyDictionary()
+)
 
 
 class CoverArtBatchRequest(BaseModel):
     ids: list[str] = Field(default_factory=list)
+    # Ready-made image URLs (artist photos) — resolved by this backend
+    # rather than by the browser, see the module docstring.
+    image_urls: list[str] = Field(default_factory=list)
     size: int = _DEFAULT_SIZE
 
 
@@ -63,19 +156,117 @@ async def cover_art_batch(
     body: CoverArtBatchRequest,
     session: SessionState = Depends(require_authenticated_session),
 ) -> dict:
-    ids = body.ids[:_MAX_IDS]
-    semaphore = asyncio.Semaphore(_CONCURRENCY)
-
-    async def fetch_one(cover_id: str) -> tuple[str, str | None]:
-        async with semaphore:
-            return cover_id, await _fetch_data_url(session, cover_id, body.size)
-
-    results = await asyncio.gather(*(fetch_one(cover_id) for cover_id in ids))
-    return {"results": dict(results)}
-
-
-async def _fetch_data_url(session: SessionState, cover_id: str, size: int) -> str | None:
+    scope = _scope(session.media)
     media = session.media
+    size = body.size
+
+    async def by_id(cover_id: str) -> tuple[str, str | None]:
+        key = (scope, cover_id, size)
+        return cover_id, await _cached(key, lambda: _fetch_cover(media, cover_id, size))
+
+    async def by_url(url: str) -> tuple[str, str | None]:
+        key = (_URL_SCOPE, url, 0)
+        return url, await _cached(key, lambda: _fetch_image_url(url))
+
+    results, image_results = await asyncio.gather(
+        _resolve_all(by_id, body.ids[:_MAX_IDS]),
+        _resolve_all(by_url, body.image_urls[:_MAX_IDS]),
+    )
+    return {"results": results, "image_results": image_results}
+
+
+async def _resolve_all(resolve, refs: list[str]) -> dict[str, str | None]:
+    return dict(await asyncio.gather(*(resolve(ref) for ref in refs)))
+
+
+def _scope(media: MediaClient) -> str:
+    """What makes a cover id unique. Cover ids are per media server, so two
+    servers' `al-1` must not answer each other's requests — but the same
+    server asked by two different sessions may share, since cover art is the
+    same picture whoever is logged in."""
+    return f"{server_type_name(media)}|{getattr(media, 'base_url', '')}"
+
+
+def _slots() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    semaphore = _fetch_slots.get(loop)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(_CONCURRENCY)
+        _fetch_slots[loop] = semaphore
+    return semaphore
+
+
+def _cache_drop(key: _Key) -> None:
+    global _cache_bytes
+    entry = _cache.pop(key, None)
+    if entry is not None and entry[1] is not None:
+        _cache_bytes -= len(entry[1])
+
+
+def _cache_get(key: _Key) -> tuple[bool, str | None]:
+    """(whether this key is cached at all, what it resolved to) — the two
+    have to be separate, since a cached *miss* is a real answer worth
+    keeping and is also None."""
+    entry = _cache.get(key)
+    if entry is None:
+        return False, None
+    expires, value = entry
+    if time.monotonic() >= expires:
+        _cache_drop(key)
+        return False, None
+    _cache.move_to_end(key)
+    return True, value
+
+
+def _cache_put(key: _Key, value: str | None) -> None:
+    global _cache_bytes
+    _cache_drop(key)
+    ttl = _CACHE_TTL if value is not None else _NEGATIVE_CACHE_TTL
+    _cache[key] = (time.monotonic() + ttl, value)
+    if value is not None:
+        _cache_bytes += len(value)
+    while _cache_bytes > _CACHE_MAX_BYTES and len(_cache) > 1:
+        _cache_drop(next(iter(_cache)))
+
+
+async def _fetch_and_store(key: _Key, fetch) -> str | None:
+    try:
+        async with _slots():
+            data_url = await fetch()
+    except Exception:
+        # Deliberately not cached: an unexpected failure here says nothing
+        # about whether this image exists, and remembering it as "no" would
+        # blank the cover for the whole negative TTL over one bad moment.
+        logger.exception(f"[cover-art-batch] fetching {key[1]} failed")
+        return None
+    finally:
+        _inflight.pop(key, None)
+    _cache_put(key, data_url)
+    return data_url
+
+
+def _resolution(key: _Key, fetch) -> asyncio.Task[str | None]:
+    """The task fetching this key, started if nobody else has. Never raises,
+    so a caller that walks away (a disconnected client) leaves a task that
+    still finishes and still fills the cache."""
+    task = _inflight.get(key)
+    if task is None:
+        task = asyncio.ensure_future(_fetch_and_store(key, fetch))
+        _inflight[key] = task
+    return task
+
+
+async def _cached(key: _Key, fetch) -> str | None:
+    hit, value = _cache_get(key)
+    if hit:
+        return value
+    # Shielded: this awaits a task that may be shared with other requests,
+    # and one client giving up must not cancel the fetch the others are
+    # still waiting on.
+    return await asyncio.shield(_resolution(key, fetch))
+
+
+async def _fetch_cover(media: MediaClient, cover_id: str, size: int) -> str | None:
     if isinstance(media, JellyfinClient):
         client = jellyfin_bridge._get_client()
     elif isinstance(media, PlexClient):
@@ -92,11 +283,24 @@ async def _fetch_data_url(session: SessionState, cover_id: str, size: int) -> st
     if not url:
         return None
     headers = media.auth_headers() if hasattr(media, "auth_headers") else {}
+    return await _get_data_url(client, url, headers, cover_id)
+
+
+async def _fetch_image_url(url: str) -> str | None:
+    """An artist photo, fetched from wherever the media server said it
+    lives. Restricted to http(s) so this can't be talked into reading a
+    `file:` URL or anything else httpx would otherwise accept."""
+    if not url.startswith(("http://", "https://")):
+        return None
+    return await _get_data_url(_image_client, url, {}, url)
+
+
+async def _get_data_url(client, url: str, headers: dict[str, str], ref: str) -> str | None:
     try:
         response = await client.get(url, headers=headers, timeout=10)
         response.raise_for_status()
     except Exception as e:
-        logger.debug(f"[cover-art-batch] {cover_id}: {e}")
+        logger.debug(f"[cover-art-batch] {ref}: {e}")
         return None
 
     content_type = response.headers.get("content-type", "")
@@ -104,3 +308,12 @@ async def _fetch_data_url(session: SessionState, cover_id: str, size: int) -> st
         return None
     encoded = base64.b64encode(response.content).decode("ascii")
     return f"data:{content_type};base64,{encoded}"
+
+
+def _reset_cache() -> None:
+    """Test seam — the cache outlives any one request, so a test that
+    doesn't clear it is answered by the previous one's fixtures."""
+    global _cache_bytes
+    _cache.clear()
+    _cache_bytes = 0
+    _inflight.clear()

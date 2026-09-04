@@ -15,6 +15,7 @@ services:
             # - WEB_PORT=7070
             # - PORT=7071
             # - LOG_LEVEL=debug
+            # - COVER_CACHE_MB=128
         # Keeps AirPlay 2 pairings and (Jellyfin/Plex only) internet radio
         # stations across container recreations/updates.
         volumes:

@@ -154,7 +154,11 @@
               <div class="now-playing__info">
                 <div class="eyebrow-label mb-2">{{ eyebrow }}</div>
                 <h1 class="detail-title now-playing__title mb-2">
-                  {{ currentSong?.title ?? playbackStore.radioStation?.name }}
+                  {{
+                    currentSong?.title ??
+                    playbackStore.radioNowPlaying ??
+                    playbackStore.radioStation?.name
+                  }}
                 </h1>
                 <router-link
                   v-if="currentSong"
@@ -163,11 +167,19 @@
                 >
                   {{ currentSong.artist }}
                 </router-link>
+                <!-- Station name, not the ICY tag — swapped with the title
+                 - above so the tag (what's actually playing right now) is
+                 - the prominent label and the station is the secondary one,
+                 - same as SongInfo.vue's own player-bar label for
+                 - consistency. Only shown once there's a tag to go with it
+                 - (mirrors the title's own fallback chain above) — with no
+                 - tag the station name already sits up top, so repeating it
+                 - here would just be noise. -->
                 <div
                   v-else-if="playbackStore.radioNowPlaying"
                   class="text-title-large text-medium-emphasis now-playing__radio-tag mb-2"
                 >
-                  {{ playbackStore.radioNowPlaying }}
+                  {{ playbackStore.radioStation?.name }}
                 </div>
                 <div v-else class="text-title-large text-medium-emphasis mb-2" />
                 <router-link

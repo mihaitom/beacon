@@ -9,7 +9,7 @@
      - of art represents "your radio stations" the way an album's own cover
      - does), so this is fallback-icon only, same as PlaylistsView.vue's
      - identical case. -->
-    <detail-header fallback-icon="mdi-radio" :title="$t('radio.title')">
+    <detail-header v-if="heroHeader" fallback-icon="mdi-radio" :title="$t('radio.title')">
       <template v-if="libraryStore.radioStations.length" #meta>
         {{ libraryStore.radioStations.length }}
         {{ libraryStore.radioStations.length === 1 ? $t('radio.station1') : $t('radio.stationsN') }}
@@ -32,6 +32,29 @@
         </div>
       </template>
     </detail-header>
+
+    <!-- heroHeader false only from MobileRadioView.vue — the backdrop/cover
+     - hero above is sized for a desktop detail page (see its own 180px
+     - cover, 280px min-height) and never renders anywhere else this narrow:
+     - every other top-level browse screen swaps to its own Mobile* view
+     - below the mobile breakpoint (see App.vue's `layout` computed) before
+     - it would have to. Radio is the one screen reused as-is on mobile
+     - (see MobileRadioView.vue's own comment), so instead of a shrunk-down
+     - hero it gets the same flat title-row every other Mobile* view already
+     - uses (MobilePlaylistsView.vue/MobileSongsView.vue's own `h1.page-
+     - title`) — with "add station" as a single icon button beside it since
+     - none of those have a header-level action of their own to match
+     - against, and discoverEnabled is always false here anyway. -->
+    <div v-else class="radio-view__flat-header">
+      <h1 class="page-title radio-view__flat-title">{{ $t('radio.title') }}</h1>
+      <v-btn
+        icon="mdi-plus"
+        color="primary"
+        variant="tonal"
+        :title="$t('radio.addStation')"
+        @click="openCreate"
+      />
+    </div>
 
     <!-- Only worth offering once there's more than a handful to search
      - through — same threshold reasoning as SongsView.vue's own filter
@@ -419,6 +442,10 @@ export default {
     // desktop-only surface by design, not something trimmed down for a
     // narrow screen (see RadioView.vue's own comment on the table itself).
     discoverEnabled: { type: Boolean, default: true },
+    // false only from MobileRadioView.vue — swaps the desktop hero header
+    // for the flat title-row every other Mobile* view uses. See the
+    // template's own v-else branch for why.
+    heroHeader: { type: Boolean, default: true },
   },
   data() {
     return {
@@ -725,6 +752,19 @@ export default {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* heroHeader's flat mobile alternative to detail-header__actions-row above —
+ * same title-plus-single-icon-button row MobilePlaylistDetailView.vue's own
+ * header uses, not a Vuetify utility-class row. */
+.radio-view__flat-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.radio-view__flat-title {
+  flex: 1 1 auto;
 }
 
 .radio-view__grid {

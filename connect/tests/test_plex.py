@@ -65,6 +65,24 @@ def test_cover_art_none_when_no_id():
     assert _client().get_cover_art_url("") is None
 
 
+def test_cover_art_puts_the_version_back_in_the_path():
+    # Plex writes its artwork path as /thumb/<changed-at>; the bridge keeps
+    # that on the id (see media/base.py's artwork_id) so that replacing the
+    # art changes the id every cache is keyed by, and it belongs back in the
+    # path here.
+    c = _client(url="http://proxy:9180", internal_url="http://plex:32400", token="tok")
+    url = c.get_cover_art_url("2001_1699999999")
+    assert url == "http://proxy:9180/library/metadata/2001/thumb/1699999999?X-Plex-Token=tok"
+
+
+def test_cover_art_still_resolves_an_id_with_no_version():
+    # An id saved by an older build (a restored queue, a cached library) has
+    # no version on it - /thumb on its own is a valid Plex path.
+    c = _client(url="http://proxy:9180", internal_url="http://plex:32400", token="tok")
+    url = c.get_cover_art_url("2001")
+    assert url == "http://proxy:9180/library/metadata/2001/thumb?X-Plex-Token=tok"
+
+
 # ── get_track parses Plex item JSON ──────────────────────────────────────────
 
 

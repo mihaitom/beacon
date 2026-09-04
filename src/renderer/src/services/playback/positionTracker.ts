@@ -42,14 +42,56 @@ export interface PositionTracker {
  * a correction it considered worth applying is never swallowed here. */
 const MAX_SMOOTHED_REWIND_SECONDS = 1.5
 
+/** How long the display takes to give a swallowed backwards correction back
+ * — i.e. to converge onto the authoritative position again after having been
+ * held ahead of it.
+ *
+ * Swallowing such a correction *without* ever giving it back is what the
+ * first version of this did (it re-anchored at the held value and dropped the
+ * reported one entirely), and that made the display permanently that much
+ * ahead of the backend: every following tick then read as another small
+ * backwards correction of the same size, got held for the same reason, and
+ * kept the lead alive indefinitely. It grew with every further correction
+ * until it crossed MAX_SMOOTHED_REWIND_SECONDS, at which point one tick was
+ * taken at face value and the counter jumped visibly backwards — the seek
+ * bar's own "jumps back every so often, and a reload fixes it" (a reload
+ * starts over with no lead), dragging the lyrics highlight back a line with
+ * it.
+ *
+ * Matches _OFFSET_SLEW_SECONDS (connect/core/playback_clock.py), which is the
+ * window the backend itself slews a recalibrated position_offset in over —
+ * so a correction it spreads across two seconds is absorbed here across the
+ * same two, rather than outliving it. Long enough that the slowdown isn't
+ * readable as such: catching a full MAX_SMOOTHED_REWIND_SECONDS back down
+ * over this window still leaves the counter moving forwards at a quarter
+ * speed, never stalled and never backwards. */
+const CATCH_UP_SECONDS = 2.0
+
 export function createPositionTracker(): PositionTracker {
   let lastElapsed: number | null = null
   let lastElapsedAt = 0
+  // How far ahead of the anchor the display is currently being held, and
+  // when that lead was taken on — see record() and CATCH_UP_SECONDS.
+  let lead = 0
+  let leadAt = 0
+
+  /** Whatever is left of the held lead, decaying linearly to nothing over
+   * CATCH_UP_SECONDS. */
+  const remainingLead = (now: number): number => {
+    if (lead === 0) return 0
+    const progress = (now - leadAt) / 1000 / CATCH_UP_SECONDS
+    return progress >= 1 ? 0 : lead * (1 - progress)
+  }
+
+  /** The displayed position: the anchor advanced by wall-clock time, plus
+   * whatever lead is still being carried. */
+  const positionAt = (now: number, elapsed: number): number =>
+    elapsed + (now - lastElapsedAt) / 1000 + remainingLead(now)
 
   return {
     record(elapsed, now) {
       // Hold, rather than snap back, for a small backwards correction —
-      // see MAX_SMOOTHED_REWIND_SECONDS. Compared against the *extrapolated*
+      // see MAX_SMOOTHED_REWIND_SECONDS. Compared against the *displayed*
       // position, not the last recorded one: that's the number actually on
       // screen, and it has kept advancing since the previous tick.
       //
@@ -57,30 +99,30 @@ export function createPositionTracker(): PositionTracker {
       // has this same rule for the same reason — the cast visualizer's clock
       // never follows a poll backwards either. This side had no equivalent, so
       // every backwards correction reached the seek bar unfiltered.
+      //
+      // The reported value still becomes the anchor either way: the
+      // difference is carried as a separate, decaying lead (see
+      // CATCH_UP_SECONDS) rather than folded into the anchor itself, so the
+      // display keeps moving forwards *and* converges back onto what the
+      // backend actually says instead of staying ahead of it forever.
       if (lastElapsed !== null) {
-        const onScreen = lastElapsed + (now - lastElapsedAt) / 1000
-        const rewind = onScreen - elapsed
-        if (rewind > 0 && rewind <= MAX_SMOOTHED_REWIND_SECONDS) {
-          // Re-anchor at the held value, not the reported one, so the
-          // counter stalls for the length of the correction and then
-          // carries on rather than replaying that stretch.
-          lastElapsed = onScreen
-          lastElapsedAt = now
-          return
-        }
+        const rewind = positionAt(now, lastElapsed) - elapsed
+        lead = rewind > 0 && rewind <= MAX_SMOOTHED_REWIND_SECONDS ? rewind : 0
+        leadAt = now
       }
       lastElapsed = elapsed
       lastElapsedAt = now
     },
     reset() {
       lastElapsed = null
+      lead = 0
     },
     hasAnchor() {
       return lastElapsed !== null
     },
     extrapolate(now, duration) {
       if (lastElapsed === null) return 0
-      const value = lastElapsed + (now - lastElapsedAt) / 1000
+      const value = positionAt(now, lastElapsed)
       return duration ? Math.min(value, duration) : value
     },
   }

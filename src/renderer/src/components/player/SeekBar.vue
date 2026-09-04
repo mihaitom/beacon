@@ -4,11 +4,14 @@
      - (see SongWaveform.vue's own comment on why it stopped trying) — an
      - elapsed-time readout replaces the whole label/bar row instead of
      - leaving a dead, maxed-out bar sitting there. While
-     - playbackStore.radioBuffering (any cast target still filling its own
-     - startup buffer — see connect/core/session.py's radio_is_buffering()
+     - playbackStore.radioBuffering — a cast target still filling its own
+     - startup buffer (see connect/core/session.py's radio_is_buffering()
      - for the two ways the backend knows that, including the Sonos case
-     - this used to miss entirely), the elapsed time would just be frozen
-     - or misleading, so the same row swaps to an indeterminate bar instead
+     - this used to miss entirely), or this device's own local <audio>
+     - element retrying a dropped connection (see audioEngine.ts's
+     - reconnectOnDrop()/onReconnectStateChange) — the elapsed time would
+     - just be frozen or misleading, so the same row swaps to an
+     - indeterminate bar instead
      - — same idiom ConnectDevicePicker.vue uses for its own device scan.
      - Deliberately just the bar, no label/icon alongside it (dropped
      - 2026-09-04): a second, stacked row for that text used to appear only

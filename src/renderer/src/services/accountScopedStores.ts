@@ -40,6 +40,7 @@ import { useAutoplayStore } from '@/stores/autoplay'
 import { parseLocale } from '@/i18n'
 import { adoptLocale, reloadLocaleForAccount } from '@/services/localeSetting'
 import { fetchAccountSettings } from '@/services/connect/accountSettings'
+import { clearCoverArtCache } from '@/services/connect/coverArtBatch'
 
 /** Pulls whatever this account has synced server-side (see
  * services/connect/accountSettings.ts) and applies it through each
@@ -98,6 +99,10 @@ async function pullAccountSettings(): Promise<void> {
 
 export function initAccountScopedStores(): void {
   onAccountChange(() => {
+    // Cover ids are only unique within one media server, so the artwork
+    // this account is about to ask for must not be answered out of the
+    // previous one's cache.
+    clearCoverArtCache()
     useUpdateStore().reload()
     usePlaybackStore().reloadAccountScoped()
     reloadLyricsCacheForAccount()

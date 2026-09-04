@@ -175,7 +175,7 @@ describe('NowPlayingView', () => {
       expect(wrapper.find('.now-playing__album-link').exists()).toBe(false)
     })
 
-    it("shows the station's own now-playing tag in place of the artist link", async () => {
+    it("shows the station's own now-playing tag as the title, station name in place of the artist link", async () => {
       const { wrapper } = await mountView()
       const playback = usePlaybackStore()
       playback.radioStation = {
@@ -187,7 +187,8 @@ describe('NowPlayingView', () => {
       playback.radioNowPlaying = 'Artist - Track'
       await wrapper.vm.$nextTick()
 
-      expect(wrapper.get('.now-playing__radio-tag').text()).toBe('Artist - Track')
+      expect(wrapper.get('.now-playing__title').text()).toBe('Artist - Track')
+      expect(wrapper.get('.now-playing__radio-tag').text()).toBe('Chill FM')
     })
   })
 

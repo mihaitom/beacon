@@ -105,7 +105,7 @@ describe('SongInfo', () => {
   })
 
   describe('a radio station is playing', () => {
-    it("shows the station's own now-playing tag as the second line", async () => {
+    it("shows the station's own now-playing tag as the title, station name as the second line", async () => {
       const { wrapper } = await mountInfo()
       usePlaybackStore().radioStation = {
         id: 'r1',
@@ -116,8 +116,8 @@ describe('SongInfo', () => {
       usePlaybackStore().radioNowPlaying = 'Artist - Track'
       await wrapper.vm.$nextTick()
 
-      expect(wrapper.text()).toContain('Chill FM')
-      expect(wrapper.text()).toContain('Artist - Track')
+      expect(wrapper.get('.text-body-medium').text()).toBe('Artist - Track')
+      expect(wrapper.get('.text-body-small').text()).toBe('Chill FM')
     })
 
     it('still shows a favicon for a station played without a homepage, via its Radio Browser hint', async () => {

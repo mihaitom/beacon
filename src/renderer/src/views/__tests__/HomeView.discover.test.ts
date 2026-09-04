@@ -309,7 +309,7 @@ describe('HomeView Discover loading', () => {
 
     // Well past one at a time, and never more than the shelf can show.
     expect(peak).toBeGreaterThan(1)
-    expect(fetchArtist.mock.calls.length).toBeLessThanOrEqual(20)
+    expect(fetchArtist.mock.calls.length).toBeLessThanOrEqual(30)
   })
 
   it('keeps the shelf when one of the matches fails to load', async () => {

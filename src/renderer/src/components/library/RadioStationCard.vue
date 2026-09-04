@@ -210,4 +210,15 @@ export default {
   flex-shrink: 0;
   margin-left: 2px;
 }
+
+/* Below this the fixed 300px tile stops filling the row — a single narrow
+ * column with a dead gutter beside it, rather than the full-width tap
+ * target every other mobile list row in the app (mobile-song-row,
+ * mobile-playlist-row) already gives you. Same 600px cutoff as
+ * releaseNotes.vue's own phone breakpoint. */
+@media (max-width: 600px) {
+  .radio-tile {
+    width: 100%;
+  }
+}
 </style>

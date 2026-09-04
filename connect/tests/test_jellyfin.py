@@ -79,6 +79,24 @@ def test_cover_art_uses_internal_url_when_requested():
     assert url == "http://jf:8096/Items/item-1/Images/Primary?maxHeight=300"
 
 
+def test_cover_art_sends_the_image_version_back_as_a_tag():
+    # The bridge puts Jellyfin's own image tag on the id (see
+    # media/base.py's artwork_id, and jellyfin_bridge's _cover_art_id) so
+    # that replacing the artwork changes the id every cache is keyed by.
+    # Here it has to come back off the id and reach Jellyfin as `tag`.
+    c = _client(url="http://proxy:9180", internal_url="http://jf:8096")
+    url = c.get_cover_art_url("item-1_a1b2c3")
+    assert url == "http://proxy:9180/Items/item-1/Images/Primary?maxHeight=300&tag=a1b2c3"
+
+
+def test_cover_art_still_resolves_an_id_with_no_version():
+    # An id saved by an older build (a restored queue, a cached library)
+    # has no version on it and must keep working exactly as it did.
+    c = _client(url="http://proxy:9180", internal_url="http://jf:8096")
+    url = c.get_cover_art_url("item-1")
+    assert url == "http://proxy:9180/Items/item-1/Images/Primary?maxHeight=300"
+
+
 # ── get_track parses Jellyfin item JSON ───────────────────────────────────────
 
 

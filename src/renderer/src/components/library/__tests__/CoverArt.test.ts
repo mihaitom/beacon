@@ -6,7 +6,11 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { useAuthStore } from '@/stores/auth'
-import { fetchCoverArtBatched } from '@/services/connect/coverArtBatch'
+import {
+  fetchArtistImageBatched,
+  fetchCoverArtBatched,
+  NoArtistImageError,
+} from '@/services/connect/coverArtBatch'
 import {
   fetchRadioFaviconBatched,
   NoRadioFaviconError,
@@ -20,7 +24,14 @@ import CoverArt, { MAX_CONCURRENT_LOADS as MAX } from '../CoverArt.vue'
 // cancel/retry logic, independent of how fetchCoverArtBatched happens to
 // group requests together on the wire — that grouping has its own tests in
 // services/connect/__tests__/coverArtBatch.test.ts.
-vi.mock('@/services/connect/coverArtBatch', () => ({ fetchCoverArtBatched: vi.fn() }))
+// NoArtistImageError has to stay the real class for the same reason
+// NoRadioFaviconError does below: the component tells "this artist has no
+// photo" apart from "the backend could not be reached" by instanceof.
+vi.mock('@/services/connect/coverArtBatch', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/connect/coverArtBatch')>()),
+  fetchCoverArtBatched: vi.fn(),
+  fetchArtistImageBatched: vi.fn(),
+}))
 
 // Same boundary for a radio station's logo, and NoRadioFaviconError has to
 // stay the real class: the component tells "this station has no logo" apart
@@ -116,6 +127,34 @@ function fakeFetchCoverArtBatched(id: string, size: number, signal: AbortSignal)
   })
 }
 
+/** An artist photo the backend resolves on this app's behalf — recorded in
+ * the same list as the covers (under the URL that was asked for), since
+ * both are candidates of the same component and a test mostly cares about
+ * the order they were tried in. */
+function fakeFetchArtistImageBatched(url: string, signal: AbortSignal): Promise<Blob> {
+  return new Promise<Blob>((resolve, reject) => {
+    const request: Request = {
+      id: url,
+      size: 0,
+      aborted: false,
+      done: false,
+      succeed() {
+        request.done = true
+        resolve(new Blob(['photo']))
+      },
+      fail() {
+        request.done = true
+        reject(new NoArtistImageError())
+      },
+    }
+    signal.addEventListener('abort', () => {
+      request.aborted = true
+      reject(new DOMException('aborted', 'AbortError'))
+    })
+    requests.push(request)
+  })
+}
+
 /** Lets the component's fetch → blob → render chain run to completion.
  * flushPromises() can't be used here: it waits on a real timer, and these
  * tests drive the settle delay with fake ones. */
@@ -172,6 +211,7 @@ describe('CoverArt', () => {
     FakeIntersectionObserver.instances = []
     vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
     vi.mocked(fetchCoverArtBatched).mockImplementation(fakeFetchCoverArtBatched)
+    vi.mocked(fetchArtistImageBatched).mockImplementation(fakeFetchArtistImageBatched)
     // jsdom has neither, and the component's whole point is that it holds
     // the image itself rather than letting <img src> fetch it.
     let n = 0
@@ -236,6 +276,32 @@ describe('CoverArt', () => {
     expect(wrapper.find('.mdi-album').exists()).toBe(false)
   })
 
+  describe('the resolution it asks for', () => {
+    // One album cover shown at eleven different box sizes across the app
+    // used to be eleven different images to fetch, resize and cache. These
+    // round up to four buckets instead - see FETCH_SIZES in CoverArt.vue.
+    it('rounds a box up to the next bucket rather than asking for its exact size', async () => {
+      await scrollIntoRest(mountCover({ size: 40 }))
+
+      expect(requests[0]!.size).toBe(64)
+    })
+
+    it('asks the same resolution for every box in the same bucket', async () => {
+      await scrollIntoRest(mountCover({ size: 132 }))
+      await scrollIntoRest(mountCover({ size: 160, coverArtId: 'cover-2' }))
+
+      expect(requests.map((r) => r.size)).toEqual([160, 160])
+    })
+
+    it('gives a box sized in CSS units the largest bucket', async () => {
+      // Now Playing sizes its artwork off the viewport ("70vh"), which has
+      // no pixel figure to round at all.
+      await scrollIntoRest(mountCover({ size: '70vh' }))
+
+      expect(requests[0]!.size).toBe(640)
+    })
+  })
+
   it('shows the fallback icon when there is no cover at all', () => {
     const wrapper = mountCover({ coverArtId: null })
 
@@ -243,30 +309,59 @@ describe('CoverArt', () => {
     expect(wrapper.find('.cover-art-fallback').exists()).toBe(true)
   })
 
-  it('leaves an image on a foreign host to <img>, and does not fetch it', async () => {
+  it('has an image on a foreign host resolved by the backend, not by <img>', async () => {
     // Artist photos come from the media server as pre-signed URLs on
-    // someone else's CDN, radio favicons from the station's own site.
-    // Neither sends CORS headers, so fetching them fails outright where a
-    // plain <img src> renders them - and neither goes anywhere near the
-    // infrastructure the fetch path exists to protect.
+    // someone else's CDN, which sends no CORS headers - so this app may
+    // render those bytes but not read them. The backend fetches them
+    // instead, which is what puts them under the same batching, cache and
+    // cancellation as every other cover.
     const wrapper = await scrollIntoRest(mountCover({ imageUrl: 'http://cdn.example/artist.jpg' }))
 
-    expect(requests).toHaveLength(0)
-    expect(wrapper.html()).toContain('http://cdn.example/artist.jpg')
-  })
-
-  it('falls back to the next candidate when a foreign photo 404s', async () => {
-    // An artist without a photo must still end up showing the album cover.
-    const wrapper = await scrollIntoRest(mountCover({ imageUrl: 'http://cdn.example/artist.jpg' }))
-
-    wrapper.findComponent({ name: 'VImg' }).vm.$emit('error')
-    await flush()
-    expect(requests[0]!.id).toBe('cover-1')
+    expect(requests.map((r) => r.id)).toEqual(['http://cdn.example/artist.jpg'])
+    expect(wrapper.html()).not.toContain('http://cdn.example/artist.jpg')
 
     requests[0]!.succeed()
     await flush()
+    expect(hasImage(wrapper)).toBe(true)
+  })
+
+  it('drops a foreign photo request when the row scrolls away', async () => {
+    // The point of resolving these through the backend rather than <img>:
+    // a photo nobody is looking at any more stops costing anything.
+    await scrollIntoRest(mountCover({ imageUrl: 'http://cdn.example/artist.jpg' }))
+
+    lastObserver().emit(false)
+    await flush()
+
+    expect(requests[0]!.aborted).toBe(true)
+  })
+
+  it('falls back to the next candidate for an artist with no photo', async () => {
+    // An artist without a photo must still end up showing the album cover.
+    const wrapper = await scrollIntoRest(mountCover({ imageUrl: 'http://cdn.example/artist.jpg' }))
+
+    requests[0]!.fail()
+    await flush()
+    expect(requests[1]!.id).toBe('cover-1')
+
+    requests[1]!.succeed()
+    await flush()
 
     expect(wrapper.html()).toContain('blob:cover-1')
+  })
+
+  it('does not keep retrying an artist who has no photo', async () => {
+    // "There is no photo" is a settled answer, not a bad moment - retrying
+    // it would be a poll against an answer that will not change, once per
+    // artist, in a view holding a screenful of them.
+    await scrollIntoRest(mountCover({ coverArtId: null, imageUrl: 'http://cdn.example/a.jpg' }))
+
+    requests[0]!.fail()
+    await flush()
+    vi.advanceTimersByTime(60000)
+    await flush()
+
+    expect(requests).toHaveLength(1)
   })
 
   describe('retrying a cover that failed for a reason that passes', () => {

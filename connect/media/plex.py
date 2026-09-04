@@ -22,7 +22,7 @@ from urllib.parse import quote
 import httpx
 
 from . import http_client
-from .base import Track
+from .base import Track, split_artwork_id
 
 logger = logging.getLogger("connect.plex")
 
@@ -334,10 +334,16 @@ class PlexClient:
         if not cover_art_id or not self.base_url:
             return None
         base = self.internal_url if internal else self.base_url
-        return (
-            f"{base}/library/metadata/{quote(str(cover_art_id), safe='')}/thumb"
-            f"?X-Plex-Token={quote(self.token, safe='')}"
-        )
+        # Plex's own artwork path carries the time the art last changed
+        # (/thumb/<changed-at>); plex_bridge.py keeps it on the id (see
+        # media/base.py's artwork_id) and it goes straight back into the
+        # path here. An id without one still resolves — /thumb on its own is
+        # a valid Plex path and answers with the current art.
+        rating_key, version = split_artwork_id(str(cover_art_id))
+        path = f"/library/metadata/{quote(rating_key, safe='')}/thumb"
+        if version:
+            path += f"/{quote(version, safe='')}"
+        return f"{base}{path}?X-Plex-Token={quote(self.token, safe='')}"
 
     def ping(self) -> bool:
         """Verifies the server-scoped token actually authenticates against

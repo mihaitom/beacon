@@ -127,11 +127,16 @@ async def _handle_stream_title_echo(label: str, body: str) -> None:
     The gap between injecting a title and this device reporting the same
     one back over its own AVTransport eventing is a *bound* on its own
     buffering delay — the exact technique scripts/icy_sync_probe.py
-    validated against real hardware, now running for the whole lifetime of
-    an ordinary cast instead. Needed at all only because delivery/sonos.py's
-    own x-rincon-mp3radio:// dispatch (added to fix Sonos-only dropouts
-    while relayed) reports position 0.00s for the entire run, the one live
-    signal Chromecast/DLNA still get from RadioPositionTracker.
+    validated against real hardware. Off by default since
+    core/icy_metadata.py's ICY_ROUND_TRIP_ENV (nothing functional is left
+    reading the result — see that constant's own comment), so in practice
+    this function is a no-op now: routes/stream.py's record_injection()
+    never arms radio_icy_pending_injection, so `pending is None` below
+    always holds. Kept rather than deleted for whoever flips that env var
+    back on. Needed at all only because delivery/sonos.py's own
+    x-rincon-mp3radio:// dispatch (added to fix Sonos-only dropouts while
+    relayed) reports position 0.00s for the entire run, the one live signal
+    Chromecast/DLNA still get from RadioPositionTracker.
 
     A bound, not a reading, and only ever an upper one — which is why
     core/session.py's radio_icy_measured_lag keeps the smallest sample
@@ -284,7 +289,29 @@ async def _redispatch_relayed_station(session: SessionState, label: str, problem
     into the redispatch loop the exclusion was originally added to stop —
     an unrecoverable one now costs one retry every
     _RELAY_REDISPATCH_COOLDOWN_SECONDS instead of as fast as the device can
-    report failures."""
+    report failures.
+
+    Reported live 2026-09-04: a redispatched Sonos went silent for its own
+    fresh startup-buffering delay same as any other, but the seek bar kept
+    showing "Live" ticking straight through it rather than "Buffering…" —
+    session.state.clock.elapsed_since_stream_start() (what
+    core/session.py's radio_is_buffering() checks a relayed Sonos against,
+    that device having no RadioPositionTracker of its own to poll instead —
+    see core/state.py's first_radio_position_delivery()) was still counting
+    from the *original* dispatch, minutes ago, not this fresh one, so the
+    buffering window it's compared against had already long since elapsed.
+    restream_from() below is the same fix routes/stream.py's own device-
+    reconnect handling already applies for the identical reason (see that
+    call's own comment) — re-basing only the stream-start reference, never
+    elapsed() itself, so the displayed position doesn't jump.
+
+    No RadioPositionTracker recreated here, unlike /play-url, /resume and
+    /seek's identical-looking block — this handler only ever runs for a
+    Sonos (see _handle_transport_problem's claims.owner_of("sonos", ...)
+    guard), and a relayed one never has a tracker to begin with (see
+    first_radio_position_delivery()'s own docstring on why Sonos over
+    x-rincon-mp3radio:// is excluded) — there is nothing here that would
+    need replacing."""
     st = session.state
     assert st.radio_info is not None and st.active_delivery is not None
     now = time.monotonic()
@@ -309,6 +336,12 @@ async def _redispatch_relayed_station(session: SessionState, label: str, problem
                 session, delivery_error=transport_error_response(problem, st.active_delivery)
             )
         )
+        return
+    st.clock.restream_from(st.clock.stream_restart_position())
+    # Not just left to the next periodic status tick — a listener staring
+    # at a frozen "Live" readout for however long that tick takes to come
+    # around is exactly the confusing gap this whole fix exists to close.
+    await session.event_bus.broadcast(build_status_dict(session))
 
 
 @router.api_route(_CALLBACK_PREFIX + "/{service}/{label}", methods=["NOTIFY"])

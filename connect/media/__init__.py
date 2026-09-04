@@ -32,11 +32,14 @@ def server_type_name(media: MediaClient) -> str:
 # which leaves the browser re-fetching art it already has every time, even
 # though the frontend's own coverArtUrl() query params (id+size+token+
 # session, no timestamp) already make the same request produce an
-# identical response every time. 1 day: long enough to actually matter for
-# repeat browsing/re-runs within the same day, short enough that art
-# someone re-tags server-side doesn't stay stale for long without needing
-# a manual cache clear.
-_IMAGE_CACHE_CONTROL = "public, max-age=86400"
+# identical response every time.
+#
+# 30 days, matching routes/coverart.py's own cache: what keeps artwork
+# current is that a cover art id changes when the picture does (see
+# base.py's artwork_id), not that the cache forgets it. The expiry is the
+# backstop for a server whose ids don't carry a version, which is why it is
+# a month rather than open-ended.
+_IMAGE_CACHE_CONTROL = "public, max-age=2592000"
 
 
 def apply_image_cache_control(headers: dict[str, str], content_type: str | None) -> None:

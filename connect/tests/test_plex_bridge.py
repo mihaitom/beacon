@@ -153,6 +153,38 @@ def test_map_song_cover_art_falls_back_to_own_id_without_album():
     assert song["coverArt"] == "1001"
 
 
+def test_map_song_takes_the_artwork_version_from_the_album_s_thumb():
+    # Plex writes /thumb/<changed-at>, and a track's cover art is its
+    # album's - so the version has to come from the path belonging to the
+    # album's own rating key, not from whatever the track carries.
+    item = {
+        "ratingKey": "1001",
+        "title": "T",
+        "duration": 0,
+        "parentRatingKey": "2001",
+        "parentThumb": "/library/metadata/2001/thumb/1699999999",
+    }
+    assert plex_bridge._map_song(item)["coverArt"] == "2001_1699999999"
+
+
+def test_map_album_and_artist_take_the_version_from_their_own_thumb():
+    album = {"ratingKey": "2001", "title": "A", "thumb": "/library/metadata/2001/thumb/1712345678"}
+    assert plex_bridge._map_album(album)["coverArt"] == "2001_1712345678"
+    assert plex_bridge._map_artist(album)["coverArt"] == "2001_1712345678"
+
+
+def test_map_album_ignores_a_thumb_belonging_to_a_different_item():
+    # A track's own `thumb` points at its album, and vice versa - taking a
+    # version off a path for another rating key would version the wrong item.
+    item = {"ratingKey": "2001", "title": "A", "thumb": "/library/metadata/9999/thumb/1699999999"}
+    assert plex_bridge._map_album(item)["coverArt"] == "2001"
+
+
+def test_map_album_ignores_a_thumb_with_no_version_in_it():
+    item = {"ratingKey": "2001", "title": "A", "thumb": "/library/metadata/2001/thumb"}
+    assert plex_bridge._map_album(item)["coverArt"] == "2001"
+
+
 def test_map_album_basic_fields():
     item = {
         "ratingKey": "2001",

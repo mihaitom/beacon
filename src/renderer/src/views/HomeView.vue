@@ -72,12 +72,16 @@
       @play-all="playAllAlbums(recentAlbums, 'recent')"
     />
 
+    <!-- Scrolls like every other shelf now, fit-to-screen dropped — see
+     - DISCOVER_SHELF_SIZE's own comment for why a fixed-size pool this
+     - much bigger than one screenful is worth scrolling through rather
+     - than cropping to whatever fits, now that it matches the other
+     - shelves' own 30. -->
     <album-shelf
       :title="$t('home.discover')"
       :albums="randomAlbums"
       :loading="discoverAlbumsLoading"
       :play-all-loading="playingAllShelf === 'random'"
-      fit-to-screen
       play-on-click
       @play-all="playAllAlbums(randomAlbums, 'random')"
     >
@@ -141,12 +145,16 @@ import type { Album, Artist, Song } from '@/types/library'
 // being off does.
 const MIN_SEED_ARTISTS = 3
 const MAX_SEED_ARTISTS = 5
-// 20, not some smaller row-of-a-few number: fitToScreen (see AlbumShelf.vue)
-// already sizes the row to however many cards the viewport fits, so this
-// just needs to be at least that many on a wide screen — matches
-// notOwnedCapped's own 20 below, so neither shelf runs out before the
-// other on a wide window.
-const DISCOVER_SHELF_SIZE = 20
+// Same 30 as the plain shelves above (frequentAlbums/newestAlbums/
+// recentAlbums) — used to be a smaller 20 back when the albums half
+// (randomAlbums) rendered fitToScreen (see AlbumShelf.vue), which never
+// needed more than a screen-width's worth. It scrolls like every other
+// shelf now (see HomeView.vue's template — no more fit-to-screen there),
+// so there is no reason left for Discover to offer less to scroll through
+// than Home's own plain shelves do. Also what notOwnedCapped below is
+// capped to, so neither Discover shelf runs out before the other on a wide
+// window.
+const DISCOVER_SHELF_SIZE = 30
 // Below this many owned matches, padding the shelf out with random albums
 // reads better than a visibly sparse "discover" row.
 const MIN_OWNED_MATCHES = 8
@@ -586,7 +594,7 @@ export default {
         else notOwned.push(artist)
       }
 
-      const notOwnedCapped = notOwned.slice(0, 20)
+      const notOwnedCapped = notOwned.slice(0, DISCOVER_SHELF_SIZE)
       // Deezer photo + link, and MusicBrainz's own page plus whichever of
       // Spotify/Apple Music/TIDAL/YouTube/Discogs it has on file (the same
       // set ArtistDetailView.vue shows for an owned artist) — two

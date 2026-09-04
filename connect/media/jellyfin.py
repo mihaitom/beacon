@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import quote, urlencode
 
 from . import http_client
-from .base import Track
+from .base import Track, split_artwork_id
 
 logger = logging.getLogger("connect.jellyfin")
 
@@ -221,7 +221,13 @@ class JellyfinClient:
         if not cover_art_id or not self.base_url:
             return None
         base = self.internal_url if internal else self.base_url
-        return f"{base}/Items/{quote(cover_art_id, safe='')}/Images/Primary?maxHeight={size}"
+        # The image tag jellyfin_bridge.py attached to the id (see
+        # media/base.py's artwork_id) travels back to Jellyfin as `tag`,
+        # which is both what makes the id itself version-bearing for our own
+        # caches and what lets Jellyfin answer from its own.
+        item_id, version = split_artwork_id(cover_art_id)
+        url = f"{base}/Items/{quote(item_id, safe='')}/Images/Primary?maxHeight={size}"
+        return f"{url}&tag={quote(version, safe='')}" if version else url
 
     def ping(self) -> bool:
         """Verifies the token actually authenticates — hits an endpoint that

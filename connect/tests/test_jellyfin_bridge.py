@@ -97,6 +97,28 @@ def test_map_song_basic_fields():
     assert song["starred"] == "true"
 
 
+def test_map_song_carries_the_image_version_on_the_cover_art_id():
+    # Replacing the artwork in Jellyfin changes ImageTags.Primary but not
+    # the item id, so without this a cover would keep the key every cache in
+    # the path is built on and the old picture would go on being served
+    # until it expired (see media/base.py's artwork_id).
+    item = {"Id": "song-1", "Name": "T", "RunTimeTicks": 0, "ImageTags": {"Primary": "abc123"}}
+    assert jellyfin_bridge._map_song(item)["coverArt"] == "song-1_abc123"
+
+
+def test_map_album_and_artist_carry_the_image_version_too():
+    tagged = {"Id": "album-1", "Name": "A", "ImageTags": {"Primary": "def456"}}
+    assert jellyfin_bridge._map_album(tagged)["coverArt"] == "album-1_def456"
+    assert jellyfin_bridge._map_artist(tagged)["coverArt"] == "album-1_def456"
+
+
+def test_map_song_leaves_the_id_alone_when_there_is_no_image():
+    # An item with no artwork at all sends no ImageTags - the bare id still
+    # has to be a usable cover art id.
+    item = {"Id": "song-1", "Name": "T", "RunTimeTicks": 0}
+    assert jellyfin_bridge._map_song(item)["coverArt"] == "song-1"
+
+
 def test_map_song_omits_starred_when_not_favorite():
     item = {"Id": "s", "Name": "T", "RunTimeTicks": 0}
     song = jellyfin_bridge._map_song(item)

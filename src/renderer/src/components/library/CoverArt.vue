@@ -11,12 +11,9 @@
    -   * at most MAX_CONCURRENT_LOADS are in flight across the whole app,
    -   * and a fetch is aborted the moment its cover stops being rendered.
    -
-   - v-img is left as pure presentation here - it usually receives an object
+   - v-img is left as pure presentation here - it always receives an object
    - URL for an image already in memory, so `eager` costs nothing and its own
-   - intersection handling would only get in the way. The exception is an
-   - image on a foreign host, which JS may render but not read (see
-   - queueLoad): that one is handed to <img> as a plain URL, and only the
-   - first of the three limits above applies to it. -->
+   - intersection handling would only get in the way. -->
   <v-avatar v-if="rounded" ref="root" :size="sizeCss" rounded="0">
     <v-img
       v-if="displaySrc"
@@ -65,7 +62,12 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import { useLibraryStore } from '@/stores/library'
-import { fetchCoverArtBatched } from '@/services/connect/coverArtBatch'
+import {
+  fetchArtistImageBatched,
+  fetchCoverArtBatched,
+  NoArtistImageError,
+  NoCoverArtError,
+} from '@/services/connect/coverArtBatch'
 import { fetchRadioFaviconBatched, NoRadioFaviconError } from '@/services/connect/radioFaviconBatch'
 import type { RadioFaviconRequest } from '@/services/connect/radio'
 
@@ -98,6 +100,30 @@ const LAZY_ROOT_MARGIN = '400px 0px'
 // LAZY_ROOT_MARGIN's 400px of lead, a cover has this long *plus* the time it
 // takes to travel those 400px before anyone can see whether it arrived.
 const LOAD_SETTLE_MS = 150
+
+// The only resolutions ever asked of the media server, ascending. A box
+// asks for the first one that covers it.
+//
+// Not the box's own pixel size, which is what this used to send: this
+// component is used at a dozen different sizes across the app (32, 36, 40,
+// 44, 48, 52, 56, 72, 132, 160, 180, 200 and Now Playing's
+// viewport-relative one), so one album cover was stored, cached and resized
+// as up to a dozen separate images — one per place it happens to be shown.
+// Every cache in the path is keyed by the size that was asked for: this
+// app's own two (see coverArtBatch.ts and artworkStore.ts), connect's
+// (routes/coverart.py) and the media server's own resize cache. Four
+// buckets instead of twelve means each of them holds two to three times as
+// many *albums* for the same space, and the media server resizes each cover
+// a handful of times ever rather than once per place it appears.
+//
+// Rounding up rather than down, so an image is never smaller than the box
+// showing it. That also sharpens the small ones: a 40px row on a 2x display
+// was being handed exactly 40 pixels to fill 80 with.
+const FETCH_SIZES = [64, 160, 320, 640]
+
+function fetchSizeFor(wanted: number): number {
+  return FETCH_SIZES.find((size) => size >= wanted) ?? FETCH_SIZES[FETCH_SIZES.length - 1]!
+}
 
 // How many covers may be fetching at once, across the whole app.
 //
@@ -164,9 +190,10 @@ function releaseLoadSlot(): void {
  *   - `favicon` — a radio station's logo, resolved in a batch with every
  *     other station on screen (radioFaviconBatch.ts),
  *   - `coverArtId` — album art, batched the same way (coverArtBatch.ts),
- *   - neither — a plain URL, either fetched and held under an
- *     AbortController or, on a foreign host, handed straight to <img>
- *     (see queueLoad). */
+ *   - neither — a plain URL: one of our own (a radio logo's legacy
+ *     single-image endpoint) is fetched directly, one on a foreign host
+ *     (an artist photo on someone else's CDN) is resolved by the backend,
+ *     batched and cached like everything else. See fetchCandidate. */
 interface Candidate {
   url: string
   coverArtId: string | null
@@ -191,10 +218,14 @@ class CoverFetchError extends Error {
  * never reached it at all is a condition that passes. */
 function isTransient(error: unknown): boolean {
   if ((error as Error)?.name === 'AbortError') return false
-  // A settled "this station has no logo", not a failure to repeat — the
-  // batch endpoint says so explicitly (see NoRadioFaviconError), and
-  // retrying it would be a poll against an answer that will not change.
+  // A settled "there is no artwork for this", not a failure to repeat — the
+  // batch endpoints say so explicitly (see NoRadioFaviconError and the two
+  // next to it), and retrying one would be a poll against an answer that
+  // will not change. Most artists have no photo at all, so that one is the
+  // normal case rather than the exception.
   if (error instanceof NoRadioFaviconError) return false
+  if (error instanceof NoCoverArtError) return false
+  if (error instanceof NoArtistImageError) return false
   if (!(error instanceof CoverFetchError)) return true
   if (error.status === undefined) return true
   return error.status >= 500 || error.status === 408 || error.status === 429
@@ -221,11 +252,13 @@ export default {
       type: String as PropType<string | null>,
       default: null,
     },
-    /** Direct image URL — tried before coverArtId when given (e.g.
+    /** A ready-made image URL — tried before coverArtId when given (e.g.
      * Navidrome's artistImageUrl, a real photo rather than an album-cover
-     * placeholder, already a full pre-signed URL outside our proxy). Many
-     * artists have no cached photo and this 404s — falls back to
-     * coverArtId, then to the icon placeholder, on load failure. */
+     * placeholder, and usually a pre-signed URL on a host of its own). Many
+     * artists have no photo and this comes back empty — falls back to
+     * coverArtId, then to the icon placeholder. One on a foreign host is
+     * resolved by the backend in a batch, same as everything else here; see
+     * fetchCandidate. */
     imageUrl: {
       type: String as PropType<string | null>,
       default: null,
@@ -286,9 +319,9 @@ export default {
      * the image in the same batch entry, and asking for it separately meant
      * a second request per station against a URL already in hand. */
     transparency: (value: boolean) => typeof value === 'boolean',
-    /** What this cover is actually showing now — an object URL for an image
-     * it fetched and holds, a plain URL for one a foreign host is loading
-     * directly, or null while there is nothing. HeroBand.vue paints its
+    /** What this cover is actually showing now — an object URL for the
+     * image it fetched and holds, or null while there is nothing.
+     * HeroBand.vue paints its
      * blurred backdrop from it: a radio logo has no URL of its own to
      * derive one from any more (it is resolved in a batch, not fetched from
      * an address), and reporting what loaded is both what still works for
@@ -313,10 +346,6 @@ export default {
       // an authorisation lookup — and it should hand its concurrency slot to
       // the next cover immediately rather than when it happens to finish.
       controller: null as AbortController | null,
-      // A candidate on a foreign host, handed straight to <img> because JS
-      // isn't allowed to read its bytes (see SubsonicClient.isProxyUrl).
-      // Mutually exclusive with objectUrl.
-      directUrl: null as string | null,
       // Whether this cover is currently within LAZY_ROOT_MARGIN of the
       // viewport, as last reported by the observer below. Kept separately
       // rather than asked for on demand, because the observer is deliberately
@@ -343,14 +372,13 @@ export default {
     sizeCss(): string {
       return typeof this.size === 'number' ? `${this.size}px` : this.size
     },
-    // What resolution to actually request from the media server — needs a
-    // real pixel number regardless of how this ends up displayed. A
-    // numeric `size` doubles as both (unchanged behavior); a CSS size
-    // string (e.g. "70vh") has no pixel figure to derive this from, so
-    // this falls back to a fixed resolution generous enough for that
-    // caller's biggest realistic on-screen size.
+    // What resolution to actually request from the media server — one of
+    // FETCH_SIZES above, never the box's own size. A CSS size string (e.g.
+    // "70vh") has no pixel figure to derive this from at all, so it takes
+    // the largest bucket, which is generous enough for that caller's
+    // biggest realistic on-screen size.
     fetchSize(): number {
-      return typeof this.size === 'number' ? this.size : 640
+      return typeof this.size === 'number' ? fetchSizeFor(this.size) : 640
     },
     // Each entry carries what decides its network path (see Candidate) —
     // loadCandidates() reads that rather than trying to tell the routes
@@ -373,10 +401,10 @@ export default {
     current(): Candidate | null {
       return this.candidates[this.failedCount] ?? null
     },
-    /** What the <img> actually shows: an image this component fetched and
-     * holds in memory, or one a foreign host is loading directly. */
+    /** What the <img> actually shows: the image this component fetched and
+     * holds in memory, whichever route it came by. */
     displaySrc(): string | null {
-      return this.objectUrl ?? this.directUrl
+      return this.objectUrl
     },
   },
   watch: {
@@ -415,7 +443,6 @@ export default {
       const shouldLoad = this.displaySrc !== null || this.holdsLoadSlot || this.inView
       this.abortLoad()
       this.setObjectUrl(null)
-      this.directUrl = null
       if (shouldLoad) this.queueLoad()
     },
   },
@@ -510,24 +537,6 @@ export default {
     queueLoad() {
       const candidate = this.current
       if (!candidate) return
-      // A foreign host (an artist photo arriving as a pre-signed CDN URL)
-      // can't be fetched from JS at all — no CORS headers, so reading the
-      // bytes is forbidden even though rendering them isn't. Those go
-      // straight to <img>, unqueued and uncancellable: neither matters for
-      // them, since they don't touch the media server or the proxy in front
-      // of it, and they appear a handful at a time rather than by the
-      // screenful. A batched candidate is never one of these — it has no
-      // URL the browser could load on its own.
-      if (
-        !candidate.favicon &&
-        !candidate.coverArtId &&
-        !useLibraryStore().client().isProxyUrl(candidate.url)
-      ) {
-        this.directUrl = candidate.url
-        this.observer?.disconnect()
-        this.observer = null
-        return
-      }
       // A previous call already has this instance queued (waiting for a
       // slot, not holding one yet) — the candidates() watcher can call this
       // again before that one ever started (a track change landing during a
@@ -554,24 +563,31 @@ export default {
         void this.loadCandidates()
       })
     },
-    /** The <img> itself refused what it was given — a foreign photo that
-     * 404s (an artist without one falls back to the album cover behind it),
-     * or, far less likely, bytes we fetched that turn out not to be an
-     * image. Either way: on to the next candidate. */
+    /** The <img> itself refused bytes this component had already fetched
+     * and held — far less likely than it used to be now that nothing
+     * reaches <img> without having been read successfully first, but a
+     * response that is a valid blob and not a valid image still lands here.
+     * On to the next candidate. */
     onImageError() {
       this.setObjectUrl(null)
-      this.directUrl = null
       this.failedCount += 1
       this.queueLoad()
     },
-    /** The one place a candidate's network path is chosen. Batched
-     * (grouped with whatever else settles in the same ~20ms window) for a
-     * radio logo and for a real coverArtId; a plain fetch for anything
-     * else this component holds. Low priority isn't meaningful on the
-     * batched paths — they are one POST each, not an image fetch the
-     * browser could deprioritize — and cover art already being the least
-     * urgent thing the app asks for is what the settle delay and the slot
-     * queue above are for instead. */
+    /** The one place a candidate's network path is chosen, and all three
+     * end in bytes this component holds itself:
+     *
+     *   - a radio logo and a real coverArtId are resolved in a batch,
+     *     grouped with whatever else settles in the same ~20ms window,
+     *   - so is an image URL on a foreign host — an artist photo on a CDN
+     *     that sends no CORS headers, which the backend fetches on this
+     *     app's behalf because JS here may render those bytes but not read
+     *     them (see SubsonicClient.isProxyUrl),
+     *   - a URL on our own proxy is fetched directly.
+     *
+     * Low priority isn't meaningful on the batched paths — they are one
+     * POST each, not an image fetch the browser could deprioritize — and
+     * cover art already being the least urgent thing the app asks for is
+     * what the settle delay and the slot queue above are for instead. */
     async fetchCandidate(candidate: Candidate, signal: AbortSignal): Promise<Blob> {
       if (candidate.favicon) {
         const favicon = await fetchRadioFaviconBatched(candidate.favicon, signal)
@@ -580,6 +596,9 @@ export default {
       }
       if (candidate.coverArtId) {
         return fetchCoverArtBatched(candidate.coverArtId, this.fetchSize, signal)
+      }
+      if (!useLibraryStore().client().isProxyUrl(candidate.url)) {
+        return fetchArtistImageBatched(candidate.url, signal)
       }
       return fetchDirect(candidate.url, signal)
     },
