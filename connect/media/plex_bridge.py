@@ -313,8 +313,16 @@ async def get_album(params: dict, media: PlexClient) -> dict:
     # path. The album id is already known here regardless of what the
     # response included, so just use it directly rather than trusting
     # _map_song()'s guess.
+    #
+    # The album's own *versioned* cover art id (see _cover_art_id), not the
+    # bare key: the two name the same picture, so using the bare one here
+    # made an album page fetch and cache it twice — once for the header,
+    # once for every track row — and, worse, left the track rows on an id
+    # that doesn't change when the cover is replaced, so they kept showing
+    # the old picture for the whole cache lifetime (30 days, see routes/
+    # coverart.py's _CACHE_TTL) while the header updated immediately.
     for song in mapped_songs:
-        song["coverArt"] = str(album_id)
+        song["coverArt"] = album["coverArt"]
         song.setdefault("albumId", str(album_id))
     album["song"] = mapped_songs
     return {"album": album}

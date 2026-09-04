@@ -1,5 +1,9 @@
 <template>
-  <div class="album-card" @click="!playOnClick && $router.push(`/albums/${album.id}`)">
+  <div
+    class="album-card"
+    @click="!playOnClick && $router.push(`/albums/${album.id}`)"
+    @contextmenu.prevent="openMenu"
+  >
     <div class="album-card-cover" @click="playOnClick && onCoverClick()">
       <cover-art :cover-art-id="album.coverArtId" :size="160" />
       <!-- Only the cover plays on click (see playOnClick) — this visual
@@ -40,19 +44,52 @@
     >
       {{ album.artist }}
     </router-link>
+    <!-- Right-click, not a click: the card's own click is already how you
+     - open (or play) the album. Every entry here acts on the album's whole
+     - track list, which is fetched on demand (see withSongs) — a grid of
+     - fifty cards must not fetch fifty track lists to render. -->
+    <tile-context-menu ref="menu">
+      <v-list-item @click="play">
+        <template #prepend><v-icon icon="mdi-play" size="small" /></template>
+        <v-list-item-title>{{ $t('library.play') }}</v-list-item-title>
+      </v-list-item>
+      <v-list-item @click="playNext">
+        <template #prepend><v-icon icon="mdi-skip-next-outline" size="small" /></template>
+        <v-list-item-title>{{ $t('library.playNext') }}</v-list-item-title>
+      </v-list-item>
+      <v-list-item @click="addToQueue">
+        <template #prepend><v-icon icon="mdi-playlist-plus" size="small" /></template>
+        <v-list-item-title>{{ $t('common.addToQueue') }}</v-list-item-title>
+      </v-list-item>
+      <add-to-playlist-submenu @create="createPlaylist" @select="addToPlaylist" />
+      <v-divider />
+      <v-list-item v-if="album.artistId" :to="`/artists/${album.artistId}`">
+        <template #prepend><v-icon icon="mdi-account-music" size="small" /></template>
+        <v-list-item-title>{{ $t('library.goToArtist') }}</v-list-item-title>
+      </v-list-item>
+      <v-list-item v-if="album.coverArtId" @click="showArtwork">
+        <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
+        <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
+      </v-list-item>
+    </tile-context-menu>
+    <create-playlist-dialog ref="createDialog" />
   </div>
 </template>
 
 <script lang="ts">
 import CoverArt from './CoverArt.vue'
+import TileContextMenu from './TileContextMenu.vue'
+import AddToPlaylistSubmenu from './AddToPlaylistSubmenu.vue'
+import CreatePlaylistDialog from './CreatePlaylistDialog.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
-import type { Album } from '@/types/library'
+import { emitter } from '@/emitter'
+import type { Album, Song } from '@/types/library'
 
 export default {
   name: 'AlbumCard',
-  components: { CoverArt },
+  components: { CoverArt, TileContextMenu, AddToPlaylistSubmenu, CreatePlaylistDialog },
   props: {
     album: {
       type: Object as () => Album,
@@ -75,6 +112,71 @@ export default {
     },
   },
   methods: {
+    /** $refs is deliberately read here rather than in a computed: it is
+     * not reactive, so a computed would cache the `undefined` it saw before
+     * the menu was ever mounted and never look again. */
+    openMenu(event: MouseEvent): void {
+      const menu = this.$refs.menu as { open: (event: MouseEvent) => void } | undefined
+      menu?.open(event)
+      // Eagerly, not when the submenu is hovered — the playlist list should
+      // already be there by the time it is, and playlist counts are small.
+      // Same reasoning as SongRow.vue's own openMenu().
+      if (useLibraryStore().playlists.length === 0) {
+        void useLibraryStore().fetchPlaylists()
+      }
+    },
+    /** The album's tracks, fetched the first time something needs them.
+     * Album cards come from listing endpoints, which carry no track list —
+     * every menu action below is what actually asks for one. */
+    async withSongs(): Promise<Song[] | null> {
+      try {
+        const full = await useLibraryStore().fetchAlbum(this.album.id)
+        return full.songs
+      } catch (error) {
+        emitter.emit('toast', {
+          level: 'error',
+          title: this.album.name,
+          message: this.$t('library.songsUnavailable'),
+        })
+        console.error('[album-card] Failed to load album songs:', error)
+        return null
+      }
+    },
+    async play(): Promise<void> {
+      const songs = await this.withSongs()
+      // pinFirst: false, peek — the same call onCoverClick() makes, see its
+      // own comment.
+      if (songs) await usePlaybackStore().playSongList(songs, 0, false, songs.length > 1)
+    },
+    async playNext(): Promise<void> {
+      const songs = await this.withSongs()
+      if (songs) usePlaybackStore().queueNext(songs)
+    },
+    async addToQueue(): Promise<void> {
+      const songs = await this.withSongs()
+      if (songs) usePlaybackStore().addToQueue(songs)
+    },
+    async addToPlaylist(playlistId: string): Promise<void> {
+      const songs = await this.withSongs()
+      if (!songs) return
+      await useLibraryStore().addToPlaylist(
+        playlistId,
+        songs.map((song) => song.id),
+      )
+    },
+    async createPlaylist(): Promise<void> {
+      const songs = await this.withSongs()
+      if (!songs) return
+      const dialog = this.$refs.createDialog as { open: (ids: string[]) => void } | undefined
+      dialog?.open(songs.map((song) => song.id))
+    },
+    showArtwork(): void {
+      emitter.emit('showArtwork', {
+        coverArtId: this.album.coverArtId,
+        title: this.album.name,
+        subtitle: this.album.artist,
+      })
+    },
     async onCoverClick() {
       const full = await useLibraryStore().fetchAlbum(this.album.id)
       // pinFirst: false — see PlaylistDetailView.vue's identical comment.

@@ -33,6 +33,8 @@ import { i18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import AlbumCard from '../AlbumCard.vue'
 import ArtistCard from '../ArtistCard.vue'
+import AlbumShelf from '../AlbumShelf.vue'
+import type { Album } from '@/types/library'
 
 const vuetify = createVuetify({ components, directives })
 const wrappers: VueWrapper[] = []
@@ -135,6 +137,80 @@ describe('card footprint', () => {
     // name line and a caption line — but it's the half that actually shows
     // in a mixed grid, so it's worth stating rather than implying.
     expect(Math.round(artist.height)).toBe(Math.round(album.height))
+  })
+})
+
+describe('shelf placeholders', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    for (const wrapper of wrappers.splice(0)) wrapper.unmount()
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+  })
+
+  async function mountShelf(loading: boolean) {
+    const router = makeRouter()
+    await router.push('/')
+    await router.isReady()
+    const album: Album = {
+      id: 'a',
+      name: 'Slow Return',
+      artist: 'The Tide',
+      artistId: 'ar',
+      coverArtId: null,
+      year: 2024,
+      songCount: 10,
+      duration: 2400,
+      genre: null,
+      starred: false,
+      rating: 0,
+      songs: [],
+    }
+    const wrapper = mount(AlbumShelf, {
+      // CoverArt is deliberately *not* stubbed here, unlike everywhere else
+      // in this file: the height being compared is mostly the cover's, and
+      // a stub has none. An album with no coverArtId renders its fallback
+      // icon at the size it was given without fetching anything.
+      props: { title: 'Recently played', albums: loading ? [] : [album], loading },
+      attachTo: document.body,
+      global: { plugins: [vuetify, i18n, router] },
+    })
+    wrappers.push(wrapper)
+    await wrapper.vm.$nextTick()
+    return wrapper
+  }
+
+  it('is exactly the size of the card it stands in for', async () => {
+    // The whole point of a placeholder shaped like the content: nothing
+    // below the shelf may move when the real cards arrive. It got this
+    // wrong by 4px per card, because the skeleton drew the artist line at
+    // the title's 20px instead of its own 16px (text-body-small).
+    await page.viewport(1200, 800)
+    await mountShelf(true)
+    const placeholder = (
+      document.querySelector('.album-shelf-skeleton-item') as HTMLElement
+    ).getBoundingClientRect()
+
+    for (const wrapper of wrappers.splice(0)) wrapper.unmount()
+    document.body.innerHTML = ''
+    await mountShelf(false)
+    const card = (document.querySelector('.album-card') as HTMLElement).getBoundingClientRect()
+
+    expect(Math.round(placeholder.width)).toBe(Math.round(card.width))
+    expect(Math.round(placeholder.height)).toBe(Math.round(card.height))
+  })
+
+  it('fills the row it is in rather than a fixed number of them', async () => {
+    // 1200px of viewport, minus the container's own padding, holds six
+    // 160px cards with their 20px gaps — the placeholders follow the
+    // window instead of stopping at a hardcoded count.
+    await page.viewport(1200, 800)
+    await mountShelf(true)
+
+    expect(document.querySelectorAll('.album-shelf-skeleton-item').length).toBeGreaterThan(6)
   })
 })
 

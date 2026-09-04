@@ -18,9 +18,19 @@ async function freshModule(): Promise<typeof import('../volumeControl')> {
   return import('../volumeControl')
 }
 
+/** volume_push mirrors the backend's own per-device flag (see
+ * connect/core/device_volume.py): a Sonos reports its own level, which is
+ * what makes the pushed reading below the current one. */
 function castTo(type: 'sonos' | 'airplay', name: string, volume?: number | null): void {
   useConnectStore().status = {
-    targets: [{ type, name, ...(volume === undefined ? {} : { volume }) }],
+    targets: [
+      {
+        type,
+        name,
+        volume_push: type === 'sonos',
+        ...(volume === undefined ? {} : { volume }),
+      },
+    ],
   } as ConnectStatus
 }
 

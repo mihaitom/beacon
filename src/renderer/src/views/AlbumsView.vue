@@ -145,14 +145,16 @@ import AlbumCard from '@/components/library/AlbumCard.vue'
 import AlphabetIndexBar from '@/components/library/AlphabetIndexBar.vue'
 import InfiniteScrollTrigger from '@/components/InfiniteScrollTrigger.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
+import { cardsAcross, observeCardsAcross } from '@/components/library/cardRowFit'
 import type { Album } from '@/types/library'
 
 const PAGE_SIZE = 60
-// Fills a few full rows of the 160px card grid on a typical window width —
-// there's no real count to key off yet (unlike SongTable's skeleton, which
-// caps at however many rows are actually about to load), so just enough to
-// read as "a grid is coming" without looking sparse.
-const SKELETON_COUNT = 18
+// How many rows of placeholder cards to draw. There's no real count to key
+// off yet (unlike SongTable's skeleton, which caps at however many rows are
+// actually about to load), so this is "enough to read as a grid" — how many
+// fit *across* is measured rather than guessed, see cardRowFit.ts, which is
+// what keeps this in step with the shelves on Home.
+const SKELETON_ROWS = 3
 
 // See the v-virtual-scroll template comment for why this exists — mirrors
 // SongTable.vue's SONG_VIRTUALIZE_THRESHOLD / QueueDrawer.vue's
@@ -203,14 +205,26 @@ export default {
       playingRandomAlbum: false,
       // Same, for the "Random from top 20" button below.
       playingTopAlbum: false,
+      // How many cards fit across the grid, measured on mount and kept up
+      // to date — 6 until then, which is what a narrow window holds.
+      cardsPerRow: 6,
+      resizeObserver: null as ResizeObserver | null,
     }
+  },
+  mounted() {
+    this.resizeObserver = observeCardsAcross(this.$el as Element, (width) => {
+      this.cardsPerRow = cardsAcross(width)
+    })
+  },
+  beforeUnmount() {
+    this.resizeObserver?.disconnect()
   },
   computed: {
     libraryStore() {
       return useLibraryStore()
     },
-    skeletonCount() {
-      return SKELETON_COUNT
+    skeletonCount(): number {
+      return this.cardsPerRow * SKELETON_ROWS
     },
     albumGap() {
       return ALBUM_GAP

@@ -170,6 +170,36 @@ describe('the store wiring the audio engine', () => {
 
       expect(playback.localPosition).toBeGreaterThanOrEqual(before)
     })
+
+    it('does not re-read a status payload the connect store merely touched again', async () => {
+      // The handler runs on every mutation of that store and re-reads the
+      // same `status` object — the device picker's own 4s poll produces one
+      // such mutation after another while it is open. status.elapsed is a
+      // snapshot from when the payload was built, so recording it again
+      // later hands the tracker a position that has since fallen behind,
+      // which past its smoothing window reads as a real rewind and pulls
+      // the counter back.
+      const playback = usePlaybackStore()
+      playback.init()
+      const connect = useConnectStore()
+      connect.status = makeStatus({
+        targets: [{ name: 'Living Room', type: 'sonos' }],
+        streaming: true,
+        elapsed: 30,
+      })
+      await flushPromises()
+
+      // Three seconds of smoothing later — well past the 1.5s the tracker
+      // is willing to treat as a correction rather than a real move.
+      vi.advanceTimersByTime(3000)
+      const smoothed = playback.localPosition
+      expect(smoothed).toBeGreaterThan(32)
+
+      connect.isScanning = true // an unrelated mutation, same payload
+      await flushPromises()
+
+      expect(playback.localPosition).toBeGreaterThanOrEqual(smoothed)
+    })
   })
 
   describe('duration', () => {

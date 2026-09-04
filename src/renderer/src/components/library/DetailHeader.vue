@@ -46,6 +46,9 @@
       </div>
     </div>
     <div class="detail-header__content">
+      <!-- Clickable only when there is a real picture behind it: opening a
+       - full-screen view of the fallback icon would be a promise the header
+       - can't keep. -->
       <cover-art
         :cover-art-id="coverArtId"
         :image-url="imageUrl"
@@ -53,6 +56,9 @@
         :fallback-icon="fallbackIcon"
         :rounded="rounded"
         class="detail-header__cover cover-shadow"
+        :class="{ 'detail-header__cover--zoomable': hasArtwork }"
+        :title="hasArtwork ? $t('library.showArtwork') : undefined"
+        @click="showArtwork"
       />
       <div class="detail-header__info min-width-0">
         <div v-if="eyebrow" class="eyebrow-label mb-1">{{ eyebrow }}</div>
@@ -75,6 +81,7 @@
 import type { PropType } from 'vue'
 import CoverArt from './CoverArt.vue'
 import { useLibraryStore } from '@/stores/library'
+import { emitter } from '@/emitter'
 import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
 
 /**
@@ -115,6 +122,26 @@ export default {
     backdropUrl(): string | null {
       if (this.coverArtId) return useLibraryStore().client().coverArtUrl(this.coverArtId, 300)
       return this.imageUrl
+    },
+    hasArtwork(): boolean {
+      return Boolean(this.coverArtId || this.imageUrl)
+    },
+  },
+  methods: {
+    /** Opens the app-wide viewer (ArtworkLightbox.vue, mounted in App.vue)
+     * rather than a dialog of this component's own — this header is on five
+     * different pages, and the same picture is also opened from places that
+     * have no header at all (a song row's context menu). */
+    showArtwork(): void {
+      if (!this.hasArtwork) return
+      emitter.emit('showArtwork', {
+        coverArtId: this.coverArtId,
+        imageUrl: this.imageUrl,
+        title: this.title,
+        subtitle: this.eyebrow || undefined,
+        rounded: this.rounded,
+        fallbackIcon: this.fallbackIcon,
+      })
     },
   },
   watch: {
@@ -198,6 +225,10 @@ export default {
 
 .detail-header__cover {
   flex-shrink: 0;
+}
+
+.detail-header__cover--zoomable {
+  cursor: zoom-in;
 }
 
 .detail-header__title {

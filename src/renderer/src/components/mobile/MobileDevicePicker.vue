@@ -24,6 +24,17 @@
           :disabled="connectStore.isScanning"
           @click="connectStore.refreshDevices(true)"
         />
+        <!-- Every action the sheet has lives in this one row: rescan,
+         - stop, done. The list below is only ever destinations. -->
+        <v-btn
+          v-if="connectStore.isActive"
+          variant="text"
+          size="small"
+          color="error"
+          @click="disconnectAll"
+        >
+          {{ $t('connect.stopAll') }}
+        </v-btn>
         <v-btn
           variant="flat"
           size="small"
@@ -42,18 +53,26 @@
       </div>
 
       <v-list v-else class="mobile-device-picker__list">
-        <v-list-item
-          v-if="connectStore.isActive"
-          class="mobile-device-picker__disconnect"
-          @click="disconnectAll"
-        >
-          <template #prepend><v-icon icon="mdi-cast-off" /></template>
-          <v-list-item-title>{{ $t('connect.stopAll') }}</v-list-item-title>
-        </v-list-item>
-
-        <v-list-item @click="disconnectAll">
-          <template #prepend><v-icon icon="mdi-speaker" /></template>
+        <!-- Local playback as one destination among the speakers, not as
+         - a red "stop" action sitting beside them. There used to be two
+         - rows here, "Stop all" and "This device", firing the identical
+         - command — one list of places the sound can go, with the current
+         - one ticked, is a choice; two differently coloured rows doing the
+         - same thing is a puzzle. Matches ConnectDevicePicker.vue, which
+         - has always shown local playback as an entry with its own active
+         - state, and keeps "Stop all" as an action next to Done rather
+         - than inside the list. -->
+        <v-list-item class="mobile-device-picker__local" @click="playHere">
+          <template #prepend>
+            <v-icon
+              :icon="connectStore.isActive ? 'mdi-speaker' : 'mdi-circle-slice-8'"
+              :color="connectStore.isActive ? undefined : 'primary'"
+            />
+          </template>
           <v-list-item-title>{{ $t('connect.thisDevice') }}</v-list-item-title>
+          <template v-if="!connectStore.isActive" #append>
+            <v-icon icon="mdi-check-circle" color="primary" />
+          </template>
         </v-list-item>
 
         <template v-for="group in deviceGroups" :key="group.type">
@@ -214,13 +233,23 @@ export default {
       this.selectedKeys = next
     },
     // Releases every active cast target — local playback then picks up on
-    // its own (see stores/playback.ts's connect.$subscribe handler), the
-    // same underlying action whether triggered from the explicit
-    // "Stop all" row (only shown while actually casting) or by picking
-    // "This device" itself.
+    // its own (see stores/playback.ts's connect.$subscribe handler). The
+    // "Stop all" action in the header and picking "This device" below are
+    // the same call; they differ only in where they are offered, which is
+    // why the list no longer carries both.
     disconnectAll() {
       void this.connectStore.stopAll()
       this.$emit('update:modelValue', false)
+    },
+    /** Picking local playback. Already local means there is nothing to
+     * apply — the sheet just closes, rather than firing a stop at nothing
+     * (which would still re-dispatch through the whole cast teardown). */
+    playHere() {
+      if (!this.connectStore.isActive) {
+        this.$emit('update:modelValue', false)
+        return
+      }
+      this.disconnectAll()
     },
     // Mirrors ConnectDevicePicker.vue's own takeOver() — immediate,
     // forced, and deliberately doesn't close the sheet (the row's own
@@ -303,12 +332,12 @@ export default {
   padding: 24px;
 }
 
-/* Destructive action (stops every active cast target) — colored to read
- * that way at a glance, same as ConnectDevicePicker.vue's own "Stop all"
- * button (color="error"). */
-.mobile-device-picker__disconnect,
-.mobile-device-picker__disconnect :deep(.v-icon) {
-  color: rgb(var(--v-theme-error));
+/* The row reads as the selected destination when nothing is casting —
+ * same treatment a picked speaker gets (MobileDeviceRow.vue's own
+ * check-circle), so the list has one consistent way of saying "this is
+ * where the sound is going". */
+.mobile-device-picker__local :deep(.v-list-item-title) {
+  font-weight: 500;
 }
 
 .mobile-device-picker__list {

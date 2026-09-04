@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -8,6 +8,7 @@ import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
 import { useConnectStore } from '@/stores/connect'
 import PlayerToolbar from '../PlayerToolbar.vue'
+import { _resetVolumeGuards } from '@/services/connect/volumeGuard'
 import { makeStatus } from '@/stores/__tests__/fixtures'
 
 const vuetify = createVuetify({ components, directives })
@@ -33,6 +34,9 @@ function scroll(wrapper: ReturnType<typeof mountToolbar>, deltaY: number): Wheel
 describe('PlayerToolbar', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    // Module-level and keyed by device (see volumeGuard.ts) — a settle
+    // window left over from one test would swallow the next one's readings.
+    _resetVolumeGuards()
   })
 
   afterEach(() => {
@@ -107,8 +111,8 @@ describe('PlayerToolbar', () => {
       // is the (disabled) local slider.
       useConnectStore().status = makeStatus({
         targets: [
-          { name: 'Kitchen', type: 'sonos' },
-          { name: 'Living Room', type: 'sonos' },
+          { name: 'Kitchen', type: 'sonos', volume_push: true },
+          { name: 'Living Room', type: 'sonos', volume_push: true },
         ],
       })
       await wrapper.vm.$nextTick()
@@ -164,7 +168,9 @@ describe('PlayerToolbar', () => {
       const wrapper = mountToolbar()
       const connect = useConnectStore()
       const getVolumeSpy = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
-      connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos', volume: 30 }] })
+      connect.status = makeStatus({
+        targets: [{ name: 'Living Room', type: 'sonos', volume: 30, volume_push: true }],
+      })
       await wrapper.vm.$nextTick()
       await vi.runOnlyPendingTimersAsync()
 
@@ -177,10 +183,113 @@ describe('PlayerToolbar', () => {
 
       // A push (e.g. the Sonos app, another session) updates the slider
       // without any request from this client at all.
-      connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos', volume: 55 }] })
+      connect.status = makeStatus({
+        targets: [{ name: 'Living Room', type: 'sonos', volume: 55, volume_push: true }],
+      })
       await wrapper.vm.$nextTick()
       expect(wrapper.get('.volume-value').text()).toBe('55%')
       expect(getVolumeSpy).not.toHaveBeenCalled()
+    })
+
+    describe('not fighting the person setting it', () => {
+      // Reported live 2026-09-04: the slider bounced back every so often.
+      // The device's own readings (a 4s poll here, a push for Sonos) were
+      // being applied on top of what the user had just done, carrying the
+      // value from before the change.
+      async function castTo(type: 'chromecast' | 'sonos', volume = 30) {
+        const wrapper = mountToolbar()
+        const connect = useConnectStore()
+        const getVolume = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(volume)
+        vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
+        connect.status = makeStatus({ targets: [{ name: 'Kitchen', type, volume }] })
+        await wrapper.vm.$nextTick()
+        await vi.runOnlyPendingTimersAsync()
+        return { wrapper, connect, getVolume }
+      }
+
+      it('does not let a poll that was already in flight pull the slider back', async () => {
+        // The actual race: the 4s poll goes out, the user moves the slider
+        // while it is on the wire, and the answer describes the level from
+        // before they touched it.
+        vi.useFakeTimers()
+        const { wrapper, getVolume } = await castTo('chromecast')
+        let answerPoll!: (volume: number) => void
+        getVolume.mockReturnValue(
+          new Promise<number>((resolve) => {
+            answerPoll = resolve
+          }),
+        )
+        await vi.advanceTimersByTimeAsync(4000)
+
+        wrapper.getComponent({ name: 'VSlider' }).vm.$emit('update:modelValue', 70)
+        await wrapper.vm.$nextTick()
+        expect(wrapper.get('.volume-value').text()).toBe('70%')
+
+        answerPoll(30)
+        // Microtasks only — advancing the clock here would step past the
+        // settle window and change what is being tested.
+        await flushPromises()
+
+        expect(wrapper.get('.volume-value').text()).toBe('70%')
+      })
+
+      it('does not even ask again while the level is being set', async () => {
+        vi.useFakeTimers()
+        const { wrapper, getVolume } = await castTo('chromecast')
+
+        // A drag that pauses mid-way: the pointer is still down, so the
+        // poll that falls in the middle of it must not answer over it.
+        wrapper.getComponent({ name: 'VSlider' }).vm.$emit('start', 30)
+        wrapper.getComponent({ name: 'VSlider' }).vm.$emit('update:modelValue', 70)
+        await wrapper.vm.$nextTick()
+        getVolume.mockClear()
+
+        await vi.advanceTimersByTimeAsync(8000)
+
+        expect(getVolume).not.toHaveBeenCalled()
+        expect(wrapper.get('.volume-value').text()).toBe('70%')
+      })
+
+      it('takes the device at its word again once it has had time to catch up', async () => {
+        vi.useFakeTimers()
+        const { wrapper, getVolume } = await castTo('chromecast')
+        wrapper.getComponent({ name: 'VSlider' }).vm.$emit('update:modelValue', 70)
+        await wrapper.vm.$nextTick()
+
+        // Someone turns the dial on the speaker itself a few seconds later:
+        // that has to reach the slider, or it would be stuck for good.
+        getVolume.mockResolvedValue(45)
+        await vi.advanceTimersByTimeAsync(8000)
+
+        expect(wrapper.get('.volume-value').text()).toBe('45%')
+      })
+
+      it('ignores a pushed reading for as long as the drag lasts', async () => {
+        vi.useFakeTimers()
+        const { wrapper, connect } = await castTo('sonos')
+        const slider = wrapper.getComponent({ name: 'VSlider' })
+
+        slider.vm.$emit('start', 30)
+        slider.vm.$emit('update:modelValue', 80)
+        await wrapper.vm.$nextTick()
+
+        // A push carrying the pre-drag level arrives mid-drag.
+        connect.status = makeStatus({
+          targets: [{ name: 'Kitchen', type: 'sonos', volume: 30, volume_push: true }],
+        })
+        await wrapper.vm.$nextTick()
+        expect(wrapper.get('.volume-value').text()).toBe('80%')
+
+        // Let go, wait out the settle window, and pushes count again.
+        slider.vm.$emit('end', 80)
+        await vi.advanceTimersByTimeAsync(4000)
+        connect.status = makeStatus({
+          targets: [{ name: 'Kitchen', type: 'sonos', volume: 25, volume_push: true }],
+        })
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.get('.volume-value').text()).toBe('25%')
+      })
     })
 
     it('sends a wheel adjustment to the device, not the local player', async () => {
@@ -190,7 +299,9 @@ describe('PlayerToolbar', () => {
       vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(50)
       const setDeviceVolumeSpy = vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
       const setLocalVolumeSpy = vi.spyOn(playback, 'setVolume')
-      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+      connect.status = makeStatus({
+        targets: [{ name: 'Kitchen', type: 'sonos', volume_push: true }],
+      })
       await wrapper.vm.$nextTick()
       await wrapper.vm.$nextTick()
 
@@ -220,7 +331,9 @@ describe('PlayerToolbar', () => {
       const connect = useConnectStore()
       vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(50)
       const setVolumeSpy = vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
-      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+      connect.status = makeStatus({
+        targets: [{ name: 'Kitchen', type: 'sonos', volume_push: true }],
+      })
       await wrapper.vm.$nextTick()
       await wrapper.vm.$nextTick()
 

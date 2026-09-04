@@ -523,6 +523,8 @@ describe('resolveRemoteQuery', () => {
     const result = await resolveRemoteQuery('radio-request', {})
 
     expect(fetchSpy).toHaveBeenCalledOnce()
+    // No homepage and no favicon hint — there is genuinely nothing to
+    // resolve a logo from, so the phone draws its fallback icon.
     expect(result).toEqual({ items: [{ id: 's1', name: 'Chill FM', favicon_url: null }] })
   })
 
@@ -628,7 +630,7 @@ describe('phone-scoped media URLs (remoteCoverArtUrl / remoteRadioFaviconUrl)', 
     )
   })
 
-  it('remoteRadioFaviconUrl is null without a homePageUrl, and only adds min_size when given a positive one', () => {
+  it('remoteRadioFaviconUrl is null with nothing to resolve from, and only adds min_size when given a positive one', () => {
     useRemoteControlStore().password = 'secret'
 
     expect(remoteRadioFaviconUrl(null)).toBeNull()
@@ -640,5 +642,21 @@ describe('phone-scoped media URLs (remoteCoverArtUrl / remoteRadioFaviconUrl)', 
     // Rounded up to the shared size step, so the phone reuses the answer the
     // desktop's own list row already had the backend resolve.
     expect(remoteRadioFaviconUrl('https://station.example', 32)).toContain('min_size=64')
+  })
+
+  it('remoteRadioFaviconUrl passes the station hint along, and works on the hint alone', () => {
+    // A station played straight out of the discover dialog has no homepage
+    // at all, only Radio Browser's own favicon URL — the desktop resolves
+    // those from the hint (see radioFaviconRequest) and the phone used to
+    // send neither, which is why it showed a fallback icon for them.
+    useRemoteControlStore().password = 'secret'
+
+    const fromHintOnly = remoteRadioFaviconUrl(null, 0, 'https://cdn.example/logo.png')
+    expect(fromHintOnly).toContain(`hint=${encodeURIComponent('https://cdn.example/logo.png')}`)
+    expect(fromHintOnly).toContain('url=&')
+
+    expect(
+      remoteRadioFaviconUrl('https://station.example', 0, 'https://cdn.example/l.png'),
+    ).toContain(`hint=${encodeURIComponent('https://cdn.example/l.png')}`)
   })
 })

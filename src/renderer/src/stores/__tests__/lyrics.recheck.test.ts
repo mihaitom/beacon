@@ -56,17 +56,22 @@ describe('lyrics cache re-check', () => {
     localStorage.clear()
   })
 
-  /** The store parses the persisted cache once and keeps it in a
-   * module-level variable, so a test that seeds localStorage has to reach
-   * it before that first read — hence a fresh module per test rather than
-   * clearing between them. Every store comes from the same fresh graph, or
-   * they would be talking to different instances. */
+  /** The store keeps this session's copy in a module-level variable, and
+   * carries an existing localStorage cache over exactly once per run, so a
+   * test that seeds that cache has to reach the module before its first
+   * read — hence a fresh module per test rather than clearing between them.
+   * Every store comes from the same fresh graph, or they would be talking
+   * to different instances. */
   async function loadStores() {
     vi.resetModules()
-    const [lyricsModule, libraryModule, authModule] = await Promise.all([
+    const [lyricsModule, libraryModule, authModule, storeModule] = await Promise.all([
       import('../lyrics'),
       import('../library'),
       import('../auth'),
+      // Read back through the store's own API rather than by poking at
+      // localStorage: where a cached entry ends up (IndexedDB in a browser,
+      // a bounded blob where there is none) is that module's business.
+      import('@/services/lyrics/lyricsStore'),
     ])
     return {
       lyrics: lyricsModule.useLyricsStore(),
@@ -74,6 +79,7 @@ describe('lyrics cache re-check', () => {
       auth: authModule.useAuthStore(),
       shouldRecheckFile: lyricsModule.shouldRecheckFile,
       FILE_SOURCE: lyricsModule.FILE_SOURCE,
+      readLyrics: storeModule.readLyrics,
     }
   }
 
@@ -142,7 +148,7 @@ describe('lyrics cache re-check', () => {
   it('keeps the cached lyrics when the file still has none', async () => {
     const song = makeSong('a')
     cacheProviderHit(song.id, Date.now() - 8 * DAY_MS)
-    const { lyrics, library, auth, shouldRecheckFile: isDue } = await loadStores()
+    const { lyrics, library, auth, shouldRecheckFile: isDue, readLyrics } = await loadStores()
     auth.serverType = 'subsonic'
     stubFileLyrics(library, [])
 
@@ -151,8 +157,8 @@ describe('lyrics cache re-check', () => {
 
     expect(lyrics.source).toBe('lrclib.net')
     // Marked as checked, so this doesn't repeat on every play from here on.
-    const stored = JSON.parse(localStorage.getItem('beacon.lyricsCache') ?? '{}')
-    expect(isDue(stored[song.id])).toBe(false)
+    const stored = await readLyrics<Parameters<typeof isDue>[0]>(song.id)
+    expect(isDue(stored!)).toBe(false)
   })
 
   it('does not ask the file again for a hit that was just cached', async () => {

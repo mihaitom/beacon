@@ -140,6 +140,12 @@ async def _create_dmr_device(location: str):
         raise UnsupportedDlnaDevice(upnp_device.friendly_name) from e
 
 
+# The service a renderer's volume lives on. Version 1 is what every
+# MediaRenderer implements; async-upnp-client resolves a v2/v3 device's own
+# service for this id anyway.
+_RENDERING_CONTROL = "urn:schemas-upnp-org:service:RenderingControl:1"
+
+
 class DlnaDelivery(BaseDelivery):
     """Controls a DLNA/UPnP MediaRenderer device via async-upnp-client."""
 
@@ -219,6 +225,46 @@ class DlnaDelivery(BaseDelivery):
             _device_cache.pop(self.target.lower(), None)
             raise
         logger.info(f"[DLNA:{self.target}] ✓ playing")
+        await self._subscribe_to_volume_events(device)
+
+    async def _subscribe_to_volume_events(self, device) -> None:
+        """Ask this renderer to report its own volume/mute changes, the same
+        RenderingControl subscription Sonos gets (see delivery/sonos.py and
+        routes/upnp.py, which parses both) — one fewer device to ask every
+        four seconds, and a level someone changes on the renderer itself
+        shows up here at once rather than at the next poll.
+
+        Entirely optional: plenty of renderers refuse eventing, and one that
+        does simply stays on the poll — nothing here is allowed to affect
+        whether it plays. Which of the two a device ended up on is reported
+        per device in the status (core/device_volume.py), rather than
+        assumed from the fact that it is a DLNA renderer at all.
+
+        Imported here, not at module scope: routes/upnp.py reaches the
+        delivery layer through core.state, so importing it at import time
+        would close that loop."""
+        from core.device_volume import mark_pushes_volume
+        from core.upnp_events import subscribe
+        from routes.upnp import callback_url_for
+
+        try:
+            # The renderer publishes its own event URL in its device
+            # description; unlike Sonos there is no fixed path to assume
+            # (see core/upnp_events.py's own comment on that assumption).
+            service = device.profile_device.service(_RENDERING_CONTROL)
+            event_url = service.event_sub_url if service else None
+            if not event_url:
+                return
+            subscription = await subscribe(
+                self.target,
+                "renderingcontrol",
+                event_url,
+                callback_url_for(self.target, "renderingcontrol", "dlna"),
+            )
+            if subscription is not None:
+                mark_pushes_volume("dlna", self.target)
+        except Exception as e:
+            logger.debug(f"[DLNA:{self.target}] volume eventing unavailable: {e}")
 
     async def pause(self) -> None:
         device = await self._get_device_or_evict()

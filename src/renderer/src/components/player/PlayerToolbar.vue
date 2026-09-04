@@ -50,6 +50,8 @@
         density="compact"
         hide-details
         @update:model-value="onDeviceVolumeChange"
+        @start="onVolumeDragStart"
+        @end="onVolumeDragEnd"
         @wheel="onVolumeWheel"
       />
       <v-slider
@@ -115,6 +117,8 @@
             density="compact"
             hide-details
             @update:model-value="onDeviceVolumeChange"
+            @start="onVolumeDragStart"
+            @end="onVolumeDragEnd"
             @wheel="onVolumeWheel"
           />
           <v-slider
@@ -142,6 +146,12 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useDrawersStore } from '@/stores/drawers'
 import { useConnectStore } from '@/stores/connect'
 import { pollingAllowed } from '@/services/connect/pollGate'
+import {
+  acceptsVolumeReading,
+  endVolumeDrag,
+  noteVolumeChange,
+  startVolumeDrag,
+} from '@/services/connect/volumeGuard'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import ConnectButton from '@/components/connect/ConnectButton.vue'
@@ -280,7 +290,12 @@ export default {
           // channel only ever fires on the *next* change, so the very
           // first paint still needs one real round trip.
           this.fetchDeviceVolume(this.singleActiveTarget)
-          if (!this.connectStore.isVolumePushCapable(this.singleActiveTarget.type)) {
+          if (
+            !this.connectStore.isVolumePushCapable(
+              this.singleActiveTarget.type,
+              this.singleActiveTarget.name,
+            )
+          ) {
             // Skipped while the window is hidden or the app is being
             // denied by whatever sits in front of the backend — see
             // pollGate.ts. The timer keeps ticking rather than being torn
@@ -295,8 +310,11 @@ export default {
       },
     },
     pushedDeviceVolume(value: number | null) {
-      if (value != null) this.deviceVolume = value
+      const target = this.singleActiveTarget
+      if (value != null && target && acceptsVolumeReading(target)) this.deviceVolume = value
     },
+    // No guard here: this one *is* the user's own change, arriving from the
+    // keyboard shortcuts or the mute button via volumeControl.ts.
     sharedDeviceVolume(value: number | null) {
       if (value != null) this.deviceVolume = value
     },
@@ -306,7 +324,13 @@ export default {
   },
   methods: {
     async fetchDeviceVolume(target: ConnectDeviceRef) {
+      // Not even asked for while the user is setting it: the answer would
+      // be the value from before their change either way.
+      if (!acceptsVolumeReading(target)) return
       const raw = await this.connectStore.getDeviceVolume(target.type, target.name)
+      // Checked again on the way back — a drag can start while this is in
+      // flight, and this answer predates it.
+      if (!acceptsVolumeReading(target)) return
       this.deviceVolume = raw == null ? null : Math.round(raw)
       // Handed over so a keyboard step doesn't repeat this round trip (and
       // so it works off a current reading rather than a stale one) — see
@@ -317,9 +341,16 @@ export default {
       const target = this.singleActiveTarget
       if (!target) return
       const rounded = Math.round(value)
+      noteVolumeChange(target)
       this.deviceVolume = rounded
       recordDeviceVolume(target, rounded)
       await this.connectStore.setDeviceVolume(target.type, target.name, rounded)
+    },
+    onVolumeDragStart() {
+      if (this.singleActiveTarget) startVolumeDrag(this.singleActiveTarget)
+    },
+    onVolumeDragEnd() {
+      if (this.singleActiveTarget) endVolumeDrag(this.singleActiveTarget)
     },
     // Same branch toggleMute() makes: with exactly one cast target this
     // slider is that device's, otherwise it's local playback's.

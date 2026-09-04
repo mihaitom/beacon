@@ -3,28 +3,23 @@
     class="lyrics-panel"
     :class="[`lyrics-panel--${variant}`, { 'lyrics-panel--mobile': mobile }]"
   >
-    <div v-if="lyricsStore.loading" class="lyrics-panel__skeleton">
-      <!-- Bones only in the compact drawer, where they sit on the app's
-       - normal solid surface — over the immersive view's blurred-photo
-       - backdrop they never looked right no matter how they were styled,
-       - so fullscreen just shows nothing until the real lyrics land. -->
-      <template v-if="variant === 'compact'">
-        <v-skeleton-loader
-          v-for="(width, index) in skeletonWidths"
-          :key="index"
-          type="text"
-          :width="width"
-          height="24"
-          class="mb-4"
-        />
-      </template>
-    </div>
-
-    <div
-      v-else-if="lyricsStore.error || lyricsStore.lines.length === 0"
-      class="lyrics-panel__empty"
-    >
-      <span class="text-medium-emphasis">{{ $t('lyrics.notFound') }}</span>
+    <!-- One line of text for both of the states that have no lyrics to
+     - show: looking for them, and not having found any.
+     -
+     - This used to be a column of skeleton bones while loading, which was
+     - the wrong promise to make here. A skeleton stands in for content
+     - whose shape is known and whose arrival is expected — neither holds
+     - for lyrics: how many lines there are is unknown until they arrive,
+     - and "this song has none" is a normal outcome rather than a failure
+     - (see stores/lyrics.ts, which caches exactly that answer). Six bars of
+     - pretend text collapsing into "no lyrics found" said the opposite.
+     - There is no layout argument for them either, the way there is on a
+     - shelf of cards: this panel is a fixed box, and both states fill it
+     - identically. The immersive variant had already dropped the bones for
+     - looking wrong over its blurred backdrop, which left the two variants
+     - disagreeing; a line of text works in both. -->
+    <div v-if="statusMessage" class="lyrics-panel__status">
+      <span class="text-medium-emphasis">{{ statusMessage }}</span>
     </div>
 
     <div v-else-if="!lyricsStore.synced" class="lyrics-panel__scroll lyrics-panel__scroll--plain">
@@ -208,8 +203,6 @@ import { FILE_SOURCE, useLyricsStore } from '@/stores/lyrics'
 import type { LyricLine } from '@/services/lyrics/parseLrc'
 import LyricsCandidateList from '@/components/lyrics/LyricsCandidateList.vue'
 
-const SKELETON_WIDTHS = ['70%', '45%', '85%', '55%', '65%', '40%']
-
 export default {
   name: 'LyricsPanel',
   components: { LyricsCandidateList },
@@ -249,8 +242,29 @@ export default {
     lyricsStore() {
       return useLyricsStore()
     },
-    skeletonWidths() {
-      return SKELETON_WIDTHS
+    /** What to say when there are no lines to show, or null when there
+     * are.
+     *
+     * "Looking" covers two cases, not one: a lookup that is running, and a
+     * song the store has no answer about at all yet — which is what a panel
+     * sees for the beat between being shown and whoever showed it asking
+     * for the lyrics. Reporting "none found" in that gap would be claiming
+     * an outcome nobody has looked for, and it is the state a freshly
+     * opened lyrics drawer starts in. */
+    statusMessage(): string | null {
+      if (this.lyricsStore.loading) return this.$t('lyrics.searching')
+      // Lines win over any of this: whatever is in the store is real
+      // lyrics, and a message that hid them would be worse than one that
+      // is a moment out of date.
+      if (!this.lyricsStore.error && this.lyricsStore.lines.length > 0) return null
+      // Nothing to show, and nobody has asked about *this* song yet — the
+      // beat between a panel appearing and whoever showed it starting the
+      // lookup, which is where a freshly opened lyrics drawer begins.
+      const playing = this.currentSong?.id ?? null
+      if (playing !== null && this.lyricsStore.songId !== playing) {
+        return this.$t('lyrics.searching')
+      }
+      return this.$t('lyrics.notFound')
     },
     plainText() {
       return this.lyricsStore.lines.map((line) => line.text).join('\n')
@@ -574,29 +588,15 @@ export default {
   line-height: 1.7;
 }
 
-.lyrics-panel__empty {
+/* Both no-lyrics states (looking, and none found) — one box, so the
+ * message changes without the panel around it moving. */
+.lyrics-panel__status {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
   padding: 24px;
-}
-
-.lyrics-panel__skeleton {
-  padding: 4px 0;
-}
-
-/* Vuetify's default bone color/shimmer is tuned for a solid surface
- * background — over the immersive view's blurred-photo backdrop it reads
- * too bright/busy. Flatten it to the same translucent-white language used
- * for inactive lines and the edge mask elsewhere in this panel. */
-.lyrics-panel__skeleton :deep(.v-skeleton-loader__bone) {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.lyrics-panel__skeleton :deep(.v-skeleton-loader__bone::after) {
-  display: none;
 }
 
 /* Compact (docked drawer) — centered, modest scale. max-width 85% is

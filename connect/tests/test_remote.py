@@ -17,6 +17,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+import routes.radio as radio_module
 from core.remote import remote
 from main import app
 from media import SubsonicClient
@@ -619,3 +620,53 @@ def test_app_404_when_static_assets_are_entirely_missing(tmp_path, monkeypatch):
         remote.disable()
 
     assert exc_info.value.status_code == 404
+
+
+def test_radio_favicon_passes_a_real_hint_through_to_the_lookup(client, monkeypatch):
+    # The re-export used to call routes/radio.py's endpoint function
+    # directly without naming `hint`, which does not leave it as "" — it
+    # leaves it as the FastAPI Query() object that is its declared default,
+    # and the resolver calls .lower() on it. Every favicon the phone asked
+    # for died on that AttributeError and came back 404, which is what the
+    # remote renders as a fallback icon.
+    seen: dict = {}
+
+    async def fake_resolve(url, hint, min_size):
+        seen.update(url=url, hint=hint, min_size=min_size)
+
+    monkeypatch.setattr(radio_module, "_resolve_favicon", fake_resolve)
+    radio_module._result_cache.clear()
+    radio_module._inflight.clear()
+    client.post("/remote/enable")
+
+    client.get(
+        "/remote/radio-favicon?url=http://station.example&min_size=120",
+        headers={"X-Remote-Password": remote.password},
+    )
+
+    assert seen == {"url": "http://station.example", "hint": "", "min_size": 120}
+
+
+def test_radio_favicon_resolves_from_a_hint_with_no_homepage(client, monkeypatch):
+    # A station played straight out of the discover dialog carries Radio
+    # Browser's own favicon URL but no homepage at all — the desktop
+    # resolves those from the hint alone (see radioFaviconRequest), and the
+    # phone could not ask for one: the parameter was not forwarded, and the
+    # endpoint demanded a url.
+    seen: dict = {}
+
+    async def fake_resolve(url, hint, min_size):
+        seen.update(url=url, hint=hint, min_size=min_size)
+
+    monkeypatch.setattr(radio_module, "_resolve_favicon", fake_resolve)
+    radio_module._result_cache.clear()
+    radio_module._inflight.clear()
+    client.post("/remote/enable")
+
+    resp = client.get(
+        "/remote/radio-favicon?hint=http://cdn.example/logo.png",
+        headers={"X-Remote-Password": remote.password},
+    )
+
+    assert resp.status_code == 404  # the stub found nothing; the lookup still ran
+    assert seen == {"url": "", "hint": "http://cdn.example/logo.png", "min_size": 0}

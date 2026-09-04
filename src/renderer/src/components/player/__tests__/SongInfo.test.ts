@@ -43,6 +43,12 @@ describe('SongInfo', () => {
     setActivePinia(createPinia())
   })
 
+  it('does not offer a click cursor with nothing playing, where a click does nothing', async () => {
+    const { wrapper } = await mountInfo()
+
+    expect(wrapper.get('.song-info').classes()).not.toContain('song-info--clickable')
+  })
+
   it('shows the placeholder and does not navigate to /now-playing when clicked with nothing playing', async () => {
     const { wrapper, router } = await mountInfo()
     const push = vi.spyOn(router, 'push')
@@ -118,6 +124,43 @@ describe('SongInfo', () => {
 
       expect(wrapper.get('.text-body-medium').text()).toBe('Artist - Track')
       expect(wrapper.get('.text-body-small').text()).toBe('Chill FM')
+    })
+
+    it('leaves its labels as plain text, with nowhere to click through to', async () => {
+      // A station has no page of its own in this app, so neither the tag
+      // nor the station name has anywhere to lead — and neither should
+      // look or behave as though it did.
+      const { wrapper, router } = await mountInfo()
+      usePlaybackStore().radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      usePlaybackStore().radioNowPlaying = 'Artist - Track'
+      await wrapper.vm.$nextTick()
+      const push = vi.spyOn(router, 'push')
+
+      await wrapper.get('.song-info__labels--inert').trigger('click')
+
+      expect(push).not.toHaveBeenCalled()
+    })
+
+    it('still opens Now Playing from the artwork beside them', async () => {
+      const { wrapper, router } = await mountInfo()
+      usePlaybackStore().radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      await wrapper.vm.$nextTick()
+      const push = vi.spyOn(router, 'push')
+
+      await wrapper.get('.song-info').trigger('click')
+
+      expect(push).toHaveBeenCalledWith('/now-playing')
+      expect(wrapper.get('.song-info').classes()).toContain('song-info--clickable')
     })
 
     it('still shows a favicon for a station played without a homepage, via its Radio Browser hint', async () => {

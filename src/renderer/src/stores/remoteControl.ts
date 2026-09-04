@@ -225,7 +225,11 @@ export const useRemoteControlStore = defineStore('remoteControl', {
             ? {
                 name: playback.radioStation.name,
                 stream_url: playback.radioStation.streamUrl,
-                favicon_url: remoteRadioFaviconUrl(playback.radioStation.homePageUrl, 120),
+                favicon_url: remoteRadioFaviconUrl(
+                  playback.radioStation.homePageUrl,
+                  120,
+                  playback.radioStation.favicon ?? null,
+                ),
               }
             : null,
           queue: playback.queue.map(toRemoteSong),
@@ -303,7 +307,7 @@ export const useRemoteControlStore = defineStore('remoteControl', {
           return
         }
         const target = targets[0]!
-        const pushed = connect.isVolumePushCapable(target.type)
+        const pushed = connect.isVolumePushCapable(target.type, target.name)
           ? connect.pushedVolumeFor(target.type, target.name)
           : null
         const volume = pushed ?? (await connect.getDeviceVolume(target.type, target.name))

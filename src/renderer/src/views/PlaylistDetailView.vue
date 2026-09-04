@@ -34,51 +34,12 @@
           :title="$t('common.edit')"
           @click="openEdit"
         />
-        <v-btn icon="mdi-delete-outline" variant="text" @click="deleteDialog = true" />
+        <v-btn icon="mdi-delete-outline" variant="text" @click="openDelete" />
       </template>
     </detail-header>
 
-    <v-dialog v-model="editDialog" max-width="400">
-      <v-card>
-        <v-card-title>{{ $t('playlists.editTitle') }}</v-card-title>
-        <v-card-text>
-          <v-text-field
-            v-model="editName"
-            :label="$t('common.name')"
-            variant="solo-filled"
-            clearable
-            @keyup.enter="saveEdit"
-          />
-          <v-switch
-            v-model="editPublic"
-            :label="$t('playlists.public')"
-            color="primary"
-            hide-details
-          />
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="editDialog = false">{{ $t('common.cancel') }}</v-btn>
-          <v-btn color="primary" :disabled="!editName.trim()" @click="saveEdit">{{
-            $t('common.save')
-          }}</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <v-dialog v-model="deleteDialog" max-width="400">
-      <v-card>
-        <v-card-title>{{ $t('playlists.deleteTitle') }}</v-card-title>
-        <v-card-text>
-          {{ $t('playlists.deleteConfirm', { name: playlist.name }) }}
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="deleteDialog = false">{{ $t('common.cancel') }}</v-btn>
-          <v-btn color="error" :loading="deleting" @click="remove">{{ $t('common.delete') }}</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <playlist-edit-dialog ref="editDialog" @saved="onRenamed" />
+    <playlist-delete-dialog ref="deleteDialog" @deleted="$router.push('/playlists')" />
 
     <!-- Only your own playlists: a shared one belongs to whoever made it,
      - and the server rejects the write anyway (Navidrome answers
@@ -112,21 +73,19 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import SongTable from '@/components/library/SongTable.vue'
+import PlaylistEditDialog from '@/components/library/PlaylistEditDialog.vue'
+import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
 import PageLoader from '@/components/PageLoader.vue'
+import type { Playlist } from '@/types/library'
 
 export default {
   name: 'PlaylistDetailView',
-  components: { DetailHeader, SongTable, PageLoader },
+  components: { DetailHeader, SongTable, PlaylistEditDialog, PlaylistDeleteDialog, PageLoader },
   data() {
     return {
       playlist: null as Awaited<
         ReturnType<ReturnType<typeof useLibraryStore>['fetchPlaylist']>
       > | null,
-      editDialog: false,
-      editName: '',
-      editPublic: false,
-      deleteDialog: false,
-      deleting: false,
     }
   },
   computed: {
@@ -169,37 +128,25 @@ export default {
         console.error('[playlist-detail] Failed to load playlist:', error)
       }
     },
-    async remove() {
-      this.deleting = true
-      try {
-        await this.libraryStore.deletePlaylist(this.$route.params.id as string)
-        this.deleteDialog = false
-        this.$router.push('/playlists')
-      } catch (error) {
-        this.$emitter.emit('toast', {
-          level: 'error',
-          title: this.$t('playlists.deleteTitle'),
-          message: error instanceof Error ? error.message : String(error),
-        })
-        console.error('[playlist-detail] Failed to delete playlist:', error)
-      } finally {
-        this.deleting = false
-      }
-    },
     openEdit() {
       if (!this.playlist) return
-      this.editName = this.playlist.name
-      this.editPublic = this.playlist.public
-      this.editDialog = true
+      ;(this.$refs.editDialog as { open: (playlist: Playlist) => void } | undefined)?.open(
+        this.playlist,
+      )
     },
-    async saveEdit() {
-      if (!this.playlist || !this.editName.trim()) return
-      const name = this.editName.trim()
-      const isPublic = this.editPublic
-      await this.libraryStore.updatePlaylist(this.playlist.id, { name, public: isPublic })
+    openDelete() {
+      if (!this.playlist) return
+      ;(this.$refs.deleteDialog as { open: (playlist: Playlist) => void } | undefined)?.open(
+        this.playlist,
+      )
+    },
+    /** This view holds its own copy of the playlist (fetched by id, not the
+     * store's list entry), so the new name has to be written into it here —
+     * the store's own list is already updated by the dialog. */
+    onRenamed({ name, public: isPublic }: { name: string; public: boolean }) {
+      if (!this.playlist) return
       this.playlist.name = name
       this.playlist.public = isPublic
-      this.editDialog = false
     },
     /** Moves a song and saves the result. The row moves first and is put
      * back if the save fails — a drag that only takes effect a round trip

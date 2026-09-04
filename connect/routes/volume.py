@@ -108,9 +108,10 @@ async def get_device_volume(
             device = await asyncio.to_thread(SonosDelivery(name)._get_device)
             volume = device.volume
             # Broadcast for the same reason /volume's GET does — see its
-            # comment. chromecast/dlna below don't: those stay on
-            # DeviceListItem.vue's existing poll, unchanged, so there's no
-            # reactive path for this response to feed.
+            # comment. chromecast/dlna below don't: this endpoint is what a
+            # client falls back to when a device *isn't* pushing (see
+            # core/device_volume.py), and the answer goes straight back to
+            # whoever asked, so there is nothing to fan out.
             _record_volume(session, "sonos", name, volume, None)
             await session.event_bus.broadcast(build_status_dict(session))
             return {"volume": volume}

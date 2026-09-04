@@ -28,6 +28,7 @@ load_dotenv()
 
 from core.auth import TOKEN as _CONNECT_TOKEN
 from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED
+from core.device_volume import capture_main_loop
 from core.log_level import TRACE as _TRACE_LEVEL
 from core.log_level import apply as _apply_log_level
 from core.log_level import initial_level as _initial_log_level
@@ -249,6 +250,10 @@ async def _periodic_discovery() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     asyncio.get_event_loop().set_exception_handler(_asyncio_exception_handler)
+    # A Chromecast reports its volume from pychromecast's own thread — see
+    # core/device_volume.py's report_volume_from_thread(), which needs a
+    # loop to hand the reading back to.
+    capture_main_loop()
     local_ip = get_local_ip()
     logger.info(f"🎵 Stream: http://{local_ip}:{PORT}/stream")
     logger.info(f"🔌 API:    http://{local_ip}:{PORT}/")

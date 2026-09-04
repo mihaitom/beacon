@@ -62,12 +62,23 @@ function remoteCoverArtUrl(coverArtId: string | null): string | null {
 
 /** Same reasoning as remoteCoverArtUrl() above, for internet radio station
  * logos — routes/remote.py's /radio-favicon re-exports routes/radio.py's
- * fetch-and-relay logic under the phone's password instead of CONNECT_TOKEN. */
-export function remoteRadioFaviconUrl(homePageUrl: string | null, minSize = 0): string | null {
-  if (!homePageUrl) return null
+ * fetch-and-relay logic under the phone's password instead of CONNECT_TOKEN.
+ *
+ * `hint` is Radio Browser's own favicon field, carried by a station played
+ * straight out of the discover dialog — which has no homepage at all, so
+ * the hint is the only thing there is to resolve from. The desktop has
+ * always passed both (see radioFaviconRequest); the phone used to send
+ * neither and simply showed a fallback icon for those stations. */
+export function remoteRadioFaviconUrl(
+  homePageUrl: string | null,
+  minSize = 0,
+  hint: string | null = null,
+): string | null {
+  if (!homePageUrl && !hint) return null
   const base = remoteMediaBase()
   if (!base) return null
-  const params = new URLSearchParams({ url: homePageUrl, password: base.password })
+  const params = new URLSearchParams({ url: homePageUrl ?? '', password: base.password })
+  if (hint) params.set('hint', hint)
   // Rounded to the same steps the desktop asks for (see faviconSizeStep), so
   // the phone shares the backend's already-resolved answer for a station
   // instead of making it look the station up again under a size of its own.
@@ -345,7 +356,7 @@ export async function resolveRemoteQuery(
           // recolored by Safari itself, not a real logo — see
           // routes/radio.py's own _ICON_RELS comment). Matches RadioView.vue's
           // own faviconUrl(homePageUrl, 32) for this same list-row use.
-          favicon_url: remoteRadioFaviconUrl(s.homePageUrl, 32),
+          favicon_url: remoteRadioFaviconUrl(s.homePageUrl, 32, s.favicon ?? null),
         })),
       }
     }

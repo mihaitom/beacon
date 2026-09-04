@@ -11,7 +11,7 @@
    - (Deezer, or MusicBrainz as a fallback) on the artist's behalf.
    - window.open() is intercepted by main/index.ts's setWindowOpenHandler ->
    - shell.openExternal, same as ServerLoginView.vue's Plex sign-in link. -->
-  <card-shelf v-if="artists.length || loading" :title="title">
+  <card-shelf v-if="artists.length || loading" ref="shelf" :title="title">
     <!-- Passed straight through to CardShelf's own header slot: this shelf
      - is filled by the same request that fills the Discover one (see
      - HomeView.vue's discoverFromSimilarArtists), so the control for
@@ -22,10 +22,13 @@
      - of the page up while the lookup runs — the same reason AlbumShelf.vue
      - has its own. -->
     <template v-if="loading">
-      <div v-for="n in SKELETON_COUNT" :key="`skeleton-${n}`" class="similar-artists-card">
+      <div v-for="n in skeletonCount" :key="`skeleton-${n}`" class="similar-artists-card">
         <v-skeleton-loader type="image" width="160" height="160" class="rounded" />
-        <v-skeleton-loader type="text" width="80%" height="20" class="mt-2" />
-        <v-skeleton-loader type="text" width="45%" height="16" />
+        <v-skeleton-loader type="text" width="70%" height="20" class="mt-2 mx-auto" />
+        <!-- Stands in for the row of service links, not for a second line
+         - of text: 18px icons with the 6px of space above them the real
+         - row has (see .similar-artists-card-links). -->
+        <v-skeleton-loader type="text" width="45%" height="18" class="mx-auto skeleton-links" />
       </div>
     </template>
     <div v-for="artist in loading ? [] : artists" :key="artist.mbid" class="similar-artists-card">
@@ -67,6 +70,7 @@ import type { SimilarArtist } from '@/services/connect/recommendations'
 import { toExternalLinkList, type ExternalLinkKey } from '@/components/library/externalArtistLinks'
 import CoverArt from './CoverArt.vue'
 import CardShelf from './CardShelf.vue'
+import { observeCardsAcross, skeletonsAcross } from './cardRowFit'
 
 /** SimilarArtist enriched with what HomeView.vue's own artist-images +
  * artist-links-by-mbid lookups found (see discoverFromSimilarArtists()) —
@@ -78,16 +82,19 @@ export interface SimilarArtistDisplay extends SimilarArtist {
   links: Partial<Record<ExternalLinkKey, string>>
 }
 
-// Enough to fill a row on a normal window without measuring anything —
-// the shelf scrolls horizontally, so overshooting costs nothing but a few
-// placeholders scrolled off the right edge.
-const SKELETON_COUNT = 8
-
 export default {
   name: 'SimilarArtistsShelf',
   components: { CoverArt, CardShelf },
-  computed: {
-    SKELETON_COUNT: () => SKELETON_COUNT,
+  data() {
+    return {
+      // Measured rather than fixed, so the placeholders fill whatever
+      // window this is open in — see cardRowFit.ts. This shelf and the
+      // Discover album shelf next to it are the two that take long enough
+      // to load for anyone to see them, which is why a count that only
+      // looked right on a narrow window showed up here first.
+      skeletonCount: 6,
+      resizeObserver: null as ResizeObserver | null,
+    }
   },
   props: {
     title: {
@@ -103,6 +110,18 @@ export default {
       required: true,
     },
   },
+  mounted() {
+    // The row, not this component's own $el: the template leads with a
+    // comment, which makes this a fragment whose $el is that comment node.
+    const row = (this.$refs.shelf as InstanceType<typeof CardShelf> | undefined)?.rowElement()
+    if (!row) return
+    this.resizeObserver = observeCardsAcross(row, (width) => {
+      this.skeletonCount = skeletonsAcross(width)
+    })
+  },
+  beforeUnmount() {
+    this.resizeObserver?.disconnect()
+  },
   methods: {
     externalLinks(urls: Partial<Record<ExternalLinkKey, string>>) {
       return toExternalLinkList(urls)
@@ -114,6 +133,24 @@ export default {
 <style scoped>
 .similar-artists-card {
   width: 160px;
+}
+
+/* Same reason AlbumShelf.vue and AlbumsView.vue force this: a
+ * v-skeleton-loader's bones ignore the component's own width/height props
+ * (those size the outer wrapper only) and keep fixed CSS heights plus a
+ * 16px margin of their own. Without it this shelf's placeholders were the
+ * one set in the app that didn't match the cards they stand in for, and
+ * the row changed height as the artists arrived. */
+.similar-artists-card :deep(.v-skeleton-loader__bone) {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* The links row sits 6px below the name (see .similar-artists-card-links),
+ * which the placeholder above stands in for. */
+.similar-artists-card .skeleton-links {
+  margin-top: 6px;
 }
 
 .similar-artists-card-art {

@@ -129,19 +129,36 @@ export const useConnectStore = defineStore('connect', {
       return (type: DeviceType): boolean =>
         RADIO_VISUALIZER_ENABLED && (type === 'chromecast' || type === 'dlna' || type === 'sonos')
     },
-    // Which device types push their volume/mute into `status.targets`
-    // instead of only ever needing to be polled for it - a
-    // RenderingControl subscription for Sonos (see
-    // connect/routes/upnp.py), nothing yet for chromecast/dlna.
+    // Which devices push their volume/mute into `status.targets` instead
+    // of only ever needing to be polled for it: a RenderingControl
+    // subscription for Sonos and for DLNA renderers that accept one, a
+    // status listener on the connection Beacon already holds to a
+    // Chromecast (see connect/core/device_volume.py, which is what sets
+    // the volume_push flag this reads).
+    //
     // Centralized here so every surface showing a device's volume
     // (DeviceListItem.vue, MobileDeviceRow.vue, PlayerToolbar.vue,
     // MobileTransportControls.vue, remoteControl.ts's own poll) agrees on
-    // which types that applies to, rather than each re-implementing its
+    // which devices that applies to, rather than each re-implementing its
     // own `type !== 'sonos'` check - three of those drifted out of sync
     // with the original fix that way (kept polling every 4s for Sonos
     // regardless), caught live 2026-08-25.
     isVolumePushCapable() {
-      return (type: DeviceType): boolean => type === 'sonos'
+      return (type: DeviceType, name?: string): boolean => {
+        // The backend says so per device (see connect/core/device_volume.py
+        // and the volume_push field): a subscription a renderer refused, or
+        // a Chromecast that hasn't been connected to yet, is polled like
+        // anything else rather than assumed to push because of its type.
+        // Without a name this can only answer for the type as a whole,
+        // which is what a device not in the current status (the picker's
+        // list of everything discovered) gets.
+        if (name == null) return false
+        return (
+          this.status?.targets.some(
+            (target) => target.type === type && target.name === name && target.volume_push === true,
+          ) ?? false
+        )
+      }
     },
     // Which device types have a per-device volume endpoint at all (see
     // connect/routes/volume.py's /device-volume, which answers with a
@@ -155,13 +172,13 @@ export const useConnectStore = defineStore('connect', {
       return (type: DeviceType): boolean =>
         type === 'sonos' || type === 'chromecast' || type === 'dlna'
     },
-    // The pushed reading for a specific device, or null when its type
-    // isn't push-capable, or when nothing has pushed one yet (an unclaimed
+    // The pushed reading for a specific device, or null when that device
+    // isn't pushing, or when nothing has pushed one yet (an unclaimed
     // device, or a claimed one whose first reading hasn't landed - see
     // ConnectStatusTarget.volume's own comment).
     pushedVolumeFor() {
       return (type: DeviceType, name: string): number | null => {
-        if (!this.isVolumePushCapable(type)) return null
+        if (!this.isVolumePushCapable(type, name)) return null
         const target = this.activeTargets.find((t) => t.type === type && t.name === name)
         return target?.volume ?? null
       }

@@ -68,6 +68,26 @@ const vuetify = createVuetify({ components, directives })
 // the fresh one.
 let currentWrapper: VueWrapper | null = null
 
+/** Puts a station with a long ICY tag on the bar instead of a song — the
+ * shape that has the least room to work with: the tag arrives as one
+ * "Artist - Title" string in the top line, with no artist line to split it
+ * across. */
+async function mountRadioBar(nowPlaying: string) {
+  const wrapper = await mountBar()
+  const playback = usePlaybackStore()
+  playback.queue = []
+  playback.currentIndex = -1
+  playback.radioStation = {
+    id: 'r1',
+    name: 'Some Station',
+    streamUrl: 'http://stream.test/live',
+    homePageUrl: null,
+  }
+  playback.radioNowPlaying = nowPlaying
+  await wrapper.vm.$nextTick()
+  return wrapper
+}
+
 async function mountBar(castingElectron = false) {
   if (currentWrapper) {
     currentWrapper.unmount()
@@ -130,10 +150,40 @@ describe('PlayerBar layout', () => {
     const barRect = rect('.player-bar')
     const centerRect = rect('.control-container')
 
-    expect(Math.round(rect('.song-info').width)).toBe(300)
+    // song-info fills its whole flank rather than sitting at a fixed width
+    // inside it (see its own rule) — in this state that flank is the
+    // toolbar's 434px, and the room goes to the title/artist instead of
+    // being left empty. What has to stay true is that both flanks are
+    // identical, which is what centers the middle track by construction.
+    expect(Math.round(rect('.song-info').width)).toBe(434)
     expect(
       Math.abs(barRect.left + barRect.width / 2 - (centerRect.left + centerRect.width / 2)),
     ).toBeLessThan(1)
+  })
+
+  it('gives a radio station its whole flank to put an ICY tag in', async () => {
+    // Which is the point of song-info filling its track: the tag is a
+    // single line of text with no second line to spill onto, so every
+    // pixel of the flank that used to sit unused beside a 300px-wide
+    // song-info is a few more characters before it truncates.
+    await page.viewport(1600, 400)
+    // Long enough to have to be cut off either way — what is under test is
+    // how much of it survives, not whether it fits.
+    await mountRadioBar(
+      'The Tide feat. Harbor Lights - Slow Return (Extended Club Mix, Remastered 2024)',
+    )
+
+    const info = rect('.song-info')
+    const text = rect('.song-info .min-width-0')
+    const title = document.querySelector('.song-info .min-width-0 > div') as HTMLElement
+
+    expect(Math.round(info.width)).toBe(434)
+    // Everything the cover and its margin leave — well past the ~240px the
+    // same text had inside the old fixed 300px box.
+    expect(text.width).toBeGreaterThan(360)
+    expect(Math.round(text.right)).toBe(Math.round(info.right))
+    // Still truncated (it is a very long tag), just later than it was.
+    expect(title.scrollWidth).toBeGreaterThan(title.clientWidth)
   })
 
   it('stays exactly centered in the collapsed state too, where song-info (not the toolbar) is the wider flank', async () => {

@@ -2,10 +2,13 @@ import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { describe, expect, it } from 'vitest'
 
-/** The three places that lay out the same fixed-width cards. Each pairs a
+/** The four places that lay out the same fixed-width cards. Each pairs a
  * JS constant (used to work out how many cards fit per row) with the CSS
  * rule that actually spaces them — and the two have to agree, or the
- * column maths describes a layout the browser isn't drawing.
+ * column maths describes a layout the browser isn't drawing. The constants
+ * don't always live in the same file as the rule any more: the two shelves
+ * share theirs (see components/library/cardRowFit.ts), which is what makes
+ * them count the same number of cards into a row of the same width.
  *
  * Checked against the source text because the relationship is invisible to
  * a mounted test: jsdom computes no layout at all, so a stylesheet that
@@ -28,8 +31,16 @@ const GRIDS = [
   },
   {
     file: 'src/renderer/src/components/library/AlbumShelf.vue',
+    constants: 'src/renderer/src/components/library/cardRowFit.ts',
     constant: 'CARD_GAP',
     rule: '.album-shelf-row',
+    widthConstant: 'CARD_WIDTH',
+  },
+  {
+    file: 'src/renderer/src/components/library/CardShelf.vue',
+    constants: 'src/renderer/src/components/library/cardRowFit.ts',
+    constant: 'CARD_GAP',
+    rule: '.card-shelf__row',
     widthConstant: 'CARD_WIDTH',
   },
 ] as const
@@ -54,16 +65,22 @@ function ruleGap(text: string, selector: string): number {
   return Number(match[1])
 }
 
+/** Where a grid's constants live — the same file as its CSS unless it says
+ * otherwise. */
+function constantsSource(grid: (typeof GRIDS)[number]): string {
+  return source('constants' in grid ? grid.constants : grid.file)
+}
+
 describe('card grid spacing', () => {
   it.each(GRIDS)('$rule spaces cards the way its constant claims', (grid) => {
-    const text = source(grid.file)
-
-    expect(ruleGap(text, grid.rule)).toBe(constantValue(text, grid.constant))
+    expect(ruleGap(source(grid.file), grid.rule)).toBe(
+      constantValue(constantsSource(grid), grid.constant),
+    )
   })
 
   it('spaces the same cards identically everywhere they appear', () => {
-    const gaps = GRIDS.map((g) => constantValue(source(g.file), g.constant))
-    const widths = GRIDS.map((g) => constantValue(source(g.file), g.widthConstant))
+    const gaps = GRIDS.map((g) => constantValue(constantsSource(g), g.constant))
+    const widths = GRIDS.map((g) => constantValue(constantsSource(g), g.widthConstant))
 
     // Same card, same rhythm — a grid and a shelf of AlbumCards sitting
     // side by side in the app must not use different spacing.

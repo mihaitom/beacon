@@ -5,7 +5,13 @@ import { fromStructuredLyrics, parseLyrics, type LyricLine } from '@/services/ly
 import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
 import { useLyricsProvidersStore } from '@/stores/lyricsProviders'
-import { accountScopedKey } from '@/services/accountKey'
+import { accountScopedKey, getAccountKey } from '@/services/accountKey'
+import {
+  clearLyricsStore,
+  readLyrics,
+  writeLyrics,
+  writeManyLyrics,
+} from '@/services/lyrics/lyricsStore'
 import type { Song } from '@/types/library'
 
 // Source id for a song's own embedded/ID3-tag lyrics (getLyricsBySongId.view)
@@ -87,46 +93,120 @@ const PROVIDER_RECHECK_MS = 7 * 24 * 60 * 60 * 1000
 
 // Persisted across restarts, unlike the old session-only cache this
 // replaces — "save every lyrics lookup we've ever made" was the explicit
-// ask, not just "avoid refetching within one run." One JSON blob keyed by
-// song id, same convention as OFFSETS_KEY below. A negative entry expires
+// ask, not just "avoid refetching within one run." A negative entry expires
 // after NEGATIVE_TTL_MS; a positive one is kept indefinitely, but one that
 // came from a third-party provider is re-checked against the file itself
 // from time to time (see shouldRecheckFile()) — the lyrics don't go stale,
 // the question of where the best copy lives does.
-const CACHE_KEY = 'beacon.lyricsCache'
+//
+// Kept in IndexedDB (services/lyrics/lyricsStore.ts), one record per song.
+// It used to be a single localStorage blob, which put an unbounded,
+// ever-growing cache inside the ~5 MB every other persisted thing in the
+// app shares — see that module's own comment for what ran out first. This
+// key is only read now, once, to carry an existing cache over.
+const LEGACY_CACHE_KEY = 'beacon.lyricsCache'
 
-// Loaded once per app run and kept in sync by writeCacheEntry() — avoids
-// re-parsing the whole persisted blob (one full lyrics text per cached
-// song, potentially a lot of them) on every single ensureLoaded() call.
-let persistedCache: Record<string, CacheEntry> | null = null
+// This session's own copy, so a song looked at twice (a replay, a re-render,
+// the panel being reopened) doesn't go back to disk. The store behind it is
+// per record, so unlike the old blob there is nothing to parse up front —
+// this fills as songs are actually played.
+let sessionCache = new Map<string, CacheEntry>()
 let inFlightSongId: string | null = null
 
-function loadPersistedCache(): Record<string, CacheEntry> {
-  if (!persistedCache) {
-    try {
-      persistedCache = JSON.parse(
-        localStorage.getItem(accountScopedKey(CACHE_KEY)) ?? '{}',
-      ) as Record<string, CacheEntry>
-    } catch {
-      persistedCache = {}
-    }
-  }
-  return persistedCache
+// Which account the cache currently holds lyrics for. Bumped whenever that
+// changes, and captured by every lookup before it starts, so an answer that
+// was already in flight when someone else logged in is recognized as
+// belonging to the previous one and dropped rather than stored.
+//
+// Without it, a provider lookup started before the switch writes its result
+// under a key built *after* it — song ids are only unique within one media
+// server (Plex's are small integers), so that is one account's lyrics filed
+// under another account's song. The artwork cache has the same guard for the
+// same reason (see services/connect/coverArtBatch.ts's own `generation`).
+let generation = 0
+
+/** Records are namespaced by account rather than the store being wiped when
+ * one logs out: two people sharing a browser each keep their own lyrics,
+ * and switching back doesn't start from nothing. */
+function storeKey(songId: string): string {
+  const account = getAccountKey()
+  return account ? `${account}::${songId}` : songId
 }
 
-function writeCacheEntry(songId: string, entry: CacheEntry): void {
-  const all = loadPersistedCache()
+/** Whatever is known about this song, from this session first and from disk
+ * otherwise. Null when nothing is. */
+async function readCacheEntry(songId: string): Promise<CacheEntry | null> {
+  const started = generation
+  const remembered = sessionCache.get(songId)
+  if (remembered) return remembered
+  const key = storeKey(songId)
+  await migrateLegacyCache()
+  const stored = await readLyrics<CacheEntry>(key)
+  // Someone else logged in while this was reading — that entry belongs to
+  // the account that has just been left.
+  if (started !== generation) return null
+  if (stored) sessionCache.set(songId, stored)
+  return stored
+}
+
+/** `startedAt` is the generation the work behind this entry began in (see
+ * `generation`); an entry from a previous one is dropped rather than
+ * stored. Callers that have nothing asynchronous behind them can leave it
+ * at the current one. */
+function writeCacheEntry(songId: string, entry: CacheEntry, startedAt = generation): void {
+  if (startedAt !== generation) return
   // Stamped here rather than at each call site, so no path can store a
   // provider hit without one — an entry with no timestamp counts as
   // overdue for its file re-check (see shouldRecheckFile()), which would
   // otherwise fire on every single play.
-  all[songId] = 'negative' in entry ? entry : { ...entry, cachedAt: Date.now() }
-  try {
-    localStorage.setItem(accountScopedKey(CACHE_KEY), JSON.stringify(all))
-  } catch {
-    // Storage full/disabled — the in-memory entry above still serves this
-    // session; losing the persisted copy just means a refetch next launch.
-  }
+  const stamped: CacheEntry = 'negative' in entry ? entry : { ...entry, cachedAt: Date.now() }
+  sessionCache.set(songId, stamped)
+  writeLyrics(storeKey(songId), stamped)
+}
+
+/** Moves an existing cache out of the old single localStorage blob and into
+ * the store, once per account per app run, and takes the old key with it.
+ * Without this, upgrading would silently throw away every lyric anyone had
+ * ever looked up.
+ *
+ * The entries go into this session's own copy as well as to the store, so
+ * they keep working immediately — and keep working at all in a browser
+ * where nothing can be persisted, where the store would otherwise have
+ * swallowed them. */
+let migrations = new Map<string, Promise<void>>()
+
+async function migrateLegacyCache(): Promise<void> {
+  const key = accountScopedKey(LEGACY_CACHE_KEY)
+  let migration = migrations.get(key)
+  if (migration) return migration
+  migration = (async () => {
+    let legacy: Record<string, CacheEntry>
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) return
+      legacy = JSON.parse(raw) as Record<string, CacheEntry>
+    } catch {
+      return
+    }
+    const entries: [string, CacheEntry][] = []
+    for (const [songId, entry] of Object.entries(legacy)) {
+      if (!entry) continue
+      if (!sessionCache.has(songId)) sessionCache.set(songId, entry)
+      entries.push([storeKey(songId), entry])
+    }
+    // One write for the whole cache, not one per song: the fallback backend
+    // rewrites its entire blob per call, which for a few thousand entries
+    // would be a visible freeze at first launch after an upgrade.
+    writeManyLyrics(entries)
+    try {
+      localStorage.removeItem(key)
+    } catch {
+      // Storage disabled between the read and now — a second run would
+      // simply copy the same entries again, which costs nothing.
+    }
+  })()
+  migrations.set(key, migration)
+  return migration
 }
 
 function isExpiredNegative(entry: CachedNegative): boolean {
@@ -146,24 +226,30 @@ export function shouldRecheckFile(entry: CachedPositive, now = Date.now()): bool
  * corrections, see readStoredOffset() below) alone, since that's the user's
  * own manual work, not a re-fetchable cache. */
 export function clearLyricsCache(): void {
-  persistedCache = {}
+  sessionCache = new Map()
+  // A lookup still in flight was started against what has just been thrown
+  // away, and storing its answer would put back part of what someone asked
+  // to be cleared.
+  generation += 1
+  clearLyricsStore()
   try {
-    localStorage.removeItem(accountScopedKey(CACHE_KEY))
+    localStorage.removeItem(accountScopedKey(LEGACY_CACHE_KEY))
   } catch {
     // Nothing to clean up if storage isn't available in the first place.
   }
 }
 
-/** Drops the in-memory cache/in-flight guard so the next read picks up
- * whatever is under the now-current account's own key — unlike
- * clearLyricsCache() above, this doesn't touch localStorage at all: there
- * may be real data already waiting there for this account, it just wasn't
- * loaded under the *previous* account's in-memory singleton (see this
- * module's own comment on persistedCache). Wired up once from
+/** Drops this session's copy and the in-flight guard so the next read goes
+ * back to the store under the now-current account's own keys — unlike
+ * clearLyricsCache() above, this deletes nothing: the previous account's
+ * entries stay exactly where they are, and so do this one's, which may
+ * already be there from an earlier login. Wired up once from
  * services/accountScopedStores.ts via accountKey.ts's onAccountChange(). */
 export function reloadLyricsCacheForAccount(): void {
-  persistedCache = null
+  sessionCache = new Map()
+  migrations = new Map()
   inFlightSongId = null
+  generation += 1
 }
 
 const OFFSETS_KEY = 'beacon.lyricsOffsets'
@@ -252,6 +338,7 @@ export const useLyricsStore = defineStore('lyrics', {
      * entry is kept and simply marked as checked, so this doesn't run
      * again for another week. */
     async recheckFileLyrics(song: Song, cached: CachedPositive): Promise<void> {
+      const startedAt = generation
       let fromFile: CachedPositive | null = null
       try {
         fromFile = await fetchFileLyrics(song)
@@ -260,7 +347,7 @@ export const useLyricsStore = defineStore('lyrics', {
         // including their age, so the next play tries again.
         return
       }
-      writeCacheEntry(song.id, fromFile ?? cached)
+      writeCacheEntry(song.id, fromFile ?? cached, startedAt)
       // The song may have changed while this was in flight — the point of
       // this call is the *next* play either way, not overwriting whatever
       // is on screen now.
@@ -273,9 +360,10 @@ export const useLyricsStore = defineStore('lyrics', {
     },
 
     async ensureLoaded(song: Song): Promise<void> {
+      const startedAt = generation
       this.offset = readStoredOffset(song.id)
 
-      const cached = loadPersistedCache()[song.id]
+      const cached = await readCacheEntry(song.id)
       if (cached && !('negative' in cached && isExpiredNegative(cached))) {
         this.songId = song.id
         this.loading = false
@@ -355,7 +443,7 @@ export const useLyricsStore = defineStore('lyrics', {
           }
         }
         if (positive || queriedProviders) {
-          writeCacheEntry(song.id, positive ?? { negative: true, cachedAt: Date.now() })
+          writeCacheEntry(song.id, positive ?? { negative: true, cachedAt: Date.now() }, startedAt)
         }
         // A newer song may have started while this was in flight — don't
         // let a slower, stale response overwrite what's actually playing now.
@@ -408,6 +496,7 @@ export const useLyricsStore = defineStore('lyrics', {
      * lyrics, overwriting whatever was cached/shown before — the explicit
      * override for when the automatic best match was wrong. */
     async selectCandidate(song: Song, source: string, id: string): Promise<void> {
+      const startedAt = generation
       this.candidates = null
       this.loading = true
       this.error = false
@@ -423,7 +512,7 @@ export const useLyricsStore = defineStore('lyrics', {
               remoteId: id,
             }
           : null
-        writeCacheEntry(song.id, positive ?? { negative: true, cachedAt: Date.now() })
+        writeCacheEntry(song.id, positive ?? { negative: true, cachedAt: Date.now() }, startedAt)
         if (this.songId !== song.id) return
         this.synced = positive?.synced ?? false
         this.lines = positive?.lines ?? []

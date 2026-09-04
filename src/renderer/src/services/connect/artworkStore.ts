@@ -10,14 +10,15 @@
  * IndexedDB rather than the Cache Storage API, which would otherwise be the
  * obvious fit for "keep these image responses": Cache Storage only exists in
  * a secure context, and a self-hosted Beacon reached at http://192.168.x.y
- * is not one. IndexedDB has no such restriction, so it works exactly where
- * this is needed most. It is not available *everywhere* either — the
- * packaged desktop app loads its renderer from a file:// URL, where Chromium
- * denies IndexedDB outright, and a browser in private mode or with site data
- * blocked can refuse at any point. Every path here therefore degrades to
- * "no persistence" rather than failing: the desktop app carries its own
- * Beacon backend, whose cache (connect/routes/coverart.py) already answers
- * from memory on the same machine.
+ * is not one. IndexedDB has no such restriction, so it works everywhere this
+ * app runs — including the packaged desktop build, whose renderer loads from
+ * a file:// URL (Electron grants IndexedDB there; verified against the real
+ * binary rather than assumed, because plain Chromium does not). A browser in
+ * private mode or with site data blocked can still refuse at any point, so
+ * every path here degrades to "no persistence" rather than failing: the
+ * desktop app carries its own Beacon backend, whose cache
+ * (connect/routes/coverart.py) already answers from memory on the same
+ * machine.
  *
  * Nothing here is on the critical path twice: a miss costs one indexed
  * lookup before the request that was going to happen anyway. */

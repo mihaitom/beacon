@@ -52,6 +52,8 @@
         hide-details
         style="flex: 1"
         @update:model-value="onVolumeChange"
+        @start="onVolumeDragStart"
+        @end="onVolumeDragEnd"
       />
       <span class="text-body-small text-medium-emphasis mobile-device-row__volume-value">{{
         volume != null ? `${volume}%` : '–'
@@ -64,9 +66,15 @@
 import type { PropType } from 'vue'
 import { useConnectStore } from '@/stores/connect'
 import { pollingAllowed } from '@/services/connect/pollGate'
+import {
+  acceptsVolumeReading,
+  endVolumeDrag,
+  noteVolumeChange,
+  startVolumeDrag,
+} from '@/services/connect/volumeGuard'
 import { useAuthStore } from '@/stores/auth'
 import AirplayIcon from '@/components/connect/AirplayIcon.vue'
-import type { DeviceType } from '@/services/connect/types'
+import type { ConnectDeviceRef, DeviceType } from '@/services/connect/types'
 
 const TYPE_ICONS: Record<string, string> = {
   chromecast: 'mdi-cast',
@@ -99,6 +107,12 @@ export default {
     }
   },
   computed: {
+    /** This row's device as the volume guard and the connect store name
+     * it — see services/connect/volumeGuard.ts. */
+    deviceRef(): ConnectDeviceRef {
+      return { type: this.type, name: this.device.name }
+    },
+
     connectStore() {
       return useConnectStore()
     },
@@ -150,7 +164,7 @@ export default {
           // channel only ever fires on the *next* change, so the very
           // first paint still needs one real round trip.
           this.fetchVolume()
-          if (!this.connectStore.isVolumePushCapable(this.type)) {
+          if (!this.connectStore.isVolumePushCapable(this.type, this.device.name)) {
             // Skipped while the window is hidden or the app is being
             // denied by whatever sits in front of the backend — see
             // pollGate.ts. The timer keeps ticking rather than being torn
@@ -163,13 +177,22 @@ export default {
       },
     },
     pushedVolume(value: number | null) {
-      if (value != null) this.volume = value
+      // See services/connect/volumeGuard.ts — a reading must not land on
+      // top of a drag in progress.
+      if (value != null && acceptsVolumeReading(this.deviceRef)) this.volume = value
     },
   },
   beforeUnmount() {
     clearInterval(this.volumePollTimer ?? undefined)
   },
   methods: {
+    onVolumeDragStart() {
+      startVolumeDrag(this.deviceRef)
+    },
+    onVolumeDragEnd() {
+      endVolumeDrag(this.deviceRef)
+    },
+
     onRowClick() {
       // claimedByOther has its own explicit "Take over" button above instead
       // — a plain row tap there would either do nothing (confusing, no
@@ -179,11 +202,14 @@ export default {
       this.$emit('toggle')
     },
     async fetchVolume() {
+      if (!acceptsVolumeReading(this.deviceRef)) return
       const raw = await this.connectStore.getDeviceVolume(this.type, this.device.name)
+      if (!acceptsVolumeReading(this.deviceRef)) return
       this.volume = raw == null ? null : Math.round(raw)
     },
     async onVolumeChange(value: number) {
       const rounded = Math.round(value)
+      noteVolumeChange(this.deviceRef)
       this.volume = rounded
       await this.connectStore.setDeviceVolume(this.type, this.device.name, rounded)
     },

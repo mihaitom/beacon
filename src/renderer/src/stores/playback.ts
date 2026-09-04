@@ -245,6 +245,20 @@ const castingActiveEdge = createEdgeDetector()
 // genuinely new interruption arrives as a new object.
 let interruptedPayloadHandled: unknown = null
 
+// The same "once per payload, not once per mutation" rule for the position,
+// and for a sharper reason than the toast above: status.elapsed is a
+// snapshot of where playback was when that payload was *built*, and
+// positionTracker measures every report against the wall clock (see its own
+// comment). Re-recording the same elapsed later — which every unrelated
+// mutation of the connect store did, and the device picker alone produces
+// one every 4s while it's open (ConnectDevicePicker.vue's own poll) — hands
+// it a position that has since fallen behind by however long ago the real
+// tick was. Past MAX_SMOOTHED_REWIND_SECONDS that reads as a real backwards
+// move and is followed: the counter jumps back a second or two, taking the
+// lyrics highlight with it, which is the very thing the smoothing exists to
+// prevent.
+let positionPayloadHandled: unknown = null
+
 // All the singleton bookkeeping above (endedEdge, the seq/keyed guards,
 // persistTimer, ...) lives outside Pinia's own reactive state, so Vite's
 // partial HMR doesn't know to reset or preserve it consistently — a live
@@ -452,10 +466,15 @@ export const usePlaybackStore = defineStore('playback', {
         // forwards, twice per status tick, with the lyrics highlight
         // following it. Ordered after the duration above so a tick that
         // brings a new song's length clamps against that one, not the
-        // previous song's.
-        const now = performance.now()
-        positionTracker.record(status.elapsed, now)
-        this.localPosition = positionTracker.extrapolate(now, this.duration)
+        // previous song's. Once per payload, same as the interruption above
+        // — see positionPayloadHandled for what re-recording a stale
+        // elapsed does to the tracker.
+        if (status !== positionPayloadHandled) {
+          positionPayloadHandled = status
+          const now = performance.now()
+          positionTracker.record(status.elapsed, now)
+          this.localPosition = positionTracker.extrapolate(now, this.duration)
+        }
         this.checkScrobbleThreshold()
 
         void this.reconcileFromStatus(status)

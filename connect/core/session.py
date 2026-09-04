@@ -20,6 +20,7 @@ from media import MediaClient, SubsonicClient
 
 from . import icy_metadata
 from .claims import claims
+from .device_volume import pushes_volume
 from .loop_health import peak_lag
 from .radio_position import RadioPositionTracker
 from .radio_relay import RadioRelay
@@ -420,7 +421,19 @@ def build_status_dict(
     targets = []
     for target_type, name in list_target_pairs(st.active_delivery):
         volume, muted = st.device_volumes.get(f"{target_type}:{name}", (None, None))
-        targets.append({"name": name, "type": target_type, "volume": volume, "muted": muted})
+        targets.append(
+            {
+                "name": name,
+                "type": target_type,
+                "volume": volume,
+                "muted": muted,
+                # Whether this device reports its own volume changes, so a
+                # client can stop asking it every few seconds — per device,
+                # not per type: two DLNA renderers differ on whether they
+                # accept a subscription at all. See core/device_volume.py.
+                "volume_push": pushes_volume(target_type, name),
+            }
+        )
 
     fmt = st.current_output_format
     stream_info = {

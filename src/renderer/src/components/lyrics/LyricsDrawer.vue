@@ -83,8 +83,22 @@ export default {
     // isn't triggered eagerly from the playback store itself instead
     // (avoids hitting three uncached third-party APIs for songs nobody's
     // actually looking at lyrics for).
-    modelValue(open: boolean) {
-      if (open && this.currentSong) useLyricsStore().ensureLoaded(this.currentSong)
+    //
+    // immediate, because the *first* opening is not a change this watcher
+    // can see: DefaultLayout.vue doesn't create this component until the
+    // moment the drawer is first opened (v-if="lyricsDrawerEverOpened", so
+    // nothing flashes at app start), which means modelValue is already true
+    // on its very first render. Without this, the first open of a session
+    // asked for nothing and sat there claiming the song had no lyrics —
+    // until something else, in practice opening the Now Playing view, went
+    // and loaded them (its own currentSong watcher is immediate for a
+    // related reason). Every later open toggles the prop normally and would
+    // have worked either way.
+    modelValue: {
+      immediate: true,
+      handler(open: boolean) {
+        if (open && this.currentSong) useLyricsStore().ensureLoaded(this.currentSong)
+      },
     },
     currentSong(song) {
       if (this.modelValue && song) useLyricsStore().ensureLoaded(song)

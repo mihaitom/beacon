@@ -237,7 +237,12 @@ export default {
           // channel only ever fires on the *next* change, so the very
           // first paint still needs one real round trip.
           this.fetchDeviceVolume(this.singleActiveTarget)
-          if (!this.connectStore.isVolumePushCapable(this.singleActiveTarget.type)) {
+          if (
+            !this.connectStore.isVolumePushCapable(
+              this.singleActiveTarget.type,
+              this.singleActiveTarget.name,
+            )
+          ) {
             // Skipped while the window is hidden or the app is being
             // denied by whatever sits in front of the backend — see
             // pollGate.ts. The timer keeps ticking rather than being torn

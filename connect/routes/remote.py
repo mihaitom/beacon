@@ -354,12 +354,25 @@ async def remote_cover_art(id: str, session: SessionState = Depends(get_session)
 
 
 @router.get("/radio-favicon", dependencies=[Depends(require_remote_password)])
-async def remote_radio_favicon(url: str, min_size: int = 0):
+async def remote_radio_favicon(url: str = "", min_size: int = 0, hint: str = ""):
     """Thin re-export of routes/radio.py's /radio-favicon under the phone's
     own auth — that function's body never actually touches CONNECT_TOKEN
     itself (it's plain URL validation + fetch-and-relay of a third-party
-    image), so there's nothing to duplicate here beyond the dependency."""
-    return await _fetch_radio_favicon(url=url, min_size=min_size)
+    image), so there's nothing to duplicate here beyond the dependency.
+
+    Every parameter that function takes has to be named explicitly, and
+    that is not a style choice: calling an endpoint function directly
+    leaves anything left out at its *declared default*, which for these is
+    a FastAPI Query() object rather than the string the body expects. An
+    unnamed `hint` reached _resolve_favicon() as one of those and died on
+    .lower(), so every logo the phone asked for came back 404 and rendered
+    as a fallback icon.
+
+    `url` is optional for the same reason it is optional there: a station
+    played straight out of the discover dialog carries Radio Browser's own
+    favicon URL as `hint` and no homepage at all, and that alone is enough
+    to resolve a logo."""
+    return await _fetch_radio_favicon(url=url, min_size=min_size, hint=hint)
 
 
 # ── Phone-facing: static web client ──────────────────────────────────────

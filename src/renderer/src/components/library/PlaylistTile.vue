@@ -1,6 +1,10 @@
 <template>
-  <router-link :to="`/playlists/${playlist.id}`" class="playlist-tile">
-    <!-- Bigger than the old 56px thumbnail this list used to have, and the
+  <router-link
+    :to="`/playlists/${playlist.id}`"
+    class="playlist-tile"
+    @contextmenu.prevent="openMenu"
+  >
+    <!-- Bigger than the thumbnail this list used to have, and the
      - play button now lives on top of it (revealed on hover, same dimmed-
      - backdrop + centered icon language as AlbumCard.vue's own shelf-card
      - overlay) instead of sitting off to the side next to the text. Not
@@ -11,7 +15,7 @@
     <div class="playlist-tile__cover-wrap">
       <cover-art
         :cover-art-id="playlist.coverArtId"
-        :size="56"
+        :size="88"
         fallback-icon="mdi-playlist-music"
         class="playlist-tile__cover"
       />
@@ -40,16 +44,55 @@
       size="20"
       class="playlist-tile__chevron text-medium-emphasis ml-1"
     />
+    <!-- Renaming and deleting used to live on the playlist's own page only
+     - — reachable from the overview solely by opening the playlist first.
+     - Both are offered here for the user's own playlists; someone else's
+     - shared playlist is not theirs to change. -->
+    <tile-context-menu ref="menu">
+      <v-list-item @click="$emit('play', playlist)">
+        <template #prepend><v-icon icon="mdi-play" size="small" /></template>
+        <v-list-item-title>{{ $t('library.play') }}</v-list-item-title>
+      </v-list-item>
+      <v-list-item @click="$emit('play-next', playlist)">
+        <template #prepend><v-icon icon="mdi-skip-next-outline" size="small" /></template>
+        <v-list-item-title>{{ $t('library.playNext') }}</v-list-item-title>
+      </v-list-item>
+      <v-list-item @click="$emit('add-to-queue', playlist)">
+        <template #prepend><v-icon icon="mdi-playlist-plus" size="small" /></template>
+        <v-list-item-title>{{ $t('common.addToQueue') }}</v-list-item-title>
+      </v-list-item>
+      <template v-if="isOwnPlaylist">
+        <v-divider />
+        <v-list-item @click="$emit('rename', playlist)">
+          <template #prepend><v-icon icon="mdi-pencil-outline" size="small" /></template>
+          <v-list-item-title>{{ $t('common.edit') }}</v-list-item-title>
+        </v-list-item>
+        <v-list-item @click="$emit('delete', playlist)">
+          <template #prepend><v-icon icon="mdi-delete-outline" size="small" /></template>
+          <v-list-item-title>{{ $t('common.delete') }}</v-list-item-title>
+        </v-list-item>
+      </template>
+      <template v-if="playlist.coverArtId">
+        <v-divider />
+        <v-list-item @click="showArtwork">
+          <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
+          <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
+        </v-list-item>
+      </template>
+    </tile-context-menu>
   </router-link>
 </template>
 
 <script lang="ts">
 import CoverArt from './CoverArt.vue'
+import TileContextMenu from './TileContextMenu.vue'
+import { useAuthStore } from '@/stores/auth'
+import { emitter } from '@/emitter'
 import type { Playlist } from '@/types/library'
 
 export default {
   name: 'PlaylistTile',
-  components: { CoverArt },
+  components: { CoverArt, TileContextMenu },
   props: {
     playlist: {
       type: Object as () => Playlist,
@@ -64,8 +107,14 @@ export default {
       default: false,
     },
   },
-  emits: ['play'],
+  emits: ['play', 'play-next', 'add-to-queue', 'rename', 'delete'],
   computed: {
+    /** Someone else's public playlist is visible here (see showOwner) but
+     * not editable — the same rule PlaylistDetailView.vue applies to its
+     * own edit/delete buttons. */
+    isOwnPlaylist(): boolean {
+      return this.playlist.owner === useAuthStore().username
+    },
     meta(): string {
       const count = this.$t('playlists.songCount', { count: this.playlist.songCount })
       const duration = this.formatDuration(this.playlist.duration)
@@ -77,6 +126,17 @@ export default {
     },
   },
   methods: {
+    openMenu(event: MouseEvent): void {
+      const menu = this.$refs.menu as { open: (event: MouseEvent) => void } | undefined
+      menu?.open(event)
+    },
+    showArtwork(): void {
+      emitter.emit('showArtwork', {
+        coverArtId: this.playlist.coverArtId,
+        title: this.playlist.name,
+        fallbackIcon: 'mdi-playlist-music',
+      })
+    },
     formatDuration(seconds: number): string {
       if (!seconds) return ''
       const total = Math.round(seconds)
@@ -95,11 +155,18 @@ export default {
  * than AlbumCard.vue/ArtistCard.vue's bare cover-plus-caption, so browsing
  * playlists and browsing radio stations read as the same kind of screen at
  * a glance instead of two unrelated list styles. */
+/* 360px, not the 300 both tiles started at: these are horizontal tiles
+ * whose text sits *beside* the artwork, so width is the only thing that
+ * buys a longer playlist or station name before it truncates — and the
+ * bigger artwork below takes some of the old width away again. Kept in
+ * step with PlaylistTile.vue's own .playlist-tile, which is the same
+ * chrome on the same kind of screen; changing one alone makes the two
+ * grids read as unrelated. */
 .playlist-tile {
   display: flex;
   align-items: center;
-  width: 300px;
-  padding: 8px 10px 8px 8px;
+  width: 360px;
+  padding: 10px 12px 10px 10px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--beacon-hairline);
@@ -126,7 +193,7 @@ export default {
 .playlist-tile__cover-wrap {
   position: relative;
   flex-shrink: 0;
-  margin-right: 12px;
+  margin-right: 14px;
 }
 
 .playlist-tile__cover {
@@ -165,5 +232,14 @@ export default {
   transition:
     opacity 0.15s ease,
     transform 0.15s ease;
+}
+
+/* Same breakpoint and reasoning as RadioStationCard.vue's own — see its
+ * comment: below this the fixed-width tile leaves a dead gutter beside a
+ * single narrow column instead of being a full-width row. */
+@media (max-width: 600px) {
+  .playlist-tile {
+    width: 100%;
+  }
 }
 </style>

@@ -8,6 +8,8 @@ import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import RadioView from '../RadioView.vue'
+import RadioStationCard from '@/components/library/RadioStationCard.vue'
+import TileSkeleton from '@/components/library/TileSkeleton.vue'
 import * as radioBrowser from '@/services/connect/radioBrowser'
 import type { RadioBrowserStation } from '@/services/connect/radioBrowser'
 import type { RadioStation } from '@/types/library'
@@ -513,6 +515,36 @@ describe('RadioView', () => {
         countrycodes: ['DE'],
         order: 'votes',
       })
+    })
+  })
+
+  describe('while the station list is still loading', () => {
+    it('holds the layout still with tile-shaped placeholders instead of a spinner', async () => {
+      const library = useLibraryStore()
+      library.loadingCount = 1
+      const wrapper = mountRadioView()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.findAllComponents(TileSkeleton).length).toBeGreaterThan(0)
+      // A spinner in the flow was what pushed everything below it down
+      // while it was there, and back up when it went.
+      expect(wrapper.findComponent({ name: 'VProgressCircular' }).exists()).toBe(false)
+      // Not the "no stations yet" alert either — nothing is known yet.
+      expect(wrapper.text()).not.toContain(i18n.global.t('radio.noStationsYet'))
+    })
+
+    it('leaves a list that is already on screen alone while something else loads', async () => {
+      // `loading` is the whole library store's, so a tile menu fetching an
+      // album's tracks sets it too — swapping the stations for placeholders
+      // then would be a worse jump than the one this replaced.
+      const library = useLibraryStore()
+      library.radioStations = makeStations(3)
+      library.loadingCount = 1
+      const wrapper = mountRadioView()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.findAllComponents(TileSkeleton)).toHaveLength(0)
+      expect(wrapper.findAllComponents(RadioStationCard)).toHaveLength(3)
     })
   })
 })

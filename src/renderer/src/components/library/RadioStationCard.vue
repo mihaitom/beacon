@@ -3,6 +3,7 @@
     class="radio-tile"
     :class="{ 'radio-tile--current': isCurrent }"
     @click="$emit('play', station)"
+    @contextmenu.prevent="openMenu($event)"
   >
     <div class="radio-tile__cover-wrap">
       <!-- Smaller and to the side, unlike AlbumCard.vue/ArtistCard.vue's own
@@ -19,7 +20,7 @@
        - see that component's own comment). -->
       <cover-art
         :radio-favicon="station.homePageUrl ? faviconRequest(station.homePageUrl, 48) : null"
-        :size="48"
+        :size="72"
         fallback-icon="mdi-radio"
       />
       <!-- Hover-reveal on desktop, same idea as AlbumCard.vue's own play
@@ -63,31 +64,33 @@
       :title="$t('common.edit')"
       @click.stop="openMenu($event)"
     />
-    <v-menu v-model="menuOpen" :target="menuTarget">
-      <v-list density="compact">
-        <v-list-item @click="$emit('edit', station)">
-          <template #prepend><v-icon icon="mdi-pencil-outline" size="small" /></template>
-          <v-list-item-title>{{ $t('common.edit') }}</v-list-item-title>
-        </v-list-item>
-        <v-list-item @click="$emit('delete', station)">
-          <template #prepend><v-icon icon="mdi-delete-outline" size="small" /></template>
-          <v-list-item-title>{{ $t('common.delete') }}</v-list-item-title>
-        </v-list-item>
-      </v-list>
-    </v-menu>
+    <!-- The same menu from two places: the button above (which a touch
+     - screen needs, having no right-click) and a right-click anywhere on
+     - the tile, which every other tile in the library now answers too. -->
+    <tile-context-menu ref="menu">
+      <v-list-item @click="$emit('edit', station)">
+        <template #prepend><v-icon icon="mdi-pencil-outline" size="small" /></template>
+        <v-list-item-title>{{ $t('common.edit') }}</v-list-item-title>
+      </v-list-item>
+      <v-list-item @click="$emit('delete', station)">
+        <template #prepend><v-icon icon="mdi-delete-outline" size="small" /></template>
+        <v-list-item-title>{{ $t('common.delete') }}</v-list-item-title>
+      </v-list-item>
+    </tile-context-menu>
   </div>
 </template>
 
 <script lang="ts">
 import type { PropType } from 'vue'
 import CoverArt from './CoverArt.vue'
+import TileContextMenu from './TileContextMenu.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import type { RadioStation } from '@/types/library'
 
 export default {
   name: 'RadioStationCard',
-  components: { CoverArt },
+  components: { CoverArt, TileContextMenu },
   props: {
     station: {
       type: Object as PropType<RadioStation>,
@@ -95,12 +98,6 @@ export default {
     },
   },
   emits: ['play', 'edit', 'delete'],
-  data() {
-    return {
-      menuOpen: false,
-      menuTarget: [0, 0] as [number, number],
-    }
-  },
   computed: {
     playbackStore() {
       return usePlaybackStore()
@@ -134,8 +131,8 @@ export default {
       }
     },
     openMenu(event: MouseEvent) {
-      this.menuTarget = [event.clientX, event.clientY]
-      this.menuOpen = true
+      const menu = this.$refs.menu as { open: (event: MouseEvent) => void } | undefined
+      menu?.open(event)
     },
   },
 }
@@ -147,11 +144,15 @@ export default {
  * cover-plus-caption, deliberately: this grid sits right next to those in
  * the app's mental model (another browse-your-library screen) and needed
  * to *not* read as a smaller, blurrier version of the same card. */
+/* Width kept in step with PlaylistTile.vue's own .playlist-tile — see its
+ * comment for why both grew. The cover stays smaller than that one's: a
+ * station's favicon is rarely artwork worth an album cover's room (see the
+ * template comment), it just stopped being *tiny* along with the tile. */
 .radio-tile {
   display: flex;
   align-items: center;
-  width: 300px;
-  padding: 10px 8px 10px 12px;
+  width: 360px;
+  padding: 10px 10px 10px 12px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--beacon-hairline);

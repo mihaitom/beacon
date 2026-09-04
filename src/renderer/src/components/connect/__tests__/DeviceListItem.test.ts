@@ -10,6 +10,7 @@ import { useConnectStore } from '@/stores/connect'
 import DeviceListItem from '../DeviceListItem.vue'
 import type { DeviceType } from '@/services/connect/types'
 import { makeStatus } from '@/stores/__tests__/fixtures'
+import { _resetVolumeGuards } from '@/services/connect/volumeGuard'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -43,13 +44,22 @@ function scroll(wrapper: ReturnType<typeof mountItem>, deltaY: number): WheelEve
 
 /** Marks this device as one of the session's live cast targets, which is
  * what every volume affordance here is gated on. */
-function castTo(name: string, type: DeviceType, volume?: number) {
-  useConnectStore().status = makeStatus({ targets: [{ name, type, volume }] })
+/** `push` mirrors the backend's own per-device volume_push flag (see
+ * connect/core/device_volume.py): true for a device that reports its own
+ * volume changes, which is what stops this client polling it. */
+function castTo(name: string, type: DeviceType, volume?: number, push = type === 'sonos') {
+  useConnectStore().status = makeStatus({
+    targets: [{ name, type, volume, volume_push: push }],
+  })
 }
 
 describe('DeviceListItem', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    // Keyed by device and module-level (see volumeGuard.ts): a settle
+    // window one test opened would make the next one's first reading be
+    // ignored, leaving its slider disabled.
+    _resetVolumeGuards()
   })
 
   afterEach(() => {
@@ -201,8 +211,8 @@ describe('DeviceListItem', () => {
 
       connect.status = makeStatus({
         targets: [
-          { name: 'Kitchen', type: 'sonos' },
-          { name: 'Living Room', type: 'sonos' },
+          { name: 'Kitchen', type: 'sonos', volume_push: true },
+          { name: 'Living Room', type: 'sonos', volume_push: true },
         ],
       })
       await wrapper.vm.$nextTick()
@@ -238,6 +248,26 @@ describe('DeviceListItem', () => {
     // Regression test: Sonos volume reaches connectStore.status by push
     // (see connectStore.isVolumePushCapable()) — this kept polling every 4s
     // regardless of type until 2026-08-25.
+    it('keeps polling a device that is not actually pushing, whatever its type', async () => {
+      // Per device, not per type: a Sonos that refused the RenderingControl
+      // subscription, or a DLNA renderer that has no eventing at all, still
+      // has to be asked. The backend says which is which (volume_push, see
+      // connect/core/device_volume.py).
+      vi.useFakeTimers()
+      const connect = useConnectStore()
+      const getVolumeSpy = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
+      castTo('Kitchen', 'sonos', 30, false)
+      const wrapper = mountItem()
+      await vi.runOnlyPendingTimersAsync()
+      expect(wrapper.get('.volume-value').text()).toBe('30%')
+
+      getVolumeSpy.mockClear()
+      await vi.advanceTimersByTimeAsync(4000)
+
+      // Asked again, unlike the pushing Sonos in the test below.
+      expect(getVolumeSpy).toHaveBeenCalledOnce()
+    })
+
     it('fetches once for a push-capable device, then takes further readings from the pushed status', async () => {
       vi.useFakeTimers()
       const connect = useConnectStore()

@@ -1,7 +1,14 @@
 import { defineStore } from 'pinia'
 import { useAuthStore } from './auth'
 import { SubsonicClient } from '@/services/subsonic/client'
-import { accountScopedKey } from '@/services/accountKey'
+import { accountScopedKey, getAccountKey } from '@/services/accountKey'
+import {
+  clearLibraryFields,
+  LEGACY_CACHE_KEY,
+  readLibraryField,
+  writeLibraryField,
+  type StoredLibraryField,
+} from '@/services/library/libraryCacheStore'
 import type { Album, Artist, Genre, Playlist, RadioStation, Song } from '@/types/library'
 
 // Default cap for fetchTopSongsForArtist() below — exported so
@@ -16,67 +23,114 @@ export const TOP_SONGS_LIMIT = 10
 // and kick off their own redundant parallel fetch of the whole catalog.
 let fetchAllSongsPromise: Promise<void> | null = null
 
-// Single localStorage cache for library data that's expensive to fetch in
-// full but rarely changes between app launches — one shared blob (not a key
-// per data type) since it's conceptually one thing: "the library as last
-// seen." Fetch functions below read/write just their own field, but it all
-// lives under one beacon.library-cache entry.
-const LIBRARY_CACHE_KEY = 'beacon.library-cache'
-
+// The library data that's expensive to fetch in full but rarely changes
+// between app launches. One record per kind (see
+// services/library/libraryCacheStore.ts for why it is IndexedDB and no
+// longer one localStorage blob), keyed per account.
 type LibraryCacheField = 'songs' | 'artists' | 'albums' | 'playlists'
 
-interface LibraryCacheSnapshot {
-  songs?: Song[]
-  artists?: Artist[]
-  albums?: Album[]
-  playlists?: Playlist[]
-  // When each field was last actually fetched (not just read from cache) —
-  // drives the TTL check below, so a cached value that's still fresh
-  // doesn't trigger a redundant background refetch of the whole thing on
-  // every single app session. Cheap for Subsonic; on a Jellyfin server with
-  // a large library, refetching the full song catalog is a multi-minute
-  // scan (see fetchAllSongsNow()'s own comment) — this is what stops that
-  // from silently re-running every time the app opens.
-  fetchedAt?: Partial<Record<LibraryCacheField, number>>
+const CACHE_FIELDS: LibraryCacheField[] = ['songs', 'artists', 'albums', 'playlists']
+
+interface LibraryCacheTypes {
+  songs: Song
+  artists: Artist
+  albums: Album
+  playlists: Playlist
 }
 
-const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
+// How long a cached field is used without a background refresh behind it.
+//
+// An hour for a Subsonic/Navidrome server, where re-fetching the catalog is
+// a handful of quick calls. Far longer for Jellyfin, where it is not: its
+// recursive Items query runs at roughly 9ms per item (see
+// fetchAllSongsNow()), so a large library is minutes of scanning — paid on
+// every app start that happens to fall outside the window, in the
+// background, while the user is trying to browse. A library's contents do
+// not change hourly, and the parts that do have their own paths: the manual
+// rescan in Settings (invalidateCache()) and a forced fetchAlbums(true).
+const CACHE_TTL_MS = 60 * 60 * 1000
+const JELLYFIN_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
-function loadLibraryCache(): LibraryCacheSnapshot {
-  try {
-    const raw = localStorage.getItem(accountScopedKey(LIBRARY_CACHE_KEY))
-    return raw ? (JSON.parse(raw) as LibraryCacheSnapshot) : {}
-  } catch {
-    return {}
-  }
+function cacheTtl(): number {
+  return useAuthStore().serverType === 'jellyfin' ? JELLYFIN_CACHE_TTL_MS : CACHE_TTL_MS
 }
 
-function isCacheFresh(field: LibraryCacheField): boolean {
-  const fetchedAt = loadLibraryCache().fetchedAt?.[field]
-  return fetchedAt != null && Date.now() - fetchedAt < CACHE_TTL_MS
+/** Per-account record key — song and album ids are only unique within one
+ * media server, same reasoning as every other account-scoped store. */
+function fieldKey(field: LibraryCacheField): string {
+  const account = getAccountKey()
+  return account ? `${account}::${field}` : field
+}
+
+function isFresh(fetchedAt: number): boolean {
+  return Date.now() - fetchedAt < cacheTtl()
+}
+
+async function readCacheField<K extends LibraryCacheField>(
+  field: K,
+): Promise<StoredLibraryField<LibraryCacheTypes[K]> | null> {
+  await migrateLegacyCache()
+  return readLibraryField<LibraryCacheTypes[K]>(fieldKey(field))
 }
 
 function saveLibraryCacheField<K extends LibraryCacheField>(
   field: K,
-  value: NonNullable<LibraryCacheSnapshot[K]>,
+  value: LibraryCacheTypes[K][],
 ): void {
+  writeLibraryField(fieldKey(field), value)
+}
+
+/** Moves an existing localStorage blob into the store, once per account per
+ * app run, and takes the old key with it — without this, upgrading would
+ * throw away a cache that costs minutes to rebuild on a Jellyfin server.
+ * Each field keeps its real age, so one that was already stale still gets
+ * its background refresh rather than looking freshly fetched. */
+let migrationInFlight: Promise<void> | null = null
+
+function migrateLegacyCache(): Promise<void> {
+  // Deduped only while it is actually running, not remembered afterwards:
+  // a finished migration leaves no key behind, so a later call is one
+  // localStorage read that finds nothing. Remembering it instead would
+  // mean the *next account* to log in never gets its own blob carried
+  // over, since that key is account-scoped and this store outlives any one
+  // login.
+  if (!migrationInFlight) {
+    migrationInFlight = runLegacyMigration().finally(() => {
+      migrationInFlight = null
+    })
+  }
+  return migrationInFlight
+}
+
+async function runLegacyMigration(): Promise<void> {
+  const key = accountScopedKey(LEGACY_CACHE_KEY)
+  let legacy: Record<string, unknown>
   try {
-    const current = loadLibraryCache()
-    current[field] = value
-    current.fetchedAt = { ...current.fetchedAt, [field]: Date.now() }
-    localStorage.setItem(accountScopedKey(LIBRARY_CACHE_KEY), JSON.stringify(current))
+    const raw = localStorage.getItem(key)
+    if (!raw) return
+    legacy = JSON.parse(raw) as Record<string, unknown>
   } catch {
-    // Quota exceeded (a large library's full song catalog can run several
-    // MB) or storage unavailable — falling back to fetching fresh every
-    // time is an acceptable degradation, not worth surfacing to the user.
+    return
+  }
+  const fetchedAt = (legacy.fetchedAt ?? {}) as Partial<Record<LibraryCacheField, number>>
+  for (const field of CACHE_FIELDS) {
+    const items = legacy[field]
+    if (Array.isArray(items)) writeLibraryField(fieldKey(field), items, fetchedAt[field] ?? 0)
+  }
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    // Storage disabled between the read and now — a later run would simply
+    // copy the same fields again, which costs nothing.
   }
 }
 
 /** Called from authStore.logout() — a different account's library shouldn't
  * leak into whoever logs in next, same reasoning as clearPersistedPlayback(). */
 export function clearLibraryCache(): void {
+  clearLibraryFields(CACHE_FIELDS.map(fieldKey))
   try {
-    localStorage.removeItem(accountScopedKey(LIBRARY_CACHE_KEY))
+    localStorage.removeItem(accountScopedKey(LEGACY_CACHE_KEY))
   } catch {
     // Nothing to clean up if storage isn't available in the first place.
   }
@@ -124,22 +178,55 @@ async function fetchSongPages(
  * page size), that used to mean the grid sat on a skeleton for as long as
  * *all twelve* round trips combined took, even though only the first page's
  * worth is needed to show anything at all. */
+// How many album pages to have in flight at once, after the first.
+//
+// getAlbumList2 caps out at 500 albums per call, so a large library is a
+// fixed number of round trips no matter what — 12 of them for 6000 albums.
+// Waiting for each before asking for the next made that 12 times the
+// latency of one: every page crosses the reverse proxy, connect, and the
+// media server, and on a remote deployment that is a few hundred
+// milliseconds each, all of it spent idle rather than working.
+//
+// Four, not more: this is the API, not artwork, so the burst is nothing
+// like the one CoverArt.vue's own limit exists for (a dozen image fetches
+// per screenful) — but it still crosses the same proxy, and four wide turns
+// those 12 trips into 3 waves, which is most of the win. The cost of
+// guessing wrong is bounded and small: the last wave asks for up to three
+// pages past the end of the library, and an empty getAlbumList2 is the
+// cheapest answer the server has.
+const ALBUM_PAGE_CONCURRENCY = 4
+
 async function fetchAlbumPages(
   client: SubsonicClient,
   pageSize: number,
   onPage?: (page: Album[]) => void,
 ): Promise<Album[]> {
-  let all: Album[] = []
-  let offset = 0
-  while (true) {
-    const page = await client.getAlbumList2('alphabeticalByName', pageSize, offset)
-    if (page.length === 0) break
-    all = all.concat(page)
-    onPage?.(page)
-    if (page.length < pageSize) break
-    offset += pageSize
+  // The first page on its own: it is what paints the view (see
+  // fetchAlbums()'s no-cache branch), so nothing else should be competing
+  // with it, and until it comes back there is no way to know whether there
+  // is a second one at all.
+  const first = await client.getAlbumList2('alphabeticalByName', pageSize, 0)
+  onPage?.(first)
+  if (first.length < pageSize) return first
+
+  const all = [...first]
+  let offset = pageSize
+  for (;;) {
+    const wave = await Promise.all(
+      Array.from({ length: ALBUM_PAGE_CONCURRENCY }, (_, index) =>
+        client.getAlbumList2('alphabeticalByName', pageSize, offset + index * pageSize),
+      ),
+    )
+    // Emitted in page order, not completion order — the list is
+    // alphabetical, and the view appends what it is handed.
+    for (const page of wave) {
+      if (page.length === 0) return all
+      all.push(...page)
+      onPage?.(page)
+      if (page.length < pageSize) return all
+    }
+    offset += ALBUM_PAGE_CONCURRENCY * pageSize
   }
-  return all
 }
 
 /** Retries `fetcher` on failure, waiting `delayMs` between attempts — covers
@@ -173,13 +260,13 @@ async function withRetry<T>(fetcher: () => Promise<T>, attempts = 3, delayMs = 2
 async function cachedFetch<K extends LibraryCacheField>(
   store: { withLoading<R>(fn: () => Promise<R>): Promise<R> },
   field: K,
-  fetcher: () => Promise<NonNullable<LibraryCacheSnapshot[K]>>,
-  onResult: (value: NonNullable<LibraryCacheSnapshot[K]>) => void,
+  fetcher: () => Promise<LibraryCacheTypes[K][]>,
+  onResult: (value: LibraryCacheTypes[K][]) => void,
 ): Promise<void> {
-  const cached = loadLibraryCache()[field]
+  const cached = await readCacheField(field)
   if (cached) {
-    onResult(cached as NonNullable<LibraryCacheSnapshot[K]>)
-    if (isCacheFresh(field)) return
+    onResult(cached.items)
+    if (isFresh(cached.fetchedAt)) return
     withRetry(fetcher)
       .then((fresh) => {
         onResult(fresh)
@@ -348,7 +435,7 @@ export const useLibraryStore = defineStore('library', {
         })
         return
       }
-      if (loadLibraryCache().albums) {
+      if (await readCacheField('albums')) {
         await cachedFetch(
           this,
           'albums',
@@ -545,11 +632,11 @@ export const useLibraryStore = defineStore('library', {
       const PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 200 : 3000
       const client = this.client()
 
-      const cached = loadLibraryCache().songs
+      const cached = await readCacheField('songs')
       if (cached) {
-        this.allSongs = cached
+        this.allSongs = cached.items
         this.allSongsLoaded = true
-        if (isCacheFresh('songs')) return
+        if (isFresh(cached.fetchedAt)) return
         withRetry(() => fetchSongPages(client, PAGE_SIZE))
           .then((fresh) => {
             this.allSongs = fresh

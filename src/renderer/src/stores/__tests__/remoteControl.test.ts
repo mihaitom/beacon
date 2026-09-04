@@ -339,6 +339,33 @@ describe('remoteControl store', () => {
       })
     })
 
+    it('sends a playing station with everything needed to resolve its logo', async () => {
+      // The phone has no way of its own to find a station's logo — it can
+      // only load the URL this snapshot hands it. Both halves matter: the
+      // homepage to scrape, and Radio Browser's own favicon field for a
+      // station played out of the discover dialog, which has no homepage
+      // at all and used to arrive with nothing to show.
+      await enableStore()
+      vi.mocked(remoteHttp.pushRemoteState).mockClear()
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/live',
+        homePageUrl: 'https://station.example',
+        favicon: 'https://cdn.example/logo.png',
+      }
+      await vi.waitFor(() => expect(remoteHttp.pushRemoteState).toHaveBeenCalled())
+
+      const calls = vi.mocked(remoteHttp.pushRemoteState).mock.calls
+      const radio = (calls[calls.length - 1]![0] as { radio: { favicon_url: string } }).radio
+
+      expect(radio.favicon_url).toContain(encodeURIComponent('https://station.example'))
+      expect(radio.favicon_url).toContain(
+        `hint=${encodeURIComponent('https://cdn.example/logo.png')}`,
+      )
+    })
+
     it('debounces a burst of playback/connect/autoplay mutations into a single extra push', async () => {
       vi.useFakeTimers()
       await enableStore()
@@ -427,7 +454,7 @@ describe('remoteControl store', () => {
         radio: null,
         radio_buffering: false,
         streaming: false,
-        targets: [{ name: 'Kitchen', type: 'sonos' }],
+        targets: [{ name: 'Kitchen', type: 'sonos', volume_push: true }],
         total_songs: 0,
         displaced: false,
         interrupted: false,
@@ -501,7 +528,7 @@ describe('remoteControl store', () => {
         radio: null,
         radio_buffering: false,
         streaming: false,
-        targets: [{ name: 'Kitchen', type: 'sonos' }],
+        targets: [{ name: 'Kitchen', type: 'sonos', volume_push: true }],
         total_songs: 0,
         displaced: false,
         interrupted: false,
@@ -579,7 +606,7 @@ describe('remoteControl store', () => {
         streaming: false,
         // No volume field yet — the first tick still has nothing pushed,
         // same gap DeviceListItem.vue's always-on-activation fetch covers.
-        targets: [{ name: 'Kitchen', type: 'sonos' }],
+        targets: [{ name: 'Kitchen', type: 'sonos', volume_push: true }],
         total_songs: 0,
         displaced: false,
         interrupted: false,
@@ -593,7 +620,7 @@ describe('remoteControl store', () => {
       // A push now lands (e.g. someone changed it via the Sonos app).
       connect.status = {
         ...connect.status,
-        targets: [{ name: 'Kitchen', type: 'sonos', volume: 55 }],
+        targets: [{ name: 'Kitchen', type: 'sonos', volume: 55, volume_push: true }],
       }
       getVolumeSpy.mockClear()
       vi.mocked(remoteHttp.pushRemoteState).mockClear()

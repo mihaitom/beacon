@@ -42,6 +42,17 @@ if (!window.visualViewport) {
   } as unknown as VisualViewport
 }
 
+// Same story one layer further in: an overlay positioned against a target
+// (a context menu opened at [x, y], the artwork viewer's dialog) has
+// Vuetify's reposition scroll strategy looking up what sits under that
+// point, which jsdom has no notion of. Left unstubbed it surfaces as an
+// unhandled rejection *beside* the test rather than a failure in it, which
+// is worse than useless. An empty list is the honest answer here: nothing
+// in jsdom is under any point, since nothing has a layout at all.
+document.elementsFromPoint ??= function elementsFromPoint(): Element[] {
+  return []
+}
+
 // jsdom implements no scrolling at all, so scrollIntoView() simply doesn't
 // exist on its elements — any component that keeps something in view
 // (LyricsPanel's autoscroll, SongTable's jump-to-letter) throws on a call

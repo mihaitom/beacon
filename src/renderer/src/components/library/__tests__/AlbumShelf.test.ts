@@ -65,10 +65,27 @@ describe('AlbumShelf', () => {
   })
 
   it('shows skeletons instead of cards while loading', async () => {
+    // Six is the count before anything has been measured — jsdom lays
+    // nothing out, so the shelf keeps its default rather than deriving "one
+    // card fits" from a width of zero.
     const wrapper = await mountShelf({ loading: true, albums: [] })
 
     expect(wrapper.findAllComponents(AlbumCard)).toHaveLength(0)
     expect(wrapper.findAll('.album-shelf-skeleton-item')).toHaveLength(6)
+  })
+
+  it('draws enough skeletons to fill the row it is actually in', async () => {
+    // The reason this is measured at all: a fixed six left a wide window's
+    // shelf visibly half empty for as long as it was loading, which on
+    // Home's two Discover shelves is long enough to see.
+    const width = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(1420)
+
+    const wrapper = await mountShelf({ loading: true, albums: [] })
+
+    // 1420px holds eight 160px cards with their 20px gaps, plus one more
+    // half off the edge so the row reads as continuing.
+    expect(wrapper.findAll('.album-shelf-skeleton-item')).toHaveLength(9)
+    width.mockRestore()
   })
 
   it('says so instead of rendering an empty row when there is nothing to show', async () => {

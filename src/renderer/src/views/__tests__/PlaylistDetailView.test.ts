@@ -8,6 +8,7 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import PlaylistDetailView from '../PlaylistDetailView.vue'
+import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
 import type { Playlist } from '@/types/library'
 import { makeSong } from '@/stores/__tests__/fixtures'
 
@@ -68,6 +69,25 @@ describe('PlaylistDetailView', () => {
   })
 
   describe('deleting a playlist', () => {
+    // The confirmation itself lives in PlaylistDeleteDialog.vue, shared
+    // with the playlists overview's own tile menu — this view's part is
+    // opening it and deciding what happens afterwards (navigating away).
+    function deleteDialogOf(wrapper: ReturnType<typeof mount>) {
+      return wrapper.findComponent(PlaylistDeleteDialog).vm as unknown as {
+        visible: boolean
+        confirm(): Promise<void>
+      }
+    }
+
+    /** Opens it the way the page does — the dialog is told *which*
+     * playlist by that click, so a test that only flips `visible` would be
+     * confirming a deletion of nothing. */
+    async function openDeleteDialog(wrapper: ReturnType<typeof mount>) {
+      const button = wrapper.get('.mdi-delete-outline').element.closest('button')!
+      await button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      return deleteDialogOf(wrapper)
+    }
+
     it('opens a confirmation dialog instead of deleting right away', async () => {
       const library = useLibraryStore()
       vi.spyOn(library, 'fetchPlaylist').mockResolvedValue(makePlaylist())
@@ -77,7 +97,7 @@ describe('PlaylistDetailView', () => {
       const deleteBtn = wrapper.get('.mdi-delete-outline').element.closest('button')!
       await deleteBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
 
-      expect((wrapper.vm as unknown as { deleteDialog: boolean }).deleteDialog).toBe(true)
+      expect(deleteDialogOf(wrapper).visible).toBe(true)
       expect(deleteSpy).not.toHaveBeenCalled()
     })
 
@@ -86,19 +106,18 @@ describe('PlaylistDetailView', () => {
       vi.spyOn(library, 'fetchPlaylist').mockResolvedValue(makePlaylist())
       const deleteSpy = vi.spyOn(library, 'deletePlaylist').mockResolvedValue()
       const { wrapper, router } = await mountView()
-      const vm = wrapper.vm as unknown as { deleteDialog: boolean; remove(): Promise<void> }
-      vm.deleteDialog = true
+      const dialog = await openDeleteDialog(wrapper)
 
-      await vm.remove()
-      // remove() fires $router.push() without awaiting it (same
-      // established pattern as every other view's post-action navigation
-      // in this codebase) — flushPromises() alone isn't enough to settle
-      // it, since Vue Router's own navigation resolves over more than one
-      // microtask tick. vi.waitFor retries until it actually lands.
+      await dialog.confirm()
+      // The navigation fires without being awaited (same established
+      // pattern as every other view's post-action navigation in this
+      // codebase) — flushPromises() alone isn't enough to settle it, since
+      // Vue Router's own navigation resolves over more than one microtask
+      // tick. vi.waitFor retries until it actually lands.
       await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/playlists'))
 
       expect(deleteSpy).toHaveBeenCalledWith('p1')
-      expect(vm.deleteDialog).toBe(false)
+      expect(dialog.visible).toBe(false)
     })
 
     it('keeps the dialog open and surfaces an error if the delete fails', async () => {
@@ -108,14 +127,13 @@ describe('PlaylistDetailView', () => {
         .spyOn(library, 'deletePlaylist')
         .mockRejectedValue(new Error('network error'))
       const { wrapper, router } = await mountView()
-      const vm = wrapper.vm as unknown as { deleteDialog: boolean; remove(): Promise<void> }
-      vm.deleteDialog = true
+      const dialog = await openDeleteDialog(wrapper)
 
-      await vm.remove()
+      await dialog.confirm()
 
       expect(deleteSpy).toHaveBeenCalledWith('p1')
       // Stays put — a failed delete must not navigate away as if it worked.
-      expect(vm.deleteDialog).toBe(true)
+      expect(dialog.visible).toBe(true)
       expect(router.currentRoute.value.path).toBe('/playlists/p1')
     })
   })

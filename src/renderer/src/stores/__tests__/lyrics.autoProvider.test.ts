@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { flushPromises } from '@vue/test-utils'
 import { makeSong } from './fixtures'
 import * as connectLyrics from '@/services/connect/lyrics'
 
@@ -24,17 +25,26 @@ describe('lyrics store — provider gating', () => {
 
   async function loadStores() {
     vi.resetModules()
-    const [lyricsModule, libraryModule, authModule, providersModule] = await Promise.all([
-      import('../lyrics'),
-      import('../library'),
-      import('../auth'),
-      import('../lyricsProviders'),
-    ])
+    const [lyricsModule, libraryModule, authModule, providersModule, storeModule] =
+      await Promise.all([
+        import('../lyrics'),
+        import('../library'),
+        import('../auth'),
+        import('../lyricsProviders'),
+        // Read back through the store's own API rather than by poking at
+        // localStorage: what a cached entry is written to (IndexedDB in a
+        // browser, a bounded blob where there is none) is that module's
+        // business, and asserting on it here would be asserting on the
+        // fallback backend specifically.
+        import('@/services/lyrics/lyricsStore'),
+      ])
     return {
       lyrics: lyricsModule.useLyricsStore(),
       library: libraryModule.useLibraryStore(),
       auth: authModule.useAuthStore(),
       providers: providersModule.useLyricsProvidersStore(),
+      readLyrics: storeModule.readLyrics,
+      reloadForAccount: lyricsModule.reloadLyricsCacheForAccount,
     }
   }
 
@@ -80,14 +90,15 @@ describe('lyrics store — provider gating', () => {
     // show "no lyrics" for NEGATIVE_TTL_MS after someone re-enables a
     // provider — the miss was never actually attempted.
     const song = makeSong('a')
-    const { lyrics, library, auth, providers } = await loadStores()
+    const { lyrics, library, auth, providers, readLyrics } = await loadStores()
     auth.serverType = 'subsonic'
     providers.setEnabled([])
     stubEmptyFileLyrics(library)
 
     await lyrics.ensureLoaded(song)
+    await flushPromises()
 
-    expect(localStorage.getItem('beacon.lyricsCache')).toBeNull()
+    expect(await readLyrics(song.id)).toBeNull()
   })
 
   it('queries only the enabled providers when the selection has been narrowed', async () => {
@@ -115,30 +126,59 @@ describe('lyrics store — provider gating', () => {
       name: song.title,
       source: 'lrclib.net',
     })
-    const { lyrics, library, auth, providers } = await loadStores()
+    const { lyrics, library, auth, providers, readLyrics } = await loadStores()
     auth.serverType = 'subsonic'
     providers.setEnabled(['lrclib.net'])
     stubEmptyFileLyrics(library)
 
     await lyrics.ensureLoaded(song)
+    await flushPromises()
 
     expect(lyrics.source).toBe('lrclib.net')
     expect(lyrics.lines[0]?.text).toBe('hello')
-    const stored = JSON.parse(localStorage.getItem('beacon.lyricsCache') ?? '{}')
-    expect(stored[song.id]?.source).toBe('lrclib.net')
+    const stored = await readLyrics<{ source: string }>(song.id)
+    expect(stored?.source).toBe('lrclib.net')
   })
 
   it('caches a genuine miss as negative once a provider was actually asked', async () => {
     const song = makeSong('a')
     vi.mocked(connectLyrics.autoLyrics).mockResolvedValue(null)
-    const { lyrics, library, auth, providers } = await loadStores()
+    const { lyrics, library, auth, providers, readLyrics } = await loadStores()
     auth.serverType = 'subsonic'
     providers.setEnabled(['lrclib.net'])
     stubEmptyFileLyrics(library)
 
     await lyrics.ensureLoaded(song)
+    await flushPromises()
 
-    const stored = JSON.parse(localStorage.getItem('beacon.lyricsCache') ?? '{}')
-    expect(stored[song.id]?.negative).toBe(true)
+    const stored = await readLyrics<{ negative: boolean }>(song.id)
+    expect(stored?.negative).toBe(true)
+  })
+
+  it('stores nothing for a lookup that was still running when the account changed', async () => {
+    // Song ids are only unique within one media server (Plex hands out
+    // small integers), so an answer fetched for the account that has just
+    // been left must not be filed under the one that just arrived - it
+    // would show up as another library's lyrics for an unrelated song.
+    const song = makeSong('a')
+    let answer: (result: null) => void = () => {}
+    vi.mocked(connectLyrics.autoLyrics).mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    const { lyrics, library, auth, providers, readLyrics, reloadForAccount } = await loadStores()
+    auth.serverType = 'subsonic'
+    providers.setEnabled(['lrclib.net'])
+    stubEmptyFileLyrics(library)
+
+    const loading = lyrics.ensureLoaded(song)
+    await flushPromises()
+    reloadForAccount()
+    answer(null)
+    await loading
+    await flushPromises()
+
+    expect(await readLyrics(song.id)).toBeNull()
   })
 })

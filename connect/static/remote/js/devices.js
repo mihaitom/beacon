@@ -40,7 +40,11 @@ export async function openDevicePicker() {
 
   const sheet = document.createElement('div');
   sheet.className = 'sheet';
-  sheet.innerHTML = '<div class="sheet-header">Play on</div><div class="sheet-loading">Loading…</div>';
+  // The sheet's own title, not a .sheet-header — that class is the small
+  // uppercase label the device *groups* use ("Sonos", "AirPlay"), and
+  // reusing it here left the sheet with no title at all, just a first
+  // group label that happened to say "Play on".
+  sheet.innerHTML = '<div class="sheet-title">Play on</div><div class="sheet-loading">Loading…</div>';
 
   function close() {
     backdrop.remove();
@@ -55,11 +59,11 @@ export async function openDevicePicker() {
   try {
     ({ items: devices } = await fetchDevices());
   } catch {
-    sheet.innerHTML = '<div class="sheet-header">Play on</div><div class="sheet-loading">Couldn’t load devices</div>';
+    sheet.innerHTML = '<div class="sheet-title">Play on</div><div class="sheet-loading">Couldn’t load devices</div>';
     return;
   }
 
-  sheet.innerHTML = '<div class="sheet-header">Play on</div>';
+  sheet.innerHTML = '<div class="sheet-title">Play on</div>';
 
   // Pre-checked with whatever's already casting — matches DeviceListItem.vue's
   // own `checked = isMyActiveTarget || selected` starting point.
@@ -88,26 +92,24 @@ export async function openDevicePicker() {
   const list = document.createElement('div');
   list.className = 'device-list';
 
-  // Only while something is actually casting — same rule (and same
-  // underlying cast-stop command as "This device" below) as the mobile web
-  // UI's own picker, which shows both rows: one says "put the music back on
-  // the Beacon machine", the other says "stop casting", and reading them
-  // as the same action isn't obvious from "This device" alone.
-  if ((state.snapshot.casting?.length ?? 0) > 0) {
-    const stopRow = document.createElement('button');
-    stopRow.className = 'device-row-stop';
-    stopRow.innerHTML = '<i class="mdi mdi-cast-off"></i><span>Stop all</span>';
-    stopRow.addEventListener('click', () => {
-      fireCommand('cast-stop');
-      close();
-    });
-    list.appendChild(stopRow);
-  }
-
+  // Local playback as one destination among the speakers, with the same
+  // tick a picked speaker gets when it is where the sound is going. There
+  // used to be two rows here — a red "Stop all" and "This device" — firing
+  // the identical cast-stop command; one list of destinations with the
+  // current one marked is a choice, two differently coloured rows doing the
+  // same thing is a puzzle. Stopping is offered once, as an action next to
+  // Done (see the footer below), which is also where the desktop's own
+  // picker keeps it.
+  const casting = (state.snapshot.casting?.length ?? 0) > 0;
   const localRow = document.createElement('button');
-  localRow.innerHTML = '<i class="mdi mdi-speaker"></i><span>This device</span>';
+  localRow.className = casting ? 'device-row-local' : 'device-row-local device-row-local--active';
+  localRow.innerHTML = `<i class="mdi ${casting ? 'mdi-speaker' : 'mdi-circle-slice-8'}"></i><span>This device</span>${
+    casting ? '' : '<i class="mdi mdi-check device-row-check"></i>'
+  }`;
   localRow.addEventListener('click', () => {
-    fireCommand('cast-stop');
+    // Already local: nothing to apply, so this is just a way out of the
+    // sheet rather than a stop dispatched at nothing.
+    if (casting) fireCommand('cast-stop');
     close();
   });
   list.appendChild(localRow);
@@ -164,6 +166,10 @@ export async function openDevicePicker() {
     // short-lived popover, not worth the same standing 4s poll
     // DeviceListItem.vue/startDeviceVolumePoll() run for it.
     if (isActive(device) && device.volume_capable) {
+      // Marked on the row above as well, so the two read as one block —
+      // a slider between two device rows otherwise looks like it could
+      // belong to either.
+      row.classList.add('device-row-has-volume');
       const volumeRow = document.createElement('div');
       volumeRow.className = 'device-volume-row';
       volumeRow.innerHTML =
@@ -202,6 +208,18 @@ export async function openDevicePicker() {
   });
   const footer = document.createElement('div');
   footer.className = 'sheet-footer';
+  // Every action the sheet has, in one row: stop on the left, done on the
+  // right. The list above is only ever destinations.
+  if (casting) {
+    const stopBtn = document.createElement('button');
+    stopBtn.className = 'btn-sheet-stop';
+    stopBtn.textContent = 'Stop all';
+    stopBtn.addEventListener('click', () => {
+      fireCommand('cast-stop');
+      close();
+    });
+    footer.appendChild(stopBtn);
+  }
   footer.appendChild(doneBtn);
   sheet.appendChild(footer);
 }

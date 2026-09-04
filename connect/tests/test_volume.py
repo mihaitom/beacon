@@ -217,7 +217,7 @@ def test_volume_get_records_and_broadcasts_the_active_targets_volume(client, def
         client.get("/volume")
     assert default_session.state.device_volumes["sonos:Küche"] == (42, None)
     assert q.get_nowait()["targets"] == [
-        {"name": "Küche", "type": "sonos", "volume": 42, "muted": None}
+        {"name": "Küche", "type": "sonos", "volume": 42, "muted": None, "volume_push": False}
     ]
 
 
@@ -246,7 +246,7 @@ def test_device_volume_get_records_and_broadcasts_for_sonos(client, default_sess
         client.get("/device-volume?device_type=sonos&name=Küche")
     assert default_session.state.device_volumes["sonos:Küche"] == (42, None)
     assert q.get_nowait()["targets"] == [
-        {"name": "Küche", "type": "sonos", "volume": 42, "muted": None}
+        {"name": "Küche", "type": "sonos", "volume": 42, "muted": None, "volume_push": False}
     ]
 
 
@@ -269,7 +269,7 @@ def test_device_volume_set_records_and_broadcasts_for_sonos(client, default_sess
         client.post("/device-volume?device_type=sonos&name=Küche", json={"volume": 77})
     assert default_session.state.device_volumes["sonos:Küche"] == (77, None)
     assert q.get_nowait()["targets"] == [
-        {"name": "Küche", "type": "sonos", "volume": 77, "muted": None}
+        {"name": "Küche", "type": "sonos", "volume": 77, "muted": None, "volume_push": False}
     ]
 
 

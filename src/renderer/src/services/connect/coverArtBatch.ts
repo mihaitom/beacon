@@ -80,6 +80,16 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null
 const cached = new Map<string, Blob | null>()
 let cachedBytes = 0
 
+// Which account's artwork the caches currently hold. Bumped by
+// clearCoverArtCache() below, and captured by every batch as it goes out, so
+// an answer that was already on the wire when the account changed can be
+// recognized as belonging to the previous one. Without that, its images were
+// written into both caches (memory and disk) *after* the switch, under keys
+// the new session reads — and cover ids are only unique within one media
+// server, so on Plex (small integer ratingKeys) or two Subsonic servers that
+// is one account being shown another's artwork.
+let generation = 0
+
 /** The album/song cover this id resolves to, or rejects — with a
  * DOMException named 'AbortError' if `signal` fires before the result
  * arrives (immediately, with no network cost at all, if it fires before
@@ -261,11 +271,35 @@ function remember(key: string, blob: Blob | null): void {
 /** Drops everything held in memory — called when the account changes (see
  * services/accountScopedStores.ts). Cover ids are only unique within one
  * media server, so another account's library must not be answered out of
- * this one's artwork. */
+ * this one's artwork.
+ *
+ * That includes artwork not fetched yet: a batch still waiting for its
+ * window, or already on the wire, was assembled from the previous account's
+ * ids. Whoever is waiting on one is told so rather than left hanging — with
+ * a plain Error, so CoverArt.vue treats it as worth another go (it is: the
+ * same component asks again against the new account and gets its own
+ * library's cover). */
 export function clearCoverArtCache(): void {
   cached.clear()
   cachedBytes = 0
+  generation += 1
+
+  const abandoned = [...pendingBySize.values(), pendingImages]
+  pendingBySize = new Map()
+  pendingImages = new Map()
+  if (flushTimer) clearTimeout(flushTimer)
+  flushTimer = null
+  for (const bucket of abandoned) abandon(bucket, [...bucket.keys()])
+
   clearArtwork()
+}
+
+/** Rejects everything still waiting in `bucket` for `refs` — an answer that
+ * arrived for the wrong account, or a batch dropped before it was sent. */
+function abandon(bucket: Pending, refs: string[]): void {
+  for (const ref of refs) {
+    settle(bucket, ref, null, new Error('The account changed while this artwork was loading'))
+  }
 }
 
 function chunked(refs: string[]): string[][] {
@@ -305,6 +339,7 @@ async function sendBatch(
   urls: string[],
   byUrl: Pending,
 ): Promise<void> {
+  const sentAt = generation
   let response: CoverArtBatchResponse
   try {
     response = await fetchConnect<CoverArtBatchResponse>('/cover-art/batch', {
@@ -318,6 +353,13 @@ async function sendBatch(
     // over one bad moment.
     for (const id of ids) settle(byId, id, null, error)
     for (const url of urls) settle(byUrl, url, null, error)
+    return
+  }
+  // The account changed while this was in flight — see clearCoverArtCache().
+  // Nothing from it may reach either cache.
+  if (sentAt !== generation) {
+    abandon(byId, ids)
+    abandon(byUrl, urls)
     return
   }
   deliver(
@@ -338,6 +380,17 @@ function deliver(
   missing: () => Error,
 ): void {
   for (const ref of refs) {
+    // Absent from the answer entirely, rather than present and null: the
+    // backend could not fetch this one just now (the media server timed
+    // out, refused, or answered 5xx) and is deliberately saying nothing
+    // about whether it exists — see _FetchUnavailable in
+    // connect/routes/coverart.py. Nothing is remembered for it, and the
+    // plain Error is what makes CoverArt.vue try again later, where a
+    // NoCoverArtError would have left the tile blank for the whole session.
+    if (!(ref in results)) {
+      settle(bucket, ref, null, new Error('Artwork could not be fetched just now'))
+      continue
+    }
     const dataUrl = results[ref]
     if (!dataUrl) {
       remember(keyOf(ref), null)

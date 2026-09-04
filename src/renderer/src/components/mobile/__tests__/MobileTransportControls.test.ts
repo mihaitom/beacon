@@ -47,7 +47,12 @@ function button(wrapper: ReturnType<typeof mountControls>, icon: string) {
 }
 
 function castTo(name: string, type: DeviceType, volume?: number) {
-  useConnectStore().status = makeStatus({ targets: [{ name, type, volume }] })
+  // volume_push mirrors the backend's own per-device flag (see
+  // connect/core/device_volume.py) — a device that reports its own volume
+  // changes is not polled by this client.
+  useConnectStore().status = makeStatus({
+    targets: [{ name, type, volume, volume_push: type === 'sonos' }],
+  })
 }
 
 describe('MobileTransportControls', () => {
@@ -265,8 +270,8 @@ describe('MobileTransportControls', () => {
       // single-target device one below.
       useConnectStore().status = makeStatus({
         targets: [
-          { name: 'Kitchen', type: 'sonos' },
-          { name: 'Living Room', type: 'sonos' },
+          { name: 'Kitchen', type: 'sonos', volume_push: true },
+          { name: 'Living Room', type: 'sonos', volume_push: true },
         ],
       })
       await wrapper.vm.$nextTick()

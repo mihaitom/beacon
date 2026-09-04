@@ -253,7 +253,7 @@ def test_play_with_paused_claims_the_target_without_dispatching(client, default_
     assert compute_position(default_session) == 42.0
     assert claims.owner_of("chromecast", "TV") == default_session.session_id
     assert build_status_dict(default_session)["targets"] == [
-        {"name": "TV", "type": "chromecast", "volume": None, "muted": None}
+        {"name": "TV", "type": "chromecast", "volume": None, "muted": None, "volume_push": False}
     ]
 
 

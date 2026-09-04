@@ -35,8 +35,8 @@
     <div v-if="loading" class="album-shelf-row">
       <div v-for="n in skeletonCount" :key="n" class="album-shelf-skeleton-item">
         <v-skeleton-loader type="image" width="160" height="160" class="rounded" />
-        <v-skeleton-loader type="text" width="80%" height="20" class="mt-2" />
-        <v-skeleton-loader type="text" width="55%" height="20" />
+        <v-skeleton-loader type="text" width="70%" height="20" class="mt-2" />
+        <v-skeleton-loader type="text" width="45%" height="16" />
       </div>
     </div>
     <div
@@ -59,10 +59,10 @@
 <script lang="ts">
 import AlbumCard from './AlbumCard.vue'
 import type { Album } from '@/types/library'
+import { cardsAcross, observeCardsAcross, skeletonsAcross } from './cardRowFit'
 
-// Matches .album-card's fixed width + .album-shelf-row's gap.
-const CARD_WIDTH = 160
-const CARD_GAP = 20
+// Matches .album-card's fixed width + .album-shelf-row's gap — shared with
+// every other shelf, see cardRowFit.ts.
 
 export default {
   name: 'AlbumShelf',
@@ -117,6 +117,12 @@ export default {
   data() {
     return {
       visibleCount: 6,
+      // Measured on mount and kept up to date, for every shelf rather than
+      // only the fit-to-screen ones: `visibleCount` decides how much
+      // *content* a fit-to-screen shelf shows, but how many *placeholders*
+      // to draw is a question every shelf has, and answering it with a
+      // fixed number left a wide window's row half empty while it loaded.
+      skeletonsFitting: 6,
       resizeObserver: null as ResizeObserver | null,
     }
   },
@@ -126,16 +132,14 @@ export default {
       return this.albums.slice(0, this.visibleCount)
     },
     skeletonCount(): number {
-      return this.fitToScreen ? this.visibleCount : 6
+      return this.skeletonsFitting
     },
   },
   mounted() {
-    if (!this.fitToScreen) return
-    this.resizeObserver = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width ?? 0
-      this.visibleCount = Math.max(1, Math.floor((width + CARD_GAP) / (CARD_WIDTH + CARD_GAP)))
+    this.resizeObserver = observeCardsAcross(this.$el as Element, (width) => {
+      this.visibleCount = cardsAcross(width)
+      this.skeletonsFitting = skeletonsAcross(width)
     })
-    this.resizeObserver.observe(this.$el as Element)
   },
   beforeUnmount() {
     this.resizeObserver?.disconnect()
@@ -193,8 +197,10 @@ export default {
  * width/height props (they keep fixed CSS heights + a 16px margin) — the
  * width/height props only size the outer wrapper. Forcing the bone to fill
  * that wrapper exactly is what makes the skeleton match AlbumCard.vue's
- * real dimensions (160px cover + mt-2 + two 20px text lines) pixel for
- * pixel, so nothing shifts once the real album cards render in. */
+ * real dimensions pixel for pixel, so nothing shifts once the real album
+ * cards render in: a 160px cover, mt-2, then the card's two lines at the
+ * heights their own type scale gives them — 20px for the title
+ * (text-body-medium) and 16px for the artist (text-body-small). */
 .album-shelf-skeleton-item :deep(.v-skeleton-loader__bone) {
   margin: 0;
   width: 100%;

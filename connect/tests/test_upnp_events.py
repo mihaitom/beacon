@@ -398,18 +398,22 @@ def test_callback_url_carries_the_service_and_label_in_the_path():
     core/upnp_events.py's Subscription), so both need to be in the path
     rather than just the source address."""
     assert callback_url_for("Arbeitszimmer", "avtransport").endswith(
-        "/upnp/events/avtransport/Arbeitszimmer"
+        "/upnp/events/sonos/avtransport/Arbeitszimmer"
     )
 
 
 def test_callback_url_defaults_to_avtransport():
-    assert callback_url_for("Arbeitszimmer").endswith("/upnp/events/avtransport/Arbeitszimmer")
+    assert callback_url_for("Arbeitszimmer").endswith(
+        "/upnp/events/sonos/avtransport/Arbeitszimmer"
+    )
 
 
 def test_notify_endpoint_logs_the_event_and_answers_200(client):
     body = NOTIFY_BODY.format(state="STOPPED", status="ERROR_CANT_CONNECT")
     with patch("routes.upnp.handle_event") as handler:
-        response = client.request("NOTIFY", "/upnp/events/avtransport/Arbeitszimmer", content=body)
+        response = client.request(
+            "NOTIFY", "/upnp/events/sonos/avtransport/Arbeitszimmer", content=body
+        )
     assert response.status_code == 200
     handler.assert_called_once()
     assert handler.call_args[0][0] == "Arbeitszimmer"
@@ -418,7 +422,7 @@ def test_notify_endpoint_logs_the_event_and_answers_200(client):
 def test_notify_endpoint_ignores_an_oversized_body(client):
     huge = "x" * (upnp_events_max() + 1)
     with patch("routes.upnp.handle_event", side_effect=AssertionError("must not parse")) as h:
-        response = client.request("NOTIFY", "/upnp/events/avtransport/A", content=huge)
+        response = client.request("NOTIFY", "/upnp/events/sonos/avtransport/A", content=huge)
     assert response.status_code == 200
     h.assert_not_called()
 
@@ -427,7 +431,7 @@ def test_notify_endpoint_still_answers_200_when_handling_raises(client):
     """A device that gets an error back may cancel its subscription —
     losing eventing over one malformed payload is worse than dropping it."""
     with patch("routes.upnp.handle_event", side_effect=ValueError("boom")):
-        response = client.request("NOTIFY", "/upnp/events/avtransport/A", content="<x/>")
+        response = client.request("NOTIFY", "/upnp/events/sonos/avtransport/A", content="<x/>")
     assert response.status_code == 200
 
 
@@ -446,7 +450,9 @@ async def test_notify_measures_the_round_trip_when_the_echo_matches(client, defa
     default_session.radio_icy_pending_injection = ("MARK 001", injected_at)
     body = _stream_content_notify("MARK 001")
 
-    response = client.request("NOTIFY", "/upnp/events/avtransport/Arbeitszimmer", content=body)
+    response = client.request(
+        "NOTIFY", "/upnp/events/sonos/avtransport/Arbeitszimmer", content=body
+    )
 
     assert response.status_code == 200
     assert default_session.radio_icy_measured_lag == pytest.approx(2.5, abs=0.5)
@@ -463,7 +469,7 @@ async def test_notify_ignores_an_echo_that_does_not_match_whats_pending(client, 
     default_session.radio_icy_pending_injection = pending
     body = _stream_content_notify("a stale, different title")
 
-    client.request("NOTIFY", "/upnp/events/avtransport/Arbeitszimmer", content=body)
+    client.request("NOTIFY", "/upnp/events/sonos/avtransport/Arbeitszimmer", content=body)
 
     assert default_session.radio_icy_measured_lag is None
     # Still pending, untouched — a later NOTIFY carrying the real echo must
@@ -477,7 +483,9 @@ async def test_notify_is_a_no_op_with_nothing_pending(client, default_session):
     await claims.claim("sonos", "Arbeitszimmer", default_session.session_id)
     body = _stream_content_notify("MARK 001")
 
-    response = client.request("NOTIFY", "/upnp/events/avtransport/Arbeitszimmer", content=body)
+    response = client.request(
+        "NOTIFY", "/upnp/events/sonos/avtransport/Arbeitszimmer", content=body
+    )
 
     assert response.status_code == 200
     assert default_session.radio_icy_measured_lag is None
@@ -497,7 +505,7 @@ async def test_notify_ignores_a_non_positive_measured_lag(client, default_sessio
     default_session.radio_icy_pending_injection = ("MARK 001", time.monotonic() + 100.0)
     body = _stream_content_notify("MARK 001")
 
-    client.request("NOTIFY", "/upnp/events/avtransport/Arbeitszimmer", content=body)
+    client.request("NOTIFY", "/upnp/events/sonos/avtransport/Arbeitszimmer", content=body)
 
     assert default_session.radio_icy_measured_lag == 5.0  # untouched
     # Still consumed either way — a non-positive result is still a result,
@@ -510,7 +518,7 @@ def test_notify_stream_title_echo_is_a_no_op_for_an_unclaimed_device(client):
     — a stray/unsolicited NOTIFY, or a device nobody currently casts radio
     to."""
     body = _stream_content_notify("MARK 001")
-    response = client.request("NOTIFY", "/upnp/events/avtransport/Nobody", content=body)
+    response = client.request("NOTIFY", "/upnp/events/sonos/avtransport/Nobody", content=body)
     assert response.status_code == 200
 
 
@@ -523,7 +531,7 @@ async def test_notify_stream_title_echo_is_a_no_op_for_a_claim_with_no_live_sess
     await claims.claim("sonos", "Ghost", "a-session-id-that-does-not-exist")
     body = _stream_content_notify("MARK 001")
 
-    response = client.request("NOTIFY", "/upnp/events/avtransport/Ghost", content=body)
+    response = client.request("NOTIFY", "/upnp/events/sonos/avtransport/Ghost", content=body)
 
     assert response.status_code == 200
 
@@ -537,7 +545,9 @@ async def test_notify_pushes_volume_into_the_claiming_session(client, default_se
     await claims.claim("sonos", "Arbeitszimmer", default_session.session_id)
     body = RC_NOTIFY_BODY.format(volume="42", mute="0")
 
-    response = client.request("NOTIFY", "/upnp/events/renderingcontrol/Arbeitszimmer", content=body)
+    response = client.request(
+        "NOTIFY", "/upnp/events/sonos/renderingcontrol/Arbeitszimmer", content=body
+    )
 
     assert response.status_code == 200
     assert default_session.state.device_volumes["sonos:Arbeitszimmer"] == (42, False)
@@ -552,11 +562,17 @@ async def test_notify_broadcasts_the_updated_status_with_the_new_volume(client, 
     q = default_session.event_bus.subscribe()
     body = RC_NOTIFY_BODY.format(volume="42", mute="0")
 
-    client.request("NOTIFY", "/upnp/events/renderingcontrol/Arbeitszimmer", content=body)
+    client.request("NOTIFY", "/upnp/events/sonos/renderingcontrol/Arbeitszimmer", content=body)
 
     payload = q.get_nowait()
     assert payload["targets"] == [
-        {"name": "Arbeitszimmer", "type": "sonos", "volume": 42, "muted": False}
+        {
+            "name": "Arbeitszimmer",
+            "type": "sonos",
+            "volume": 42,
+            "muted": False,
+            "volume_push": False,
+        }
     ]
 
 
@@ -571,7 +587,7 @@ async def test_notify_volume_only_update_does_not_clobber_a_known_mute(client, d
         "</LastChange></e:property></e:propertyset>"
     )
 
-    client.request("NOTIFY", "/upnp/events/renderingcontrol/Arbeitszimmer", content=body)
+    client.request("NOTIFY", "/upnp/events/sonos/renderingcontrol/Arbeitszimmer", content=body)
 
     assert default_session.state.device_volumes["sonos:Arbeitszimmer"] == (55, True)
 
@@ -582,7 +598,9 @@ def test_notify_rendering_control_is_a_no_op_for_an_unclaimed_device(client, def
     raise or fabricate a session's worth of state."""
     body = RC_NOTIFY_BODY.format(volume="42", mute="0")
 
-    response = client.request("NOTIFY", "/upnp/events/renderingcontrol/NobodysDevice", content=body)
+    response = client.request(
+        "NOTIFY", "/upnp/events/sonos/renderingcontrol/NobodysDevice", content=body
+    )
 
     assert response.status_code == 200
     assert default_session.state.device_volumes == {}
@@ -606,7 +624,7 @@ async def _notify(client, session, title):
     await claims.claim("sonos", "Arbeitszimmer", session.session_id)
     client.request(
         "NOTIFY",
-        "/upnp/events/avtransport/Arbeitszimmer",
+        "/upnp/events/sonos/avtransport/Arbeitszimmer",
         content=_stream_content_notify(title),
     )
 
@@ -716,3 +734,68 @@ def test_pulsed_title_passes_an_absent_title_through():
     the station has none."""
     assert pulsed_title(None, ICY_PULSE_SECONDS) is None
     assert pulsed_title("", ICY_PULSE_SECONDS) == ""
+
+
+# ── Volume push: which device is reporting, and to which session ────────────
+
+
+async def test_notify_reaches_the_session_that_claimed_that_device_type(client, default_session):
+    """The callback path carries the device type because a claim is per
+    (type, name): a DLNA renderer and a Sonos room can be called the same
+    thing, and a reading has to land on the one that was claimed."""
+    from core.claims import claims
+
+    await claims.claim("dlna", "Wohnzimmer", default_session.session_id)
+    body = RC_NOTIFY_BODY.format(volume="17", mute="0")
+
+    response = client.request(
+        "NOTIFY", "/upnp/events/dlna/renderingcontrol/Wohnzimmer", content=body
+    )
+
+    assert response.status_code == 200
+    assert default_session.state.device_volumes["dlna:Wohnzimmer"] == (17, False)
+    # The Sonos of the same name — which nobody claimed — is untouched.
+    assert "sonos:Wohnzimmer" not in default_session.state.device_volumes
+
+
+async def test_notify_for_an_unclaimed_device_type_is_ignored(client, default_session):
+    from core.claims import claims
+
+    await claims.claim("sonos", "Wohnzimmer", default_session.session_id)
+    body = RC_NOTIFY_BODY.format(volume="17", mute="0")
+
+    response = client.request(
+        "NOTIFY", "/upnp/events/dlna/renderingcontrol/Wohnzimmer", content=body
+    )
+
+    assert response.status_code == 200
+    assert default_session.state.device_volumes == {}
+
+
+async def test_a_pushing_device_says_so_in_the_status(client, default_session):
+    """What tells every client to stop polling that device — per device, not
+    per type (see core/device_volume.py)."""
+    from core.claims import claims
+    from core.device_volume import _reset_for_tests, mark_pushes_volume
+    from core.session import build_status_dict
+
+    _reset_for_tests()
+    await claims.claim("dlna", "Wohnzimmer", default_session.session_id)
+    default_session.state.active_delivery = _dlna_delivery("Wohnzimmer")
+
+    before = build_status_dict(default_session)["targets"]
+    assert before == [
+        {"name": "Wohnzimmer", "type": "dlna", "volume": None, "muted": None, "volume_push": False}
+    ]
+
+    mark_pushes_volume("dlna", "Wohnzimmer")
+    after = build_status_dict(default_session)["targets"]
+
+    assert after[0]["volume_push"] is True
+    _reset_for_tests()
+
+
+def _dlna_delivery(name: str):
+    from delivery.dlna import DlnaDelivery
+
+    return DlnaDelivery(name)

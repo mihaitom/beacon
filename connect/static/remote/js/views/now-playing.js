@@ -5,6 +5,12 @@ import { openDevicePicker } from '../devices.js';
 import { setArt } from '../art.js';
 import { paintRange } from '../range.js';
 
+// How long the slider keeps its own value after a change, ignoring what
+// the desktop reports back. Matches VOLUME_SETTLE_MS in the app's own
+// services/connect/volumeGuard.ts — the same race, on the other side of
+// the wire: a cast device also takes a moment to report a new level.
+const VOLUME_SETTLE_MS = 2500;
+
 function formatTime(seconds) {
   if (!Number.isFinite(seconds)) return '0:00';
   const m = Math.floor(seconds / 60);
@@ -58,6 +64,14 @@ export function renderNowPlaying(root) {
 
   let seeking = false;
   let volumeDragging = false;
+  // Until when an incoming snapshot's volume is ignored. Snapshots keep
+  // arriving after the slider is let go (the desktop pushes a debounced
+  // one several times a second), and any that was built before the command
+  // landed still carries the previous value — applying it snapped the
+  // slider back to where the drag started. Reported live 2026-09-04 as the
+  // volume slider bouncing back; the desktop's own sliders have the same
+  // window for the same reason, see services/connect/volumeGuard.ts.
+  let volumeHeldUntil = 0;
   // What to restore to on un-mute — same idea as
   // MobileTransportControls.vue's own volumeBeforeMute.
   let volumeBeforeMute = 100;
@@ -109,7 +123,15 @@ export function renderNowPlaying(root) {
       durationLabel.textContent = formatTime(snapshot.duration || 0);
       paintRange(seek);
     }
-    if (!volumeDragging) {
+    // The value this snapshot would put on the slider — read before the
+    // hold below, so a snapshot that already agrees with what was sent
+    // ends the hold early rather than sitting it out.
+    const incomingVolume =
+      casting.length === 1
+        ? snapshot.device_volume
+        : Math.round((snapshot.volume ?? 1) * 100);
+    if (incomingVolume != null && incomingVolume === Number(volume.value)) volumeHeldUntil = 0;
+    if (!volumeDragging && Date.now() >= volumeHeldUntil) {
       // Mirrors PlayerBar.vue's own slider swap: exactly one active cast
       // target -> that device's volume (disabled until the first poll
       // resolves, see stores/remoteControl.ts's device_volume field);
@@ -157,6 +179,7 @@ export function renderNowPlaying(root) {
   volume.addEventListener('change', () => {
     fireCommand('volume', { volume: Number(volume.value) / 100 });
     volumeDragging = false;
+    volumeHeldUntil = Date.now() + VOLUME_SETTLE_MS;
   });
 
   muteBtn.addEventListener('click', () => {
@@ -167,6 +190,7 @@ export function renderNowPlaying(root) {
     volume.value = String(next);
     paintRange(volume);
     fireCommand('volume', { volume: next / 100 });
+    volumeHeldUntil = Date.now() + VOLUME_SETTLE_MS;
   });
 
   return unsubscribe;

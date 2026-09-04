@@ -66,6 +66,15 @@ export default {
   },
   emits: ['update:wrap'],
   methods: {
+    /** The scrolling row itself, for a host that needs to measure how many
+     * cards fit across it (see cardRowFit.ts). Handed out rather than
+     * measured through the host's own $el, because a shelf whose template
+     * leads with a comment is a *fragment* — its $el is that comment node,
+     * which has no width to read and would silently leave the host on its
+     * default count (SimilarArtistsShelf.vue is exactly that shape). */
+    rowElement(): HTMLElement | null {
+      return (this.$refs.row as HTMLElement | undefined) ?? null
+    },
     /** One "page" per click, deliberately short of a full width so the card
      * at the edge stays partly visible as a handle on where you were —
      * same 0.8 factor AlbumShelf.vue and SimilarArtistsShelf.vue use. */

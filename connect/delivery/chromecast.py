@@ -49,6 +49,60 @@ def _wait_for_discovery(min_seconds: float = 2.0) -> None:
         time.sleep(min_seconds - elapsed)
 
 
+class _VolumeListener:
+    """Reports this device's own volume changes, the same way a Sonos
+    speaker's RenderingControl subscription does (see
+    core/device_volume.py).
+
+    pychromecast pushes a CastStatus on every change the device makes —
+    including the ones nothing here asked for: the TV remote, the Google
+    Home app, another cast sender. That is what replaces asking the device
+    every four seconds.
+
+    Called on pychromecast's own connection thread, hence
+    report_volume_from_thread() rather than a coroutine. Registered once per
+    connection, and pychromecast keeps only a weak-ish list of listeners on
+    that connection object — this instance is kept alive by the cache entry
+    it hangs off (see _register_volume_listener)."""
+
+    def __init__(self, target: str) -> None:
+        self.target = target
+
+    def new_cast_status(self, status) -> None:
+        from core.device_volume import report_volume_from_thread
+
+        level = getattr(status, "volume_level", None)
+        if level is None:
+            return
+        report_volume_from_thread(
+            "chromecast",
+            self.target,
+            volume=round(level * 100),
+            muted=bool(getattr(status, "volume_muted", False)),
+        )
+
+
+def _register_volume_listener(cast, target: str) -> None:
+    """Attach a _VolumeListener to a freshly connected device, once.
+
+    Kept on the cast object itself rather than in a map of its own: the
+    listener's life is exactly that connection's, and the cache already
+    drops the connection when it stops answering (see
+    _get_cached_chromecast), taking this with it."""
+    from core.device_volume import mark_pushes_volume
+
+    if getattr(cast, "_beacon_volume_listener", None) is not None:
+        return
+    try:
+        listener = _VolumeListener(target)
+        cast.register_status_listener(listener)
+        cast._beacon_volume_listener = listener
+        mark_pushes_volume("chromecast", target)
+    except Exception as e:
+        # A device that won't take a listener simply stays on the poll.
+        logger.debug(f"[Chromecast:{target}] volume eventing unavailable: {e}")
+
+
 def _get_cached_chromecast(target: str):
     """Return a connected, cached Chromecast or None if not cached / stale."""
     cast = _chromecast_cache.get(target.lower())
@@ -61,7 +115,12 @@ def _get_cached_chromecast(target: str):
         logger.debug(
             f"[Chromecast:{target}] cached device no longer answering ({e}) — dropping from cache"
         )
+    from core.device_volume import clear_pushes_volume
+
     _chromecast_cache.pop(target.lower(), None)
+    # Nothing is pushing for it any more, so whoever is showing its volume
+    # goes back to asking — see core/device_volume.py.
+    clear_pushes_volume("chromecast", target)
     return None
 
 
@@ -96,6 +155,7 @@ class ChromecastDelivery(BaseDelivery):
                 cast = pychromecast.get_chromecast_from_cast_info(cast_info, zconf)
                 cast.wait(timeout=10)
                 _chromecast_cache[target_lower] = cast
+                _register_volume_listener(cast, self.target)
                 return cast
 
         available = [info.friendly_name for info in browser.devices.values()]

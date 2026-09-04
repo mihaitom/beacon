@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -205,5 +205,109 @@ describe('MobileDevicePicker', () => {
 
     expect(rescan.props('loading')).toBe(true)
     expect(rescan.props('disabled')).toBe(true)
+  })
+
+  describe('where the actions live', () => {
+    // The sheet used to carry two rows at the top of the device list,
+    // "Stop all" and "This device", firing the identical command — one red
+    // and one not. What is left is a list of destinations with the current
+    // one ticked, and every action in the header row above it.
+    /** The sheet only renders its list once there is something to list —
+     * an empty, still-scanning picker shows a spinner instead (and every
+     * DOM query below would find nothing). */
+    function openSheet() {
+      const connect = withDevices(['Kitchen'])
+      vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+      return connect
+    }
+
+    function rowTexts(): string[] {
+      return [...document.querySelectorAll('.v-list-item')].map((row) => row.textContent ?? '')
+    }
+
+    function localRow(): HTMLElement {
+      return document.querySelector('.mobile-device-picker__local') as HTMLElement
+    }
+
+    function stopButton(wrapper: ReturnType<typeof mountPicker>) {
+      return wrapper
+        .findAllComponents<typeof VBtn>(VBtn)
+        .find((button) => button.text() === 'Stop all')
+    }
+
+    it('offers local playback as a destination, not as a second stop button', async () => {
+      openSheet()
+      const wrapper = mountPicker()
+      await flushPromises()
+
+      expect(rowTexts().filter((text) => text.includes('This device'))).toHaveLength(1)
+      expect(rowTexts().some((text) => text.includes('Stop all'))).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('ticks local playback while nothing is casting', async () => {
+      openSheet()
+      const wrapper = mountPicker()
+      await flushPromises()
+
+      expect(localRow().querySelector('.mdi-check-circle')).not.toBeNull()
+      wrapper.unmount()
+    })
+
+    it('keeps stopping everything as an action beside Done, while casting', async () => {
+      const connect = openSheet()
+      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+      const stopAll = vi.spyOn(connect, 'stopAll').mockResolvedValue()
+      const wrapper = mountPicker()
+      await flushPromises()
+
+      // No longer ticked — the sound is somewhere else.
+      expect(localRow().querySelector('.mdi-check-circle')).toBeNull()
+
+      await stopButton(wrapper)!.trigger('click')
+      expect(stopAll).toHaveBeenCalled()
+      expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([false])
+      wrapper.unmount()
+    })
+
+    it('offers no stop action at all when nothing is casting', async () => {
+      openSheet()
+      const wrapper = mountPicker()
+      await flushPromises()
+
+      expect(stopButton(wrapper)).toBeUndefined()
+      wrapper.unmount()
+    })
+
+    it('just closes when local playback is already where the sound goes', async () => {
+      // Nothing to apply — firing a stop at nothing would still run the
+      // whole cast teardown.
+      const connect = openSheet()
+      const stopAll = vi.spyOn(connect, 'stopAll').mockResolvedValue()
+      const wrapper = mountPicker()
+      await flushPromises()
+
+      localRow().click()
+      await flushPromises()
+
+      expect(stopAll).not.toHaveBeenCalled()
+      expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([false])
+      wrapper.unmount()
+    })
+
+    it('goes back to local playback when it is picked while casting', async () => {
+      const connect = openSheet()
+      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+      const stopAll = vi.spyOn(connect, 'stopAll').mockResolvedValue()
+      const wrapper = mountPicker()
+      await flushPromises()
+
+      localRow().click()
+      await flushPromises()
+
+      expect(stopAll).toHaveBeenCalled()
+      expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([false])
+      wrapper.unmount()
+    })
   })
 })

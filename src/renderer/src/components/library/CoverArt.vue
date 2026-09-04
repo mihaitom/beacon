@@ -119,7 +119,20 @@ const LOAD_SETTLE_MS = 150
 // Rounding up rather than down, so an image is never smaller than the box
 // showing it. That also sharpens the small ones: a 40px row on a 2x display
 // was being handed exactly 40 pixels to fill 80 with.
-const FETCH_SIZES = [64, 160, 320, 640]
+//
+// 1280 is the odd one out: nothing in the browsing UI is anywhere near that
+// big, and it exists for the artwork viewer alone (ArtworkLightbox.vue),
+// which fills most of the window with one deliberately-opened picture and
+// would otherwise be showing a 640px cover blown up. It costs one extra
+// stored copy per cover somebody actually opens, which is a very different
+// volume from a grid fetching a screenful at a time.
+const FETCH_SIZES = [64, 160, 320, 640, 1280]
+
+/** The tier the artwork viewer asks for (see the `fullSize` prop), and the
+ * largest one anything that merely *browses* ever needs — a CSS-string size
+ * settles for that rather than pulling the viewer's copy into a grid. */
+export const FULL_SIZE_FETCH = 1280
+const BROWSING_MAX_FETCH = 640
 
 function fetchSizeFor(wanted: number): number {
   return FETCH_SIZES.find((size) => size >= wanted) ?? FETCH_SIZES[FETCH_SIZES.length - 1]!
@@ -275,6 +288,16 @@ export default {
       type: [Number, String] as PropType<number | string>,
       default: 160,
     },
+    /** Ask for the full-size tier (FULL_SIZE_FETCH) rather than deriving a
+     * tier from the box. For the artwork viewer alone: its box is a CSS
+     * string, which has no pixel figure to round up from and so settles for
+     * the largest size the browsing UI ever needs — and that is exactly the
+     * one place showing a single picture on purpose rather than a
+     * screenful. */
+    fullSize: {
+      type: Boolean,
+      default: false,
+    },
     rounded: {
       type: Boolean,
       default: false,
@@ -375,10 +398,12 @@ export default {
     // What resolution to actually request from the media server — one of
     // FETCH_SIZES above, never the box's own size. A CSS size string (e.g.
     // "70vh") has no pixel figure to derive this from at all, so it takes
-    // the largest bucket, which is generous enough for that caller's
-    // biggest realistic on-screen size.
+    // the largest browsing bucket, which is generous enough for that
+    // caller's biggest realistic on-screen size; `fullSize` is how the one
+    // caller that needs more than that says so.
     fetchSize(): number {
-      return typeof this.size === 'number' ? fetchSizeFor(this.size) : 640
+      if (this.fullSize) return FULL_SIZE_FETCH
+      return typeof this.size === 'number' ? fetchSizeFor(this.size) : BROWSING_MAX_FETCH
     },
     // Each entry carries what decides its network path (see Candidate) —
     // loadCandidates() reads that rather than trying to tell the routes

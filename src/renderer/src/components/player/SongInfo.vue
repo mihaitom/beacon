@@ -1,7 +1,14 @@
 <template>
+  <!-- Only the parts that actually go somewhere look like they do. The
+   - whole block used to carry a pointer cursor unconditionally: with
+   - nothing playing it pointed at a click that does nothing, and on radio
+   - it made two labels look like links to a page that does not exist (a
+   - station has no page of its own — see the plain text below). What is
+   - left clickable is the artwork and the space around it, which opens Now
+   - Playing, plus a song's own artist link. -->
   <div
     class="song-info d-flex align-center"
-    style="cursor: pointer"
+    :class="{ 'song-info--clickable': hasPlayable }"
     @click="hasPlayable && $router.push('/now-playing')"
   >
     <cover-art
@@ -17,7 +24,15 @@
       fallback-icon="mdi-radio"
       class="cover mr-3"
     />
-    <div class="min-width-0">
+    <!-- A song's labels stay part of the block's own click (its title is
+     - one more way to reach Now Playing, and its artist is a real link).
+     - Radio's are text and nothing else: neither line has anywhere of its
+     - own to lead, so neither pretends to. -->
+    <div
+      class="min-width-0"
+      :class="{ 'song-info__labels--inert': !currentSong }"
+      @click="onLabelsClick"
+    >
       <div class="text-body-medium text-truncate">
         {{
           currentSong?.title ??
@@ -101,6 +116,12 @@ export default {
     },
   },
   methods: {
+    /** Swallows the click on radio's (and the idle placeholder's) labels,
+     * so what they do matches what they look like. A song's labels fall
+     * through to the block's own handler as before. */
+    onLabelsClick(event: MouseEvent) {
+      if (!this.currentSong) event.stopPropagation()
+    },
     async toggleStar() {
       if (!this.currentSong || this.starringInFlight) return
       this.starringInFlight = true
@@ -120,13 +141,31 @@ export default {
 </script>
 
 <style scoped>
-/* Fixed width, hugging its own grid cell's start edge — see
- * PlayerBar.vue's own .player-bar__row comment for why this and
- * PlayerToolbar.vue's root share an identical track width instead of each
- * being sized to their own content. */
+/* Fills its grid track rather than sitting at a fixed 300px inside it.
+ *
+ * The two flanks of PlayerBar.vue's row share one width, whichever of the
+ * two needs more room in the current state (see .player-bar__row's own
+ * comment) — so whenever the toolbar is the wider one, this sat at 300px
+ * in a 434px track with the difference simply unused, while the text next
+ * to it truncated. Radio shows that plainest: a station's ICY metadata
+ * arrives as a single "Artist - Title" string with no artist line to split
+ * it across, so all of it competes for the top line's width.
+ *
+ * Nothing about the centering changes: the track is exactly as wide as it
+ * was, this just uses all of it. min-width: 0 because a grid item's
+ * automatic minimum is its content, which would otherwise stop the text
+ * inside from ever truncating. */
 .song-info {
-  width: 300px;
-  justify-self: start;
+  min-width: 0;
+}
+
+.song-info--clickable {
+  cursor: pointer;
+}
+
+/* Text, not a control — the default cursor is the whole point. */
+.song-info__labels--inert {
+  cursor: default;
 }
 
 .cover {

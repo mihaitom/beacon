@@ -23,6 +23,7 @@ import time
 from fastapi import APIRouter, Request, Response
 
 from core.claims import claims
+from core.device_volume import record_pushed_volume
 from core.icy_metadata import strip_pulse
 from core.session import SessionState, build_status_dict, registry
 from core.state import PORT, get_local_ip, radio_dispatch_url
@@ -76,45 +77,46 @@ _MAX_BODY_BYTES = 256 * 1024
 _PLAUSIBLE_ICY_LAG = (1.0, 12.0)
 
 
-def callback_url_for(label: str, service: str = "avtransport") -> str:
-    """The CALLBACK a device should POST its events to. `label` and
-    `service` come back in the path so one endpoint can serve every
-    subscribed device *and* service without needing to match on source
+def callback_url_for(label: str, service: str = "avtransport", device_type: str = "sonos") -> str:
+    """The CALLBACK a device should POST its events to. `device_type`,
+    `label` and `service` come back in the path so one endpoint can serve
+    every subscribed device *and* service without needing to match on source
     address — a grouped Sonos pair reports from two different players about
     the same session, and a single player holds one subscription per
-    service (see core/upnp_events.py's Subscription)."""
-    return f"http://{get_local_ip()}:{PORT}{_CALLBACK_PREFIX}/{service}/{label}"
+    service (see core/upnp_events.py's Subscription).
+
+    The type is in there because a claim is per (type, name): a DLNA
+    renderer and a Sonos room can be called the same thing, and a volume
+    reading has to reach the session that claimed *that* one. It defaults to
+    sonos only so the AVTransport call sites, which are Sonos-specific
+    anyway (transport problems, ICY title echo), stay as they read."""
+    return f"http://{get_local_ip()}:{PORT}{_CALLBACK_PREFIX}/{device_type}/{service}/{label}"
 
 
-async def _handle_rendering_control_event(label: str, body: str) -> None:
+async def _handle_rendering_control_event(device_type: str, label: str, body: str) -> None:
     """Push Master-channel Volume/Mute into whichever session currently
-    claims `label` (a Sonos room name — RenderingControl subscriptions are
-    Sonos-only for now, see delivery/sonos.py) and rebroadcast its status,
-    replacing DeviceListItem.vue's 4s poll for that device. A no-op, not an
-    error, whenever nobody currently claims it (the app was closed, the
-    device was released, or this is simply a stray/unsolicited POST) — the
-    reading just has nothing to update."""
+    claims this device and rebroadcast its status, replacing that device's
+    4s poll on every client showing it (see core/device_volume.py, and
+    stores/connect.ts's isVolumePushCapable for the other end of it).
+
+    Sent by Sonos speakers (delivery/sonos.py) and by DLNA renderers that
+    accept a RenderingControl subscription (delivery/dlna.py) — the payload
+    is the same UPnP LastChange either way, which is why one handler serves
+    both."""
     properties = parse_rendering_control_event(body)
     if not properties:
         return
-    session_id = claims.owner_of("sonos", label)
-    if session_id is None:
-        return
-    session = registry.get(session_id)
-    if session is None:
-        return
 
-    key = f"sonos:{label}"
-    volume, muted = session.state.device_volumes.get(key, (None, None))
+    volume: int | None = None
     if "Volume" in properties:
         try:
             volume = int(properties["Volume"])
         except ValueError:
-            pass
-    if "Mute" in properties:
-        muted = properties["Mute"] != "0"
-    session.state.device_volumes[key] = (volume, muted)
-    await session.event_bus.broadcast(build_status_dict(session))
+            volume = None
+    muted = properties["Mute"] != "0" if "Mute" in properties else None
+    if volume is None and muted is None:
+        return
+    await record_pushed_volume(device_type, label, volume=volume, muted=muted)
 
 
 async def _handle_stream_title_echo(label: str, body: str) -> None:
@@ -344,8 +346,8 @@ async def _redispatch_relayed_station(session: SessionState, label: str, problem
     await session.event_bus.broadcast(build_status_dict(session))
 
 
-@router.api_route(_CALLBACK_PREFIX + "/{service}/{label}", methods=["NOTIFY"])
-async def upnp_event(service: str, label: str, request: Request) -> Response:
+@router.api_route(_CALLBACK_PREFIX + "/{device_type}/{service}/{label}", methods=["NOTIFY"])
+async def upnp_event(device_type: str, service: str, label: str, request: Request) -> Response:
     """UPnP's own method name, not POST — Starlette routes arbitrary HTTP
     methods, so this needs no special casing beyond naming it here.
 
@@ -361,7 +363,7 @@ async def upnp_event(service: str, label: str, request: Request) -> Response:
     body = raw.decode("utf-8", errors="replace")
     try:
         if service == "renderingcontrol":
-            await _handle_rendering_control_event(label, body)
+            await _handle_rendering_control_event(device_type, label, body)
         else:
             properties = handle_event(label, body)
             problem = problem_in(properties) if properties else None

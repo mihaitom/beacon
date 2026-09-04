@@ -1,13 +1,42 @@
 <template>
   <v-app>
+    <!-- Switched, not hovered. expand-on-hover moved the whole layout
+     - whenever the pointer crossed the left edge on its way somewhere
+     - else, and gave no way to just keep the labels up; the state is a
+     - deliberate choice now, remembered per device (see
+     - services/sidebarSetting.ts).
+     -
+     - `width` is set rather than left at Vuetify's 256px default: the
+     - longest label in any of the five locales is twelve characters
+     - ("Statistiques", "Impostazioni", "Estadísticas"), which with the
+     - icon and the list's own padding needs a little over 140px. 200
+     - leaves room for a longer one without the rail taking a chunk of the
+     - window it has no use for. -->
     <v-navigation-drawer
       v-model="drawerOpen"
-      rail
-      expand-on-hover
+      :rail="sidebarCollapsed"
+      :width="SIDEBAR_WIDTH"
       permanent
       color="#0B0D13"
       class="beacon-rail"
     >
+      <!-- Chrome, not a destination — its own list above the divider, so it
+       - doesn't read as one more place to navigate to. -->
+      <v-list density="compact" nav>
+        <!-- Icon only, no label beside it: a hamburger that just opened the
+         - rail is self-evidently the way to close it again, and spelling
+         - that out is the one row of text nobody needs to read twice. The
+         - wording lives on aria-label instead, for a reader that cannot see
+         - which way the icon points. -->
+        <v-list-item
+          :prepend-icon="sidebarCollapsed ? 'mdi-menu' : 'mdi-menu-open'"
+          :aria-label="$t(sidebarCollapsed ? 'nav.expandSidebar' : 'nav.collapseSidebar')"
+          class="beacon-rail__toggle"
+          @click="toggleSidebar"
+        />
+      </v-list>
+      <v-divider class="beacon-rail__divider" />
+
       <v-list density="compact" nav>
         <v-list-item
           v-for="item in navItems"
@@ -79,6 +108,11 @@ import TopBarSearch from '@/components/TopBarSearch.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useDrawersStore } from '@/stores/drawers'
 import { useAuthStore } from '@/stores/auth'
+import { loadSidebarCollapsed, saveSidebarCollapsed } from '@/services/sidebarSetting'
+
+// How wide the rail is with its labels showing — see the drawer's own
+// comment in the template for where the number comes from.
+const SIDEBAR_WIDTH = 200
 
 export default {
   name: 'DefaultLayout',
@@ -92,6 +126,7 @@ export default {
   data() {
     return {
       drawerOpen: true,
+      sidebarCollapsed: loadSidebarCollapsed(),
       // Flips true the first time each drawer opens and never resets —
       // see the queue-drawer/lyrics-drawer v-if above for why.
       queueDrawerEverOpened: false,
@@ -102,6 +137,7 @@ export default {
     }
   },
   computed: {
+    SIDEBAR_WIDTH: () => SIDEBAR_WIDTH,
     playbackStore() {
       return usePlaybackStore()
     },
@@ -154,6 +190,12 @@ export default {
       if (everOpened) this.$nextTick(() => (this.queueDrawerFirstMountSettled = true))
     },
   },
+  methods: {
+    toggleSidebar() {
+      this.sidebarCollapsed = !this.sidebarCollapsed
+      saveSidebarCollapsed(this.sidebarCollapsed)
+    },
+  },
 }
 </script>
 
@@ -173,6 +215,17 @@ export default {
 
 .beacon-rail {
   border-right: 1px solid var(--beacon-hairline);
+}
+
+/* The toggle is chrome rather than a destination: no active state to ever
+ * light up, and a quieter icon than the routes below it. */
+.beacon-rail__toggle :deep(.v-icon) {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.beacon-rail__divider {
+  margin: 0 8px 4px;
+  border-color: var(--beacon-hairline);
 }
 
 /* Replaces Vuetify's default flat grey hover/active overlay with the

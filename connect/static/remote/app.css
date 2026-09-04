@@ -480,6 +480,16 @@ h2.section-title { font-size: 1.1rem; margin: 4px 0 10px; }
 
 .sheet-icon { font-size: 1.2rem; margin-right: 14px; color: var(--text-muted); }
 
+/* The sheet's own title. Distinct from .sheet-header below, which is the
+ * small uppercase label a *group* of rows gets — with both using that, a
+ * sheet had no heading, only a first group label. */
+.sheet-title {
+  padding: 4px 20px 10px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
 .sheet-header {
   padding: 10px 20px 4px;
   font-size: 0.75rem;
@@ -493,16 +503,20 @@ h2.section-title { font-size: 1.1rem; margin: 4px 0 10px; }
 .device-list button i:first-child { font-size: 1.2rem; margin-right: 14px; color: var(--text-muted); flex-shrink: 0; }
 .device-row-check { margin-left: auto; color: var(--accent) !important; font-size: 1.1rem !important; flex-shrink: 0; }
 
-/* Same red as the mobile web UI's own "Stop all" row — the one
- * destructive-ish action in a sheet that's otherwise all "start playing
- * here". Both selectors have to out-specify .sheet button / .device-list
- * button i:first-child above, which set the default text/icon colors. */
-.device-list .device-row-stop { color: var(--error); }
-.device-list .device-row-stop i:first-child { color: var(--error); }
+/* Local playback while it *is* where the sound goes — the same accent the
+ * checked speakers get, so the list has one way of saying "this one".
+ * Out-specifies .device-list button i:first-child above, which would
+ * otherwise grey the icon out. */
+.device-list .device-row-local--active { color: var(--text); }
+.device-list .device-row-local--active i:first-child { color: var(--accent); }
 
 .device-row-disabled { opacity: 0.45; cursor: default; }
 .device-row-disabled .device-row-check { color: var(--text-muted) !important; }
 .device-row-hint { font-size: 0.72rem; }
+
+/* Belongs to the row above it, not between two devices — the pair is
+ * indented past the device icon and closed up so it reads as one block. */
+.device-list .device-row-has-volume { padding-bottom: 6px; }
 
 .device-volume-row {
   display: flex;
@@ -516,7 +530,29 @@ h2.section-title { font-size: 1.1rem; margin: 4px 0 10px; }
 
 .sheet-loading { padding: 20px; color: var(--text-muted); text-align: center; }
 
-.sheet-footer { display: flex; justify-content: flex-end; padding: 10px 20px 4px; }
+/* Every action the sheet has, in one row: the destructive one on the left,
+ * the confirming one on the right, with the list above holding nothing but
+ * destinations. Same arrangement as the desktop picker's own action bar. */
+.sheet-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px 4px;
+}
+
+/* Pushes Done to the right on its own when there is no stop button (i.e.
+ * nothing is casting), which is what justify-content: space-between would
+ * otherwise leave left-aligned. */
+.sheet-footer > :only-child { margin-left: auto; }
+
+.sheet-footer button.btn-sheet-stop {
+  width: auto;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--error);
+}
 
 /* Scoped through .sheet-footer (not just .btn-sheet-action alone) so this
  * actually outranks the generic ".sheet button" rule above — that one's

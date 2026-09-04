@@ -75,7 +75,12 @@
       />
     </sticky-filter>
 
-    <v-progress-circular v-if="libraryStore.loading" indeterminate class="mb-4" />
+    <!-- See PlaylistsView.vue's identical block: placeholders shaped like
+     - the tiles, in the grid's own place, instead of a spinner that shifted
+     - everything below it. -->
+    <div v-if="showSkeletons" class="radio-view__grid mb-4">
+      <tile-skeleton v-for="n in SKELETON_TILES" :key="n" :cover-size="72" />
+    </div>
 
     <!-- A wrapping grid of RadioStationCard's own horizontal tiles, not the
      - plain single-column list this used to be, and not AlbumsView.vue/
@@ -97,7 +102,7 @@
       />
     </div>
 
-    <v-alert v-else-if="!libraryStore.loading" type="info" variant="tonal">
+    <v-alert v-else-if="!showSkeletons" type="info" variant="tonal">
       {{
         debouncedQuery
           ? $t('radio.noStationsForQuery', { query: debouncedQuery })
@@ -379,6 +384,7 @@ import {
 import CoverArt from '@/components/library/CoverArt.vue'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import RadioStationCard from '@/components/library/RadioStationCard.vue'
+import TileSkeleton from '@/components/library/TileSkeleton.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
 import { matchesAllTerms } from '@/services/textSearch'
 import type { RadioStation } from '@/types/library'
@@ -434,9 +440,12 @@ let filterDebounceTimer: ReturnType<typeof setTimeout> | undefined
 // whole feature is built on top of, not something to leave unattributed.
 const RADIO_BROWSER_HOMEPAGE = 'https://www.radio-browser.info/'
 
+// See PlaylistsView.vue's own SKELETON_TILES — same number, same reasoning.
+const SKELETON_TILES = 8
+
 export default {
   name: 'RadioView',
-  components: { CoverArt, DetailHeader, RadioStationCard, StickyFilter },
+  components: { CoverArt, DetailHeader, RadioStationCard, TileSkeleton, StickyFilter },
   props: {
     // false only from MobileRadioView.vue — the discover table is a
     // desktop-only surface by design, not something trimmed down for a
@@ -449,6 +458,7 @@ export default {
   },
   data() {
     return {
+      SKELETON_TILES,
       createDialog: false,
       editDialog: false,
       editingId: null as string | null,
@@ -499,6 +509,12 @@ export default {
   computed: {
     libraryStore() {
       return useLibraryStore()
+    },
+    /** See the template — only while there is genuinely nothing to show
+     * yet, since this flag is set by every library fetch, not just the
+     * station list's own. */
+    showSkeletons(): boolean {
+      return this.libraryStore.loading && this.libraryStore.radioStations.length === 0
     },
     filteredStations(): RadioStation[] {
       const query = this.debouncedQuery

@@ -2,10 +2,25 @@
 /lyrics/by-remote-id) and the shared search-result ranking."""
 
 import logging
+import time
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
+import routes.lyrics as lyrics_routes
 from lyrics import LyricSource, artist_matches, has_sung_lines, order_search_results
-from routes.lyrics import GET_FETCHERS, SEARCH_FETCHERS, _parse_sources
+from routes.lyrics import GET_FETCHERS, SEARCH_FETCHERS, _parse_sources, _reset_cache
+
+
+@pytest.fixture(autouse=True)
+def _empty_cache():
+    """The endpoints' cache is module-level and outlives one request, so
+    without this a test asking what an earlier one already asked is
+    answered by that test's fixtures instead of by its own."""
+    _reset_cache()
+    yield
+    _reset_cache()
+
 
 # ── order_search_results ───────────────────────────────────────────────────
 
@@ -223,7 +238,12 @@ def test_search_respects_sources_param(client):
     simpmusic_results.assert_not_awaited()
 
 
-def test_search_treats_a_fetcher_exception_as_no_results(client, caplog):
+def test_search_reports_a_lookup_no_provider_answered_as_unavailable(client, caplog):
+    # Not an empty 200: "we asked and there is nothing" and "we could not
+    # ask" are different answers, and only the first one is a fact about the
+    # song. The frontend remembers what a 200 tells it (see
+    # stores/lyrics.ts), so a five-second provider outage would otherwise
+    # leave songs marked as having no lyrics long after it ended.
     failing = AsyncMock(side_effect=RuntimeError("provider down"))
     with (
         patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: failing}),
@@ -231,9 +251,23 @@ def test_search_treats_a_fetcher_exception_as_no_results(client, caplog):
     ):
         r = client.get("/lyrics/search", params={"name": "Song", "sources": "lrclib.net"})
 
-    assert r.status_code == 200
-    assert r.json() == {"lrclib.net": []}
+    assert r.status_code == 503
     assert "provider down" in caplog.text
+
+
+def test_search_still_answers_with_what_the_reachable_providers_found(client):
+    # One provider down is not the same as none answering — whatever came
+    # back is worth showing, it just isn't worth remembering (see
+    # test_search_does_not_remember_a_partial_answer).
+    found = AsyncMock(return_value=[{"id": "1", "name": "Song", "source": "lrclib.net"}])
+    failing = AsyncMock(side_effect=RuntimeError("provider down"))
+
+    with patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: found, LyricSource.NETEASE: failing}):
+        r = client.get("/lyrics/search", params={"name": "Song", "sources": "lrclib.net,NetEase"})
+
+    assert r.status_code == 200
+    assert r.json()["lrclib.net"] == [{"id": "1", "name": "Song", "source": "lrclib.net"}]
+    assert r.json()["NetEase"] == []
 
 
 # ── /lyrics/auto ──────────────────────────────────────────────────────────
@@ -503,7 +537,7 @@ def test_auto_skips_a_source_whose_search_fails(client):
     assert r.json()["lyrics"] == "[00:01.00]La la la"
 
 
-def test_auto_returns_none_when_the_winning_matchs_fetch_fails(client, caplog):
+def test_auto_reports_a_failed_fetch_of_the_winning_match_as_unavailable(client, caplog):
     search_result = [
         {"artist": "Artist", "id": "42", "isSync": True, "name": "Song", "source": "lrclib.net"}
     ]
@@ -519,7 +553,9 @@ def test_auto_returns_none_when_the_winning_matchs_fetch_fails(client, caplog):
             params={"name": "Song", "artist": "Artist", "sources": "lrclib.net"},
         )
 
-    assert r.json() is None
+    # A match was found and its lyrics could not be fetched — that is a
+    # failure to ask, not a song without lyrics.
+    assert r.status_code == 503
     assert "timeout" in caplog.text
 
 
@@ -560,12 +596,194 @@ def test_by_remote_id_returns_none_for_unknown_source(client):
     assert r.json() is None
 
 
-def test_by_remote_id_returns_none_when_the_fetch_fails(client, caplog):
+def test_by_remote_id_reports_a_failed_fetch_as_unavailable(client, caplog):
+    # Picking a candidate by hand and having the fetch fail must not be
+    # recorded as "this song has no lyrics" — that is what the frontend
+    # would store for a 200 answering null.
     with (
         patch.dict(GET_FETCHERS, {LyricSource.LRCLIB: AsyncMock(side_effect=RuntimeError("boom"))}),
         caplog.at_level(logging.WARNING, logger="connect.lyrics"),
     ):
         r = client.get("/lyrics/by-remote-id", params={"source": "lrclib.net", "id": "42"})
 
-    assert r.json() is None
+    assert r.status_code == 503
     assert "boom" in caplog.text
+
+
+# ── Caching ───────────────────────────────────────────────────────────────
+
+
+def test_auto_answers_a_repeat_lookup_without_asking_the_providers(client):
+    # The point of the cache: every lookup here is up to three searches plus
+    # a fetch against third-party services, carrying this deployment's
+    # listening habits off it. A second device asking for the same song must
+    # not repeat that.
+    search = AsyncMock(
+        return_value=[
+            {"artist": "Artist", "id": "1", "isSync": True, "name": "Song", "source": "lrclib.net"}
+        ]
+    )
+    fetch = AsyncMock(return_value="[00:01.00] a line")
+    params = {"name": "Song", "artist": "Artist", "sources": "lrclib.net"}
+
+    with (
+        patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: search}),
+        patch.dict(GET_FETCHERS, {LyricSource.LRCLIB: fetch}),
+    ):
+        first = client.get("/lyrics/auto", params=params)
+        second = client.get("/lyrics/auto", params=params)
+
+    assert first.json() == second.json()
+    assert first.json()["lyrics"] == "[00:01.00] a line"
+    assert search.await_count == 1
+    assert fetch.await_count == 1
+
+
+def test_auto_remembers_that_a_song_has_no_lyrics(client):
+    # A song nothing has is by far the most repeated lookup there is - it
+    # comes back around on every replay.
+    search = AsyncMock(return_value=[])
+    params = {"name": "Obscure", "artist": "Nobody", "sources": "lrclib.net"}
+
+    with patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: search}):
+        assert client.get("/lyrics/auto", params=params).json() is None
+        assert client.get("/lyrics/auto", params=params).json() is None
+
+    assert search.await_count == 1
+
+
+def test_auto_does_not_remember_nothing_found_while_a_provider_was_down(client):
+    # "No lyrics" produced while a provider was unreachable says nothing
+    # about the song - remembering it would blank the lyrics for a day over
+    # one bad moment. It is reported as unavailable rather than as a miss,
+    # and asked again next time.
+    failing = AsyncMock(side_effect=RuntimeError("provider down"))
+    params = {"name": "Song", "artist": "Artist", "sources": "lrclib.net"}
+
+    with patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: failing}):
+        assert client.get("/lyrics/auto", params=params).status_code == 503
+        assert client.get("/lyrics/auto", params=params).status_code == 503
+
+    assert failing.await_count == 2
+
+
+def test_auto_keeps_a_hit_even_when_another_provider_failed(client):
+    # A provider that could not be reached cannot make the lyrics that were
+    # found any less correct.
+    found = AsyncMock(
+        return_value=[
+            {"artist": "Artist", "id": "1", "isSync": True, "name": "Song", "source": "lrclib.net"}
+        ]
+    )
+    failing = AsyncMock(side_effect=RuntimeError("provider down"))
+    fetch = AsyncMock(return_value="[00:01.00] a line")
+    params = {"name": "Song", "artist": "Artist", "sources": "lrclib.net,NetEase"}
+
+    with (
+        patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: found, LyricSource.NETEASE: failing}),
+        patch.dict(GET_FETCHERS, {LyricSource.LRCLIB: fetch}),
+    ):
+        assert client.get("/lyrics/auto", params=params).json()["lyrics"] == "[00:01.00] a line"
+        assert client.get("/lyrics/auto", params=params).json()["lyrics"] == "[00:01.00] a line"
+
+    assert found.await_count == 1
+
+
+def test_a_different_set_of_providers_is_a_different_lookup(client):
+    # Asking lrclib alone and asking it together with NetEase are different
+    # questions - the frontend changes that set from Settings, and the
+    # answer legitimately differs.
+    search = AsyncMock(return_value=[])
+
+    with patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: search, LyricSource.NETEASE: search}):
+        client.get("/lyrics/auto", params={"name": "Song", "sources": "lrclib.net"})
+        client.get("/lyrics/auto", params={"name": "Song", "sources": "lrclib.net,NetEase"})
+
+    # Once for the first lookup, twice more for the second's two providers.
+    assert search.await_count == 3
+
+
+def test_search_does_not_remember_a_partial_answer(client):
+    # Whatever the reachable providers returned is fine to show now, but
+    # keeping it would hide the missing provider's results for as long as
+    # the entry lives.
+    found = AsyncMock(return_value=[{"id": "1", "name": "Song", "source": "lrclib.net"}])
+    failing = AsyncMock(side_effect=RuntimeError("provider down"))
+    params = {"name": "Song", "sources": "lrclib.net,NetEase"}
+
+    with patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: found, LyricSource.NETEASE: failing}):
+        client.get("/lyrics/search", params=params)
+        client.get("/lyrics/search", params=params)
+
+    assert found.await_count == 2
+
+
+def test_by_remote_id_is_cached_but_a_failed_fetch_is_not(client):
+    fetch = AsyncMock(return_value="[00:01.00] a line")
+    with patch.dict(GET_FETCHERS, {LyricSource.LRCLIB: fetch}):
+        client.get("/lyrics/by-remote-id", params={"source": "lrclib.net", "id": "1"})
+        client.get("/lyrics/by-remote-id", params={"source": "lrclib.net", "id": "1"})
+    assert fetch.await_count == 1
+
+    failing = AsyncMock(side_effect=RuntimeError("provider down"))
+    with patch.dict(GET_FETCHERS, {LyricSource.LRCLIB: failing}):
+        client.get("/lyrics/by-remote-id", params={"source": "lrclib.net", "id": "2"})
+        client.get("/lyrics/by-remote-id", params={"source": "lrclib.net", "id": "2"})
+    assert failing.await_count == 2
+
+
+def test_the_cache_gives_up_its_least_recently_used_entry(client, monkeypatch):
+    monkeypatch.setattr(lyrics_routes, "_CACHE_MAX_BYTES", 200)
+    fetch = AsyncMock(return_value="x" * 100)
+
+    with patch.dict(GET_FETCHERS, {LyricSource.LRCLIB: fetch}):
+        for remote_id in ["a", "b", "c"]:
+            client.get("/lyrics/by-remote-id", params={"source": "lrclib.net", "id": remote_id})
+        assert fetch.await_count == 3
+
+        # "c" is the newest thing there is; "a" was pushed out.
+        client.get("/lyrics/by-remote-id", params={"source": "lrclib.net", "id": "c"})
+        assert fetch.await_count == 3
+        client.get("/lyrics/by-remote-id", params={"source": "lrclib.net", "id": "a"})
+        assert fetch.await_count == 4
+
+
+def test_a_cache_of_nothing_but_misses_is_still_bounded(client, monkeypatch):
+    # A remembered "this song has no lyrics" is four bytes of answer against
+    # a key carrying the whole song's metadata, so an entry has to be
+    # charged for both - otherwise a library full of songs nothing has
+    # grows the cache without limit whatever the budget says.
+    monkeypatch.setattr(lyrics_routes, "_CACHE_MAX_BYTES", 400)
+    search = AsyncMock(return_value=[])
+
+    with patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: search}):
+        for i in range(20):
+            client.get("/lyrics/auto", params={"name": f"Song {i}", "sources": "lrclib.net"})
+
+    assert lyrics_routes._cache_bytes <= 400
+    assert len(lyrics_routes._cache) < 20
+
+
+def test_an_answer_is_forgotten_once_its_time_is_up(client):
+    # Set the expiry back by hand rather than moving the process clock: the
+    # event loop reads the same clock, and winding it forward under a
+    # running one is a good way to get a flaky test instead of a failing one.
+    search = AsyncMock(return_value=[])
+    params = {"name": "Song", "artist": "Artist", "sources": "lrclib.net"}
+
+    with patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: search}):
+        client.get("/lyrics/auto", params=params)
+        assert search.await_count == 1
+
+        for key, (_expires, value) in list(lyrics_routes._cache.items()):
+            lyrics_routes._cache[key] = (time.monotonic() - 1, value)
+
+        client.get("/lyrics/auto", params=params)
+
+    assert search.await_count == 2
+
+
+def test_a_found_answer_outlives_a_miss(client):
+    # Lyrics that exist do not stop existing; a song nothing has today may
+    # well be added tomorrow.
+    assert lyrics_routes._CACHE_TTL > lyrics_routes._NEGATIVE_CACHE_TTL

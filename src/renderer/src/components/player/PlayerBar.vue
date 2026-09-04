@@ -36,7 +36,7 @@ export default {
       // Driven by barResizeObserver below, off this element's own real
       // rendered width — not a window-width media query, which would stay
       // wrong whenever the sidebar rail's own width changes independently
-      // of the window (e.g. expand-on-hover, see DefaultLayout.vue).
+      // of the window (the sidebar toggle, see DefaultLayout.vue).
       volumeCollapsed: false,
       barResizeObserver: null as ResizeObserver | null,
     }
@@ -49,8 +49,10 @@ export default {
     // width in the widest case with the volume slider still shown
     // (Electron, a song loaded, casting to one device); 300px is what's
     // left needing accommodating once VOLUME_COLLAPSE_BREAKPOINT_PX has
-    // already dropped the slider/label, where song-info's own fixed width
-    // becomes the wider one instead. A single static number across both
+    // already dropped the slider/label. That 300 is a floor for the track,
+    // not song-info's own width: it fills whatever track it is given (see
+    // its own rule in SongInfo.vue), so the wider state is more room for
+    // the title and artist rather than empty space beside them. A single static number across both
     // states (434px always) would keep exact centering too, but would also
     // silently defeat the collapse's entire reason to exist — the
     // reclaimed space would just sit unused to the left of a now-smaller
@@ -94,7 +96,7 @@ export default {
  * binding and flankWidthPx above) — not each sized to its own content.
  * `auto` on each flank independently (tried first) does keep both from
  * ever shrinking, since grid always satisfies non-flexible tracks in full
- * before an `fr` track gets anything, but song-info's own 300px and
+ * before an `fr` track gets anything, but song-info's own floor and
  * toolbar's own natural width are almost never equal — control-container
  * still ends up measurably off the bar's own midpoint (up to ~67px, in the
  * widest real mismatch). A shared value is the only way for two
@@ -103,16 +105,16 @@ export default {
  * trick actually depends on — flankWidthPx is whichever of the two
  * genuinely needs more room in the *current* state (434px normally,
  * toolbar's own natural width in the widest case with the volume slider
- * still shown; 300px, song-info's own width, once
+ * still shown; 300px, the floor kept for song-info, once
  * VOLUME_COLLAPSE_BREAKPOINT_PX has already dropped the slider and toolbar
  * no longer needs as much). A single static value across both states would
  * keep exact centering too, but would also silently defeat the collapse's
  * entire reason to exist — the reclaimed space would just sit unused to
  * the left of a now-smaller icon row inside a track that never actually
- * shrank alongside it. The (accepted) visible cost either way: some empty
- * space between song-info's own content and where control-container
- * starts whenever toolbar happens to be the wider flank, where a track
- * sized to its own content alone wouldn't have any.
+ * shrank alongside it. The room this leaves beside song-info whenever
+ * toolbar happens to be the wider flank is not wasted: song-info fills
+ * whatever track it is given (see its own rule in SongInfo.vue), so it
+ * goes to the title and artist rather than sitting empty.
  *
  * The center track is minmax(var(--control-container-min-width), 1fr), not
  * `auto` — as the row's *only* `fr` track, it's the one grid gives

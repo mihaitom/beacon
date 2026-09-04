@@ -24,8 +24,13 @@ function mountRow(
   })
 }
 
-function castTo(name: string, type: DeviceType, volume?: number) {
-  useConnectStore().status = makeStatus({ targets: [{ name, type, volume }] })
+/** `push` mirrors the backend's own per-device volume_push flag (see
+ * connect/core/device_volume.py): true for a device that reports its own
+ * volume changes, which is what stops this client polling it. */
+function castTo(name: string, type: DeviceType, volume?: number, push = type === 'sonos') {
+  useConnectStore().status = makeStatus({
+    targets: [{ name, type, volume, volume_push: push }],
+  })
 }
 
 describe('MobileDeviceRow', () => {

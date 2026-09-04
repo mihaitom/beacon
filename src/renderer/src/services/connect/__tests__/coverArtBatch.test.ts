@@ -241,6 +241,70 @@ describe('fetchCoverArtBatched', () => {
 
       expect(await (await retry).text()).toBe('img')
     })
+
+    it('treats an id the backend left out of its answer as worth asking again', async () => {
+      // The batch arrived, but the backend could not fetch this one just
+      // now (its media server timed out or answered 5xx) and says nothing
+      // about whether it exists — see _FetchUnavailable in
+      // connect/routes/coverart.py. A `null` here would be remembered as
+      // "there is no cover" and leave the tile blank for the session.
+      vi.mocked(fetchConnect).mockResolvedValueOnce({ results: {} })
+      vi.mocked(fetchConnect).mockResolvedValue({ results: { a: dataUrlFor('img') } })
+
+      await expect(
+        settled(fetchCoverArtBatched('a', 160, new AbortController().signal)),
+      ).rejects.toMatchObject({ name: 'Error' })
+      expect(writeArtwork).not.toHaveBeenCalled()
+
+      const retry = fetchCoverArtBatched('a', 160, new AbortController().signal)
+      await runBatch()
+
+      expect(await (await retry).text()).toBe('img')
+      expect(fetchConnect).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('an account change mid-flight', () => {
+    it('keeps the previous account artwork out of both caches', async () => {
+      // Cover ids are only unique within one media server, so an answer
+      // that was already on the wire when the account changed would
+      // otherwise be written under keys the new session reads — on Plex
+      // (small integer ratingKeys) that is one account being shown
+      // another's covers.
+      let answer!: (response: unknown) => void
+      vi.mocked(fetchConnect).mockReturnValueOnce(
+        new Promise<never>((resolve) => {
+          answer = resolve as (response: unknown) => void
+        }),
+      )
+      const pending = fetchCoverArtBatched('a', 160, new AbortController().signal)
+      await runBatch()
+
+      clearCoverArtCache()
+      answer({ results: { a: dataUrlFor('other-account') } })
+      await flush()
+
+      await expect(pending).rejects.toThrow(/account changed/i)
+      expect(writeArtwork).not.toHaveBeenCalled()
+
+      vi.mocked(fetchConnect).mockResolvedValue({ results: { a: dataUrlFor('mine') } })
+      const next = fetchCoverArtBatched('a', 160, new AbortController().signal)
+      await runBatch()
+
+      expect(await (await next).text()).toBe('mine')
+    })
+
+    it('never sends a batch that was still waiting for its window', async () => {
+      const pending = fetchCoverArtBatched('a', 160, new AbortController().signal)
+      await flush() // joined the batch; the window has not closed yet
+
+      clearCoverArtCache()
+
+      await expect(pending).rejects.toThrow(/account changed/i)
+      vi.advanceTimersByTime(20)
+      await flush()
+      expect(fetchConnect).not.toHaveBeenCalled()
+    })
   })
 
   describe('artist photos', () => {

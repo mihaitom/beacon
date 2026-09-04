@@ -269,6 +269,7 @@ class SonosDelivery(BaseDelivery):
         # Imported here, not at module scope: routes/upnp.py imports the
         # delivery layer's siblings via core.state, and pulling it in at
         # import time would close that loop.
+        from core.device_volume import mark_pushes_volume
         from routes.upnp import callback_url_for
 
         try:
@@ -288,12 +289,18 @@ class SonosDelivery(BaseDelivery):
             logger.debug(f"[Sonos:{self.target}] transport eventing unavailable: {e}")
 
         try:
-            await subscribe(
+            subscription = await subscribe(
                 self.target,
                 "renderingcontrol",
                 f"http://{ip}:1400{RENDERINGCONTROL_EVENT_PATH}",
-                callback_url_for(self.target, "renderingcontrol"),
+                callback_url_for(self.target, "renderingcontrol", "sonos"),
             )
+            # Only once the speaker has actually accepted it: this is what
+            # tells every slider showing this device to stop polling it (see
+            # core/device_volume.py), so claiming it for a subscription that
+            # was refused would leave them on a value nothing refreshes.
+            if subscription is not None:
+                mark_pushes_volume("sonos", self.target)
         except Exception as e:
             logger.debug(f"[Sonos:{self.target}] volume eventing unavailable: {e}")
 

@@ -20,27 +20,32 @@
       >
         <div class="song-index" />
         <v-skeleton-loader v-if="showCover" type="image" width="40" height="40" class="rounded" />
+        <!-- Heights straight off the real row's typography (SongRow.vue):
+         - the title is text-body-medium at 20px, and everything else in
+         - the row - the artist under it and every other column - is
+         - text-body-small at 16px. Getting the second title line wrong
+         - made every skeleton row 4px taller than the row replacing it. -->
         <div class="song-title min-width-0">
           <v-skeleton-loader type="text" width="60%" height="20" />
-          <v-skeleton-loader type="text" width="38%" height="20" />
+          <v-skeleton-loader type="text" width="38%" height="16" />
         </div>
         <div v-if="showAlbum" class="song-album">
-          <v-skeleton-loader type="text" width="70%" height="20" />
+          <v-skeleton-loader type="text" width="70%" height="16" />
         </div>
         <div v-if="showGenre" class="song-genre">
-          <v-skeleton-loader type="text" width="60%" height="20" />
+          <v-skeleton-loader type="text" width="60%" height="16" />
         </div>
         <div v-if="showYear" class="song-year">
-          <v-skeleton-loader type="text" width="28" height="20" class="ml-auto" />
+          <v-skeleton-loader type="text" width="28" height="16" class="ml-auto" />
         </div>
         <div v-if="showPlayCount" class="song-playcount">
-          <v-skeleton-loader type="text" width="20" height="20" class="ml-auto" />
+          <v-skeleton-loader type="text" width="20" height="16" class="ml-auto" />
         </div>
         <div v-if="showFormat" class="song-format">
-          <v-skeleton-loader type="text" width="60" height="20" class="ml-auto" />
+          <v-skeleton-loader type="text" width="60" height="16" class="ml-auto" />
         </div>
         <div class="song-duration">
-          <v-skeleton-loader type="text" width="30" height="20" class="ml-auto" />
+          <v-skeleton-loader type="text" width="30" height="16" class="ml-auto" />
         </div>
         <div class="song-actions" style="width: 200px" />
       </div>
@@ -188,28 +193,7 @@
      - one, which some backends can't even do at all (Plex's playlist
      - endpoint requires at least one starting item; see
      - media/plex_bridge.py's create_playlist()). -->
-    <v-dialog v-model="createPlaylistDialog" max-width="400">
-      <v-card>
-        <v-card-title>{{ $t('playlists.createTitle') }}</v-card-title>
-        <v-card-text>
-          <v-text-field
-            v-model="createPlaylistName"
-            :label="$t('common.name')"
-            variant="solo-filled"
-            autofocus
-            clearable
-            @keyup.enter="confirmCreatePlaylist"
-          />
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="createPlaylistDialog = false">{{
-            $t('common.cancel')
-          }}</v-btn>
-          <v-btn color="primary" @click="confirmCreatePlaylist">{{ $t('common.create') }}</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <create-playlist-dialog ref="createPlaylistDialog" />
   </div>
 </template>
 
@@ -220,6 +204,7 @@ import { useLibraryStore } from '@/stores/library'
 import { firstIndexByLetter } from '@/services/alphabetIndex'
 import SongRow from './SongRow.vue'
 import SongTableHeader from './SongTableHeader.vue'
+import CreatePlaylistDialog from './CreatePlaylistDialog.vue'
 import AlphabetIndexBar from './AlphabetIndexBar.vue'
 import InfiniteScrollTrigger from '@/components/InfiniteScrollTrigger.vue'
 import type { Song } from '@/types/library'
@@ -238,7 +223,13 @@ const ALPHABET_BAR_MIN_SONGS = 60
 
 export default {
   name: 'SongTable',
-  components: { SongRow, SongTableHeader, AlphabetIndexBar, InfiniteScrollTrigger },
+  components: {
+    SongRow,
+    SongTableHeader,
+    AlphabetIndexBar,
+    CreatePlaylistDialog,
+    InfiniteScrollTrigger,
+  },
   props: {
     // Pass the complete list this view has (not a pre-sliced page) —
     // sorting and render-slicing (visibleSongs/virtualizeSongs) both happen
@@ -330,12 +321,7 @@ export default {
       // selected. See selectedSongs for resolving these back to real
       // Song objects when a bulk action needs them.
       selectedRowKeys: new Set<number>(),
-      createPlaylistDialog: false,
-      createPlaylistName: '',
-      // Set by openCreatePlaylistDialog() — the song(s) (selection-aware,
-      // same as addToPlaylist()) to seed the new playlist with once
-      // confirmCreatePlaylist() actually creates it.
-      createPlaylistSongs: [] as Song[],
+
       // Drag state for a reorderable list — same three fields (and the
       // same before/after boundary handling) as QueueDrawer.vue's own
       // drag-to-reorder, since the interaction is identical.
@@ -485,7 +471,10 @@ export default {
     // that (Vuetify's own default dialog behavior) instead of also
     // silently clearing the selection underneath it.
     onKeydown(event: KeyboardEvent) {
-      if (event.key !== 'Escape' || !this.selectionMode || this.createPlaylistDialog) return
+      // The dialog owns its own open state now (see CreatePlaylistDialog),
+      // so this asks it rather than tracking a flag of its own.
+      const dialog = this.$refs.createPlaylistDialog as { visible: boolean } | undefined
+      if (event.key !== 'Escape' || !this.selectionMode || dialog?.visible) return
       this.clearSelection()
     },
     loadMoreVisible() {
@@ -699,26 +688,10 @@ export default {
       )
     },
     openCreatePlaylistDialog({ song, index }: { song: Song; index?: number }) {
-      this.createPlaylistSongs = this.selectedOrSingle(song, index)
-      this.createPlaylistName = ''
-      this.createPlaylistDialog = true
-    },
-    async confirmCreatePlaylist() {
-      if (!this.createPlaylistName.trim()) return
-      try {
-        await this.libraryStore.createPlaylist(
-          this.createPlaylistName,
-          this.createPlaylistSongs.map((t) => t.id),
-        )
-        this.createPlaylistDialog = false
-      } catch (error) {
-        this.$emitter.emit('toast', {
-          level: 'error',
-          title: this.$t('playlists.createTitle'),
-          message: error instanceof Error ? error.message : String(error),
-        })
-        console.error('[song-table] Failed to create playlist:', error)
-      }
+      const songs = this.selectedOrSingle(song, index)
+      const dialog = this.$refs.createPlaylistDialog as
+        { open: (songIds: string[]) => void } | undefined
+      dialog?.open(songs.map((track) => track.id))
     },
     // A row's own actions (play-next/add-to-queue/add-to-playlist, all via
     // SongRow.vue's "..." menu) apply to the *whole* current selection

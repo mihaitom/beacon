@@ -18,11 +18,19 @@ export interface ConnectStatusTarget extends ConnectDeviceRef {
   // but plenty of test fixtures build a target literal from just
   // {name, type} without caring about volume at all; optional lets those
   // keep doing that instead of needing `volume: null, muted: null` padding
-  // everywhere. Only ever populated for Sonos today; chromecast/dlna stay
-  // unset here and keep DeviceListItem.vue's existing poll as their only
-  // source.
+  // everywhere. Populated for any device that reports its own volume: a
+  // Sonos or DLNA renderer over a RenderingControl subscription, a
+  // Chromecast through its own status listener (see
+  // connect/core/device_volume.py).
   volume?: number | null
   muted?: boolean | null
+  /** Whether this device is currently pushing those readings by itself, so
+   * a client can stop asking it every few seconds. Per device rather than
+   * per type: whether a DLNA renderer accepts a subscription at all is a
+   * fact about that renderer, and a Sonos that refused one is polled like
+   * anything else. Absent from an older backend's status, which is read as
+   * "no" — polling then continues exactly as it used to. */
+  volume_push?: boolean
 }
 
 export interface DiscoveredDevice {

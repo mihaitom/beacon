@@ -4,7 +4,22 @@ import { useLibraryStore } from '../library'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import type { Playlist } from '@/types/library'
 
-const CACHE_KEY = 'beacon.library-cache'
+// The cache lives in IndexedDB now (services/library/libraryCacheStore.ts),
+// which jsdom has none of — stood in for by a plain map, same as
+// library.cache.test.ts does. No account is logged in under test, so the
+// record key is the bare field name.
+const cache = vi.hoisted(() => new Map<string, { items: unknown[]; fetchedAt: number }>())
+
+vi.mock('@/services/library/libraryCacheStore', () => ({
+  LEGACY_CACHE_KEY: 'beacon.library-cache',
+  readLibraryField: vi.fn(async (key: string) => cache.get(key) ?? null),
+  writeLibraryField: vi.fn((key: string, items: unknown[], fetchedAt = Date.now()) => {
+    cache.set(key, { items, fetchedAt })
+  }),
+  clearLibraryFields: vi.fn((keys: string[]) => {
+    for (const key of keys) cache.delete(key)
+  }),
+}))
 
 function makePlaylist(id: string, overrides: Partial<Playlist> = {}): Playlist {
   return {
@@ -21,8 +36,7 @@ function makePlaylist(id: string, overrides: Partial<Playlist> = {}): Playlist {
 }
 
 function cachedPlaylists(): Playlist[] {
-  const cache = JSON.parse(localStorage.getItem(CACHE_KEY) ?? '{}') as { playlists?: Playlist[] }
-  return cache.playlists ?? []
+  return (cache.get('playlists')?.items ?? []) as Playlist[]
 }
 
 function stubClient(
@@ -49,6 +63,7 @@ describe('library mutations', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+    cache.clear()
     vi.restoreAllMocks()
   })
 

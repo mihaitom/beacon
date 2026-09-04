@@ -33,7 +33,16 @@
     <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="mb-4">
       {{ libraryStore.error }}
     </v-alert>
-    <v-progress-circular v-if="libraryStore.loading" indeterminate class="mb-4" />
+    <!-- Placeholders in the grid's own place, not a spinner above it: a
+     - spinner in the flow pushed everything below it down while it was
+     - there. Only while there is genuinely nothing to show yet — the flag
+     - is the library store's own, so any background fetch (a tile menu
+     - loading a playlist's songs) sets it too, and swapping a full grid for
+     - placeholders because of one of those would be worse than the jump it
+     - replaced. -->
+    <div v-if="showSkeletons" class="playlists-view__grid mb-6">
+      <tile-skeleton v-for="n in SKELETON_TILES" :key="n" />
+    </div>
 
     <template v-if="personalPlaylists.length">
       <h2 class="section-title mb-2">{{ $t('playlists.personal') }}</h2>
@@ -43,6 +52,10 @@
           :key="playlist.id"
           :playlist="playlist"
           @play="playPlaylist"
+          @play-next="queuePlaylist($event, 'next')"
+          @add-to-queue="queuePlaylist($event, 'end')"
+          @rename="openRename"
+          @delete="openDelete"
         />
       </div>
     </template>
@@ -56,6 +69,8 @@
           :playlist="playlist"
           show-owner
           @play="playPlaylist"
+          @play-next="queuePlaylist($event, 'next')"
+          @add-to-queue="queuePlaylist($event, 'end')"
         />
       </div>
     </template>
@@ -71,6 +86,9 @@
           : $t('playlists.noPlaylistsYet')
       }}
     </v-alert>
+
+    <playlist-edit-dialog ref="editDialog" />
+    <playlist-delete-dialog ref="deleteDialog" />
 
     <v-dialog v-model="createDialog" max-width="400">
       <v-card>
@@ -101,16 +119,33 @@ import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import PlaylistTile from '@/components/library/PlaylistTile.vue'
+import TileSkeleton from '@/components/library/TileSkeleton.vue'
+import PlaylistEditDialog from '@/components/library/PlaylistEditDialog.vue'
+import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
 import type { Playlist } from '@/types/library'
+
+// Enough placeholder tiles to read as a grid rather than as one stray box.
+// No real count to key off yet — the list they stand in for is exactly what
+// hasn't arrived — so this is a plain number, unlike the shelves, which
+// measure how many fit across (see cardRowFit.ts) because theirs scroll.
+const SKELETON_TILES = 8
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'PlaylistsView',
-  components: { DetailHeader, PlaylistTile, StickyFilter },
+  components: {
+    DetailHeader,
+    PlaylistTile,
+    TileSkeleton,
+    PlaylistEditDialog,
+    PlaylistDeleteDialog,
+    StickyFilter,
+  },
   data() {
     return {
+      SKELETON_TILES,
       createDialog: false,
       newPlaylistName: '',
       filterQuery: '',
@@ -126,6 +161,9 @@ export default {
     },
     authStore() {
       return useAuthStore()
+    },
+    showSkeletons(): boolean {
+      return this.libraryStore.loading && this.libraryStore.playlists.length === 0
     },
     filteredPlaylists(): Playlist[] {
       const query = this.debouncedQuery
@@ -164,6 +202,32 @@ export default {
       // peek: replaces the queue with more than one song — see
       // peekQueueDrawer()'s own comment for the rule.
       await usePlaybackStore().playSongList(full.songs, 0, false, full.songs.length > 1)
+    },
+    /** Queueing a playlist needs its songs, which the list this view
+     * renders doesn't carry — same fetch playPlaylist() above makes. */
+    async queuePlaylist(playlist: Playlist, where: 'next' | 'end') {
+      const playback = usePlaybackStore()
+      try {
+        const full = await this.libraryStore.fetchPlaylist(playlist.id)
+        if (!full.songs.length) return
+        if (where === 'next') playback.queueNext(full.songs)
+        else playback.addToQueue(full.songs)
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: playlist.name,
+          message: this.$t('library.songsUnavailable'),
+        })
+        console.error('[playlists] Failed to load playlist songs:', error)
+      }
+    },
+    openRename(playlist: Playlist) {
+      ;(this.$refs.editDialog as { open: (playlist: Playlist) => void } | undefined)?.open(playlist)
+    },
+    openDelete(playlist: Playlist) {
+      ;(this.$refs.deleteDialog as { open: (playlist: Playlist) => void } | undefined)?.open(
+        playlist,
+      )
     },
     async createPlaylist() {
       if (!this.newPlaylistName.trim()) return

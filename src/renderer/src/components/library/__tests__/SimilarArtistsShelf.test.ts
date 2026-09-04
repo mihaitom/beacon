@@ -1,8 +1,9 @@
 // The shelf/chevron mechanics (paging, wrap mode) are CardShelf.vue's own
 // responsibility and tested there — this file only covers what's specific
 // to *this* shelf: the artist card markup and its external-service links.
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
@@ -23,9 +24,9 @@ function makeArtist(overrides: Partial<SimilarArtistDisplay> = {}): SimilarArtis
   } as SimilarArtistDisplay
 }
 
-function mountShelf(artists: SimilarArtistDisplay[] = [makeArtist()]) {
+function mountShelf(artists: SimilarArtistDisplay[] = [makeArtist()], loading = false) {
   return mount(SimilarArtistsShelf, {
-    props: { title: 'New artists to explore', artists },
+    props: { title: 'New artists to explore', artists, loading },
     global: { plugins: [vuetify, i18n], stubs: { CoverArt: true } },
   })
 }
@@ -41,6 +42,32 @@ describe('SimilarArtistsShelf', () => {
     const cards = wrapper.findAll('.similar-artists-card')
     expect(cards).toHaveLength(2)
     expect(cards[1]!.text()).toContain('Harbor Lights')
+  })
+
+  it('draws enough placeholders to fill the row it is actually in', async () => {
+    // This shelf and Home's Discover album shelf are the two slow enough to
+    // load for anyone to see their loading state, which is where a fixed
+    // count showed: on a wide window the row sat visibly half empty.
+    const width = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(1420)
+
+    const wrapper = mountShelf([], true)
+    // The row is measured on mount, i.e. after the first render — the
+    // placeholders it decides on land on the next one.
+    await nextTick()
+
+    // Eight 160px cards with their 20px gaps fit in 1420px, plus one more
+    // half off the edge so the row reads as continuing.
+    expect(wrapper.findAll('.similar-artists-card')).toHaveLength(9)
+    width.mockRestore()
+  })
+
+  it('keeps its own placeholder count where nothing can be measured', async () => {
+    // jsdom lays nothing out — a width of zero must leave the default
+    // standing rather than collapsing the row to a single card.
+    const wrapper = mountShelf([], true)
+    await nextTick()
+
+    expect(wrapper.findAll('.similar-artists-card')).toHaveLength(6)
   })
 
   it('hides itself entirely when the lookup came back with nobody', () => {

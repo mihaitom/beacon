@@ -4,6 +4,7 @@
   <release-notes />
   <update-toast />
   <keyboard-shortcuts-dialog />
+  <artwork-lightbox />
 </template>
 
 <script lang="ts">
@@ -14,6 +15,7 @@ import ToastSnackbar from '@/components/toast.vue'
 import ReleaseNotes from '@/components/releaseNotes.vue'
 import UpdateToast from '@/components/UpdateToast.vue'
 import KeyboardShortcutsDialog from '@/components/KeyboardShortcutsDialog.vue'
+import ArtworkLightbox from '@/components/library/ArtworkLightbox.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { useConnectStore } from '@/stores/connect'
@@ -26,7 +28,13 @@ import { initAccountScopedStores } from '@/services/accountScopedStores'
 
 export default {
   name: 'App',
-  components: { ToastSnackbar, ReleaseNotes, UpdateToast, KeyboardShortcutsDialog },
+  components: {
+    ToastSnackbar,
+    ReleaseNotes,
+    UpdateToast,
+    KeyboardShortcutsDialog,
+    ArtworkLightbox,
+  },
   // Composition API escape hatch just for useIsMobileWeb() — everything else
   // here stays Options API, matching the rest of the renderer. Refs returned
   // from setup() auto-unwrap when read via `this` below (isMobileWeb, not

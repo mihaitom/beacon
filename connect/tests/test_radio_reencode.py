@@ -484,7 +484,7 @@ class TestTransportProblemTriggersTheRetry:
         with patch.object(SonosDelivery, "play", new=AsyncMock()) as play:
             r = client.request(
                 "NOTIFY",
-                "/upnp/events/avtransport/Arbeitszimmer",
+                "/upnp/events/sonos/avtransport/Arbeitszimmer",
                 content=_NOTIFY_BODY.format(status=status),
             )
 
@@ -497,7 +497,7 @@ class TestTransportProblemTriggersTheRetry:
         with patch.object(SonosDelivery, "play", new=AsyncMock()) as play:
             client.request(
                 "NOTIFY",
-                "/upnp/events/avtransport/Arbeitszimmer",
+                "/upnp/events/sonos/avtransport/Arbeitszimmer",
                 content=_NOTIFY_BODY.format(status="OK"),
             )
         play.assert_not_awaited()
@@ -507,7 +507,7 @@ class TestTransportProblemTriggersTheRetry:
         with patch.object(SonosDelivery, "play", new=AsyncMock()) as play:
             client.request(
                 "NOTIFY",
-                "/upnp/events/avtransport/Arbeitszimmer",
+                "/upnp/events/sonos/avtransport/Arbeitszimmer",
                 content=_NOTIFY_BODY.format(status="ERROR_ACCESS_DENIED"),
             )
         play.assert_not_awaited()
@@ -515,7 +515,7 @@ class TestTransportProblemTriggersTheRetry:
     def _report_problem(self, client, status="ERROR_LOST_CONNECTION"):
         return client.request(
             "NOTIFY",
-            "/upnp/events/avtransport/Arbeitszimmer",
+            "/upnp/events/sonos/avtransport/Arbeitszimmer",
             content=_NOTIFY_BODY.format(status=status),
         )
 
@@ -565,7 +565,7 @@ class TestTransportProblemTriggersTheRetry:
         with patch.object(SonosDelivery, "play", new=AsyncMock()) as play:
             client.request(
                 "NOTIFY",
-                "/upnp/events/avtransport/Arbeitszimmer",
+                "/upnp/events/sonos/avtransport/Arbeitszimmer",
                 content=_NOTIFY_BODY.format(status="ERROR_ACCESS_DENIED"),
             )
         play.assert_not_awaited()

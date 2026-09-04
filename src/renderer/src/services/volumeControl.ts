@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useConnectStore } from '@/stores/connect'
 import { STEP_FRACTION } from '@/services/volumeWheel'
+import { noteVolumeChange } from '@/services/connect/volumeGuard'
 import type { ConnectDeviceRef, ConnectStatusTarget } from '@/services/connect/types'
 
 /**
@@ -108,6 +109,11 @@ export async function setVolume(scope: VolumeScope, volume: number): Promise<voi
   }
   const rounded = Math.round(clamped)
   recordDeviceVolume(scope.device, rounded)
+  // Every slider showing this device now ignores its own readings for a
+  // moment — see volumeGuard.ts. Without this, a keyboard step or a mute
+  // toggle was overwritten a second later by a poll that had been in
+  // flight, or by a push carrying the pre-change value.
+  noteVolumeChange(scope.device)
   await useConnectStore().setDeviceVolume(scope.device.type, scope.device.name, rounded)
 }
 

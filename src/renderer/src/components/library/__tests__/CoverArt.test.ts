@@ -293,12 +293,22 @@ describe('CoverArt', () => {
       expect(requests.map((r) => r.size)).toEqual([160, 160])
     })
 
-    it('gives a box sized in CSS units the largest bucket', async () => {
+    it('gives a box sized in CSS units the largest browsing bucket', async () => {
       // Now Playing sizes its artwork off the viewport ("70vh"), which has
       // no pixel figure to round at all.
       await scrollIntoRest(mountCover({ size: '70vh' }))
 
       expect(requests[0]!.size).toBe(640)
+    })
+
+    it('asks for the full-size bucket only where fullSize says so', async () => {
+      // The artwork viewer (ArtworkLightbox.vue) fills most of the window
+      // with one deliberately-opened picture, where 640 is visibly soft.
+      // Nothing that merely browses may pull that copy in — it is a whole
+      // extra stored image per cover.
+      await scrollIntoRest(mountCover({ size: '82vh', fullSize: true }))
+
+      expect(requests[0]!.size).toBe(1280)
     })
   })
 
