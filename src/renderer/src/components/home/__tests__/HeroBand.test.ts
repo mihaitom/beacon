@@ -29,7 +29,7 @@ async function mountBand(props: Record<string, unknown> = {}) {
   await router.push('/')
   await router.isReady()
   return mount(HeroBand, {
-    props: { greeting: 'Good evening', hasContent: true, title: 'Harbor Lights', ...props },
+    props: { hasContent: true, title: 'Harbor Lights', ...props },
     global: {
       plugins: [vuetify, i18n, router],
       // Pulls in <img> loading/CORS machinery this band doesn't own.

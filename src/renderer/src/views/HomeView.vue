@@ -1,7 +1,6 @@
 <template>
   <v-container fluid class="home-view">
     <hero-band
-      :greeting="greeting"
       :cover-id="heroCoverId"
       :radio-favicon="heroRadioFavicon"
       :eyebrow="heroEyebrow"
@@ -262,14 +261,6 @@ export default {
     },
     recommendationsStore() {
       return useRecommendationsStore()
-    },
-    greeting() {
-      const hour = new Date().getHours()
-      const name = this.authStore.username
-      if (hour < 5 || hour >= 22) return this.$t('home.greetingNight', { name })
-      if (hour < 11) return this.$t('home.greetingMorning', { name })
-      if (hour < 18) return this.$t('home.greetingDay', { name })
-      return this.$t('home.greetingEvening', { name })
     },
     heroCoverId() {
       if (this.playbackStore.currentSong) return this.playbackStore.currentSong.coverArtId

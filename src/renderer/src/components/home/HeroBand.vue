@@ -12,8 +12,6 @@
     />
     <div class="hero-scrim" />
     <div class="hero-content">
-      <p class="display-title hero-greeting">{{ greeting }}</p>
-
       <div v-if="loading" class="hero-body">
         <v-skeleton-loader type="image" width="132" height="132" class="hero-cover rounded" />
         <div class="hero-info min-width-0 hero-skel">
@@ -114,7 +112,6 @@ export default {
   name: 'HeroBand',
   components: { CoverArt },
   props: {
-    greeting: { type: String, required: true },
     coverId: { type: String as PropType<string | null>, default: null },
     imageUrl: { type: String as PropType<string | null>, default: null },
     /** A radio station's logo, resolved in a batch rather than fetched from
@@ -252,19 +249,6 @@ export default {
 .hero-content {
   position: relative;
   padding: 32px 36px;
-}
-
-/* .display-title on the element brings the serif face — spelling the stack
- * out here is what let it drift from the one in base.css. The size, the
- * italic and the weight are this greeting's own: it sits above the title
- * rather than being one, so it stays at the body weight instead of the
- * class's 600. */
-.hero-greeting {
-  font-weight: 400;
-  font-style: italic;
-  font-size: 1.05rem;
-  color: rgba(255, 255, 255, 0.7);
-  margin-bottom: 20px;
 }
 
 .hero-body {

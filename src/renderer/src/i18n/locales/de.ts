@@ -61,10 +61,6 @@ export default {
     plexNoServers: 'Für dieses Plex-Konto wurden keine Server gefunden.',
   },
   home: {
-    greetingNight: 'Ruhige Nacht, {name}',
-    greetingMorning: 'Guten Morgen, {name}',
-    greetingDay: 'Guten Tag, {name}',
-    greetingEvening: 'Guten Abend, {name}',
     frequentlyPlayed: 'Oft gehört',
     topSongs: 'Meistgespielte Songs',
     recentlyAdded: 'Zuletzt hinzugefügt',
