@@ -1,5 +1,5 @@
 <template>
-  <div class="control-container d-flex flex-column align-center">
+  <div class="control-container">
     <center-controls />
     <seek-bar />
   </div>
@@ -35,6 +35,12 @@ export default {
  * what belongs here: a floor for when the row gets squeezed, not a ceiling
  * on how wide this can grow when there's room to spare. */
 .control-container {
+  /* The two rows keep their own natural widths and are centered within
+   * this box — see the note above on why only the box is centered in the
+   * bar, not each row within it. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   width: 100%;
   min-width: var(--control-container-min-width, 220px);
   /* A ceiling this time, not the min-width floor above — filling the

@@ -3,12 +3,12 @@
     <v-card>
       <v-card-title>{{ $t('connect.pairDeviceTitle', { name: deviceName }) }}</v-card-title>
       <v-card-text>
-        <v-progress-circular v-if="loading" indeterminate class="mb-2" />
-        <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-2">
+        <v-progress-circular v-if="loading" indeterminate class="pair-block" />
+        <v-alert v-if="error" type="error" variant="tonal" density="compact" class="pair-block">
           {{ error }}
         </v-alert>
         <template v-if="started && !error">
-          <p v-if="devicePin" class="mb-2">
+          <p v-if="devicePin" class="pair-block">
             {{ $t('connect.pairPinPrompt') }}
           </p>
           <v-text-field
@@ -20,7 +20,7 @@
             clearable
             @keyup.enter="finish"
           />
-          <p v-else class="mb-2">{{ $t('connect.pairConfirmPrompt') }}</p>
+          <p v-else class="pair-block">{{ $t('connect.pairConfirmPrompt') }}</p>
         </template>
       </v-card-text>
       <v-card-actions>
@@ -111,3 +111,11 @@ export default {
   },
 }
 </script>
+
+<style scoped>
+/* Every line in the dialog body - the spinner, an error, the prompt -
+ * sits the same distance above whatever follows it. */
+.pair-block {
+  margin-bottom: 8px;
+}
+</style>

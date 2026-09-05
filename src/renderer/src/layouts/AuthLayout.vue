@@ -1,6 +1,6 @@
 <template>
   <v-app>
-    <v-main class="d-flex align-center justify-center fill-height auth-main">
+    <v-main class="auth-main">
       <div class="auth-glow" />
       <router-view />
     </v-main>
@@ -14,7 +14,13 @@ export default {
 </script>
 
 <style scoped>
+/* The sign-in card sits in the middle of the window, whatever its own
+ * height happens to be. */
 .auth-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
   position: relative;
   overflow: hidden;
 }

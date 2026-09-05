@@ -1,5 +1,5 @@
 <template>
-  <div class="toolbar d-flex align-center">
+  <div class="toolbar">
     <!-- Radio included: the drawer holds that station's title log
        - instead of lyrics (see LyricsDrawer.vue), and gating this on
        - currentSong alone meant there was no way to open it at all. -->
@@ -100,7 +100,7 @@
         />
       </template>
       <v-card min-width="220" class="volume-popover">
-        <v-card-text class="d-flex align-center" style="gap: 8px">
+        <v-card-text class="toolbar__popover-row">
           <v-btn
             :icon="volumeIcon"
             :disabled="muteDisabled"
@@ -400,8 +400,17 @@ export default {
  * many are currently shown, instead of drifting depending on whatever's
  * rendered right now. */
 .toolbar {
+  display: flex;
+  align-items: center;
   gap: 4px;
   justify-self: end;
+}
+
+/* The device-volume popover's one row: a slider and its readout. */
+.toolbar__popover-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* A real width, not max-width — this used to be allowed to shrink down to

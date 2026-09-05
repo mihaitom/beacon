@@ -15,12 +15,32 @@
       />
       <slot name="action" />
       <v-spacer />
+      <!-- Same toggle, same rule as CardShelf.vue's: amber while the grid
+       - is on, one icon rather than two because the colour already says
+       - which state it is in. -->
+      <v-btn
+        v-if="wrapToggle && albums.length"
+        icon="mdi-view-grid-outline"
+        :color="wrap ? 'primary' : undefined"
+        variant="text"
+        size="small"
+        density="comfortable"
+        :title="$t('library.showAsGrid')"
+        @click="$emit('update:wrap', !wrap)"
+      />
+      <!-- Each chevron goes dim once the row has nothing further that way,
+       - and both do while the grid is on.
+       -
+       - Disabled rather than hidden: this row sits right of the grid toggle
+       - that switches it, and removing it lets the spacer pull that toggle
+       - out from under the pointer that just clicked it. -->
       <div v-if="albums.length && !fitToScreen" class="album-shelf-nav">
         <v-btn
           icon="mdi-chevron-left"
           variant="text"
           size="small"
           density="comfortable"
+          :disabled="wrap || edges.atStart"
           @click="scrollRow(-1)"
         />
         <v-btn
@@ -28,6 +48,7 @@
           variant="text"
           size="small"
           density="comfortable"
+          :disabled="wrap || edges.atEnd"
           @click="scrollRow(1)"
         />
       </div>
@@ -35,7 +56,7 @@
     <div v-if="loading" class="album-shelf-row">
       <div v-for="n in skeletonCount" :key="n" class="album-shelf-skeleton-item">
         <v-skeleton-loader type="image" width="160" height="160" class="rounded" />
-        <v-skeleton-loader type="text" width="70%" height="20" class="mt-2" />
+        <v-skeleton-loader type="text" width="70%" height="20" class="shelf-skeleton__label" />
         <v-skeleton-loader type="text" width="45%" height="16" />
       </div>
     </div>
@@ -43,7 +64,7 @@
       v-else-if="albums.length"
       ref="row"
       class="album-shelf-row"
-      :class="{ 'album-shelf-row--fit': fitToScreen }"
+      :class="{ 'album-shelf-row--fit': fitToScreen, 'album-shelf-row--wrap': wrap }"
     >
       <album-card
         v-for="album in displayedAlbums"
@@ -60,6 +81,7 @@
 import AlbumCard from './AlbumCard.vue'
 import type { Album } from '@/types/library'
 import { cardsAcross, observeCardsAcross, skeletonsAcross } from './cardRowFit'
+import { observeShelfEdges, SHELF_EDGES_UNMEASURED } from './shelfScrollEdges'
 
 // Matches .album-card's fixed width + .album-shelf-row's gap — shared with
 // every other shelf, see cardRowFit.ts.
@@ -112,8 +134,22 @@ export default {
       type: Boolean,
       default: true,
     },
+    // Lays the albums out as a wrapping grid instead of one scrolling row.
+    // Same names and same meaning as CardShelf.vue's own pair, so a host
+    // that offers this switches either component the same way — and
+    // services/cardGridView.ts remembers it for both.
+    wrap: {
+      type: Boolean,
+      default: false,
+    },
+    // Renders the toggle in this shelf's header. Opt-in, so a shelf whose
+    // host has no intention of switching it doesn't grow a dead button.
+    wrapToggle: {
+      type: Boolean,
+      default: false,
+    },
   },
-  emits: ['play-all'],
+  emits: ['play-all', 'update:wrap'],
   data() {
     return {
       visibleCount: 6,
@@ -124,6 +160,9 @@ export default {
       // fixed number left a wide window's row half empty while it loaded.
       skeletonsFitting: 6,
       resizeObserver: null as ResizeObserver | null,
+      edges: { ...SHELF_EDGES_UNMEASURED },
+      edgeWatch: null as ReturnType<typeof observeShelfEdges> | null,
+      edgeWatchEl: null as HTMLElement | null,
     }
   },
   computed: {
@@ -140,11 +179,37 @@ export default {
       this.visibleCount = cardsAcross(width)
       this.skeletonsFitting = skeletonsAcross(width)
     })
+    this.syncEdgeWatch()
+  },
+  updated() {
+    this.syncEdgeWatch()
   },
   beforeUnmount() {
     this.resizeObserver?.disconnect()
+    this.edgeWatch?.stop()
   },
   methods: {
+    /** (Re)points the edge watch at whichever row is on screen now — the
+     * element changes when a shelf swaps its placeholders for real cards,
+     * and disappears entirely while there is nothing to show. */
+    syncEdgeWatch(): void {
+      const row = (this.$refs.row as HTMLElement | undefined) ?? null
+      if (row === this.edgeWatchEl) {
+        this.edgeWatch?.refresh()
+        return
+      }
+      this.edgeWatch?.stop()
+      this.edgeWatchEl = row
+      if (!row) {
+        this.edgeWatch = null
+        this.edges = { ...SHELF_EDGES_UNMEASURED }
+        return
+      }
+      this.edgeWatch = observeShelfEdges(row, (edges) => {
+        this.edges = edges
+      })
+    },
+
     scrollRow(direction: 1 | -1): void {
       const row = this.$refs.row as HTMLElement | undefined
       if (!row) return
@@ -188,6 +253,14 @@ export default {
   overflow-x: hidden;
 }
 
+.album-shelf-row--wrap {
+  flex-wrap: wrap;
+  overflow-x: visible;
+  /* Scroll snapping is meaningless without a scroll axis, and leaving it on
+   * makes the *page's* own vertical scrolling snap in some browsers. */
+  scroll-snap-type: none;
+}
+
 .album-shelf-skeleton-item {
   flex: 0 0 auto;
   width: 160px;
@@ -205,5 +278,11 @@ export default {
   margin: 0;
   width: 100%;
   height: 100%;
+}
+
+/* Matches AlbumCard.vue's own title gap, so the placeholders are the
+ * same height as the cards that replace them. */
+.shelf-skeleton__label {
+  margin-top: 8px;
 }
 </style>

@@ -31,15 +31,15 @@
     <router-link
       v-if="playOnClick"
       :to="`/albums/${album.id}`"
-      class="album-card-title text-body-medium mt-2 text-truncate"
+      class="album-card-title text-body-medium"
       @click.stop
     >
       {{ album.name }}
     </router-link>
-    <div v-else class="album-card-title text-body-medium mt-2 text-truncate">{{ album.name }}</div>
+    <div v-else class="album-card-title text-body-medium">{{ album.name }}</div>
     <router-link
       :to="`/artists/${album.artistId}`"
-      class="album-card-artist text-body-small text-medium-emphasis text-truncate"
+      class="album-card-artist text-body-small text-medium-emphasis"
       @click.stop
     >
       {{ album.artist }}
@@ -284,9 +284,9 @@ export default {
 }
 
 .album-card-artist {
-  /* text-truncate (Vuetify's utility class, applied inline above) needs a
-   * block-level box with a bounded width to actually ellipsize against —
-   * an <a>'s default `inline` display doesn't respect that. */
+  /* The ellipsis rule below needs a block-level box with a bounded width
+   * to work against — an <a>'s default `inline` display doesn't respect
+   * that. */
   display: block;
   text-decoration: none;
   width: fit-content;
@@ -296,5 +296,18 @@ export default {
 .album-card-artist:hover {
   color: rgb(var(--v-theme-primary));
   text-decoration: underline;
+}
+
+/* Both lines under the cover stay single. */
+.album-card-title,
+.album-card-artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The gap between the cover and the title under it. */
+.album-card-title {
+  margin-top: 8px;
 }
 </style>

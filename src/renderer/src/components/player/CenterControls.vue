@@ -5,7 +5,7 @@
    - toggleShuffle()), so these buttons could only ever look pressable and
    - then do nothing. Play/pause is the one transport control a live
    - stream genuinely has. -->
-  <div class="center-controls d-flex align-center" style="gap: 4px">
+  <div class="center-controls">
     <v-btn
       icon="mdi-shuffle"
       :color="!isRadio && playbackStore.shuffle ? 'primary' : undefined"
@@ -22,7 +22,7 @@
       @click="playbackStore.playPrevious()"
     />
     <v-btn
-      class="play-btn mx-1"
+      class="play-btn"
       :icon="playbackStore.isPlaying ? 'mdi-pause' : 'mdi-play'"
       variant="flat"
       color="primary"
@@ -72,9 +72,20 @@ export default {
 </script>
 
 <style scoped>
+.center-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* Filled, inverted-color circle — reads as "the" button at a glance next
  * to the flanking transport buttons' plain outlined icons. */
 .play-btn :deep(.v-icon) {
   color: rgb(var(--v-theme-background));
+}
+
+/* Set apart from the skip buttons flanking it. */
+.play-btn {
+  margin-inline: 4px;
 }
 </style>

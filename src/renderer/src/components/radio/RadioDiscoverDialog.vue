@@ -4,7 +4,7 @@
    - a phone: a centred dialog with margins would leave the list barely
    - taller than its own search row. -->
   <v-dialog v-model="open" max-width="820" :fullscreen="compact" scrollable>
-    <v-card :class="{ 'discover-card-shell--mobile': compact }">
+    <v-card :class="compact ? 'discover-card-shell--mobile' : 'beacon-dialog'">
       <!-- Fullscreen on a phone puts the title where an app bar goes, so
        - it carries the close button too; the bottom Close stays for the
        - windowed desktop dialog, where a lone X in a corner reads as
@@ -290,6 +290,15 @@ let browseDebounceTimer: ReturnType<typeof setTimeout> | undefined
 // feature is built on top of, not something to leave unattributed.
 const RADIO_BROWSER_HOMEPAGE = 'https://www.radio-browser.info/'
 
+// Which ranking the dialog opens with. Plays, not votes: a vote is a thing
+// somebody had to go and cast, so the vote ranking rewards whoever has been
+// in the directory longest and had a community around them, while the play
+// count is simply what people actually listened to - the more honest answer
+// to "what is popular here". Both orderings stay one tap apart, and Beacon
+// contributes to this one itself: it reports a listen back to the directory
+// every time you play a station you found through it.
+const DEFAULT_BROWSE_ORDER: 'votes' | 'clickcount' = 'clickcount'
+
 export default {
   name: 'RadioDiscoverDialog',
   components: { CoverArt, SegmentedControl },
@@ -311,7 +320,7 @@ export default {
       // filter persists across dialog opens (and app restarts) while the
       // query text and order toggle deliberately start fresh each time.
       browseCountry: loadSavedBrowseCountry() as string | null,
-      browseOrder: 'votes' as 'votes' | 'clickcount',
+      browseOrder: DEFAULT_BROWSE_ORDER as 'votes' | 'clickcount',
       browseResults: [] as RadioBrowserStation[],
       browseLoading: false,
       browseError: false,
@@ -347,10 +356,14 @@ export default {
         this.$emit('update:modelValue', value)
       },
     },
+    // Most played first, because it is what the dialog opens on
+    // (DEFAULT_BROWSE_ORDER) - a segmented control whose lit half is the
+    // second one reads as "something was changed here" rather than as the
+    // starting point.
     browseOrderOptions() {
       return [
-        { title: this.$t('radio.discoverTopVoted'), value: 'votes' },
         { title: this.$t('radio.discoverMostPlayed'), value: 'clickcount' },
+        { title: this.$t('radio.discoverTopVoted'), value: 'votes' },
       ]
     },
     libraryStore() {
@@ -404,7 +417,7 @@ export default {
       this.browseQuery = ''
       // browseCountry is deliberately left alone — see its own data()
       // comment for why that one filter survives across dialog opens.
-      this.browseOrder = 'votes'
+      this.browseOrder = DEFAULT_BROWSE_ORDER
       this.browseResults = []
       this.browseError = false
       this.addedStationuuids = new Set()
@@ -572,6 +585,10 @@ export default {
 .discover-card-shell--mobile {
   background: var(--beacon-chrome);
 }
+
+/* Windowed on the desktop, where the shared .beacon-dialog caps it and
+ * scrolls the results inside that cap; the phone keeps the full screen,
+ * where the dialog *is* the page. */
 
 .discover-title {
   display: flex;

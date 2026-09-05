@@ -17,10 +17,12 @@ from delivery import (
 )
 from media import SubsonicClient, Track
 from routes.playback import (
+    ORPHANED_TRACK_GRACE_SECONDS,
     POSITION_RESYNC_THRESHOLD,
     PROVISIONAL_STARTUP_DELAY,
     QUEUE_TOPUP_DEDUP_WINDOW,
     _apply_position_offset,
+    _finish_orphaned_track,
     _resync_position_once,
     _resync_position_periodically,
 )
@@ -2450,3 +2452,64 @@ def test_resync_position_periodically_skips_polling_while_paused(default_session
             _run_briefly(_resync_position_periodically(default_session, target, generation=1))
         )
     get_position.assert_not_called()
+
+
+# ── a track end nobody reported ──────────────────────────────────────────────
+
+
+def _orphaned_session(session, *, duration=229, elapsed=None, connections=0):
+    """A session in the state a superseded-but-still-feeding stream leaves
+    behind: the track played to its end, the generator that fed it declined
+    to report that (older play_generation, see routes/stream.py's
+    _advance_or_end), and nothing else did either."""
+    st = session.state
+    session.media = SubsonicClient("http://nav")
+    st.is_streaming = True
+    st.track_ended = False
+    st.current_track = Track("1", "Hypnotize", "The Notorious B.I.G.", duration, "")
+    st.active_delivery = SonosDelivery("Arbeitszimmer")
+    st.active_stream_connections = connections
+    past = duration + ORPHANED_TRACK_GRACE_SECONDS + 5 if elapsed is None else elapsed
+    st.clock.play_start_time = time.time() - past
+    return st
+
+
+def test_finishes_a_track_whose_end_was_never_reported(default_session):
+    """The whole point: without this, `ended` never reaches any client, so
+    playback stays "playing" forever — the visualizer freezes on its last
+    frame and the resync loop keeps polling a stopped speaker."""
+    st = _orphaned_session(default_session)
+
+    assert asyncio.run(_finish_orphaned_track(default_session, st.clock.play_generation)) is True
+    assert st.track_ended is True
+    assert st.is_streaming is False
+
+
+def test_leaves_a_track_alone_while_a_stream_connection_is_still_open(default_session):
+    """A device still pulling bytes is still playing, however far past the
+    nominal duration the wall clock has got — a duration read from a VBR
+    file's own header can simply be wrong."""
+    st = _orphaned_session(default_session, connections=1)
+
+    assert asyncio.run(_finish_orphaned_track(default_session, st.clock.play_generation)) is False
+    assert st.track_ended is False
+    assert st.is_streaming is True
+
+
+def test_leaves_a_track_alone_until_well_past_its_end(default_session):
+    """The normal end (routes/stream.py's _advance_or_end) fires within a
+    second or two of the duration, and the ffmpeg-done-early overrun window
+    sits right at it — this backstop must not race either of them."""
+    st = _orphaned_session(default_session, elapsed=230)
+
+    assert asyncio.run(_finish_orphaned_track(default_session, st.clock.play_generation)) is False
+    assert st.track_ended is False
+
+
+def test_leaves_radio_alone(default_session):
+    """A station has no duration to be past and no end to report."""
+    st = _orphaned_session(default_session)
+    st.current_track = Track("radio", "Some station", "", 0, "")
+
+    assert asyncio.run(_finish_orphaned_track(default_session, st.clock.play_generation)) is False
+    assert st.track_ended is False

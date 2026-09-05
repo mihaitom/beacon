@@ -51,6 +51,8 @@ export default {
       'Fordere einen Code an und gib ihn auf einem anderen, bereits angemeldeten Gerät ein (oder in Jellyfins Weboberfläche unter Profil → Quick Connect), um dich hier anzumelden.',
     quickConnectApproveHint: 'Gib diesen Code auf einem anderen Gerät ein, um dich anzumelden:',
     quickConnectRequestCode: 'Code anfordern',
+    quickConnectCopyCode: 'Code kopieren',
+    quickConnectCodeCopied: 'Kopiert',
     plexHint:
       'Meldet dich über dein Plex-Konto an — dafür öffnet sich ein Browser-Tab, in dem du dich bei Plex anmeldest und die Anfrage bestätigst.',
     plexSignIn: 'Mit Plex anmelden',

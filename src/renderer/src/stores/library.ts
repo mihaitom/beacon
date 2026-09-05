@@ -23,6 +23,23 @@ export const TOP_SONGS_LIMIT = 10
 // and kick off their own redundant parallel fetch of the whole catalog.
 let fetchAllSongsPromise: Promise<void> | null = null
 
+// How much of a search the results page asks for. Passed explicitly rather
+// than left to SubsonicClient.search3()'s own 25-per-kind default, which is
+// the API's convention for a type-ahead dropdown and far too small for a
+// page: a common first name matches more than 25 tracks in any real
+// library, and nothing on that page said the list had been cut short - it
+// simply looked like everything the server had.
+//
+// Songs get the larger share because that is the list people scan; albums
+// and artists are a handful of tiles above it. Still bounded, though, since
+// this is one request whose whole answer is rendered at once - and a
+// Jellyfin server splits a single shared limit across all three kinds (see
+// media/jellyfin_bridge.py's search3), so asking for thousands would cost
+// that answer its balance as well as its speed.
+const SEARCH_SONG_LIMIT = 100
+const SEARCH_ALBUM_LIMIT = 40
+const SEARCH_ARTIST_LIMIT = 40
+
 // The library data that's expensive to fetch in full but rarely changes
 // between app launches. One record per kind (see
 // services/library/libraryCacheStore.ts for why it is IndexedDB and no
@@ -788,7 +805,12 @@ export const useLibraryStore = defineStore('library', {
         return
       }
       await this.withLoading(async () => {
-        const result = await this.client().search3(query)
+        const result = await this.client().search3(
+          query,
+          SEARCH_SONG_LIMIT,
+          SEARCH_ALBUM_LIMIT,
+          SEARCH_ARTIST_LIMIT,
+        )
         this.searchResults = result
       })
     },

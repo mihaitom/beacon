@@ -65,10 +65,11 @@ Beacon is `connect` as the actual foundation instead of an add-on - a frontend b
 - **Multi-user** - different logins on the same deployment each get independent playback to independent devices at the same time.
 - **Remote Control** - pair a phone to the desktop app over the LAN via QR code or PIN, no app install needed, and control local playback (Now Playing, Queue, Playlists, Library, Radio) from it. Electron only - see below.
 - **A responsive mobile web UI** - open the Docker/web deployment directly on a phone's browser and it _is_ the player, no pairing needed.
-- **Internet radio stations** - add, play, and manage your own, with favicon lookup. Or find one with **Discover stations**, a search over the free [Radio Browser](https://www.radio-browser.info/) directory: search by name, filter by country (remembered for next time), sort by most-voted or most-played, and either try a station straight away without saving it or add it to your list with one click, instead of typing in a stream URL by hand. Works on a phone as well, where it fills the screen; adding a station by typing its address is desktop-only, since nobody types a stream URL on a phone. Each result shows its location, language, audio format, popularity and whether it was reachable at its last check. Stations that broadcast a "now playing" tag show the current artist and track under the station name, in the player bar, the Now Playing screen and on the lock screen - for local playback and casting alike.
+- **Internet radio stations** - add, play, and manage your own, with favicon lookup. Or find one with **Discover stations**, a search over the free [Radio Browser](https://www.radio-browser.info/) directory: search by name, filter by country (remembered for next time), sort by most-played (the default) or most-voted, and either try a station straight away without saving it or add it to your list with one click, instead of typing in a stream URL by hand. Works on a phone as well, where it fills the screen; adding a station by typing its address is desktop-only, since nobody types a stream URL on a phone. Each result shows its location, language, audio format, popularity and whether it was reachable at its last check. Stations that broadcast a "now playing" tag show the current artist and track under the station name, in the player bar, the Now Playing screen and on the lock screen - for local playback and casting alike. Those tags are also kept as a running list of what the station has played, with the time each title came in: it opens where lyrics would be, each station keeps its own, and clicking a title searches your library for that track. The list lives on the Beacon server, so it carries on filling while you cast with the app closed, and yesterday's is still there tomorrow.
 - **Trigger a Navidrome library rescan** from Settings, with a completion notice.
 - **Adjustable backend log level** (Trace/Debug/Info/Warning/Error) from Settings, in effect immediately, no restart needed - Debug covers Beacon's own code, Trace also turns on the third-party libraries underneath it (SoCo, pyatv, HTTP clients) for SOAP/HTTP-level detail. `LOG_LEVEL` is the env var fallback for a deployment that never comes up far enough to reach Settings.
 - **Update notifications** - a dismissable/snoozable toast when a new release is out; auto-downloads in the background on Electron, links to the release on the web build.
+- **A Privacy page that lists every outside service Beacon contacts** - what each one is asked for, what is sent with the request, and whether the connection comes from your device or from your Beacon server. Anything a setting can switch off says which setting that is, and the lyrics providers can be turned off one by one or all at once, so a song's title and artist never leave your server.
 - **German, English, Spanish, French, and Italian UI**, detected automatically and switchable anytime in Settings.
 
 ### Keyboard shortcuts
@@ -78,6 +79,7 @@ Beacon is `connect` as the actual foundation instead of an add-on - a frontend b
 | `Space` / `K`      | Play / pause                           |
 | `←` / `→`          | Back / forward 5 seconds               |
 | `Ctrl` + `←` / `→` | Previous / next track (`Cmd` on macOS) |
+| `Alt` + `←` / `→`  | Back / forward through pages           |
 | `↑` / `↓`          | Volume up / down                       |
 | `M`                | Mute                                   |
 | `S`                | Toggle shuffle                         |
@@ -295,7 +297,17 @@ Settings -> Playback can cap that choice, and can also apply it to Beacon's own 
 
 ### Why can Beacon feel slower with Jellyfin?
 
-Navidrome/Subsonic is the primary, most-exercised backend. Jellyfin has no Subsonic-compatible API of its own, so `connect` translates every request on the fly into real Jellyfin API calls (see `connect/media/jellyfin_bridge.py`) - and Jellyfin's own API just isn't as optimized for this access pattern as Navidrome's. That combination means library loads and scans can take noticeably longer, especially on a large library (a full track-catalog fetch can take minutes rather than seconds). This is inherent to Jellyfin/the bridge, not something Beacon's UI does differently per backend - see "Jellyfin and Plex support" above.
+**Mostly on the very first load, and then it stops mattering.**
+
+Navidrome/Subsonic is the primary, most-exercised backend. Jellyfin has no Subsonic-compatible API of its own, so `connect` translates every request on the fly into real Jellyfin API calls (see `connect/media/jellyfin_bridge.py`) - and Jellyfin's own API just isn't as optimized for this access pattern as Navidrome's. Its recursive item query measured at roughly 9ms per track on the one real server this was timed against, so the first full catalog fetch on a large library is a matter of minutes rather than seconds. This is inherent to Jellyfin/the bridge, not something Beacon's UI does differently per backend - see "Jellyfin and Plex support" above.
+
+That cost is paid once, not on every visit:
+
+- **The catalog is kept and trusted for a full day on Jellyfin**, against an hour for Navidrome/Subsonic - precisely because re-fetching it is expensive there. Everything after that first scan is answered from Beacon's own copy, and the refresh once the day is up happens in the background while you carry on browsing.
+- **Cover art never goes back to Jellyfin twice** either, with three caches in front of it (see "Artwork caching" above) and a whole screenful fetched in a single request.
+- **Changed something in Jellyfin and don't want to wait?** The rescan button in Settings drops the copy and fetches fresh right away.
+
+Both the timing and the workarounds around it are a snapshot rather than a law: the bridge is written and verified against **Jellyfin 10.11.11**, and how fast that API answers is Jellyfin's to change from one release to the next. If a newer Jellyfin has become quicker at this, the numbers here are simply out of date.
 
 ### No devices found
 

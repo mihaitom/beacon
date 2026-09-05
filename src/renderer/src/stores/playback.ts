@@ -1144,8 +1144,29 @@ export const usePlaybackStore = defineStore('playback', {
     async startCurrent(startPosition = 0): Promise<boolean> {
       const song = this.currentSong
       if (!song) return false
-      const seq = startCurrentGuard.begin()
       const connect = useConnectStore()
+      // A second start of the *same* song while the first /play is still in
+      // flight is always a duplicate dispatch, never an intent: the first
+      // one has not even reached the backend yet, so there is nothing to
+      // restart. It comes from a double-click landing on a click-driven
+      // control, or from two paths reaching this for one gesture.
+      //
+      // Worth stopping here rather than letting the backend sort it out,
+      // because it cannot: both requests carry a newer seq than the last,
+      // so both are accepted, and each one bumps the clock's
+      // play_generation. The stream generator already feeding the device
+      // keeps the *older* generation, plays the track to its end, and then
+      // declines to report that end (routes/stream.py's _advance_or_end
+      // guards on exactly that) — leaving playback stuck "playing" for
+      // good. Reported live 2026-09-05, two /play 143ms apart; see
+      // docs/playback-bugs/track-end-never-reported.md.
+      //
+      // Ahead of everything below, startCurrentGuard included: a duplicate
+      // that got as far as begin()ing that guard would invalidate the very
+      // dispatch it is a duplicate of, which then reports "superseded" and
+      // unwinds — the queue index included.
+      if (connect.isActive && localSongChangeGuard.isCurrent(song.id)) return false
+      const seq = startCurrentGuard.begin()
       this.localPosition = startPosition
       scrobbledSongId = null // fresh play-through, even if it's the same song id as before
       // Otherwise the extrapolation interval (see positionTracker.ts's own

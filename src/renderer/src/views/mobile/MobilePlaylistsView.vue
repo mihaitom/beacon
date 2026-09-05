@@ -17,11 +17,11 @@
       />
     </sticky-filter>
 
-    <v-progress-circular v-if="libraryStore.loading" indeterminate class="mb-4" />
+    <v-progress-circular v-if="libraryStore.loading" indeterminate class="view-notice" />
 
     <template v-if="personalPlaylists.length">
-      <h2 class="section-title mb-1">{{ $t('playlists.personal') }}</h2>
-      <div class="mobile-playlist-list mb-4">
+      <h2 class="section-title">{{ $t('playlists.personal') }}</h2>
+      <div class="mobile-playlist-list">
         <mobile-playlist-row
           v-for="playlist in personalPlaylists"
           :key="playlist.id"
@@ -32,7 +32,7 @@
     </template>
 
     <template v-if="globalPlaylists.length">
-      <h2 class="section-title mb-1">{{ $t('playlists.global') }}</h2>
+      <h2 class="section-title">{{ $t('playlists.global') }}</h2>
       <div class="mobile-playlist-list">
         <mobile-playlist-row
           v-for="playlist in globalPlaylists"
@@ -125,5 +125,15 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* A heading sits right on top of its own list; the lists themselves
+ * are further apart. */
+.section-title {
+  margin-bottom: 4px;
+}
+
+.mobile-playlist-list {
+  margin-bottom: 16px;
 }
 </style>

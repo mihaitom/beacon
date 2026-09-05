@@ -26,21 +26,18 @@
         :class="{ 'cursor-pointer': !isMyActiveTarget && !claimedByOther }"
         @click="onInfoClick"
       >
-        <div class="text-body-medium text-truncate" :class="{ 'text-primary': isMyActiveTarget }">
+        <div class="text-body-medium" :class="{ 'text-primary': isMyActiveTarget }">
           {{ device.name }}
         </div>
         <template v-if="claimedByOther">
-          <div class="text-body-small device-row__claimed text-truncate">
+          <div class="text-body-small device-row__claimed">
             {{
               device.in_use_by_name
                 ? $t('connect.inUseBy', { name: device.in_use_by_name })
                 : $t('connect.inUseByUnknown')
             }}
           </div>
-          <div
-            v-if="device.in_use_by_song"
-            class="text-body-small text-medium-emphasis text-truncate"
-          >
+          <div v-if="device.in_use_by_song" class="text-body-small text-medium-emphasis">
             {{ device.in_use_by_song }}
           </div>
         </template>
@@ -441,5 +438,12 @@ export default {
  * here do, so matching font-size exactly renders it visibly smaller. */
 .device-row__type-icon {
   font-size: 20px;
+}
+
+/* A speaker's name and its status line each clip rather than wrap. */
+.device-row__info > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

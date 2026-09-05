@@ -18,7 +18,7 @@
     @update:model-value="$emit('update:modelValue', $event)"
     @mouseenter="drawersStore.cancelQueueDrawerAutoClose()"
   >
-    <div class="d-flex flex-column fill-height">
+    <div class="beacon-drawer__body">
       <v-toolbar
         density="compact"
         color="#0B0D13"
@@ -138,12 +138,7 @@
          - normally through the plain, non-appear enter path below — this
          - only costs the very first reveal of a session its slide-in; rows
          - just appear already in place instead. -->
-        <transition-group
-          v-if="!virtualizeQueue"
-          tag="div"
-          name="queue-move"
-          class="flex-grow-1 queue-scroll"
-        >
+        <transition-group v-if="!virtualizeQueue" tag="div" name="queue-move" class="queue-scroll">
           <queue-row
             v-for="(song, index) in playbackStore.queue"
             :key="queueRowKey(song)"
@@ -168,8 +163,7 @@
           ref="virtualScroll"
           :items="playbackStore.queue"
           item-height="56"
-          class="flex-grow-1"
-          style="min-height: 0"
+          class="queue-virtual-scroll"
         >
           <template #default="{ item: song, index }">
             <queue-row
@@ -690,7 +684,25 @@ export default {
   border-bottom: 1px solid var(--beacon-hairline);
 }
 
+/* The drawer's own column: a fixed toolbar with the content filling
+ * whatever is left of the drawer's height. */
+.beacon-drawer__body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* The virtualized alternative to .queue-scroll below — same box, but
+ * v-virtual-scroll does its own scrolling inside it. min-height: 0 so it
+ * can actually shrink inside the flex column rather than growing to fit
+ * every row. */
+.queue-virtual-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
 .queue-scroll {
+  flex: 1;
   display: block;
   position: relative;
   overflow-y: auto;

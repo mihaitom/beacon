@@ -123,6 +123,26 @@ describe('MobileLibraryView', () => {
     vi.useRealTimers()
   })
 
+  /** The library list is the whole catalogue, or whatever the search
+   * matched - a set of matches, not a running order. Tapping one song
+   * queues that song, the same as the row's own action sheet already did
+   * and the same as the desktop's Songs and search views. */
+  it('plays only the tapped song, not the rest of the list', async () => {
+    const library = stubStore()
+    library.allSongs = [makeSong('a'), makeSong('b'), makeSong('c')]
+    const playSongList = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.findAllComponents({ name: 'MobileSongRow' })[1]!.trigger('click')
+    await flushPromises()
+
+    expect(playSongList).toHaveBeenCalledTimes(1)
+    const [songs, index] = playSongList.mock.calls[0]!
+    expect(songs.map((song) => song.id)).toEqual(['b'])
+    expect(index).toBe(0)
+  })
+
   it('plays an album in its own track order', async () => {
     const library = stubStore()
     library.allSongs = []

@@ -167,7 +167,7 @@ export default defineComponent({
   height: 24px;
   margin: -2px -2px -2px 0;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 55%, transparent);
   cursor: pointer;

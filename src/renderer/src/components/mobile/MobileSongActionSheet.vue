@@ -4,11 +4,11 @@
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <v-card v-if="song">
-      <div class="mobile-song-actions__header d-flex align-center">
-        <cover-art :cover-art-id="song.coverArtId" :size="40" class="mr-3" />
-        <div class="min-width-0">
-          <div class="text-body-medium text-truncate">{{ song.title }}</div>
-          <div class="text-body-small text-medium-emphasis text-truncate">{{ song.artist }}</div>
+      <div class="mobile-song-actions__header">
+        <cover-art :cover-art-id="song.coverArtId" :size="40" class="mobile-song-actions__art" />
+        <div class="mobile-song-actions__labels">
+          <div class="text-body-medium">{{ song.title }}</div>
+          <div class="text-body-small text-medium-emphasis">{{ song.artist }}</div>
         </div>
       </div>
       <v-list v-if="!playlistPicker" density="compact">
@@ -144,6 +144,8 @@ export default {
 
 <style scoped>
 .mobile-song-actions__header {
+  display: flex;
+  align-items: center;
   padding: 16px 16px 8px;
 }
 
@@ -154,5 +156,16 @@ export default {
 
 .min-width-0 {
   min-width: 0;
+}
+
+/* The sheet names one song, on two single lines. */
+.mobile-song-actions__labels > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-song-actions__art {
+  margin-right: 12px;
 }
 </style>

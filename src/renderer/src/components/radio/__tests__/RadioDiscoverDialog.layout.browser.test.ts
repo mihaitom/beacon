@@ -13,9 +13,13 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
+// Same order as main.ts: the app's own stylesheet first, which is what
+// makes base.css's @layer declaration the authoritative one. Reversed,
+// @layer base lands behind Vuetify's utility layer and its `* { margin: 0 }`
+// reset silently cancels every mb-*/pa-* in the markup under test.
+import '@/assets/main.css'
 import 'vuetify/styles'
 import '@mdi/font/css/materialdesignicons.css'
-import '@/assets/base.css'
 import { i18n } from '@/i18n'
 import * as radioBrowser from '@/services/connect/radioBrowser'
 import RadioDiscoverDialog from '../RadioDiscoverDialog.vue'
@@ -158,6 +162,35 @@ describe('RadioDiscoverDialog layout', () => {
     const list = document.querySelector('.discover-results') as HTMLElement
     expect(list.scrollHeight).toBeLessThanOrEqual(list.clientHeight + 1)
     expect(getComputedStyle(list).maxHeight).toBe('none')
+  })
+
+  /** A directory search returns dozens of stations, and the windowed
+   * dialog would otherwise grow with them until it covered nearly the whole
+   * window - a dialog that reads as a takeover of the page behind it.
+   *
+   * Measured with offsetHeight rather than a rect: v-dialog keeps a scale
+   * transform on .v-overlay__content, and a bounding rect inside it is a
+   * picture of that transform. The phone half needs no assertion here - it
+   * is `fullscreen`, where the dialog *is* the page. */
+  it('keeps the windowed dialog to 70vh however many stations come back', async () => {
+    await openDiscover(
+      1200,
+      Array.from({ length: 20 }, (_, i) => makeResult({ stationuuid: `u${i}` })),
+    )
+
+    const card = document.querySelector('.beacon-dialog') as HTMLElement
+    // The viewport openDiscover() sets is 800 tall, and the shared cap is
+    // 70vh (--beacon-dialog-max-height).
+    expect(card.offsetHeight).toBeLessThanOrEqual(0.7 * 800 + 1)
+
+    // ...and the 20 stations are reachable inside that cap rather than
+    // clipped by it. Asserted on the body, not the card: the card is the
+    // thing that must *not* scroll - if it does, the cap is being enforced
+    // by cutting the list off, which is how the privacy sheet once shipped.
+    const body = card.querySelector('.v-card-text') as HTMLElement
+    expect(getComputedStyle(body).overflowY).toBe('auto')
+    expect(body.scrollHeight).toBeGreaterThan(body.clientHeight)
+    expect(card.scrollHeight).toBeLessThanOrEqual(card.clientHeight + 1)
   })
 
   /** On the desktop the two figures sit beside the name; in the phone

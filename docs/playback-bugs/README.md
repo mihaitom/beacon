@@ -29,6 +29,7 @@ opening every file.
 
 ## Fixed
 
+- [A track's end was never reported, and playback never finished](fixed-track-end-never-reported.md) (2026-09-05) - two `/play` for one gesture bumped the clock's generation past the stream still feeding the device, so nothing ever set `ended`
 - [Cast device drops mid-track - symptom, evidence & ruled-out theories](mid-track-drop-symptom.md) (2026-08-26) - **RESOLVED**; shared diagnostic reference for the two causes below plus the general mitigation
 - [Auto-advance onto a still-playing device drops the next track silently](auto-advance-still-playing-device.md) (2026-08-26) - reattributed to the test-suite leak below, not an independent mechanism after all
 - [Cast device drops mid-track - reverse-proxy 403](mid-track-drop-reverse-proxy-403.md) (2026-08-23)

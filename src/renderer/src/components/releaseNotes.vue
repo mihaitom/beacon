@@ -1,6 +1,6 @@
 <template>
   <v-dialog v-model="visible" max-width="920" scrollable transition="dialog-top-transition">
-    <v-card class="release-dialog">
+    <v-card class="release-dialog beacon-dialog">
       <div class="release-hero">
         <div class="release-hero__icon-wrap">
           <v-icon :class="['release-icon', { spin: iconAnimation }]">
@@ -218,7 +218,7 @@ export default defineComponent({
   justify-content: center;
   width: 72px;
   height: 72px;
-  border-radius: 20px;
+  border-radius: 16px;
   background: color-mix(in srgb, rgb(var(--v-theme-primary)) 16%, rgb(var(--v-theme-surface)));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, rgb(var(--v-theme-primary)) 18%, transparent);
 }
@@ -255,7 +255,6 @@ export default defineComponent({
 
 .release-body {
   padding: 1.25rem 1.5rem 1rem;
-  max-height: 68vh;
 }
 
 .release-toolbar {
@@ -379,7 +378,6 @@ export default defineComponent({
 
   .release-body {
     padding: 0.85rem 1rem 0.5rem;
-    max-height: 58vh;
   }
 
   /* Select-then-chip used to just wrap onto a second line at this width,

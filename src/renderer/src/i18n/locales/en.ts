@@ -53,6 +53,8 @@ export default {
       "Request a code and enter it on another device you're already signed in on (or in Jellyfin's own web UI, under Profile → Quick Connect) to log in here.",
     quickConnectApproveHint: 'Enter this code on another device to log in:',
     quickConnectRequestCode: 'Request code',
+    quickConnectCopyCode: 'Copy code',
+    quickConnectCodeCopied: 'Copied',
     plexHint:
       'Signs you in through your Plex account — a browser tab opens where you sign in to Plex and approve the request.',
     plexSignIn: 'Sign in with Plex',

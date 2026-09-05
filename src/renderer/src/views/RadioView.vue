@@ -46,15 +46,14 @@
         variant="solo-filled"
         density="compact"
         clearable
-        class="mb-4"
-        style="max-width: 320px"
+        class="library-search"
       />
     </sticky-filter>
 
     <!-- See PlaylistsView.vue's identical block: placeholders shaped like
      - the tiles, in the grid's own place, instead of a spinner that shifted
      - everything below it. -->
-    <div v-if="showSkeletons" class="radio-view__grid mb-4">
+    <div v-if="showSkeletons" class="radio-view__grid radio-view__grid--loading">
       <tile-skeleton v-for="n in SKELETON_TILES" :key="n" :cover-size="72" />
     </div>
 
@@ -95,7 +94,7 @@
             :label="$t('common.name')"
             variant="solo-filled"
             clearable
-            class="mb-2"
+            class="radio-form__field"
           />
           <v-text-field
             v-model="formStreamUrl"
@@ -103,7 +102,7 @@
             placeholder="https://..."
             variant="solo-filled"
             clearable
-            class="mb-2"
+            class="radio-form__field"
           />
           <v-text-field
             v-model="formHomePageUrl"
@@ -130,7 +129,7 @@
             :label="$t('common.name')"
             variant="solo-filled"
             clearable
-            class="mb-2"
+            class="radio-form__field"
           />
           <v-text-field
             v-model="formStreamUrl"
@@ -138,7 +137,7 @@
             placeholder="https://..."
             variant="solo-filled"
             clearable
-            class="mb-2"
+            class="radio-form__field"
           />
           <v-text-field
             v-model="formHomePageUrl"
@@ -306,5 +305,16 @@ export default {
    * tile, not a big square cover, and 20px between tiles that short read
    * as gappy rather than airy. */
   gap: 14px;
+}
+
+/* The placeholder grid keeps the gap the real one has under it, so
+ * nothing shifts when the stations arrive. */
+.radio-view__grid--loading {
+  margin-bottom: 16px;
+}
+
+/* The add/edit station form: three URL-shaped fields in a column. */
+.radio-form__field {
+  margin-bottom: 8px;
 }
 </style>

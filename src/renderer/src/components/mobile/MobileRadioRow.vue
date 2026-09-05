@@ -18,16 +18,13 @@
       class="mobile-row__art"
     />
     <div class="mobile-row__text">
-      <div class="text-body-medium text-truncate" :class="{ 'text-primary': isCurrent }">
+      <div class="text-body-medium" :class="{ 'text-primary': isCurrent }">
         {{ station.name }}
       </div>
       <!-- The site the station belongs to, not the stream URL — see
        - RadioStationCard.vue's own hostname comment. A station with none
        - simply drops the line. -->
-      <div
-        v-if="hostname"
-        class="text-body-small text-medium-emphasis text-truncate radio-row__host"
-      >
+      <div v-if="hostname" class="text-body-small text-medium-emphasis radio-row__host">
         {{ hostname }}
       </div>
     </div>

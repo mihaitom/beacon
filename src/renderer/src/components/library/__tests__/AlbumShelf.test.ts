@@ -130,7 +130,13 @@ describe('AlbumShelf', () => {
       const wrapper = await mountShelf()
       const row = wrapper.get('.album-shelf-row').element as HTMLElement
       // jsdom reports 0 for every layout box and has no scrollBy at all.
+      // A row three times its own width, scrolled to the middle: the state
+      // in which neither chevron is at an end and both are live.
       Object.defineProperty(row, 'clientWidth', { value: 1000, configurable: true })
+      Object.defineProperty(row, 'scrollWidth', { value: 3000, configurable: true })
+      Object.defineProperty(row, 'scrollLeft', { value: 500, writable: true, configurable: true })
+      row.dispatchEvent(new Event('scroll'))
+      await wrapper.vm.$nextTick()
       const scrollBy = vi.fn()
       row.scrollBy = scrollBy
 
@@ -147,6 +153,46 @@ describe('AlbumShelf', () => {
 
       expect(wrapper.find('.album-shelf-nav').exists()).toBe(false)
       expect(wrapper.get('.album-shelf-row').classes()).toContain('album-shelf-row--fit')
+    })
+
+    /** Unlike fit-to-screen, which is how a host configured this shelf once,
+     * wrapping is switched by a button in this very row — so the chevrons
+     * are disabled rather than removed. Removing them lets the spacer pull
+     * that button out from under the pointer that just clicked it. */
+    it('keeps the chevrons in place while wrapping, disabled', async () => {
+      const wrapper = await mountShelf({ wrap: true })
+
+      const nav = wrapper.find('.album-shelf-nav')
+      expect(nav.exists()).toBe(true)
+      expect(nav.findAll('button').every((b) => b.attributes('disabled') !== undefined)).toBe(true)
+      expect(wrapper.get('.album-shelf-row').classes()).toContain('album-shelf-row--wrap')
+    })
+  })
+
+  describe('grid toggle', () => {
+    it('is opt-in — a shelf nobody switches has no dead button', async () => {
+      const wrapper = await mountShelf()
+
+      expect(wrapper.find('.mdi-view-grid-outline').exists()).toBe(false)
+    })
+
+    it('asks its host to switch instead of switching itself', async () => {
+      // The host owns the state and persists it (see
+      // services/cardGridView.ts) — same split as CardShelf.vue's own.
+      const wrapper = await mountShelf({ wrapToggle: true })
+
+      await wrapper.get('.mdi-view-grid-outline').element.closest('button')!.click()
+
+      expect(wrapper.emitted('update:wrap')).toEqual([[true]])
+      expect(wrapper.get('.album-shelf-row').classes()).not.toContain('album-shelf-row--wrap')
+    })
+
+    it('asks to switch back when it is already wrapping', async () => {
+      const wrapper = await mountShelf({ wrapToggle: true, wrap: true })
+
+      await wrapper.get('.mdi-view-grid-outline').element.closest('button')!.click()
+
+      expect(wrapper.emitted('update:wrap')).toEqual([[false]])
     })
   })
 

@@ -1,6 +1,6 @@
 <template>
   <v-dialog v-model="visible" max-width="640" scrollable class="song-info">
-    <v-card v-if="song" class="song-info__card">
+    <v-card v-if="song" class="song-info__card beacon-dialog">
       <!-- The same lit-artwork header every album, artist and playlist page
          - opens with (DetailHeader.vue), at dialog scale: blurred cover
          - behind a scrim, amber eyebrow, serif title. This used to be a
@@ -175,21 +175,14 @@ export default {
 </script>
 
 <style scoped>
+/* The height cap and the scrolling come from .beacon-dialog; this sheet
+ * used to carry its own 76vh, which made it the one content dialog in the
+ * app standing 6vh taller than the rest for no reason anyone could name. */
 .song-info__card {
-  /* Short enough to leave the player bar visible behind it, same as the
-   * privacy sheet - this is something read next to the app, not instead
-   * of it. */
-  max-height: 76vh;
-  display: flex;
-  flex-direction: column;
   /* Same 16px as DetailHeader's own frame - one step rounder than the
    * panels inside it, so the sheet reads as the container of the column
    * rather than as one more panel in it. */
   border-radius: 16px;
-}
-
-.song-info__card :deep(.v-card-text) {
-  overflow-y: auto;
 }
 
 /* ── Header ─────────────────────────────────────────────────────────── */

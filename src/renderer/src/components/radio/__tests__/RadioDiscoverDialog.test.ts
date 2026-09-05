@@ -108,14 +108,17 @@ describe('RadioDiscoverDialog', () => {
     document.body.innerHTML = ''
   })
 
-  it('browses top-voted stations immediately on open, before anything is typed', async () => {
+  /** Plays rather than votes: a vote has to be cast by hand and so favours
+   * whoever has been listed longest, while the play count is what people
+   * actually listened to. */
+  it('browses the most-played stations immediately on open, before anything is typed', async () => {
     const wrapper = mountDialog()
     await openAndSettle(wrapper)
 
     expect(radioBrowser.searchRadioBrowser).toHaveBeenCalledWith({
       name: '',
       countrycodes: [],
-      order: 'votes',
+      order: 'clickcount',
     })
   })
 
@@ -145,7 +148,7 @@ describe('RadioDiscoverDialog', () => {
     await openAndSettle(wrapper)
     instanceOf(wrapper).browseQuery = 'jazz'
     await vi.advanceTimersByTimeAsync(400)
-    instanceOf(wrapper).browseOrder = 'clickcount'
+    instanceOf(wrapper).browseOrder = 'votes'
     await flushPromises()
     vi.mocked(radioBrowser.searchRadioBrowser).mockClear()
 
@@ -157,7 +160,7 @@ describe('RadioDiscoverDialog', () => {
     expect(radioBrowser.searchRadioBrowser).toHaveBeenCalledWith({
       name: '',
       countrycodes: [],
-      order: 'votes',
+      order: 'clickcount',
     })
   })
 
@@ -207,11 +210,13 @@ describe('RadioDiscoverDialog', () => {
     await openAndSettle(wrapper)
     vi.mocked(radioBrowser.searchRadioBrowser).mockClear()
 
-    instanceOf(wrapper).browseOrder = 'clickcount'
+    // Away from the default, or the watcher has nothing to react to and
+    // this would pass on the search the dialog already made on open.
+    instanceOf(wrapper).browseOrder = 'votes'
     await wrapper.vm.$nextTick()
 
     expect(radioBrowser.searchRadioBrowser).toHaveBeenCalledWith(
-      expect.objectContaining({ order: 'clickcount' }),
+      expect.objectContaining({ order: 'votes' }),
     )
   })
 
@@ -457,7 +462,7 @@ describe('RadioDiscoverDialog', () => {
     await openAndSettle(wrapper)
     instanceOf(wrapper).browseQuery = 'jazz'
     instanceOf(wrapper).browseCountry = 'DE'
-    instanceOf(wrapper).browseOrder = 'clickcount'
+    instanceOf(wrapper).browseOrder = 'votes'
     await flushPromises()
     expect(document.body.textContent).toContain('Example FM')
 
@@ -467,11 +472,11 @@ describe('RadioDiscoverDialog', () => {
 
     expect(instanceOf(wrapper).browseQuery).toBe('')
     expect(instanceOf(wrapper).browseCountry).toBe('DE')
-    expect(instanceOf(wrapper).browseOrder).toBe('votes')
+    expect(instanceOf(wrapper).browseOrder).toBe('clickcount')
     expect(radioBrowser.searchRadioBrowser).toHaveBeenCalledWith({
       name: '',
       countrycodes: ['DE'],
-      order: 'votes',
+      order: 'clickcount',
     })
   })
 })

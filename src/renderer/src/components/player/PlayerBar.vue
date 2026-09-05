@@ -1,5 +1,5 @@
 <template>
-  <v-footer app inset height="88" color="#0B0D13" class="player-bar px-4">
+  <v-footer app inset height="88" color="#0B0D13" class="player-bar">
     <div class="player-bar__row" :style="{ '--player-bar-flank-width': flankWidthPx + 'px' }">
       <song-info />
       <control-container />
@@ -187,5 +187,9 @@ export default {
    * value themselves instead of a second, independently-hardcoded copy
    * that could silently drift from this one. */
   --control-container-min-width: 220px;
+}
+
+.player-bar {
+  padding-inline: 16px;
 }
 </style>

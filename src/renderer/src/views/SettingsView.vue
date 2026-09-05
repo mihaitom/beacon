@@ -6,7 +6,7 @@
    - separated by a hairline, so vertical rhythm comes from one rule rather
    - than from per-element utility margins that drifted apart. -->
   <v-container max-width="640" class="settings-view">
-    <h1 class="page-title mb-6">{{ $t('settings.title') }}</h1>
+    <h1 class="page-title">{{ $t('settings.title') }}</h1>
 
     <section class="settings-section">
       <h2 class="section-title">{{ $t('settings.account') }}</h2>
@@ -165,7 +165,7 @@
           </v-btn>
           <v-progress-linear
             v-if="refreshingLibrary"
-            class="mt-3"
+            class="settings-progress"
             :indeterminate="refreshProgressPercent === null"
             :model-value="refreshProgressPercent ?? undefined"
             color="primary"
@@ -327,7 +327,7 @@
             type="info"
             variant="tonal"
             density="compact"
-            class="mt-3"
+            class="settings-progress"
           >
             {{ $t('settings.updateAvailable', { version: updateStore.latestVersion }) }}
             <a
@@ -945,5 +945,14 @@ export default {
   .account-strip > .v-btn {
     flex-shrink: 0;
   }
+}
+
+.page-title {
+  margin-bottom: 24px;
+}
+
+/* A progress bar or notice that appears under the control it belongs to. */
+.settings-progress {
+  margin-top: 12px;
 }
 </style>

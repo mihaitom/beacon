@@ -16,8 +16,8 @@
         class="ranked-list__cover"
       />
       <div class="ranked-list__info">
-        <div class="text-body-medium text-truncate">{{ item.label }}</div>
-        <div v-if="item.sublabel" class="text-body-small text-medium-emphasis text-truncate">
+        <div class="text-body-medium">{{ item.label }}</div>
+        <div v-if="item.sublabel" class="text-body-small text-medium-emphasis">
           {{ item.sublabel }}
         </div>
         <div class="ranked-list__bar-song">
@@ -178,5 +178,12 @@ a.ranked-list__row:hover {
 
 .ranked-list__value-icon {
   opacity: 0.7;
+}
+
+/* Both lines clip: a row is one line tall each. */
+.ranked-list__info > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

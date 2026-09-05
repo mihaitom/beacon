@@ -9,13 +9,15 @@
          - feature anywhere in the app now that it's gone from there. Shown
          - unconditionally (not just the non-regenerate branch below) since
          - it explains the feature itself, not the current pairing code. -->
-        <p class="text-body-medium text-medium-emphasis mb-4">{{ $t('remoteControl.hint') }}</p>
+        <p class="text-body-medium text-medium-emphasis pairing-intro">
+          {{ $t('remoteControl.hint') }}
+        </p>
         <v-alert
           v-if="store.needsRegenerate"
           type="info"
           variant="tonal"
           density="compact"
-          class="mb-2"
+          class="pairing-notice"
         >
           {{ $t('remoteControl.needsRegenerate') }}
         </v-alert>
@@ -23,8 +25,8 @@
           <div class="qr-wrap">
             <canvas ref="qrCanvas" />
           </div>
-          <p class="pin-display text-center">{{ formattedPin }}</p>
-          <p class="text-body-medium text-medium-emphasis text-center mb-4">
+          <p class="pin-display">{{ formattedPin }}</p>
+          <p class="text-body-medium text-medium-emphasis pairing-hint">
             {{ $t('remoteControl.pairHint') }}
           </p>
           <v-text-field
@@ -136,14 +138,30 @@ export default {
   margin-bottom: 16px;
 }
 
+/* An image, and cover art's 4px is the app's radius for those. */
 .qr-wrap canvas {
-  border-radius: 8px;
+  border-radius: 4px;
+}
+
+.pairing-hint {
+  margin-bottom: 16px;
+  text-align: center;
 }
 
 .pin-display {
+  text-align: center;
   font-size: 1.6rem;
   font-weight: 600;
   letter-spacing: 0.25em;
   margin-bottom: 4px;
+}
+
+/* The line explaining what the pairing code is for. */
+.pairing-intro {
+  margin-bottom: 16px;
+}
+
+.pairing-notice {
+  margin-bottom: 8px;
 }
 </style>

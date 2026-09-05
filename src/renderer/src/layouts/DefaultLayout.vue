@@ -55,7 +55,12 @@
     </v-navigation-drawer>
 
     <v-app-bar density="comfortable" color="#0B0D13" class="beacon-app-bar">
-      <v-icon icon="mdi-lighthouse-on" color="primary" size="20" class="ml-4 mr-2 beacon-glow" />
+      <v-icon
+        icon="mdi-lighthouse-on"
+        color="primary"
+        size="20"
+        class="beacon-glow app-bar__mark"
+      />
       <v-app-bar-title class="app-title">Beacon</v-app-bar-title>
       <!-- Beside the app's own name rather than out with the search: this
        - is where every browser and every player that has one puts it, and
@@ -278,5 +283,11 @@ export default {
 .beacon-rail :deep(.v-list-item--active .v-icon) {
   color: rgb(var(--v-theme-primary));
   filter: drop-shadow(0 0 5px rgba(245, 169, 78, 0.4));
+}
+
+/* The lighthouse beside the app's name in the top bar. */
+.app-bar__mark {
+  margin-left: 16px;
+  margin-right: 8px;
 }
 </style>

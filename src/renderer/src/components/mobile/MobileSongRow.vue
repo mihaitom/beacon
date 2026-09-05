@@ -10,10 +10,10 @@
       class="mobile-row__art"
     />
     <div class="mobile-row__text">
-      <div class="text-body-medium text-truncate" :class="{ 'text-primary': isCurrentSong }">
+      <div class="text-body-medium" :class="{ 'text-primary': isCurrentSong }">
         {{ song.title }}
       </div>
-      <div class="text-body-small text-medium-emphasis text-truncate">{{ song.artist }}</div>
+      <div class="text-body-small text-medium-emphasis">{{ song.artist }}</div>
     </div>
     <!-- No favourite toggle here, deliberately: the phone has no way to
      - *see* favourites — no tab, and nothing that links to the desktop's

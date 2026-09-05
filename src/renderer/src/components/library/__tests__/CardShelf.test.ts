@@ -28,7 +28,13 @@ describe('CardShelf', () => {
     const wrapper = mountShelf()
     const row = wrapper.get('.card-shelf__row').element as HTMLElement
     // jsdom reports 0 for every layout box and has no scrollBy at all.
+    // A row three times its own width, scrolled to the middle: the state in
+    // which neither chevron is at an end and both are live.
     Object.defineProperty(row, 'clientWidth', { value: 1000, configurable: true })
+    Object.defineProperty(row, 'scrollWidth', { value: 3000, configurable: true })
+    Object.defineProperty(row, 'scrollLeft', { value: 500, writable: true, configurable: true })
+    row.dispatchEvent(new Event('scroll'))
+    await wrapper.vm.$nextTick()
     const scrollBy = vi.fn()
     row.scrollBy = scrollBy
 
@@ -42,10 +48,39 @@ describe('CardShelf', () => {
     expect(scrollBy).toHaveBeenLastCalledWith({ left: -800, behavior: 'smooth' })
   })
 
-  it('drops the chevrons in wrapping mode, where there is nothing to page', () => {
+  /** The measuring itself is shelfScrollEdges.test.ts's subject; this is
+   * that answer reaching the right button. A row already at its left edge
+   * has nothing to the left, so only that chevron goes dim. */
+  it('dims the chevron pointing at an end the row has reached', async () => {
+    const wrapper = mountShelf()
+    const row = wrapper.get('.card-shelf__row').element as HTMLElement
+    Object.defineProperty(row, 'clientWidth', { value: 1000, configurable: true })
+    Object.defineProperty(row, 'scrollWidth', { value: 3000, configurable: true })
+    Object.defineProperty(row, 'scrollLeft', { value: 0, writable: true, configurable: true })
+
+    row.dispatchEvent(new Event('scroll'))
+    await wrapper.vm.$nextTick()
+    const [left, right] = wrapper.findAll('.card-shelf__nav button')
+    expect(left!.attributes('disabled')).toBeDefined()
+    expect(right!.attributes('disabled')).toBeUndefined()
+
+    row.scrollLeft = 2000
+    row.dispatchEvent(new Event('scroll'))
+    await wrapper.vm.$nextTick()
+    expect(left!.attributes('disabled')).toBeUndefined()
+    expect(right!.attributes('disabled')).toBeDefined()
+  })
+
+  /** Disabled, not removed. The chevrons sit right of the grid toggle, and
+   * taking them out of the row lets the spacer pull that toggle rightwards
+   * — out from under the pointer that just clicked it, so a second click
+   * lands on nothing or on a chevron that has moved into its place. */
+  it('keeps the chevrons in place in wrapping mode, disabled', () => {
     const wrapper = mountShelf({ wrap: true })
 
-    expect(wrapper.find('.card-shelf__nav').exists()).toBe(false)
+    const nav = wrapper.find('.card-shelf__nav')
+    expect(nav.exists()).toBe(true)
+    expect(nav.findAll('button').every((b) => b.attributes('disabled') !== undefined)).toBe(true)
     expect(wrapper.get('.card-shelf__row').classes()).toContain('card-shelf__row--wrap')
     // Same cards either way — the toggle is a layout change, not a
     // different component.

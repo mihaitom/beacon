@@ -61,7 +61,18 @@
       </template>
     </detail-header>
 
-    <album-shelf :title="$t('library.albums')" :albums="sortedAlbums" :show-play-all="false">
+    <!-- A grid toggle like the favorites page's and the search results',
+     - remembered per visit: an artist with three albums and one with sixty
+     - want different layouts, and the answer belongs to the page rather
+     - than to the artist currently on it. -->
+    <album-shelf
+      :title="$t('library.albums')"
+      :albums="sortedAlbums"
+      :show-play-all="false"
+      :wrap="albumGridView"
+      wrap-toggle
+      @update:wrap="setAlbumGridView"
+    >
       <template #action>
         <v-btn
           :icon="
@@ -77,7 +88,7 @@
     </album-shelf>
 
     <template v-if="topSongs.length || loadingTopSongs">
-      <div class="section-header mt-8 mb-2">
+      <div class="section-header">
         <h2 class="section-title">
           {{ allSongsShown ? $t('library.allSongs') : $t('library.mostPlayed') }}
         </h2>
@@ -125,6 +136,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import AlbumShelf from '@/components/library/AlbumShelf.vue'
+import { readCardGridView, writeCardGridView } from '@/services/cardGridView'
 import SongTable from '@/components/library/SongTable.vue'
 import PageLoader from '@/components/PageLoader.vue'
 import { getArtistImages, getArtistLinks } from '@/services/connect/recommendations'
@@ -136,12 +148,17 @@ import type { Song } from '@/types/library'
 // repeat this whole ReturnType chain inline.
 type ArtistDetail = Awaited<ReturnType<ReturnType<typeof useLibraryStore>['fetchArtist']>>
 
+// The albums on an artist's page, shelf or grid. One key for the page as a
+// whole rather than one per artist — see services/cardGridView.ts.
+const ALBUM_GRID_VIEW_KEY = 'beacon.artistGridView.albums'
+
 export default {
   name: 'ArtistDetailView',
   components: { DetailHeader, AlbumShelf, SongTable, PageLoader },
   data() {
     return {
       artist: null as ArtistDetail | null,
+      albumGridView: readCardGridView(ALBUM_GRID_VIEW_KEY),
       // Newest-first (descending by year) by default — see this file's own
       // #action template comment. Reset per artist in loadArtist() so a
       // toggle made on one artist page doesn't carry over to the next.
@@ -214,6 +231,10 @@ export default {
     '$route.params.id': 'loadArtist',
   },
   methods: {
+    setAlbumGridView(value: boolean) {
+      this.albumGridView = value
+      writeCardGridView(ALBUM_GRID_VIEW_KEY, value)
+    },
     async loadArtist() {
       const id = this.$route.params.id as string
       this.topSongs = []
@@ -368,5 +389,11 @@ export default {
 
 .external-link-icon--invert {
   filter: invert(1);
+}
+
+/* Its own block, set apart from the tracks above it. */
+.section-header {
+  margin-top: 32px;
+  margin-bottom: 8px;
 }
 </style>

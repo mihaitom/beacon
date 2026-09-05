@@ -24,14 +24,19 @@
         :title="$t('library.showAsGrid')"
         @click="$emit('update:wrap', !wrap)"
       />
-      <!-- Nothing to page through once the cards wrap onto as many rows as
-       - they need. -->
-      <div v-if="!wrap" class="card-shelf__nav">
+      <!-- Each chevron goes dim once the row has nothing further that way,
+       - and both do while the grid is on.
+       -
+       - Disabled rather than hidden: this row sits right of the grid toggle
+       - that switches it, and removing it lets the spacer pull that toggle
+       - out from under the pointer that just clicked it. -->
+      <div class="card-shelf__nav">
         <v-btn
           icon="mdi-chevron-left"
           variant="text"
           size="small"
           density="comfortable"
+          :disabled="wrap || edges.atStart"
           @click="scrollRow(-1)"
         />
         <v-btn
@@ -39,6 +44,7 @@
           variant="text"
           size="small"
           density="comfortable"
+          :disabled="wrap || edges.atEnd"
           @click="scrollRow(1)"
         />
       </div>
@@ -50,6 +56,8 @@
 </template>
 
 <script lang="ts">
+import { observeShelfEdges, SHELF_EDGES_UNMEASURED } from './shelfScrollEdges'
+
 export default {
   name: 'CardShelf',
   props: {
@@ -65,7 +73,44 @@ export default {
     wrapToggle: { type: Boolean, default: false },
   },
   emits: ['update:wrap'],
+  data() {
+    return {
+      edges: { ...SHELF_EDGES_UNMEASURED },
+      edgeWatch: null as ReturnType<typeof observeShelfEdges> | null,
+      edgeWatchEl: null as HTMLElement | null,
+    }
+  },
+  mounted() {
+    this.syncEdgeWatch()
+  },
+  updated() {
+    this.syncEdgeWatch()
+  },
+  beforeUnmount() {
+    this.edgeWatch?.stop()
+  },
   methods: {
+    /** (Re)points the edge watch at whichever row is on screen now — the
+     * element changes when a shelf swaps its placeholders for real cards,
+     * and disappears entirely while there is nothing to show. */
+    syncEdgeWatch(): void {
+      const row = (this.$refs.row as HTMLElement | undefined) ?? null
+      if (row === this.edgeWatchEl) {
+        this.edgeWatch?.refresh()
+        return
+      }
+      this.edgeWatch?.stop()
+      this.edgeWatchEl = row
+      if (!row) {
+        this.edgeWatch = null
+        this.edges = { ...SHELF_EDGES_UNMEASURED }
+        return
+      }
+      this.edgeWatch = observeShelfEdges(row, (edges) => {
+        this.edges = edges
+      })
+    },
+
     /** The scrolling row itself, for a host that needs to measure how many
      * cards fit across it (see cardRowFit.ts). Handed out rather than
      * measured through the host's own $el, because a shelf whose template

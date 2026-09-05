@@ -43,11 +43,10 @@
         variant="solo-filled"
         density="compact"
         clearable
-        class="mb-4"
-        style="max-width: 320px"
+        class="library-search"
       />
     </sticky-filter>
-    <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="mb-4">
+    <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
       {{ libraryStore.error }}
     </v-alert>
 
@@ -65,7 +64,7 @@
             height="160"
             class="rounded album-card-cover"
           />
-          <v-skeleton-loader type="text" width="70%" height="20" class="mt-2" />
+          <v-skeleton-loader type="text" width="70%" height="20" class="album-skeleton__label" />
           <v-skeleton-loader type="text" width="45%" height="16" />
         </div>
       </div>
@@ -391,5 +390,11 @@ export default {
   margin: 0;
   width: 100%;
   height: 100%;
+}
+
+/* Stands in for AlbumCard.vue's own title, which carries the same gap
+ * above it — so the placeholder grid is exactly as tall as the real one. */
+.album-skeleton__label {
+  margin-top: 8px;
 }
 </style>

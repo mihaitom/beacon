@@ -1,53 +1,53 @@
 <template>
-  <div class="song-table-header d-flex align-center px-2 pb-1">
+  <div class="song-table-header">
     <div class="song-index" />
     <div v-if="showCover" class="song-cover-spacer" />
     <div class="song-title min-width-0">
       <button type="button" class="sort-header" @click="$emit('sort', 'title')">
         {{ $t('library.title') }}
-        <v-icon v-if="sortKey === 'title'" :icon="arrowIcon" size="12" class="ml-1" />
+        <v-icon v-if="sortKey === 'title'" :icon="arrowIcon" size="12" />
       </button>
     </div>
     <div v-if="showAlbum" class="song-album">
       <button type="button" class="sort-header" @click="$emit('sort', 'album')">
         {{ $t('library.album') }}
-        <v-icon v-if="sortKey === 'album'" :icon="arrowIcon" size="12" class="ml-1" />
+        <v-icon v-if="sortKey === 'album'" :icon="arrowIcon" size="12" />
       </button>
     </div>
     <div v-if="showGenre" class="song-genre">
       <button type="button" class="sort-header" @click="$emit('sort', 'genre')">
         {{ $t('library.genre') }}
-        <v-icon v-if="sortKey === 'genre'" :icon="arrowIcon" size="12" class="ml-1" />
+        <v-icon v-if="sortKey === 'genre'" :icon="arrowIcon" size="12" />
       </button>
     </div>
     <div v-if="showYear" class="song-year">
       <button type="button" class="sort-header" @click="$emit('sort', 'year')">
         {{ $t('library.year') }}
-        <v-icon v-if="sortKey === 'year'" :icon="arrowIcon" size="12" class="ml-1" />
+        <v-icon v-if="sortKey === 'year'" :icon="arrowIcon" size="12" />
       </button>
     </div>
     <div v-if="showPlayCount" class="song-playcount">
       <button type="button" class="sort-header" @click="$emit('sort', 'playCount')">
         {{ $t('library.plays') }}
-        <v-icon v-if="sortKey === 'playCount'" :icon="arrowIcon" size="12" class="ml-1" />
+        <v-icon v-if="sortKey === 'playCount'" :icon="arrowIcon" size="12" />
       </button>
     </div>
     <div v-if="showFormat" class="song-format">
       <button type="button" class="sort-header" @click="$emit('sort', 'format')">
         {{ $t('library.format') }}
-        <v-icon v-if="sortKey === 'format'" :icon="arrowIcon" size="12" class="ml-1" />
+        <v-icon v-if="sortKey === 'format'" :icon="arrowIcon" size="12" />
       </button>
     </div>
     <div class="song-duration">
       <button type="button" class="sort-header" @click="$emit('sort', 'duration')">
         {{ $t('library.duration') }}
-        <v-icon v-if="sortKey === 'duration'" :icon="arrowIcon" size="12" class="ml-1" />
+        <v-icon v-if="sortKey === 'duration'" :icon="arrowIcon" size="12" />
       </button>
     </div>
     <div class="song-actions">
       <button type="button" class="sort-header" @click="$emit('sort', 'rating')">
         {{ $t('library.rating') }}
-        <v-icon v-if="sortKey === 'rating'" :icon="arrowIcon" size="12" class="ml-1" />
+        <v-icon v-if="sortKey === 'rating'" :icon="arrowIcon" size="12" />
       </button>
     </div>
   </div>
@@ -78,26 +78,68 @@ export default {
 </script>
 
 <style scoped>
+/* The app's small-label voice - upper case, tracked, heavier - the same
+ * shape as .eyebrow-label in base.css, so this reads as a label *about*
+ * the list rather than as one more, slightly greyer, row of it. It used to
+ * be plain sentence case at 0.75rem, which is the size and casing of the
+ * data underneath: the only thing separating the two was opacity.
+ *
+ * White rather than the eyebrow's amber, though. Amber is the signal
+ * colour, and eight amber column headings would spend it on a row nobody
+ * needs to look at twice - it goes to the one heading that is actually
+ * saying something instead (see .sort-header below). */
 .song-table-header {
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.5);
+  display: flex;
+  align-items: center;
+  /* Mirrors SongRow.vue's own horizontal padding, so a column heading sits
+   * over the column it names. */
+  padding: 0 8px 6px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
   border-bottom: 1px solid var(--beacon-hairline);
   gap: 12px;
 }
 
+/* The gap carries the sort arrow, which is why no icon in here needs a
+ * margin of its own. */
 .sort-header {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   background: none;
   border: none;
   padding: 0;
   font: inherit;
   color: inherit;
   cursor: pointer;
+  /* Both are inherited by everything else on the page, but not by a form
+   * control: the UA stylesheet resets them on <button> (to `none` and
+   * `normal`), and `font: inherit` does not cover either - neither is part
+   * of the font shorthand. Without these two lines every heading is a
+   * button that quietly ignores the casing and tracking set on the row
+   * above it, which is exactly how it rendered on the first attempt. */
+  text-transform: inherit;
+  letter-spacing: inherit;
 }
 
 .sort-header:hover {
   color: rgba(255, 255, 255, 0.85);
+}
+
+/* The column the list is currently sorted by, lit in the app's amber. The
+ * arrow alone said this before, at 12px and in the same grey as the seven
+ * headings that mean nothing at that moment.
+ *
+ * Keyed off the arrow's own presence rather than a second flag threaded
+ * through the template: the heading that renders an icon is by definition
+ * the active one, so the two cannot fall out of step. A browser without
+ * :has() simply keeps the grey heading and its arrow, which is what this
+ * looked like before. */
+.sort-header:has(.v-icon) {
+  color: rgb(var(--v-theme-primary));
 }
 
 /* Widths/flex-grow here must mirror SongRow.vue's exactly, column for

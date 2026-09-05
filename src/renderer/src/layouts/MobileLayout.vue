@@ -33,7 +33,7 @@
         icon="mdi-cog-outline"
         variant="text"
         density="comfortable"
-        class="mr-1"
+        class="mobile-app-bar__action"
         @click="$router.push('/settings')"
       />
     </v-app-bar>
@@ -95,5 +95,9 @@ export default {
 
 .beacon-glow {
   filter: drop-shadow(0 0 6px rgba(245, 169, 78, 0.55));
+}
+
+.mobile-app-bar__action {
+  margin-right: 4px;
 }
 </style>

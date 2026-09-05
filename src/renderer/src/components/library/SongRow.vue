@@ -1,6 +1,6 @@
 <template>
   <div
-    class="song-row d-flex align-center px-2 py-1"
+    class="song-row"
     :class="{
       'song-row--current': isCurrentSong,
       'song-row--selected': selected,
@@ -45,12 +45,12 @@
       @click.stop="onCoverClick"
     />
     <div class="song-title min-width-0">
-      <div class="text-body-medium text-truncate" :class="{ 'text-primary': isCurrentSong }">
+      <div class="text-body-medium" :class="{ 'text-primary': isCurrentSong }">
         {{ song.title }}
       </div>
       <router-link
         :to="`/artists/${song.artistId}`"
-        class="song-artist-link text-body-small text-medium-emphasis text-truncate"
+        class="song-artist-link text-body-small text-medium-emphasis"
         @click.stop
       >
         {{ song.artist }}
@@ -59,13 +59,13 @@
     <div v-if="showAlbum" class="song-album">
       <router-link
         :to="`/albums/${song.albumId}`"
-        class="song-album-link text-body-small text-medium-emphasis text-truncate"
+        class="song-album-link text-body-small text-medium-emphasis"
         @click.stop
       >
         {{ song.album }}
       </router-link>
     </div>
-    <div v-if="showGenre" class="song-genre text-body-small text-medium-emphasis text-truncate">
+    <div v-if="showGenre" class="song-genre text-body-small text-medium-emphasis">
       {{ song.genre || '—' }}
     </div>
     <div v-if="showYear" class="song-year text-body-small text-medium-emphasis">
@@ -74,13 +74,13 @@
     <div v-if="showPlayCount" class="song-playcount text-body-small text-medium-emphasis">
       {{ song.playCount }}
     </div>
-    <div v-if="showFormat" class="song-format text-body-small text-medium-emphasis text-truncate">
+    <div v-if="showFormat" class="song-format text-body-small text-medium-emphasis">
       {{ formattedFormat }}
     </div>
     <div class="song-duration text-body-small text-medium-emphasis">
       {{ formattedDuration }}
     </div>
-    <div class="song-actions d-flex align-center">
+    <div class="song-actions">
       <transition name="rating-fade" style="margin-right: 1rem">
         <v-rating
           v-if="authStore.capabilities.personalRating && (song.rating > 0 || isHovered)"
@@ -439,6 +439,9 @@ export default {
 
 <style scoped>
 .song-row {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
   cursor: default;
   border-radius: 4px;
   gap: 12px;
@@ -543,9 +546,9 @@ export default {
 }
 
 .song-artist-link {
-  /* text-truncate (Vuetify's utility class, applied inline above) needs a
-   * block-level box with a bounded width to actually ellipsize against —
-   * an <a>'s default `inline` display doesn't respect that. width:
+  /* The ellipsis rule above needs a block-level box with a bounded width
+   * to work against — an <a>'s default `inline` display doesn't respect
+   * that. width:
    * fit-content keeps the actual click/hit area sized to the artist name
    * itself instead of stretching block-level across the rest of the
    * row (which made a double-click-to-play landing anywhere in that
@@ -587,6 +590,8 @@ export default {
 }
 
 .song-actions {
+  display: flex;
+  align-items: center;
   flex: 0 0 200px;
   justify-content: flex-end;
 }
@@ -607,5 +612,16 @@ export default {
 
 .min-width-0 {
   min-width: 0;
+}
+
+/* Every column in a row is one line — the row has a fixed height, so a
+ * long title would push the rest of the table out of alignment. */
+.song-title > *,
+.song-album > *,
+.song-genre,
+.song-format {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

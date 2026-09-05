@@ -480,6 +480,70 @@ async def _resync_position_once(session: SessionState, candidate, generation: in
     await session.event_bus.broadcast(build_status_dict(session))
 
 
+# How far past a track's own duration the wall clock has to be before
+# _finish_orphaned_track() below concludes that nothing is going to report
+# this track's end. Generous on purpose: the normal path (routes/stream.py's
+# _advance_or_end) fires within a second or two of the duration, and the
+# ffmpeg-done-early overrun window legitimately sits right at it. This only
+# has to be long enough that a healthy end has certainly already happened —
+# STREAM_DISCONNECT_GRACE_SECONDS is the longest wait in that path, and this
+# is comfortably past it.
+ORPHANED_TRACK_GRACE_SECONDS = 20.0
+
+
+async def _finish_orphaned_track(session: SessionState, generation: int) -> bool:
+    """Close out a track whose end nobody reported, and say whether it did.
+
+    Exactly one place marks a track finished: routes/stream.py's
+    _advance_or_end(). It refuses to, deliberately and silently, when the
+    stream generator calling it belongs to an older play_generation than the
+    clock — that guard is what stops a superseded stream from declaring the
+    end of a track that is no longer the one playing.
+
+    But a generator can be superseded and *still be the one feeding the
+    device*: a second /play for the same track on the same target (a
+    double-dispatched click, see stores/playback.ts's startCurrent) bumps the
+    generation without the device ever reopening its connection, so the
+    bytes keep coming from the now-older generator. It plays to the end
+    perfectly normally, then declines to report it — and nothing else ever
+    does. Observed live 2026-09-05: `ended` never reached the frontend, so
+    isPlaying stayed true, the visualizer froze on its last frame, and this
+    very resync loop was still polling a stopped speaker five minutes past a
+    229s track. See docs/playback-bugs/track-end-never-reported.md.
+
+    Rather than teach that guard to distinguish the two cases (it cannot -
+    from inside the generator, "superseded but still feeding" and
+    "superseded and replaced" look identical), this is the backstop for
+    every way a track end can go unreported: the wall clock is well past the
+    track's own duration, the device has dropped back to a standstill, and
+    no stream connection is open any more. All three together cannot
+    describe a track that is still playing.
+    """
+    st = session.state
+    track = st.current_track
+    if track is None or not track.duration:
+        return False
+    # elapsed_since_stream_start(), the same measure _resync_position_once()
+    # compares against — not elapsed(), whose position_offset is the very
+    # thing a stalled track's resyncs have been pushing around, and not
+    # seconds_until(), which clamps at zero and so can never express "past
+    # the end" at all.
+    wall_elapsed = st.clock.elapsed_since_stream_start()
+    if wall_elapsed < float(track.duration) + ORPHANED_TRACK_GRACE_SECONDS:
+        return False
+    if st.active_stream_connections > 0:
+        return False
+    logger.info(
+        f"[position-resync] {track.artist} — {track.title}: track end was never reported "
+        f"({wall_elapsed:.0f}s elapsed of {track.duration}s, no stream connection open) "
+        "— marking it finished"
+    )
+    st.is_streaming = False
+    st.track_ended = True
+    await session.event_bus.broadcast(build_status_dict(session))
+    return True
+
+
 async def _resync_position_periodically(session: SessionState, target, generation: int) -> None:
     """Keeps position_offset accurate for as long as this track keeps
     playing, by re-measuring the device's actual position every
@@ -544,6 +608,10 @@ async def _resync_position_periodically(session: SessionState, target, generatio
             return
         if st.clock.is_paused:
             continue
+        # Before recalibrating against it: is this track actually still
+        # playing at all? See _finish_orphaned_track().
+        if await _finish_orphaned_track(session, generation):
+            return
         await _resync_position_once(session, candidate, generation)
 
 

@@ -53,6 +53,8 @@ export default {
       'Solicita un código e introdúcelo en otro dispositivo en el que ya hayas iniciado sesión (o en la propia interfaz web de Jellyfin, en Perfil → Conexión rápida) para iniciar sesión aquí.',
     quickConnectApproveHint: 'Introduce este código en otro dispositivo para iniciar sesión:',
     quickConnectRequestCode: 'Solicitar código',
+    quickConnectCopyCode: 'Copiar código',
+    quickConnectCodeCopied: 'Copiado',
     plexHint:
       'Te inicia sesión a través de tu cuenta de Plex: se abrirá una pestaña del navegador donde inicias sesión en Plex y apruebas la solicitud.',
     plexSignIn: 'Iniciar sesión con Plex',

@@ -1,6 +1,6 @@
 <template>
   <v-container fluid>
-    <h1 class="page-title mb-4">{{ $t('favorites.title') }}</h1>
+    <h1 class="page-title">{{ $t('favorites.title') }}</h1>
 
     <!-- Scrolling rows by default, same shape as the Home view's shelves:
      - a large favorites collection otherwise pushed the songs table
@@ -34,7 +34,7 @@
     <template v-if="libraryStore.starred.songs.length">
       <!-- Not a shelf: a table has its own vertical rhythm, and there is
        - nothing to page through sideways. -->
-      <h2 class="section-title mb-2">{{ $t('favorites.songs') }}</h2>
+      <h2 class="section-title">{{ $t('favorites.songs') }}</h2>
       <song-table
         :songs="libraryStore.starred.songs"
         show-cover
@@ -67,25 +67,16 @@ import AlbumCard from '@/components/library/AlbumCard.vue'
 import ArtistCard from '@/components/library/ArtistCard.vue'
 import CardShelf from '@/components/library/CardShelf.vue'
 import SongTable from '@/components/library/SongTable.vue'
+import { readCardGridView, writeCardGridView } from '@/services/cardGridView'
 
 type CardSection = 'artists' | 'albums'
 
-// Remembered across visits, like NowPlayingView.vue's own visualizer
-// preference — a layout choice that resets every time you navigate back
-// here is worse than not offering it. One key per section, since the two
-// are switched independently. Shelf is the default, so a missing (or
-// unreadable) value means shelf.
+// One key per section, since the two are switched independently. The
+// reading and writing itself is services/cardGridView.ts, shared with the
+// search results, which offer the same toggle.
 const GRID_VIEW_KEY: Record<CardSection, string> = {
   artists: 'beacon.favoritesGridView.artists',
   albums: 'beacon.favoritesGridView.albums',
-}
-
-function readGridView(section: CardSection): boolean {
-  try {
-    return localStorage.getItem(GRID_VIEW_KEY[section]) === 'true'
-  } catch {
-    return false
-  }
 }
 
 export default {
@@ -93,7 +84,10 @@ export default {
   components: { AlbumCard, ArtistCard, CardShelf, SongTable },
   data() {
     return {
-      gridView: { artists: readGridView('artists'), albums: readGridView('albums') },
+      gridView: {
+        artists: readCardGridView(GRID_VIEW_KEY.artists),
+        albums: readCardGridView(GRID_VIEW_KEY.albums),
+      },
     }
   },
   computed: {
@@ -107,13 +101,18 @@ export default {
   methods: {
     setGridView(section: CardSection, value: boolean) {
       this.gridView[section] = value
-      try {
-        localStorage.setItem(GRID_VIEW_KEY[section], String(value))
-      } catch {
-        // Private mode/blocked storage — the toggle still works for this
-        // visit, it just won't be remembered.
-      }
+      writeCardGridView(GRID_VIEW_KEY[section], value)
     },
   },
 }
 </script>
+
+<style scoped>
+.page-title {
+  margin-bottom: 16px;
+}
+
+.section-title {
+  margin-bottom: 8px;
+}
+</style>

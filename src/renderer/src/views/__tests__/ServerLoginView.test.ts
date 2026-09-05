@@ -34,6 +34,7 @@ interface LoginVm {
   quickConnectCode: string | null
   quickConnectSecret: string | null
   quickConnectTimer: ReturnType<typeof setTimeout> | null
+  codeCopied: boolean
   plexCode: string | null
   plexPinId: number | null
   plexWaiting: boolean
@@ -48,6 +49,7 @@ interface LoginVm {
   submit(): Promise<void>
   selectServerType(option: { type: string; locked: boolean }): void
   setAuthMode(mode: 'password' | 'quickconnect'): void
+  copyQuickConnectCode(): Promise<void>
   rememberServerUrl(url: string): void
   forgetServerUrl(url: string): void
   startQuickConnect(): Promise<void>
@@ -269,6 +271,42 @@ describe('ServerLoginView submit', () => {
     expect(auth.login).not.toHaveBeenCalled()
     expect(vm.quickConnectCode).toBe('123456')
     vm.cancelQuickConnect()
+  })
+})
+
+describe('ServerLoginView copying the Quick Connect code', () => {
+  /** The code is typed into Jellyfin on another device, which is often just
+   * another window on this machine — so it has to be copyable rather than
+   * only readable. */
+  it('puts the code on the clipboard and confirms it did', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    const { vm } = await mountLogin()
+    vm.quickConnectCode = '123456'
+
+    await vm.copyQuickConnectCode()
+
+    expect(writeText).toHaveBeenCalledWith('123456')
+    // What turns the button into a checkmark.
+    expect(vm.codeCopied).toBe(true)
+    vi.unstubAllGlobals()
+  })
+
+  /** A blocked or unavailable clipboard is not worth a dialog: the code is
+   * on screen in a large monospace face, so the fallback is reading it.
+   * What must not happen is the button claiming success. */
+  it('does not claim success when the clipboard refuses', async () => {
+    vi.stubGlobal('navigator', {
+      clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+    })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { vm } = await mountLogin()
+    vm.quickConnectCode = '123456'
+
+    await vm.copyQuickConnectCode()
+
+    expect(vm.codeCopied).toBe(false)
+    vi.unstubAllGlobals()
   })
 })
 

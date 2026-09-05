@@ -467,10 +467,11 @@ class AudioAnalyzer:
         # The cast clock's reading at this run's *first decoded byte*, which
         # is where content_position's own zero sits for radio. Captured in
         # _read_pcm() right after on_first_byte(), so both clocks are read
-        # at the same instant. Stays 0.0 for a track (no on_first_byte at
-        # all), which is correct: content_position is track-absolute there
-        # and needs no re-basing. See _release_frames() for why this must
-        # NOT be taken at the first released frame instead.
+        # at the same instant. Stays 0.0 for a track, which has no
+        # on_first_byte and is what _read_pcm() gates this on: content_
+        # position is track-absolute there and needs no re-basing. See
+        # _release_frames() for why this must NOT be taken at the first
+        # released frame instead.
         self._debug_baseline: float = 0.0
         # (visualizer_position, cast_position) for the most recently
         # released frame, in a common reference frame — see
@@ -612,7 +613,19 @@ class AudioAnalyzer:
                     # reading at the same instant those do. See
                     # _debug_baseline's own comment for why the baseline
                     # moved here from the first *released* frame.
-                    if self._debug_cast_elapsed_fn is not None:
+                    #
+                    # Only where there is an on_first_byte to be alongside,
+                    # i.e. radio: that is the case whose content_position is
+                    # relative to this decode and needs the cast side pulled
+                    # to the same zero. A track's is already track-absolute,
+                    # so a baseline there re-bases one side of the
+                    # comparison and not the other. Missing that guard is
+                    # what made the overlay read a constant Δ of exactly the
+                    # seek distance after skipping forward in a track
+                    # (+97.59s at 103.98/6.39, reported live 2026-09-05) —
+                    # a track opened at 0 hides it, because the baseline is
+                    # then ~0 either way.
+                    if self._on_first_byte is not None and self._debug_cast_elapsed_fn is not None:
                         self._debug_baseline = self._debug_cast_elapsed_fn()
                 self._pcm_buffer.extend(data)
                 while len(self._pcm_buffer) >= window_bytes:

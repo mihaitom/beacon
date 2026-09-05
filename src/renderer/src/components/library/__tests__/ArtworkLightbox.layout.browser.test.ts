@@ -93,8 +93,21 @@ function artBox(): DOMRect {
   return document.querySelector('.artwork-lightbox__art')!.getBoundingClientRect()
 }
 
+/** CoverArt's own `.cover-art { background: ... }`, restated as a real
+ * stylesheet rule - the stub above cannot carry it inline, because an
+ * inline style would be unbeatable and the whole question here is whether
+ * the lightbox's rule beats the component's. Kept faint and grey like the
+ * original; only that it is *there* matters. */
+function paintCoverArtFill(): void {
+  const style = document.createElement('style')
+  style.textContent = '.cover-art { background: rgba(255, 255, 255, 0.06); }'
+  style.dataset.testFill = 'cover-art'
+  document.head.appendChild(style)
+}
+
 describe('ArtworkLightbox layout', () => {
   afterEach(() => {
+    document.querySelectorAll('style[data-test-fill]').forEach((el) => el.remove())
     for (const wrapper of wrappers.splice(0)) wrapper.unmount()
     emitter.all.clear()
     document.body.innerHTML = ''
@@ -112,6 +125,25 @@ describe('ArtworkLightbox layout', () => {
     // 72vh, the cap the component asks for. Before the fix this measured
     // the picture's own 1200px height, on an 800px-tall window.
     expect(art.height).toBeLessThanOrEqual(window.innerHeight * 0.75)
+  })
+
+  /** The box is square and the picture inside it is contained, so on a
+   * portrait photo the box is wider than what it holds. Anything painted
+   * behind it is therefore visible as bars down both sides - which is what
+   * CoverArt's own placeholder fill did here, right for a grid and wrong
+   * for a picture on a dimmed backdrop.
+   *
+   * The rule that removes it has to out-specify CoverArt's own, since both
+   * land on the same element; that is what this actually pins. */
+  it('shows the picture with nothing painted behind it', async () => {
+    await page.viewport(1200, 800)
+    paintCoverArtFill()
+    const wrapper = mountLightbox()
+
+    await showPortrait(wrapper)
+
+    const art = document.querySelector('.artwork-lightbox__art')!
+    expect(getComputedStyle(art).backgroundColor).toBe('rgba(0, 0, 0, 0)')
   })
 
   it('keeps the caption with it rather than pushing it off', async () => {

@@ -8,7 +8,7 @@
         class="mobile-playlist-detail__cover"
       />
       <div class="mobile-header__title">
-        <h1 class="page-title text-truncate">{{ playlist.name }}</h1>
+        <h1 class="page-title">{{ playlist.name }}</h1>
         <div class="text-body-small text-medium-emphasis">
           {{ $t('playlists.songCount', { count: playlist.songCount }) }}
         </div>
@@ -36,7 +36,7 @@
     <mobile-song-action-sheet v-model="actionsOpen" :song="activeSong" />
   </v-container>
   <v-container v-else>
-    <div v-if="libraryStore.loading" class="d-flex justify-center pa-6">
+    <div v-if="libraryStore.loading" class="mobile-playlist-detail__loading">
       <v-progress-circular indeterminate color="primary" />
     </div>
     <v-alert v-else-if="libraryStore.error" type="error" variant="tonal">{{
@@ -105,6 +105,14 @@ export default {
 </script>
 
 <style scoped>
+/* The spinner while the playlist loads, centered in the space its rows
+ * will take. */
+.mobile-playlist-detail__loading {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+}
+
 /* The header row's own leading element — .mobile-header supplies the gap
  * between it and the text, so this only has to stay its own size. */
 .mobile-playlist-detail__cover {
@@ -118,5 +126,12 @@ export default {
 
 .min-width-0 {
   min-width: 0;
+}
+
+/* A playlist name can be long; the header stays one line. */
+.mobile-header__title .page-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

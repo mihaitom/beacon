@@ -1,6 +1,6 @@
 <template>
   <v-dialog :model-value="modelValue" max-width="720" scrollable @update:model-value="close">
-    <v-card class="privacy-card">
+    <v-card class="privacy-card beacon-dialog">
       <v-card-title class="privacy-title">
         <span>{{ $t('privacy.title') }}</span>
         <v-btn
@@ -168,31 +168,9 @@ export default {
 </script>
 
 <style scoped>
-/* Short enough to leave the app's own chrome visible behind it — the bar
- * at the top and the player at the bottom stay in view, so the dialog
- * reads as something opened *in* Beacon rather than as a screen of its
- * own. Vuetify's default would take about 90% of the height. `scrollable`
- * on the dialog is what makes the list inside scroll instead of the card
- * growing past this. */
-.privacy-card {
-  max-height: 70vh;
-  /* The scrolling is arranged here rather than left to v-dialog's own
-   * `scrollable`: measured in a real browser, that leaves .v-card-text at
-   * `overflow-y: visible`, so the card clipped at the cap and everything
-   * past it — the last section and the closing note — was cut off with no
-   * way to reach it. A flex column with the body allowed to shrink is what
-   * actually makes it scroll. */
-  display: flex;
-  flex-direction: column;
-}
-
-/* No min-height: 0 alongside, though a flex child usually needs one — an
- * element whose own overflow is not `visible` already has an automatic
- * minimum size of zero, which is exactly what lets this shrink and scroll.
- * Left off rather than added defensively; measured both ways next door. */
-.privacy-card :deep(.v-card-text) {
-  overflow-y: auto;
-}
+/* The height cap and the scrolling inside it are .beacon-dialog's now
+ * (assets/base.css) - this sheet is where that rule was worked out, and
+ * every other content dialog wears the same one. */
 
 .privacy-title {
   display: flex;

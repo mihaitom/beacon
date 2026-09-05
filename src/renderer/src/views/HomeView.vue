@@ -31,8 +31,8 @@
       @play-all="playAllAlbums(frequentAlbums, 'frequent')"
     />
 
-    <section v-if="topSongs.length || loadingTopSongs" class="mb-10">
-      <div class="d-flex align-center mb-4">
+    <section v-if="topSongs.length || loadingTopSongs" class="home-view__section">
+      <div class="home-view__section-head">
         <h2 class="section-title">{{ $t('home.topSongs') }}</h2>
         <v-btn
           v-if="topSongs.length"
@@ -44,8 +44,13 @@
           @click="playSongList(topSongs)"
         />
       </div>
+      <!-- A chart, not a running order: these are the tracks played most,
+         - so clicking one plays that one. The button beside the heading
+         - above is what starts the whole list, which is the difference
+         - between "I want to hear this song" and "play my top songs". -->
       <song-table
         :songs="topSongs"
+        :queue-whole-list="false"
         :loading="loadingTopSongs"
         default-sort-key="playCount"
         default-sort-direction="desc"
@@ -723,5 +728,16 @@ export default {
 <style scoped>
 .home-view {
   padding-bottom: 24px;
+}
+
+/* A section's heading with its own play-all button beside it. */
+.home-view__section-head {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.home-view__section {
+  margin-bottom: 40px;
 }
 </style>

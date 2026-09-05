@@ -697,6 +697,40 @@ def _fake_analyzer_with_stdout(elapsed_fn, stdout_chunks) -> AudioAnalyzer:
     return analyzer
 
 
+async def test_read_pcm_leaves_the_debug_baseline_alone_for_a_track():
+    """A track's content_position is track-absolute, so the cast side must
+    not be pulled to a zero the other side doesn't share. Skipping forward
+    is where getting this wrong shows: the baseline is then the seek
+    position, and the overlay reads a constant delta of exactly the
+    distance skipped (reported live 2026-09-05 as 103.98 vs 6.39, Δ
+    +97.59s), while a track opened at 0 hides it behind a ~0 baseline.
+
+    A track is the case with no on_first_byte, which is what _read_pcm()
+    keys on — see AudioAnalyzer's own _debug_baseline comment."""
+    pcm = _tone_pcm(440, _FFT_SIZE)
+    analyzer = _fake_analyzer_with_stdout(elapsed_fn=lambda: 97.59, stdout_chunks=[pcm, b""])
+    analyzer._debug_cast_elapsed_fn = lambda: 97.59
+
+    await analyzer._read_pcm()
+
+    assert analyzer._debug_baseline == 0.0
+
+
+async def test_read_pcm_takes_the_debug_baseline_at_first_byte_for_radio():
+    """Radio is the other half of the same rule: content_position counts
+    from this decode's own first byte, so the cast clock — running since
+    /play-url, whatever that reads by now — has to be re-based to the same
+    instant."""
+    pcm = _tone_pcm(440, _FFT_SIZE)
+    analyzer = _fake_analyzer_with_stdout(elapsed_fn=lambda: 0.0, stdout_chunks=[pcm, b""])
+    analyzer._on_first_byte = lambda: None
+    analyzer._debug_cast_elapsed_fn = lambda: 600.0
+
+    await analyzer._read_pcm()
+
+    assert analyzer._debug_baseline == 600.0
+
+
 async def test_read_pcm_produces_one_frame_from_exactly_one_window():
     pcm = _tone_pcm(440, _FFT_SIZE)
     analyzer = _fake_analyzer_with_stdout(elapsed_fn=lambda: 0.0, stdout_chunks=[pcm, b""])

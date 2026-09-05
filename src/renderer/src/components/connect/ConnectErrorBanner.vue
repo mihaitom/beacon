@@ -1,6 +1,6 @@
 <template>
-  <v-alert :type="alertType" variant="tonal" density="compact" class="mb-2">
-    <div class="d-flex align-center">
+  <v-alert :type="alertType" variant="tonal" density="compact" class="connect-error-banner">
+    <div class="connect-error-banner__row">
       <span>{{ message }}</span>
       <v-spacer />
       <v-btn
@@ -44,3 +44,16 @@ export default {
   },
 }
 </script>
+
+<style scoped>
+/* The message and the retry button on one line, with a v-spacer between
+ * them pushing the button to the far end. */
+.connect-error-banner__row {
+  display: flex;
+  align-items: center;
+}
+
+.connect-error-banner {
+  margin-bottom: 8px;
+}
+</style>

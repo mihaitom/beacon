@@ -36,10 +36,7 @@
       </div>
     </div>
     <div class="radio-tile__info">
-      <div
-        class="text-body-medium text-truncate radio-tile__name"
-        :class="{ 'text-primary': isCurrent }"
-      >
+      <div class="text-body-medium radio-tile__name" :class="{ 'text-primary': isCurrent }">
         {{ station.name }}
       </div>
       <!-- The raw stream URL used to sit here — accurate, but the kind of
@@ -47,7 +44,7 @@
        - station belongs to reads as an actual caption instead; a station
        - with none just omits the line rather than falling back to the
        - stream URL anyway. -->
-      <div v-if="hostname" class="text-body-small text-medium-emphasis text-truncate">
+      <div v-if="hostname" class="text-body-small text-medium-emphasis">
         {{ hostname }}
       </div>
     </div>
@@ -223,5 +220,12 @@ export default {
   .radio-tile {
     width: 100%;
   }
+}
+
+/* Station name and host each stay on one line. */
+.radio-tile__info > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

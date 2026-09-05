@@ -29,20 +29,20 @@
       />
     </div>
     <div class="playlist-tile__info">
-      <div class="text-body-medium text-truncate playlist-tile__name">{{ playlist.name }}</div>
-      <div class="text-body-small text-medium-emphasis text-truncate">{{ meta }}</div>
+      <div class="text-body-medium playlist-tile__name">{{ playlist.name }}</div>
+      <div class="text-body-small text-medium-emphasis">{{ meta }}</div>
     </div>
     <v-icon
       v-if="playlist.public"
       icon="mdi-earth"
       size="16"
-      class="text-medium-emphasis mx-1"
+      class="text-medium-emphasis playlist-tile__dot"
       :title="$t('playlists.public')"
     />
     <v-icon
       icon="mdi-chevron-right"
       size="20"
-      class="playlist-tile__chevron text-medium-emphasis ml-1"
+      class="playlist-tile__chevron text-medium-emphasis"
     />
     <!-- Renaming and deleting used to live on the playlist's own page only
      - — reachable from the overview solely by opening the playlist first.
@@ -243,5 +243,21 @@ export default {
   .playlist-tile {
     width: 100%;
   }
+}
+
+/* Name and meta line each stay on one line under the artwork. */
+.playlist-tile__info > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The separator between the two facts on the meta line. */
+.playlist-tile__dot {
+  margin-inline: 4px;
+}
+
+.playlist-tile__chevron {
+  margin-left: 4px;
 }
 </style>

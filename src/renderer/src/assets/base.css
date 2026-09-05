@@ -196,6 +196,34 @@ body {
   min-width: 0;
 }
 
+/* Both lines of a row clip rather than wrap: a row is a fixed 60px, so a
+ * long title would push the second line out of it entirely. Set here, on
+ * the primitive, rather than per row component - every list in the phone
+ * UI wants the same thing and used to say so one `text-truncate` at a
+ * time. */
+.mobile-row__text > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The search box above a library grid - Albums, Artists, Songs, Playlists,
+ * Radio and a genre's own page all put the same one there. It was six
+ * copies of `class="mb-4" style="max-width: 320px"`, which is how the six
+ * drift apart. Wide enough for a search term, never so wide it reads as
+ * the page's main input. */
+.library-search {
+  max-width: 320px;
+  margin-bottom: 16px;
+}
+
+/* The line a library page shows in place of its grid while something is
+ * loading or has gone wrong - the error banner and the spinner both sit
+ * here, above the content, with the same gap under them. */
+.view-notice {
+  margin-bottom: 16px;
+}
+
 /* ── Panels ───────────────────────────────────────────────────────────────
  * The app's one surface for a group of related things: Settings' sections,
  * the station cards on Radio, the field lists in the track-info dialog.
@@ -263,6 +291,47 @@ body {
    * popovers below, which are pinned above the bar rather than to the
    * button that opened them and so have to know how tall it is. */
   --beacon-player-bar-height: 88px;
+  /* How tall a dialog full of content is allowed to get. See .beacon-dialog
+   * below for what this is and why it isn't Vuetify's own ~90%. */
+  --beacon-dialog-max-height: 70vh;
+}
+
+/* ── Dialogs that hold content ────────────────────────────────────────────
+ * A dialog whose content can be arbitrarily long — a privacy sheet, a
+ * search result list, release notes, a track's fields — is capped rather
+ * than allowed to grow to the ~90% of the viewport Vuetify would give it.
+ * At that size the app behind it is reduced to a sliver at the top and
+ * bottom and the dialog reads as a takeover of the page; at 70vh the app
+ * bar and the player bar stay in view, so it reads as something opened
+ * *in* Beacon.
+ *
+ * The three declarations belong together and none of them is optional:
+ *
+ *   - `max-height` is the cap itself.
+ *   - the flex column plus `overflow-y: auto` on the body are what make the
+ *     content *scroll* inside the cap. Leaving that to v-dialog's own
+ *     `scrollable` is not enough — measured in a real browser, that left
+ *     .v-card-text at `overflow-y: visible`, so the card clipped at the cap
+ *     and everything past it was simply unreachable. The privacy sheet
+ *     shipped that way once; see its layout test, which is what now covers
+ *     this rule for every dialog wearing the class.
+ *
+ * Small dialogs (a rename form, a confirmation) do not want this: their
+ * content is a fixed few lines, and a cap on those only invents a scroll
+ * region nobody needs. */
+.beacon-dialog {
+  max-height: var(--beacon-dialog-max-height);
+  display: flex;
+  flex-direction: column;
+}
+
+/* No `min-height: 0` alongside, though a flex child usually needs one: an
+ * element whose own overflow is not `visible` already has an automatic
+ * minimum size of zero, which is exactly what lets this shrink and scroll.
+ * Left off rather than added defensively — measured both ways when the
+ * privacy sheet first hit this. */
+.beacon-dialog > .v-card-text {
+  overflow-y: auto;
 }
 
 /* Opt-in for plain v-list-item rows (genre/search results, anywhere else

@@ -12,21 +12,15 @@
     />
     <div class="hero-scrim" />
     <div class="hero-content">
-      <p class="hero-greeting">{{ greeting }}</p>
+      <p class="display-title hero-greeting">{{ greeting }}</p>
 
       <div v-if="loading" class="hero-body">
         <v-skeleton-loader type="image" width="132" height="132" class="hero-cover rounded" />
         <div class="hero-info min-width-0 hero-skel">
-          <v-skeleton-loader type="text" width="140" height="17" class="mb-1" />
+          <v-skeleton-loader type="text" width="140" height="17" class="hero-skel__eyebrow" />
           <v-skeleton-loader type="text" width="320" height="41" />
-          <v-skeleton-loader type="text" width="220" height="24" class="mt-1" />
-          <v-skeleton-loader
-            type="text"
-            width="180"
-            height="36"
-            class="mt-4"
-            style="border-radius: 9999px"
-          />
+          <v-skeleton-loader type="text" width="220" height="24" class="hero-skel__subtitle" />
+          <v-skeleton-loader type="text" width="180" height="36" class="hero-skel__button" />
         </div>
       </div>
       <div v-else-if="hasContent" class="hero-body">
@@ -47,14 +41,14 @@
           @loaded="loadedSrc = $event"
         />
         <div class="hero-info min-width-0">
-          <div class="eyebrow-label mb-1">{{ eyebrow }}</div>
-          <h1 class="detail-title hero-title text-truncate">
+          <div class="eyebrow-label hero-eyebrow">{{ eyebrow }}</div>
+          <h1 class="detail-title hero-title">
             <router-link v-if="titleTo" :to="titleTo" class="hero-title-link">{{
               title
             }}</router-link>
             <template v-else>{{ title }}</template>
           </h1>
-          <div class="hero-subtitle text-truncate">
+          <div class="hero-subtitle">
             <template v-if="artistName">
               <router-link
                 v-if="artistId"
@@ -73,7 +67,7 @@
             </template>
             <template v-else>{{ subtitle }}</template>
           </div>
-          <div class="hero-actions mt-4">
+          <div class="hero-actions">
             <v-btn
               color="primary"
               :prepend-icon="isPlayingThis ? 'mdi-pause' : 'mdi-play'"
@@ -227,7 +221,7 @@ export default {
   inset: -20px;
   background-size: cover;
   background-position: center;
-  filter: blur(38px) saturate(1.4) brightness(0.6);
+  filter: blur(38px) saturate(1.4) brightness(0.55);
   transform: scale(1.15);
   /* Two stacked instances of this, only one of them --active at a time —
    * this opacity transition is the crossfade itself. Same 0.6s as
@@ -260,8 +254,13 @@ export default {
   padding: 32px 36px;
 }
 
+/* .display-title on the element brings the serif face — spelling the stack
+ * out here is what let it drift from the one in base.css. The size, the
+ * italic and the weight are this greeting's own: it sits above the title
+ * rather than being one, so it stays at the body weight instead of the
+ * class's 600. */
 .hero-greeting {
-  font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  font-weight: 400;
   font-style: italic;
   font-size: 1.05rem;
   color: rgba(255, 255, 255, 0.7);
@@ -314,5 +313,36 @@ export default {
   margin: 0;
   width: 100%;
   height: 100%;
+}
+
+/* The band is a fixed height; both lines clip. */
+.hero-title,
+.hero-subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-eyebrow {
+  margin-bottom: 4px;
+}
+
+.hero-actions {
+  margin-top: 16px;
+}
+
+/* The placeholders mirror the real band's own gaps, so nothing shifts
+ * when the album arrives. */
+.hero-skel__eyebrow {
+  margin-bottom: 4px;
+}
+
+.hero-skel__subtitle {
+  margin-top: 4px;
+}
+
+.hero-skel__button {
+  margin-top: 16px;
+  border-radius: 9999px;
 }
 </style>

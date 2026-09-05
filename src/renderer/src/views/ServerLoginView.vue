@@ -1,15 +1,17 @@
 <template>
-  <v-card width="440" max-width="calc(100vw - 32px)" class="login-card pa-6">
-    <div class="login-header mb-6">
+  <v-card width="440" max-width="calc(100vw - 32px)" class="login-card">
+    <div class="login-header">
       <div class="login-icon-badge">
         <v-icon icon="mdi-lighthouse-on" size="26" color="primary" />
       </div>
-      <div class="eyebrow-label mt-3">{{ $t('auth.welcomeBack') }}</div>
+      <div class="eyebrow-label login-header__eyebrow">{{ $t('auth.welcomeBack') }}</div>
       <h1 class="display-title login-title">Beacon</h1>
-      <div class="text-body-medium text-medium-emphasis mt-1">{{ $t('auth.chooseServer') }}</div>
+      <div class="text-body-medium text-medium-emphasis login-header__hint">
+        {{ $t('auth.chooseServer') }}
+      </div>
     </div>
 
-    <div v-if="checkingLock" class="d-flex justify-center my-6">
+    <div v-if="checkingLock" class="server-login__checking">
       <v-progress-circular indeterminate color="primary" />
     </div>
 
@@ -17,7 +19,7 @@
       <!-- All three server types are selectable. Skipped entirely once
        - this deployment is itself locked to one specific server (see
        - `locked` below) — there's nothing left to choose either way. -->
-      <div v-if="!locked" class="server-type-grid mb-6">
+      <div v-if="!locked" class="server-type-grid">
         <button
           v-for="option in serverTypeOptions"
           :key="option.type"
@@ -45,7 +47,7 @@
         </button>
       </div>
 
-      <v-card-text class="pa-0">
+      <v-card-text class="login-body">
         <v-form @submit.prevent="submit">
           <!-- Keyed by selectedServerType alone (not the finer-grained
            - sub-states within one server's own flow — auth-mode tab,
@@ -104,7 +106,7 @@
                   :placeholder="serverUrlPlaceholder"
                   variant="solo-filled"
                   clearable
-                  class="mb-2 login-server-url"
+                  class="login-server-url"
                   name="url"
                   autocapitalize="off"
                   autocorrect="off"
@@ -129,7 +131,7 @@
                 <!-- Read-only, not just hidden — still worth showing which server
                  - this actually is, same reasoning as SettingsView.vue's own
                  - read-only server display post-login. -->
-                <p v-else-if="locked" class="text-body-small text-medium-emphasis mb-4">
+                <p v-else-if="locked" class="text-body-small text-medium-emphasis login-note">
                   {{ $t('auth.serverLocked', { url: serverUrl }) }}
                 </p>
 
@@ -142,7 +144,7 @@
                   :model-value="authMode"
                   :options="authModeOptions"
                   :label="$t('auth.password')"
-                  class="mb-4"
+                  class="login-auth-mode"
                   @update:model-value="setAuthMode($event)"
                 />
 
@@ -153,26 +155,26 @@
                 <template v-if="selectedServerType === 'plex'">
                   <p
                     v-if="!plexWaiting && !plexPickingServer"
-                    class="text-body-medium text-medium-emphasis mb-4"
+                    class="text-body-medium text-medium-emphasis login-note"
                   >
                     {{ $t('auth.plexHint') }}
                   </p>
                   <template v-else-if="plexPickingServer">
-                    <p class="text-body-medium text-medium-emphasis mb-3">
+                    <p class="text-body-medium text-medium-emphasis login-note login-note--tight">
                       {{ $t('auth.plexChooseServer') }}
                     </p>
                     <button
                       v-for="server in plexServers"
                       :key="server.machine_identifier"
                       type="button"
-                      class="plex-server-row mb-2"
+                      class="plex-server-row"
                       @click="choosePlexServer(server)"
                     >
                       {{ server.name }}
                     </button>
                   </template>
-                  <div v-else class="quick-connect-panel mb-4">
-                    <p class="text-body-medium text-medium-emphasis mb-2">
+                  <div v-else class="quick-connect-panel">
+                    <p class="text-body-medium text-medium-emphasis quick-connect-panel__hint">
                       {{ $t('auth.plexWaitingHint') }}
                     </p>
                     <v-progress-linear
@@ -180,25 +182,49 @@
                       color="primary"
                       height="4"
                       rounded
-                      class="mt-4"
+                      class="quick-connect-panel__progress"
                     />
                   </div>
                 </template>
                 <template v-else-if="quickConnectMode">
-                  <p v-if="!quickConnectCode" class="text-body-medium text-medium-emphasis mb-4">
+                  <p
+                    v-if="!quickConnectCode"
+                    class="text-body-medium text-medium-emphasis login-note"
+                  >
                     {{ $t('auth.quickConnectHint') }}
                   </p>
-                  <div v-else class="quick-connect-panel mb-4">
-                    <p class="text-body-medium text-medium-emphasis mb-2">
+                  <div v-else class="quick-connect-panel">
+                    <p class="text-body-medium text-medium-emphasis quick-connect-panel__hint">
                       {{ $t('auth.quickConnectApproveHint') }}
                     </p>
-                    <div class="quick-connect-code">{{ quickConnectCode }}</div>
+                    <!-- The code is read off this screen and typed into
+                     - Jellyfin on another device — which is a browser on
+                     - the same machine as often as not, where retyping six
+                     - characters by hand is pure friction. Beside the code
+                     - rather than under it: the panel is already tall, and
+                     - the button belongs to the one thing next to it. -->
+                    <div class="quick-connect-code-row">
+                      <div class="quick-connect-code">{{ quickConnectCode }}</div>
+                      <v-btn
+                        :icon="codeCopied ? 'mdi-check' : 'mdi-content-copy'"
+                        :color="codeCopied ? 'success' : undefined"
+                        variant="text"
+                        density="comfortable"
+                        :title="
+                          codeCopied
+                            ? $t('auth.quickConnectCodeCopied')
+                            : $t('auth.quickConnectCopyCode')
+                        "
+                        :aria-label="$t('auth.quickConnectCopyCode')"
+                        @click="copyQuickConnectCode"
+                      />
+                    </div>
                     <v-progress-linear
                       indeterminate
                       color="primary"
                       height="4"
                       rounded
-                      class="mt-4"
+                      class="quick-connect-panel__progress"
                     />
                   </div>
                 </template>
@@ -208,7 +234,7 @@
                     :label="$t('auth.username')"
                     variant="solo-filled"
                     clearable
-                    class="mb-2"
+                    class="login-field"
                     name="username"
                     autocapitalize="off"
                     autocorrect="off"
@@ -222,14 +248,19 @@
                     :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
                     variant="solo-filled"
                     clearable
-                    class="mb-2"
+                    class="login-field"
                     name="password"
                     autocomplete="current-password"
                     @click:append-inner="showPassword = !showPassword"
                   />
                 </template>
 
-                <v-alert v-if="authStore.loginError" type="error" variant="tonal" class="mb-4">
+                <v-alert
+                  v-if="authStore.loginError"
+                  type="error"
+                  variant="tonal"
+                  class="login-error"
+                >
                   {{ authStore.loginError }}
                 </v-alert>
 
@@ -340,6 +371,11 @@ export default {
       // resets this too (see selectServerType()).
       authMode: 'password' as 'password' | 'quickconnect',
       quickConnectCode: null as string | null,
+      // Flips the copy button to a checkmark for a moment. Local and
+      // short-lived on purpose — a toast for something this small would be
+      // louder than the action itself.
+      codeCopied: false,
+      codeCopiedTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       quickConnectSecret: null as string | null,
       quickConnectTimer: null as ReturnType<typeof setTimeout> | null,
       // Plex PIN-linking flow — see startPlexLogin()/pollPlexLogin(). Three
@@ -446,8 +482,33 @@ export default {
   beforeUnmount() {
     this.stopQuickConnectPolling()
     this.stopPlexPolling()
+    clearTimeout(this.codeCopiedTimer)
   },
   methods: {
+    /** Puts the Quick Connect code on the clipboard — it is meant to be
+     * entered into Jellyfin on another device, and that device is often a
+     * second window on this same machine.
+     *
+     * A failure is only logged, same as
+     * settings/RemoteControlPairingDialog.vue's own copy button: the code
+     * is on screen in a large monospace face either way, so the fallback
+     * is reading it, and the checkmark simply not appearing says clearly
+     * enough that nothing was copied. */
+    async copyQuickConnectCode() {
+      // The button only renders alongside a code, but the field is nullable
+      // until one has been requested.
+      if (!this.quickConnectCode) return
+      try {
+        await navigator.clipboard.writeText(this.quickConnectCode)
+        clearTimeout(this.codeCopiedTimer)
+        this.codeCopied = true
+        this.codeCopiedTimer = setTimeout(() => {
+          this.codeCopied = false
+        }, 2000)
+      } catch (error) {
+        console.error('[auth] Failed to copy the Quick Connect code:', error)
+      }
+    },
     selectServerType(option: { type: string; locked: boolean }) {
       if (option.locked) return
       this.selectedServerType = option.type as 'subsonic' | 'jellyfin' | 'plex'
@@ -770,6 +831,13 @@ export default {
 </script>
 
 <style scoped>
+/* The spinner shown while Beacon checks whether the server is locked. */
+.server-login__checking {
+  display: flex;
+  justify-content: center;
+  margin: 24px 0;
+}
+
 /* --beacon-chrome (base.css) — same solid dark tone as the rest of the
  * app's chrome, not the semi-transparent blur this used before. Opaque now,
  * so backdrop-filter: blur() has nothing left to blur — dropped along with
@@ -884,7 +952,7 @@ export default {
   gap: 8px;
   padding: 16px 8px 12px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--beacon-hairline);
   background: rgba(255, 255, 255, 0.03);
   font: inherit;
   color: inherit;
@@ -970,6 +1038,18 @@ export default {
   text-align: center;
 }
 
+/* The code and its copy button on one line, centred as a pair — which
+ * moves the code itself a little left of centre. At this size that reads
+ * as one object rather than as an off-centre code, and the alternative
+ * (holding the code dead centre and floating the button beside it) leaves
+ * the button drifting away from what it belongs to as the panel widens. */
+.quick-connect-code-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
 .quick-connect-code {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 2rem;
@@ -986,8 +1066,8 @@ export default {
   display: block;
   width: 100%;
   padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  border: 1px solid var(--beacon-hairline);
   background: rgba(255, 255, 255, 0.03);
   font: inherit;
   font-size: 0.9rem;
@@ -1008,5 +1088,60 @@ export default {
 .plex-server-row:focus-visible {
   outline: 2px solid rgb(var(--v-theme-primary));
   outline-offset: 2px;
+}
+
+/* The sign-in card's own rhythm. It had been a dozen Vuetify spacing
+ * classes in the markup, which is why the same kind of element - a hint
+ * paragraph, a field - carried three different gaps depending on which
+ * branch of the form it happened to sit in. */
+.login-card {
+  padding: 24px;
+}
+
+.login-header,
+.server-type-grid,
+.quick-connect-panel,
+.login-error {
+  margin-bottom: 24px;
+}
+
+.login-header__eyebrow {
+  margin-top: 12px;
+}
+
+.login-header__hint {
+  margin-top: 4px;
+}
+
+.login-body {
+  padding: 0;
+}
+
+/* One gap for every field in the form, whichever server type is chosen. */
+.login-field,
+.login-server-url,
+.plex-server-row {
+  margin-bottom: 8px;
+}
+
+/* A line of explanation above a form or a code. */
+.login-note {
+  margin-bottom: 16px;
+}
+
+.login-note--tight {
+  margin-bottom: 12px;
+}
+
+.login-auth-mode {
+  margin-bottom: 16px;
+}
+
+.quick-connect-panel__hint {
+  margin-bottom: 8px;
+}
+
+.quick-connect-panel__progress {
+  margin-top: 16px;
 }
 </style>

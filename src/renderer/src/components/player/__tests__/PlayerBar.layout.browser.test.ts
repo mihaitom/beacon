@@ -174,8 +174,8 @@ describe('PlayerBar layout', () => {
     )
 
     const info = rect('.song-info')
-    const text = rect('.song-info .min-width-0')
-    const title = document.querySelector('.song-info .min-width-0 > div') as HTMLElement
+    const text = rect('.song-info .song-info__labels')
+    const title = document.querySelector('.song-info .song-info__labels > div') as HTMLElement
 
     expect(Math.round(info.width)).toBe(434)
     // Everything the cover and its margin leave — well past the ~240px the

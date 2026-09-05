@@ -1,15 +1,15 @@
 <template>
   <v-container fluid>
-    <div class="mb-8">
-      <p class="eyebrow-label mb-2">{{ $t('stats.eyebrow') }}</p>
+    <div class="stats-header">
+      <p class="eyebrow-label stats-header__eyebrow">{{ $t('stats.eyebrow') }}</p>
       <h1 class="page-title">{{ $t('stats.title') }}</h1>
     </div>
 
     <page-loader v-if="loading && songs.length === 0" />
 
     <template v-else>
-      <section class="mb-10">
-        <h2 class="section-title mb-4">{{ $t('stats.libraryTitle') }}</h2>
+      <section>
+        <h2 class="section-title">{{ $t('stats.libraryTitle') }}</h2>
         <div class="stat-grid">
           <div class="stat-tile">
             <div class="stat-tile__value detail-title">{{ formatNumber(totalSongs) }}</div>
@@ -36,8 +36,8 @@
         </div>
       </section>
 
-      <section class="mb-10">
-        <h2 class="section-title mb-4">{{ $t('stats.listeningTitle') }}</h2>
+      <section>
+        <h2 class="section-title">{{ $t('stats.listeningTitle') }}</h2>
         <div class="stat-grid">
           <div class="stat-tile stat-tile--highlight">
             <div class="stat-tile__value detail-title">{{ formatNumber(totalPlays) }}</div>
@@ -68,25 +68,25 @@
         </div>
       </section>
 
-      <v-alert v-if="totalPlays === 0" type="info" variant="tonal" class="mb-10">
+      <v-alert v-if="totalPlays === 0" type="info" variant="tonal" class="stats-empty">
         {{ $t('stats.noPlaysYet') }}
       </v-alert>
 
-      <div v-else class="pair-grid mb-10">
+      <div v-else class="pair-grid">
         <section>
-          <h2 class="section-title mb-4">{{ $t('stats.topSongs') }}</h2>
+          <h2 class="section-title">{{ $t('stats.topSongs') }}</h2>
           <ranked-list :items="topSongs" value-icon="mdi-play" />
         </section>
         <section>
-          <h2 class="section-title mb-4">{{ $t('stats.topArtists') }}</h2>
+          <h2 class="section-title">{{ $t('stats.topArtists') }}</h2>
           <ranked-list :items="topArtists" value-icon="mdi-play" />
         </section>
         <section>
-          <h2 class="section-title mb-4">{{ $t('stats.topAlbums') }}</h2>
+          <h2 class="section-title">{{ $t('stats.topAlbums') }}</h2>
           <ranked-list :items="topAlbums" value-icon="mdi-play" />
         </section>
         <section>
-          <h2 class="section-title mb-4">{{ $t('stats.topGenres') }}</h2>
+          <h2 class="section-title">{{ $t('stats.topGenres') }}</h2>
           <ranked-list :items="topGenres" value-icon="mdi-play" />
         </section>
       </div>
@@ -97,11 +97,11 @@
        - afterthought on its own row. -->
       <div v-if="formatBreakdown.length || decadeBreakdown.length" class="pair-grid">
         <section v-if="formatBreakdown.length">
-          <h2 class="section-title mb-4">{{ $t('stats.formatsTitle') }}</h2>
+          <h2 class="section-title">{{ $t('stats.formatsTitle') }}</h2>
           <ranked-list :items="formatBreakdown" />
         </section>
         <section v-if="decadeBreakdown.length">
-          <h2 class="section-title mb-4">{{ $t('stats.decadesTitle') }}</h2>
+          <h2 class="section-title">{{ $t('stats.decadesTitle') }}</h2>
           <ranked-list :items="decadeBreakdown" />
         </section>
       </div>
@@ -355,6 +355,28 @@ export default {
 </script>
 
 <style scoped>
+/* The page's own vertical rhythm: every top-level block on it is followed
+ * by the same gap, so a section added later lines up without being told
+ * to. The heading inside a section sits closer to its own content than
+ * the sections do to each other. */
+.pair-grid,
+.stats-empty,
+.v-container > section {
+  margin-bottom: 40px;
+}
+
+.stats-header {
+  margin-bottom: 32px;
+}
+
+.stats-header__eyebrow {
+  margin-bottom: 8px;
+}
+
+.section-title {
+  margin-bottom: 16px;
+}
+
 .stat-grid {
   display: flex;
   flex-wrap: wrap;

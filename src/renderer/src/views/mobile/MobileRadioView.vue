@@ -35,7 +35,7 @@
       />
     </sticky-filter>
 
-    <v-progress-circular v-if="showSkeletons" indeterminate class="mb-4" />
+    <v-progress-circular v-if="showSkeletons" indeterminate class="view-notice" />
 
     <!-- Rows, not the desktop's grid of bordered tiles: a grid collapses to
        - one tile per line at this width anyway, so all the box around each
@@ -73,7 +73,7 @@
             :label="$t('common.name')"
             variant="solo-filled"
             clearable
-            class="mb-2"
+            class="radio-form__field"
           />
           <v-text-field
             v-model="formStreamUrl"
@@ -81,7 +81,7 @@
             placeholder="https://..."
             variant="solo-filled"
             clearable
-            class="mb-2"
+            class="radio-form__field"
           />
           <v-text-field
             v-model="formHomePageUrl"
@@ -215,5 +215,10 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* The add/edit station form: URL-shaped fields in a column. */
+.radio-form__field {
+  margin-bottom: 8px;
 }
 </style>

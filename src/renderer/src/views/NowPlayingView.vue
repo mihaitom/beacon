@@ -176,8 +176,8 @@
               </div>
 
               <div class="now-playing__info">
-                <div class="eyebrow-label mb-2">{{ eyebrow }}</div>
-                <h1 class="detail-title now-playing__title mb-2">
+                <div class="eyebrow-label">{{ eyebrow }}</div>
+                <h1 class="detail-title now-playing__title">
                   {{
                     currentSong?.title ??
                     playbackStore.radioNowPlaying ??
@@ -187,7 +187,7 @@
                 <router-link
                   v-if="currentSong"
                   :to="`/artists/${currentSong.artistId}`"
-                  class="text-title-large text-medium-emphasis now-playing__artist-link mb-2"
+                  class="text-title-large text-medium-emphasis now-playing__artist-link"
                 >
                   {{ currentSong.artist }}
                 </router-link>
@@ -201,11 +201,11 @@
                  - here would just be noise. -->
                 <div
                   v-else-if="playbackStore.radioNowPlaying"
-                  class="text-title-large text-medium-emphasis now-playing__radio-tag mb-2"
+                  class="text-title-large text-medium-emphasis now-playing__radio-tag"
                 >
                   {{ playbackStore.radioStation?.name }}
                 </div>
-                <div v-else class="text-title-large text-medium-emphasis mb-2" />
+                <div v-else class="text-title-large text-medium-emphasis" />
                 <router-link
                   v-if="currentSong"
                   :to="`/albums/${currentSong.albumId}`"
@@ -436,8 +436,18 @@ export default {
     // cover ends up with four pixels of air either side, which reads as a
     // layout mistake rather than as a big cover.
     artSize(): string {
+      // The third term is what the *rest* of the compact column needs out of
+      // the same height: .now-playing__content's 12px top and bottom, the
+      // 16px under the artwork, and the eyebrow/title/artist block, which
+      // measures a little over 50px. 58cqh alone describes a tall stage
+      // correctly and a short one not at all — a phone on its side leaves
+      // roughly 190px here, where 58% is 112px and everything else still
+      // wants its 94px, so the artwork was sized past what was left and
+      // the stage's `overflow: hidden` clipped through the title. The floor
+      // comes down with it: a 120px minimum is itself taller than such a
+      // stage can spare.
       return this.compact
-        ? 'clamp(120px, min(58cqh, 90cqw), 480px)'
+        ? 'clamp(88px, min(58cqh, 90cqw, calc(100cqh - 100px)), 480px)'
         : 'clamp(180px, min(70cqh, 50cqw), 900px)'
     },
     // Backed by the same store flag PlayerBar's lyrics button drives
@@ -501,9 +511,14 @@ export default {
       if (this.playbackStore.radioStation) return this.$t('home.radioEyebrow')
       return ''
     },
+    /** Feeds the backdrop and the colour extraction, not the artwork on
+     * screen — that one is <cover-art> above with its own size. 300 because
+     * every backdrop in the app asks for that (see docs/styleguide.md), so
+     * they share one cached image instead of each holding a private
+     * resolution. */
     coverArtUrl(): string | null {
       const id = this.currentSong?.coverArtId
-      return id ? useLibraryStore().client().coverArtUrl(id, 400) : null
+      return id ? useLibraryStore().client().coverArtUrl(id, 300) : null
     },
     // The biggest single spot in the whole app for one of these — 512 asks
     // for whatever's largest a station's homepage actually declares (see
@@ -711,15 +726,18 @@ export default {
   background: #12141c;
 }
 
-/* Full-bleed blurred artwork — same technique as DetailHeader.vue's
- * .detail-header__backdrop (blur + oversized + scaled so the blur radius
- * never reveals a hard edge at the viewport bounds). */
+/* Full-bleed blurred artwork — the app's one backdrop recipe, shared with
+ * DetailHeader.vue, HeroBand.vue and SongInfoDialog.vue (see
+ * docs/styleguide.md). Oversized and scaled so the blur radius never
+ * reveals a hard edge at the bounds; at this blur the scale alone already
+ * covers far more than the radius needs on a full-bleed surface, which is
+ * why the inset is the same modest -20px as everywhere else. */
 .now-playing__backdrop {
   position: absolute;
-  inset: -60px;
+  inset: -20px;
   background-size: cover;
   background-position: center;
-  filter: blur(50px) saturate(1.3) brightness(0.5);
+  filter: blur(38px) saturate(1.4) brightness(0.55);
   transform: scale(1.15);
   /* Two stacked instances of this, only one of which is --active
    * (opacity: 1) at a time — this opacity transition is what actually
@@ -1361,5 +1379,12 @@ export default {
 
 .now-playing--compact .now-playing__info .now-playing__album-link {
   font-size: clamp(0.68rem, min(1.8cqw, 2.4cqh), 1rem);
+}
+
+/* The eyebrow, the title and the artist line, evenly spaced. artSize's own
+ * third term counts on this block's height (see its comment), so the gaps
+ * live here as one rule rather than as a margin on each line. */
+.now-playing__info > * {
+  margin-bottom: 8px;
 }
 </style>

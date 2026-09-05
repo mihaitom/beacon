@@ -7,8 +7,8 @@
       class="mobile-row__art"
     />
     <div class="mobile-row__text">
-      <div class="text-body-medium text-truncate">{{ playlist.name }}</div>
-      <div class="text-body-small text-medium-emphasis text-truncate">{{ meta }}</div>
+      <div class="text-body-medium">{{ playlist.name }}</div>
+      <div class="text-body-small text-medium-emphasis">{{ meta }}</div>
     </div>
     <!-- Always visible — no hover state to reveal it on touch (this is what
      - made the desktop PlaylistRow.vue unusable here, see the mobile plan's

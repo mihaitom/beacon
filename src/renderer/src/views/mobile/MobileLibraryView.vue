@@ -31,7 +31,7 @@
       />
     </sticky-filter>
 
-    <v-progress-circular v-if="libraryStore.loading" indeterminate class="mb-4" />
+    <v-progress-circular v-if="libraryStore.loading" indeterminate class="view-notice" />
 
     <div class="mobile-library__list">
       <template v-if="showingSongs">
@@ -53,7 +53,13 @@
       </template>
     </div>
 
-    <v-btn v-if="hasMore" block variant="tonal" class="mt-3" @click="pageSize += PAGE_SIZE">
+    <v-btn
+      v-if="hasMore"
+      block
+      variant="tonal"
+      class="mobile-library__more"
+      @click="pageSize += PAGE_SIZE"
+    >
       {{ $t('common.loadMore') }}
     </v-btn>
 
@@ -207,8 +213,18 @@ export default {
       this.debouncedQuery = term
       this.pageSize = PAGE_SIZE
     },
+    /** The tapped song alone, not the list around it. This list is the
+     * whole catalogue, or whatever a search term happened to match - a set
+     * of matches rather than a sequence anyone meant to hear in order, so
+     * playing one of them must not queue the rest behind it. Same rule as
+     * SongsView and the search results on the desktop (SongTable.vue's
+     * `queueWholeList`), and as this view's own action sheet, whose Play
+     * already did exactly this - tapping the row and picking Play from the
+     * "..." menu were two different actions until now. */
     async play(index: number) {
-      await usePlaybackStore().playSongList(this.visibleSongs, index)
+      const song = this.visibleSongs[index]
+      if (!song) return
+      await usePlaybackStore().playSongList([song], 0)
     },
     /** Natural track order, not shuffled, and pinFirst false — an album is
      * a deliberately-sequenced work rather than a pile of songs. Same call
@@ -235,5 +251,10 @@ export default {
 .mobile-library__list {
   display: flex;
   flex-direction: column;
+}
+
+/* The "load more" button, set off from the last row above it. */
+.mobile-library__more {
+  margin-top: 12px;
 }
 </style>

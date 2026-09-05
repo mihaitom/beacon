@@ -26,11 +26,10 @@
         variant="solo-filled"
         density="compact"
         clearable
-        class="mb-4"
-        style="max-width: 320px"
+        class="library-search"
       />
     </sticky-filter>
-    <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="mb-4">
+    <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
       {{ libraryStore.error }}
     </v-alert>
     <!-- Placeholders in the grid's own place, not a spinner above it: a
@@ -40,13 +39,13 @@
      - loading a playlist's songs) sets it too, and swapping a full grid for
      - placeholders because of one of those would be worse than the jump it
      - replaced. -->
-    <div v-if="showSkeletons" class="playlists-view__grid mb-6">
+    <div v-if="showSkeletons" class="playlists-view__grid">
       <tile-skeleton v-for="n in SKELETON_TILES" :key="n" />
     </div>
 
     <template v-if="personalPlaylists.length">
-      <h2 class="section-title mb-2">{{ $t('playlists.personal') }}</h2>
-      <div class="playlists-view__grid mb-6">
+      <h2 class="section-title">{{ $t('playlists.personal') }}</h2>
+      <div class="playlists-view__grid">
         <playlist-tile
           v-for="playlist in personalPlaylists"
           :key="playlist.id"
@@ -61,7 +60,7 @@
     </template>
 
     <template v-if="globalPlaylists.length">
-      <h2 class="section-title mb-2">{{ $t('playlists.global') }}</h2>
+      <h2 class="section-title">{{ $t('playlists.global') }}</h2>
       <div class="playlists-view__grid">
         <playlist-tile
           v-for="playlist in globalPlaylists"
@@ -247,5 +246,15 @@ export default {
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
+}
+
+/* A heading sits close to the grid it names; the grids themselves are
+ * further apart, so "Personal" and "Shared" read as two blocks. */
+.section-title {
+  margin-bottom: 8px;
+}
+
+.playlists-view__grid {
+  margin-bottom: 24px;
 }
 </style>

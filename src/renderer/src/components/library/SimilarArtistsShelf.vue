@@ -27,7 +27,7 @@
     <template v-if="loading">
       <div v-for="n in skeletonCount" :key="`skeleton-${n}`" class="similar-artists-card">
         <v-skeleton-loader type="image" width="160" height="160" class="rounded" />
-        <v-skeleton-loader type="text" width="70%" height="20" class="mt-2 mx-auto" />
+        <v-skeleton-loader type="text" width="70%" height="20" class="similar-skeleton__label" />
         <!-- Stands in for the row of service links, not for a second line
          - of text: 18px icons with the 6px of space above them the real
          - row has (see .similar-artists-card-links). -->
@@ -65,7 +65,7 @@
         fallback-icon="mdi-account-music"
         class="similar-artists-card-art"
       />
-      <div class="similar-artists-card-name text-body-medium mt-2 text-truncate">
+      <div class="similar-artists-card-name text-body-medium">
         {{ artist.name }}
       </div>
       <div class="similar-artists-card-links">
@@ -275,7 +275,7 @@ export default {
 
 .similar-artists-card-link:hover {
   opacity: 1;
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: var(--beacon-hover);
 }
 
 .similar-artists-card-link-icon {
@@ -286,5 +286,22 @@ export default {
 
 .similar-artists-card-link-icon--invert {
   filter: invert(1);
+}
+
+/* An artist's name under a small round photo. */
+.similar-artists-card-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.similar-artists-card-name {
+  margin-top: 8px;
+}
+
+/* Same gap as .similar-artists-card-name, centred like the real one. */
+.similar-skeleton__label {
+  margin-top: 8px;
+  margin-inline: auto;
 }
 </style>

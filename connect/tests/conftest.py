@@ -216,7 +216,7 @@ def _reaches_real_hardware(host: str) -> bool:
 
 
 @pytest.fixture(autouse=True)
-def _no_real_device_network(monkeypatch):
+def _no_real_device_network(monkeypatch, request):
     """Fail any attempt to open a socket to a real device on this LAN, for
     every test in the suite.
 
@@ -247,7 +247,18 @@ def _no_real_device_network(monkeypatch):
 
     A test that legitimately needs a connection this still blocks should
     mock the call it is exercising - that is what this makes unmissable,
-    by failing loudly instead of quietly reaching hardware."""
+    by failing loudly instead of quietly reaching hardware.
+
+    The one exception is the `live` suites, whose entire purpose is a real
+    connection to a real server on this LAN (test_bridges_live.py: a
+    Jellyfin, Plex or Navidrome the developer actually runs). Mocking the
+    call there would delete the test. They are excluded from the default
+    run by `-m 'not live'` in pyproject.toml, so this only opens up when
+    someone asks for them by name - and none of them talks to a speaker,
+    which is what this guard exists to protect."""
+    if request.node.get_closest_marker("live"):
+        return
+
     import socket
 
     real_connect = socket.socket.connect

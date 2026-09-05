@@ -7,33 +7,28 @@
    - left clickable is the artwork and the space around it, which opens Now
    - Playing, plus a song's own artist link. -->
   <div
-    class="song-info d-flex align-center"
+    class="song-info"
     :class="{ 'song-info--clickable': hasPlayable }"
     @click="hasPlayable && $router.push('/now-playing')"
   >
-    <cover-art
-      v-if="currentSong"
-      :cover-art-id="currentSong.coverArtId"
-      :size="48"
-      class="cover mr-3"
-    />
+    <cover-art v-if="currentSong" :cover-art-id="currentSong.coverArtId" :size="48" class="cover" />
     <cover-art
       v-else-if="playbackStore.radioStation"
       :radio-favicon="radioFavicon"
       :size="48"
       fallback-icon="mdi-radio"
-      class="cover mr-3"
+      class="cover"
     />
     <!-- A song's labels stay part of the block's own click (its title is
      - one more way to reach Now Playing, and its artist is a real link).
      - Radio's are text and nothing else: neither line has anywhere of its
      - own to lead, so neither pretends to. -->
     <div
-      class="min-width-0"
+      class="song-info__labels"
       :class="{ 'song-info__labels--inert': !currentSong }"
       @click="onLabelsClick"
     >
-      <div class="text-body-medium text-truncate">
+      <div class="text-body-medium">
         {{
           currentSong?.title ??
           playbackStore.radioNowPlaying ??
@@ -44,7 +39,7 @@
       <router-link
         v-if="currentSong"
         :to="`/artists/${currentSong.artistId}`"
-        class="text-body-small text-medium-emphasis text-truncate artist-link"
+        class="text-body-small text-medium-emphasis artist-link"
         @click.stop
       >
         {{ currentSong.artist }}
@@ -56,13 +51,10 @@
        - (mirrors the top label's own fallback chain above); with no tag the
        - station name already sits up there, so repeating it here would
        - just be noise. -->
-      <div
-        v-else-if="playbackStore.radioNowPlaying"
-        class="text-body-small text-medium-emphasis text-truncate"
-      >
+      <div v-else-if="playbackStore.radioNowPlaying" class="text-body-small text-medium-emphasis">
         {{ playbackStore.radioStation?.name }}
       </div>
-      <div v-else class="text-body-small text-medium-emphasis text-truncate" />
+      <div v-else class="text-body-small text-medium-emphasis" />
     </div>
     <v-btn
       v-if="currentSong && authStore.capabilities.favorites"
@@ -156,6 +148,8 @@ export default {
  * automatic minimum is its content, which would otherwise stop the text
  * inside from ever truncating. */
 .song-info {
+  display: flex;
+  align-items: center;
   min-width: 0;
 }
 
@@ -172,10 +166,11 @@ export default {
   flex-shrink: 0;
 }
 
-/* Block, not the anchor's default inline — text-truncate (overflow/
- * white-space/ellipsis) needs a constrained box to truncate against,
- * which an inline element sitting in normal block flow doesn't have here
- * (this row isn't itself a flex item, see .min-width-0 above it). */
+/* Block, not the anchor's default inline — the ellipsis rule on
+ * .song-info__labels' children needs a constrained box to truncate
+ * against, which an inline element sitting in normal block flow doesn't
+ * have here (this row isn't itself a flex item, see .song-info__labels
+ * above it). */
 .artist-link {
   display: block;
   text-decoration: none;
@@ -188,7 +183,19 @@ export default {
 /* Without min-width: 0, a flex item refuses to shrink below its content's
  * natural width by default — the title/artist text wouldn't truncate at
  * all, just push the star button (and this whole row) wider instead. */
-.min-width-0 {
+.song-info__labels {
   min-width: 0;
+}
+
+/* Every line in the player bar clips: the bar is a fixed height, and a
+ * radio station's ICY tag arrives as one long "Artist - Title" string. */
+.song-info__labels > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cover {
+  margin-right: 12px;
 }
 </style>

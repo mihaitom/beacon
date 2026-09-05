@@ -5,7 +5,7 @@
     inset
     height="60"
     color="#0B0D13"
-    class="mobile-player-bar px-3"
+    class="mobile-player-bar"
     @click="$router.push('/m/now-playing')"
   >
     <!-- The same artwork size the list rows above this bar use
@@ -33,12 +33,12 @@
      - backend was already watching for (services/connect/radioMetadata.ts)
      - never appeared anywhere on a phone except Now Playing. -->
     <div class="mobile-player-bar__labels">
-      <div class="text-body-medium text-truncate">
+      <div class="text-body-medium">
         {{
           currentSong?.title ?? playbackStore.radioNowPlaying ?? playbackStore.radioStation?.name
         }}
       </div>
-      <div class="text-body-small text-medium-emphasis text-truncate">
+      <div class="text-body-small text-medium-emphasis">
         {{ currentSong?.artist ?? (playbackStore.radioNowPlaying ? radioStationName : '') }}
       </div>
     </div>
@@ -122,5 +122,16 @@ export default {
 .mobile-player-bar__labels {
   flex: 1;
   min-width: 0;
+}
+
+/* The strip is a fixed height; both lines clip. */
+.mobile-player-bar__labels > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-player-bar {
+  padding-inline: 12px;
 }
 </style>

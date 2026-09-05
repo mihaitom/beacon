@@ -9,11 +9,11 @@
       <v-icon v-else :icon="typeIcon" size="20" />
 
       <div class="mobile-device-row__info min-width-0">
-        <div class="text-body-medium text-truncate">{{ device.name }}</div>
-        <div v-if="needsPairing" class="text-body-small text-medium-emphasis text-truncate">
+        <div class="text-body-medium">{{ device.name }}</div>
+        <div v-if="needsPairing" class="text-body-small text-medium-emphasis">
           {{ $t('mobile.needsPairing') }}
         </div>
-        <div v-else-if="claimedByOther" class="text-body-small device-row__claimed text-truncate">
+        <div v-else-if="claimedByOther" class="text-body-small device-row__claimed">
           {{
             device.in_use_by_name
               ? $t('connect.inUseBy', { name: device.in_use_by_name })
@@ -42,7 +42,7 @@
      - has no touch equivalent) for every currently active, volume-capable
      - target — same rule the LAN remote's devices.js already validated. -->
     <div v-if="showVolume" class="mobile-device-row__volume">
-      <v-icon icon="mdi-volume-high" size="18" class="mr-2" />
+      <v-icon icon="mdi-volume-high" size="18" class="mobile-device-row__volume-icon" />
       <v-slider
         :model-value="volume ?? 0"
         :max="100"
@@ -259,5 +259,16 @@ export default {
 
 .min-width-0 {
   min-width: 0;
+}
+
+/* A device's name and status each stay on one line. */
+.mobile-device-row__info > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-device-row__volume-icon {
+  margin-right: 8px;
 }
 </style>

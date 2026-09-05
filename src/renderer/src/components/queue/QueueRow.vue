@@ -1,6 +1,6 @@
 <template>
   <div
-    class="queue-row d-flex align-center px-2"
+    class="queue-row"
     :class="{
       'queue-row--current': isCurrent,
       'queue-row--drag-over-before': dragOverPosition === 'before',
@@ -16,7 +16,7 @@
     <v-icon
       icon="mdi-drag-vertical"
       size="18"
-      class="queue-row__handle text-medium-emphasis mr-1"
+      class="queue-row__handle text-medium-emphasis"
       draggable="true"
       @click.stop
       @dragstart="$emit('dragstart', $event)"
@@ -30,12 +30,12 @@
       <v-icon v-if="audible" icon="mdi-volume-high" size="14" color="primary" />
       <template v-else>{{ index + 1 }}</template>
     </div>
-    <cover-art :cover-art-id="song.coverArtId" :size="36" class="queue-row__cover mx-2" />
-    <div class="queue-row__info min-width-0 flex-grow-1">
-      <div class="text-body-medium text-truncate" :class="{ 'text-primary': isCurrent }">
+    <cover-art :cover-art-id="song.coverArtId" :size="36" class="queue-row__cover" />
+    <div class="queue-row__info">
+      <div class="text-body-medium" :class="{ 'text-primary': isCurrent }">
         {{ song.title }}
       </div>
-      <div class="text-body-small text-medium-emphasis text-truncate">{{ song.artist }}</div>
+      <div class="text-body-small text-medium-emphasis">{{ song.artist }}</div>
     </div>
     <span class="text-body-small text-medium-emphasis queue-row__duration">{{
       formattedDuration
@@ -114,6 +114,9 @@ export default {
 
 <style scoped>
 .queue-row {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
   height: 56px;
   cursor: pointer;
   border-top: 2px solid transparent;
@@ -174,6 +177,7 @@ export default {
 }
 
 .queue-row__info {
+  flex: 1;
   min-width: 0;
 }
 
@@ -184,5 +188,20 @@ export default {
 
 .min-width-0 {
   min-width: 0;
+}
+
+/* Title and artist each stay on their own single line. */
+.queue-row__info > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-row__handle {
+  margin-right: 4px;
+}
+
+.queue-row__cover {
+  margin-inline: 8px;
 }
 </style>

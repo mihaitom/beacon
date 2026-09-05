@@ -39,11 +39,10 @@
         variant="solo-filled"
         density="compact"
         clearable
-        class="mb-4"
-        style="max-width: 320px"
+        class="library-search"
       />
     </sticky-filter>
-    <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="mb-4">
+    <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
       {{ libraryStore.error }}
     </v-alert>
     <song-table

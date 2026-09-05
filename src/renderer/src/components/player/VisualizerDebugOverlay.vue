@@ -1,5 +1,21 @@
 <template>
   <div v-if="debugSyncEnabled && debug" class="visualizer-debug-overlay">
+    <!-- A legend rather than a v-tooltip per line, which was the first
+     - thought: these numbers are read against each other while something
+     - is playing, so what each one means has to be on screen at the same
+     - time as all of them, not one at a time under a pointer that is busy
+     - hovering somewhere else. Folded away by default — it is four lines
+     - of prose over the artwork, and this overlay has already been in the
+     - way twice (see the component comment below). -->
+    <button
+      type="button"
+      class="visualizer-debug-overlay__help"
+      :aria-expanded="showLegend"
+      :title="showLegend ? 'Hide what these mean' : 'What do these mean?'"
+      @click="showLegend = !showLegend"
+    >
+      {{ showLegend ? '×' : '?' }}
+    </button>
     <div>Visualizer: {{ debug.visualizer.toFixed(2) }}s</div>
     <div>Cast: {{ debug.cast.toFixed(2) }}s</div>
     <div
@@ -20,6 +36,27 @@
         debug.lead.measured ? 'measured' : 'guessed'
       }})
     </div>
+
+    <dl v-if="showLegend" class="visualizer-debug-overlay__legend">
+      <dt>Visualizer</dt>
+      <dd>Position the bars are being drawn for.</dd>
+      <dt>Cast</dt>
+      <dd>Position the cast clock reports for that same moment.</dd>
+      <dt>Δ</dt>
+      <dd>
+        The two subtracted. Holding still is what matters: a value that keeps growing means the two
+        clocks run at different speeds. A large but <em>constant</em> offset is a calibration gap
+        instead — both sides are re-based to the same zero, so it should settle near it. Red past
+        0.75s. It says the clocks disagree, not which one is wrong.
+      </dd>
+      <template v-if="debug.lead">
+        <dt>Lead</dt>
+        <dd>
+          Sonos radio only: how far ahead of the speaker the relay runs.
+          <em>measured</em> = a real reading landed, <em>guessed</em> = still the fixed fallback.
+        </dd>
+      </template>
+    </dl>
   </div>
 </template>
 
@@ -64,6 +101,10 @@ export default {
       // that needs to react to Settings being changed in another window
       // mid-session.
       debugSyncEnabled: false,
+      // Per visit, not remembered: whoever opens this is reading it once to
+      // learn what the four lines are, and wants the numbers unobstructed
+      // afterwards.
+      showLegend: false,
     }
   },
   computed: {
@@ -109,19 +150,89 @@ export default {
 </script>
 
 <style scoped>
+/* Wide enough for the legend's prose when it is open, but only then — the
+ * numbers themselves are short, and a permanently wide box sits over more
+ * of the artwork than it needs to. */
+.visualizer-debug-overlay:has(.visualizer-debug-overlay__legend) {
+  max-width: 320px;
+}
+
+/* Sits in the top corner beside the first reading rather than above it, so
+ * opening the legend does not push the numbers down the screen. */
+.visualizer-debug-overlay__help {
+  float: right;
+  margin-left: 10px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: inherit;
+  font: inherit;
+  line-height: 16px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.visualizer-debug-overlay__help:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.visualizer-debug-overlay__legend {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  /* Prose, unlike the readings above it, which are figures kept in a
+   * monospace column so they line up as they tick. `inherit` would have
+   * taken that monospace with it. */
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.visualizer-debug-overlay__legend dt {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.visualizer-debug-overlay__legend dd {
+  margin: 0 0 6px;
+}
+
+.visualizer-debug-overlay__legend dd:last-child {
+  margin-bottom: 0;
+}
+
+/* The keywords the Lead line actually prints, coloured as it prints them.
+ * Plain italics elsewhere in the legend: <em> there is emphasis in a
+ * sentence, not a value being quoted. */
+.visualizer-debug-overlay__legend dd:last-child em {
+  font-style: normal;
+  color: rgba(140, 255, 170, 0.95);
+}
+
 /* Fixed dark backdrop rather than a theme-aware one on purpose: this can
    sit over a blurred artwork backdrop or the visualizer's own colored
    bars, not over the app's ordinary surface, so it needs to stay readable
    regardless of the current theme rather than blending into it. */
 .visualizer-debug-overlay {
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: 8px;
   background: rgba(0, 0, 0, 0.55);
   color: rgba(255, 255, 255, 0.92);
   font-family: ui-monospace, 'SF Mono', Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
   user-select: text;
+  min-width: 200px;
 }
 
 .visualizer-debug-overlay-delta {

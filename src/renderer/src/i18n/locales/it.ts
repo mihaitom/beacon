@@ -53,6 +53,8 @@ export default {
       "Richiedi un codice e inseriscilo su un altro dispositivo in cui hai già effettuato l'accesso (oppure nell'interfaccia web di Jellyfin, in Profilo → Connessione rapida) per accedere qui.",
     quickConnectApproveHint: 'Inserisci questo codice su un altro dispositivo per accedere:',
     quickConnectRequestCode: 'Richiedi codice',
+    quickConnectCopyCode: 'Copia codice',
+    quickConnectCodeCopied: 'Copiato',
     plexHint:
       'Ti autentica tramite il tuo account Plex: si aprirà una scheda del browser in cui accedere a Plex e approvare la richiesta.',
     plexSignIn: 'Accedi con Plex',

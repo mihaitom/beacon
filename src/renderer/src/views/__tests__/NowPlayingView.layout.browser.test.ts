@@ -278,8 +278,15 @@ describe('NowPlayingView layout', () => {
     // wider than the screen. How *close* to the screen it should get is
     // NowPlayingView.compact.layout.browser.test.ts's subject, measured
     // against the room actually available rather than against a number.
+    //
+    // The floor is 88px, not the 120px it used to be: a phone on its side
+    // leaves the stage under 200px, and a 120px minimum was taller than
+    // such a stage could spare once the title block below the artwork was
+    // counted (see artSize). This view is mounted on its own here, so its
+    // stage has no height at all and the floor is the only thing sizing
+    // the artwork — which is exactly what this line is pinning down.
     const art = rect(wrapper.get('.now-playing__art-wrap').element)
-    expect(art.width).toBeGreaterThanOrEqual(120)
+    expect(art.width).toBeGreaterThanOrEqual(88)
     expect(art.right).toBeLessThanOrEqual(390 + 1)
 
     // The toolbar used to be checked here for stacking vertically, back

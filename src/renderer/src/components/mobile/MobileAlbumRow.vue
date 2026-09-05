@@ -13,8 +13,8 @@
       class="mobile-row__art"
     />
     <div class="mobile-row__text">
-      <div class="text-body-medium text-truncate">{{ album.name }}</div>
-      <div class="text-body-small text-medium-emphasis text-truncate">{{ meta }}</div>
+      <div class="text-body-medium">{{ album.name }}</div>
+      <div class="text-body-small text-medium-emphasis">{{ meta }}</div>
     </div>
     <v-btn
       icon="mdi-play-circle"

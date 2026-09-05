@@ -21,8 +21,8 @@
         class="artwork-lightbox__art"
       />
       <div class="artwork-lightbox__caption">
-        <div class="text-body-large text-truncate">{{ view.title }}</div>
-        <div v-if="view.subtitle" class="text-body-small text-medium-emphasis text-truncate">
+        <div class="text-body-large">{{ view.title }}</div>
+        <div v-if="view.subtitle" class="text-body-small text-medium-emphasis">
           {{ view.subtitle }}
         </div>
       </div>
@@ -102,6 +102,25 @@ export default {
   max-height: 72vh;
 }
 
+/* No fill behind the picture. CoverArt paints a faint one so that a cover
+ * still reads as a tile before it has arrived, which is right in a grid -
+ * but this box is square and the picture inside it is `contain`ed, so on
+ * anything that is not square the fill is what is left over: grey bars
+ * down both sides of a portrait artist photo, or above and below a wide
+ * station logo. This view is one picture on a dimmed backdrop and there
+ * should be nothing behind it at all.
+ *
+ * Two classes rather than one, and the v-avatar branch named separately:
+ * .artwork-lightbox__art lands on CoverArt's own root element, so a rule
+ * on it alone ties with that component's own `.cover-art` rule on
+ * specificity and the winner is decided by stylesheet order. Pairing it
+ * with the class it is overriding settles it. Same technique, and the same
+ * reason, as .radio-cover-art--transparent in NowPlayingView.vue. */
+.artwork-lightbox__art.cover-art,
+.artwork-lightbox__art.v-avatar {
+  background: transparent;
+}
+
 .artwork-lightbox__caption {
   max-width: 100%;
   text-align: center;
@@ -111,5 +130,12 @@ export default {
   padding: 8px 16px;
   border-radius: 8px;
   background: rgba(var(--v-theme-surface), 0.85);
+}
+
+/* The caption is one line over the dimmed backdrop. */
+.artwork-lightbox__caption > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

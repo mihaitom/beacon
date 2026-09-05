@@ -15,7 +15,9 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import HomeView from '../HomeView.vue'
 import HeroBand from '@/components/home/HeroBand.vue'
+import SongTable from '@/components/library/SongTable.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
+import type { Song } from '@/types/library'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -54,6 +56,31 @@ async function mountHome() {
   await wrapper.vm.$nextTick()
   return wrapper
 }
+
+describe('HomeView top songs', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  /** The most-played list is a chart, not a running order: clicking one of
+   * its rows plays that song rather than queueing the other nine behind
+   * it. Starting the whole list is what the play button next to the
+   * heading is for. The behaviour itself is SongTable's and has its own
+   * test (SongTable.play.test.ts); this pins that Home asks for it. */
+  it('hands the top-songs table the one-song rule rather than the default', async () => {
+    const wrapper = await mountHome()
+    ;(wrapper.vm as unknown as { topSongs: Song[] }).topSongs = [makeSong('a'), makeSong('b')]
+    await wrapper.vm.$nextTick()
+
+    const table = wrapper.findComponent(SongTable)
+    expect(table.exists()).toBe(true)
+    expect(table.props('queueWholeList')).toBe(false)
+  })
+})
 
 describe('HomeView hero', () => {
   beforeEach(() => {

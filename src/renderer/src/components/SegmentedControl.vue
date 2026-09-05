@@ -59,15 +59,15 @@ export default {
   display: flex;
   gap: 4px;
   padding: 3px;
-  border-radius: 10px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--beacon-hairline);
 }
 
 .segmented__option {
   flex: 1;
   padding: 8px;
-  border-radius: 7px;
+  border-radius: 8px;
   border: none;
   background: transparent;
   color: rgba(255, 255, 255, 0.5);

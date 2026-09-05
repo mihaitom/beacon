@@ -13,11 +13,7 @@
       @sort="onSort"
     />
     <template v-if="loading">
-      <div
-        v-for="n in skeletonRowCount"
-        :key="n"
-        class="song-row song-row--skeleton d-flex align-center px-2 py-1"
-      >
+      <div v-for="n in skeletonRowCount" :key="n" class="song-row song-row--skeleton">
         <div class="song-index" />
         <v-skeleton-loader v-if="showCover" type="image" width="40" height="40" class="rounded" />
         <!-- Heights straight off the real row's typography (SongRow.vue):
@@ -258,12 +254,19 @@ export default {
     defaultSortKey: { type: String as PropType<SortKey | null>, default: 'title' },
     defaultSortDirection: { type: String as () => 'asc' | 'desc', default: 'asc' },
     // Whether clicking a song queues the rest of this list too (true,
-    // default) or just that one song (false). Set to false for raw
-    // library-browse views whose list isn't a curated sequence and can run
-    // into the thousands (SongsView, GenreDetailView) — everywhere else
-    // (album/playlist/artist detail, favorites, search, home shelves) is a
-    // bounded, intentional list, so playing through it is the expected
-    // behavior, same as any other music player.
+    // default) or just that one song (false).
+    //
+    // The question is not how long the list is, it is whether it is a
+    // *sequence somebody meant*. An album and an artist's tracks are, and
+    // play through, same as in any other music player. A list that is
+    // merely "everything matching this" is not: the whole library
+    // (SongsView), a genre (GenreDetailView), a playlist opened for editing
+    // (PlaylistDetailView), search results, and Home's most-played chart
+    // all pass false, and clicking a row there plays that row. Building a
+    // queue on purpose is what the row menu's Play next / Add to queue /
+    // Song Radio are for — and where a whole list is worth starting at
+    // once, the view says so with a play button of its own, the way Home's
+    // top-songs heading does.
     queueWholeList: { type: Boolean, default: true },
     // Renders placeholder rows matching SongRow's column layout instead of
     // the real (still-loading) songs — avoids the height jump of swapping
@@ -607,15 +610,15 @@ export default {
         return
       }
       if (!this.queueWholeList) {
-        // Raw library browsing (Songs/Genre views) — not a curated
-        // sequence, so only the clicked song goes into the queue, not the
-        // rest of a list that can run into the thousands. Use the context
-        // menu's "Play next" to queue more, or "Song Radio" to build a
-        // queue out of similar songs.
+        // A list of matches or a ranking rather than a sequence (library
+        // browse, a genre, a playlist being edited, search results, Home's
+        // most-played) — only the clicked song goes into the queue. Use the row menu's "Play next"
+        // to queue more, or "Song Radio" to build a queue out of similar
+        // songs.
         void this.playbackStore.playSongList([song], 0)
         return
       }
-      // A curated, bounded list (album/playlist/favorites/search/...) —
+      // A sequence somebody meant (album/artist/favorites/home shelves) —
       // clicking a song plays it and continues through the rest, same as
       // any other music player. Uses the row's own absolute index (passed
       // through from SongRow) rather than re-deriving it by id — a
@@ -737,7 +740,12 @@ export default {
 
 /* Column widths/flex mirror SongRow.vue's so a skeleton row lines up with
  * the real rows that replace it once loading finishes. */
+/* The skeleton row's own box — the real rows are SongRow.vue, which
+ * carries the identical rule so the two line up column for column. */
 .song-row {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
   gap: 12px;
 }
 

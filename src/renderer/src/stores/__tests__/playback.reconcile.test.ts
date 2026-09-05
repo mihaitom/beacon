@@ -355,6 +355,55 @@ describe('reconcileFromStatus / adoptCastQueue', () => {
       await startCurrentPromise
     })
 
+    /** Two dispatches of the same song within the same instant - a
+     * double-click landing on a click-driven control, or two paths reaching
+     * startCurrent() for one gesture. The backend accepts both (each seq is
+     * newer than the last) and each one bumps its play_generation, which
+     * leaves the stream still feeding the device on an older generation:
+     * it plays to the end and then declines to report that end, so playback
+     * never finishes. Reported live 2026-09-05; see
+     * docs/playback-bugs/track-end-never-reported.md. */
+    it('sends one /play when the same song is started twice before the first lands', async () => {
+      const playback = usePlaybackStore()
+      const connect = useConnectStore()
+      playback.setQueue([makeSong('a')], 0)
+      connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos' }] })
+
+      let resolvePlay!: (response: PlayResponse) => void
+      vi.mocked(connectPlayback.play).mockReturnValue(
+        new Promise((resolve) => {
+          resolvePlay = resolve
+        }),
+      )
+
+      const first = playback.startCurrent()
+      const second = playback.startCurrent()
+
+      expect(connectPlayback.play).toHaveBeenCalledTimes(1)
+      // The duplicate reports "nothing started", the same answer a
+      // superseded dispatch gives, so callers unwind exactly as they
+      // already do for that.
+      expect(await second).toBe(false)
+
+      resolvePlay({ status: 'playing' })
+      expect(await first).toBe(true)
+    })
+
+    /** ...but once the first has landed, starting the same song again is a
+     * real restart (repeat-one, or pressing play on a finished track) and
+     * has to go through. */
+    it('still starts the same song again once the first dispatch has finished', async () => {
+      const playback = usePlaybackStore()
+      const connect = useConnectStore()
+      playback.setQueue([makeSong('a')], 0)
+      connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos' }] })
+      vi.mocked(connectPlayback.play).mockResolvedValue({ status: 'playing' })
+
+      expect(await playback.startCurrent()).toBe(true)
+      expect(await playback.startCurrent()).toBe(true)
+      expect(connectPlayback.play).toHaveBeenCalledTimes(2)
+    })
+
     it('does adopt that same incoming queue once the in-flight switch has resolved', async () => {
       const playback = usePlaybackStore()
       const connect = useConnectStore()

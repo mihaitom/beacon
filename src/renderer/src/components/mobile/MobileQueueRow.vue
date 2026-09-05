@@ -23,10 +23,10 @@
       class="mobile-row__art mobile-queue-row__art"
     />
     <div class="mobile-row__text">
-      <div class="text-body-medium text-truncate" :class="{ 'text-primary': isCurrent }">
+      <div class="text-body-medium" :class="{ 'text-primary': isCurrent }">
         {{ song.title }}
       </div>
-      <div class="text-body-small text-medium-emphasis text-truncate">{{ song.artist }}</div>
+      <div class="text-body-small text-medium-emphasis">{{ song.artist }}</div>
     </div>
     <v-btn
       icon="mdi-close"
@@ -38,7 +38,7 @@
     <v-icon
       icon="mdi-drag-vertical"
       size="22"
-      class="mobile-queue-row__handle text-medium-emphasis ml-1"
+      class="mobile-queue-row__handle text-medium-emphasis"
       @pointerdown.stop="$emit('drag-start', $event)"
     />
   </div>
@@ -127,5 +127,9 @@ export default {
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
+}
+
+.mobile-queue-row__handle {
+  margin-left: 4px;
 }
 </style>

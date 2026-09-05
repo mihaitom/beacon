@@ -12,7 +12,7 @@
           icon="mdi-cast-connected"
           color="primary"
           size="18"
-          class="mr-3 connect-picker__active-glow"
+          class="connect-picker__active-glow"
         />
       </template>
     </v-toolbar>
@@ -29,7 +29,7 @@
         variant="tonal"
         density="compact"
         closable
-        class="mb-2"
+        class="connect-picker__notice"
         @click:close="connectStore.clearError()"
       >
         {{ connectStore.errors.message }}
@@ -42,7 +42,10 @@
        - spinner, and this line is the only place an empty card needs to
        - say anything at all. It covers the first scan after login too,
        - which blocks for the full sweep (see refreshDevices()). -->
-      <div v-if="allDevices.length === 0" class="text-body-medium text-medium-emphasis pa-2">
+      <div
+        v-if="allDevices.length === 0"
+        class="text-body-medium text-medium-emphasis connect-picker__empty"
+      >
         {{
           connectStore.isScanning ? $t('connect.searchingDevices') : $t('connect.noDevicesFound')
         }}
@@ -84,7 +87,7 @@
         />
       </template>
 
-      <v-divider v-if="showStreamInfo" class="my-2" />
+      <v-divider v-if="showStreamInfo" class="connect-picker__rule" />
       <stream-info-section />
     </v-card-text>
     <v-card-actions class="connect-picker__actions">
@@ -465,5 +468,24 @@ export default {
 
 .this-device--active .v-icon {
   filter: drop-shadow(0 0 5px rgba(245, 169, 78, 0.4));
+}
+
+.connect-picker__active-glow {
+  margin-right: 12px;
+}
+
+/* A banner above the device list. */
+.connect-picker__notice {
+  margin-bottom: 8px;
+}
+
+.connect-picker__rule {
+  margin-block: 8px;
+}
+
+/* The "searching"/"none found" line, indented like the rows it stands
+ * in for. */
+.connect-picker__empty {
+  padding: 8px;
 }
 </style>

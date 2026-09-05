@@ -41,14 +41,13 @@
         variant="solo-filled"
         density="compact"
         clearable
-        class="mb-4"
-        style="max-width: 320px"
+        class="library-search"
       />
     </sticky-filter>
-    <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="mb-4">
+    <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
       {{ libraryStore.error }}
     </v-alert>
-    <v-progress-circular v-if="libraryStore.loading" indeterminate class="mb-4" />
+    <v-progress-circular v-if="libraryStore.loading" indeterminate class="view-notice" />
 
     <div
       ref="gridRoot"

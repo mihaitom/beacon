@@ -1,6 +1,6 @@
 <template>
   <v-dialog v-model="visible" max-width="560" scrollable>
-    <v-card class="shortcuts-dialog">
+    <v-card class="shortcuts-dialog beacon-dialog">
       <v-card-title class="shortcuts-title">{{ $t('shortcuts.title') }}</v-card-title>
       <v-card-text class="shortcuts-body">
         <dl class="shortcut-list">
@@ -115,7 +115,7 @@ kbd {
   display: inline-block;
   min-width: 1.75rem;
   padding: 0.15rem 0.45rem;
-  border-radius: 6px;
+  border-radius: 8px;
   font-family: inherit;
   font-size: 0.8rem;
   font-weight: 600;

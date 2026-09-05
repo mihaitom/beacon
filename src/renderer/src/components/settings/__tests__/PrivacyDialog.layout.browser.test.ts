@@ -8,8 +8,12 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
+// Same order as main.ts: the app's own stylesheet first, which is what
+// makes base.css's @layer declaration the authoritative one. Reversed,
+// @layer base lands behind Vuetify's utility layer and its `* { margin: 0 }`
+// reset silently cancels every mb-*/pa-* in the markup under test.
+import '@/assets/main.css'
 import 'vuetify/styles'
-import '@/assets/base.css'
 import { i18n } from '@/i18n'
 import PrivacyDialog from '../PrivacyDialog.vue'
 

@@ -3,7 +3,7 @@
     <!-- Queue-shaped controls are disabled on radio for the same reason as
      - CenterControls.vue's identical gating — see its own comment: a live
      - stream has no queue for shuffle/repeat/prev/next to act on. -->
-    <div class="d-flex align-center justify-center mb-1 mobile-transport__row">
+    <div class="mobile-transport__row">
       <v-btn
         icon="mdi-shuffle"
         :color="!isRadio && playbackStore.shuffle ? 'primary' : undefined"
@@ -20,7 +20,7 @@
         @click="playbackStore.playPrevious()"
       />
       <v-btn
-        class="mobile-transport__play-btn mx-2"
+        class="mobile-transport__play-btn"
         :icon="playbackStore.isPlaying ? 'mdi-pause' : 'mdi-play'"
         variant="flat"
         color="primary"
@@ -45,7 +45,7 @@
       />
     </div>
 
-    <div class="d-flex align-center mb-2" style="gap: 10px">
+    <div class="mobile-transport__seek-row">
       <!-- See RadioLiveStatus.vue: radio replaces the whole bar rather
        - than showing one with nothing to represent, buffering state
        - included, in one row that never changes height. -->
@@ -65,13 +65,14 @@
           @update:model-value="seekPreviewPosition = $event"
           @end="onSeekEnd"
         />
-        <span class="text-body-small text-medium-emphasis mobile-transport__time text-right">{{
-          formatTime(playbackStore.duration)
-        }}</span>
+        <span
+          class="text-body-small text-medium-emphasis mobile-transport__time mobile-transport__time--end"
+          >{{ formatTime(playbackStore.duration) }}</span
+        >
       </template>
     </div>
 
-    <div class="d-flex align-center" style="gap: 10px">
+    <div class="mobile-transport__bottom-row">
       <v-btn
         :icon="connectStore.isActive ? 'mdi-cast-connected' : 'mdi-cast'"
         :color="connectStore.isActive ? 'primary' : undefined"
@@ -310,7 +311,25 @@ export default {
 }
 
 .mobile-transport__row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
   gap: 4px;
+}
+
+/* The position, the waveform and the remaining time on one line. */
+.mobile-transport__seek-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  gap: 10px;
+}
+
+.mobile-transport__bottom-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .mobile-transport__play-btn :deep(.v-icon) {
@@ -320,6 +339,11 @@ export default {
 .mobile-transport__time {
   width: 36px;
   flex-shrink: 0;
+}
+
+/* The duration on the right of the waveform reads toward it. */
+.mobile-transport__time--end {
+  text-align: right;
 }
 
 .mobile-transport__live {
@@ -338,5 +362,10 @@ export default {
   width: 32px;
   text-align: right;
   flex-shrink: 0;
+}
+
+/* The one filled button in the row, given room on both sides. */
+.mobile-transport__play-btn {
+  margin-inline: 8px;
 }
 </style>

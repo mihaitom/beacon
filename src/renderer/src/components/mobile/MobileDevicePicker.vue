@@ -90,7 +90,7 @@
 
         <div
           v-if="allDevices.length === 0 && !connectStore.isScanning"
-          class="text-body-medium text-medium-emphasis pa-4"
+          class="text-body-medium text-medium-emphasis mobile-device-picker__empty"
         >
           {{ $t('connect.noDevicesFound') }}
         </div>
@@ -344,5 +344,10 @@ export default {
   max-height: 60vh;
   overflow-y: auto;
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* The "no speakers found" line, given the padding a row would have. */
+.mobile-device-picker__empty {
+  padding: 16px;
 }
 </style>

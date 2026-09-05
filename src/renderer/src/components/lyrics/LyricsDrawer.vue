@@ -18,7 +18,7 @@
     :style="{ insetInlineEnd: sideBySideOffset }"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <div class="d-flex flex-column fill-height">
+    <div class="beacon-drawer__body">
       <v-toolbar
         density="compact"
         color="#0B0D13"
@@ -26,7 +26,7 @@
         :title="drawerTitle"
       />
 
-      <lyrics-panel v-if="currentSong" variant="compact" class="flex-grow-1" />
+      <lyrics-panel v-if="currentSong" variant="compact" class="lyrics-drawer__fill" />
       <!-- A radio station never has lyrics, which leaves this whole panel
          - empty for as long as one plays. What it does have is a running
          - list of what it has played (stores/playback.ts's radioTitleLog),
@@ -139,6 +139,21 @@ export default {
 
 .beacon-drawer__toolbar {
   border-bottom: 1px solid var(--beacon-hairline);
+}
+
+/* The drawer's own column: a fixed toolbar with the content filling
+ * whatever is left of the drawer's height. */
+.beacon-drawer__body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Whichever of the two the drawer is showing takes the rest of the
+ * column — lyrics for a song, the title log for a station. */
+.lyrics-drawer__fill {
+  flex: 1;
+  min-height: 0;
 }
 
 /* Takes the height the toolbar above it leaves, and no more — min-height

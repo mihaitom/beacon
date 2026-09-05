@@ -61,9 +61,9 @@
         @click="showArtwork"
       />
       <div class="detail-header__info min-width-0">
-        <div v-if="eyebrow" class="eyebrow-label mb-1">{{ eyebrow }}</div>
-        <h1 class="detail-title detail-header__title text-truncate">{{ title }}</h1>
-        <div v-if="$slots.subtitle" class="detail-header__subtitle text-truncate">
+        <div v-if="eyebrow" class="eyebrow-label detail-header__eyebrow">{{ eyebrow }}</div>
+        <h1 class="detail-title detail-header__title">{{ title }}</h1>
+        <div v-if="$slots.subtitle" class="detail-header__subtitle">
           <slot name="subtitle" />
         </div>
         <div v-if="$slots.meta" class="detail-header__meta">
@@ -262,5 +262,18 @@ export default {
 
 .min-width-0 {
   min-width: 0;
+}
+
+/* One line each — the name of an album or artist has no length limit,
+ * and this header is a fixed band. */
+.detail-header__title,
+.detail-header__subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-header__eyebrow {
+  margin-bottom: 4px;
 }
 </style>

@@ -18,8 +18,8 @@
         @click.stop="toggleStar"
       />
     </div>
-    <div class="artist-card-name text-body-medium mt-2 text-truncate">{{ artist.name }}</div>
-    <div class="text-body-small text-medium-emphasis text-truncate">
+    <div class="artist-card-name text-body-medium">{{ artist.name }}</div>
+    <div class="artist-card-meta text-body-small text-medium-emphasis">
       {{ artist.albumCount }}
       {{ artist.albumCount === 1 ? $t('library.album1') : $t('library.albumsN') }}
     </div>
@@ -204,5 +204,17 @@ export default {
 
 .artist-card:hover .artist-card-name {
   color: rgb(var(--v-theme-primary));
+}
+
+/* Both lines under the portrait stay single. */
+.artist-card-name,
+.artist-card-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artist-card-name {
+  margin-top: 8px;
 }
 </style>

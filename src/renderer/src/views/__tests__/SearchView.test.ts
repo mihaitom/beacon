@@ -9,6 +9,7 @@ import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import type { Album, Artist, Song } from '@/types/library'
 import { makeSong } from '@/stores/__tests__/fixtures'
+import SongTable from '@/components/library/SongTable.vue'
 import SearchView from '../SearchView.vue'
 
 const vuetify = createVuetify({ components, directives })
@@ -119,5 +120,22 @@ describe('SearchView result presence', () => {
     // together, or looks at only one of them, would show "nothing found"
     // over a page of real results.
     expect(vm.hasResults).toBe(true)
+  })
+})
+
+describe('SearchView playing a result', () => {
+  /** Search results are things that match a word, not a sequence anyone
+   * meant to hear in order - so playing one must not queue the other
+   * nineteen matches behind it. The behaviour itself is SongTable's, and
+   * has its own test (SongTable.play.test.ts); what this pins is that this
+   * view asks for it. */
+  it('hands the song table the one-song rule rather than the default', async () => {
+    const { wrapper, store } = await mountSearchView()
+    setResults(store, { songs: [makeSong('s1'), makeSong('s2')] })
+    await flushPromises()
+
+    const table = wrapper.findComponent(SongTable)
+    expect(table.exists()).toBe(true)
+    expect(table.props('queueWholeList')).toBe(false)
   })
 })

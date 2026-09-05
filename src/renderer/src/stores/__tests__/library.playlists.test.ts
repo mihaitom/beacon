@@ -149,4 +149,23 @@ describe('library mutations', () => {
 
     expect(client.search3).not.toHaveBeenCalled()
   })
+
+  /** The API's own default is 25 of each, which is a type-ahead dropdown's
+   * worth: a common first name matches more than that in any real library,
+   * and the results page gave no sign it had been cut short. Asserted here
+   * rather than left to the client's defaults, because that is where it
+   * silently was before. */
+  it('asks for a page worth of results, not the API default of 25', async () => {
+    const library = useLibraryStore()
+    const client = stubClient()
+
+    await library.search('michael')
+
+    // `!` because the stub is a Record, so every lookup on it is optional.
+    const [query, songCount, albumCount, artistCount] = client.search3!.mock.calls[0]!
+    expect(query).toBe('michael')
+    expect(songCount).toBeGreaterThanOrEqual(100)
+    expect(albumCount).toBeGreaterThan(25)
+    expect(artistCount).toBeGreaterThan(25)
+  })
 })
