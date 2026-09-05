@@ -27,10 +27,10 @@
      - Playing anything here needs the artist's tracks, which a listing
      - endpoint doesn't carry — fetched on demand, see withSongs(). -->
     <tile-context-menu ref="menu">
-      <v-list-item v-if="authStore.capabilities.songRadio" @click="startArtistRadio">
-        <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
-        <v-list-item-title>{{ $t('library.artistRadio') }}</v-list-item-title>
-      </v-list-item>
+      <!-- Now, next, at the end — then Artist Radio, which conjures a
+         - queue instead of adding to the one there is. Same section order
+         - as every other menu in the app; see docs/styleguide.md. -->
+      <context-menu-section :label="$t('library.menuPlayback')" />
       <v-list-item @click="play">
         <template #prepend><v-icon icon="mdi-play" size="small" /></template>
         <v-list-item-title>{{ $t('library.playAll') }}</v-list-item-title>
@@ -43,7 +43,11 @@
         <template #prepend><v-icon icon="mdi-playlist-plus" size="small" /></template>
         <v-list-item-title>{{ $t('common.addToQueue') }}</v-list-item-title>
       </v-list-item>
-      <v-divider />
+      <v-list-item v-if="authStore.capabilities.songRadio" @click="startArtistRadio">
+        <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
+        <v-list-item-title>{{ $t('library.artistRadio') }}</v-list-item-title>
+      </v-list-item>
+      <context-menu-section :label="$t('library.menuDetails')" />
       <v-list-item v-if="hasArtwork" @click="showArtwork">
         <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
         <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
@@ -55,6 +59,7 @@
 <script lang="ts">
 import CoverArt from './CoverArt.vue'
 import TileContextMenu from './TileContextMenu.vue'
+import ContextMenuSection from './ContextMenuSection.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
@@ -63,7 +68,7 @@ import type { Artist, Song } from '@/types/library'
 
 export default {
   name: 'ArtistCard',
-  components: { CoverArt, TileContextMenu },
+  components: { CoverArt, TileContextMenu, ContextMenuSection },
   props: {
     artist: {
       type: Object as () => Artist,

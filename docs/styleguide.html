@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Beacon style guide</title>
+
+    <!-- The app's own stylesheet, not a copy of it. Every panel, heading and
+       - row below is drawn by the same rules the running app uses, so this
+       - page cannot drift from it: change base.css and reload. -->
+    <link rel="stylesheet" href="../src/renderer/src/assets/base.css" />
+
+    <style>
+      /* The Vuetify theme variables base.css builds on. Vuetify writes these
+       * at runtime from the `beacon` theme in src/renderer/src/main.ts,
+       * which is the authority - these are that theme, restated so the page
+       * stands on its own. Keep them in step when the theme changes. */
+      :root {
+        --v-theme-background: 18, 20, 28;
+        --v-theme-surface: 26, 29, 39;
+        --v-theme-surface-bright: 35, 39, 51;
+        --v-theme-primary: 245, 169, 78;
+        --v-theme-secondary: 91, 132, 177;
+        --v-theme-on-surface: 255, 255, 255;
+      }
+
+      body {
+        margin: 0;
+        padding: 48px 32px 96px;
+        background: rgb(var(--v-theme-background));
+        color: #fff;
+      }
+
+      .guide {
+        max-width: 880px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 56px;
+      }
+
+      .guide__lede {
+        max-width: 60ch;
+        color: rgba(255, 255, 255, 0.7);
+        line-height: 1.6;
+      }
+
+      .guide__lede code {
+        color: rgb(var(--v-theme-primary));
+      }
+
+      /* Every block below is "here is the thing, here is what it is for". */
+      .demo {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .demo__note {
+        max-width: 62ch;
+        font-size: 0.8125rem;
+        line-height: 1.6;
+        color: rgba(255, 255, 255, 0.55);
+      }
+
+      .demo__note code,
+      .guide__lede code {
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 0.9em;
+      }
+
+      /* Swatches -------------------------------------------------------- */
+
+      .swatches {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 12px;
+      }
+
+      .swatch__chip {
+        height: 64px;
+        border-radius: 10px;
+        border: 1px solid var(--beacon-hairline);
+      }
+
+      .swatch__name {
+        margin-top: 8px;
+        font-size: 0.8125rem;
+        font-weight: 600;
+      }
+
+      .swatch__value {
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 0.72rem;
+        color: rgba(255, 255, 255, 0.5);
+      }
+
+      /* Field rows, the pattern the track-info dialog is built from ------ */
+
+      .fields {
+        display: grid;
+        grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
+      }
+
+      .fields dt,
+      .fields dd {
+        margin: 0;
+        padding: 10px 18px;
+        font-size: 0.8125rem;
+        line-height: 1.5;
+        border-top: 1px solid var(--beacon-hairline);
+      }
+
+      .fields > :nth-child(-n + 2) {
+        border-top: none;
+      }
+
+      .fields dt {
+        color: rgba(255, 255, 255, 0.55);
+      }
+
+      .fields dd--code,
+      .fields .code {
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 0.78rem;
+        color: rgba(255, 255, 255, 0.82);
+      }
+
+      /* Chips ----------------------------------------------------------- */
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      /* Vuetify draws these in the app (size="small" variant="tonal"
+       * color="primary"); this is that appearance without loading Vuetify. */
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        height: 24px;
+        padding: 0 10px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: rgb(var(--v-theme-primary));
+        background: rgba(245, 169, 78, 0.12);
+      }
+
+      /* Hero ------------------------------------------------------------ */
+
+      .hero {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        border-radius: 14px;
+        border: 1px solid var(--beacon-hairline);
+      }
+
+      .hero__backdrop {
+        position: absolute;
+        inset: -20px;
+        background-size: cover;
+        background-position: center;
+        filter: blur(38px) saturate(1.4) brightness(0.55);
+        transform: scale(1.15);
+      }
+
+      .hero__scrim {
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(
+            120deg,
+            rgba(18, 20, 28, 0.94) 0%,
+            rgba(18, 20, 28, 0.74) 48%,
+            rgba(245, 169, 78, 0.18) 100%
+          ),
+          linear-gradient(to bottom, transparent 55%, rgba(18, 20, 28, 0.55));
+      }
+
+      .hero__body {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 20px;
+      }
+
+      .hero__art {
+        width: 88px;
+        height: 88px;
+        flex-shrink: 0;
+        border-radius: 4px;
+        background-size: cover;
+      }
+
+      .hero__title {
+        margin: 0;
+        font-size: 1.4rem;
+      }
+
+      .hero__subtitle {
+        margin: 6px 0 0;
+        font-size: 0.875rem;
+        color: rgba(255, 255, 255, 0.72);
+      }
+
+      /* Rows ------------------------------------------------------------ */
+
+      .rows {
+        max-width: 420px;
+        background: var(--beacon-chrome);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      .row__art {
+        width: 48px;
+        height: 48px;
+        border-radius: 4px;
+        background-size: cover;
+      }
+
+      .row__title {
+        font-size: 0.875rem;
+      }
+
+      .row__sub {
+        font-size: 0.8125rem;
+        color: rgba(255, 255, 255, 0.6);
+      }
+
+      .row--hover {
+        background: var(--beacon-hover);
+      }
+
+      /* Radius ladder --------------------------------------------------- */
+
+      .radii {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+
+      .radius {
+        width: 108px;
+        height: 84px;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        padding-bottom: 8px;
+        font-size: 0.75rem;
+        color: rgba(255, 255, 255, 0.6);
+        border: 1px solid var(--beacon-hairline);
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .type-sample + .type-sample {
+        margin-top: 14px;
+      }
+
+      .type-sample__label {
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 0.7rem;
+        color: rgba(255, 255, 255, 0.4);
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="guide">
+      <header>
+        <div class="eyebrow-label">Beacon</div>
+        <h1 class="detail-title">Style guide</h1>
+        <p class="guide__lede">
+          Rendered by the app's own <code>base.css</code>, so what is below is what the app draws -
+          not a picture of it. The reasoning behind each of these lives in
+          <code>docs/styleguide.md</code>; this page is for looking.
+        </p>
+      </header>
+
+      <section class="demo">
+        <h2 class="section-title">Palette</h2>
+        <p class="demo__note">
+          Amber is the signal colour: an active nav item, an eyebrow, a divider, a selected segment.
+          Nothing large is amber. The chrome sits one shade <em>darker</em> than the content behind
+          it, like dark water behind a lit surface.
+        </p>
+        <div class="swatches">
+          <div class="swatch">
+            <div class="swatch__chip" style="background: #12141c"></div>
+            <div class="swatch__name">background</div>
+            <div class="swatch__value">#12141C</div>
+          </div>
+          <div class="swatch">
+            <div class="swatch__chip" style="background: #1a1d27"></div>
+            <div class="swatch__name">surface</div>
+            <div class="swatch__value">#1A1D27</div>
+          </div>
+          <div class="swatch">
+            <div class="swatch__chip" style="background: #232733"></div>
+            <div class="swatch__name">surface-bright</div>
+            <div class="swatch__value">#232733</div>
+          </div>
+          <div class="swatch">
+            <div class="swatch__chip" style="background: #f5a94e"></div>
+            <div class="swatch__name">primary</div>
+            <div class="swatch__value">#F5A94E</div>
+          </div>
+          <div class="swatch">
+            <div class="swatch__chip" style="background: #5b84b1"></div>
+            <div class="swatch__name">secondary</div>
+            <div class="swatch__value">#5B84B1</div>
+          </div>
+          <div class="swatch">
+            <div class="swatch__chip" style="background: var(--beacon-chrome)"></div>
+            <div class="swatch__name">--beacon-chrome</div>
+            <div class="swatch__value">#0b0d13</div>
+          </div>
+          <div class="swatch">
+            <div class="swatch__chip" style="background: var(--beacon-hairline)"></div>
+            <div class="swatch__name">--beacon-hairline</div>
+            <div class="swatch__value">amber 14%</div>
+          </div>
+          <div class="swatch">
+            <div class="swatch__chip" style="background: var(--beacon-hover)"></div>
+            <div class="swatch__name">--beacon-hover</div>
+            <div class="swatch__value">amber 7%</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="demo">
+        <h2 class="section-title">Type</h2>
+        <p class="demo__note">
+          The serif face is the signature and is rationed: two or three per screen, never for a
+          label or a row. Everything else is Inter on Vuetify's own scale.
+        </p>
+        <div class="beacon-panel">
+          <div class="type-sample">
+            <div class="type-sample__label">.detail-title</div>
+            <div class="detail-title">Everything Everything</div>
+          </div>
+          <div class="type-sample">
+            <div class="type-sample__label">.display-title</div>
+            <div class="display-title" style="font-size: 1.4rem">Slow Return</div>
+          </div>
+          <div class="type-sample">
+            <div class="type-sample__label">.page-title</div>
+            <div class="page-title">Library</div>
+          </div>
+          <div class="type-sample">
+            <div class="type-sample__label">.section-title (a section of a page)</div>
+            <div class="section-title">Recently added</div>
+          </div>
+          <div class="type-sample">
+            <div class="type-sample__label">
+              .eyebrow-label .panel-title (a section in a surface)
+            </div>
+            <div class="eyebrow-label panel-title">Audio</div>
+          </div>
+          <div class="type-sample">
+            <div class="type-sample__label">.eyebrow-label</div>
+            <div class="eyebrow-label">Album</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="demo">
+        <h2 class="section-title">Panels</h2>
+        <p class="demo__note">
+          One surface for a group of related things. A panel reads as a slightly raised area of the
+          same surface, not as a second colour. <code>.beacon-panel</code> brings the padding;
+          <code>.beacon-panel--flush</code> hands it to the rows instead, so their separators run
+          edge to edge.
+        </p>
+        <div class="beacon-panel">
+          <div style="font-weight: 600; font-size: 0.875rem">A padded panel</div>
+          <p class="demo__note" style="margin: 8px 0 0">
+            Settings' sections are these: label, control, hint, separated by a hairline.
+          </p>
+        </div>
+        <dl class="beacon-panel beacon-panel--flush fields">
+          <dt>Duration</dt>
+          <dd>3:42</dd>
+          <dt>Format</dt>
+          <dd>FLAC</dd>
+          <dt>Sample rate</dt>
+          <dd>44.1 kHz</dd>
+          <dt>Path</dt>
+          <dd class="code">/music/The Long Winters/Everything Everything/04 Slow Return.flac</dd>
+        </dl>
+      </section>
+
+      <section class="demo">
+        <h2 class="section-title">Dividers</h2>
+        <p class="demo__note">
+          One rule, everywhere: <code>1px solid var(--beacon-hairline)</code>, between siblings
+          only, never after the last one. A second, quieter divider colour was tried in the
+          track-info dialog and dropped - it only made that dialog the one place with two kinds of
+          hairline.
+        </p>
+      </section>
+
+      <section class="demo">
+        <h2 class="section-title">Chips</h2>
+        <p class="demo__note">
+          For tags - a set the reader scans rather than reads. Not for a value that happens to be
+          short: a bitrate or a year is one fact and stays plain text.
+        </p>
+        <dl class="beacon-panel beacon-panel--flush fields">
+          <dt>Genre</dt>
+          <dd>
+            <div class="chips">
+              <span class="chip">Indie Rock</span><span class="chip">Shoegaze</span
+              ><span class="chip">Dream Pop</span>
+            </div>
+          </dd>
+          <dt>Mood</dt>
+          <dd>
+            <div class="chips">
+              <span class="chip">Melancholic</span><span class="chip">Warm</span>
+            </div>
+          </dd>
+        </dl>
+      </section>
+
+      <section class="demo">
+        <h2 class="section-title">The artwork backdrop</h2>
+        <p class="demo__note">
+          The app's one hero effect: the artwork of whatever the surface is about, blurred past
+          recognition behind it, under a scrim that keeps text readable and lands the amber on the
+          far side. Album, artist, genre and playlist headers, Home's hero band, Now Playing and the
+          track-info dialog all use this same recipe.
+        </p>
+        <div class="hero">
+          <div class="hero__backdrop" id="hero-backdrop"></div>
+          <div class="hero__scrim"></div>
+          <div class="hero__body">
+            <div class="hero__art" id="hero-art"></div>
+            <div>
+              <div class="eyebrow-label">Everything Everything</div>
+              <h3 class="display-title hero__title">Slow Return</h3>
+              <p class="hero__subtitle">The Long Winters</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="demo">
+        <h2 class="section-title">List rows</h2>
+        <p class="demo__note">
+          <code>.mobile-row</code>: 60px tall, 48px of artwork, two lines, a hairline under every
+          row but the last, and no radius - a stack of rounded cards is not a list. The second row
+          shows the shared hover tint.
+        </p>
+        <div class="rows">
+          <div class="mobile-row">
+            <div class="mobile-row__art row__art" id="row-art-1"></div>
+            <div class="mobile-row__text">
+              <div class="row__title">Slow Return</div>
+              <div class="row__sub">The Long Winters</div>
+            </div>
+          </div>
+          <div class="mobile-row row--hover">
+            <div class="mobile-row__art row__art" id="row-art-2"></div>
+            <div class="mobile-row__text">
+              <div class="row__title">Cinnamon</div>
+              <div class="row__sub">The Long Winters</div>
+            </div>
+          </div>
+          <div class="mobile-row">
+            <div class="mobile-row__art row__art" id="row-art-3"></div>
+            <div class="mobile-row__text">
+              <div class="row__title">Blue Diamonds</div>
+              <div class="row__sub">The Long Winters</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="demo">
+        <h2 class="section-title">Radius ladder</h2>
+        <p class="demo__note">
+          A container is one step rounder than what it holds, which is what makes a dialog read as
+          the container of its panels rather than as one more panel.
+        </p>
+        <div class="radii">
+          <div class="radius" style="border-radius: 16px">16 · dialog</div>
+          <div class="radius" style="border-radius: 14px">14 · panel</div>
+          <div class="radius" style="border-radius: 12px">12 · tile</div>
+          <div class="radius" style="border-radius: 4px">4 · artwork</div>
+          <div class="radius" style="border-radius: 0">0 · list row</div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      // Stand-in artwork, drawn rather than shipped: this page has no server
+      // and no album covers to borrow, and a missing <img> would leave the
+      // backdrop section demonstrating nothing.
+      const canvas = document.createElement('canvas')
+      canvas.width = canvas.height = 300
+      const ctx = canvas.getContext('2d')
+      const gradient = ctx.createLinearGradient(0, 0, 300, 300)
+      gradient.addColorStop(0, '#f0b45a')
+      gradient.addColorStop(0.55, '#b06a7a')
+      gradient.addColorStop(1, '#4a5aa8')
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, 300, 300)
+      const url = `url(${canvas.toDataURL()})`
+      for (const id of ['hero-backdrop', 'hero-art', 'row-art-1', 'row-art-2', 'row-art-3']) {
+        document.getElementById(id).style.backgroundImage = url
+      }
+    </script>
+  </body>
+</html>

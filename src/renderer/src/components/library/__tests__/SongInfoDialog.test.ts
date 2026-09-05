@@ -152,6 +152,31 @@ describe('SongInfoDialog', () => {
     expect(labelledRows()).toMatchObject({ Format: 'FLAC', 'Sample rate': '44.1 kHz' })
   })
 
+  /** Several genres on one track is the norm, and they read as tags rather
+   * than as a sentence - so the sheet gives each one its own chip while the
+   * scalar rows stay plain text. */
+  it('shows a genre list as one chip each', async () => {
+    const getSongDetails = stubClient()
+    getSongDetails.mockResolvedValue({
+      id: 's1',
+      genres: [{ name: 'Indie Rock' }, { name: 'Shoegaze' }],
+      suffix: 'flac',
+    })
+    openDialog()
+
+    emitter.emit('showSongInfo', makeSong('s1'))
+    await flushPromises()
+
+    const chips = [...document.querySelectorAll('.song-info__chips .v-chip')].map((chip) =>
+      chip.textContent?.trim(),
+    )
+    expect(chips).toEqual(['Indie Rock', 'Shoegaze'])
+    // The format row beside it stays plain text rather than becoming a
+    // chip of its own.
+    expect(document.querySelectorAll('.v-chip').length).toBe(2)
+    expect(labelledRows()).toMatchObject({ Format: 'FLAC' })
+  })
+
   it('says so when the server could not answer, instead of an empty sheet', async () => {
     const getSongDetails = stubClient()
     getSongDetails.mockRejectedValue(new Error('offline'))

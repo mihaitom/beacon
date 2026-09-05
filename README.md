@@ -338,6 +338,7 @@ Built with Vue 3 (Options API) + Vuetify + Pinia on the frontend, and Python/Fas
 - `pnpm run lint` - lint the frontend
 - `pnpm test:unit` - run the frontend unit test suite (jsdom); `pnpm test:layout` runs the real-browser layout suite alongside it
 - `cd connect && uv run pytest` - run the backend test suite
+- `docs/styleguide.md` + `docs/styleguide.html` - the design system, in words and rendered by the app's own stylesheet. Worth a look before changing anything visual
 
 ## Contributing
 

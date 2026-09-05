@@ -51,15 +51,31 @@
         </p>
         <template v-else>
           <section v-for="group in sections" :key="group.titleKey" class="song-info__group">
-            <h3 class="eyebrow-label song-info__group-title">{{ $t(group.titleKey) }}</h3>
-            <dl class="song-info__rows">
+            <h3 class="eyebrow-label panel-title">{{ $t(group.titleKey) }}</h3>
+            <dl class="beacon-panel beacon-panel--flush song-info__rows">
               <template v-for="row in group.rows" :key="row.labelKey">
                 <dt class="song-info__label">{{ $t(row.labelKey) }}</dt>
                 <!-- Selectable, unlike the rest of the app's rows: a file
                    - path or a MusicBrainz id is here to be copied out, and
                    - those same rows are set in a monospaced face so the
                    - reader can tell an l from a 1 while doing it. -->
+                <!-- Genres and moods arrive as a list rather than one
+                   - string (see songDetails.ts) and read as one: three
+                   - chips, not "Indie Rock, Shoegaze, Dream Pop" run
+                   - together in a sentence. -->
+                <dd v-if="row.values" class="song-info__value song-info__chips">
+                  <v-chip
+                    v-for="tag in row.values"
+                    :key="tag"
+                    size="small"
+                    variant="tonal"
+                    color="primary"
+                  >
+                    {{ tag }}
+                  </v-chip>
+                </dd>
                 <dd
+                  v-else
                   class="song-info__value"
                   :class="{ 'song-info__value--code': isCode(row.labelKey) }"
                 >
@@ -166,11 +182,10 @@ export default {
   max-height: 76vh;
   display: flex;
   flex-direction: column;
-  /* Same 16px as DetailHeader's own frame, and clipped: the hero's
-   * backdrop is a blurred image bleeding past its own box, which without
-   * this paints over the card's rounded corners. */
+  /* Same 16px as DetailHeader's own frame - one step rounder than the
+   * panels inside it, so the sheet reads as the container of the column
+   * rather than as one more panel in it. */
   border-radius: 16px;
-  overflow: hidden;
 }
 
 .song-info__card :deep(.v-card-text) {
@@ -179,10 +194,20 @@ export default {
 
 /* ── Header ─────────────────────────────────────────────────────────── */
 
+/* Inset and rounded rather than bleeding to the card's own edges: the
+ * field panels below it are a column of surfaces sharing one left and
+ * right edge, and the header is the first of them. Running it full-bleed
+ * instead left it as the one element in the dialog that answered to
+ * neither the card's edge nor the column's. */
 .song-info__hero {
   position: relative;
   flex: 0 0 auto;
   isolation: isolate;
+  margin: 20px 20px 0;
+  border-radius: 14px;
+  /* Same edge as the panels below, so the column has one outline rather
+   * than a picture at the top and bordered surfaces under it. */
+  border: 1px solid var(--beacon-hairline);
   overflow: hidden;
 }
 
@@ -222,9 +247,9 @@ export default {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 18px;
   /* Right side kept clear of the close button above it. */
-  padding: 24px 56px 24px 24px;
+  padding: 20px 52px 20px 20px;
 }
 
 .song-info__art {
@@ -268,7 +293,9 @@ export default {
 /* ── Fields ─────────────────────────────────────────────────────────── */
 
 .song-info__body {
-  padding: 20px 24px 24px;
+  /* Same 20px as the header's margin above, so the column of panels has
+   * one edge from top to bottom. */
+  padding: 20px;
 }
 
 .song-info__state {
@@ -289,50 +316,25 @@ export default {
   margin-top: 22px;
 }
 
-/* The app's amber eyebrow, carried to the end of the sheet by a hairline -
- * the same "small lit mark plus a label" language as .section-title on
- * every page, at the scale a dialog wants. */
-.song-info__group-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.song-info__group-title::after {
-  content: '';
-  flex: 1 1 auto;
-  height: 1px;
-  background: var(--beacon-hairline);
-}
-
 /* Labels sized to the longest of them, values taking the rest - a table
  * would line the columns up across all four sections, which is wrong: each
- * section's labels are their own set.
- *
- * The whole set sits on one panel, the same bordered surface Settings and
- * the station cards use, so a section reads as one block of facts rather
- * than as loose text on the dialog's floor. */
+ * section's labels are their own set. The surface itself is .beacon-panel,
+ * the same one Settings' sections sit on. */
 .song-info__rows {
   display: grid;
   grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
   margin: 0;
-  border-radius: 12px;
-  border: 1px solid var(--beacon-hairline);
-  background: rgba(255, 255, 255, 0.02);
-  overflow: hidden;
 }
 
 .song-info__label,
 .song-info__value {
-  padding: 9px 14px;
+  padding: 10px 18px;
   font-size: 0.8125rem;
   line-height: 1.5;
-  /* Neutral rather than the amber --beacon-hairline the panel's own border
-   * uses: there is one of these between every pair of rows, and at a dozen
-   * repeats the tint stops reading as a hairline and starts reading as
-   * stripes. */
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  /* The same hairline Settings draws between two settings in a panel -
+   * one rule for "these belong together but are separate entries",
+   * wherever a panel holds more than one thing. */
+  border-top: 1px solid var(--beacon-hairline);
 }
 
 /* dt and dd of the first row, which have the panel's own border above them
@@ -354,6 +356,16 @@ export default {
   user-select: text;
 }
 
+/* Tighter than the text rows above: a chip brings its own height, and the
+ * row would otherwise measure a good deal taller than its neighbours. */
+.song-info__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
 .song-info__value--code {
   font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
   font-size: 0.78rem;
@@ -363,15 +375,19 @@ export default {
 /* On a phone-width window the dialog is nearly the full screen, and 88px
  * of artwork next to two columns of fields leaves neither enough room. */
 @media (max-width: 480px) {
+  .song-info__hero {
+    margin: 16px 16px 0;
+  }
+
   .song-info__hero-body {
     flex-direction: column;
     align-items: flex-start;
     gap: 14px;
-    padding: 20px 20px 18px;
+    padding: 18px 16px;
   }
 
   .song-info__body {
-    padding: 16px 20px 20px;
+    padding: 16px;
   }
 
   .song-info__rows {
@@ -380,7 +396,7 @@ export default {
 
   .song-info__label {
     padding-bottom: 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-top: 1px solid var(--beacon-hairline);
   }
 
   /* One column means every cell is its own row, so the separator has to be

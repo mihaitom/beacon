@@ -68,6 +68,7 @@
      - screen needs, having no right-click) and a right-click anywhere on
      - the tile, which every other tile in the library now answers too. -->
     <tile-context-menu ref="menu">
+      <context-menu-section :label="$t('library.menuLibrary')" />
       <v-list-item @click="$emit('edit', station)">
         <template #prepend><v-icon icon="mdi-pencil-outline" size="small" /></template>
         <v-list-item-title>{{ $t('common.edit') }}</v-list-item-title>
@@ -84,13 +85,14 @@
 import type { PropType } from 'vue'
 import CoverArt from './CoverArt.vue'
 import TileContextMenu from './TileContextMenu.vue'
+import ContextMenuSection from './ContextMenuSection.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import type { RadioStation } from '@/types/library'
 
 export default {
   name: 'RadioStationCard',
-  components: { CoverArt, TileContextMenu },
+  components: { CoverArt, TileContextMenu, ContextMenuSection },
   props: {
     station: {
       type: Object as PropType<RadioStation>,

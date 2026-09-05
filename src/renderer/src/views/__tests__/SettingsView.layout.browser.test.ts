@@ -81,14 +81,14 @@ describe('SettingsView layout', () => {
     await mountSettings(1200)
 
     // Account, Playback, Library, Lyrics, Storage, Advanced, About.
-    expect(rects('.settings-panel').length).toBe(7)
+    expect(rects('.beacon-panel').length).toBe(7)
   })
 
   it('fits a phone viewport without anything spilling sideways', async () => {
     await mountSettings(390, 800)
 
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390)
-    for (const panel of rects('.settings-panel')) {
+    for (const panel of rects('.beacon-panel')) {
       expect(panel.right).toBeLessThanOrEqual(390)
       expect(panel.left).toBeGreaterThanOrEqual(0)
     }
@@ -99,7 +99,7 @@ describe('SettingsView layout', () => {
     // width first, well before the panel itself is tight.
     await mountSettings(390, 800)
 
-    const [panel] = rects('.settings-panel')
+    const [panel] = rects('.beacon-panel')
     const [strip] = rects('.account-strip')
     expect(strip!.right).toBeLessThanOrEqual(panel!.right + 1)
     expect(strip!.left).toBeGreaterThanOrEqual(panel!.left - 1)
@@ -143,7 +143,7 @@ describe('SettingsView layout', () => {
    * place in the page where the rhythm visibly broke. */
   it('draws a divider between blocks but never above the topmost in a panel', async () => {
     await mountSettings(1200)
-    const panels = [...document.querySelectorAll('.settings-panel')]
+    const panels = [...document.querySelectorAll('.beacon-panel')]
 
     for (const panel of panels) {
       const settings = [...panel.querySelectorAll(':scope > .setting')]

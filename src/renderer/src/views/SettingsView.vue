@@ -10,7 +10,7 @@
 
     <section class="settings-section">
       <h2 class="section-title">{{ $t('settings.account') }}</h2>
-      <div class="settings-panel">
+      <div class="beacon-panel">
         <div class="account-strip">
           <div class="account-badge">
             <NavidromeIcon v-if="authStore.serverType === 'subsonic'" />
@@ -41,7 +41,7 @@
 
     <section class="settings-section">
       <h2 class="section-title">{{ $t('settings.playbackTitle') }}</h2>
-      <div class="settings-panel">
+      <div class="beacon-panel">
         <div class="setting">
           <p class="setting__label">{{ $t('settings.replayGain') }}</p>
           <segmented-control
@@ -133,7 +133,7 @@
      - on those, as it used to be, would take the toggle away with them. -->
     <section class="settings-section">
       <h2 class="section-title">{{ $t('settings.libraryTitle') }}</h2>
-      <div class="settings-panel">
+      <div class="beacon-panel">
         <div v-if="authStore.capabilities.libraryScan" class="setting">
           <p class="setting__description">{{ $t('settings.libraryScanHint') }}</p>
           <v-btn
@@ -199,7 +199,7 @@
      - rather than the select complaining about it. -->
     <section class="settings-section">
       <h2 class="section-title">{{ $t('settings.lyricsProvidersTitle') }}</h2>
-      <div class="settings-panel">
+      <div class="beacon-panel">
         <div class="setting">
           <p class="setting__description">{{ $t('settings.lyricsProvidersHint') }}</p>
           <v-select
@@ -226,7 +226,7 @@
 
     <section class="settings-section">
       <h2 class="section-title">{{ $t('settings.storageTitle') }}</h2>
-      <div class="settings-panel">
+      <div class="beacon-panel">
         <div class="setting">
           <p class="setting__description">{{ $t('settings.clearCacheHint') }}</p>
           <v-btn
@@ -260,7 +260,7 @@
      - under it. See services/capabilities.ts's logLevelControl. -->
     <section v-if="authStore.capabilities.logLevelControl" class="settings-section">
       <h2 class="section-title">{{ $t('settings.advancedTitle') }}</h2>
-      <div class="settings-panel">
+      <div class="beacon-panel">
         <div class="setting">
           <p class="setting__description">{{ $t('settings.logLevelHint') }}</p>
           <v-select
@@ -279,7 +279,7 @@
 
     <section class="settings-section">
       <h2 class="section-title">{{ $t('settings.about') }}</h2>
-      <div class="settings-panel">
+      <div class="beacon-panel">
         <div class="setting">
           <div class="about-actions">
             <v-btn variant="tonal" prepend-icon="mdi-star-circle-outline" @click="showReleaseNotes">
@@ -750,13 +750,9 @@ export default {
 /* One surface per section, rather than every control floating directly on
  * the page. Same treatment .account-strip already used on its own, now the
  * container for a whole group — which is also why that strip no longer
- * draws a second border inside this one. */
-.settings-panel {
-  padding: 18px 20px;
-  border-radius: 14px;
-  border: 1px solid var(--beacon-hairline);
-  background: rgba(255, 255, 255, 0.02);
-}
+ * draws a second border inside this one. The surface itself is the app's
+ * shared .beacon-panel (assets/base.css), where this page's own version of
+ * it now lives; the track-info dialog sits on the same one. */
 
 /* The vertical rhythm of the whole page, in one rule. Every setting is
  * this block, and the separator only exists between siblings — so a
@@ -925,7 +921,9 @@ export default {
  * one line well before the panel itself is tight. Everything else already
  * stacks on its own (.quality-row wraps, every control is full-width). */
 @media (max-width: 600px) {
-  .settings-panel {
+  /* Scoped, so this tightens the panels on this page only - a dialog's
+   * panels have their own answer to a narrow window. */
+  .beacon-panel {
     padding: 14px;
     border-radius: 12px;
   }

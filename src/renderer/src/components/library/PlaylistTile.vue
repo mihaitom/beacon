@@ -49,6 +49,7 @@
      - Both are offered here for the user's own playlists; someone else's
      - shared playlist is not theirs to change. -->
     <tile-context-menu ref="menu">
+      <context-menu-section :label="$t('library.menuPlayback')" />
       <v-list-item @click="$emit('play', playlist)">
         <template #prepend><v-icon icon="mdi-play" size="small" /></template>
         <v-list-item-title>{{ $t('library.play') }}</v-list-item-title>
@@ -62,7 +63,7 @@
         <v-list-item-title>{{ $t('common.addToQueue') }}</v-list-item-title>
       </v-list-item>
       <template v-if="isOwnPlaylist">
-        <v-divider />
+        <context-menu-section :label="$t('library.menuLibrary')" />
         <v-list-item @click="$emit('rename', playlist)">
           <template #prepend><v-icon icon="mdi-pencil-outline" size="small" /></template>
           <v-list-item-title>{{ $t('common.edit') }}</v-list-item-title>
@@ -73,7 +74,7 @@
         </v-list-item>
       </template>
       <template v-if="playlist.coverArtId">
-        <v-divider />
+        <context-menu-section :label="$t('library.menuDetails')" />
         <v-list-item @click="showArtwork">
           <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
           <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
@@ -86,13 +87,14 @@
 <script lang="ts">
 import CoverArt from './CoverArt.vue'
 import TileContextMenu from './TileContextMenu.vue'
+import ContextMenuSection from './ContextMenuSection.vue'
 import { useAuthStore } from '@/stores/auth'
 import { emitter } from '@/emitter'
 import type { Playlist } from '@/types/library'
 
 export default {
   name: 'PlaylistTile',
-  components: { CoverArt, TileContextMenu },
+  components: { CoverArt, TileContextMenu, ContextMenuSection },
   props: {
     playlist: {
       type: Object as () => Playlist,

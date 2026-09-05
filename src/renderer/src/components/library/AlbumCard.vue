@@ -49,6 +49,7 @@
      - track list, which is fetched on demand (see withSongs) — a grid of
      - fifty cards must not fetch fifty track lists to render. -->
     <tile-context-menu ref="menu">
+      <context-menu-section :label="$t('library.menuPlayback')" />
       <v-list-item @click="play">
         <template #prepend><v-icon icon="mdi-play" size="small" /></template>
         <v-list-item-title>{{ $t('library.play') }}</v-list-item-title>
@@ -61,12 +62,17 @@
         <template #prepend><v-icon icon="mdi-playlist-plus" size="small" /></template>
         <v-list-item-title>{{ $t('common.addToQueue') }}</v-list-item-title>
       </v-list-item>
+      <!-- Each heading below names a kind of action rather than breaking
+         - up a long list — see docs/styleguide.md's context-menu section
+         - for the four the app uses and what belongs in each. -->
+      <context-menu-section :label="$t('library.menuLibrary')" />
       <add-to-playlist-submenu @create="createPlaylist" @select="addToPlaylist" />
-      <v-divider />
+      <context-menu-section :label="$t('library.menuNavigation')" />
       <v-list-item v-if="album.artistId" :to="`/artists/${album.artistId}`">
         <template #prepend><v-icon icon="mdi-account-music" size="small" /></template>
         <v-list-item-title>{{ $t('library.goToArtist') }}</v-list-item-title>
       </v-list-item>
+      <context-menu-section :label="$t('library.menuDetails')" />
       <v-list-item v-if="album.coverArtId" @click="showArtwork">
         <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
         <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
@@ -79,6 +85,7 @@
 <script lang="ts">
 import CoverArt from './CoverArt.vue'
 import TileContextMenu from './TileContextMenu.vue'
+import ContextMenuSection from './ContextMenuSection.vue'
 import AddToPlaylistSubmenu from './AddToPlaylistSubmenu.vue'
 import CreatePlaylistDialog from './CreatePlaylistDialog.vue'
 import { useLibraryStore } from '@/stores/library'
@@ -89,7 +96,13 @@ import type { Album, Song } from '@/types/library'
 
 export default {
   name: 'AlbumCard',
-  components: { CoverArt, TileContextMenu, AddToPlaylistSubmenu, CreatePlaylistDialog },
+  components: {
+    CoverArt,
+    TileContextMenu,
+    ContextMenuSection,
+    AddToPlaylistSubmenu,
+    CreatePlaylistDialog,
+  },
   props: {
     album: {
       type: Object as () => Album,

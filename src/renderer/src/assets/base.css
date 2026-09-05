@@ -196,6 +196,55 @@ body {
   min-width: 0;
 }
 
+/* ── Panels ───────────────────────────────────────────────────────────────
+ * The app's one surface for a group of related things: Settings' sections,
+ * the station cards on Radio, the field lists in the track-info dialog.
+ * Every one of those had grown its own near-copy of these four lines (12px
+ * or 14px of radius, the same border, the same 2% white), which is how a
+ * dialog ends up looking almost - but not quite - like the page behind it.
+ *
+ * The border is the amber hairline the whole app frames things with, and
+ * the fill is deliberately faint: a panel should read as a slightly raised
+ * area of the same surface, not as a second colour. */
+.beacon-panel {
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 1px solid var(--beacon-hairline);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* For a panel whose own children bring the padding - a list of rows, where
+ * the separator between two of them has to run the full width rather than
+ * stopping short of the border on both sides. Clipped, so those rows keep
+ * to the panel's rounded corners. */
+.beacon-panel--flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* The heading of a section *inside* a panel or a dialog. .section-title,
+ * with its lit mark, names a section of a page and stays that: the mark is
+ * the app's signature and loses its meaning if every group of four fields
+ * wears one too. This is the quieter second level - the amber eyebrow, and
+ * a hairline carrying it to the far edge so the heading spans its section
+ * rather than floating above it.
+ *
+ * Pairs with .eyebrow-label, which brings the type:
+ *   <h3 class="eyebrow-label panel-title">Audio</h3> */
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.panel-title::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--beacon-hairline);
+}
+
 .cover-shadow {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
 }

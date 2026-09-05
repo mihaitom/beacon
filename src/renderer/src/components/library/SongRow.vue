@@ -130,7 +130,13 @@
         {{ selectedCount === 1 ? $t('library.song1') : $t('library.songsN') }}
         {{ $t('library.selected') }}
       </v-list-subheader>
-      <!-- Play has a real "whole selection" reading too — see
+      <!-- What comes out of the speakers, in the order it gets there:
+         - now, next, at the end — then Song Radio, which is the one entry
+         - that conjures a queue rather than adding to the one there is.
+         - See docs/styleguide.md's context-menu section for the four
+         - sections every menu in the app is cut into.
+         -
+         - Play has a real "whole selection" reading too — see
          - SongTable.vue's playSong(), which replaces the queue with the
          - selection and starts the first one instead of starting the full
          - list from this song's position, same as Play Next/Add to
@@ -139,6 +145,7 @@
          - so it hides once this row is part of an actual multi-selection
          - instead of offering an action that silently ignores everything
          - else selected. -->
+      <context-menu-section :label="$t('library.menuPlayback')" />
       <v-list-item @click="$emit('play', song, index)">
         <template #prepend><v-icon icon="mdi-play" size="small" /></template>
         <v-list-item-title>{{ $t('library.play') }}</v-list-item-title>
@@ -147,6 +154,10 @@
         <template #prepend><v-icon icon="mdi-skip-next-outline" size="small" /></template>
         <v-list-item-title>{{ $t('library.playNext') }}</v-list-item-title>
       </v-list-item>
+      <v-list-item @click="$emit('add-to-queue', song, index)">
+        <template #prepend><v-icon icon="mdi-playlist-plus" size="small" /></template>
+        <v-list-item-title>{{ $t('common.addToQueue') }}</v-list-item-title>
+      </v-list-item>
       <v-list-item
         v-if="authStore.capabilities.songRadio && !showSelectionSubheader"
         @click="$emit('song-radio', song)"
@@ -154,26 +165,10 @@
         <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
         <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
       </v-list-item>
-      <!-- Not part of the selection-scoped group below: it shows one
-         - picture, so it stays about this one song however many rows happen
-         - to be selected — same reasoning as Song Radio above, which hides
-         - itself instead. Hidden when the song carries no cover at all. -->
-      <v-list-item v-if="song.coverArtId" @click="showArtwork">
-        <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
-        <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
-      </v-list-item>
-      <!-- About this one track for the same reason Show image is: it is a
-         - sheet of one song's fields, so it stays on the row that was
-         - right-clicked however many others happen to be selected. -->
-      <v-list-item @click="showInfo">
-        <template #prepend><v-icon icon="mdi-information-outline" size="small" /></template>
-        <v-list-item-title>{{ $t('library.songInfo') }}</v-list-item-title>
-      </v-list-item>
-      <v-divider />
-      <v-list-item @click="$emit('add-to-queue', song, index)">
-        <template #prepend><v-icon icon="mdi-playlist-plus" size="small" /></template>
-        <v-list-item-title>{{ $t('common.addToQueue') }}</v-list-item-title>
-      </v-list-item>
+
+      <!-- What is still true tomorrow. The queue section above is undone
+         - by playing something else; this writes to a playlist. -->
+      <context-menu-section :label="$t('library.menuLibrary')" />
       <add-to-playlist-submenu
         @create="$emit('create-playlist', { song, index })"
         @select="$emit('add-to-playlist', { song, playlistId: $event, index })"
@@ -182,7 +177,7 @@
          - either of them (see showAlbum) and the player-bar-sized rows show
          - neither — so this is the one way to reach them that is always
          - there. -->
-      <v-divider />
+      <context-menu-section :label="$t('library.menuNavigation')" />
       <v-list-item v-if="song.albumId" :to="`/albums/${song.albumId}`">
         <template #prepend><v-icon icon="mdi-album" size="small" /></template>
         <v-list-item-title>{{ $t('library.goToAlbum') }}</v-list-item-title>
@@ -191,6 +186,27 @@
         <template #prepend><v-icon icon="mdi-account-music" size="small" /></template>
         <v-list-item-title>{{ $t('library.goToArtist') }}</v-list-item-title>
       </v-list-item>
+
+      <!-- Last, and in a section of their own: these two are the only
+         - entries that open a dialog rather than acting on the queue or
+         - taking the app somewhere. Mixed in above, Show image and Info
+         - read as part of the playback group they sat in.
+         -
+         - Neither is selection-scoped — one shows a single picture, the
+         - other a sheet of one song's fields, so both stay about the row
+         - that was right-clicked however many others happen to be
+         - selected. That is the same reasoning behind Song Radio above,
+         - which hides itself instead. Show image goes altogether when the
+         - song carries no cover. -->
+      <context-menu-section :label="$t('library.menuDetails')" />
+      <v-list-item v-if="song.coverArtId" @click="showArtwork">
+        <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
+        <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
+      </v-list-item>
+      <v-list-item @click="showInfo">
+        <template #prepend><v-icon icon="mdi-information-outline" size="small" /></template>
+        <v-list-item-title>{{ $t('library.songInfo') }}</v-list-item-title>
+      </v-list-item>
     </tile-context-menu>
   </div>
 </template>
@@ -198,6 +214,7 @@
 <script lang="ts">
 import CoverArt from './CoverArt.vue'
 import TileContextMenu from './TileContextMenu.vue'
+import ContextMenuSection from './ContextMenuSection.vue'
 import AddToPlaylistSubmenu from './AddToPlaylistSubmenu.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
@@ -206,7 +223,7 @@ import type { Song } from '@/types/library'
 
 export default {
   name: 'SongRow',
-  components: { CoverArt, TileContextMenu, AddToPlaylistSubmenu },
+  components: { CoverArt, TileContextMenu, ContextMenuSection, AddToPlaylistSubmenu },
   props: {
     song: {
       type: Object,

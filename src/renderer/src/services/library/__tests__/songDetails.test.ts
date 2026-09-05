@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { songDetailSections } from '../songDetails'
+import { songDetailSections, type SongDetailRow } from '../songDetails'
 import type { RawSongDetail } from '@/services/subsonic/types'
 
 /** Every row of every section, flattened — most assertions here are about
@@ -10,8 +10,16 @@ import type { RawSongDetail } from '@/services/subsonic/types'
  * situation the whole module exists for. */
 function rows(detail: Partial<RawSongDetail>, locale = 'en'): Record<string, string> {
   const flat: Record<string, string> = {}
+  for (const row of Object.values(rowObjects(detail, locale))) flat[row.labelKey] = row.value
+  return flat
+}
+
+/** The same, keeping the whole row - for the assertions that are about
+ * more than its text. */
+function rowObjects(detail: Partial<RawSongDetail>, locale = 'en'): Record<string, SongDetailRow> {
+  const flat: Record<string, SongDetailRow> = {}
   for (const section of songDetailSections(detail as RawSongDetail, locale)) {
-    for (const row of section.rows) flat[row.labelKey] = row.value
+    for (const row of section.rows) flat[row.labelKey] = row
   }
   return flat
 }
@@ -112,6 +120,27 @@ describe('songDetailSections', () => {
       'Rock, Pop',
     )
     expect(rows({ id: 's1', genre: 'Rock' })['songInfo.genre']).toBe('Rock')
+  })
+
+  /** The two tag fields also carry their entries separately, which is what
+   * lets the dialog give each one its own chip. An identifier list (ISRC)
+   * deliberately does not - it is text to copy, not tags to read. */
+  it('keeps genres and moods as a list beside their joined form', () => {
+    const flat = rowObjects({
+      id: 's1',
+      genres: [{ name: 'Rock' }, { name: 'Pop' }],
+      moods: ['Melancholic', 'Warm'],
+      isrc: ['DEA123456789', 'DEA987654321'],
+    })
+
+    expect(flat['songInfo.genre']!.values).toEqual(['Rock', 'Pop'])
+    expect(flat['songInfo.mood']!.values).toEqual(['Melancholic', 'Warm'])
+    expect(flat['songInfo.isrc']!.values).toBeUndefined()
+  })
+
+  it('drops a tag list the server left empty rather than showing a bare label', () => {
+    expect(rows({ id: 's1', moods: [] })).not.toHaveProperty('songInfo.mood')
+    expect(rows({ id: 's1', genres: [] })).not.toHaveProperty('songInfo.genre')
   })
 
   it('treats an unrated track as unrated rather than as zero stars', () => {

@@ -18,6 +18,12 @@ import type { RawSongDetail } from '@/services/subsonic/types'
 export interface SongDetailRow {
   labelKey: string
   value: string
+  /** Set on the rows that are a *list* of tags rather than one value -
+   * genres and moods, which routinely hold three or four. The dialog shows
+   * these as chips; `value` stays filled with the joined form, so anything
+   * that just wants the text (a test, a future export) needs no special
+   * case for them. */
+  values?: string[]
 }
 
 export interface SongDetailSection {
@@ -25,13 +31,8 @@ export interface SongDetailSection {
   rows: SongDetailRow[]
 }
 
-function names(entries?: { name: string }[]): string | null {
-  if (!entries?.length) return null
-  const joined = entries
-    .map((entry) => entry.name)
-    .filter(Boolean)
-    .join(', ')
-  return joined || null
+function names(entries?: { name: string }[]): string[] {
+  return entries?.map((entry) => entry.name).filter(Boolean) ?? []
 }
 
 function formatDuration(seconds?: number): string | null {
@@ -72,12 +73,26 @@ function formatGain(db?: number): string | null {
   return `${db > 0 ? '+' : ''}${db.toFixed(2)} dB`
 }
 
-function section(titleKey: string, rows: [string, string | number | null][]): SongDetailSection {
+function join(entries: string[]): string | null {
+  return entries.join(', ') || null
+}
+
+/** A row's value: one scalar, or a list of tags that becomes chips. Either
+ * way an empty one drops out of the section entirely. */
+type RowValue = string | number | null | string[]
+
+function section(titleKey: string, rows: [string, RowValue][]): SongDetailSection {
   return {
     titleKey,
     rows: rows
-      .filter(([, value]) => value != null && value !== '')
-      .map(([labelKey, value]) => ({ labelKey, value: String(value) })),
+      .filter(([, value]) =>
+        Array.isArray(value) ? value.length > 0 : value != null && value !== '',
+      )
+      .map(([labelKey, value]) =>
+        Array.isArray(value)
+          ? { labelKey, value: value.join(', '), values: value }
+          : { labelKey, value: String(value) },
+      ),
   }
 }
 
@@ -85,9 +100,13 @@ export function songDetailSections(
   detail: RawSongDetail,
   locale: string = 'en',
 ): SongDetailSection[] {
-  const artist = detail.displayArtist ?? names(detail.artists) ?? detail.artist ?? null
-  const albumArtist = detail.displayAlbumArtist ?? names(detail.albumArtists) ?? null
-  const genre = names(detail.genres) ?? detail.genre ?? null
+  const artist = detail.displayArtist ?? join(names(detail.artists)) ?? detail.artist ?? null
+  const albumArtist = detail.displayAlbumArtist ?? join(names(detail.albumArtists)) ?? null
+  // As a list, not a joined string: several genres per track is the norm,
+  // and the dialog gives each one its own chip. A server that only has the
+  // single legacy field contributes exactly one.
+  const genres = names(detail.genres)
+  if (!genres.length && detail.genre) genres.push(detail.genre)
   const gain = detail.replayGain ?? {}
 
   return [
@@ -105,9 +124,9 @@ export function songDetailSections(
       ['songInfo.track', detail.track ?? null],
       ['songInfo.disc', detail.discNumber ?? null],
       ['songInfo.year', detail.year ?? null],
-      ['songInfo.genre', genre],
+      ['songInfo.genre', genres],
       ['songInfo.bpm', detail.bpm ?? null],
-      ['songInfo.mood', detail.moods?.join(', ') || null],
+      ['songInfo.mood', detail.moods ?? []],
       ['songInfo.comment', detail.comment ?? null],
       ['songInfo.explicit', detail.explicitStatus ?? null],
     ]),
@@ -120,6 +139,11 @@ export function songDetailSections(
       ['songInfo.bitDepth', detail.bitDepth ? `${detail.bitDepth} bit` : null],
       ['songInfo.channels', detail.channelCount ?? null],
       ['songInfo.size', formatSize(detail.size)],
+      // Whatever the server calls the file's location, unchanged. Worth
+      // knowing before reading it as a real path: Navidrome synthesises
+      // this one for Subsonic clients ("Artist/Album/01-03 - Title.mp3",
+      // no music folder in front) unless that client's player has
+      // "Report Real Path" switched on in its own settings.
       ['songInfo.path', detail.path ?? null],
     ]),
     section('songInfo.sectionLibrary', [
@@ -134,6 +158,8 @@ export function songDetailSections(
     ]),
     section('songInfo.sectionIds', [
       ['songInfo.musicBrainzId', detail.musicBrainzId ?? null],
+      // Joined rather than chipped, unlike the two above: an ISRC is an
+      // identifier to copy out, not a tag to read.
       ['songInfo.isrc', detail.isrc?.join(', ') || null],
     ]),
   ].filter((entry) => entry.rows.length > 0)

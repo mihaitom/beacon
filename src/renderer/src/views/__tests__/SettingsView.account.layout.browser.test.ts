@@ -143,7 +143,7 @@ describe('SettingsView account strip', () => {
     // against the filled select below it simply disappears into it. What
     // makes a hairline read as a separator is the room on both sides.
     await page.viewport(w, h)
-    const setting = mountSettings().get('.settings-panel .setting').element
+    const setting = mountSettings().get('.beacon-panel .setting').element
     const style = getComputedStyle(setting)
 
     expect(style.borderTopStyle).toBe('solid')
