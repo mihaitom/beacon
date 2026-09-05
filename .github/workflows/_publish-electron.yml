@@ -48,7 +48,15 @@ jobs:
 
         strategy:
             fail-fast: false
-            matrix: ${{ fromJson(inputs.matrix) }}
+            matrix:
+                # Under `include:`, not as the matrix itself: every caller
+                # passes a JSON array of ready-made legs ([{os, script, ...}])
+                # rather than axes to combine, and `strategy.matrix` only ever
+                # accepts an object - handed a bare sequence it fails the whole
+                # run before a single job starts ("A sequence was not
+                # expected"). `include` is what takes a list of complete
+                # combinations, which is exactly what these are.
+                include: ${{ fromJson(inputs.matrix) }}
 
         steps:
             - name: Checkout git repo
