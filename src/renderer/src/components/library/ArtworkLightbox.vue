@@ -14,7 +14,7 @@
         contain
         :cover-art-id="view.coverArtId"
         :image-url="view.imageUrl"
-        :lazy-src="view.placeholderImageUrl ?? ''"
+        :lazy-src="placeholderUrl ?? ''"
         :rounded="view.rounded"
         :fallback-icon="view.fallbackIcon ?? 'mdi-album'"
         :size="artSize"
@@ -33,6 +33,7 @@
 <script lang="ts">
 import CoverArt from './CoverArt.vue'
 import { emitter } from '@/emitter'
+import { useLibraryStore } from '@/stores/library'
 import type { ArtworkView } from '@/types/events'
 
 // The artwork's box, and with it the dialog's own width. Both sides are
@@ -48,6 +49,9 @@ import type { ArtworkView } from '@/types/events'
 // inset), both of which come out of the same 100vh.
 const ART_SIZE = 'min(72vh, 86vw)'
 
+// See placeholderUrl() for why this particular number.
+const PLACEHOLDER_SIZE = 300
+
 export default {
   name: 'ArtworkLightbox',
   components: { CoverArt },
@@ -62,6 +66,22 @@ export default {
     }
   },
   computed: {
+    /** The small copy shown while the full-size one downloads. Whoever
+     * opened the viewer can name it (an external artist's card photo, which
+     * has no cover-art id at all), and otherwise it is derived here rather
+     * than in each of the six places that open this: they all have the same
+     * cover-art id and would all build the same URL.
+     *
+     * 300px because that is the size DetailHeader.vue's blurred backdrop
+     * already asks for - so on an album, artist, genre or playlist page,
+     * where most of these are opened from, the picture is in the browser's
+     * cache before the click and appears instantly. Elsewhere it is a small
+     * fetch that still lands long before the 1280px one behind it. */
+    placeholderUrl(): string | null {
+      if (this.view?.placeholderImageUrl) return this.view.placeholderImageUrl
+      if (!this.view?.coverArtId) return null
+      return useLibraryStore().client().coverArtUrl(this.view.coverArtId, PLACEHOLDER_SIZE)
+    },
     artSize(): string {
       return ART_SIZE
     },
