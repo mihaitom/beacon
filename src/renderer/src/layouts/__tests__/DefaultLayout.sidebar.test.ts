@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -7,6 +7,7 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { VNavigationDrawer } from 'vuetify/components'
+import NavHistoryControls from '@/components/NavHistoryControls.vue'
 import DefaultLayout from '../DefaultLayout.vue'
 
 const vuetify = createVuetify({ components, directives })
@@ -102,5 +103,33 @@ describe('DefaultLayout sidebar', () => {
     expect(toggle.attributes('aria-label')).toBe('Expand sidebar')
     await toggle.trigger('click')
     expect(wrapper.get('.beacon-rail__toggle').attributes('aria-label')).toBe('Collapse sidebar')
+  })
+})
+
+describe('DefaultLayout back/forward arrows', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    delete (window as { api?: unknown }).api
+  })
+
+  /** In a browser this is the browser's own job, and its buttons sit right
+   * above ours - two sets of arrows a few pixels apart, one of which knows
+   * about pages the other does not. */
+  it('leaves them out in the web build', async () => {
+    const wrapper = await mountLayout()
+
+    expect(wrapper.findComponent(NavHistoryControls).exists()).toBe(false)
+  })
+
+  it('shows them in the desktop app, where nothing else offers them', async () => {
+    // What the preload bridge puts there; its presence is the app's own
+    // "am I in Electron" test everywhere else too.
+    ;(window as { api?: unknown }).api = {}
+    const wrapper = await mountLayout()
+
+    expect(wrapper.findComponent(NavHistoryControls).exists()).toBe(true)
   })
 })

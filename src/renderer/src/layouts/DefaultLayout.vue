@@ -66,7 +66,10 @@
        - is where every browser and every player that has one puts it, and
        - it is the first place someone looks when a detail page has
        - swallowed them. -->
-      <nav-history-controls />
+      <!-- Electron only: in the browser this is the browser's own job, and
+         - its buttons are right there above ours. Same `window.api` gate the
+         - Remote Control button uses (see PlayerToolbar.vue). -->
+      <nav-history-controls v-if="isElectron" />
       <v-spacer />
       <top-bar-search />
     </v-app-bar>
@@ -150,6 +153,9 @@ export default {
   },
   computed: {
     SIDEBAR_WIDTH: () => SIDEBAR_WIDTH,
+    isElectron(): boolean {
+      return !!window.api
+    },
     playbackStore() {
       return usePlaybackStore()
     },
