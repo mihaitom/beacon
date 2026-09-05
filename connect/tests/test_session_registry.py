@@ -347,6 +347,57 @@ def test_stop_radio_metadata_watch_keeps_the_stream_info_a_relay_is_feeding():
     assert session.radio_codec == "MP3"
 
 
+async def _noop_stop() -> None:
+    """A stand-in relay's own stop() - stop_radio_relay() awaits it."""
+
+
+def test_stop_radio_metadata_watch_keeps_the_title_a_relay_is_feeding():
+    """Same reasoning as the bitrate above, and the same call site: a
+    relayed /play-url stops this watch on every dispatch, its retries and
+    re-dispatches included. A station sends only *changed* titles, so a
+    title cleared here does not come back until the next track - which is
+    how the now-playing line went blank in the player bar while the
+    station's log kept filling."""
+    from types import SimpleNamespace
+
+    from core.session import SessionState
+
+    session = SessionState("s")
+    # Its presence is what the guard reads; the url is what the title gets
+    # logged against, same as a real relay's.
+    session.radio_relay = SimpleNamespace(url="http://station/a")
+    session._set_radio_title("Fun. - We Are Young")
+
+    session.stop_radio_metadata_watch()
+
+    assert session.radio_title == "Fun. - We Are Young"
+
+
+def test_stop_radio_relay_clears_the_title_it_was_feeding():
+    """The other half: with the watch's own clear now guarded, stopping the
+    relay has to drop the title, or the last thing a stopped station played
+    would sit in the player bar indefinitely. Both teardown paths call the
+    two in this order, with the relay still in place for the first of them
+    - which is exactly the case the guard above skips."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from core.session import SessionState
+
+    async def run():
+        session = SessionState("s")
+        session.radio_relay = SimpleNamespace(url="http://station/a", stop=_noop_stop)
+        session._set_radio_title("Fun. - We Are Young")
+
+        session.stop_radio_metadata_watch()
+        assert session.radio_title == "Fun. - We Are Young"  # guarded, still relaying
+        await session.stop_radio_relay()
+
+        assert session.radio_title is None
+
+    asyncio.run(run())
+
+
 def test_stop_radio_metadata_watch_clears_the_stream_info_with_no_relay():
     """The local/direct case, where this watch *is* the only reader."""
     from core.session import SessionState

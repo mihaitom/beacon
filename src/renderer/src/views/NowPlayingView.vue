@@ -1257,6 +1257,24 @@ export default {
   font-size: clamp(1.1rem, min(2.3cqw, 9cqh), 2.75rem);
   line-height: 1.15;
   overflow-wrap: break-word;
+  /* Cut off after three lines rather than growing without limit. This line
+   * is not always a song title: a radio station's ICY tag lands here too,
+   * and some stations send their playout system's whole record in it (see
+   * connect/core/icy_metadata.py's clean_stream_title — what survives that
+   * can still be long). Reported live at five lines, which pushed the
+   * artwork half out of view, since .now-playing__primary does not shrink
+   * (see .now-playing__info above) and this block's height is what artSize
+   * subtracts the artwork's own room from. Nothing is lost: the station's
+   * full tag is one line down in the title log.
+   *
+   * Both spellings: the unprefixed property is the standard one, the
+   * -webkit- pair is what actually does the work in Chromium today, and
+   * -webkit-box display is required for either to apply at all. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  line-clamp: 3;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 
 /* .now-playing__info .now-playing__artist-link (compound), not the class
@@ -1367,6 +1385,10 @@ export default {
  * compound-selector-over-Vuetify-utility reasoning as the base rules above. */
 .now-playing--compact .now-playing__title {
   font-size: clamp(1.2rem, min(2.4cqw, 9cqh), 2.75rem);
+  /* Two, not three: the phone shell has the artwork and the controls in
+   * the same column, so a third line costs proportionally far more here. */
+  line-clamp: 2;
+  -webkit-line-clamp: 2;
 }
 
 .now-playing--compact .now-playing__info .now-playing__artist-link {

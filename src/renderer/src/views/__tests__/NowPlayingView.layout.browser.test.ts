@@ -265,6 +265,68 @@ describe('NowPlayingView layout', () => {
     })
   })
 
+  // The title line is not always a song title: a radio station's ICY tag
+  // lands there too, and some stations send far more than "Artist - Track"
+  // (see connect/core/icy_metadata.py's clean_stream_title). Reported live
+  // at five lines, with the artwork pushed half out of view - the info
+  // block's height is what artSize leaves the artwork the rest of.
+  describe('a very long radio title', () => {
+    const LONG_TITLE =
+      'Fun. - text="We Are Young" song_spot="M" MediaBaseId="1827386" ' +
+      'itunesTrackId="0" amgTrackId="-1" amgArtistId="0" TAID="414211" ' +
+      'TPID="16978031" cartcutId="0709588001" length="00:03:51"'
+
+    async function mountWithRadioTitle(compact = false) {
+      const mounted = await mountView({ compact })
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      playback.radioNowPlaying = LONG_TITLE
+      await mounted.wrapper.vm.$nextTick()
+      return mounted
+    }
+
+    it('clamps to three lines instead of growing down the page', async () => {
+      await page.viewport(1920, 1080)
+      const { wrapper } = await mountWithRadioTitle()
+
+      const title = wrapper.get('.now-playing__title').element
+      const style = getComputedStyle(title)
+      const lineHeight = parseFloat(style.lineHeight)
+      // The rendered box, not the property: -webkit-line-clamp only takes
+      // effect together with -webkit-box display, and reading the property
+      // back would pass even with that missing.
+      expect(rect(title).height).toBeLessThanOrEqual(lineHeight * 3 + 1)
+      // ...and it really is the clamp doing it, not a title that happened
+      // to fit: the unclamped text is taller than the box showing it.
+      expect(title.scrollHeight).toBeGreaterThan(rect(title).height)
+    })
+
+    it('leaves the artwork its room, rather than pushing it off the stage', async () => {
+      await page.viewport(1920, 1080)
+      const { wrapper } = await mountWithRadioTitle()
+
+      const stage = rect(wrapper.get('.now-playing__stage').element)
+      const art = rect(wrapper.get('.now-playing__art-wrap').element)
+      expect(art.top).toBeGreaterThanOrEqual(stage.top - 1)
+      expect(art.bottom).toBeLessThanOrEqual(stage.bottom + 1)
+    })
+
+    it('clamps to two lines in the compact (phone) layout', async () => {
+      await page.viewport(390, 844)
+      const { wrapper } = await mountWithRadioTitle(true)
+
+      const title = wrapper.get('.now-playing__title').element
+      const lineHeight = parseFloat(getComputedStyle(title).lineHeight)
+      expect(rect(title).height).toBeLessThanOrEqual(lineHeight * 2 + 1)
+      expect(title.scrollHeight).toBeGreaterThan(rect(title).height)
+    })
+  })
+
   it('always flips on mobile (compact) and fits a phone width', async () => {
     await page.viewport(390, 844)
     const { wrapper } = await mountWithSongAndLyrics(true)

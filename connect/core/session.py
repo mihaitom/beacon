@@ -258,18 +258,26 @@ class SessionState:
             self._radio_metadata_task.cancel()
             self._radio_metadata_task = None
         self._radio_metadata_url = None
-        self.radio_title = None
-        # Guarded, unlike the title above: a station states its bitrate
-        # exactly once per connection, in the response headers, so a
-        # wrongly-cleared one never comes back on its own the way the next
-        # title change does. routes/playback.py's /play-url calls this
-        # *after* start_radio_relay() has taken the same ICY reading over
-        # (they are mutually exclusive, see start_radio_relay()), and
-        # clearing unconditionally would wipe exactly what the relay just
-        # reported. stop_radio_relay() owns the clear in that case, and
-        # both teardown paths in routes/playback.py call it right after
-        # this one.
+        # All three are guarded the same way: routes/playback.py's
+        # /play-url calls this *after* start_radio_relay() has taken the
+        # same ICY reading over (the two are mutually exclusive, see
+        # start_radio_relay()), so clearing unconditionally would wipe
+        # exactly what the relay is reporting. stop_radio_relay() owns the
+        # clear in that case, and both teardown paths in routes/playback.py
+        # call it right after this one.
+        #
+        # The title used to be cleared unconditionally, on the assumption
+        # that the next title change brings it straight back. It does not:
+        # a station only sends a *changed* title, so the next one can be a
+        # whole track away, and /play-url runs this on every dispatch for
+        # an already-running relay (its retries, a re-dispatch after a
+        # device event) - each one blanking the now-playing line in the
+        # player bar and on Now Playing until the track changed. The
+        # station's log kept filling the whole time, since that is written
+        # when the title arrives rather than read from here, which is what
+        # made this look like a display bug in one place only.
         if self.radio_relay is None:
+            self.radio_title = None
             self.radio_bitrate = None
             self.radio_codec = None
 
@@ -385,7 +393,9 @@ class SessionState:
         # is.
         self.radio_position_tracker = None
         # See stop_radio_metadata_watch()'s own comment for why the clear
-        # lives here as well as there, rather than only there.
+        # lives here as well as there, rather than only there - this is the
+        # half of it that runs when a relay *is* what was reporting.
+        self.radio_title = None
         self.radio_bitrate = None
         self.radio_codec = None
         self.radio_icy_pending_injection = None

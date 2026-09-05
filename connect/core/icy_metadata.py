@@ -46,6 +46,68 @@ _client = httpx.AsyncClient(
 
 _TITLE_RE = re.compile(rb"StreamTitle='(.*?)';", re.DOTALL)
 
+# Where a station stops sending a title and starts sending its playout
+# system's own bookkeeping. Sampled live 2026-09-06 from an iHeartRadio
+# station:
+#
+#   Fun. - text="We Are Young" song_spot="M" MediaBaseId="1827386"
+#   itunesTrackId="0" amgTrackId="-1" TAID="414211" cartcutId="0709588001"
+#   amgArtworkURL="http://image.iheart.com/content/music/prod/WMG4/Thum
+#
+# None of that is ICY: the protocol says StreamTitle is free text, and
+# "Artist - Track" is convention, not spec. These key="value" pairs are one
+# US playout system's private extension stuffed through the same field, so
+# there is no standard to implement - only this shape to recognise and cut
+# off. An unterminated final pair is tolerated even so: an ICY block's
+# length byte counts 16-byte units, so a block cannot exceed 255*16 = 4080
+# bytes and a station sending more than that has to cut the run off
+# mid-value. Measured on this station the whole run is 336 bytes and
+# arrives complete, so that is a structural limit being respected here
+# rather than anything observed - but reading the value is not what this
+# depends on either way.
+_ATTR_START_RE = re.compile(r"\s*\b[A-Za-z_][A-Za-z0-9_.-]*=\"")
+_ATTR_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_.-]*)=\"([^\"]*)\"?")
+
+# The one attribute in that run that is not bookkeeping: the track title
+# itself, with only the artist left in front of it.
+_TITLE_ATTR = "text"
+
+# Trailing separator left behind once the attributes are cut off - the
+# station wrote "Fun. - text=...", so removing the attributes leaves the
+# dash dangling. Only a dash with the spaces around it that RadioTitleLog's
+# own split expects; a hyphenated word ("ARD-Infosamstag") must survive.
+_DANGLING_SEPARATOR_RE = re.compile(r"\s*-\s*$")
+
+
+def clean_stream_title(title: str) -> str:
+    """A StreamTitle with a playout system's key="value" run removed, and
+    the track name pulled back out of `text="..."` if that is where the
+    station put it.
+
+    "Fun. - text=\"We Are Young\" song_spot=\"M\" MediaBaseId=\"1827386\""
+    becomes "Fun. - We Are Young", which is the "Artist - Track" shape the
+    rest of Beacon already assumes (the frontend's RadioTitleLog splits on
+    exactly that separator to offer a library search).
+
+    An ordinary title is returned untouched - the run has to actually be
+    there, anchored on a `key="` that no normal title contains, so a track
+    with quotes in it ('Weird Al - "Weird Al" Yankovic') is not a match.
+
+    Returns "" for a block that carried nothing *but* bookkeeping - an ad
+    break tagged song_spot="F" with no text attribute at all. Callers
+    already skip empty titles, which is the right outcome: better to keep
+    showing the previous track than to put a MediaBaseId on screen."""
+    start = _ATTR_START_RE.search(title)
+    if start is None:
+        return title.strip()
+    head = _DANGLING_SEPARATOR_RE.sub("", title[: start.start()].strip()).strip()
+    attrs = dict(_ATTR_RE.findall(title[start.start() :]))
+    track = attrs.get(_TITLE_ATTR, "").strip()
+    if head and track:
+        return f"{head} - {track}"
+    return head or track
+
+
 # Anything outside this is not a station bitrate but a misread header — the
 # frontend puts this number straight in front of the listener ("Live · 320
 # kbps · 1:23"), so a nonsense value is worse than none at all.
@@ -144,7 +206,13 @@ class IcyDemuxer:
                     bytes(self._buf[self._metaint + 1 : self._metaint + 1 + length])
                 )
                 if match:
-                    title = match.group(1).decode("utf-8", errors="replace").strip()
+                    # Cleaned here rather than at each reader, because this
+                    # is the single point both of them come through
+                    # (watch() below and core/radio_relay.py's relay) - and
+                    # cleaning before the callback also keeps the bookkeeping
+                    # out of what IcyMuxer re-injects towards a device, which
+                    # reads the very title this sets.
+                    title = clean_stream_title(match.group(1).decode("utf-8", errors="replace"))
                     if title:
                         self._on_title_change(title)
             del self._buf[: self._metaint + 1 + length]

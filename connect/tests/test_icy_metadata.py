@@ -208,6 +208,66 @@ class TestIcyMuxer:
         assert out == _icy_block(b"a" * metaint, "Title")
 
 
+class TestCleanStreamTitle:
+    """Stations whose playout system stuffs its own bookkeeping through
+    StreamTitle - see clean_stream_title()'s own comment for the live
+    sample this is built from."""
+
+    def test_pulls_the_track_out_of_the_iheart_attribute_run(self):
+        title = (
+            'Fun. - text="We Are Young" song_spot="M" MediaBaseId="1827386" '
+            'itunesTrackId="0" amgTrackId="-1" amgArtistId="0" TAID="414211" '
+            'TPID="16978031" cartcutId="0709588001"'
+        )
+
+        assert icy_mod.clean_stream_title(title) == "Fun. - We Are Young"
+
+    def test_survives_a_truncated_final_attribute(self):
+        """A block cannot exceed 4080 bytes (see clean_stream_title), so a
+        long enough run has to be cut off mid-value. Not what the sampled
+        station does - it sends 336 complete bytes - but nothing here needs
+        the closing quote to be there."""
+        title = (
+            'Fun. - text="We Are Young" song_spot="M" '
+            'amgArtworkURL="http://image.iheart.com/content/music/prod/WMG4/Thum'
+        )
+
+        assert icy_mod.clean_stream_title(title) == "Fun. - We Are Young"
+
+    def test_reads_a_text_attribute_that_carries_the_whole_title(self):
+        assert (
+            icy_mod.clean_stream_title('text="Someone - Some Song" song_spot="M"')
+            == "Someone - Some Song"
+        )
+
+    def test_drops_a_block_that_is_only_bookkeeping(self):
+        """An ad break: tagged, but with no title in it at all. Empty means
+        IcyDemuxer keeps the previous title on screen rather than showing a
+        MediaBaseId."""
+        assert icy_mod.clean_stream_title('song_spot="F" MediaBaseId="0"') == ""
+
+    def test_leaves_an_ordinary_title_alone(self):
+        # Including the two shapes that must not be mistaken for the run:
+        # a hyphenated word, and a title with quotes of its own.
+        assert icy_mod.clean_stream_title("Artist - Track") == "Artist - Track"
+        assert icy_mod.clean_stream_title("ARD-Infosamstag") == "ARD-Infosamstag"
+        assert (
+            icy_mod.clean_stream_title('Weird Al - "Weird Al" Yankovic')
+            == 'Weird Al - "Weird Al" Yankovic'
+        )
+
+    def test_the_demuxer_reports_the_cleaned_title(self):
+        """The point of cleaning inside IcyDemuxer: every reader - the
+        watch, the relay, and the title IcyMuxer mirrors back out to a
+        device - gets the same cleaned text without doing it itself."""
+        metaint = 8
+        demuxer = icy_mod.IcyDemuxer(metaint, (titles := []).append)
+
+        demuxer.feed(_icy_block(b"a" * metaint, 'Fun. - text="We Are Young" song_spot="M"'))
+
+        assert titles == ["Fun. - We Are Young"]
+
+
 class TestParseBitrate:
     def test_reads_a_plain_value(self):
         assert icy_mod.parse_bitrate("320") == 320

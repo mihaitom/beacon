@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Radio stations that send iHeartRadio-style now-playing metadata now show the artist and track like every other station, instead of a line of internal identifiers
+- While casting a radio station, the artist and track under the station name no longer disappears until the next song starts
+- Switching stations while casting no longer flickers back to the previous station for a moment before settling on the new one
+- A very long radio title no longer pushes the artwork out of view on Now Playing; it is shortened with an ellipsis, and the full title stays in the station's title list
+
 ## [1.1.0] - 2026-09-05
 
 ### Added

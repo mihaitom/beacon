@@ -11,6 +11,7 @@ import * as radioMetadata from '@/services/connect/radioMetadata'
 import * as radioBrowser from '@/services/connect/radioBrowser'
 import { rememberRadioBrowserStation } from '@/services/radioBrowserLinks'
 import { resolveRadioStreamUrl } from '@/services/connect/radio'
+import type { PlayResponse } from '@/services/connect/types'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import { makeSong, makeStatus } from './fixtures'
 
@@ -629,6 +630,59 @@ describe('playback transport', () => {
       expect(radioMetadata.startRadioMetadataWatch).toHaveBeenCalledWith(
         'https://stream.example/chill',
       )
+    })
+
+    // Regression test, reported live 2026-09-06 while casting: clicking a
+    // station showed it in the player bar, then the *previous* station
+    // replaced it, then the new one came back about two seconds later. The
+    // status ticks arriving while /play-url is still in flight still name
+    // the old station, and reconcileFromStatus() reads those as another
+    // client in this shared session having switched - so it switches back.
+    // Each flip also resets the now-playing tag and the title log, which is
+    // what made a station look like it never reported anything.
+    it('ignores a status tick still naming the previous station while its own dispatch is in flight', async () => {
+      const playback = usePlaybackStore()
+      castTo()
+      let releaseDispatch: () => void = () => {}
+      vi.mocked(connectPlayback.playUrl).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            releaseDispatch = () => resolve({ status: 'playing' } as PlayResponse)
+          }),
+      )
+      playback.radioStation = {
+        id: 'r0',
+        name: 'Old FM',
+        streamUrl: 'https://stream.example/old',
+        homePageUrl: null,
+      }
+
+      const dispatch = playback.playRadioStation({
+        id: 'r1',
+        name: 'New FM',
+        streamUrl: 'https://stream.example/new',
+        homePageUrl: null,
+      })
+      await flushPromises()
+      playback.radioNowPlaying = 'Fun. - We Are Young'
+
+      // The tick that used to undo the switch.
+      await playback.reconcileFromStatus(
+        makeStatus({ radio: { title: 'Old FM', url: 'https://stream.example/old' } }),
+      )
+
+      expect(playback.radioStation?.streamUrl).toBe('https://stream.example/new')
+      expect(playback.radioNowPlaying).toBe('Fun. - We Are Young')
+
+      releaseDispatch()
+      await dispatch
+
+      // ...and once the dispatch has landed, a tick naming a genuinely
+      // different station is adopted again as it always was.
+      await playback.reconcileFromStatus(
+        makeStatus({ radio: { title: 'Third FM', url: 'https://stream.example/third' } }),
+      )
+      expect(playback.radioStation?.streamUrl).toBe('https://stream.example/third')
     })
 
     // Regression test: status.current_song is always null for radio, so

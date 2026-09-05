@@ -224,6 +224,18 @@ const startCurrentGuard = createSequenceGuard()
 // to that one stale song. See reconcileFromStatus()'s early return below.
 const localSongChangeGuard = createKeyedGuard<string>()
 
+// Radio's own counterpart, keyed by stream URL. Same race, same shape: the
+// station is switched here first and /play-url told about it afterwards, so
+// an SSE tick landing in that gap still reports the *previous* station -
+// which reconcileFromStatus() below would read as another client having
+// switched this shared session, and switch back to it. Reported live
+// 2026-09-06 as the new station appearing in the player bar, the old one
+// replacing it, and the new one returning two seconds later. Not cosmetic:
+// that branch also resets the now-playing tag and the title log, so every
+// flip threw away what had already arrived for the station actually
+// starting.
+const localRadioChangeGuard = createKeyedGuard<string>()
+
 // The song id already registered as "played" (scrobble submission=true)
 // during the current play-through — guards checkScrobbleThreshold() against
 // submitting more than once per play, and naturally allows a re-scrobble
@@ -761,6 +773,10 @@ export const usePlaybackStore = defineStore('playback', {
      * matches. */
     async reconcileFromStatus(status: ConnectStatus): Promise<void> {
       if (status.radio) {
+        // Our own station switch hasn't been confirmed yet - see
+        // localRadioChangeGuard, and localSongChangeGuard's identical use
+        // for the queue further down.
+        if (localRadioChangeGuard.hasAny()) return
         if (this.radioStation?.streamUrl !== status.radio.url) {
           // Queue left alone, same as playRadioStation()'s own branch and
           // for the same reason (see its comment) — this is that same
@@ -1119,10 +1135,15 @@ export const usePlaybackStore = defineStore('playback', {
       startRadioMetadataWatch(streamUrl)
 
       if (connect.isActive) {
-        await connectPlayback.playUrl(streamUrl, station.name, {
-          targets: connect.activeTargets,
-          castDirectly: useRadioSettingsStore().castDirectly,
-        })
+        localRadioChangeGuard.begin(streamUrl)
+        try {
+          await connectPlayback.playUrl(streamUrl, station.name, {
+            targets: connect.activeTargets,
+            castDirectly: useRadioSettingsStore().castDirectly,
+          })
+        } finally {
+          localRadioChangeGuard.end(streamUrl)
+        }
       } else {
         getAudioEngine().play(streamUrl)
       }
