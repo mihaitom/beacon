@@ -58,7 +58,7 @@
            - Beacon is being run, and only one of them is a real separation
            - of addresses — worth saying plainly rather than letting the
            - desktop app read as more separated than it is. -->
-        <section class="privacy-note">
+        <section class="privacy-builds">
           <h3 class="privacy-group__title">{{ $t('privacy.buildsTitle') }}</h3>
           <p class="privacy-group__rule text-body-small">{{ $t('privacy.builds') }}</p>
         </section>
@@ -184,13 +184,23 @@ export default {
 }
 
 .privacy-group + .privacy-group,
-.privacy-group + .privacy-note {
+.privacy-group + .privacy-builds {
   margin-top: 24px;
 }
 
 /* Same look as a section, but not one: it lists no services, and the two
- * that do are what "split by who opens the connection" counts. */
-.privacy-note {
+ * that do are what "split by who opens the connection" counts.
+ *
+ * Not called .privacy-note, however well that reads: cookie-banner filter
+ * lists (uBlock/AdGuard "annoyances") carry a rule for that exact class,
+ * because so many sites label their cookie notice with it - and they hide
+ * it with !important, which no stylesheet of ours can outrank. Reported
+ * live 2026-09-05 from the web build: the section was in the DOM, the
+ * dialog scrolled fine, and the browser extension had simply removed it.
+ * Invisible in Electron, where no extension runs, which is what made it
+ * look like a build difference. Anything named for privacy, consent or
+ * cookies is worth checking against those lists before using it. */
+.privacy-builds {
   display: block;
 }
 
