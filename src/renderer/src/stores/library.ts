@@ -127,13 +127,14 @@ async function runLegacyMigration(): Promise<void> {
 
 /** Called from authStore.logout() — a different account's library shouldn't
  * leak into whoever logs in next, same reasoning as clearPersistedPlayback(). */
-export function clearLibraryCache(): void {
-  clearLibraryFields(CACHE_FIELDS.map(fieldKey))
+export function clearLibraryCache(): Promise<void> {
+  const cleared = clearLibraryFields(CACHE_FIELDS.map(fieldKey))
   try {
     localStorage.removeItem(accountScopedKey(LEGACY_CACHE_KEY))
   } catch {
     // Nothing to clean up if storage isn't available in the first place.
   }
+  return cleared
 }
 
 /** Fetches every page of the flat song catalog (search3 with an empty
@@ -389,14 +390,15 @@ export const useLibraryStore = defineStore('library', {
      * app restarts. Per-item caches (albumCache/artistCache) go too, since
      * a scan can change a specific album/artist's own song list without
      * that id ever having been "missing" before. */
-    invalidateCache(): void {
-      clearLibraryCache()
+    invalidateCache(): Promise<void> {
+      const cleared = clearLibraryCache()
       this.artists = []
       this.albums = []
       this.allSongs = []
       this.allSongsLoaded = false
       this.albumCache = {}
       this.artistCache = {}
+      return cleared
     },
 
     /** Called from authStore.logout() — without this, a different account

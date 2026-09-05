@@ -177,9 +177,14 @@ export function writeArtwork(key: string, blob: Blob): void {
 /** Throws away everything stored. Called when the account changes: cover
  * ids are only unique within one media server, so another account's
  * library must not be shown this one's artwork. */
-export function clearArtwork(): void {
+/** Resolves once the store is actually empty. Awaitable because Settings'
+ * "clear cache" reports success to the person who pressed it, and saying so
+ * while a wipe of the largest store here is still running is both untrue
+ * and losable: a reload right after can abort the transaction, leaving the
+ * artwork that was just declared gone still sitting there. */
+export function clearArtwork(): Promise<void> {
   generation += 1
-  void (async () => {
+  return (async () => {
     const db = await open()
     if (!db) return
     await run(db, 'readwrite', (store) => store.clear())

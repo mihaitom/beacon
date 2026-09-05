@@ -631,6 +631,7 @@ export default {
         return {
           ...artist,
           imageUrl: enrichment?.image ?? null,
+          largeImageUrl: enrichment?.imageLarge ?? null,
           links,
         }
       })

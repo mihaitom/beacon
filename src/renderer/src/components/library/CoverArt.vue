@@ -16,8 +16,9 @@
    - intersection handling would only get in the way. -->
   <v-avatar v-if="rounded" ref="root" :size="sizeCss" rounded="0">
     <v-img
-      v-if="displaySrc"
-      :src="displaySrc"
+      v-if="displaySrc || lazySrc"
+      :src="displaySrc ?? undefined"
+      :lazy-src="lazySrc"
       width="100%"
       height="100%"
       :cover="!contain"
@@ -25,7 +26,9 @@
       @error="onImageError"
     >
       <template #placeholder>
-        <v-skeleton-loader type="image" class="cover-art-skeleton" />
+        <!-- Only when there is nothing better to show: with a lazy-src,
+           - v-img is already drawing that in this same spot. -->
+        <v-skeleton-loader v-if="!lazySrc" type="image" class="cover-art-skeleton" />
       </template>
     </v-img>
     <v-skeleton-loader v-else-if="current" type="image" class="cover-art-skeleton" />
@@ -40,8 +43,9 @@
    - matches this box's current size, mid-transition or not. -->
   <div v-else ref="root" class="cover-art" :style="{ width: sizeCss, height: sizeCss }">
     <v-img
-      v-if="displaySrc"
-      :src="displaySrc"
+      v-if="displaySrc || lazySrc"
+      :src="displaySrc ?? undefined"
+      :lazy-src="lazySrc"
       width="100%"
       height="100%"
       :cover="!contain"
@@ -49,7 +53,8 @@
       @error="onImageError"
     >
       <template #placeholder>
-        <v-skeleton-loader type="image" class="cover-art-skeleton" />
+        <!-- Same as the rounded branch above. -->
+        <v-skeleton-loader v-if="!lazySrc" type="image" class="cover-art-skeleton" />
       </template>
     </v-img>
     <v-skeleton-loader v-else-if="current" type="image" class="cover-art-skeleton" />
@@ -297,6 +302,23 @@ export default {
     fullSize: {
       type: Boolean,
       default: false,
+    },
+    /** A ready-made URL for a smaller copy of the same picture, shown
+     * while the real one is still being fetched. Handed straight to
+     * v-img's own `lazy-src`, which is what makes the swap a cross-fade:
+     * it keeps the small image on screen until the real one has decoded
+     * and then transitions between them, both inside the same element.
+     * Rendering the two as separate elements instead — which this did at
+     * first — has Vue unmount one and mount the other, and that shows as a
+     * flicker at exactly the moment the better picture arrives.
+     *
+     * Only ever set by the artwork viewer (ArtworkLightbox.vue), which is
+     * opened from somewhere that already has the small version on screen;
+     * every other caller renders at a size its own fetch reaches quickly
+     * enough for a skeleton to be the honest answer. */
+    lazySrc: {
+      type: String,
+      default: '',
     },
     rounded: {
       type: Boolean,

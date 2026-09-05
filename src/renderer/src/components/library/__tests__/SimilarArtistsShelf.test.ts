@@ -8,6 +8,8 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
+import { emitter } from '@/emitter'
+import type { ArtworkView } from '@/types/events'
 import SimilarArtistsShelf, { type SimilarArtistDisplay } from '../SimilarArtistsShelf.vue'
 
 const vuetify = createVuetify({ components, directives })
@@ -17,6 +19,7 @@ function makeArtist(overrides: Partial<SimilarArtistDisplay> = {}): SimilarArtis
     mbid: 'mb-1',
     name: 'The Tide',
     imageUrl: 'https://art/tide.jpg',
+    largeImageUrl: 'https://art/tide-xl.jpg',
     // HomeView's lookup always leaves at least a musicbrainz entry — see
     // SimilarArtistDisplay's own docstring.
     links: { musicbrainz: 'https://musicbrainz.org/artist/mb-1' },
@@ -31,7 +34,83 @@ function mountShelf(artists: SimilarArtistDisplay[] = [makeArtist()], loading = 
   })
 }
 
+/** Everything the artwork viewer was asked to show while `run` ran. */
+function shown(run: () => void): ArtworkView[] {
+  const views: ArtworkView[] = []
+  const listener = (view: ArtworkView): void => {
+    views.push(view)
+  }
+  emitter.on('showArtwork', listener)
+  run()
+  emitter.off('showArtwork', listener)
+  return views
+}
+
 describe('SimilarArtistsShelf', () => {
+  describe('opening the photo full size', () => {
+    it('shows the artist photo when the card art is clicked', () => {
+      // These cards are the one place in the app with artwork and no other
+      // left-click meaning of their own — the card is deliberately not a
+      // link, since an artist nobody owns has no page here to go to.
+      const wrapper = mountShelf([makeArtist({ name: 'The Tide' })])
+
+      const views = shown(() => {
+        void wrapper.get('.similar-artists-card-art-button').trigger('click')
+      })
+
+      expect(views).toHaveLength(1)
+      expect(views[0]).toMatchObject({
+        // The big one: the viewer fills most of the window, where the
+        // card's own 250px looked like 250px blown up.
+        imageUrl: 'https://art/tide-xl.jpg',
+        // And the card's own picture underneath it, so the viewer is
+        // filled the instant it opens rather than showing a skeleton over
+        // an image the person was already looking at.
+        placeholderImageUrl: 'https://art/tide.jpg',
+        title: 'The Tide',
+        // Same shape the card itself draws it in, so it does not change on
+        // the way into the viewer.
+        rounded: true,
+      })
+      // Nothing to resolve through the cover-art batch: this artist is not
+      // in the library, which is the point of the shelf.
+      expect(views[0]!.coverArtId).toBeUndefined()
+    })
+
+    it('falls back to the card photo when the lookup found only one size', () => {
+      const wrapper = mountShelf([makeArtist({ largeImageUrl: null })])
+
+      const views = shown(() => {
+        void wrapper.get('.similar-artists-card-art-button').trigger('click')
+      })
+
+      expect(views[0]).toMatchObject({
+        imageUrl: 'https://art/tide.jpg',
+        placeholderImageUrl: 'https://art/tide.jpg',
+      })
+    })
+
+    it('offers no click for an artist with no photo at all', () => {
+      // There would be nothing to open but the fallback icon.
+      const wrapper = mountShelf([makeArtist({ imageUrl: null })])
+
+      expect(wrapper.find('.similar-artists-card-art-button').exists()).toBe(false)
+      expect(wrapper.find('.similar-artists-card-art').exists()).toBe(true)
+    })
+
+    it('leaves the service links alone', () => {
+      // The icon row below the name has its own destinations — the artwork
+      // click must not swallow those.
+      const wrapper = mountShelf([makeArtist()])
+
+      const views = shown(() => {
+        void wrapper.get('.similar-artists-card-link').trigger('click')
+      })
+
+      expect(views).toEqual([])
+    })
+  })
+
   it('renders one card per artist under its own heading', () => {
     const wrapper = mountShelf([
       makeArtist({ mbid: 'mb-1', name: 'The Tide' }),

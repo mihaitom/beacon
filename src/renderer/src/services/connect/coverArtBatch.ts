@@ -279,7 +279,7 @@ function remember(key: string, blob: Blob | null): void {
  * a plain Error, so CoverArt.vue treats it as worth another go (it is: the
  * same component asks again against the new account and gets its own
  * library's cover). */
-export function clearCoverArtCache(): void {
+export function clearCoverArtCache(): Promise<void> {
   cached.clear()
   cachedBytes = 0
   generation += 1
@@ -291,7 +291,7 @@ export function clearCoverArtCache(): void {
   flushTimer = null
   for (const bucket of abandoned) abandon(bucket, [...bucket.keys()])
 
-  clearArtwork()
+  return clearArtwork()
 }
 
 /** Rejects everything still waiting in `bucket` for `refs` — an answer that
@@ -430,5 +430,5 @@ export function _resetCoverArtBatch(): void {
   pendingImages = new Map()
   if (flushTimer) clearTimeout(flushTimer)
   flushTimer = null
-  clearCoverArtCache()
+  void clearCoverArtCache()
 }

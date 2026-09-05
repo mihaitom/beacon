@@ -8,6 +8,13 @@ export interface SimilarArtist {
 
 export interface ArtistImage {
   image: string | null
+  /** The same photo at Deezer's largest size. Carried separately rather
+   * than used everywhere, because the two places it is shown want
+   * different things: a 160px card is well served by `image` (250px, sharp
+   * even at 2x) and downloading a megapixel for every card in a shelf
+   * would be waste, while the artwork viewer fills most of a window and
+   * made 250px look exactly like 250px. */
+  imageLarge: string | null
   link: string | null
 }
 
@@ -48,10 +55,25 @@ export async function getArtistImages(
   if (!names.length) return {}
   const params = new URLSearchParams()
   for (const name of names) params.append('name', name)
-  const data = await fetchConnect<{ images: Record<string, ArtistImage | null> }>(
-    `/recommendations/artist-images?${params.toString()}`,
+  const data = await fetchConnect<{
+    images: Record<
+      string,
+      { image: string | null; image_large?: string | null; link: string | null } | null
+    >
+  }>(`/recommendations/artist-images?${params.toString()}`)
+  return Object.fromEntries(
+    Object.entries(data.images).map(([name, entry]) => [
+      name,
+      entry && {
+        image: entry.image,
+        // A backend too old to send it (a browser client against a Beacon
+        // that has not been updated) leaves the viewer with the card's own
+        // picture, which is what it used to get anyway.
+        imageLarge: entry.image_large ?? entry.image,
+        link: entry.link,
+      },
+    ]),
   )
-  return data.images
 }
 
 // MusicBrainz's own artist page plus whichever of Spotify/Apple Music/

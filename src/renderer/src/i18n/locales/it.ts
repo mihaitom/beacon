@@ -20,6 +20,7 @@ export default {
   },
   nav: {
     home: 'Home',
+    library: 'Libreria',
     albums: 'Album',
     artists: 'Artisti',
     songs: 'Brani',
@@ -96,6 +97,8 @@ export default {
     noGenresFound: 'Nessun genere trovato.',
     noGenresForQuery: 'Nessun genere per "{query}".',
     noSongsFound: 'Nessun brano trovato.',
+    searchSongs: 'Cerca brani…',
+    searchAlbums: 'Cerca album…',
     noSongsForQuery: 'Nessun brano per "{query}".',
     album1: 'album',
     albumsN: 'album',
@@ -140,8 +143,9 @@ export default {
     nothingPlaying: 'Nessuna riproduzione in corso',
     mute: 'Muto',
     volume: 'Volume',
-    autoplay: 'Autoplay',
+    autoplay: 'Riproduzione automatica',
     liveRadio: 'In diretta · {time}',
+    live: 'In diretta',
   },
   shortcuts: {
     title: 'Scorciatoie da tastiera',
@@ -314,7 +318,7 @@ export default {
     refreshLibraryFailed: 'Impossibile aggiornare la libreria.',
     storageTitle: 'Archiviazione',
     clearCacheHint:
-      'Elimina i dati della libreria e i testi memorizzati nella cache locale: tutto verrà ricaricato la prossima volta che sarà necessario. Non avvia una scansione della libreria.',
+      'Elimina i dati della libreria, le copertine, le foto degli artisti, i loghi delle stazioni e i testi memorizzati nella cache locale: tutto verrà ricaricato la prossima volta che sarà necessario. Non avvia una scansione della libreria.',
     clearCache: 'Svuota cache',
     cacheCleared: 'Cache svuotata.',
     resetAirplayHint:
@@ -335,15 +339,15 @@ export default {
     logLevelChangeFailed: 'Impossibile aggiornare il livello di log.',
     recommendations: 'Consigli personalizzati',
     recommendationsHint:
-      'Scopri nella Home usa artisti simili a quello che ascolti davvero, risolti tramite MusicBrainz e ListenBrainz — questo condivide uno o due nomi di artisti della libreria con questi servizi. Disattivato torna ad album casuali.',
+      'Scopri nella Home usa artisti simili a ciò che ascolti davvero, cercati su MusicBrainz, ListenBrainz e Deezer — questo condivide con loro uno o due nomi di artisti della tua libreria. Disattivato mostra album casuali; aprire la pagina di un artista continua comunque a cercare quel singolo artista.',
     lyricsProvidersTitle: 'Provider di testi',
     lyricsProvidersHint:
-      'I testi salvati nel file del brano stesso vengono sempre provati per primi e non lasciano mai il tuo server. Per impostazione predefinita ogni provider qui sotto è attivo — deseleziona quelli a cui preferisci che Beacon non invii titolo, artista, album e durata di un brano.',
+      'I testi salvati nel file stesso vengono sempre provati per primi e non lasciano mai il tuo server. Tutti i fornitori qui sotto sono attivi per impostazione predefinita — deseleziona quelli a cui preferisci che Beacon non invii titolo e artista di un brano.',
     lyricsProviders: 'Provider di terze parti',
     lyricsProvidersEmptyHint:
       'Nessun provider selezionato — vengono mostrati solo i testi salvati nel file stesso.',
     lyricsProvidersActiveHint:
-      'Quando il file non contiene testi, il titolo, l’artista, l’album e la durata del brano vengono inviati ai provider selezionati per trovare una corrispondenza.',
+      'Se il file non ha testo, titolo e artista vengono inviati ai fornitori selezionati per trovare una corrispondenza. Album e durata non lasciano mai il tuo server; servono solo qui, per scegliere il risultato più vicino.',
     playbackTitle: 'Riproduzione',
     replayGain: 'ReplayGain',
     replayGainOff: 'Disattivato',
@@ -366,10 +370,6 @@ export default {
     castRadioDirectly: 'Inviare la radio direttamente al dispositivo',
     castRadioDirectlyHint:
       "Per impostazione predefinita Beacon instrada la radio trasmessa tramite il proprio backend, così dispositivo e titolo in riproduzione condividono un'unica connessione alla stazione. Se attivato, il dispositivo si collega direttamente alla stazione — la riproduzione continua anche se Beacon si riavvia, con il rischio che alcuni dispositivi rifiutino il flusso della stazione.",
-    autoplay: 'Autoplay',
-    autoplayBatchSizeItem: '{count} brani',
-    autoplayHint:
-      'Si attiva/disattiva dalla barra di riproduzione (accanto a Coda), non qui — questo controlla solo quanti brani simili vengono aggiunti ogni volta che la coda viene rifornita, tramite lo stesso motore di raccomandazione di Radio brano/artista. Non si attiva se Ripeti è già acceso, perché in quel caso la coda non si svuota mai da sola.',
     about: 'Informazioni su Beacon',
     whatsNew: 'Novità?',
     ffmpegFound: 'ffmpeg trovato',
@@ -397,6 +397,98 @@ export default {
     byOwner: 'di {owner}',
     deleteTitle: 'Eliminare la playlist?',
     deleteConfirm: 'Eliminare "{name}"? Questa azione non può essere annullata.',
+  },
+  privacy: {
+    title: 'Privacy',
+    intro:
+      "Beacon funziona con il tuo server multimediale. Non c'è registrazione, né analytics, né tracking, né pubblicità. Alcune funzioni interrogano però servizi esterni. Ecco quali sono, per cosa vengono interrogati e cosa parte con la richiesta.",
+    fromDeviceTitle: 'Connessioni da questo dispositivo',
+    fromDeviceHint:
+      "Vale per tutto ciò che segue in questa sezione: è il dispositivo ad aprire la connessione, quindi l'altro capo vede il tuo indirizzo IP.",
+    viaServerTitle: 'Connessioni tramite il tuo server Beacon',
+    viaServerHint:
+      "Vale per tutto ciò che segue in questa sezione: il dispositivo parla solo con il tuo server Beacon, che fa la richiesta per suo conto. L'altro capo vede quindi l'indirizzo del server, non il tuo.",
+    sends: 'Viene inviato:',
+    buildsTitle: 'App desktop e Docker',
+    builds:
+      "Nella versione Docker il tuo server Beacon gira dove lo ospiti: le richieste della seconda sezione partono quindi dall'indirizzo di quel server, non dal tuo. L'app desktop porta con sé lo stesso server e lo avvia su questo computer: lì i due sono lo stesso indirizzo, e la divisione qui sopra descrive il percorso più che una separazione. Anche solo nel desktop: scarica da sé l'aggiornamento che trova, invece di limitarsi a segnalarlo.",
+    ownServer:
+      'Non in questo elenco: il tuo server multimediale (Navidrome, Jellyfin, Plex), i tuoi altoparlanti e il telecomando sul telefono. Sono tuoi, e Beacon ci parla direttamente.',
+    optOut: {
+      lyrics: 'Disattivabile in Testi',
+      recommendations: 'Disattivabile in Consigli',
+      recommendationsPartial: 'Parzialmente disattivabile in Consigli',
+    },
+    services: {
+      updateCheck: {
+        name: 'GitHub',
+        purpose: 'Controllare se è stata pubblicata una versione più recente di Beacon.',
+        sends:
+          "Nulla che ti riguardi. Viene letto l'elenco delle versioni; il confronto avviene sul tuo dispositivo. L'app desktop scarica da lì anche l'aggiornamento.",
+      },
+      radioStream: {
+        name: 'La stazione radio stessa',
+        purpose: 'Riprodurre il suono quando ascolti la radio su questo dispositivo.',
+        sends:
+          'Nulla oltre alla richiesta dello stream. La stazione vede il tuo indirizzo IP, come qualsiasi web radio. Verso un altoparlante passa invece dal tuo server Beacon.',
+      },
+      radioBrowser: {
+        name: 'Radio Browser',
+        purpose: 'La directory di stazioni dietro "Scopri stazioni".',
+        sends:
+          "Il tuo termine di ricerca e il paese scelto. Quando riproduci una stazione trovata qui, Beacon riporta il suo identificativo come clic; lo richiedono le regole del direttorio, perché le stazioni popolari restino riconoscibili. Una stazione aggiunta da te digitandone l'indirizzo non viene mai segnalata.",
+      },
+      stationSite: {
+        name: 'I siti delle stazioni radio',
+        purpose: "Trovare il logo di una stazione, mostrato nell'elenco e durante la riproduzione.",
+        sends:
+          "Nulla che ti riguardi. Vengono letti la home page della stazione e l'immagine che indica.",
+      },
+      lrclib: {
+        name: 'LRCLIB',
+        purpose: 'Cercare i testi quando il file non ne contiene.',
+        sends:
+          'Titolo e artista del brano. Album e durata restano sul tuo server; lì servono solo a scegliere il risultato più vicino.',
+      },
+      netease: {
+        name: 'NetEase',
+        purpose: 'Cercare i testi quando il file non ne contiene.',
+        sends:
+          'Titolo e artista del brano. Album e durata restano sul tuo server; lì servono solo a scegliere il risultato più vicino.',
+      },
+      simpmusic: {
+        name: 'SimpMusic',
+        purpose: 'Cercare i testi quando il file non ne contiene.',
+        sends:
+          'Titolo e artista del brano. Album e durata restano sul tuo server; lì servono solo a scegliere il risultato più vicino.',
+      },
+      musicbrainz: {
+        name: 'MusicBrainz',
+        purpose:
+          'Associa i nomi degli artisti a un identificativo stabile, su cui si basano i consigli. Serve anche per i collegamenti nella pagina di un artista, che i consigli siano attivi o no.',
+        sends: 'Nomi di artisti della tua libreria.',
+      },
+      listenbrainz: {
+        name: 'ListenBrainz',
+        purpose: 'Proporre artisti simili per "Nuovi artisti da scoprire".',
+        sends:
+          'Gli identificatori MusicBrainz degli artisti di partenza: nessun nome e nulla su ciò che hai ascoltato.',
+      },
+      deezer: {
+        name: 'Deezer',
+        purpose:
+          "Trova foto e pagina dell'artista per un artista suggerito e per la pagina dell'artista che hai aperto, che i consigli siano attivi o no.",
+        sends:
+          "Il nome dell'artista cercato: uno suggerito, oppure quello di cui hai aperto la pagina.",
+      },
+      plexAuth: {
+        name: 'Plex',
+        purpose:
+          "Solo se accedi con un account Plex: Plex gestisce l'accesso tramite plex.tv, non tramite il tuo server.",
+        sends:
+          'Una richiesta di accesso e poi il tuo token Plex a ogni verifica. Per accedere si apre app.plex.tv nel browser. Con Navidrome o Jellyfin non accade nulla di tutto questo.',
+      },
+    },
   },
   radio: {
     title: 'Radio',
@@ -430,6 +522,10 @@ export default {
     homePageUrl: 'URL della homepage',
     noStationsYet: 'Nessuna stazione radio salvata ancora.',
     noStationsForQuery: 'Nessuna stazione per "{query}".',
+    titleLog: 'Cronologia dei titoli',
+    titleLogEmpty: 'Ancora nulla trasmesso da quando è iniziata questa stazione.',
+    titleLogSearch: 'Cerca nella tua libreria',
+    titleLogYesterday: 'Ieri',
   },
   favorites: {
     title: 'Preferiti',

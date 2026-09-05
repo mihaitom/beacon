@@ -1,18 +1,22 @@
 <template>
   <div class="mobile-transport">
+    <!-- Queue-shaped controls are disabled on radio for the same reason as
+     - CenterControls.vue's identical gating — see its own comment: a live
+     - stream has no queue for shuffle/repeat/prev/next to act on. -->
     <div class="d-flex align-center justify-center mb-1 mobile-transport__row">
       <v-btn
         icon="mdi-shuffle"
-        :color="playbackStore.shuffle ? 'primary' : undefined"
+        :color="!isRadio && playbackStore.shuffle ? 'primary' : undefined"
         variant="text"
         density="comfortable"
+        :disabled="isRadio"
         @click="playbackStore.toggleShuffle()"
       />
       <v-btn
         icon="mdi-skip-previous"
         variant="text"
         density="comfortable"
-        :disabled="!hasPlayable"
+        :disabled="isRadio || !hasPlayable"
         @click="playbackStore.playPrevious()"
       />
       <v-btn
@@ -28,35 +32,25 @@
         icon="mdi-skip-next"
         variant="text"
         density="comfortable"
-        :disabled="!hasPlayable || !playbackStore.hasNext"
+        :disabled="isRadio || !hasPlayable || !playbackStore.hasNext"
         @click="playbackStore.playNext()"
       />
       <v-btn
         :icon="repeatIcon"
-        :color="playbackStore.repeatMode !== 'off' ? 'primary' : undefined"
+        :color="!isRadio && playbackStore.repeatMode !== 'off' ? 'primary' : undefined"
         variant="text"
         density="comfortable"
+        :disabled="isRadio"
         @click="playbackStore.cycleRepeatMode()"
       />
     </div>
 
     <div class="d-flex align-center mb-2" style="gap: 10px">
-      <!-- See SeekBar.vue's identical swap for why radio replaces the
-       - whole row instead of showing a bar with nothing to represent, and
-       - for the buffering state (playbackStore.radioBuffering) — one row
-       - either way, no separate stacked bar row, so it never shoves the
-       - transport buttons above around when buffering starts or ends. -->
+      <!-- See RadioLiveStatus.vue: radio replaces the whole bar rather
+       - than showing one with nothing to represent, buffering state
+       - included, in one row that never changes height. -->
       <div v-if="playbackStore.radioStation" class="mobile-transport__live">
-        <v-progress-linear
-          v-if="playbackStore.radioBuffering"
-          indeterminate
-          height="4"
-          rounded
-          color="primary"
-        />
-        <span v-else class="text-body-small text-medium-emphasis">{{
-          $t('player.liveRadio', { time: formatTime(playbackStore.localPosition) })
-        }}</span>
+        <radio-live-status />
       </div>
       <template v-else>
         <span class="text-body-small text-medium-emphasis mobile-transport__time">{{
@@ -132,13 +126,14 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useConnectStore } from '@/stores/connect'
 import { pollingAllowed } from '@/services/connect/pollGate'
 import SongWaveform from '@/components/player/SongWaveform.vue'
+import RadioLiveStatus from '@/components/player/RadioLiveStatus.vue'
 import { getAudioEngine } from '@/services/audioEngine'
 import MobileDevicePicker from './MobileDevicePicker.vue'
 import type { ConnectDeviceRef } from '@/services/connect/types'
 
 export default {
   name: 'MobileTransportControls',
-  components: { SongWaveform, MobileDevicePicker },
+  components: { SongWaveform, RadioLiveStatus, MobileDevicePicker },
   data() {
     return {
       devicePickerOpen: false,
@@ -163,6 +158,9 @@ export default {
     },
     hasPlayable() {
       return this.playbackStore.currentSong != null || this.playbackStore.radioStation != null
+    },
+    isRadio() {
+      return this.playbackStore.radioStation != null
     },
     // Same reasoning as SeekBar.vue's identical computed: no local buffer
     // to show while casting, which buffers on the device itself. Radio no

@@ -367,7 +367,9 @@ async def test_get_artist_images_cache_hit_skips_network():
         ):
             result = await recommendations.get_artist_images(["Portishead"])
 
-    assert result == {"Portishead": {"image": "img", "link": "link"}}
+    # image_large is filled in on the way out for an entry stored before
+    # the field existed — see _with_large_image().
+    assert result == {"Portishead": {"image": "img", "image_large": "img", "link": "link"}}
     client.get.assert_not_called()
 
 
@@ -386,6 +388,7 @@ async def test_get_artist_images_fetches_and_caches_on_miss():
                             "name": "Portishead",
                             "nb_fan": 500,
                             "picture_medium": "https://img/1",
+                            "picture_xl": "https://img/1-xl",
                             "link": "https://deezer/1",
                         }
                     ],
@@ -393,11 +396,18 @@ async def test_get_artist_images_fetches_and_caches_on_miss():
             )
             result = await recommendations.get_artist_images(["Portishead"])
 
-        assert result == {"Portishead": {"image": "https://img/1", "link": "https://deezer/1"}}
+        assert result == {
+            "Portishead": {
+                "image": "https://img/1",
+                "image_large": "https://img/1-xl",
+                "link": "https://deezer/1",
+            }
+        }
         with open(path, encoding="utf-8") as f:
             cache = json.load(f)
         assert cache["deezer_by_name"]["portishead"] == {
             "image": "https://img/1",
+            "image_large": "https://img/1-xl",
             "link": "https://deezer/1",
         }
 
@@ -423,6 +433,7 @@ async def test_get_artist_images_picks_highest_fan_count_among_exact_matches():
                             "name": "Radiohead",
                             "nb_fan": 4076156,
                             "picture_medium": "https://img/real",
+                            "picture_xl": "https://img/real-xl",
                             "link": "https://deezer/real",
                         },
                         {
@@ -437,7 +448,42 @@ async def test_get_artist_images_picks_highest_fan_count_among_exact_matches():
             )
             result = await recommendations.get_artist_images(["Radiohead"])
 
-    assert result["Radiohead"] == {"image": "https://img/real", "link": "https://deezer/real"}
+    assert result["Radiohead"] == {
+        "image": "https://img/real",
+        "image_large": "https://img/real-xl",
+        "link": "https://deezer/real",
+    }
+
+
+def test_a_large_image_is_derived_for_an_entry_stored_before_the_field_existed():
+    """The Deezer cache has no expiry at all, so an artist looked up before
+    there was a second size would stay soft in the artwork viewer forever.
+    The size sits in the CDN path, so the large variant of a URL this
+    module produced itself is a substitution, not another lookup."""
+    stored = {
+        "image": "https://cdn-images.dzcdn.net/images/artist/abc/250x250-000000-80-0-0.jpg",
+        "link": "https://deezer/x",
+    }
+
+    assert recommendations._with_large_image(stored)["image_large"] == (
+        "https://cdn-images.dzcdn.net/images/artist/abc/1000x1000-000000-80-0-0.jpg"
+    )
+
+
+def test_a_stored_large_image_is_left_alone():
+    stored = {"image": "https://img/m", "image_large": "https://img/xl", "link": "l"}
+
+    assert recommendations._with_large_image(stored)["image_large"] == "https://img/xl"
+
+
+def test_an_unrecognised_image_url_falls_back_to_itself():
+    """A slightly soft picture beats none — and beats guessing at a URL
+    shape this module did not produce."""
+    stored = {"image": "https://elsewhere/photo.jpg", "link": "l"}
+
+    assert recommendations._with_large_image(stored)["image_large"] == "https://elsewhere/photo.jpg"
+    assert recommendations._with_large_image({"image": None, "link": "l"})["image_large"] is None
+    assert recommendations._with_large_image(None) is None
 
 
 async def test_fetch_deezer_returns_none_on_a_search_failure(caplog):
@@ -502,6 +548,7 @@ async def test_get_artist_images_fetches_multiple_names_concurrently():
                             "name": name,
                             "nb_fan": 1,
                             "picture_medium": f"img-{name}",
+                            "picture_xl": f"img-{name}-xl",
                             "link": f"link-{name}",
                         }
                     ],
@@ -511,8 +558,8 @@ async def test_get_artist_images_fetches_multiple_names_concurrently():
             result = await recommendations.get_artist_images(["A", "B"])
 
     assert result == {
-        "A": {"image": "img-A", "link": "link-A"},
-        "B": {"image": "img-B", "link": "link-B"},
+        "A": {"image": "img-A", "image_large": "img-A-xl", "link": "link-A"},
+        "B": {"image": "img-B", "image_large": "img-B-xl", "link": "link-B"},
     }
 
 

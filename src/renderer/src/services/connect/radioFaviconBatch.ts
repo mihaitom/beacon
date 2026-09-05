@@ -229,11 +229,17 @@ function settle(station: QueuedStation, favicon: RadioFavicon | null, error: unk
   station.waiting = []
 }
 
-/** Test seam — the module-level caches outlive any one component, so a test
- * that doesn't clear them is answered by the previous one's fixtures. */
-export function _resetRadioFaviconBatch(): void {
+/** Throws away every resolved logo and whatever is still queued. Memory
+ * only — a station's logo is never stored past the session on this side
+ * (see MAX_RESOLVED), so unlike artwork or lyrics there is nothing on disk
+ * here to go with it. */
+export function clearRadioFaviconCache(): void {
   queued = new Map()
   resolved.clear()
   if (flushTimer) clearTimeout(flushTimer)
   flushTimer = null
 }
+
+/** Test seam — the module-level caches outlive any one component, so a test
+ * that doesn't clear them is answered by the previous one's fixtures. */
+export const _resetRadioFaviconBatch = clearRadioFaviconCache

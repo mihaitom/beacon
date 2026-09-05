@@ -47,11 +47,11 @@ describe('accountSettings', () => {
     })
 
     it('only names the field it was actually asked to change', async () => {
-      await pushAccountSettings({ autoplayBatchSize: 20 })
+      await pushAccountSettings({ recommendationsEnabled: false })
 
       const [, options] = vi.mocked(fetchConnect).mock.calls[0]!
       const body = (options as { body: { settings: Record<string, unknown> } }).body
-      expect(Object.keys(body.settings)).toEqual(['autoplayBatchSize'])
+      expect(Object.keys(body.settings)).toEqual(['recommendationsEnabled'])
     })
   })
 })

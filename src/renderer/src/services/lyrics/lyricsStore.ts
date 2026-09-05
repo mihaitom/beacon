@@ -270,8 +270,10 @@ export function writeManyLyrics<T>(entries: [string, T][]): void {
   })()
 }
 
-/** Throws away everything stored, for Settings' "clear caches" action. */
-export function clearLyricsStore(): void {
+/** Throws away everything stored, for Settings' "clear caches" action.
+ * Resolves once the store is actually empty — see artworkStore.ts's
+ * clearArtwork() for why that is worth waiting on. */
+export function clearLyricsStore(): Promise<void> {
   generation += 1
   localBlob = {}
   try {
@@ -279,7 +281,7 @@ export function clearLyricsStore(): void {
   } catch {
     // Nothing to clean up if storage isn't available in the first place.
   }
-  void (async () => {
+  return (async () => {
     const db = await open()
     if (!db) return
     await run(db, 'readwrite', (store) => store.clear())

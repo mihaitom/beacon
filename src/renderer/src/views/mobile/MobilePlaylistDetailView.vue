@@ -1,13 +1,13 @@
 <template>
   <v-container v-if="playlist" fluid>
-    <div class="d-flex align-center mb-4">
+    <div class="mobile-header">
       <cover-art
         :cover-art-id="playlist.coverArtId"
         :size="72"
         fallback-icon="mdi-playlist-music"
-        class="mr-3"
+        class="mobile-playlist-detail__cover"
       />
-      <div class="min-width-0 flex-grow-1">
+      <div class="mobile-header__title">
         <h1 class="page-title text-truncate">{{ playlist.name }}</h1>
         <div class="text-body-small text-medium-emphasis">
           {{ $t('playlists.songCount', { count: playlist.songCount }) }}
@@ -29,7 +29,6 @@
         :key="song.id"
         :song="song"
         @play="play(index)"
-        @toggle-star="toggleStar(song)"
         @open-actions="openActions(song)"
       />
     </div>
@@ -97,10 +96,6 @@ export default {
       if (!this.playlist) return
       await usePlaybackStore().playSongList(this.playlist.songs, index)
     },
-    async toggleStar(song: Song) {
-      await this.libraryStore.toggleStar({ id: song.id, starred: song.starred })
-      song.starred = !song.starred
-    },
     openActions(song: Song) {
       this.activeSong = song
       this.actionsOpen = true
@@ -110,6 +105,12 @@ export default {
 </script>
 
 <style scoped>
+/* The header row's own leading element — .mobile-header supplies the gap
+ * between it and the text, so this only has to stay its own size. */
+.mobile-playlist-detail__cover {
+  flex-shrink: 0;
+}
+
 .mobile-playlist-detail__list {
   display: flex;
   flex-direction: column;

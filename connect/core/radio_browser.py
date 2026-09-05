@@ -21,11 +21,16 @@ mirror being down doesn't fail the whole lookup.
 
 register_click() exists because Radio Browser's own client rules call it a
 requirement, not a courtesy: "Send /json/url requests for every click the
-user makes, this helps to mark stations as popular." Fired once, when a
-browsed station is actually added (routes/radio.py), not on every search
-result rendered — that's the moment closest to an actual "listen" this app
-can report, and Radio Browser itself dedupes it to once per station per
-IP per day regardless.
+user makes, this helps to mark stations as popular." Fired once whenever a
+station from the directory actually starts playing, not when one is saved
+to a library and not per search result rendered — a click means somebody
+listened, and saving a station for later is not that yet. It used to fire
+on the save instead, which reported the one moment a station was found and
+then nothing for every later play of it: the overwhelming majority of the
+listening this is meant to count. See the frontend's own
+services/radioBrowserLinks.ts, which keeps a saved station's directory id
+so those later plays can be reported at all. Radio Browser itself dedupes
+to once per station per IP per day regardless.
 
 search_stations() goes through /json/stations/search rather than the
 narrower /json/stations/byname/{term} this module started with — the
@@ -348,9 +353,12 @@ async def list_countries() -> list[dict] | None:
 
 async def register_click(stationuuid: str) -> None:
     """Best-effort - see this module's own docstring for why this is called
-    at all. A failure here is never worth surfacing to whoever just added a
-    station; it costs Radio Browser a popularity vote, nothing this app's
-    own user would notice or could act on."""
+    at all. Reports one *listen*, which is what Radio Browser counts a click
+    as: the frontend calls it when a station starts playing, not when one is
+    saved to a library (see services/connect/radioBrowser.ts). A failure
+    here is never worth surfacing to whoever just pressed play; it costs
+    Radio Browser a popularity vote, nothing this app's own user would
+    notice or could act on."""
     servers = await _discover_servers()
     if not servers:
         return

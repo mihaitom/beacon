@@ -12,13 +12,14 @@ import asyncio
 import logging
 import os
 import time
+from collections import OrderedDict, deque
 
 from fastapi import Header, HTTPException, Query
 
 from delivery import BaseDelivery, DeliveryManager
 from media import MediaClient, SubsonicClient
 
-from . import icy_metadata
+from . import icy_metadata, radio_history
 from .claims import claims
 from .device_volume import pushes_volume
 from .loop_health import peak_lag
@@ -30,6 +31,34 @@ from .visualizer_feed import ASSUMED_DEVICE_LEAD_SECONDS, VisualizerFeed
 logger = logging.getLogger("connect.session")
 
 DEFAULT_SESSION_ID = "default"
+
+# How many past titles are kept per station (see SessionState's own
+# radio_title_history). A title is around 70 bytes stored, so this is ~70KB
+# per station — the cheap end of what a log is worth, and chosen for how
+# far back it reaches rather than for what it costs: a music station
+# changes title roughly every three and a half minutes, which makes this
+# some 60 hours of uninterrupted listening, or a good month of a couple of
+# hours a day on the same station.
+#
+# core/radio_history.py appends rather than rewriting, so this number costs
+# nothing per title to raise — see its own docstring.
+_RADIO_HISTORY_PER_STATION = 1000
+
+# How many stations are remembered at once, least-recently-heard dropped
+# first. A session outlives any single station — someone is free to hop
+# around all evening — and without a bound these histories are the one part
+# of it that only ever grows.
+_RADIO_HISTORY_STATIONS = 20
+
+# A title already logged this recently is the same broadcast coming round
+# again rather than something new. Not a theoretical concern: sampled live
+# on 2026-09-05, Deutschlandfunk cycles three fixed strings (the programme
+# name, the station's own slogan, the current item) on a roughly one-minute
+# loop, which without this buries a station's whole history under three
+# repeating rows within the hour. Long enough to cover that kind of
+# rotation, short enough that a track genuinely played again later in the
+# day still earns its own entry.
+_RADIO_HISTORY_REPEAT_WINDOW = 30 * 60.0
 
 
 class SessionState:
@@ -94,6 +123,29 @@ class SessionState:
         # background task reading it off the stream - see
         # start_radio_metadata_watch()/stop_radio_metadata_watch() below.
         self.radio_title: str | None = None
+        # What the station itself declares it broadcasts at, in kbps, or
+        # None for one that declares nothing usable — read once per
+        # connection out of the `icy-br` response header, by whichever of
+        # the two ICY readers is running (see _set_radio_bitrate). Shown
+        # next to the elapsed time while a station plays; deliberately the
+        # *station's* number rather than anything Beacon re-encodes to, so
+        # it reads the same whether you are listening here or casting.
+        self.radio_bitrate: int | None = None
+        # ...and what it is encoded as ("MP3", "AAC", ...), from the same
+        # response's Content-Type. None for a station whose type this
+        # doesn't recognise; see core/icy_metadata.py's parse_codec().
+        self.radio_codec: str | None = None
+        # Every title this session has seen, per station, oldest first —
+        # what LyricsDrawer.vue shows in place of the lyrics a radio
+        # station never has. Keyed by stream URL because that is the only
+        # station identity _set_radio_title() has to go on, and kept per
+        # station rather than as one merged log so that coming back to a
+        # station finds its own history intact instead of somebody else's
+        # interleaved with it. Survives stop_radio_metadata_watch() for the
+        # same reason, and a restart or a reap on top of that — see
+        # core/radio_history.py, and _station_history() below for when the
+        # stored copy is read back in.
+        self.radio_title_history: OrderedDict[str, deque[dict]] = OrderedDict()
         self._radio_metadata_url: str | None = None
         self._radio_metadata_task: asyncio.Task | None = None
         # The shared relay a radio station routed through Beacon's own
@@ -198,7 +250,7 @@ class SessionState:
         self.stop_radio_metadata_watch()
         self._radio_metadata_url = url
         self._radio_metadata_task = asyncio.create_task(
-            icy_metadata.watch(url, self._set_radio_title)
+            icy_metadata.watch(url, self._set_radio_title, self._set_radio_stream_info)
         )
 
     def stop_radio_metadata_watch(self) -> None:
@@ -207,9 +259,108 @@ class SessionState:
             self._radio_metadata_task = None
         self._radio_metadata_url = None
         self.radio_title = None
+        # Guarded, unlike the title above: a station states its bitrate
+        # exactly once per connection, in the response headers, so a
+        # wrongly-cleared one never comes back on its own the way the next
+        # title change does. routes/playback.py's /play-url calls this
+        # *after* start_radio_relay() has taken the same ICY reading over
+        # (they are mutually exclusive, see start_radio_relay()), and
+        # clearing unconditionally would wipe exactly what the relay just
+        # reported. stop_radio_relay() owns the clear in that case, and
+        # both teardown paths in routes/playback.py call it right after
+        # this one.
+        if self.radio_relay is None:
+            self.radio_bitrate = None
+            self.radio_codec = None
+
+    @property
+    def current_radio_station_url(self) -> str | None:
+        """Which station the titles arriving right now belong to. The two
+        sources are mutually exclusive — a relayed station reports its own
+        titles instead of a second ICY watch, see radio_relay's own comment
+        — so there is never a question of which one to believe."""
+        if self.radio_relay is not None:
+            return self.radio_relay.url
+        return self._radio_metadata_url
+
+    def radio_title_log(self) -> list[dict]:
+        """The current station's own history, newest first — the order it
+        is read in. Empty whenever nothing is playing, which is also what
+        makes this safe to ask for unconditionally."""
+        url = self.current_radio_station_url
+        if not url:
+            return []
+        return list(reversed(self._station_history(url)))
+
+    def _station_history(self, url: str) -> deque[dict]:
+        """One station's log, faulting in what a previous run (or a
+        previous session under the same login) stored the first time this
+        session touches that station.
+
+        Per station rather than all at once, and lazily rather than in
+        __init__, because both of the alternatives pay for logs nobody
+        asked for: a SessionState is built for every request carrying an
+        unknown session id and most never touch radio at all, and somebody
+        who has tried fifty stations is still only listening to one."""
+        history = self.radio_title_history.get(url)
+        if history is None:
+            history = deque(
+                radio_history.load_station(self.session_id, url, _RADIO_HISTORY_PER_STATION),
+                maxlen=_RADIO_HISTORY_PER_STATION,
+            )
+            self.radio_title_history[url] = history
+            while len(self.radio_title_history) > _RADIO_HISTORY_STATIONS:
+                self.radio_title_history.popitem(last=False)
+        self.radio_title_history.move_to_end(url)
+        return history
 
     def _set_radio_title(self, title: str) -> None:
         self.radio_title = title
+        self._record_radio_title(title)
+
+    def _set_radio_stream_info(self, bitrate: int | None, codec: str | None) -> None:
+        """Handed to both ICY readers — core/icy_metadata.py's watch for a
+        station played locally or dispatched straight to a device, and
+        core/radio_relay.py's relay for one re-served through Beacon. Only
+        ever one of them runs at a time, so there is no question of which
+        reading wins.
+
+        Both values are set together, None included: they come from one
+        response's headers, so a reconnect to a station that has stopped
+        declaring something must drop it rather than leave the previous
+        connection's answer standing."""
+        self.radio_bitrate = bitrate
+        self.radio_codec = codec
+
+    def _record_radio_title(self, title: str) -> None:
+        """Adds one title to its station's log, unless it is that station
+        coming round again (see _RADIO_HISTORY_REPEAT_WINDOW).
+
+        Nothing is filtered by what a title *looks* like. Sampled live on
+        2026-09-05: a station sends its programme name ("Informationen am
+        Morgen"), its own slogan ("Deutschlandfunk - Alles von Relevanz")
+        and a news item through the very same field a song comes through,
+        and the slogan carries the exact "Artist - Title" shape a song
+        does. Any rule that dropped headlines would drop songs with it, so
+        everything is kept and telling them apart is left to the reader —
+        see the frontend's own splitting of an entry into artist/title."""
+        url = self.current_radio_station_url
+        if not url:
+            return
+
+        history = self._station_history(url)
+
+        # Wall-clock, not monotonic: this is read as a time of day by
+        # whoever is looking at the drawer, possibly on another device.
+        now = time.time()
+        for entry in reversed(history):
+            if now - entry["at"] > _RADIO_HISTORY_REPEAT_WINDOW:
+                break
+            if entry["title"] == title:
+                return
+        entry = {"title": title, "at": now}
+        history.append(entry)
+        radio_history.append(self.session_id, url, entry, _RADIO_HISTORY_PER_STATION)
 
     async def start_radio_relay(self, url: str, content_type: str) -> RadioRelay:
         """Starts (or, for a different station, restarts) the shared relay
@@ -218,7 +369,7 @@ class SessionState:
         if self.radio_relay is not None and self.radio_relay.url == url:
             return self.radio_relay
         await self.stop_radio_relay()
-        relay = RadioRelay(url, content_type, self._set_radio_title)
+        relay = RadioRelay(url, content_type, self._set_radio_title, self._set_radio_stream_info)
         await relay.start()
         self.radio_relay = relay
         self.last_radio_redispatch = 0.0
@@ -233,6 +384,10 @@ class SessionState:
         # be set even in cast_directly mode, where radio_relay itself never
         # is.
         self.radio_position_tracker = None
+        # See stop_radio_metadata_watch()'s own comment for why the clear
+        # lives here as well as there, rather than only there.
+        self.radio_bitrate = None
+        self.radio_codec = None
         self.radio_icy_pending_injection = None
         self.radio_icy_last_injected = None
         self.radio_icy_measured_lag = None

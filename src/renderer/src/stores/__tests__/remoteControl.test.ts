@@ -366,6 +366,56 @@ describe('remoteControl store', () => {
       )
     })
 
+    /** The phone renders a station the way this app does — the ICY tag as
+     * the prominent label and a live readout in place of a seek bar it has
+     * no position for — and neither is derivable from what the snapshot
+     * used to carry. See connect/static/remote/js/views/now-playing.js. */
+    it('sends the station tag and buffering state the phone renders it with', async () => {
+      await enableStore()
+      vi.mocked(remoteHttp.pushRemoteState).mockClear()
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/live',
+        homePageUrl: null,
+      }
+      playback.radioNowPlaying = 'Artist - Track'
+      playback.radioBuffering = true
+      await vi.waitFor(() => expect(remoteHttp.pushRemoteState).toHaveBeenCalled())
+
+      const calls = vi.mocked(remoteHttp.pushRemoteState).mock.calls
+      const radio = (
+        calls[calls.length - 1]![0] as {
+          radio: { now_playing: string | null; buffering: boolean }
+        }
+      ).radio
+
+      expect(radio.now_playing).toBe('Artist - Track')
+      expect(radio.buffering).toBe(true)
+    })
+
+    it('sends a station with no tag as an explicit absence, not a missing field', async () => {
+      // So the phone never has to tell "this station sends no tag" apart
+      // from "an older desktop that never sent one".
+      await enableStore()
+      vi.mocked(remoteHttp.pushRemoteState).mockClear()
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/live',
+        homePageUrl: null,
+      }
+      await vi.waitFor(() => expect(remoteHttp.pushRemoteState).toHaveBeenCalled())
+
+      const calls = vi.mocked(remoteHttp.pushRemoteState).mock.calls
+      const radio = (calls[calls.length - 1]![0] as { radio: Record<string, unknown> }).radio
+
+      expect(radio).toHaveProperty('now_playing', null)
+      expect(radio).toHaveProperty('buffering', false)
+    })
+
     it('debounces a burst of playback/connect/autoplay mutations into a single extra push', async () => {
       vi.useFakeTimers()
       await enableStore()

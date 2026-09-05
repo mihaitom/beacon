@@ -13,7 +13,7 @@ import {
 import { useLibraryStore } from './library'
 import { useConnectStore } from './connect'
 import { useAuthStore } from './auth'
-import { useAutoplayStore } from './autoplay'
+import { AUTOPLAY_BATCH_SIZE, useAutoplayStore } from './autoplay'
 import { useRadioSettingsStore } from './radioSettings'
 import { useDrawersStore } from './drawers'
 import * as connectPlayback from '@/services/connect/playback'
@@ -32,10 +32,13 @@ import type { RepeatMode } from '@/services/playback/types'
 import { resolveRadioStation } from '@/services/playback/radioStation'
 import {
   fetchRadioMetadata,
+  type RadioTitleEntry,
   startRadioMetadataWatch,
   stopRadioMetadataWatch,
 } from '@/services/connect/radioMetadata'
 import { resolveRadioStreamUrl } from '@/services/connect/radio'
+import { registerRadioBrowserClick } from '@/services/connect/radioBrowser'
+import { radioBrowserIdFor } from '@/services/radioBrowserLinks'
 import { pollingAllowed } from '@/services/connect/pollGate'
 import { buildCastQualityPayload, buildCastQueuePayload } from '@/services/playback/castPayload'
 import {
@@ -112,6 +115,30 @@ interface PlaybackState {
    * title from the *previous* station never lingers even briefly on
    * screen while the poll below catches up to the new one. */
   radioNowPlaying: string | null
+  /** Every title the current station has played this session, newest
+   * first — LyricsDrawer.vue shows this in place of the lyrics a radio
+   * station never has. Kept per station by the backend (see connect/core/
+   * session.py's radio_title_history), so switching away and back finds
+   * this station's own log rather than a merged one; reset here alongside
+   * radioNowPlaying purely so the previous station's log is never on
+   * screen while the poll catches up.
+   *
+   * Deliberately unfiltered — a station sends its programme name, its own
+   * slogan and news items through the very same field a song comes
+   * through, and the slogan carries the same "Artist - Title" shape a song
+   * does, so anything that dropped headlines would drop songs with it.
+   * Telling them apart is left to the display. */
+  radioTitleLog: RadioTitleEntry[]
+  /** What the current station declares it broadcasts at (kbps) and what it
+   * is encoded as — both null for a station that declares neither, and for
+   * the moment before the first poll answers. Read straight off the
+   * station's own ICY headers by the backend (see connect/core/
+   * icy_metadata.py), so they describe the station itself rather than
+   * whatever Beacon may be re-encoding it to for a cast device, and read
+   * the same locally and while casting. Shown by StreamInfoSection.vue,
+   * which has nothing else to say about a station. */
+  radioBitrate: number | null
+  radioCodec: string | null
   /** True only while casting radio to a Chromecast/DLNA target whose own
    * position hasn't shown real movement yet — see connect/core/
    * radio_position.py. Drives the "still buffering" state on the seek
@@ -316,13 +343,35 @@ export const usePlaybackStore = defineStore('playback', {
       activeLocalStream: null,
       radioStation: null,
       radioNowPlaying: null,
+      radioTitleLog: [],
+      radioBitrate: null,
+      radioCodec: null,
       radioBuffering: false,
       initialized: false,
     }
   },
 
   getters: {
+    /** What is playing right now, or null.
+     *
+     * Null for as long as a radio station is playing, even though the
+     * queue behind it is still fully intact — see playRadioStation() for
+     * why a station interrupts the queue rather than replacing it. Every
+     * consumer of this already asks "a song, or a station?" in exactly
+     * that order (the player-bar labels, the seek bar, lyrics, the
+     * waveform, scrobbling, the media-session metadata), so this one
+     * getter is what keeps all of them right without any of them needing
+     * to know the queue survived. Queue bookkeeping wants queuedSong
+     * below instead. */
     currentSong(state): Song | null {
+      if (state.radioStation) return null
+      return state.currentIndex >= 0 ? (state.queue[state.currentIndex] ?? null) : null
+    },
+    /** Where the queue itself stands, station or no station — the song a
+     * shuffle toggle re-pins around, "play next" inserts after and "clear
+     * queue" keeps. Identical to currentSong whenever no station is
+     * playing; the two only differ for the span of one. */
+    queuedSong(state): Song | null {
       return state.currentIndex >= 0 ? (state.queue[state.currentIndex] ?? null) : null
     },
     hasNext(state): boolean {
@@ -504,11 +553,15 @@ export const usePlaybackStore = defineStore('playback', {
         const station = this.radioStation
         if (!station) return
         fetchRadioMetadata()
-          .then((title) => {
+          .then((metadata) => {
             // The station may have changed while this was in flight - a
             // stale answer for the *previous* one must never overwrite
             // this one's (already-reset-to-null) title.
-            if (this.radioStation?.streamUrl === station.streamUrl) this.radioNowPlaying = title
+            if (this.radioStation?.streamUrl !== station.streamUrl) return
+            this.radioNowPlaying = metadata.title
+            this.radioTitleLog = metadata.history
+            this.radioBitrate = metadata.bitrate
+            this.radioCodec = metadata.codec
           })
           .catch(() => {})
       }
@@ -568,7 +621,14 @@ export const usePlaybackStore = defineStore('playback', {
       this.volume = saved.volume
       // Falls back to 'off' for data saved before this field existed.
       this.replayGainMode = saved.replayGainMode ?? 'off'
-      this.localPosition = saved.localPosition
+      // Not for radio: a live stream has no position to come back to, and
+      // resumeLocalPlayback() never uses one for it either — it reconnects
+      // at the live edge and the elapsed counter starts from zero again
+      // (see its own comment). Restored, the number would be how long the
+      // *previous* session listened, presented as this one's — reported
+      // live 2026-09-05 as a restored-but-not-started station showing a
+      // running time it had never played for.
+      this.localPosition = saved.radioStation ? 0 : saved.localPosition
     },
 
     persistNow(): void {
@@ -702,15 +762,19 @@ export const usePlaybackStore = defineStore('playback', {
     async reconcileFromStatus(status: ConnectStatus): Promise<void> {
       if (status.radio) {
         if (this.radioStation?.streamUrl !== status.radio.url) {
-          this.originalQueue = []
-          this.queue = []
-          this.currentIndex = -1
+          // Queue left alone, same as playRadioStation()'s own branch and
+          // for the same reason (see its comment) — this is that same
+          // switch reached from another client in the shared session
+          // rather than from this one.
           this.radioStation = await resolveRadioStation(
             status.radio.url,
             status.radio.title,
             this.radioStation,
           )
           this.radioNowPlaying = null
+          this.radioTitleLog = []
+          this.radioBitrate = null
+          this.radioCodec = null
           // Same reset playRadioStation() does, and for the identical
           // reason (see its own comment): another client switching this
           // shared session to radio takes this branch instead of that one,
@@ -817,6 +881,9 @@ export const usePlaybackStore = defineStore('playback', {
         if (this.radioStation) {
           stopRadioMetadataWatch()
           this.radioNowPlaying = null
+          this.radioTitleLog = []
+          this.radioBitrate = null
+          this.radioCodec = null
         }
         this.radioStation = null
         if (!queueMatches) this.queue = remoteQueueIds.map((id) => resolvedById.get(id)!)
@@ -842,11 +909,7 @@ export const usePlaybackStore = defineStore('playback', {
      * always started on track 1 in its original, unshuffled position,
      * shuffle only kicking in from the second song onward. */
     setQueue(songs: Song[], startIndex = 0, pinFirst = true): void {
-      if (this.radioStation) {
-        stopRadioMetadataWatch()
-        this.radioNowPlaying = null
-      }
-      this.radioStation = null
+      this.leaveRadio()
       this.originalQueue = [...songs]
       // Unshuffled, this.queue is `songs` in the same order, so startIndex
       // already *is* the right index — re-deriving it by id below would
@@ -1005,12 +1068,28 @@ export const usePlaybackStore = defineStore('playback', {
       // single tick as a station change and rebuilds the station over and
       // over. Costs a round trip only for a URL that actually looks like a
       // playlist.
+      // Reported here rather than where a station is found, and against
+      // the URL as saved rather than the resolved one below: Radio Browser
+      // counts a click as someone *listening*, and this is the one place a
+      // station starts playing on purpose (a reconnect or a hand-off back
+      // from casting goes straight to the audio engine, so neither
+      // double-counts). Silent for a station Beacon has no Radio Browser
+      // id for, which is most of them.
+      const browserId = radioBrowserIdFor(station.streamUrl)
+      if (browserId) registerRadioBrowserClick(browserId)
+
       const streamUrl = await resolveRadioStreamUrl(station.streamUrl)
-      this.originalQueue = []
-      this.queue = []
-      this.currentIndex = -1
+      // The queue is deliberately left untouched: a station interrupts
+      // whatever was lined up rather than throwing it away, so it's still
+      // there to pick back up afterwards by clicking a row in it (see
+      // playAtIndex(), which is what leaves the station again). currentSong
+      // reading null for the duration is what keeps the station, and not
+      // the queue's own current entry, showing as what's playing.
       this.radioStation = { ...station, streamUrl }
       this.radioNowPlaying = null
+      this.radioTitleLog = []
+      this.radioBitrate = null
+      this.radioCodec = null
       // Cleared here rather than left to the first SSE tick — that first
       // tick is itself delayed by however long /play-url's own dispatch
       // takes, and a stale true/false from whatever this session was doing
@@ -1185,12 +1264,6 @@ export const usePlaybackStore = defineStore('playback', {
         if (this.isPlaying) {
           engine.pause()
           this.isPlaying = false
-        } else if (engine.hasEnded) {
-          // The loaded track already played through to the end (e.g. the last
-          // song of a non-repeating queue) — a bare resume() on an ended
-          // <audio> element doesn't reliably restart it, so do a proper
-          // restart instead, same as switchToIndex()/startCurrent() elsewhere.
-          await this.startCurrent()
         } else if (this.radioStation) {
           // resumeLocalPlayback() deliberately never loads radio into the
           // engine after a plain app restart (not restoredWasPlaying) — see
@@ -1204,6 +1277,16 @@ export const usePlaybackStore = defineStore('playback', {
           // same action whether something was loaded or not.
           getAudioEngine().play(this.radioStation.streamUrl)
           this.isPlaying = true
+        } else if (engine.hasEnded) {
+          // The loaded track already played through to the end (e.g. the last
+          // song of a non-repeating queue) — a bare resume() on an ended
+          // <audio> element doesn't reliably restart it, so do a proper
+          // restart instead, same as switchToIndex()/startCurrent() elsewhere.
+          // Checked *after* the station branch above: the queue behind a
+          // station is still loaded and can perfectly well be in its ended
+          // state, and pressing play on a station has to restart the
+          // station, not the track it interrupted.
+          await this.startCurrent()
         } else {
           engine.resume()
           this.isPlaying = true
@@ -1262,9 +1345,36 @@ export const usePlaybackStore = defineStore('playback', {
       await this.switchToIndex(this.nextIndex(-1) ?? this.currentIndex, true)
     },
 
+    /** Picking a song straight out of the queue — which is also how you
+     * leave a radio station, since the queue survives one now (see
+     * playRadioStation()). The station has to go before switchToIndex()
+     * below, not after: startCurrent() reads currentSong, and that stays
+     * null for as long as a station is what's playing. */
     async playAtIndex(index: number): Promise<void> {
       if (index < 0 || index >= this.queue.length) return
+      this.leaveRadio()
       await this.switchToIndex(index)
+    },
+
+    /** Drops whatever radio state is set, if any — the station itself, its
+     * "now playing" tag, the buffering indicator and the backend's own ICY
+     * watch (see services/connect/radioMetadata.ts). A no-op when no
+     * station is playing, so callers that just mean "a song is starting
+     * now" can call it unconditionally.
+     *
+     * Deliberately does not touch the queue, stop the audio engine or tell
+     * connect anything: every caller is on its way to starting a song,
+     * which replaces the engine's source (or connect's dispatch) on its
+     * own a moment later. */
+    leaveRadio(): void {
+      if (!this.radioStation) return
+      stopRadioMetadataWatch()
+      this.radioStation = null
+      this.radioNowPlaying = null
+      this.radioTitleLog = []
+      this.radioBitrate = null
+      this.radioCodec = null
+      this.radioBuffering = false
     },
 
     async seek(position: number): Promise<void> {
@@ -1357,7 +1467,12 @@ export const usePlaybackStore = defineStore('playback', {
 
     toggleShuffle(): void {
       this.shuffle = !this.shuffle
-      const current = this.currentSong
+      // queuedSong, not currentSong: this re-pins the queue around
+      // wherever it stands, which is still a real position while a radio
+      // station is playing over the top of it (see currentSong's own
+      // docstring). Reading null there would reshuffle the queue and leave
+      // currentIndex pointing at whatever landed in that slot.
+      const current = this.queuedSong
       this.queue = this.shuffle
         ? shuffledExcept(this.originalQueue, current)
         : [...this.originalQueue]
@@ -1418,7 +1533,7 @@ export const usePlaybackStore = defineStore('playback', {
       try {
         const { songs: similar, plexPassRequired } = await useLibraryStore()
           .client()
-          .getSimilarSongs2(seed.id, autoplay.batchSize)
+          .getSimilarSongs2(seed.id, AUTOPLAY_BATCH_SIZE)
         if (plexPassRequired) {
           // Unlike Song/Artist Radio's own one-shot notify-and-move-on
           // (startSongRadio()/startArtistRadio()), Autoplay is a standing
@@ -1458,7 +1573,8 @@ export const usePlaybackStore = defineStore('playback', {
       }
       const toInsert = dedupeForQueue(songs, this.queue)
       this.queue.splice(this.currentIndex + 1, 0, ...toInsert)
-      const current = this.currentSong
+      // queuedSong — same reasoning as toggleShuffle()'s own use of it.
+      const current = this.queuedSong
       const originalIndex = current ? this.originalQueue.findIndex((t) => t.id === current.id) : -1
       if (originalIndex >= 0) {
         this.originalQueue.splice(originalIndex + 1, 0, ...toInsert)
@@ -1507,6 +1623,13 @@ export const usePlaybackStore = defineStore('playback', {
      * startCurrent() sends the initial queue itself. */
     syncCastQueue(): void {
       if (!this.isCasting || this.currentIndex < 0) return
+      // The backend is dispatching a station, not this queue — pushing the
+      // queue at it would only make it look like the session had gone back
+      // to songs to every other client reading the status. Whatever the
+      // queue ends up as while the station plays reaches connect in one go
+      // at the next startCurrent() (see castQueuePayload), which is the
+      // moment it starts mattering again.
+      if (this.radioStation) return
       const {
         fullQueue,
         queueIndex,
@@ -1540,7 +1663,10 @@ export const usePlaybackStore = defineStore('playback', {
      * pre-clear queue and adoptCastQueue() would restore it a few seconds
      * later, undoing the clear. */
     clearQueue(): void {
-      const current = this.currentSong
+      // queuedSong — same reasoning as toggleShuffle()'s own use of it:
+      // "clear everything but what's playing" keeps the queue's own
+      // current entry, which outlives a radio station playing over it.
+      const current = this.queuedSong
       if (!current) {
         this.originalQueue = []
         this.queue = []
@@ -1568,6 +1694,9 @@ export const usePlaybackStore = defineStore('playback', {
       this.localPosition = 0
       this.bufferedPosition = 0
       this.radioNowPlaying = null
+      this.radioTitleLog = []
+      this.radioBitrate = null
+      this.radioCodec = null
       // Same reasoning as handOffToLocalPlayback()'s identical reset —
       // nothing is casting (or playing at all) any more to still be
       // filling a startup buffer, and the SSE handler that normally clears

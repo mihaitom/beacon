@@ -230,6 +230,15 @@ export const useRemoteControlStore = defineStore('remoteControl', {
                   120,
                   playback.radioStation.favicon ?? null,
                 ),
+                // The station's ICY "now playing" tag and whether it is
+                // currently stalled — the two things the phone's own
+                // now-playing view needs to show a station the way this
+                // app does (see RadioLiveStatus.vue and SongInfo.vue).
+                // Both null/false rather than absent for a station that
+                // reports neither, so the phone never has to tell "no tag"
+                // apart from "an older desktop that never sent one".
+                now_playing: playback.radioNowPlaying,
+                buffering: playback.radioBuffering,
               }
             : null,
           queue: playback.queue.map(toRemoteSong),

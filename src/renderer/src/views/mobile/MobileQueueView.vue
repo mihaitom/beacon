@@ -1,8 +1,7 @@
 <template>
   <v-container fluid class="mobile-queue">
-    <div class="d-flex align-center mb-3">
-      <h1 class="page-title">{{ $t('queue.title') }}</h1>
-      <v-spacer />
+    <div class="mobile-header">
+      <h1 class="page-title mobile-header__title">{{ $t('queue.title') }}</h1>
       <v-btn
         v-if="playbackStore.queue.length > 1"
         icon="mdi-notification-clear-all"
@@ -20,9 +19,10 @@
         :song="song"
         :index="index"
         :is-current="index === playbackStore.currentIndex"
+        :audible="index === playbackStore.currentIndex && !playbackStore.radioStation"
         :drag-over-position="dragIndex !== index ? dragOverPosition(index) : null"
         :dragging="dragIndex === index"
-        @play="playbackStore.playAtIndex(index)"
+        @play="onRowPlay(index)"
         @remove="playbackStore.removeFromQueue(index)"
         @drag-start="onDragStart(index, $event)"
       />
@@ -74,6 +74,17 @@ export default {
       // further than intended (a "swap with the very next track" drag
       // reliably overshot to the track after that).
       overHalf: null as 'before' | 'after' | null,
+      // Set the moment a drag ends, cleared on the next task. The browser
+      // synthesises a click out of the same pointer sequence that just
+      // finished the drag, and it lands on whichever element the press and
+      // the release share — the dragged row itself, whenever the pointer
+      // came back over it. A queue row's click plays it, so reordering the
+      // queue changed the track; with a station playing it also ended the
+      // station, since playAtIndex() leaves radio (see the playback
+      // store). MobileQueueRow's own `!dragging` guard was meant to cover
+      // this, but dragIndex is already back to null by the time that click
+      // arrives.
+      suppressNextRowClick: false,
     }
   },
   computed: {
@@ -125,6 +136,17 @@ export default {
       this.dragIndex = null
       this.overIndex = null
       this.overHalf = null
+      // Outlives this pointer sequence by exactly one task: the synthesised
+      // click is dispatched as part of the same input processing, before
+      // any timer gets a turn.
+      this.suppressNextRowClick = true
+      setTimeout(() => {
+        this.suppressNextRowClick = false
+      })
+    },
+    onRowPlay(index: number) {
+      if (this.suppressNextRowClick) return
+      void this.playbackStore.playAtIndex(index)
     },
     detachPointerListeners() {
       window.removeEventListener('pointermove', this.onPointerMove)

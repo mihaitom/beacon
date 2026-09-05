@@ -265,7 +265,7 @@ describe('NowPlayingView layout', () => {
     })
   })
 
-  it('always flips on mobile (compact), fits a phone width, and stacks the toolbar', async () => {
+  it('always flips on mobile (compact) and fits a phone width', async () => {
     await page.viewport(390, 844)
     const { wrapper } = await mountWithSongAndLyrics(true)
 
@@ -274,18 +274,19 @@ describe('NowPlayingView layout', () => {
     const flipCard = wrapper.get('.now-playing__flip-card').element
     expect(getComputedStyle(flipCard).transform).not.toBe('none')
 
-    // Compact's own tighter contract: clamp(120px, ..., 320px) — a phone
-    // screen should never let this grow to desktop sizes.
+    // Compact's own contract: never smaller than the clamp floor, never
+    // wider than the screen. How *close* to the screen it should get is
+    // NowPlayingView.compact.layout.browser.test.ts's subject, measured
+    // against the room actually available rather than against a number.
     const art = rect(wrapper.get('.now-playing__art-wrap').element)
     expect(art.width).toBeGreaterThanOrEqual(120)
-    expect(art.width).toBeLessThanOrEqual(320)
     expect(art.right).toBeLessThanOrEqual(390 + 1)
 
-    // The toolbar (visualizer/fullscreen-equivalent buttons) stacks
-    // vertically on compact — two icon buttons side by side reached into
-    // the artwork underneath at phone width (see the CSS comment).
-    const toolbar = wrapper.get('.now-playing__toolbar').element
-    expect(getComputedStyle(toolbar).flexDirection).toBe('column')
+    // The toolbar used to be checked here for stacking vertically, back
+    // when it floated in the artwork's top-right corner and two buttons
+    // side by side reached into it. It is teleported into the app bar now
+    // and is no part of this view's own box — see the compact layout test
+    // for where it ends up instead.
 
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(391)
   })

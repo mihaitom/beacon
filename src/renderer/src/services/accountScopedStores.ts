@@ -82,11 +82,6 @@ async function pullAccountSettings(): Promise<void> {
       }
     }
 
-    if (remote.autoplayBatchSize !== undefined) {
-      // Sanitized inside setBatchSize() — see its comment there.
-      useAutoplayStore().setBatchSize(remote.autoplayBatchSize)
-    }
-
     if (typeof remote.castRadioDirectly === 'boolean') {
       useRadioSettingsStore().setCastDirectly(remote.castRadioDirectly)
     }

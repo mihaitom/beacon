@@ -1,6 +1,6 @@
 <template>
   <div
-    class="mobile-queue-row d-flex align-center"
+    class="mobile-queue-row mobile-row"
     :data-index="index"
     :class="{
       'mobile-queue-row--current': isCurrent,
@@ -11,11 +11,18 @@
     @click="!dragging && $emit('play')"
   >
     <div class="mobile-queue-row__index text-body-small text-medium-emphasis">
-      <v-icon v-if="isCurrent" icon="mdi-volume-high" size="14" color="primary" />
+      <!-- See QueueRow.vue's identical split: `audible`, not `isCurrent`,
+       - so a station playing over the queue doesn't leave a speaker icon
+       - on a song nobody is hearing. -->
+      <v-icon v-if="audible" icon="mdi-volume-high" size="14" color="primary" />
       <template v-else>{{ index + 1 }}</template>
     </div>
-    <cover-art :cover-art-id="song.coverArtId" :size="40" class="mx-2 flex-shrink-0" />
-    <div class="min-width-0 flex-grow-1">
+    <cover-art
+      :cover-art-id="song.coverArtId"
+      :size="MOBILE_ROW_ART_SIZE"
+      class="mobile-row__art mobile-queue-row__art"
+    />
+    <div class="mobile-row__text">
       <div class="text-body-medium text-truncate" :class="{ 'text-primary': isCurrent }">
         {{ song.title }}
       </div>
@@ -39,11 +46,15 @@
 
 <script lang="ts">
 import CoverArt from '@/components/library/CoverArt.vue'
+import { MOBILE_ROW_ART_SIZE } from './rowMetrics'
 import type { Song } from '@/types/library'
 
 export default {
   name: 'MobileQueueRow',
   components: { CoverArt },
+  data() {
+    return { MOBILE_ROW_ART_SIZE }
+  },
   props: {
     song: {
       type: Object as () => Song,
@@ -54,6 +65,14 @@ export default {
       required: true,
     },
     isCurrent: {
+      type: Boolean,
+      default: false,
+    },
+    /** Whether isCurrent is also what's actually audible — false while a
+     * radio station plays over the queue. Only the speaker icon turns on
+     * this; the highlight and the un-removable current row follow
+     * isCurrent either way. */
+    audible: {
       type: Boolean,
       default: false,
     },
@@ -75,8 +94,6 @@ export default {
 
 <style scoped>
 .mobile-queue-row {
-  min-height: 56px;
-  padding: 0 8px;
   border-top: 2px solid transparent;
   touch-action: pan-y;
 }
@@ -85,11 +102,15 @@ export default {
   background: rgba(var(--v-theme-primary), 0.08);
 }
 
-.mobile-queue-row--drag-over-before {
+/* Doubled class, deliberately: .mobile-row (assets/base.css) now draws a
+ * hairline on this same edge, and a single class would only tie with it —
+ * leaving which one wins up to stylesheet order, i.e. up to a drop
+ * indicator quietly rendering as a hairline. */
+.mobile-queue-row--drag-over-before.mobile-queue-row--drag-over-before {
   border-top-color: rgb(var(--v-theme-primary));
 }
 
-.mobile-queue-row--drag-over-after {
+.mobile-queue-row--drag-over-after.mobile-queue-row--drag-over-after {
   border-bottom: 2px solid rgb(var(--v-theme-primary));
 }
 
@@ -106,9 +127,5 @@ export default {
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
-}
-
-.min-width-0 {
-  min-width: 0;
 }
 </style>

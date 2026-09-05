@@ -19,13 +19,13 @@ import { createArt } from '../art.js';
 // to hold its place, so the scrollbar and scroll position behave exactly
 // as if every row were really there.
 const OVERSCAN = 6;
-// Matches .row's CSS (44px art + 10px*2 padding + 1px border) — only used
-// to size the very first render, before renderWindow() below measures an
-// actual row and corrects it.
-const FALLBACK_ROW_HEIGHT = 65;
+// Matches .row's CSS (48px art + 6px*2 padding + 1px border, and its own
+// 60px min-height) — only used to size the very first render, before
+// renderWindow() below measures an actual row and corrects it.
+const FALLBACK_ROW_HEIGHT = 61;
 
 export function renderQueue(root) {
-  root.innerHTML = '<div class="list" id="queue-list"></div>';
+  root.innerHTML = '<h1 class="view-title">Queue</h1><div class="list" id="queue-list"></div>';
   const list = root.querySelector('#queue-list');
 
   const topSpacer = document.createElement('div');

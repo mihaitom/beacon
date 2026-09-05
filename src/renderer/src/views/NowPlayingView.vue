@@ -29,8 +29,27 @@
      - away in the player bar. An icon still swaps where it describes what
      - the *click* does (fullscreen vs. exit fullscreen), never where it's
      - only restating the on/off state the color already carries. -->
-    <div v-if="hasPlayable" class="now-playing__toolbar">
-      <!-- PlayerBar.vue's own lyrics button (the normal way to reach this
+    <!-- On the phone these move into the app bar rather than floating over
+       - the artwork. They were in its top-right corner, which only worked
+       - while the artwork left a corner free — now that it uses the width
+       - it has, they sat on top of it. Teleported rather than duplicated in
+       - MobileLayout.vue: which buttons apply, and what each of them does,
+       - is this view's business, and none of it belongs in the shell.
+       -
+       - `disabled` on desktop, where the toolbar stays exactly where it
+       - was: there is no such target in DefaultLayout, and in fullscreen
+       - only this element's own subtree is shown, so anything hung outside
+       - it would vanish at the moment it is most needed. Also disabled
+       - wherever the target simply is not there — this view is mounted on
+       - its own in tests, and a Teleport pointed at nothing does not
+       - degrade, it throws on unmount. -->
+    <Teleport to="#mobile-app-bar-actions" :disabled="!compact || !canDock">
+      <div
+        v-if="hasPlayable"
+        class="now-playing__toolbar"
+        :class="{ 'now-playing__toolbar--docked': compact }"
+      >
+        <!-- PlayerBar.vue's own lyrics button (the normal way to reach this
        - on desktop) is outside .now-playing entirely, so fullscreen — which
        - only ever shows this element's own subtree, see toggleFullscreen()'s
        - comment — hides it along with the rest of the app chrome. Compact
@@ -41,60 +60,65 @@
        - stand-in. Neither condition applies on desktop outside fullscreen,
        - where PlayerBar's own button already covers it — no redundant
        - second lyrics button there. -->
-      <v-btn
-        v-if="currentSong && (compact || isFullscreen)"
-        icon="mdi-script-text-outline"
-        :color="drawersStore.lyricsDrawerOpen ? 'primary' : undefined"
-        variant="text"
-        density="comfortable"
-        :title="$t('lyrics.title')"
-        @click="drawersStore.toggleLyricsDrawer()"
-      />
-      <!-- Same reasoning as the lyrics button just above — PlayerBar.vue's
+        <v-btn
+          v-if="hasPlayable && (compact || isFullscreen)"
+          :icon="
+            playbackStore.radioStation && !currentSong ? 'mdi-history' : 'mdi-script-text-outline'
+          "
+          :color="drawersStore.lyricsDrawerOpen ? 'primary' : undefined"
+          variant="text"
+          density="comfortable"
+          :title="
+            playbackStore.radioStation && !currentSong ? $t('radio.titleLog') : $t('lyrics.title')
+          "
+          @click="drawersStore.toggleLyricsDrawer()"
+        />
+        <!-- Same reasoning as the lyrics button just above — PlayerBar.vue's
        - own Autoplay button (next to Queue) is outside .now-playing
        - entirely, so it's unreachable in fullscreen and doesn't exist at
        - all on mobile (MobileTransportControls.vue has no equivalent
        - slot), making this the only way to reach it in both cases. Not
        - shown outside fullscreen on desktop, where PlayerBar's own button
        - already covers it. -->
-      <v-btn
-        v-if="(compact || isFullscreen) && authStore.capabilities.songRadio"
-        icon="mdi-infinity"
-        :color="autoplayStore.enabled ? 'primary' : undefined"
-        variant="text"
-        density="comfortable"
-        :title="$t('player.autoplay')"
-        @click="playbackStore.setAutoplayEnabled(!autoplayStore.enabled)"
-      />
-      <!-- Hidden rather than disabled where there is nothing to visualize:
+        <v-btn
+          v-if="(compact || isFullscreen) && authStore.capabilities.songRadio"
+          icon="mdi-infinity"
+          :color="autoplayStore.enabled ? 'primary' : undefined"
+          variant="text"
+          density="comfortable"
+          :title="$t('player.autoplay')"
+          @click="playbackStore.setAutoplayEnabled(!autoplayStore.enabled)"
+        />
+        <!-- Hidden rather than disabled where there is nothing to visualize:
        - a phone plays without a Web Audio graph so that it keeps going
        - while the screen is locked (see services/audioEngine.ts), and a
        - control that could only ever produce empty bars is worse than no
        - control. Still there while casting, whose data comes from the
        - backend instead. -->
-      <v-btn
-        v-if="visualizerAvailable"
-        icon="mdi-equalizer"
-        :color="showVisualizer ? 'primary' : undefined"
-        variant="text"
-        density="comfortable"
-        :title="$t('nowPlaying.toggleVisualizer')"
-        @click="showVisualizer = !showVisualizer"
-      />
-      <!-- Not a mobile feature — MobileTransportControls.vue/the tab bar
+        <v-btn
+          v-if="visualizerAvailable"
+          icon="mdi-equalizer"
+          :color="showVisualizer ? 'primary' : undefined"
+          variant="text"
+          density="comfortable"
+          :title="$t('nowPlaying.toggleVisualizer')"
+          @click="showVisualizer = !showVisualizer"
+        />
+        <!-- Not a mobile feature — MobileTransportControls.vue/the tab bar
        - already own the phone's actual full screen; hiding *that* app
        - chrome behind the Fullscreen API here wouldn't gain anything and
        - isn't what "fullscreen" reads as on a phone anyway. -->
-      <v-btn
-        v-if="!compact"
-        :icon="isFullscreen ? 'mdi-fullscreen-exit' : 'mdi-fullscreen'"
-        :color="isFullscreen ? 'primary' : undefined"
-        variant="text"
-        density="comfortable"
-        :title="$t('nowPlaying.toggleFullscreen')"
-        @click="toggleFullscreen"
-      />
-    </div>
+        <v-btn
+          v-if="!compact"
+          :icon="isFullscreen ? 'mdi-fullscreen-exit' : 'mdi-fullscreen'"
+          :color="isFullscreen ? 'primary' : undefined"
+          variant="text"
+          density="comfortable"
+          :title="$t('nowPlaying.toggleFullscreen')"
+          @click="toggleFullscreen"
+        />
+      </div>
+    </Teleport>
 
     <!-- The container-query host — see artSize's own comment. .now-playing's
      - own grid (see <style>, grid-template-rows: minmax(0, 1fr) auto) is
@@ -194,9 +218,17 @@
 
             <transition name="now-playing-lyrics">
               <lyrics-panel
-                v-if="showLyrics"
+                v-if="showLyrics && currentSong"
                 variant="immersive"
                 :mobile="compact"
+                class="now-playing__lyrics"
+              />
+              <!-- Radio takes the same half of the split (and the same
+                 - back face of the portrait flip card): no lyrics to show,
+                 - but the station's own title log to read instead. -->
+              <radio-title-log
+                v-else-if="showLyrics && playbackStore.radioStation"
+                :entries="playbackStore.radioTitleLog"
                 class="now-playing__lyrics"
               />
             </transition>
@@ -259,6 +291,7 @@ import { useAutoplayStore } from '@/stores/autoplay'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import CoverArt from '@/components/library/CoverArt.vue'
 import LyricsPanel from '@/components/lyrics/LyricsPanel.vue'
+import RadioTitleLog from '@/components/radio/RadioTitleLog.vue'
 import AudioVisualizer from '@/components/player/AudioVisualizer.vue'
 import VisualizerDebugOverlay from '@/components/player/VisualizerDebugOverlay.vue'
 import type { VisualizerFrame } from '@/services/connect/types'
@@ -292,7 +325,7 @@ const VISUALIZER_HIDE_DELAY_MS = 400
 
 export default {
   name: 'NowPlayingView',
-  components: { CoverArt, LyricsPanel, AudioVisualizer, VisualizerDebugOverlay },
+  components: { CoverArt, LyricsPanel, AudioVisualizer, VisualizerDebugOverlay, RadioTitleLog },
   props: {
     // Set by MobileNowPlayingView.vue — this view's own sizing (artSize
     // below, plus the .now-playing--compact overrides in <style>) assumes
@@ -308,6 +341,10 @@ export default {
   },
   data() {
     return {
+      /** Whether MobileLayout.vue's app bar is on the page to hang the
+       * toolbar in — see the Teleport in the template. Checked rather than
+       * assumed: this view is also mounted on its own, outside any shell. */
+      canDock: false,
       // "r, g, b" — kept as a CSS-ready string so the two computed styles
       // below don't each redo the same join().
       extractedColor: null as string | null,
@@ -376,9 +413,31 @@ export default {
     // height and a width fraction, same reasoning as before: a *short*
     // container and a *narrow* one are both real ways to run out of room,
     // independently.
+    //
+    // The compact fractions come from measuring what the stage actually
+    // leaves rather than from picking cautious-looking numbers, which is
+    // what the previous 55cqh/60cqw were. Measured across six phone and
+    // tablet viewports (see NowPlayingView.compact.layout.browser.test.ts):
+    // once .now-playing__content's 16px side padding is off, the width
+    // available is ~91cqw everywhere, so 60cqw was leaving a third of it
+    // unused — on a 390px phone a 234px cover in 358px of room, and with
+    // it a flip card, and so a lyrics and title-log panel, all sized to
+    // the same 234px.
+    //
+    // The height fraction cannot be as generous, and that is the whole
+    // reason the two differ: the info block and the padding under the
+    // artwork cost a fixed ~78px, which is 12% of a tall portrait stage
+    // but 38% of a 205px landscape one. 58cqh is what still fits there;
+    // in portrait the width binds first anyway, so nothing is lost by
+    // being careful about it.
+    //
+    // 90cqw rather than the ~98 the box would actually tolerate: the last
+    // few percent are margin, not waste. Pushed right to the edge the
+    // cover ends up with four pixels of air either side, which reads as a
+    // layout mistake rather than as a big cover.
     artSize(): string {
       return this.compact
-        ? 'clamp(120px, min(55cqh, 60cqw), 320px)'
+        ? 'clamp(120px, min(58cqh, 90cqw), 480px)'
         : 'clamp(180px, min(70cqh, 50cqw), 900px)'
     },
     // Backed by the same store flag PlayerBar's lyrics button drives
@@ -509,10 +568,15 @@ export default {
     currentSong: {
       immediate: true,
       handler(song: Song | null) {
-        // Radio has no lyrics concept — fall back to the normal artwork
-        // view instead of being stuck showing lyrics for nothing.
+        // Radio has no lyrics, but it does have a title log to put in the
+        // same panel (see the template) — so only *nothing playing at all*
+        // still falls back to the plain artwork view. Reading
+        // Reading the store here (as the rest of this view does) rather
+        // than assuming an order: which of the two is set first when
+        // switching to a station isn't guaranteed, and this runs on the
+        // currentSong half of it.
         if (!song) {
-          this.showLyrics = false
+          if (!this.playbackStore.radioStation) this.showLyrics = false
           return
         }
         useLyricsStore().ensureLoaded(song)
@@ -557,6 +621,13 @@ export default {
         }
       },
     },
+  },
+  created() {
+    // Already there in the real shell: MobileLayout renders its app bar
+    // before <router-view>, so the target is in the document by the time
+    // this gets here — checking now rather than in mounted() keeps the
+    // toolbar from rendering over the artwork for a frame first.
+    this.canDock = document.getElementById('mobile-app-bar-actions') !== null
   },
   mounted() {
     document.addEventListener('fullscreenchange', this.onFullscreenChange)
@@ -679,6 +750,17 @@ export default {
   z-index: 2;
   display: flex;
   gap: 4px;
+}
+
+/* Teleported into the app bar (see the template): it is a row of buttons in
+ * a bar now, not an overlay on artwork, so everything that made it float
+ * comes back off. The `.now-playing--compact` rules below cannot do this —
+ * once teleported it is no longer inside .now-playing at all. */
+.now-playing__toolbar--docked {
+  position: static;
+  z-index: auto;
+  flex-direction: row;
+  gap: 0;
 }
 
 /* Mirrors .now-playing__toolbar's own corner placement (opposite side, so

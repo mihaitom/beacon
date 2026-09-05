@@ -23,7 +23,11 @@
       @dragend="$emit('dragend')"
     />
     <div class="queue-row__index text-body-small text-medium-emphasis">
-      <v-icon v-if="isCurrent" icon="mdi-volume-high" size="14" color="primary" />
+      <!-- audible, not isCurrent: the row stays marked as where the queue
+       - stands while a radio station plays over the top of it, but a
+       - speaker icon there would be claiming this song is what you are
+       - hearing. -->
+      <v-icon v-if="audible" icon="mdi-volume-high" size="14" color="primary" />
       <template v-else>{{ index + 1 }}</template>
     </div>
     <cover-art :cover-art-id="song.coverArtId" :size="36" class="queue-row__cover mx-2" />
@@ -90,6 +94,13 @@ export default {
     },
     isCurrent() {
       return this.index === this.playbackStore.currentIndex
+    },
+    /** isCurrent says where the queue stands; this says whether that is
+     * also what's coming out of the speakers. The two only differ while a
+     * radio station is playing, which interrupts the queue without
+     * discarding it (see the playback store's currentSong). */
+    audible() {
+      return this.isCurrent && this.playbackStore.radioStation == null
     },
     formattedDuration() {
       const total = Math.round(this.song.duration ?? 0)

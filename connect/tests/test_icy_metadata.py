@@ -208,7 +208,78 @@ class TestIcyMuxer:
         assert out == _icy_block(b"a" * metaint, "Title")
 
 
+class TestParseBitrate:
+    def test_reads_a_plain_value(self):
+        assert icy_mod.parse_bitrate("320") == 320
+
+    def test_reads_the_first_of_a_multi_rate_header(self):
+        """Some Shoutcast servers advertise every rate the stream is offered
+        at; the first is the one this connection is receiving."""
+        assert icy_mod.parse_bitrate("128,128,64") == 128
+
+    def test_ignores_what_it_cannot_use(self):
+        # This number goes straight in front of a listener, so anything
+        # doubtful is better dropped than shown.
+        assert icy_mod.parse_bitrate(None) is None
+        assert icy_mod.parse_bitrate("") is None
+        assert icy_mod.parse_bitrate("quite fast") is None
+        assert icy_mod.parse_bitrate("0") is None
+        assert icy_mod.parse_bitrate("999999") is None
+
+
+class TestParseCodec:
+    def test_names_the_families_a_station_actually_serves(self):
+        assert icy_mod.parse_codec("audio/mpeg") == "MP3"
+        assert icy_mod.parse_codec("audio/aacp") == "AAC"
+        assert icy_mod.parse_codec("application/ogg") == "OGG"
+
+    def test_survives_parameters_and_casing(self):
+        assert icy_mod.parse_codec("Audio/MPEG; charset=utf-8") == "MP3"
+
+    def test_leaves_an_unknown_type_unnamed(self):
+        assert icy_mod.parse_codec(None) is None
+        assert icy_mod.parse_codec("application/octet-stream") is None
+
+
 class TestWatchOnce:
+    async def test_reports_the_stream_info_from_the_response_headers(self):
+        metaint = 8
+        chunk = _icy_block(b"a" * metaint, "Artist - Track")
+        stream = _mock_stream(
+            {"icy-metaint": str(metaint), "icy-br": "320", "content-type": "audio/mpeg"}, [chunk]
+        )
+        reported = []
+        with patch.object(icy_mod._client, "stream", stream):
+            await icy_mod._watch_once(
+                "http://station", lambda _: None, lambda *a: reported.append(a)
+            )
+        assert reported == [(320, "MP3")]
+
+    async def test_reports_stream_info_even_for_a_station_with_no_metaint(self):
+        """`icy-br` and `icy-metaint` are independent headers. Giving up on
+        the titles (which is what no metaint means) is no reason to throw
+        away what the connection did learn about the stream itself."""
+        stream = _mock_stream({"icy-br": "128", "content-type": "audio/aacp"}, [b"whatever"])
+        reported = []
+        with patch.object(icy_mod._client, "stream", stream):
+            worth_retrying = await icy_mod._watch_once(
+                "http://station", lambda _: None, lambda *a: reported.append(a)
+            )
+        assert worth_retrying is False
+        assert reported == [(128, "AAC")]
+
+    async def test_reports_nothing_declared_as_nothing(self):
+        """Both together, None included: a station that has stopped
+        declaring something must not leave the previous connection's answer
+        standing."""
+        stream = _mock_stream({"icy-metaint": "8"}, [_icy_block(b"a" * 8, "T")])
+        reported = []
+        with patch.object(icy_mod._client, "stream", stream):
+            await icy_mod._watch_once(
+                "http://station", lambda _: None, lambda *a: reported.append(a)
+            )
+        assert reported == [(None, None)]
+
     async def test_gives_up_immediately_when_the_station_declares_no_metaint(self):
         stream = _mock_stream({}, [b"whatever"])
         titles = []

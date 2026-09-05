@@ -7,7 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import { useRadioSettingsStore } from '@/stores/radioSettings'
 import { useLyricsProvidersStore, LYRIC_PROVIDERS } from '@/stores/lyricsProviders'
-import { useAutoplayStore, DEFAULT_AUTOPLAY_BATCH_SIZE } from '@/stores/autoplay'
+import { useAutoplayStore } from '@/stores/autoplay'
 import { browserLocale, getLocale } from '@/i18n'
 import { setLocale } from '@/services/localeSetting'
 
@@ -40,7 +40,6 @@ describe('accountScopedStores — pull on account change', () => {
       locale: 'de',
       recommendationsEnabled: false,
       lyricsProviders: ['lrclib.net'],
-      autoplayBatchSize: 20,
       castRadioDirectly: true,
     })
     initAccountScopedStores()
@@ -51,7 +50,6 @@ describe('accountScopedStores — pull on account change', () => {
 
     expect(useRecommendationsStore().enabled).toBe(false)
     expect(useLyricsProvidersStore().enabled).toEqual(['lrclib.net'])
-    expect(useAutoplayStore().batchSize).toBe(20)
     expect(useRadioSettingsStore().castDirectly).toBe(true)
   })
 
@@ -70,7 +68,7 @@ describe('accountScopedStores — pull on account change', () => {
   })
 
   it('leaves a field the server has never seen at its current local value', async () => {
-    useAutoplayStore().setBatchSize(30)
+    useRecommendationsStore().setEnabled(false)
     vi.mocked(fetchAccountSettings).mockResolvedValue({ locale: 'en' })
     initAccountScopedStores()
 
@@ -78,8 +76,8 @@ describe('accountScopedStores — pull on account change', () => {
     await nextTick()
     await vi.waitFor(() => expect(getLocale()).toBe('en'))
 
-    // autoplayBatchSize was absent from the server response — untouched.
-    expect(useAutoplayStore().batchSize).toBe(30)
+    // recommendationsEnabled was absent from the server response — untouched.
+    expect(useRecommendationsStore().enabled).toBe(false)
   })
 
   it('ignores a lyrics provider the server sent that this build does not recognize', async () => {
@@ -116,15 +114,6 @@ describe('accountScopedStores — pull on account change', () => {
     await nextTick()
 
     expect(useLyricsProvidersStore().enabled).toEqual([...LYRIC_PROVIDERS])
-  })
-
-  it('falls back to the default for a batch size that is not an offered option', async () => {
-    vi.mocked(fetchAccountSettings).mockResolvedValue({ autoplayBatchSize: 500 })
-    initAccountScopedStores()
-
-    signIn()
-    await nextTick()
-    await vi.waitFor(() => expect(useAutoplayStore().batchSize).toBe(DEFAULT_AUTOPLAY_BATCH_SIZE))
   })
 
   it('ignores a non-boolean recommendations flag', async () => {
@@ -181,7 +170,6 @@ describe('accountScopedStores — local reload on account change', () => {
     signIn('alice')
     useRecommendationsStore().setEnabled(false)
     useLyricsProvidersStore().setEnabled([])
-    useAutoplayStore().setBatchSize(30)
     useAutoplayStore().setEnabled(true)
     useRadioSettingsStore().setCastDirectly(true)
 
@@ -191,7 +179,6 @@ describe('accountScopedStores — local reload on account change', () => {
 
     expect(useRecommendationsStore().enabled).toBe(true)
     expect(useLyricsProvidersStore().enabled).toEqual([...LYRIC_PROVIDERS])
-    expect(useAutoplayStore().batchSize).toBe(DEFAULT_AUTOPLAY_BATCH_SIZE)
     expect(useAutoplayStore().enabled).toBe(false)
     expect(useRadioSettingsStore().castDirectly).toBe(false)
   })
@@ -227,17 +214,17 @@ describe('accountScopedStores — local reload on account change', () => {
 
   it('gives each account its own value back when switching between them', async () => {
     signIn('alice')
-    useAutoplayStore().setBatchSize(30)
+    useRadioSettingsStore().setCastDirectly(true)
 
     initAccountScopedStores()
     const auth = useAuthStore()
     auth.username = 'bob'
     await nextTick()
-    useAutoplayStore().setBatchSize(5)
+    useRadioSettingsStore().setCastDirectly(false)
 
     auth.username = 'alice'
     await nextTick()
 
-    expect(useAutoplayStore().batchSize).toBe(30)
+    expect(useRadioSettingsStore().castDirectly).toBe(true)
   })
 })

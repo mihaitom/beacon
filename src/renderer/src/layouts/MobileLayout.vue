@@ -4,10 +4,31 @@
      - mobile shell — none of the five tabs cover it. Shown on every route,
      - including Now Playing, so it doesn't depend on playback state (that
      - view's own toolbar only renders at all once something's playing). -->
-    <v-app-bar density="compact" height="44" color="#0B0D13" class="mobile-app-bar">
-      <v-icon icon="mdi-lighthouse-on" color="primary" size="16" class="ml-3 mr-2 beacon-glow" />
+    <!-- 56, not the 44 this started at: the bar carries the current view's
+       - own actions now (see the actions slot below), and an icon button in
+       - a 44px bar sat with barely a pixel of air above and below it.
+       -
+       - No `density` prop either — Vuetify's compact density overrode the
+       - height outright rather than adjusting it, leaving the bar at 41px
+       - however large the number here said. -->
+    <v-app-bar height="56" color="#0B0D13" class="mobile-app-bar">
+      <!-- Same size as every other icon in this bar. It was 16 while the
+         - bar held nothing but a title; sitting next to 24px buttons it
+         - just read as a small version of them. -->
+      <v-icon
+        icon="mdi-lighthouse-on"
+        color="primary"
+        size="24"
+        class="mobile-app-bar__logo beacon-glow"
+      />
       <v-app-bar-title class="mobile-app-bar__title">Beacon</v-app-bar-title>
       <v-spacer />
+      <!-- Where a view can hang its own actions instead of floating them
+         - over its content. Now Playing is the one that does (see
+         - NowPlayingView.vue's toolbar Teleport): its two buttons used to
+         - sit in the top-right corner of the artwork, which only worked
+         - while the artwork was small enough to leave a corner free. -->
+      <span id="mobile-app-bar-actions" class="mobile-app-bar__actions" />
       <v-btn
         icon="mdi-cog-outline"
         variant="text"
@@ -53,6 +74,16 @@ export default {
 </script>
 
 <style scoped>
+.mobile-app-bar__logo {
+  margin-inline-start: 12px;
+  margin-inline-end: 8px;
+}
+
+.mobile-app-bar__actions {
+  display: flex;
+  align-items: center;
+}
+
 .mobile-app-bar {
   border-bottom: 1px solid var(--beacon-hairline);
 }

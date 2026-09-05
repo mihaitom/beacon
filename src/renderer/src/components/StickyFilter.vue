@@ -43,19 +43,31 @@ export default {
     }
   },
   mounted() {
-    this.intersectionObserver = new IntersectionObserver(([entry]) => {
-      this.isStuck = entry ? !entry.isIntersecting : false
-    })
-    this.intersectionObserver.observe(this.$refs.sentinel as Element)
+    // Both observers are progressive enhancement — the fade and the
+    // reported height, neither of which the filter needs in order to be a
+    // filter. Guarded rather than assumed so an environment without them
+    // (jsdom, which every view test using this runs in) renders the slot
+    // normally instead of throwing out of mounted() and taking the search
+    // field down with it. Without this, every test touching a view that
+    // wraps its filter had to stub this component out, which is how a
+    // shared component ends up untested in exactly the places it is used.
+    if (typeof IntersectionObserver !== 'undefined') {
+      this.intersectionObserver = new IntersectionObserver(([entry]) => {
+        this.isStuck = entry ? !entry.isIntersecting : false
+      })
+      this.intersectionObserver.observe(this.$refs.sentinel as Element)
+    }
 
     // getBoundingClientRect() (not the entry's own contentRect, which
     // excludes padding) so consumers needing the box's full footprint
     // (SongsView, stacking SongTable's column header right below it) get
     // padding included, not just the inner content's height.
-    this.resizeObserver = new ResizeObserver((entries) => {
-      this.$emit('resize', entries[0]?.target.getBoundingClientRect().height ?? 0)
-    })
-    this.resizeObserver.observe(this.$refs.box as Element)
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        this.$emit('resize', entries[0]?.target.getBoundingClientRect().height ?? 0)
+      })
+      this.resizeObserver.observe(this.$refs.box as Element)
+    }
   },
   beforeUnmount() {
     this.intersectionObserver?.disconnect()

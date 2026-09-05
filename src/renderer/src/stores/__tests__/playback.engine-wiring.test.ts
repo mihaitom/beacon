@@ -417,11 +417,17 @@ describe('the store wiring the audio engine', () => {
         streamUrl: 'https://stream.example/chill',
         homePageUrl: null,
       }
-      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue('Artist - Track')
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue({
+        title: 'Artist - Track',
+        history: [{ title: 'Artist - Track', at: 1_757_000_000 }],
+        bitrate: 320,
+        codec: 'MP3',
+      })
 
       await vi.advanceTimersByTimeAsync(8000)
 
       expect(playback.radioNowPlaying).toBe('Artist - Track')
+      expect(playback.radioTitleLog).toEqual([{ title: 'Artist - Track', at: 1_757_000_000 }])
     })
 
     it('never polls while nothing is playing', async () => {
@@ -442,7 +448,7 @@ describe('the store wiring the audio engine', () => {
         streamUrl: 'https://stream.example/chill',
         homePageUrl: null,
       }
-      let resolveFirst: (title: string | null) => void = () => {}
+      let resolveFirst: (metadata: radioMetadata.RadioMetadata) => void = () => {}
       vi.mocked(radioMetadata.fetchRadioMetadata).mockImplementation(
         () =>
           new Promise((resolve) => {
@@ -458,10 +464,18 @@ describe('the store wiring the audio engine', () => {
         streamUrl: 'https://stream.example/jazz',
         homePageUrl: null,
       }
-      resolveFirst('Old Artist - Old Track')
+      resolveFirst({
+        title: 'Old Artist - Old Track',
+        history: [{ title: 'Old Artist - Old Track', at: 1_757_000_000 }],
+        bitrate: 128,
+        codec: 'AAC',
+      })
       await flushPromises()
 
       expect(playback.radioNowPlaying).toBeNull()
+      // The log belongs to the station it came from just as much as the
+      // title does — a stale one must not land under the new station.
+      expect(playback.radioTitleLog).toEqual([])
     })
   })
 })

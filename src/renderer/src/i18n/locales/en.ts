@@ -20,6 +20,7 @@ export default {
   },
   nav: {
     home: 'Home',
+    library: 'Library',
     albums: 'Albums',
     artists: 'Artists',
     songs: 'Songs',
@@ -96,6 +97,8 @@ export default {
     noGenresFound: 'No genres found.',
     noGenresForQuery: 'No genres for "{query}".',
     noSongsFound: 'No songs found.',
+    searchSongs: 'Search songs…',
+    searchAlbums: 'Search albums…',
     noSongsForQuery: 'No songs for "{query}".',
     album1: 'album',
     albumsN: 'albums',
@@ -142,6 +145,7 @@ export default {
     volume: 'Volume',
     autoplay: 'Autoplay',
     liveRadio: 'Live · {time}',
+    live: 'Live',
   },
   shortcuts: {
     title: 'Keyboard shortcuts',
@@ -310,7 +314,7 @@ export default {
     refreshLibraryFailed: "Couldn't refresh the library.",
     storageTitle: 'Storage',
     clearCacheHint:
-      "Discard locally cached library data and lyrics — everything reloads fresh the next time it's needed. Doesn't trigger a library scan.",
+      "Discard locally cached library data, cover art, artist photos, station logos and lyrics — everything reloads fresh the next time it's needed. Doesn't trigger a library scan.",
     clearCache: 'Clear cache',
     cacheCleared: 'Cache cleared.',
     resetAirplayHint:
@@ -331,15 +335,15 @@ export default {
     logLevelChangeFailed: "Couldn't update the log level.",
     recommendations: 'Personalized recommendations',
     recommendationsHint:
-      'Discover on Home uses artists similar to what you actually listen to, resolved via MusicBrainz and ListenBrainz — this shares a library artist name or two with those services. Off falls back to random albums.',
+      "Discover on Home uses artists similar to what you actually listen to, looked up at MusicBrainz, ListenBrainz and Deezer — this shares a library artist name or two with them. Off falls back to random albums; opening an artist's own page still looks up that one artist either way.",
     lyricsProvidersTitle: 'Lyrics providers',
     lyricsProvidersHint:
-      "Lyrics stored with the song file itself are always tried first and never leave your server. Every provider below is enabled by default — deselect any you'd rather Beacon not send a song's title, artist, album, and duration to.",
+      "Lyrics stored with the song file itself are always tried first and never leave your server. Every provider below is enabled by default — deselect any you'd rather Beacon not send a song's title and artist to.",
     lyricsProviders: 'Third-party providers',
     lyricsProvidersEmptyHint:
       'No providers selected — only lyrics stored in the file itself are shown.',
     lyricsProvidersActiveHint:
-      "When the file has no lyrics, the song's title, artist, album, and duration are sent to the selected provider(s) to find a match.",
+      "When the file has no lyrics, the song's title and artist are sent to the selected provider(s) to find a match. Its album and length never leave your server; they are only used here, to pick the closest of the results.",
     playbackTitle: 'Playback',
     replayGain: 'ReplayGain',
     replayGainOff: 'Off',
@@ -362,10 +366,6 @@ export default {
     castRadioDirectly: 'Send radio straight to the device',
     castRadioDirectlyHint:
       "Beacon routes cast radio through its own backend by default, so the device and the now-playing title share one fetch of the station. Turned on, the device connects to the station directly instead — playback then keeps going even if Beacon restarts, at the risk that some devices refuse the station's own stream.",
-    autoplay: 'Autoplay',
-    autoplayBatchSizeItem: '{count} songs',
-    autoplayHint:
-      "Turned on/off from the player bar (next to Queue), not here — this only controls how many similar songs get added each time it tops the queue back up, the same recommendation engine Song/Artist Radio uses. Doesn't kick in with Repeat already on, since the queue never runs out on its own then anyway.",
     about: 'About Beacon',
     whatsNew: "What's new?",
     ffmpegFound: 'ffmpeg found',
@@ -393,6 +393,97 @@ export default {
     byOwner: 'by {owner}',
     deleteTitle: 'Delete playlist?',
     deleteConfirm: 'Delete "{name}"? This cannot be undone.',
+  },
+  privacy: {
+    title: 'Privacy',
+    intro:
+      'Beacon runs against your own media server. There is no registration, no analytics, no tracking and no ads. A few features do ask outside services, though. This is which ones, what they are asked for, and what goes out with the request.',
+    fromDeviceTitle: 'Connections from this device',
+    fromDeviceHint:
+      'True of everything in this section: your device opens the connection itself, so the other end sees your IP address.',
+    viaServerTitle: 'Connections through your Beacon server',
+    viaServerHint:
+      "True of everything in this section: your device only ever talks to your own Beacon server, which makes the request on its behalf. The other end therefore sees your server's address, not yours.",
+    sends: 'Sends:',
+    buildsTitle: 'Desktop app and Docker',
+    builds:
+      "In the Docker build, your Beacon server runs wherever you host it - the requests in the second section then go out from that server's address, not yours. The desktop app carries the same server inside it and starts it on this machine: there the two are one address, and the split above describes the route rather than a separation. Also desktop-only: it downloads an update it finds, rather than only pointing at one.",
+    ownServer:
+      'Not on this list: your media server (Navidrome, Jellyfin, Plex), your speakers, and the phone remote. Those are your own, and Beacon talks to them directly.',
+    optOut: {
+      lyrics: 'Can be switched off under Lyrics',
+      recommendations: 'Can be switched off under Recommendations',
+      recommendationsPartial: 'Partly switchable under Recommendations',
+    },
+    services: {
+      updateCheck: {
+        name: 'GitHub',
+        purpose: 'Checking whether a newer version of Beacon has been published.',
+        sends:
+          'Nothing about you. It reads the release list; the comparison happens on your device. The desktop app also downloads an update from there.',
+      },
+      radioStream: {
+        name: 'The radio station itself',
+        purpose: 'Playing the sound, when you listen to radio on this device.',
+        sends:
+          'Nothing beyond the request for the stream. The station sees your IP address, as any web radio does. Casting to a speaker goes through your Beacon server instead.',
+      },
+      radioBrowser: {
+        name: 'Radio Browser',
+        purpose: 'The station directory behind "Discover stations".',
+        sends:
+          "Your search term and the country you picked. Playing a station you found here reports its id back as a click, which the directory's own rules ask for so that popular stations stay recognisable. A station you added by typing its address yourself is never reported.",
+      },
+      stationSite: {
+        name: "Radio stations' own websites",
+        purpose: "Finding a station's logo, shown in the list and while it plays.",
+        sends: "Nothing about you. It reads the station's home page and the image it names.",
+      },
+      lrclib: {
+        name: 'LRCLIB',
+        purpose: 'Looking up lyrics when the file itself carries none.',
+        sends:
+          "The song's title and artist. Its album and length stay on your server; they are only used there, to pick the closest of the results.",
+      },
+      netease: {
+        name: 'NetEase',
+        purpose: 'Looking up lyrics when the file itself carries none.',
+        sends:
+          "The song's title and artist. Its album and length stay on your server; they are only used there, to pick the closest of the results.",
+      },
+      simpmusic: {
+        name: 'SimpMusic',
+        purpose: 'Looking up lyrics when the file itself carries none.',
+        sends:
+          "The song's title and artist. Its album and length stay on your server; they are only used there, to pick the closest of the results.",
+      },
+      musicbrainz: {
+        name: 'MusicBrainz',
+        purpose:
+          "Matching artist names to a stable id, which recommendations are built on. Also used for the links on an artist's own page, whether or not recommendations are on.",
+        sends: 'Artist names from your library.',
+      },
+      listenbrainz: {
+        name: 'ListenBrainz',
+        purpose: 'Suggesting similar artists for "New artists to explore".',
+        sends:
+          'The MusicBrainz ids of the artists being started from - no names, and nothing about what you have played.',
+      },
+      deezer: {
+        name: 'Deezer',
+        purpose:
+          'Finding a photo and an artist page for a suggested artist, and for the artist page you have open, whether or not recommendations are on.',
+        sends:
+          'The name of the artist being looked up: a suggested one, or the one whose page you have open.',
+      },
+      plexAuth: {
+        name: 'Plex',
+        purpose:
+          'Only if you sign in with a Plex account: Plex runs sign-in through plex.tv rather than through your own server.',
+        sends:
+          'A sign-in request, and afterwards your Plex token whenever it is checked. Signing in opens app.plex.tv in your browser. None of this happens with Navidrome or Jellyfin.',
+      },
+    },
   },
   radio: {
     title: 'Radio',
@@ -426,6 +517,10 @@ export default {
     homePageUrl: 'Homepage URL',
     noStationsYet: 'No radio stations saved yet.',
     noStationsForQuery: 'No stations for "{query}".',
+    titleLog: 'Title history',
+    titleLogEmpty: 'Nothing played yet since this station started.',
+    titleLogSearch: 'Search your library',
+    titleLogYesterday: 'Yesterday',
   },
   favorites: {
     title: 'Favorites',

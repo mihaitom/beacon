@@ -1,13 +1,13 @@
 <template>
-  <router-link :to="`/m/playlists/${playlist.id}`" class="mobile-playlist-row d-flex align-center">
+  <router-link :to="`/m/playlists/${playlist.id}`" class="mobile-playlist-row mobile-row">
     <cover-art
       :cover-art-id="playlist.coverArtId"
-      :size="52"
+      :size="MOBILE_ROW_ART_SIZE"
       fallback-icon="mdi-playlist-music"
-      class="mr-3 flex-shrink-0"
+      class="mobile-row__art"
     />
-    <div class="min-width-0 flex-grow-1">
-      <div class="text-body-large text-truncate">{{ playlist.name }}</div>
+    <div class="mobile-row__text">
+      <div class="text-body-medium text-truncate">{{ playlist.name }}</div>
       <div class="text-body-small text-medium-emphasis text-truncate">{{ meta }}</div>
     </div>
     <!-- Always visible — no hover state to reveal it on touch (this is what
@@ -26,11 +26,15 @@
 
 <script lang="ts">
 import CoverArt from '@/components/library/CoverArt.vue'
+import { MOBILE_ROW_ART_SIZE } from './rowMetrics'
 import type { Playlist } from '@/types/library'
 
 export default {
   name: 'MobilePlaylistRow',
   components: { CoverArt },
+  data() {
+    return { MOBILE_ROW_ART_SIZE }
+  },
   props: {
     playlist: {
       type: Object as () => Playlist,
@@ -68,14 +72,7 @@ export default {
 
 <style scoped>
 .mobile-playlist-row {
-  display: flex;
-  padding: 10px 4px;
-  border-radius: 8px;
   text-decoration: none;
   color: inherit;
-}
-
-.min-width-0 {
-  min-width: 0;
 }
 </style>

@@ -563,5 +563,84 @@ describe('StreamInfoSection', () => {
 
       expect(wrapper.find('.stream-info-section').exists()).toBe(false)
     })
+
+    /** What a station *can* be described by: its own ICY headers. Not a
+     * probe of a file (there is none) and not connect's pipeline (a
+     * station does not go through it) — see hasStreamInfo()'s comment. */
+    describe('what the station itself reports', () => {
+      it('describes a station once it says what it broadcasts, locally', () => {
+        useConnectStore().status = makeStatus()
+        setRadio()
+        const playback = usePlaybackStore()
+        playback.radioCodec = 'MP3'
+        playback.radioBitrate = 320
+
+        const wrapper = mountSection()
+
+        expect(wrapper.find('.stream-info-section').exists()).toBe(true)
+        expect(wrapper.vm.sourceLine).toBe('MP3, 320 kb/s')
+      })
+
+      it('reports the same station the same way while casting', () => {
+        // The station's own numbers, not the device's: a re-encode for a
+        // fussy speaker does not change what the station broadcasts.
+        setStreamInfo({})
+        setRadio()
+        const playback = usePlaybackStore()
+        playback.radioCodec = 'MP3'
+        playback.radioBitrate = 320
+
+        const wrapper = mountSection()
+
+        expect(wrapper.vm.sourceLine).toBe('MP3, 320 kb/s')
+      })
+
+      it('shows whichever half the station declared', () => {
+        useConnectStore().status = makeStatus()
+        setRadio()
+        const playback = usePlaybackStore()
+        playback.radioBitrate = 128
+
+        const wrapper = mountSection()
+
+        expect(wrapper.vm.sourceLine).toBe('128 kb/s')
+      })
+
+      it('leaves out the pipeline rows that mean nothing for a station', () => {
+        // Shown because the station described itself — which must not drag
+        // in "transcoding to MP3" (bookkeeping, not a real conversion) or a
+        // connection count for connect's /stream proxy, which a station is
+        // not served through.
+        setStreamInfo({ transcoding: true, active_connections: 1 })
+        setRadio()
+        const playback = usePlaybackStore()
+        playback.radioCodec = 'AAC'
+        playback.radioBitrate = 96
+
+        const wrapper = mountSection()
+        const labels = wrapper
+          .findAll('.stream-info-row .text-medium-emphasis')
+          .map((r) => r.text())
+
+        expect(wrapper.vm.sourceLine).toBe('AAC, 96 kb/s')
+        expect(labels).toEqual(['Source'])
+      })
+
+      it('still shows the transcoding rows for a station that really is re-encoded', () => {
+        setStreamInfo({ transcoding: true, transcode_reason: 'device_rejected_stream' })
+        setRadio()
+        const playback = usePlaybackStore()
+        playback.radioCodec = 'MP3'
+        playback.radioBitrate = 320
+
+        const wrapper = mountSection()
+        const labels = wrapper
+          .findAll('.stream-info-row .text-medium-emphasis')
+          .map((r) => r.text())
+
+        expect(labels).toContain('Transcoding')
+        expect(labels).toContain('Source')
+      })
+    })
   })
 })

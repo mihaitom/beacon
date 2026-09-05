@@ -7,7 +7,11 @@
    - format worth knowing too. -->
   <div v-if="hasStream" class="stream-info-section">
     <div class="eyebrow-label stream-info-heading">{{ $t('connect.streamInfo.title') }}</div>
-    <div class="stream-info-row">
+    <!-- Hidden for a station unless it really is being re-encoded: for
+     - every other cast station `transcoding` is true purely as bookkeeping
+     - and would claim a conversion that never happens. See
+     - hasStreamInfo()'s own comment. -->
+    <div v-if="!isRadio || radioReencoded" class="stream-info-row">
       <span class="text-medium-emphasis">{{ $t('connect.streamInfo.transcoding') }}</span>
       <span class="stream-info-value">
         <v-icon
@@ -34,7 +38,10 @@
      - which is exactly what does not happen for local playback — the
      - browser fetches its own audio and there is no cast connection to
      - report the health of. -->
-    <template v-if="isCasting">
+    <!-- ...and not for a station either: these count connections to
+     - connect's own /stream proxy, which a station is not served through.
+     - Same reasoning as the transcoding row above. -->
+    <template v-if="isCasting && !isRadio">
       <div class="stream-info-row">
         <span class="text-medium-emphasis">{{ $t('connect.streamInfo.connection') }}</span>
         <span class="stream-info-value">
@@ -132,14 +139,23 @@ function formatKhz(hz: number): string {
  * /stream proxy, which radio never uses either — none of stream_info means
  * anything here.
  *
- * The one radio case that *does* have something to describe is when the
- * device refused the station's own stream and connect fell back to
- * re-encoding it (core/streamer.py's REASON_DEVICE_REJECTED_STREAM) —
- * then there genuinely is a transcode, running through the very pipeline
- * this panel reports on, and hiding it would leave a listener wondering
- * why the station sounds different from the one they picked. Matched on
- * that reason specifically rather than on `transcoding`, which stays true
- * for every cast station purely as the bookkeeping described above.
+ * What radio *does* have to describe is the station itself: what it says
+ * it broadcasts, read straight off its own ICY response headers (see
+ * connect/core/icy_metadata.py). That is a genuine property of what is
+ * playing rather than of a pipeline it never enters, it is the same
+ * number locally and while casting, and it is the only thing this panel
+ * can say about a station at all — so the section is shown as soon as
+ * there is one.
+ *
+ * The other radio case worth describing is when the device refused the
+ * station's own stream and connect fell back to re-encoding it
+ * (core/streamer.py's REASON_DEVICE_REJECTED_STREAM) — then there
+ * genuinely is a transcode, running through the very pipeline this panel
+ * reports on, and hiding it would leave a listener wondering why the
+ * station sounds different from the one they picked. Matched on that
+ * reason specifically rather than on `transcoding`, which stays true for
+ * every cast station purely as the bookkeeping described above; the
+ * template gates the transcoding rows on it for the same reason.
  *
  * Exported (not just this component's own `hasStream` computed) so
  * ConnectDevicePicker.vue can decide whether the divider above this
@@ -151,6 +167,7 @@ export function hasStreamInfo(): boolean {
   const playback = usePlaybackStore()
   const connect = useConnectStore()
   if (playback.radioStation) {
+    if (playback.radioBitrate !== null || playback.radioCodec !== null) return true
     return connect.status?.stream_info?.transcode_reason === RADIO_REENCODED_REASON
   }
   return (
@@ -174,6 +191,15 @@ export default {
     },
     isCasting(): boolean {
       return this.connectStore.isActive
+    },
+    isRadio(): boolean {
+      return this.playbackStore.radioStation !== null
+    },
+    /** The one case where a station really is going through the transcode
+     * pipeline the rows below describe — see hasStreamInfo()'s own comment
+     * for why `transcoding` alone cannot be trusted to say so. */
+    radioReencoded(): boolean {
+      return this.connectStore.status?.stream_info?.transcode_reason === RADIO_REENCODED_REASON
     },
     castInfo(): ConnectStreamInfo {
       return this.connectStore.status?.stream_info ?? FALLBACK_INFO
@@ -240,6 +266,16 @@ export default {
     // /stream/local/{id}/info. That is the whole reason that endpoint
     // exists — a Song carries neither sample rate nor bit depth.
     sourceLine(): string | null {
+      // A station is described by what it says it sends, not by an ffmpeg
+      // probe of a file — there is no file, and the fields below stay null
+      // for it (see connect/routes/playback.py's radio fallback, which
+      // carries a transcode reason and nothing else). Same two numbers
+      // whether this device is playing the station or a speaker is.
+      if (this.isRadio) {
+        const { radioCodec, radioBitrate } = this.playbackStore
+        const parts = [radioCodec, radioBitrate ? `${radioBitrate} kb/s` : null].filter(Boolean)
+        return parts.length > 0 ? parts.join(', ') : null
+      }
       const source = this.isCasting ? this.castInfo : this.localSource
       const { source_codec, source_sample_rate, source_bit_depth, source_bitrate_kbps } = source
       if (!source_codec) return null

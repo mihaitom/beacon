@@ -137,24 +137,14 @@
                  - equivalent concept. Switching away cancels any in-flight Quick
                  - Connect request (see setAuthMode()) so a stray poll never
                  - outlives the mode it was started in. -->
-                <div v-if="selectedServerType === 'jellyfin'" class="auth-mode-toggle mb-4">
-                  <button
-                    type="button"
-                    class="auth-mode-tab"
-                    :class="{ 'auth-mode-tab--active': authMode === 'password' }"
-                    @click="setAuthMode('password')"
-                  >
-                    {{ $t('auth.password') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="auth-mode-tab"
-                    :class="{ 'auth-mode-tab--active': authMode === 'quickconnect' }"
-                    @click="setAuthMode('quickconnect')"
-                  >
-                    Quick Connect
-                  </button>
-                </div>
+                <segmented-control
+                  v-if="selectedServerType === 'jellyfin'"
+                  :model-value="authMode"
+                  :options="authModeOptions"
+                  :label="$t('auth.password')"
+                  class="mb-4"
+                  @update:model-value="setAuthMode($event)"
+                />
 
                 <!-- Plex authenticates a plex.tv *account*, not a per-server
                  - password — no username/password fields at all, and a server
@@ -273,6 +263,7 @@ import { getHealth } from '@/services/connect/config'
 import NavidromeIcon from '@/components/auth/NavidromeIcon.vue'
 import JellyfinIcon from '@/components/auth/JellyfinIcon.vue'
 import PlexIcon from '@/components/auth/PlexIcon.vue'
+import SegmentedControl from '@/components/SegmentedControl.vue'
 import type { PlexServer } from '@/services/connect/types'
 
 // How often pollJellyfinQuickConnect() is polled while a code is showing —
@@ -320,6 +311,7 @@ function saveRecentServerUrls(urls: string[]): void {
 
 export default {
   name: 'ServerLoginView',
+  components: { SegmentedControl },
   data() {
     return {
       serverUrl: '',
@@ -368,6 +360,14 @@ export default {
     }
   },
   computed: {
+    // Quick Connect is Jellyfin's own product name and stays untranslated,
+    // same as it reads in the markup this replaced.
+    authModeOptions() {
+      return [
+        { title: this.$t('auth.password'), value: 'password' },
+        { title: 'Quick Connect', value: 'quickconnect' },
+      ]
+    },
     authStore() {
       return useAuthStore()
     },
@@ -458,7 +458,8 @@ export default {
       // outlive the tile it was started under.
       if (option.type !== 'plex') this.cancelPlexLogin()
     },
-    setAuthMode(mode: 'password' | 'quickconnect') {
+    setAuthMode(mode: string) {
+      if (mode !== 'password' && mode !== 'quickconnect') return
       if (this.authMode === mode) return
       this.cancelQuickConnect()
       this.authMode = mode
@@ -959,41 +960,6 @@ export default {
   top: 6px;
   right: 6px;
   color: rgba(255, 255, 255, 0.3);
-}
-
-.auth-mode-toggle {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.auth-mode-tab {
-  flex: 1;
-  padding: 8px;
-  border-radius: 7px;
-  border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.5);
-  font: inherit;
-  font-size: 0.8125rem;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-}
-
-.auth-mode-tab:focus-visible {
-  outline: 2px solid rgb(var(--v-theme-primary));
-  outline-offset: 2px;
-}
-
-.auth-mode-tab--active {
-  background: rgba(245, 169, 78, 0.12);
-  color: #fdf6ec;
-  font-weight: 600;
 }
 
 .quick-connect-panel {

@@ -112,6 +112,34 @@ describe('playback persistence', () => {
       expect(playback.isPlaying).toBe(false)
     })
 
+    /** A live stream has no position to come back to — resumeLocalPlayback()
+     * reconnects at the edge and the counter starts from zero, so the
+     * stored number is only ever how long the *previous* session listened.
+     * Restored, it showed up as this session's listening time on a station
+     * that had not been started at all. Reported live 2026-09-05. */
+    it('does not carry a radio elapsed across a restart', () => {
+      localStorage.setItem(
+        PERSIST_KEY,
+        snapshot({
+          radioStation: {
+            id: 'r1',
+            name: 'Chill FM',
+            streamUrl: 'https://stream.example/chill',
+            homePageUrl: null,
+          },
+          localPosition: 243,
+        }),
+      )
+      const playback = usePlaybackStore()
+
+      playback.restoreFromStorage()
+
+      // The station itself is restored — that is what the player bar shows
+      // and what pressing play starts.
+      expect(playback.radioStation?.name).toBe('Chill FM')
+      expect(playback.localPosition).toBe(0)
+    })
+
     it('falls back to ReplayGain off for a snapshot written before that setting existed', () => {
       localStorage.setItem(PERSIST_KEY, snapshot({ replayGainMode: undefined }))
       const playback = usePlaybackStore()

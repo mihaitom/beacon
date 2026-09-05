@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { useAutoplayStore } from '../autoplay'
+import { AUTOPLAY_BATCH_SIZE, useAutoplayStore } from '../autoplay'
 import { useConnectStore } from '../connect'
 import { useLibraryStore } from '../library'
 import { usePlaybackStore } from '../playback'
@@ -52,6 +52,22 @@ describe('maybeAutoplay', () => {
     await playback.maybeAutoplay()
 
     expect(playback.queue.map((s) => s.id)).toEqual(['a', 'b', 'x', 'y'])
+  })
+
+  /** How many songs a top-up asks for is the app's own answer now, not a
+   * setting: the four-way select in Settings asked people to pick a number
+   * none of them could have an opinion about before trying it. Pinned to
+   * the literal 10 rather than to the constant alone, so changing it back
+   * is a deliberate edit here too, not something a refactor does quietly. */
+  it('asks for ten similar songs, the number the app settled on', async () => {
+    const playback = usePlaybackStore()
+    stubSimilar({ songs: [makeSong('x')] })
+    playback.setQueue([makeSong('a'), makeSong('b')], 1)
+
+    await playback.maybeAutoplay()
+
+    expect(similar).toHaveBeenCalledWith('b', 10)
+    expect(AUTOPLAY_BATCH_SIZE).toBe(10)
   })
 
   it('leaves a queue with plenty left in it alone', async () => {

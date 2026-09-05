@@ -1,12 +1,15 @@
 <template>
   <div class="toolbar d-flex align-center">
+    <!-- Radio included: the drawer holds that station's title log
+       - instead of lyrics (see LyricsDrawer.vue), and gating this on
+       - currentSong alone meant there was no way to open it at all. -->
     <v-btn
-      v-if="currentSong"
-      icon="mdi-script-text-outline"
+      v-if="currentSong || radioStation"
+      :icon="radioStation && !currentSong ? 'mdi-history' : 'mdi-script-text-outline'"
       :color="drawersStore.lyricsDrawerOpen ? 'primary' : undefined"
       variant="text"
       density="comfortable"
-      :title="$t('lyrics.title')"
+      :title="radioStation && !currentSong ? $t('radio.titleLog') : $t('lyrics.title')"
       @click="drawersStore.toggleLyricsDrawer()"
     />
     <v-btn
@@ -211,6 +214,9 @@ export default {
     },
     currentSong() {
       return this.playbackStore.currentSong
+    },
+    radioStation() {
+      return this.playbackStore.radioStation
     },
     // Same check as SettingsView.vue's own `isElectron` gate on the Remote
     // Control section this button surfaces here instead.

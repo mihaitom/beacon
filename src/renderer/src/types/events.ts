@@ -38,6 +38,12 @@ export interface ArtworkView {
   // rather than converting it on the way.
   coverArtId?: string | null
   imageUrl?: string | null
+  /** A smaller copy of the same picture, already on screen wherever this
+   * was opened from, shown while `imageUrl` loads. Without it a viewer
+   * opened on a large photo sits on a skeleton for as long as the download
+   * takes, having just covered up a perfectly good small version of the
+   * very same image. */
+  placeholderImageUrl?: string | null
   title: string
   subtitle?: string
   /** Artists are shown as circles everywhere else in the app; passing this

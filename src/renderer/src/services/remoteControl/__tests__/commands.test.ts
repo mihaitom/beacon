@@ -290,6 +290,35 @@ describe('handleRemoteCommand', () => {
     expect(playSpy).toHaveBeenLastCalledWith(playlist.songs, 0, true, true)
   })
 
+  describe('play-album', () => {
+    it('plays the album in its own track order', async () => {
+      const library = useLibraryStore()
+      const playback = usePlaybackStore()
+      const songs = [makeSong('x'), makeSong('y')]
+      vi.spyOn(library, 'fetchAlbum').mockResolvedValue({ id: 'al1', songs } as never)
+      const playSongList = vi.spyOn(playback, 'playSongList').mockResolvedValue()
+
+      await handleRemoteCommand('play-album', { albumId: 'al1' })
+
+      // pinFirst false, natural order — an album is a sequenced work, not a
+      // pick made row by row. peek because more than one song lands in the
+      // queue and the phone has no drawer of its own to reveal.
+      expect(playSongList).toHaveBeenCalledWith(songs, 0, false, true)
+    })
+
+    it('does not peek the drawer for a single-track album', async () => {
+      const library = useLibraryStore()
+      const playback = usePlaybackStore()
+      const songs = [makeSong('x')]
+      vi.spyOn(library, 'fetchAlbum').mockResolvedValue({ id: 'al1', songs } as never)
+      const playSongList = vi.spyOn(playback, 'playSongList').mockResolvedValue()
+
+      await handleRemoteCommand('play-album', { albumId: 'al1' })
+
+      expect(playSongList).toHaveBeenCalledWith(songs, 0, false, false)
+    })
+  })
+
   describe('play-radio-station', () => {
     it('plays the matching station without re-fetching an already-loaded list', async () => {
       const library = useLibraryStore()
@@ -462,6 +491,87 @@ describe('resolveRemoteQuery', () => {
       }
 
       expect(result.items.map((s) => s.id)).toEqual(['s2', 's3'])
+      expect(result.total).toBe(5)
+    })
+  })
+
+  describe('albums-request', () => {
+    function makeAlbum(id: string, overrides: Record<string, unknown> = {}) {
+      return {
+        id,
+        name: `Album ${id}`,
+        artist: 'Nobody',
+        artistId: 'ar',
+        coverArtId: null,
+        songCount: 2,
+        duration: 300,
+        year: 1999,
+        genre: null,
+        starred: false,
+        rating: 0,
+        songs: [],
+        ...overrides,
+      }
+    }
+
+    it('fetches the catalog once, filters across name and artist, and paginates', async () => {
+      const library = useLibraryStore()
+      const albums = [
+        makeAlbum('a', { name: 'Harbor Lights' }),
+        makeAlbum('b', { name: 'Other', artist: 'The Tide' }),
+        makeAlbum('c', { name: 'Unrelated' }),
+      ]
+      const fetchSpy = vi.spyOn(library, 'fetchAlbums').mockImplementation(async () => {
+        library.albums = albums as never
+      })
+
+      const result = (await resolveRemoteQuery('albums-request', { search: 'tide' })) as {
+        items: { id: string }[]
+        total: number
+      }
+
+      expect(fetchSpy).toHaveBeenCalledOnce()
+      expect(result.items).toEqual([expect.objectContaining({ id: 'b' })])
+      expect(result.total).toBe(1)
+    })
+
+    it('does not re-fetch once the catalog is already loaded', async () => {
+      const library = useLibraryStore()
+      library.albums = [makeAlbum('a')] as never
+      const fetchSpy = vi.spyOn(library, 'fetchAlbums')
+
+      await resolveRemoteQuery('albums-request', {})
+
+      expect(fetchSpy).not.toHaveBeenCalled()
+    })
+
+    it('sends the phone what a row needs and nothing more', async () => {
+      const library = useLibraryStore()
+      library.albums = [makeAlbum('a', { name: 'Harbor Lights', artist: 'The Tide' })] as never
+
+      const result = (await resolveRemoteQuery('albums-request', {})) as {
+        items: Record<string, unknown>[]
+      }
+
+      expect(result.items[0]).toEqual({
+        id: 'a',
+        name: 'Harbor Lights',
+        artist: 'The Tide',
+        year: 1999,
+        cover_art_url: null,
+      })
+    })
+
+    it('slices by offset/limit', async () => {
+      const library = useLibraryStore()
+      library.albums = Array.from({ length: 5 }, (_, i) => makeAlbum(`al${i}`)) as never
+
+      const result = (await resolveRemoteQuery('albums-request', { offset: 2, limit: 2 })) as {
+        items: { id: string }[]
+        total: number
+      }
+
+      expect(result.items.map((a) => a.id)).toEqual(['al2', 'al3'])
       expect(result.total).toBe(5)
     })
   })

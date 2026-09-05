@@ -6,7 +6,7 @@
  *
  * Used by the getters of the same name in stores/playback.ts. */
 
-import { useAutoplayStore } from '@/stores/autoplay'
+import { AUTOPLAY_BATCH_SIZE, useAutoplayStore } from '@/stores/autoplay'
 import type { StreamQuality, TranscodeFormat } from '@/services/streamQuality'
 import type { Song } from '@/types/library'
 import type { RepeatMode } from './types'
@@ -72,6 +72,6 @@ export function buildCastQueuePayload(state: {
     shuffle: state.shuffle,
     repeatMode: state.repeatMode,
     autoplayEnabled: autoplay.enabled,
-    autoplayBatchSize: autoplay.batchSize,
+    autoplayBatchSize: AUTOPLAY_BATCH_SIZE,
   }
 }

@@ -49,17 +49,53 @@ describe('radioMetadata', () => {
   })
 
   describe('fetchRadioMetadata', () => {
-    it('resolves to the title the backend reports', async () => {
-      vi.mocked(fetchConnect).mockResolvedValue({ title: 'Artist - Track' })
+    it('resolves to the title, log and stream info the backend reports', async () => {
+      const history = [{ title: 'Artist - Track', at: 1_757_000_000 }]
+      vi.mocked(fetchConnect).mockResolvedValue({
+        title: 'Artist - Track',
+        history,
+        bitrate: 320,
+        codec: 'MP3',
+      })
 
-      await expect(fetchRadioMetadata()).resolves.toBe('Artist - Track')
+      await expect(fetchRadioMetadata()).resolves.toEqual({
+        title: 'Artist - Track',
+        history,
+        bitrate: 320,
+        codec: 'MP3',
+      })
       expect(fetchConnect).toHaveBeenCalledWith('/radio-metadata')
     })
 
-    it('resolves to null when nothing has been seen yet', async () => {
-      vi.mocked(fetchConnect).mockResolvedValue({ title: null })
+    it('resolves to an empty log when nothing has been seen yet', async () => {
+      vi.mocked(fetchConnect).mockResolvedValue({
+        title: null,
+        history: [],
+        bitrate: null,
+        codec: null,
+      })
 
-      await expect(fetchRadioMetadata()).resolves.toBeNull()
+      await expect(fetchRadioMetadata()).resolves.toEqual({
+        title: null,
+        history: [],
+        bitrate: null,
+        codec: null,
+      })
+    })
+
+    it('survives a backend too old to send a log or stream info at all', async () => {
+      // The desktop app bundles its own connect, but a browser client can
+      // be talking to a Beacon server that hasn't been updated yet — an
+      // absent field must read as "no history"/"nothing declared", not as
+      // undefined reaching the components that render them.
+      vi.mocked(fetchConnect).mockResolvedValue({ title: 'Artist - Track' })
+
+      await expect(fetchRadioMetadata()).resolves.toEqual({
+        title: 'Artist - Track',
+        history: [],
+        bitrate: null,
+        codec: null,
+      })
     })
   })
 })

@@ -1,17 +1,24 @@
 <template>
+  <!-- Everything that operates on a queue is disabled while a radio
+   - station is playing: there is no queue behind it (see the playback
+   - store's own early returns in playNext()/playPrevious()/
+   - toggleShuffle()), so these buttons could only ever look pressable and
+   - then do nothing. Play/pause is the one transport control a live
+   - stream genuinely has. -->
   <div class="center-controls d-flex align-center" style="gap: 4px">
     <v-btn
       icon="mdi-shuffle"
-      :color="playbackStore.shuffle ? 'primary' : undefined"
+      :color="!isRadio && playbackStore.shuffle ? 'primary' : undefined"
       variant="text"
       density="comfortable"
+      :disabled="isRadio"
       @click="playbackStore.toggleShuffle()"
     />
     <v-btn
       icon="mdi-skip-previous"
       variant="text"
       density="comfortable"
-      :disabled="!hasPlayable"
+      :disabled="isRadio || !hasPlayable"
       @click="playbackStore.playPrevious()"
     />
     <v-btn
@@ -28,14 +35,15 @@
       icon="mdi-skip-next"
       variant="text"
       density="comfortable"
-      :disabled="!hasPlayable || !playbackStore.hasNext"
+      :disabled="isRadio || !hasPlayable || !playbackStore.hasNext"
       @click="playbackStore.playNext()"
     />
     <v-btn
       :icon="repeatIcon"
-      :color="playbackStore.repeatMode !== 'off' ? 'primary' : undefined"
+      :color="!isRadio && playbackStore.repeatMode !== 'off' ? 'primary' : undefined"
       variant="text"
       density="comfortable"
+      :disabled="isRadio"
       @click="playbackStore.cycleRepeatMode()"
     />
   </div>
@@ -52,6 +60,9 @@ export default {
     },
     hasPlayable() {
       return this.playbackStore.currentSong != null || this.playbackStore.radioStation != null
+    },
+    isRadio() {
+      return this.playbackStore.radioStation != null
     },
     repeatIcon() {
       return this.playbackStore.repeatMode === 'one' ? 'mdi-repeat-once' : 'mdi-repeat'

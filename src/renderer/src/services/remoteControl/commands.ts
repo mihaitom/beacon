@@ -220,6 +220,15 @@ export async function handleRemoteCommand(
       }
       return
     }
+    case 'play-album': {
+      // Natural track order, pinFirst false — an album is a deliberately
+      // sequenced work rather than a pile of songs, the same call
+      // AlbumsView.vue and the mobile library make. peek for the same
+      // reason play-playlist does below.
+      const album = await library.fetchAlbum(String(payload.albumId))
+      await playback.playSongList(album.songs, 0, false, album.songs.length > 1)
+      return
+    }
     case 'play-playlist': {
       const playlist = await library.fetchPlaylist(String(payload.playlistId))
       const startIndex = typeof payload.startIndex === 'number' ? payload.startIndex : 0
@@ -318,6 +327,29 @@ export async function resolveRemoteQuery(
       const limit = Number(payload.limit ?? 50)
       return {
         items: filtered.slice(offset, offset + limit).map(toRemoteSong),
+        total: filtered.length,
+      }
+    }
+    case 'albums-request': {
+      if (!library.albums.length) await library.fetchAlbums()
+      const search = String(payload.search ?? '')
+        .trim()
+        .toLowerCase()
+      const filtered = search
+        ? library.albums.filter(
+            (a) => a.name.toLowerCase().includes(search) || a.artist.toLowerCase().includes(search),
+          )
+        : library.albums
+      const offset = Number(payload.offset ?? 0)
+      const limit = Number(payload.limit ?? 50)
+      return {
+        items: filtered.slice(offset, offset + limit).map((a) => ({
+          id: a.id,
+          name: a.name,
+          artist: a.artist,
+          year: a.year,
+          cover_art_url: remoteCoverArtUrl(a.coverArtId),
+        })),
         total: filtered.length,
       }
     }

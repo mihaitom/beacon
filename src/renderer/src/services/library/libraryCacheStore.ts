@@ -116,8 +116,10 @@ export function writeLibraryField<T>(key: string, items: T[], fetchedAt = Date.n
 }
 
 /** Forgets the given fields — logout, or a library rescan. */
-export function clearLibraryFields(keys: string[]): void {
-  void (async () => {
+/** Resolves once the fields are actually gone — see clearArtwork()'s own
+ * note for why that is worth waiting on. */
+export function clearLibraryFields(keys: string[]): Promise<void> {
+  return (async () => {
     const db = await open()
     if (!db) return
     for (const key of keys) await run(db, 'readwrite', (store) => store.delete(key))

@@ -1,25 +1,25 @@
 <template>
   <div
-    class="mobile-song-row d-flex align-center"
+    class="mobile-song-row mobile-row"
     :class="{ 'mobile-song-row--current': isCurrentSong }"
     @click="$emit('play')"
   >
-    <cover-art :cover-art-id="song.coverArtId" :size="44" class="mr-3 flex-shrink-0" />
-    <div class="min-width-0 flex-grow-1">
+    <cover-art
+      :cover-art-id="song.coverArtId"
+      :size="MOBILE_ROW_ART_SIZE"
+      class="mobile-row__art"
+    />
+    <div class="mobile-row__text">
       <div class="text-body-medium text-truncate" :class="{ 'text-primary': isCurrentSong }">
         {{ song.title }}
       </div>
       <div class="text-body-small text-medium-emphasis text-truncate">{{ song.artist }}</div>
     </div>
-    <v-btn
-      v-if="authStore.capabilities.favorites"
-      :icon="song.starred ? 'mdi-heart' : 'mdi-heart-outline'"
-      :color="song.starred ? 'primary' : undefined"
-      variant="text"
-      density="comfortable"
-      size="small"
-      @click.stop="$emit('toggle-star')"
-    />
+    <!-- No favourite toggle here, deliberately: the phone has no way to
+     - *see* favourites — no tab, and nothing that links to the desktop's
+     - /favorites page — so setting one was an action with no visible
+     - result anywhere in this shell. Still reachable from the desktop,
+     - where the list it feeds actually exists. -->
     <v-btn
       icon="mdi-dots-vertical"
       variant="text"
@@ -32,23 +32,23 @@
 
 <script lang="ts">
 import CoverArt from '@/components/library/CoverArt.vue'
+import { MOBILE_ROW_ART_SIZE } from './rowMetrics'
 import { usePlaybackStore } from '@/stores/playback'
-import { useAuthStore } from '@/stores/auth'
 
 export default {
   name: 'MobileSongRow',
   components: { CoverArt },
+  data() {
+    return { MOBILE_ROW_ART_SIZE }
+  },
   props: {
     song: {
       type: Object,
       required: true,
     },
   },
-  emits: ['play', 'toggle-star', 'open-actions'],
+  emits: ['play', 'open-actions'],
   computed: {
-    authStore() {
-      return useAuthStore()
-    },
     isCurrentSong() {
       return usePlaybackStore().currentSong?.id === this.song.id
     },
@@ -58,16 +58,9 @@ export default {
 
 <style scoped>
 .mobile-song-row {
-  min-height: 60px;
-  padding: 4px;
-  border-radius: 8px;
 }
 
 .mobile-song-row--current {
   background: rgba(var(--v-theme-primary), 0.08);
-}
-
-.min-width-0 {
-  min-width: 0;
 }
 </style>

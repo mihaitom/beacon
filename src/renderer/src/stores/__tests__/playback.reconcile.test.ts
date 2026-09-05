@@ -132,7 +132,7 @@ describe('reconcileFromStatus / adoptCastQueue', () => {
       expect(playback.currentIndex).toBe(0)
     })
 
-    it('replaces the queue with the radio station and clears currentIndex when the stream URL changes', async () => {
+    it('adopts the station without discarding the queue it interrupts', async () => {
       const playback = usePlaybackStore()
       playback.setQueue([makeSong('a'), makeSong('b')], 0)
 
@@ -140,9 +140,13 @@ describe('reconcileFromStatus / adoptCastQueue', () => {
         makeStatus({ radio: { title: 'Chill FM', url: 'https://stream.example/chill' } }),
       )
 
-      expect(playback.queue).toEqual([])
-      expect(playback.originalQueue).toEqual([])
-      expect(playback.currentIndex).toBe(-1)
+      // Another client in this session switching to radio interrupts the
+      // queue here exactly as playRadioStation() does locally: it stays,
+      // and the station is what counts as playing meanwhile.
+      expect(playback.queue.map((t) => t.id)).toEqual(['a', 'b'])
+      expect(playback.originalQueue.map((t) => t.id)).toEqual(['a', 'b'])
+      expect(playback.currentIndex).toBe(0)
+      expect(playback.currentSong).toBeNull()
       expect(playback.radioStation).toEqual({
         id: '',
         name: 'Chill FM',

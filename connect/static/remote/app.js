@@ -1,11 +1,12 @@
 import { login, getStoredPassword, setStoredPassword, clearStoredPassword, connectEvents, fetchInitialState, fireCommand } from './js/api.js';
 import { setSnapshot, setConnected, subscribe } from './js/state.js';
 import { startRouter } from './js/router.js';
+import { initMiniPlayer } from './js/mini-player.js';
 
 import './js/views/now-playing.js';
 import './js/views/queue.js';
 import './js/views/playlists.js';
-import './js/views/songs.js';
+import './js/views/library.js';
 import './js/views/radio.js';
 
 // Registering this is what actually makes Chrome/Android offer "Add to Home
@@ -101,6 +102,9 @@ function startApp() {
   );
 
   startRouter();
+  // After the router, so the strip's first render already knows which
+  // route it is on (it hides itself on Now Playing).
+  initMiniPlayer();
 }
 
 document.getElementById('login-form').addEventListener('submit', async (event) => {

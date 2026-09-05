@@ -260,6 +260,48 @@ def test_songs_query_504_on_timeout(client, monkeypatch):
     assert resp.status_code == 504
 
 
+def test_albums_query_relays_search_and_paging_to_the_renderer(client, monkeypatch):
+    """The albums half of the phone's library view. Asserted on the relayed
+    payload rather than on an answer: answering needs a renderer, which this
+    module deliberately does not stand up (see its docstring)."""
+    monkeypatch.setattr(remote_routes, "QUERY_TIMEOUT", 0.05)
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+        return {"items": [], "total": 0}
+
+    monkeypatch.setattr(remote_routes, "_query", capture)
+    resp = client.get(
+        "/remote/albums?search=blue&offset=50&limit=25",
+        headers={"X-Remote-Password": remote.password},
+    )
+
+    assert resp.status_code == 200
+    assert seen["event"] == "albums-request"
+    assert seen["payload"] == {"search": "blue", "offset": 50, "limit": 25}
+
+
+def test_albums_query_504_on_timeout(client, monkeypatch):
+    monkeypatch.setattr(remote_routes, "QUERY_TIMEOUT", 0.05)
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    resp = client.get("/remote/albums", headers={"X-Remote-Password": remote.password})
+    assert resp.status_code == 504
+
+
+def test_albums_query_401_with_a_wrong_password(client):
+    """Same gate as every other phone-facing endpoint — see
+    test_phone_endpoint_401_when_wrong_password for why the token the
+    `client` fixture attaches is no substitute for it."""
+    client.post("/remote/enable")
+    resp = client.get("/remote/albums", headers={"X-Remote-Password": "wrong"})
+    assert resp.status_code == 401
+
+
 def test_devices_query_503_when_no_renderer_connected(client):
     client.post("/remote/enable")
     resp = client.get("/remote/devices", headers={"X-Remote-Password": remote.password})
@@ -577,6 +619,110 @@ def test_app_static_asset_served_relative_to_trailing_slash(client):
     client.post("/remote/enable")
     resp = client.get("/remote/app/app.js")
     assert resp.status_code == 200
+
+
+def test_every_precached_shell_asset_is_actually_served(client):
+    """sw.js precaches the shell by path, and app.js pulls its modules in as
+    ES imports — either one naming a file the route does not serve breaks
+    the whole app, not just one feature (an import that 404s aborts the
+    module graph). Walking the list catches a module added without being
+    added here, which is exactly the shape of that mistake."""
+    import re
+
+    client.post("/remote/enable")
+    sw = (remote_routes._static_dir() / "sw.js").read_text()
+    listed = re.search(r"SHELL_PATHS = \[(.*?)\]", sw, re.DOTALL)
+    assert listed, "SHELL_PATHS not found in sw.js"
+    paths = [p for p in re.findall(r"'\./([^']*)'", listed.group(1)) if p]
+    assert len(paths) > 5, "suspiciously short shell list — did the format change?"
+
+    for path in paths:
+        resp = client.get(f"/remote/app/{path}")
+        assert resp.status_code == 200, f"{path} is precached but not served"
+        # Status alone proves nothing: an unknown subpath deliberately falls
+        # back to index.html for the SPA router (see the test below), so a
+        # missing module answers 200 with HTML and the import fails at
+        # parse time instead. Anything but the shell page itself must come
+        # back as its own type.
+        if not path.endswith(".html"):
+            assert "text/html" not in resp.headers["content-type"], (
+                f"{path} is precached but only resolves to the index fallback"
+            )
+
+
+def test_app_files_are_always_revalidated(client):
+    """Nothing in this shell is content-hashed, so without an explicit
+    Cache-Control a browser applies its own heuristic freshness — commonly a
+    tenth of the file's age — and stops asking for a week-old file for most
+    of a day. That is a phone stuck on the layout from before the last
+    change, with reloading unable to fix it: there is nothing to revalidate
+    while the browser believes what it holds is fresh."""
+    client.post("/remote/enable")
+
+    for path in ("", "app.js", "app.css", "js/api.js", "fonts/mdi.css"):
+        resp = client.get(f"/remote/app/{path}")
+        assert resp.status_code == 200, path
+        assert resp.headers["cache-control"] == "no-cache", path
+        assert resp.headers["etag"], path
+
+
+def test_app_file_revalidation_answers_304_for_an_unchanged_file(client):
+    """What keeps "ask every time" cheap. FileResponse does not do this on
+    its own (only StaticFiles implements it), so without the explicit
+    handling every visit would re-download the whole shell, icon font
+    included."""
+    client.post("/remote/enable")
+    first = client.get("/remote/app/app.js")
+    assert first.status_code == 200
+
+    again = client.get("/remote/app/app.js", headers={"If-None-Match": first.headers["etag"]})
+
+    assert again.status_code == 304
+    assert again.content == b""
+    assert again.headers["cache-control"] == "no-cache"
+
+
+def test_app_file_revalidation_sends_the_file_when_it_has_changed(client):
+    client.post("/remote/enable")
+
+    resp = client.get("/remote/app/app.js", headers={"If-None-Match": '"something-else"'})
+
+    assert resp.status_code == 200
+    assert resp.content
+
+
+def test_app_index_fallback_is_revalidated_too(client):
+    """The SPA fallback is the one file a phone loads on every cold start —
+    serving it stale is what pins the whole app to an old version, since
+    every module it imports is named in it."""
+    client.post("/remote/enable")
+    first = client.get("/remote/app/queue")
+    assert first.status_code == 200
+    assert first.headers["cache-control"] == "no-cache"
+
+    again = client.get("/remote/app/queue", headers={"If-None-Match": first.headers["etag"]})
+
+    assert again.status_code == 304
+
+
+def test_app_file_etag_changes_when_the_file_does(client, tmp_path, monkeypatch):
+    """A stale answer must never survive an edit — the whole point. The
+    ETag is derived from mtime and size, so a rewritten file gets a new
+    one and the client's conditional request misses."""
+    shell = tmp_path / "remote"
+    shell.mkdir()
+    (shell / "index.html").write_text("<html></html>")
+    (shell / "app.js").write_text("console.log('v1');")
+    monkeypatch.setattr(remote_routes, "_static_dir", lambda: shell)
+    client.post("/remote/enable")
+    first = client.get("/remote/app/app.js")
+
+    (shell / "app.js").write_text("console.log('v2 — a longer line');")
+    again = client.get("/remote/app/app.js", headers={"If-None-Match": first.headers["etag"]})
+
+    assert again.status_code == 200
+    assert b"v2" in again.content
+    assert again.headers["etag"] != first.headers["etag"]
 
 
 def test_app_unknown_subpath_falls_back_to_index_for_spa_router(client):

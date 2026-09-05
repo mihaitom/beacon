@@ -23,10 +23,19 @@
         density="compact"
         color="#0B0D13"
         class="beacon-drawer__toolbar"
-        :title="$t('lyrics.title')"
+        :title="drawerTitle"
       />
 
       <lyrics-panel v-if="currentSong" variant="compact" class="flex-grow-1" />
+      <!-- A radio station never has lyrics, which leaves this whole panel
+         - empty for as long as one plays. What it does have is a running
+         - list of what it has played (stores/playback.ts's radioTitleLog),
+         - and this is the space to read it in. -->
+      <radio-title-log
+        v-else-if="radioStation"
+        :entries="playbackStore.radioTitleLog"
+        class="beacon-drawer__log"
+      />
       <v-list-item v-else>
         <span class="text-medium-emphasis text-body-medium">{{
           $t('nowPlaying.nothingPlaying')
@@ -46,10 +55,11 @@ import { useDrawersStore } from '@/stores/drawers'
 const DRAWER_WIDTH = 380
 import { useLyricsStore } from '@/stores/lyrics'
 import LyricsPanel from './LyricsPanel.vue'
+import RadioTitleLog from '@/components/radio/RadioTitleLog.vue'
 
 export default {
   name: 'LyricsDrawer',
-  components: { LyricsPanel },
+  components: { LyricsPanel, RadioTitleLog },
   props: {
     modelValue: {
       type: Boolean,
@@ -75,6 +85,17 @@ export default {
     },
     currentSong() {
       return this.playbackStore.currentSong
+    },
+    radioStation() {
+      return this.playbackStore.radioStation
+    },
+    /** The panel is the same drawer either way, but what it holds is not
+     * a song text while radio plays — naming it "Lyrics" over a list of
+     * broadcast titles would just be wrong. */
+    drawerTitle(): string {
+      return this.radioStation && !this.currentSong
+        ? this.$t('radio.titleLog')
+        : this.$t('lyrics.title')
     },
   },
   watch: {
@@ -118,5 +139,13 @@ export default {
 
 .beacon-drawer__toolbar {
   border-bottom: 1px solid var(--beacon-hairline);
+}
+
+/* Takes the height the toolbar above it leaves, and no more — min-height
+ * because a flex child otherwise refuses to shrink below its own content,
+ * which is what kept the log from ever scrolling inside the drawer. */
+.beacon-drawer__log {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 </style>

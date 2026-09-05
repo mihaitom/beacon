@@ -14,6 +14,7 @@
         contain
         :cover-art-id="view.coverArtId"
         :image-url="view.imageUrl"
+        :lazy-src="view.placeholderImageUrl ?? ''"
         :rounded="view.rounded"
         :fallback-icon="view.fallbackIcon ?? 'mdi-album'"
         :size="artSize"

@@ -453,7 +453,38 @@ async def _fetch_deezer(name: str) -> dict | None:
     link = best.get("link")
     if not image and not link:
         return None
-    return {"image": image, "link": link}
+    # Two sizes, because the two places this is shown want different ones:
+    # a 160px card (250px covers it, even on a 2x display) and the artwork
+    # viewer, which fills most of a window and made 250px look like exactly
+    # what it is. Deezer publishes both, so this is a field to carry rather
+    # than an image to resize.
+    return {"image": image, "image_large": best.get("picture_xl"), "link": link}
+
+
+# Deezer's CDN puts the size in the path
+# (…/artist/<hash>/250x250-000000-80-0-0.jpg), so the large variant of an
+# already-stored URL is a substitution rather than another lookup. Needed
+# because the cache below has no expiry at all — every artist looked up
+# before there was a second size would otherwise stay soft in the viewer
+# forever, and re-fetching all of them to add one field is a poor trade
+# against a rule we already know, for URLs this module produced itself.
+_DEEZER_MEDIUM_SEGMENT = "/250x250-"
+_DEEZER_XL_SEGMENT = "/1000x1000-"
+
+
+def _with_large_image(entry: dict | None) -> dict | None:
+    """`entry` guaranteed to carry an `image_large`, deriving one for a
+    cache entry written before the field existed. Falls back to the medium
+    image rather than to nothing: a slightly soft picture beats none."""
+    if entry is None or entry.get("image_large"):
+        return entry
+    image = entry.get("image") or ""
+    large = (
+        image.replace(_DEEZER_MEDIUM_SEGMENT, _DEEZER_XL_SEGMENT)
+        if _DEEZER_MEDIUM_SEGMENT in image
+        else image or None
+    )
+    return {**entry, "image_large": large}
 
 
 async def get_artist_images(names: list[str]) -> dict[str, dict | None]:
@@ -481,4 +512,7 @@ async def get_artist_images(names: list[str]) -> dict[str, dict | None]:
             results[name] = result
         _save_cache(cache)
 
-    return results
+    # Applied on the way out rather than on the way into the cache, so an
+    # entry stored before the field existed is answered correctly without
+    # rewriting a cache file nothing else needed to touch.
+    return {name: _with_large_image(entry) for name, entry in results.items()}

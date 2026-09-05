@@ -23,6 +23,8 @@ connect/.plex-client-id
 connect/radio_stations.json
 connect/airplay_credentials.json
 connect/recommendations_cache.json
+connect/radio-favicons/
+connect/radio-history/
 connect/account_settings.json
 connect/log_level.txt
 connect/.venv

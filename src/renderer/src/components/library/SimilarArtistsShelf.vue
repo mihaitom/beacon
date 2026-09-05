@@ -4,9 +4,12 @@
    - HomeView.vue's lookup found one, plain fallback icon otherwise (no
    - cover-art placeholder to fall back to like an owned artist has —
    - CoverArt.vue's own coverArtId path never applies here, only imageUrl).
-   - The card itself isn't a link (unlike before) — the icon row below the
-   - name is, one per external service HomeView.vue's lookup found (same
-   - set, same icons, as ArtistDetailView.vue shows for an owned artist —
+   - The card itself isn't a link (unlike before) — there is no page in
+   - this app to link an artist nobody owns to. What it does have is the
+   - artwork click every other picture in the app has (see showArtwork()
+   - below) and the icon row below the name, one per external service
+   - HomeView.vue's lookup found (same set, same icons, as
+   - ArtistDetailView.vue shows for an owned artist —
    - see externalArtistLinks.ts), instead of picking a single destination
    - (Deezer, or MusicBrainz as a fallback) on the artist's behalf.
    - window.open() is intercepted by main/index.ts's setWindowOpenHandler ->
@@ -32,7 +35,30 @@
       </div>
     </template>
     <div v-for="artist in loading ? [] : artists" :key="artist.mbid" class="similar-artists-card">
+      <!-- Clicking the photo opens it full size, the same thing clicking
+         - artwork does on every detail page and in the tile menus. These
+         - cards are the one place with artwork and no other left-click
+         - meaning of its own (the card deliberately isn't a link — see the
+         - comment at the top), so the viewer gets it rather than nothing
+         - happening. A plain <div> for an artist with no photo at all:
+         - there would be nothing to open but the fallback icon. -->
+      <button
+        v-if="artist.imageUrl"
+        type="button"
+        class="similar-artists-card-art-button"
+        :title="$t('library.showArtwork')"
+        @click="showArtwork(artist)"
+      >
+        <cover-art
+          :image-url="artist.imageUrl"
+          :size="160"
+          rounded
+          fallback-icon="mdi-account-music"
+          class="similar-artists-card-art"
+        />
+      </button>
       <cover-art
+        v-else
         :image-url="artist.imageUrl"
         :size="160"
         rounded
@@ -66,6 +92,7 @@
 
 <script lang="ts">
 import type { PropType } from 'vue'
+import { emitter } from '@/emitter'
 import type { SimilarArtist } from '@/services/connect/recommendations'
 import { toExternalLinkList, type ExternalLinkKey } from '@/components/library/externalArtistLinks'
 import CoverArt from './CoverArt.vue'
@@ -79,6 +106,9 @@ import { observeCardsAcross, skeletonsAcross } from './cardRowFit'
  * never has to handle a totally-empty card. */
 export interface SimilarArtistDisplay extends SimilarArtist {
   imageUrl: string | null
+  /** The same photo, big enough for the artwork viewer — see ArtistImage's
+   * own note on why the card does not simply use this one. */
+  largeImageUrl: string | null
   links: Partial<Record<ExternalLinkKey, string>>
 }
 
@@ -126,6 +156,27 @@ export default {
     externalLinks(urls: Partial<Record<ExternalLinkKey, string>>) {
       return toExternalLinkList(urls)
     },
+    showArtwork(artist: SimilarArtistDisplay): void {
+      emitter.emit('showArtwork', {
+        // No coverArtId to offer: these artists are not in the library,
+        // which is the whole point of the shelf. The photo is whatever
+        // HomeView.vue's own lookup found — at the larger size here, since
+        // the viewer fills most of the window and the card's own 250px
+        // looked like 250px blown up. Falls back to the card's picture for
+        // an artist whose lookup only produced the one.
+        imageUrl: artist.largeImageUrl ?? artist.imageUrl,
+        // Already on screen in the card that was just clicked, so it fills
+        // the viewer instantly while the large one downloads instead of a
+        // skeleton appearing over a picture the person could already see.
+        placeholderImageUrl: artist.imageUrl,
+        title: artist.name,
+        // Matches how the card itself renders it (CoverArt's rounded
+        // branch), so the picture does not change shape on the way into
+        // the viewer.
+        rounded: true,
+        fallbackIcon: 'mdi-account-music',
+      })
+    },
   },
 }
 </script>
@@ -151,6 +202,29 @@ export default {
  * which the placeholder above stands in for. */
 .similar-artists-card .skeleton-links {
   margin-top: 6px;
+}
+
+/* Stripped back to the artwork it wraps — a button for the keyboard and
+ * for what a click means, not for how it looks.
+ *
+ * zoom-in rather than a plain pointer: artwork that opens full size says
+ * so with the magnifier everywhere else it happens (DetailHeader.vue's own
+ * .detail-header__cover--zoomable), and the viewer it opens answers with
+ * zoom-out. A pointer here would read as "this goes somewhere", which is
+ * the one thing this card deliberately does not do. */
+.similar-artists-card-art-button {
+  display: block;
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.similar-artists-card-art-button:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .similar-artists-card-art {

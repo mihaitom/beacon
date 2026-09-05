@@ -3,7 +3,7 @@ import { registerRoute } from '../router.js';
 import { createArt } from '../art.js';
 
 export function renderRadio(root) {
-  root.innerHTML = '<h2 class="section-title">Internet Radio</h2><div class="list" id="radio-list">Loading…</div>';
+  root.innerHTML = '<h1 class="view-title">Radio</h1><div class="list" id="radio-list">Loading…</div>';
   const list = root.querySelector('#radio-list');
 
   fetchRadioStations()

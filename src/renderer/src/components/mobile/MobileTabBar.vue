@@ -31,7 +31,7 @@ export default {
         },
         { to: '/m/queue', icon: 'mdi-playlist-music', label: this.$t('mobile.tabQueue') },
         { to: '/m/playlists', icon: 'mdi-playlist-play', label: this.$t('nav.playlists') },
-        { to: '/m/songs', icon: 'mdi-music-note', label: this.$t('nav.songs') },
+        { to: '/m/library', icon: 'mdi-music-note', label: this.$t('nav.library') },
         this.authStore.capabilities.internetRadio
           ? { to: '/m/radio', icon: 'mdi-radio', label: this.$t('nav.radio') }
           : null,

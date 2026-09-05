@@ -4,7 +4,7 @@ import { navigate, registerRoute } from '../router.js';
 import { createArt } from '../art.js';
 
 export function renderPlaylists(root) {
-  root.innerHTML = '<h2 class="section-title">Playlists</h2><div class="list" id="playlist-list">Loading…</div>';
+  root.innerHTML = '<h1 class="view-title">Playlists</h1><div class="list" id="playlist-list">Loading…</div>';
   const list = root.querySelector('#playlist-list');
 
   fetchPlaylists()
@@ -41,7 +41,10 @@ export function renderPlaylistDetail(root, params) {
     .then(({ playlist, songs }) => {
       container.innerHTML = '';
       const header = document.createElement('div');
-      header.innerHTML = `<h2 class="section-title">${escapeHtml(playlist.name)}</h2>`;
+      // The playlist's own name is this view's title, same treatment as
+      // every other view's — the last .section-title in the remote, which
+      // was a third heading size on top of the two the views used.
+      header.innerHTML = `<h1 class="view-title">${escapeHtml(playlist.name)}</h1>`;
       const playAllBtn = document.createElement('button');
       playAllBtn.className = 'btn btn-primary';
       playAllBtn.textContent = 'Play All';

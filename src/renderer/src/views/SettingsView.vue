@@ -1,140 +1,128 @@
 <template>
-  <v-container max-width="600" class="settings-view">
-    <h1 class="page-title mb-8">{{ $t('settings.title') }}</h1>
+  <!-- Title above, controls in a panel below — the grouping every settings
+   - screen worth using has, and what lets a section be scanned as one
+   - block instead of as loose paragraphs sharing a margin. Each setting
+   - inside a panel is the same .setting primitive (label, control, hint),
+   - separated by a hairline, so vertical rhythm comes from one rule rather
+   - than from per-element utility margins that drifted apart. -->
+  <v-container max-width="640" class="settings-view">
+    <h1 class="page-title mb-6">{{ $t('settings.title') }}</h1>
 
-    <section class="mb-10">
-      <h2 class="section-title mb-4">{{ $t('settings.account') }}</h2>
+    <section class="settings-section">
+      <h2 class="section-title">{{ $t('settings.account') }}</h2>
+      <div class="settings-panel">
+        <div class="account-strip">
+          <div class="account-badge">
+            <NavidromeIcon v-if="authStore.serverType === 'subsonic'" />
+            <PlexIcon v-else-if="authStore.serverType === 'plex'" />
+            <JellyfinIcon v-else />
+          </div>
+          <div class="account-info">
+            <p class="account-info__url">{{ serverUrl }}</p>
+            <p class="account-info__user text-medium-emphasis">{{ username }}</p>
+          </div>
+          <v-btn variant="text" color="error" size="small" @click="logout">
+            {{ $t('settings.logout') }}
+          </v-btn>
+        </div>
 
-      <div class="account-strip">
-        <div class="account-badge">
-          <NavidromeIcon v-if="authStore.serverType === 'subsonic'" />
-          <PlexIcon v-else-if="authStore.serverType === 'plex'" />
-          <JellyfinIcon v-else />
+        <div class="setting">
+          <v-select
+            v-model="locale"
+            :items="localeOptions"
+            :label="$t('settings.language')"
+            variant="solo-filled"
+            hide-details
+            @update:model-value="onLocaleChange"
+          />
         </div>
-        <div class="account-info">
-          <p class="account-info__url">{{ serverUrl }}</p>
-          <p class="account-info__user text-medium-emphasis">{{ username }}</p>
-        </div>
-        <v-btn variant="text" color="error" size="small" @click="logout">
-          {{ $t('settings.logout') }}
-        </v-btn>
       </div>
-
-      <v-select
-        v-model="locale"
-        :items="localeOptions"
-        :label="$t('settings.language')"
-        variant="solo-filled"
-        class="mt-6"
-        @update:model-value="onLocaleChange"
-      />
     </section>
 
-    <section class="mb-10">
-      <h2 class="section-title mb-4">{{ $t('settings.playbackTitle') }}</h2>
-      <p class="text-body-medium font-weight-medium mb-2">{{ $t('settings.replayGain') }}</p>
-      <div class="segmented-control" role="radiogroup" :aria-label="$t('settings.replayGain')">
-        <button
-          v-for="option in replayGainOptions"
-          :key="option.value"
-          type="button"
-          role="radio"
-          class="segmented-control__option"
-          :class="{ 'segmented-control__option--active': replayGainMode === option.value }"
-          :aria-checked="replayGainMode === option.value"
-          @click="replayGainMode = option.value"
-        >
-          {{ option.title }}
-        </button>
-      </div>
-      <p class="text-body-small text-medium-emphasis mt-3">
-        {{ $t('settings.replayGainHint') }}
-      </p>
-      <!-- Local playback on a phone runs without a Web Audio graph, which
-       - is also what ReplayGain needs to change the level (see
-       - webAudioAllowed() in services/audioEngine.ts) — saying so beats a
-       - setting that silently does half of what it claims. -->
-      <p v-if="!hasLocalGain" class="text-body-small text-medium-emphasis mt-1">
-        {{ $t('settings.replayGainMobileHint') }}
-      </p>
+    <section class="settings-section">
+      <h2 class="section-title">{{ $t('settings.playbackTitle') }}</h2>
+      <div class="settings-panel">
+        <div class="setting">
+          <p class="setting__label">{{ $t('settings.replayGain') }}</p>
+          <segmented-control
+            v-model="replayGainMode"
+            :options="replayGainOptions"
+            :label="$t('settings.replayGain')"
+          />
+          <p class="setting__hint">{{ $t('settings.replayGainHint') }}</p>
+          <!-- Local playback on a phone runs without a Web Audio graph, which
+           - is also what ReplayGain needs to change the level (see
+           - webAudioAllowed() in services/audioEngine.ts) — saying so beats a
+           - setting that silently does half of what it claims. -->
+          <p v-if="!hasLocalGain" class="setting__hint">
+            {{ $t('settings.replayGainMobileHint') }}
+          </p>
+        </div>
 
-      <p class="text-body-medium font-weight-medium mt-6 mb-2">{{ $t('settings.localQuality') }}</p>
-      <div class="quality-row">
-        <v-select
-          :model-value="playbackStore.localQuality.format"
-          :items="formatOptions"
-          :label="$t('settings.qualityFormat')"
-          variant="solo-filled"
-          hide-details
-          @update:model-value="playbackStore.setLocalQuality($event)"
-        />
-        <v-select
-          v-if="playbackStore.localQuality.format !== 'original'"
-          :model-value="playbackStore.localQuality.bitrate"
-          :items="bitrateOptions(playbackStore.localQuality.format)"
-          :label="$t('settings.qualityBitrate')"
-          variant="solo-filled"
-          hide-details
-          @update:model-value="
-            playbackStore.setLocalQuality(playbackStore.localQuality.format, $event)
-          "
-        />
-      </div>
-      <p class="text-body-small text-medium-emphasis mt-3">
-        {{ $t('settings.localQualityHint') }}
-      </p>
-      <p class="text-body-medium font-weight-medium mt-6 mb-2">{{ $t('settings.castQuality') }}</p>
-      <div class="quality-row">
-        <v-select
-          :model-value="playbackStore.castQuality.format"
-          :items="castFormatOptions"
-          :label="$t('settings.qualityFormat')"
-          variant="solo-filled"
-          hide-details
-          @update:model-value="playbackStore.setCastQuality($event)"
-        />
-        <v-select
-          v-if="playbackStore.castQuality.format !== 'original'"
-          :model-value="playbackStore.castQuality.bitrate"
-          :items="bitrateOptions(playbackStore.castQuality.format)"
-          :label="$t('settings.qualityBitrate')"
-          variant="solo-filled"
-          hide-details
-          @update:model-value="
-            playbackStore.setCastQuality(playbackStore.castQuality.format, $event)
-          "
-        />
-      </div>
-      <p class="text-body-small text-medium-emphasis mt-3">
-        {{ $t('settings.castQualityHint') }}
-      </p>
+        <div class="setting">
+          <p class="setting__label">{{ $t('settings.localQuality') }}</p>
+          <div class="quality-row">
+            <v-select
+              :model-value="playbackStore.localQuality.format"
+              :items="formatOptions"
+              :label="$t('settings.qualityFormat')"
+              variant="solo-filled"
+              hide-details
+              @update:model-value="playbackStore.setLocalQuality($event)"
+            />
+            <v-select
+              v-if="playbackStore.localQuality.format !== 'original'"
+              :model-value="playbackStore.localQuality.bitrate"
+              :items="bitrateOptions(playbackStore.localQuality.format)"
+              :label="$t('settings.qualityBitrate')"
+              variant="solo-filled"
+              hide-details
+              @update:model-value="
+                playbackStore.setLocalQuality(playbackStore.localQuality.format, $event)
+              "
+            />
+          </div>
+          <p class="setting__hint">{{ $t('settings.localQualityHint') }}</p>
+        </div>
 
-      <v-switch
-        :model-value="radioSettingsStore.castDirectly"
-        color="primary"
-        density="compact"
-        hide-details
-        class="radio-direct-switch"
-        :label="$t('settings.castRadioDirectly')"
-        @update:model-value="radioSettingsStore.setCastDirectly(!!$event)"
-      />
-      <p class="setting-hint">
-        {{ $t('settings.castRadioDirectlyHint') }}
-      </p>
+        <div class="setting">
+          <p class="setting__label">{{ $t('settings.castQuality') }}</p>
+          <div class="quality-row">
+            <v-select
+              :model-value="playbackStore.castQuality.format"
+              :items="castFormatOptions"
+              :label="$t('settings.qualityFormat')"
+              variant="solo-filled"
+              hide-details
+              @update:model-value="playbackStore.setCastQuality($event)"
+            />
+            <v-select
+              v-if="playbackStore.castQuality.format !== 'original'"
+              :model-value="playbackStore.castQuality.bitrate"
+              :items="bitrateOptions(playbackStore.castQuality.format)"
+              :label="$t('settings.qualityBitrate')"
+              variant="solo-filled"
+              hide-details
+              @update:model-value="
+                playbackStore.setCastQuality(playbackStore.castQuality.format, $event)
+              "
+            />
+          </div>
+          <p class="setting__hint">{{ $t('settings.castQualityHint') }}</p>
+        </div>
 
-      <template v-if="authStore.capabilities.songRadio">
-        <p class="text-body-medium font-weight-medium mt-6 mb-2">{{ $t('settings.autoplay') }}</p>
-        <v-select
-          :model-value="autoplayStore.batchSize"
-          :items="autoplayBatchSizeOptions"
-          variant="solo-filled"
-          hide-details
-          @update:model-value="autoplayStore.setBatchSize($event)"
-        />
-        <p class="text-body-small text-medium-emphasis mt-3">
-          {{ $t('settings.autoplayHint') }}
-        </p>
-      </template>
+        <div class="setting">
+          <v-switch
+            :model-value="radioSettingsStore.castDirectly"
+            color="primary"
+            density="compact"
+            hide-details
+            :label="$t('settings.castRadioDirectly')"
+            @update:model-value="radioSettingsStore.setCastDirectly(!!$event)"
+          />
+          <p class="setting__hint">{{ $t('settings.castRadioDirectlyHint') }}</p>
+        </div>
+      </div>
     </section>
 
     <!-- The section itself is unconditional, only what's inside it isn't:
@@ -143,69 +131,65 @@
      - non-admin Navidrome account has neither — see
      - services/capabilities.ts's libraryScan). Gating the whole <section>
      - on those, as it used to be, would take the toggle away with them. -->
-    <section class="mb-10">
-      <h2 class="section-title mb-4">{{ $t('settings.libraryTitle') }}</h2>
+    <section class="settings-section">
+      <h2 class="section-title">{{ $t('settings.libraryTitle') }}</h2>
+      <div class="settings-panel">
+        <div v-if="authStore.capabilities.libraryScan" class="setting">
+          <p class="setting__description">{{ $t('settings.libraryScanHint') }}</p>
+          <v-btn
+            color="primary"
+            prepend-icon="mdi-refresh"
+            :loading="scanning"
+            :disabled="scanning"
+            @click="rescanLibrary"
+          >
+            {{ scanning ? scanLabel : $t('settings.rescanLibrary') }}
+          </v-btn>
+        </div>
 
-      <template v-if="authStore.capabilities.libraryScan">
-        <p class="text-body-medium text-medium-emphasis mb-4">
-          {{ $t('settings.libraryScanHint') }}
-        </p>
-        <v-btn
-          color="primary"
-          prepend-icon="mdi-refresh"
-          :loading="scanning"
-          :disabled="scanning"
-          @click="rescanLibrary"
-        >
-          {{ scanning ? scanLabel : $t('settings.rescanLibrary') }}
-        </v-btn>
-      </template>
+        <!-- Jellyfin has no server-side scan-trigger of its own (see
+         - capabilities.libraryScan) — this instead forces Beacon's own cached
+         - view of the library to refetch now, rather than waiting for
+         - CACHE_TTL_MS. Shows real progress since a large Jellyfin library can
+         - take a couple of minutes (see stores/library.ts's refreshLibrary()). -->
+        <div v-else-if="authStore.serverType === 'jellyfin'" class="setting">
+          <p class="setting__description">{{ $t('settings.libraryRefreshHint') }}</p>
+          <v-btn
+            color="primary"
+            prepend-icon="mdi-refresh"
+            :loading="refreshingLibrary"
+            :disabled="refreshingLibrary"
+            @click="refreshLibrary"
+          >
+            {{ refreshingLibrary ? refreshProgressLabel : $t('settings.refreshLibrary') }}
+          </v-btn>
+          <v-progress-linear
+            v-if="refreshingLibrary"
+            class="mt-3"
+            :indeterminate="refreshProgressPercent === null"
+            :model-value="refreshProgressPercent ?? undefined"
+            color="primary"
+            height="6"
+            rounded
+          />
+        </div>
 
-      <!-- Jellyfin has no server-side scan-trigger of its own (see
-       - capabilities.libraryScan) — this instead forces Beacon's own cached
-       - view of the library to refetch now, rather than waiting for
-       - CACHE_TTL_MS. Shows real progress since a large Jellyfin library can
-       - take a couple of minutes (see stores/library.ts's refreshLibrary()). -->
-      <template v-else-if="authStore.serverType === 'jellyfin'">
-        <p class="text-body-medium text-medium-emphasis mb-4">
-          {{ $t('settings.libraryRefreshHint') }}
-        </p>
-        <v-btn
-          color="primary"
-          prepend-icon="mdi-refresh"
-          :loading="refreshingLibrary"
-          :disabled="refreshingLibrary"
-          @click="refreshLibrary"
-        >
-          {{ refreshingLibrary ? refreshProgressLabel : $t('settings.refreshLibrary') }}
-        </v-btn>
-        <v-progress-linear
-          v-if="refreshingLibrary"
-          class="mt-3"
-          :indeterminate="refreshProgressPercent === null"
-          :model-value="refreshProgressPercent ?? undefined"
-          color="primary"
-          height="6"
-          rounded
-        />
-      </template>
-
-      <!-- Discover's seed artists come out of the library itself, which is
-       - what puts this here rather than under "advanced" — it is an
-       - everyday setting with a visible effect on Home (see
-       - HomeView.vue), not a diagnostic one like the log level. -->
-      <v-switch
-        :model-value="recommendationsStore.enabled"
-        color="primary"
-        density="compact"
-        hide-details
-        :class="hasLibraryActions ? 'mt-6' : ''"
-        :label="$t('settings.recommendations')"
-        @update:model-value="recommendationsStore.setEnabled(!!$event)"
-      />
-      <p class="text-body-small text-medium-emphasis mt-2">
-        {{ $t('settings.recommendationsHint') }}
-      </p>
+        <!-- Discover's seed artists come out of the library itself, which is
+         - what puts this here rather than under "advanced" — it is an
+         - everyday setting with a visible effect on Home (see
+         - HomeView.vue), not a diagnostic one like the log level. -->
+        <div class="setting">
+          <v-switch
+            :model-value="recommendationsStore.enabled"
+            color="primary"
+            density="compact"
+            hide-details
+            :label="$t('settings.recommendations')"
+            @update:model-value="recommendationsStore.setEnabled(!!$event)"
+          />
+          <p class="setting__hint">{{ $t('settings.recommendationsHint') }}</p>
+        </div>
+      </div>
     </section>
 
     <!-- Opt-out, same convention as recommendations' toggle above — see
@@ -213,114 +197,153 @@
      - selected by default. Empty is still a valid, deliberate state (fully
      - opted out), not an error, so the hint below explains what it means
      - rather than the select complaining about it. -->
-    <section class="mb-10">
-      <h2 class="section-title mb-4">{{ $t('settings.lyricsProvidersTitle') }}</h2>
-      <p class="text-body-medium text-medium-emphasis mb-4">
-        {{ $t('settings.lyricsProvidersHint') }}
-      </p>
-      <v-select
-        :model-value="lyricsProvidersStore.enabled"
-        :items="lyricProviders"
-        :label="$t('settings.lyricsProviders')"
-        variant="solo-filled"
-        multiple
-        chips
-        closable-chips
-        hide-details
-        @update:model-value="lyricsProvidersStore.setEnabled($event)"
-      />
-      <p class="text-body-small text-medium-emphasis mt-2">
-        {{
-          lyricsProvidersStore.enabled.length === 0
-            ? $t('settings.lyricsProvidersEmptyHint')
-            : $t('settings.lyricsProvidersActiveHint')
-        }}
-      </p>
+    <section class="settings-section">
+      <h2 class="section-title">{{ $t('settings.lyricsProvidersTitle') }}</h2>
+      <div class="settings-panel">
+        <div class="setting">
+          <p class="setting__description">{{ $t('settings.lyricsProvidersHint') }}</p>
+          <v-select
+            :model-value="lyricsProvidersStore.enabled"
+            :items="lyricProviders"
+            :label="$t('settings.lyricsProviders')"
+            variant="solo-filled"
+            multiple
+            chips
+            closable-chips
+            hide-details
+            @update:model-value="lyricsProvidersStore.setEnabled($event)"
+          />
+          <p class="setting__hint">
+            {{
+              lyricsProvidersStore.enabled.length === 0
+                ? $t('settings.lyricsProvidersEmptyHint')
+                : $t('settings.lyricsProvidersActiveHint')
+            }}
+          </p>
+        </div>
+      </div>
     </section>
 
-    <section class="mb-10">
-      <h2 class="section-title mb-4">{{ $t('settings.storageTitle') }}</h2>
-      <p class="text-body-medium text-medium-emphasis mb-4">
-        {{ $t('settings.clearCacheHint') }}
-      </p>
-      <v-btn variant="tonal" prepend-icon="mdi-broom" @click="clearCache">
-        {{ $t('settings.clearCache') }}
-      </v-btn>
+    <section class="settings-section">
+      <h2 class="section-title">{{ $t('settings.storageTitle') }}</h2>
+      <div class="settings-panel">
+        <div class="setting">
+          <p class="setting__description">{{ $t('settings.clearCacheHint') }}</p>
+          <v-btn
+            variant="tonal"
+            prepend-icon="mdi-broom"
+            :loading="clearingCache"
+            :disabled="clearingCache"
+            @click="clearCache"
+          >
+            {{ $t('settings.clearCache') }}
+          </v-btn>
+        </div>
 
-      <p class="text-body-medium text-medium-emphasis mt-6 mb-4">
-        {{ $t('settings.resetAirplayHint') }}
-      </p>
-      <v-btn
-        variant="tonal"
-        prepend-icon="mdi-cast-off"
-        :loading="resettingAirplay"
-        @click="resetAirplayPairings"
-      >
-        {{ $t('settings.resetAirplay') }}
-      </v-btn>
+        <div class="setting">
+          <p class="setting__description">{{ $t('settings.resetAirplayHint') }}</p>
+          <v-btn
+            variant="tonal"
+            prepend-icon="mdi-cast-off"
+            :loading="resettingAirplay"
+            @click="resetAirplayPairings"
+          >
+            {{ $t('settings.resetAirplay') }}
+          </v-btn>
+        </div>
+      </div>
     </section>
 
     <!-- Unlike the library section above, this one has nothing else in it —
      - the whole section (title included) is gated, not just the control,
      - or a non-admin would see an empty "Advanced" heading with nothing
      - under it. See services/capabilities.ts's logLevelControl. -->
-    <section v-if="authStore.capabilities.logLevelControl" class="mb-10">
-      <h2 class="section-title mb-4">{{ $t('settings.advancedTitle') }}</h2>
-      <p class="text-body-medium text-medium-emphasis mb-4">
-        {{ $t('settings.logLevelHint') }}
-      </p>
-      <v-select
-        v-model="logLevel"
-        :items="logLevelOptions"
-        :label="$t('settings.logLevel')"
-        :loading="logLevelBusy"
-        :disabled="logLevelBusy || logLevel === null"
-        variant="solo-filled"
-        @update:model-value="onLogLevelChange"
-      />
+    <section v-if="authStore.capabilities.logLevelControl" class="settings-section">
+      <h2 class="section-title">{{ $t('settings.advancedTitle') }}</h2>
+      <div class="settings-panel">
+        <div class="setting">
+          <p class="setting__description">{{ $t('settings.logLevelHint') }}</p>
+          <v-select
+            v-model="logLevel"
+            :items="logLevelOptions"
+            :label="$t('settings.logLevel')"
+            :loading="logLevelBusy"
+            :disabled="logLevelBusy || logLevel === null"
+            variant="solo-filled"
+            hide-details
+            @update:model-value="onLogLevelChange"
+          />
+        </div>
+      </div>
     </section>
 
-    <section>
-      <h2 class="section-title mb-4">{{ $t('settings.about') }}</h2>
-      <div class="about-actions">
-        <v-btn variant="tonal" prepend-icon="mdi-star-circle-outline" @click="showReleaseNotes">
-          {{ $t('settings.whatsNew') }}
-        </v-btn>
-        <!-- The "?" key opens the same dialog, but nothing on screen says
-         - so — this is where someone who has never pressed it finds out
-         - the shortcuts exist at all. -->
-        <v-btn variant="tonal" prepend-icon="mdi-keyboard-outline" @click="showShortcuts">
-          {{ $t('shortcuts.title') }}
-        </v-btn>
+    <section class="settings-section">
+      <h2 class="section-title">{{ $t('settings.about') }}</h2>
+      <div class="settings-panel">
+        <div class="setting">
+          <div class="about-actions">
+            <v-btn variant="tonal" prepend-icon="mdi-star-circle-outline" @click="showReleaseNotes">
+              {{ $t('settings.whatsNew') }}
+            </v-btn>
+            <!-- Sits with the other two rather than in a section of its own:
+               - it answers the same kind of question they do — what is this
+               - version, what can it do, who does it talk to — and a
+               - one-button section would read as more ceremony than the
+               - dialog behind it warrants. -->
+            <v-btn
+              variant="tonal"
+              prepend-icon="mdi-shield-lock-outline"
+              @click="privacyOpen = true"
+            >
+              {{ $t('privacy.title') }}
+            </v-btn>
+            <!-- The "?" key opens the same dialog, but nothing on screen says
+             - so — this is where someone who has never pressed it finds out
+             - the shortcuts exist at all. Which is also why it is not
+             - offered on the phone layout: there is no keyboard to press
+             - any of them with, and a list of key combinations is the one
+             - thing a touch device can do nothing at all with. -->
+            <v-btn
+              v-if="!isMobileWeb"
+              variant="tonal"
+              prepend-icon="mdi-keyboard-outline"
+              @click="showShortcuts"
+            >
+              {{ $t('shortcuts.title') }}
+            </v-btn>
+          </div>
+        </div>
+
+        <div class="setting">
+          <div class="status-row">
+            <span class="status-dot" :class="ffmpegFound ? 'status-dot--ok' : 'status-dot--warn'" />
+            <span class="setting__hint setting__hint--inline">
+              {{ ffmpegFound ? $t('settings.ffmpegFound') : $t('settings.ffmpegMissing') }}
+            </span>
+          </div>
+          <p class="setting__hint">{{ $t('settings.version', { version: appVersion }) }}</p>
+          <v-alert
+            v-if="updateStore.available"
+            type="info"
+            variant="tonal"
+            density="compact"
+            class="mt-3"
+          >
+            {{ $t('settings.updateAvailable', { version: updateStore.latestVersion }) }}
+            <a
+              v-if="updateStore.releaseUrl"
+              :href="updateStore.releaseUrl"
+              target="_blank"
+              rel="noopener"
+              class="update-link"
+            >
+              {{ $t('settings.updateAvailableLink') }}
+            </a>
+          </v-alert>
+        </div>
       </div>
-      <div class="status-row mt-4">
-        <span class="status-dot" :class="ffmpegFound ? 'status-dot--ok' : 'status-dot--warn'" />
-        <span class="text-body-small text-medium-emphasis">
-          {{ ffmpegFound ? $t('settings.ffmpegFound') : $t('settings.ffmpegMissing') }}
-        </span>
-      </div>
-      <p class="text-body-small text-medium-emphasis mt-1">
-        {{ $t('settings.version', { version: appVersion }) }}
-      </p>
-      <v-alert
-        v-if="updateStore.available"
-        type="info"
-        variant="tonal"
-        density="compact"
-        class="mt-3"
-      >
-        {{ $t('settings.updateAvailable', { version: updateStore.latestVersion }) }}
-        <a
-          v-if="updateStore.releaseUrl"
-          :href="updateStore.releaseUrl"
-          target="_blank"
-          rel="noopener"
-          class="update-link"
-        >
-          {{ $t('settings.updateAvailableLink') }}
-        </a>
-      </v-alert>
     </section>
+    <privacy-dialog v-model="privacyOpen" />
   </v-container>
 </template>
 
@@ -330,13 +353,14 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useConnectStore } from '@/stores/connect'
 import { clearLyricsCache } from '@/stores/lyrics'
+import { clearCoverArtCache } from '@/services/connect/coverArtBatch'
+import { clearRadioFaviconCache } from '@/services/connect/radioFaviconBatch'
 import { getLocale, type SupportedLocale } from '@/i18n'
 import { setLocale } from '@/services/localeSetting'
 import { getLogLevel, setLogLevel, type LogLevel } from '@/services/connect/logLevel'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import { useRadioSettingsStore } from '@/stores/radioSettings'
 import { LYRIC_PROVIDERS, useLyricsProvidersStore } from '@/stores/lyricsProviders'
-import { AUTOPLAY_BATCH_SIZE_OPTIONS, useAutoplayStore } from '@/stores/autoplay'
 import { useUpdateStore } from '@/stores/update'
 import type { ReplayGainMode } from '@/services/replayGain'
 import { getAudioEngine } from '@/services/audioEngine'
@@ -347,9 +371,12 @@ import {
   type StreamFormat,
   type TranscodeFormat,
 } from '@/services/streamQuality'
+import PrivacyDialog from '@/components/settings/PrivacyDialog.vue'
 import NavidromeIcon from '@/components/auth/NavidromeIcon.vue'
 import JellyfinIcon from '@/components/auth/JellyfinIcon.vue'
 import PlexIcon from '@/components/auth/PlexIcon.vue'
+import SegmentedControl from '@/components/SegmentedControl.vue'
+import { useIsMobileWeb } from '@/composables/useIsMobileWeb'
 import packageJson from '../../../../package.json'
 
 // How often getScanStatus.view is polled while a scan is running — frequent
@@ -360,13 +387,23 @@ const SCAN_POLL_INTERVAL_MS = 2000
 
 export default {
   name: 'SettingsView',
-  components: { NavidromeIcon, JellyfinIcon, PlexIcon },
+  components: { NavidromeIcon, JellyfinIcon, PlexIcon, PrivacyDialog, SegmentedControl },
+  // Composition API escape hatch just for useIsMobileWeb() — everything
+  // else stays Options API, same idiom as App.vue's identical use of it.
+  setup() {
+    return { isMobileWeb: useIsMobileWeb() }
+  },
   data() {
     return {
       serverUrl: '',
       username: '',
       locale: getLocale(),
       appVersion: packageJson.version,
+      // The wipe reaches three IndexedDB stores, the largest of which is a
+      // whole library's worth of artwork — long enough on a big one that
+      // the button has to say it is working rather than look ignored.
+      clearingCache: false,
+      privacyOpen: false,
       scanning: false,
       // How far the running scan has got, in whichever of the two ways the
       // server can say (see the client's ScanProgress): Navidrome counts
@@ -399,14 +436,6 @@ export default {
     authStore() {
       return useAuthStore()
     },
-    // Whether the Library section has a scan/refresh control above the
-    // recommendations toggle — a non-admin Navidrome account has neither,
-    // and the toggle is then the section's first element, where the
-    // spacing that separates it from a button above would leave it
-    // hanging well below its own heading.
-    hasLibraryActions(): boolean {
-      return this.authStore.capabilities.libraryScan || this.authStore.serverType === 'jellyfin'
-    },
     connectStore() {
       return useConnectStore()
     },
@@ -430,9 +459,6 @@ export default {
     },
     lyricProviders() {
       return LYRIC_PROVIDERS
-    },
-    autoplayStore() {
-      return useAutoplayStore()
     },
     // Defaults to true (no warning dot) while health hasn't loaded yet —
     // ffmpeg being genuinely missing is rare enough that a false negative
@@ -469,12 +495,6 @@ export default {
     },
     castFormatOptions(): { title: string; value: StreamFormat }[] {
       return CAST_FORMATS.map((value) => ({ title: this.formatLabel(value), value }))
-    },
-    autoplayBatchSizeOptions() {
-      return AUTOPLAY_BATCH_SIZE_OPTIONS.map((count) => ({
-        title: this.$t('settings.autoplayBatchSizeItem', { count }),
-        value: count,
-      }))
     },
     localeOptions() {
       return [
@@ -625,7 +645,7 @@ export default {
       // would keep showing whatever it already had cached in memory until
       // the app restarts, same "missing songs never appear" complaint
       // that prompted this feature in the first place.
-      this.libraryStore.invalidateCache()
+      void this.libraryStore.invalidateCache()
       this.$emitter.emit('toast', {
         level: 'success',
         title: this.$t('settings.rescanLibrary'),
@@ -653,15 +673,36 @@ export default {
     },
     // Distinct from rescanLibrary()/refreshLibrary() above — those ask the
     // *server* to look for actual changes; this just throws away Beacon's
-    // own locally-cached copies (library, lyrics) so the next view that
-    // needs them fetches fresh, without necessarily implying anything on
-    // the server side has changed. Waveforms aren't cached at all anymore
-    // (see services/connect/waveform.ts) — a fresh decode is well under a
-    // second, not worth keeping a cache around for. Both remaining caches
-    // clear themselves synchronously — nothing here to await.
-    clearCache() {
-      this.libraryStore.invalidateCache()
-      clearLyricsCache()
+    // own locally-cached copies so the next view that needs them fetches
+    // fresh, without necessarily implying anything on the server side has
+    // changed. Waveforms aren't cached at all anymore (see
+    // services/connect/waveform.ts) — a fresh decode is well under a
+    // second, not worth keeping a cache around for.
+    //
+    // Artwork and radio logos belong here as much as the library and
+    // lyrics do, and for a while did not get cleared at all: clearing
+    // cover art has only ever been wired to switching accounts
+    // (accountScopedStores.ts), and station logos had no way to be cleared
+    // outside a test. Artwork is by some distance the largest of the four,
+    // so a "clear cache" that left it behind cleared almost nothing of
+    // what anyone means by it.
+    //
+    // Awaited rather than fired off, because the three that reach
+    // IndexedDB return before the deletion has actually happened — the
+    // success toast used to appear over caches that were still there, and
+    // a reload right behind it could abort the wipe outright.
+    async clearCache() {
+      this.clearingCache = true
+      try {
+        await Promise.all([
+          this.libraryStore.invalidateCache(),
+          clearLyricsCache(),
+          clearCoverArtCache(),
+        ])
+        clearRadioFaviconCache()
+      } finally {
+        this.clearingCache = false
+      }
       this.$emitter.emit('toast', {
         level: 'success',
         title: this.$t('settings.clearCache'),
@@ -698,21 +739,66 @@ export default {
 </script>
 
 <style scoped>
-/* Separates the radio-routing switch from the cast-quality block above it,
- * which is a different decision entirely rather than a further detail of
- * the same one. */
-.radio-direct-switch {
-  margin-top: 24px;
+.settings-section {
+  margin-bottom: 28px;
 }
 
-/* The explanatory line under a control — quieter and smaller than the
- * setting it belongs to, so a section reads as label-then-explanation
- * rather than two equal lines. Values match Vuetify's own body-small /
- * medium-emphasis, deliberately: the other hints on this page still use
- * those, and one that sat a hair off would read as a mistake rather than
- * a choice. */
-.setting-hint {
-  margin-top: 8px;
+.settings-section .section-title {
+  margin-bottom: 10px;
+}
+
+/* One surface per section, rather than every control floating directly on
+ * the page. Same treatment .account-strip already used on its own, now the
+ * container for a whole group — which is also why that strip no longer
+ * draws a second border inside this one. */
+.settings-panel {
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 1px solid var(--beacon-hairline);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* The vertical rhythm of the whole page, in one rule. Every setting is
+ * this block, and the separator only exists between siblings — so a
+ * section whose first control is conditionally absent (the library scan on
+ * a non-admin account) closes up on its own, with no margin class needing
+ * to know whether anything above it rendered. */
+/* The account strip is not a .setting, so without naming it here the
+ * separator that every other block in a panel gets simply skipped the one
+ * place two different kinds of block meet — account above, language below.
+ *
+ * Naming it in *this* rule rather than giving the strip a border of its own
+ * is the whole point: a line needs the 18px above and below it that this
+ * rule provides. Drawn on the strip alone it lands flush against the filled
+ * select underneath and is invisible for it, which is exactly how it looked
+ * on the first attempt. */
+.setting + .setting,
+.account-strip + .setting {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--beacon-hairline);
+}
+
+.setting__label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+/* Reads before the control it introduces; the hint below reads after one.
+ * Two names rather than one class plus a modifier, because which side of
+ * the control a line belongs on is the whole difference between them. */
+.setting__description {
+  margin-bottom: 12px;
+}
+
+/* The quieter line under a control, so a setting reads as
+ * label-then-explanation rather than as two equal lines. Values match
+ * Vuetify's own body-small / medium-emphasis deliberately: the rest of the
+ * app uses those, and a hint sitting a hair off would read as a mistake
+ * rather than a choice. */
+.setting__description,
+.setting__hint {
   font-size: 0.75rem;
   font-weight: 400;
   line-height: 1.3333333333;
@@ -722,6 +808,16 @@ export default {
     rgb(var(--v-theme-on-background)) calc(var(--v-medium-emphasis-opacity) * 100%),
     transparent
   );
+}
+
+.setting__hint {
+  margin-top: 8px;
+}
+
+/* Already sitting next to the status dot on its own row, so the stacking
+ * margin would only push it off that line. */
+.setting__hint--inline {
+  margin-top: 0;
 }
 
 /* Format and bitrate side by side, with the format wider — it carries the
@@ -744,15 +840,13 @@ export default {
 
 /* Echoes ServerLoginView.vue's lit account badge — the same signal that
  * confirmed which server you signed into now confirms who you're signed in
- * as, a deliberate bookend rather than a plain read-only form field. */
+ * as, a deliberate bookend rather than a plain read-only form field. No
+ * border or surface of its own any more: the panel around it draws both,
+ * and two nested hairlines read as a mistake. */
 .account-strip {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 12px 16px;
-  border-radius: 12px;
-  border: 1px solid var(--beacon-hairline);
-  background: rgba(255, 255, 255, 0.02);
 }
 
 .account-badge {
@@ -784,44 +878,6 @@ export default {
 .account-info__user {
   font-size: 0.8rem;
   margin-top: 2px;
-}
-
-/* Same tab-group language as ServerLoginView.vue's Password/Quick Connect
- * switch — a three-way choice reads better as one deliberate control than
- * as a dropdown menu. */
-.segmented-control {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.segmented-control__option {
-  flex: 1;
-  padding: 8px;
-  border-radius: 7px;
-  border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.5);
-  font: inherit;
-  font-size: 0.8125rem;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-}
-
-.segmented-control__option:focus-visible {
-  outline: 2px solid rgb(var(--v-theme-primary));
-  outline-offset: 2px;
-}
-
-.segmented-control__option--active {
-  background: rgba(245, 169, 78, 0.12);
-  color: #fdf6ec;
-  font-weight: 600;
 }
 
 /* A small lit/unlit signal rather than a full-width alert banner — same
@@ -862,5 +918,34 @@ export default {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* A phone has no room to spend on panel padding, and the account row runs
+ * out of width first: its two lines and the logout button stop fitting on
+ * one line well before the panel itself is tight. Everything else already
+ * stacks on its own (.quality-row wraps, every control is full-width). */
+@media (max-width: 600px) {
+  .settings-panel {
+    padding: 14px;
+    border-radius: 12px;
+  }
+
+  .settings-section {
+    margin-bottom: 22px;
+  }
+
+  /* One row here too, the same shape as on the desktop — only tighter.
+   * What gives when there is not enough width is the URL, which already
+   * ellipsises (see .account-info__url); it is the one part of this row
+   * that can lose its tail and still say what it says. Wrapping instead
+   * put the button on a line of its own under the username, where it read
+   * as a third line of account text rather than as an action. */
+  .account-strip {
+    gap: 10px;
+  }
+
+  .account-strip > .v-btn {
+    flex-shrink: 0;
+  }
 }
 </style>

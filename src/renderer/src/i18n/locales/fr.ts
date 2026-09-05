@@ -20,6 +20,7 @@ export default {
   },
   nav: {
     home: 'Accueil',
+    library: 'Bibliothèque',
     albums: 'Albums',
     artists: 'Artistes',
     songs: 'Titres',
@@ -96,6 +97,8 @@ export default {
     noGenresFound: 'Aucun genre trouvé.',
     noGenresForQuery: 'Aucun genre pour « {query} ».',
     noSongsFound: 'Aucun titre trouvé.',
+    searchSongs: 'Rechercher des titres…',
+    searchAlbums: 'Rechercher des albums…',
     noSongsForQuery: 'Aucun titre pour « {query} ».',
     album1: 'album',
     albumsN: 'albums',
@@ -142,6 +145,7 @@ export default {
     volume: 'Volume',
     autoplay: 'Lecture automatique',
     liveRadio: 'En direct · {time}',
+    live: 'En direct',
   },
   shortcuts: {
     title: 'Raccourcis clavier',
@@ -314,7 +318,7 @@ export default {
     refreshLibraryFailed: "Impossible d'actualiser la bibliothèque.",
     storageTitle: 'Stockage',
     clearCacheHint:
-      "Supprime les données de bibliothèque et les paroles mises en cache localement — tout est rechargé la prochaine fois que c'est nécessaire. Ne déclenche pas d'analyse de la bibliothèque.",
+      "Supprime les données de bibliothèque, les pochettes, les photos d'artistes, les logos de stations et les paroles mis en cache localement — tout est rechargé la prochaine fois que c'est nécessaire. Ne déclenche pas d'analyse de la bibliothèque.",
     clearCache: 'Vider le cache',
     cacheCleared: 'Cache vidé.',
     resetAirplayHint:
@@ -335,15 +339,15 @@ export default {
     logLevelChangeFailed: 'Impossible de mettre à jour le niveau de journalisation.',
     recommendations: 'Recommandations personnalisées',
     recommendationsHint:
-      "Découvrir sur l'accueil utilise des artistes similaires à ce que vous écoutez réellement, résolus via MusicBrainz et ListenBrainz — cela partage un ou deux noms d'artistes de la bibliothèque avec ces services. Désactivé revient à des albums aléatoires.",
+      "Découvrir sur l'accueil s'appuie sur des artistes proches de ce que vous écoutez vraiment, recherchés auprès de MusicBrainz, ListenBrainz et Deezer — cela leur transmet un ou deux noms d'artistes de votre bibliothèque. Désactivé, des albums au hasard sont proposés ; ouvrir la page d'un artiste consulte toujours cet artiste, dans un cas comme dans l'autre.",
     lyricsProvidersTitle: 'Fournisseurs de paroles',
     lyricsProvidersHint:
-      "Les paroles enregistrées dans le fichier de la chanson lui-même sont toujours essayées en premier et ne quittent jamais votre serveur. Chaque fournisseur ci-dessous est activé par défaut — désélectionnez ceux auxquels vous préférez que Beacon n'envoie pas le titre, l'artiste, l'album et la durée d'une chanson.",
+      "Les paroles enregistrées dans le fichier lui-même sont toujours essayées en premier et ne quittent jamais votre serveur. Tous les fournisseurs ci-dessous sont activés par défaut — décochez ceux auxquels vous préférez que Beacon n'envoie pas le titre et l'artiste d'un morceau.",
     lyricsProviders: 'Fournisseurs tiers',
     lyricsProvidersEmptyHint:
       'Aucun fournisseur sélectionné — seules les paroles enregistrées dans le fichier lui-même sont affichées.',
     lyricsProvidersActiveHint:
-      "Quand le fichier n'a pas de paroles, le titre, l'artiste, l'album et la durée de la chanson sont envoyés aux fournisseurs sélectionnés pour trouver une correspondance.",
+      "Si le fichier ne contient pas de paroles, le titre et l'artiste sont envoyés aux fournisseurs sélectionnés pour trouver une correspondance. L'album et la durée ne quittent jamais votre serveur ; ils servent uniquement ici, à retenir le résultat le plus proche.",
     playbackTitle: 'Lecture',
     replayGain: 'ReplayGain',
     replayGainOff: 'Désactivé',
@@ -366,10 +370,6 @@ export default {
     castRadioDirectly: "Envoyer la radio directement à l'appareil",
     castRadioDirectlyHint:
       "Par défaut, Beacon route la radio diffusée via son propre backend, pour que l'appareil et le titre en cours partagent une seule connexion à la station. Activé, l'appareil se connecte directement à la station — la lecture continue même si Beacon redémarre, avec le risque que certains appareils refusent le flux de la station.",
-    autoplay: 'Lecture automatique',
-    autoplayBatchSizeItem: '{count} morceaux',
-    autoplayHint:
-      "S'active/se désactive depuis la barre de lecture (à côté de la file d'attente), pas ici — ce réglage définit seulement combien de morceaux similaires sont ajoutés à chaque fois que la file est complétée, via le même moteur de recommandation que Radio par morceau/artiste. Ne se déclenche pas si la répétition est déjà activée, puisque la file ne se vide alors jamais d'elle-même.",
     about: 'À propos de Beacon',
     whatsNew: 'Quoi de neuf ?',
     ffmpegFound: 'ffmpeg trouvé',
@@ -397,6 +397,98 @@ export default {
     byOwner: 'par {owner}',
     deleteTitle: 'Supprimer la playlist ?',
     deleteConfirm: 'Supprimer "{name}" ? Cette action est irréversible.',
+  },
+  privacy: {
+    title: 'Confidentialité',
+    intro:
+      "Beacon fonctionne avec votre propre serveur multimédia. Il n'y a ni inscription, ni analytics, ni tracking, ni publicité. Quelques fonctions interrogent tout de même des services extérieurs. Voici lesquels, pourquoi ils sont interrogés, et ce qui part avec la requête.",
+    fromDeviceTitle: 'Connexions depuis cet appareil',
+    fromDeviceHint:
+      "Vaut pour tout ce qui suit dans cette section : votre appareil ouvre lui-même la connexion, donc l'autre extrémité voit votre adresse IP.",
+    viaServerTitle: 'Connexions via votre serveur Beacon',
+    viaServerHint:
+      "Vaut pour tout ce qui suit dans cette section : votre appareil ne parle qu'à votre propre serveur Beacon, qui fait la requête à sa place. L'autre extrémité voit donc l'adresse de votre serveur, pas la vôtre.",
+    sends: 'Envoyé :',
+    buildsTitle: 'Application de bureau et Docker',
+    builds:
+      "Dans la version Docker, votre serveur Beacon tourne là où vous l'hébergez : les requêtes de la deuxième section partent alors de l'adresse de ce serveur, pas de la vôtre. L'application de bureau embarque ce même serveur et le lance sur cette machine : les deux ne font alors qu'une seule adresse, et la séparation ci-dessus décrit le trajet plutôt qu'une séparation réelle. Également propre au bureau : elle télécharge elle-même la mise à jour qu'elle trouve, au lieu de seulement la signaler.",
+    ownServer:
+      'Absents de cette liste : votre serveur multimédia (Navidrome, Jellyfin, Plex), vos enceintes et la télécommande sur téléphone. Ce sont les vôtres, et Beacon leur parle directement.',
+    optOut: {
+      lyrics: 'Désactivable dans Paroles',
+      recommendations: 'Désactivable dans Recommandations',
+      recommendationsPartial: 'Partiellement désactivable sous Recommandations',
+    },
+    services: {
+      updateCheck: {
+        name: 'GitHub',
+        purpose: 'Vérifier si une version plus récente de Beacon a été publiée.',
+        sends:
+          "Rien vous concernant. La liste des versions est lue ; la comparaison se fait sur votre appareil. L'application de bureau y télécharge aussi la mise à jour.",
+      },
+      radioStream: {
+        name: 'La station de radio elle-même',
+        purpose: 'Diffuser le son quand vous écoutez la radio sur cet appareil.',
+        sends:
+          'Rien de plus que la demande du flux. La station voit votre adresse IP, comme toute webradio. Vers une enceinte, cela passe par votre serveur Beacon.',
+      },
+      radioBrowser: {
+        name: 'Radio Browser',
+        purpose: 'Le répertoire de stations derrière « Découvrir des stations ».',
+        sends:
+          "Votre terme de recherche et le pays choisi. Lorsqu'une station trouvée ici est lue, Beacon renvoie son identifiant sous forme de clic ; les règles du répertoire le demandent, afin que les stations populaires restent identifiables. Une station que vous avez ajoutée en saisissant son adresse n'est jamais signalée.",
+      },
+      stationSite: {
+        name: 'Les sites des stations de radio',
+        purpose: "Trouver le logo d'une station, affiché dans la liste et pendant la lecture.",
+        sends:
+          "Rien vous concernant. La page d'accueil de la station et l'image qu'elle indique sont lues.",
+      },
+      lrclib: {
+        name: 'LRCLIB',
+        purpose: "Chercher des paroles quand le fichier n'en contient pas.",
+        sends:
+          "Le titre et l'artiste du morceau. Son album et sa durée restent sur votre serveur ; ils y servent uniquement à retenir le résultat le plus proche.",
+      },
+      netease: {
+        name: 'NetEase',
+        purpose: "Chercher des paroles quand le fichier n'en contient pas.",
+        sends:
+          "Le titre et l'artiste du morceau. Son album et sa durée restent sur votre serveur ; ils y servent uniquement à retenir le résultat le plus proche.",
+      },
+      simpmusic: {
+        name: 'SimpMusic',
+        purpose: "Chercher des paroles quand le fichier n'en contient pas.",
+        sends:
+          "Le titre et l'artiste du morceau. Son album et sa durée restent sur votre serveur ; ils y servent uniquement à retenir le résultat le plus proche.",
+      },
+      musicbrainz: {
+        name: 'MusicBrainz',
+        purpose:
+          "Associe les noms d'artistes à un identifiant stable, sur lequel reposent les recommandations. Sert aussi aux liens de la page d'un artiste, que les recommandations soient activées ou non.",
+        sends: "Des noms d'artistes de votre bibliothèque.",
+      },
+      listenbrainz: {
+        name: 'ListenBrainz',
+        purpose: 'Proposer des artistes similaires pour « Nouveaux artistes à découvrir ».',
+        sends:
+          'Les identifiants MusicBrainz des artistes de départ : aucun nom, et rien sur ce que vous avez écouté.',
+      },
+      deezer: {
+        name: 'Deezer',
+        purpose:
+          "Recherche une photo et une page d'artiste pour un artiste suggéré, ainsi que pour la page d'artiste que vous avez ouverte, que les recommandations soient activées ou non.",
+        sends:
+          "Le nom de l'artiste recherché : un artiste suggéré, ou celui dont vous avez ouvert la page.",
+      },
+      plexAuth: {
+        name: 'Plex',
+        purpose:
+          'Uniquement si vous vous connectez avec un compte Plex : Plex gère la connexion via plex.tv, et non via votre propre serveur.',
+        sends:
+          'Une demande de connexion, puis votre jeton Plex à chaque vérification. La connexion ouvre app.plex.tv dans votre navigateur. Rien de tout cela avec Navidrome ou Jellyfin.',
+      },
+    },
   },
   radio: {
     title: 'Radio',
@@ -431,6 +523,10 @@ export default {
     homePageUrl: "URL de la page d'accueil",
     noStationsYet: 'Aucune station de radio enregistrée pour le moment.',
     noStationsForQuery: 'Aucune station pour « {query} ».',
+    titleLog: 'Historique des titres',
+    titleLogEmpty: 'Rien de diffusé depuis le démarrage de cette station.',
+    titleLogSearch: 'Rechercher dans votre bibliothèque',
+    titleLogYesterday: 'Hier',
   },
   favorites: {
     title: 'Favoris',

@@ -39,8 +39,25 @@ button {
   cursor: pointer;
 }
 
-input {
+/* iOS Safari zooms the page in whenever a text field it focuses renders
+ * below 16px, and does not zoom back out afterwards — leaving a page that
+ * is already laid out for a phone stuck at the wrong scale until the reader
+ * pinches out again. 16px is that threshold rather than a design choice.
+ *
+ * A bare type selector on purpose, so anything with a class of its own
+ * (.pin-input's deliberate 2rem) still wins — `input:not([type='range'])`
+ * would read better but outweighs a single class and would have quietly
+ * shrunk that field. Ranges are swept up harmlessly: they render no text.
+ *
+ * Deliberately not solved with `maximum-scale=1`/`user-scalable=no` on the
+ * viewport, which is the other well-known answer: that takes pinch-zoom
+ * away from everyone for good, including anyone who needs it to read at
+ * all, to fix a nuisance that belongs to one field. */
+input,
+select,
+textarea {
   font-family: inherit;
+  font-size: 16px;
 }
 
 /* ── Login ── */
@@ -86,6 +103,44 @@ input {
   overflow-y: auto;
   padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
 }
+
+/* Docks directly above the tab bar, as a sibling flex item of #view-root
+ * rather than an overlay — the scroll area shrinks by exactly this height,
+ * so nothing is ever hidden behind it and no padding has to be kept in
+ * step. Mirrors MobilePlayerBar.vue's own 60px strip. */
+.mini-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 60px;
+  flex-shrink: 0;
+  padding: 0 12px;
+  background: var(--chrome);
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+
+/* Artwork and both labels come from .row-art/.row-title/.row-subtitle
+ * above — this strip sits directly under a list of those rows, and had
+ * picked up its own 40px cover and its own two font sizes purely because
+ * it was written against the web app's mini bar rather than against the
+ * rows next to it. Only the things a fixed bar genuinely needs differently
+ * are left here. */
+.mini-player__labels { flex: 1; min-width: 0; }
+
+.mini-player__btn {
+  background: none;
+  color: var(--text);
+  font-size: 1.5rem;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mini-player__btn:disabled { color: var(--text-muted); opacity: 0.4; }
 
 .tabbar {
   display: flex;
@@ -212,6 +267,89 @@ input {
 .seek-row { width: 100%; }
 .seek-row input[type="range"] { width: 100%; }
 .time-row { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); }
+
+/* What a station gets in place of the seek row — see now-playing.js.
+ * Mirrors the app's own RadioLiveStatus.vue. Its own fixed height so that
+ * swapping between the readout, the buffering bar and nothing at all never
+ * shifts the transport buttons underneath. */
+.live-row {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.live-readout { display: flex; align-items: center; gap: 6px; }
+.live-buffering {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(245, 169, 78, 0.25);
+}
+/* The indeterminate sweep Vuetify's v-progress-linear gives the app's own
+ * buffering state, done by hand here. */
+.live-buffering::after {
+  content: '';
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: live-buffering-sweep 1.4s ease-in-out infinite;
+}
+@keyframes live-buffering-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+/* box-shadow, not size: the ring grows past the dot without taking any
+ * layout with it. */
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.live-dot--on-air { animation: live-ping 2.4s ease-out infinite; }
+@keyframes live-ping {
+  0% { box-shadow: 0 0 0 0 rgba(245, 169, 78, 0.45); }
+  70% { box-shadow: 0 0 0 7px rgba(245, 169, 78, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 169, 78, 0); }
+}
+.live-label {
+  color: var(--accent);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.live-sep { color: var(--accent); opacity: 0.4; line-height: 1; }
+/* Proportional digits change width as they tick, which shuffles the whole
+ * centred row sideways once a second. */
+.live-time {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Paused: still worth showing how long the station has been on, but not as
+ * something currently on air. */
+.live-readout--off-air .live-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-muted);
+}
+.live-readout--off-air .live-label,
+.live-readout--off-air .live-sep { color: var(--text-muted); opacity: 1; }
+
+/* A static dot still says everything it means to say. */
+@media (prefers-reduced-motion: reduce) {
+  .live-dot--on-air { animation: none; }
+  .live-buffering::after { animation: none; width: 100%; }
+}
 
 /* One row — shuffle, previous, play/pause, next, repeat — matching
  * MobileTransportControls.vue's own single-row layout instead of splitting
@@ -351,12 +489,25 @@ input[type="range"]:disabled::-moz-range-thumb {
   flex-shrink: 0;
 }
 
+/* The one list row, shared by Queue, Library, Playlists, Radio and a
+ * playlist's own song list. Its metrics match the web app's own
+ * .mobile-row (see src/renderer/src/assets/base.css): the two clients show
+ * the same lists on the same phone, and a 44px cover here next to a 48px
+ * one there is the kind of near-miss that reads as two products. */
 .row {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 0;
+  min-height: 60px;
+  padding: 6px 0;
   border-bottom: 1px solid var(--border);
+}
+
+/* Not after the last row, where it would underline the end of the list
+ * rather than separate anything — the web view's .mobile-row does the
+ * same. */
+.row:last-child {
+  border-bottom: none;
 }
 
 /* :active, not :hover — a touch app shell, same reasoning as .list's own
@@ -367,8 +518,8 @@ input[type="range"]:disabled::-moz-range-thumb {
 }
 
 .row-art {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   border-radius: 8px;
   background: var(--surface);
   overflow: hidden;
@@ -396,8 +547,28 @@ input[type="range"]:disabled::-moz-range-thumb {
 }
 
 .row-main { flex: 1; min-width: 0; }
-.row-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.row-subtitle { color: var(--text-muted); font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Pinned rather than inherited: without a size of its own this was
+ * whatever the browser's default happened to be (16px), which is a large
+ * title for a dense list and silently differed from the web app's rows.
+ * These two are Vuetify's own body-medium/body-small, which is what those
+ * rows use. */
+.row-title {
+  font-size: 0.875rem;
+  line-height: 1.43;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-subtitle {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.33;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .row-action {
   background: none;
@@ -426,7 +597,41 @@ input[type="range"]:disabled::-moz-range-thumb {
 
 .row.dragging { opacity: 0.5; }
 
-h2.section-title { font-size: 1.1rem; margin: 4px 0 10px; }
+/* Every view opens with its own name, at one size and one spacing. Queue
+ * and Library had no heading at all, Playlists and Radio each had an h2 at
+ * a different size from the app's own .page-title, and Radio called itself
+ * "Internet Radio" while its tab said "Radio". Matches the mobile web
+ * view's .page-title (1.5rem/600) rather than inventing a third size. */
+.view-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0 0 12px;
+}
+
+/* The library's songs/albums toggle — one control, two halves, the active
+ * one filled. Mirrors MobileLibraryView.vue's own v-btn-toggle. */
+.segmented {
+  display: flex;
+  width: 100%;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.segmented button {
+  flex: 1;
+  padding: 8px 0;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.segmented button + button { border-left: 1px solid var(--border); }
+.segmented button.active { background: var(--accent); color: var(--accent-on); font-weight: 600; }
+
+.search-field { position: relative; }
 
 .search-input {
   width: 100%;
@@ -436,6 +641,27 @@ h2.section-title { font-size: 1.1rem; margin: 4px 0 10px; }
   border: 1px solid var(--border);
   color: var(--text);
   margin-bottom: 12px;
+}
+
+/* Room for the clear button, so a long query never runs underneath it. */
+.search-field .search-input { padding-right: 40px; }
+
+/* WebKit draws its own inside type="search"; this one is always there, so
+ * hide that to avoid two of them side by side on iOS. */
+.search-field .search-input::-webkit-search-cancel-button { display: none; }
+
+.search-clear {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
 }
 
 .load-more { width: 100%; margin-top: 12px; padding: 10px; border-radius: 10px; background: var(--surface); color: var(--text); }

@@ -293,15 +293,134 @@ def test_discover_dlna_includes_sonos_when_debug_enabled(monkeypatch):
 # ── discover_airplay ─────────────────────────────────────────────────────────
 
 
-def _fake_airplay_device(manufacturer: str, name: str) -> MagicMock:
+def _fake_service(
+    protocol,
+    pairing,
+    enabled: bool = True,
+    manufacturer: str = "Apple Inc.",
+    requires_password: bool = False,
+):
+    """One pyatv service. The protocol and pairing requirement are the real
+    enum members, not stand-ins — discover_airplay() compares against them
+    by identity, so a mock that merely looks like one would pass whatever
+    the rule happened to be."""
     service = MagicMock()
+    service.protocol = protocol
+    service.pairing = pairing
+    service.enabled = enabled
+    service.requires_password = requires_password
     service.properties = {"manufacturer": manufacturer}
+    return service
+
+
+def _fake_airplay_device(manufacturer: str, name: str, services=None) -> MagicMock:
     device = MagicMock()
-    device.services = [service]
+    if services is None:
+        service = MagicMock()
+        service.properties = {"manufacturer": manufacturer}
+        services = [service]
+    device.services = services
     device.name = name
     device.address = "10.0.0.1"
     device.device_info.model = "Model"
     return device
+
+
+def _needs_pairing_for(services) -> bool:
+    """discover_airplay()'s answer for one device with exactly `services`."""
+    from delivery.manager import discover_airplay
+
+    device = _fake_airplay_device("Apple Inc.", "Some Receiver", services)
+
+    async def fake_scan(loop, timeout=10):
+        return [device]
+
+    with patch("pyatv.scan", new=fake_scan):
+        return asyncio.run(discover_airplay())[0]["needs_pairing"]
+
+
+def test_needs_pairing_is_false_when_raop_asks_for_nothing():
+    """The case that made this wrong for everybody. Every modern AirPlay
+    receiver also speaks AirPlay 2, and the rule used to be "speaks AirPlay
+    2" — so a network of devices that ask for nothing was shown as needing
+    pairing throughout, greyed out and unselectable on the phone. Scanned
+    live: an Apple TV and four AirPort Express units, all RAOP NotNeeded,
+    all marked as needing pairing."""
+    from pyatv.const import PairingRequirement, Protocol
+
+    services = [
+        _fake_service(Protocol.AirPlay, PairingRequirement.NotNeeded),
+        _fake_service(Protocol.RAOP, PairingRequirement.NotNeeded),
+    ]
+
+    assert _needs_pairing_for(services) is False
+
+
+def test_needs_pairing_ignores_a_protocol_the_audio_never_uses():
+    """A real Apple TV reports DMAP Mandatory — that is its old remote
+    control protocol, and delivery/airplay.py streams over RAOP either way.
+    What some other service wants says nothing about the audio path."""
+    from pyatv.const import PairingRequirement, Protocol
+
+    services = [
+        _fake_service(Protocol.DMAP, PairingRequirement.Mandatory),
+        _fake_service(Protocol.AirPlay, PairingRequirement.NotNeeded),
+        _fake_service(Protocol.RAOP, PairingRequirement.NotNeeded),
+    ]
+
+    assert _needs_pairing_for(services) is False
+
+
+def test_needs_pairing_is_true_for_a_password_protected_speaker():
+    """A speaker password is not pairing — pyatv keeps the two apart, and an
+    AirPort Express with one set reports RAOP `requires_password` while its
+    pairing requirement stays NotNeeded (confirmed on a real unit). It is
+    still not usable as it stands, and the remedy is the same one: pairing,
+    with the password typed into that flow. Marking it ready would trade
+    the old "everything needs pairing" mistake for a device that fails
+    silently the moment somebody presses play."""
+    from pyatv.const import PairingRequirement, Protocol
+
+    services = [
+        _fake_service(Protocol.AirPlay, PairingRequirement.NotNeeded, requires_password=True),
+        _fake_service(Protocol.RAOP, PairingRequirement.NotNeeded, requires_password=True),
+    ]
+
+    assert _needs_pairing_for(services) is True
+
+
+def test_needs_pairing_is_true_when_raop_demands_it():
+    from pyatv.const import PairingRequirement, Protocol
+
+    services = [_fake_service(Protocol.RAOP, PairingRequirement.Mandatory)]
+
+    assert _needs_pairing_for(services) is True
+
+
+def test_needs_pairing_is_false_when_raop_only_offers_it():
+    """Optional means it works either way, and the unpaired path is the one
+    this backend takes when it can."""
+    from pyatv.const import PairingRequirement, Protocol
+
+    services = [_fake_service(Protocol.RAOP, PairingRequirement.Optional)]
+
+    assert _needs_pairing_for(services) is False
+
+
+def test_needs_pairing_is_true_without_a_usable_raop_service():
+    """The one case that genuinely needs it: no RAOP at all means the
+    unpaired path delivery/airplay.py takes does not exist for this device.
+    A RAOP service that is present but disabled is the same thing."""
+    from pyatv.const import PairingRequirement, Protocol
+
+    airplay_only = [_fake_service(Protocol.AirPlay, PairingRequirement.NotNeeded)]
+    disabled_raop = [
+        _fake_service(Protocol.AirPlay, PairingRequirement.NotNeeded),
+        _fake_service(Protocol.RAOP, PairingRequirement.NotNeeded, enabled=False),
+    ]
+
+    assert _needs_pairing_for(airplay_only) is True
+    assert _needs_pairing_for(disabled_raop) is True
 
 
 def test_discover_airplay_filters_out_sonos_manufactured_devices():

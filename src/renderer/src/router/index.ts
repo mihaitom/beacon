@@ -147,10 +147,14 @@ const router = createRouter({
       component: () => import('../views/mobile/MobilePlaylistDetailView.vue'),
     },
     {
-      path: '/m/songs',
-      name: 'm-songs',
-      component: () => import('../views/mobile/MobileSongsView.vue'),
+      path: '/m/library',
+      name: 'm-library',
+      component: () => import('../views/mobile/MobileLibraryView.vue'),
     },
+    // The songs list grew an albums half and became the library (see
+    // MobileLibraryView.vue), so the old path is kept as a redirect rather
+    // than 404ing a bookmark or a link someone already has.
+    { path: '/m/songs', redirect: { name: 'm-library' } },
     {
       path: '/m/radio',
       name: 'm-radio',

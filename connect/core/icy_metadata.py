@@ -46,6 +46,58 @@ _client = httpx.AsyncClient(
 
 _TITLE_RE = re.compile(rb"StreamTitle='(.*?)';", re.DOTALL)
 
+# Anything outside this is not a station bitrate but a misread header — the
+# frontend puts this number straight in front of the listener ("Live · 320
+# kbps · 1:23"), so a nonsense value is worse than none at all.
+_MIN_BITRATE_KBPS = 8
+_MAX_BITRATE_KBPS = 2000
+
+
+# What a station's own Content-Type says it is broadcasting, reduced to
+# something worth putting on screen. Only the families a station realistically
+# serves; anything else is left unnamed rather than guessed at from a
+# subtype nobody recognises.
+_CODEC_BY_CONTENT_TYPE = {
+    "audio/mpeg": "MP3",
+    "audio/mp3": "MP3",
+    "audio/aac": "AAC",
+    "audio/aacp": "AAC",
+    "audio/mp4": "AAC",
+    "audio/ogg": "OGG",
+    "application/ogg": "OGG",
+    "audio/opus": "Opus",
+    "audio/flac": "FLAC",
+}
+
+
+def parse_codec(value: str | None) -> str | None:
+    """The station's codec out of a Content-Type response header, or None
+    for one this doesn't recognise. Parameters are dropped ("audio/mpeg;
+    charset=utf-8"), and the match is case-insensitive — both show up in
+    the wild."""
+    if not value:
+        return None
+    return _CODEC_BY_CONTENT_TYPE.get(value.split(";")[0].strip().lower())
+
+
+def parse_bitrate(value: str | None) -> int | None:
+    """The station's own bitrate in kbps out of an `icy-br` response header,
+    or None for a station that doesn't declare one (plenty don't) or
+    declares something unusable.
+
+    A multi-value header ("128,128", which some Shoutcast servers send for
+    a stream offered at several rates) is read as its first entry: that is
+    the one this connection is actually receiving."""
+    if not value:
+        return None
+    first = value.split(",")[0].strip()
+    try:
+        bitrate = int(float(first))
+    except ValueError:
+        return None
+    return bitrate if _MIN_BITRATE_KBPS <= bitrate <= _MAX_BITRATE_KBPS else None
+
+
 # How long to wait before reconnecting after a stream drop - not the same
 # situation as audioEngine.ts's own reconnect-on-drop (that one's fighting
 # to keep audio from cutting out for the person listening); nobody's
@@ -324,13 +376,27 @@ class IcyMuxer:
         return bytes([units]) + payload.ljust(units * 16, b"\x00")
 
 
-async def _watch_once(url: str, on_title_change: Callable[[str], None]) -> bool:
+async def _watch_once(
+    url: str,
+    on_title_change: Callable[[str], None],
+    on_stream_info: Callable[[int | None, str | None], None] | None = None,
+) -> bool:
     """One connection attempt. Returns False when the station never even
     declared `icy-metaint` (nothing to retry - it isn't going to start
     mid-stream), True when metadata was seen but the connection then ended
     or dropped (worth reconnecting)."""
     async with _client.stream("GET", url, headers={"Icy-MetaData": "1"}) as resp:
         resp.raise_for_status()
+        # Reported before the metaint check below, deliberately: `icy-br`
+        # and `icy-metaint` are independent headers, and a station that
+        # declares its bitrate but carries no in-band metadata at all is
+        # common. Giving up on the *titles* is no reason to also throw away
+        # what this connection did learn about the stream itself.
+        if on_stream_info is not None:
+            on_stream_info(
+                parse_bitrate(resp.headers.get("icy-br")),
+                parse_codec(resp.headers.get("content-type")),
+            )
         metaint = int(resp.headers.get("icy-metaint") or "0")
         if metaint <= 0:
             return False
@@ -352,7 +418,11 @@ def _reconnect_delay(consecutive_failures: int) -> float:
     return min(_RECONNECT_DELAY_SECONDS * 2**steps, _MAX_RECONNECT_DELAY_SECONDS)
 
 
-async def watch(url: str, on_title_change: Callable[[str], None]) -> None:
+async def watch(
+    url: str,
+    on_title_change: Callable[[str], None],
+    on_stream_info: Callable[[int | None, str | None], None] | None = None,
+) -> None:
     """Runs until cancelled — see SessionState.start_radio_metadata_watch()/
     stop_radio_metadata_watch() for the lifecycle that starts and cancels
     this. `on_title_change` is called with a fresh, non-empty title every
@@ -362,7 +432,7 @@ async def watch(url: str, on_title_change: Callable[[str], None]) -> None:
     last_failure: str | None = None
     while True:
         try:
-            worth_retrying = await _watch_once(url, on_title_change)
+            worth_retrying = await _watch_once(url, on_title_change, on_stream_info)
             failures = 0
             last_failure = None
         except httpx.HTTPError as e:

@@ -17,15 +17,17 @@ const SHELL_PATHS = [
   './js/api.js',
   './js/art.js',
   './js/devices.js',
+  './js/mini-player.js',
   './js/range.js',
   './js/state.js',
   './js/router.js',
   './js/sheet.js',
+  './js/album-row.js',
   './js/song-row.js',
   './js/views/now-playing.js',
   './js/views/queue.js',
   './js/views/playlists.js',
-  './js/views/songs.js',
+  './js/views/library.js',
   './js/views/radio.js',
 ];
 

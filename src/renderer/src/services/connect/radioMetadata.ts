@@ -23,15 +23,43 @@ export function stopRadioMetadataWatch(): void {
   void fetchConnect('/radio-metadata/stop', { method: 'POST' }).catch(() => {})
 }
 
-interface RadioMetadataResponse {
-  title: string | null
+/** One title this station has played, with the wall-clock time (epoch
+ * seconds) it arrived — a time of day is what the reader is after, and it
+ * may well be read on a different device than the one that was playing. */
+export interface RadioTitleEntry {
+  title: string
+  at: number
 }
 
-/** The watch's current title, polled — see stores/playback.ts's own poll
- * loop. Resolves to null both while nothing has been seen yet (the watch
- * just started, or the station has no ICY support at all) and once
- * genuinely stopped; callers don't need to tell those apart. */
-export async function fetchRadioMetadata(): Promise<string | null> {
-  const response = await fetchConnect<RadioMetadataResponse>('/radio-metadata')
-  return response.title
+export interface RadioMetadata {
+  title: string | null
+  /** Everything this station has played this session, newest first. Built
+   * by the backend rather than accumulated here from these very answers:
+   * the poll runs every 8s and only while pollGate.ts allows it at all, so
+   * a locally-kept log would have holes exactly where nobody was watching,
+   * and a different set of them on every device. */
+  history: RadioTitleEntry[]
+  /** What the station itself declares it broadcasts at, in kbps, and what
+   * it is encoded as ("MP3", "AAC", ...) — read once per connection out of
+   * the stream's own ICY response headers, so both are null for a station
+   * that declares nothing usable. Deliberately the station's own numbers
+   * rather than anything Beacon re-encodes to while casting, so they read
+   * the same on every device. StreamInfoSection.vue is the consumer. */
+  bitrate: number | null
+  codec: string | null
+}
+
+/** The watch's current title, the station's log and what it broadcasts,
+ * polled — see stores/playback.ts's own poll loop. `title` is null both
+ * while nothing has been seen yet (the watch just started, or the station
+ * has no ICY support at all) and once genuinely stopped; callers don't
+ * need to tell those apart. */
+export async function fetchRadioMetadata(): Promise<RadioMetadata> {
+  const response = await fetchConnect<RadioMetadata>('/radio-metadata')
+  return {
+    title: response.title ?? null,
+    history: response.history ?? [],
+    bitrate: response.bitrate ?? null,
+    codec: response.codec ?? null,
+  }
 }

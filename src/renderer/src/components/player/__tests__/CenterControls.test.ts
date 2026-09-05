@@ -100,4 +100,50 @@ describe('CenterControls', () => {
       expect(repeatSpy).toHaveBeenCalledOnce()
     })
   })
+
+  describe('a radio station is playing', () => {
+    function mountWithRadio() {
+      const wrapper = mountControls()
+      usePlaybackStore().radioStation = {
+        id: 'r1',
+        name: 'Some Radio',
+        streamUrl: 'http://station/stream',
+        homePageUrl: null,
+      }
+      return wrapper
+    }
+
+    /** Everything that acts on a queue: a live stream has none, so the
+     * store's own playPrevious()/playNext()/toggleShuffle() return early
+     * and these buttons would look pressable while doing nothing. */
+    it('disables shuffle, previous, next and repeat, keeping play/pause', async () => {
+      const wrapper = mountWithRadio()
+      await wrapper.vm.$nextTick()
+      const disabled = (icon: string) =>
+        wrapper.get(`.${icon}`).element.closest('button')!.hasAttribute('disabled')
+
+      expect(disabled('mdi-shuffle')).toBe(true)
+      expect(disabled('mdi-skip-previous')).toBe(true)
+      expect(disabled('mdi-skip-next')).toBe(true)
+      expect(disabled('mdi-repeat')).toBe(true)
+      expect(wrapper.get('.play-btn').attributes('disabled')).toBeUndefined()
+    })
+
+    /** A shuffle/repeat left on from the last queue must not keep its
+     * "active" highlight on a station it no longer applies to. */
+    it('drops the shuffle/repeat active colour', async () => {
+      const wrapper = mountWithRadio()
+      const playback = usePlaybackStore()
+      playback.shuffle = true
+      playback.repeatMode = 'all'
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.get('.mdi-shuffle').element.closest('button')!.className).not.toContain(
+        'text-primary',
+      )
+      expect(wrapper.get('.mdi-repeat').element.closest('button')!.className).not.toContain(
+        'text-primary',
+      )
+    })
+  })
 })

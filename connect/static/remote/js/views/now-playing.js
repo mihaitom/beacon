@@ -27,9 +27,23 @@ export function renderNowPlaying(root) {
         <div class="song-title" id="np-title">Nothing playing</div>
         <div class="song-artist" id="np-artist"></div>
       </div>
-      <div class="seek-row">
+      <div class="seek-row" id="np-seek-row">
         <input type="range" id="np-seek" min="0" max="100" step="1" value="0" />
         <div class="time-row"><span id="np-elapsed">0:00</span><span id="np-duration">0:00</span></div>
+      </div>
+      <!-- What a station gets instead: it has no position or length a
+           slider could honestly represent. Mirrors the desktop/mobile app's
+           own RadioLiveStatus.vue, three states and all. Its own fixed
+           height, so buffering starting or ending never shifts the
+           transport buttons below. -->
+      <div class="live-row hidden" id="np-live-row">
+        <div class="live-buffering hidden" id="np-live-buffering"></div>
+        <div class="live-readout hidden" id="np-live-readout">
+          <span class="live-dot" id="np-live-dot"></span>
+          <span class="live-label">Live</span>
+          <span class="live-sep">·</span>
+          <span class="live-time" id="np-live-time">0:00</span>
+        </div>
       </div>
       <div class="transport-row">
         <button id="np-shuffle"><i class="mdi mdi-shuffle"></i></button>
@@ -53,9 +67,17 @@ export function renderNowPlaying(root) {
   const title = root.querySelector('#np-title');
   const artist = root.querySelector('#np-artist');
   const seek = root.querySelector('#np-seek');
+  const seekRow = root.querySelector('#np-seek-row');
+  const liveRow = root.querySelector('#np-live-row');
+  const liveBuffering = root.querySelector('#np-live-buffering');
+  const liveReadout = root.querySelector('#np-live-readout');
+  const liveDot = root.querySelector('#np-live-dot');
+  const liveTime = root.querySelector('#np-live-time');
   const elapsedLabel = root.querySelector('#np-elapsed');
   const durationLabel = root.querySelector('#np-duration');
   const playBtn = root.querySelector('#np-play');
+  const prevBtn = root.querySelector('#np-prev');
+  const nextBtn = root.querySelector('#np-next');
   const shuffleBtn = root.querySelector('#np-shuffle');
   const repeatBtn = root.querySelector('#np-repeat');
   const autoplayBtn = root.querySelector('#np-autoplay');
@@ -95,13 +117,34 @@ export function renderNowPlaying(root) {
     // eyebrow computed (home.nowPlaying/home.paused) — empty once there's
     // nothing loaded at all, matching the title's own "Nothing playing".
     eyebrow.textContent = song || snapshot.radio ? (snapshot.playing ? 'Now playing' : 'Pause') : '';
-    title.textContent = song ? song.title : snapshot.radio ? snapshot.radio.name : 'Nothing playing';
-    artist.textContent = song ? song.artist || '' : snapshot.radio ? 'Radio' : '';
+    // Radio's two labels in the same order the app's own player bar uses
+    // (see SongInfo.vue): the ICY tag on top, since that is what is
+    // actually playing, and the station below it. With no tag the station
+    // name moves up and the second line stays empty, rather than repeating
+    // it or showing a bare "Radio".
+    const nowPlaying = snapshot.radio?.now_playing || null;
+    title.textContent = song
+      ? song.title
+      : snapshot.radio
+        ? nowPlaying || snapshot.radio.name
+        : 'Nothing playing';
+    artist.textContent = song ? song.artist || '' : nowPlaying ? snapshot.radio.name : '';
     playBtn.innerHTML = snapshot.playing
       ? '<i class="mdi mdi-pause"></i>'
       : '<i class="mdi mdi-play"></i>';
-    shuffleBtn.classList.toggle('active', !!snapshot.shuffle);
-    repeatBtn.classList.toggle('active', snapshot.repeat !== 'off');
+    // Everything that acts on a queue is disabled while a station plays —
+    // a live stream has none, so the desktop's own actions return early
+    // and these would look pressable while doing nothing. Same set the
+    // app's CenterControls.vue/MobileTransportControls.vue disable, and
+    // the "active" highlight goes with them: a shuffle left on from the
+    // last queue must not look lit up on a station it cannot apply to.
+    const isRadio = !!snapshot.radio;
+    shuffleBtn.disabled = isRadio;
+    repeatBtn.disabled = isRadio;
+    prevBtn.disabled = isRadio;
+    nextBtn.disabled = isRadio;
+    shuffleBtn.classList.toggle('active', !isRadio && !!snapshot.shuffle);
+    repeatBtn.classList.toggle('active', !isRadio && snapshot.repeat !== 'off');
     repeatBtn.innerHTML =
       snapshot.repeat === 'one' ? '<i class="mdi mdi-repeat-once"></i>' : '<i class="mdi mdi-repeat"></i>';
     // Hidden entirely rather than just inert when the server can't back it
@@ -116,7 +159,23 @@ export function renderNowPlaying(root) {
     castBtn.querySelector('i').className = casting.length > 0 ? 'mdi mdi-cast-connected' : 'mdi mdi-cast';
     castBtn.title = casting.length > 0 ? `Playing on ${casting.map((t) => t.name).join(', ')}` : 'Play on…';
 
-    if (!seeking) {
+    seekRow.classList.toggle('hidden', isRadio);
+    liveRow.classList.toggle('hidden', !isRadio);
+    if (isRadio) {
+      // While buffering the elapsed time is frozen or misleading, so the
+      // readout gives way to a bar that just says "working on it". Before
+      // the station has played at all — one restored on the desktop and
+      // never started — neither half has anything true to say, so the row
+      // stays empty rather than announcing a station as on air.
+      const buffering = !!snapshot.radio.buffering;
+      const position = snapshot.position || 0;
+      const started = snapshot.playing || position > 0;
+      liveBuffering.classList.toggle('hidden', !buffering);
+      liveReadout.classList.toggle('hidden', buffering || !started);
+      liveReadout.classList.toggle('live-readout--off-air', !snapshot.playing);
+      liveDot.classList.toggle('live-dot--on-air', !!snapshot.playing);
+      liveTime.textContent = formatTime(position);
+    } else if (!seeking) {
       seek.max = String(Math.max(snapshot.duration || 0, 1));
       seek.value = String(snapshot.position || 0);
       elapsedLabel.textContent = formatTime(snapshot.position || 0);
@@ -156,8 +215,8 @@ export function renderNowPlaying(root) {
 
   castBtn.addEventListener('click', () => void openDevicePicker());
   playBtn.addEventListener('click', () => fireCommand('toggle-play'));
-  root.querySelector('#np-prev').addEventListener('click', () => fireCommand('previous'));
-  root.querySelector('#np-next').addEventListener('click', () => fireCommand('next'));
+  prevBtn.addEventListener('click', () => fireCommand('previous'));
+  nextBtn.addEventListener('click', () => fireCommand('next'));
   shuffleBtn.addEventListener('click', () => fireCommand('shuffle'));
   repeatBtn.addEventListener('click', () => fireCommand('repeat'));
   autoplayBtn.addEventListener('click', () => fireCommand('autoplay'));

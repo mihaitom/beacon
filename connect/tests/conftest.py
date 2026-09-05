@@ -128,6 +128,36 @@ def _stub_stream_probe(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_radio_title_history(tmp_path, monkeypatch):
+    """core/radio_history.py stores each session's radio title log under
+    CONNECT_DATA_DIR so it outlives a restart and a reap (see its own
+    docstring). Same reasoning as _isolate_radio_favicon_disk_cache below:
+    unisolated, a test run writes real files into the developer's checkout
+    and — worse here, since the log is keyed by session id and every test
+    shares DEFAULT_SESSION_ID — hands the next test the titles this one
+    recorded."""
+    monkeypatch.setattr("core.radio_history._DIR", str(tmp_path / "radio-history"))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_radio_favicon_disk_cache(tmp_path, monkeypatch):
+    """routes/radio.py keeps resolved station logos in a directory under
+    CONNECT_DATA_DIR so they survive a restart (see its _disk_store()). In
+    a test run that directory is the developer's own checkout, and the
+    module resolved its path at import time, before any test could point it
+    somewhere else.
+
+    So every test gets its own empty one. Same reasoning as
+    _block_real_sonos_discovery above: a test that forgets to isolate this
+    would otherwise write real files into the working tree and hand the
+    *next* test a populated cache, which is exactly the kind of pass that
+    means nothing."""
+    monkeypatch.setattr("routes.radio._DISK_DIR", str(tmp_path / "radio-favicons"))
+    monkeypatch.setattr("routes.radio._disk_loaded", False)
+    monkeypatch.setattr("routes.radio._disk_bytes", 0)
+
+
+@pytest.fixture(autouse=True)
 def reset_state():
     """Wipe all runtime state before each test so tests are isolated: the
     session registry (all per-user playback state), the claim registry, the

@@ -302,12 +302,14 @@ async def test_reap_stale_sessions_calls_reap_once_after_the_interval():
 # ── radio metadata watch lifecycle ──────────────────────────────────────────
 
 
-async def _hang_forever(url, on_title_change):
+async def _hang_forever(url, on_title_change, on_stream_info=None):
     """Stands in for core.icy_metadata.watch() — a real one only ever
     returns when cancelled or when the station has nothing more to say
     (see that module's own tests), neither of which these lifecycle tests
     care about; they only care whether SessionState starts/cancels the
-    right task."""
+    right task. `on_stream_info` is accepted and ignored for the same reason:
+    what the station reports is core/icy_metadata.py's business, not this
+    file's."""
     await asyncio.sleep(3600)
 
 
@@ -324,6 +326,38 @@ def test_start_radio_metadata_watch_starts_a_cancellable_background_task():
             assert not session._radio_metadata_task.done()
 
     asyncio.run(run())
+
+
+def test_stop_radio_metadata_watch_keeps_the_stream_info_a_relay_is_feeding():
+    """routes/playback.py's /play-url starts the relay and *then* stops the
+    independent watch, because the relay reports the same titles. A station
+    states its bitrate exactly once per connection, in the response
+    headers, so clearing it here unconditionally would wipe exactly what
+    the relay had just reported, with nothing to bring it back until the
+    next reconnect."""
+    from core.session import SessionState
+
+    session = SessionState("s")
+    session.radio_relay = object()  # only its presence is read
+    session._set_radio_stream_info(320, "MP3")
+
+    session.stop_radio_metadata_watch()
+
+    assert session.radio_bitrate == 320
+    assert session.radio_codec == "MP3"
+
+
+def test_stop_radio_metadata_watch_clears_the_stream_info_with_no_relay():
+    """The local/direct case, where this watch *is* the only reader."""
+    from core.session import SessionState
+
+    session = SessionState("s")
+    session._set_radio_stream_info(320, "MP3")
+
+    session.stop_radio_metadata_watch()
+
+    assert session.radio_bitrate is None
+    assert session.radio_codec is None
 
 
 def test_start_radio_metadata_watch_is_a_no_op_for_the_same_url():
@@ -354,7 +388,7 @@ def test_start_radio_metadata_watch_retries_a_task_that_already_finished():
 
     from core.session import SessionState
 
-    async def already_done(url, on_title_change):
+    async def already_done(url, on_title_change, on_stream_info=None):
         return
 
     async def run():

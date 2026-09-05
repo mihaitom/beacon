@@ -4,14 +4,20 @@ POST /radio-metadata/start, POST /radio-metadata/stop, GET /radio-metadata."""
 import asyncio
 import io
 import json
+import os
+import time
 from contextlib import asynccontextmanager
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 from PIL import Image
 
+import core.session as session_module
 import routes.radio as radio_mod
+from core import radio_history
 
 
 def _png_bytes(mode: str, transparent_ratio: float = 0.0) -> bytes:
@@ -56,9 +62,14 @@ def _fake_get_response(status_code=200, content=b"icon-bytes", content_type="ima
     return resp
 
 
-def _mock_stream(html: bytes, content_type="text/html"):
+def _mock_stream(html: bytes, content_type="text/html", final_url=None):
     """Mocks _client.stream("GET", url) — an async context manager yielding
-    a response whose .aiter_bytes() streams `html` in one chunk."""
+    a response whose .aiter_bytes() streams `html` in one chunk.
+
+    `.url` is the *final* URL httpx would report, i.e. the requested one
+    unless `final_url` says a redirect landed somewhere else — icon hrefs
+    resolve against it, so a mock without it would resolve them against
+    nothing."""
     stream_resp = MagicMock()
     stream_resp.headers = {"content-type": content_type}
 
@@ -69,6 +80,7 @@ def _mock_stream(html: bytes, content_type="text/html"):
 
     @asynccontextmanager
     async def stream(method, url):
+        stream_resp.url = final_url or url
         yield stream_resp
 
     return stream
@@ -207,6 +219,7 @@ def test_discover_candidates_stops_reading_past_the_html_byte_cap(client):
 
     @asynccontextmanager
     async def stream(method, url):
+        stream_resp.url = url
         yield stream_resp
 
     mock_get = AsyncMock(return_value=_fake_get_response())
@@ -219,6 +232,82 @@ def test_discover_candidates_stops_reading_past_the_html_byte_cap(client):
     # No <link> tags in the (junk) HTML either way — just confirms this
     # returned promptly instead of consuming every one of n_chunks first.
     assert r.status_code == 200
+
+
+def test_discover_candidates_reads_to_the_end_of_head_and_stops_there(client):
+    """hitradion1.de inlines a ~300KB stylesheet ahead of its icon
+    declarations, putting them past what used to be a flat 256KB read
+    limit — the station came out with no findable logo at all. The read now
+    runs to </head> however far in that is, and stops there rather than
+    carrying on through the page body."""
+    head = (
+        b"<html><head><style>"
+        + b" " * (300 * 1024)
+        + b"</style>"
+        + b'<link rel="icon" sizes="48x48" href="/late.png">'
+        + b"</head>"
+    )
+    body_chunks_read = 0
+
+    stream_resp = MagicMock()
+    stream_resp.headers = {"content-type": "text/html"}
+
+    async def aiter_bytes():
+        nonlocal body_chunks_read
+        for i in range(0, len(head), 64 * 1024):
+            yield head[i : i + 64 * 1024]
+        # Past </head>, and far more of it than _MAX_HTML_BYTES would ever
+        # allow — so a read that fails to stop here still ends, as a failed
+        # assertion rather than a hung test.
+        for _ in range(200):
+            body_chunks_read += 1
+            yield b"<body>" + b"x" * (64 * 1024)
+
+    stream_resp.aiter_bytes = aiter_bytes
+
+    @asynccontextmanager
+    async def stream(method, url):
+        stream_resp.url = url
+        yield stream_resp
+
+    mock_get = AsyncMock(return_value=_fake_get_response(content_type="image/png"))
+    with (
+        patch.object(radio_mod._client, "stream", stream),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com/", "min_size": "48"})
+
+    assert r.status_code == 200
+    assert mock_get.await_args_list[0].args[0] == "https://example.com/late.png"
+    assert body_chunks_read == 0
+
+
+def test_discover_candidates_resolves_hrefs_against_the_redirected_url(client):
+    """A homepage that redirects elsewhere (einslive.de -> www1.wdr.de/radio/
+    1live/) declares its icons relative to where it *landed*. Resolving them
+    against the requested URL instead aimed every candidate, the implicit
+    /favicon.ico included, at a host that never had them."""
+    html = (
+        b"<html><head>"
+        b'<link rel="icon" sizes="48x48" href="img/favicon/icon.png">'
+        b"</head><body></body></html>"
+    )
+    mock_get = AsyncMock(return_value=_fake_get_response(content_type="image/png"))
+    stream = _mock_stream(html, final_url="https://www1.example.com/radio/one/index.html")
+
+    with (
+        patch.object(radio_mod._client, "stream", stream),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com/", "min_size": "48"})
+
+    assert r.status_code == 200
+    assert mock_get.await_args_list[0].args[0] == (
+        "https://www1.example.com/radio/one/img/favicon/icon.png"
+    )
+
+    candidates = radio_mod._candidate_cache["https://example.com/"][1]
+    assert candidates[-1].url == "https://www1.example.com/favicon.ico"
 
 
 def test_radio_favicon_skips_an_unreachable_candidate_and_tries_the_next(client):
@@ -829,6 +918,195 @@ def test_radio_favicon_reuses_cached_candidates_across_different_min_size(client
     assert stream_spy.call_count == 1
 
 
+# ── Surviving a restart (the on-disk cache) ─────────────────────────────────
+
+
+_ICON_HTML = (
+    b'<html><head><link rel="icon" sizes="48x48" href="/icon.png"></head><body></body></html>'
+)
+
+
+def _restart():
+    """Everything the process loses when it exits, and nothing else — the
+    directory _disk_store() wrote stays exactly where the next process
+    would find it."""
+    radio_mod._result_cache.clear()
+    radio_mod._result_cache_bytes = 0
+    radio_mod._inflight.clear()
+    radio_mod._candidate_cache.clear()
+    radio_mod._disk_loaded = False
+    radio_mod._disk_bytes = 0
+
+
+def _resolve_once(client, content=b"real-icon-bytes"):
+    """One cold lookup that leaves a cached icon behind, in memory and on
+    disk. Returns the response."""
+    mock_get = AsyncMock(return_value=_fake_get_response(content=content, content_type="image/png"))
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(_ICON_HTML)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        return client.get(
+            "/radio-favicon", params={"url": "https://example.com/", "min_size": "48"}
+        )
+
+
+def test_resolved_icon_is_restored_after_a_restart_without_refetching(client):
+    """The packaged desktop app spawns its own connect, so every launch
+    starts with an empty _result_cache. Without this, each one re-scraped
+    every saved station's homepage against a third-party host."""
+    first = _resolve_once(client)
+    assert first.status_code == 200
+
+    _restart()
+
+    # Answering these at all would mean the icon came off the network
+    # again; the differing bytes are what says so if it did.
+    cold_stream = MagicMock(side_effect=_mock_stream(_ICON_HTML))
+    cold_get = AsyncMock(
+        return_value=_fake_get_response(content=b"refetched-bytes", content_type="image/png")
+    )
+    with (
+        patch.object(radio_mod._client, "stream", cold_stream),
+        patch.object(radio_mod._client, "get", cold_get),
+    ):
+        second = client.get(
+            "/radio-favicon", params={"url": "https://example.com/", "min_size": "48"}
+        )
+
+    assert second.status_code == 200
+    assert second.content == b"real-icon-bytes"
+    assert second.headers["X-Has-Transparency"] == first.headers["X-Has-Transparency"]
+    assert cold_stream.call_count == 0
+    assert cold_get.await_count == 0
+
+
+def test_a_stored_svg_is_re_judged_for_transparency_on_restart(client):
+    """A cached entry carries the answer the rule of the day produced. For
+    an SVG that answer used to be "opaque", and re-serving it unchanged
+    would keep the logo framed for the whole week the entry stays good —
+    so the one verdict that costs nothing to redo is redone."""
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path d="M1 1z"/></svg>'
+    html = b'<html><head><link rel="icon" href="/icon.svg"></head><body></body></html>'
+    mock_get = AsyncMock(return_value=_fake_get_response(content=svg, content_type="image/svg+xml"))
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        assert (
+            client.get("/radio-favicon", params={"url": "https://example.com/"}).status_code == 200
+        )
+
+    # Rewrite the stored verdict the way a version of this app that did not
+    # know about SVGs would have left it.
+    stored = next(Path(radio_mod._DISK_DIR).iterdir())
+    entry = json.loads(stored.read_text())
+    entry["transparent"] = False
+    stored.write_text(json.dumps(entry))
+
+    _restart()
+
+    with (
+        patch.object(radio_mod._client, "stream", MagicMock(side_effect=AssertionError)),
+        patch.object(radio_mod._client, "get", AsyncMock(side_effect=AssertionError)),
+    ):
+        again = client.get("/radio-favicon", params={"url": "https://example.com/"})
+
+    assert again.content == svg  # served from disk, not refetched
+    assert again.headers["X-Has-Transparency"] == "true"
+
+
+def test_a_station_with_no_icon_is_remembered_across_a_restart(client):
+    """A miss is the answer worth keeping most: a station whose homepage
+    declares nothing and has no /favicon.ico costs a full scrape to find
+    that out, every launch, for as long as it stays in the list."""
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(b"<html><head></head></html>")),
+        patch.object(radio_mod._client, "get", AsyncMock(return_value=_fake_get_response(404))),
+    ):
+        assert (
+            client.get("/radio-favicon", params={"url": "https://example.com/"}).status_code == 404
+        )
+
+    _restart()
+
+    cold_get = AsyncMock(return_value=_fake_get_response())
+    with (
+        patch.object(radio_mod._client, "stream", MagicMock(side_effect=AssertionError)),
+        patch.object(radio_mod._client, "get", cold_get),
+    ):
+        again = client.get("/radio-favicon", params={"url": "https://example.com/"})
+
+    assert again.status_code == 404
+    assert cold_get.await_count == 0
+
+
+def test_an_expired_disk_entry_is_not_restored(client):
+    """Expiries are stored as wall-clock time precisely so that an entry
+    that ran out while nothing was running is gone by the next launch, and
+    the file with it."""
+    assert _resolve_once(client).status_code == 200
+    files = list(Path(radio_mod._DISK_DIR).iterdir())
+    assert len(files) == 1
+    entry = json.loads(files[0].read_text())
+    entry["expires"] = time.time() - 1
+    files[0].write_text(json.dumps(entry))
+
+    _restart()
+    radio_mod._disk_load()
+
+    # Dropped on the way in rather than kept around as a hit nobody may
+    # use, so the directory doesn't accumulate what it can never answer.
+    assert not files[0].exists()
+    assert not radio_mod._result_cache
+    assert _resolve_once(client, content=b"refetched-bytes").content == b"refetched-bytes"
+
+
+def test_an_unreadable_disk_entry_costs_only_its_own_station(client):
+    """A half-written or hand-mangled file is one station's logo, not a
+    reason to come up with nothing at all."""
+    assert _resolve_once(client).status_code == 200
+    (Path(radio_mod._DISK_DIR) / "garbage.json").write_text("{not json")
+
+    _restart()
+
+    cold_get = AsyncMock(
+        return_value=_fake_get_response(content=b"refetched-bytes", content_type="image/png")
+    )
+    with (
+        patch.object(radio_mod._client, "stream", MagicMock(side_effect=AssertionError)),
+        patch.object(radio_mod._client, "get", cold_get),
+    ):
+        second = client.get(
+            "/radio-favicon", params={"url": "https://example.com/", "min_size": "48"}
+        )
+
+    assert second.content == b"real-icon-bytes"
+    assert cold_get.await_count == 0
+    assert not (Path(radio_mod._DISK_DIR) / "garbage.json").exists()
+
+
+def test_disk_cache_evicts_oldest_entries_past_its_budget(monkeypatch):
+    """Bounded by what it holds, oldest first — the budget has to cover
+    what a *previous* run left behind as much as this one's own writes."""
+    icon = radio_mod._Fetched(b"x" * 4096, "image/png", 48, transparent=False)
+    monkeypatch.setattr(radio_mod, "_DISK_CACHE_MAX_BYTES", 8 * 1024)
+
+    paths = []
+    for i in range(4):
+        key = (f"https://example.com/{i}", "", 48)
+        radio_mod._disk_store(key, icon)
+        path = radio_mod._disk_path(key)
+        # Written within the same instant otherwise, which leaves "oldest"
+        # up to whatever order the filesystem reports.
+        os.utime(path, (1_700_000_000 + i, 1_700_000_000 + i))
+        paths.append(path)
+
+    surviving = [p for p in paths if os.path.exists(p)]
+    assert surviving == paths[-len(surviving) :]
+    assert sum(os.path.getsize(p) for p in surviving) <= radio_mod._DISK_CACHE_MAX_BYTES
+
+
 # ── _has_transparency ────────────────────────────────────────────────────────
 
 
@@ -855,6 +1133,38 @@ def test_has_transparency_false_below_minimum_ratio():
 
 def test_has_transparency_false_for_garbage_bytes():
     assert radio_mod._has_transparency(b"not an image") is False
+
+
+def test_has_transparency_true_for_svg():
+    """A vector image is transparent wherever it does not paint, and PIL
+    cannot open one to be asked — left to the generic "couldn't tell"
+    fallback, every SVG logo came back opaque and got framed like a square
+    cover. tomorrowland.com's, four <path> elements and no background at
+    all, is exactly that shape."""
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260"><path d="M1 1z"/></svg>'
+
+    assert radio_mod._has_transparency(svg, "image/svg+xml") is True
+    # Without the content type there is nothing to recognise it by, and the
+    # decode below is what answers — the old behaviour, kept for anything
+    # that genuinely cannot be identified.
+    assert radio_mod._has_transparency(svg) is False
+
+
+def test_transparency_header_is_true_for_a_resolved_svg(client):
+    """The end-to-end version of the above: what NowPlayingView.vue reads
+    off the response to decide whether to frame the logo."""
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path d="M1 1z"/></svg>'
+    html = b'<html><head><link rel="icon" href="/icon.svg"></head><body></body></html>'
+    mock_get = AsyncMock(return_value=_fake_get_response(content=svg, content_type="image/svg+xml"))
+
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com/"})
+
+    assert r.status_code == 200
+    assert r.headers["X-Has-Transparency"] == "true"
 
 
 # ── X-Has-Transparency header ────────────────────────────────────────────────
@@ -998,13 +1308,324 @@ def test_radio_metadata_returns_the_sessions_current_title(client, default_sessi
     default_session.radio_title = "Artist - Track"
     r = client.get("/radio-metadata")
     assert r.status_code == 200
-    assert r.json() == {"title": "Artist - Track"}
+    # No history: setting the field directly is not a title *arriving*, and
+    # nothing is playing for one to belong to.
+    assert r.json() == {"title": "Artist - Track", "history": [], "bitrate": None, "codec": None}
+
+
+def test_radio_metadata_reports_what_the_station_broadcasts(client, default_session):
+    """Read once per connection out of the ICY response headers by whichever
+    reader is running — see SessionState._set_radio_stream_info(). The
+    stream-info panel is the one consumer."""
+    default_session._set_radio_stream_info(320, "MP3")
+    r = client.get("/radio-metadata")
+    assert r.status_code == 200
+    assert r.json()["bitrate"] == 320
+    assert r.json()["codec"] == "MP3"
 
 
 def test_radio_metadata_returns_null_before_anything_has_been_seen(client, default_session):
     r = client.get("/radio-metadata")
     assert r.status_code == 200
-    assert r.json() == {"title": None}
+    assert r.json() == {"title": None, "history": [], "bitrate": None, "codec": None}
+
+
+# ── The per-station title log ────────────────────────────────────────────────
+
+
+def test_radio_metadata_returns_the_current_stations_log_newest_first(client, default_session):
+    default_session._radio_metadata_url = "http://station-a"
+    for title in ("First", "Second", "Third"):
+        default_session._set_radio_title(title)
+
+    body = client.get("/radio-metadata").json()
+
+    assert body["title"] == "Third"
+    assert [e["title"] for e in body["history"]] == ["Third", "Second", "First"]
+    assert all(isinstance(e["at"], float) for e in body["history"])
+
+
+def test_radio_title_log_is_kept_per_station(default_session):
+    """Switching away and back finds the first station's own log intact,
+    rather than one merged list with another station's titles in it."""
+    default_session._radio_metadata_url = "http://station-a"
+    default_session._set_radio_title("A1")
+    default_session._radio_metadata_url = "http://station-b"
+    default_session._set_radio_title("B1")
+    default_session._radio_metadata_url = "http://station-a"
+    default_session._set_radio_title("A2")
+
+    assert [e["title"] for e in default_session.radio_title_log()] == ["A2", "A1"]
+    default_session._radio_metadata_url = "http://station-b"
+    assert [e["title"] for e in default_session.radio_title_log()] == ["B1"]
+
+
+def test_radio_title_log_survives_stopping_the_watch(default_session):
+    """A station's history is not what stopping means — coming back to it
+    later is exactly when the log is worth having."""
+    default_session._radio_metadata_url = "http://station-a"
+    default_session._set_radio_title("A1")
+    default_session.stop_radio_metadata_watch()
+
+    assert default_session.radio_title_log() == []  # nothing playing
+    default_session._radio_metadata_url = "http://station-a"
+    assert [e["title"] for e in default_session.radio_title_log()] == ["A1"]
+
+
+def test_radio_title_log_ignores_a_station_cycling_the_same_strings(default_session):
+    """Deutschlandfunk rotates its programme name, its slogan and the
+    current item on a roughly one-minute loop (sampled live 2026-09-05).
+    Logged as they arrive, three strings would fill the whole buffer."""
+    default_session._radio_metadata_url = "http://station-a"
+    for _ in range(20):
+        for title in ("Informationen am Morgen", "DLF - Alles von Relevanz", "Ein Beitrag"):
+            default_session._set_radio_title(title)
+
+    assert [e["title"] for e in default_session.radio_title_log()] == [
+        "Ein Beitrag",
+        "DLF - Alles von Relevanz",
+        "Informationen am Morgen",
+    ]
+
+
+def test_radio_title_log_records_a_repeat_once_the_window_has_passed(default_session):
+    """The same track really played again hours later is a new entry, not
+    the same broadcast coming round — that is the whole reason the repeat
+    guard is a time window rather than a plain "seen before"."""
+    default_session._radio_metadata_url = "http://station-a"
+    default_session._set_radio_title("Artist - Track")
+    history = default_session.radio_title_history["http://station-a"]
+    history[0]["at"] -= session_module._RADIO_HISTORY_REPEAT_WINDOW + 1
+
+    default_session._set_radio_title("Artist - Track")
+
+    assert [e["title"] for e in default_session.radio_title_log()] == [
+        "Artist - Track",
+        "Artist - Track",
+    ]
+
+
+def test_radio_title_log_keeps_the_newest_entries_per_station(default_session):
+    default_session._radio_metadata_url = "http://station-a"
+    for i in range(session_module._RADIO_HISTORY_PER_STATION + 25):
+        default_session._set_radio_title(f"Track {i}")
+
+    log = default_session.radio_title_log()
+    assert len(log) == session_module._RADIO_HISTORY_PER_STATION
+    assert log[0]["title"] == f"Track {session_module._RADIO_HISTORY_PER_STATION + 24}"
+    assert log[-1]["title"] == "Track 25"
+
+
+def test_radio_title_log_drops_the_least_recently_heard_station(default_session):
+    """A session outlives any single station; the histories are the one
+    part of it that would otherwise only ever grow."""
+    for i in range(session_module._RADIO_HISTORY_STATIONS + 3):
+        default_session._radio_metadata_url = f"http://station-{i}"
+        default_session._set_radio_title(f"Title {i}")
+
+    assert len(default_session.radio_title_history) == session_module._RADIO_HISTORY_STATIONS
+    assert "http://station-0" not in default_session.radio_title_history
+    assert "http://station-3" in default_session.radio_title_history
+
+
+def test_radio_title_log_follows_a_relayed_station(default_session):
+    """A relayed station reports its titles through the same callback but
+    has no _radio_metadata_url — its own URL is the station identity."""
+    default_session.radio_relay = SimpleNamespace(url="http://relayed-station")
+    default_session._set_radio_title("Relayed title")
+
+    assert [e["title"] for e in default_session.radio_title_log()] == ["Relayed title"]
+    assert "http://relayed-station" in default_session.radio_title_history
+
+
+def test_radio_title_log_comes_back_after_the_session_is_gone(default_session):
+    """The whole point of storing it: the session is reaped after half an
+    hour of not listening, and the packaged desktop app spawns a fresh
+    connect on every launch. Starting the station again has to find what it
+    played yesterday."""
+    default_session._radio_metadata_url = "http://station-a"
+    default_session._set_radio_title("Yesterday's track")
+
+    # A new process, a new SessionState under the same login — nothing in
+    # memory, only what is on disk.
+    revived = session_module.SessionState(default_session.session_id)
+    revived._radio_metadata_url = "http://station-a"
+
+    assert [e["title"] for e in revived.radio_title_log()] == ["Yesterday's track"]
+
+
+def test_a_revived_log_keeps_growing_where_it_left_off(default_session):
+    default_session._radio_metadata_url = "http://station-a"
+    default_session._set_radio_title("Yesterday's track")
+
+    revived = session_module.SessionState(default_session.session_id)
+    revived._radio_metadata_url = "http://station-a"
+    revived._set_radio_title("Today's track")
+
+    assert [e["title"] for e in revived.radio_title_log()] == [
+        "Today's track",
+        "Yesterday's track",
+    ]
+    # And the addition is itself stored, rather than the file staying at
+    # whatever the previous run left.
+    again = session_module.SessionState(default_session.session_id)
+    again._radio_metadata_url = "http://station-a"
+    assert len(again.radio_title_log()) == 2
+
+
+def test_a_stored_log_stays_with_its_own_session(default_session):
+    """A session id comes out of the login it belongs to — one person's
+    listening must not surface under another's."""
+    default_session._radio_metadata_url = "http://station-a"
+    default_session._set_radio_title("Mine")
+
+    other = session_module.SessionState("someone-else")
+    other._radio_metadata_url = "http://station-a"
+
+    assert other.radio_title_log() == []
+
+
+def test_a_stored_log_stays_with_its_own_station(default_session):
+    default_session._radio_metadata_url = "http://station-a"
+    default_session._set_radio_title("A1")
+    default_session._radio_metadata_url = "http://station-b"
+    default_session._set_radio_title("B1")
+
+    revived = session_module.SessionState(default_session.session_id)
+    revived._radio_metadata_url = "http://station-b"
+
+    assert [e["title"] for e in revived.radio_title_log()] == ["B1"]
+
+
+def test_a_half_written_line_costs_only_that_one_title(default_session):
+    """The log is appended to, so the line that loses a crash is the one
+    being written — the thousand before it are still whole, and giving up
+    the file over the broken tail would throw away exactly what this
+    exists to keep."""
+    default_session._radio_metadata_url = "http://station-a"
+    default_session._set_radio_title("A1")
+    default_session._set_radio_title("A2")
+    path = Path(radio_history._station_path(default_session.session_id, "http://station-a"))
+    with path.open("a", encoding="utf-8") as f:
+        f.write('{"title": "torn off half')
+
+    revived = session_module.SessionState(default_session.session_id)
+    revived._radio_metadata_url = "http://station-a"
+
+    assert [e["title"] for e in revived.radio_title_log()] == ["A2", "A1"]
+
+
+def test_an_unreadable_file_costs_only_its_own_station(default_session):
+    default_session._radio_metadata_url = "http://station-a"
+    default_session._set_radio_title("A1")
+    directory = Path(radio_history._session_dir(default_session.session_id))
+    (directory / "garbage.jsonl").write_text("{not json")
+
+    revived = session_module.SessionState(default_session.session_id)
+    revived._radio_metadata_url = "http://station-a"
+
+    assert [e["title"] for e in revived.radio_title_log()] == ["A1"]
+
+
+def test_a_stations_file_is_trimmed_back_once_it_outgrows_the_cap(default_session):
+    """Appending means the file grows past the cap between trims — what it
+    must never do is grow without bound, or hand back more than the cap."""
+    cap = 5
+    monkeyed = session_module._RADIO_HISTORY_PER_STATION
+    try:
+        session_module._RADIO_HISTORY_PER_STATION = cap
+        default_session._radio_metadata_url = "http://station-a"
+        for i in range(cap * radio_history._TRIM_FACTOR + 3):
+            default_session._set_radio_title(f"Track {i}")
+        path = Path(radio_history._station_path(default_session.session_id, "http://station-a"))
+        # Header plus at most _TRIM_FACTOR caps' worth of titles.
+        assert len(path.read_text().splitlines()) <= cap * radio_history._TRIM_FACTOR + 1
+
+        revived = session_module.SessionState(default_session.session_id)
+        revived._radio_metadata_url = "http://station-a"
+        log = revived.radio_title_log()
+    finally:
+        session_module._RADIO_HISTORY_PER_STATION = monkeyed
+
+    assert len(log) == cap
+    assert log[0]["title"] == f"Track {cap * radio_history._TRIM_FACTOR + 2}"
+
+
+def test_only_the_station_being_played_is_read_into_memory(default_session):
+    """A log this long is worth holding for the station somebody is
+    listening to, not for all fifty they have ever tried."""
+    for i in range(3):
+        default_session._radio_metadata_url = f"http://station-{i}"
+        default_session._set_radio_title(f"Title {i}")
+
+    revived = session_module.SessionState(default_session.session_id)
+    revived._radio_metadata_url = "http://station-1"
+    assert [e["title"] for e in revived.radio_title_log()] == ["Title 1"]
+    assert list(revived.radio_title_history) == ["http://station-1"]
+
+
+def test_a_session_keeps_only_its_most_recent_stations_on_disk(default_session, monkeypatch):
+    """A station tried once would otherwise keep a file of its own for as
+    long as the session lives — the least recently played go first, so what
+    survives is what somebody actually comes back to."""
+    monkeypatch.setattr(radio_history, "_MAX_STATIONS", 3)
+    directory = Path(radio_history._session_dir(default_session.session_id))
+    for i in range(6):
+        default_session._radio_metadata_url = f"http://station-{i}"
+        default_session._set_radio_title(f"Title {i}")
+        path = Path(radio_history._station_path(default_session.session_id, f"http://station-{i}"))
+        # Written within the same instant otherwise, which leaves "least
+        # recently played" up to whatever order the filesystem reports.
+        # Recent on purpose: a directory whose newest file is older than
+        # _MAX_AGE_SECONDS is dropped whole, before the per-station cap
+        # ever applies.
+        stamp = time.time() - 100 + i
+        os.utime(path, (stamp, stamp))
+
+    radio_history.prune()
+
+    survivors = sorted(p.name for p in directory.iterdir())
+    expected = sorted(
+        Path(radio_history._station_path(default_session.session_id, f"http://station-{i}")).name
+        for i in (3, 4, 5)
+    )
+    assert survivors == expected
+
+
+def test_stored_logs_are_dropped_once_nothing_has_written_to_them_for_a_month(default_session):
+    """A session id changes with the login it is derived from, so an old
+    one is never revisited — without this the directory grows with every
+    session that ever played radio."""
+    default_session._radio_metadata_url = "http://station-a"
+    default_session._set_radio_title("Ancient")
+    directory = Path(radio_history._session_dir(default_session.session_id))
+    stale = time.time() - radio_history._MAX_AGE_SECONDS - 1
+    for path in directory.iterdir():
+        os.utime(path, (stale, stale))
+
+    radio_history.prune()
+
+    assert not directory.exists()
+
+
+def test_a_log_that_cannot_be_written_still_plays(default_session, monkeypatch):
+    """Storage is an improvement on the in-memory log, never a condition
+    for it — a read-only or full data directory must not cost a title."""
+    monkeypatch.setattr(radio_history, "_DIR", "/proc/definitely-not-writable/radio-history")
+    default_session._radio_metadata_url = "http://station-a"
+
+    default_session._set_radio_title("Still recorded")
+
+    assert [e["title"] for e in default_session.radio_title_log()] == ["Still recorded"]
+
+
+def test_radio_title_is_not_logged_when_nothing_is_playing(default_session):
+    """No station, nothing to attribute a title to — dropped rather than
+    filed under a made-up key."""
+    default_session._set_radio_title("Orphan")
+
+    assert default_session.radio_title == "Orphan"
+    assert default_session.radio_title_history == {}
 
 
 # ── Cache correctness across Origin ──────────────────────────────────────────

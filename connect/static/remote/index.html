@@ -38,6 +38,20 @@
       <span class="app-bar__title">Beacon</span>
     </header>
     <main id="view-root"></main>
+    <!-- The strip MobilePlayerBar.vue shows on every mobile route but Now
+     - Playing, docked above the tab bar the same way. Part of the shell,
+     - not of a view: it has to survive route changes. See
+     - js/mini-player.js. -->
+    <div id="mini-player" class="mini-player hidden">
+      <div class="row-art" id="mini-art"></div>
+      <div class="mini-player__labels">
+        <div class="row-title" id="mini-title"></div>
+        <div class="row-subtitle" id="mini-subtitle"></div>
+      </div>
+      <button id="mini-prev" class="mini-player__btn"><i class="mdi mdi-skip-previous"></i></button>
+      <button id="mini-play" class="mini-player__btn"><i class="mdi mdi-play"></i></button>
+      <button id="mini-next" class="mini-player__btn"><i class="mdi mdi-skip-next"></i></button>
+    </div>
     <!-- Icons/labels/order match MobileTabBar.vue's own `items` exactly. -->
     <nav class="tabbar">
       <a href="#/now-playing" data-tab="now-playing">
@@ -49,8 +63,8 @@
       <a href="#/playlists" data-tab="playlists">
         <i class="mdi mdi-playlist-play icon"></i><span>Playlists</span>
       </a>
-      <a href="#/songs" data-tab="songs">
-        <i class="mdi mdi-music-note icon"></i><span>Songs</span>
+      <a href="#/library" data-tab="library">
+        <i class="mdi mdi-music-note icon"></i><span>Library</span>
       </a>
       <a href="#/radio" data-tab="radio">
         <i class="mdi mdi-radio icon"></i><span>Radio</span>

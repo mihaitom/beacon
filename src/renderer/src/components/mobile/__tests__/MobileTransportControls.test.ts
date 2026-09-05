@@ -124,6 +124,34 @@ describe('MobileTransportControls', () => {
       expect(button(wrapper, 'mdi-play').disabled).toBe(false)
     })
 
+    /** Same gating CenterControls.vue applies on the desktop: a live
+     * stream has no queue, so the store's own playPrevious()/playNext()/
+     * toggleShuffle() return early and these would look pressable while
+     * doing nothing. */
+    it('leaves shuffle, previous, next and repeat disabled on radio', async () => {
+      const wrapper = mountControls()
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Some Radio',
+        streamUrl: 'http://station/stream',
+        homePageUrl: null,
+      }
+      // On from whatever was playing before the station — must not keep
+      // its "active" highlight on something it no longer applies to.
+      playback.shuffle = true
+      playback.repeatMode = 'all'
+      await wrapper.vm.$nextTick()
+
+      expect(button(wrapper, 'mdi-shuffle').disabled).toBe(true)
+      expect(button(wrapper, 'mdi-skip-previous').disabled).toBe(true)
+      expect(button(wrapper, 'mdi-skip-next').disabled).toBe(true)
+      expect(button(wrapper, 'mdi-repeat').disabled).toBe(true)
+      expect(button(wrapper, 'mdi-play').disabled).toBe(false)
+      expect(button(wrapper, 'mdi-shuffle').className).not.toContain('text-primary')
+      expect(button(wrapper, 'mdi-repeat').className).not.toContain('text-primary')
+    })
+
     it('disables skip-next at the end of the queue', async () => {
       const wrapper = mountControls()
       const playback = usePlaybackStore()

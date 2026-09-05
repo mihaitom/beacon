@@ -74,7 +74,7 @@ import httpx
 
 from lyrics.shared import USER_AGENT
 
-from .icy_metadata import IcyDemuxer
+from .icy_metadata import IcyDemuxer, parse_bitrate, parse_codec
 from .streamer import _READRATE_ARGS
 
 logger = logging.getLogger("connect.radio_relay")
@@ -199,10 +199,17 @@ class RadioRelay:
     division of responsibility it already has for
     start_radio_metadata_watch()."""
 
-    def __init__(self, url: str, content_type: str, on_title_change: Callable[[str], None]) -> None:
+    def __init__(
+        self,
+        url: str,
+        content_type: str,
+        on_title_change: Callable[[str], None],
+        on_stream_info: Callable[[int | None, str | None], None] | None = None,
+    ) -> None:
         self.url = url
         self._device_args, self.device_content_type = _device_output_args(content_type)
         self._on_title_change = on_title_change
+        self._on_stream_info = on_stream_info
         self._proc: asyncio.subprocess.Process | None = None
         self._fetch_task: asyncio.Task | None = None
         self._audio_fanout_task: asyncio.Task | None = None
@@ -323,6 +330,19 @@ class RadioRelay:
     async def _run_once(self) -> None:
         async with _client.stream("GET", self.url, headers={"Icy-MetaData": "1"}) as resp:
             resp.raise_for_status()
+            # What the station says it is broadcasting, same headers and
+            # same handling as core/icy_metadata.py's watch — this relay
+            # replaces that watch while it runs (see core/session.py), so
+            # without this the one path that re-serves a station to a
+            # device would be the one path that never learns it.
+            # Deliberately the *source* values, not whatever ffmpeg below
+            # re-encodes to: they describe the station, and read the same
+            # whether you are listening locally or casting.
+            if self._on_stream_info is not None:
+                self._on_stream_info(
+                    parse_bitrate(resp.headers.get("icy-br")),
+                    parse_codec(resp.headers.get("content-type")),
+                )
             metaint = int(resp.headers.get("icy-metaint") or "0")
             demuxer = IcyDemuxer(metaint, self._on_title_change) if metaint > 0 else None
 

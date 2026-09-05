@@ -1,16 +1,21 @@
 <template>
   <v-container fluid>
-    <h1 class="page-title mb-3">{{ $t('playlists.title') }}</h1>
+    <div class="mobile-header">
+      <h1 class="page-title mobile-header__title">{{ $t('playlists.title') }}</h1>
+    </div>
 
-    <v-text-field
-      v-model="filterQuery"
-      :label="$t('search.label')"
-      prepend-inner-icon="mdi-magnify"
-      variant="solo-filled"
-      density="compact"
-      clearable
-      class="mb-4"
-    />
+    <!-- Sticky, the same as the library's and Radio's own filters. -->
+    <sticky-filter>
+      <v-text-field
+        v-model="filterQuery"
+        :label="$t('search.label')"
+        prepend-inner-icon="mdi-magnify"
+        variant="solo-filled"
+        density="compact"
+        clearable
+        hide-details
+      />
+    </sticky-filter>
 
     <v-progress-circular v-if="libraryStore.loading" indeterminate class="mb-4" />
 
@@ -59,13 +64,14 @@ import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
 import MobilePlaylistRow from '@/components/mobile/MobilePlaylistRow.vue'
+import StickyFilter from '@/components/StickyFilter.vue'
 import type { Playlist } from '@/types/library'
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'MobilePlaylistsView',
-  components: { MobilePlaylistRow },
+  components: { MobilePlaylistRow, StickyFilter },
   data() {
     return {
       filterQuery: '',

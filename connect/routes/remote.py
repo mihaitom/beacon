@@ -19,6 +19,7 @@ the roles reversed — see core/remote.py's RemoteState docstring.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import secrets
@@ -31,6 +32,7 @@ from fastapi.responses import (
     FileResponse,
     JSONResponse,
     RedirectResponse,
+    Response,
     StreamingResponse,
 )
 from pydantic import BaseModel
@@ -296,6 +298,14 @@ async def list_songs(search: str = "", offset: int = 0, limit: int = 50):
     return await _query("songs-request", {"search": search, "offset": offset, "limit": limit})
 
 
+@router.get("/albums", dependencies=[Depends(require_remote_password)])
+async def list_albums(search: str = "", offset: int = 0, limit: int = 50):
+    """The albums half of the phone's library view — same shape and same
+    paging as /songs above, answered by the desktop out of its own already-
+    loaded catalog (see resolveRemoteQuery's albums-request)."""
+    return await _query("albums-request", {"search": search, "offset": offset, "limit": limit})
+
+
 @router.get("/playlists", dependencies=[Depends(require_remote_password)])
 async def list_playlists():
     return await _query("playlists-request", {})
@@ -398,8 +408,57 @@ async def redirect_remote_app_to_trailing_slash():
     return RedirectResponse(url="/remote/app/", status_code=308)
 
 
+# The remote app's files are served under plain, unhashed names — there is
+# no bundler stamping a content hash into them the way the main app's assets
+# get one. A browser handed no Cache-Control for those falls back on its own
+# heuristic freshness (commonly a tenth of the file's age), so a shell file
+# last changed a week ago is treated as good for most of a day and simply
+# not asked for again. That is what leaves a phone showing the layout from
+# before the last change with no way to force it: reloading revalidates
+# nothing while the browser still considers what it holds fresh, and the
+# service worker's own network-first fetch (static/remote/sw.js) goes
+# through that same cache, so it re-stores the stale copy rather than
+# replacing it.
+#
+# ng.conf.template makes exactly this call, with exactly this reasoning, for
+# the main app's own un-hashed index.html. These files never got it.
+#
+# "no-cache" is "ask every time", not "keep nothing" — and the ask is
+# answered with a 304 for anything unchanged (see _app_file_response), so a
+# revalidated shell costs a round trip per file instead of its bytes.
+_APP_CACHE_CONTROL = "no-cache"
+
+
+def _app_file_response(path: Path, if_none_match: str | None) -> Response:
+    """One shell file, revalidated rather than assumed fresh.
+
+    The conditional handling is spelled out here because FileResponse does
+    not do it — only StaticFiles implements is_not_modified, and this route
+    cannot be a StaticFiles mount: it is password-gated and falls back to
+    index.html for the hash router's own sub-paths. Without it, "no-cache"
+    would mean re-downloading the entire shell, 400KB of icon font
+    included, on every single visit.
+
+    The ETag is built the way FileResponse builds its own (mtime and size,
+    hashed), so nothing changes about what a client stores — only that this
+    end now recognises it coming back."""
+    stat = path.stat()
+    etag_base = f"{stat.st_mtime}-{stat.st_size}"
+    etag = f'"{hashlib.md5(etag_base.encode(), usedforsecurity=False).hexdigest()}"'
+    headers = {"Cache-Control": _APP_CACHE_CONTROL, "ETag": etag}
+    # A client may echo several, comma-separated, per RFC 9110 — and "*"
+    # matches whatever is there.
+    offered = [tag.strip() for tag in (if_none_match or "").split(",")]
+    if etag in offered or "*" in offered:
+        return Response(status_code=304, headers=headers)
+    return FileResponse(path, headers=headers)
+
+
 @router.get("/app/{path:path}")
-async def serve_remote_app(path: str = "index.html"):
+async def serve_remote_app(
+    path: str = "index.html",
+    if_none_match: str | None = Header(default=None),
+):
     if not remote.enabled:
         raise HTTPException(status_code=404)
 
@@ -411,9 +470,9 @@ async def serve_remote_app(path: str = "index.html"):
         raise HTTPException(status_code=404)
 
     if requested.is_file():
-        return FileResponse(requested)
+        return _app_file_response(requested, if_none_match)
     # SPA fallback — the hash-router handles the actual sub-path client-side.
     index = static_dir / "index.html"
     if index.is_file():
-        return FileResponse(index)
+        return _app_file_response(index, if_none_match)
     raise HTTPException(status_code=404)

@@ -19,7 +19,7 @@ class FakeRelay:
     is exactly what test_radio_relay.py already covers; this only needs to
     look like a relay to whatever wires it in."""
 
-    def __init__(self, url, content_type, on_title_change):
+    def __init__(self, url, content_type, on_title_change, on_stream_info=None):
         self.url = url
         self.device_content_type = "audio/mpeg"
         self._on_title_change = on_title_change
@@ -215,7 +215,7 @@ class UnreachableRelay(FakeRelay):
     RadioRelay.start() returns anyway (its own loop keeps retrying in the
     background), leaving `connected` False."""
 
-    def __init__(self, url, content_type, on_title_change):
+    def __init__(self, url, content_type, on_title_change, on_stream_info=None):
         super().__init__(url, content_type, on_title_change)
         self.connected = False
 

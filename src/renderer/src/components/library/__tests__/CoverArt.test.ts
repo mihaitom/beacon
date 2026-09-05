@@ -252,6 +252,40 @@ describe('CoverArt', () => {
     expect(wrapper.html()).toContain('blob:cover-1')
   })
 
+  it('cross-fades from the smaller copy it was handed to the real one', async () => {
+    // The artwork viewer is opened from something that already has a small
+    // version of the very same picture on screen. Covering that with a
+    // skeleton for the length of a download is a step backwards, which is
+    // what a large photo made visible.
+    //
+    // One v-img, not two: it takes both URLs and swaps them itself, keeping
+    // the small one up until the real one has decoded and transitioning
+    // between them. Rendering them as separate elements — which this did at
+    // first — has Vue unmount one and mount the other, and that shows as a
+    // flicker at exactly the moment the better picture arrives.
+    const wrapper = await scrollIntoRest(mountCover({ lazySrc: 'https://art/small.jpg' }))
+
+    const element = wrapper.get('.v-img').element
+    expect(wrapper.html()).toContain('https://art/small.jpg')
+    expect(wrapper.html()).not.toContain('cover-art-skeleton')
+
+    requests[0]!.succeed()
+    await flush()
+
+    // The same node, still: this is the assertion that a v-if/v-else pair
+    // cannot satisfy, because Vue tears the first one down to put the
+    // second one up. Counting elements would not catch it — only one of
+    // the two ever renders at a time either way.
+    expect(wrapper.get('.v-img').element).toBe(element)
+    expect(wrapper.html()).toContain('blob:cover-1')
+  })
+
+  it('still shows the skeleton when nothing was handed in', async () => {
+    const wrapper = await scrollIntoRest(mountCover())
+
+    expect(wrapper.html()).toContain('cover-art-skeleton')
+  })
+
   it('watches its own box, not the fragment comment node in front of it', () => {
     const wrapper = mountCover()
 

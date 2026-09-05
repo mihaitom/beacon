@@ -225,18 +225,19 @@ export function shouldRecheckFile(entry: CachedPositive, now = Date.now()): bool
  * lyrics cache — deliberately leaves OFFSETS_KEY (per-song sync-offset
  * corrections, see readStoredOffset() below) alone, since that's the user's
  * own manual work, not a re-fetchable cache. */
-export function clearLyricsCache(): void {
+export function clearLyricsCache(): Promise<void> {
   sessionCache = new Map()
   // A lookup still in flight was started against what has just been thrown
   // away, and storing its answer would put back part of what someone asked
   // to be cleared.
   generation += 1
-  clearLyricsStore()
+  const cleared = clearLyricsStore()
   try {
     localStorage.removeItem(accountScopedKey(LEGACY_CACHE_KEY))
   } catch {
     // Nothing to clean up if storage isn't available in the first place.
   }
+  return cleared
 }
 
 /** Drops this session's copy and the in-flight guard so the next read goes

@@ -34,6 +34,20 @@ import { useLibraryStore } from '@/stores/library'
 // syncCastQueue()'s own $subscribe-driven callers already use elsewhere.
 let lastMetadataKey: string | null = null
 let lastPlaybackState: MediaSessionPlaybackState | null = null
+let lastQueueHandlersSet: boolean | null = null
+
+/** Wrapped per-handler, not once around a whole block: Chromium accepts
+ * every action this service registers, but a browser that only partially
+ * implements this API (an older or non-Chromium one, were this ever to run
+ * in one) shouldn't lose every handler just because one of them threw. */
+function setHandler(action: MediaSessionAction, handler: MediaSessionActionHandler | null): void {
+  try {
+    navigator.mediaSession.setActionHandler(action, handler)
+  } catch {
+    // Not supported by this browser — that one control just doesn't
+    // appear on the OS side; the rest still work.
+  }
+}
 
 function updatePlaybackState(): void {
   const playback = usePlaybackStore()
@@ -79,28 +93,47 @@ function updateMetadata(): void {
   })
 }
 
+/** Registers (or withdraws) the queue-shaped actions, following whether a
+ * radio station is what's playing. A live stream has no previous/next track
+ * and nothing to seek within — the playback store's own playPrevious()/
+ * playNext()/seek() all return early for it — and an action handler is
+ * exactly what makes the OS *draw* that button on a lock screen or media
+ * widget, so leaving them registered puts skip arrows on a phone's lock
+ * screen that do nothing at all. Withdrawing them (null) removes the
+ * buttons instead, matching what CenterControls.vue/
+ * MobileTransportControls.vue disable in the app's own UI.
+ *
+ * Kept behind lastQueueHandlersSet: this runs from the same $subscribe as
+ * updateMetadata(), i.e. on every playback mutation including the ~4x/sec
+ * position tick, and re-registering three handlers that many times a second
+ * is work for nothing. */
+function updateQueueHandlers(): void {
+  const playback = usePlaybackStore()
+  const wanted = playback.radioStation == null
+  if (wanted === lastQueueHandlersSet) return
+  lastQueueHandlersSet = wanted
+  setHandler('previoustrack', wanted ? () => void playback.playPrevious() : null)
+  setHandler('nexttrack', wanted ? () => void playback.playNext() : null)
+  setHandler(
+    'seekto',
+    wanted
+      ? (details) => {
+          if (details.seekTime != null) void playback.seek(details.seekTime)
+        }
+      : null,
+  )
+}
+
 /** Called once from playbackStore.init() — sets up the action handlers
- * (play/pause/skip map straight onto the same actions PlayerBar.vue's own
- * buttons call) and a playbackStore subscription that keeps
- * metadata/playbackState current from then on. Safe to call from
+ * (play/pause/stop map straight onto the same actions PlayerBar.vue's own
+ * buttons call; the queue-shaped ones come and go with
+ * updateQueueHandlers() above) and a playbackStore subscription that keeps
+ * metadata/playbackState/those handlers current from then on. Safe to call from
  * environments without the API (Docker/web on an older or non-Chromium
  * browser) — becomes a no-op rather than throwing. */
 export function initMediaSession(): void {
   if (!('mediaSession' in navigator)) return
   const playback = usePlaybackStore()
-
-  // Wrapped per-handler, not once around the whole block: Chromium accepts
-  // every action below, but a browser that only partially implements this
-  // API (an older or non-Chromium one, were this ever to run in one)
-  // shouldn't lose every handler just because one of them threw.
-  const setHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler): void => {
-    try {
-      navigator.mediaSession.setActionHandler(action, handler)
-    } catch {
-      // Not supported by this browser — that one control just doesn't
-      // appear on the OS side; the rest still work.
-    }
-  }
 
   // Checked against the current state before ever calling togglePlay() —
   // these are directional (the OS is asking "make it play"/"make it
@@ -119,11 +152,6 @@ export function initMediaSession(): void {
   setHandler('pause', () => {
     if (playback.isPlaying) void playback.togglePlay()
   })
-  setHandler('previoustrack', () => void playback.playPrevious())
-  setHandler('nexttrack', () => void playback.playNext())
-  setHandler('seekto', (details) => {
-    if (details.seekTime != null) void playback.seek(details.seekTime)
-  })
   setHandler('stop', () => {
     if (playback.isPlaying) void playback.togglePlay()
   })
@@ -131,7 +159,9 @@ export function initMediaSession(): void {
   playback.$subscribe(() => {
     updateMetadata()
     updatePlaybackState()
+    updateQueueHandlers()
   })
   updateMetadata()
   updatePlaybackState()
+  updateQueueHandlers()
 }

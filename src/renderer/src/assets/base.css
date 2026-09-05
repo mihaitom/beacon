@@ -107,6 +107,95 @@ body {
   box-shadow: 0 0 6px 1px rgba(245, 169, 78, 0.5);
 }
 
+/* ── Mobile view headers ──────────────────────────────────────────────────
+ * Every phone view opens the same way: the view's name, optionally an
+ * action or two on the right, then whatever the view is. They had drifted
+ * into four spellings of that — a bare h1 with mb-3, another with mb-4, one
+ * wrapped in `d-flex align-center mb-3` utility classes, and one with a
+ * hand-rolled flex block of its own — which is why some sat closer to their
+ * content than others.
+ *
+ * The title keeps .page-title, the app's own type; this only settles the
+ * row it sits in. */
+.mobile-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.mobile-header__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Mobile list rows ─────────────────────────────────────────────────────
+ * Queue, Songs, Albums, Playlists and Radio are five lists that were built
+ * at different times and drifted apart: 40/44/52px artwork, three different
+ * title treatments, four different paddings. What each row *carries*
+ * differs for real reasons — a queue row has a drag handle, a station has a
+ * menu, a song has a favourite toggle — but how tall it is, how big its
+ * artwork is and how its two lines read should not, and five near-misses
+ * read as five authors rather than one app.
+ *
+ * Only the metrics live here. Type stays on Vuetify's own scale in each
+ * template (text-body-medium / text-body-small text-medium-emphasis), which
+ * is what the rest of the app uses. The artwork size is a number passed to
+ * CoverArt as a prop and so cannot be a CSS value at all — see
+ * MOBILE_ROW_ART_SIZE in components/mobile/rowMetrics.ts, kept equal to the
+ * space reserved here. */
+.mobile-row {
+  display: flex;
+  align-items: center;
+  /* 48px of artwork plus this padding and a 1px separator comes to 57,
+   * and the queue row's own 2px drop-indicator border takes it to 59 —
+   * both under the 60 below, so every row renders at exactly 60 rather
+   * than each growing to whatever its own borders add up to. At the 6px
+   * padding this used to have, a queue row measured 63px against the
+   * others' 61: three near-identical lists, three heights.
+   *
+   * box-sizing is stated rather than inherited from the global reset: the
+   * arithmetic above is what holds the rows level, and it should not
+   * quietly depend on a rule from somewhere else. */
+  box-sizing: border-box;
+  min-height: 60px;
+  padding: 4px;
+  /* A hairline under every row, the same as the phone remote's own lists
+   * draw. */
+  border-bottom: 1px solid var(--beacon-hairline);
+}
+
+/* ...but not after the last one, where it would underline the end of the
+ * list rather than separate anything. The remote does the same. */
+.mobile-row:last-child {
+  border-bottom: none;
+}
+
+/* Square, deliberately, and stated here so a new row does not reach for a
+ * radius of its own. Four of these lists used to round their corners at
+ * 8px, which with a separator underneath reads as a stack of cards rather
+ * than as one list — the ends of every hairline curved away while the
+ * queue's, alone in having no radius, ran straight across. */
+.mobile-row {
+  border-radius: 0;
+}
+
+.mobile-row__art {
+  flex-shrink: 0;
+  margin-right: 12px;
+}
+
+/* min-width: 0 is what actually lets the two lines truncate — a flex item
+ * defaults to min-width: auto, its own content's width, which single-
+ * handedly defeats text-overflow: ellipsis. */
+.mobile-row__text {
+  flex: 1;
+  min-width: 0;
+}
+
 .cover-shadow {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
 }

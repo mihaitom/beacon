@@ -108,6 +108,17 @@ describe('tile context menus', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     useAuthStore().username = 'thomas'
+    // Opening any of these menus loads the playlists for its "Add to
+    // playlist" submenu, and the real action goes out over the network:
+    // every test here that right-clicks a tile was firing a live request
+    // at the media server proxy on localhost:7071. That surfaced as
+    // intermittent unhandled ECONNREFUSED rejections in a full suite run
+    // (never in this file alone, which is why it stayed hidden) — and
+    // worse, on a machine where the dev backend happens to be up it is a
+    // real request against a real library. Same reasoning as the backend
+    // suite's own network-blocking fixtures: one predictable answer for
+    // whatever a test did not think to stub itself.
+    vi.spyOn(useLibraryStore(), 'fetchPlaylists').mockResolvedValue()
   })
 
   afterEach(() => {
@@ -216,8 +227,7 @@ describe('tile context menus', () => {
     })
 
     it('fetches the playlists once, when the menu opens rather than when it is hovered', async () => {
-      const library = useLibraryStore()
-      const fetchPlaylists = vi.spyOn(library, 'fetchPlaylists').mockResolvedValue()
+      const fetchPlaylists = useLibraryStore().fetchPlaylists
       const wrapper = mountCard()
 
       await rightClick(wrapper)

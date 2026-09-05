@@ -80,10 +80,20 @@ export async function listRadioBrowserCountries(): Promise<RadioBrowserFilterOpt
   return result.countries
 }
 
-/** Fire-and-forget, deliberately — see core/radio_browser.py's
- * register_click() for why a failure here is never worth surfacing to
- * whoever just added a station. Call once, right when a browsed station is
- * actually added, not on every search result rendered. */
+/** Reports one listen of `stationuuid` to Radio Browser, whose own
+ * popularity ordering is built on that count — the same ordering this
+ * app's Discover search offers to sort by.
+ *
+ * Called from exactly one place, stores/playback.ts's playRadioStation(),
+ * whenever a station Beacon knows a Radio Browser id for actually starts
+ * playing. Deliberately *not* when a station is added to the library: to
+ * the directory a click means somebody listened, and saving a station for
+ * later is not listening yet. See services/radioBrowserLinks.ts for how a
+ * saved station keeps its id, which is what lets every later play of it be
+ * reported rather than only the first encounter.
+ *
+ * Fire-and-forget — see core/radio_browser.py's register_click() for why a
+ * failure here is never worth surfacing to whoever just pressed play. */
 export function registerRadioBrowserClick(stationuuid: string): void {
   void fetchConnect(`/radio-browser/click/${encodeURIComponent(stationuuid)}`, {
     method: 'POST',

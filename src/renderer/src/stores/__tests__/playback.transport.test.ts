@@ -8,11 +8,18 @@ import { useRadioSettingsStore } from '../radioSettings'
 import { getAudioEngine } from '@/services/audioEngine'
 import * as connectPlayback from '@/services/connect/playback'
 import * as radioMetadata from '@/services/connect/radioMetadata'
+import * as radioBrowser from '@/services/connect/radioBrowser'
+import { rememberRadioBrowserStation } from '@/services/radioBrowserLinks'
 import { resolveRadioStreamUrl } from '@/services/connect/radio'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import { makeSong, makeStatus } from './fixtures'
 
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
+vi.mock('@/services/connect/radioBrowser', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/connect/radioBrowser')>()
+  return { ...actual, registerRadioBrowserClick: vi.fn() }
+})
+
 vi.mock('@/services/connect/radioMetadata', () => ({
   startRadioMetadataWatch: vi.fn(),
   stopRadioMetadataWatch: vi.fn(),
@@ -592,9 +599,10 @@ describe('playback transport', () => {
   })
 
   describe('radio', () => {
-    it('clears the queue it cannot advance and plays the stream', async () => {
+    it('keeps the queue it interrupts, and plays the stream over it', async () => {
       const playback = usePlaybackStore()
-      playback.setQueue([makeSong('a'), makeSong('b')], 1)
+      const songs = [makeSong('a'), makeSong('b')]
+      playback.setQueue(songs, 1)
       const station = {
         id: 'r1',
         name: 'Chill FM',
@@ -604,8 +612,14 @@ describe('playback transport', () => {
 
       await playback.playRadioStation(station)
 
-      expect(playback.queue).toEqual([])
-      expect(playback.currentIndex).toBe(-1)
+      // A station interrupts the queue rather than replacing it — it is
+      // still there, at the same position, to pick back up afterwards.
+      expect(playback.queue.map((t) => t.id)).toEqual(['a', 'b'])
+      expect(playback.currentIndex).toBe(1)
+      // ...while the station, not the queue's own entry, is what counts as
+      // playing for as long as it runs.
+      expect(playback.currentSong).toBeNull()
+      expect(playback.queuedSong?.id).toBe('b')
       expect(playback.radioStation).toEqual(station)
       expect(engine.play).toHaveBeenCalledWith('https://stream.example/chill')
       expect(playback.isPlaying).toBe(true)
@@ -739,6 +753,181 @@ describe('playback transport', () => {
       playback.setQueue([makeSong('b')], 0)
 
       expect(radioMetadata.stopRadioMetadataWatch).not.toHaveBeenCalled()
+    })
+
+    /** Radio Browser orders its directory by how often a station is
+     * actually listened to, and that is the ordering Beacon's own Discover
+     * search offers to sort by. Reporting only at the moment a station was
+     * found - added, or played once from the dialog - left every later play
+     * of a saved station uncounted, which is nearly all listening. */
+    describe('reporting a listen back to Radio Browser', () => {
+      beforeEach(() => {
+        // The links live in localStorage, which outlives a fresh pinia —
+        // without this the previous test's link is still there and the
+        // "added by hand" case below is not the case it says it is.
+        localStorage.clear()
+      })
+
+      const station = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+
+      it('reports a station that came from the directory', async () => {
+        const playback = usePlaybackStore()
+        rememberRadioBrowserStation(station.streamUrl, 'uuid-1')
+
+        await playback.playRadioStation(station)
+
+        expect(radioBrowser.registerRadioBrowserClick).toHaveBeenCalledWith('uuid-1')
+      })
+
+      it('stays quiet for a station added by hand', async () => {
+        const playback = usePlaybackStore()
+
+        await playback.playRadioStation(station)
+
+        expect(radioBrowser.registerRadioBrowserClick).not.toHaveBeenCalled()
+      })
+
+      /** Against the URL as saved, not the one a playlist file resolves to
+       * - that resolved address is not what the directory knows the station
+       * by. */
+      it('reports a playlist-file station by the address it was saved with', async () => {
+        const playback = usePlaybackStore()
+        vi.mocked(resolveRadioStreamUrl).mockResolvedValue('http://cdn.example/actual.mp3')
+        rememberRadioBrowserStation('http://streams.example/station.m3u', 'uuid-2')
+
+        await playback.playRadioStation({
+          ...station,
+          streamUrl: 'http://streams.example/station.m3u',
+        })
+
+        expect(radioBrowser.registerRadioBrowserClick).toHaveBeenCalledWith('uuid-2')
+      })
+    })
+
+    /** The queue survives a station now, so these cover what it survives
+     * *as*: still there and still consistent, but never something the
+     * station's own playback can fall into. */
+    describe('the queue behind a station', () => {
+      const station = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+
+      it('is picked back up by playing a song out of it, which ends the station', async () => {
+        const playback = usePlaybackStore()
+        stubLibraryClient()
+        playback.setQueue([makeSong('a'), makeSong('b')], 0)
+        await playback.playRadioStation(station)
+        vi.mocked(radioMetadata.stopRadioMetadataWatch).mockClear()
+
+        await playback.playAtIndex(1)
+
+        expect(playback.radioStation).toBeNull()
+        expect(playback.radioNowPlaying).toBeNull()
+        expect(radioMetadata.stopRadioMetadataWatch).toHaveBeenCalledOnce()
+        expect(playback.currentSong?.id).toBe('b')
+        expect(engine.play).toHaveBeenLastCalledWith(
+          'https://server.example/stream/b',
+          0,
+          expect.anything(),
+        )
+      })
+
+      // Regression: toggleShuffle() re-pins the queue around currentSong,
+      // which is null for as long as a station plays — read straight, it
+      // reshuffled the queue and left currentIndex on whatever song
+      // happened to land in that slot.
+      it('keeps its position when shuffle is toggled while the station plays', async () => {
+        const playback = usePlaybackStore()
+        // Shuffled state written directly, so toggling it *off* below
+        // restores a known order rather than producing a random one — the
+        // buggy and the correct currentIndex are then two different, fixed
+        // numbers instead of a coin flip.
+        playback.originalQueue = [makeSong('a'), makeSong('b'), makeSong('c')]
+        playback.queue = [makeSong('c'), makeSong('b'), makeSong('a')]
+        playback.currentIndex = 0 // 'c'
+        playback.shuffle = true
+        await playback.playRadioStation(station)
+
+        playback.toggleShuffle()
+
+        expect(playback.queue.map((t) => t.id)).toEqual(['a', 'b', 'c'])
+        expect(playback.queuedSong?.id).toBe('c')
+      })
+
+      it('is not pushed at connect while it is dispatching a station', async () => {
+        const playback = usePlaybackStore()
+        castTo()
+        playback.setQueue([makeSong('a')], 0)
+        await playback.playRadioStation(station)
+        vi.mocked(connectPlayback.updateQueue).mockClear()
+
+        playback.addToQueue([makeSong('b')])
+
+        // The backend drops its own queue for a station (see /play-url in
+        // routes/playback.py) precisely so nothing auto-advances into it;
+        // handing it one back mid-station would undo that. It gets the
+        // whole queue in one go at the next real dispatch instead.
+        expect(connectPlayback.updateQueue).not.toHaveBeenCalled()
+        expect(playback.queue.map((t) => t.id)).toEqual(['a', 'b'])
+      })
+
+      it('reaches connect in full once a song out of it is dispatched', async () => {
+        const playback = usePlaybackStore()
+        stubLibraryClient()
+        castTo()
+        playback.setQueue([makeSong('a'), makeSong('b')], 0)
+        await playback.playRadioStation(station)
+
+        await playback.playAtIndex(1)
+
+        expect(connectPlayback.play).toHaveBeenCalledWith(
+          'b',
+          expect.objectContaining({ fullQueue: ['a', 'b'], queueIndex: 1 }),
+        )
+      })
+
+      // The station is loaded in the same element the queue's own track
+      // was, and a live stream that dropped leaves it in its ended state —
+      // pressing play then has to restart the station, not the track it
+      // interrupted.
+      it('is not restarted by pressing play on an ended stream', async () => {
+        const playback = usePlaybackStore()
+        stubLibraryClient()
+        playback.setQueue([makeSong('a')], 0)
+        await playback.playRadioStation(station)
+        playback.isPlaying = false
+        engine.hasEnded = true
+        vi.mocked(engine.play).mockClear()
+
+        await playback.togglePlay()
+
+        expect(engine.play).toHaveBeenCalledWith('https://stream.example/chill')
+        expect(playback.isPlaying).toBe(true)
+      })
+
+      // advanceOnSongEnd() is what both the local element's 'ended' and
+      // the cast side's status.ended edge land in.
+      it('is never advanced into by a stream ending', async () => {
+        const playback = usePlaybackStore()
+        stubLibraryClient()
+        playback.setQueue([makeSong('a'), makeSong('b')], 0)
+        await playback.playRadioStation(station)
+        vi.mocked(engine.play).mockClear()
+
+        await playback.advanceOnSongEnd()
+
+        expect(engine.play).not.toHaveBeenCalled()
+        expect(playback.currentIndex).toBe(0)
+        expect(playback.radioStation).toEqual(station)
+      })
     })
   })
 

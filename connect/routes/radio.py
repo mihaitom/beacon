@@ -16,6 +16,10 @@ to scraping the homepage, still through this same proxy for the identical
 IP-leak reason. /radio-favicon/batch answers the same question for a whole
 list in one request — see its own docstring for why a per-station <img src>
 is a problem worth solving even though each individual request is correct.
+Resolved icons survive a restart (see _disk_load()/_disk_store()), which
+matters more here than for any other cache in this backend: the packaged
+desktop app spawns its own copy of connect, so every app launch would
+otherwise re-scrape every saved station's homepage from scratch.
 
 The /radio-browser/* group is unrelated to any of that — a thin HTTP wrapper
 around core/radio_browser.py's lookup against the public Radio Browser
@@ -38,8 +42,12 @@ piggyback on."""
 import asyncio
 import base64
 import binascii
+import codecs
+import hashlib
 import io
+import json
 import logging
+import os
 import time
 import weakref
 from collections import OrderedDict
@@ -79,11 +87,17 @@ _MAX_BYTES = 512 * 1024
 # the caller than answering with the best of the first few.
 _MAX_FETCHES = 5
 
-# How much of the homepage's own HTML is read looking for <link rel="icon">
-# tags — favicon declarations live in <head>, which on virtually every real
-# site is well within this, so there's no need to risk reading (and every
-# caller waiting on) an entire multi-MB page just to find them.
-_MAX_HTML_BYTES = 256 * 1024
+# A hard stop on how much of a homepage is read looking for <link
+# rel="icon"> tags, for the case where <head> never ends (a misconfigured
+# streaming response, a page with no closing tag at all): the read normally
+# stops at </head> instead, see _discover_candidates().
+#
+# Only a safety net, so it is deliberately far above what any real <head>
+# needs. It used to be the *primary* limit at 256KB, on the reasoning that
+# a <head> is always well within that — hitradion1.de disagrees, inlining
+# a ~300KB stylesheet ahead of its icon declarations, which put them out of
+# reach and left the station with no findable logo at all.
+_MAX_HTML_BYTES = 4 * 1024 * 1024
 
 _CACHE_CONTROL = "public, max-age=604800"
 
@@ -152,16 +166,24 @@ def _parse_sizes(sizes: str) -> int:
 
 class _IconLinkParser(HTMLParser):
     """Collects every <link rel="icon"-ish> tag's (href, sizes) — see
-    _ICON_RELS. Not head-aware (doesn't track whether it's actually still
-    inside <head>): a stray matching <link> in <body> is vanishingly rare
-    in practice and harmless to pick up anyway, not worth the extra state
-    to exclude."""
+    _ICON_RELS.
+
+    `head_done` is what lets _discover_candidates() stop reading at the end
+    of <head> rather than at a byte count: icon declarations live there, so
+    everything past it is the page itself and no icon of interest can still
+    be coming. A page that never closes its <head> gives itself away by
+    opening <body> instead; one that does neither is caught by
+    _MAX_HTML_BYTES."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.links: list[tuple[str, str, bool]] = []  # (href, sizes, is_mask_icon)
+        self.head_done = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "body":
+            self.head_done = True
+            return
         if tag != "link":
             return
         values = {k.lower(): v for k, v in attrs if v is not None}
@@ -169,6 +191,10 @@ class _IconLinkParser(HTMLParser):
         href = values.get("href")
         if rel in _ICON_RELS and href:
             self.links.append((href, values.get("sizes", ""), rel == "mask-icon"))
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("head", "html"):
+            self.head_done = True
 
 
 # Parsed candidate lists (not the image bytes themselves — those still go
@@ -187,26 +213,39 @@ async def _discover_candidates(homepage_url: str) -> list[_Candidate]:
     if cached and time.monotonic() - cached[0] < _CANDIDATE_CACHE_TTL:
         return cached[1]
 
-    parsed = urlparse(homepage_url)
-    root = f"{parsed.scheme}://{parsed.netloc}"
+    # What the icon hrefs below are actually relative to: the URL the
+    # response came back from, which is not necessarily the one asked for.
+    # einslive.de redirects to www1.wdr.de/radio/1live/, so resolving its
+    # "/radio/1live/.../apple-touch-icon.png" against the *requested* URL
+    # pointed every candidate at a host that never had them - and at one
+    # answering 200-with-HTML for any path at all, so even the implicit
+    # /favicon.ico below came back as a page instead of a visible 404 and
+    # the station ended up with no findable icon whatsoever. Stays the
+    # requested URL when the fetch never got far enough to have a final one.
+    base_url = homepage_url
     candidates: list[_Candidate] = []
 
     try:
         async with _client.stream("GET", homepage_url) as resp:
+            base_url = str(resp.url)
             if resp.headers.get("content-type", "").split(";")[0].strip() in (
                 "text/html",
                 "application/xhtml+xml",
             ):
-                chunks = []
+                # Parsed as it arrives rather than buffered whole, so
+                # reading far enough to clear an oversized <head> (see
+                # _MAX_HTML_BYTES) costs no more memory than reading a
+                # small one. An incremental decoder because a chunk
+                # boundary lands wherever the network puts it, which is
+                # readily in the middle of a multi-byte character.
+                parser = _IconLinkParser()
+                decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
                 read = 0
                 async for chunk in resp.aiter_bytes():
-                    chunks.append(chunk)
+                    parser.feed(decoder.decode(chunk))
                     read += len(chunk)
-                    if read >= _MAX_HTML_BYTES:
+                    if parser.head_done or read >= _MAX_HTML_BYTES:
                         break
-                html = b"".join(chunks).decode("utf-8", errors="ignore")
-                parser = _IconLinkParser()
-                parser.feed(html)
                 for href, sizes, is_mask_icon in parser.links:
                     # urljoin parses `href` and raises for a malformed one
                     # ("Invalid IPv6 URL" for a stray "//[", say). One
@@ -214,7 +253,7 @@ async def _discover_candidates(homepage_url: str) -> list[_Candidate]:
                     # fail the whole lookup — skip it like any other dead
                     # candidate and keep the good ones.
                     try:
-                        resolved = urljoin(homepage_url, href)
+                        resolved = urljoin(base_url, href)
                     except ValueError:
                         logger.info(f"[radio-favicon] {homepage_url}: unusable icon href {href!r}")
                         continue
@@ -234,6 +273,8 @@ async def _discover_candidates(homepage_url: str) -> list[_Candidate]:
     # tag at all is a slightly stronger signal of being an intentional,
     # reasonable-quality icon than the bare convention path is) but is
     # never mistaken for "no candidate at all".
+    parsed = urlparse(base_url)
+    root = f"{parsed.scheme}://{parsed.netloc}"
     candidates.append(_Candidate(url=f"{root}/favicon.ico", size=1, is_declared_size=False))
 
     _candidate_cache[homepage_url] = (time.monotonic(), candidates)
@@ -248,7 +289,7 @@ async def _discover_candidates(homepage_url: str) -> list[_Candidate]:
 _MIN_TRANSPARENT_RATIO = 0.05
 
 
-def _has_transparency(content: bytes) -> bool:
+def _has_transparency(content: bytes, content_type: str = "") -> bool:
     """True if `content` decodes as an image with a real, meaningfully-used
     alpha channel — computed server-side (not by having the frontend sample
     a canvas) because this backend already has the raw bytes in hand with
@@ -258,6 +299,25 @@ def _has_transparency(content: bytes) -> bool:
     (unrecognized format, corrupt data, ...) reads as "no transparency" —
     NowPlayingView.vue's own card treatment for a normal opaque image is a
     perfectly reasonable fallback for "couldn't tell"."""
+    # An SVG is transparent wherever it does not paint. There is no canvas
+    # underneath to be opaque, unlike a raster format which has a value for
+    # every pixel — so the question the decode below asks does not apply,
+    # and PIL cannot answer it anyway: rasterizing SVG needs a renderer
+    # this backend deliberately does not carry. Left to the generic
+    # "couldn't tell" fallback, every vector logo came back as opaque and
+    # was framed like a square cover; tomorrowland.com's, four <path>
+    # elements and nothing else, is exactly that case.
+    #
+    # An SVG that does paint its own full-bleed background is called
+    # transparent here too, and loses NowPlayingView's shadow as a result.
+    # That is the deliberate cheaper end of the trade: such an icon already
+    # supplies its own backdrop, so it still reads as a filled square, and
+    # the alternative is guessing at covering <rect>s in someone else's
+    # markup — a guess whose own failure is the framed-logo bug this exists
+    # to fix.
+    if content_type.startswith("image/svg"):
+        return True
+
     try:
         with Image.open(io.BytesIO(content)) as img:
             if img.mode not in ("RGBA", "LA", "PA") and not (
@@ -361,7 +421,7 @@ def _transparency(fetched: _Fetched) -> bool:
     background box) for one that is, see its radioIconIsTransparent.
     Memoized on the icon itself, since resolved icons are cached and reused."""
     if fetched.transparent is None:
-        fetched.transparent = _has_transparency(fetched.content)
+        fetched.transparent = _has_transparency(fetched.content, fetched.content_type)
     return fetched.transparent
 
 
@@ -618,7 +678,12 @@ def _cache_drop(key: _ResultKey) -> None:
 def _cache_get(key: _ResultKey) -> tuple[bool, _Fetched | None]:
     """(whether this key is cached at all, what it resolved to) — the two
     have to be separate, since a cached *miss* is a real answer worth
-    keeping and is also None."""
+    keeping and is also None.
+
+    Every lookup, single and batch alike, comes through here first, which
+    is what makes it the place to fault in last run's answers (_disk_load()
+    returns immediately after the first call)."""
+    _disk_load()
     entry = _result_cache.get(key)
     if entry is None:
         return False, None
@@ -630,15 +695,185 @@ def _cache_get(key: _ResultKey) -> tuple[bool, _Fetched | None]:
     return True, value
 
 
-def _cache_put(key: _ResultKey, value: _Fetched | None) -> None:
+def _cache_put(key: _ResultKey, value: _Fetched | None, expires: float | None = None) -> None:
+    """`expires` (monotonic, as _cache_get() reads it) only for an entry
+    restored from disk, which has already spent part of its life — a fresh
+    resolution takes the full TTL from now."""
     global _result_cache_bytes
     _cache_drop(key)
-    ttl = _RESULT_CACHE_TTL if value is not None else _RESULT_NEGATIVE_TTL
-    _result_cache[key] = (time.monotonic() + ttl, value)
+    if expires is None:
+        ttl = _RESULT_CACHE_TTL if value is not None else _RESULT_NEGATIVE_TTL
+        expires = time.monotonic() + ttl
+    _result_cache[key] = (expires, value)
     if value is not None:
         _result_cache_bytes += len(value.content)
     while _result_cache_bytes > _RESULT_CACHE_MAX_BYTES and len(_result_cache) > 1:
         _cache_drop(next(iter(_result_cache)))
+
+
+# ── keeping resolved icons across restarts ───────────────────────────────
+#
+# Everything above this point is lost when the process ends, which for most
+# of this backend is the right trade: cover art comes off the media server
+# on the LAN, so rebuilding that cache is cheap and bothers nobody. A radio
+# logo does not. Finding one means fetching a stranger's homepage over the
+# internet and reading it to the end of its <head> — a few hundred KB for
+# sites like hitradion1.de — and then fetching the icon it names, once per
+# saved station. The packaged desktop app spawns its own connect (see
+# src/main/index.ts), so without this every launch pays that again for
+# every station in the list, against every one of those third-party hosts.
+#
+# One small file per entry rather than a single index: a resolution writes
+# only its own file, so a batch resolving fifty stations doesn't rewrite a
+# growing file fifty times, and a file that ends up corrupt (a power cut
+# mid-write) costs exactly one station's logo rather than all of them.
+_DISK_DIR = os.path.join(
+    os.environ.get("CONNECT_DATA_DIR")
+    or os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "radio-favicons",
+)
+
+# Far below the in-memory budget on purpose. This holds what a real station
+# list actually needs (a handful of KB per station per size), not a slice of
+# the whole directory — anything past it is a station nobody has, which is
+# cheaper to look up again than to carry around forever.
+_DISK_CACHE_MAX_BYTES = 3 * 1024 * 1024
+
+_disk_loaded = False
+_disk_bytes = 0
+
+
+def _disk_path(key: _ResultKey) -> str:
+    url, hint, min_size = key
+    digest = hashlib.sha256("\0".join((url, hint, str(min_size))).encode()).hexdigest()
+    return os.path.join(_DISK_DIR, f"{digest[:32]}.json")
+
+
+def _disk_load() -> None:
+    """Restores what the last run resolved, once, on the first lookup of
+    this one. Stored expiries are wall-clock (a monotonic clock means
+    nothing to the next process) and converted back on the way in, so an
+    entry that ran out while nothing was running does not come back."""
+    global _disk_loaded, _disk_bytes
+    if _disk_loaded:
+        return
+    _disk_loaded = True
+
+    try:
+        names = os.listdir(_DISK_DIR)
+    except FileNotFoundError:
+        return
+    except OSError as e:
+        logger.warning(f"[radio-favicon] disk cache unreadable: {e}")
+        return
+
+    now_wall, now_monotonic = time.time(), time.monotonic()
+    restored = 0
+    for name in names:
+        path = os.path.join(_DISK_DIR, name)
+        try:
+            with open(path, encoding="utf-8") as f:
+                entry = json.load(f)
+            remaining = float(entry["expires"]) - now_wall
+            if remaining <= 0:
+                os.remove(path)
+                continue
+            key = (str(entry["url"]), str(entry["hint"]), int(entry["min_size"]))
+            encoded = entry["content"]
+            fetched = None
+            if encoded is not None:
+                fetched = _Fetched(
+                    content=base64.b64decode(encoded),
+                    content_type=str(entry["content_type"]),
+                    pixels=int(entry["pixels"]),
+                    # Carried rather than recomputed, because it is a
+                    # full image decode (_has_transparency()) that this
+                    # already paid for once — except for an SVG, whose
+                    # answer costs a string comparison and whose *stored*
+                    # answer may predate the rule that produces it now (an
+                    # entry written before SVGs were recognised as
+                    # transparent at all says false, and would keep a logo
+                    # framed for the rest of the week the entry is good
+                    # for). None means "ask again", see _transparency().
+                    transparent=(
+                        None
+                        if str(entry["content_type"]).startswith("image/svg")
+                        else bool(entry["transparent"])
+                    ),
+                )
+            _cache_put(key, fetched, expires=now_monotonic + remaining)
+            _disk_bytes += os.path.getsize(path)
+            restored += 1
+        # A truncated, hand-edited or half-written file is one station's
+        # logo, not a reason to start with nothing — drop it and move on.
+        except (OSError, ValueError, KeyError, TypeError, binascii.Error) as e:
+            logger.info(f"[radio-favicon] discarding cache file {name}: {type(e).__name__}: {e}")
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+    if restored:
+        logger.info(f"[radio-favicon] restored {restored} cached icons ({_disk_bytes // 1024} KB)")
+
+
+def _disk_evict() -> None:
+    """Drops least-recently-written files until back inside the budget.
+    Modification time rather than the in-memory LRU order, since the point
+    is to bound what a *previous* run left behind as much as this one."""
+    global _disk_bytes
+    try:
+        entries = []
+        for name in os.listdir(_DISK_DIR):
+            path = os.path.join(_DISK_DIR, name)
+            stat = os.stat(path)
+            entries.append((stat.st_mtime, stat.st_size, path))
+        entries.sort()
+        total = sum(size for _, size, _ in entries)
+        while total > _DISK_CACHE_MAX_BYTES and entries:
+            _, size, path = entries.pop(0)
+            os.remove(path)
+            total -= size
+        _disk_bytes = total
+    except OSError as e:
+        logger.warning(f"[radio-favicon] disk cache eviction failed: {e}")
+
+
+def _disk_store(key: _ResultKey, fetched: _Fetched | None) -> None:
+    """Mirrors one resolution. Written through a temporary file and renamed,
+    so a reader (the next process) only ever sees a whole entry. Never
+    raises: a cache that can't be written is slower, not broken."""
+    global _disk_bytes
+    url, hint, min_size = key
+    ttl = _RESULT_CACHE_TTL if fetched is not None else _RESULT_NEGATIVE_TTL
+    entry = {
+        "url": url,
+        "hint": hint,
+        "min_size": min_size,
+        "expires": time.time() + ttl,
+        "content_type": fetched.content_type if fetched else None,
+        "pixels": fetched.pixels if fetched else 0,
+        # Resolved here rather than left as None: a restored entry that
+        # still had to decode its own image on first ask would give back
+        # the one thing this file is meant to have finished with.
+        "transparent": _transparency(fetched) if fetched else False,
+        "content": base64.b64encode(fetched.content).decode("ascii") if fetched else None,
+    }
+    path = _disk_path(key)
+    tmp = f"{path}.tmp"
+    try:
+        os.makedirs(_DISK_DIR, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(entry, f)
+        os.replace(tmp, path)
+        _disk_bytes += os.path.getsize(path)
+        if _disk_bytes > _DISK_CACHE_MAX_BYTES:
+            _disk_evict()
+    except OSError as e:
+        logger.warning(f"[radio-favicon] caching {url or hint} to disk failed: {e}")
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
 
 
 async def _resolve_and_store(key: _ResultKey) -> _Fetched | None:
@@ -655,6 +890,7 @@ async def _resolve_and_store(key: _ResultKey) -> _Fetched | None:
     finally:
         _inflight.pop(key, None)
     _cache_put(key, fetched)
+    _disk_store(key, fetched)
     return fetched
 
 
@@ -885,4 +1121,20 @@ async def stop_radio_metadata(
 async def get_radio_metadata(
     session: SessionState = Depends(require_authenticated_session),
 ) -> dict:
-    return {"title": session.radio_title}
+    """The station's current title, every title it has played this session
+    (newest first, see SessionState.radio_title_log()), and what the
+    station declares it broadcasts at (kbps, or null - see
+    SessionState.radio_bitrate).
+
+    The log has to be built here rather than accumulated by the frontend
+    from these very answers: this is polled every 8s and only while
+    services/connect/pollGate.ts allows it at all (it pauses on a hidden
+    window and during a proxy backoff), so a client-side log would have
+    holes exactly where nobody was watching — and a different set of them
+    on every device."""
+    return {
+        "title": session.radio_title,
+        "history": session.radio_title_log(),
+        "bitrate": session.radio_bitrate,
+        "codec": session.radio_codec,
+    }

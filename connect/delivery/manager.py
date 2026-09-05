@@ -205,7 +205,8 @@ async def discover_airplay(verbose: bool = False) -> list[dict]:
     triggered by every popover open or the periodic task in main.py.
     """
     pyatv = await import_in_thread("pyatv")
-    Protocol = (await import_in_thread("pyatv.const")).Protocol
+    const = await import_in_thread("pyatv.const")
+    Protocol, PairingRequirement = const.Protocol, const.PairingRequirement
 
     devices = await pyatv.scan(asyncio.get_event_loop(), timeout=10)
     result = []
@@ -217,18 +218,65 @@ async def discover_airplay(verbose: bool = False) -> list[dict]:
                     f"(use Sonos output instead)"
                 )
             continue
-        protocols = {s.protocol for s in d.services}
         result.append(
             {
                 "address": str(d.address),
                 "model": str(d.device_info.model),
                 "name": d.name,
-                # AirPlay 2 devices expose Protocol.AirPlay (HAP-based) and require pairing.
-                # AirPlay 1 / RAOP devices do not.
-                "needs_pairing": Protocol.AirPlay in protocols,
+                "needs_pairing": _needs_pairing(d, Protocol, PairingRequirement),
             }
         )
     return result
+
+
+def _needs_pairing(device, Protocol, PairingRequirement) -> bool:
+    """Whether this device can be streamed to at all without being paired
+    first — which is the only thing the phone's and the app's device rows
+    are saying when they mark one (see MobileDeviceRow.vue's needsPairing).
+
+    Asks about RAOP specifically, because that is the one protocol
+    delivery/airplay.py ever sends audio over: unpaired it scans
+    RAOP-only, and even with credentials it sets them on RAOP and streams
+    there. Whether the *AirPlay* (HAP) service wants pairing says nothing
+    about whether the audio path does.
+
+    This used to be `Protocol.AirPlay in protocols` — "does it speak
+    AirPlay 2 at all" — on the reasoning that AirPlay 2 is HAP-based and
+    HAP means pairing. Every modern AirPlay receiver speaks it, including
+    ones that ask for nothing: scanned live on a real network, an Apple TV
+    and four AirPort Express units all reported RAOP `NotNeeded` while the
+    old rule called every one of them unpairable-until-paired. The phone
+    then greyed them out and refused to select them, for a pairing none of
+    them wanted.
+
+    A device with no RAOP service at all is the one case that genuinely
+    needs pairing: the unpaired path simply does not exist for it.
+
+    A speaker password counts as well. pyatv keeps the two apart — an
+    AirPort Express with a password set advertises RAOP `pw=true` and
+    reports `requires_password`, while its pairing requirement stays
+    NotNeeded — but from here they are the same question, because they have
+    the same answer: run the pairing flow once. The password is what gets
+    typed into it, pyatv completes HAP with it, and delivery/airplay.py
+    puts the resulting credentials on the RAOP service too, which is what
+    makes the audio go through afterwards. Confirmed on a real unit: with
+    a password set and paired it streams, and routes/discovery.py clears
+    the flag for it because credentials are on file.
+
+    So asking only about `pairing` here would be wrong in the direction
+    that matters — a password-protected speaker nobody has paired yet would
+    look ready to use and then fail silently the moment somebody pressed
+    play."""
+    raop = next(
+        (s for s in device.services if s.protocol is Protocol.RAOP and s.enabled),
+        None,
+    )
+    if raop is None:
+        return True
+    # Only Mandatory. `Optional` means it works either way and beacon
+    # streams unpaired when it can; `Disabled`/`Unsupported`/`NotNeeded`
+    # are all "don't ask".
+    return raop.pairing is PairingRequirement.Mandatory or bool(raop.requires_password)
 
 
 async def discover_chromecast() -> list[dict]:
