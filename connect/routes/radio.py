@@ -99,6 +99,11 @@ _MAX_FETCHES = 5
 # reach and left the station with no findable logo at all.
 _MAX_HTML_BYTES = 4 * 1024 * 1024
 
+# Enough of the previous chunk to carry a "</head" split across a chunk
+# boundary - the tag is six characters, so five is the most that can be left
+# hanging on the wrong side of one.
+_HEAD_TAG_OVERLAP = 5
+
 _CACHE_CONTROL = "public, max-age=604800"
 
 # What "this station has no usable icon" is cached as. Shorter than a
@@ -241,11 +246,40 @@ async def _discover_candidates(homepage_url: str) -> list[_Candidate]:
                 parser = _IconLinkParser()
                 decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
                 read = 0
+                # The end of <head> is looked for in the text itself as well
+                # as via the parser, because html.parser does not promise
+                # *when* it reports a tag: given a large <style> block it
+                # holds the buffered CDATA back until it has more to work
+                # with, and how long it waits changed between Python
+                # versions. Measured on this module's own fixture (a 300KB
+                # inline stylesheet ahead of the icon links): 3.13 reports
+                # </head> on the chunk that contains it, 3.14 reports it
+                # four 64KB chunks later. Both are allowed - so the loop
+                # stops on the text, and treats the parser's own flag as the
+                # other way of finding out (a page that opens <body> without
+                # ever closing its head).
+                pending = ""
                 async for chunk in resp.aiter_bytes():
-                    parser.feed(decoder.decode(chunk))
+                    text = decoder.decode(chunk)
+                    parser.feed(text)
                     read += len(chunk)
+                    # ...against the previous chunk's tail too, since a
+                    # chunk boundary lands wherever the network puts it and
+                    # readily splits "</head>" down the middle.
+                    if "</head" in (pending + text).lower():
+                        break
+                    pending = text[-_HEAD_TAG_OVERLAP:]
                     if parser.head_done or read >= _MAX_HTML_BYTES:
                         break
+                # Flushes whatever html.parser is still holding back, which
+                # is the other half of stopping on the text above: the tags
+                # inside a buffer it has not got round to are exactly the
+                # ones this is looking for. Without it, the same 300KB
+                # stylesheet that delays </head> on 3.14 also swallowed the
+                # icon link that follows it, and the station fell through to
+                # a bare /favicon.ico.
+                parser.feed(decoder.decode(b"", True))
+                parser.close()
                 for href, sizes, is_mask_icon in parser.links:
                     # urljoin parses `href` and raises for a malformed one
                     # ("Invalid IPv6 URL" for a stray "//[", say). One
