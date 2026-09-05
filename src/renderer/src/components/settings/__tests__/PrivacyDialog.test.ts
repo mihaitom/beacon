@@ -121,7 +121,12 @@ describe('PrivacyDialog', () => {
     // letting that read as a separation it is not would be the one
     // misleading thing in here.
     mountDialog()
-    const note = document.querySelector('.privacy-note')
+    // .privacy-builds, not .privacy-note - cookie-banner filter lists hide
+    // the latter outright, see the component's own comment. Asserted by
+    // class rather than by text so a rename that walks back into one of
+    // those names fails here rather than silently in someone's browser.
+    expect(document.querySelector('.privacy-note')).toBeNull()
+    const note = document.querySelector('.privacy-builds')
 
     expect(note?.textContent).toBeTruthy()
     expect(note?.textContent?.toLowerCase()).toContain('docker')

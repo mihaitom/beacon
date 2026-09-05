@@ -41,6 +41,19 @@ Two standing rules that predate the rest:
 
 ---
 
+## Naming
+
+Class names are read by more than this app. Cookie-banner filter lists
+(uBlock/AdGuard "annoyances") hide whole families of names outright and with
+`!important`, so no stylesheet here can win them back: `.privacy-note` is one
+of them, and it cost a section of the privacy sheet its visibility in the web
+build while looking perfectly fine in Electron, where no extension runs.
+
+Before naming anything after privacy, consent, cookies, banners, ads or
+notices, check it against those lists - or sidestep the question by naming
+the thing for what it holds (`.privacy-builds`) rather than for what kind of
+notice it is.
+
 ## Palette
 
 The Vuetify theme (`main.ts`, theme name `beacon`) is dark only. There is no
