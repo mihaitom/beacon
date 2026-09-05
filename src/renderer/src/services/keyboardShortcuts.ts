@@ -2,6 +2,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
 import { nudgeVolume, toggleMute } from '@/services/volumeControl'
+import { goBack, goForward } from '@/services/navigationHistory'
 import { emitter } from '@/emitter'
 
 /**
@@ -31,6 +32,8 @@ export type ShortcutAction =
   | { type: 'toggleFavorite' }
   | { type: 'toggleQueue' }
   | { type: 'toggleHelp' }
+  | { type: 'historyBack' }
+  | { type: 'historyForward' }
 
 /**
  * Typing must never reach a shortcut — Space in the search field belongs to
@@ -84,7 +87,6 @@ const NAVIGATION_KEYS = [' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']
  * testable without a DOM, a store, or actual playback.
  */
 export function resolveShortcut(event: KeyboardEvent): ShortcutAction | null {
-  if (event.altKey) return null
   if (isTypingTarget(event.target)) return null
 
   // Checked before the overlay guard: the help dialog is itself an overlay,
@@ -92,6 +94,18 @@ export function resolveShortcut(event: KeyboardEvent): ShortcutAction | null {
   // it unable to close it again.
   if (event.key === '?') return { type: 'toggleHelp' }
   if (isInsideOverlay(event.target)) return null
+
+  // Alt is the page-history modifier, the same combination every browser
+  // uses. Claimed rather than left alone (which is what this did before
+  // there was anywhere to go back to): the desktop window has no browser
+  // chrome of its own to answer it, and in the web build preventDefault()
+  // in the listener below keeps the browser from also acting on it.
+  if (event.altKey) {
+    if (event.ctrlKey || event.metaKey || event.shiftKey) return null
+    if (event.key === 'ArrowLeft') return { type: 'historyBack' }
+    if (event.key === 'ArrowRight') return { type: 'historyForward' }
+    return null
+  }
 
   // Ctrl/Cmd is the track-skip modifier (matching Spotify's own web
   // player); every other shortcut here is unmodified, so a browser/OS
@@ -213,6 +227,12 @@ async function runShortcut(action: ShortcutAction): Promise<void> {
     case 'toggleHelp':
       emitter.emit('toggleKeyboardShortcuts')
       return
+    case 'historyBack':
+      goBack()
+      return
+    case 'historyForward':
+      goForward()
+      return
   }
 }
 
@@ -257,6 +277,7 @@ export const SHORTCUT_HELP: ShortcutHelpEntry[] = [
   { keys: ['R'], labelKey: 'shortcuts.repeat' },
   { keys: ['F'], labelKey: 'shortcuts.favorite' },
   { keys: ['Q'], labelKey: 'shortcuts.queue' },
+  { keys: ['Alt + ←', 'Alt + →'], labelKey: 'shortcuts.navigate' },
   { keys: ['0 – 9'], labelKey: 'shortcuts.jump' },
   { keys: ['?'], labelKey: 'shortcuts.help' },
 ]

@@ -30,6 +30,48 @@ export interface RawSong {
   replayGain?: RawReplayGain
 }
 
+/**
+ * Everything getSong.view can carry about one track, beyond the handful of
+ * fields the library models keep (see mappers.ts's mapSong).
+ *
+ * Deliberately not folded into Song: this is read once, by the info dialog,
+ * for one track at a time. Carrying it on every song in a 20000-track
+ * library would cost memory and a much larger cache for a set of fields
+ * nothing else reads.
+ *
+ * Every field is optional because every one of them is: a plain Subsonic
+ * server sends few of these, Navidrome sends most (they are OpenSubsonic
+ * extensions), and the Jellyfin/Plex bridges send whatever those two
+ * expose. See services/library/songDetails.ts, which drops whatever is
+ * missing rather than showing an empty row.
+ */
+export interface RawSongDetail extends RawSong {
+  path?: string
+  size?: number
+  contentType?: string
+  bitDepth?: number
+  samplingRate?: number
+  channelCount?: number
+  /** When the file was added to the library, ISO 8601. */
+  created?: string
+  /** When it was last played, ISO 8601. */
+  played?: string
+  comment?: string
+  bpm?: number
+  sortName?: string
+  musicBrainzId?: string
+  isrc?: string[]
+  moods?: string[]
+  explicitStatus?: string
+  /** The tag as written, which multi-artist tracks keep intact ("A feat.
+   * B") where the `artists` list below splits them apart. */
+  displayArtist?: string
+  displayAlbumArtist?: string
+  genres?: { name: string }[]
+  artists?: { id?: string; name: string }[]
+  albumArtists?: { id?: string; name: string }[]
+}
+
 export interface RawAlbum {
   id: string
   name: string

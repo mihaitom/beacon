@@ -1272,3 +1272,113 @@ def test_get_user_reports_an_ordinary_listener_as_such(client, jellyfin_session,
 
     r = client.get("/rest/getUser.view?username=rita")
     assert r.json()["subsonic-response"]["user"]["adminRole"] is False
+
+
+def test_map_song_detail_carries_what_the_track_info_sheet_needs():
+    """The single-track lookup answers with everything Jellyfin holds, in
+    OpenSubsonic's own field names — see _map_song_detail()."""
+    item = {
+        "Id": "song-1",
+        "Name": "Song",
+        "Artists": ["A", "B"],
+        "AlbumArtist": "A",
+        "ArtistItems": [{"Id": "a1", "Name": "A"}],
+        "AlbumArtists": [{"Id": "a1", "Name": "A"}],
+        "Genres": ["Rock", "Pop"],
+        "SortName": "song",
+        "DateCreated": "2026-01-02T03:04:05.000Z",
+        "UserData": {"LastPlayedDate": "2026-02-03T04:05:06.000Z", "PlayCount": 3},
+        "ProviderIds": {"MusicBrainzTrack": "mb-1"},
+        "MediaSources": [
+            {
+                "Path": "/music/a/song.flac",
+                "Size": 12345,
+                "Container": "flac",
+                "Bitrate": 900000,
+                "MediaStreams": [
+                    # The audio stream is picked out by type, not by
+                    # position: a file with embedded artwork carries a
+                    # video stream first.
+                    {"Type": "Video", "BitDepth": 8},
+                    {"Type": "Audio", "BitDepth": 24, "SampleRate": 96000, "Channels": 2},
+                ],
+            }
+        ],
+    }
+
+    song = jellyfin_bridge._map_song_detail(item)
+
+    assert song["path"] == "/music/a/song.flac"
+    assert song["size"] == 12345
+    assert song["bitDepth"] == 24
+    assert song["samplingRate"] == 96000
+    assert song["channelCount"] == 2
+    assert song["created"] == "2026-01-02T03:04:05.000Z"
+    assert song["played"] == "2026-02-03T04:05:06.000Z"
+    assert song["sortName"] == "song"
+    assert song["musicBrainzId"] == "mb-1"
+    assert song["genres"] == [{"name": "Rock"}, {"name": "Pop"}]
+    assert song["artists"] == [{"id": "a1", "name": "A"}]
+    assert song["albumArtists"] == [{"id": "a1", "name": "A"}]
+    assert song["displayArtist"] == "A, B"
+    assert song["displayAlbumArtist"] == "A"
+    # Everything a row already needed is still there.
+    assert song["title"] == "Song"
+    assert song["bitRate"] == 900
+
+
+def test_map_song_detail_omits_what_the_server_did_not_report():
+    """An empty row reads as "this track has no sample rate", which is a
+    different statement from "this server does not report one"."""
+    song = jellyfin_bridge._map_song_detail({"Id": "song-1", "Name": "Song"})
+
+    for field in (
+        "path",
+        "size",
+        "bitDepth",
+        "samplingRate",
+        "channelCount",
+        "created",
+        "played",
+        "sortName",
+        "musicBrainzId",
+        "genres",
+        "artists",
+        "albumArtists",
+        "displayArtist",
+        "displayAlbumArtist",
+    ):
+        assert field not in song
+
+
+def test_song_lists_stay_free_of_the_detail_fields():
+    """Only the single-track lookup builds them — a path and an audio
+    stream's figures on every entry of a 20000-track response is a lot of
+    bytes for fields only the track-info sheet reads."""
+    item = {
+        "Id": "song-1",
+        "Name": "Song",
+        "MediaSources": [{"Path": "/music/a/song.flac", "Size": 1}],
+    }
+
+    song = jellyfin_bridge._map_song(item)
+
+    assert "path" not in song
+    assert "size" not in song
+
+
+def test_get_song_answers_with_the_detailed_mapping(client, jellyfin_session, monkeypatch):
+    fake_client, _calls = _fake_jf_client(
+        {
+            "/Users/u1/Items/song-1": {
+                "Id": "song-1",
+                "Name": "Song",
+                "MediaSources": [{"Path": "/music/a/song.flac"}],
+            }
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getSong.view?id=song-1")
+
+    assert r.json()["subsonic-response"]["song"]["path"] == "/music/a/song.flac"

@@ -60,19 +60,6 @@ describe('PrivacyDialog layout', () => {
     expect(getComputedStyle(card).maxHeight).toBe(`${h * 0.7}px`)
   })
 
-  it('DIAG phone', async () => {
-    const card = await open(390, 844)
-    const body = card.querySelector('.v-card-text') as HTMLElement
-    const note = card.querySelector('.privacy-note') as HTMLElement | null
-    const foot = card.querySelector('.privacy-footnote') as HTMLElement | null
-    expect(
-      `card=${Math.round(card.getBoundingClientRect().height)} bodyScroll=${body.scrollHeight}/${body.clientHeight} ` +
-        `overflowY=${getComputedStyle(body).overflowY} ` +
-        `note=${note ? getComputedStyle(note).display + ' h=' + Math.round(note.getBoundingClientRect().height) : 'MISSING'} ` +
-        `foot=${foot ? 'yes' : 'MISSING'}`,
-    ).toBe('SHOW')
-  })
-
   it('lets the whole thing be read, scrolling inside the cap', async () => {
     // The assertion that matters is scrollHeight vs *clientHeight*, not vs
     // the card: a body taller than the card only proves the content is

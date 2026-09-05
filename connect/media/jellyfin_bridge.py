@@ -141,6 +141,69 @@ def _map_song(item: dict) -> dict:
     return song
 
 
+def _set(target: dict, key: str, value) -> None:
+    """Omit rather than send an empty field. mappers.ts and
+    services/library/songDetails.ts both read presence, not value: a key
+    that is there with None in it becomes a row saying nothing."""
+    if value not in (None, "", [], {}):
+        target[key] = value
+
+
+def _map_song_detail(item: dict) -> dict:
+    """Everything Jellyfin holds about one track, on top of what the lists
+    need.
+
+    Built only by get_song(), never by the list handlers: a file path, the
+    audio stream's own figures and the artist objects are a lot of bytes to
+    attach to every entry of a 20000-track response for fields only the
+    track-info sheet reads.
+
+    Field names follow OpenSubsonic's own Child schema, so the frontend
+    reads one shape whichever server answered (see subsonic/types.ts's
+    RawSongDetail). Nothing is derived or guessed: a figure Jellyfin does
+    not report is simply absent here."""
+    song = _map_song(item)
+    sources = item.get("MediaSources") or []
+    source = sources[0] if sources else {}
+    streams = source.get("MediaStreams") or item.get("MediaStreams") or []
+    audio = next((stream for stream in streams if stream.get("Type") == "Audio"), {})
+    user_data = item.get("UserData") or {}
+
+    _set(song, "path", source.get("Path") or item.get("Path"))
+    _set(song, "size", source.get("Size"))
+    _set(song, "bitDepth", audio.get("BitDepth"))
+    _set(song, "samplingRate", audio.get("SampleRate"))
+    _set(song, "channelCount", audio.get("Channels"))
+    _set(song, "created", item.get("DateCreated"))
+    _set(song, "played", user_data.get("LastPlayedDate"))
+    _set(song, "sortName", item.get("SortName"))
+    _set(song, "musicBrainzId", (item.get("ProviderIds") or {}).get("MusicBrainzTrack"))
+    _set(song, "genres", [{"name": genre} for genre in (item.get("Genres") or [])])
+    _set(
+        song,
+        "artists",
+        [
+            {"id": artist["Id"], "name": artist.get("Name", "")}
+            for artist in (item.get("ArtistItems") or [])
+            if artist.get("Id")
+        ],
+    )
+    _set(
+        song,
+        "albumArtists",
+        [
+            {"id": artist["Id"], "name": artist.get("Name", "")}
+            for artist in (item.get("AlbumArtists") or [])
+            if artist.get("Id")
+        ],
+    )
+    # The tag as written, which the Artists list above has already split on
+    # its separators.
+    _set(song, "displayArtist", ", ".join(item.get("Artists") or []))
+    _set(song, "displayAlbumArtist", item.get("AlbumArtist"))
+    return song
+
+
 def _map_replay_gain(item: dict) -> dict | None:
     """Jellyfin exposes loudness-normalization data directly on the item
     (NormalizationGain/AlbumNormalizationGain, dB — populated from the
@@ -340,7 +403,10 @@ async def get_album(params: dict, media: JellyfinClient) -> dict:
 
 async def get_song(params: dict, media: JellyfinClient) -> dict:
     item = await _jf_get(media, f"/Users/{media.user_id}/Items/{_quote_id(params['id'])}")
-    return {"song": _map_song(item)}
+    # The detailed mapping, not the list one: this is the single-track
+    # lookup, and the only caller that wants more than a row's worth of
+    # fields (the track-info sheet) comes through here.
+    return {"song": _map_song_detail(item)}
 
 
 async def get_artists(_params: dict, media: JellyfinClient) -> dict:

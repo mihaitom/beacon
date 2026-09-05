@@ -94,11 +94,13 @@ async function mountLogin(
   const router = makeRouter()
   await router.push(opts.route ?? '/login')
   await router.isReady()
-  const push = vi.spyOn(router, 'push')
+  // replace(), not push() — a signed-in session must not leave the login
+  // form sitting behind it in the history (see goToRedirect()).
+  const navigate = vi.spyOn(router, 'replace')
 
   const wrapper = mount(ServerLoginView, { global: { plugins: [vuetify, i18n, router] } })
   await flushPromises()
-  return { wrapper, auth, push, vm: wrapper.vm as unknown as LoginVm }
+  return { wrapper, auth, navigate, vm: wrapper.vm as unknown as LoginVm }
 }
 
 beforeEach(() => {
@@ -209,33 +211,33 @@ describe('ServerLoginView submit', () => {
   })
 
   it('neither remembers nor navigates when the login fails', async () => {
-    const { vm, auth, push } = await mountLogin()
+    const { vm, auth, navigate } = await mountLogin()
     auth.login = vi.fn().mockRejectedValue(new Error('bad credentials'))
     vm.serverUrl = 'https://nav.example.com'
 
     await vm.submit()
 
     expect(vm.recentServerUrls).toEqual([])
-    expect(push).not.toHaveBeenCalled()
+    expect(navigate).not.toHaveBeenCalled()
     // The button has to become usable again, or a mistyped password locks
     // the form for good.
     expect(vm.submitting).toBe(false)
   })
 
   it('returns to the redirect the route carried', async () => {
-    const { vm, push } = await mountLogin({ route: '/login?redirect=/albums' })
+    const { vm, navigate } = await mountLogin({ route: '/login?redirect=/albums' })
 
     await vm.submit()
 
-    expect(push).toHaveBeenCalledWith('/albums')
+    expect(navigate).toHaveBeenCalledWith('/albums')
   })
 
   it('goes home when no redirect was given', async () => {
-    const { vm, push } = await mountLogin()
+    const { vm, navigate } = await mountLogin()
 
     await vm.submit()
 
-    expect(push).toHaveBeenCalledWith('/')
+    expect(navigate).toHaveBeenCalledWith('/')
   })
 
   it('starts the Plex flow instead of a password login', async () => {
@@ -405,7 +407,7 @@ describe('ServerLoginView Plex polling', () => {
   })
 
   it('signs straight in when the account has exactly one server', async () => {
-    const { vm, auth, push } = await mountLogin()
+    const { vm, auth, navigate } = await mountLogin()
     auth.pollPlexAuth = vi.fn().mockResolvedValue({ accountToken: 't', username: 'someone' })
     auth.fetchPlexServers = vi.fn().mockResolvedValue([server('home')])
     vm.plexPinId = 7
@@ -413,7 +415,7 @@ describe('ServerLoginView Plex polling', () => {
     await vm.pollPlexLogin()
 
     expect(auth.selectPlexServer).toHaveBeenCalled()
-    expect(push).toHaveBeenCalled()
+    expect(navigate).toHaveBeenCalled()
     expect(vm.plexPickingServer).toBe(false)
   })
 

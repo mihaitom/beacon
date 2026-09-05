@@ -521,9 +521,13 @@ export default {
         this.submitting = false
       }
     },
+    // replace(), not push(): the login screen must not stay behind the
+    // page it hands over to, or the app bar's own back arrow (see
+    // components/NavHistoryControls.vue) walks straight back into a form
+    // for a session that is already signed in.
     goToRedirect() {
       const redirect = this.$route.query.redirect
-      this.$router.push(typeof redirect === 'string' ? redirect : '/')
+      this.$router.replace(typeof redirect === 'string' ? redirect : '/')
     },
     // Called only on an actually-successful login (submit()/pollQuickConnect())
     // — not on every keystroke or a failed attempt, so the list stays "servers

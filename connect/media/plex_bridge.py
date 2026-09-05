@@ -53,6 +53,7 @@ needed (three rounds: wrong endpoint version, DNS, then TLS).
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from urllib.parse import quote
 
 import httpx
@@ -218,6 +219,73 @@ def _map_song(item: dict) -> dict:
     return song
 
 
+def _set(target: dict, key: str, value) -> None:
+    """Omit rather than send an empty field — see the identical helper in
+    jellyfin_bridge.py for why presence is the signal on the other side."""
+    if value not in (None, "", [], {}):
+        target[key] = value
+
+
+def _epoch_to_iso(seconds) -> str | None:
+    """Plex reports timestamps as Unix seconds; the Subsonic shape (and the
+    frontend that reads it) expects ISO 8601."""
+    if not seconds:
+        return None
+    return datetime.fromtimestamp(seconds, tz=UTC).isoformat()
+
+
+def _musicbrainz_id(item: dict) -> str | None:
+    """Plex carries external ids as `mbid://<id>` entries in the item's Guid
+    list. Only the plain track mbid is taken; the same list also holds
+    Discogs/Last.fm-shaped entries for other providers."""
+    for guid in item.get("Guid") or []:
+        value = guid.get("id") or ""
+        if value.startswith("mbid://"):
+            return value[len("mbid://") :]
+    return None
+
+
+def _map_song_detail(item: dict) -> dict:
+    """Everything Plex holds about one track, on top of what the lists need.
+
+    Built only by get_song(), for the same reason as the Jellyfin bridge's
+    own _map_song_detail(): these fields cost real bytes per entry and only
+    the track-info sheet reads them. Field names follow OpenSubsonic's Child
+    schema so both bridges and a real Subsonic server answer in one shape."""
+    song = _map_song(item)
+    media_list = item.get("Media") or []
+    media0 = media_list[0] if media_list else {}
+    parts = media0.get("Part") or []
+    part0 = parts[0] if parts else {}
+    streams = part0.get("Stream") or []
+    # streamType 2 is Plex's own marker for an audio stream.
+    audio = next((stream for stream in streams if stream.get("streamType") == 2), {})
+
+    _set(song, "path", part0.get("file"))
+    _set(song, "size", part0.get("size"))
+    _set(song, "bitDepth", audio.get("bitDepth"))
+    _set(song, "samplingRate", audio.get("samplingRate"))
+    _set(song, "channelCount", media0.get("audioChannels") or audio.get("channels"))
+    _set(song, "created", _epoch_to_iso(item.get("addedAt")))
+    _set(song, "played", _epoch_to_iso(item.get("lastViewedAt")))
+    _set(song, "sortName", item.get("titleSort"))
+    _set(song, "musicBrainzId", _musicbrainz_id(item))
+    _set(song, "genres", [{"name": genre} for genre in _tags(item, "Genre")])
+    _set(song, "moods", _tags(item, "Mood"))
+    # originalTitle is where Plex keeps a track's own artist when it differs
+    # from the album's — a compilation's individual performers, say.
+    _set(song, "displayArtist", item.get("originalTitle") or item.get("grandparentTitle"))
+    _set(song, "displayAlbumArtist", item.get("grandparentTitle"))
+    if item.get("grandparentRatingKey"):
+        song["albumArtists"] = [
+            {
+                "id": str(item["grandparentRatingKey"]),
+                "name": item.get("grandparentTitle", ""),
+            }
+        ]
+    return song
+
+
 def _map_album(item: dict) -> dict:
     album = {
         "id": str(item["ratingKey"]),
@@ -333,7 +401,9 @@ async def get_song(params: dict, media: PlexClient) -> dict:
     items = data.get("MediaContainer", {}).get("Metadata", [])
     if not items:
         raise ValueError(f"Song {params['id']} not found")
-    return {"song": _map_song(items[0])}
+    # The detailed mapping — this is the single-track lookup the track-info
+    # sheet comes through, see _map_song_detail().
+    return {"song": _map_song_detail(items[0])}
 
 
 # ── Library scan + who is asking ─────────────────────────────────────────────

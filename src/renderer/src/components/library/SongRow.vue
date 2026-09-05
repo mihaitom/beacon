@@ -162,6 +162,13 @@
         <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
         <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
       </v-list-item>
+      <!-- About this one track for the same reason Show image is: it is a
+         - sheet of one song's fields, so it stays on the row that was
+         - right-clicked however many others happen to be selected. -->
+      <v-list-item @click="showInfo">
+        <template #prepend><v-icon icon="mdi-information-outline" size="small" /></template>
+        <v-list-item-title>{{ $t('library.songInfo') }}</v-list-item-title>
+      </v-list-item>
       <v-divider />
       <v-list-item @click="$emit('add-to-queue', song, index)">
         <template #prepend><v-icon icon="mdi-playlist-plus" size="small" /></template>
@@ -195,6 +202,7 @@ import AddToPlaylistSubmenu from './AddToPlaylistSubmenu.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
+import type { Song } from '@/types/library'
 
 export default {
   name: 'SongRow',
@@ -353,6 +361,13 @@ export default {
         title: this.song.title,
         subtitle: this.song.album || this.song.artist,
       })
+    },
+    /** Opens the track's own metadata sheet, through the app-wide dialog
+     * (SongInfoDialog.vue in App.vue) rather than as an event this row's
+     * parents would have to carry - same arrangement as showArtwork above,
+     * and for the same reason. */
+    showInfo(): void {
+      this.$emitter.emit('showSongInfo', this.song as Song)
     },
     // Every one of these is a no-op unless this row was actually made
     // reorderable — the listeners are bound unconditionally (a template

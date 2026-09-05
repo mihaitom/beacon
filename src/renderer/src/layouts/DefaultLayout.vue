@@ -57,6 +57,11 @@
     <v-app-bar density="comfortable" color="#0B0D13" class="beacon-app-bar">
       <v-icon icon="mdi-lighthouse-on" color="primary" size="20" class="ml-4 mr-2 beacon-glow" />
       <v-app-bar-title class="app-title">Beacon</v-app-bar-title>
+      <!-- Beside the app's own name rather than out with the search: this
+       - is where every browser and every player that has one puts it, and
+       - it is the first place someone looks when a detail page has
+       - swallowed them. -->
+      <nav-history-controls />
       <v-spacer />
       <top-bar-search />
     </v-app-bar>
@@ -105,6 +110,7 @@ import QueueDrawer from '@/components/queue/QueueDrawer.vue'
 import LyricsDrawer from '@/components/lyrics/LyricsDrawer.vue'
 import CastTakeoverConfirmDialog from '@/components/connect/CastTakeoverConfirmDialog.vue'
 import TopBarSearch from '@/components/TopBarSearch.vue'
+import NavHistoryControls from '@/components/NavHistoryControls.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useDrawersStore } from '@/stores/drawers'
 import { useAuthStore } from '@/stores/auth'
@@ -122,6 +128,7 @@ export default {
     LyricsDrawer,
     CastTakeoverConfirmDialog,
     TopBarSearch,
+    NavHistoryControls,
   },
   data() {
     return {
@@ -200,6 +207,13 @@ export default {
 </script>
 
 <style scoped>
+/* Sized to the word, not stretched: the title's default `flex: 1 1 auto`
+ * would push the history arrows all the way over to the search field,
+ * away from the name they belong beside. */
+.app-title {
+  flex: 0 1 auto;
+}
+
 .app-title :deep(.v-toolbar-title__placeholder) {
   font-weight: 600;
   letter-spacing: 0.04em;

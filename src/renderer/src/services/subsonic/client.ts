@@ -9,6 +9,7 @@ import type {
   PlaylistResponse,
   PlaylistsResponse,
   RawSong,
+  RawSongDetail,
   ScanStatusResponse,
   UserResponse,
   SearchResult3Response,
@@ -205,6 +206,18 @@ export class SubsonicClient {
   async getSong(id: string): Promise<Song> {
     const data = await this.get<{ song: RawSong }>('getSong.view', { id })
     return mapSong(data.song)
+  }
+
+  /** The server's own full record for one track, handed back unmapped.
+   *
+   * Separate from getSong() above, which narrows the same response down to
+   * the library's Song model: the info dialog exists to show what the media
+   * server holds, so mapping it through a model that keeps a dozen fields
+   * would be throwing away the answer to the question being asked. See
+   * services/library/songDetails.ts for what is made of it. */
+  async getSongDetails(id: string): Promise<RawSongDetail> {
+    const data = await this.get<{ song: RawSongDetail }>('getSong.view', { id })
+    return data.song
   }
 
   /** Embedded/ID3-tag lyrics for one specific file (OpenSubsonic

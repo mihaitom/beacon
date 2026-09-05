@@ -1,4 +1,5 @@
 import type Toast from './toast'
+import type { Song } from './library'
 
 /** Shorthand form for emitter.emit('toast', ...) — [level, title, message]. */
 export type ToastTuple = [Toast['level'], string, string]
@@ -25,6 +26,13 @@ export type AppEvents = {
   // album/artist card's) sit in components spread across the library, none
   // of which should have to thread a dialog through their own parents.
   showArtwork: ArtworkView
+  // Opens the track-info dialog (SongInfoDialog.vue, mounted once in
+  // App.vue) for one song. Same reasoning as showArtwork above: its trigger
+  // is a song row's context menu, and SongRow.vue sits under a dozen views
+  // that have nothing to do with a metadata sheet. The whole Song is passed
+  // rather than just its id so the dialog can name what it is loading
+  // straight away, before the server has answered.
+  showSongInfo: Song
 }
 
 /** What the artwork viewer needs to show one picture: whichever of the two

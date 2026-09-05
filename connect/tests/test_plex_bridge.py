@@ -1279,3 +1279,101 @@ def test_scan_status_reports_an_idle_server_as_finished(client, plex_session, mo
 
     status = client.get("/rest/getScanStatus.view").json()["subsonic-response"]["scanStatus"]
     assert status == {"scanning": False}
+
+
+def test_map_song_detail_carries_what_the_track_info_sheet_needs():
+    """The single-track lookup answers with everything Plex holds, in
+    OpenSubsonic's own field names — see _map_song_detail()."""
+    item = {
+        "ratingKey": 1,
+        "title": "Song",
+        "grandparentTitle": "A",
+        "grandparentRatingKey": 9,
+        "originalTitle": "A feat. B",
+        "titleSort": "song",
+        "addedAt": 1700000000,
+        "lastViewedAt": 1700003600,
+        "Genre": [{"tag": "Rock"}, {"tag": "Pop"}],
+        "Mood": [{"tag": "Chill"}],
+        "Guid": [{"id": "imdb://nope"}, {"id": "mbid://mb-1"}],
+        "Media": [
+            {
+                "audioChannels": 2,
+                "Part": [
+                    {
+                        "file": "/music/song.flac",
+                        "size": 12345,
+                        "Stream": [
+                            # streamType 1 is video (embedded artwork);
+                            # the audio one is picked out by type.
+                            {"streamType": 1, "bitDepth": 8},
+                            {"streamType": 2, "bitDepth": 24, "samplingRate": 96000},
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    song = plex_bridge._map_song_detail(item)
+
+    assert song["path"] == "/music/song.flac"
+    assert song["size"] == 12345
+    assert song["bitDepth"] == 24
+    assert song["samplingRate"] == 96000
+    assert song["channelCount"] == 2
+    # Plex counts in Unix seconds; the frontend reads ISO 8601.
+    assert song["created"] == "2023-11-14T22:13:20+00:00"
+    assert song["played"] == "2023-11-14T23:13:20+00:00"
+    assert song["sortName"] == "song"
+    assert song["musicBrainzId"] == "mb-1"
+    assert song["genres"] == [{"name": "Rock"}, {"name": "Pop"}]
+    assert song["moods"] == ["Chill"]
+    assert song["displayArtist"] == "A feat. B"
+    assert song["displayAlbumArtist"] == "A"
+    assert song["albumArtists"] == [{"id": "9", "name": "A"}]
+    # Everything a row already needed is still there.
+    assert song["title"] == "Song"
+
+
+def test_map_song_detail_falls_back_to_the_album_artist_for_the_display_name():
+    """originalTitle is only set where a track's own artist differs from the
+    album's — most tracks leave it out."""
+    item = {"ratingKey": 1, "title": "Song", "grandparentTitle": "A"}
+
+    assert plex_bridge._map_song_detail(item)["displayArtist"] == "A"
+
+
+def test_map_song_detail_omits_what_the_server_did_not_report():
+    song = plex_bridge._map_song_detail({"ratingKey": 1, "title": "Song"})
+
+    for field in (
+        "path",
+        "size",
+        "bitDepth",
+        "samplingRate",
+        "channelCount",
+        "created",
+        "played",
+        "sortName",
+        "musicBrainzId",
+        "genres",
+        "moods",
+        "albumArtists",
+    ):
+        assert field not in song
+
+
+def test_song_lists_stay_free_of_the_detail_fields():
+    """Only the single-track lookup builds them — see the Jellyfin bridge's
+    own test of the same rule."""
+    item = {
+        "ratingKey": 1,
+        "title": "Song",
+        "Media": [{"Part": [{"file": "/music/song.flac", "size": 1}]}],
+    }
+
+    song = plex_bridge._map_song(item)
+
+    assert "path" not in song
+    assert "size" not in song

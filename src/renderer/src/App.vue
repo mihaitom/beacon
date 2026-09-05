@@ -5,6 +5,7 @@
   <update-toast />
   <keyboard-shortcuts-dialog />
   <artwork-lightbox />
+  <song-info-dialog />
 </template>
 
 <script lang="ts">
@@ -16,6 +17,7 @@ import ReleaseNotes from '@/components/releaseNotes.vue'
 import UpdateToast from '@/components/UpdateToast.vue'
 import KeyboardShortcutsDialog from '@/components/KeyboardShortcutsDialog.vue'
 import ArtworkLightbox from '@/components/library/ArtworkLightbox.vue'
+import SongInfoDialog from '@/components/library/SongInfoDialog.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { useConnectStore } from '@/stores/connect'
@@ -24,6 +26,7 @@ import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useUpdateStore } from '@/stores/update'
 import { useIsMobileWeb } from '@/composables/useIsMobileWeb'
 import { initKeyboardShortcuts } from '@/services/keyboardShortcuts'
+import { initNavigationHistory } from '@/services/navigationHistory'
 import { initAccountScopedStores } from '@/services/accountScopedStores'
 
 export default {
@@ -34,6 +37,7 @@ export default {
     UpdateToast,
     KeyboardShortcutsDialog,
     ArtworkLightbox,
+    SongInfoDialog,
   },
   // Composition API escape hatch just for useIsMobileWeb() — everything else
   // here stays Options API, matching the rest of the renderer. Refs returned
@@ -99,6 +103,10 @@ export default {
     // Window-level, so a shortcut works wherever focus happens to be
     // (see resolveShortcut() for what it deliberately keeps its hands off).
     initKeyboardShortcuts()
+    // Tracks whether there is anywhere to go back/forward to, and picks up
+    // the mouse's own back/forward buttons — see that module for why the
+    // router's history is the only bookkeeping this needs.
+    initNavigationHistory()
     // Not gated on media-server auth — same reasoning as the Remote Control
     // status refresh below, just checking GitHub instead of connect. Not
     // awaited: UpdateToast.vue/SettingsView.vue both read the store

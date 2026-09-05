@@ -45,11 +45,22 @@ describe('resolveShortcut', () => {
   })
 
   it('leaves every other modifier combination to the browser and the OS', () => {
-    // Ctrl+R reloads, Alt+Left goes back — none of those may turn into a
-    // repeat-mode change or a seek.
+    // Ctrl+R reloads — that must not turn into a repeat-mode change.
     expect(resolveShortcut(press('r', { ctrlKey: true }))).toBeNull()
-    expect(resolveShortcut(press('ArrowLeft', { altKey: true }))).toBeNull()
     expect(resolveShortcut(press('m', { shiftKey: true }))).toBeNull()
+  })
+
+  it('walks the page history with Alt and an arrow, the way a browser does', () => {
+    expect(resolveShortcut(press('ArrowLeft', { altKey: true }))).toEqual({ type: 'historyBack' })
+    expect(resolveShortcut(press('ArrowRight', { altKey: true }))).toEqual({
+      type: 'historyForward',
+    })
+    // Only Alt on its own: Alt+Shift+Left is a text selection everywhere
+    // else, and must not become a navigation here.
+    expect(resolveShortcut(press('ArrowLeft', { altKey: true, shiftKey: true }))).toBeNull()
+    expect(resolveShortcut(press('ArrowLeft', { altKey: true, ctrlKey: true }))).toBeNull()
+    // Alt with anything else stays the OS's business (Alt+F opens a menu).
+    expect(resolveShortcut(press('f', { altKey: true }))).toBeNull()
   })
 
   it('jumps to a tenth of the track for the digit keys', () => {
