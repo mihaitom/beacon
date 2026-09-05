@@ -1,0 +1,41 @@
+# TEMPORARY - delete once the publish matrix is confirmed.
+#
+# Resolves the same strategy block _publish-electron.yml uses, with the same
+# JSON the real callers pass, but runs a single echo instead of a build. It
+# exists because a bad `strategy` fails before any job starts, so the only
+# way to find out used to be starting a real release.
+name: (internal) Matrix check
+
+on:
+    workflow_call:
+        inputs:
+            matrix:
+                required: true
+                type: string
+
+jobs:
+    publish:
+        runs-on: ubuntu-latest
+
+        strategy:
+            fail-fast: false
+            matrix:
+                # Under `include:`, not as the matrix itself: every caller
+                # passes a JSON array of ready-made legs ([{os, script, ...}])
+                # rather than axes to combine, and `strategy.matrix` only ever
+                # accepts an object - handed a bare sequence it fails the whole
+                # run before a single job starts ("A sequence was not
+                # expected"). `include` is what takes a list of complete
+                # combinations, which is exactly what these are.
+                include: ${{ fromJson(inputs.matrix) }}
+
+        steps:
+            - name: Report this leg
+              run: |
+                  echo "os=${{ matrix.os }}"
+                  echo "script=${{ matrix.script }}"
+                  echo "node_options=${{ matrix.node_options }}"
+                  echo "arm64_build_tools=${{ matrix.arm64_build_tools }}"
+            - name: The step the arm64 leg gates
+              if: matrix.arm64_build_tools
+              run: echo "build tools would be installed here"

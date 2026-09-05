@@ -1,0 +1,33 @@
+# TEMPORARY - delete once the publish matrix is confirmed. See
+# _matrix-check.yml.
+name: Matrix check (Manual)
+
+on:
+    workflow_dispatch:
+
+jobs:
+    check:
+        uses: ./.github/workflows/_matrix-check.yml
+        with:
+            # Copied verbatim from publish.yml - the widest of the four.
+            matrix: |
+                [
+                  {
+                    "os": "windows-latest",
+                    "script": "publish:win"
+                  },
+                  {
+                    "os": "macos-26",
+                    "script": "publish:mac",
+                    "node_options": "--max-old-space-size=4096"
+                  },
+                  {
+                    "os": "ubuntu-latest",
+                    "script": "publish:linux"
+                  },
+                  {
+                    "os": "ubuntu-24.04-arm",
+                    "script": "publish:linux-arm64",
+                    "arm64_build_tools": true
+                  }
+                ]
