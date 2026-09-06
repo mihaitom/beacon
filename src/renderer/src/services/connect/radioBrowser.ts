@@ -99,3 +99,26 @@ export function registerRadioBrowserClick(stationuuid: string): void {
     method: 'POST',
   }).catch(() => {})
 }
+
+/** Casts one vote for `stationuuid` — Radio Browser's own "top voted"
+ * ranking, which this dialog offers to sort by, is built from these.
+ *
+ * Resolves true when the vote counted and false when the directory refused
+ * it, which it does for a station this address already voted for in the
+ * last 24 hours. That refusal arrives as an ordinary successful response
+ * (see connect's own vote_for_station()), so it is a return value here
+ * rather than a thrown error; a rejection means the vote is spent, not
+ * that anything went wrong. Rejects only when Radio Browser could not be
+ * reached at all.
+ *
+ * The address that limit applies to is the Beacon server's, not the
+ * device's — everything here goes out through connect. One vote per
+ * station per day is therefore shared by everyone using the same Beacon
+ * server, the same way a click already is. */
+export async function voteForRadioBrowserStation(stationuuid: string): Promise<boolean> {
+  const result = await fetchConnect<{ ok: boolean }>(
+    `/radio-browser/vote/${encodeURIComponent(stationuuid)}`,
+    { method: 'POST' },
+  )
+  return result.ok === true
+}

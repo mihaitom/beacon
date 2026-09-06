@@ -148,8 +148,36 @@ export async function resolveRadioStreamUrl(url: string): Promise<string> {
   }
 }
 
+/** Where this device's own `<audio>` element should fetch `streamUrl` from
+ * when radio is routed through Beacon rather than pulled straight off the
+ * station — connect/routes/stream.py's /stream/radio-local, which has the
+ * full reasoning for why that is the default.
+ *
+ * A URL rather than a fetch, so auth travels as a query param the same way
+ * radioFaviconUrl() and services/subsonic/client.ts's streamUrl() do: an
+ * `<audio src>` sends no headers of its own. The session id goes with it
+ * for the same reason — the relay is owned by a session (see
+ * core/session.py), and X-Connect-Session is a header this request cannot
+ * carry either.
+ *
+ * The station URL is passed through as-is: the backend starts its relay
+ * lazily from whatever this asks for, so there is no separate "start"
+ * call to keep in step with it, and the element retrying this URL after a
+ * drop lands back on the very same relay. */
+export function localRadioStreamUrl(
+  apiUrl: string,
+  token: string,
+  sessionId: string,
+  streamUrl: string,
+): string {
+  const params = new URLSearchParams({ url: streamUrl })
+  if (token) params.set('token', token)
+  if (sessionId) params.set('session', sessionId)
+  return `${apiUrl}/stream/radio-local?${params.toString()}`
+}
+
 /** Matched on the path alone, so a query string (a cache-buster, an auth
- * token) can neither trigger nor mask this. `.m3u8` is deliberately not
+ * token) can neither trigger nor mask this.""" `.m3u8` is deliberately not
  * here: an HLS playlist looks superficially like an M3U but is the live
  * format itself, not an indirection to resolve away — see
  * connect/core/playlist_url.py's own list. */

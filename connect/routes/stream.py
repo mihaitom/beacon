@@ -7,7 +7,7 @@ import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response, StreamingResponse
 
 from core.auth import require_token
@@ -33,6 +33,7 @@ from core.state import (
     stream_url,
     test_tone_url,
 )
+from core.stream_format import probe_stream
 from core.streamer import FALLBACK_FORMAT, resolve_output_format, stream_tracks
 
 from .playback import (
@@ -708,15 +709,21 @@ def _latin1_header_value(text: str) -> str:
     return text.encode("latin-1", "replace").decode("latin-1")
 
 
-async def _relayed_radio_audio(relay: RadioRelay) -> AsyncGenerator[bytes]:
+async def _relayed_radio_audio(relay: RadioRelay, *, burst: bool = False) -> AsyncGenerator[bytes]:
     """One subscriber's view of the relay's device-audio fan-out — ends on
     a `None` sentinel (the relay stopped for good, see RadioRelay.stop())
     or, same as any other StreamingResponse generator, when the caller
     (the device) disconnects and this generator itself is cancelled/closed,
     which is what the `finally` below actually always runs for in
     practice: a relay usually outlives any one connection to it, ending
-    long after a device has already moved on."""
-    queue = relay.subscribe_audio()
+    long after a device has already moved on.
+
+    `burst` hands this subscriber the last few seconds of audio up front
+    rather than starting it at the live edge — see RadioRelay's
+    subscribe_audio() and _BURST_SECONDS. Only a listener's own player asks
+    for it; a cast device sits on the same network as this backend and gains
+    nothing from being seconds behind."""
+    queue = relay.subscribe_audio(burst=burst)
     try:
         while True:
             chunk = await queue.get()
@@ -725,6 +732,83 @@ async def _relayed_radio_audio(relay: RadioRelay) -> AsyncGenerator[bytes]:
             yield chunk
     finally:
         relay.unsubscribe_audio(queue)
+
+
+@router.get("/stream/radio-local")
+async def local_radio_stream(
+    url: str = Query(...),
+    session: SessionState = Depends(get_session),
+    _token: None = Depends(require_token),
+):
+    """The same relayed station as /stream/radio above, for the app's own
+    `<audio>` element instead of a cast device.
+
+    The listener's own player is a subscriber like any other. Routing it
+    through here rather than letting it fetch the station itself buys three
+    things, and the first is the reason it exists:
+
+    - **A drop is noticed in seconds, not minutes.** A station that stops
+      sending without closing the connection produces no error a browser
+      ever reports; the element goes quiet and stays that way. The relay
+      sees the same silence directly and acts on it (see
+      core/radio_relay.py's _STALL_TIMEOUT_SECONDS), and its reconnect
+      happens *behind* this response — the element's own connection is
+      never closed for it, so a station that comes back within the gap
+      simply resumes, with no reload and no restart of anything.
+    - **One fetch of the station, not two.** Local playback already had the
+      backend open a second connection purely to read the ICY now-playing
+      tag (core/icy_metadata.py). Relayed, that tag comes out of this same
+      fetch — the relay demuxes it inline and reports it through the very
+      same callback the watch did, so /radio-metadata answers exactly as
+      before.
+    - **Whatever the station serves plays.** The relay's output is MP3
+      either way (byte-for-byte where the station already is MP3, see
+      _device_output_args()), so a station a browser cannot decode is no
+      longer a station this device cannot play.
+
+    Not free, and the listener can decline it: the audio crosses the
+    network twice for anyone running connect somewhere other than their own
+    machine, and connect becomes a component that radio depends on while it
+    is already playing. That is the same trade casting makes, and it is the
+    same switch — see stores/radioSettings.ts's castDirectly, which now
+    speaks for both.
+
+    `url` rather than a start/stop handshake: the relay is started lazily by
+    whichever request first asks for a station, and idempotently for a
+    station already running, so the element reconnecting to this URL (its
+    own retry, a reload, a second device) costs nothing and needs no
+    coordination. Stopping is /radio-metadata/stop's job — see its own
+    comment for why that one route can speak for both the ICY watch it
+    always stopped and the relay that has replaced it.
+
+    Deliberately answers 200 even when the relay has not reached the
+    station yet: subscribing to a relay that is still retrying is the
+    *point* of it holding the connection, and a 5xx here would instead be
+    reported by the element as an unplayable source — the one MediaError
+    code its own reconnect logic (audioEngine.ts) correctly refuses to
+    retry.
+    """
+    relay = session.radio_relay
+    if relay is None or relay.url != url:
+        # Only for a station that is not already relayed: probe_stream()
+        # is a request of its own, and this route is re-entered by every
+        # reconnect the element makes.
+        probed = await probe_stream(url)
+        relay = await session.start_radio_relay(url, probed.content_type)
+    logger.info(f"[stream] Serving relayed radio to a local player: {url[:80]}")
+    # No ICY muxing, unlike /stream/radio: an <audio> element has no way to
+    # read it (that is why core/icy_metadata.py exists at all), and asking
+    # for it would only interleave metadata blocks into audio nothing here
+    # would demux back out.
+    return StreamingResponse(
+        # burst: everything this relay emits is paced to real time, so
+        # without it a player fed from here would hold no buffer at all and
+        # every few seconds of lost connection would be audible. See
+        # core/radio_relay.py's _BURST_SECONDS.
+        _relayed_radio_audio(relay, burst=True),
+        media_type=relay.device_content_type,
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 async def _muxed_icy_audio(audio: AsyncGenerator[bytes], muxer: IcyMuxer) -> AsyncGenerator[bytes]:

@@ -33,12 +33,18 @@ function mountDrawer() {
 // the midpoint is always 0: a positive clientY reliably reads as "bottom
 // half of the row", zero or negative as "top half" — not a real geometry
 // check here, but a deterministic stand-in for driving the same branch.
-// Each row's own reveal stagger, as QueueDrawer binds it: the inline
-// transition-delay revealDelayStyle() produces, or undefined for a row
+// Each row's own reveal stagger, as QueueDrawer binds it: the
+// --queue-reveal-delay revealDelayStyle() produces, or undefined for a row
 // that isn't part of the current reveal at all.
+//
+// A custom property rather than transition-delay itself, deliberately, and
+// that is worth reading as part of the assertion rather than as a detail:
+// only .queue-move-enter-active resolves it, so a stagger can no longer
+// reach the FLIP settle that shares the same element. See
+// revealDelayStyle() for what setting the real property inline did to it.
 function revealDelays(wrapper: ReturnType<typeof mountDrawer>) {
   return wrapper.findAll('.queue-row').map((row) => {
-    const match = /transition-delay:\s*([^;]+)/.exec(row.attributes('style') ?? '')
+    const match = /--queue-reveal-delay:\s*([^;]+)/.exec(row.attributes('style') ?? '')
     return match ? match[1]!.trim() : undefined
   })
 }
@@ -79,8 +85,8 @@ describe('QueueDrawer', () => {
   // The reveal itself is Vue's own TransitionGroup enter transition, which
   // jsdom can't meaningfully run (no layout, no real transitionend) — what
   // *is* assertable here is the part QueueDrawer actually owns: which rows
-  // get an inline transition-delay, what that delay is, and that it gets
-  // cleaned back off again afterwards.
+  // get a stagger, what that stagger is, and that it gets cleaned back off
+  // again afterwards.
   it('staggers only genuinely new rows on a peek, leaving already-rendered ones untouched', async () => {
     vi.useFakeTimers()
     const playback = usePlaybackStore()

@@ -114,6 +114,54 @@ describe('ArtworkLightbox layout', () => {
     vi.restoreAllMocks()
   })
 
+  // The backdrop. Worth a real browser rather than a unit assertion on the
+  // stylesheet: what is actually in question is whether the rule reaches
+  // the scrim at all, and two things stand between them. Vuetify teleports
+  // the overlay out of this component's own DOM, and it ships its own
+  // `.v-overlay { --v-overlay-opacity: 0.32 }` inside a cascade layer,
+  // which an unlayered rule beats however specific the layered one is (see
+  // base.css). Both are things jsdom would report as passing whatever the
+  // answer.
+  it('dims the room around the picture further than an ordinary dialog', async () => {
+    await page.viewport(1200, 800)
+    const wrapper = mountLightbox()
+
+    await showPortrait(wrapper)
+
+    const scrim = document.querySelector('.artwork-lightbox .v-overlay__scrim')
+    expect(scrim).not.toBeNull()
+    // Vuetify's own default is 0.32; anything at or below it means the
+    // override never landed.
+    expect(Number(getComputedStyle(scrim!).opacity)).toBeGreaterThan(0.5)
+  })
+
+  // ...and only this one. The darkening belongs to a picture being looked
+  // at, not to dialogs in general: a dialog you read wants the page behind
+  // it still legible for context, which is what Vuetify's own 0.32 is for.
+  // This is what stops the rule from being "simplified" into base.css or
+  // onto .v-overlay later, where it would take every dialog, menu and
+  // bottom sheet in the app with it.
+  it('leaves every other overlay at the ordinary dialog dimming', async () => {
+    await page.viewport(1200, 800)
+    const wrapper = mount(
+      defineComponent({
+        setup: () => () =>
+          h(components.VApp, null, {
+            default: () =>
+              h(components.VDialog, { modelValue: true }, { default: () => h('div', 'plain') }),
+          }),
+      }),
+      { attachTo: document.body, global: { plugins: [vuetify, i18n] } },
+    )
+    wrappers.push(wrapper)
+    await wrapper.vm.$nextTick()
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    const scrim = document.querySelector('.v-overlay__scrim')
+    expect(scrim).not.toBeNull()
+    expect(Number(getComputedStyle(scrim!).opacity)).toBeCloseTo(0.32, 2)
+  })
+
   it('keeps a portrait picture within the height of the window', async () => {
     await page.viewport(1200, 800)
     const wrapper = mountLightbox()

@@ -194,6 +194,8 @@ export default {
     autoplay: 'Lecture automatique',
     liveRadio: 'En direct · {time}',
     live: 'En direct',
+    radioConnectionLost: 'Connexion perdue',
+    radioReconnect: 'Se reconnecter',
   },
   shortcuts: {
     title: 'Raccourcis clavier',
@@ -416,9 +418,9 @@ export default {
     qualityBitrate: 'Débit',
     qualityBitrateItem: '{value} kbit/s',
     qualityOriginal: 'Original (inchangé)',
-    castRadioDirectly: "Envoyer la radio directement à l'appareil",
+    castRadioDirectly: 'Lire la radio directement depuis la station',
     castRadioDirectlyHint:
-      "Par défaut, Beacon route la radio diffusée via son propre backend, pour que l'appareil et le titre en cours partagent une seule connexion à la station. Activé, l'appareil se connecte directement à la station — la lecture continue même si Beacon redémarre, avec le risque que certains appareils refusent le flux de la station.",
+      "Par défaut, Beacon route la radio via son propre backend, aussi bien pour un appareil de diffusion que pour ce lecteur. Une seule connexion à la station alimente le son et le titre en cours, et une station qui décroche est reconnectée par Beacon sans interrompre la lecture ici. Activé, l'appareil et ce lecteur se connectent directement à la station : la lecture continue même si Beacon redémarre, mais une coupure ne se remarque qu'une fois le son parti, et certains appareils refusent le flux de la station.",
     about: 'À propos de Beacon',
     whatsNew: 'Quoi de neuf ?',
     ffmpegFound: 'ffmpeg trouvé',
@@ -485,7 +487,7 @@ export default {
         name: 'Radio Browser',
         purpose: 'Le répertoire de stations derrière « Découvrir des stations ».',
         sends:
-          "Votre terme de recherche et le pays choisi. Lorsqu'une station trouvée ici est lue, Beacon renvoie son identifiant sous forme de clic ; les règles du répertoire le demandent, afin que les stations populaires restent identifiables. Une station que vous avez ajoutée en saisissant son adresse n'est jamais signalée.",
+          "Votre terme de recherche et le pays choisi. Lorsqu'une station trouvée ici est lue, Beacon renvoie son identifiant sous forme de clic ; les règles du répertoire le demandent, afin que les stations populaires restent identifiables. Une station que vous avez ajoutée en saisissant son adresse n'est jamais signalée. Voter pour une station envoie également son identifiant, uniquement lorsque vous appuyez vous-même sur ce bouton.",
       },
       stationSite: {
         name: 'Les sites des stations de radio',
@@ -562,6 +564,13 @@ export default {
     discoverColumnCodec: 'Codec',
     discoverColumnVotes: 'Votes',
     discoverColumnClicks: 'Clics (24h)',
+    discoverVote: 'Voter pour cette station',
+    discoverVoted: 'Vous avez voté pour cette station',
+    discoverVoteLimitTitle: "Déjà voté aujourd'hui",
+    discoverVoteLimitMessage:
+      "Radio Browser ne compte qu'un vote par station et par jour, pour toutes les personnes qui partagent ce serveur Beacon.",
+    discoverVoteFailedTitle: 'Vote non envoyé',
+    discoverVoteFailedMessage: 'Radio Browser est injoignable. Veuillez réessayer plus tard.',
     discoverStreamOk: 'En ligne à la dernière vérification',
     discoverStreamDown: 'Hors ligne à la dernière vérification',
     discoverPlay: "Lire sans l'ajouter",

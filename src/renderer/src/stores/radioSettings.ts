@@ -11,6 +11,16 @@ const CAST_DIRECTLY_KEY = 'beacon.radio-cast-directly'
 // the opt-out, for anyone who'd rather not make connect a single point of
 // failure for radio that's already playing — see core/radio_relay.py's own
 // docstring for that trade-off.
+//
+// The name is narrower than what it decides. It speaks for this device's
+// own player too (stores/playback.ts's startLocalRadio(), and
+// connect/routes/stream.py's /stream/radio-local for what that buys):
+// a browser is one more thing being fed a station, the trade-off it makes
+// is the same one, and a listener who wants radio to survive a connect
+// restart wants that for whatever is playing it. Kept as-is rather than
+// renamed because the value is stored under this key on every existing
+// install and synced to the account under this name
+// (services/connect/accountSettings.ts's castRadioDirectly).
 function loadCastDirectly(): boolean {
   try {
     return localStorage.getItem(accountScopedKey(CAST_DIRECTLY_KEY)) === 'true'

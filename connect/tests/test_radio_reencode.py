@@ -263,7 +263,12 @@ class TestRadioStreamRoute:
         class FakeRelay:
             device_content_type = "audio/mpeg"
 
-            def subscribe_audio(self):
+            def subscribe_audio(self, *, burst=False):
+                # A cast device never asks for the burst a listener's own
+                # player does: it is on the same network as this backend,
+                # and seconds of extra lag would only push its audio
+                # further from the position tracking built around it.
+                assert burst is False
                 q = asyncio.Queue()
                 q.put_nowait(b"relayed-audio")
                 q.put_nowait(None)
@@ -365,7 +370,12 @@ class TestRadioStreamIcy:
         class FakeRelay:
             device_content_type = "audio/mpeg"
 
-            def subscribe_audio(self):
+            def subscribe_audio(self, *, burst=False):
+                # A cast device never asks for the burst a listener's own
+                # player does: it is on the same network as this backend,
+                # and seconds of extra lag would only push its audio
+                # further from the position tracking built around it.
+                assert burst is False
                 q = asyncio.Queue()
                 q.put_nowait(b"relayed-data")  # 12 bytes — a clean multiple of metaint=4
                 q.put_nowait(None)

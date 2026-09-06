@@ -15,6 +15,7 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
+import { emitter } from '@/emitter'
 import RadioDiscoverDialog from '../RadioDiscoverDialog.vue'
 import * as radioBrowser from '@/services/connect/radioBrowser'
 import { radioBrowserIdFor } from '@/services/radioBrowserLinks'
@@ -24,6 +25,7 @@ vi.mock('@/services/connect/radioBrowser', () => ({
   searchRadioBrowser: vi.fn(),
   listRadioBrowserCountries: vi.fn(),
   registerRadioBrowserClick: vi.fn(),
+  voteForRadioBrowserStation: vi.fn(),
 }))
 
 const vuetify = createVuetify({ components, directives })
@@ -34,6 +36,7 @@ interface DialogInstance {
   browseOrder: 'votes' | 'clickcount'
   countryOptions: { name: string; code: string }[]
   addBrowsedStation(result: RadioBrowserStation): Promise<void>
+  voteForStation(result: RadioBrowserStation): Promise<void>
 }
 
 function makeResult(overrides: Partial<RadioBrowserStation> = {}): RadioBrowserStation {
@@ -60,7 +63,13 @@ function makeResult(overrides: Partial<RadioBrowserStation> = {}): RadioBrowserS
 function mountDialog() {
   return mount(RadioDiscoverDialog, {
     props: { modelValue: false },
-    global: { plugins: [vuetify, i18n], stubs: { CoverArt: true } },
+    global: {
+      plugins: [vuetify, i18n],
+      stubs: { CoverArt: true },
+      // The dialog reports a refused or failed vote as a toast — see its
+      // own voteForStation().
+      mocks: { $emitter: emitter },
+    },
     // v-dialog teleports its content out of the component tree — without
     // this it is beyond both the wrapper's and document.querySelector's
     // reach.
@@ -78,6 +87,12 @@ function instanceOf(wrapper: ReturnType<typeof mountDialog>): DialogInstance {
 async function openAndSettle(wrapper: ReturnType<typeof mountDialog>) {
   await wrapper.setProps({ modelValue: true })
   await flushPromises()
+}
+
+/** The vote figure is the vote button — see the component's own template
+ * for why the number and the control that raises it are one target. */
+function voteButton(): HTMLElement {
+  return document.querySelector('.discover-results .discover-card__stat--vote')!
 }
 
 /** Closing and opening again, which is what the page does — the dialog is
@@ -98,6 +113,7 @@ describe('RadioDiscoverDialog', () => {
     vi.mocked(radioBrowser.searchRadioBrowser).mockReset().mockResolvedValue([])
     vi.mocked(radioBrowser.listRadioBrowserCountries).mockReset().mockResolvedValue([])
     vi.mocked(radioBrowser.registerRadioBrowserClick).mockReset()
+    vi.mocked(radioBrowser.voteForRadioBrowserStation).mockReset().mockResolvedValue(true)
     vi.spyOn(useLibraryStore(), 'saveRadioStation').mockResolvedValue()
     vi.spyOn(usePlaybackStore(), 'playRadioStation').mockResolvedValue()
   })
@@ -398,6 +414,112 @@ describe('RadioDiscoverDialog', () => {
 
     expect(document.querySelector('.discover-results .mdi-plus')).toBeNull()
     expect(document.querySelector('.discover-results .mdi-check')).not.toBeNull()
+  })
+
+  it('casts a vote for a station and raises the figure that button sits on', async () => {
+    vi.mocked(radioBrowser.searchRadioBrowser).mockResolvedValue([makeResult({ votes: 42 })])
+    const wrapper = mountDialog()
+    await openAndSettle(wrapper)
+    await wrapper.vm.$nextTick()
+
+    voteButton().click()
+    await flushPromises()
+
+    expect(radioBrowser.voteForRadioBrowserStation).toHaveBeenCalledWith('uuid-1')
+    expect(voteButton().textContent).toContain('43')
+    // Filled thumb, and no second vote to give — one per station per day.
+    expect(voteButton().querySelector('.mdi-thumb-up')).not.toBeNull()
+    expect((voteButton() as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('never spends a second vote while the first is still in flight', async () => {
+    // Through the method rather than the button: the button disables
+    // itself for the round trip, so a second *click* never reaches this
+    // anyway — the guard is what keeps a vote from being cast twice by
+    // anything else that can reach it.
+    let resolveVote: (counted: boolean) => void = () => {}
+    vi.mocked(radioBrowser.voteForRadioBrowserStation).mockImplementation(
+      () => new Promise((resolve) => (resolveVote = resolve)),
+    )
+    const station = makeResult()
+    vi.mocked(radioBrowser.searchRadioBrowser).mockResolvedValue([station])
+    const wrapper = mountDialog()
+    await openAndSettle(wrapper)
+
+    void instanceOf(wrapper).voteForStation(station)
+    void instanceOf(wrapper).voteForStation(station)
+    resolveVote(true)
+    await flushPromises()
+
+    expect(radioBrowser.voteForRadioBrowserStation).toHaveBeenCalledTimes(1)
+    expect(station.votes).toBe(43)
+  })
+
+  it('has nothing left to send once a vote for that station is cast', async () => {
+    const station = makeResult()
+    vi.mocked(radioBrowser.searchRadioBrowser).mockResolvedValue([station])
+    const wrapper = mountDialog()
+    await openAndSettle(wrapper)
+
+    await instanceOf(wrapper).voteForStation(station)
+    await instanceOf(wrapper).voteForStation(station)
+
+    expect(radioBrowser.voteForRadioBrowserStation).toHaveBeenCalledTimes(1)
+  })
+
+  it('marks a refused vote as spent and says why, rather than reporting an error', async () => {
+    vi.mocked(radioBrowser.voteForRadioBrowserStation).mockResolvedValue(false)
+    vi.mocked(radioBrowser.searchRadioBrowser).mockResolvedValue([makeResult({ votes: 42 })])
+    const toasts: { level: string; title: string }[] = []
+    emitter.on('toast', (toast) => toasts.push(toast as { level: string; title: string }))
+    const wrapper = mountDialog()
+    await openAndSettle(wrapper)
+    await wrapper.vm.$nextTick()
+
+    voteButton().click()
+    await flushPromises()
+    emitter.all.clear()
+
+    // The directory's own day's vote for this station is spent (by another
+    // device, or another person on this Beacon server), so the button
+    // closes — but the count it did not raise stays where it was.
+    expect((voteButton() as HTMLButtonElement).disabled).toBe(true)
+    expect(voteButton().textContent).toContain('42')
+    expect(toasts).toEqual([
+      expect.objectContaining({ level: 'information', title: 'Already voted today' }),
+    ])
+  })
+
+  it('leaves the button open for another try when the vote could not be sent at all', async () => {
+    vi.mocked(radioBrowser.voteForRadioBrowserStation).mockRejectedValue(new Error('unreachable'))
+    vi.mocked(radioBrowser.searchRadioBrowser).mockResolvedValue([makeResult()])
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const toasts: { level: string; title: string }[] = []
+    emitter.on('toast', (toast) => toasts.push(toast as { level: string; title: string }))
+    const wrapper = mountDialog()
+    await openAndSettle(wrapper)
+    await wrapper.vm.$nextTick()
+
+    voteButton().click()
+    await flushPromises()
+    emitter.all.clear()
+
+    expect((voteButton() as HTMLButtonElement).disabled).toBe(false)
+    expect(toasts).toEqual([expect.objectContaining({ level: 'error', title: 'Vote not sent' })])
+  })
+
+  it('still shows a vote as cast after the dialog is closed and opened again', async () => {
+    vi.mocked(radioBrowser.searchRadioBrowser).mockResolvedValue([makeResult()])
+    const wrapper = mountDialog()
+    await openAndSettle(wrapper)
+    await wrapper.vm.$nextTick()
+    voteButton().click()
+    await flushPromises()
+
+    await reopenAndSettle(wrapper)
+    await wrapper.vm.$nextTick()
+
+    expect((voteButton() as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('shows an error message when every mirror is unreachable', async () => {

@@ -1,7 +1,7 @@
 """routes/radio.py — GET /radio-favicon, POST /radio-favicon/batch,
 GET /radio-browser/search, GET /radio-browser/countries,
-POST /radio-browser/click/{stationuuid}, POST /radio-metadata/start,
-POST /radio-metadata/stop, GET /radio-metadata
+POST /radio-browser/click/{stationuuid}, POST /radio-browser/vote/{stationuuid},
+POST /radio-metadata/start, POST /radio-metadata/stop, GET /radio-metadata
 
 Internet radio stations are Navidrome's own resource (createInternetRadioStation
 etc., proxied straight through routes/proxy.py) and have no favicon concept of
@@ -27,7 +27,9 @@ directory, for RadioView.vue's "browse stations" dialog: /search to find a
 station to add in the first place (rather than requiring a stream URL typed
 in by hand), /countries to back that dialog's country filter dropdown with
 values Radio Browser actually recognizes (see core/radio_browser.py's own
-docstring for why there is no equivalent /languages).
+docstring for why there is no equivalent /languages), /click to report a
+listen back to the directory and /vote to cast a vote for a station
+somebody liked enough to say so.
 
 /radio-metadata/* is unrelated to either of those too — a thin wrapper
 around core/session.py's start_radio_metadata_watch()/
@@ -63,7 +65,12 @@ from pydantic import BaseModel, Field
 
 from core.auth import require_token
 from core.playlist_url import resolve_stream_url
-from core.radio_browser import list_countries, register_click, search_stations
+from core.radio_browser import (
+    list_countries,
+    register_click,
+    search_stations,
+    vote_for_station,
+)
 from core.session import SessionState, require_authenticated_session
 
 logger = logging.getLogger("connect.radio")
@@ -1116,6 +1123,19 @@ async def radio_browser_click(stationuuid: str) -> dict:
     return {"ok": True}
 
 
+@router.post("/radio-browser/vote/{stationuuid}")
+async def radio_browser_vote(stationuuid: str):
+    # Three outcomes, not two - see vote_for_station()'s own docstring. A
+    # refused vote is a real answer from a reachable directory ("this
+    # address already voted for this station today"), so it comes back as
+    # a 200 with ok=false; only a directory nobody could reach at all is
+    # the 502 every other /radio-browser route uses for that case.
+    status = await vote_for_station(stationuuid)
+    if status == "unreachable":
+        return JSONResponse({"error": "Radio Browser is unreachable"}, status_code=502)
+    return {"ok": status == "ok"}
+
+
 @router.get("/radio-stream-url")
 async def radio_stream_url(url: str = Query(...)) -> dict:
     """The playable audio URL behind a station's own URL - see
@@ -1147,7 +1167,24 @@ async def start_radio_metadata(
 async def stop_radio_metadata(
     session: SessionState = Depends(require_authenticated_session),
 ) -> dict:
+    """Radio has stopped on the client that owns this session.
+
+    Also tears down a relay that *local* playback started (see
+    /stream/radio-local, which starts one lazily rather than through a
+    handshake of its own): without this, a station the listener stopped
+    would go on being fetched from this backend for as long as the session
+    lived, silently, with nothing left listening to it.
+
+    Never a casting session's relay, though — st.radio_info is the one
+    thing only /play-url ever sets, so it is exactly the question "is a
+    device being fed from this?". The two are the same object and the same
+    station, and the client calls this on its way through every radio stop
+    including the ones where casting continues (see leaveRadio() in
+    stores/playback.ts), so stopping it unconditionally would cut a speaker
+    off mid-song."""
     session.stop_radio_metadata_watch()
+    if session.state.radio_info is None:
+        await session.stop_radio_relay()
     return {"status": "ok"}
 
 

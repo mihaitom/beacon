@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
@@ -49,6 +49,36 @@ describe('RadioLiveStatus', () => {
 
     expect(wrapper.get('.radio-live__sr').text()).toBe('Live · 1:05')
     expect(wrapper.get('.radio-live__readout').attributes('aria-hidden')).toBe('true')
+  })
+
+  // The one state on this row that offers an action. Before it existed a
+  // station that went quiet left the player bar with nothing on it that
+  // could bring the station back.
+  it('offers a reconnect once the connection is lost', async () => {
+    const wrapper = mountStatus()
+    const playback = playRadio()
+    playback.radioConnectionLost = true
+    const reconnect = vi.spyOn(playback, 'reconnectRadio').mockImplementation(() => {})
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.radio-live__readout').exists()).toBe(false)
+    await wrapper.get('.radio-live__retry').trigger('click')
+
+    expect(reconnect).toHaveBeenCalledOnce()
+  })
+
+  // Both can be true for a moment - reconnectRadio() sets buffering on its
+  // way out of the lost state - and "we are trying again" is the newer,
+  // more useful of the two to show.
+  it('shows the reconnect attempt rather than the lost state once one is under way', async () => {
+    const wrapper = mountStatus()
+    const playback = playRadio()
+    playback.radioConnectionLost = false
+    playback.radioBuffering = true
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.radio-live__retry').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'VProgressLinear' }).exists()).toBe(true)
   })
 
   // The elapsed time is frozen or misleading while this is true, so the

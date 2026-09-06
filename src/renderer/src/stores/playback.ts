@@ -36,7 +36,7 @@ import {
   startRadioMetadataWatch,
   stopRadioMetadataWatch,
 } from '@/services/connect/radioMetadata'
-import { resolveRadioStreamUrl } from '@/services/connect/radio'
+import { localRadioStreamUrl, resolveRadioStreamUrl } from '@/services/connect/radio'
 import { registerRadioBrowserClick } from '@/services/connect/radioBrowser'
 import { radioBrowserIdFor } from '@/services/radioBrowserLinks'
 import { pollingAllowed } from '@/services/connect/pollGate'
@@ -145,6 +145,16 @@ interface PlaybackState {
    * bar's live-time label (SeekBar.vue/MobileTransportControls.vue)
    * instead of a frozen or misleading elapsed time. */
   radioBuffering: boolean
+  /** True once local playback has stopped trying to reconnect a dropped
+   * station on its own — the end of audioEngine.ts's reconnect ladder (see
+   * its onConnectionLost). RadioLiveStatus.vue turns this into the one
+   * thing the player bar has never offered for a station that went quiet:
+   * a way to try again without hunting the station down in the library.
+   *
+   * Local playback only. A cast target's own drops are the backend's to
+   * notice and retry (core/radio_relay.py never stops trying), and nothing
+   * about this device's connection says anything about the speaker's. */
+  radioConnectionLost: boolean
   initialized: boolean
 }
 
@@ -359,11 +369,36 @@ export const usePlaybackStore = defineStore('playback', {
       radioBitrate: null,
       radioCodec: null,
       radioBuffering: false,
+      radioConnectionLost: false,
       initialized: false,
     }
   },
 
   getters: {
+    /** What positionTracker.extrapolate() may clamp the reported position
+     * to — `duration` for a track, and nothing at all for a station.
+     *
+     * A live stream has no length, so there is nothing to clamp against;
+     * `this.duration` while one is playing is whatever the last *track*
+     * left behind. Clamping to that pins the "Live · {elapsed}" readout at
+     * that track's length and holds it there for as long as the station
+     * plays — a counter that looks like it froze, over audio that is
+     * perfectly fine. Confirmed live 2026-09-06 with duration and
+     * localPosition both sitting at exactly 170 on a station 15 minutes in.
+     *
+     * Asked here rather than fixed by clearing `duration` at each place a
+     * station starts, which is what the first attempt at this did
+     * (playRadioStation(), 2026-09-02). That left the same bug on every
+     * other route to a playing station — pressing play on a restored one
+     * (togglePlay), picking a cast target for one already playing
+     * (castTo), and both hand-off paths — since none of those changes the
+     * station and so none of them looked like it needed a reset. Deriving
+     * it from "is a station playing" instead means no future path can
+     * forget. */
+    positionClamp(state): number {
+      return state.radioStation ? 0 : state.duration
+    },
+
     /** What is playing right now, or null.
      *
      * Null for as long as a radio station is playing, even though the
@@ -468,6 +503,13 @@ export const usePlaybackStore = defineStore('playback', {
       engine.onReconnectStateChange = (reconnecting) => {
         if (!this.isCasting && this.radioStation) this.radioBuffering = reconnecting
       }
+      // The other end of the same story: the ladder ran out. Radio only for
+      // the same reason as above — a song that cannot be reconnected is
+      // one the listener can play again from the queue, so there is nothing
+      // to offer them that they do not already have.
+      engine.onConnectionLost = () => {
+        if (!this.isCasting && this.radioStation) this.radioConnectionLost = true
+      }
 
       // OS media keys / lock-screen / GNOME-KDE media widget — see that
       // service's own comment. Works the same whether casting or playing
@@ -534,7 +576,7 @@ export const usePlaybackStore = defineStore('playback', {
           positionPayloadHandled = status
           const now = performance.now()
           positionTracker.record(status.elapsed, now)
-          this.localPosition = positionTracker.extrapolate(now, this.duration)
+          this.localPosition = positionTracker.extrapolate(now, this.positionClamp)
         }
         this.checkScrobbleThreshold()
 
@@ -550,7 +592,7 @@ export const usePlaybackStore = defineStore('playback', {
       // it around every play/pause/cast-toggle.
       setInterval(() => {
         if (!this.isCasting || !this.isPlaying || !positionTracker.hasAnchor()) return
-        this.localPosition = positionTracker.extrapolate(performance.now(), this.duration)
+        this.localPosition = positionTracker.extrapolate(performance.now(), this.positionClamp)
       }, 200)
 
       // Polls this session's ICY "now playing" tag (services/connect/
@@ -704,9 +746,8 @@ export const usePlaybackStore = defineStore('playback', {
     async resumeLocalPlayback(): Promise<void> {
       if (this.radioStation) {
         if (restoredWasPlaying) {
-          getAudioEngine().play(this.radioStation.streamUrl)
+          this.startLocalRadio(this.radioStation.streamUrl)
           this.isPlaying = true
-          startRadioMetadataWatch(this.radioStation.streamUrl)
         }
         return
       }
@@ -745,10 +786,8 @@ export const usePlaybackStore = defineStore('playback', {
         // "Buffering…" indicator it drives would otherwise stick forever
         // once audio has clearly already started.
         this.radioBuffering = false
-        if (this.isPlaying) {
-          getAudioEngine().play(this.radioStation.streamUrl)
-          startRadioMetadataWatch(this.radioStation.streamUrl)
-        }
+        this.radioConnectionLost = false
+        if (this.isPlaying) this.startLocalRadio(this.radioStation.streamUrl)
         return
       }
       const song = this.currentSong
@@ -791,6 +830,7 @@ export const usePlaybackStore = defineStore('playback', {
           this.radioTitleLog = []
           this.radioBitrate = null
           this.radioCodec = null
+          this.radioConnectionLost = false
           // Same reset playRadioStation() does, and for the identical
           // reason (see its own comment): another client switching this
           // shared session to radio takes this branch instead of that one,
@@ -900,6 +940,7 @@ export const usePlaybackStore = defineStore('playback', {
           this.radioTitleLog = []
           this.radioBitrate = null
           this.radioCodec = null
+          this.radioConnectionLost = false
         }
         this.radioStation = null
         if (!queueMatches) this.queue = remoteQueueIds.map((id) => resolvedById.get(id)!)
@@ -1106,6 +1147,7 @@ export const usePlaybackStore = defineStore('playback', {
       this.radioTitleLog = []
       this.radioBitrate = null
       this.radioCodec = null
+      this.radioConnectionLost = false
       // Cleared here rather than left to the first SSE tick — that first
       // tick is itself delayed by however long /play-url's own dispatch
       // takes, and a stale true/false from whatever this session was doing
@@ -1113,27 +1155,18 @@ export const usePlaybackStore = defineStore('playback', {
       // for that whole gap.
       this.radioBuffering = false
       this.localPosition = 0
-      // Radio has no track duration — status.current_song is always null
-      // for it, so nothing else ever clears whatever this held from the
-      // last track played, and positionTracker.extrapolate() (see its own
-      // comment) then clamps every 200ms tick to that stale number instead
-      // of leaving live elapsed unclamped. Reported live 2026-09-02 as the
-      // seek bar's "Live · {time}" label sticking on the last track's
-      // duration, only flickering to the real value on each ~2s SSE tick
-      // (positionTracker.extrapolate() runs unclamped in between those,
-      // right up until the next tick re-clamps it).
+      // Radio has no track duration, and nothing else clears what the last
+      // track left here (status.current_song is always null for a station).
+      // No longer what keeps the elapsed readout honest — positionClamp
+      // above does that, on every route to a playing station rather than
+      // only this one — but still correct in its own right: leaving a
+      // previous track's length sitting in state for anything else to read
+      // would be a trap of its own.
       this.duration = 0
       // Same reasoning as startCurrent()'s identical reset() call — without
       // it, extrapolation would keep advancing from the last track's final
       // anchor until the first real radio status tick corrects it.
       positionTracker.reset()
-      // Local playback never otherwise touches the connect backend at all
-      // (see services/connect/radioMetadata.ts's own docstring) - the
-      // casting branch below also starts one on its own via /play-url, so
-      // this call is a harmless, idempotent repeat there rather than a
-      // second, redundant watch.
-      startRadioMetadataWatch(streamUrl)
-
       if (connect.isActive) {
         localRadioChangeGuard.begin(streamUrl)
         try {
@@ -1145,7 +1178,14 @@ export const usePlaybackStore = defineStore('playback', {
           localRadioChangeGuard.end(streamUrl)
         }
       } else {
-        getAudioEngine().play(streamUrl)
+        // Which also starts the now-playing watch, in the one mode that
+        // still needs one — see startLocalRadio(). It used to be started
+        // here for both branches, on the reasoning that the casting branch
+        // above starting its own through /play-url made the repeat
+        // harmless; that stopped being true once "relayed" became a thing
+        // a local player can be as well, since the repeat would then be a
+        // second connection to the station rather than a no-op.
+        this.startLocalRadio(streamUrl)
       }
       this.isPlaying = true
     },
@@ -1317,7 +1357,13 @@ export const usePlaybackStore = defineStore('playback', {
           // did nothing. Radio has no "resume from where it paused" to
           // preserve either way, so restarting the live connection is the
           // same action whether something was loaded or not.
-          getAudioEngine().play(this.radioStation.streamUrl)
+          //
+          // Pressing play is also a reconnect, for a station whose
+          // connection this device had already given up on —
+          // startLocalRadio() clearing the flag is what stops
+          // RadioLiveStatus.vue from still offering its own button over a
+          // station that is audibly playing again.
+          this.startLocalRadio(this.radioStation.streamUrl)
           this.isPlaying = true
         } else if (engine.hasEnded) {
           // The loaded track already played through to the end (e.g. the last
@@ -1416,7 +1462,68 @@ export const usePlaybackStore = defineStore('playback', {
       this.radioTitleLog = []
       this.radioBitrate = null
       this.radioCodec = null
+      this.radioConnectionLost = false
       this.radioBuffering = false
+    },
+
+    /** Starts this device's own player on `streamUrl` — the single place
+     * local radio playback begins.
+     *
+     * One place, because the decision it makes has two halves that must
+     * never be made separately: where the audio comes from, and who reads
+     * the station's now-playing tag. Routed through Beacon (the default,
+     * see connect/routes/stream.py's /stream/radio-local) both come out of
+     * the one connection the backend's relay holds. Straight from the
+     * station, the audio is this element's own fetch and the tag needs a
+     * second connection of its own (services/connect/radioMetadata.ts).
+     * The same switch decides it here as for casting — a browser is one
+     * more thing being fed a station, and the trade-off is the same one.
+     */
+    startLocalRadio(streamUrl: string): void {
+      const direct = useRadioSettingsStore().castDirectly
+      this.radioConnectionLost = false
+      if (direct) {
+        getAudioEngine().playLive(streamUrl)
+        // The relay reports its own titles through the very same callback
+        // this watch feeds (core/session.py's _set_radio_title), so this is
+        // the one mode that still needs asking. Starting it alongside a
+        // relay would open a second connection to the station to read
+        // something already being read — the exact duplication the relay
+        // exists to remove.
+        startRadioMetadataWatch(streamUrl)
+        return
+      }
+      const auth = useAuthStore()
+      getAudioEngine().playLive(
+        localRadioStreamUrl(auth.apiUrl, auth.connectToken, auth.sessionId, streamUrl),
+        // The relay holds the station's connection and queues what this
+        // device misses while it cannot be reached, so a gap here is
+        // something to wait through rather than to reconnect out of — see
+        // audioEngine.ts's LIVE_HOLD_SECONDS.
+        { holdsConnection: true },
+      )
+    },
+
+    /** The listener's own "try again" for a station this device stopped
+     * reconnecting to on its own (radioConnectionLost). Restarts the live
+     * connection from scratch — there is nothing to resume, a station is
+     * only ever served from its own edge — which also gives the engine a
+     * fresh reconnect ladder, so a station that comes back a minute later
+     * is one button press away rather than a hunt through the library.
+     *
+     * Local playback only, and deliberately so: while casting, the backend
+     * relay is what holds the station's connection and it never stops
+     * retrying on its own (core/radio_relay.py), so there is no give-up
+     * state here for this to answer. */
+    reconnectRadio(): void {
+      const station = this.radioStation
+      if (!station || this.isCasting) return
+      // Shown as connecting straight away rather than after the first byte
+      // arrives: pressing this and seeing nothing change for several
+      // seconds reads as a button that did not work.
+      this.radioBuffering = true
+      this.startLocalRadio(station.streamUrl)
+      this.isPlaying = true
     },
 
     async seek(position: number): Promise<void> {
@@ -1739,6 +1846,7 @@ export const usePlaybackStore = defineStore('playback', {
       this.radioTitleLog = []
       this.radioBitrate = null
       this.radioCodec = null
+      this.radioConnectionLost = false
       // Same reasoning as handOffToLocalPlayback()'s identical reset —
       // nothing is casting (or playing at all) any more to still be
       // filling a startup buffer, and the SSE handler that normally clears

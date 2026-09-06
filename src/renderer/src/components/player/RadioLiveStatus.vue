@@ -1,20 +1,52 @@
 <template>
   <div class="radio-live">
-    <!-- The one row a live stream gets where a track gets a seek bar. Two
-     - states, deliberately the same height either way: while
-     - playbackStore.radioBuffering — a cast target still filling its own
-     - startup buffer (see connect/core/session.py's radio_is_buffering()),
-     - or this device's own <audio> element retrying a dropped connection
-     - (audioEngine.ts's reconnectOnDrop()) — the elapsed time would be
-     - frozen or misleading, so the readout swaps for an indeterminate bar.
-     - Just the bar, no label beside it: a second row for that text used to
-     - appear only while buffering and shoved the transport controls above
-     - around every time it started or ended (dropped 2026-09-04).
+    <!-- The one row a live stream gets where a track gets a seek bar.
+     - Three states, deliberately the same height in all of them, in order
+     - of how specific they are:
+     -
+     -  1. The connection is gone and nothing is still trying (below).
+     -  2. playbackStore.radioBuffering — a cast target still filling its
+     -     own startup buffer (see connect/core/session.py's
+     -     radio_is_buffering()), or this device's own <audio> element
+     -     retrying a dropped connection (audioEngine.ts's
+     -     reconnectOnDrop()). The elapsed time would be frozen or
+     -     misleading either way, so the readout swaps for an indeterminate
+     -     bar. Just the bar, no label beside it: a second row for that text
+     -     used to appear only while buffering and shoved the transport
+     -     controls above around every time it started or ended (dropped
+     -     2026-09-04).
+     -  3. The ordinary "Live · {elapsed}" readout.
      -
      - Shared by SeekBar.vue and MobileTransportControls.vue, which had two
      - copies of this. -->
+    <!-- The station is gone and this device has stopped retrying on its own
+     - (stores/playback.ts's radioConnectionLost, the end of the reconnect
+     - ladder in audioEngine.ts). Ahead of the buffering bar because it is
+     - the more specific state: retrying and having stopped retrying are
+     - mutually exclusive, and this is the one the listener can do something
+     - about.
+     -
+     - The only state of the three that offers an action. Until this existed
+     - a station that went quiet left the player bar with nothing on it that
+     - could bring it back — the way out was to find the station again in
+     - the library and start it over. -->
+    <div v-if="playbackStore.radioConnectionLost" class="radio-live__lost">
+      <span class="radio-live__dot radio-live__dot--lost" />
+      <span class="text-body-small radio-live__lost-label">
+        {{ $t('player.radioConnectionLost') }}
+      </span>
+      <v-btn
+        class="radio-live__retry"
+        variant="text"
+        size="x-small"
+        density="compact"
+        color="primary"
+        :text="$t('player.radioReconnect')"
+        @click="playbackStore.reconnectRadio()"
+      />
+    </div>
     <v-progress-linear
-      v-if="playbackStore.radioBuffering"
+      v-else-if="playbackStore.radioBuffering"
       indeterminate
       height="4"
       rounded
@@ -97,6 +129,37 @@ export default {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.radio-live__lost {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Solid rather than the off-air state's hollow ring: "paused" is a state
+ * the listener chose and the hollow dot reads as the absence of a
+ * connection nobody asked for; this one is a fault, and it should be the
+ * thing the eye lands on in a row that is otherwise all low-contrast. */
+.radio-live__dot--lost {
+  background: rgb(var(--v-theme-error));
+}
+
+.radio-live__lost-label {
+  color: rgb(var(--v-theme-error));
+  line-height: 1;
+}
+
+/* Vuetify sizes a text button's padding and letter-spacing for a toolbar,
+ * which in a 24px row shared with a label reads as a button parked next to
+ * some text rather than one line saying one thing. Trimmed to sit inside
+ * the row the rest of this component is built to keep at a constant
+ * height (see the template). */
+.radio-live__retry {
+  min-width: 0;
+  padding-inline: 6px;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 /* Paused: the same readout, saying it is not on air right now rather than

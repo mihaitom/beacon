@@ -27,6 +27,63 @@ const MEDIA_ERR_NETWORK = 2
 const MAX_RECONNECT_ATTEMPTS = 5
 const MAX_RECONNECT_DELAY_SECONDS = 8
 
+// The same two, for a live stream (playLive() below). Longer on both counts
+// than a song's ladder, which gives up after about 23s: a song that cannot
+// be fetched is one the listener can simply play again from the queue,
+// while a station that drops has nothing else to fall back to, and the
+// listener is being *shown* that a reconnect is in progress (see
+// onReconnectStateChange) rather than left guessing at silence. 1s, 2s, 4s,
+// 8s, 15s, 15s — about 45s of trying before onConnectionLost() below hands
+// the decision to the listener.
+const MAX_LIVE_RECONNECT_ATTEMPTS = 6
+const MAX_LIVE_RECONNECT_DELAY_SECONDS = 15
+
+// How long a live stream's playhead may stand still, while the element is
+// not paused, before the connection counts as dropped — and how often that
+// is checked.
+//
+// This exists because the element's own 'error' event is not, for a live
+// stream, the thing that actually happens: MEDIA_ERR_NETWORK is reported
+// when a fetch *fails*, and the common radio failure is a connection that
+// never fails at all. The station's server (or anything between it and
+// here) keeps the TCP connection open and simply stops writing to it — the
+// element goes to 'waiting', buffers nothing, fires no error, and sits
+// there indefinitely. Waiting for the browser to give up on its own took
+// long enough to look like the app had hung.
+//
+// Four seconds rather than one or two: a live stream legitimately runs its
+// buffer down to nothing now and again (that is the difference between it
+// and a file, which is fetched ahead as fast as the connection allows), and
+// a reconnect that throws away a stream which was about to resume is worse
+// than four seconds of silence — it *guarantees* a gap where there might
+// have been none. 'waiting' is deliberately not treated as a drop on its
+// own for that same reason.
+const LIVE_STALL_SECONDS = 4
+const LIVE_STALL_CHECK_MS = 1000
+
+// How long a *held* live stream may stand still before this gives up on it
+// — see playLive()'s `holdsConnection`.
+//
+// Reconnecting is the wrong move on a stream Beacon's own backend is
+// relaying: the relay keeps fetching the station whether or not this
+// device can currently be reached, and what it produces meanwhile is
+// queued on the connection this element already has open. Let that
+// connection stand and a phone coming back from a dead spot is handed
+// exactly the seconds it missed, as fast as the link allows, and simply
+// carries on. Tear it down at four seconds instead and that queue is
+// discarded with it — the reconnect starts at the live edge, with no
+// buffer, having thrown away the one thing that would have made the gap
+// inaudible.
+//
+// So the four-second mark still *reports* a stall (the listener is told
+// something is wrong), and this much longer one is where "wrong" turns
+// into "not coming back". A minute is past what the relay's own upstream
+// backoff takes to recover a station (core/radio_relay.py's
+// _MAX_RECONNECT_DELAY_SECONDS), so a station outage rides through here
+// too — what is left after a minute is this device's own link to Beacon,
+// which retrying will not fix either, and the listener gets the button.
+const LIVE_HOLD_SECONDS = 60
+
 /** Whether the local <audio> element may be routed through a Web Audio
  * graph at all — which is what buys the visualizer and ReplayGain, and what
  * costs playback while the screen is locked.
@@ -77,6 +134,36 @@ export class AudioEngine {
   private lastKnownPosition = 0
   private reconnectAttempts = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  // Whether what is loaded is a live stream rather than a file — set by
+  // playLive() and cleared by every other load(). Changes three things:
+  // the reconnect ladder used (see MAX_LIVE_RECONNECT_ATTEMPTS), whether a
+  // reconnect writes a start position at all (it must not — see
+  // reconnectOnDrop()), and whether the stall watchdog below runs.
+  private liveStream = false
+  // Whether the thing on the other end of a live stream holds the
+  // station's connection on this element's behalf — see playLive() and
+  // LIVE_HOLD_SECONDS. False for a station fetched straight from its own
+  // server, where nothing is keeping anything for us and reconnecting is
+  // the only thing that can help.
+  private holdsConnection = false
+  // What to add to the element's own currentTime to get the position this
+  // engine reports. Only ever non-zero for a live stream that has
+  // reconnected: the element starts a reconnected stream at 0 again, but
+  // "Live · 3:41" is how long this listener has been listening, not an
+  // offset into anything, and resetting it to 0:00 over a four-second gap
+  // would throw away the one number on that row that was still true.
+  // A song has no equivalent — it reconnects by seeking back to where it
+  // dropped, which the element's own currentTime then reports correctly.
+  //
+  // Deliberately not applied to onBufferedChange: that one is read against
+  // the element's own `buffered` ranges, which are in the element's own
+  // time, and a live stream never renders it anyway (RadioLiveStatus.vue
+  // takes the whole seek bar's place for one).
+  private liveOffset = 0
+  // The stall watchdog: the interval itself, and when the reported position
+  // last actually moved. See LIVE_STALL_SECONDS.
+  private stallTimer: ReturnType<typeof setInterval> | null = null
+  private lastProgressAt = 0
 
   onTimeUpdate: ((position: number) => void) | null = null
   onEnded: (() => void) | null = null
@@ -100,6 +187,18 @@ export class AudioEngine {
    * connection there is audible right away, and was previously reported as
    * nothing worse than "Live" ticking straight through it. */
   onReconnectStateChange: ((reconnecting: boolean) => void) | null = null
+  /** Fires when a live stream's reconnect ladder has run out — the point
+   * at which retrying on its own stops being useful and the listener is
+   * offered the decision instead (stores/playback.ts's
+   * radioConnectionLost, surfaced by RadioLiveStatus.vue's reconnect
+   * button, which calls playLive() again).
+   *
+   * Alongside onError, not instead of it: giving up is still a genuine
+   * playback failure and everything that reacts to one — isPlaying going
+   * false, the console line — should still happen. This only adds the
+   * "and there is a way back from here" half, which is true for a station
+   * and not for much else. */
+  onConnectionLost: (() => void) | null = null
 
   constructor() {
     this.audio = new Audio()
@@ -138,10 +237,27 @@ export class AudioEngine {
       }
     }
     this.audio.addEventListener('timeupdate', () => {
-      this.lastKnownPosition = this.audio.currentTime
-      this.onTimeUpdate?.(this.audio.currentTime)
+      const position = this.audio.currentTime + this.liveOffset
+      // Only a position that actually moved counts as progress — the
+      // browser keeps firing 'timeupdate' at a stalled playhead on some
+      // platforms, so "the event arrived" is not the same question as "the
+      // stream is still feeding us" that checkForStall() below asks.
+      if (position !== this.lastKnownPosition) this.lastProgressAt = Date.now()
+      this.lastKnownPosition = position
+      this.onTimeUpdate?.(position)
     })
     this.audio.addEventListener('ended', () => {
+      // A live stream has no end to reach, so this is the station's
+      // connection having been closed cleanly — by the station itself, or
+      // by Beacon's relay being restarted underneath it. Not something the
+      // stall watchdog can be left to pick up either: a browser reports an
+      // ended element as paused, and checkForStall() (rightly) does not
+      // reconnect a paused one. Without this the sound simply stopped,
+      // with the row above it still reading "Live".
+      if (this.liveStream && this.reconnectUrl !== null) {
+        this.reconnectOnDrop()
+        return
+      }
       this.onEnded?.()
     })
     // A successful reconnect lands here, same as any other stream actually
@@ -210,24 +326,39 @@ export class AudioEngine {
    * UI out of "playing" for what is, from the listener's chair, a
    * half-second gap in the sound. */
   private reconnectOnDrop(): void {
-    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      const url = this.reconnectUrl
-      this.reconnectUrl = null
-      console.error(`[audio-engine] Giving up reconnecting to ${url} after dropped connection`)
-      this.onReconnectStateChange?.(false)
-      this.onError?.('Playback error: connection lost')
+    const maxAttempts = this.liveStream ? MAX_LIVE_RECONNECT_ATTEMPTS : MAX_RECONNECT_ATTEMPTS
+    const maxDelay = this.liveStream
+      ? MAX_LIVE_RECONNECT_DELAY_SECONDS
+      : MAX_RECONNECT_DELAY_SECONDS
+    if (this.reconnectAttempts >= maxAttempts) {
+      this.giveUp('after dropped connection')
       return
     }
     this.onReconnectStateChange?.(true)
     this.reconnectAttempts++
-    const delaySeconds = Math.min(2 ** (this.reconnectAttempts - 1), MAX_RECONNECT_DELAY_SECONDS)
+    const delaySeconds = Math.min(2 ** (this.reconnectAttempts - 1), maxDelay)
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null
       const url = this.reconnectUrl
       if (url === null) return
       this.cancelStartPositionRetry?.()
       this.audio.src = url
-      this.applyStartPosition(this.lastKnownPosition)
+      if (this.liveStream) {
+        // A live stream has no position to come back to: it is only ever
+        // served from its own edge, and writing a start position onto one
+        // asks the element to seek somewhere that does not exist. What is
+        // carried across instead is the *reported* position, so the elapsed
+        // readout survives the gap — see liveOffset.
+        this.liveOffset = this.lastKnownPosition
+      } else {
+        this.applyStartPosition(this.lastKnownPosition)
+      }
+      // The retry gets the full stall budget of its own rather than
+      // inheriting a clock that has already been standing still for
+      // however long this backoff step lasted — otherwise checkForStall()
+      // would condemn the new connection before it has had a chance to
+      // deliver its first byte.
+      this.lastProgressAt = Date.now()
       this.onBufferedChange?.(0)
       // A rejected play() here needs no handling of its own: a connection
       // that still isn't back fires the element's own 'error' event just
@@ -235,6 +366,76 @@ export class AudioEngine {
       // next backoff step.
       void this.audio.play().catch(() => {})
     }, delaySeconds * 1000)
+  }
+
+  /** Starts watching a live stream for a playhead that has stopped moving
+   * — see LIVE_STALL_SECONDS for what that catches and why the browser's
+   * own error reporting does not.
+   *
+   * Armed from start() rather than from loadSource(), so it only ever runs
+   * while sound is actually meant to be coming out: a paused element's
+   * playhead stands still for entirely legitimate reasons, and a watchdog
+   * that could not tell the two apart would reconnect a station the
+   * listener had deliberately paused. A no-op for anything but a live
+   * stream — a song that stalls has a real buffer behind it and the
+   * element's own 'error' event in front of it. */
+  private armStallWatchdog(): void {
+    this.disarmStallWatchdog()
+    if (!this.liveStream) return
+    this.lastProgressAt = Date.now()
+    this.stallTimer = setInterval(() => this.checkForStall(), LIVE_STALL_CHECK_MS)
+  }
+
+  private disarmStallWatchdog(): void {
+    if (this.stallTimer === null) return
+    clearInterval(this.stallTimer)
+    this.stallTimer = null
+  }
+
+  /** One tick of the watchdog. Hands a stalled live stream to
+   * reconnectOnDrop() — the same path a real 'error' takes, so the backoff,
+   * the "reconnecting" signal and the give-up handling all exist once
+   * rather than twice. */
+  private checkForStall(): void {
+    // paused covers both an actual pause and the moment between a
+    // reconnect's src assignment and its play() landing; reconnectTimer
+    // covers the backoff wait itself, where the playhead is standing still
+    // precisely because a retry is already scheduled.
+    if (!this.liveStream || this.audio.paused) return
+    if (this.reconnectUrl === null || this.reconnectTimer !== null) return
+    const stalledForMs = Date.now() - this.lastProgressAt
+    if (stalledForMs < LIVE_STALL_SECONDS * 1000) return
+
+    if (!this.holdsConnection) {
+      console.warn(
+        `[audio-engine] ${this.reconnectUrl} stopped advancing for ${LIVE_STALL_SECONDS}s — treating it as a dropped connection`,
+      )
+      this.reconnectOnDrop()
+      return
+    }
+    // Held: say so, and wait. The connection this element already has open
+    // is the one thing that can still recover the missing seconds rather
+    // than skipping them — see LIVE_HOLD_SECONDS.
+    if (stalledForMs < LIVE_HOLD_SECONDS * 1000) {
+      this.onReconnectStateChange?.(true)
+      return
+    }
+    this.giveUp(`after ${LIVE_HOLD_SECONDS}s with nothing arriving`)
+  }
+
+  /** Stops trying, by either route into it — the reconnect ladder running
+   * out, or a held connection standing still for too long. Both mean the
+   * same thing to everything downstream: nothing automatic is left to try,
+   * and for a station the listener is offered the decision instead (see
+   * onConnectionLost). */
+  private giveUp(reason: string): void {
+    const url = this.reconnectUrl
+    this.reconnectUrl = null
+    this.disarmStallWatchdog()
+    console.error(`[audio-engine] Giving up on ${url} ${reason}`)
+    this.onReconnectStateChange?.(false)
+    this.onConnectionLost?.()
+    this.onError?.('Playback error: connection lost')
   }
 
   /** Drops any in-flight reconnect attempt — called wherever playback is
@@ -263,13 +464,48 @@ export class AudioEngine {
    * always set explicitly rather than silently carrying over the previous
    * song's value. */
   load(url: string, startPosition = 0, gain = 1): void {
+    this.loadSource(url, startPosition, gain, false)
+  }
+
+  /** Loads and starts `url` as a live stream — a radio station, the one
+   * thing this app plays that has no length, no position and no end.
+   *
+   * A separate entry point rather than a flag on play(), because what
+   * follows from it is not a detail: nothing here may write a start
+   * position (there is nowhere to seek to), the stall watchdog runs
+   * (LIVE_STALL_SECONDS — a station's characteristic failure produces no
+   * 'error' event at all), the reconnect ladder is the longer one
+   * (MAX_LIVE_RECONNECT_ATTEMPTS), and running out of it is a state the
+   * listener is shown and can act on rather than a silent give-up.
+   *
+   * `holdsConnection` says that whatever is on the other end is fetching
+   * the station on this element's behalf and queueing what it produces —
+   * Beacon's own relay (connect/routes/stream.py's /stream/radio-local),
+   * never a station's own server. That flips what a stall means: not
+   * "reconnect", but "wait, the seconds you are missing are being kept for
+   * you". See LIVE_HOLD_SECONDS. */
+  playLive(url: string, options: { holdsConnection?: boolean } = {}): void {
+    this.loadSource(url, 0, 1, true)
+    this.holdsConnection = options.holdsConnection ?? false
+    this.start()
+  }
+
+  private loadSource(url: string, startPosition: number, gain: number, live: boolean): void {
     this.cancelStartPositionRetry?.()
     this.cancelReconnect()
+    this.disarmStallWatchdog()
+    this.liveStream = live
+    this.holdsConnection = false
+    this.liveOffset = 0
     this.reconnectUrl = url
     this.reconnectAttempts = 0
     this.lastKnownPosition = startPosition
     this.audio.src = url
-    this.applyStartPosition(startPosition)
+    // Never for a live stream: see reconnectOnDrop()'s own branch for why
+    // a position means nothing on one. startPosition is 0 for every live
+    // caller anyway, so this is what the rule is written down as rather
+    // than something that changes behaviour today.
+    if (!live) this.applyStartPosition(startPosition)
     this.setReplayGain(gain)
     // Otherwise the seek bar would flash the previous song's buffered band
     // for a moment before the new stream's first 'progress' event corrects
@@ -328,6 +564,7 @@ export class AudioEngine {
     // place guaranteed to run inside the user gesture that asked for it —
     // see resumeContext()'s own comment for why that matters.
     this.resumeContext()
+    this.armStallWatchdog()
     void this.audio.play().catch((error: unknown) => {
       // Read off the value rather than narrowing by `instanceof Error`:
       // what lands here is a DOMException, which isn't reliably an Error
@@ -363,6 +600,7 @@ export class AudioEngine {
     // before the pause could still land its retry and resume sound the
     // user asked to have paused.
     this.cancelReconnect()
+    this.disarmStallWatchdog()
     this.audio.pause()
     this.suspendContext()
   }
@@ -374,6 +612,7 @@ export class AudioEngine {
   stop(): void {
     this.cancelStartPositionRetry?.()
     this.cancelReconnect()
+    this.disarmStallWatchdog()
     this.audio.pause()
     this.audio.removeAttribute('src')
     this.audio.load()

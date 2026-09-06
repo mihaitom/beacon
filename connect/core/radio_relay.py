@@ -67,6 +67,8 @@ the difference is one truncated trailing frame).
 
 import asyncio
 import logging
+import time
+from collections import deque
 from collections.abc import Callable
 from contextlib import suppress
 
@@ -91,6 +93,64 @@ _client = httpx.AsyncClient(
 # as long as the radio plays, so a struggling station shouldn't be hammered.
 _RECONNECT_DELAY_SECONDS = 5.0
 _MAX_RECONNECT_DELAY_SECONDS = 60.0
+
+# How long the station may go quiet — connection still open, nothing
+# arriving — before _run_once() below treats it as a drop and _run()
+# reconnects.
+#
+# _TIMEOUT above deliberately carries no read timeout, because a live stream
+# never "finishes" reading and httpx's own would fire on a perfectly healthy
+# one. That left the *common* radio failure unhandled: a station's server,
+# or something between it and here, stops writing to a connection it never
+# closes. Nothing raises, nothing is logged, aiter_bytes() simply never
+# yields again — and this relay would sit on that dead connection for as
+# long as the radio was left playing, with every subscriber (a speaker, the
+# app's own player) left to notice on its own, much later, from silence.
+#
+# Ten seconds rather than two or three: this fetch is paced from the far end
+# by ffmpeg's own -readrate (see _start_ffmpeg()), so the read loop spends
+# most of its time blocked on drain() rather than on the station, and the
+# gap this measures is only ever the tail end of that. Ten is well inside
+# what a listener is willing to wait through and well outside anything a
+# working station produces.
+_STALL_TIMEOUT_SECONDS = 10.0
+
+# How much already-relayed audio a *listening* subscriber is handed the
+# moment it subscribes, and how much of it this keeps around to be able to.
+#
+# The problem it answers is *late* arrival, and only that. ffmpeg's own
+# -readrate_initial_burst (see core/streamer.py's _READRATE_ARGS) already
+# hands whoever is subscribed when a relay starts a head start of
+# LOOKAHEAD_SECONDS, so the listener who pressed play has a cushion. Nobody
+# who joins afterwards does: from then on this relay emits strictly one
+# second of audio per second, so a player connecting mid-stream — the
+# element retrying after a drop, a second device, a reload — starts at the
+# live edge with nothing in hand, and the next few seconds of no signal are
+# heard rather than absorbed. That matters most in the case relaying is most
+# useful in, listening away from home, where a handover or a tunnel is a
+# routine few seconds of nothing. An Icecast server solves it with the same
+# rolling buffer; this is that, on this side.
+#
+# Held as (when, bytes) and trimmed by *age*, not by size: at 1x pacing the
+# wall-clock age of a chunk is its playing time, whatever the station's
+# bitrate, so this is six seconds of sound for a 320kbps station and for a
+# 64kbps one alike. A size-only cap would be half a minute of audio for the
+# latter. Trimming by age also empties it by itself while the station is
+# down, so a reconnecting listener is never handed audio from before the
+# outage.
+#
+# Six seconds is a compromise, not a maximum: it is what a subscriber ends
+# up *behind* live, and the now-playing title is read at the live edge (see
+# _run_once()), so a bigger cushion means the title changing further ahead
+# of the song being heard.
+_BURST_SECONDS = 6.0
+
+# A hard ceiling on the same buffer, for the case the pacing assumption
+# above does not hold — a station bursting through a restarted ffmpeg, say.
+# Far above six seconds of any real radio bitrate (320kbps is 240KB), so it
+# is a backstop against unbounded memory rather than a second policy.
+_BURST_MAX_BYTES = 1_000_000
+
 
 # Device-audio output. Deliberately not core/streamer.py's full tier ladder
 # (resolve_output_format()) — that one exists for library tracks, weighing
@@ -219,6 +279,12 @@ class RadioRelay:
         # queues themselves any clearer, and identity is exactly the
         # question being asked.
         self._lossy_subscribers: set[int] = set()
+        # The most recent _BURST_SECONDS of device audio, as (emitted_at,
+        # chunk), handed to a listening subscriber the moment it arrives so
+        # it starts with a buffer instead of at the live edge. See
+        # _BURST_SECONDS.
+        self._burst: deque[tuple[float, bytes]] = deque()
+        self._burst_bytes = 0
         # Set once the first connection attempt has either produced a
         # running ffmpeg or given up — see start().
         self._started = asyncio.Event()
@@ -262,7 +328,9 @@ class RadioRelay:
             _send_sentinel(q)
         self._audio_subscribers.clear()
 
-    def subscribe_audio(self, *, lossy: bool = False) -> "asyncio.Queue[bytes | None]":
+    def subscribe_audio(
+        self, *, lossy: bool = False, burst: bool = False
+    ) -> "asyncio.Queue[bytes | None]":
         """One more reader of the same audio the devices get — see
         routes/stream.py's radio_stream(). A `None` read from the queue
         means the relay has stopped for good; there is nothing more to
@@ -273,7 +341,15 @@ class RadioRelay:
         dropped when it can't keep up, instead of a large one whose newest
         are. Only the visualizer's analyzer asks for this — see
         _ANALYSIS_QUEUE_MAXSIZE. A device never does: a gap in its audio is
-        audible."""
+        audible.
+
+        `burst` is the opposite request, and the two are mutually
+        exclusive by nature: hand me the last few seconds up front, so what
+        I am playing has a buffer behind it. Asked for by a listener's own
+        player (routes/stream.py's /stream/radio-local) and by nothing
+        else — see _BURST_SECONDS for why that cushion is worth six
+        seconds of being behind live, and why an analyzer must never have
+        one."""
         maxsize = _ANALYSIS_QUEUE_MAXSIZE if lossy else _AUDIO_QUEUE_MAXSIZE
         q: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=maxsize)
         if self._stopped:
@@ -291,6 +367,15 @@ class RadioRelay:
         self._audio_subscribers.append(q)
         if lossy:
             self._lossy_subscribers.add(id(q))
+        if burst:
+            # Before the append above would matter either way — nothing is
+            # fed into this queue until the next chunk arrives — but
+            # ordering it after keeps "subscribed" and "primed" from ever
+            # being separated by an await that isn't there today.
+            self._trim_burst()
+            for _, chunk in self._burst:
+                with suppress(asyncio.QueueFull):
+                    q.put_nowait(chunk)
         return q
 
     def unsubscribe_audio(self, q: "asyncio.Queue[bytes | None]") -> None:
@@ -352,7 +437,25 @@ class RadioRelay:
             assert proc.stdout is not None and proc.stdin is not None
             self._audio_fanout_task = asyncio.create_task(self._fan_out_audio(proc.stdout))
             try:
-                async for chunk in resp.aiter_bytes():
+                # Read one chunk at a time under a deadline rather than
+                # `async for`, which has no way to say "and if nothing
+                # arrives, give up" — see _STALL_TIMEOUT_SECONDS for what
+                # that silence looks like and why nothing else catches it.
+                # Only the wait for the *next* chunk is bounded: the write
+                # and drain below are paced on purpose and take as long as
+                # real time takes.
+                chunks = resp.aiter_bytes()
+                while True:
+                    try:
+                        async with asyncio.timeout(_STALL_TIMEOUT_SECONDS):
+                            chunk = await anext(chunks)
+                    except StopAsyncIteration:
+                        break
+                    except TimeoutError as e:
+                        # Raised, not returned: _run() treats a raise as a
+                        # drop worth reconnecting and a clean return as a
+                        # station that simply ended. A stall is the former.
+                        raise RuntimeError(f"no data for {_STALL_TIMEOUT_SECONDS:.0f}s") from e
                     audio = demuxer.feed(chunk) if demuxer is not None else chunk
                     if not audio:
                         continue
@@ -430,6 +533,7 @@ class RadioRelay:
                 chunk = await stdout.read(8192)
                 if not chunk:
                     return
+                self._remember_for_burst(chunk)
                 for q in list(self._audio_subscribers):
                     try:
                         q.put_nowait(chunk)
@@ -446,3 +550,24 @@ class RadioRelay:
                             q.put_nowait(chunk)
         except asyncio.CancelledError:
             pass
+
+    def _remember_for_burst(self, chunk: bytes) -> None:
+        """Keeps `chunk` for the next subscriber that asks for a burst —
+        see _BURST_SECONDS. Unconditional, whether or not anything is
+        subscribed at all: what makes this useful is having the seconds
+        already in hand when somebody arrives, which is exactly the moment
+        it is too late to start collecting them."""
+        self._burst.append((time.monotonic(), chunk))
+        self._burst_bytes += len(chunk)
+        self._trim_burst()
+
+    def _trim_burst(self) -> None:
+        """Drops everything older than _BURST_SECONDS (and anything past
+        the byte ceiling). Also on the way *out*, not only on the way in:
+        while the station is down nothing new arrives, so age alone is what
+        empties this — which is what keeps a listener reconnecting after an
+        outage from being handed audio from before it."""
+        cutoff = time.monotonic() - _BURST_SECONDS
+        while self._burst and (self._burst[0][0] < cutoff or self._burst_bytes > _BURST_MAX_BYTES):
+            _, chunk = self._burst.popleft()
+            self._burst_bytes -= len(chunk)

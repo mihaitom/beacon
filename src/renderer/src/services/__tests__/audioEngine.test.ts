@@ -27,7 +27,6 @@ class FakeTimeRanges {
 class FakeAudio extends EventTarget {
   static last: FakeAudio
 
-  src = ''
   preload = ''
   crossOrigin: string | null = null
   volume = 1
@@ -54,10 +53,25 @@ class FakeAudio extends EventTarget {
   removeAttribute = vi.fn()
 
   private time = 0
+  private source = ''
 
   constructor() {
     super()
     FakeAudio.last = this
+  }
+
+  get src(): string {
+    return this.source
+  }
+
+  /** Assigning a source resets the playhead, same as a browser loading a
+   * new one does. That reset is the whole difference the two reconnect
+   * paths turn on: a song is seeked back to where it dropped, a live
+   * stream is not (it has nowhere to seek to) and carries its reported
+   * elapsed across the gap in the engine instead — see liveOffset. */
+  set src(value: string) {
+    this.source = value
+    this.time = 0
   }
 
   get currentTime(): number {
@@ -581,6 +595,272 @@ describe('AudioEngine', () => {
         expect(onReconnectStateChange).toHaveBeenCalledWith(false)
         expect(onReconnectStateChange).not.toHaveBeenCalledWith(true)
       })
+    })
+  })
+
+  // playLive() — radio. What separates it from a song is not one setting
+  // but four (see the method's own docstring); these cover the three that
+  // are behaviour rather than plumbing.
+  describe('live streams', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    /** Puts the fake into the state a station actually playing produces:
+     * not paused, and reporting a position that moves. */
+    function playing(position: number): void {
+      audio.paused = false
+      audio.settleAt(position)
+      audio.dispatchEvent(new Event('timeupdate'))
+    }
+
+    // The whole reason the watchdog exists: a station's characteristic
+    // failure is a connection that stays open and stops delivering, which
+    // fires no 'error' event at all, so nothing in the engine would ever
+    // have noticed it.
+    it('reconnects a stream whose playhead stops advancing, with no error event to go on', async () => {
+      engine.playLive('http://station/stream')
+      playing(3)
+      audio.play.mockClear()
+
+      // Four seconds of standing still, then the first backoff step.
+      await vi.advanceTimersByTimeAsync(5000)
+
+      expect(audio.play).toHaveBeenCalledOnce()
+      expect(audio.src).toBe('http://station/stream')
+    })
+
+    it('leaves a stream alone for as long as it keeps advancing', async () => {
+      engine.playLive('http://station/stream')
+      audio.play.mockClear()
+
+      // Ten seconds of ordinary playback, reported the way a browser
+      // reports it — well past the stall threshold, but never standing
+      // still for it.
+      for (let second = 1; second <= 10; second++) {
+        await vi.advanceTimersByTimeAsync(1000)
+        playing(second)
+      }
+
+      expect(audio.play).not.toHaveBeenCalled()
+    })
+
+    // A paused element's playhead stands still for a reason that is not a
+    // fault, and reconnecting one would start sound the listener stopped.
+    it('does not treat a pause as a stall', async () => {
+      engine.playLive('http://station/stream')
+      playing(3)
+      engine.pause()
+      audio.paused = true
+      audio.play.mockClear()
+
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      expect(audio.play).not.toHaveBeenCalled()
+    })
+
+    // The watchdog is live-only: a song has a real buffer behind it, is
+    // legitimately allowed to sit still while it fills, and has the
+    // element's own 'error' event in front of it.
+    it('does not watch a song for stalls', async () => {
+      engine.play('song.mp3')
+      audio.paused = false
+      audio.settleAt(3)
+      audio.dispatchEvent(new Event('timeupdate'))
+      audio.play.mockClear()
+
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      expect(audio.play).not.toHaveBeenCalled()
+    })
+
+    // A live stream has nowhere to seek to. Writing the elapsed listening
+    // time onto one as a start position asks for a point in the stream
+    // that does not exist.
+    it('reconnects at the edge instead of seeking to the elapsed time', async () => {
+      engine.playLive('http://station/stream')
+      playing(120)
+
+      audio.error = { message: 'network error', code: 2 }
+      audio.dispatchEvent(new Event('error'))
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(audio.currentTime).toBe(0)
+    })
+
+    // ...but the elapsed readout is listening time, not an offset into
+    // anything, so it survives the gap rather than dropping back to 0:00.
+    it('carries the elapsed time across a reconnect', async () => {
+      const onTimeUpdate = vi.fn()
+      engine.onTimeUpdate = onTimeUpdate
+      engine.playLive('http://station/stream')
+      playing(120)
+
+      audio.error = { message: 'network error', code: 2 }
+      audio.dispatchEvent(new Event('error'))
+      await vi.advanceTimersByTimeAsync(1000)
+      // The reconnected stream starts from its own beginning again.
+      playing(5)
+
+      expect(onTimeUpdate).toHaveBeenLastCalledWith(125)
+    })
+
+    // A station's connection being closed cleanly, by the station or by
+    // Beacon's relay restarting under it. The watchdog cannot cover this
+    // one: a browser reports an ended element as paused, and a paused
+    // element is exactly what must not be reconnected.
+    it('treats the stream ending as a drop rather than an end', async () => {
+      const onEnded = vi.fn()
+      engine.onEnded = onEnded
+      engine.playLive('http://station/stream')
+      playing(30)
+      audio.play.mockClear()
+
+      audio.ended = true
+      audio.paused = true
+      audio.dispatchEvent(new Event('ended'))
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(onEnded).not.toHaveBeenCalled()
+      expect(audio.play).toHaveBeenCalledOnce()
+    })
+
+    it('still reports a song reaching its end', () => {
+      const onEnded = vi.fn()
+      engine.onEnded = onEnded
+      engine.play('song.mp3')
+
+      audio.dispatchEvent(new Event('ended'))
+
+      expect(onEnded).toHaveBeenCalledOnce()
+    })
+
+    // holdsConnection — a station relayed by Beacon's own backend rather
+    // than fetched from its own server.
+    describe('a held connection', () => {
+      it('reports the stall but leaves the connection standing', async () => {
+        const onReconnectStateChange = vi.fn()
+        engine.onReconnectStateChange = onReconnectStateChange
+        engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+        playing(3)
+        audio.play.mockClear()
+
+        await vi.advanceTimersByTimeAsync(20_000)
+
+        // The relay is still fetching the station and queueing what this
+        // device is missing; tearing the connection down would throw that
+        // queue away and resume at the live edge instead of filling the
+        // gap.
+        expect(audio.play).not.toHaveBeenCalled()
+        expect(onReconnectStateChange).toHaveBeenCalledWith(true)
+      })
+
+      it('picks straight back up when the audio resumes', async () => {
+        const onReconnectStateChange = vi.fn()
+        engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+        playing(3)
+        await vi.advanceTimersByTimeAsync(20_000)
+        engine.onReconnectStateChange = onReconnectStateChange
+
+        // The queued seconds arriving at once, then ordinary playback.
+        playing(9)
+        audio.dispatchEvent(new Event('playing'))
+        await vi.advanceTimersByTimeAsync(2000)
+
+        expect(onReconnectStateChange).toHaveBeenCalledWith(false)
+        expect(onReconnectStateChange).not.toHaveBeenCalledWith(true)
+      })
+
+      it('gives up once waiting has stopped being worth it', async () => {
+        const onConnectionLost = vi.fn()
+        engine.onConnectionLost = onConnectionLost
+        engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+        playing(3)
+
+        await vi.advanceTimersByTimeAsync(59_000)
+        expect(onConnectionLost).not.toHaveBeenCalled()
+
+        await vi.advanceTimersByTimeAsync(2000)
+
+        expect(onConnectionLost).toHaveBeenCalledOnce()
+        expect(vi.getTimerCount()).toBe(0)
+      })
+
+      // A connection that actually failed is gone whoever was holding it,
+      // and the relay it pointed at is still there to reconnect to.
+      it('still reconnects on a real error', async () => {
+        engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+        playing(3)
+        audio.play.mockClear()
+
+        audio.error = { message: 'network error', code: 2 }
+        audio.dispatchEvent(new Event('error'))
+        await vi.advanceTimersByTimeAsync(1000)
+
+        expect(audio.play).toHaveBeenCalledOnce()
+      })
+
+      // The station's own server holds nothing for anyone.
+      it('does not hold a station fetched directly', async () => {
+        engine.playLive('http://station/stream')
+        playing(3)
+        audio.play.mockClear()
+
+        await vi.advanceTimersByTimeAsync(5000)
+
+        expect(audio.play).toHaveBeenCalledOnce()
+      })
+    })
+
+    // Six attempts rather than a song's five, and a 15s cap rather than 8s
+    // — see MAX_LIVE_RECONNECT_ATTEMPTS.
+    it('tries for longer than a song does before giving up', async () => {
+      const onConnectionLost = vi.fn()
+      const onError = vi.fn()
+      engine.onConnectionLost = onConnectionLost
+      engine.onError = onError
+      engine.playLive('http://station/stream')
+
+      function drop(): void {
+        audio.error = { message: 'network error', code: 2 }
+        audio.dispatchEvent(new Event('error'))
+      }
+
+      // Five drops is where a song would already have given up.
+      for (let i = 0; i < 5; i++) {
+        drop()
+        await vi.advanceTimersByTimeAsync(15_000)
+      }
+      drop()
+      await vi.advanceTimersByTimeAsync(15_000)
+      expect(onConnectionLost).not.toHaveBeenCalled()
+
+      drop()
+
+      expect(onConnectionLost).toHaveBeenCalledOnce()
+      expect(onError).toHaveBeenCalledWith('Playback error: connection lost')
+    })
+
+    // Nothing is retrying any more, so nothing should still be ticking
+    // either. Asserted as "no timer is left", not as "no reconnect
+    // happens": the guards inside checkForStall() already make a watchdog
+    // that keeps running harmless, which is exactly why one left behind
+    // would go unnoticed — a station played for an afternoon and given up
+    // on would tick once a second until the app was closed.
+    it('leaves nothing ticking once it has given up', async () => {
+      engine.playLive('http://station/stream')
+      playing(3)
+      for (let i = 0; i < 7; i++) {
+        audio.error = { message: 'network error', code: 2 }
+        audio.dispatchEvent(new Event('error'))
+        await vi.advanceTimersByTimeAsync(15_000)
+      }
+
+      expect(vi.getTimerCount()).toBe(0)
     })
   })
 

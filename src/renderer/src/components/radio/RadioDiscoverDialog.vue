@@ -165,10 +165,44 @@
              - icons are what the column headings used to say, so the
              - figures still mean something without them. -->
             <div class="discover-card__stats">
-              <span class="discover-card__stat" :title="$t('radio.discoverColumnVotes')">
-                <v-icon icon="mdi-thumb-up-outline" size="13" />
+              <!-- The vote figure is also the button that raises it: the
+               - "top voted" ranking this dialog sorts by is built from
+               - votes, and Beacon was taking that ranking without ever
+               - contributing one. A separate button next to the number it
+               - changes would have been a second target saying the same
+               - thing. Disabled once cast - a vote cannot be taken back,
+               - and Radio Browser refuses a second one for a day anyway
+               - (see services/radioBrowserVotes.ts). -->
+              <button
+                type="button"
+                class="discover-card__stat discover-card__stat--vote"
+                :class="{ 'discover-card__stat--voted': votedStationuuids.has(item.stationuuid) }"
+                :disabled="
+                  votedStationuuids.has(item.stationuuid) ||
+                  votingStationuuids.has(item.stationuuid)
+                "
+                :title="
+                  votedStationuuids.has(item.stationuuid)
+                    ? $t('radio.discoverVoted')
+                    : $t('radio.discoverVote')
+                "
+                :aria-label="
+                  votedStationuuids.has(item.stationuuid)
+                    ? $t('radio.discoverVoted')
+                    : $t('radio.discoverVote')
+                "
+                @click="voteForStation(item)"
+              >
+                <v-icon
+                  :icon="
+                    votedStationuuids.has(item.stationuuid)
+                      ? 'mdi-thumb-up'
+                      : 'mdi-thumb-up-outline'
+                  "
+                  size="13"
+                />
                 {{ item.votes.toLocaleString() }}
-              </span>
+              </button>
               <span class="discover-card__stat" :title="$t('radio.discoverColumnClicks')">
                 <v-icon icon="mdi-play-circle-outline" size="13" />
                 {{ item.clickcount.toLocaleString() }}
@@ -237,9 +271,11 @@ import { rememberRadioBrowserStation } from '@/services/radioBrowserLinks'
 import {
   listRadioBrowserCountries,
   searchRadioBrowser,
+  voteForRadioBrowserStation,
   type RadioBrowserFilterOption,
   type RadioBrowserStation,
 } from '@/services/connect/radioBrowser'
+import { recentRadioBrowserVotes, rememberRadioBrowserVote } from '@/services/radioBrowserVotes'
 import { accountScopedKey } from '@/services/accountKey'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import CoverArt from '@/components/library/CoverArt.vue'
@@ -338,6 +374,14 @@ export default {
       // see addBrowsedStation()'s own comment on why the add button needs
       // this on top of addedStationuuids.
       addingStationuuids: new Set<string>(),
+      // Which stations already carry this account's vote. Unlike
+      // addedStationuuids this one *is* seeded from storage on every
+      // open, because a vote is spent for a day and survives the dialog
+      // being closed — see services/radioBrowserVotes.ts.
+      votedStationuuids: recentRadioBrowserVotes(),
+      // Which votes are in flight, so a second click during the round trip
+      // cannot spend a vote twice — same reasoning as addingStationuuids.
+      votingStationuuids: new Set<string>(),
       // Guards a slow search response landing after a newer query already
       // superseded it — a counter rather than an id, since queries aren't
       // unique.
@@ -421,6 +465,10 @@ export default {
       this.browseResults = []
       this.browseError = false
       this.addedStationuuids = new Set()
+      // Re-read rather than kept: an entry expires 24h after it was
+      // written, and a dialog reopened the next day should offer the vote
+      // again.
+      this.votedStationuuids = recentRadioBrowserVotes()
       this.loadBrowseFilterOptions()
       // Not through the debounced watcher above — opening the dialog is
       // its own deliberate action, not a keystroke to wait out, and this
@@ -514,6 +562,49 @@ export default {
         rememberRadioBrowserStation(result.url, result.stationuuid)
       } finally {
         this.addingStationuuids.delete(result.stationuuid)
+      }
+    },
+    /** Casts this account's vote for a station in the directory.
+     *
+     * The refused case is not an error: Radio Browser allows one vote per
+     * station per day and per address, and the address it sees is the
+     * Beacon server's — so a station somebody else on the same server
+     * already voted for today comes back refused (see
+     * services/connect/radioBrowser.ts). Either way the vote for today is
+     * spent, so both outcomes mark the button as voted; only the count is
+     * raised for a vote that actually counted.
+     *
+     * Raised locally rather than by re-running the search: one vote is one
+     * number changing, and re-querying the directory to see it would also
+     * reshuffle the whole list under the person who just clicked. */
+    async voteForStation(result: RadioBrowserStation) {
+      if (this.votedStationuuids.has(result.stationuuid)) return
+      if (this.votingStationuuids.has(result.stationuuid)) return
+      this.votingStationuuids.add(result.stationuuid)
+      try {
+        const counted = await voteForRadioBrowserStation(result.stationuuid)
+        rememberRadioBrowserVote(result.stationuuid)
+        this.votedStationuuids = new Set(this.votedStationuuids).add(result.stationuuid)
+        if (counted) {
+          result.votes += 1
+        } else {
+          this.$emitter.emit('toast', {
+            level: 'information',
+            title: this.$t('radio.discoverVoteLimitTitle'),
+            message: this.$t('radio.discoverVoteLimitMessage'),
+          })
+        }
+      } catch (error) {
+        // Nothing was recorded, so the button stays open for another try —
+        // this is the one outcome where clicking again can still work.
+        console.error('[radio-discover] Radio Browser vote failed:', error)
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('radio.discoverVoteFailedTitle'),
+          message: this.$t('radio.discoverVoteFailedMessage'),
+        })
+      } finally {
+        this.votingStationuuids.delete(result.stationuuid)
       }
     },
     // A one-off listen, deliberately not going through saveRadioStation —
@@ -736,6 +827,35 @@ export default {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+/* A real <button> for the vote figure, stripped back to look like the
+ * plain stat beside it — the affordance is the pointer and the hover
+ * colour, not a box drawn around a two-digit number. */
+.discover-card__stat--vote {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.discover-card__stat--vote:hover:not(:disabled),
+.discover-card__stat--vote:focus-visible {
+  color: rgb(var(--v-theme-primary));
+}
+
+.discover-card__stat--vote:disabled {
+  cursor: default;
+}
+
+/* A cast vote stays legible rather than fading out the way a disabled
+ * control normally would: the filled thumb is the point, and it is
+ * standing in the same row as a figure that has to stay readable. */
+.discover-card__stat--voted {
+  color: rgb(var(--v-theme-primary));
+  opacity: 1;
 }
 
 .discover-card__add {

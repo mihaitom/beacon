@@ -105,6 +105,27 @@ export default {
 </script>
 
 <style scoped>
+/* Darker than an ordinary dialog's backdrop. Vuetify dims every overlay by
+ * the same 0.32 (--v-overlay-opacity, VOverlay.css), which is the right
+ * amount for a dialog you read while still wanting the page behind it for
+ * context. This one is a picture being looked at, and the room around it
+ * should get out of the way instead.
+ *
+ * Set as that variable rather than as a rule on .v-overlay__scrim itself,
+ * so the scrim stays exactly what Vuetify computes it to be and only the
+ * one number it computes it from changes. It reaches the scrim by
+ * inheritance, which is also why this needs no :deep(): the scrim is a
+ * child of the element this class lands on (v-dialog forwards `class` to
+ * the overlay root), and custom properties inherit down into it wherever
+ * Vuetify teleports it to.
+ *
+ * Unlayered, so it wins over Vuetify's own layered `.v-overlay`
+ * declaration however specific that one is - see base.css on the layer
+ * order. */
+.artwork-lightbox {
+  --v-overlay-opacity: 0.85;
+}
+
 .artwork-lightbox__frame {
   display: flex;
   flex-direction: column;

@@ -6,8 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- You can now vote for a station in "Discover stations" by clicking its vote count, which is what the "most voted" ranking there is built on. Radio Browser counts one vote per station a day, shared by everyone using the same Beacon server, and a station whose vote for today is already spent says so instead of quietly dropping yours
+- Internet radio played on this device now goes through Beacon's own backend too: the player is handed a few seconds of audio up front, so a tunnel or a cell handover while listening away from home is absorbed rather than heard, and a station is fetched only once for the sound and the now-playing title together
+- A radio station that goes quiet is now noticed within seconds instead of minutes and brought back automatically, and the player bar offers a Reconnect button if it stays away
+
+### Changed
+
+- The full-size artwork view now dims the rest of the window much further, so the picture is what you are looking at rather than a dialog over a lit page
+- The Playback setting "Send radio straight to the device" is now "Play radio straight from the station" and decides it for this device's own player as well as for casting
+
 ### Fixed
 
+- Rows in the queue now slide into place as soon as they move, instead of sitting visibly out of position for a moment first and then taking twice as long to settle
+- The elapsed time beside "Live" no longer freezes at the length of whatever track was playing before the station started
 - Radio stations that send iHeartRadio-style now-playing metadata now show the artist and track like every other station, instead of a line of internal identifiers
 - While casting a radio station, the artist and track under the station name no longer disappears until the next song starts
 - Switching stations while casting no longer flickers back to the previous station for a moment before settling on the new one

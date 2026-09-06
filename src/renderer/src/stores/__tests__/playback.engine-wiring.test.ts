@@ -24,6 +24,7 @@ vi.mock('@/services/connect/radioMetadata', () => ({
  * tests then call them the way the real <audio> element's events would. */
 interface WiredEngine {
   play: ReturnType<typeof vi.fn>
+  playLive: ReturnType<typeof vi.fn>
   load: ReturnType<typeof vi.fn>
   pause: ReturnType<typeof vi.fn>
   stop: ReturnType<typeof vi.fn>
@@ -34,6 +35,7 @@ interface WiredEngine {
   onError: ((message: string) => void) | null
   onDurationChange: ((duration: number) => void) | null
   onReconnectStateChange: ((reconnecting: boolean) => void) | null
+  onConnectionLost: (() => void) | null
 }
 
 let engine: WiredEngine
@@ -49,6 +51,17 @@ function stubLibraryClient(): void {
   } as unknown as SubsonicClient)
 }
 
+/** The two arguments playLive() is handed for `streamUrl` in the default
+ * (relayed) mode: Beacon's own relay URL with the station's own inside it,
+ * and the option that follows from the same decision (see
+ * startLocalRadio()). Spread into toHaveBeenCalledWith. Both are pinned in
+ * full where they are the subject, in playback.transport.test.ts — here the
+ * only question is which station is playing.
+ */
+function playingStation(streamUrl: string): [unknown, unknown] {
+  return [expect.stringContaining(encodeURIComponent(streamUrl)), { holdsConnection: true }]
+}
+
 describe('the store wiring the audio engine', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -58,6 +71,7 @@ describe('the store wiring the audio engine', () => {
     vi.clearAllMocks()
     engine = {
       play: vi.fn(),
+      playLive: vi.fn(),
       load: vi.fn(),
       pause: vi.fn(),
       stop: vi.fn(),
@@ -68,6 +82,7 @@ describe('the store wiring the audio engine', () => {
       onError: null,
       onDurationChange: null,
       onReconnectStateChange: null,
+      onConnectionLost: null,
     }
     vi.mocked(getAudioEngine).mockReturnValue(
       engine as unknown as ReturnType<typeof getAudioEngine>,
@@ -169,6 +184,58 @@ describe('the store wiring the audio engine', () => {
       await flushPromises()
 
       expect(playback.localPosition).toBeGreaterThanOrEqual(before)
+    })
+
+    it('does not clamp a live station to whatever length the last track left', async () => {
+      // Confirmed live 2026-09-06: duration 170 (a previous track's length)
+      // and localPosition stuck at exactly 170, on a station a quarter of an
+      // hour in, with the backend reporting elapsed correctly the whole
+      // time. A station has no length to clamp against — and every route to
+      // a playing station other than playRadioStation() leaves duration
+      // alone, since none of them changes the station: pressing play on a
+      // restored one, picking a cast target for one already playing, and
+      // both hand-off paths. See the positionClamp getter.
+      const playback = usePlaybackStore()
+      playback.init()
+      const connect = useConnectStore()
+      const radio = { title: 'Chill FM', url: 'https://stream.example/chill' }
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: radio.url,
+        homePageUrl: null,
+      }
+      playback.duration = 170
+
+      connect.status = makeStatus({
+        targets: [{ name: 'Living Room', type: 'sonos' }],
+        streaming: true,
+        elapsed: 900,
+        radio,
+      })
+      await flushPromises()
+
+      expect(playback.localPosition).toBeCloseTo(900, 0)
+    })
+
+    it('still clamps a track to its own length', async () => {
+      // The clamp is not simply gone: a track really does end, and letting
+      // the extrapolation run past that would report a position the audio
+      // never reaches.
+      const playback = usePlaybackStore()
+      playback.init()
+      const connect = useConnectStore()
+      playback.setQueue([makeSong('a', { duration: 170 })], 0)
+      playback.duration = 170
+
+      connect.status = makeStatus({
+        targets: [{ name: 'Living Room', type: 'sonos' }],
+        streaming: true,
+        elapsed: 900,
+      })
+      await flushPromises()
+
+      expect(playback.localPosition).toBe(170)
     })
 
     it('does not re-read a status payload the connect store merely touched again', async () => {
@@ -320,6 +387,80 @@ describe('the store wiring the audio engine', () => {
     })
   })
 
+  describe('radio connection lost', () => {
+    function playChillFm() {
+      const playback = usePlaybackStore()
+      playback.init()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      return playback
+    }
+
+    it('offers a way back once the engine has stopped retrying a station', () => {
+      const playback = playChillFm()
+
+      engine.onConnectionLost?.()
+
+      expect(playback.radioConnectionLost).toBe(true)
+    })
+
+    it('says nothing for a song, which has its own queue to fall back on', () => {
+      const playback = usePlaybackStore()
+      playback.init()
+      playback.setQueue([makeSong('a')], 0)
+
+      engine.onConnectionLost?.()
+
+      expect(playback.radioConnectionLost).toBe(false)
+    })
+
+    it('says nothing while casting, this element not being what is playing', () => {
+      // The backend relay holds the station's connection then, and it never
+      // stops retrying on its own (core/radio_relay.py) - so there is no
+      // give-up state here for a button to answer.
+      const playback = playChillFm()
+      castTo()
+
+      engine.onConnectionLost?.()
+
+      expect(playback.radioConnectionLost).toBe(false)
+    })
+
+    it('restarts the live connection from the edge when the listener asks', () => {
+      const playback = playChillFm()
+      playback.radioConnectionLost = true
+
+      playback.reconnectRadio()
+
+      expect(engine.playLive).toHaveBeenCalledWith(
+        ...playingStation('https://stream.example/chill'),
+      )
+      expect(playback.radioConnectionLost).toBe(false)
+      expect(playback.isPlaying).toBe(true)
+      // Shown as connecting straight away - a button that changes nothing
+      // visible for several seconds reads as one that did not work.
+      expect(playback.radioBuffering).toBe(true)
+      // No separate now-playing watch: relayed is the default, and the
+      // relay reads the station's ICY tag out of the fetch it already
+      // holds (see startLocalRadio()). Direct mode is what still needs one
+      // — covered by its own test.
+      expect(radioMetadata.startRadioMetadataWatch).not.toHaveBeenCalled()
+    })
+
+    it('does nothing without a station to reconnect to', () => {
+      const playback = usePlaybackStore()
+      playback.init()
+
+      playback.reconnectRadio()
+
+      expect(engine.playLive).not.toHaveBeenCalled()
+    })
+  })
+
   describe('handOffToLocalPlayback', () => {
     it('picks the song back up here, from where the speaker had got to', async () => {
       // The local element is never kept in sync while casting, so without
@@ -360,12 +501,14 @@ describe('the store wiring the audio engine', () => {
 
       await playback.handOffToLocalPlayback()
 
-      expect(engine.play).toHaveBeenCalledWith('https://stream.example/chill')
-      // Local playback never otherwise reaches the connect backend at all
-      // — see services/connect/radioMetadata.ts's own docstring.
-      expect(radioMetadata.startRadioMetadataWatch).toHaveBeenCalledWith(
-        'https://stream.example/chill',
+      expect(engine.playLive).toHaveBeenCalledWith(
+        ...playingStation('https://stream.example/chill'),
       )
+      // No separate now-playing watch: relayed is the default, and the
+      // relay reads the station's ICY tag out of the fetch it already
+      // holds (see startLocalRadio()). Direct mode is what still needs one
+      // — covered by its own test.
+      expect(radioMetadata.startRadioMetadataWatch).not.toHaveBeenCalled()
     })
 
     it('clears a stale buffering flag, there being no cast target left to still be filling one', async () => {

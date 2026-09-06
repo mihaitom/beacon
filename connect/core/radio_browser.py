@@ -32,6 +32,13 @@ services/radioBrowserLinks.ts, which keeps a saved station's directory id
 so those later plays can be reported at all. Radio Browser itself dedupes
 to once per station per IP per day regardless.
 
+vote_for_station() is the other half of that give-and-take and the only
+one a person triggers deliberately: the directory's "top voted" ordering,
+which this app's own Discover dialog offers to sort by, is built from
+votes nobody here was casting. Same 24h-per-IP-per-station limit as a
+click, but a refusal is worth telling the user about rather than
+swallowing — see that function's own docstring.
+
 search_stations() goes through /json/stations/search rather than the
 narrower /json/stations/byname/{term} this module started with — the
 former takes name and countrycode as independent, combinable filters and,
@@ -366,3 +373,62 @@ async def register_click(stationuuid: str) -> None:
         await _client.get(f"https://{servers[0]}/json/url/{quote(stationuuid, safe='')}")
     except httpx.HTTPError as e:
         logger.info(f"[radio-browser] click registration failed for {stationuuid}: {e}")
+
+
+async def vote_for_station(stationuuid: str) -> str:
+    """Casts one vote for `stationuuid` in the directory, on behalf of
+    whoever pressed the vote button in RadioView.vue's browse dialog.
+
+    Unlike register_click() above this is not fire-and-forget: a vote is a
+    deliberate act with a visible result (the station's own vote count, and
+    the "top voted" ordering built on it), so the caller gets one of three
+    answers back - "ok", "rejected" or "unreachable" - and the dialog says
+    something different for each.
+
+    "rejected" is the interesting one. Radio Browser allows one vote per IP
+    per station per 24 hours (its published docs say ten minutes; its own
+    server code deletes the IPVoteCheck row after 24h and refuses anything
+    inside that window, which is what actually happens) and reports the
+    refusal as a *successful* HTTP 200 carrying `{"ok": false, "message":
+    "you are voting for the same station too often"}`. A vote that didn't
+    count therefore looks exactly like one that did at the transport level:
+    the body is the only place the difference exists.
+
+    The IP that limit applies to is this server's, not the device's - every
+    request to the directory goes out from connect (see this module's own
+    docstring). One Beacon instance therefore shares a single vote per
+    station per day across everyone using it, the same way it already
+    shares a single click. That is a property of self-hosting a proxy, not
+    something to work around: a rejection is passed straight through rather
+    than retried against a second mirror, which is exactly the vote-farming
+    the limit exists to stop.
+
+    Only a transport failure moves on to the next mirror, and only every
+    mirror failing is "unreachable"."""
+    servers = await _discover_servers()
+    if not servers:
+        return "unreachable"
+
+    for host in servers:
+        try:
+            r = await _client.post(f"https://{host}/json/vote/{quote(stationuuid, safe='')}")
+            r.raise_for_status()
+            data = r.json()
+        except (httpx.HTTPError, ValueError) as e:
+            logger.info(f"[radio-browser] {host} vote failed: {type(e).__name__}: {e}")
+            continue
+
+        if not isinstance(data, dict):
+            continue
+        # `ok` comes back as a real bool here, but the neighbouring
+        # /json/url endpoint answers with the string "true" for the same
+        # field - so both spellings are accepted rather than trusting one
+        # mirror version's JSON types.
+        ok = data.get("ok")
+        if ok is True or (isinstance(ok, str) and ok.lower() == "true"):
+            return "ok"
+        logger.info(f"[radio-browser] vote for {stationuuid} refused: {data.get('message')!r}")
+        return "rejected"
+
+    logger.warning(f"[radio-browser] every server failed voting for {stationuuid}")
+    return "unreachable"

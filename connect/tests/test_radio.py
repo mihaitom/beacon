@@ -1258,6 +1258,30 @@ def test_radio_browser_click_registers_and_never_fails_the_request(client):
     register.assert_called_once_with("abc-123")
 
 
+def test_radio_browser_vote_passes_a_counted_vote_through(client):
+    with patch.object(radio_mod, "vote_for_station", AsyncMock(return_value="ok")) as vote:
+        r = client.post("/radio-browser/vote/abc-123")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+    vote.assert_called_once_with("abc-123")
+
+
+def test_radio_browser_vote_reports_a_refusal_as_a_successful_request(client):
+    # Radio Browser allows one vote per station per day and per IP - which
+    # is this server's, for everyone using it. A refusal is an answer, not
+    # an outage, so the frontend gets a 200 it can tell apart from a 502.
+    with patch.object(radio_mod, "vote_for_station", AsyncMock(return_value="rejected")):
+        r = client.post("/radio-browser/vote/abc-123")
+    assert r.status_code == 200
+    assert r.json() == {"ok": False}
+
+
+def test_radio_browser_vote_reports_502_when_every_mirror_is_unreachable(client):
+    with patch.object(radio_mod, "vote_for_station", AsyncMock(return_value="unreachable")):
+        r = client.post("/radio-browser/vote/abc-123")
+    assert r.status_code == 502
+
+
 # ── /radio-stream-url ────────────────────────────────────────────────────────
 # Local playback never otherwise reaches this backend, so this endpoint is
 # the only place it can have a .m3u/.pls station URL resolved - see

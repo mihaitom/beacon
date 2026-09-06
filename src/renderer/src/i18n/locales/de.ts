@@ -191,6 +191,8 @@ export default {
     autoplay: 'Autoplay',
     liveRadio: 'Live · {time}',
     live: 'Live',
+    radioConnectionLost: 'Verbindung verloren',
+    radioReconnect: 'Neu verbinden',
   },
   shortcuts: {
     title: 'Tastenbelegungen',
@@ -411,9 +413,9 @@ export default {
     qualityBitrate: 'Bitrate',
     qualityBitrateItem: '{value} kbit/s',
     qualityOriginal: 'Original (unverändert)',
-    castRadioDirectly: 'Radio direkt an das Gerät senden',
+    castRadioDirectly: 'Radio direkt vom Sender abspielen',
     castRadioDirectlyHint:
-      'Standardmäßig leitet Beacon gecastetes Radio über sein eigenes Backend, damit Gerät und Titelanzeige sich einen einzigen Abruf der Station teilen. Aktiviert, verbindet sich das Gerät stattdessen direkt mit der Station — die Wiedergabe läuft dann weiter, auch wenn Beacon neu startet, mit dem Risiko, dass manche Geräte den Stream ablehnen.',
+      'Standardmäßig leitet Beacon Radio über sein eigenes Backend — für ein Cast-Gerät wie für diesen Player. Ein einziger Abruf der Station versorgt Ton und Titelanzeige, und einen abgerissenen Sender verbindet Beacon neu, ohne die Wiedergabe hier zu unterbrechen. Aktiviert, verbinden sich Gerät und Player stattdessen direkt mit der Station: die Wiedergabe läuft dann weiter, auch wenn Beacon neu startet, ein Abriss fällt aber erst auf, wenn der Ton weg ist, und manche Geräte lehnen den Stream der Station ab.',
     about: 'Über Beacon',
     whatsNew: 'Was ist neu?',
     ffmpegFound: 'ffmpeg gefunden',
@@ -480,7 +482,7 @@ export default {
         name: 'Radio Browser',
         purpose: 'Das Senderverzeichnis hinter „Sender entdecken“.',
         sends:
-          'Deinen Suchbegriff und das gewählte Land. Wird ein hier gefundener Sender abgespielt, meldet Beacon dessen Kennung als Klick zurück; das verlangen die Nutzungsregeln des Verzeichnisses, damit beliebte Sender erkennbar bleiben. Ein von dir selbst per Adresse eingetragener Sender wird nie gemeldet.',
+          'Deinen Suchbegriff und das gewählte Land. Wird ein hier gefundener Sender abgespielt, meldet Beacon dessen Kennung als Klick zurück; das verlangen die Nutzungsregeln des Verzeichnisses, damit beliebte Sender erkennbar bleiben. Ein von dir selbst per Adresse eingetragener Sender wird nie gemeldet. Stimmst du für einen Sender ab, geht dessen Kennung ebenfalls raus - nur dann, wenn du den Knopf selbst drückst.',
       },
       stationSite: {
         name: 'Die Webseiten der Radiosender',
@@ -556,6 +558,13 @@ export default {
     discoverColumnCodec: 'Codec',
     discoverColumnVotes: 'Stimmen',
     discoverColumnClicks: 'Klicks (24h)',
+    discoverVote: 'Für diesen Sender stimmen',
+    discoverVoted: 'Du hast für diesen Sender gestimmt',
+    discoverVoteLimitTitle: 'Heute schon abgestimmt',
+    discoverVoteLimitMessage:
+      'Radio Browser zählt eine Stimme pro Sender und Tag - für alle, die diesen Beacon-Server nutzen.',
+    discoverVoteFailedTitle: 'Stimme nicht abgegeben',
+    discoverVoteFailedMessage: 'Radio Browser war nicht erreichbar. Bitte später erneut versuchen.',
     discoverStreamOk: 'Beim letzten Check erreichbar',
     discoverStreamDown: 'Beim letzten Check nicht erreichbar',
     discoverPlay: 'Abspielen ohne hinzuzufügen',

@@ -194,6 +194,8 @@ export default {
     autoplay: 'Reproducción automática',
     liveRadio: 'En directo · {time}',
     live: 'En directo',
+    radioConnectionLost: 'Conexión perdida',
+    radioReconnect: 'Reconectar',
   },
   shortcuts: {
     title: 'Atajos de teclado',
@@ -415,9 +417,9 @@ export default {
     qualityBitrate: 'Tasa de bits',
     qualityBitrateItem: '{value} kb/s',
     qualityOriginal: 'Original (sin modificar)',
-    castRadioDirectly: 'Enviar la radio directamente al dispositivo',
+    castRadioDirectly: 'Reproducir la radio directamente desde la emisora',
     castRadioDirectlyHint:
-      'Por defecto, Beacon enruta la radio emitida a través de su propio backend, para que el dispositivo y el título de reproducción compartan una sola conexión a la emisora. Activado, el dispositivo se conecta directamente a la emisora — la reproducción sigue aunque Beacon se reinicie, con el riesgo de que algún dispositivo rechace la emisión de la emisora.',
+      'Por defecto, Beacon enruta la radio a través de su propio backend, tanto para un dispositivo de emisión como para este reproductor. Una sola conexión a la emisora alimenta el audio y el título en reproducción, y si la emisora se cae Beacon vuelve a conectarse sin interrumpir la reproducción aquí. Activado, el dispositivo y este reproductor se conectan directamente a la emisora: la reproducción sigue aunque Beacon se reinicie, pero una caída solo se nota cuando desaparece el sonido, y algunos dispositivos rechazan la emisión de la emisora.',
     about: 'Acerca de Beacon',
     whatsNew: '¿Qué hay de nuevo?',
     ffmpegFound: 'ffmpeg encontrado',
@@ -484,7 +486,7 @@ export default {
         name: 'Radio Browser',
         purpose: 'El directorio de emisoras detrás de "Descubrir emisoras".',
         sends:
-          'Tu término de búsqueda y el país elegido. Al reproducir una emisora encontrada aquí, Beacon informa de su identificador como clic; lo piden las propias reglas del directorio, para que las emisoras populares sigan siendo reconocibles. Una emisora que hayas añadido escribiendo su dirección nunca se informa.',
+          'Tu término de búsqueda y el país elegido. Al reproducir una emisora encontrada aquí, Beacon informa de su identificador como clic; lo piden las propias reglas del directorio, para que las emisoras populares sigan siendo reconocibles. Una emisora que hayas añadido escribiendo su dirección nunca se informa. Al votar por una emisora también se envía su identificador, solo cuando pulsas tú ese botón.',
       },
       stationSite: {
         name: 'Los sitios web de las emisoras',
@@ -560,6 +562,14 @@ export default {
     discoverColumnCodec: 'Códec',
     discoverColumnVotes: 'Votos',
     discoverColumnClicks: 'Clics (24h)',
+    discoverVote: 'Votar por esta emisora',
+    discoverVoted: 'Has votado por esta emisora',
+    discoverVoteLimitTitle: 'Ya has votado hoy',
+    discoverVoteLimitMessage:
+      'Radio Browser cuenta un voto por emisora y día, para todos los que comparten este servidor de Beacon.',
+    discoverVoteFailedTitle: 'Voto no enviado',
+    discoverVoteFailedMessage:
+      'No se pudo conectar con Radio Browser. Inténtalo de nuevo más tarde.',
     discoverStreamOk: 'En línea en la última comprobación',
     discoverStreamDown: 'Fuera de línea en la última comprobación',
     discoverPlay: 'Reproducir sin añadir',

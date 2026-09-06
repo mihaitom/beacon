@@ -35,6 +35,7 @@ vi.mock('@/services/connect/radioBrowser', () => ({
   searchRadioBrowser: vi.fn(),
   listRadioBrowserCountries: vi.fn().mockResolvedValue([]),
   registerRadioBrowserClick: vi.fn(),
+  voteForRadioBrowserStation: vi.fn(),
 }))
 
 const vuetify = createVuetify({ components, directives })

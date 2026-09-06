@@ -401,13 +401,31 @@ export default {
     queueRowKey,
     // revealDelayMap's own per-row lookup, as the :style the template
     // actually binds — undefined (not a 0ms delay) for any row that isn't
-    // part of the current reveal at all, so untouched rows never pick up
-    // an inline transition-delay that could then linger and affect some
-    // completely unrelated later transition on that same element (a
-    // drag-reorder's own .queue-move-move, say).
+    // part of the current reveal at all, so untouched rows never pick up a
+    // stagger they were not meant to have.
+    //
+    // A custom property, not `transitionDelay` itself. Setting the real
+    // property inline puts it on the *row*, and the row is also what
+    // .queue-move-move animates — so a reveal's stagger silently became a
+    // delay on the FLIP settle too, and worse, the cleanup that removes it
+    // again lands in the middle of that settle. Removing a
+    // transition-delay while the transition it belongs to is running
+    // cancels and restarts it, for its full duration, from wherever it had
+    // got to. Measured 2026-09-06 on a peek that mounts the drawer: the
+    // settle sat still for its first 200ms, was cancelled at 642ms with
+    // 2.3px left to go, and then took another 300ms to travel those 2.3px
+    // — 960ms in total for a 300ms transition. The comment this replaces
+    // already named the hazard ("could then linger and affect some
+    // completely unrelated later transition on that same element") and
+    // guarded only against the lingering half of it.
+    //
+    // Read back by .queue-move-enter-active alone (see the CSS), which is
+    // the one transition the stagger was ever for. Nothing else resolves
+    // it, so setting or clearing it can neither delay nor interrupt any
+    // other transition on the row.
     revealDelayStyle(song: Song) {
       const delay = this.revealDelayMap.get(song)
-      return delay === undefined ? undefined : { transitionDelay: `${delay}ms` }
+      return delay === undefined ? undefined : { '--queue-reveal-delay': `${delay}ms` }
     },
     // See the modelValue watcher's own comment for when this runs.
     scrollToCurrent() {
@@ -711,7 +729,12 @@ export default {
 
 /* TransitionGroup's FLIP move animation — the actual "slides into its new
  * position" effect. Applies to every row whose index changed, not just the
- * dragged one, since reordering shifts everything in between too. */
+ * dragged one, since reordering shifts everything in between too.
+ *
+ * No delay, and nothing may give it one: this settle is a correction to a
+ * position the row is already wrongly at, so any wait before it starts is
+ * time the row spends visibly out of place. See revealDelayStyle() for the
+ * stagger that used to reach this by accident. */
 .queue-move-move {
   transition: transform 0.3s ease;
 }
@@ -729,6 +752,13 @@ export default {
   transition:
     opacity 0.3s ease,
     transform 0.3s ease;
+  /* The per-row stagger, from revealDelayStyle() — see its own comment for
+   * why it arrives as a custom property rather than as this property set
+   * inline. Resolved here and nowhere else, so .queue-move-move above is
+   * never delayed by it and never interrupted when it goes away. 0ms for
+   * every row that is not part of a reveal, which is the same "no delay"
+   * the shorthand above already sets. */
+  transition-delay: var(--queue-reveal-delay, 0ms);
 }
 .queue-move-enter-from {
   opacity: 0;

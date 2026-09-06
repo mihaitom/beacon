@@ -56,6 +56,7 @@ vi.mock('@/services/connect/playback', async (importOriginal) => {
  * behaviour. */
 function fakeEngine(): {
   play: ReturnType<typeof vi.fn>
+  playLive: ReturnType<typeof vi.fn>
   load: ReturnType<typeof vi.fn>
   pause: ReturnType<typeof vi.fn>
   resume: ReturnType<typeof vi.fn>
@@ -68,6 +69,7 @@ function fakeEngine(): {
 } {
   return {
     play: vi.fn(),
+    playLive: vi.fn(),
     load: vi.fn(),
     pause: vi.fn(),
     resume: vi.fn(),
@@ -99,6 +101,17 @@ function stubLibraryClient(): { streamUrl: ReturnType<typeof vi.fn> } {
   }
   vi.spyOn(useLibraryStore(), 'client').mockReturnValue(client as unknown as SubsonicClient)
   return client
+}
+
+/** The two arguments playLive() is handed for `streamUrl` in the default
+ * (relayed) mode: Beacon's own relay URL with the station's own inside it,
+ * and the option that follows from the same decision (see
+ * startLocalRadio()). Spread into toHaveBeenCalledWith. Both are pinned in
+ * full where they are the subject, in playback.transport.test.ts — here the
+ * only question is which station is playing.
+ */
+function playingStation(streamUrl: string): [unknown, unknown] {
+  return [expect.stringContaining(encodeURIComponent(streamUrl)), { holdsConnection: true }]
 }
 
 describe('playback transport', () => {
@@ -205,7 +218,9 @@ describe('playback transport', () => {
       await playback.togglePlay()
 
       expect(engine.resume).not.toHaveBeenCalled()
-      expect(engine.play).toHaveBeenCalledWith('https://stream.example/chill')
+      expect(engine.playLive).toHaveBeenCalledWith(
+        ...playingStation('https://stream.example/chill'),
+      )
       expect(playback.isPlaying).toBe(true)
     })
 
@@ -600,6 +615,49 @@ describe('playback transport', () => {
   })
 
   describe('radio', () => {
+    // The one switch that decides where a station's bytes come from, for
+    // this device's own player as much as for a speaker (see
+    // startLocalRadio()). What follows from it is not only the URL: direct
+    // mode needs a second connection of its own to read the now-playing
+    // tag, relayed mode gets it out of the fetch the relay already holds.
+    describe('where the audio comes from', () => {
+      const station = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+
+      it('routes a station through Beacon by default', async () => {
+        const playback = usePlaybackStore()
+
+        await playback.playRadioStation(station)
+
+        expect(engine.playLive).toHaveBeenCalledWith(
+          expect.stringContaining('/stream/radio-local?url=https%3A%2F%2Fstream.example%2Fchill'),
+          // The relay keeps fetching the station whether or not this
+          // device can be reached, and queues what it misses — so a gap is
+          // something to wait through, not to reconnect out of.
+          { holdsConnection: true },
+        )
+        expect(radioMetadata.startRadioMetadataWatch).not.toHaveBeenCalled()
+      })
+
+      it('fetches the station itself, and its titles separately, in direct mode', async () => {
+        const playback = usePlaybackStore()
+        useRadioSettingsStore().castDirectly = true
+
+        await playback.playRadioStation(station)
+
+        // No second argument: a station's own server holds nothing for
+        // anyone, so a gap here is a dropped connection to reconnect.
+        expect(engine.playLive).toHaveBeenCalledWith('https://stream.example/chill')
+        expect(radioMetadata.startRadioMetadataWatch).toHaveBeenCalledWith(
+          'https://stream.example/chill',
+        )
+      })
+    })
+
     it('keeps the queue it interrupts, and plays the stream over it', async () => {
       const playback = usePlaybackStore()
       const songs = [makeSong('a'), makeSong('b')]
@@ -622,14 +680,15 @@ describe('playback transport', () => {
       expect(playback.currentSong).toBeNull()
       expect(playback.queuedSong?.id).toBe('b')
       expect(playback.radioStation).toEqual(station)
-      expect(engine.play).toHaveBeenCalledWith('https://stream.example/chill')
-      expect(playback.isPlaying).toBe(true)
-      // Local playback never otherwise reaches the connect backend at all
-      // — see services/connect/radioMetadata.ts's own docstring for why
-      // this needs its own explicit call.
-      expect(radioMetadata.startRadioMetadataWatch).toHaveBeenCalledWith(
-        'https://stream.example/chill',
+      expect(engine.playLive).toHaveBeenCalledWith(
+        ...playingStation('https://stream.example/chill'),
       )
+      expect(playback.isPlaying).toBe(true)
+      // No separate now-playing watch: relayed is the default, and the
+      // relay reads the station's ICY tag out of the fetch it already
+      // holds (see startLocalRadio()). Direct mode is what still needs one
+      // — covered by its own test.
+      expect(radioMetadata.startRadioMetadataWatch).not.toHaveBeenCalled()
     })
 
     // Regression test, reported live 2026-09-06 while casting: clicking a
@@ -722,8 +781,7 @@ describe('playback transport', () => {
         homePageUrl: null,
       })
 
-      expect(engine.play).toHaveBeenCalledWith(stream)
-      expect(radioMetadata.startRadioMetadataWatch).toHaveBeenCalledWith(stream)
+      expect(engine.playLive).toHaveBeenCalledWith(...playingStation(stream))
       expect(playback.radioStation?.streamUrl).toBe(stream)
       // Everything else about the station is untouched.
       expect(playback.radioStation?.name).toBe('B5 aktuell')
@@ -959,11 +1017,13 @@ describe('playback transport', () => {
         await playback.playRadioStation(station)
         playback.isPlaying = false
         engine.hasEnded = true
-        vi.mocked(engine.play).mockClear()
+        vi.mocked(engine.playLive).mockClear()
 
         await playback.togglePlay()
 
-        expect(engine.play).toHaveBeenCalledWith('https://stream.example/chill')
+        expect(engine.playLive).toHaveBeenCalledWith(
+          ...playingStation('https://stream.example/chill'),
+        )
         expect(playback.isPlaying).toBe(true)
       })
 

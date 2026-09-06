@@ -325,6 +325,108 @@ class TestRegisterClick:
             await radio_browser.register_click("abc-123")  # must not raise
 
 
+def _vote_response(payload) -> MagicMock:
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.json = MagicMock(return_value=payload)
+    return resp
+
+
+class TestVoteForStation:
+    async def test_reports_ok_when_the_vote_counted(self):
+        radio_browser._cached_servers = ["de1.api.radio-browser.info"]
+        radio_browser._cached_servers_at = time.monotonic()
+
+        with patch.object(radio_browser, "_client") as client:
+            client.post = AsyncMock(
+                return_value=_vote_response({"ok": True, "message": "voted for station"})
+            )
+            status = await radio_browser.vote_for_station("abc-123")
+
+        assert status == "ok"
+        client.post.assert_called_once_with("https://de1.api.radio-browser.info/json/vote/abc-123")
+
+    async def test_accepts_the_string_spelling_of_ok(self):
+        # /json/url answers with the string "true" for the same field - see
+        # vote_for_station()'s own comment on not trusting one mirror
+        # version's JSON types.
+        radio_browser._cached_servers = ["de1.api.radio-browser.info"]
+        radio_browser._cached_servers_at = time.monotonic()
+
+        with patch.object(radio_browser, "_client") as client:
+            client.post = AsyncMock(return_value=_vote_response({"ok": "true"}))
+            status = await radio_browser.vote_for_station("abc-123")
+
+        assert status == "ok"
+
+    async def test_reports_a_refused_vote_rather_than_treating_the_200_as_success(self):
+        radio_browser._cached_servers = ["de1.api.radio-browser.info"]
+        radio_browser._cached_servers_at = time.monotonic()
+
+        with patch.object(radio_browser, "_client") as client:
+            client.post = AsyncMock(
+                return_value=_vote_response(
+                    {"ok": False, "message": "you are voting for the same station too often"}
+                )
+            )
+            status = await radio_browser.vote_for_station("abc-123")
+
+        assert status == "rejected"
+
+    async def test_never_retries_a_refusal_against_another_mirror(self):
+        # Retrying here would be exactly the vote farming the 24h limit
+        # exists to stop - see vote_for_station()'s own docstring.
+        radio_browser._cached_servers = ["de1.api.radio-browser.info", "de2.api.radio-browser.info"]
+        radio_browser._cached_servers_at = time.monotonic()
+
+        with patch.object(radio_browser, "_client") as client:
+            client.post = AsyncMock(return_value=_vote_response({"ok": False, "message": "nope"}))
+            status = await radio_browser.vote_for_station("abc-123")
+
+        assert status == "rejected"
+        assert client.post.await_count == 1
+
+    async def test_tries_the_next_mirror_when_one_is_unreachable(self):
+        radio_browser._cached_servers = ["de1.api.radio-browser.info", "de2.api.radio-browser.info"]
+        radio_browser._cached_servers_at = time.monotonic()
+
+        with patch.object(radio_browser, "_client") as client:
+            client.post = AsyncMock(
+                side_effect=[httpx.ConnectError("down"), _vote_response({"ok": True})]
+            )
+            status = await radio_browser.vote_for_station("abc-123")
+
+        assert status == "ok"
+        assert client.post.await_count == 2
+
+    async def test_reports_unreachable_when_every_mirror_fails(self):
+        radio_browser._cached_servers = ["de1.api.radio-browser.info"]
+        radio_browser._cached_servers_at = time.monotonic()
+
+        with patch.object(radio_browser, "_client") as client:
+            client.post = AsyncMock(side_effect=httpx.ConnectError("down"))
+            status = await radio_browser.vote_for_station("abc-123")
+
+        assert status == "unreachable"
+
+    async def test_reports_unreachable_when_no_server_could_be_discovered(self):
+        with patch.object(socket, "gethostbyname_ex", side_effect=socket.gaierror("dns down")):
+            assert await radio_browser.vote_for_station("abc-123") == "unreachable"
+
+    async def test_reports_unreachable_when_the_answer_is_not_json(self):
+        radio_browser._cached_servers = ["de1.api.radio-browser.info"]
+        radio_browser._cached_servers_at = time.monotonic()
+
+        with patch.object(radio_browser, "_client") as client:
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            resp.json = MagicMock(side_effect=ValueError("not json"))
+            client.post = AsyncMock(return_value=resp)
+            status = await radio_browser.vote_for_station("abc-123")
+
+        assert status == "unreachable"
+
+
 def _list_response(entries: list[dict]) -> MagicMock:
     resp = MagicMock()
     resp.raise_for_status = MagicMock()

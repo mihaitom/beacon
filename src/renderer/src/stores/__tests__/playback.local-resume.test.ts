@@ -23,6 +23,17 @@ vi.mock('@/services/connect/radioMetadata', () => ({
 // since jsdom's sessionStorage otherwise behaves just like a real one.
 const SESSION_WAS_PLAYING_KEY = 'beacon.playback.session-was-playing'
 
+/** The two arguments playLive() is handed for `streamUrl` in the default
+ * (relayed) mode: Beacon's own relay URL with the station's own inside it,
+ * and the option that follows from the same decision (see
+ * startLocalRadio()). Spread into toHaveBeenCalledWith. Both are pinned in
+ * full where they are the subject, in playback.transport.test.ts — here the
+ * only question is which station is playing.
+ */
+function playingStation(streamUrl: string): [unknown, unknown] {
+  return [expect.stringContaining(encodeURIComponent(streamUrl)), { holdsConnection: true }]
+}
+
 describe('resumeLocalPlayback', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -31,6 +42,7 @@ describe('resumeLocalPlayback', () => {
     vi.mocked(getAudioEngine).mockReturnValue({
       load: vi.fn(),
       play: vi.fn(),
+      playLive: vi.fn(),
     } as unknown as ReturnType<typeof getAudioEngine>)
   })
 
@@ -104,12 +116,12 @@ describe('resumeLocalPlayback', () => {
     await playback.resumeLocalPlayback()
 
     const engine = getAudioEngine()
-    expect(engine.play).toHaveBeenCalledWith('https://stream.example/chill')
+    expect(engine.playLive).toHaveBeenCalledWith(...playingStation('https://stream.example/chill'))
     expect(playback.isPlaying).toBe(true)
-    // Local playback never otherwise reaches the connect backend at all —
-    // see services/connect/radioMetadata.ts's own docstring.
-    expect(radioMetadata.startRadioMetadataWatch).toHaveBeenCalledWith(
-      'https://stream.example/chill',
-    )
+    // No separate now-playing watch: relayed is the default, and the
+    // relay reads the station's ICY tag out of the fetch it already
+    // holds (see startLocalRadio()). Direct mode is what still needs one
+    // — covered by its own test.
+    expect(radioMetadata.startRadioMetadataWatch).not.toHaveBeenCalled()
   })
 })

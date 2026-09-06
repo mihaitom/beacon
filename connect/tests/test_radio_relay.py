@@ -113,6 +113,156 @@ class TestDeviceOutputArgs:
         assert content_type == "audio/mpeg"
 
 
+def _stalling_stream(attempts: list[str], chunks: list[bytes], gap: float):
+    """A station that answers, sends `chunks` `gap` seconds apart, and then
+    stops sending without ever closing the connection. `attempts` records
+    each connection so a test can see whether the relay reconnected.
+
+    This is the shape that matters: httpx's own read timeout is
+    deliberately off for a live stream (_TIMEOUT), so nothing raises, and
+    aiter_bytes() simply never yields again."""
+
+    def stream(method, url, headers=None):
+        attempts.append(url)
+        resp = MagicMock()
+        resp.headers = {}
+        resp.raise_for_status = MagicMock()
+
+        async def aiter_bytes():
+            for chunk in chunks:
+                await asyncio.sleep(gap)
+                yield chunk
+            await asyncio.sleep(3600)  # open, silent, never closed
+
+        resp.aiter_bytes = aiter_bytes
+
+        @asynccontextmanager
+        async def cm():
+            yield resp
+
+        return cm()
+
+    return stream
+
+
+class TestRadioRelayBurst:
+    """The few seconds of already-relayed audio a listener's own player is
+    handed on arrival. Everything this relay emits is paced to real time,
+    so without it a player fed from here receives exactly one second of
+    audio per second and holds no buffer at all — which is what turns a
+    routine few seconds of no signal, away from home, into silence."""
+
+    async def test_hands_a_listener_the_recent_audio_up_front(self):
+        relay, _proc, _ = _relay_with_fake_ffmpeg(stdout_chunks=[b"chunk-1", b"chunk-2"])
+        stream = _mock_stream({}, [])
+
+        with patch.object(relay_mod._client, "stream", stream):
+            await relay.start()
+            for _ in range(4):
+                await asyncio.sleep(0)
+            # Subscribing *after* those chunks have already gone past.
+            q = relay.subscribe_audio(burst=True)
+            await relay.stop()
+
+        assert _drain(q)[:2] == [b"chunk-1", b"chunk-2"]
+
+    async def test_starts_a_device_at_the_live_edge_instead(self):
+        """A speaker is on the same network as this backend and gains
+        nothing from lagging; the radio position tracking built around the
+        relay (core/radio_position.py) would only be further out."""
+        relay, _proc, _ = _relay_with_fake_ffmpeg(stdout_chunks=[b"chunk-1", b"chunk-2"])
+        stream = _mock_stream({}, [])
+
+        with patch.object(relay_mod._client, "stream", stream):
+            await relay.start()
+            for _ in range(4):
+                await asyncio.sleep(0)
+            q = relay.subscribe_audio()
+            await relay.stop()
+
+        # Only stop()'s own sentinel — none of the audio already past.
+        assert _drain(q) == [None]
+
+    async def test_forgets_audio_from_before_an_outage(self):
+        """Trimmed by age, which is what empties this by itself while a
+        station is down: handing a listener reconnecting after a minute of
+        nothing the sixty-second-old seconds before it would be replaying
+        the past, not filling a buffer."""
+        relay, _proc, _ = _relay_with_fake_ffmpeg(stdout_chunks=[b"old-audio"])
+        stream = _mock_stream({}, [])
+
+        with (
+            patch.object(relay_mod, "_BURST_SECONDS", 0.01),
+            patch.object(relay_mod._client, "stream", stream),
+        ):
+            await relay.start()
+            await asyncio.sleep(0)
+            await asyncio.sleep(0.05)
+            q = relay.subscribe_audio(burst=True)
+            await relay.stop()
+
+        assert _drain(q) == [None]
+
+    async def test_caps_what_it_keeps(self):
+        chunks = [b"x" * 8192 for _ in range(40)]
+        relay, _proc, _ = _relay_with_fake_ffmpeg(stdout_chunks=chunks)
+        stream = _mock_stream({}, [])
+
+        with (
+            patch.object(relay_mod, "_BURST_MAX_BYTES", 16384),
+            patch.object(relay_mod._client, "stream", stream),
+        ):
+            await relay.start()
+            for _ in range(len(chunks) + 2):
+                await asyncio.sleep(0)
+            assert relay._burst_bytes <= 16384
+            await relay.stop()
+
+
+class TestRadioRelayStallDetection:
+    """A station that goes quiet without closing the connection. Nothing
+    else in the stack notices one: the relay used to sit on the dead
+    connection for as long as the radio was left playing, and every
+    subscriber — a speaker, the app's own player — was left to work it out
+    from silence, much later."""
+
+    async def test_reconnects_a_station_that_stops_sending(self):
+        relay, _proc, _ = _relay_with_fake_ffmpeg()
+        attempts: list[str] = []
+        stream = _stalling_stream(attempts, [b"audio"], gap=0.0)
+
+        with (
+            patch.object(relay_mod, "_STALL_TIMEOUT_SECONDS", 0.02),
+            patch.object(relay_mod, "_RECONNECT_DELAY_SECONDS", 0.01),
+            patch.object(relay_mod._client, "stream", stream),
+        ):
+            await relay.start()
+            await asyncio.sleep(0.25)
+            await relay.stop()
+
+        assert len(attempts) >= 2, attempts
+
+    async def test_leaves_a_station_that_is_merely_slow_alone(self):
+        """The gap this measures is only ever the tail of a read paced from
+        the far end by ffmpeg's own -readrate, so it has to tolerate a
+        station trickling rather than bursting — dropping one of those
+        would guarantee a gap in the sound where there was none."""
+        relay, proc, _ = _relay_with_fake_ffmpeg()
+        attempts: list[str] = []
+        stream = _stalling_stream(attempts, [b"a", b"b", b"c", b"d"], gap=0.01)
+
+        with (
+            patch.object(relay_mod, "_STALL_TIMEOUT_SECONDS", 0.15),
+            patch.object(relay_mod._client, "stream", stream),
+        ):
+            await relay.start()
+            await asyncio.sleep(0.1)
+            await relay.stop()
+
+        assert attempts == ["http://station"]
+        assert bytes(proc.stdin.written) == b"abcd"
+
+
 class TestRadioRelayFetchLoop:
     async def test_feeds_only_demultiplexed_audio_to_ffmpeg_stdin(self):
         metaint = 8
@@ -435,6 +585,11 @@ async def test_start_ffmpeg_builds_the_expected_single_output_command():
     # burst. Local playback, which never touches this relay, was
     # unaffected either way.
     assert "-fflags" in cmd
+    # Exactly once. It comes from core/streamer.py's _READRATE_ARGS, which
+    # has always carried it; a second one added here would silently win
+    # (ffmpeg takes the last value) and shorten the head start that whoever
+    # is subscribed at relay start gets, casting included.
+    assert cmd.count("-readrate_initial_burst") == 1
     assert cmd[cmd.index("-fflags") + 1] == "nobuffer"
     assert "-flush_packets" in cmd
     assert cmd[cmd.index("-flush_packets") + 1] == "1"

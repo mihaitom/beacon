@@ -193,6 +193,8 @@ export default {
     autoplay: 'Autoplay',
     liveRadio: 'Live · {time}',
     live: 'Live',
+    radioConnectionLost: 'Connection lost',
+    radioReconnect: 'Reconnect',
   },
   shortcuts: {
     title: 'Keyboard shortcuts',
@@ -411,9 +413,9 @@ export default {
     qualityBitrate: 'Bitrate',
     qualityBitrateItem: '{value} kbps',
     qualityOriginal: 'Original (untouched)',
-    castRadioDirectly: 'Send radio straight to the device',
+    castRadioDirectly: 'Play radio straight from the station',
     castRadioDirectlyHint:
-      "Beacon routes cast radio through its own backend by default, so the device and the now-playing title share one fetch of the station. Turned on, the device connects to the station directly instead — playback then keeps going even if Beacon restarts, at the risk that some devices refuse the station's own stream.",
+      "Beacon routes radio through its own backend by default — for a cast device and for this player alike. One fetch of the station feeds the audio and the now-playing title, and a station that drops is reconnected by Beacon without interrupting playback here. Turned on, the device and this player connect to the station directly instead: playback then keeps going even if Beacon restarts, but a drop is only noticed once the sound stops, and some devices refuse a station's own stream.",
     about: 'About Beacon',
     whatsNew: "What's new?",
     ffmpegFound: 'ffmpeg found',
@@ -480,7 +482,7 @@ export default {
         name: 'Radio Browser',
         purpose: 'The station directory behind "Discover stations".',
         sends:
-          "Your search term and the country you picked. Playing a station you found here reports its id back as a click, which the directory's own rules ask for so that popular stations stay recognisable. A station you added by typing its address yourself is never reported.",
+          "Your search term and the country you picked. Playing a station you found here reports its id back as a click, which the directory's own rules ask for so that popular stations stay recognisable. A station you added by typing its address yourself is never reported. Voting for a station sends its id as well, only when you press that button yourself.",
       },
       stationSite: {
         name: "Radio stations' own websites",
@@ -555,6 +557,13 @@ export default {
     discoverColumnCodec: 'Codec',
     discoverColumnVotes: 'Votes',
     discoverColumnClicks: 'Clicks (24h)',
+    discoverVote: 'Vote for this station',
+    discoverVoted: 'You voted for this station',
+    discoverVoteLimitTitle: 'Already voted today',
+    discoverVoteLimitMessage:
+      'Radio Browser counts one vote per station per day, for everyone sharing this Beacon server.',
+    discoverVoteFailedTitle: 'Vote not sent',
+    discoverVoteFailedMessage: 'Radio Browser could not be reached. Please try again later.',
     discoverStreamOk: 'Online at last check',
     discoverStreamDown: 'Offline at last check',
     discoverPlay: 'Play without adding',
