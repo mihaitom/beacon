@@ -32,6 +32,8 @@ import type { RepeatMode } from '@/services/playback/types'
 import { resolveRadioStation } from '@/services/playback/radioStation'
 import {
   fetchRadioMetadata,
+  fetchRadioTitleHistory,
+  RADIO_TITLE_PAGE_SIZE,
   type RadioTitleEntry,
   startRadioMetadataWatch,
   stopRadioMetadataWatch,
@@ -123,12 +125,28 @@ interface PlaybackState {
    * radioNowPlaying purely so the previous station's log is never on
    * screen while the poll catches up.
    *
-   * Deliberately unfiltered — a station sends its programme name, its own
+   * Almost unfiltered — a station sends its programme name, its own
    * slogan and news items through the very same field a song comes
    * through, and the slogan carries the same "Artist - Title" shape a song
    * does, so anything that dropped headlines would drop songs with it.
-   * Telling them apart is left to the display. */
+   * Telling those apart is left to the display. The single exception is
+   * made by the backend before this ever sees it: an ad break, which a
+   * station marks by putting the advertiser's own domain where a song has
+   * its artist (see connect/core/radio_ads.py).
+   *
+   * Only the part that has actually been fetched: the newest page arrives
+   * with the first poll of a station and older ones follow as the reader
+   * scrolls back through them (see loadOlderRadioTitles()). Every poll
+   * after that carries the delta alone — see the poll loop in init() for
+   * what asking for the whole thing every eight seconds used to cost. */
   radioTitleLog: RadioTitleEntry[]
+  /** Whether radioTitleLog has reached the beginning of the backend's log
+   * for this station, so there is nothing older left to ask for. Set from
+   * a page that came back shorter than it could have been, which is the
+   * only signal there is — deliberately, since a separate flag from the
+   * backend would be one more thing that can disagree with the list it
+   * describes. */
+  radioTitleLogComplete: boolean
   /** What the current station declares it broadcasts at (kbps) and what it
    * is encoded as — both null for a station that declares neither, and for
    * the moment before the first poll answers. Read straight off the
@@ -259,6 +277,32 @@ let scrobbledSongId: string | null = null
 // _apply_position_offset) — exactly what record() below should anchor to.
 const positionTracker = createPositionTracker()
 
+// A radio title that has arrived from the backend but is not on screen
+// yet, because the audio it belongs to has not been played out of this
+// device's buffer — see the poll loop in init(). The timer and the title
+// it is holding, so a second poll reporting the same title does not
+// re-arm it, and `url` so a station change can tell whose it was.
+// True while loadOlderRadioTitles() has a page request out. Module-level
+// rather than store state for the same reason as pendingRadioTitle above:
+// nothing renders it, and the scroll handler that triggers the load fires
+// far more often than the request completes.
+let radioTitleLogPageInFlight = false
+
+let pendingRadioTitle: { title: string | null; url: string } | null = null
+let pendingRadioTitleTimer: ReturnType<typeof setTimeout> | null = null
+
+function cancelPendingRadioTitle(): void {
+  if (pendingRadioTitleTimer !== null) clearTimeout(pendingRadioTitleTimer)
+  pendingRadioTitleTimer = null
+  pendingRadioTitle = null
+}
+
+// A ceiling on that hold. The buffer this is read from is normally a
+// handful of seconds; a much larger reading means something unusual
+// (a stall that refilled hugely, a browser deciding to fetch far ahead),
+// and holding a title for a minute is worse than showing it early.
+const MAX_RADIO_TITLE_HOLD_SECONDS = 30
+
 // Subsonic/Last.fm convention: a play counts once listened past 50% of the
 // song or 4 minutes, whichever comes first.
 const SCROBBLE_PERCENT = 0.5
@@ -366,6 +410,7 @@ export const usePlaybackStore = defineStore('playback', {
       radioStation: null,
       radioNowPlaying: null,
       radioTitleLog: [],
+      radioTitleLogComplete: false,
       radioBitrate: null,
       radioCodec: null,
       radioBuffering: false,
@@ -606,16 +651,86 @@ export const usePlaybackStore = defineStore('playback', {
       const pollRadioMetadata = () => {
         const station = this.radioStation
         if (!station) return
-        fetchRadioMetadata()
+        // The newest entry already on screen is what this asks to be
+        // brought up to date from; without one (a station just started, a
+        // reload) the backend hands over its newest page instead. A title
+        // being held back below deliberately does not count as held: it is
+        // not in the log yet, so it keeps being re-delivered until it is,
+        // which costs one entry per poll and needs no buffer of its own.
+        fetchRadioMetadata(this.radioTitleLog[0]?.at)
           .then((metadata) => {
             // The station may have changed while this was in flight - a
             // stale answer for the *previous* one must never overwrite
             // this one's (already-reset-to-null) title.
             if (this.radioStation?.streamUrl !== station.streamUrl) return
-            this.radioNowPlaying = metadata.title
-            this.radioTitleLog = metadata.history
+            // Immediately, both of them: they describe the station itself,
+            // not a moment in it, so there is nothing to line them up with.
             this.radioBitrate = metadata.bitrate
             this.radioCodec = metadata.codec
+
+            const showTitle = () => {
+              this.radioNowPlaying = metadata.title
+              this.applyRadioTitleDelta(metadata.history)
+            }
+            // Nothing new to line up. The log still moves, unless a title
+            // is being held — then its newest entry is the held one, and
+            // letting it through would put the song on screen in the list
+            // while the line above it still shows the previous one.
+            if (
+              metadata.title === this.radioNowPlaying ||
+              metadata.title === pendingRadioTitle?.title
+            ) {
+              if (pendingRadioTitleTimer === null) this.applyRadioTitleDelta(metadata.history)
+              return
+            }
+
+            // The backend reads the station's tag at the live edge, but
+            // this device is playing out of a buffer that was handed to it
+            // as fast as the network allowed - a station's own
+            // burst-on-connect, or the relay's head start
+            // (connect/core/streamer.py's LOOKAHEAD_SECONDS, measured at
+            // ~15s). Showing the tag when it arrives therefore announces
+            // the next song while the previous one is still audibly
+            // playing. Held back by exactly what this element has buffered
+            // ahead, which is the same number (see the engine's
+            // bufferedAhead).
+            //
+            // Only for local playback: while casting, the buffer that
+            // matters belongs to the speaker and nothing here can measure
+            // it, so a hold would be a guess laid on top of an unknown.
+            //
+            // How much that is in practice, measured live 2026-09-06 on a
+            // relayed station: 2.4s half a minute in, 0.3s twelve minutes
+            // in. Small, and shrinking — the relay delivers at exactly 1x
+            // (core/streamer.py's -readrate), so a player can never build
+            // a lead, and the head start it is handed on connect is spent
+            // for good the first time a stall eats into it. So this
+            // corrects a few seconds early on and almost nothing later,
+            // which is worth having and is not the whole gap: with 2.4s
+            // held, a counted track change still showed 4s before it was
+            // audible. The rest sits between the tag being demuxed on the
+            // relay's *input* side and that audio leaving ffmpeg, and is
+            // not measured yet — see TODO.md before adding a constant for
+            // it.
+            const holdSeconds = this.isCasting
+              ? 0
+              : Math.min(getAudioEngine().bufferedAhead, MAX_RADIO_TITLE_HOLD_SECONDS)
+            if (holdSeconds <= 0) {
+              cancelPendingRadioTitle()
+              showTitle()
+              return
+            }
+            cancelPendingRadioTitle()
+            pendingRadioTitle = { title: metadata.title, url: station.streamUrl }
+            pendingRadioTitleTimer = setTimeout(() => {
+              pendingRadioTitleTimer = null
+              pendingRadioTitle = null
+              // Same guard as above, for the wait rather than the request:
+              // a station change during the hold makes this title somebody
+              // else's.
+              if (this.radioStation?.streamUrl !== station.streamUrl) return
+              showTitle()
+            }, holdSeconds * 1000)
           })
           .catch(() => {})
       }
@@ -827,7 +942,7 @@ export const usePlaybackStore = defineStore('playback', {
             this.radioStation,
           )
           this.radioNowPlaying = null
-          this.radioTitleLog = []
+          this.resetRadioTitleLog()
           this.radioBitrate = null
           this.radioCodec = null
           this.radioConnectionLost = false
@@ -937,7 +1052,7 @@ export const usePlaybackStore = defineStore('playback', {
         if (this.radioStation) {
           stopRadioMetadataWatch()
           this.radioNowPlaying = null
-          this.radioTitleLog = []
+          this.resetRadioTitleLog()
           this.radioBitrate = null
           this.radioCodec = null
           this.radioConnectionLost = false
@@ -1144,7 +1259,7 @@ export const usePlaybackStore = defineStore('playback', {
       // the queue's own current entry, showing as what's playing.
       this.radioStation = { ...station, streamUrl }
       this.radioNowPlaying = null
-      this.radioTitleLog = []
+      this.resetRadioTitleLog()
       this.radioBitrate = null
       this.radioCodec = null
       this.radioConnectionLost = false
@@ -1444,6 +1559,72 @@ export const usePlaybackStore = defineStore('playback', {
       await this.switchToIndex(index)
     },
 
+    /** Clears the title log and everything that describes how much of it
+     * has been fetched. Called wherever a station stops being the current
+     * one, which is the moment all three stop meaning anything. */
+    resetRadioTitleLog(): void {
+      this.radioTitleLog = []
+      this.radioTitleLogComplete = false
+      radioTitleLogPageInFlight = false
+    },
+
+    /** Puts what a poll brought back at the top of the log.
+     *
+     * `entries` is newest-first and, on every poll after the first, holds
+     * only what is newer than the entry the request named — so this is a
+     * prepend, not a replacement. The filter is for the first poll of a
+     * station, which asks for a whole page rather than a delta, and for
+     * the case of an answer overtaking a newer one that already landed:
+     * either way, only what is genuinely newer than the current head goes
+     * in, and a repeated entry is dropped rather than duplicated.
+     *
+     * Whether the log is complete is decided here too, and only on that
+     * first page: a first page shorter than the backend's own page size is
+     * the entire log, so there is nothing for a scroll to fetch later. */
+    applyRadioTitleDelta(entries: RadioTitleEntry[]): void {
+      const head = this.radioTitleLog[0]
+      if (!head) {
+        this.radioTitleLog = entries
+        this.radioTitleLogComplete = entries.length < RADIO_TITLE_PAGE_SIZE
+        return
+      }
+      const fresh = entries.filter((entry) => entry.at > head.at)
+      if (fresh.length) this.radioTitleLog = [...fresh, ...this.radioTitleLog]
+    },
+
+    /** Fetches the page of titles before the oldest one held, for the
+     * reader who has scrolled to the end of what is on screen (see
+     * RadioTitleLog.vue, which asks as the bottom comes into reach rather
+     * than offering a button).
+     *
+     * Safe to call on every scroll event: it returns immediately once the
+     * beginning of the log has been reached and while a page is already in
+     * flight, which is what the scroll handler relies on instead of
+     * throttling itself.
+     *
+     * A failed page is not remembered as anything: nothing is appended, no
+     * flag moves, and the next scroll simply asks again. */
+    async loadOlderRadioTitles(): Promise<void> {
+      if (this.radioTitleLogComplete || radioTitleLogPageInFlight) return
+      const oldest = this.radioTitleLog[this.radioTitleLog.length - 1]
+      const station = this.radioStation
+      if (!oldest || !station) return
+
+      radioTitleLogPageInFlight = true
+      try {
+        const page = await fetchRadioTitleHistory(oldest.at)
+        // The station may have changed while this was in flight — that
+        // page belongs to a log nobody is looking at any more.
+        if (this.radioStation?.streamUrl !== station.streamUrl) return
+        if (page.length) this.radioTitleLog = [...this.radioTitleLog, ...page]
+        if (page.length < RADIO_TITLE_PAGE_SIZE) this.radioTitleLogComplete = true
+      } catch (error) {
+        console.error('[playback] Failed to load older radio titles:', error)
+      } finally {
+        radioTitleLogPageInFlight = false
+      }
+    },
+
     /** Drops whatever radio state is set, if any — the station itself, its
      * "now playing" tag, the buffering indicator and the backend's own ICY
      * watch (see services/connect/radioMetadata.ts). A no-op when no
@@ -1456,10 +1637,11 @@ export const usePlaybackStore = defineStore('playback', {
      * own a moment later. */
     leaveRadio(): void {
       if (!this.radioStation) return
+      cancelPendingRadioTitle()
       stopRadioMetadataWatch()
       this.radioStation = null
       this.radioNowPlaying = null
-      this.radioTitleLog = []
+      this.resetRadioTitleLog()
       this.radioBitrate = null
       this.radioCodec = null
       this.radioConnectionLost = false
@@ -1482,6 +1664,9 @@ export const usePlaybackStore = defineStore('playback', {
     startLocalRadio(streamUrl: string): void {
       const direct = useRadioSettingsStore().castDirectly
       this.radioConnectionLost = false
+      // Whatever was waiting belonged to the connection being replaced -
+      // the new one starts with its own buffer and its own tag.
+      cancelPendingRadioTitle()
       if (direct) {
         getAudioEngine().playLive(streamUrl)
         // The relay reports its own titles through the very same callback
@@ -1843,7 +2028,7 @@ export const usePlaybackStore = defineStore('playback', {
       this.localPosition = 0
       this.bufferedPosition = 0
       this.radioNowPlaying = null
-      this.radioTitleLog = []
+      this.resetRadioTitleLog()
       this.radioBitrate = null
       this.radioCodec = null
       this.radioConnectionLost = false

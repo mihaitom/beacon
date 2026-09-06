@@ -166,6 +166,75 @@ describe('RadioTitleLog', () => {
     })
   })
 
+  describe('asking for older entries as the end comes into reach', () => {
+    /** jsdom lays nothing out, so a scroller's own metrics are all 0 and
+     * every scroll would read as "at the end". These are the numbers a
+     * real box would report; the real thing is measured in
+     * RadioTitleLog.scroll.layout.browser.test.ts. */
+    function scrollTo(
+      wrapper: ReturnType<typeof mountEntries>,
+      {
+        scrollTop,
+        scrollHeight = 4000,
+        clientHeight = 800,
+      }: { scrollTop: number; scrollHeight?: number; clientHeight?: number },
+    ) {
+      const el = wrapper.find('.title-log__scroll').element as HTMLElement
+      Object.defineProperty(el, 'scrollHeight', { value: scrollHeight, configurable: true })
+      Object.defineProperty(el, 'clientHeight', { value: clientHeight, configurable: true })
+      el.scrollTop = scrollTop
+      return wrapper.find('.title-log__scroll').trigger('scroll')
+    }
+
+    function mountWithMore(hasMore: boolean) {
+      return mount(RadioTitleLog, {
+        props: {
+          entries: [{ title: 'Artist - Track', at: 1_757_000_000 }],
+          hasMore,
+        },
+        ...i18n,
+      })
+    }
+
+    it('asks for more before the last row is reached, not once it is', async () => {
+      const wrapper = mountWithMore(true)
+
+      // 3400 of 4000 scrolled past with an 800px box: 600px per screenful
+      // still below, which is inside the reach that counts as running out.
+      await scrollTo(wrapper, { scrollTop: 2600 })
+
+      expect(wrapper.emitted('load-more')).toHaveLength(1)
+    })
+
+    it('stays quiet while there is still plenty below', async () => {
+      const wrapper = mountWithMore(true)
+
+      await scrollTo(wrapper, { scrollTop: 200 })
+
+      expect(wrapper.emitted('load-more')).toBeUndefined()
+    })
+
+    it('asks for nothing once the log is complete', async () => {
+      const wrapper = mountWithMore(false)
+
+      await scrollTo(wrapper, { scrollTop: 3200 })
+
+      expect(wrapper.emitted('load-more')).toBeUndefined()
+    })
+
+    it('asks again on the next scroll, leaving the throttling to the store', async () => {
+      // Deliberate: the store's own loadOlderRadioTitles() is a no-op
+      // while a page is in flight, and a guard here would be a second one
+      // that can fall out of step with the request it guards.
+      const wrapper = mountWithMore(true)
+
+      await scrollTo(wrapper, { scrollTop: 2600 })
+      await scrollTo(wrapper, { scrollTop: 2800 })
+
+      expect(wrapper.emitted('load-more')).toHaveLength(2)
+    })
+  })
+
   it('says so when the station has not played anything yet', () => {
     const wrapper = mount(RadioTitleLog, { props: { entries: [] }, ...i18n })
 

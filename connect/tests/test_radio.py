@@ -1369,6 +1369,101 @@ def test_radio_metadata_returns_the_current_stations_log_newest_first(client, de
     assert all(isinstance(e["at"], float) for e in body["history"])
 
 
+def _fill_history(session, url: str, count: int) -> list[dict]:
+    """`count` titles on `url`, oldest first, one minute apart — bypassing
+    _set_radio_title() so the repeat guard and the wall clock stay out of
+    it. Returns them newest first, i.e. the order the log reads in."""
+    session._radio_metadata_url = url
+    history = session._station_history(url)
+    for i in range(count):
+        history.append({"title": f"Track {i}", "at": 1_757_000_000.0 + i * 60})
+    return list(reversed(history))
+
+
+def test_radio_metadata_hands_a_first_time_caller_one_page_rather_than_everything(
+    client, default_session
+):
+    # The whole log used to go out on every 8s poll — 70KB of unchanged
+    # JSON at the cap, several hundred times an hour. See the route's own
+    # docstring.
+    entries = _fill_history(default_session, "http://station", 450)
+
+    r = client.get("/radio-metadata")
+
+    assert r.status_code == 200
+    history = r.json()["history"]
+    assert len(history) == 200
+    assert history[0] == entries[0]  # newest first, unchanged
+
+
+def test_radio_metadata_hands_back_only_what_is_newer_than_since(client, default_session):
+    entries = _fill_history(default_session, "http://station", 10)
+
+    r = client.get("/radio-metadata", params={"since": entries[2]["at"]})
+
+    assert r.status_code == 200
+    assert r.json()["history"] == entries[:2]
+
+
+def test_radio_metadata_says_nothing_at_all_when_the_caller_is_current(client, default_session):
+    # The common case by far: a station changes title every few minutes and
+    # this is asked every eight seconds.
+    entries = _fill_history(default_session, "http://station", 10)
+
+    r = client.get("/radio-metadata", params={"since": entries[0]["at"]})
+
+    assert r.json()["history"] == []
+
+
+def test_radio_metadata_since_is_not_capped_to_a_page(client, default_session):
+    """A client coming back from a long pause gets everything it missed —
+    the page size exists to bound a *first* load, not to withhold what a
+    caller explicitly asked to catch up on."""
+    entries = _fill_history(default_session, "http://station", 400)
+
+    r = client.get("/radio-metadata", params={"since": entries[-1]["at"]})
+
+    assert len(r.json()["history"]) == 399
+
+
+def test_radio_history_pages_backwards_from_the_oldest_entry_held(client, default_session):
+    entries = _fill_history(default_session, "http://station", 500)
+
+    r = client.get("/radio-metadata/history", params={"before": entries[199]["at"], "limit": 200})
+
+    assert r.status_code == 200
+    assert r.json()["history"] == entries[200:400]
+
+
+def test_radio_history_returns_a_short_page_at_the_beginning_of_the_log(client, default_session):
+    """Shorter than the limit asked for *is* the "nothing older" signal —
+    see the route's docstring on why there is no separate flag."""
+    entries = _fill_history(default_session, "http://station", 30)
+
+    r = client.get("/radio-metadata/history", params={"before": entries[9]["at"], "limit": 200})
+
+    assert r.json()["history"] == entries[10:]
+
+
+def test_radio_history_never_hands_out_more_than_one_page_however_much_is_asked_for(
+    client, default_session
+):
+    entries = _fill_history(default_session, "http://station", 500)
+
+    r = client.get("/radio-metadata/history", params={"before": entries[0]["at"], "limit": 5000})
+
+    assert len(r.json()["history"]) == 200
+
+
+def test_radio_history_is_empty_when_nothing_is_playing(client, default_session):
+    _fill_history(default_session, "http://station", 10)
+    default_session._radio_metadata_url = None
+
+    r = client.get("/radio-metadata/history", params={"before": 1_757_000_600.0})
+
+    assert r.json()["history"] == []
+
+
 def test_radio_title_log_is_kept_per_station(default_session):
     """Switching away and back finds the first station's own log intact,
     rather than one merged list with another station's titles in it."""
@@ -1394,6 +1489,51 @@ def test_radio_title_log_survives_stopping_the_watch(default_session):
     assert default_session.radio_title_log() == []  # nothing playing
     default_session._radio_metadata_url = "http://station-a"
     assert [e["title"] for e in default_session.radio_title_log()] == ["A1"]
+
+
+def test_radio_title_log_keeps_a_stations_advertising_out(default_session):
+    """Sampled from mangoradio: the ad break puts the advertiser's own
+    domain where a song has its artist. See core/radio_ads.py."""
+    default_session._radio_metadata_url = "http://station-a"
+    default_session._set_radio_title("Years & Years - Eyes Shut")
+    default_session._set_radio_title("booking.com - ...  zweite Halbzeit ...")
+    default_session._set_radio_title("Mark Forster - Übermorgen")
+
+    assert [e["title"] for e in default_session.radio_title_log()] == [
+        "Mark Forster - Übermorgen",
+        "Years & Years - Eyes Shut",
+    ]
+
+
+def test_an_advert_clears_the_now_playing_line_rather_than_showing_itself(default_session):
+    """A lock screen reading "vodafone.de - Ein bisschen
+    Verbraucherinformationen" is the thing being fixed; leaving the
+    previous song up instead would be a different lie."""
+    default_session._radio_metadata_url = "http://station-a"
+    default_session._set_radio_title("Years & Years - Eyes Shut")
+
+    default_session._set_radio_title("vodafone.de - Ein bisschen Verbraucherinformationen ...")
+
+    assert default_session.radio_title is None
+
+
+def test_advertising_stored_before_the_rule_existed_is_dropped_on_load(default_session):
+    """A log cleans itself up the next time its station is played, rather
+    than carrying old ad rows around forever."""
+    url = "http://station-a"
+    for title in [
+        "Years & Years - Eyes Shut",
+        "booking.com - Ein bisschen Verbraucherinformationen ...",
+        "Mark Forster - Übermorgen",
+    ]:
+        radio_history.append(default_session.session_id, url, {"title": title, "at": 1.0}, 1000)
+
+    default_session._radio_metadata_url = url
+
+    assert [e["title"] for e in default_session.radio_title_log()] == [
+        "Mark Forster - Übermorgen",
+        "Years & Years - Eyes Shut",
+    ]
 
 
 def test_radio_title_log_ignores_a_station_cycling_the_same_strings(default_session):

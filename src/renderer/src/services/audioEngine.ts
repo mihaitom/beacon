@@ -765,6 +765,31 @@ export class AudioEngine {
     return this.volumeNode !== null
   }
 
+  /** How far ahead of the playhead this element has already received, in
+   * seconds — the buffer it is currently playing out of.
+   *
+   * For a live stream this is also, exactly, how far behind the *source*
+   * the listener is: everything here was handed over as fast as the
+   * connection allowed (a station's burst-on-connect, or the relay's own
+   * head start — see core/radio_relay.py), and is then played at 1x. So a
+   * "now playing" tag read at the source edge describes audio this
+   * listener will not hear for this many seconds. stores/playback.ts holds
+   * a new radio title back by exactly this before showing it.
+   *
+   * Measured, not assumed, and self-correcting: it shrinks as a stall eats
+   * into the buffer and grows again as the catch-up refills it. 0 when
+   * nothing is buffered past the playhead, which is also the honest answer
+   * for "no idea" — see reportBuffered() for the range this reads. */
+  get bufferedAhead(): number {
+    const { buffered, currentTime } = this.audio
+    for (let i = 0; i < buffered.length; i++) {
+      if (buffered.start(i) <= currentTime && currentTime <= buffered.end(i)) {
+        return Math.max(0, buffered.end(i) - currentTime)
+      }
+    }
+    return 0
+  }
+
   /** Whether a local analyser exists to read from at all — false where
    * webAudioAllowed() above declined to build the graph, and where building
    * it failed. NowPlayingView.vue reads this to decide whether offering the

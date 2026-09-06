@@ -7,7 +7,7 @@
        - LyricsPanel.vue has for the same reason. A root that tried to be
        - the scroller too would be fighting whichever stylesheet loaded
        - last for both properties. -->
-    <div class="title-log__scroll">
+    <div ref="scroller" class="title-log__scroll" @scroll.passive="onScroll">
       <ol v-if="entries.length" class="title-log__list">
         <template v-for="row in rows" :key="row.key">
           <li v-if="row.divider" class="title-log__day">{{ row.divider }}</li>
@@ -64,6 +64,11 @@ interface LogRow {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+/** How close to the bottom counts as "about to run out", in pixels. Around
+ * a screenful of rows on a phone, so the next page is usually already
+ * there by the time the reader arrives at what it holds. */
+const NEAR_END_PX = 600
+
 /** Midnight local time for `date`, as a number — comparing these is how two
  * timestamps are told to be on the same calendar day in the *reader's* own
  * timezone, which is the one that decides what "yesterday" means. */
@@ -78,7 +83,12 @@ export default {
       type: Array as PropType<RadioTitleEntry[]>,
       default: () => [],
     },
+    /** Whether anything older than the oldest entry shown is still to be
+     * had. False both while a log is complete and while none is playing,
+     * and in both cases scrolling to the bottom asks for nothing. */
+    hasMore: { type: Boolean, default: false },
   },
+  emits: ['load-more'],
   computed: {
     /** The entries with a date heading wherever the day changes going down
      * the list.
@@ -115,6 +125,25 @@ export default {
     },
   },
   methods: {
+    /** Asks for the next page as the end of the list comes into reach,
+     * rather than at the moment it is hit: a log read on a phone is
+     * flicked through, and a request that only starts once the last row is
+     * on screen arrives after the scroll has already stopped there.
+     *
+     * NEAR_END_PX is deliberately generous for that reason - roughly a
+     * screenful of rows ahead. Fires on every scroll event without
+     * throttling of its own: the store's own loadOlderRadioTitles() is a
+     * no-op while a page is in flight and once the log is complete, which
+     * is the same guard a throttle here would need and one that cannot
+     * drift out of step with the request it guards. */
+    onScroll(): void {
+      if (!this.hasMore) return
+      const el = this.$refs.scroller as HTMLElement | undefined
+      if (!el) return
+      if (el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_END_PX) {
+        this.$emit('load-more')
+      }
+    },
     dayLabel(day: number): string {
       if (day === startOfDay(new Date()) - DAY_MS) return this.$t('radio.titleLogYesterday')
       return new Date(day).toLocaleDateString(undefined, {

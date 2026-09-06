@@ -25,6 +25,8 @@ vi.mock('@/services/connect/radioMetadata', () => ({
   startRadioMetadataWatch: vi.fn(),
   stopRadioMetadataWatch: vi.fn(),
   fetchRadioMetadata: vi.fn().mockResolvedValue(null),
+  fetchRadioTitleHistory: vi.fn().mockResolvedValue([]),
+  RADIO_TITLE_PAGE_SIZE: 200,
 }))
 
 // Only resolveRadioStreamUrl is used from here; the rest of the module

@@ -229,7 +229,9 @@
               <radio-title-log
                 v-else-if="showLyrics && playbackStore.radioStation"
                 :entries="playbackStore.radioTitleLog"
+                :has-more="!playbackStore.radioTitleLogComplete"
                 class="now-playing__lyrics"
+                @load-more="playbackStore.loadOlderRadioTitles()"
               />
             </transition>
           </div>

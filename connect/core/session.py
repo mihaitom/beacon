@@ -19,7 +19,7 @@ from fastapi import Header, HTTPException, Query
 from delivery import BaseDelivery, DeliveryManager
 from media import MediaClient, SubsonicClient
 
-from . import icy_metadata, radio_history
+from . import icy_metadata, radio_ads, radio_history
 from .claims import claims
 from .device_volume import pushes_volume
 from .loop_health import peak_lag
@@ -291,14 +291,52 @@ class SessionState:
             return self.radio_relay.url
         return self._radio_metadata_url
 
-    def radio_title_log(self) -> list[dict]:
+    def radio_title_log(
+        self,
+        *,
+        since: float | None = None,
+        before: float | None = None,
+        limit: int | None = None,
+    ) -> list[dict]:
         """The current station's own history, newest first — the order it
         is read in. Empty whenever nothing is playing, which is also what
-        makes this safe to ask for unconditionally."""
+        makes this safe to ask for unconditionally.
+
+        All three arguments exist because routes/radio.py's /radio-metadata
+        is polled every 8 seconds and used to answer with the whole log
+        every time. At the cap of _RADIO_HISTORY_PER_STATION that is some
+        70KB of unchanged JSON per poll, roughly 30MB an hour, on a
+        connection that is quite often a phone on mobile data — for a list
+        that grows by one entry every few minutes.
+
+        `since` (exclusive) is what the poll uses: everything newer than
+        the newest entry the caller already has, which is nothing at all on
+        the overwhelming majority of polls. `before` (exclusive) and
+        `limit` page backwards through the rest as the reader scrolls. A
+        page shorter than the limit it asked for is the end of the log,
+        which is what saves a separate "is there more" flag.
+
+        The timestamps used as cursors are `time.time()` floats recorded
+        per title (see _record_radio_title()), so two entries sharing one
+        is not a case that occurs."""
         url = self.current_radio_station_url
         if not url:
             return []
-        return list(reversed(self._station_history(url)))
+
+        out: list[dict] = []
+        # reversed() over the deque, so this walks newest first and can
+        # stop as soon as it is past what was asked for, rather than
+        # materializing a thousand-entry list to slice a handful off it.
+        for entry in reversed(self._station_history(url)):
+            at = entry["at"]
+            if since is not None and at <= since:
+                break
+            if before is not None and at >= before:
+                continue
+            out.append(entry)
+            if limit is not None and len(out) >= limit:
+                break
+        return out
 
     def _station_history(self, url: str) -> deque[dict]:
         """One station's log, faulting in what a previous run (or a
@@ -313,7 +351,19 @@ class SessionState:
         history = self.radio_title_history.get(url)
         if history is None:
             history = deque(
-                radio_history.load_station(self.session_id, url, _RADIO_HISTORY_PER_STATION),
+                (
+                    entry
+                    # Also applied to what was stored before this rule
+                    # existed (or before it learned a shape), so a log
+                    # cleans itself up the next time its station is
+                    # played rather than carrying old ads forever. The
+                    # file itself is left alone; it is rewritten only by
+                    # the trim in core/radio_history.py.
+                    for entry in radio_history.load_station(
+                        self.session_id, url, _RADIO_HISTORY_PER_STATION
+                    )
+                    if not radio_ads.looks_like_advert(entry["title"])
+                ),
                 maxlen=_RADIO_HISTORY_PER_STATION,
             )
             self.radio_title_history[url] = history
@@ -323,6 +373,18 @@ class SessionState:
         return history
 
     def _set_radio_title(self, title: str) -> None:
+        """Both readers land here — see start_radio_metadata_watch() and
+        start_radio_relay(), which hand this same callback over.
+
+        An advertisement (core/radio_ads.py) is dropped rather than shown:
+        it neither becomes what is playing nor enters the log. Clearing the
+        title rather than leaving the previous one is deliberate — the
+        previous song is genuinely no longer playing, and the frontend
+        renders a station with no title as just its name, which is what an
+        ad break should look like on a lock screen."""
+        if radio_ads.looks_like_advert(title):
+            self.radio_title = None
+            return
         self.radio_title = title
         self._record_radio_title(title)
 
@@ -344,14 +406,22 @@ class SessionState:
         """Adds one title to its station's log, unless it is that station
         coming round again (see _RADIO_HISTORY_REPEAT_WINDOW).
 
-        Nothing is filtered by what a title *looks* like. Sampled live on
+        Nothing is filtered by what a title *means*. Sampled live on
         2026-09-05: a station sends its programme name ("Informationen am
         Morgen"), its own slogan ("Deutschlandfunk - Alles von Relevanz")
         and a news item through the very same field a song comes through,
         and the slogan carries the exact "Artist - Title" shape a song
         does. Any rule that dropped headlines would drop songs with it, so
         everything is kept and telling them apart is left to the reader —
-        see the frontend's own splitting of an entry into artist/title."""
+        see the frontend's own splitting of an entry into artist/title.
+
+        The one exception is upstream of here, in _set_radio_title(): an
+        advertisement whose artist half is the advertiser's own domain
+        (core/radio_ads.py) never reaches this at all. That is a shape no
+        artist name has, rather than a judgement about the words, and
+        keeping those out matters more than it looks — a single ad break
+        contributes four entries, which would push real songs out of the
+        far end of a log that only holds so many."""
         url = self.current_radio_station_url
         if not url:
             return

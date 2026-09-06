@@ -18,6 +18,8 @@ vi.mock('@/services/connect/radioMetadata', () => ({
   startRadioMetadataWatch: vi.fn(),
   stopRadioMetadataWatch: vi.fn(),
   fetchRadioMetadata: vi.fn().mockResolvedValue(null),
+  fetchRadioTitleHistory: vi.fn().mockResolvedValue([]),
+  RADIO_TITLE_PAGE_SIZE: 200,
 }))
 
 /** Only the callback sinks matter here: init() assigns them, and these
@@ -25,6 +27,7 @@ vi.mock('@/services/connect/radioMetadata', () => ({
 interface WiredEngine {
   play: ReturnType<typeof vi.fn>
   playLive: ReturnType<typeof vi.fn>
+  bufferedAhead: number
   load: ReturnType<typeof vi.fn>
   pause: ReturnType<typeof vi.fn>
   stop: ReturnType<typeof vi.fn>
@@ -72,6 +75,7 @@ describe('the store wiring the audio engine', () => {
     engine = {
       play: vi.fn(),
       playLive: vi.fn(),
+      bufferedAhead: 0,
       load: vi.fn(),
       pause: vi.fn(),
       stop: vi.fn(),
@@ -384,6 +388,370 @@ describe('the store wiring the audio engine', () => {
       engine.onReconnectStateChange?.(false)
 
       expect(playback.radioBuffering).toBe(true)
+    })
+  })
+
+  // The backend reads the station's tag at the live edge; this device is
+  // playing out of a buffer handed to it as fast as the network allowed.
+  // Announcing the next song while the previous one is still audible is
+  // the visible half of that gap.
+  describe('the now-playing tag against what is audible', () => {
+    function playChillFm() {
+      const playback = usePlaybackStore()
+      playback.init()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      return playback
+    }
+
+    /** One poll cycle: the interval init() started, plus the fetch it
+     * awaits. */
+    async function poll() {
+      await vi.advanceTimersByTimeAsync(8000)
+      await flushPromises()
+    }
+
+    it('holds a new title back by what the element has buffered ahead', async () => {
+      const playback = playChillFm()
+      engine.bufferedAhead = 15
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue({
+        title: 'Artist - Track',
+        history: [{ title: 'Artist - Track', at: 1 }],
+        bitrate: 128,
+        codec: 'MP3',
+      })
+
+      await poll()
+
+      // Not yet: those 15 seconds are still in the buffer, unheard.
+      expect(playback.radioNowPlaying).toBeNull()
+      // ...while what describes the station rather than a moment in it is
+      // applied straight away.
+      expect(playback.radioCodec).toBe('MP3')
+
+      await vi.advanceTimersByTimeAsync(15_000)
+
+      expect(playback.radioNowPlaying).toBe('Artist - Track')
+    })
+
+    it('shows it straight away when nothing is buffered ahead', async () => {
+      const playback = playChillFm()
+      engine.bufferedAhead = 0
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue({
+        title: 'Artist - Track',
+        history: [],
+        bitrate: null,
+        codec: null,
+      })
+
+      await poll()
+
+      expect(playback.radioNowPlaying).toBe('Artist - Track')
+    })
+
+    it("does not hold anything while casting, where the buffer is the speaker's", async () => {
+      const playback = playChillFm()
+      castTo()
+      engine.bufferedAhead = 15
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue({
+        title: 'Artist - Track',
+        history: [],
+        bitrate: null,
+        codec: null,
+      })
+
+      await poll()
+
+      expect(playback.radioNowPlaying).toBe('Artist - Track')
+    })
+
+    it('does not re-arm the hold on every poll reporting the same title', async () => {
+      const playback = playChillFm()
+      engine.bufferedAhead = 10
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue({
+        title: 'Artist - Track',
+        history: [],
+        bitrate: null,
+        codec: null,
+      })
+
+      // The poll runs every 8s, so a 10s hold sees one more answer with the
+      // same title before it lands. Re-arming on that would push the title
+      // back for as long as the station keeps playing it.
+      await poll()
+      await poll()
+      await vi.advanceTimersByTimeAsync(2500)
+
+      expect(playback.radioNowPlaying).toBe('Artist - Track')
+    })
+
+    it('asks for the whole first page, then only for what is newer', async () => {
+      // Started for its side effects alone — this one watches the requests
+      // rather than the store they land in.
+      playChillFm()
+      engine.bufferedAhead = 0
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue({
+        title: 'Artist - Track',
+        history: [{ title: 'Artist - Track', at: 1000 }],
+        bitrate: null,
+        codec: null,
+      })
+
+      await poll()
+      expect(radioMetadata.fetchRadioMetadata).toHaveBeenLastCalledWith(undefined)
+
+      await poll()
+
+      // The entry it already holds, so the backend has nothing to repeat.
+      expect(radioMetadata.fetchRadioMetadata).toHaveBeenLastCalledWith(1000)
+    })
+
+    it('puts a delta on top of the log rather than replacing it', async () => {
+      const playback = playChillFm()
+      engine.bufferedAhead = 0
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue({
+        title: 'Artist - First',
+        history: [{ title: 'Artist - First', at: 1000 }],
+        bitrate: null,
+        codec: null,
+      })
+      await poll()
+
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue({
+        title: 'Artist - Second',
+        history: [{ title: 'Artist - Second', at: 2000 }],
+        bitrate: null,
+        codec: null,
+      })
+      await poll()
+
+      expect(playback.radioTitleLog.map((e) => e.title)).toEqual([
+        'Artist - Second',
+        'Artist - First',
+      ])
+    })
+
+    it('keeps re-offering a held entry until it is actually applied', async () => {
+      // A held title is not in the log, so `since` still names the entry
+      // below it and the backend keeps handing the same one back. That is
+      // what saves keeping a pending buffer of entries on this side.
+      const playback = playChillFm()
+      engine.bufferedAhead = 20
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue({
+        title: 'Artist - Held',
+        history: [{ title: 'Artist - Held', at: 2000 }],
+        bitrate: null,
+        codec: null,
+      })
+
+      await poll()
+      expect(playback.radioTitleLog).toEqual([])
+      await poll()
+      expect(radioMetadata.fetchRadioMetadata).toHaveBeenLastCalledWith(undefined)
+
+      await vi.advanceTimersByTimeAsync(20_000)
+
+      expect(playback.radioTitleLog.map((e) => e.title)).toEqual(['Artist - Held'])
+    })
+
+    it('never lets the same entry into the log twice', async () => {
+      const playback = playChillFm()
+      engine.bufferedAhead = 0
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue({
+        title: 'Artist - Track',
+        history: [{ title: 'Artist - Track', at: 1000 }],
+        bitrate: null,
+        codec: null,
+      })
+
+      await poll()
+      await poll()
+
+      expect(playback.radioTitleLog).toHaveLength(1)
+    })
+
+    it('treats a short first page as the whole log, with nothing older to fetch', async () => {
+      const playback = playChillFm()
+      engine.bufferedAhead = 0
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue({
+        title: 'Artist - Track',
+        history: [{ title: 'Artist - Track', at: 1000 }],
+        bitrate: null,
+        codec: null,
+      })
+
+      await poll()
+
+      expect(playback.radioTitleLogComplete).toBe(true)
+    })
+
+    it('leaves the door open for older pages when the first one is full', async () => {
+      const playback = playChillFm()
+      engine.bufferedAhead = 0
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue({
+        title: 'Artist - Track 0',
+        history: Array.from({ length: 200 }, (_, i) => ({
+          title: `Artist - Track ${i}`,
+          at: 100_000 - i,
+        })),
+        bitrate: null,
+        codec: null,
+      })
+
+      await poll()
+
+      expect(playback.radioTitleLogComplete).toBe(false)
+    })
+
+    it('drops a held title when the station changes under it', async () => {
+      const playback = playChillFm()
+      engine.bufferedAhead = 15
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue({
+        title: 'Artist - Track',
+        history: [],
+        bitrate: null,
+        codec: null,
+      })
+      await poll()
+
+      playback.radioStation = {
+        id: 'r2',
+        name: 'Other FM',
+        streamUrl: 'https://stream.example/other',
+        homePageUrl: null,
+      }
+      playback.radioNowPlaying = null
+      await vi.advanceTimersByTimeAsync(15_000)
+
+      expect(playback.radioNowPlaying).toBeNull()
+    })
+  })
+
+  describe('paging back through the title log', () => {
+    function playChillFm() {
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      playback.radioTitleLog = [
+        { title: 'Artist - Newest', at: 3000 },
+        { title: 'Artist - Oldest held', at: 2000 },
+      ]
+      return playback
+    }
+
+    it('appends the page before the oldest entry it holds', async () => {
+      const playback = playChillFm()
+      vi.mocked(radioMetadata.fetchRadioTitleHistory).mockResolvedValue([
+        { title: 'Artist - Older', at: 1000 },
+      ])
+
+      await playback.loadOlderRadioTitles()
+
+      expect(radioMetadata.fetchRadioTitleHistory).toHaveBeenCalledWith(2000)
+      expect(playback.radioTitleLog.map((e) => e.title)).toEqual([
+        'Artist - Newest',
+        'Artist - Oldest held',
+        'Artist - Older',
+      ])
+    })
+
+    it('stops asking once a page comes back shorter than a full one', async () => {
+      const playback = playChillFm()
+      vi.mocked(radioMetadata.fetchRadioTitleHistory).mockResolvedValue([
+        { title: 'Artist - Older', at: 1000 },
+      ])
+
+      await playback.loadOlderRadioTitles()
+      expect(playback.radioTitleLogComplete).toBe(true)
+
+      await playback.loadOlderRadioTitles()
+
+      expect(radioMetadata.fetchRadioTitleHistory).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps going while a page comes back full', async () => {
+      const playback = playChillFm()
+      vi.mocked(radioMetadata.fetchRadioTitleHistory).mockResolvedValue(
+        Array.from({ length: 200 }, (_, i) => ({ title: `Artist - Old ${i}`, at: 1000 - i })),
+      )
+
+      await playback.loadOlderRadioTitles()
+
+      expect(playback.radioTitleLogComplete).toBe(false)
+    })
+
+    it('never has two pages of the same log in flight at once', async () => {
+      // The scroll handler fires on every scroll event and leans on this
+      // rather than throttling itself - see RadioTitleLog.vue's onScroll().
+      const playback = playChillFm()
+      let resolvePage: (entries: { title: string; at: number }[]) => void = () => {}
+      vi.mocked(radioMetadata.fetchRadioTitleHistory).mockImplementation(
+        () => new Promise((resolve) => (resolvePage = resolve)),
+      )
+
+      const first = playback.loadOlderRadioTitles()
+      await playback.loadOlderRadioTitles()
+      resolvePage([{ title: 'Artist - Older', at: 1000 }])
+      await first
+
+      expect(radioMetadata.fetchRadioTitleHistory).toHaveBeenCalledTimes(1)
+      expect(playback.radioTitleLog).toHaveLength(3)
+    })
+
+    it('throws away a page that arrives after the station has changed', async () => {
+      const playback = playChillFm()
+      let resolvePage: (entries: { title: string; at: number }[]) => void = () => {}
+      vi.mocked(radioMetadata.fetchRadioTitleHistory).mockImplementation(
+        () => new Promise((resolve) => (resolvePage = resolve)),
+      )
+
+      const pending = playback.loadOlderRadioTitles()
+      playback.radioStation = {
+        id: 'r2',
+        name: 'Other FM',
+        streamUrl: 'https://stream.example/other',
+        homePageUrl: null,
+      }
+      playback.resetRadioTitleLog()
+      resolvePage([{ title: 'Artist - Older', at: 1000 }])
+      await pending
+
+      expect(playback.radioTitleLog).toEqual([])
+    })
+
+    it('asks nothing at all when no station is playing', async () => {
+      const playback = usePlaybackStore()
+
+      await playback.loadOlderRadioTitles()
+
+      expect(radioMetadata.fetchRadioTitleHistory).not.toHaveBeenCalled()
+    })
+
+    it('lets a failed page be retried by the next scroll', async () => {
+      const playback = playChillFm()
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.mocked(radioMetadata.fetchRadioTitleHistory).mockRejectedValueOnce(
+        new Error('unreachable'),
+      )
+
+      await playback.loadOlderRadioTitles()
+
+      expect(playback.radioTitleLogComplete).toBe(false)
+
+      vi.mocked(radioMetadata.fetchRadioTitleHistory).mockResolvedValue([
+        { title: 'Artist - Older', at: 1000 },
+      ])
+      await playback.loadOlderRadioTitles()
+
+      expect(playback.radioTitleLog).toHaveLength(3)
     })
   })
 

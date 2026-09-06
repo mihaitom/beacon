@@ -1,7 +1,8 @@
 """routes/radio.py — GET /radio-favicon, POST /radio-favicon/batch,
 GET /radio-browser/search, GET /radio-browser/countries,
 POST /radio-browser/click/{stationuuid}, POST /radio-browser/vote/{stationuuid},
-POST /radio-metadata/start, POST /radio-metadata/stop, GET /radio-metadata
+POST /radio-metadata/start, POST /radio-metadata/stop, GET /radio-metadata,
+GET /radio-metadata/history
 
 Internet radio stations are Navidrome's own resource (createInternetRadioStation
 etc., proxied straight through routes/proxy.py) and have no favicon concept of
@@ -1188,24 +1189,79 @@ async def stop_radio_metadata(
     return {"status": "ok"}
 
 
+# How much of the log a client that has none of it yet is handed. Enough to
+# scroll through without asking again immediately, far short of the
+# thousand a station can accumulate — the rest arrives through
+# /radio-metadata/history below, as the reader actually scrolls back.
+_HISTORY_FIRST_PAGE = 200
+
+# The most one backwards page may hand out however much is asked for. A
+# reader scrolling has no use for more at a time, and this is the only
+# bound on what a single request can cost.
+_HISTORY_MAX_PAGE = 200
+
+
 @router.get("/radio-metadata")
 async def get_radio_metadata(
+    since: float | None = Query(default=None),
     session: SessionState = Depends(require_authenticated_session),
 ) -> dict:
-    """The station's current title, every title it has played this session
-    (newest first, see SessionState.radio_title_log()), and what the
-    station declares it broadcasts at (kbps, or null - see
-    SessionState.radio_bitrate).
+    """The station's current title, what it has played (newest first, see
+    SessionState.radio_title_log()), and what the station declares it
+    broadcasts at (kbps, or null — see SessionState.radio_bitrate).
 
     The log has to be built here rather than accumulated by the frontend
     from these very answers: this is polled every 8s and only while
     services/connect/pollGate.ts allows it at all (it pauses on a hidden
     window and during a proxy backoff), so a client-side log would have
     holes exactly where nobody was watching — and a different set of them
-    on every device."""
+    on every device.
+
+    What the frontend does keep is the part it has already been given, and
+    `since` is how it says so: the `at` of the newest entry it holds, in
+    return for only what is newer than that. Usually nothing — a station
+    changes title every few minutes and this is asked every eight seconds —
+    where it used to be the whole log, unchanged, several hundred times an
+    hour. At the cap of _RADIO_HISTORY_PER_STATION that was some 70KB per
+    poll, roughly 30MB an hour, quite often to a phone on mobile data.
+
+    Without `since` (a fresh station, a reload) the newest
+    _HISTORY_FIRST_PAGE are handed over instead of all of them; a response
+    shorter than that page size is itself the signal that there is nothing
+    older to fetch.
+
+    A title being held back on the client (see stores/playback.ts, which
+    waits out the local buffer before announcing a song) simply stays
+    unacknowledged: that client keeps sending the older `since` and keeps
+    being handed the one entry until it applies it."""
     return {
         "title": session.radio_title,
-        "history": session.radio_title_log(),
+        "history": session.radio_title_log(
+            since=since, limit=None if since is not None else _HISTORY_FIRST_PAGE
+        ),
         "bitrate": session.radio_bitrate,
         "codec": session.radio_codec,
+    }
+
+
+@router.get("/radio-metadata/history")
+async def get_radio_title_history(
+    before: float = Query(...),
+    limit: int = Query(default=_HISTORY_MAX_PAGE),
+    session: SessionState = Depends(require_authenticated_session),
+) -> dict:
+    """One page of the current station's log older than `before` (the `at`
+    of the oldest entry the caller holds), newest first.
+
+    Asked for by the title log as the reader scrolls towards the end of
+    what it has rather than by a button: arriving at the bottom is already
+    the gesture that means "more". A page shorter than `limit` is the
+    beginning of the log — there is no separate "has more" flag that could
+    then fall out of step with it, and a log whose length happens to be an
+    exact multiple of the page size costs one empty response to discover
+    that."""
+    return {
+        "history": session.radio_title_log(
+            before=before, limit=max(1, min(limit, _HISTORY_MAX_PAGE))
+        )
     }

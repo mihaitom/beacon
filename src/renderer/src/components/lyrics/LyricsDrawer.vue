@@ -34,7 +34,9 @@
       <radio-title-log
         v-else-if="radioStation"
         :entries="playbackStore.radioTitleLog"
+        :has-more="!playbackStore.radioTitleLogComplete"
         class="beacon-drawer__log"
+        @load-more="playbackStore.loadOlderRadioTitles()"
       />
       <v-list-item v-else>
         <span class="text-medium-emphasis text-body-medium">{{

@@ -13,6 +13,8 @@ vi.mock('@/services/connect/radioMetadata', () => ({
   startRadioMetadataWatch: vi.fn(),
   stopRadioMetadataWatch: vi.fn(),
   fetchRadioMetadata: vi.fn().mockResolvedValue(null),
+  fetchRadioTitleHistory: vi.fn().mockResolvedValue([]),
+  RADIO_TITLE_PAGE_SIZE: 200,
 }))
 
 // resumeLocalPlayback() tells a reload (sessionStorage survives it) apart

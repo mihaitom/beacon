@@ -31,13 +31,24 @@ export interface RadioTitleEntry {
   at: number
 }
 
+/** How many entries a first load asks for, and how many each backwards
+ * page holds. Mirrors connect's own _HISTORY_FIRST_PAGE/_HISTORY_MAX_PAGE,
+ * and is what makes a shorter answer mean "that was the last of it" — see
+ * fetchRadioTitleHistory(). */
+export const RADIO_TITLE_PAGE_SIZE = 200
+
 export interface RadioMetadata {
   title: string | null
-  /** Everything this station has played this session, newest first. Built
-   * by the backend rather than accumulated here from these very answers:
-   * the poll runs every 8s and only while pollGate.ts allows it at all, so
-   * a locally-kept log would have holes exactly where nobody was watching,
-   * and a different set of them on every device. */
+  /** What this station has played, newest first. Built by the backend
+   * rather than accumulated here from these very answers: the poll runs
+   * every 8s and only while pollGate.ts allows it at all, so a locally
+   * kept log would have holes exactly where nobody was watching, and a
+   * different set of them on every device.
+   *
+   * With a `since` this is only what is newer than the entry named, which
+   * on almost every poll is nothing at all; without one it is the newest
+   * RADIO_TITLE_PAGE_SIZE. Either way it is a piece of the backend's log,
+   * never the whole of it. */
   history: RadioTitleEntry[]
   /** What the station itself declares it broadcasts at, in kbps, and what
    * it is encoded as ("MP3", "AAC", ...) — read once per connection out of
@@ -49,17 +60,37 @@ export interface RadioMetadata {
   codec: string | null
 }
 
-/** The watch's current title, the station's log and what it broadcasts,
- * polled — see stores/playback.ts's own poll loop. `title` is null both
- * while nothing has been seen yet (the watch just started, or the station
- * has no ICY support at all) and once genuinely stopped; callers don't
- * need to tell those apart. */
-export async function fetchRadioMetadata(): Promise<RadioMetadata> {
-  const response = await fetchConnect<RadioMetadata>('/radio-metadata')
+/** The watch's current title, what the station has played and what it
+ * broadcasts, polled — see stores/playback.ts's own poll loop. `title` is
+ * null both while nothing has been seen yet (the watch just started, or
+ * the station has no ICY support at all) and once genuinely stopped;
+ * callers don't need to tell those apart.
+ *
+ * `since` is the `at` of the newest entry the caller already holds, and
+ * asks for nothing but what is newer. Omitting it means "I have none of
+ * it", answered with the newest RADIO_TITLE_PAGE_SIZE. */
+export async function fetchRadioMetadata(since?: number): Promise<RadioMetadata> {
+  const query = since === undefined ? '' : `?since=${encodeURIComponent(since)}`
+  const response = await fetchConnect<RadioMetadata>(`/radio-metadata${query}`)
   return {
     title: response.title ?? null,
     history: response.history ?? [],
     bitrate: response.bitrate ?? null,
     codec: response.codec ?? null,
   }
+}
+
+/** One page of entries older than `before` (the `at` of the oldest entry
+ * the caller holds), newest first — what the title log asks for as the
+ * reader scrolls towards the end of what is on screen.
+ *
+ * Fewer than RADIO_TITLE_PAGE_SIZE entries means the beginning of the log
+ * has been reached. That is deliberately the only signal: a separate "has
+ * more" flag is one more thing that can disagree with the list it
+ * describes. */
+export async function fetchRadioTitleHistory(before: number): Promise<RadioTitleEntry[]> {
+  const response = await fetchConnect<{ history: RadioTitleEntry[] }>(
+    `/radio-metadata/history?before=${encodeURIComponent(before)}&limit=${RADIO_TITLE_PAGE_SIZE}`,
+  )
+  return response.history ?? []
 }

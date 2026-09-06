@@ -40,12 +40,17 @@ const ENTRIES = Array.from({ length: 200 }, (_, i) => ({
  * .now-playing__lyrics and the drawer's own slot rule both do exactly
  * that. Anything that sized a wrapper instead would be testing a shape
  * that does not occur. */
-function mountAsCallerDoes(hostStyle: string, rootStyle: string, count = ENTRIES.length) {
+function mountAsCallerDoes(
+  hostStyle: string,
+  rootStyle: string,
+  count = ENTRIES.length,
+  hasMore = false,
+) {
   const host = document.createElement('div')
   host.setAttribute('style', hostStyle)
   document.body.appendChild(host)
   const wrapper = mount(RadioTitleLog, {
-    props: { entries: ENTRIES.slice(0, count) },
+    props: { entries: ENTRIES.slice(0, count), hasMore },
     attachTo: host,
     global: { plugins: [vuetify, i18n], mocks: { $router: { push: () => {} } } },
   })
@@ -56,7 +61,14 @@ function mountAsCallerDoes(hostStyle: string, rootStyle: string, count = ENTRIES
   // drawer really has it. Reparenting puts it where the callers put it.
   host.appendChild(root)
   root.setAttribute('style', rootStyle)
-  return { root, scroller: wrapper.get('.title-log__scroll').element }
+  return { root, wrapper, scroller: wrapper.get('.title-log__scroll').element as HTMLElement }
+}
+
+/** A scroll event and the frame it is handled in. Setting scrollTop is
+ * synchronous, the `scroll` event that follows is not. */
+async function scrollTo(scroller: HTMLElement, top: number) {
+  scroller.scrollTop = top
+  await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
 }
 
 describe('RadioTitleLog scrolling', () => {
@@ -104,5 +116,42 @@ describe('RadioTitleLog scrolling', () => {
     const { scroller } = mountAsCallerDoes('', 'height: 400px; overflow: hidden;', 2)
 
     expect(scroller.scrollHeight).toBeLessThanOrEqual(scroller.clientHeight)
+  })
+
+  /** The paging half, measured rather than faked: the jsdom test defines
+   * scrollHeight and clientHeight by hand because jsdom reports 0 for
+   * both, which is precisely the arrangement that cannot tell a real
+   * threshold from a broken one. */
+  it('asks for the next page as the end of the log comes into reach', async () => {
+    const { wrapper, scroller } = mountAsCallerDoes(
+      '',
+      'height: 400px; overflow: hidden;',
+      ENTRIES.length,
+      true,
+    )
+    const max = scroller.scrollHeight - scroller.clientHeight
+
+    await scrollTo(scroller, max / 2)
+    expect(wrapper.emitted('load-more')).toBeUndefined()
+
+    // Short of the bottom, deliberately: asking only once the last row is
+    // reached would mean the page arrives after the scroll has stopped
+    // there. 300px is inside NEAR_END_PX and roughly half a phone screen.
+    await scrollTo(scroller, max - 300)
+
+    expect(wrapper.emitted('load-more')?.length).toBeGreaterThan(0)
+  })
+
+  it('asks for nothing once there is nothing older left', async () => {
+    const { wrapper, scroller } = mountAsCallerDoes(
+      '',
+      'height: 400px; overflow: hidden;',
+      ENTRIES.length,
+      false,
+    )
+
+    await scrollTo(scroller, scroller.scrollHeight)
+
+    expect(wrapper.emitted('load-more')).toBeUndefined()
   })
 })
