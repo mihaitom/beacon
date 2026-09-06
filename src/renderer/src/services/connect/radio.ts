@@ -169,10 +169,20 @@ export function localRadioStreamUrl(
   token: string,
   sessionId: string,
   streamUrl: string,
+  maxBitrateKbps?: number,
+  format?: string,
 ): string {
   const params = new URLSearchParams({ url: streamUrl })
   if (token) params.set('token', token)
   if (sessionId) params.set('session', sessionId)
+  // This device's own audio-quality ceiling. It reaches the relay the same
+  // way everything else here does, as a query param, and only matters where
+  // this request is the one that starts the relay — see the route's own
+  // comment on why a reconnecting element must not restart one.
+  if (maxBitrateKbps) params.set('max_bitrate_kbps', String(maxBitrateKbps))
+  // The format half of the same setting: it decides what a conversion comes
+  // out as, and lets a station already in that format through untouched.
+  if (format) params.set('format', format)
   return `${apiUrl}/stream/radio-local?${params.toString()}`
 }
 

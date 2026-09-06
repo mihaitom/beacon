@@ -128,6 +128,26 @@ describe('connect playback dispatch', () => {
       expect(body()).not.toHaveProperty('cast_directly')
     })
 
+    it('sends the cast-quality ceiling, which only /play used to carry', async () => {
+      const { playUrl } = await freshModule()
+
+      await playUrl('https://stream.example/chill', 'Chill FM', {
+        max_lossy_format: 'mp3',
+        max_lossy_bitrate_kbps: 96,
+      })
+
+      expect(body()).toMatchObject({ max_lossy_format: 'mp3', max_lossy_bitrate_kbps: 96 })
+    })
+
+    it('leaves both out when no ceiling is set, the same as play()', async () => {
+      const { playUrl } = await freshModule()
+
+      await playUrl('https://stream.example/chill', 'Chill FM')
+
+      expect(body()).not.toHaveProperty('max_lossy_format')
+      expect(body()).not.toHaveProperty('max_lossy_bitrate_kbps')
+    })
+
     it('passes cast_directly through when the caller has an opinion either way', async () => {
       const { playUrl } = await freshModule()
 

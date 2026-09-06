@@ -183,6 +183,14 @@ class AirPlayDelivery(BaseDelivery):
     # limit" now that the mechanism exists.
     MAX_SAMPLE_RATE_HZ: int | None = 44100
     MAX_BIT_DEPTH: int | None = 16
+    # Not the AirPlay protocol's limit but this delivery's: nothing is
+    # handed to the device in the format it arrives in, because RAOP takes
+    # PCM and pyatv decodes to it with miniaudio, whose whole repertoire is
+    # WAV, FLAC, MP3 and Vorbis (miniaudio.FileFormat). An AAC stream
+    # therefore never played here — it surfaced as pyatv's opaque "failed
+    # to init decoder" — which was reachable simply by setting the cast
+    # quality to AAC and picking an AirPlay target.
+    PLAYABLE_CODECS: frozenset[str] = frozenset({"mp3", "flac", "vorbis"})
 
     def __init__(self, target: str):
         super().__init__(target)

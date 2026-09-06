@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.radio_relay as relay_mod
-from core.radio_relay import RadioRelay, _device_output_args
+from core.radio_relay import RadioRelay, _device_output_args, relay_format_for_target
 
 
 def _drain(q: asyncio.Queue) -> list:
@@ -103,14 +103,111 @@ def _relay_with_fake_ffmpeg(url="http://station", content_type="audio/mpeg", std
 
 class TestDeviceOutputArgs:
     def test_copies_an_already_mp3_station(self):
-        args, content_type = _device_output_args("audio/mpeg")
+        args, content_type, _, reason = _device_output_args("audio/mpeg")
         assert args == relay_mod._COPY_ARGS
         assert content_type == "audio/mpeg"
+        assert reason is None
 
-    def test_reencodes_anything_else_to_the_192k_fallback(self):
-        args, content_type = _device_output_args("audio/aacp")
-        assert args == relay_mod._FALLBACK_DEVICE_ARGS
+    def test_reencodes_anything_else_at_the_stations_own_bitrate(self):
+        """With no ceiling asked for, an AAC 256 station comes out as MP3
+        256 rather than dropping to a fixed number nobody chose."""
+        args, content_type, bitrate, reason = _device_output_args("audio/aacp", 256)
+        assert "256k" in args
         assert content_type == "audio/mpeg"
+        assert bitrate == 256
+        # The relay hands every device MP3 — not a claim about what the
+        # device could have played.
+        assert reason == "relay_mp3_only"
+
+    def test_guesses_high_for_a_station_that_never_said_its_bitrate(self):
+        args, _, bitrate, _ = _device_output_args("audio/aacp")
+        assert "192k" in args
+        assert bitrate == 192
+
+    def test_brings_a_station_down_to_the_cast_quality_ceiling(self):
+        args, content_type, bitrate, reason = _device_output_args("audio/mpeg", 320, 96)
+        assert "libmp3lame" in args
+        assert "96k" in args
+        assert content_type == "audio/mpeg"
+        assert bitrate == 96
+        assert reason == "quality_limit"
+
+    def test_leaves_a_station_already_under_the_ceiling_alone(self):
+        """A ceiling, not a target — re-encoding 64k up to 96k would cost
+        quality and bandwidth and buy nothing."""
+        args, _, bitrate, reason = _device_output_args("audio/mpeg", 64, 96)
+        assert args == relay_mod._COPY_ARGS
+        assert bitrate == 64
+        assert reason is None
+
+    def test_copies_a_station_exactly_at_the_ceiling(self):
+        args, _, _, reason = _device_output_args("audio/mpeg", 96, 96)
+        assert args == relay_mod._COPY_ARGS
+        assert reason is None
+
+    def test_leaves_a_station_that_never_said_its_bitrate_alone(self):
+        """No icy-br header: re-encoding on a guess would cost quality on a
+        stream that may already be under the ceiling."""
+        args, _, _, reason = _device_output_args("audio/mpeg", None, 96)
+        assert args == relay_mod._COPY_ARGS
+        assert reason is None
+
+    def test_hands_an_aac_station_through_untouched_where_aac_was_chosen(self):
+        """The reason for offering AAC at all: at the same bitrate it is the
+        better format, and a listener who picks it stops the conversion
+        happening rather than merely choosing what it converts to."""
+        args, content_type, bitrate, reason = _device_output_args("audio/aacp", 256, None, "aac")
+        assert args == relay_mod._AAC_COPY_ARGS
+        assert content_type == "audio/aac"
+        assert bitrate == 256
+        assert reason is None
+
+    def test_encodes_to_aac_where_the_ceiling_forces_a_conversion(self):
+        args, content_type, bitrate, _ = _device_output_args("audio/aacp", 256, 96, "aac")
+        assert "aac" in args
+        assert "adts" in args
+        assert "96k" in args
+        assert content_type == "audio/aac"
+        assert bitrate == 96
+
+    def test_converts_an_mp3_station_to_aac_only_where_it_is_over_the_ceiling(self):
+        """Choosing AAC is not an instruction to convert everything: an MP3
+        station under the ceiling is still copied, untouched."""
+        args, content_type, _, reason = _device_output_args("audio/mpeg", 128, 192, "aac")
+        assert args == relay_mod._COPY_ARGS
+        assert content_type == "audio/mpeg"
+        assert reason is None
+
+    def test_holds_the_ceiling_even_for_a_station_that_never_said_its_bitrate(self):
+        """It cannot be compared against the ceiling, so it is not copied —
+        but a conversion that happens anyway must not come out above the
+        number somebody set because their connection cannot carry more."""
+        args, _, bitrate, reason = _device_output_args("audio/aacp", None, 96, "mp3")
+        assert "96k" in args
+        assert bitrate == 96
+        assert reason == "quality_limit"
+
+    def test_gives_a_codec_change_headroom_over_a_thin_source(self):
+        """A 64k HE-AAC news station turned into 64k MP3 loses the SBR that
+        made it listenable — bitrate is only comparable within a codec."""
+        _, _, bitrate, _ = _device_output_args("audio/aacp", 64, None, None)
+        assert bitrate == 192
+
+    def test_keeps_a_generous_source_bitrate_across_a_codec_change(self):
+        _, _, bitrate, _ = _device_output_args("audio/aacp", 256, None, None)
+        assert bitrate == 256
+
+    def test_still_hands_an_aac_station_mp3_where_mp3_was_chosen(self):
+        args, content_type, _, reason = _device_output_args("audio/aacp", 256, None, "mp3")
+        assert "libmp3lame" in args
+        assert content_type == "audio/mpeg"
+        assert reason == "relay_mp3_only"
+
+    def test_still_re_encodes_a_non_mp3_station_over_the_ceiling(self):
+        args, _, _, reason = _device_output_args("audio/aacp", 256, 96)
+        assert "96k" in args
+        # Both apply; the ceiling is the one that decided the number.
+        assert reason == "quality_limit"
 
 
 def _stalling_stream(attempts: list[str], chunks: list[bytes], gap: float):
@@ -261,6 +358,122 @@ class TestRadioRelayStallDetection:
 
         assert attempts == ["http://station"]
         assert bytes(proc.stdin.written) == b"abcd"
+
+
+class TestCastQualityCeiling:
+    """The ceiling can only be applied once the station has said what it
+    broadcasts at, which is the icy-br header — so the decision is made in
+    the fetch loop, not in __init__."""
+
+    async def test_re_encodes_a_station_over_the_ceiling_once_the_header_is_in(self):
+        relay, _, _ = _relay_with_fake_ffmpeg()
+        relay.max_bitrate_kbps = 96
+        stream = _mock_stream({"icy-br": "320"}, [b"audio"])
+
+        with patch.object(relay_mod._client, "stream", stream):
+            await relay.start()
+            await asyncio.sleep(0.05)
+            await relay.stop()
+
+        assert relay.reencode_reason == "quality_limit"
+        assert relay.output_bitrate_kbps == 96
+        assert "96k" in relay._device_args
+
+    async def test_leaves_a_station_under_the_ceiling_as_a_copy(self):
+        relay, _, _ = _relay_with_fake_ffmpeg()
+        relay.max_bitrate_kbps = 192
+        stream = _mock_stream({"icy-br": "128"}, [b"audio"])
+
+        with patch.object(relay_mod._client, "stream", stream):
+            await relay.start()
+            await asyncio.sleep(0.05)
+            await relay.stop()
+
+        assert relay.reencode_reason is None
+        # What the device is getting is the station's own bitrate, which is
+        # what the stream-info panel should be saying too.
+        assert relay.output_bitrate_kbps == 128
+        assert relay._device_args == relay_mod._COPY_ARGS
+
+    async def test_a_relay_with_no_ceiling_is_untouched(self):
+        relay, _, _ = _relay_with_fake_ffmpeg()
+        stream = _mock_stream({"icy-br": "320"}, [b"audio"])
+
+        with patch.object(relay_mod._client, "stream", stream):
+            await relay.start()
+            await asyncio.sleep(0.05)
+            await relay.stop()
+
+        assert relay.reencode_reason is None
+        assert relay._device_args == relay_mod._COPY_ARGS
+
+
+class TestCeilingReachesFfmpeg:
+    """The chosen format has to survive the whole way to the command line.
+    It did not: the re-decision that runs once the station's headers are in
+    was still calling _device_output_args() with three arguments, so every
+    station came out as MP3 however the setting was set — and every unit
+    test of that function passed the whole time, because the function was
+    never the thing that was wrong."""
+
+    async def test_the_chosen_format_reaches_the_ffmpeg_command(self):
+        relay, _, _ = _relay_with_fake_ffmpeg()
+        relay.max_bitrate_kbps = 128
+        relay.preferred_format = "aac"
+        relay.source_content_type = "audio/aacp"
+        stream = _mock_stream({"icy-br": "256"}, [b"audio"])
+
+        with patch.object(relay_mod._client, "stream", stream):
+            await relay.start()
+            await asyncio.sleep(0.05)
+            await relay.stop()
+
+        assert "-f" in relay._device_args
+        assert relay._device_args[relay._device_args.index("-f") + 1] == "adts"
+        assert relay.device_content_type == "audio/aac"
+
+
+class TestOutputStaysPutAcrossReconnects:
+    """A reconnect happens behind the listener's own connection, which was
+    handed one Content-Type and is still reading that same body. A station
+    coming back with a different icy-br must not flip the container under
+    it — and the burst buffer would be holding frames of the first kind."""
+
+    async def test_keeps_the_container_it_started_with(self):
+        relay, _, _ = _relay_with_fake_ffmpeg()
+        relay.max_bitrate_kbps = 128
+        relay.preferred_format = "aac"
+        relay.source_content_type = "audio/mpeg"
+        attempts: list[str] = []
+        responses = [{"icy-br": "128"}, {"icy-br": "320"}]
+
+        def stream_for(headers):
+            return _mock_stream(headers, [b"audio"])
+
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def flaky(method, url, headers=None):
+            attempts.append(url)
+            headers_now = responses[min(len(attempts) - 1, len(responses) - 1)]
+            async with stream_for(headers_now)(method, url) as resp:
+                yield resp
+
+        with (
+            patch.object(relay_mod._client, "stream", flaky),
+            patch.object(relay_mod, "_RECONNECT_DELAY_SECONDS", 0.01),
+            patch.object(relay_mod, "_STALL_TIMEOUT_SECONDS", 0.05),
+        ):
+            await relay.start()
+            await asyncio.sleep(0.15)
+            first = relay.device_content_type
+            await asyncio.sleep(0.15)
+            await relay.stop()
+
+        # An MP3 station under the ceiling: copied as MP3, and it stays MP3
+        # even after coming back claiming 320.
+        assert first == "audio/mpeg"
+        assert relay.device_content_type == "audio/mpeg"
 
 
 class TestRadioRelayFetchLoop:
@@ -616,3 +829,52 @@ async def test_stop_radio_relay_clears_the_icy_round_trip_fields(default_session
 
     assert default_session.radio_icy_pending_injection is None
     assert default_session.radio_icy_measured_lag is None
+
+
+# ── relay_format_for_target ──────────────────────────────────────────────────
+# The cast-quality format, narrowed twice: to what this relay can encode,
+# and to what the speaker at the other end can decode.
+
+
+def test_relay_format_aims_original_at_aac_where_the_target_takes_it():
+    """ "Original" is a wish not to convert, and aiming at AAC is what
+    grants it: _device_output_args() copies a station whose own format is
+    the one being aimed at, so an AAC station is handed over untouched.
+    Aiming at None instead meant converting it to MP3 - a lossy second
+    pass on a station the device would have taken as it was."""
+    assert relay_format_for_target(None, frozenset({"mp3", "aac"})) == "aac"
+
+
+def test_relay_format_aims_original_at_aac_when_no_device_constrains_it():
+    """Local playback: no cast target, so nothing rules AAC out, and every
+    browser plays it."""
+    assert relay_format_for_target(None, None) == "aac"
+
+
+def test_relay_format_aims_original_at_mp3_for_a_device_without_aac():
+    assert relay_format_for_target(None, frozenset({"mp3", "flac"})) == "mp3"
+
+
+def test_relay_format_keeps_an_explicit_mp3_choice(client=None):
+    """The escape hatch for a device whose declared codecs are optimistic:
+    somebody who picks MP3 by hand gets MP3, whatever the codec list says."""
+    assert relay_format_for_target("mp3", frozenset({"mp3", "aac"})) == "mp3"
+
+
+def test_relay_format_asks_for_aac_where_the_listener_picked_opus():
+    """There is no Opus encoder in the relay, and the one cast target that
+    plays Opus takes AAC just as happily."""
+    assert relay_format_for_target("opus", frozenset({"mp3", "aac", "opus"})) == "aac"
+
+
+def test_relay_format_drops_to_mp3_for_a_device_that_plays_no_aac():
+    assert relay_format_for_target("aac", frozenset({"mp3", "flac"})) == "mp3"
+    assert relay_format_for_target("opus", frozenset({"mp3", "flac"})) == "mp3"
+
+
+def test_relay_format_keeps_aac_where_the_device_takes_it():
+    assert relay_format_for_target("aac", frozenset({"mp3", "aac"})) == "aac"
+
+
+def test_relay_format_with_no_known_device_trusts_the_setting():
+    assert relay_format_for_target("aac", None) == "aac"

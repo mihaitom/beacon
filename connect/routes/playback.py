@@ -15,6 +15,7 @@ from core.auth import require_token
 from core.claims import claims
 from core.playlist_url import resolve_stream_url
 from core.radio_position import RadioPositionTracker
+from core.radio_relay import relay_format_for_target
 from core.session import (
     SessionState,
     build_status_dict,
@@ -32,6 +33,7 @@ from core.state import (
     first_radio_position_delivery,
     is_still_targeted,
     list_target_pairs,
+    playable_codecs,
     radio_dispatch_url,
     radio_stream_url,
     resolve_target,
@@ -880,6 +882,7 @@ async def play_tracks(
             max_bit_depth=max_depth,
             max_lossy_format=req.max_lossy_format,
             max_lossy_bitrate_kbps=req.max_lossy_bitrate_kbps,
+            device_codecs=playable_codecs(target),
         )
 
         if target:
@@ -1046,6 +1049,19 @@ class PlayUrlRequest(BaseModel):
     # that refuses it. Frontend setting: account-scoped, see
     # services/connect/accountSettings.ts's castRadioDirectly.
     cast_directly: bool = False
+    # The cast-quality setting, the same pair /play takes (see
+    # PlayRequest.max_lossy_*). Both halves reach a station: the bitrate as
+    # a ceiling, and the format as what a re-encode comes out as — AAC
+    # where it was asked for, MP3 otherwise. Picking AAC also lets an AAC
+    # station through untouched, which is the point of offering it: it is
+    # the better format at the same bitrate, and whether a given speaker
+    # takes it is something only trying can answer. A station already below
+    # the ceiling and in the chosen format is copied — see
+    # core/radio_relay.py's _device_output_args(). Both are ignored for
+    # cast_directly, which hands the device the station's own URL and has
+    # nothing in between to convert with.
+    max_lossy_format: Literal["mp3", "aac", "opus"] | None = None
+    max_lossy_bitrate_kbps: int | None = None
 
 
 @router.post("/play-url")
@@ -1152,7 +1168,40 @@ async def play_url(
         dispatch_url = url
         dispatch_content_type = content_type
         if relayed:
-            relay = await session.start_radio_relay(url, content_type)
+            # A relay may already be running for this very station, started
+            # by *local* playback (routes/stream.py's /stream/radio-local)
+            # under the local quality ceiling rather than the cast one. That
+            # is the ordinary way of it — somebody listening on this device
+            # sends the station to a speaker — and reusing it as-is would
+            # silently ignore the cast setting for the whole station. Casting
+            # is the deliberate act, so it wins: the relay is torn down and
+            # started again under its ceiling, which costs one reconnect to
+            # the station, right where the sound is moving to another device
+            # anyway. Local reconnects deliberately do *not* do this (see
+            # /stream/radio-local), or the two would take turns restarting
+            # the same relay for as long as both were listening.
+            #
+            # The setting is reduced to what the relay can produce and this
+            # device can decode before any of that is compared — otherwise
+            # a listener on Opus would restart the relay on every dispatch,
+            # since what is stored on it is what it actually encodes.
+            relay_format = relay_format_for_target(req.max_lossy_format, playable_codecs(target))
+            existing = session.radio_relay
+            if (
+                existing is not None
+                and existing.url == url
+                and (
+                    existing.max_bitrate_kbps != req.max_lossy_bitrate_kbps
+                    or existing.preferred_format != relay_format
+                )
+            ):
+                await session.stop_radio_relay()
+            relay = await session.start_radio_relay(
+                url,
+                content_type,
+                max_bitrate_kbps=req.max_lossy_bitrate_kbps,
+                preferred_format=relay_format,
+            )
             if relay.connected:
                 dispatch_url = radio_stream_url(session.session_id)
                 dispatch_content_type = relay.device_content_type
@@ -1187,7 +1236,15 @@ async def play_url(
         # duplicate of the previous one and silently skip the redispatch —
         # the device would keep pointing at a relay connection that
         # start_radio_relay() has, by then, already torn down.
-        if not _is_duplicate_dispatch(st, f"play-url:{target}:{url}"):
+        # The quality is part of what makes a dispatch a different one: two
+        # clients share a session but each has its own quality setting, and
+        # the second one arriving within the cooldown used to be dropped as
+        # a duplicate — after the relay had already been torn down for it,
+        # which left the speaker silent until somebody pressed something.
+        dispatch_key = (
+            f"play-url:{target}:{url}:{req.max_lossy_format}:{req.max_lossy_bitrate_kbps}"
+        )
+        if not _is_duplicate_dispatch(st, dispatch_key):
             try:
                 await target.play(dispatch_url, req.title, content_type=dispatch_content_type)
             except Exception as e:
@@ -1224,10 +1281,44 @@ async def play_url(
                     return delivery_error_response(e, target)
 
         st.current_track = None
-        # Left alone when the retry above already set it to the re-encoding
-        # format — overwriting here would hide the transcode from the panel
-        # that exists to show it.
-        if not st.radio_info.get("proxied"):
+        # What the stream-info panel reads. Three cases, decided here rather
+        # than wherever each becomes true, because the dispatch above can
+        # still fail and roll everything back — a format set earlier would
+        # then be claiming a conversion for a station that never started.
+        if st.radio_info.get("proxied"):
+            # The device-rejected retry already put the re-encoding format
+            # here; overwriting would hide the transcode from the panel
+            # that exists to show it.
+            pass
+        elif (
+            relayed
+            and session.radio_relay is not None
+            and session.radio_relay.reencode_reason is not None
+        ):
+            # The relay is re-encoding the station, and it says why: over
+            # the quality ceiling, or a codec the device would not take
+            # anyway (see core/radio_relay.py's _device_output_args()).
+            # Reported the same way a song's own transcode is.
+            bitrate = session.radio_relay.output_bitrate_kbps
+            # Named after what the relay is actually producing, not after
+            # MP3: since the quality setting can ask for AAC, a hard-coded
+            # "mp3-…" label was a second place claiming a format, and the
+            # one the panel reads first.
+            codec = "aac" if dispatch_content_type == "audio/aac" else "mp3"
+            st.current_output_format = replace(
+                FALLBACK_FORMAT,
+                label=f"{codec}-{bitrate}k",
+                content_type=dispatch_content_type,
+                source_codec=session.radio_codec,
+                source_bitrate_kbps=session.radio_bitrate,
+                target_bitrate_kbps=bitrate,
+                transcode_reason=session.radio_relay.reencode_reason,
+            )
+        else:
+            # Passed through untouched: an MP3 station under the ceiling, or
+            # one that never said what it broadcasts at. Nothing to report,
+            # and claiming a conversion here is exactly what the panel used
+            # to do for every cast station.
             st.current_output_format = FALLBACK_FORMAT
         st.is_streaming = True
         if relayed:

@@ -60,7 +60,18 @@
         </div>
 
         <div class="setting">
-          <p class="setting__label">{{ $t('settings.localQuality') }}</p>
+          <!-- The label with the recommendations beside it. Which format
+           - and which number to pick is not something a listener can read
+           - off the two dropdowns, and the hint under them explains what
+           - the setting *is* rather than what to choose — so the advice
+           - sits where the question is asked, out of the way until it is
+           - wanted. -->
+          <div class="setting__label-row">
+            <p class="setting__label setting__label--inline">
+              {{ $t('settings.localQuality') }}
+            </p>
+            <quality-tips :lines="localQualityTips" />
+          </div>
           <div class="quality-row">
             <v-select
               :model-value="playbackStore.localQuality.format"
@@ -86,7 +97,12 @@
         </div>
 
         <div class="setting">
-          <p class="setting__label">{{ $t('settings.castQuality') }}</p>
+          <div class="setting__label-row">
+            <p class="setting__label setting__label--inline">
+              {{ $t('settings.castQuality') }}
+            </p>
+            <quality-tips :lines="castQualityTips" />
+          </div>
           <div class="quality-row">
             <v-select
               :model-value="playbackStore.castQuality.format"
@@ -403,7 +419,7 @@ import { getAudioEngine } from '@/services/audioEngine'
 import {
   BITRATES,
   CAST_FORMATS,
-  LOCAL_FORMATS,
+  localFormats,
   type StreamFormat,
   type TranscodeFormat,
 } from '@/services/streamQuality'
@@ -412,12 +428,20 @@ import NavidromeIcon from '@/components/auth/NavidromeIcon.vue'
 import JellyfinIcon from '@/components/auth/JellyfinIcon.vue'
 import PlexIcon from '@/components/auth/PlexIcon.vue'
 import SegmentedControl from '@/components/SegmentedControl.vue'
+import QualityTips from '@/components/settings/QualityTips.vue'
 import { useIsMobileWeb } from '@/composables/useIsMobileWeb'
 import packageJson from '../../../../package.json'
 
 export default {
   name: 'SettingsView',
-  components: { NavidromeIcon, JellyfinIcon, PlexIcon, PrivacyDialog, SegmentedControl },
+  components: {
+    NavidromeIcon,
+    JellyfinIcon,
+    PlexIcon,
+    PrivacyDialog,
+    QualityTips,
+    SegmentedControl,
+  },
   // Composition API escape hatch just for useIsMobileWeb() — everything
   // else stays Options API, same idiom as App.vue's identical use of it.
   setup() {
@@ -532,12 +556,49 @@ export default {
     /** Both lists come from services/streamQuality.ts rather than being
      * written out here — which formats each side can offer is a fact about
      * the encoders and the seeking, not a UI decision, and it's explained
-     * where it's decided. */
+     * where it's decided.
+     *
+     * The local one is a call rather than a constant because it depends on
+     * the browser this is running in: Safari decodes no Ogg, so Opus is
+     * simply not among its choices. */
     formatOptions(): { title: string; value: StreamFormat }[] {
-      return LOCAL_FORMATS.map((value) => ({ title: this.formatLabel(value), value }))
+      return localFormats().map((value) => ({ title: this.formatLabel(value), value }))
     },
     castFormatOptions(): { title: string; value: StreamFormat }[] {
       return CAST_FORMATS.map((value) => ({ title: this.formatLabel(value), value }))
+    },
+    /** The advice behind the info button, one line each.
+     *
+     * Two different sets of advice, because the two settings answer
+     * different questions. On this device the question is how much data
+     * to pull over whatever connection it happens to be on, which is why
+     * that list talks about being out and about — and Opus is left out of
+     * it entirely where this browser cannot play it, since recommending
+     * something that is not in the dropdown reads as a bug in the
+     * dropdown. A speaker is on the same network as connect and pulls
+     * from it there, so data size is not what anyone is weighing: the cast
+     * list is about when a limit is worth setting at all, and what a
+     * device that struggles wants instead. Which format each device
+     * actually gets is still connect's decision (see _codec_for_ceiling()
+     * in core/streamer.py) — the setting is the listener's wish. */
+    localQualityTips(): string[] {
+      const lines = [
+        this.$t('settings.qualityTips.ceiling'),
+        this.$t('settings.qualityTips.home'),
+        this.$t('settings.qualityTips.mobile'),
+      ]
+      if (localFormats().includes('opus')) lines.push(this.$t('settings.qualityTips.slow'))
+      lines.push(this.$t('settings.qualityTips.compatibility'))
+      return lines
+    },
+    castQualityTips(): string[] {
+      return [
+        this.$t('settings.qualityTips.ceiling'),
+        this.$t('settings.qualityTips.castDefault'),
+        this.$t('settings.qualityTips.castWhenNeeded'),
+        this.$t('settings.qualityTips.castCompatibility'),
+        this.$t('settings.qualityTips.castDevice'),
+      ]
     },
     localeOptions() {
       return [
@@ -803,6 +864,20 @@ export default {
   font-size: 0.875rem;
   font-weight: 600;
   margin-bottom: 10px;
+}
+
+/* A label that shares its line with the info button next to it, so the
+ * button sits on the text's baseline row rather than below the gap the
+ * label reserves for the control under it. */
+.setting__label-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.setting__label--inline {
+  margin-bottom: 0;
 }
 
 /* Reads before the control it introduces; the hint below reads after one.

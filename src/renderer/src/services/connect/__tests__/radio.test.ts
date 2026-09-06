@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchConnect } from '../http'
 import {
+  localRadioStreamUrl,
   faviconSizeStep,
   radioFaviconKey,
   radioFaviconRequest,
@@ -173,5 +174,37 @@ describe('resolveRadioStreamUrl', () => {
     vi.mocked(fetchConnect).mockResolvedValue({ url: '' })
     const url = 'http://streams.br.de/b5aktuell_2.m3u'
     expect(await resolveRadioStreamUrl(url)).toBe(url)
+  })
+})
+
+/** Local radio comes through Beacon's own relay now (see connect's
+ * /stream/radio-local), which is what puts this device's audio-quality
+ * setting in reach of a station at all — it used to apply to songs only. */
+describe('localRadioStreamUrl', () => {
+  it("carries this device's own quality ceiling", () => {
+    const url = localRadioStreamUrl('http://connect', 'tok', 'sess', 'https://station/stream', 96)
+
+    const params = new URL(url).searchParams
+    expect(params.get('url')).toBe('https://station/stream')
+    expect(params.get('max_bitrate_kbps')).toBe('96')
+  })
+
+  it('carries the chosen format, which decides what a conversion produces', () => {
+    const url = localRadioStreamUrl(
+      'http://connect',
+      'tok',
+      'sess',
+      'https://station/stream',
+      96,
+      'aac',
+    )
+
+    expect(new URL(url).searchParams.get('format')).toBe('aac')
+  })
+
+  it('leaves the ceiling out when the setting caps nothing', () => {
+    const url = localRadioStreamUrl('http://connect', 'tok', 'sess', 'https://station/stream')
+
+    expect(new URL(url).searchParams.has('max_bitrate_kbps')).toBe(false)
   })
 })

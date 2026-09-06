@@ -395,6 +395,9 @@ textarea {
   display: flex;
 }
 .volume-row button.active { color: var(--accent); }
+/* Same treatment the transport row's own disabled buttons get - autoplay
+ * sits in this row and is switched off on a station (now-playing.js). */
+.volume-row button:disabled { color: var(--text-muted); opacity: 0.4; }
 .volume-row input[type="range"] { flex: 1; }
 
 /* Themed range sliders (seek, volume, per-device volume) — matches

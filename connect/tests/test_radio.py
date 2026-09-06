@@ -1334,7 +1334,41 @@ def test_radio_metadata_returns_the_sessions_current_title(client, default_sessi
     assert r.status_code == 200
     # No history: setting the field directly is not a title *arriving*, and
     # nothing is playing for one to belong to.
-    assert r.json() == {"title": "Artist - Track", "history": [], "bitrate": None, "codec": None}
+    assert r.json() == {
+        "title": "Artist - Track",
+        "history": [],
+        "bitrate": None,
+        "codec": None,
+        "relay_bitrate": None,
+        "relay_reason": None,
+        "relay_content_type": None,
+    }
+
+
+def test_radio_metadata_reports_what_the_relay_is_handing_this_device(client, default_session):
+    """Local playback comes through the same relay and has no cast status to
+    read — without this, a station brought down to this device's own
+    quality ceiling had nowhere to say so."""
+
+    default_session.radio_relay = SimpleNamespace(
+        output_bitrate_kbps=96,
+        reencode_reason="quality_limit",
+        device_content_type="audio/mpeg",
+        url="http://station",
+    )
+
+    r = client.get("/radio-metadata")
+
+    assert r.json()["relay_bitrate"] == 96
+    assert r.json()["relay_reason"] == "quality_limit"
+    assert r.json()["relay_content_type"] == "audio/mpeg"
+
+
+def test_radio_metadata_says_nothing_about_a_station_it_passes_through(client, default_session):
+    r = client.get("/radio-metadata")
+
+    assert r.json()["relay_bitrate"] is None
+    assert r.json()["relay_reason"] is None
 
 
 def test_radio_metadata_reports_what_the_station_broadcasts(client, default_session):
@@ -1351,7 +1385,15 @@ def test_radio_metadata_reports_what_the_station_broadcasts(client, default_sess
 def test_radio_metadata_returns_null_before_anything_has_been_seen(client, default_session):
     r = client.get("/radio-metadata")
     assert r.status_code == 200
-    assert r.json() == {"title": None, "history": [], "bitrate": None, "codec": None}
+    assert r.json() == {
+        "title": None,
+        "history": [],
+        "bitrate": None,
+        "codec": None,
+        "relay_bitrate": None,
+        "relay_reason": None,
+        "relay_content_type": None,
+    }
 
 
 # ── The per-station title log ────────────────────────────────────────────────

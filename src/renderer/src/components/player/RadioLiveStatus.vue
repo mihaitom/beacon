@@ -89,10 +89,19 @@ export default {
     playbackStore() {
       return usePlaybackStore()
     },
+    /** m:ss, and h:mm:ss once a station has been on for an hour — a live
+     * stream is the one thing in the app that runs long enough to reach
+     * that, and until it did the readout counted on past 60 minutes as
+     * "76:47". The hour part only appears when there is one, so a normal
+     * listen keeps the shorter, narrower label. */
     elapsed(): string {
       const total = Math.max(0, Math.round(this.playbackStore.localPosition))
-      const minutes = Math.floor(total / 60)
+      const hours = Math.floor(total / 3600)
+      const minutes = Math.floor(total / 60) % 60
       const seconds = total % 60
+      if (hours > 0) {
+        return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+      }
       return `${minutes}:${String(seconds).padStart(2, '0')}`
     },
     /** Whether a station is coming out of a speaker right now. Drives both

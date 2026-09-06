@@ -440,14 +440,33 @@ class SessionState:
         history.append(entry)
         radio_history.append(self.session_id, url, entry, _RADIO_HISTORY_PER_STATION)
 
-    async def start_radio_relay(self, url: str, content_type: str) -> RadioRelay:
+    async def start_radio_relay(
+        self,
+        url: str,
+        content_type: str,
+        max_bitrate_kbps: int | None = None,
+        preferred_format: str | None = None,
+    ) -> RadioRelay:
         """Starts (or, for a different station, restarts) the shared relay
         — see core/radio_relay.py. Idempotent for the same URL, same
-        reasoning as start_radio_metadata_watch()."""
+        reasoning as start_radio_metadata_watch().
+
+        `max_bitrate_kbps` and `preferred_format` are the listener's own
+        quality setting (see routes/playback.py's PlayUrlRequest). A relay already running for
+        this station keeps whatever it was started with: re-deciding it
+        would mean tearing the station down and reconnecting mid-listen,
+        and the setting takes effect on the next station either way."""
         if self.radio_relay is not None and self.radio_relay.url == url:
             return self.radio_relay
         await self.stop_radio_relay()
-        relay = RadioRelay(url, content_type, self._set_radio_title, self._set_radio_stream_info)
+        relay = RadioRelay(
+            url,
+            content_type,
+            self._set_radio_title,
+            self._set_radio_stream_info,
+            max_bitrate_kbps=max_bitrate_kbps,
+            preferred_format=preferred_format,
+        )
         await relay.start()
         self.radio_relay = relay
         self.last_radio_redispatch = 0.0

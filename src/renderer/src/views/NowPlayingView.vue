@@ -77,13 +77,17 @@
        - all on mobile (MobileTransportControls.vue has no equivalent
        - slot), making this the only way to reach it in both cases. Not
        - shown outside fullscreen on desktop, where PlayerBar's own button
-       - already covers it. -->
+       - already covers it.
+       -
+       - Disabled during radio for the reason PlayerBar's copy gives: there
+       - is no queue for autoplay to top up while a live stream plays. -->
         <v-btn
           v-if="(compact || isFullscreen) && authStore.capabilities.songRadio"
           icon="mdi-infinity"
-          :color="autoplayStore.enabled ? 'primary' : undefined"
+          :color="!playbackStore.radioStation && autoplayStore.enabled ? 'primary' : undefined"
           variant="text"
           density="comfortable"
+          :disabled="!!playbackStore.radioStation"
           :title="$t('player.autoplay')"
           @click="playbackStore.setAutoplayEnabled(!autoplayStore.enabled)"
         />
@@ -114,6 +118,27 @@
           density="comfortable"
           :title="$t('nowPlaying.toggleFullscreen')"
           @click="toggleFullscreen"
+        />
+        <!-- A test bench for the title log's entrance animation: a station
+       - changes title every few minutes, which is a long wait to watch a
+       - three-tenths-of-a-second transition. Each press hands the log one
+       - made-up title at the top, through the same prop a real one arrives
+       - on, so what is being watched is the real path and not a rehearsal
+       - of it.
+       -
+       - Renderer-only: the entry is never sent anywhere, never reaches the
+       - station's stored log (connect/core/session.py keeps that one) and
+       - is gone on the next reload or station change. And only ever while
+       - the backend's log level is DEBUG or TRACE, the same switch
+       - VisualizerDebugOverlay.vue hides behind — nobody who is not
+       - already chasing something ever sees it. -->
+        <v-btn
+          v-if="debugEnabled && playbackStore.radioStation"
+          icon="mdi-playlist-plus"
+          variant="text"
+          density="comfortable"
+          title="Debug: add a made-up title"
+          @click="addDebugTitle"
         />
       </div>
     </Teleport>
@@ -227,7 +252,7 @@
               <radio-title-log
                 v-else-if="showLyrics && playbackStore.radioStation"
                 variant="immersive"
-                :entries="playbackStore.radioTitleLog"
+                :entries="titleLogEntries"
                 :has-more="!playbackStore.radioTitleLogComplete"
                 class="now-playing__lyrics"
                 @load-more="playbackStore.loadOlderRadioTitles()"
@@ -293,6 +318,8 @@ import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connec
 import CoverArt from '@/components/library/CoverArt.vue'
 import LyricsPanel from '@/components/lyrics/LyricsPanel.vue'
 import RadioTitleLog from '@/components/radio/RadioTitleLog.vue'
+import { getLogLevel } from '@/services/connect/logLevel'
+import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
 import AudioVisualizer from '@/components/player/AudioVisualizer.vue'
 import VisualizerDebugOverlay from '@/components/player/VisualizerDebugOverlay.vue'
 import type { VisualizerFrame } from '@/services/connect/types'
@@ -324,6 +351,17 @@ function readShowVisualizer(): boolean {
 // visibly settle every bar to 0 before it's actually removed.
 const VISUALIZER_HIDE_DELAY_MS = 400
 
+/** Fake artist/track pairs for the toolbar's debug button. Shaped like a
+ * song on purpose, so a press exercises the row the log spends its time
+ * drawing - split into artist and track, with the search button that comes
+ * with it - rather than the plain one-line fallback. */
+const DEBUG_TITLES: [string, string][] = [
+  ['Lorem Ipsum', 'Dolor Sit Amet'],
+  ['Consectetur', 'Adipiscing Elit'],
+  ['Sed Do Eiusmod', 'Tempor Incididunt'],
+  ['Ut Labore', 'Et Dolore Magna'],
+]
+
 export default {
   name: 'NowPlayingView',
   components: { CoverArt, LyricsPanel, AudioVisualizer, VisualizerDebugOverlay, RadioTitleLog },
@@ -346,6 +384,10 @@ export default {
        * toolbar in — see the Teleport in the template. Checked rather than
        * assumed: this view is also mounted on its own, outside any shell. */
       canDock: false,
+      // Both belong to the debug button in the toolbar — see its own
+      // comment. Off, and empty, for everyone who is not chasing something.
+      debugEnabled: false,
+      debugTitles: [] as RadioTitleEntry[],
       // "r, g, b" — kept as a CSS-ready string so the two computed styles
       // below don't each redo the same join().
       extractedColor: null as string | null,
@@ -472,6 +514,15 @@ export default {
         this.drawersStore.lyricsPanelOpen = value
       },
     },
+    /** The station's own log, with anything the toolbar's debug button has
+     * invented on top of it. Empty for everyone else, so this is the
+     * store's list unchanged - and because it is one prop, a made-up title
+     * reaches the log exactly the way a real one does, animation included.
+     */
+    titleLogEntries(): RadioTitleEntry[] {
+      const log = this.playbackStore.radioTitleLog
+      return this.debugTitles.length ? [...this.debugTitles, ...log] : log
+    },
     // Radio has no track for the backend to analyze while casting to
     // AirPlay (see routes/playback.py's /play-url) and nothing honest to
     // show but a fake animation, even though casting a station is routed
@@ -567,6 +618,12 @@ export default {
     radioFavicon() {
       this.radioIconIsTransparent = false
     },
+    /** Made-up titles belong to the station they were invented for - see
+     * the toolbar's debug button. Left behind, they would sit at the top
+     * of the next station's log looking like something it had played. */
+    'playbackStore.radioStation'() {
+      if (this.debugTitles.length) this.debugTitles = []
+    },
     // Also fires the instant lyrics are actually opened, in case the
     // currentSong watcher below hasn't resolved yet (a fresh song whose
     // fetch is still in flight) — ensureLoaded() is idempotent/cache-aware
@@ -647,6 +704,14 @@ export default {
   },
   mounted() {
     document.addEventListener('fullscreenchange', this.onFullscreenChange)
+    // Best-effort, exactly as VisualizerDebugOverlay.vue does it: a failed
+    // call just leaves the debug button away, which is the right outcome
+    // for anyone who was not looking for it.
+    getLogLevel()
+      .then(({ level }) => {
+        this.debugEnabled = level === 'DEBUG' || level === 'TRACE'
+      })
+      .catch(() => {})
   },
   beforeUnmount() {
     if (this.visualizerHideTimer) clearTimeout(this.visualizerHideTimer)
@@ -656,6 +721,18 @@ export default {
     if (document.fullscreenElement === this.$refs.root) void document.exitFullscreen()
   },
   methods: {
+    /** One made-up title, handed to the log the way a real one arrives —
+     * see the debug button in the toolbar. The counter goes in the title
+     * because two presses inside the same second would otherwise produce
+     * the same row key, and the log would take the second one for the
+     * first still sitting there rather than for something new. */
+    addDebugTitle(): void {
+      const [artist, track] = DEBUG_TITLES[this.debugTitles.length % DEBUG_TITLES.length]!
+      this.debugTitles = [
+        { title: `${artist} - ${track} ${this.debugTitles.length + 1}`, at: Date.now() / 1000 },
+        ...this.debugTitles,
+      ]
+    },
     // Requests fullscreen on this view's own root element, not
     // document.documentElement — the point is hiding the rest of the app
     // chrome (app-bar, sidebar, PlayerBar) around it, not just the
@@ -707,7 +784,30 @@ export default {
    * songs for every registered app-bar/footer (see composables/layout.js),
    * set as inherited CSS custom properties, not something this file has to
    * duplicate or guess. */
-  height: calc(100dvh - var(--v-layout-top, 0px) - var(--v-layout-bottom, 0px));
+  /* svh, not dvh, plus a plain-vh line under it for engines that know
+   * neither.
+   *
+   * `dvh` is only right if the browser subtracts its own chrome, and not
+   * every one does: Orion on iOS reports 100dvh as though its bottom bar
+   * (address field plus button row, some 200px) were not there, so this
+   * box came out that much taller than the visible area and the page
+   * scrolled by exactly that - artwork out of the top, a black band above
+   * the tab bar. Safari made the same mistake, small enough to shrug at.
+   *
+   * `svh` is the smallest viewport height, the one with every dynamic
+   * toolbar shown, so it cannot overflow: where a toolbar later hides, a
+   * strip of unused space is left rather than the page growing past the
+   * screen. That fixed Safari. Orion is unchanged by it - it gets svh
+   * wrong the same way - and is deliberately left there: chasing it needs
+   * the real height measured through visualViewport in JS, which is a lot
+   * of machinery for one uncommon browser. On a desktop window nothing is
+   * dynamic and all three units are the same number.
+   *
+   * Two declarations because an engine that knows neither drops the line
+   * entirely and falls back to `auto`, which nothing in the chain above
+   * caps - the page then grows to whatever the content needs. */
+  height: calc(100vh - var(--v-layout-top, 0px) - var(--v-layout-bottom, 0px));
+  height: calc(100svh - var(--v-layout-top, 0px) - var(--v-layout-bottom, 0px));
   position: relative;
   /* Grid, not flex — two rows, .now-playing__stage and
    * .now-playing__visualizer-row, sharing this element's (now definite,
@@ -1326,7 +1426,7 @@ export default {
  * height regardless of source order, same reasoning as
  * .sheet-footer button.btn-sheet-action elsewhere in this app. */
 .now-playing.now-playing--compact {
-  /* NOT the base rule's calc(100dvh - ...) — that's the right height for
+  /* NOT the base rule's calc(100svh - ...) — that's the right height for
    * .now-playing when it's the *entire* routed view (desktop), but here
    * it's nested inside MobileNowPlayingView.vue's own grid, sharing that
    * same total viewport height with MobileTransportControls.vue below it.

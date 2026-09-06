@@ -54,20 +54,73 @@ export const BITRATES: Record<TranscodeFormat, number[]> = {
 /**
  * Which formats each side can actually offer.
  *
- * Local playback is mp3 or nothing, and that is measured rather than
- * preferred: seeking in a transcode works by declaring a length of
- * `bitrate x duration`, and ffmpeg's aac and opus encoders don't hold the
- * bitrate they're given (aac 256 came out 12.75% under it), so the declared
- * length — and every seek made against it — would be wrong. The numbers are
- * in connect/routes/local_stream.py's ALLOWED_BITRATES comment.
+ * Local playback was mp3-only for a long time, and the reason is worth
+ * knowing because it no longer applies: seeking in a transcode used to
+ * work by declaring a length of `bitrate x duration` and letting the
+ * media element seek against it, which only lands correctly for a format
+ * whose output really is that size. Only mp3 is — LAME's CBR pads every
+ * frame — while an AAC encode follows the material and comes out smaller
+ * wherever the music is cheap to encode. Beacon does that seeking itself
+ * now (each position is a fresh request that starts there, see the
+ * playback store's startLocalSong()), so nothing depends on the bitrate
+ * being met and aac can be offered here too. The measurements are in
+ * connect/routes/local_stream.py's ALLOWED_BITRATES comment.
  *
- * Casting has no such constraint: Beacon does the seeking itself, server
- * side, and never declares a length to anyone. opus is still left out
- * there, for the unrelated reason that Sonos won't play it at all (see
- * _COPY_MUXER_FOR_CODEC in core/streamer.py).
+ * opus is here for the same reason and goes lower still — 96k of it is
+ * what the other two need 192k for, which is the difference that matters
+ * on a phone away from home. What it needs on this side is a browser that
+ * decodes Ogg, which not every one does — see localFormats().
+ *
+ * Casting offers all three as well, and none of them is a promise about
+ * the speaker: connect knows what each target can decode
+ * (BaseDelivery.PLAYABLE_CODECS) and encodes the best format that target
+ * actually plays, so Opus reaches a Chromecast as Opus, a Sonos as AAC and
+ * an AirPlay device as MP3 rather than as silence (see _codec_for_ceiling()
+ * in core/streamer.py). The bitrate is kept either way — it is a ceiling
+ * somebody set for their connection, not a quality target to make up for.
  */
-export const LOCAL_FORMATS: StreamFormat[] = ['original', 'mp3']
-export const CAST_FORMATS: StreamFormat[] = ['original', 'mp3', 'aac']
+const ALL_LOCAL_FORMATS: StreamFormat[] = ['original', 'mp3', 'aac', 'opus']
+export const CAST_FORMATS: StreamFormat[] = ['original', 'mp3', 'aac', 'opus']
+
+/**
+ * What a media element in *this* browser says it can decode, for the
+ * formats above. Chrome and Firefox play all three; Safari has no Ogg
+ * demuxer at all, so its answer for Opus is empty and offering it there
+ * would be offering silence.
+ *
+ * Asked through a throwaway `<audio>` rather than assumed from the user
+ * agent — the question is about a decoder, and the browser answers it
+ * directly.
+ */
+const CAN_PLAY_TYPE: Record<TranscodeFormat, string> = {
+  mp3: 'audio/mpeg',
+  // ADTS, which is what connect's aac output is muxed into (see
+  // _LOSSY_ENCODERS in core/streamer.py).
+  aac: 'audio/aac',
+  opus: 'audio/ogg; codecs="opus"',
+}
+
+/**
+ * The local formats this browser can actually play.
+ *
+ * mp3 is the reference: every browser worth the name decodes it, so an
+ * empty answer *for mp3* means the answer itself is worthless (jsdom says
+ * nothing to anything) rather than that this browser plays no music. In
+ * that case every format is offered, which is where this started before
+ * the question was asked at all.
+ */
+export function localFormats(): StreamFormat[] {
+  let probe: HTMLAudioElement
+  try {
+    probe = document.createElement('audio')
+    if (!probe.canPlayType?.(CAN_PLAY_TYPE.mp3)) return [...ALL_LOCAL_FORMATS]
+  } catch {
+    return [...ALL_LOCAL_FORMATS]
+  }
+  return ALL_LOCAL_FORMATS.filter(
+    (format) => format === 'original' || !!probe.canPlayType(CAN_PLAY_TYPE[format]),
+  )
+}
 
 /**
  * What each format falls back to when the user switches to it from one
@@ -79,6 +132,11 @@ const DEFAULT_BITRATE: Record<TranscodeFormat, number> = {
   aac: 192,
   opus: 128,
 }
+
+/** Where a format that isn't available lands, best first — the same order
+ * connect uses for a cast device that can't decode what was asked for (see
+ * _LOSSY_FALLBACK_ORDER in core/streamer.py). */
+const FORMAT_FALLBACK_ORDER: TranscodeFormat[] = ['aac', 'mp3']
 
 /**
  * Untouched audio on both paths. Not a conservative placeholder: it is the
@@ -110,7 +168,11 @@ export interface StreamQualitySettings {
   cast: StreamQuality
 }
 
-function sanitize(value: unknown, fallback: StreamQuality): StreamQuality {
+function sanitize(
+  value: unknown,
+  fallback: StreamQuality,
+  available: StreamFormat[] = ALL_LOCAL_FORMATS,
+): StreamQuality {
   const raw = value as Partial<StreamQuality> | undefined
   const format = raw?.format
   if (format === 'original') return { format, bitrate: fallback.bitrate }
@@ -118,6 +180,16 @@ function sanitize(value: unknown, fallback: StreamQuality): StreamQuality {
   const bitrate = BITRATES[format].includes(raw?.bitrate as number)
     ? (raw!.bitrate as number)
     : DEFAULT_BITRATE[format]
+  // A setting saved on one browser can be read back on another — the same
+  // account on a desktop and on an iPhone — and a format this one cannot
+  // decode would play nothing at all. Falls back to the next format down
+  // rather than to 'original', which would quietly undo the whole reason
+  // the ceiling was set.
+  if (!available.includes(format)) {
+    const substitute = FORMAT_FALLBACK_ORDER.find((candidate) => available.includes(candidate))
+    if (!substitute) return { format: 'original', bitrate: fallback.bitrate }
+    return { format: substitute, bitrate: bitrateFor(substitute, bitrate) }
+  }
   return { format, bitrate }
 }
 
@@ -126,7 +198,10 @@ export function load(): StreamQualitySettings {
     const raw = localStorage.getItem(accountScopedKey(STORAGE_KEY))
     const parsed = raw ? JSON.parse(raw) : {}
     return {
-      local: sanitize(parsed?.local, DEFAULTS.local),
+      // Only the local half is judged against this browser: the cast half
+      // describes what a speaker gets, and connect narrows that to the
+      // target's own codecs (see CAST_FORMATS above).
+      local: sanitize(parsed?.local, DEFAULTS.local, localFormats()),
       cast: sanitize(parsed?.cast, DEFAULTS.cast),
     }
   } catch {
@@ -154,17 +229,52 @@ export function bitrateFor(format: StreamFormat, current: number): number {
 }
 
 /**
- * File suffixes every current browser decodes. A source outside this list
- * has to be converted whatever the bitrate says — otherwise the element
- * simply plays nothing, which is the other half of why local transcoding
- * exists at all.
+ * The media type to ask a browser about, per source file suffix. A source
+ * this browser can't decode has to be converted whatever the bitrate says
+ * — otherwise the element simply plays nothing, which is the other half of
+ * why local transcoding exists at all.
+ *
+ * Asked rather than assumed, because the answer differs: Chrome and
+ * Firefox play all of these, while Safari has no Ogg demuxer and so plays
+ * neither the `ogg`/`oga` nor the `opus` line. A list hard-coded to
+ * "every current browser" was really a list for Chrome, and on an iPhone
+ * it meant a Vorbis track was fetched untouched and played nothing.
  *
  * `m4a` is here because it is overwhelmingly AAC, but it can also hold
  * ALAC, which Chrome and Firefox refuse. That case isn't distinguishable
  * from the suffix — it is caught by the bitrate rule instead, since ALAC's
  * is far above any ceiling on offer.
  */
-const BROWSER_PLAYABLE = new Set(['mp3', 'flac', 'wav', 'ogg', 'oga', 'opus', 'm4a', 'aac', 'mp4'])
+const SOURCE_MEDIA_TYPE: Record<string, string | undefined> = {
+  mp3: 'audio/mpeg',
+  flac: 'audio/flac',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  oga: 'audio/ogg',
+  opus: 'audio/ogg; codecs="opus"',
+  m4a: 'audio/mp4',
+  mp4: 'audio/mp4',
+  aac: 'audio/aac',
+}
+
+/** Whether this browser plays a source with that suffix.
+ *
+ * A suffix nothing here knows about is "no" — it is exactly the ALAC/APE/
+ * WavPack case local transcoding was added for. An unusable answer (jsdom,
+ * or anything else that says nothing to `audio/mpeg` either) falls back to
+ * the fixed list this used to be, so nothing starts converting everything
+ * because the question could not be asked. */
+function browserPlays(suffix: string): boolean {
+  const type = SOURCE_MEDIA_TYPE[suffix]
+  if (!type) return false
+  try {
+    const probe = document.createElement('audio')
+    if (!probe.canPlayType?.(CAN_PLAY_TYPE.mp3)) return true
+    return !!probe.canPlayType(type)
+  } catch {
+    return true
+  }
+}
 
 /**
  * Lossless suffixes. Always above a lossy ceiling, whatever number it
@@ -218,7 +328,7 @@ export function plan(
   if (setting.format === 'original') return PLAY_ORIGINAL
   const suffix = source.format?.toLowerCase() ?? null
 
-  if (suffix && !BROWSER_PLAYABLE.has(suffix)) {
+  if (suffix && !browserPlays(suffix)) {
     return { quality: { ...setting }, reason: 'browser_unsupported' }
   }
   if (suffix && LOSSLESS.has(suffix)) {

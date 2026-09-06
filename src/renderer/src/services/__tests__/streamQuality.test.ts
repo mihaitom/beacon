@@ -5,9 +5,10 @@ import {
   bitrateFor,
   CAST_FORMATS,
   load,
-  LOCAL_FORMATS,
+  localFormats,
   plan,
   save,
+  type TranscodeFormat,
 } from '../streamQuality'
 
 /** The stored quality preferences. Everything worth testing here is what
@@ -189,28 +190,116 @@ describe('streamQuality', () => {
     expect(BITRATES.mp3).toEqual([320, 256, 192, 128, 96])
   })
 
+  describe('what the browser can decode', () => {
+    function browserPlays(...types: string[]) {
+      vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((type: string) =>
+        types.some((t) => type.startsWith(t)) ? 'probably' : '',
+      )
+    }
+
+    it('converts a source this browser has no decoder for', () => {
+      // Safari plays no Ogg at all, so a Vorbis track there has to be
+      // converted however small it is - fetching it untouched plays
+      // nothing, which is the case local transcoding exists for.
+      browserPlays('audio/mpeg', 'audio/aac')
+
+      expect(plan({ format: 'ogg', bitRate: 96 }, { format: 'aac', bitrate: 192 })).toEqual({
+        quality: { format: 'aac', bitrate: 192 },
+        reason: 'browser_unsupported',
+      })
+    })
+
+    it('leaves the same source alone in a browser that does play it', () => {
+      browserPlays('audio/mpeg', 'audio/aac', 'audio/ogg')
+
+      expect(plan({ format: 'ogg', bitRate: 96 }, { format: 'aac', bitrate: 192 }).reason).toBe(
+        null,
+      )
+    })
+
+    it('trusts the old fixed list where the browser answers nothing', () => {
+      // jsdom says nothing to anything; treating that as "plays nothing"
+      // would convert every track on every device.
+      browserPlays()
+
+      expect(plan({ format: 'ogg', bitRate: 96 }, { format: 'aac', bitrate: 192 }).reason).toBe(
+        null,
+      )
+    })
+  })
+
   describe('format lists', () => {
-    it('offers only untouched audio and mp3 locally', () => {
-      // Not a preference: seeking in a transcode needs a length of
-      // bitrate x duration, and only mp3 actually holds the bitrate it is
-      // given (aac 256 measured 12.75% under). See LOCAL_FORMATS.
-      expect(LOCAL_FORMATS).toEqual(['original', 'mp3'])
+    /** What a browser answers for a media type. jsdom's own canPlayType()
+     * says nothing to anything, which is indistinguishable from a browser
+     * that plays no music at all - so localFormats() treats an empty
+     * answer *for mp3* as "this browser cannot be asked" and offers
+     * everything. These tests supply real answers instead. */
+    function browserPlays(...types: string[]) {
+      vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((type: string) =>
+        types.some((t) => type.startsWith(t)) ? 'probably' : '',
+      )
+    }
+
+    it('offers untouched audio and all three transcodes locally', () => {
+      // aac and opus were both excluded for as long as seeking meant
+      // declaring a length of bitrate x duration and letting the element
+      // seek against it - an encode is only that size when the music
+      // happens to need the bits, which only mp3's padded CBR guarantees.
+      // Beacon does the seeking itself now (startLocalSong()), so nothing
+      // depends on the bitrate being met.
+      browserPlays('audio/mpeg', 'audio/aac', 'audio/ogg')
+
+      expect(localFormats()).toEqual(['original', 'mp3', 'aac', 'opus'])
     })
 
-    it('also offers aac for casting, where nothing declares a length', () => {
-      expect(CAST_FORMATS).toEqual(['original', 'mp3', 'aac'])
+    it('leaves out a format this browser cannot decode', () => {
+      // Safari has no Ogg demuxer, so offering Opus there would be
+      // offering silence.
+      browserPlays('audio/mpeg', 'audio/aac')
+
+      expect(localFormats()).toEqual(['original', 'mp3', 'aac'])
     })
 
-    it('never offers opus, which no supported cast device plays', () => {
-      // Sonos rejects it outright — see _COPY_MUXER_FOR_CODEC's comment.
-      expect(CAST_FORMATS).not.toContain('opus')
-      expect(LOCAL_FORMATS).not.toContain('opus')
+    it('offers everything where the browser answers nothing at all', () => {
+      // An empty answer for mp3 means the answer is worthless, not that
+      // this browser plays no music - the old behaviour is the safe one.
+      browserPlays()
+
+      expect(localFormats()).toEqual(['original', 'mp3', 'aac', 'opus'])
+    })
+
+    it('replaces a stored format this browser cannot play', () => {
+      // The same account on a desktop and on an iPhone shares nothing but
+      // the setting; a saved 'opus' has to land on the next format down
+      // rather than on silence - and not on 'original', which would undo
+      // the ceiling entirely.
+      browserPlays('audio/mpeg', 'audio/aac')
+      localStorage.setItem(KEY, JSON.stringify({ local: { format: 'opus', bitrate: 96 } }))
+
+      expect(load().local).toEqual({ format: 'aac', bitrate: 96 })
+    })
+
+    it('leaves the cast setting alone, which is not about this browser', () => {
+      // What a speaker gets is narrowed by connect against that device's
+      // own codecs, not by whatever browser happens to be open.
+      browserPlays('audio/mpeg')
+      localStorage.setItem(KEY, JSON.stringify({ cast: { format: 'opus', bitrate: 128 } }))
+
+      expect(load().cast).toEqual({ format: 'opus', bitrate: 128 })
+    })
+
+    it('offers all three formats for casting', () => {
+      // Including opus, which only a Chromecast plays: connect encodes the
+      // best format each target actually supports (see _codec_for_ceiling()
+      // in core/streamer.py), so this list is a wish rather than a promise
+      // about the speaker.
+      expect(CAST_FORMATS).toEqual(['original', 'mp3', 'aac', 'opus'])
     })
 
     it('has a bitrate list for every format either side can offer', () => {
-      for (const format of [...LOCAL_FORMATS, ...CAST_FORMATS]) {
+      for (const format of [...localFormats(), ...CAST_FORMATS]) {
         if (format === 'original') continue
-        expect(BITRATES[format].length).toBeGreaterThan(0)
+        expect(BITRATES[format as TranscodeFormat].length).toBeGreaterThan(0)
       }
     })
   })

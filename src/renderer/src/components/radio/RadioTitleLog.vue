@@ -29,27 +29,53 @@
         truncate-line="both"
         line-thickness="1"
       >
-        <template v-for="row in rows" :key="row.key">
-          <!-- A day heading is not an event, so it gets no dot — the line
-             - runs past it. A dot here would read as "something played at
-             - the start of Tuesday", which is not what it says. -->
-          <v-timeline-item v-if="row.divider" hide-dot>
-            <span class="title-log__day">{{ row.divider }}</span>
-          </v-timeline-item>
-          <!-- The dot carries what the row itself has no room to say: the
+        <!-- No `tag`, so this renders as a fragment and the items stay
+           - direct children of the timeline's own grid - a wrapper element
+           - here would take them out of it and the whole layout with them.
+           -
+           - `css` is what decides whether a change animates at all, and it
+           - is off for most of them: a page of older entries arriving at
+           - the bottom (see @scroll below) would otherwise fade thirty rows
+           - in at once, and so would switching stations, which replaces the
+           - list wholesale. Only a title genuinely arriving at the top gets
+           - the entrance - see the `entries` watcher.
+           -
+           - No `appear`, deliberately: QueueDrawer.vue's own transition
+           - group has the long version of why (Vue's move logic racing its
+           - own initial render), and this list mounts inside a drawer that
+           - starts closed, which is exactly that situation.
+           -
+           - `duration` is spelled out as a precaution rather than a fix:
+           - Vue reads the transition off the element it puts the classes
+           - on, and that element is a v-timeline-item, which Vuetify gives
+           - `display: contents` and which therefore declares no transition
+           - of its own (the entrance lives on its children - see the style
+           - block). Chromium happens to finish the children's transition
+           - even when the classes come off early, which is not something
+           - worth depending on. -->
+        <transition-group name="title-log" :duration="ENTER_MS" :css="animateInsert">
+          <template v-for="row in rows" :key="row.key">
+            <!-- A day heading is not an event, so it gets no dot — the line
+               - runs past it. A dot here would read as "something played at
+               - the start of Tuesday", which is not what it says. -->
+            <v-timeline-item v-if="row.divider" :key="row.key" hide-dot>
+              <span class="title-log__day">{{ row.divider }}</span>
+            </v-timeline-item>
+            <!-- The dot carries what the row itself has no room to say: the
              - one entry that is playing right now, and the lines that do
              - not read as a song at all. An ordinary song gets a plain
              - dot, so that the marked ones are the ones that stand out. -->
-          <v-timeline-item
-            v-else
-            size="x-small"
-            :class="{ 'title-log__break': row.afterBreak }"
-            :dot-color="row.newest ? 'primary' : 'secondary'"
-            :fill-dot="row.newest"
-            :icon="dotIcon(row)"
-            icon-color="background"
-          >
-            <!-- The whole card is the search target, not the title inside
+            <v-timeline-item
+              v-else
+              :key="row.key"
+              size="x-small"
+              :class="{ 'title-log__break': row.afterBreak }"
+              :dot-color="row.newest ? 'primary' : 'secondary'"
+              :fill-dot="row.newest"
+              :icon="dotIcon(row)"
+              icon-color="background"
+            >
+              <!-- The whole card is the search target, not the title inside
                - it: a row this size is easier to hit than the text on it,
                - and on a phone that is the difference between a tap and a
                - careful tap. Only a row that reads as a song gets one -
@@ -57,28 +83,29 @@
                - nothing and invites the click anyway - so the card is a
                - real <button> there and a plain div for everything else,
                - rather than a div that pretends. -->
-            <component
-              :is="split(row.entry!.title) ? 'button' : 'div'"
-              class="title-log__item"
-              :class="{
-                'title-log__item--now': row.newest,
-                'title-log__item--searchable': !!split(row.entry!.title),
-              }"
-              :type="split(row.entry!.title) ? 'button' : undefined"
-              :title="split(row.entry!.title) ? $t('radio.titleLogSearch') : undefined"
-              @click="split(row.entry!.title) && search(split(row.entry!.title)!.track)"
-            >
-              <span class="title-log__time">{{ formatTime(row.entry!.at) }}</span>
-              <span v-if="split(row.entry!.title)" class="title-log__text">
-                <span class="title-log__track">{{ split(row.entry!.title)!.track }}</span>
-                <span class="title-log__artist">{{ split(row.entry!.title)!.artist }}</span>
-              </span>
-              <span v-else class="title-log__text">
-                <span class="title-log__plain">{{ row.entry!.title }}</span>
-              </span>
-            </component>
-          </v-timeline-item>
-        </template>
+              <component
+                :is="split(row.entry!.title) ? 'button' : 'div'"
+                class="title-log__item"
+                :class="{
+                  'title-log__item--now': row.newest,
+                  'title-log__item--searchable': !!split(row.entry!.title),
+                }"
+                :type="split(row.entry!.title) ? 'button' : undefined"
+                :title="split(row.entry!.title) ? $t('radio.titleLogSearch') : undefined"
+                @click="split(row.entry!.title) && search(split(row.entry!.title)!.track)"
+              >
+                <span class="title-log__time">{{ formatTime(row.entry!.at) }}</span>
+                <span v-if="split(row.entry!.title)" class="title-log__text">
+                  <span class="title-log__track">{{ split(row.entry!.title)!.track }}</span>
+                  <span class="title-log__artist">{{ split(row.entry!.title)!.artist }}</span>
+                </span>
+                <span v-else class="title-log__text">
+                  <span class="title-log__plain">{{ row.entry!.title }}</span>
+                </span>
+              </component>
+            </v-timeline-item>
+          </template>
+        </transition-group>
       </v-timeline>
       <p v-else class="title-log__empty">{{ $t('radio.titleLogEmpty') }}</p>
     </div>
@@ -118,6 +145,11 @@ interface LogRow {
    * evening. */
   afterBreak?: boolean
 }
+
+/** How long a new title's entrance runs. Named here as well as in the CSS
+ * because the transition group has to be told (see its `duration` in the
+ * template) - the two have to say the same thing. */
+const ENTER_MS = 300
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -167,7 +199,42 @@ export default {
     hasMore: { type: Boolean, default: false },
   },
   emits: ['load-more'],
+  data() {
+    return {
+      // Whether the *next* render is allowed to animate - see the watcher
+      // below, and the transition group in the template.
+      animateInsert: false,
+    }
+  },
+  watch: {
+    /** Arms the entrance for one render, and only for the one change that
+     * should have it: a title the station has just started playing,
+     * arriving at the top of the list.
+     *
+     * Everything else that changes this list would animate badly. Scrolling
+     * to the end appends a page of thirty older entries at once, which as
+     * an entrance is a wall of movement about something the reader asked
+     * for and is already looking at. Switching stations replaces the list
+     * wholesale, and a hundred rows fading in reads as the panel breaking
+     * rather than as a new station. Both are told apart from a genuine
+     * arrival by shape alone: exactly one row more than before, and what
+     * used to be the first row is now the second.
+     *
+     * Comparing by the same key the rows are rendered with, not by object
+     * identity - these come from the store as fresh objects on every poll.
+     */
+    entries(next: RadioTitleEntry[], previous: RadioTitleEntry[]) {
+      const key = (entry: RadioTitleEntry | undefined): string | null =>
+        entry ? `${entry.at}-${entry.title}` : null
+      this.animateInsert =
+        previous.length > 0 &&
+        next.length === previous.length + 1 &&
+        key(next[0]) !== key(previous[0]) &&
+        key(next[1]) === key(previous[0])
+    },
+  },
   computed: {
+    ENTER_MS: () => ENTER_MS,
     /** The entries with a date heading wherever the day changes going down
      * the list.
      *
@@ -560,6 +627,49 @@ export default {
 .title-log__list :deep(.title-log__break .v-timeline-divider),
 .title-log__list :deep(.title-log__break .v-timeline-item__body) {
   margin-top: 22px;
+}
+
+/* The entrance a newly played title gets.
+ *
+ * Handed down to the row's two children rather than set on the row itself,
+ * because the row cannot be animated at all: Vuetify gives
+ * .v-timeline-item `display: contents`, and an element with that generates
+ * no box - opacity and transform on it do nothing, and its
+ * getBoundingClientRect() is all zeros. That last part is also why there is
+ * no move transition here, however much this list would like one:
+ * TransitionGroup's FLIP measures exactly that rectangle, reads no
+ * movement, and never applies a move class. So the rows below take their
+ * new position at once and only the arriving one is animated. Getting them
+ * to slide would mean giving the items real boxes, which means rebuilding
+ * the timeline's own two-column layout by hand - far more than this is
+ * worth.
+ *
+ * 0.3s is the app's "something arrived" speed, shared with the queue's own
+ * rows (docs/styleguide.md's motion table); ENTER_MS in the script says the
+ * same number to Vue. Downwards, from behind the panel's top edge, because
+ * that is where the entry comes from: the newest is the topmost, and the
+ * fade mask above is what it emerges out of. */
+.title-log-enter-active :deep(.v-timeline-divider),
+.title-log-enter-active :deep(.v-timeline-item__body) {
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
+}
+
+.title-log-enter-from :deep(.v-timeline-divider),
+.title-log-enter-from :deep(.v-timeline-item__body) {
+  opacity: 0;
+  transform: translateY(-14px);
+}
+
+/* Someone who has asked for less movement gets the new row, just not the
+ * journey - the same answer every other animation in this app gives
+ * (docs/styleguide.md). */
+@media (prefers-reduced-motion: reduce) {
+  .title-log-enter-active :deep(.v-timeline-divider),
+  .title-log-enter-active :deep(.v-timeline-item__body) {
+    transition: none;
+  }
 }
 
 /* Not an event on the line but a break in it — see the template. Sits

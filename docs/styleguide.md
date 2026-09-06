@@ -302,6 +302,29 @@ one fact and stays plain text - chipping those turns a spec sheet into
 confetti. A list of identifiers (ISRC) stays text too: it is there to be
 copied, not scanned.
 
+## Advice on a setting
+
+A setting says what it is in its label, and what it does in the `.setting__hint`
+line under it. Neither of those is the place for *which value to pick* - that
+is a paragraph, it is only wanted once, and permanently parked under the
+control it pushes the rest of the page down for everyone who has already
+chosen.
+
+So recommendations go behind an info button beside the label
+(`components/settings/QualityTips.vue` is the one that exists), in a
+`v-tooltip` with `open-on-click` on top of the default hover - half of this
+app runs on a phone, where there is no hover to open anything with. The
+activator is a real `v-btn`, not a bare `v-icon`: it has to be reachable
+with a keyboard and carry a name a screen reader can read. The `title`
+attribute is not the cheap version of this - it never appears on touch, and
+it collapses several lines into one.
+
+The lines themselves are written per setting rather than shared, because two
+settings that look alike rarely answer the same question: the audio quality
+for this device is about how much data to pull over the connection it
+happens to be on, while a cast device sits on the same network as connect
+and is weighing compatibility instead.
+
 ## Dialogs
 
 ### How big

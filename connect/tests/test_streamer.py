@@ -4,11 +4,13 @@ ffmpeg command selection (stream-copy vs. lossless re-encode vs. the mp3
 
 import asyncio
 import logging
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from core.streamer import (
+    _LOSSY_ENCODERS,
     FALLBACK_FORMAT,
     LOOKAHEAD_SECONDS,
     REASON_CODEC_NOT_CASTABLE,
@@ -765,13 +767,15 @@ def test_lossy_encode_args_per_format(fmt, codec, muxer, content_type):
     assert ct == content_type
 
 
-def test_opus_is_forced_to_constant_bitrate():
-    """Opus is variable-rate by default, and a variable-rate stream has no
-    byte-to-time mapping — which is exactly what routes/local_stream.py
-    divides by to answer a Range request."""
+def test_opus_is_held_to_the_bitrate_it_was_given():
+    """Constrained VBR, not plain VBR: the bitrate is a ceiling somebody set
+    for their connection, and measured against ffmpeg 9.0.1 an unconstrained
+    opus encode answers a 96k ceiling with 110k and a 64k one with 85k (see
+    lossy_encode_args()). Not CBR either, which pads every packet to the
+    same size whatever is in it and spends the difference on nothing."""
     args, _ = lossy_encode_args("opus", 128, source_rate=44100)
 
-    assert args[args.index("-vbr") + 1] == "off"
+    assert args[args.index("-vbr") + 1] == "constrained"
 
 
 def test_opus_always_encodes_at_48khz():
@@ -1167,3 +1171,183 @@ def test_stream_tracks_swallows_a_kill_error_after_an_unexpected_error():
 
     with pytest.raises(RuntimeError, match="pipe broke"):  # not the kill() error instead
         asyncio.run(_run())
+
+
+class TestBundledFfmpegCoversWhatWeOffer:
+    """The Docker image builds its own minimal ffmpeg (see the Dockerfile),
+    and `--disable-everything` means every encoder and muxer has to be asked
+    for by name. That list and the formats Beacon offers are two places
+    saying the same thing, in two languages, with nothing tying them
+    together: `aac` was offered as a cast quality for months while the image
+    could not encode it, failing with "Unknown encoder 'aac'" at the moment
+    somebody cast - and never on the desktop build, which uses the system
+    ffmpeg instead. These tests are the tie.
+
+    All three lossy formats are covered: opus joined them once the image
+    started building libopus from source (Alpine ships no static one - see
+    the Dockerfile), which is also what let it be offered for local
+    playback at all.
+    """
+
+    @staticmethod
+    def _configure_line(flag: str) -> set[str]:
+        dockerfile = Path(__file__).resolve().parents[2] / "Dockerfile"
+        for line in dockerfile.read_text().splitlines():
+            stripped = line.strip().rstrip("\\").strip()
+            if stripped.startswith(f"--{flag}="):
+                return set(stripped.split("=", 1)[1].split(","))
+        raise AssertionError(f"no --{flag}= in the Dockerfile's ffmpeg configure")
+
+    @pytest.mark.parametrize("fmt", ["mp3", "aac", "opus"])
+    def test_the_image_can_encode_every_format_the_app_offers(self, fmt):
+        codec, muxer = _LOSSY_ENCODERS[fmt]
+        assert codec in self._configure_line("enable-encoder")
+        assert muxer in self._configure_line("enable-muxer")
+
+
+# ── What the target can actually decode ──────────────────────────────────────
+# resolve_output_format()'s device_codecs — BaseDelivery.PLAYABLE_CODECS,
+# reduced across every active target (core/state.py's playable_codecs()).
+# The failure it exists to prevent is silence: a device that accepts a URI,
+# starts, and produces nothing.
+
+
+def test_a_source_the_target_cannot_decode_is_not_copied_to_it():
+    """The bug this parameter was added for: an AAC source was copied
+    straight to an AirPlay device, which decodes with miniaudio and has
+    never been able to play one."""
+    fmt = _resolve(
+        _info("aac", sample_rate=44100, bitrate_kbps=256, duration=180.0),
+        device_codecs=frozenset({"mp3", "flac", "vorbis"}),
+    )
+
+    assert fmt.ffmpeg_args == FALLBACK_FORMAT.ffmpeg_args
+    assert fmt.transcode_reason == REASON_CODEC_NOT_CASTABLE
+    # The probe still ran, so the length is still known.
+    assert fmt.source_duration == 180.0
+
+
+def test_a_source_the_target_can_decode_is_still_copied():
+    fmt = _resolve(
+        _info("aac", sample_rate=44100, bitrate_kbps=256),
+        device_codecs=frozenset({"mp3", "aac", "flac", "vorbis"}),
+    )
+
+    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "adts"]
+    assert fmt.transcode_reason is None
+
+
+def test_no_device_codecs_leaves_the_copy_tier_exactly_as_it_was():
+    """Nothing known about the target (no delivery active) is not the same
+    as a target that plays nothing."""
+    fmt = _resolve(_info("aac", sample_rate=44100, bitrate_kbps=256))
+
+    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "adts"]
+
+
+def test_a_ceiling_the_target_cannot_decode_is_encoded_as_the_best_it_can():
+    """A listener on Opus casting to a Sonos gets AAC, not silence."""
+    fmt = _resolve(
+        _info("flac", sample_rate=44100, bit_depth=16),
+        max_lossy_format="opus",
+        max_lossy_bitrate_kbps=128,
+        device_codecs=frozenset({"mp3", "aac", "flac", "vorbis"}),
+    )
+
+    assert fmt.ffmpeg_args[:2] == ["-acodec", "aac"]
+    assert fmt.content_type == "audio/aac"
+    assert fmt.transcode_reason == REASON_QUALITY_LIMIT
+
+
+def test_a_ceiling_falls_all_the_way_to_mp3_where_that_is_all_there_is():
+    fmt = _resolve(
+        _info("flac", sample_rate=44100, bit_depth=16),
+        max_lossy_format="opus",
+        max_lossy_bitrate_kbps=128,
+        device_codecs=frozenset({"mp3", "flac", "vorbis"}),
+    )
+
+    assert fmt.ffmpeg_args[:2] == ["-acodec", "libmp3lame"]
+    assert fmt.content_type == "audio/mpeg"
+
+
+def test_the_fallback_keeps_the_bitrate_the_listener_asked_for():
+    """A ceiling is a ceiling: somebody who capped their stream at 96k
+    because of their connection must not be handed more than that just
+    because the format had to change under them."""
+    fmt = _resolve(
+        _info("flac", sample_rate=44100, bit_depth=16),
+        max_lossy_format="opus",
+        max_lossy_bitrate_kbps=96,
+        device_codecs=frozenset({"mp3", "aac", "flac", "vorbis"}),
+    )
+
+    assert fmt.ffmpeg_args[fmt.ffmpeg_args.index("-b:a") + 1] == "96k"
+    assert fmt.target_bitrate_kbps == 96
+
+
+def test_a_ceiling_the_target_can_decode_is_left_alone():
+    fmt = _resolve(
+        _info("flac", sample_rate=44100, bit_depth=16),
+        max_lossy_format="opus",
+        max_lossy_bitrate_kbps=128,
+        device_codecs=frozenset({"mp3", "aac", "flac", "vorbis", "opus"}),
+    )
+
+    assert fmt.ffmpeg_args[:2] == ["-acodec", "libopus"]
+    assert fmt.content_type == "audio/ogg"
+
+
+def test_a_listener_on_mp3_is_never_upgraded_behind_their_back():
+    """Falling back is not the same as choosing: mp3 is what somebody picks
+    when they want the format nothing argues with."""
+    fmt = _resolve(
+        _info("flac", sample_rate=44100, bit_depth=16),
+        max_lossy_format="mp3",
+        max_lossy_bitrate_kbps=192,
+        device_codecs=frozenset({"mp3", "aac", "flac", "vorbis", "opus"}),
+    )
+
+    assert fmt.ffmpeg_args[:2] == ["-acodec", "libmp3lame"]
+
+
+def test_a_target_that_does_not_play_flac_gets_the_mp3_fallback_instead():
+    """The lossless tiers' landing place is FLAC; a device that cannot
+    decode it must not be sent one for want of anywhere else to go."""
+    fmt = _resolve(
+        _info("alac", sample_rate=44100, bit_depth=16, duration=90.0),
+        device_codecs=frozenset({"mp3"}),
+    )
+
+    assert fmt.ffmpeg_args == FALLBACK_FORMAT.ffmpeg_args
+    assert fmt.transcode_reason == REASON_CODEC_NOT_CASTABLE
+
+
+def test_a_resampled_source_on_a_target_without_flac_falls_back_too():
+    """A source the device *can* decode but not at that sample rate would
+    normally be re-encoded to FLAC on the way down. Where FLAC is not on
+    the menu either, mp3 is — and the reason stays the device's limit,
+    which is what actually forced the conversion."""
+    fmt = _resolve(
+        _info("aac", sample_rate=96000, bitrate_kbps=256, duration=90.0),
+        max_sample_rate=48000,
+        device_codecs=frozenset({"mp3", "aac"}),
+    )
+
+    assert fmt.ffmpeg_args == FALLBACK_FORMAT.ffmpeg_args
+    assert fmt.transcode_reason == REASON_DEVICE_LIMIT
+
+
+def test_a_lossless_source_a_target_cannot_decode_says_so_rather_than_blaming_the_rate():
+    """A device that plays no FLAC at all is refused at the copy check
+    above, before the resample question is even asked — the codec is the
+    honest reason, not the sample rate."""
+    fmt = _resolve(
+        _info("flac", sample_rate=96000, bit_depth=24, duration=90.0),
+        max_sample_rate=48000,
+        max_bit_depth=24,
+        device_codecs=frozenset({"mp3"}),
+    )
+
+    assert fmt.ffmpeg_args == FALLBACK_FORMAT.ffmpeg_args
+    assert fmt.transcode_reason == REASON_CODEC_NOT_CASTABLE

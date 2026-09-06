@@ -18,6 +18,19 @@ function formatTime(seconds) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+// The live readout is the one time in this UI that runs past an hour - a
+// track never does, so its elapsed/duration pair stays m:ss above. Without
+// the hour part a long listen read as "76:47". It only appears once there
+// is an hour to show, so the usual case keeps the shorter label.
+function formatLiveTime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const h = Math.floor(seconds / 3600);
+  if (h === 0) return formatTime(seconds);
+  const m = Math.floor(seconds / 60) % 60;
+  const s = Math.floor(seconds % 60);
+  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 export function renderNowPlaying(root) {
   root.innerHTML = `
     <div class="now-playing">
@@ -151,8 +164,14 @@ export function renderNowPlaying(root) {
     // at all (Plex without Sonic Analysis bridged, or no server support) —
     // same capability gate PlayerBar.vue's own button uses
     // (authStore.capabilities.songRadio).
+    //
+    // On a station it is disabled instead, like the queue buttons above:
+    // autoplay tops the queue up as it runs out and a live stream never
+    // does, so it stays visible (the setting is unchanged) but cannot look
+    // lit up for something it has no effect on.
     autoplayBtn.classList.toggle('hidden', !snapshot.song_radio_supported);
-    autoplayBtn.classList.toggle('active', !!snapshot.autoplay);
+    autoplayBtn.disabled = isRadio;
+    autoplayBtn.classList.toggle('active', !isRadio && !!snapshot.autoplay);
 
     const casting = snapshot.casting ?? [];
     castBtn.classList.toggle('active', casting.length > 0);
@@ -174,7 +193,7 @@ export function renderNowPlaying(root) {
       liveReadout.classList.toggle('hidden', buffering || !started);
       liveReadout.classList.toggle('live-readout--off-air', !snapshot.playing);
       liveDot.classList.toggle('live-dot--on-air', !!snapshot.playing);
-      liveTime.textContent = formatTime(position);
+      liveTime.textContent = formatLiveTime(position);
     } else if (!seeking) {
       seek.max = String(Math.max(snapshot.duration || 0, 1));
       seek.value = String(snapshot.position || 0);

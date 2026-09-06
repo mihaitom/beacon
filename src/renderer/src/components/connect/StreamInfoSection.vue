@@ -113,6 +113,10 @@ const TARGET_LABEL_FOR_CONTENT_TYPE: Record<string, string> = {
   'audio/flac': 'FLAC',
   'audio/mpeg': 'MP3',
   'audio/aac': 'AAC',
+  // Reachable since Opus joined CAST_FORMATS: a Chromecast declares it
+  // (see its PLAYABLE_CODECS), so a cast at that quality really does come
+  // out as Ogg. Without this the row read "audio/ogg" at the listener.
+  'audio/ogg': 'Opus',
 }
 
 // e.g. 96000 -> "96 kHz", 44100 -> "44.1 kHz". Shared by the source and
@@ -161,14 +165,31 @@ function formatKhz(hz: number): string {
  * ConnectDevicePicker.vue can decide whether the divider above this
  * section has anything below it to separate from — one answer, asked in
  * two places, rather than two conditions that could quietly drift apart. */
-export const RADIO_REENCODED_REASON = 'device_rejected_stream'
+/** The three reasons a station is really being re-encoded rather than
+ * passed through: a device refused the raw stream (Beacon re-encodes to
+ * rescue the cast), the station is over the cast-quality ceiling and the
+ * relay brings it down, or it does not arrive as MP3 and the device would
+ * not take it as it is — see connect's core/radio_relay.py. Anything else
+ * `transcoding` claims for a station is bookkeeping, not a conversion. */
+export const RADIO_REENCODED_REASONS = ['device_rejected_stream', 'quality_limit', 'relay_mp3_only']
+
+function isRadioReencoded(reason: string | null | undefined): boolean {
+  return reason != null && RADIO_REENCODED_REASONS.includes(reason)
+}
 
 export function hasStreamInfo(): boolean {
   const playback = usePlaybackStore()
   const connect = useConnectStore()
   if (playback.radioStation) {
     if (playback.radioBitrate !== null || playback.radioCodec !== null) return true
-    return connect.status?.stream_info?.transcode_reason === RADIO_REENCODED_REASON
+    // Same two places the reason is read from as in the component's own
+    // radioReencodeReason(): the cast status while casting, the relay's own
+    // report otherwise. A station that says nothing about itself but is
+    // being converted still has something worth showing.
+    const reason = connect.isActive
+      ? connect.status?.stream_info?.transcode_reason
+      : playback.radioRelayReason
+    return isRadioReencoded(reason)
   }
   return (
     connect.isActive || (playback.currentSong?.id != null && playback.activeLocalStream !== null)
@@ -199,7 +220,17 @@ export default {
      * pipeline the rows below describe — see hasStreamInfo()'s own comment
      * for why `transcoding` alone cannot be trusted to say so. */
     radioReencoded(): boolean {
-      return this.connectStore.status?.stream_info?.transcode_reason === RADIO_REENCODED_REASON
+      return isRadioReencoded(this.radioReencodeReason)
+    },
+    /** Why the current station is being re-encoded, or null while it is
+     * passed through. Two sources for the same fact: while casting it comes
+     * with the cast status, and locally from the relay's own report in
+     * /radio-metadata — local playback has no cast status to read, which is
+     * why a station brought down to this device's own ceiling used to show
+     * nothing at all here. */
+    radioReencodeReason(): string | null {
+      if (this.isCasting) return this.connectStore.status?.stream_info?.transcode_reason ?? null
+      return this.playbackStore.radioRelayReason
     },
     castInfo(): ConnectStreamInfo {
       return this.connectStore.status?.stream_info ?? FALLBACK_INFO
@@ -223,6 +254,7 @@ export default {
       return hasStreamInfo()
     },
     transcoding(): boolean {
+      if (this.isRadio) return this.radioReencoded
       if (this.isCasting) return this.castInfo.transcoding
       return this.activePlan !== null && this.activePlan.quality.format !== 'original'
     },
@@ -230,6 +262,17 @@ export default {
      * decision, reported back; locally it is what this app asked for when
      * it started the track. */
     targetLabel(): string {
+      // Named from what the relay reports it is handing out, not assumed:
+      // the quality setting can ask for AAC, and a local player can inherit
+      // the relay a cast started, so "a station is always MP3 out of the
+      // relay" stopped being true.
+      if (this.isRadio && !this.isCasting) {
+        const { radioRelayBitrate, radioRelayContentType } = this.playbackStore
+        const format =
+          (radioRelayContentType ? TARGET_LABEL_FOR_CONTENT_TYPE[radioRelayContentType] : null) ??
+          'MP3'
+        return radioRelayBitrate ? `${format}, ${radioRelayBitrate} kb/s` : format
+      }
       if (!this.isCasting) {
         if (!this.activePlan) return ''
         const { format, bitrate } = this.activePlan.quality
@@ -237,9 +280,9 @@ export default {
       }
       return this.castTargetLabel
     },
-    // Falls back to the raw content_type in the (currently unreachable)
-    // case of a tier this map doesn't know about, rather than showing
-    // nothing.
+    // Falls back to the raw content_type for a tier this map doesn't know
+    // about, rather than showing nothing. Every tier the app can currently
+    // produce is in it.
     //
     // The rate/depth are appended only where they were actually forced away
     // from the source's own (see ConnectStreamInfo.target_sample_rate) —
@@ -303,6 +346,9 @@ export default {
      * a cast device's own format limits are a different question, already
      * covered by `device_limit`. */
     reasonKey(): string | null {
+      // A station has its own answer either way round — see
+      // radioReencodeReason(), which knows where to read it from.
+      if (this.isRadio) return this.radioReencodeReason
       if (!this.isCasting) return this.activePlan?.reason ?? null
       return this.castInfo.transcoding ? this.castInfo.transcode_reason : null
     },

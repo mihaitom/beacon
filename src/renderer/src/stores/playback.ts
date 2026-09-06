@@ -140,6 +140,14 @@ interface PlaybackState {
    * after that carries the delta alone — see the poll loop in init() for
    * what asking for the whole thing every eight seconds used to cost. */
   radioTitleLog: RadioTitleEntry[]
+  /** What Beacon's relay is handing this device for the current station,
+   * and why it is not simply passing it through — null while it is (the
+   * common case) and for a station played straight from its own URL. The
+   * stream panel reads these for local playback, where there is no cast
+   * status to read them from. */
+  radioRelayBitrate: number | null
+  radioRelayReason: string | null
+  radioRelayContentType: string | null
   /** Whether radioTitleLog has reached the beginning of the backend's log
    * for this station, so there is nothing older left to ask for. Set from
    * a page that came back shorter than it could have been, which is the
@@ -410,6 +418,9 @@ export const usePlaybackStore = defineStore('playback', {
       radioStation: null,
       radioNowPlaying: null,
       radioTitleLog: [],
+      radioRelayBitrate: null,
+      radioRelayReason: null,
+      radioRelayContentType: null,
       radioTitleLogComplete: false,
       radioBitrate: null,
       radioCodec: null,
@@ -667,6 +678,11 @@ export const usePlaybackStore = defineStore('playback', {
             // not a moment in it, so there is nothing to line them up with.
             this.radioBitrate = metadata.bitrate
             this.radioCodec = metadata.codec
+            // Same "describes the station, not a moment in it" reasoning as
+            // the two above — see the relay's own note in routes/radio.py.
+            this.radioRelayBitrate = metadata.relayBitrate
+            this.radioRelayReason = metadata.relayReason
+            this.radioRelayContentType = metadata.relayContentType
 
             const showTitle = () => {
               this.radioNowPlaying = metadata.title
@@ -868,14 +884,8 @@ export const usePlaybackStore = defineStore('playback', {
       }
       const song = this.currentSong
       if (!song) return
-      const url = this.localStreamUrl(song)
-      const gain = this.replayGainMultiplier
-      if (restoredWasPlaying) {
-        getAudioEngine().play(url, this.localPosition, gain)
-        this.isPlaying = true
-      } else {
-        getAudioEngine().load(url, this.localPosition, gain)
-      }
+      this.startLocalSong(song, this.localPosition, restoredWasPlaying)
+      if (restoredWasPlaying) this.isPlaying = true
     },
 
     /** The live-session counterpart to resumeLocalPlayback() — called when
@@ -907,13 +917,7 @@ export const usePlaybackStore = defineStore('playback', {
       }
       const song = this.currentSong
       if (!song) return
-      const url = this.localStreamUrl(song)
-      const gain = this.replayGainMultiplier
-      if (this.isPlaying) {
-        getAudioEngine().play(url, this.localPosition, gain)
-      } else {
-        getAudioEngine().load(url, this.localPosition, gain)
-      }
+      this.startLocalSong(song, this.localPosition, this.isPlaying)
     },
 
     /** Keeps this.queue/currentIndex mirroring the connect backend's
@@ -931,6 +935,13 @@ export const usePlaybackStore = defineStore('playback', {
         // localRadioChangeGuard, and localSongChangeGuard's identical use
         // for the queue further down.
         if (localRadioChangeGuard.hasAny()) return
+        // And the other direction of the same race: this client has just
+        // told the backend to play a *song*, which ends the station, but
+        // the tick in hand was built before that reached it. Adopting the
+        // station it still reports would put the player bar back on a
+        // station that is already over — with the song playing underneath
+        // it. Reported live 2026-09-06.
+        if (localSongChangeGuard.hasAny()) return
         if (this.radioStation?.streamUrl !== status.radio.url) {
           // Queue left alone, same as playRadioStation()'s own branch and
           // for the same reason (see its comment) — this is that same
@@ -961,6 +972,15 @@ export const usePlaybackStore = defineStore('playback', {
 
       if (!status.current_song) return
       if (localSongChangeGuard.hasAny()) return // our own song switch hasn't been confirmed yet — see above
+
+      // The session is playing a song, so whatever station this client
+      // still shows is over — including one adopted from a stale tick a
+      // moment ago (see the radio branch above). Here rather than inside
+      // adoptCastQueue(), which returns early whenever the queue already
+      // matches: it does match, every time, for the client that dispatched
+      // the song itself, so a station recovered like that was never
+      // cleared again and simply stayed on the player bar.
+      this.leaveRadio()
 
       await this.adoptCastQueue(status)
     },
@@ -1049,15 +1069,9 @@ export const usePlaybackStore = defineStore('playback', {
         // state as-is rather than adopting a queue with a hole in it; the
         // next status tick tries again.
         if (neededIds.some((id) => !resolvedById.has(id))) return
-        if (this.radioStation) {
-          stopRadioMetadataWatch()
-          this.radioNowPlaying = null
-          this.resetRadioTitleLog()
-          this.radioBitrate = null
-          this.radioCodec = null
-          this.radioConnectionLost = false
-        }
-        this.radioStation = null
+        // The station is left to reconcileFromStatus(), which does it for
+        // every tick that reports a song rather than only for the ones
+        // that get this far.
         if (!queueMatches) this.queue = remoteQueueIds.map((id) => resolvedById.get(id)!)
         if (!originalMatches)
           this.originalQueue = remoteOriginalIds.map((id) => resolvedById.get(id)!)
@@ -1288,6 +1302,11 @@ export const usePlaybackStore = defineStore('playback', {
           await connectPlayback.playUrl(streamUrl, station.name, {
             targets: connect.activeTargets,
             castDirectly: useRadioSettingsStore().castDirectly,
+            // The same setting a song is cast under, both halves — see
+            // connect's PlayUrlRequest for what each does to a station. It
+            // does nothing at all while castDirectly is on: nothing sits
+            // between the station and the device there to convert with.
+            ...this.castQualityPayload,
           })
         } finally {
           localRadioChangeGuard.end(streamUrl)
@@ -1384,8 +1403,7 @@ export const usePlaybackStore = defineStore('playback', {
         }
         if (response.status === 'superseded') return false
       } else {
-        const url = this.localStreamUrl(song)
-        getAudioEngine().play(url, startPosition, this.replayGainMultiplier)
+        this.startLocalSong(song, startPosition, true)
       }
       // A newer startCurrent() already took over while the above awaited —
       // applying isPlaying/scrobble here would be reporting "now playing"
@@ -1563,6 +1581,9 @@ export const usePlaybackStore = defineStore('playback', {
      * has been fetched. Called wherever a station stops being the current
      * one, which is the moment all three stop meaning anything. */
     resetRadioTitleLog(): void {
+      this.radioRelayBitrate = null
+      this.radioRelayReason = null
+      this.radioRelayContentType = null
       this.radioTitleLog = []
       this.radioTitleLogComplete = false
       radioTitleLogPageInFlight = false
@@ -1680,7 +1701,18 @@ export const usePlaybackStore = defineStore('playback', {
       }
       const auth = useAuthStore()
       getAudioEngine().playLive(
-        localRadioStreamUrl(auth.apiUrl, auth.connectToken, auth.sessionId, streamUrl),
+        localRadioStreamUrl(
+          auth.apiUrl,
+          auth.connectToken,
+          auth.sessionId,
+          streamUrl,
+          // The same setting a song plays under on this device — both
+          // halves: the bitrate as a ceiling, and the format as what a
+          // conversion comes out as (and what can be passed through
+          // untouched). See connect/core/radio_relay.py.
+          this.localQuality.format === 'original' ? undefined : this.localQuality.bitrate,
+          this.localQuality.format === 'original' ? undefined : this.localQuality.format,
+        ),
         // The relay holds the station's connection and queues what this
         // device misses while it cannot be reached, so a gap here is
         // something to wait through rather than to reconnect out of — see
@@ -1720,6 +1752,17 @@ export const usePlaybackStore = defineStore('playback', {
         // it'd keep extrapolating from the pre-seek anchor for up to ~200ms
         // and briefly overwrite this seek with a stale position.
         positionTracker.record(position, performance.now())
+      } else if (
+        this.currentSong &&
+        this.activeLocalStream &&
+        this.activeLocalStream.quality.format !== 'original'
+      ) {
+        // A transcode has no length to seek within — the position is
+        // fetched rather than scrubbed to. See startLocalSong(), which
+        // explains why, and note that the byte-range seek this replaces
+        // already re-ran ffmpeg from the target second: the cost is the
+        // same, only the arithmetic in between is gone.
+        this.startLocalSong(this.currentSong, position, this.isPlaying)
       } else {
         getAudioEngine().seek(position)
       }
@@ -1767,6 +1810,54 @@ export const usePlaybackStore = defineStore('playback', {
       const streamPlan = plan(song, this.localQuality)
       this.activeLocalStream = streamPlan
       return useLibraryStore().client().streamUrl(song.id, streamPlan.quality)
+    },
+
+    /** Starts (or, with `autoplay: false`, only loads) `song` on the local
+     * element at `position`.
+     *
+     * The one place that decides between the two ways a local stream can
+     * be positioned, so every caller gets the same answer:
+     *
+     * - The untouched file is served by the media server with a real
+     *   length. The element seeks in it by itself, which is both correct
+     *   and instant, and there is nothing to improve on.
+     * - A transcode is produced on demand by connect, and asking the
+     *   element to seek in it means declaring a length of
+     *   `bitrate x duration` and hoping the encoder hits that bitrate
+     *   exactly. Only mp3 does. So the seeking is done here instead: each
+     *   position is a fresh request that starts there (see playFrom() and
+     *   routes/local_stream.py's `start`), and the format is free to be
+     *   whatever sounds best per bit.
+     *
+     * A transcode costs nothing extra for this: a byte-range seek already
+     * started a new ffmpeg at the requested second, so the same work
+     * happens either way - it is only the arithmetic in between that goes
+     * away. */
+    startLocalSong(song: Song, position: number, autoplay: boolean): void {
+      const url = this.localStreamUrl(song)
+      const gain = this.replayGainMultiplier
+      const engine = getAudioEngine()
+      if (this.activeLocalStream?.quality.format === 'original') {
+        if (autoplay) engine.play(url, position, gain)
+        else engine.load(url, position, gain)
+        return
+      }
+      // `start` on every request, including the one for the beginning: its
+      // presence is what tells connect not to declare a length (see the
+      // route's docstring), and a first request without it would hand the
+      // element a length to seek against for as long as the track played
+      // from the top.
+      const urlFor = (seconds: number): string => `${url}&start=${Math.max(0, seconds).toFixed(3)}`
+      // A transcoded stream declares no length, so the element never
+      // reports a duration for it. The library already knows how long the
+      // track is — and the engine needs the same number for a second
+      // reason: without it, a stream cut off mid-track is indistinguishable
+      // from one that finished, and the next song starts instead of the
+      // connection being picked back up (see playFrom()).
+      const duration = song.duration ?? 0
+      if (autoplay) engine.playFrom(urlFor, position, gain, duration || null)
+      else engine.loadFrom(urlFor, position, gain, duration || null)
+      this.duration = duration
     },
 
     /** Settings-driven. Takes effect from the next song start onward rather
@@ -2153,6 +2244,7 @@ export const usePlaybackStore = defineStore('playback', {
             targets,
             force: f,
             castDirectly: useRadioSettingsStore().castDirectly,
+            ...this.castQualityPayload,
           })
           // Superseded by a newer dispatch — another client sharing this
           // connect session, most likely (see startCurrent()'s identical
@@ -2188,6 +2280,13 @@ export const usePlaybackStore = defineStore('playback', {
             startPosition,
             force: f,
             gain,
+            // The same ceiling every other dispatch carries (startCurrent(),
+            // and the radio branch above). Missing here, the track already
+            // playing was handed to the speaker untouched however this
+            // device's quality was set, and the setting only appeared to
+            // work from the *next* track on - which is the one that goes
+            // through startCurrent(). Reported live 2026-09-06.
+            ...this.castQualityPayload,
             fullQueue,
             queueIndex,
             originalQueue,

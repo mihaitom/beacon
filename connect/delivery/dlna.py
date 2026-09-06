@@ -162,6 +162,13 @@ class DlnaDelivery(BaseDelivery):
     # this whole mechanism exists to prevent.
     MAX_SAMPLE_RATE_HZ: int | None = 48000
     MAX_BIT_DEPTH: int | None = 24
+    # Same "varies per renderer" problem as the two limits above, and the
+    # same answer: MP3 and AAC are what a MediaRenderer is in practice
+    # guaranteed to decode, FLAC and Vorbis are what this backend has
+    # always handed one. Opus is left out — plenty of renderers predate it
+    # entirely, and the failure it produces is silence rather than an
+    # error anyone would see.
+    PLAYABLE_CODECS: frozenset[str] = frozenset({"mp3", "aac", "flac", "vorbis"})
 
     async def _get_device(self):
         cached = _device_cache.get(self.target.lower())

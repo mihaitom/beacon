@@ -68,6 +68,27 @@ describe('castTo', () => {
     expect(playback.isPlaying).toBe(true)
   })
 
+  /** The handoff is a dispatch like any other and has to carry the same
+   * ceiling. Without it the track already playing went to the speaker
+   * untouched however the cast quality was set, and the setting only
+   * appeared to take hold from the *next* track on - the one that goes
+   * through startCurrent(), which always sent it. Reported live
+   * 2026-09-06: switching to a speaker mid-song, and the stream panel
+   * saying nothing was being converted. */
+  it('takes the cast quality ceiling with it, not just from the next track on', async () => {
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a')], 0)
+    playback.isPlaying = true
+    playback.setCastQuality('aac', 192)
+
+    await playback.castTo([kitchen])
+
+    expect(connectPlayback.play).toHaveBeenCalledWith(
+      'a',
+      expect.objectContaining({ max_lossy_format: 'aac', max_lossy_bitrate_kbps: 192 }),
+    )
+  })
+
   it('silences this device, so the song is not audible in two places at once', async () => {
     const playback = usePlaybackStore()
     playback.setQueue([makeSong('a')], 0)

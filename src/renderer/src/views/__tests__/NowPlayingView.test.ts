@@ -14,12 +14,18 @@ import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import NowPlayingView from '../NowPlayingView.vue'
 import { getAudioEngine } from '@/services/audioEngine'
+import { getLogLevel, type LogLevel } from '@/services/connect/logLevel'
 import { makeSong } from '@/stores/__tests__/fixtures'
 
 // The view asks the engine whether a local analyser exists at all — jsdom
 // has no AudioContext, so a real one would always answer no and every
 // visualizer case below would be testing the wrong branch.
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
+
+// The toolbar's debug button asks the backend for its log level on mount.
+// Mocked rather than left to a failing fetch so each test can say which
+// answer it is testing against.
+vi.mock('@/services/connect/logLevel', () => ({ getLogLevel: vi.fn() }))
 
 /** Stands in for a build where the graph came up (desktop, desktop
  * browser); `false` is a phone, where it deliberately never does. */
@@ -77,6 +83,9 @@ describe('NowPlayingView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     withAnalyser(true)
+    // What a normal install answers, so the debug button below stays away
+    // in every test that isn't about it.
+    vi.mocked(getLogLevel).mockResolvedValue({ level: 'INFO', levels: [] })
     // extractDominantColor()/hasTransparency() only ever run when a song
     // has coverArtId or a radio station has a homePageUrl — every fixture
     // below leaves both unset, so neither the canvas-based color sampler
@@ -496,6 +505,31 @@ describe('NowPlayingView', () => {
       expect(wrapper.find('.now-playing__toolbar .mdi-script-text-outline').exists()).toBe(false)
     })
 
+    /** Autoplay tops the queue up as it runs out, and a live stream never
+     * does - the same reason CenterControls.vue greys out shuffle, repeat
+     * and skip on a station. The lit state goes with it, so the button
+     * cannot advertise something it has no effect on. */
+    it('greys out the autoplay button on a station, and drops its lit state', async () => {
+      const { wrapper } = await mountToolbar({ compact: true })
+      useAutoplayStore().enabled = true
+      await wrapper.vm.$nextTick()
+      expect(isAmber(wrapper, 'mdi-infinity')).toBe(true)
+      expect(button(wrapper, 'mdi-infinity').disabled).toBe(false)
+
+      const playback = usePlaybackStore()
+      playback.setQueue([], -1)
+      playback.radioStation = {
+        id: '',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      await wrapper.vm.$nextTick()
+
+      expect(button(wrapper, 'mdi-infinity').disabled).toBe(true)
+      expect(isAmber(wrapper, 'mdi-infinity')).toBe(false)
+    })
+
     it('colors the autoplay button while autoplay is on', async () => {
       const { wrapper } = await mountToolbar({ compact: true })
       expect(isAmber(wrapper, 'mdi-infinity')).toBe(false)
@@ -597,5 +631,74 @@ describe('NowPlayingView', () => {
 
       expect(wrapper.classes()).toContain('now-playing--compact')
     })
+  })
+})
+
+/** A test bench for the title log's entrance animation, and the one thing
+ * about it that genuinely matters: it must not exist for anyone who has
+ * not turned the backend's log level up. */
+describe('NowPlayingView radio debug button', () => {
+  const station = {
+    id: '',
+    name: 'Chill FM',
+    streamUrl: 'https://stream.example/chill',
+    homePageUrl: null,
+  }
+
+  async function mountWithRadio(level: LogLevel) {
+    vi.mocked(getLogLevel).mockResolvedValue({ level, levels: [] })
+    const mounted = await mountView()
+    const playback = usePlaybackStore()
+    playback.radioStation = station
+    playback.radioTitleLog = [{ title: 'Artist - Real', at: 1_757_000_000 }]
+    useDrawersStore().lyricsPanelOpen = true
+    await flushPromises()
+    return { ...mounted, playback }
+  }
+
+  function debugButton(wrapper: VueWrapper) {
+    return wrapper.find('.now-playing__toolbar .mdi-playlist-plus')
+  }
+
+  it('is not there on a normal install', async () => {
+    const { wrapper } = await mountWithRadio('INFO')
+
+    expect(debugButton(wrapper).exists()).toBe(false)
+  })
+
+  it('is not there off a station, even with debug logging on', async () => {
+    vi.mocked(getLogLevel).mockResolvedValue({ level: 'DEBUG', levels: [] })
+    const { wrapper } = await mountView()
+    usePlaybackStore().setQueue([makeSong('a')], 0)
+    await flushPromises()
+
+    expect(debugButton(wrapper).exists()).toBe(false)
+  })
+
+  it('adds a made-up title to the top of the log, and only in the browser', async () => {
+    const { wrapper, playback } = await mountWithRadio('DEBUG')
+    expect(wrapper.findAll('.title-log__item')).toHaveLength(1)
+
+    await debugButton(wrapper).element.closest('button')!.click()
+    await flushPromises()
+
+    const items = wrapper.findAll('.title-log__item')
+    expect(items).toHaveLength(2)
+    expect(items[0]!.text()).toContain('Lorem Ipsum')
+    // The station's own log is untouched: nothing here is sent anywhere or
+    // stored, it only rides along on the prop.
+    expect(playback.radioTitleLog).toHaveLength(1)
+  })
+
+  it('drops its made-up titles when the station changes', async () => {
+    const { wrapper, playback } = await mountWithRadio('DEBUG')
+    await debugButton(wrapper).element.closest('button')!.click()
+    await flushPromises()
+    expect(wrapper.findAll('.title-log__item')).toHaveLength(2)
+
+    playback.radioStation = { ...station, name: 'Other FM', streamUrl: 'https://x/other' }
+    await flushPromises()
+
+    expect(wrapper.findAll('.title-log__item')).toHaveLength(1)
   })
 })

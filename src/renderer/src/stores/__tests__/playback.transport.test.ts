@@ -58,6 +58,8 @@ vi.mock('@/services/connect/playback', async (importOriginal) => {
  * behaviour. */
 function fakeEngine(): {
   play: ReturnType<typeof vi.fn>
+  playFrom: ReturnType<typeof vi.fn>
+  loadFrom: ReturnType<typeof vi.fn>
   playLive: ReturnType<typeof vi.fn>
   load: ReturnType<typeof vi.fn>
   pause: ReturnType<typeof vi.fn>
@@ -71,6 +73,8 @@ function fakeEngine(): {
 } {
   return {
     play: vi.fn(),
+    playFrom: vi.fn(),
+    loadFrom: vi.fn(),
     playLive: vi.fn(),
     load: vi.fn(),
     pause: vi.fn(),
@@ -805,6 +809,67 @@ describe('playback transport', () => {
       expect(connectPlayback.playUrl).toHaveBeenCalledWith(stream, 'B5 aktuell', expect.anything())
     })
 
+    it("plays a station locally under this device's own ceiling", async () => {
+      // Local radio goes through Beacon's relay too now, which is what puts
+      // the setting in reach of a station at all.
+      const playback = usePlaybackStore()
+      playback.setLocalQuality('mp3', 128)
+
+      await playback.playRadioStation({
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      })
+
+      const [url] = engine.playLive.mock.calls[0] as [string]
+      expect(url).toContain('max_bitrate_kbps=128')
+      // The format goes with it: it decides what a conversion comes out as,
+      // and which stations can be passed through untouched.
+      expect(url).toContain('format=mp3')
+    })
+
+    it('asks for the station untouched while the setting caps nothing', async () => {
+      const playback = usePlaybackStore()
+      // Stated rather than assumed: the setting is persisted, so a default
+      // here would be whatever the test before it happened to leave behind.
+      playback.setLocalQuality('original')
+
+      await playback.playRadioStation({
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      })
+
+      expect(engine.playLive).toHaveBeenCalledWith(
+        expect.not.stringContaining('max_bitrate_kbps'),
+        { holdsConnection: true },
+      )
+    })
+
+    it('casts a station under the same quality ceiling as a song', async () => {
+      // The setting only ever reached /play; a station went out at
+      // whatever the source was, and the stream-info panel said so by
+      // showing nothing.
+      const playback = usePlaybackStore()
+      castTo()
+      playback.setCastQuality('mp3', 96)
+
+      await playback.playRadioStation({
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      })
+
+      expect(connectPlayback.playUrl).toHaveBeenCalledWith(
+        'https://stream.example/chill',
+        'Chill FM',
+        expect.objectContaining({ max_lossy_format: 'mp3', max_lossy_bitrate_kbps: 96 }),
+      )
+    })
+
     it('hands the raw stream URL to the cast targets, bypassing the library', async () => {
       const playback = usePlaybackStore()
       castTo()
@@ -1153,6 +1218,90 @@ describe('playback transport', () => {
 
       expect(playback.hasNext).toBe(false)
       expect(playback.hasPrevious).toBe(false)
+    })
+  })
+
+  /** Seeking inside a transcode used to be the browser's job: connect
+   * declared a length of `bitrate x duration`, the element divided by the
+   * bitrate it saw in the stream, and the two agreed only for mp3 - the one
+   * format whose encoder pads every frame to size. Beacon asks for the
+   * position instead now, which is what lets aac be offered locally at all. */
+  describe('seeking a transcoded local stream', () => {
+    function playingTranscoded(quality: { format: string; bitrate: number }) {
+      const playback = usePlaybackStore()
+      playback.setLocalQuality(quality.format as 'mp3' | 'aac', quality.bitrate)
+      playback.setQueue([makeSong('a', { format: 'flac', bitRate: 1000 })], 0)
+      return playback
+    }
+
+    it('fetches a fresh stream that starts at the new position', async () => {
+      const playback = playingTranscoded({ format: 'aac', bitrate: 192 })
+      // Playing already: activeLocalStream is what says which of the two
+      // kinds of stream is loaded, and it is set by starting one.
+      playback.startLocalSong(playback.currentSong!, 0, true)
+      playback.isPlaying = true
+      engine.playFrom.mockClear()
+
+      await playback.seek(73.5)
+
+      expect(engine.seek).not.toHaveBeenCalled()
+      expect(engine.playFrom).toHaveBeenCalledOnce()
+      const [urlFor, seconds] = engine.playFrom.mock.calls[0]!
+      expect(seconds).toBe(73.5)
+      // The factory is what a reconnect uses to come back at a later
+      // position, so it has to answer for any second, not just this one.
+      expect(urlFor(73.5)).toContain('start=73.500')
+      expect(urlFor(0)).toContain('start=0.000')
+      expect(playback.localPosition).toBe(73.5)
+    })
+
+    it('asks for the beginning with a start of its own, so no length is declared', () => {
+      const playback = playingTranscoded({ format: 'aac', bitrate: 192 })
+
+      expect(engine.playFrom).not.toHaveBeenCalled()
+      playback.startLocalSong(playback.currentSong!, 0, true)
+
+      const [urlFor] = engine.playFrom.mock.calls.at(-1)!
+      expect(urlFor(0)).toContain('start=0.000')
+    })
+
+    /** The untouched file has a real length from the media server; the
+     * element seeks in it by itself, instantly, and there is nothing here to
+     * improve on. */
+    it('leaves an untouched file to the element', async () => {
+      const playback = usePlaybackStore()
+      playback.setLocalQuality('original')
+      playback.setQueue([makeSong('a', { format: 'mp3', bitRate: 320 })], 0)
+      playback.startLocalSong(playback.currentSong!, 0, true)
+
+      await playback.seek(42)
+
+      expect(engine.seek).toHaveBeenCalledWith(42)
+      expect(engine.playFrom).not.toHaveBeenCalled()
+    })
+
+    /** The engine needs it too, and for a sharper reason than the scrub
+     * bar: a transcode carries no length, so a connection lost mid-track
+     * reaches the element as a stream that simply finished. Without the
+     * track's real length there is nothing to tell those two apart. */
+    it('hands the track length to the engine as well', () => {
+      const playback = playingTranscoded({ format: 'aac', bitrate: 192 })
+
+      playback.startLocalSong(playback.currentSong!, 0, true)
+
+      const [, , , duration] = engine.playFrom.mock.calls.at(-1)!
+      expect(duration).toBe(playback.currentSong!.duration)
+    })
+
+    /** A transcode declares no duration, so the element never reports one.
+     * The library already knows how long the track is. */
+    it('takes the duration from the track rather than from the element', () => {
+      const playback = playingTranscoded({ format: 'aac', bitrate: 192 })
+      playback.duration = 0
+
+      playback.startLocalSong(playback.currentSong!, 0, true)
+
+      expect(playback.duration).toBe(playback.currentSong!.duration)
     })
   })
 })

@@ -25,7 +25,15 @@ function mountLog(entries: { title: string; at: number }[], variant?: 'compact' 
   const wrapper = mount(RadioTitleLog, {
     props: variant ? { entries, variant } : { entries },
     attachTo: document.body,
-    global: { plugins: [vuetify, i18n], mocks: { $router: { push: () => {} } } },
+    global: {
+      plugins: [vuetify, i18n],
+      mocks: { $router: { push: () => {} } },
+      // See the jsdom suite's own note: @vue/test-utils stubs transition
+      // groups by default, and this component needs the real one to render
+      // as a fragment - a stub's wrapper element would take the timeline
+      // items out of the grid these tests measure.
+      stubs: { transition: false, 'transition-group': false },
+    },
   })
   wrappers.push(wrapper)
   return wrapper
@@ -130,7 +138,15 @@ describe('RadioTitleLog timeline layout', () => {
         ],
       },
       attachTo: host,
-      global: { plugins: [vuetify, i18n], mocks: { $router: { push: () => {} } } },
+      global: {
+        plugins: [vuetify, i18n],
+        mocks: { $router: { push: () => {} } },
+        // See the jsdom suite's own note: @vue/test-utils stubs transition
+        // groups by default, and this component needs the real one to render
+        // as a fragment - a stub's wrapper element would take the timeline
+        // items out of the grid these tests measure.
+        stubs: { transition: false, 'transition-group': false },
+      },
     })
     wrappers.push(wrapper)
     host.appendChild(wrapper.get('.title-log').element)
@@ -214,7 +230,15 @@ function mountInBox(entries: { title: string; at: number }[], height: number) {
   const wrapper = mount(RadioTitleLog, {
     props: { entries },
     attachTo: host,
-    global: { plugins: [vuetify, i18n], mocks: { $router: { push: () => {} } } },
+    global: {
+      plugins: [vuetify, i18n],
+      mocks: { $router: { push: () => {} } },
+      // See the jsdom suite's own note: @vue/test-utils stubs transition
+      // groups by default, and this component needs the real one to render
+      // as a fragment - a stub's wrapper element would take the timeline
+      // items out of the grid these tests measure.
+      stubs: { transition: false, 'transition-group': false },
+    },
   })
   wrappers.push(wrapper)
   // Straight into the sized box: the wrapper element vue-test-utils mounts
@@ -417,6 +441,65 @@ describe('RadioTitleLog on the Now Playing backdrop', () => {
     expect(isAccent(dot)).toBe(true)
     // And the size that goes with it, which had the same selector.
     expect(wrapper.get('.v-timeline-divider__dot').element.getBoundingClientRect().width).toBe(30)
+  })
+})
+
+/** The one test that would have caught what the animation first got
+ * wrong. Vue puts its transition classes on the .v-timeline-item, and
+ * Vuetify gives that `display: contents` - an element with no box, where
+ * opacity and transform do nothing at all. Everything looked right (the
+ * classes were applied, the guard armed) and nothing moved. So this asks
+ * the browser the only question that matters: is the arriving row actually
+ * part-way through something? jsdom computes no transitions and would pass
+ * either way. */
+describe('RadioTitleLog new-title animation', () => {
+  afterEach(() => {
+    while (wrappers.length) wrappers.pop()?.unmount()
+    document.body.innerHTML = ''
+  })
+
+  const older = [
+    { title: 'Artist - Second', at: at(6, 11, 51) },
+    { title: 'Artist - Third', at: at(6, 11, 42) },
+  ]
+
+  it('starts the arriving row transparent and offset, not at its final place', async () => {
+    await page.viewport(380, 700)
+    const wrapper = mountLog(older)
+
+    await wrapper.setProps({
+      entries: [{ title: 'Artist - Newest', at: at(6, 11, 59) }, ...older],
+    })
+    // One frame in: the enter class is on, the transition has been started
+    // and has not had time to finish.
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
+
+    const card = wrapper.findAll('.v-timeline-item__body')[0]!.element
+    const style = getComputedStyle(card)
+    expect(Number(style.opacity)).toBeLessThan(1)
+    expect(style.transform).not.toBe('none')
+
+    // And still running well into it, not just for the one frame the
+    // classes go on - a sample at the start alone would also pass on an
+    // entrance that was cancelled immediately afterwards.
+    await new Promise((resolve) => setTimeout(resolve, 140))
+    expect(Number(getComputedStyle(card).opacity)).toBeLessThan(1)
+  })
+
+  /** And the guard actually reaches the browser: a page of older entries
+   * arriving at the bottom must not animate thirty rows at once. */
+  it('leaves an appended page of older entries alone', async () => {
+    await page.viewport(380, 700)
+    const wrapper = mountLog(older)
+
+    await wrapper.setProps({
+      entries: [...older, { title: 'Artist - Older', at: at(6, 10, 4) }],
+    })
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
+
+    const cards = wrapper.findAll('.v-timeline-item__body')
+    const style = getComputedStyle(cards.at(-1)!.element)
+    expect(Number(style.opacity)).toBe(1)
   })
 })
 

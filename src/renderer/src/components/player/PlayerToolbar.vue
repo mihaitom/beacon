@@ -7,12 +7,19 @@
       density="comfortable"
       @click="drawersStore.toggleQueueDrawer()"
     />
+    <!-- Disabled while a station plays, the same as CenterControls.vue's
+     - queue buttons and for the same reason: autoplay tops the queue up as
+     - it runs out, and a live stream never runs out. Its lit state goes
+     - with it, so the button cannot advertise something that has no effect
+     - right now. The setting itself is untouched and applies again the
+     - moment a song is playing. -->
     <v-btn
       v-if="authStore.capabilities.songRadio"
       icon="mdi-infinity"
-      :color="autoplayStore.enabled ? 'primary' : undefined"
+      :color="!isRadio && autoplayStore.enabled ? 'primary' : undefined"
       variant="text"
       density="comfortable"
+      :disabled="isRadio"
       :title="$t('player.autoplay')"
       @click="playbackStore.setAutoplayEnabled(!autoplayStore.enabled)"
     />
@@ -199,6 +206,9 @@ export default {
     },
     autoplayStore() {
       return useAutoplayStore()
+    },
+    isRadio(): boolean {
+      return this.playbackStore.radioStation != null
     },
     // Same check as SettingsView.vue's own `isElectron` gate on the Remote
     // Control section this button surfaces here instead.

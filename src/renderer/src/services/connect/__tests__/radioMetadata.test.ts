@@ -58,6 +58,9 @@ describe('radioMetadata', () => {
         history,
         bitrate: 320,
         codec: 'MP3',
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
 
       await expect(fetchRadioMetadata()).resolves.toEqual({
@@ -65,6 +68,9 @@ describe('radioMetadata', () => {
         history,
         bitrate: 320,
         codec: 'MP3',
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
       expect(fetchConnect).toHaveBeenCalledWith('/radio-metadata')
     })
@@ -75,6 +81,9 @@ describe('radioMetadata', () => {
         history: [],
         bitrate: null,
         codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
 
       await expect(fetchRadioMetadata()).resolves.toEqual({
@@ -82,7 +91,33 @@ describe('radioMetadata', () => {
         history: [],
         bitrate: null,
         codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
+    })
+
+    it('carries what the relay is doing to the station right now', async () => {
+      vi.mocked(fetchConnect).mockResolvedValue({
+        title: null,
+        history: [],
+        relay_bitrate: 96,
+        relay_reason: 'quality_limit',
+      })
+
+      const metadata = await fetchRadioMetadata()
+
+      expect(metadata.relayBitrate).toBe(96)
+      expect(metadata.relayReason).toBe('quality_limit')
+    })
+
+    it('reads a station that is passed through as exactly that', async () => {
+      vi.mocked(fetchConnect).mockResolvedValue({ title: null, history: [] })
+
+      const metadata = await fetchRadioMetadata()
+
+      expect(metadata.relayBitrate).toBeNull()
+      expect(metadata.relayReason).toBeNull()
     })
 
     it('asks only for what is newer than the entry it already holds', async () => {
@@ -107,6 +142,9 @@ describe('radioMetadata', () => {
         history: [],
         bitrate: null,
         codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
     })
   })

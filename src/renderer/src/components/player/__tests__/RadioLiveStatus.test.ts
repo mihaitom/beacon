@@ -40,6 +40,27 @@ describe('RadioLiveStatus', () => {
     expect(wrapper.get('.radio-live__time').text()).toBe('1:05')
   })
 
+  // A station is the only thing in the app that plays long enough to pass
+  // an hour; the readout used to keep counting minutes ("76:47").
+  it('switches to h:mm:ss once the station has been on for an hour', async () => {
+    const wrapper = mountStatus()
+    const playback = playRadio()
+    playback.localPosition = 4607
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('.radio-live__time').text()).toBe('1:16:47')
+
+    // Exactly on the hour, and the minutes stay padded either side of it.
+    playback.localPosition = 3600
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.radio-live__time').text()).toBe('1:00:00')
+
+    // Just below it the shorter label is kept - no leading "0:".
+    playback.localPosition = 3599
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.radio-live__time').text()).toBe('59:59')
+  })
+
   // One sentence for a screen reader instead of the four fragments the
   // visible row is built from, which are hidden from it.
   it('carries the whole readout as one accessible label', async () => {

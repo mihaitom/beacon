@@ -30,14 +30,31 @@ RUN pnpm run build:web
 
 # --- Build minimal ffmpeg (audio-only, statically linked)
 #
-# connect/core/streamer.py only ever runs
-# `ffmpeg -i <url> -vn -acodec libmp3lame ... -f mp3 pipe:1` — video is
-# always explicitly disabled (-vn). Alpine's `ffmpeg` apk package pulls in
-# ~130MB of codecs/libraries never touched here (AV1/H.264/H.265 encoders,
-# Vulkan shader compilation, X11/Wayland/SDL, Blu-ray, webcam capture...).
-# Building just what's needed — decode for common library formats, HTTPS
-# input, MP3 encode — gets that down to ~8MB with zero runtime dependencies
+# connect/core/streamer.py only ever transcodes audio — video is always
+# explicitly disabled (-vn). Alpine's `ffmpeg` apk package pulls in ~130MB
+# of codecs/libraries never touched here (AV1/H.264/H.265 encoders, Vulkan
+# shader compilation, X11/Wayland/SDL, Blu-ray, webcam capture...). Building
+# just what's needed — decode for common library formats, HTTPS input, and
+# the encoders below — gets that down to ~8MB with zero runtime dependencies
 # (fully static binary, just COPY it into the final stage below).
+#
+# The decoder list is the other half of the same rule, from the input side:
+# a library holds whatever the person put in it. The PCM entries are all of
+# the depths a WAV or AIFF can carry, not just 16-bit — this app reads and
+# displays a source's real bit depth (see core/streamer.py's own note on
+# probing it), so 24- and 32-bit files are expected rather than exotic, and
+# a missing decoder there is a track that simply refuses to play.
+#
+# The encoder list has to cover every format the app can actually ask for,
+# which is not the same as every format it usually uses. `aac` is in it
+# because Beacon offers AAC as a cast quality (streamQuality.ts's
+# CAST_FORMATS, reached through lossy_encode_args()); without it that
+# setting failed here with "Unknown encoder 'aac'" while working fine on the
+# desktop build, which uses the system ffmpeg rather than this one. Nothing
+# checks at startup which encoders exist, so an option offered in Settings
+# and an encoder missing here is a combination that fails at the moment the
+# user casts. Adding a format to CAST_FORMATS or LOCAL_FORMATS means adding
+# its encoder (and muxer) here too.
 FROM alpine:3.24 AS ffmpeg-builder
 
 RUN apk add --no-cache \
@@ -54,6 +71,28 @@ RUN apk add --no-cache \
     zlib-static
 
 WORKDIR /build
+
+# libopus from source, because Alpine has no static build of it: `opus-dev`
+# ships only libopus.so, there is no opus-static package, and this ffmpeg is
+# linked fully static so a shared library is of no use. Five lines here beat
+# the alternatives — a Debian builder would bring the static library as a
+# package but produce a glibc binary whose getaddrinfo() needs dlopen'd NSS
+# modules that a static link leaves out, i.e. an ffmpeg that cannot resolve
+# a hostname, and ffmpeg's input here is http(s) URLs. Prebuilt images
+# (mwader/static-ffmpeg, jrottenberg/ffmpeg) solve it too, at ~118MB
+# compressed against the ~8MB this produces, and with every video codec
+# back in.
+#
+# --prefix=/usr/local is enough for ffmpeg's configure to find it: Alpine's
+# pkg-config already searches /usr/local/lib/pkgconfig first.
+RUN curl -fsSL -4 --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 10 \
+        -o opus-1.6.1.tar.gz https://downloads.xiph.org/releases/opus/opus-1.6.1.tar.gz \
+    && tar xf opus-1.6.1.tar.gz \
+    && cd opus-1.6.1 \
+    && ./configure --disable-shared --enable-static --disable-doc --disable-extra-programs \
+        --prefix=/usr/local \
+    && make -j$(nproc) \
+    && make install
 
 # ffmpeg.org's own server is occasionally flaky under CI load — retry with
 # backoff, and force IPv4 to sidestep the SSL handshake failures observed
@@ -102,11 +141,12 @@ RUN ./configure \
     --enable-protocol=file,http,https,tls,tcp,udp,pipe \
     --enable-openssl \
     --enable-demuxer=mp3,flac,ogg,wav,aac,mov,matroska,asf,ape,aiff \
-    --enable-decoder=mp3,mp3float,flac,vorbis,opus,aac,aac_latm,pcm_s16le,pcm_s16be,pcm_u8,pcm_f32le,alac,wmav1,wmav2,ape \
+    --enable-decoder=mp3,mp3float,flac,vorbis,opus,aac,aac_latm,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_u8,pcm_f32le,pcm_f64le,alac,wmav1,wmav2,ape \
     --enable-parser=mp3,aac,flac,opus,vorbis \
-    --enable-encoder=libmp3lame,pcm_s16le,flac \
+    --enable-encoder=aac,libmp3lame,libopus,pcm_s16le,flac \
     --enable-muxer=mp3,pcm_s16le,flac,adts,ogg \
     --enable-libmp3lame \
+    --enable-libopus \
     --enable-swresample \
     --enable-filter=aresample,anull,aformat \
     --disable-shared \

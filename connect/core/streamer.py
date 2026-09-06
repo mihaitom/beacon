@@ -188,15 +188,35 @@ def lossy_encode_args(
     source_rate: int | None = None,
     max_sample_rate: int | None = None,
 ) -> tuple[list[str], str]:
-    """ffmpeg output args for a constant-bitrate encode to `fmt`, plus the
-    content type the result carries.
+    """ffmpeg output args for a lossy encode to `fmt`, plus the content type
+    the result carries.
 
-    Constant bitrate specifically, not "roughly this size": routes/
-    local_stream.py turns a byte offset back into a timestamp by dividing
-    by exactly this number, which is what makes seeking work in a browser
-    for a stream that has no real length. `-vbr off` on opus is that same
-    requirement — opus is variable-rate by default, and a variable-rate
-    stream has no byte-to-time mapping to divide by.
+    Opus is encoded in constrained VBR, and which of the three modes to use
+    is a decided question rather than a taste: it was `-vbr off` (CBR) for
+    as long as routes/local_stream.py turned a byte offset back into a
+    timestamp by dividing by exactly this bitrate, which needs a stream
+    whose bytes really do run at that rate. That division is gone — a
+    caller asks for a position in seconds (`start`) and nothing maps bytes
+    onto time any more — so the mode was measured instead (ffmpeg 9.0.1,
+    120s at 44.1kHz, `-b:a 96k`, packet sizes off ffprobe):
+
+        signal                 -vbr off   constrained   -vbr on
+        pink noise, wide        96.6k      97.0k         85.8k
+        pink noise, mono        96.6k      97.0k         64.0k
+        a few sine tones        96.6k      97.1k        109.7k
+        worst second, tones     97.9k     100.2k        112.6k
+        worst second @64k        65.3k      67.0k         84.8k
+
+    Plain `-vbr on` is out on the numbers: this bitrate is a ceiling
+    somebody set because their connection has a limit, and a mode that
+    answers 96k with 110k — 64k with 85k — is not honouring it. Between
+    the other two the data is the same and the difference is where it
+    goes: CBR pads every packet to the same size whatever is in it
+    (measured on a file that is quiet for a minute and then loud: every
+    packet exactly 240 bytes, in both halves), while constrained VBR holds
+    the identical average and the same worst second while letting a hard
+    passage have 415 bytes and an easy one 196. Those are bits that were
+    being spent on padding and are now spent on the music.
 
     Shared with resolve_output_format()'s quality-ceiling tier so a track
     capped for a cast device and the same track transcoded for local
@@ -205,9 +225,53 @@ def lossy_encode_args(
     rate = _lossy_sample_rate(fmt, source_rate, max_sample_rate)
     args = ["-acodec", codec, "-b:a", f"{bitrate_kbps}k", "-ar", str(rate)]
     if fmt == "opus":
-        args += ["-vbr", "off"]
+        args += ["-vbr", "constrained"]
     args += ["-f", muxer]
     return args, _CONTENT_TYPE_FOR_MUXER[muxer]
+
+
+# Which lossy encoder to fall back to when a device cannot decode the one
+# the listener asked for, best first. Efficiency order, not preference
+# order: opus is never *chosen* here (a listener who picks it and casts to
+# a Chromecast keeps it, and one who picks mp3 is not "upgraded" to it
+# behind their back) — this only decides where to land when the picked
+# format is off the table.
+_LOSSY_FALLBACK_ORDER = ("aac", "mp3")
+
+
+def _codec_for_ceiling(fmt: str, device_codecs: frozenset[str] | None) -> str:
+    """The encoder to actually use for a `fmt` quality ceiling on a target
+    that plays `device_codecs`.
+
+    `fmt` itself wherever the device can decode it, and where nothing is
+    known about the device at all (`None` — no delivery active, i.e. the
+    caller has no target to be wrong about).
+
+    Otherwise the best format the device does play, which is what makes
+    Opus offerable as a cast setting at all: a Chromecast gets Opus, and
+    the same setting reaches a Sonos as AAC and an AirPlay device as MP3
+    instead of as silence. The bitrate is deliberately *not* raised to
+    compensate — it is a ceiling somebody set because their connection or
+    their patience has a limit, and quietly sending more than they asked
+    for is the one thing the setting exists to prevent. It costs some
+    quality on a device that has to fall back, which is visible in the
+    stream-info panel rather than hidden.
+
+    Falls back to mp3 if a device somehow plays none of the three, which
+    cannot happen today (every delivery declares mp3) and is still not
+    worth an exception: mp3 is the universal fallback this whole module
+    already ends on."""
+    if device_codecs is None or fmt in device_codecs:
+        return fmt
+    for candidate in _LOSSY_FALLBACK_ORDER:
+        if candidate in device_codecs:
+            logger.info(
+                f"[ffmpeg] quality ceiling asks for {fmt}, which this target does not "
+                f"play — encoding {candidate} instead"
+            )
+            return candidate
+    logger.warning(f"[ffmpeg] target plays none of {sorted(_LOSSY_ENCODERS)} — falling back to mp3")
+    return "mp3"
 
 
 def transcoded_byte_length(bitrate_kbps: int, duration: float) -> int:
@@ -328,6 +392,13 @@ REASON_REPLAY_GAIN = "replay_gain"  # copying rules out the volume filter Replay
 REASON_LOSSLESS_CONTAINER = "lossless_container"  # lossless, but not in a castable container
 REASON_CODEC_NOT_CASTABLE = "codec_not_castable"  # decodable, deliberately not copied (opus)
 REASON_CODEC_UNKNOWN = "codec_unknown"  # nothing recognized it
+# Radio only: the relay hands every device MP3 (see core/radio_relay.py),
+# so a station arriving as anything else is re-encoded on the way through
+# no matter what any device could have played. Deliberately not
+# REASON_CODEC_NOT_CASTABLE, which says the source codec is the problem —
+# a Chromecast takes AAC quite happily, and telling the listener otherwise
+# describes a limit that is Beacon's, not their device's.
+REASON_RELAY_MP3_ONLY = "relay_mp3_only"
 # Radio only, and not a property of the audio at all: the device refused
 # the station's own stream (see routes/upnp.py and /play-url's own retry),
 # so Beacon re-encodes it to plain MP3 and serves that instead. Beacon
@@ -479,6 +550,17 @@ def _resample_plan(
     return args, target_sample_rate, target_bit_depth
 
 
+def _plays_flac(device_codecs: frozenset[str] | None) -> bool:
+    """Whether the lossless tiers below may produce FLAC for this target.
+
+    True when nothing is known about the target (no delivery active), same
+    as every other device check here: an unknown device is not judged, it
+    is left alone. Every delivery Beacon ships does play FLAC, so this only
+    guards a future one that does not — and guards it against silence
+    rather than against an error message."""
+    return device_codecs is None or "flac" in device_codecs
+
+
 def _exceeds_quality_ceiling(
     info: SourceInfo, max_lossy_format: str | None, max_lossy_bitrate_kbps: int | None
 ) -> bool:
@@ -542,6 +624,7 @@ async def resolve_output_format(
     max_bit_depth: int | None = None,
     max_lossy_format: str | None = None,
     max_lossy_bitrate_kbps: int | None = None,
+    device_codecs: frozenset[str] | None = None,
 ) -> OutputFormat:
     """Detect the real source codec/sample rate/bit depth and decide how
     ffmpeg should handle it — stream-copy when the source is already
@@ -595,7 +678,18 @@ async def resolve_output_format(
     ordering is deliberate: `max_sample_rate` is what a device can decode at
     all, so ignoring it produces silence (see the ERROR_UNSUPPORTED_FREQ
     case above), while ignoring the listener's ceiling only produces a
-    bigger stream than they asked for."""
+    bigger stream than they asked for.
+
+    `device_codecs` is the same idea one level up: which codecs the target
+    can decode at all (BaseDelivery.PLAYABLE_CODECS, reduced across every
+    active target by core/state.py's playable_codecs()). It decides both
+    halves of what leaves here — a source is only copied to a device that
+    plays its codec, and a quality ceiling naming a format the device
+    cannot decode is encoded as the best one it can (see
+    _codec_for_ceiling()). That is what makes Opus offerable as a setting
+    at all: it reaches a Chromecast as Opus and a Sonos as AAC, rather than
+    reaching a Sonos as a URI it accepts and then plays silently. None (the
+    default) means no target is known, and nothing is judged against it."""
     info = await _probe_source(url)
     if info is None:
         return _fallback(REASON_PROBE_FAILED)
@@ -604,10 +698,32 @@ async def resolve_output_format(
 
     if _exceeds_quality_ceiling(info, max_lossy_format, max_lossy_bitrate_kbps):
         return _lossy_ceiling_format(
-            info, max_lossy_format, max_lossy_bitrate_kbps, max_sample_rate
+            info,
+            _codec_for_ceiling(max_lossy_format, device_codecs),
+            max_lossy_bitrate_kbps,
+            max_sample_rate,
         )
 
     muxer = _COPY_MUXER_FOR_CODEC.get(codec)
+    # _COPY_MUXER_FOR_CODEC says what *can* be copied; this says whether
+    # this particular target can play it. The two used to be the same
+    # question, which is how an AAC source reached an AirPlay device it
+    # has never been able to decode (see AirPlayDelivery.PLAYABLE_CODECS)
+    # — copied straight through, announced correctly, and silent.
+    if muxer and device_codecs is not None and codec not in device_codecs:
+        logger.info(
+            f"[ffmpeg] format probe: '{codec}' could be copied, but this target "
+            f"plays only {sorted(device_codecs)} — using mp3 fallback"
+        )
+        return _fallback(REASON_CODEC_NOT_CASTABLE, info.duration)
+    if muxer and resample_args and not _plays_flac(device_codecs):
+        # The resample below has to happen — the source is past what this
+        # device can decode — but its usual lossless landing place is out.
+        logger.info(
+            f"[ffmpeg] format probe: '{codec}' exceeds this target's limit and it does not "
+            "play flac — using mp3 fallback"
+        )
+        return _fallback(REASON_DEVICE_LIMIT, info.duration)
     if muxer and resample_args:
         logger.info(
             f"[ffmpeg] format probe: '{codec}' would copy, but source "
@@ -647,6 +763,12 @@ async def resolve_output_format(
         return _fallback(REASON_REPLAY_GAIN, info.duration)
 
     if codec in _LOSSLESS_REENCODE_CODECS:
+        if not _plays_flac(device_codecs):
+            logger.info(
+                f"[ffmpeg] format probe: lossless '{codec}' would become flac, which this "
+                "target does not play — using mp3 fallback"
+            )
+            return _fallback(REASON_CODEC_NOT_CASTABLE, info.duration)
         label = f"{codec} → flac" + (" (resampled for device limit)" if resample_args else "")
         return OutputFormat(
             ffmpeg_args=["-acodec", "flac", "-f", "flac", *resample_args],
@@ -664,6 +786,10 @@ async def resolve_output_format(
             transcode_reason=(REASON_DEVICE_LIMIT if resample_args else REASON_LOSSLESS_CONTAINER),
         )
 
+    # "opus" is the codec this backend never copies to anything (see
+    # _COPY_MUXER_FOR_CODEC); everything else reaching here was simply not
+    # recognized. A source the *target* cannot play never gets this far —
+    # it is answered above, where the device's own codec list is known.
     not_castable = codec == "opus"
     reason = (
         "not broadly device-compatible (see _COPY_MUXER_FOR_CODEC's comment)"

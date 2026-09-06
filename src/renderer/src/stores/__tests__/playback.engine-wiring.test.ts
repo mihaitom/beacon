@@ -423,6 +423,9 @@ describe('the store wiring the audio engine', () => {
         history: [{ title: 'Artist - Track', at: 1 }],
         bitrate: 128,
         codec: 'MP3',
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
 
       await poll()
@@ -446,6 +449,9 @@ describe('the store wiring the audio engine', () => {
         history: [],
         bitrate: null,
         codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
 
       await poll()
@@ -462,6 +468,9 @@ describe('the store wiring the audio engine', () => {
         history: [],
         bitrate: null,
         codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
 
       await poll()
@@ -477,6 +486,9 @@ describe('the store wiring the audio engine', () => {
         history: [],
         bitrate: null,
         codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
 
       // The poll runs every 8s, so a 10s hold sees one more answer with the
@@ -499,6 +511,9 @@ describe('the store wiring the audio engine', () => {
         history: [{ title: 'Artist - Track', at: 1000 }],
         bitrate: null,
         codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
 
       await poll()
@@ -518,6 +533,9 @@ describe('the store wiring the audio engine', () => {
         history: [{ title: 'Artist - First', at: 1000 }],
         bitrate: null,
         codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
       await poll()
 
@@ -526,6 +544,9 @@ describe('the store wiring the audio engine', () => {
         history: [{ title: 'Artist - Second', at: 2000 }],
         bitrate: null,
         codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
       await poll()
 
@@ -546,6 +567,9 @@ describe('the store wiring the audio engine', () => {
         history: [{ title: 'Artist - Held', at: 2000 }],
         bitrate: null,
         codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
 
       await poll()
@@ -566,6 +590,9 @@ describe('the store wiring the audio engine', () => {
         history: [{ title: 'Artist - Track', at: 1000 }],
         bitrate: null,
         codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
 
       await poll()
@@ -582,6 +609,9 @@ describe('the store wiring the audio engine', () => {
         history: [{ title: 'Artist - Track', at: 1000 }],
         bitrate: null,
         codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
 
       await poll()
@@ -600,6 +630,9 @@ describe('the store wiring the audio engine', () => {
         })),
         bitrate: null,
         codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
 
       await poll()
@@ -615,6 +648,9 @@ describe('the store wiring the audio engine', () => {
         history: [],
         bitrate: null,
         codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
       await poll()
 
@@ -933,6 +969,9 @@ describe('the store wiring the audio engine', () => {
         history: [{ title: 'Artist - Track', at: 1_757_000_000 }],
         bitrate: 320,
         codec: 'MP3',
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
 
       await vi.advanceTimersByTimeAsync(8000)
@@ -980,6 +1019,9 @@ describe('the store wiring the audio engine', () => {
         history: [{ title: 'Old Artist - Old Track', at: 1_757_000_000 }],
         bitrate: 128,
         codec: 'AAC',
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
       })
       await flushPromises()
 

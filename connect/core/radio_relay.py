@@ -77,7 +77,7 @@ import httpx
 from lyrics.shared import USER_AGENT
 
 from .icy_metadata import IcyDemuxer, parse_bitrate, parse_codec
-from .streamer import _READRATE_ARGS
+from .streamer import _READRATE_ARGS, REASON_QUALITY_LIMIT, REASON_RELAY_MP3_ONLY
 
 logger = logging.getLogger("connect.radio_relay")
 
@@ -172,18 +172,23 @@ _BURST_MAX_BYTES = 1_000_000
 # casting, with local playback (which never goes through this relay at
 # all) unaffected.
 _COPY_ARGS = ["-acodec", "copy", "-f", "mp3", "-flush_packets", "1"]
-_FALLBACK_DEVICE_ARGS = [
-    "-acodec",
-    "libmp3lame",
-    "-ab",
-    "192k",
-    "-ar",
-    "44100",
-    "-f",
-    "mp3",
-    "-flush_packets",
-    "1",
-]
+# The same, for a station already in the format the listener asked for.
+# ADTS is the framing an AAC stream is served in over HTTP — the same thing
+# a station sending audio/aacp is already sending.
+_AAC_COPY_ARGS = ["-acodec", "copy", "-f", "adts", "-flush_packets", "1"]
+_AAC_CONTENT_TYPE = "audio/aac"
+# What a station arriving as AAC declares itself as; both spellings occur.
+_AAC_SOURCE_CONTENT_TYPES = ("audio/aac", "audio/aacp", "audio/x-aac")
+
+# The floor for a conversion that changes the codec, and what such a
+# conversion targets for a station that never said what it broadcasts at.
+#
+# Taking the source's own number across a codec change is wrong in the one
+# direction that is audible: a 64k HE-AAC news station (very common) turned
+# into 64k MP3 loses the SBR that made it listenable, where the 192k this
+# used to be fixed at kept it fine. Bitrate is only comparable within a
+# codec, so a codec change gets headroom rather than the same number.
+_CODEC_CHANGE_FLOOR_KBPS = 192
 _MP3_CONTENT_TYPE = "audio/mpeg"
 
 # Generous on purpose, now that a burst is possible (see -flush_packets
@@ -246,11 +251,152 @@ def _send_sentinel(q: "asyncio.Queue[bytes | None]") -> None:
     q.put_nowait(None)
 
 
-def _device_output_args(content_type: str) -> tuple[list[str], str]:
-    """(ffmpeg args, Content-Type) for the device-audio output."""
-    if content_type == _MP3_CONTENT_TYPE:
-        return _COPY_ARGS, _MP3_CONTENT_TYPE
-    return _FALLBACK_DEVICE_ARGS, _MP3_CONTENT_TYPE
+def _encode_args(bitrate_kbps: int, aac: bool = False) -> list[str]:
+    """Device-audio output re-encoded at `bitrate_kbps`, as AAC where the
+    listener asked for it and as MP3 otherwise. ffmpeg's built-in `aac`
+    encoder rather than libfdk_aac: the latter is not in a stock build, and
+    a relay that only works on a self-compiled ffmpeg is worse than one
+    that sounds very slightly less good."""
+    codec, container = ("aac", "adts") if aac else ("libmp3lame", "mp3")
+    return [
+        "-acodec",
+        codec,
+        "-ab",
+        f"{bitrate_kbps}k",
+        "-ar",
+        "44100",
+        "-f",
+        container,
+        "-flush_packets",
+        "1",
+    ]
+
+
+def _device_output_args(
+    content_type: str,
+    source_bitrate_kbps: int | None = None,
+    max_bitrate_kbps: int | None = None,
+    preferred_format: str | None = None,
+) -> tuple[list[str], str, int | None, str | None]:
+    """(ffmpeg args, Content-Type, output bitrate, why it is being
+    re-encoded) for the device-audio output.
+
+    `preferred_format` is the format half of the listener's quality setting
+    — "aac", "mp3", or None for "original". It decides two things and
+    neither of them is a conversion on its own:
+
+    - **What a re-encode comes out as.** AAC is the better of the two at
+      the same bitrate, so a listener who picks it gets it; anything else
+      lands on MP3, which every cast target here is known to take. The
+      choice is deliberately theirs: some devices refuse AAC, and the only
+      way to find out is to try it, so the setting is where that decision
+      belongs rather than a rule this module makes for everyone.
+    - **What can be passed through untouched.** An AAC station is copied
+      where AAC was chosen — no decode, no re-encode, no loss — which is
+      what picking it actually buys. An MP3 station is copied either way:
+      turning one lossy format into another cannot recover what the first
+      already discarded.
+
+    The reason returned is not cosmetic. A station re-encoded because it is
+    over the ceiling reports that; one re-encoded only because it arrives
+    in a format the listener did not ask for reports REASON_RELAY_MP3_ONLY,
+    which says the relay's own doing rather than blaming the device (an
+    earlier version reported the quality ceiling for it, which told the
+    listener their setting was doing something it was not).
+
+    `max_bitrate_kbps` is a ceiling, not a target. A station already below
+    it is copied rather than re-encoded upwards into a bigger stream that
+    sounds no better, and one that never said what it broadcasts at (no
+    icy-br) cannot be compared against it — so it is copied too, wherever
+    copying is possible at all. Where it is not, the ceiling still applies:
+    a conversion that has to happen anyway must not come out above the
+    number somebody set precisely because their connection cannot carry
+    more.
+    """
+    wants_aac = preferred_format == "aac"
+    source_is_aac = content_type in _AAC_SOURCE_CONTENT_TYPES
+    source_is_mp3 = content_type == _MP3_CONTENT_TYPE
+    out_content_type = _AAC_CONTENT_TYPE if wants_aac else _MP3_CONTENT_TYPE
+
+    over_ceiling = (
+        max_bitrate_kbps is not None
+        and source_bitrate_kbps is not None
+        and source_bitrate_kbps > max_bitrate_kbps
+    )
+    if over_ceiling:
+        return (
+            _encode_args(max_bitrate_kbps, aac=wants_aac),
+            out_content_type,
+            max_bitrate_kbps,
+            REASON_QUALITY_LIMIT,
+        )
+
+    # Copied wherever the station already arrives in something the device
+    # can be handed as-is. An MP3 station is copied even when AAC was
+    # chosen: re-encoding one lossy format into another cannot recover what
+    # the first one threw away, so it would cost quality and gain nothing.
+    # The format setting decides what a *necessary* conversion comes out
+    # as, not that one should happen.
+    if wants_aac and source_is_aac:
+        return _AAC_COPY_ARGS, _AAC_CONTENT_TYPE, source_bitrate_kbps, None
+    if source_is_mp3:
+        return _COPY_ARGS, _MP3_CONTENT_TYPE, source_bitrate_kbps, None
+
+    # A codec change: headroom over the source rather than its own number
+    # (see _CODEC_CHANGE_FLOOR_KBPS), and never above the ceiling. That last
+    # part matters more than it looks: a station with no icy-br cannot be
+    # compared against the ceiling at all, so it lands here — and handing
+    # somebody who asked for 96k a 192k stream because their station is
+    # quiet about itself is exactly the bandwidth they said they did not
+    # have.
+    bitrate = max(source_bitrate_kbps or 0, _CODEC_CHANGE_FLOOR_KBPS)
+    if max_bitrate_kbps is not None:
+        bitrate = min(bitrate, max_bitrate_kbps)
+    return (
+        _encode_args(bitrate, aac=wants_aac),
+        out_content_type,
+        bitrate,
+        REASON_QUALITY_LIMIT if bitrate == max_bitrate_kbps else REASON_RELAY_MP3_ONLY,
+    )
+
+
+def relay_format_for_target(
+    preferred_format: str | None, device_codecs: frozenset[str] | None
+) -> str | None:
+    """The format half of the listener's quality setting, reduced to what
+    this relay can produce and the cast target can play.
+
+    Two narrowings, in that order:
+
+    - **The relay's own repertoire is MP3 and AAC.** There is no Opus
+      encoder here and no reason to add one: a station is already lossy, a
+      second lossy encode gains nothing an Opus container could give back,
+      and the only cast target that plays Opus (Chromecast) takes AAC just
+      as happily. So Opus asks for AAC.
+    - **The target has to be able to decode it.** An AirPlay device plays
+      neither (see AirPlayDelivery.PLAYABLE_CODECS), and handing it AAC is
+      how a station reached it as silence.
+
+    "Original" (None) becomes AAC wherever the target takes it, and that is
+    not the contradiction it looks like. _device_output_args() copies a
+    station rather than converting it whenever the format it arrives in is
+    the one being aimed at, so aiming at AAC is what *stops* an AAC station
+    from being re-encoded — with None it was converted to MP3 instead,
+    losing quality for nothing and reporting `relay_mp3_only` for a station
+    the device would have taken as it was. Reported live 2026-09-06: an AAC
+    station at 256k arriving as MP3 at 256k, while picking AAC by hand
+    played the station untouched. An MP3 station is copied under either
+    answer, so this only ever changes what happens to one that is not MP3.
+
+    A listener who picks MP3 explicitly still gets MP3: that is the escape
+    hatch for a device whose declared codecs are optimistic, and narrowing
+    "no preference" must not take it away."""
+    if preferred_format is None:
+        return "aac" if device_codecs is None or "aac" in device_codecs else "mp3"
+    wanted = "aac" if preferred_format in ("aac", "opus") else "mp3"
+    if wanted == "aac" and device_codecs is not None and "aac" not in device_codecs:
+        return "mp3"
+    return wanted
 
 
 class RadioRelay:
@@ -265,9 +411,41 @@ class RadioRelay:
         content_type: str,
         on_title_change: Callable[[str], None],
         on_stream_info: Callable[[int | None, str | None], None] | None = None,
+        max_bitrate_kbps: int | None = None,
+        preferred_format: str | None = None,
     ) -> None:
         self.url = url
-        self._device_args, self.device_content_type = _device_output_args(content_type)
+        # What the station itself sends, as probed before this was started —
+        # kept so a caller can restart this relay under a different ceiling
+        # without probing the station a second time.
+        self.source_content_type = content_type
+        # The quality ceiling this relay was started under, if any — see
+        # _device_output_args(). Public so a caller can tell whether a
+        # relay already running for this station is running under the
+        # ceiling it wants (see routes/playback.py's /play-url).
+        self.max_bitrate_kbps = max_bitrate_kbps
+        # "aac", "mp3" or None — see _device_output_args(). Public for the
+        # same reason as the ceiling: a caller has to be able to tell
+        # whether a relay already running is running under what it wants.
+        self.preferred_format = preferred_format
+        # Decided here from the content type alone so `device_content_type`
+        # is answerable before the station has even been reached (/play-url
+        # needs it to tell the device what is coming). Decided *again* in
+        # _run_once() once the station's own icy-br header is in, which is
+        # the only place the source bitrate exists — and the ceiling cannot
+        # be applied without it.
+        self._device_args, self.device_content_type, _, _ = _device_output_args(
+            content_type, preferred_format=preferred_format
+        )
+        # What the device is actually being handed and why, for the
+        # stream-info panel: both stay unresolved until the first
+        # connection, since the station's own bitrate is what decides them.
+        self.output_bitrate_kbps: int | None = None
+        self.reencode_reason: str | None = None
+        # Whether the two above (and the ffmpeg args behind them) have been
+        # settled by a real connection — see _run_once(), which does it once
+        # and never again for the life of this relay.
+        self._output_decided = False
         self._on_title_change = on_title_change
         self._on_stream_info = on_stream_info
         self._proc: asyncio.subprocess.Process | None = None
@@ -423,11 +601,42 @@ class RadioRelay:
             # Deliberately the *source* values, not whatever ffmpeg below
             # re-encodes to: they describe the station, and read the same
             # whether you are listening locally or casting.
+            source_bitrate = parse_bitrate(resp.headers.get("icy-br"))
             if self._on_stream_info is not None:
                 self._on_stream_info(
-                    parse_bitrate(resp.headers.get("icy-br")),
+                    source_bitrate,
                     parse_codec(resp.headers.get("content-type")),
                 )
+            # Only now can the ceiling be applied: what the station
+            # broadcasts at is in the header above, and nothing before this
+            # point knows it. On a reconnect this re-decides from whatever
+            # the station says this time, which is what it should do — a
+            # station that changed its bitrate is a different stream.
+            # Decided once, on the first connection that gets this far, and
+            # then left alone. A reconnect happens *behind* the listener's
+            # own connection — that is the whole point of the relay — so the
+            # device (or the <audio> element) is still reading the body it
+            # was handed a Content-Type for. A station that comes back
+            # announcing a different icy-br would otherwise flip the
+            # container mid-body: MP3 frames, then ADTS, down one open
+            # connection, with the burst buffer (see _remember_for_burst)
+            # still holding frames of the first kind. Whatever this decided
+            # the first time is what this relay serves until something
+            # restarts it — which a changed quality setting does, deliberately
+            # (see routes/playback.py's /play-url).
+            if not self._output_decided:
+                (
+                    self._device_args,
+                    self.device_content_type,
+                    self.output_bitrate_kbps,
+                    self.reencode_reason,
+                ) = _device_output_args(
+                    self.source_content_type,
+                    source_bitrate,
+                    self.max_bitrate_kbps,
+                    self.preferred_format,
+                )
+                self._output_decided = True
             metaint = int(resp.headers.get("icy-metaint") or "0")
             demuxer = IcyDemuxer(metaint, self._on_title_change) if metaint > 0 else None
 

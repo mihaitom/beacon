@@ -55,7 +55,7 @@ export default {
     quickConnectCopyCode: 'Code kopieren',
     quickConnectCodeCopied: 'Kopiert',
     plexHint:
-      'Meldet dich über dein Plex-Konto an — dafür öffnet sich ein Browser-Tab, in dem du dich bei Plex anmeldest und die Anfrage bestätigst.',
+      'Meldet dich über dein Plex-Konto an - dafür öffnet sich ein Browser-Tab, in dem du dich bei Plex anmeldest und die Anfrage bestätigst.',
     plexSignIn: 'Mit Plex anmelden',
     plexWaitingHint: 'Bestätige die Anmeldung im geöffneten Browser-Tab.',
     plexChooseServer: 'Wähle deinen Plex-Server:',
@@ -70,7 +70,7 @@ export default {
     reroll: 'Neu mischen',
     playAll: 'Alle abspielen',
     readyToPlay: 'Bereit zum Auflegen?',
-    nothingHeardYet: 'Noch nichts gehört — leg irgendwo los.',
+    nothingHeardYet: 'Noch nichts gehört - leg irgendwo los.',
     nowPlaying: 'Läuft gerade',
     paused: 'Pause',
     keepListening: 'Weiter hören',
@@ -266,9 +266,9 @@ export default {
     apiUnreachable:
       'Connect-Backend nicht erreichbar. Läuft es und stimmt die URL in den Settings?',
     authError: 'Connect-Session nicht authentifiziert. Bitte neu anmelden.',
-    ffmpegMissing: 'ffmpeg fehlt auf dem Connect-Backend — Casting funktioniert nicht ohne.',
+    ffmpegMissing: 'ffmpeg fehlt auf dem Connect-Backend - Casting funktioniert nicht ohne.',
     unknownError: 'Unbekannter Fehler.',
-    // Keyed by connect/delivery/errors.py's REASON_* constants — a
+    // Keyed by connect/delivery/errors.py's REASON_* constants - a
     // dispatch that reached the device and didn't start playing.
     deliveryFailed: {
       rejected:
@@ -280,7 +280,7 @@ export default {
       unknown: 'Die Wiedergabe auf „{device}“ ist fehlgeschlagen.',
     },
     pairDeviceTitle: '„{name}“ koppeln',
-    pairPinPrompt: 'Auf dem Gerät wird eine PIN angezeigt — bitte eingeben:',
+    pairPinPrompt: 'Auf dem Gerät wird eine PIN angezeigt - bitte eingeben:',
     pairConfirmPrompt: 'Bitte am Gerät bestätigen, dann „Fertig“ klicken.',
     pin: 'PIN',
     takeoverTitle: 'Gerät übernehmen?',
@@ -309,6 +309,7 @@ export default {
         quality_limit: 'Qualitätsgrenze',
         browser_unsupported: 'Browser-Format',
         device_rejected_stream: 'Gerät abgelehnt',
+        relay_mp3_only: 'Für das Gerät umgewandelt',
       },
       reasons: {
         device_limit: 'Quelle liegt über der Qualität, die dieses Gerät unterstützt',
@@ -321,6 +322,8 @@ export default {
         browser_unsupported: 'Quellformat kann vom Browser nicht abgespielt werden',
         device_rejected_stream:
           'Das Gerät hat den Stream des Senders abgelehnt, Beacon wandelt ihn deshalb um',
+        relay_mp3_only:
+          'Der Sender liefert kein Format, das so weitergereicht wird, deshalb wandelt Beacon ihn um - unter Audioqualität lässt sich statt MP3 auch AAC wählen',
       },
     },
   },
@@ -332,7 +335,7 @@ export default {
   },
   remoteControl: {
     title: 'Fernsteuerung',
-    hint: 'Erlaubt einem Handy im selben Netzwerk, die Wiedergabe zu steuern — Wiedergabe, Warteschlange, Playlists, Titel und Radio.',
+    hint: 'Erlaubt einem Handy im selben Netzwerk, die Wiedergabe zu steuern - Wiedergabe, Warteschlange, Playlists, Titel und Radio.',
     enableFailed: 'Fernsteuerung konnte nicht aktiviert werden.',
     disableFailed: 'Fernsteuerung konnte nicht deaktiviert werden.',
     pairTitle: 'Handy koppeln',
@@ -342,7 +345,7 @@ export default {
     turnOff: 'Ausschalten',
     regenerate: 'Code neu erzeugen',
     needsRegenerate:
-      'Der vorherige Pairing-Code ist nicht mehr verfügbar. Erzeuge einen neuen, um ein Handy zu koppeln — bereits gekoppelte Handys werden dabei getrennt.',
+      'Der vorherige Pairing-Code ist nicht mehr verfügbar. Erzeuge einen neuen, um ein Handy zu koppeln - bereits gekoppelte Handys werden dabei getrennt.',
   },
   settings: {
     title: 'Settings',
@@ -355,29 +358,29 @@ export default {
     scanning: 'Scan läuft … ({count})',
     scanningPercent: 'Scan l\u00e4uft \u2026 ({percent}%)',
     scanningPlain: 'Scan l\u00e4uft \u2026',
-    scanComplete: 'Scan abgeschlossen — {count} Titel verarbeitet.',
+    scanComplete: 'Scan abgeschlossen - {count} Titel verarbeitet.',
     scanFailed: 'Scan konnte nicht gestartet werden.',
     libraryRefreshHint:
       'Beacons eigene Bibliotheksansicht jetzt neu laden, statt auf die automatische Aktualisierung zu warten.',
     refreshLibrary: 'Bibliothek aktualisieren',
     refreshingLibrary: 'Wird aktualisiert … ({loaded})',
     refreshingLibraryWithTotal: 'Wird aktualisiert … ({loaded} / {total})',
-    libraryRefreshed: 'Bibliothek aktualisiert — {count} Titel geladen.',
+    libraryRefreshed: 'Bibliothek aktualisiert - {count} Titel geladen.',
     refreshLibraryFailed: 'Bibliothek konnte nicht aktualisiert werden.',
     storageTitle: 'Speicher',
     clearCacheHint:
-      'Lokal zwischengespeicherte Bibliotheksdaten, Cover, Künstlerfotos, Sender-Logos und Songtexte verwerfen — bei Bedarf wird alles beim nächsten Aufruf neu geladen. Löst keinen Bibliotheks-Scan aus.',
+      'Lokal zwischengespeicherte Bibliotheksdaten, Cover, Künstlerfotos, Sender-Logos und Songtexte verwerfen - bei Bedarf wird alles beim nächsten Aufruf neu geladen. Löst keinen Bibliotheks-Scan aus.',
     clearCache: 'Zwischenspeicher leeren',
     cacheCleared: 'Zwischenspeicher geleert.',
     resetAirplayHint:
-      'Gespeicherte AirPlay-Kopplungen (HomePod, Apple TV, …) vergessen — hilfreich, wenn sich ein Gerät nicht mehr verbinden lässt. Jedes Gerät muss danach neu gekoppelt werden.',
+      'Gespeicherte AirPlay-Kopplungen (HomePod, Apple TV, …) vergessen - hilfreich, wenn sich ein Gerät nicht mehr verbinden lässt. Jedes Gerät muss danach neu gekoppelt werden.',
     resetAirplay: 'AirPlay-Kopplungen zurücksetzen',
     airplayReset: 'AirPlay-Kopplungen zurückgesetzt.',
     airplayResetFailed: 'AirPlay-Kopplungen konnten nicht zurückgesetzt werden.',
     advancedTitle: 'Erweitert',
     logLevel: 'Log-Level',
     logLevelHint:
-      'Wie detailliert das Connect-Backend protokolliert — wirkt sich auch auf die Docker-/Container-Logs aus. Tritt sofort in Kraft, kein Neustart nötig.',
+      'Wie detailliert das Connect-Backend protokolliert - wirkt sich auch auf die Docker-/Container-Logs aus. Tritt sofort in Kraft, kein Neustart nötig.',
     logLevelTrace: 'Trace',
     logLevelDebug: 'Debug',
     logLevelInfo: 'Info',
@@ -387,13 +390,13 @@ export default {
     logLevelChangeFailed: 'Log-Level konnte nicht aktualisiert werden.',
     recommendations: 'Personalisierte Empfehlungen',
     recommendationsHint:
-      'Entdecken auf der Startseite nutzt Künstler, die dem ähneln, was du tatsächlich hörst, nachgeschlagen bei MusicBrainz, ListenBrainz und Deezer — dabei werden ein bis zwei Künstlernamen aus deiner Bibliothek an diese Dienste übermittelt. Aus zeigt stattdessen zufällige Alben; die Seite eines Künstlers schlägt diesen einen Künstler weiterhin nach, so oder so.',
+      'Entdecken auf der Startseite nutzt Künstler, die dem ähneln, was du tatsächlich hörst, nachgeschlagen bei MusicBrainz, ListenBrainz und Deezer - dabei werden ein bis zwei Künstlernamen aus deiner Bibliothek an diese Dienste übermittelt. Aus zeigt stattdessen zufällige Alben; die Seite eines Künstlers schlägt diesen einen Künstler weiterhin nach, so oder so.',
     lyricsProvidersTitle: 'Songtext-Anbieter',
     lyricsProvidersHint:
-      'Songtexte, die in der Datei selbst stecken, werden immer zuerst versucht und verlassen deinen Server nie. Alle Anbieter unten sind standardmäßig aktiv — wähle die ab, an die Beacon Titel und Künstler eines Songs nicht senden soll.',
+      'Songtexte, die in der Datei selbst stecken, werden immer zuerst versucht und verlassen deinen Server nie. Alle Anbieter unten sind standardmäßig aktiv - wähle die ab, an die Beacon Titel und Künstler eines Songs nicht senden soll.',
     lyricsProviders: 'Externe Anbieter',
     lyricsProvidersEmptyHint:
-      'Kein Anbieter ausgewählt — es werden nur Songtexte aus der Datei selbst angezeigt.',
+      'Kein Anbieter ausgewählt - es werden nur Songtexte aus der Datei selbst angezeigt.',
     lyricsProvidersActiveHint:
       'Hat die Datei keinen Songtext, werden Titel und Künstler an die gewählten Anbieter gesendet, um eine Übereinstimmung zu finden. Album und Länge verlassen deinen Server nie; sie dienen nur hier dazu, das passendste Ergebnis auszuwählen.',
     playbackTitle: 'Wiedergabe',
@@ -402,12 +405,12 @@ export default {
     replayGainTrack: 'Titel',
     replayGainAlbum: 'Album',
     replayGainHint:
-      'Gleicht die Lautstärke unterschiedlich lauter Aufnahmen an — „Titel“ normalisiert jeden Song einzeln, „Album“ behält die Lautstärkeunterschiede innerhalb eines Albums bei. Gilt für lokale Wiedergabe und Casting; bei laufendem Casting wirkt eine Änderung erst ab dem nächsten Titel.',
+      'Gleicht die Lautstärke unterschiedlich lauter Aufnahmen an - „Titel“ normalisiert jeden Song einzeln, „Album“ behält die Lautstärkeunterschiede innerhalb eines Albums bei. Gilt für lokale Wiedergabe und Casting; bei laufendem Casting wirkt eine Änderung erst ab dem nächsten Titel.',
     replayGainMobileHint:
-      'Auf diesem Gerät gilt es nur fürs Casting: Die Wiedergabe hier läuft direkt über den Browser, damit sie bei gesperrtem Bildschirm weiterspielt — dabei lässt sich die Lautstärke des Tons unterwegs nicht anpassen.',
+      'Auf diesem Gerät gilt es nur fürs Casting: Die Wiedergabe hier läuft direkt über den Browser, damit sie bei gesperrtem Bildschirm weiterspielt - dabei lässt sich die Lautstärke des Tons unterwegs nicht anpassen.',
     localQuality: 'Audioqualität (dieses Gerät)',
     localQualityHint:
-      'Gilt nur für die Wiedergabe auf diesem Gerät und ist hier gespeichert, nicht im Konto — Handy und Desktop können also unterschiedlich eingestellt sein. „Original“ sendet die Datei unverändert; MP3 wandelt sie beim Abspielen um, was Bandbreite spart und Dateien abspielbar macht, die der Browser sonst nicht öffnen kann. MP3 ist hier das einzige Umwandlungsformat, weil nur damit das Springen in der laufenden Aufnahme zuverlässig funktioniert. Eine Änderung wirkt ab dem nächsten Titel.',
+      'Gilt nur für die Wiedergabe auf diesem Gerät und ist hier gespeichert, nicht im Konto - Handy und Desktop können also unterschiedlich eingestellt sein. „Original“ sendet die Datei unverändert; jedes andere Format wird beim Abspielen umgewandelt, was Bandbreite spart und Dateien abspielbar macht, die der Browser sonst nicht öffnen kann. Angeboten wird nur, was dieser Browser auch abspielen kann. Eine Änderung wirkt ab dem nächsten Titel.',
     castQuality: 'Audioqualität (Casting)',
     castQualityHint:
       'Eine Obergrenze, keine feste Vorgabe: Beacon wählt weiterhin selbst das beste Format, das das jeweilige Gerät annimmt, sendet aber nichts oberhalb dieser Einstellung. Eine Aufnahme, die ohnehin darunter liegt, wird unverändert gesendet. Die Grenzen des Geräts selbst gelten immer zusätzlich. Wirkt ab dem nächsten Titel.',
@@ -415,13 +418,32 @@ export default {
     qualityBitrate: 'Bitrate',
     qualityBitrateItem: '{value} kbit/s',
     qualityOriginal: 'Original (unverändert)',
+    qualityTipsTitle: 'Empfehlungen',
+    qualityTips: {
+      ceiling:
+        'Eine Obergrenze, keine Umwandlung: Was ohnehin darunter liegt, wird unverändert abgespielt.',
+      home: 'Zu Hause im WLAN: Original, dabei wird gar nichts umgewandelt.',
+      mobile:
+        'Unterwegs: AAC mit 192 kbit/s klingt wie MP3 mit 320 und braucht deutlich weniger Daten.',
+      slow: 'Bei langsamer Verbindung: Opus mit 96 bis 128 kbit/s ist bei gleicher Qualität das kleinste.',
+      compatibility:
+        'MP3 mit 256 oder 320 kbit/s läuft überall und ist die Antwort, wenn etwas anderes Probleme macht.',
+      castDefault:
+        'Der Lautsprecher steht im selben Netz wie Beacon, Datenmenge ist hier also nicht die Frage: „Original“ ist meist richtig.',
+      castWhenNeeded:
+        'Eine Grenze lohnt erst, wenn etwas hakt - schwaches WLAN in dem Raum oder ein Gerät, das über große verlustfreie Dateien stolpert. AAC mit 256 kbit/s ist dann reichlich.',
+      castCompatibility:
+        'MP3 mit 320 kbit/s ist die Antwort, sobald ein Gerät überhaupt zickt: Das läuft überall.',
+      castDevice:
+        'Beacon reduziert das auf das, was der Lautsprecher wirklich abspielt: Ein Gerät ohne Opus bekommt stattdessen AAC, und MP3 wo auch das nicht geht, mit der gewählten Bitrate.',
+    },
     castRadioDirectly: 'Radio direkt vom Sender abspielen',
     castRadioDirectlyHint:
-      'Standardmäßig leitet Beacon Radio über sein eigenes Backend — für ein Cast-Gerät wie für diesen Player. Ein einziger Abruf der Station versorgt Ton und Titelanzeige, und einen abgerissenen Sender verbindet Beacon neu, ohne die Wiedergabe hier zu unterbrechen. Aktiviert, verbinden sich Gerät und Player stattdessen direkt mit der Station: die Wiedergabe läuft dann weiter, auch wenn Beacon neu startet, ein Abriss fällt aber erst auf, wenn der Ton weg ist, und manche Geräte lehnen den Stream der Station ab.',
+      'Standardmäßig leitet Beacon Radio über sein eigenes Backend - für ein Cast-Gerät wie für diesen Player. Ein einziger Abruf der Station versorgt Ton und Titelanzeige, und einen abgerissenen Sender verbindet Beacon neu, ohne die Wiedergabe hier zu unterbrechen. Aktiviert, verbinden sich Gerät und Player stattdessen direkt mit der Station: die Wiedergabe läuft dann weiter, auch wenn Beacon neu startet, ein Abriss fällt aber erst auf, wenn der Ton weg ist, und manche Geräte lehnen den Stream der Station ab.',
     about: 'Über Beacon',
     whatsNew: 'Was ist neu?',
     ffmpegFound: 'ffmpeg gefunden',
-    ffmpegMissing: 'ffmpeg fehlt — Casting funktioniert nicht ohne.',
+    ffmpegMissing: 'ffmpeg fehlt - Casting funktioniert nicht ohne.',
     version: 'Version {version}',
     updateAvailable: 'Version {version} ist verfügbar.',
     updateAvailableLink: 'Release ansehen',
@@ -620,7 +642,7 @@ export default {
     favoriteSongs: 'Lieblings-Songs',
     favoriteAlbums: 'Lieblingsalben',
     favoriteArtists: 'Lieblings-Artists',
-    noPlaysYet: 'Noch keine Wiedergaben aufgezeichnet — hier tut sich was, sobald du loshörst.',
+    noPlaysYet: 'Noch keine Wiedergaben aufgezeichnet - hier tut sich was, sobald du loshörst.',
     topSongs: 'Meistgehörte Songs',
     topArtists: 'Meistgehörte Artists',
     topAlbums: 'Meistgehörte Alben',

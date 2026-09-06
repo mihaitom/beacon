@@ -139,7 +139,19 @@ export async function play(songId: string, options: PlayOptions = {}): Promise<P
 export async function playUrl(
   url: string,
   title: string,
-  options: { targets?: ConnectDeviceRef[]; force?: boolean; castDirectly?: boolean } = {},
+  options: {
+    targets?: ConnectDeviceRef[]
+    force?: boolean
+    castDirectly?: boolean
+    /** The cast-quality setting, the same pair play() takes — see
+     * buildCastQualityPayload(). Both halves reach a station: the bitrate
+     * as a ceiling, and the format as what a conversion comes out as — and
+     * as what lets a station already in that format through untouched (see
+     * connect's own PlayUrlRequest). Leaving the format out therefore
+     * costs the AAC passthrough, it does not merely go unused. */
+    max_lossy_format?: TranscodeFormat
+    max_lossy_bitrate_kbps?: number
+  } = {},
 ): Promise<PlayResponse> {
   return fetchConnect<PlayResponse>('/play-url', {
     method: 'POST',
@@ -149,6 +161,13 @@ export async function playUrl(
       targets: options.targets?.map((t) => ({ name: t.name, type: t.type })),
       force: options.force ?? false,
       seq: nextSeq(),
+      // Same all-or-nothing shape as play() above.
+      ...(options.max_lossy_format && options.max_lossy_bitrate_kbps
+        ? {
+            max_lossy_format: options.max_lossy_format,
+            max_lossy_bitrate_kbps: options.max_lossy_bitrate_kbps,
+          }
+        : {}),
       // See connect/routes/playback.py's PlayUrlRequest.cast_directly —
       // omitted keeps the backend's own default (false, i.e. relayed)
       // rather than this call site needing to know it.

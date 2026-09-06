@@ -57,7 +57,7 @@ export default {
     quickConnectCopyCode: 'Copier le code',
     quickConnectCodeCopied: 'Copié',
     plexHint:
-      "Vous connecte via votre compte Plex — un onglet du navigateur s'ouvre où vous vous connectez à Plex et approuvez la demande.",
+      "Vous connecte via votre compte Plex - un onglet du navigateur s'ouvre où vous vous connectez à Plex et approuvez la demande.",
     plexSignIn: 'Se connecter avec Plex',
     plexWaitingHint: "Approuvez la connexion dans l'onglet du navigateur qui vient de s'ouvrir.",
     plexChooseServer: 'Choisissez votre serveur Plex :',
@@ -72,7 +72,7 @@ export default {
     reroll: 'Remélanger',
     playAll: 'Tout lire',
     readyToPlay: 'Prêt à écouter quelque chose ?',
-    nothingHeardYet: "Vous n'avez encore rien écouté — commencez où vous voulez.",
+    nothingHeardYet: "Vous n'avez encore rien écouté - commencez où vous voulez.",
     nowPlaying: 'En cours de lecture',
     paused: 'Pause',
     keepListening: 'Continuer à écouter',
@@ -269,9 +269,9 @@ export default {
       "Le backend Connect est inaccessible. Est-il en cours d'exécution et l'URL dans les Paramètres est-elle correcte ?",
     authError: "La session Connect n'est pas authentifiée. Veuillez vous reconnecter.",
     ffmpegMissing:
-      'ffmpeg est manquant sur le backend Connect — la diffusion ne fonctionnera pas sans lui.',
+      'ffmpeg est manquant sur le backend Connect - la diffusion ne fonctionnera pas sans lui.',
     unknownError: 'Erreur inconnue.',
-    // Keyed by connect/delivery/errors.py's REASON_* constants — a
+    // Keyed by connect/delivery/errors.py's REASON_* constants - a
     // dispatch that reached the device and didn't start playing.
     deliveryFailed: {
       rejected:
@@ -283,7 +283,7 @@ export default {
       unknown: 'La lecture sur « {device} » a échoué.',
     },
     pairDeviceTitle: 'Associer « {name} »',
-    pairPinPrompt: "L'appareil affiche un code PIN — veuillez le saisir :",
+    pairPinPrompt: "L'appareil affiche un code PIN - veuillez le saisir :",
     pairConfirmPrompt: "Veuillez confirmer sur l'appareil, puis cliquez sur « Terminé ».",
     pin: 'PIN',
     takeoverTitle: "Prendre le contrôle de l'appareil ?",
@@ -312,6 +312,7 @@ export default {
         quality_limit: 'Limite de qualité',
         browser_unsupported: 'Format navigateur',
         device_rejected_stream: 'Refusé',
+        relay_mp3_only: 'Convertie pour l’appareil',
       },
       reasons: {
         device_limit: 'La source dépasse la qualité prise en charge par cet appareil',
@@ -325,6 +326,8 @@ export default {
         browser_unsupported: 'Le navigateur ne peut pas lire le format source',
         device_rejected_stream:
           "L'appareil a refusé le flux d'origine de la station, Beacon le convertit donc",
+        relay_mp3_only:
+          'La station n’envoie pas un format transmissible tel quel ; Beacon la convertit donc - dans Qualité audio, vous pouvez demander de l’AAC plutôt que du MP3',
       },
     },
   },
@@ -336,7 +339,7 @@ export default {
   },
   remoteControl: {
     title: 'Contrôle à distance',
-    hint: "Laissez un téléphone sur votre réseau contrôler la lecture — Lecture en cours, File d'attente, Playlists, Titres et Radio.",
+    hint: "Laissez un téléphone sur votre réseau contrôler la lecture - Lecture en cours, File d'attente, Playlists, Titres et Radio.",
     enableFailed: "Impossible d'activer le contrôle à distance.",
     disableFailed: 'Impossible de désactiver le contrôle à distance.',
     pairTitle: 'Associer un téléphone',
@@ -346,7 +349,7 @@ export default {
     turnOff: 'Désactiver',
     regenerate: 'Régénérer le code',
     needsRegenerate:
-      "Le code d'association précédent n'est plus disponible. Générez-en un nouveau pour associer un téléphone — cela déconnectera tout téléphone associé précédemment.",
+      "Le code d'association précédent n'est plus disponible. Générez-en un nouveau pour associer un téléphone - cela déconnectera tout téléphone associé précédemment.",
   },
   settings: {
     title: 'Paramètres',
@@ -360,29 +363,29 @@ export default {
     scanning: 'Analyse en cours … ({count})',
     scanningPercent: 'Analyse en cours \u2026 ({percent}%)',
     scanningPlain: 'Analyse en cours \u2026',
-    scanComplete: 'Analyse terminée — {count} titres traités.',
+    scanComplete: 'Analyse terminée - {count} titres traités.',
     scanFailed: "Impossible de démarrer l'analyse.",
     libraryRefreshHint:
       "Rechargez la vue de la bibliothèque de Beacon maintenant, au lieu d'attendre l'actualisation automatique.",
     refreshLibrary: 'Actualiser la bibliothèque',
     refreshingLibrary: 'Actualisation … ({loaded})',
     refreshingLibraryWithTotal: 'Actualisation … ({loaded} / {total})',
-    libraryRefreshed: 'Bibliothèque actualisée — {count} titres chargés.',
+    libraryRefreshed: 'Bibliothèque actualisée - {count} titres chargés.',
     refreshLibraryFailed: "Impossible d'actualiser la bibliothèque.",
     storageTitle: 'Stockage',
     clearCacheHint:
-      "Supprime les données de bibliothèque, les pochettes, les photos d'artistes, les logos de stations et les paroles mis en cache localement — tout est rechargé la prochaine fois que c'est nécessaire. Ne déclenche pas d'analyse de la bibliothèque.",
+      "Supprime les données de bibliothèque, les pochettes, les photos d'artistes, les logos de stations et les paroles mis en cache localement - tout est rechargé la prochaine fois que c'est nécessaire. Ne déclenche pas d'analyse de la bibliothèque.",
     clearCache: 'Vider le cache',
     cacheCleared: 'Cache vidé.',
     resetAirplayHint:
-      "Oubliez les associations AirPlay enregistrées (HomePod, Apple TV, …) — utile lorsqu'un appareil cesse de se connecter. Chaque appareil devra être ré-associé par la suite.",
+      "Oubliez les associations AirPlay enregistrées (HomePod, Apple TV, …) - utile lorsqu'un appareil cesse de se connecter. Chaque appareil devra être ré-associé par la suite.",
     resetAirplay: 'Réinitialiser les associations AirPlay',
     airplayReset: 'Associations AirPlay réinitialisées.',
     airplayResetFailed: 'Impossible de réinitialiser les associations AirPlay.',
     advancedTitle: 'Avancé',
     logLevel: 'Niveau de journalisation',
     logLevelHint:
-      'Le niveau de détail que le backend Connect écrit dans son propre journal — affecte aussi ce qui apparaît dans les journaux Docker/du conteneur. Prend effet immédiatement, aucun redémarrage nécessaire.',
+      'Le niveau de détail que le backend Connect écrit dans son propre journal - affecte aussi ce qui apparaît dans les journaux Docker/du conteneur. Prend effet immédiatement, aucun redémarrage nécessaire.',
     logLevelTrace: 'Trace',
     logLevelDebug: 'Débogage',
     logLevelInfo: 'Information',
@@ -392,13 +395,13 @@ export default {
     logLevelChangeFailed: 'Impossible de mettre à jour le niveau de journalisation.',
     recommendations: 'Recommandations personnalisées',
     recommendationsHint:
-      "Découvrir sur l'accueil s'appuie sur des artistes proches de ce que vous écoutez vraiment, recherchés auprès de MusicBrainz, ListenBrainz et Deezer — cela leur transmet un ou deux noms d'artistes de votre bibliothèque. Désactivé, des albums au hasard sont proposés ; ouvrir la page d'un artiste consulte toujours cet artiste, dans un cas comme dans l'autre.",
+      "Découvrir sur l'accueil s'appuie sur des artistes proches de ce que vous écoutez vraiment, recherchés auprès de MusicBrainz, ListenBrainz et Deezer - cela leur transmet un ou deux noms d'artistes de votre bibliothèque. Désactivé, des albums au hasard sont proposés ; ouvrir la page d'un artiste consulte toujours cet artiste, dans un cas comme dans l'autre.",
     lyricsProvidersTitle: 'Fournisseurs de paroles',
     lyricsProvidersHint:
-      "Les paroles enregistrées dans le fichier lui-même sont toujours essayées en premier et ne quittent jamais votre serveur. Tous les fournisseurs ci-dessous sont activés par défaut — décochez ceux auxquels vous préférez que Beacon n'envoie pas le titre et l'artiste d'un morceau.",
+      "Les paroles enregistrées dans le fichier lui-même sont toujours essayées en premier et ne quittent jamais votre serveur. Tous les fournisseurs ci-dessous sont activés par défaut - décochez ceux auxquels vous préférez que Beacon n'envoie pas le titre et l'artiste d'un morceau.",
     lyricsProviders: 'Fournisseurs tiers',
     lyricsProvidersEmptyHint:
-      'Aucun fournisseur sélectionné — seules les paroles enregistrées dans le fichier lui-même sont affichées.',
+      'Aucun fournisseur sélectionné - seules les paroles enregistrées dans le fichier lui-même sont affichées.',
     lyricsProvidersActiveHint:
       "Si le fichier ne contient pas de paroles, le titre et l'artiste sont envoyés aux fournisseurs sélectionnés pour trouver une correspondance. L'album et la durée ne quittent jamais votre serveur ; ils servent uniquement ici, à retenir le résultat le plus proche.",
     playbackTitle: 'Lecture',
@@ -407,12 +410,12 @@ export default {
     replayGainTrack: 'Titre',
     replayGainAlbum: 'Album',
     replayGainHint:
-      "Uniformise le volume des enregistrements masterisés différemment — « Titre » normalise chaque morceau individuellement, « Album » préserve les différences de volume au sein d'un album. S'applique à la lecture locale et à la diffusion ; pendant une diffusion en cours, un changement ne prend effet qu'à partir du morceau suivant.",
+      "Uniformise le volume des enregistrements masterisés différemment - « Titre » normalise chaque morceau individuellement, « Album » préserve les différences de volume au sein d'un album. S'applique à la lecture locale et à la diffusion ; pendant une diffusion en cours, un changement ne prend effet qu'à partir du morceau suivant.",
     replayGainMobileHint:
       "Sur cet appareil, cela ne s'applique qu'à la diffusion : la lecture passe ici directement par le navigateur afin de continuer lorsque l'écran est verrouillé, ce qui ne laisse aucun moyen d'ajuster le volume de l'audio en chemin.",
     localQuality: 'Qualité audio (cet appareil)',
     localQualityHint:
-      "Ne s'applique qu'à la lecture sur cet appareil et est enregistré ici, pas dans le compte — un téléphone et un ordinateur peuvent donc être réglés différemment. « Original » envoie le fichier tel quel ; MP3 le convertit à la lecture, ce qui économise de la bande passante et rend lisibles des fichiers que le navigateur ne sait pas ouvrir. MP3 est la seule conversion proposée ici, car c'est la seule avec laquelle se déplacer dans le morceau fonctionne de manière fiable. Le changement prend effet à partir du morceau suivant.",
+      "Ne s'applique qu'à la lecture sur cet appareil et est enregistré ici, pas dans le compte - un téléphone et un ordinateur peuvent donc être réglés différemment. « Original » envoie le fichier tel quel ; tout autre format est converti à la lecture, ce qui économise de la bande passante et rend lisibles des fichiers que le navigateur ne sait pas ouvrir. Seuls les formats que ce navigateur sait décoder sont proposés. Le changement prend effet à partir du morceau suivant.",
     castQuality: 'Qualité audio (diffusion)',
     castQualityHint:
       "Un plafond, pas un choix imposé : Beacon continue de choisir le meilleur format accepté par chaque appareil, mais n'envoie jamais rien au-dessus de ce réglage. Un enregistrement déjà en dessous est envoyé tel quel. Les limites propres à l'appareil s'appliquent toujours en plus. Prend effet à partir du morceau suivant.",
@@ -420,13 +423,31 @@ export default {
     qualityBitrate: 'Débit',
     qualityBitrateItem: '{value} kbit/s',
     qualityOriginal: 'Original (inchangé)',
+    qualityTipsTitle: 'Recommandations',
+    qualityTips: {
+      ceiling: 'Un plafond, pas une conversion : ce qui est déjà en dessous est lu tel quel.',
+      home: "À la maison en Wi-Fi : Original, rien n'est converti du tout.",
+      mobile:
+        'En déplacement : AAC à 192 kbit/s sonne comme du MP3 à 320 et consomme bien moins de données.',
+      slow: 'Sur une connexion lente : Opus à 96 ou 128 kbit/s est le plus léger à qualité égale.',
+      compatibility:
+        "MP3 à 256 ou 320 kbit/s est celui qui se lit partout, et la réponse dès qu'autre chose pose problème.",
+      castDefault:
+        "L'enceinte est sur le même réseau que Beacon : la quantité de données n'est pas la question ici, Original est le plus souvent le bon choix.",
+      castWhenNeeded:
+        "Un plafond n'a d'intérêt que si quelque chose coince : Wi-Fi faible dans cette pièce, ou un appareil qui bute sur de gros fichiers sans perte. AAC à 256 kbit/s suffit largement.",
+      castCompatibility:
+        "MP3 à 320 kbit/s est la réponse dès qu'un appareil fait des siennes : il se lit partout.",
+      castDevice:
+        "Beacon réduit ce choix à ce que l'enceinte lit vraiment : un appareil sans Opus reçoit de l'AAC, ou du MP3 si même cela ne passe pas, au débit que vous avez choisi.",
+    },
     castRadioDirectly: 'Lire la radio directement depuis la station',
     castRadioDirectlyHint:
       "Par défaut, Beacon route la radio via son propre backend, aussi bien pour un appareil de diffusion que pour ce lecteur. Une seule connexion à la station alimente le son et le titre en cours, et une station qui décroche est reconnectée par Beacon sans interrompre la lecture ici. Activé, l'appareil et ce lecteur se connectent directement à la station : la lecture continue même si Beacon redémarre, mais une coupure ne se remarque qu'une fois le son parti, et certains appareils refusent le flux de la station.",
     about: 'À propos de Beacon',
     whatsNew: 'Quoi de neuf ?',
     ffmpegFound: 'ffmpeg trouvé',
-    ffmpegMissing: 'ffmpeg est manquant — la diffusion ne fonctionnera pas sans lui.',
+    ffmpegMissing: 'ffmpeg est manquant - la diffusion ne fonctionnera pas sans lui.',
     version: 'Version {version}',
     updateAvailable: 'La version {version} est disponible.',
     updateAvailableLink: 'Voir la version',
@@ -627,7 +648,7 @@ export default {
     favoriteAlbums: 'Albums favoris',
     favoriteArtists: 'Artistes favoris',
     noPlaysYet:
-      'Aucune écoute enregistrée pour le moment — cela se remplira une fois que vous commencerez à écouter.',
+      'Aucune écoute enregistrée pour le moment - cela se remplira une fois que vous commencerez à écouter.',
     topSongs: 'Titres les plus écoutés',
     topArtists: 'Artistes les plus écoutés',
     topAlbums: 'Albums les plus écoutés',

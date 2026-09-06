@@ -57,7 +57,7 @@ export default {
     quickConnectCopyCode: 'Copy code',
     quickConnectCodeCopied: 'Copied',
     plexHint:
-      'Signs you in through your Plex account — a browser tab opens where you sign in to Plex and approve the request.',
+      'Signs you in through your Plex account - a browser tab opens where you sign in to Plex and approve the request.',
     plexSignIn: 'Sign in with Plex',
     plexWaitingHint: 'Approve the sign-in in the browser tab that just opened.',
     plexChooseServer: 'Choose your Plex server:',
@@ -72,7 +72,7 @@ export default {
     reroll: 'Shuffle again',
     playAll: 'Play all',
     readyToPlay: 'Ready to play something?',
-    nothingHeardYet: "You haven't listened to anything yet — start anywhere.",
+    nothingHeardYet: "You haven't listened to anything yet - start anywhere.",
     nowPlaying: 'Now playing',
     paused: 'Pause',
     keepListening: 'Keep listening',
@@ -267,9 +267,9 @@ export default {
     apiUnreachable:
       'Connect backend unreachable. Is it running and is the URL in Settings correct?',
     authError: 'Connect session not authenticated. Please log in again.',
-    ffmpegMissing: "ffmpeg is missing on the Connect backend — casting won't work without it.",
+    ffmpegMissing: "ffmpeg is missing on the Connect backend - casting won't work without it.",
     unknownError: 'Unknown error.',
-    // Keyed by connect/delivery/errors.py's REASON_* constants — a
+    // Keyed by connect/delivery/errors.py's REASON_* constants - a
     // dispatch that reached the device and didn't start playing.
     deliveryFailed: {
       rejected: "“{device}” refused this stream. The device can't play that format or address.",
@@ -280,7 +280,7 @@ export default {
       unknown: 'Playback on “{device}” failed.',
     },
     pairDeviceTitle: 'Pair "{name}"',
-    pairPinPrompt: 'The device is showing a PIN — please enter it:',
+    pairPinPrompt: 'The device is showing a PIN - please enter it:',
     pairConfirmPrompt: 'Please confirm on the device, then click "Done".',
     pin: 'PIN',
     takeoverTitle: 'Take over device?',
@@ -309,6 +309,7 @@ export default {
         quality_limit: 'Quality limit',
         browser_unsupported: 'Browser format',
         device_rejected_stream: 'Device refused',
+        relay_mp3_only: 'Converted for the device',
       },
       reasons: {
         device_limit: "Source is beyond this device's supported quality",
@@ -321,6 +322,8 @@ export default {
         browser_unsupported: 'Source format cannot be played by the browser',
         device_rejected_stream:
           "The device refused the station's own stream, so Beacon converts it",
+        relay_mp3_only:
+          'The station does not send a format the device is handed as it is, so Beacon converts it - under Audio quality you can ask for AAC instead of MP3',
       },
     },
   },
@@ -332,7 +335,7 @@ export default {
   },
   remoteControl: {
     title: 'Remote Control',
-    hint: 'Let a phone on your network control playback — Now Playing, Queue, Playlists, Songs, and Radio.',
+    hint: 'Let a phone on your network control playback - Now Playing, Queue, Playlists, Songs, and Radio.',
     enableFailed: "Couldn't enable Remote Control.",
     disableFailed: "Couldn't disable Remote Control.",
     pairTitle: 'Pair a phone',
@@ -342,7 +345,7 @@ export default {
     turnOff: 'Turn off',
     regenerate: 'Regenerate code',
     needsRegenerate:
-      'The pairing code from last time is no longer available. Regenerate a new one to pair a phone — this disconnects any phone paired earlier.',
+      'The pairing code from last time is no longer available. Regenerate a new one to pair a phone - this disconnects any phone paired earlier.',
   },
   settings: {
     title: 'Settings',
@@ -355,29 +358,29 @@ export default {
     scanning: 'Scanning … ({count})',
     scanningPercent: 'Scanning \u2026 ({percent}%)',
     scanningPlain: 'Scanning \u2026',
-    scanComplete: 'Scan complete — {count} songs processed.',
+    scanComplete: 'Scan complete - {count} songs processed.',
     scanFailed: "Couldn't start the scan.",
     libraryRefreshHint:
       "Reload Beacon's own library view now, instead of waiting for the automatic refresh.",
     refreshLibrary: 'Refresh library',
     refreshingLibrary: 'Refreshing … ({loaded})',
     refreshingLibraryWithTotal: 'Refreshing … ({loaded} / {total})',
-    libraryRefreshed: 'Library refreshed — {count} songs loaded.',
+    libraryRefreshed: 'Library refreshed - {count} songs loaded.',
     refreshLibraryFailed: "Couldn't refresh the library.",
     storageTitle: 'Storage',
     clearCacheHint:
-      "Discard locally cached library data, cover art, artist photos, station logos and lyrics — everything reloads fresh the next time it's needed. Doesn't trigger a library scan.",
+      "Discard locally cached library data, cover art, artist photos, station logos and lyrics - everything reloads fresh the next time it's needed. Doesn't trigger a library scan.",
     clearCache: 'Clear cache',
     cacheCleared: 'Cache cleared.',
     resetAirplayHint:
-      'Forget saved AirPlay pairings (HomePod, Apple TV, …) — useful when a device stops connecting. Each device needs pairing again afterward.',
+      'Forget saved AirPlay pairings (HomePod, Apple TV, …) - useful when a device stops connecting. Each device needs pairing again afterward.',
     resetAirplay: 'Reset AirPlay pairings',
     airplayReset: 'AirPlay pairings reset.',
     airplayResetFailed: "Couldn't reset AirPlay pairings.",
     advancedTitle: 'Advanced',
     logLevel: 'Log level',
     logLevelHint:
-      'How much detail the Connect backend writes to its own log — also affects what shows up in Docker/container logs. Takes effect immediately, no restart needed.',
+      'How much detail the Connect backend writes to its own log - also affects what shows up in Docker/container logs. Takes effect immediately, no restart needed.',
     logLevelTrace: 'Trace',
     logLevelDebug: 'Debug',
     logLevelInfo: 'Info',
@@ -387,13 +390,13 @@ export default {
     logLevelChangeFailed: "Couldn't update the log level.",
     recommendations: 'Personalized recommendations',
     recommendationsHint:
-      "Discover on Home uses artists similar to what you actually listen to, looked up at MusicBrainz, ListenBrainz and Deezer — this shares a library artist name or two with them. Off falls back to random albums; opening an artist's own page still looks up that one artist either way.",
+      "Discover on Home uses artists similar to what you actually listen to, looked up at MusicBrainz, ListenBrainz and Deezer - this shares a library artist name or two with them. Off falls back to random albums; opening an artist's own page still looks up that one artist either way.",
     lyricsProvidersTitle: 'Lyrics providers',
     lyricsProvidersHint:
-      "Lyrics stored with the song file itself are always tried first and never leave your server. Every provider below is enabled by default — deselect any you'd rather Beacon not send a song's title and artist to.",
+      "Lyrics stored with the song file itself are always tried first and never leave your server. Every provider below is enabled by default - deselect any you'd rather Beacon not send a song's title and artist to.",
     lyricsProviders: 'Third-party providers',
     lyricsProvidersEmptyHint:
-      'No providers selected — only lyrics stored in the file itself are shown.',
+      'No providers selected - only lyrics stored in the file itself are shown.',
     lyricsProvidersActiveHint:
       "When the file has no lyrics, the song's title and artist are sent to the selected provider(s) to find a match. Its album and length never leave your server; they are only used here, to pick the closest of the results.",
     playbackTitle: 'Playback',
@@ -402,12 +405,12 @@ export default {
     replayGainTrack: 'Track',
     replayGainAlbum: 'Album',
     replayGainHint:
-      'Evens out the volume of differently mastered recordings — "Track" normalizes each song individually, "Album" preserves the volume differences within an album. Applies to both local playback and casting; while already casting, a change only takes effect from the next track.',
+      'Evens out the volume of differently mastered recordings - "Track" normalizes each song individually, "Album" preserves the volume differences within an album. Applies to both local playback and casting; while already casting, a change only takes effect from the next track.',
     replayGainMobileHint:
       'On this device it applies to casting only: playing here goes straight through the browser so that it keeps running while the screen is locked, which leaves no way to adjust the volume of the audio on the way.',
     localQuality: 'Audio quality (this device)',
     localQualityHint:
-      'Applies only to playback on this device, and is stored here rather than with your account — so a phone and a desktop can be set differently. "Original" sends the file untouched; MP3 converts it as it plays, which saves bandwidth and makes files playable that the browser otherwise can\'t open. MP3 is the only conversion offered here, because it is the only one that lets you reliably jump around in the track while it plays. A change takes effect from the next track.',
+      'Applies only to playback on this device, and is stored here rather than with your account - so a phone and a desktop can be set differently. "Original" sends the file untouched; every other format is converted as it plays, which saves bandwidth and makes files playable that the browser otherwise can\'t open. Only formats this browser can decode are offered. A change takes effect from the next track.',
     castQuality: 'Audio quality (casting)',
     castQualityHint:
       "A ceiling, not a fixed choice: Beacon still picks the best format each device will accept, it just never sends anything above this setting. A recording that already fits is sent untouched. The device's own limits always apply on top. Takes effect from the next track.",
@@ -415,13 +418,30 @@ export default {
     qualityBitrate: 'Bitrate',
     qualityBitrateItem: '{value} kbps',
     qualityOriginal: 'Original (untouched)',
+    qualityTipsTitle: 'Recommendations',
+    qualityTips: {
+      ceiling: 'An upper limit, not a conversion: anything already below it is played untouched.',
+      home: 'At home on Wi-Fi: Original, where nothing is converted at all.',
+      mobile: 'Out and about: AAC at 192 kbps sounds like MP3 at 320 and uses far less data.',
+      slow: 'On a slow connection: Opus at 96 to 128 kbps is the smallest at the same quality.',
+      compatibility:
+        'MP3 at 256 or 320 kbps is the one that plays anywhere, and the answer whenever something else gives trouble.',
+      castDefault:
+        'A speaker sits on the same network as Beacon, so data size is not the question here: Original is usually right.',
+      castWhenNeeded:
+        'A limit is worth setting when something struggles - weak Wi-Fi in that room, or a device that stumbles over large lossless files. AAC at 256 kbps is plenty.',
+      castCompatibility:
+        'MP3 at 320 kbps is the answer whenever a device gives trouble at all: it plays everywhere.',
+      castDevice:
+        'Beacon narrows this to what the speaker really plays: a device without Opus is sent AAC instead, or MP3 where even that is not accepted, at the bitrate you picked.',
+    },
     castRadioDirectly: 'Play radio straight from the station',
     castRadioDirectlyHint:
-      "Beacon routes radio through its own backend by default — for a cast device and for this player alike. One fetch of the station feeds the audio and the now-playing title, and a station that drops is reconnected by Beacon without interrupting playback here. Turned on, the device and this player connect to the station directly instead: playback then keeps going even if Beacon restarts, but a drop is only noticed once the sound stops, and some devices refuse a station's own stream.",
+      "Beacon routes radio through its own backend by default - for a cast device and for this player alike. One fetch of the station feeds the audio and the now-playing title, and a station that drops is reconnected by Beacon without interrupting playback here. Turned on, the device and this player connect to the station directly instead: playback then keeps going even if Beacon restarts, but a drop is only noticed once the sound stops, and some devices refuse a station's own stream.",
     about: 'About Beacon',
     whatsNew: "What's new?",
     ffmpegFound: 'ffmpeg found',
-    ffmpegMissing: "ffmpeg missing — casting won't work without it.",
+    ffmpegMissing: "ffmpeg missing - casting won't work without it.",
     version: 'Version {version}',
     updateAvailable: 'Version {version} is available.',
     updateAvailableLink: 'View release',
@@ -619,7 +639,7 @@ export default {
     favoriteSongs: 'Favorite songs',
     favoriteAlbums: 'Favorite albums',
     favoriteArtists: 'Favorite artists',
-    noPlaysYet: 'No plays recorded yet — this fills in once you start listening.',
+    noPlaysYet: 'No plays recorded yet - this fills in once you start listening.',
     topSongs: 'Most played songs',
     topArtists: 'Most played artists',
     topAlbums: 'Most played albums',

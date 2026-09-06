@@ -138,6 +138,12 @@ class ChromecastDelivery(BaseDelivery):
     # actually breaks playback.
     MAX_SAMPLE_RATE_HZ: int | None = 96000
     MAX_BIT_DEPTH: int | None = 24
+    # The one target here that does play Opus: Google's Default Media
+    # Receiver lists it alongside MP3, AAC, Vorbis, FLAC and WAV. That is
+    # the whole reason Opus is offered as a cast quality at all — every
+    # other target falls back to AAC for it (see core/streamer.py's
+    # _codec_for_ceiling()).
+    PLAYABLE_CODECS: frozenset[str] = frozenset({"mp3", "aac", "flac", "vorbis", "opus"})
 
     def _get_device(self):
         import pychromecast

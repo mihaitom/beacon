@@ -309,6 +309,118 @@ describe('reconcileFromStatus / adoptCastQueue', () => {
     })
   })
 
+  /** Leaving a station for a song, while casting. The station has to go
+   * and stay gone: the backend clears its own radio state as part of
+   * /play, but a status tick built before that arrives still reports one.
+   * Reported live 2026-09-06 as the player bar keeping the station name,
+   * logo and the "Live" readout while a song from the library played
+   * underneath. */
+  describe('leaving a station for a song', () => {
+    const STATION = { title: 'Chill FM', url: 'https://stream.example/chill' }
+
+    function playingSong(id: string) {
+      return {
+        id,
+        artist: '',
+        album: '',
+        cover_art_url: null,
+        duration: 180,
+        title: `Song ${id}`,
+      }
+    }
+
+    it('drops the station on the first tick that reports a song', async () => {
+      const playback = usePlaybackStore()
+      const a = makeSong('a')
+      playback.setQueue([a], 0)
+      await playback.reconcileFromStatus(makeStatus({ radio: STATION }))
+      expect(playback.radioStation).not.toBeNull()
+
+      await playback.reconcileFromStatus(
+        makeStatus({
+          current_song: playingSong('a'),
+          queue: ['a'],
+          original_queue: ['a'],
+          current_song_index: 0,
+        }),
+      )
+
+      expect(playback.radioStation).toBeNull()
+    })
+
+    /** The case that made it stick rather than flicker: this client
+     * dispatched the song itself, so the queue it gets back always matches
+     * and adoptCastQueue() returns early — which is where the station used
+     * to be cleared. */
+    it('drops it even when the queue already matches, so nothing rebuilds', async () => {
+      const playback = usePlaybackStore()
+      const a = makeSong('a')
+      playback.setQueue([a], 0)
+      playback.radioStation = {
+        id: '',
+        name: 'Chill FM',
+        streamUrl: STATION.url,
+        homePageUrl: null,
+      }
+
+      await playback.reconcileFromStatus(
+        makeStatus({
+          current_song: playingSong('a'),
+          queue: ['a'],
+          original_queue: ['a'],
+          current_song_index: 0,
+        }),
+      )
+
+      expect(playback.radioStation).toBeNull()
+      expect(playback.queue).toEqual([a])
+    })
+
+    it('ignores a stale tick that still reports the station our own dispatch just ended', async () => {
+      const playback = usePlaybackStore()
+      const connect = useConnectStore()
+      const a = makeSong('a')
+      connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos' }] })
+      playback.radioStation = {
+        id: '',
+        name: 'Chill FM',
+        streamUrl: STATION.url,
+        homePageUrl: null,
+      }
+      playback.setQueue([a], 0) // leaves the station, as every song start does
+      expect(playback.radioStation).toBeNull()
+
+      // Our /play is still in flight, so the backend is still reporting
+      // the station it has not been told about yet.
+      let resolvePlay!: (response: PlayResponse) => void
+      vi.mocked(connectPlayback.play).mockReturnValue(
+        new Promise((resolve) => {
+          resolvePlay = resolve
+        }),
+      )
+      const startCurrentPromise = playback.startCurrent()
+
+      await playback.reconcileFromStatus(makeStatus({ radio: STATION }))
+
+      expect(playback.radioStation).toBeNull()
+
+      resolvePlay({ status: 'playing' })
+      await startCurrentPromise
+    })
+
+    /** The guard above is about *this* client's own dispatch, not about
+     * radio in general — another client switching the shared session to a
+     * station still has to reach this one. */
+    it('still adopts a station once no dispatch of ours is in flight', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('a')], 0)
+
+      await playback.reconcileFromStatus(makeStatus({ radio: STATION }))
+
+      expect(playback.radioStation?.streamUrl).toBe(STATION.url)
+    })
+  })
+
   describe('the in-flight local song switch race', () => {
     it('does not blow away the queue when a stale SSE tick lands while our own startCurrent() is still awaiting the backend', async () => {
       const playback = usePlaybackStore()

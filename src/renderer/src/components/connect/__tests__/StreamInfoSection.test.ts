@@ -205,6 +205,7 @@ describe('StreamInfoSection', () => {
         'lossless_container',
         'codec_not_castable',
         'codec_unknown',
+        'relay_mp3_only',
       ]) {
         setStreamInfo({ transcoding: true, transcode_reason: reason })
         const wrapper = mountSection()
@@ -214,6 +215,89 @@ describe('StreamInfoSection', () => {
         // this row was shortened to avoid.
         expect(wrapper.vm.reasonShort).not.toBe(wrapper.vm.reasonText)
       }
+    })
+
+    /** A station is only really converted for three reasons; for every
+     * other cast station `transcoding` is bookkeeping, and the row would
+     * claim a conversion that never happens. Casting an AAC station with
+     * the quality setting on "original" is the case that got this wrong:
+     * the conversion is real, but it happens for compatibility, not
+     * because of a limit nobody set. */
+    it('shows a station its real reason, not the ceiling', () => {
+      usePlaybackStore().radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      setStreamInfo({ transcoding: true, transcode_reason: 'relay_mp3_only' })
+
+      const wrapper = mountSection()
+
+      expect(wrapper.find('.stream-info-reason').exists()).toBe(true)
+      expect(wrapper.vm.reasonShort).toBe(
+        i18n.global.t('connect.streamInfo.reasonsShort.relay_mp3_only'),
+      )
+    })
+
+    /** Local radio comes through the same relay, and has no cast status to
+     * read the answer from — a station brought down to this device's own
+     * ceiling showed nothing at all here. */
+    it('shows a station converted for this device, with no cast running', () => {
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      // A 320k station brought down to this device's own ceiling.
+      playback.radioBitrate = 320
+      playback.radioRelayBitrate = 96
+      playback.radioRelayReason = 'quality_limit'
+
+      const wrapper = mountSection()
+
+      expect(wrapper.vm.transcoding).toBe(true)
+      expect(wrapper.vm.targetLabel).toBe('MP3, 96 kb/s')
+      expect(wrapper.find('.stream-info-reason').exists()).toBe(true)
+    })
+
+    /** Local playback can inherit the relay a cast started, so even a
+     * format nobody chose on this device can be the one arriving — the
+     * label is reported by the relay rather than assumed to be MP3. */
+    it('names the format the relay reports, not MP3 by default', () => {
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      playback.radioBitrate = 256
+      playback.radioRelayBitrate = 128
+      playback.radioRelayReason = 'quality_limit'
+      playback.radioRelayContentType = 'audio/aac'
+
+      const wrapper = mountSection()
+
+      expect(wrapper.vm.targetLabel).toBe('AAC, 128 kb/s')
+    })
+
+    it('says nothing for a station this device is playing untouched', () => {
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      playback.radioBitrate = 128
+
+      const wrapper = mountSection()
+
+      expect(wrapper.vm.transcoding).toBe(false)
+      expect(wrapper.find('.stream-info-reason').exists()).toBe(false)
     })
 
     it('is hidden on the copy tier, where there is nothing to explain', () => {

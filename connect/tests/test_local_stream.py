@@ -110,19 +110,27 @@ def test_a_bitrate_the_format_does_not_offer_is_rejected(client, default_session
     assert "3000" in response.json()["error"]
 
 
-def test_only_mp3_is_offered_here(client, default_session):
-    """aac and opus are real encoders this app uses for casting, and are
-    deliberately absent here: neither holds the bitrate it is given, so the
-    length this route declares — and therefore every seek made against it —
-    would be wrong. See ALLOWED_BITRATES for the measured numbers."""
-    assert set(local_stream.ALLOWED_BITRATES) == {"mp3"}
+def test_every_lossy_format_is_offered_here(client, default_session):
+    """aac and opus were both absent for as long as seeking meant the
+    caller dividing a declared length by the nominal bitrate - an encode is
+    only that size when the music happens to need the bits, which only
+    mp3's padded CBR guarantees. With `start` doing the seeking instead,
+    nothing depends on that any more. See ALLOWED_BITRATES for the measured
+    numbers, and the Dockerfile for the libopus that has to be in the image
+    for the third one to run."""
+    assert set(local_stream.ALLOWED_BITRATES) == {"mp3", "aac", "opus"}
 
 
-@pytest.mark.parametrize("fmt", ["aac", "opus"])
-def test_a_cast_only_format_is_rejected_here(fmt, client, default_session):
-    response, _ = _request(client, default_session, f"/stream/local/1?fmt={fmt}&br=128")
+@pytest.mark.parametrize("fmt", ["mp3", "aac", "opus"])
+def test_each_format_reaches_ffmpeg_with_its_own_encoder(fmt, client, default_session):
+    """The bitrates differ per format, so each one is asked for at a value
+    it actually offers - a shared number would silently test only the
+    formats that happen to list it."""
+    br = min(local_stream.ALLOWED_BITRATES[fmt])
+    response, cmd = _request(client, default_session, f"/stream/local/1?fmt={fmt}&br={br}")
 
-    assert response.status_code == 400
+    assert response.status_code == 200
+    assert cmd[cmd.index("-acodec") + 1] in {"libmp3lame", "aac", "libopus"}
 
 
 def test_original_is_not_a_format_this_route_serves(client, default_session):
@@ -300,6 +308,74 @@ def test_range_request_seeks_ffmpeg_to_the_matching_second(client, default_sessi
     # -ss must sit before -i to seek on the input side, same as
     # core/streamer.py's stream_tracks().
     assert cmd.index("-ss") < cmd.index("-i")
+
+
+def test_start_seeks_ffmpeg_without_declaring_a_length(client, default_session):
+    """The other way to start somewhere: the caller names the second it
+    wants, and gets a plain stream from there.
+
+    No length and no Accept-Ranges with it, on purpose - a caller that
+    seeks for itself has no use for either, and a declared length is
+    exactly what invites the media element to seek behind its back through
+    a bytes-to-seconds division that only holds while the encoder really
+    hits its nominal bitrate."""
+    response, cmd = _request(
+        client, default_session, f"/stream/local/1?fmt=mp3&br={_BR}&start=73.5"
+    )
+
+    assert response.status_code == 200
+    assert "content-length" not in response.headers
+    assert "accept-ranges" not in response.headers
+    assert cmd[cmd.index("-ss") + 1] == "73.500"
+    assert cmd.index("-ss") < cmd.index("-i")
+
+
+def test_start_wins_over_a_range_header(client, default_session):
+    """Both at once is a caller contradicting itself. `start` is the one
+    that means "I am doing the seeking", so it is the one that counts -
+    and answering with a 206 against a length this response does not have
+    would be the worse of the two ways to be wrong."""
+    response, cmd = _request(
+        client,
+        default_session,
+        f"/stream/local/1?fmt=mp3&br={_BR}&start=30",
+        headers={"Range": f"bytes={int(_BYTES_PER_SECOND * 60)}-"},
+    )
+
+    assert response.status_code == 200
+    assert cmd[cmd.index("-ss") + 1] == "30.000"
+
+
+def test_start_zero_still_means_the_caller_does_the_seeking(client, default_session):
+    """Its presence is the signal, not its value. A caller that says
+    `start=0` is one that will ask for other positions later, and handing
+    it a length now would let the element seek against that length in the
+    meantime - the one thing the parameter exists to take away."""
+    response, cmd = _request(client, default_session, f"/stream/local/1?fmt=mp3&br={_BR}&start=0")
+
+    assert response.status_code == 200
+    assert "content-length" not in response.headers
+    assert "accept-ranges" not in response.headers
+    # Nothing to seek to, so no -ss either.
+    assert "-ss" not in cmd
+
+
+def test_without_start_the_length_and_ranges_are_still_offered(client, default_session):
+    """The byte-range way is still there for a caller that wants it - see
+    the route's docstring."""
+    response, _ = _request(client, default_session, f"/stream/local/1?fmt=mp3&br={_BR}")
+
+    assert response.headers["content-length"] == str(_TOTAL)
+    assert response.headers["accept-ranges"] == "bytes"
+
+
+def test_a_negative_start_is_rejected(client, default_session):
+    """`start` reaches ffmpeg's -ss, so it is bounded at the door rather
+    than passed through - the same reasoning ALLOWED_BITRATES has for not
+    handing `br` straight to an encoder."""
+    response, _ = _request(client, default_session, f"/stream/local/1?fmt=mp3&br={_BR}&start=-5")
+
+    assert response.status_code == 422
 
 
 def test_an_explicit_range_window_is_not_overrun(client, default_session):
@@ -551,3 +627,36 @@ def test_a_stale_probe_is_re_taken(monkeypatch):
 
     assert first.duration == _DURATION
     assert second.duration == 90.0
+
+
+def test_only_mp3_is_offered_a_length_and_ranges(client, default_session):
+    """The declared length is `bitrate x duration` and a Range's start byte
+    is divided by the same number — arithmetic that is only true for an
+    encoder that really produces that many bytes per second. LAME's padded
+    CBR does; aac and opus miss it by whole percent (see ALLOWED_BITRATES),
+    so they are answered as a plain stream rather than with a length nothing
+    can seek against."""
+    for fmt in ("aac", "opus"):
+        response, cmd = _request(client, default_session, f"/stream/local/1?fmt={fmt}&br=128")
+
+        assert response.status_code == 200
+        assert "content-length" not in response.headers
+        assert "accept-ranges" not in response.headers
+        # Still the start of the track, same as the mp3 case above.
+        assert "-ss" not in cmd
+
+
+def test_a_range_header_on_an_aac_request_is_answered_with_the_whole_stream(
+    client, default_session
+):
+    """A 206 against a length this response never declared would be a claim
+    about bytes nobody can honour."""
+    response, _ = _request(
+        client,
+        default_session,
+        "/stream/local/1?fmt=aac&br=128",
+        headers={"Range": "bytes=1000-"},
+    )
+
+    assert response.status_code == 200
+    assert "content-range" not in response.headers

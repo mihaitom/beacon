@@ -26,12 +26,15 @@ timestamps the same information in two units — the length is
 `transcoded_byte_length()`, and a `Range` request's start byte divided by
 the same bitrate is the second to seek ffmpeg to.
 
-That constraint is also why this route offers exactly one format. FLAC has
-no predictable length at all, and — measured, not assumed — neither ffmpeg's
-aac encoder nor opus actually holds the bitrate it is given. See
-ALLOWED_BITRATES below for the numbers. An output that misses its bitrate
-plays perfectly and then seeks to the wrong place, which is a worse failure
-than not offering the format.
+That constraint is also why this route offered exactly one format for as
+long as it did: FLAC has no predictable length at all, and — measured, not
+assumed — neither ffmpeg's aac encoder nor its opus one actually holds the
+bitrate it is given (see ALLOWED_BITRATES below for the numbers). An output
+that misses its bitrate plays perfectly and then seeks to the wrong place.
+A caller that passes `start` in seconds takes the seeking over instead, and
+nothing then maps bytes onto time — which is what let aac and opus be
+offered here at all. The `Range` path stays for a caller that does not, and
+stays mp3-shaped for the same reason it always was.
 
 No pacing (core/streamer.py's _READRATE_ARGS) on this path, deliberately.
 Those exist so a cast device isn't handed an hour of audio in one go over a
@@ -60,32 +63,47 @@ logger = logging.getLogger("connect.streamer")
 
 router = APIRouter(dependencies=[Depends(require_token)])
 
-# Formats offered here, and the bitrates each one may be asked for. Bounded
-# on purpose rather than passed through to ffmpeg: `br` arrives from a query
-# string, and an arbitrary integer there would let a caller ask for a
-# 3000kbps mp3 that no encoder produces and no listener wanted.
+# Formats offered here, and the bitrates each one may be asked for.
 #
-# **mp3 only, and that is a measurement rather than a preference.** The
-# length this route declares is `bitrate x duration` (see
-# transcoded_byte_length()), so a format whose encoder does not actually hit
-# the bitrate it was given declares a length that is wrong by however much
-# it missed by — and a browser turns a wrong length straight into a wrong
-# seek, since it maps the scrub position onto a byte offset through exactly
-# that number. Measured against ffmpeg 2026-08-26, 180s of pink noise:
+# Two formats now, and the reason the second one arrived is worth keeping:
+# for a long time this was mp3 only, because the length this route declares
+# was `bitrate x duration` (see transcoded_byte_length()) and a media
+# element seeking against that length only lands correctly while the
+# encoder really produces that many bytes. Only mp3 does, and only because
+# LAME's CBR mode pads every frame to size whatever the music is - measured
+# against ffmpeg 9.0.1, 180s at 44.1kHz stereo, and the numbers say
+# something about the *signal* rather than about the encoders:
 #
-#     mp3  320/192/128/96   within 0.02% of the estimate
-#     opus 128 (-vbr off)   +0.81%   (Ogg page framing)
-#     aac  192              +1.33%
-#     aac  256             -12.75%   (the native encoder never reaches it)
+#     signal                        mp3 320     aac 256
+#     pink noise, channels equal     +0.04%     -12.9%  (saturates ~223k)
+#     pink noise, channels apart     +0.04%      +1.1%
+#     a few sine tones, a chord      +0.04%      -6.4%  (saturates ~240k)
 #
-# 12% off is roughly half a minute adrift in a five-minute track. Even the
-# ~1% cases are a second or two, which is visible on a scrub bar. So the
-# formats that are better per bit are the ones that cannot be offered here.
-# They remain available for *casting* (see core/streamer.py's
-# lossy_encode_args(), which this route shares), where Beacon does the
-# seeking itself server-side and no length is ever declared to anyone.
+# ffmpeg is behaving correctly there: `-b:a` is a target its rate control
+# aims at, and where two channels carry the same signal (mid/side makes one
+# nearly free) or the spectrum is a handful of lines, there is nothing left
+# to spend bits on. Ask for 320k on those and the file does not grow at
+# all. Real music decorrelates and fills its spectrum, so it lands on its
+# target - but "usually" is not something a seek can be built on, and a
+# sparse or near-mono track would undershoot silently.
+#
+# What changed is that the seeking no longer goes through that arithmetic:
+# a caller passes `start` in seconds and gets a stream that begins there
+# with no length at all (see local_stream()'s docstring, and the frontend's
+# startLocalSong()). Nothing has to agree about bytes, so a format can be
+# chosen for how it sounds per bit, which is what aac and opus are both
+# here for. opus goes lowest of the three: 96k of it is what the others
+# need 192k for, which is the difference that matters on a phone away from
+# home. Its own +0.81% at 128k in the table above was Ogg page framing, and
+# that no longer matters either now that nothing divides bytes by seconds.
+#
+# Bounded rather than passed through to ffmpeg either way: `br` arrives
+# from a query string, and an arbitrary integer there would let a caller
+# ask for a 3000kbps mp3 that no encoder produces and no listener wanted.
 ALLOWED_BITRATES: dict[str, tuple[int, ...]] = {
     "mp3": (320, 256, 192, 128, 96),
+    "aac": (256, 192, 128, 96),
+    "opus": (192, 128, 96, 64),
 }
 
 # Only the two forms a browser actually sends: "from here to the end" when
@@ -256,6 +274,9 @@ async def local_stream(
     request: Request,
     fmt: str = Query(description="mp3 | aac | opus"),
     br: int = Query(description="bitrate in kbps, see ALLOWED_BITRATES"),
+    start: float | None = Query(
+        None, ge=0.0, description="seconds to start from; its presence disables byte ranges"
+    ),
     session: SessionState = Depends(require_authenticated_session),
 ):
     """Transcode one track for this session's own player.
@@ -264,7 +285,27 @@ async def local_stream(
     wants the untouched file gets the ordinary /rest/stream.view URL from
     the frontend instead, so that path keeps behaving exactly as it always
     has rather than gaining a second implementation that has to be kept
-    identical to the first."""
+    identical to the first.
+
+    Two ways to start somewhere other than the beginning, and they are
+    mutually exclusive:
+
+    - `start`, in seconds. The caller says where it wants to be, and gets a
+      stream that begins there and carries no length at all. Nothing has to
+      agree about how bytes map onto time, which is what makes this the
+      only one of the two that works for a format whose encoder does not
+      produce exactly `br` kbps.
+    - A `Range` header, in bytes, against the declared `bitrate x duration`
+      length. This is the browser seeking by itself, and it only lands
+      correctly while the encoder really does hit `br` — see
+      ALLOWED_BITRATES above for why that means mp3.
+
+    `start` takes precedence, and its *presence* is what counts rather than
+    its value: `start=0` is a caller saying "I am doing the seeking, and I
+    happen to want the beginning", which still means no length. Declaring
+    one anyway would invite the media element to seek against it behind
+    that caller's back, which is exactly what the caller took over to
+    avoid."""
     allowed = ALLOWED_BITRATES.get(fmt)
     if allowed is None:
         return JSONResponse(
@@ -291,13 +332,28 @@ async def local_stream(
     headers = {"Cache-Control": "no-store"}
     status_code = 200
     byte_limit: int | None = None
-    start_seconds = 0.0
+    start_seconds = start or 0.0
 
     # No duration means no length and therefore no seeking — the track still
     # plays, the scrub bar just can't move. Rare enough to accept (it needs
     # the probe to have failed outright, or a source ffmpeg reports no
     # Duration line for) and far better than refusing to play at all.
-    if info is not None and info.duration:
+    #
+    # A caller that passed `start` at all lands here too, deliberately: it
+    # is asking for a plain stream from a point in time, and the whole
+    # length/Range apparatus below would only get in its way.
+    #
+    # And mp3 only, because that is the whole of what the arithmetic here
+    # is true for: a declared length of `bitrate x duration` and a byte
+    # offset divided back into a second both assume an encoder that really
+    # produces that many bytes per second, which LAME's padded CBR does and
+    # neither of the others comes close to (see ALLOWED_BITRATES above, and
+    # lossy_encode_args()'s own measurements for opus). Answering an aac or
+    # opus request the same way declared a length that is wrong by whole
+    # percent and invited the element to seek against it — nothing here
+    # asks for one (the app always sends `start`), and a caller that does
+    # gets a plain stream rather than a plausible-looking lie.
+    if start is None and fmt == "mp3" and info is not None and info.duration:
         total = transcoded_byte_length(br, info.duration)
         headers["Accept-Ranges"] = "bytes"
         rng = _parse_range(request.headers.get("range"), total)

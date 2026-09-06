@@ -132,6 +132,13 @@ class SonosDelivery(BaseDelivery):
     # stopped 1.1s in. Sonos' own published spec tops out at 24-bit/48kHz.
     MAX_SAMPLE_RATE_HZ: int | None = 48000
     MAX_BIT_DEPTH: int | None = 24
+    # Sonos' own published format list: MP3, AAC, FLAC, ALAC, WMA, Ogg
+    # Vorbis, AIFF and WAV. Opus is not on it, and is not merely
+    # undocumented — a real speaker accepts the URI and then plays
+    # silence (confirmed 2026-08-19, see _COPY_MUXER_FOR_CODEC in
+    # core/streamer.py). A listener who picks Opus in Settings therefore
+    # gets AAC on a Sonos rather than nothing.
+    PLAYABLE_CODECS: frozenset[str] = frozenset({"mp3", "aac", "flac", "vorbis"})
 
     def _get_device(self):
         """The SoCo device for this target.

@@ -271,7 +271,7 @@ export default {
     ffmpegMissing:
       'ffmpeg non è presente nel backend Connect: la trasmissione non funzionerà senza di esso.',
     unknownError: 'Errore sconosciuto.',
-    // Keyed by connect/delivery/errors.py's REASON_* constants — a
+    // Keyed by connect/delivery/errors.py's REASON_* constants - a
     // dispatch that reached the device and didn't start playing.
     deliveryFailed: {
       rejected:
@@ -312,6 +312,7 @@ export default {
         quality_limit: 'Limite di qualità',
         browser_unsupported: 'Formato browser',
         device_rejected_stream: 'Rifiutato',
+        relay_mp3_only: 'Convertita per il dispositivo',
       },
       reasons: {
         device_limit: 'La sorgente supera la qualità supportata da questo dispositivo',
@@ -325,6 +326,8 @@ export default {
         browser_unsupported: 'Il browser non può riprodurre il formato di origine',
         device_rejected_stream:
           "Il dispositivo ha rifiutato il flusso originale dell'emittente, quindi Beacon lo converte",
+        relay_mp3_only:
+          'La stazione non invia un formato che si possa inoltrare così com’è, quindi Beacon la converte; in Qualità audio puoi scegliere AAC invece di MP3',
       },
     },
   },
@@ -336,7 +339,7 @@ export default {
   },
   remoteControl: {
     title: 'Controllo remoto',
-    hint: 'Consenti a un telefono sulla tua rete di controllare la riproduzione — In riproduzione, Coda, Playlist, Brani e Radio.',
+    hint: 'Consenti a un telefono sulla tua rete di controllare la riproduzione - In riproduzione, Coda, Playlist, Brani e Radio.',
     enableFailed: 'Impossibile attivare il controllo remoto.',
     disableFailed: 'Impossibile disattivare il controllo remoto.',
     pairTitle: 'Associa un telefono',
@@ -391,13 +394,13 @@ export default {
     logLevelChangeFailed: 'Impossibile aggiornare il livello di log.',
     recommendations: 'Consigli personalizzati',
     recommendationsHint:
-      'Scopri nella Home usa artisti simili a ciò che ascolti davvero, cercati su MusicBrainz, ListenBrainz e Deezer — questo condivide con loro uno o due nomi di artisti della tua libreria. Disattivato mostra album casuali; aprire la pagina di un artista continua comunque a cercare quel singolo artista.',
+      'Scopri nella Home usa artisti simili a ciò che ascolti davvero, cercati su MusicBrainz, ListenBrainz e Deezer - questo condivide con loro uno o due nomi di artisti della tua libreria. Disattivato mostra album casuali; aprire la pagina di un artista continua comunque a cercare quel singolo artista.',
     lyricsProvidersTitle: 'Provider di testi',
     lyricsProvidersHint:
-      'I testi salvati nel file stesso vengono sempre provati per primi e non lasciano mai il tuo server. Tutti i fornitori qui sotto sono attivi per impostazione predefinita — deseleziona quelli a cui preferisci che Beacon non invii titolo e artista di un brano.',
+      'I testi salvati nel file stesso vengono sempre provati per primi e non lasciano mai il tuo server. Tutti i fornitori qui sotto sono attivi per impostazione predefinita - deseleziona quelli a cui preferisci che Beacon non invii titolo e artista di un brano.',
     lyricsProviders: 'Provider di terze parti',
     lyricsProvidersEmptyHint:
-      'Nessun provider selezionato — vengono mostrati solo i testi salvati nel file stesso.',
+      'Nessun provider selezionato - vengono mostrati solo i testi salvati nel file stesso.',
     lyricsProvidersActiveHint:
       'Se il file non ha testo, titolo e artista vengono inviati ai fornitori selezionati per trovare una corrispondenza. Album e durata non lasciano mai il tuo server; servono solo qui, per scegliere il risultato più vicino.',
     playbackTitle: 'Riproduzione',
@@ -411,7 +414,7 @@ export default {
       "Su questo dispositivo vale solo per la trasmissione: la riproduzione qui passa direttamente dal browser per continuare a suonare a schermo bloccato, il che non lascia modo di regolare il volume dell'audio lungo il percorso.",
     localQuality: 'Qualità audio (questo dispositivo)',
     localQualityHint:
-      "Si applica solo alla riproduzione su questo dispositivo ed è salvata qui, non nell'account, quindi telefono e computer possono avere impostazioni diverse. «Originale» invia il file invariato; MP3 lo converte durante la riproduzione, il che riduce la banda usata e rende riproducibili file che il browser altrimenti non apre. MP3 è l'unica conversione offerta qui, perché è l'unica con cui spostarsi all'interno del brano funziona in modo affidabile. La modifica ha effetto dal brano successivo.",
+      "Si applica solo alla riproduzione su questo dispositivo ed è salvata qui, non nell'account, quindi telefono e computer possono avere impostazioni diverse. «Originale» invia il file invariato; ogni altro formato viene convertito durante la riproduzione, il che riduce la banda usata e rende riproducibili file che il browser altrimenti non apre. Vengono offerti solo i formati che questo browser sa decodificare. La modifica ha effetto dal brano successivo.",
     castQuality: 'Qualità audio (trasmissione)',
     castQualityHint:
       'Un limite massimo, non una scelta fissa: Beacon continua a scegliere il formato migliore accettato da ogni dispositivo, ma non invia mai nulla al di sopra di questa impostazione. Una registrazione già al di sotto viene inviata invariata. I limiti del dispositivo stesso valgono sempre in aggiunta. Ha effetto dal brano successivo.',
@@ -419,6 +422,24 @@ export default {
     qualityBitrate: 'Bitrate',
     qualityBitrateItem: '{value} kbit/s',
     qualityOriginal: 'Originale (invariato)',
+    qualityTipsTitle: 'Consigli',
+    qualityTips: {
+      ceiling:
+        'Un limite massimo, non una conversione: ciò che è già al di sotto viene riprodotto invariato.',
+      home: 'A casa in Wi-Fi: Originale, così non viene convertito nulla.',
+      mobile: 'Fuori casa: AAC a 192 kbit/s suona come MP3 a 320 e consuma molti meno dati.',
+      slow: 'Con una connessione lenta: Opus a 96 o 128 kbit/s è il più leggero a parità di qualità.',
+      compatibility:
+        "MP3 a 256 o 320 kbit/s è quello che si riproduce ovunque, ed è la risposta quando qualcos'altro dà problemi.",
+      castDefault:
+        "L'altoparlante è sulla stessa rete di Beacon, quindi qui la quantità di dati non è il punto: «Originale» di solito è la scelta giusta.",
+      castWhenNeeded:
+        'Un limite conviene solo quando qualcosa si inceppa: Wi-Fi debole in quella stanza, o un dispositivo che arranca con file senza perdita di grandi dimensioni. AAC a 256 kbit/s è più che sufficiente.',
+      castCompatibility:
+        'MP3 a 320 kbit/s è la risposta appena un dispositivo fa storie: si riproduce ovunque.',
+      castDevice:
+        "Beacon riduce la scelta a ciò che l'altoparlante riproduce davvero: a un dispositivo senza Opus viene inviato AAC, o MP3 se nemmeno quello è accettato, con il bitrate scelto.",
+    },
     castRadioDirectly: 'Riprodurre la radio direttamente dalla stazione',
     castRadioDirectlyHint:
       "Per impostazione predefinita Beacon instrada la radio tramite il proprio backend, sia per un dispositivo di trasmissione sia per questo lettore. Un'unica connessione alla stazione alimenta l'audio e il titolo in riproduzione, e una stazione che cade viene riconnessa da Beacon senza interrompere la riproduzione qui. Se attivato, il dispositivo e questo lettore si collegano direttamente alla stazione: la riproduzione continua anche se Beacon si riavvia, ma un'interruzione si nota solo quando sparisce l'audio, e alcuni dispositivi rifiutano il flusso della stazione.",

@@ -18,7 +18,7 @@ from core.icy_metadata import (
     pulsed_title,
 )
 from core.loop_health import peak_lag
-from core.radio_relay import RadioRelay
+from core.radio_relay import RadioRelay, relay_format_for_target
 from core.session import (
     DEFAULT_SESSION_ID,
     SessionState,
@@ -30,6 +30,7 @@ from core.session import (
 from core.state import (
     TEST_TONE_TRACK_ID,
     audio_capability_limits,
+    playable_codecs,
     stream_url,
     test_tone_url,
 )
@@ -73,6 +74,7 @@ async def _dispatch_queued_track(session: SessionState, target, track, gain: flo
         # SessionState.max_lossy_format's comment.
         max_lossy_format=st.max_lossy_format,
         max_lossy_bitrate_kbps=st.max_lossy_bitrate_kbps,
+        device_codecs=playable_codecs(target),
     )
     url = stream_url(session.session_id)
 
@@ -737,6 +739,23 @@ async def _relayed_radio_audio(relay: RadioRelay, *, burst: bool = False) -> Asy
 @router.get("/stream/radio-local")
 async def local_radio_stream(
     url: str = Query(...),
+    # This device's own audio-quality ceiling, in kbps — the same setting
+    # /play-url carries for a cast device, for the same reason: since local
+    # radio comes through this relay too, a station broadcasting above it
+    # can be brought down here instead of arriving at whatever the station
+    # sends. Absent means "leave it alone". Applied only where this request
+    # actually starts the relay: an element reconnecting mid-station must
+    # not tear down and rebuild one that is already running (see
+    # /play-url's own note on which side wins when the two disagree).
+    max_bitrate_kbps: int | None = Query(default=None),
+    # The format half of the same setting. Reduced to what this relay can
+    # actually produce before it gets there (see relay_format_for_target()):
+    # Opus asks for AAC, since there is no Opus encoder here and any
+    # browser that plays Opus plays AAC too — which beats quietly dropping
+    # the listener onto MP3, the format they went out of their way not to
+    # pick. An `<audio>` element takes either, so this is purely about not
+    # converting a station that already arrives in the format they chose.
+    format: str | None = Query(default=None),
     session: SessionState = Depends(get_session),
     _token: None = Depends(require_token),
 ):
@@ -761,10 +780,12 @@ async def local_radio_stream(
       fetch — the relay demuxes it inline and reports it through the very
       same callback the watch did, so /radio-metadata answers exactly as
       before.
-    - **Whatever the station serves plays.** The relay's output is MP3
-      either way (byte-for-byte where the station already is MP3, see
-      _device_output_args()), so a station a browser cannot decode is no
-      longer a station this device cannot play.
+    - **Whatever the station serves plays.** The relay's output is MP3 or
+      AAC — whichever the listener's own quality setting asked for, and
+      byte-for-byte where the station already sends it (see
+      core/radio_relay.py's _device_output_args()); a browser plays both,
+      so a station a browser cannot decode is no longer a station this
+      device cannot play.
 
     Not free, and the listener can decline it: the audio crosses the
     network twice for anyone running connect somewhere other than their own
@@ -794,7 +815,15 @@ async def local_radio_stream(
         # is a request of its own, and this route is re-entered by every
         # reconnect the element makes.
         probed = await probe_stream(url)
-        relay = await session.start_radio_relay(url, probed.content_type)
+        relay = await session.start_radio_relay(
+            url,
+            probed.content_type,
+            max_bitrate_kbps=max_bitrate_kbps,
+            # No device to narrow against: this stream ends up in a browser,
+            # and which formats *it* plays is already decided on that side
+            # (see localFormats() in services/streamQuality.ts).
+            preferred_format=relay_format_for_target(format, None),
+        )
     logger.info(f"[stream] Serving relayed radio to a local player: {url[:80]}")
     # No ICY muxing, unlike /stream/radio: an <audio> element has no way to
     # read it (that is why core/icy_metadata.py exists at all), and asking

@@ -11,7 +11,7 @@ already reports.
 from unittest.mock import AsyncMock, patch
 
 from core.stream_format import ProbedStream
-from delivery import ChromecastDelivery
+from delivery import AirPlayDelivery, ChromecastDelivery
 
 
 class FakeRelay:
@@ -19,8 +19,25 @@ class FakeRelay:
     is exactly what test_radio_relay.py already covers; this only needs to
     look like a relay to whatever wires it in."""
 
-    def __init__(self, url, content_type, on_title_change, on_stream_info=None):
+    def __init__(
+        self,
+        url,
+        content_type,
+        on_title_change,
+        on_stream_info=None,
+        max_bitrate_kbps=None,
+        preferred_format=None,
+    ):
         self.url = url
+        # What the listener's cast-quality ceiling was when this relay was
+        # started, so a test can check the route passes it through.
+        self.max_bitrate_kbps = max_bitrate_kbps
+        self.preferred_format = preferred_format
+        # Mirrors RadioRelay's own two: why the station is being re-encoded
+        # (None where it is passed through) and what it is being handed to
+        # the device at.
+        self.reencode_reason = None
+        self.output_bitrate_kbps = None
         self.device_content_type = "audio/mpeg"
         self._on_title_change = on_title_change
         self.started = False
@@ -69,6 +86,239 @@ def test_dispatches_the_device_to_beacons_own_relay_by_default(client, default_s
     assert default_session.state.radio_info["url"] == "http://example.com/stream.mp3"
     assert isinstance(default_session.radio_relay, FakeRelay)
     assert default_session.radio_relay.started is True
+
+
+def test_passes_the_cast_quality_ceiling_to_the_relay(client, default_session):
+    """The setting only ever reached songs: /play sent it, /play-url did
+    not, and the relay had no way to know about it."""
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch(
+            "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/mpeg"))
+        ),
+        patch("core.session.RadioRelay", FakeRelay),
+    ):
+        _play_url(client, max_lossy_format="mp3", max_lossy_bitrate_kbps=96)
+
+    assert default_session.radio_relay.max_bitrate_kbps == 96
+
+
+def test_casting_restarts_a_relay_local_playback_started_under_another_ceiling(
+    client, default_session
+):
+    """Listening on this device and then sending the station to a speaker is
+    the ordinary way round. The relay is already running under the local
+    ceiling; reusing it would ignore the cast setting for the whole
+    station."""
+    running = FakeRelay("http://example.com/stream.mp3", "audio/mpeg", lambda _t: None)
+    running.max_bitrate_kbps = 320
+    running.preferred_format = "mp3"
+    default_session.radio_relay = running
+
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch(
+            "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/mpeg"))
+        ),
+        patch("core.session.RadioRelay", FakeRelay),
+    ):
+        _play_url(client, max_lossy_format="mp3", max_lossy_bitrate_kbps=96)
+
+    assert running.stopped is True
+    assert default_session.radio_relay is not running
+    assert default_session.radio_relay.max_bitrate_kbps == 96
+
+
+def test_casting_restarts_a_relay_running_in_another_format(client, default_session):
+    """Switching the setting to AAC has to reach a station already playing
+    through the relay, the same way a changed ceiling does."""
+    running = FakeRelay("http://example.com/stream.mp3", "audio/mpeg", lambda _t: None)
+    running.max_bitrate_kbps = 96
+    running.preferred_format = "mp3"
+    default_session.radio_relay = running
+
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch(
+            "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/mpeg"))
+        ),
+        patch("core.session.RadioRelay", FakeRelay),
+    ):
+        _play_url(client, max_lossy_format="aac", max_lossy_bitrate_kbps=96)
+
+    assert running.stopped is True
+    assert default_session.radio_relay.preferred_format == "aac"
+
+
+def test_opus_reaches_the_relay_as_aac(client, default_session):
+    """The relay has no Opus encoder, and a Chromecast takes AAC just as
+    happily as it takes Opus — so the setting lands on the best thing the
+    relay can actually produce rather than falling all the way to MP3."""
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch(
+            "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/mpeg"))
+        ),
+        patch("core.session.RadioRelay", FakeRelay),
+    ):
+        _play_url(client, max_lossy_format="opus", max_lossy_bitrate_kbps=128)
+
+    assert default_session.radio_relay.preferred_format == "aac"
+
+
+def test_a_device_that_plays_no_aac_gets_mp3_whatever_was_asked_for(client, default_session):
+    """An AirPlay device decodes neither AAC nor Opus (see
+    AirPlayDelivery.PLAYABLE_CODECS) — handing it either is how a station
+    reached a speaker as silence."""
+    with (
+        patch.object(AirPlayDelivery, "play", new=AsyncMock()),
+        patch(
+            "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/mpeg"))
+        ),
+        patch("core.session.RadioRelay", FakeRelay),
+    ):
+        _play_url(
+            client,
+            target_name="HomePod",
+            target_type="airplay",
+            max_lossy_format="aac",
+            max_lossy_bitrate_kbps=128,
+        )
+
+    assert default_session.radio_relay.preferred_format == "mp3"
+
+
+def test_a_second_dispatch_at_another_quality_is_not_a_duplicate(client, default_session):
+    """Two clients share a session and each has its own quality setting. The
+    second arriving inside the duplicate-dispatch cooldown used to be
+    dropped — after its relay teardown had already silenced the speaker."""
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play,
+        patch(
+            "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/mpeg"))
+        ),
+        patch("core.session.RadioRelay", FakeRelay),
+    ):
+        _play_url(client, max_lossy_format="mp3", max_lossy_bitrate_kbps=320)
+        _play_url(client, max_lossy_format="mp3", max_lossy_bitrate_kbps=96)
+
+    assert play.await_count == 2
+
+
+def test_the_very_same_dispatch_is_still_a_duplicate(client, default_session):
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play,
+        patch(
+            "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/mpeg"))
+        ),
+        patch("core.session.RadioRelay", FakeRelay),
+    ):
+        _play_url(client, max_lossy_format="mp3", max_lossy_bitrate_kbps=96)
+        _play_url(client, max_lossy_format="mp3", max_lossy_bitrate_kbps=96)
+
+    assert play.await_count == 1
+
+
+def test_casting_keeps_a_relay_already_running_under_the_same_ceiling(client, default_session):
+    """Nothing to gain from a reconnect — and it would cost the station one
+    for no reason."""
+    running = FakeRelay("http://example.com/stream.mp3", "audio/mpeg", lambda _t: None)
+    running.max_bitrate_kbps = 96
+    running.preferred_format = "mp3"
+    default_session.radio_relay = running
+
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch(
+            "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/mpeg"))
+        ),
+        patch("core.session.RadioRelay", FakeRelay),
+    ):
+        _play_url(client, max_lossy_format="mp3", max_lossy_bitrate_kbps=96)
+
+    assert running.stopped is False
+    assert default_session.radio_relay is running
+
+
+def test_a_station_cast_without_a_ceiling_gets_none(client, default_session):
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch(
+            "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/mpeg"))
+        ),
+        patch("core.session.RadioRelay", FakeRelay),
+    ):
+        _play_url(client)
+
+    assert default_session.radio_relay.max_bitrate_kbps is None
+
+
+def test_reports_a_re_encoded_station_to_the_stream_info_panel(client, default_session):
+    """So the overlay says "MP3 96k" instead of only naming the source —
+    the same row it already shows for a song over the ceiling."""
+
+    class ReencodingRelay(FakeRelay):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.reencode_reason = "quality_limit"
+            self.output_bitrate_kbps = 96
+
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch(
+            "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/mpeg"))
+        ),
+        patch("core.session.RadioRelay", ReencodingRelay),
+    ):
+        _play_url(client, max_lossy_format="mp3", max_lossy_bitrate_kbps=96)
+
+    fmt = default_session.state.current_output_format
+    assert fmt.target_bitrate_kbps == 96
+    assert fmt.transcode_reason == "quality_limit"
+    assert "96k" in fmt.label
+
+
+def test_reports_a_compatibility_conversion_as_one(client, default_session):
+    """An AAC station is re-encoded because the device gets MP3 either way.
+    Reporting the quality ceiling for that (as this did at first) tells the
+    listener their setting is doing something it is not — it says so even
+    with the setting on "original"."""
+
+    class CompatRelay(FakeRelay):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.reencode_reason = "codec_not_castable"
+            self.output_bitrate_kbps = 192
+
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch(
+            "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/aacp"))
+        ),
+        patch("core.session.RadioRelay", CompatRelay),
+    ):
+        _play_url(client)
+
+    fmt = default_session.state.current_output_format
+    assert fmt.transcode_reason == "codec_not_castable"
+    assert fmt.target_bitrate_kbps == 192
+
+
+def test_says_nothing_about_transcoding_for_a_station_it_passes_through(client, default_session):
+    """A station under the ceiling is copied, and claiming a conversion
+    that never happened is exactly what the panel used to do."""
+    before = default_session.state.current_output_format
+
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch(
+            "routes.playback.probe_stream", new=AsyncMock(return_value=ProbedStream("audio/mpeg"))
+        ),
+        patch("core.session.RadioRelay", FakeRelay),
+    ):
+        _play_url(client, max_lossy_format="mp3", max_lossy_bitrate_kbps=96)
+
+    assert default_session.state.current_output_format is before
 
 
 def test_does_not_start_a_second_independent_icy_watch_when_relayed(client, default_session):
@@ -215,8 +465,8 @@ class UnreachableRelay(FakeRelay):
     RadioRelay.start() returns anyway (its own loop keeps retrying in the
     background), leaving `connected` False."""
 
-    def __init__(self, url, content_type, on_title_change, on_stream_info=None):
-        super().__init__(url, content_type, on_title_change)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.connected = False
 
 

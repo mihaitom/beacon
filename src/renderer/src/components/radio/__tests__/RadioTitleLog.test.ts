@@ -22,6 +22,13 @@ const i18n = {
   },
 }
 
+// `transition-group` is stubbed by @vue/test-utils out of the box, which
+// replaces it with a wrapper element - and this component relies on it
+// rendering as a fragment so the timeline items stay direct children of the
+// timeline's grid. Testing against the stub would test a DOM the app never
+// has, so it is switched off here and in the layout suite next door.
+const realTransitions = { stubs: { transition: false, 'transition-group': false } }
+
 beforeEach(() => {
   push.mockClear()
   vi.mocked(isMobileWebNow).mockReturnValue(false)
@@ -30,7 +37,7 @@ beforeEach(() => {
 function mountLog(titles: string[]) {
   return mount(RadioTitleLog, {
     props: { entries: titles.map((title, i) => ({ title, at: 1_757_000_000 + i })) },
-    ...i18n,
+    global: { ...i18n.global, ...realTransitions },
   })
 }
 
@@ -41,7 +48,10 @@ function at(day: number, hour: number, minute = 0): number {
 }
 
 function mountEntries(entries: { title: string; at: number }[]) {
-  return mount(RadioTitleLog, { props: { entries }, ...i18n })
+  return mount(RadioTitleLog, {
+    props: { entries },
+    global: { ...i18n.global, ...realTransitions },
+  })
 }
 
 function lines(wrapper: ReturnType<typeof mountEntries>): string[] {
@@ -329,5 +339,74 @@ describe('RadioTitleLog', () => {
 
     expect(wrapper.find('.title-log__empty').text()).toBe('radio.titleLogEmpty')
     expect(wrapper.find('.title-log__list').exists()).toBe(false)
+  })
+})
+
+/** The entrance is armed for exactly one kind of change - a title the
+ * station has just started, arriving at the top - and stays off for the
+ * two that would otherwise animate a whole screenful at once. The
+ * animation itself is CSS and needs no test; which change gets it is
+ * ordinary logic and does. */
+describe('RadioTitleLog new-title animation', () => {
+  const at = (hour: number, minute: number) => new Date(2026, 8, 6, hour, minute).getTime() / 1000
+
+  const older = [
+    { title: 'Artist - Second', at: at(11, 51) },
+    { title: 'Artist - Third', at: at(11, 42) },
+  ]
+
+  /** Read off the transition group itself rather than off the component's
+   * own flag: what matters is that the switch actually reaches the thing
+   * doing the animating. */
+  function armed(wrapper: ReturnType<typeof mountEntries>): boolean {
+    return wrapper.findComponent({ name: 'TransitionGroup' }).props('css') as boolean
+  }
+
+  it('does not animate its very first render', () => {
+    const wrapper = mountEntries(older)
+
+    expect(armed(wrapper)).toBe(false)
+  })
+
+  it('animates a title arriving at the top', async () => {
+    const wrapper = mountEntries(older)
+
+    await wrapper.setProps({ entries: [{ title: 'Artist - Newest', at: at(11, 59) }, ...older] })
+
+    expect(armed(wrapper)).toBe(true)
+  })
+
+  it('stays still when a page of older entries is appended', async () => {
+    const wrapper = mountEntries(older)
+
+    await wrapper.setProps({ entries: [...older, { title: 'Artist - Older', at: at(10, 4) }] })
+
+    expect(armed(wrapper)).toBe(false)
+  })
+
+  it('stays still when the whole list is replaced, as on a station switch', async () => {
+    const wrapper = mountEntries(older)
+
+    await wrapper.setProps({
+      entries: [
+        { title: 'Other - A', at: at(12, 1) },
+        { title: 'Other - B', at: at(12, 0) },
+        { title: 'Other - C', at: at(11, 58) },
+      ],
+    })
+
+    expect(armed(wrapper)).toBe(false)
+  })
+
+  /** The transition group must not bring a wrapper element with it: the
+   * timeline is a grid and its items have to stay direct children of it. */
+  it('leaves the timeline items as direct children of the timeline', () => {
+    const wrapper = mountEntries(older)
+
+    const children = [...wrapper.get('.v-timeline').element.children]
+    expect(children.length).toBeGreaterThan(0)
+    for (const child of children) {
+      expect(child.classList.contains('v-timeline-item')).toBe(true)
+    }
   })
 })

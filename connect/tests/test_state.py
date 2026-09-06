@@ -4,7 +4,13 @@ import asyncio
 import time
 
 from core.session import SessionState, compute_position
-from core.state import EventBus, audio_capability_limits, find_sonos, resolve_target
+from core.state import (
+    EventBus,
+    audio_capability_limits,
+    find_sonos,
+    playable_codecs,
+    resolve_target,
+)
 from media import Track
 
 # ── EventBus ──────────────────────────────────────────────────────────────────
@@ -488,3 +494,46 @@ def test_audio_capability_limits_manager_all_members_without_a_limit():
     a.MAX_BIT_DEPTH = None
     manager = DeliveryManager.from_deliveries([a])
     assert audio_capability_limits(manager) == (None, None)
+
+
+# ── playable_codecs ──────────────────────────────────────────────────────────
+
+
+def test_playable_codecs_from_none():
+    """No delivery active means nothing to judge against — the streamer
+    then behaves exactly as it did before device codecs existed."""
+    assert playable_codecs(None) is None
+
+
+def test_playable_codecs_single_delivery():
+    from delivery import ChromecastDelivery
+
+    assert "opus" in playable_codecs(ChromecastDelivery("TV"))
+
+
+def test_playable_codecs_manager_takes_the_intersection():
+    """One ffmpeg feeds every active target at once, so what one of them
+    cannot decode is off the table for all of them."""
+    from delivery import ChromecastDelivery, DeliveryManager, SonosDelivery
+
+    manager = DeliveryManager.from_deliveries([SonosDelivery("Küche"), ChromecastDelivery("TV")])
+    codecs = playable_codecs(manager)
+    assert "aac" in codecs  # both play it
+    assert "opus" not in codecs  # only the Chromecast does
+
+
+def test_playable_codecs_airplay_plays_neither_aac_nor_opus():
+    """pyatv decodes with miniaudio, whose repertoire is WAV/FLAC/MP3/
+    Vorbis — an AAC stream never played on this target."""
+    from delivery import AirPlayDelivery
+
+    codecs = playable_codecs(AirPlayDelivery("HomePod"))
+    assert "mp3" in codecs
+    assert "aac" not in codecs
+    assert "opus" not in codecs
+
+
+def test_playable_codecs_empty_manager_is_the_same_as_no_delivery():
+    from delivery import DeliveryManager
+
+    assert playable_codecs(DeliveryManager.from_deliveries([])) is None

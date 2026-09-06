@@ -500,6 +500,36 @@ def audio_capability_limits(
     return (min(rates) if rates else None, min(depths) if depths else None)
 
 
+def playable_codecs(
+    delivery: BaseDelivery | DeliveryManager | None,
+) -> frozenset[str] | None:
+    """The codecs every currently active delivery can play, for
+    core/streamer.py's resolve_output_format().
+
+    The intersection, for the same reason audio_capability_limits() takes
+    the minimum: one ffmpeg process feeds every active target at once (see
+    routes/stream.py's audio_stream()), so a codec one of them cannot decode
+    is a codec none of them can be sent — casting to a Chromecast and an
+    AirPlay device at once means the pair share whatever both understand.
+
+    None means there is nothing to judge against (no delivery active at
+    all), and resolve_output_format() then behaves exactly as it did before
+    this existed. An *empty* set is a different answer and never occurs:
+    every delivery declares at least mp3 (see BaseDelivery.PLAYABLE_CODECS).
+    """
+    deliveries: list[BaseDelivery]
+    if isinstance(delivery, DeliveryManager):
+        deliveries = delivery.deliveries
+    elif delivery is not None:
+        deliveries = [delivery]
+    else:
+        return None
+
+    if not deliveries:
+        return None
+    return frozenset.intersection(*(frozenset(d.PLAYABLE_CODECS) for d in deliveries))
+
+
 def list_target_pairs(
     delivery: BaseDelivery | DeliveryManager | None,
 ) -> list[tuple[str, str]]:

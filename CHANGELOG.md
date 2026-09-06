@@ -9,14 +9,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - Now Playing has its own entry at the top of the sidebar, rather than being reachable only through the player bar
-- You can now vote for a station in "Discover stations" by clicking its vote count, which is what the "most voted" ranking there is built on. Radio Browser counts one vote per station a day, shared by everyone using the same Beacon server, and a station whose vote for today is already spent says so instead of quietly dropping yours
+- Each audio-quality setting now has an info button with a few recommendations behind it, so which format and bitrate to pick no longer has to be guessed
 - Internet radio played on this device now goes through Beacon's own backend too, which keeps hold of the station on your behalf: a tunnel or a cell handover while listening away from home no longer skips ahead, because the seconds you missed are kept for you and catch up once you are back
 - A radio station that goes quiet is now noticed within seconds instead of minutes and brought back automatically, and the player bar offers a Reconnect button if it stays away
+- You can now vote for a station in "Discover stations" by clicking its vote count, which is what the "most voted" ranking there is built on. Radio Browser counts one vote per station a day, shared by everyone using the same Beacon server, and a station whose vote for today is already spent says so instead of quietly dropping yours
 
 ### Changed
 
-- A station's title history is now laid out as a timeline: one card per title on a line down the panel with the time beside it, the track playing right now marked on the line, and anything that does not read as an artist and a track - a programme name, the news, a station slogan - marked as a plain line of text. A longer break, where the station was off or you were listening to something else, shows as a gap in the line
+- AAC and Opus are now available as playback qualities, not just MP3, for this device and for casting alike. Both fit more music into the same bandwidth, Opus most of all: at 96 kbps it holds up where the others need 192. Each is only offered where it can actually be played, and a speaker that does not take the one you picked is sent AAC instead, at the bitrate you chose
+- Seeking inside a converted track is now done by Beacon rather than by the browser: dragging the scrub bar asks the server for the music from exactly that second. That is what makes formats other than MP3 usable on this device at all
+- A station's title history is now laid out as a timeline: one card per title on a line down the panel with the time beside it, the track playing right now marked on the line, and anything that does not read as an artist and a track marked as a plain line of text. A longer break, where the station was off or you were listening to something else, shows as a gap in the line
+- A title a station has just started now slides into the top of its history rather than appearing from nowhere. Scrolling further back, or switching stations, still fills the list at once
 - A station's title history now loads as you scroll it instead of arriving all at once, and the app no longer re-fetches the whole list every few seconds while a station plays, which saves a good deal of mobile data on a long history
+- Autoplay is greyed out while an internet radio station is playing, on the desktop, the phone and the phone remote alike. It tops the queue up as it runs out, which a live stream never does
 - The Playback setting "Send radio straight to the device" is now "Play radio straight from the station" and decides it for this device's own player as well as for casting
 - The Remote Control pairing window now closes itself as soon as the phone connects, unless you were using it for something else, such as copying the address or generating a new code
 - The Remote Control button in the player bar now shows how many phones are connected and opens the pairing code again, and switching Remote Control off moved into that window
@@ -30,16 +35,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Both audio-quality settings now apply to internet radio as well, on this device and when casting: a station broadcasting above the limit you picked is brought down to it, one already below it is passed through untouched, and the stream panel says which of the two happened. A station that already sends AAC now reaches the speaker exactly as it left the station, whether you picked AAC or left the setting on Original; it used to be converted to MP3 on the way. Stations sent straight to the device are still untouched by both settings, since there is nothing in between to convert them
+- Switching to a speaker while a song is already playing now applies the cast audio quality to that song too. It used to reach the speaker untouched, and the setting only appeared to take hold from the next track on
+- Casting to an AirPlay device with the quality set to AAC played nothing at all, since such a device cannot decode AAC. Beacon now converts to a format the device on the other end really plays
+- Casting with the quality set to AAC now works in the Docker version. The media tool bundled there was built without an AAC encoder, so the cast failed as soon as a track needed converting; the desktop app was never affected, since it uses the one installed on your machine
+- A recording in a format the browser cannot open is now converted for it on this device too, which Safari needed and never got: an Ogg Vorbis track stayed silent there even with an audio quality set
 - A library scan now keeps running in view after you leave Settings: it is followed to the end wherever you are, the finished scan's results show up without a restart, and coming back to Settings picks up a scan that is still going
 - The "Rescan library" button in Settings no longer changes size while it runs, and it now shows how far the scan has got: the ring in the button fills up where your server reports a percentage (Jellyfin, Plex) and keeps turning where it only counts files (Navidrome), with the figure beside it either way
 - The line above the rescan button named Navidrome even when signed in to Jellyfin or Plex; it now names the server the scan will actually run on
+- A connection lost after pausing and resuming is now reconnected like any other. Pausing used to stand down the automatic reconnect for good, so a song or a station that dropped after the pause simply stopped
+- Now Playing no longer scrolls in a phone browser: the page is sized to what is actually visible, so the artwork stays put instead of sliding out of view above the browser's own toolbar
 - Now Playing remembers whether the lyrics, or a station's title list, were open, so leaving that screen and coming back shows them again instead of the plain artwork
 - A very long radio title no longer pushes the artwork out of view on Now Playing; it is shortened with an ellipsis, and the full title stays in the station's title list
 - Where a station marks an ad by putting the advertiser's web address in place of the artist, it is now kept out of the title history and off the lock screen. Ads that look like an ordinary song still come through
 - Radio stations that send iHeartRadio-style now-playing metadata now show the artist and track like every other station, instead of a line of internal identifiers
 - The elapsed time beside "Live" no longer freezes at the length of whatever track was playing before the station started
+- The elapsed time beside "Live" now counts hours once a station has been on for one, instead of running up as "76:47"
 - While casting a radio station, the artist and track under the station name no longer disappear until the next song starts
 - Switching stations while casting no longer flickers back to the previous station for a moment before settling on the new one
+- Switching from a radio station to music from your library while casting left the station name, its logo and the "Live" readout sitting in the player bar, with the song already playing underneath
 - Rows in the queue now slide into place as soon as they move, instead of sitting out of position for a moment first
 
 ## [1.1.0] - 2026-09-05

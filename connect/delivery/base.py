@@ -33,6 +33,28 @@ class BaseDelivery(ABC):
     MAX_SAMPLE_RATE_HZ: int | None = None
     MAX_BIT_DEPTH: int | None = None
 
+    # Which audio codecs this device class actually plays — read by
+    # core/state.py's playable_codecs() and enforced in
+    # core/streamer.py's resolve_output_format(), which uses it for both
+    # halves of the same question: whether a source can be handed over
+    # untouched (the copy tier), and which encoder the listener's quality
+    # ceiling may use for a device that can't decode the one they picked.
+    #
+    # Unlike MAX_SAMPLE_RATE_HZ above, there is no "unknown" value here.
+    # A rate nobody declared is a rate nothing is judged against and the
+    # source is left alone, which is harmless; a *codec* nobody declared
+    # would have to mean either "everything" or "nothing", and both are
+    # wrong. So this base default is the assumption the streamer made for
+    # every target before the attribute existed — mp3/aac/flac/vorbis are
+    # exactly what _COPY_MUXER_FOR_CODEC hands over as-is, plus the flac
+    # its lossless tier re-encodes into — and each subclass states its own.
+    #
+    # Only codecs the streamer ever has to decide about are listed: what it
+    # can copy, what it re-encodes lossless sources into, and the three
+    # lossy encoders a quality ceiling can name. A device playing WMA or
+    # AIFF is true and irrelevant — nothing here ever produces one.
+    PLAYABLE_CODECS: frozenset[str] = frozenset({"mp3", "aac", "flac", "vorbis"})
+
     def __init__(self, target: str):
         self.target = target
         # Called when a delivery discovers by itself that playback has

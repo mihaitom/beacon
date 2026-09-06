@@ -73,7 +73,7 @@ export default {
     reroll: 'Volver a mezclar',
     playAll: 'Reproducir todo',
     readyToPlay: '¿Listo para escuchar algo?',
-    nothingHeardYet: 'Todavía no has escuchado nada — empieza donde quieras.',
+    nothingHeardYet: 'Todavía no has escuchado nada - empieza donde quieras.',
     nowPlaying: 'Reproduciendo ahora',
     paused: 'Pausa',
     keepListening: 'Sigue escuchando',
@@ -269,9 +269,9 @@ export default {
     apiUnreachable:
       'El backend de Connect no está disponible. ¿Está en ejecución y es correcta la URL en Ajustes?',
     authError: 'La sesión de Connect no está autenticada. Vuelve a iniciar sesión.',
-    ffmpegMissing: 'Falta ffmpeg en el backend de Connect — la transmisión no funcionará sin él.',
+    ffmpegMissing: 'Falta ffmpeg en el backend de Connect - la transmisión no funcionará sin él.',
     unknownError: 'Error desconocido.',
-    // Keyed by connect/delivery/errors.py's REASON_* constants — a
+    // Keyed by connect/delivery/errors.py's REASON_* constants - a
     // dispatch that reached the device and didn't start playing.
     deliveryFailed: {
       rejected:
@@ -283,7 +283,7 @@ export default {
       unknown: 'Falló la reproducción en «{device}».',
     },
     pairDeviceTitle: 'Emparejar "{name}"',
-    pairPinPrompt: 'El dispositivo muestra un PIN — introdúcelo:',
+    pairPinPrompt: 'El dispositivo muestra un PIN - introdúcelo:',
     pairConfirmPrompt: 'Confirma en el dispositivo y luego haz clic en "Hecho".',
     pin: 'PIN',
     takeoverTitle: '¿Tomar el control del dispositivo?',
@@ -312,6 +312,7 @@ export default {
         quality_limit: 'Límite de calidad',
         browser_unsupported: 'Formato del navegador',
         device_rejected_stream: 'Rechazado',
+        relay_mp3_only: 'Convertida para el dispositivo',
       },
       reasons: {
         device_limit: 'La fuente supera la calidad que admite este dispositivo',
@@ -325,6 +326,8 @@ export default {
         browser_unsupported: 'El navegador no puede reproducir el formato de origen',
         device_rejected_stream:
           'El dispositivo rechazó la transmisión original de la emisora, así que Beacon la convierte',
+        relay_mp3_only:
+          'La emisora no envía un formato que pueda entregarse tal cual, por lo que Beacon la convierte; en Calidad de audio puedes elegir AAC en lugar de MP3',
       },
     },
   },
@@ -336,7 +339,7 @@ export default {
   },
   remoteControl: {
     title: 'Control remoto',
-    hint: 'Permite que un teléfono en tu red controle la reproducción — Reproduciendo ahora, Cola, Listas de reproducción, Canciones y Radio.',
+    hint: 'Permite que un teléfono en tu red controle la reproducción - Reproduciendo ahora, Cola, Listas de reproducción, Canciones y Radio.',
     enableFailed: 'No se pudo activar el control remoto.',
     disableFailed: 'No se pudo desactivar el control remoto.',
     pairTitle: 'Emparejar un teléfono',
@@ -346,7 +349,7 @@ export default {
     turnOff: 'Desactivar',
     regenerate: 'Regenerar código',
     needsRegenerate:
-      'El código de emparejamiento anterior ya no está disponible. Genera uno nuevo para emparejar un teléfono — esto desconectará cualquier teléfono emparejado anteriormente.',
+      'El código de emparejamiento anterior ya no está disponible. Genera uno nuevo para emparejar un teléfono - esto desconectará cualquier teléfono emparejado anteriormente.',
   },
   settings: {
     title: 'Ajustes',
@@ -359,29 +362,29 @@ export default {
     scanning: 'Escaneando … ({count})',
     scanningPercent: 'Analizando \u2026 ({percent}%)',
     scanningPlain: 'Analizando \u2026',
-    scanComplete: 'Escaneo completo — {count} canciones procesadas.',
+    scanComplete: 'Escaneo completo - {count} canciones procesadas.',
     scanFailed: 'No se pudo iniciar el escaneo.',
     libraryRefreshHint:
       'Recarga la vista de biblioteca propia de Beacon ahora, en lugar de esperar a la actualización automática.',
     refreshLibrary: 'Actualizar biblioteca',
     refreshingLibrary: 'Actualizando … ({loaded})',
     refreshingLibraryWithTotal: 'Actualizando … ({loaded} / {total})',
-    libraryRefreshed: 'Biblioteca actualizada — {count} canciones cargadas.',
+    libraryRefreshed: 'Biblioteca actualizada - {count} canciones cargadas.',
     refreshLibraryFailed: 'No se pudo actualizar la biblioteca.',
     storageTitle: 'Almacenamiento',
     clearCacheHint:
-      'Descarta los datos de biblioteca, carátulas, fotos de artistas, logotipos de emisoras y letras almacenados localmente en caché — todo se vuelve a cargar la próxima vez que se necesite. No provoca un escaneo de biblioteca.',
+      'Descarta los datos de biblioteca, carátulas, fotos de artistas, logotipos de emisoras y letras almacenados localmente en caché - todo se vuelve a cargar la próxima vez que se necesite. No provoca un escaneo de biblioteca.',
     clearCache: 'Borrar caché',
     cacheCleared: 'Caché borrada.',
     resetAirplayHint:
-      'Olvida los emparejamientos de AirPlay guardados (HomePod, Apple TV, …) — útil cuando un dispositivo deja de conectarse. Cada dispositivo deberá emparejarse de nuevo después.',
+      'Olvida los emparejamientos de AirPlay guardados (HomePod, Apple TV, …) - útil cuando un dispositivo deja de conectarse. Cada dispositivo deberá emparejarse de nuevo después.',
     resetAirplay: 'Restablecer emparejamientos de AirPlay',
     airplayReset: 'Emparejamientos de AirPlay restablecidos.',
     airplayResetFailed: 'No se pudieron restablecer los emparejamientos de AirPlay.',
     advancedTitle: 'Avanzado',
     logLevel: 'Nivel de registro',
     logLevelHint:
-      'Cuánto detalle escribe el backend de Connect en su propio registro — también afecta lo que aparece en los registros de Docker/contenedor. Se aplica de inmediato, sin necesidad de reiniciar.',
+      'Cuánto detalle escribe el backend de Connect en su propio registro - también afecta lo que aparece en los registros de Docker/contenedor. Se aplica de inmediato, sin necesidad de reiniciar.',
     logLevelTrace: 'Traza',
     logLevelDebug: 'Depuración',
     logLevelInfo: 'Información',
@@ -391,13 +394,13 @@ export default {
     logLevelChangeFailed: 'No se pudo actualizar el nivel de registro.',
     recommendations: 'Recomendaciones personalizadas',
     recommendationsHint:
-      'Descubrir en Inicio usa artistas parecidos a lo que escuchas realmente, consultados en MusicBrainz, ListenBrainz y Deezer — esto comparte con ellos uno o dos nombres de artista de tu biblioteca. Desactivado muestra álbumes al azar; abrir la página de un artista sigue consultando a ese artista en cualquier caso.',
+      'Descubrir en Inicio usa artistas parecidos a lo que escuchas realmente, consultados en MusicBrainz, ListenBrainz y Deezer - esto comparte con ellos uno o dos nombres de artista de tu biblioteca. Desactivado muestra álbumes al azar; abrir la página de un artista sigue consultando a ese artista en cualquier caso.',
     lyricsProvidersTitle: 'Proveedores de letras',
     lyricsProvidersHint:
-      'Las letras guardadas en el propio archivo se intentan siempre primero y nunca salen de tu servidor. Todos los proveedores de abajo están activados por defecto — desmarca aquellos a los que prefieras que Beacon no envíe el título y el artista de una canción.',
+      'Las letras guardadas en el propio archivo se intentan siempre primero y nunca salen de tu servidor. Todos los proveedores de abajo están activados por defecto - desmarca aquellos a los que prefieras que Beacon no envíe el título y el artista de una canción.',
     lyricsProviders: 'Proveedores externos',
     lyricsProvidersEmptyHint:
-      'Ningún proveedor seleccionado — solo se muestran las letras guardadas en el propio archivo.',
+      'Ningún proveedor seleccionado - solo se muestran las letras guardadas en el propio archivo.',
     lyricsProvidersActiveHint:
       'Si el archivo no tiene letra, se envían el título y el artista a los proveedores seleccionados para buscar una coincidencia. El álbum y la duración nunca salen de tu servidor; solo se usan aquí, para elegir el resultado más parecido.',
     playbackTitle: 'Reproducción',
@@ -406,12 +409,12 @@ export default {
     replayGainTrack: 'Pista',
     replayGainAlbum: 'Álbum',
     replayGainHint:
-      'Iguala el volumen de grabaciones masterizadas de forma diferente — «Pista» normaliza cada canción individualmente, «Álbum» conserva las diferencias de volumen dentro de un álbum. Se aplica tanto a la reproducción local como a la transmisión; mientras ya se está transmitiendo, un cambio solo tiene efecto a partir de la siguiente pista.',
+      'Iguala el volumen de grabaciones masterizadas de forma diferente - «Pista» normaliza cada canción individualmente, «Álbum» conserva las diferencias de volumen dentro de un álbum. Se aplica tanto a la reproducción local como a la transmisión; mientras ya se está transmitiendo, un cambio solo tiene efecto a partir de la siguiente pista.',
     replayGainMobileHint:
       'En este dispositivo se aplica solo a la transmisión: la reproducción aquí pasa directamente por el navegador para que siga sonando con la pantalla bloqueada, lo que no deja forma de ajustar el volumen del audio por el camino.',
     localQuality: 'Calidad de audio (este dispositivo)',
     localQualityHint:
-      'Solo se aplica a la reproducción en este dispositivo y se guarda aquí, no en la cuenta, así que un móvil y un ordenador pueden tener ajustes distintos. «Original» envía el archivo sin modificar; MP3 lo convierte al reproducirse, lo que ahorra ancho de banda y permite reproducir archivos que el navegador no puede abrir. MP3 es la única conversión disponible aquí, porque es la única con la que saltar dentro de la pista funciona de forma fiable. El cambio surte efecto a partir de la siguiente pista.',
+      'Solo se aplica a la reproducción en este dispositivo y se guarda aquí, no en la cuenta, así que un móvil y un ordenador pueden tener ajustes distintos. «Original» envía el archivo sin modificar; cualquier otro formato se convierte al reproducirse, lo que ahorra ancho de banda y permite reproducir archivos que el navegador no puede abrir. Solo se ofrecen los formatos que este navegador sabe descodificar. El cambio surte efecto a partir de la siguiente pista.',
     castQuality: 'Calidad de audio (transmisión)',
     castQualityHint:
       'Un límite máximo, no una elección fija: Beacon sigue eligiendo el mejor formato que acepte cada dispositivo, pero nunca envía nada por encima de este ajuste. Una grabación que ya cabe por debajo se envía sin modificar. Los límites del propio dispositivo se aplican siempre además de este. Surte efecto a partir de la siguiente pista.',
@@ -419,13 +422,31 @@ export default {
     qualityBitrate: 'Tasa de bits',
     qualityBitrateItem: '{value} kb/s',
     qualityOriginal: 'Original (sin modificar)',
+    qualityTipsTitle: 'Recomendaciones',
+    qualityTips: {
+      ceiling:
+        'Es un límite máximo, no una conversión: lo que ya está por debajo se reproduce sin modificar.',
+      home: 'En casa con wifi: Original, así no se convierte nada.',
+      mobile: 'Fuera de casa: AAC a 192 kbps suena como MP3 a 320 y consume muchos menos datos.',
+      slow: 'Con conexión lenta: Opus a 96 o 128 kbps es lo más pequeño con la misma calidad.',
+      compatibility:
+        'MP3 a 256 o 320 kbps es el que se reproduce en todas partes y la respuesta cuando algo más da problemas.',
+      castDefault:
+        'El altavoz está en la misma red que Beacon, así que aquí la cuestión no es el tamaño de los datos: «Original» suele ser lo correcto.',
+      castWhenNeeded:
+        'Poner un límite compensa cuando algo falla: wifi débil en esa habitación o un dispositivo que se atasca con archivos sin pérdida grandes. AAC a 256 kbps sobra.',
+      castCompatibility:
+        'MP3 a 320 kbps es la respuesta en cuanto un dispositivo da algún problema: se reproduce en todas partes.',
+      castDevice:
+        'Beacon lo reduce a lo que el altavoz reproduce realmente: a un dispositivo sin Opus se le envía AAC, o MP3 si tampoco lo acepta, con la tasa de bits que hayas elegido.',
+    },
     castRadioDirectly: 'Reproducir la radio directamente desde la emisora',
     castRadioDirectlyHint:
       'Por defecto, Beacon enruta la radio a través de su propio backend, tanto para un dispositivo de emisión como para este reproductor. Una sola conexión a la emisora alimenta el audio y el título en reproducción, y si la emisora se cae Beacon vuelve a conectarse sin interrumpir la reproducción aquí. Activado, el dispositivo y este reproductor se conectan directamente a la emisora: la reproducción sigue aunque Beacon se reinicie, pero una caída solo se nota cuando desaparece el sonido, y algunos dispositivos rechazan la emisión de la emisora.',
     about: 'Acerca de Beacon',
     whatsNew: '¿Qué hay de nuevo?',
     ffmpegFound: 'ffmpeg encontrado',
-    ffmpegMissing: 'Falta ffmpeg — la transmisión no funcionará sin él.',
+    ffmpegMissing: 'Falta ffmpeg - la transmisión no funcionará sin él.',
     version: 'Versión {version}',
     updateAvailable: 'La versión {version} está disponible.',
     updateAvailableLink: 'Ver versión',
@@ -626,7 +647,7 @@ export default {
     favoriteAlbums: 'Álbumes favoritos',
     favoriteArtists: 'Artistas favoritos',
     noPlaysYet:
-      'Todavía no hay reproducciones registradas — esto se completará cuando empieces a escuchar.',
+      'Todavía no hay reproducciones registradas - esto se completará cuando empieces a escuchar.',
     topSongs: 'Canciones más reproducidas',
     topArtists: 'Artistas más reproducidos',
     topAlbums: 'Álbumes más reproducidos',

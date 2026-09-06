@@ -66,7 +66,14 @@ class TestLocalRadioStream:
         assert r.status_code == 200
         assert r.headers["content-type"].startswith("audio/mpeg")
         assert r.content == b"relayed-audio"
-        start.assert_awaited_once_with(STATION, "audio/mpeg")
+        # "aac" rather than None even though nothing was asked for: see
+        # relay_format_for_target(), where "original" aims at AAC wherever
+        # the target takes it - which is what keeps an AAC station from
+        # being re-encoded to MP3 on its way to a listener who never asked
+        # for a conversion at all.
+        start.assert_awaited_once_with(
+            STATION, "audio/mpeg", max_bitrate_kbps=None, preferred_format="aac"
+        )
         # Released again on the way out, exactly like a cast device's own
         # connection to /stream/radio — a relay outlives any one connection
         # to it, and a subscriber never removed is a queue filled forever.
@@ -105,7 +112,74 @@ class TestLocalRadioStream:
             r = client.get(f"/stream/radio-local?url={STATION}")
 
         assert r.status_code == 200
-        start.assert_awaited_once_with(STATION, "audio/mpeg")
+        start.assert_awaited_once_with(
+            STATION, "audio/mpeg", max_bitrate_kbps=None, preferred_format="aac"
+        )
+
+    def test_passes_this_devices_own_quality_ceiling_to_the_relay(
+        self, client, default_session, probed
+    ):
+        """Local radio comes through the relay too, so the setting for this
+        device applies to a station the same way it applies to a song."""
+        relay = FakeRelay()
+
+        with patch.object(
+            type(default_session), "start_radio_relay", new=AsyncMock(return_value=relay)
+        ) as start:
+            r = client.get(f"/stream/radio-local?url={STATION}&max_bitrate_kbps=96")
+
+        assert r.status_code == 200
+        start.assert_awaited_once_with(
+            STATION, "audio/mpeg", max_bitrate_kbps=96, preferred_format="aac"
+        )
+
+    def test_passes_the_chosen_format_on_as_well(self, client, default_session, probed):
+        relay = FakeRelay()
+
+        with patch.object(
+            type(default_session), "start_radio_relay", new=AsyncMock(return_value=relay)
+        ) as start:
+            r = client.get(f"/stream/radio-local?url={STATION}&max_bitrate_kbps=96&format=aac")
+
+        assert r.status_code == 200
+        start.assert_awaited_once_with(
+            STATION, "audio/mpeg", max_bitrate_kbps=96, preferred_format="aac"
+        )
+
+    def test_opus_asks_the_relay_for_aac_rather_than_dropping_to_mp3(
+        self, client, default_session, probed
+    ):
+        """There is no Opus encoder in the relay. AAC is the closest thing
+        it can produce, and every browser that plays Opus plays AAC — so
+        the listener keeps the better of the two rather than landing on the
+        format they went out of their way not to pick."""
+        relay = FakeRelay()
+
+        with patch.object(
+            type(default_session), "start_radio_relay", new=AsyncMock(return_value=relay)
+        ) as start:
+            r = client.get(f"/stream/radio-local?url={STATION}&format=opus")
+
+        assert r.status_code == 200
+        start.assert_awaited_once_with(
+            STATION, "audio/mpeg", max_bitrate_kbps=None, preferred_format="aac"
+        )
+
+    def test_a_reconnect_never_restarts_a_running_relay_over_a_ceiling(
+        self, client, default_session, probed
+    ):
+        """The element re-requests this URL on every reconnect. Restarting
+        the relay because the ceiling in the URL differs from the one it is
+        running under would mean local playback and a cast device taking
+        turns tearing down the same station — see /play-url, which is the
+        one side allowed to win that argument."""
+        default_session.radio_relay = FakeRelay()
+
+        with patch.object(type(default_session), "start_radio_relay", new=AsyncMock()) as start:
+            r = client.get(f"/stream/radio-local?url={STATION}&max_bitrate_kbps=96")
+
+        assert r.status_code == 200
+        start.assert_not_awaited()
 
     def test_answers_200_while_the_relay_is_still_trying_to_reach_the_station(
         self, client, default_session, probed

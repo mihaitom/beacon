@@ -35,7 +35,30 @@ export default {
  * overflow: hidden is the safe outcome either way — unlike Queue/Songs/
  * Playlists, Now Playing was never meant to scroll at all. */
 .mobile-now-playing {
-  height: calc(100dvh - var(--v-layout-top, 0px) - var(--v-layout-bottom, 0px));
+  /* svh, not dvh, plus a plain-vh line under it for engines that know
+   * neither.
+   *
+   * `dvh` is only right if the browser subtracts its own chrome, and not
+   * every one does: Orion on iOS reports 100dvh as though its bottom bar
+   * (address field plus button row, some 200px) were not there, so this
+   * box came out that much taller than the visible area and the page
+   * scrolled by exactly that - artwork out of the top, a black band above
+   * the tab bar. Safari made the same mistake, small enough to shrug at.
+   *
+   * `svh` is the smallest viewport height, the one with every dynamic
+   * toolbar shown, so it cannot overflow: where a toolbar later hides, a
+   * strip of unused space is left rather than the page growing past the
+   * screen. That fixed Safari. Orion is unchanged by it - it gets svh
+   * wrong the same way - and is deliberately left there: chasing it needs
+   * the real height measured through visualViewport in JS, which is a lot
+   * of machinery for one uncommon browser. On a desktop window nothing is
+   * dynamic and all three units are the same number.
+   *
+   * Two declarations because an engine that knows neither drops the line
+   * entirely and falls back to `auto`, which nothing in the chain above
+   * caps - the page then grows to whatever the content needs. */
+  height: calc(100vh - var(--v-layout-top, 0px) - var(--v-layout-bottom, 0px));
+  height: calc(100svh - var(--v-layout-top, 0px) - var(--v-layout-bottom, 0px));
   overflow: hidden;
   /* Grid, not flex — see NowPlayingView.vue's own .now-playing comment for
    * why: minmax(0, 1fr) for the art row (shrinkable below its content's

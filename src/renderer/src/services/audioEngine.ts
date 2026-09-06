@@ -84,6 +84,40 @@ const LIVE_STALL_CHECK_MS = 1000
 // which retrying will not fix either, and the listener gets the button.
 const LIVE_HOLD_SECONDS = 60
 
+// The same watchdog, for a transcode from playFrom(). It needs one for the
+// same reason a station does and the plain-file case does not: what is on
+// the other end is a held HTTP response being fed by an ffmpeg process
+// (connect/routes/local_stream.py), not a file with a length the browser
+// can tell is incomplete. When that process or the link to it goes away
+// quietly, the element buffers nothing, reports no error, and waits.
+//
+// Much longer than a station's four seconds, because the two are stalled
+// for different reasons. A live stream runs its buffer down to nothing as a
+// matter of course; a transcode is fetched as fast as the connection
+// allows, so a playhead that has stood still this long means the buffer ran
+// dry and nothing has arrived since. Reconnecting costs a fresh ffmpeg and
+// throws away whatever buffer might still have been coming, so this errs
+// towards letting a slow stretch recover on its own.
+const TRANSCODE_STALL_SECONDS = 15
+
+// How many times a stream may end early and be resumed before it counts as
+// broken rather than dropped — see the 'ended' handler. Separate from the
+// reconnect ladder's own count, which a successful 'playing' resets: a
+// server handing out half a second of audio and hanging up would otherwise
+// be retried forever, each attempt "successful" enough to reset that
+// counter. Reset by real progress instead (EARLY_END_PROGRESS_SECONDS), so
+// a long track that genuinely drops every few minutes keeps its retries.
+const MAX_EARLY_ENDS = 5
+const EARLY_END_PROGRESS_SECONDS = 10
+
+// How far before its known end a stream may stop and still count as having
+// ended by itself. Generous on purpose: it is measured against the length
+// the media server reports, which is rounded to the second on every server
+// type here, and against an encoder that trims the odd fraction off the
+// final frame. Anything short of this is not a track ending — it is the
+// connection going away in a way that looks exactly like one.
+const EARLY_END_TOLERANCE_SECONDS = 5
+
 /** Whether the local <audio> element may be routed through a Web Audio
  * graph at all — which is what buys the visualizer and ReplayGain, and what
  * costs playback while the screen is locked.
@@ -140,6 +174,16 @@ export class AudioEngine {
   // reconnect writes a start position at all (it must not — see
   // reconnectOnDrop()), and whether the stall watchdog below runs.
   private liveStream = false
+  // Whether what is loaded begins somewhere other than its own zero and
+  // has no length — a transcode requested from a given second (see
+  // playFrom()). Changes what a reconnect has to do: there is nothing to
+  // seek back to, so the URL itself has to be asked for again at the
+  // position playback had reached.
+  private offsetStream = false
+  // How an offset stream's URL is built for a given second. Held so a
+  // reconnect can ask for the same stream again from where it dropped —
+  // see reconnectOnDrop(). Null for every other kind of source.
+  private urlForPosition: ((seconds: number) => string) | null = null
   // Whether the thing on the other end of a live stream holds the
   // station's connection on this element's behalf — see playLive() and
   // LIVE_HOLD_SECONDS. False for a station fetched straight from its own
@@ -147,19 +191,39 @@ export class AudioEngine {
   // the only thing that can help.
   private holdsConnection = false
   // What to add to the element's own currentTime to get the position this
-  // engine reports. Only ever non-zero for a live stream that has
-  // reconnected: the element starts a reconnected stream at 0 again, but
-  // "Live · 3:41" is how long this listener has been listening, not an
-  // offset into anything, and resetting it to 0:00 over a four-second gap
-  // would throw away the one number on that row that was still true.
-  // A song has no equivalent — it reconnects by seeking back to where it
-  // dropped, which the element's own currentTime then reports correctly.
+  // engine reports. Two kinds of stream need it, for related reasons.
   //
-  // Deliberately not applied to onBufferedChange: that one is read against
-  // the element's own `buffered` ranges, which are in the element's own
-  // time, and a live stream never renders it anyway (RadioLiveStatus.vue
-  // takes the whole seek bar's place for one).
-  private liveOffset = 0
+  // A live stream that has reconnected: the element starts the new
+  // connection at 0 again, but "Live · 3:41" is how long this listener has
+  // been listening, not an offset into anything, and resetting it to 0:00
+  // over a four-second gap would throw away the one number on that row
+  // that was still true.
+  //
+  // And a stream from playFrom() — a transcode that begins at a chosen
+  // second and carries no length of its own, where the element's clock
+  // starts at 0 while the listener is three minutes into a song. A plain
+  // file needs neither: it has a length, the element seeks within it, and
+  // its currentTime already is the position.
+  //
+  // Applied to onBufferedChange as well, and that is not a detail: the
+  // element's `buffered` ranges are in its own time, while everything the
+  // seek bar draws them alongside — the playhead, the track length — is in
+  // reported time. A live stream never renders the band at all
+  // (RadioLiveStatus.vue takes the whole seek bar's place for one), but a
+  // transcode does, and reporting an offset stream's buffer unshifted put
+  // the band three minutes behind the playhead, where SongWaveform.vue's
+  // own clamp then hid it entirely.
+  private positionOffset = 0
+  // The track's real length, for an offset stream that carries none of its
+  // own (see playFrom()). Only ever used to tell a stream that ended from
+  // one that was cut off — see the 'ended' handler. Null for every other
+  // kind of source, and for a caller that has no length to give.
+  private expectedDuration: number | null = null
+  // How many times the current stream has ended before its length said it
+  // should, and the position the last of those resumed from. See
+  // MAX_EARLY_ENDS.
+  private earlyEnds = 0
+  private positionAtLastEarlyEnd = 0
   // The stall watchdog: the interval itself, and when the reported position
   // last actually moved. See LIVE_STALL_SECONDS.
   private stallTimer: ReturnType<typeof setInterval> | null = null
@@ -237,7 +301,7 @@ export class AudioEngine {
       }
     }
     this.audio.addEventListener('timeupdate', () => {
-      const position = this.audio.currentTime + this.liveOffset
+      const position = this.audio.currentTime + this.positionOffset
       // Only a position that actually moved counts as progress — the
       // browser keeps firing 'timeupdate' at a stalled playhead on some
       // platforms, so "the event arrived" is not the same question as "the
@@ -255,6 +319,26 @@ export class AudioEngine {
       // reconnect a paused one. Without this the sound simply stopped,
       // with the row above it still reading "Live".
       if (this.liveStream && this.reconnectUrl !== null) {
+        this.reconnectOnDrop()
+        return
+      }
+      // The same problem one step along: a transcode is served without a
+      // length (see playFrom()), so a connection that goes away mid-track
+      // reaches the element as a stream that simply finished — no error,
+      // no stall, just 'ended'. Indistinguishable from the real thing to
+      // the element, and not to us: the track's length is known, and a
+      // stream that stopped a minute short of it did not end.
+      //
+      // Without this the sound broke off partway and the next song
+      // started, which reads as a corrupt file rather than as the dropped
+      // connection it is.
+      if (this.endedEarly()) {
+        console.warn(
+          `[audio-engine] stream ended at ${this.lastKnownPosition.toFixed(1)}s of ` +
+            `${this.expectedDuration?.toFixed(1)}s — treating it as a dropped connection`,
+        )
+        this.earlyEnds++
+        this.positionAtLastEarlyEnd = this.lastKnownPosition
         this.reconnectOnDrop()
         return
       }
@@ -281,6 +365,13 @@ export class AudioEngine {
       this.onError?.(this.audio.error?.message ?? 'Playback error')
     })
     this.audio.addEventListener('durationchange', () => {
+      // Never from an offset stream, however finite the number looks. Its
+      // length is the caller's to know (see playFrom()), and what the
+      // element eventually works out for itself is the length of *what it
+      // was sent* — a track resumed at 3:00 reports 1:10 once the stream
+      // finishes, which would rescale the seek bar at the very end of the
+      // song.
+      if (this.offsetStream) return
       if (Number.isFinite(this.audio.duration)) this.onDurationChange?.(this.audio.duration)
     })
     // 'progress' is what fires as the browser actually receives more of the
@@ -314,7 +405,35 @@ export class AudioEngine {
         break
       }
     }
-    this.onBufferedChange?.(end)
+    // 0 stays 0: it means "nothing covers the playhead", not "buffered up
+    // to the start of this stream", and shifting it would claim a band
+    // that isn't there.
+    this.onBufferedChange?.(end === 0 ? 0 : end + this.positionOffset)
+  }
+
+  /** Whether the stream that just ended stopped short of the track's own
+   * length, i.e. was cut off rather than finished.
+   *
+   * False for anything but an offset stream, and for one whose caller gave
+   * no length: without a length there is nothing to compare against, and
+   * guessing would turn every finished track into a reconnect.
+   *
+   * The retry budget is separate from the reconnect ladder's own, because
+   * the two count different things. That one is reset by a stream starting
+   * to play, which is exactly what a server handing out half a second and
+   * hanging up does every time — it would retry forever. This one is reset
+   * by playback actually getting somewhere (EARLY_END_PROGRESS_SECONDS),
+   * so a long track on a flaky connection keeps its five attempts each
+   * time it drops, and a track that cannot be produced at all stops after
+   * five. */
+  private endedEarly(): boolean {
+    if (!this.offsetStream || this.reconnectUrl === null) return false
+    if (this.expectedDuration === null) return false
+    if (this.lastKnownPosition >= this.expectedDuration - EARLY_END_TOLERANCE_SECONDS) return false
+    if (this.lastKnownPosition - this.positionAtLastEarlyEnd >= EARLY_END_PROGRESS_SECONDS) {
+      this.earlyEnds = 0
+    }
+    return this.earlyEnds < MAX_EARLY_ENDS
   }
 
   /** Reconnects after a dropped (not merely slow) connection — see
@@ -342,15 +461,25 @@ export class AudioEngine {
       const url = this.reconnectUrl
       if (url === null) return
       this.cancelStartPositionRetry?.()
-      this.audio.src = url
-      if (this.liveStream) {
+      if (this.offsetStream && this.urlForPosition) {
+        // A different URL, not the one that dropped: this stream has no
+        // length and the element's clock restarts at 0 on a new src, so
+        // there is nothing to seek back to. What is asked for instead is
+        // the same audio from where playback had reached, with the offset
+        // moved to match. Assigned here rather than below because it is a
+        // different address — everything else reconnects to the same one.
+        this.positionOffset = this.lastKnownPosition
+        this.audio.src = this.urlForPosition(this.lastKnownPosition)
+      } else if (this.liveStream) {
+        this.audio.src = url
         // A live stream has no position to come back to: it is only ever
         // served from its own edge, and writing a start position onto one
         // asks the element to seek somewhere that does not exist. What is
         // carried across instead is the *reported* position, so the elapsed
-        // readout survives the gap — see liveOffset.
-        this.liveOffset = this.lastKnownPosition
+        // readout survives the gap — see positionOffset.
+        this.positionOffset = this.lastKnownPosition
       } else {
+        this.audio.src = url
         this.applyStartPosition(this.lastKnownPosition)
       }
       // The retry gets the full stall budget of its own rather than
@@ -376,14 +505,30 @@ export class AudioEngine {
    * while sound is actually meant to be coming out: a paused element's
    * playhead stands still for entirely legitimate reasons, and a watchdog
    * that could not tell the two apart would reconnect a station the
-   * listener had deliberately paused. A no-op for anything but a live
-   * stream — a song that stalls has a real buffer behind it and the
-   * element's own 'error' event in front of it. */
+   * listener had deliberately paused.
+   *
+   * A no-op for a plain file, which stalls with a real buffer behind it and
+   * the element's own 'error' event in front of it. Not for a transcode,
+   * which has neither: it is a held response from an ffmpeg process, and
+   * the far end going quiet looks the same there as it does on a station
+   * — see TRANSCODE_STALL_SECONDS for why it waits far longer than one. */
   private armStallWatchdog(): void {
     this.disarmStallWatchdog()
-    if (!this.liveStream) return
+    if (!this.watchedForStalls()) return
     this.lastProgressAt = Date.now()
     this.stallTimer = setInterval(() => this.checkForStall(), LIVE_STALL_CHECK_MS)
+  }
+
+  /** The kinds of stream whose failure produces no 'error' event of its
+   * own: a station, and a transcode served without a length. */
+  private watchedForStalls(): boolean {
+    return this.liveStream || this.offsetStream
+  }
+
+  /** How long this stream's playhead may stand still before the connection
+   * counts as dropped. */
+  private stallBudgetSeconds(): number {
+    return this.liveStream ? LIVE_STALL_SECONDS : TRANSCODE_STALL_SECONDS
   }
 
   private disarmStallWatchdog(): void {
@@ -401,14 +546,15 @@ export class AudioEngine {
     // reconnect's src assignment and its play() landing; reconnectTimer
     // covers the backoff wait itself, where the playhead is standing still
     // precisely because a retry is already scheduled.
-    if (!this.liveStream || this.audio.paused) return
+    if (!this.watchedForStalls() || this.audio.paused) return
     if (this.reconnectUrl === null || this.reconnectTimer !== null) return
+    const budget = this.stallBudgetSeconds()
     const stalledForMs = Date.now() - this.lastProgressAt
-    if (stalledForMs < LIVE_STALL_SECONDS * 1000) return
+    if (stalledForMs < budget * 1000) return
 
     if (!this.holdsConnection) {
       console.warn(
-        `[audio-engine] ${this.reconnectUrl} stopped advancing for ${LIVE_STALL_SECONDS}s — treating it as a dropped connection`,
+        `[audio-engine] ${this.reconnectUrl} stopped advancing for ${budget}s — treating it as a dropped connection`,
       )
       this.reconnectOnDrop()
       return
@@ -438,20 +584,32 @@ export class AudioEngine {
     this.onError?.('Playback error: connection lost')
   }
 
-  /** Drops any in-flight reconnect attempt — called wherever playback is
-   * meant to actually stop, so a backoff timer from a drop several seconds
-   * ago never resurrects sound the user (or the next track) already moved
-   * on from. */
+  /** Drops any in-flight reconnect attempt, keeping this stream's ability
+   * to start a new one — what a pause wants: the retry that was already
+   * scheduled must not land and resurrect sound the listener just stopped,
+   * but a drop *after* they press play again is an ordinary drop. */
+  private cancelPendingReconnect(): void {
+    if (this.reconnectTimer === null) return
+    clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
+    // Only when a wait/retry was actually cancelled — a plain pause with
+    // nothing pending has nothing to clear, and calling this on every
+    // pause/stop/load regardless would fire "not reconnecting" far more
+    // than the handful of call sites that could actually be mid-backoff.
+    this.onReconnectStateChange?.(false)
+  }
+
+  /** The same, and this stream is finished: nothing that arrives later,
+   * from any path, may reconnect it. For wherever the source itself is
+   * going away — a stop, or another stream taking the element over.
+   *
+   * The two used to be one method, and a pause called it: after a pause
+   * and a resume there was no reconnect left in the engine at all, so a
+   * connection lost from then on simply reported an error. Least visible
+   * where it costs most — a transcode paused for a while is exactly what
+   * the far end stops holding open. */
   private cancelReconnect(): void {
-    if (this.reconnectTimer !== null) {
-      clearTimeout(this.reconnectTimer)
-      this.reconnectTimer = null
-      // Only when a wait/retry was actually cancelled — a plain pause with
-      // nothing pending has nothing to clear, and calling this on every
-      // pause/stop/load regardless would fire "not reconnecting" far more
-      // than the handful of call sites that could actually be mid-backoff.
-      this.onReconnectStateChange?.(false)
-    }
+    this.cancelPendingReconnect()
     this.reconnectUrl = null
   }
 
@@ -465,6 +623,54 @@ export class AudioEngine {
    * song's value. */
   load(url: string, startPosition = 0, gain = 1): void {
     this.loadSource(url, startPosition, gain, false)
+  }
+
+  /** Loads and starts a transcode that begins at `seconds` and carries no
+   * length — the shape routes/local_stream.py serves when it is handed a
+   * `start` parameter.
+   *
+   * A separate entry point from play() for the same reason playLive() is
+   * one: what follows from it is not a detail. The stream has no length,
+   * so the element cannot seek within it and must not be asked to; the
+   * position it reports is the element's own clock plus `seconds` (see
+   * positionOffset); and seeking means fetching a different stream rather
+   * than moving inside this one, which is what `urlFor` is for. That is
+   * also what a reconnect needs — it has to ask for the same audio again
+   * from wherever playback had got to.
+   *
+   * Why any of this: the alternative is declaring `bitrate x duration` as
+   * a length and letting the element seek by byte offset, which only lands
+   * correctly while the encoder hits that bitrate exactly. mp3 does
+   * because LAME's CBR pads every frame; nothing else does. Seeking this
+   * way is what lets a format be chosen for how it sounds rather than for
+   * how predictably it fills bytes.
+   *
+   * `duration` is the track's real length, which the caller knows and this
+   * stream does not carry. Only ever used to tell a stream that ended from
+   * one that was cut off — see the 'ended' handler. Left out, a truncated
+   * stream is indistinguishable from a finished one and the next song
+   * starts instead. */
+  playFrom(
+    urlFor: (seconds: number) => string,
+    seconds: number,
+    gain = 1,
+    duration: number | null = null,
+  ): void {
+    this.loadFrom(urlFor, seconds, gain, duration)
+    this.start()
+  }
+
+  /** playFrom() without starting playback — the paused-restore counterpart,
+   * matching load() against play(). */
+  loadFrom(
+    urlFor: (seconds: number) => string,
+    seconds: number,
+    gain = 1,
+    duration: number | null = null,
+  ): void {
+    this.loadSource(urlFor(seconds), seconds, gain, false, true)
+    this.urlForPosition = urlFor
+    this.expectedDuration = duration
   }
 
   /** Loads and starts `url` as a live stream — a radio station, the one
@@ -490,13 +696,28 @@ export class AudioEngine {
     this.start()
   }
 
-  private loadSource(url: string, startPosition: number, gain: number, live: boolean): void {
+  private loadSource(
+    url: string,
+    startPosition: number,
+    gain: number,
+    live: boolean,
+    offsetStream = false,
+  ): void {
     this.cancelStartPositionRetry?.()
     this.cancelReconnect()
     this.disarmStallWatchdog()
     this.liveStream = live
     this.holdsConnection = false
-    this.liveOffset = 0
+    this.offsetStream = offsetStream
+    this.positionOffset = offsetStream ? startPosition : 0
+    // Cleared here rather than in each caller, so a plain file or a
+    // station can never reconnect through the previous song's factory, and
+    // no stream is ever measured against the previous track's length.
+    // loadFrom() sets both again immediately after calling this.
+    this.urlForPosition = null
+    this.expectedDuration = null
+    this.earlyEnds = 0
+    this.positionAtLastEarlyEnd = startPosition
     this.reconnectUrl = url
     this.reconnectAttempts = 0
     this.lastKnownPosition = startPosition
@@ -505,7 +726,13 @@ export class AudioEngine {
     // a position means nothing on one. startPosition is 0 for every live
     // caller anyway, so this is what the rule is written down as rather
     // than something that changes behaviour today.
-    if (!live) this.applyStartPosition(startPosition)
+    //
+    // Never for an offset stream either, and there it does change
+    // behaviour: the position it is already at was chosen when the URL was
+    // built, and the stream carries no length for the element to seek
+    // within. Writing one would ask it to seek past the end of what it
+    // thinks it has.
+    if (!live && !offsetStream) this.applyStartPosition(startPosition)
     this.setReplayGain(gain)
     // Otherwise the seek bar would flash the previous song's buffered band
     // for a moment before the new stream's first 'progress' event corrects
@@ -598,8 +825,10 @@ export class AudioEngine {
     // An explicit pause means "stop", not "give up trying to reconnect and
     // then stop" — without this a backoff timer left over from a drop just
     // before the pause could still land its retry and resume sound the
-    // user asked to have paused.
-    this.cancelReconnect()
+    // user asked to have paused. The *pending* retry only: what is loaded
+    // stays reconnectable for when playback resumes (see
+    // cancelPendingReconnect()).
+    this.cancelPendingReconnect()
     this.disarmStallWatchdog()
     this.audio.pause()
     this.suspendContext()

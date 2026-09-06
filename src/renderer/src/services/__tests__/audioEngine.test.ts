@@ -1181,6 +1181,253 @@ describe('AudioEngine', () => {
     })
   })
 
+  /** A transcode from playFrom(): served from a chosen second, with no
+   * length of its own (connect/routes/local_stream.py). Everything here is
+   * about the two things that follow from having no length — the element's
+   * clock starts at 0 while the listener is minutes into a song, and a
+   * connection that goes away is not reported as one. */
+  describe('a stream that starts partway in', () => {
+    const urlFor = (seconds: number): string => `stream?start=${seconds.toFixed(3)}`
+    const NETWORK_ERROR_CODE = 2
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    /** Plays `duration`-second track from 180s in, with 20s of it heard. */
+    function playingAt(duration: number | null = 600): void {
+      engine.playFrom(urlFor, 180, 1, duration)
+      audio.paused = false
+      audio.settleAt(20)
+      audio.dispatchEvent(new Event('timeupdate'))
+    }
+
+    function dropConnection(): void {
+      audio.error = { message: 'network error', code: NETWORK_ERROR_CODE }
+      audio.dispatchEvent(new Event('error'))
+    }
+
+    it('reports the position as the track position, not the stream position', () => {
+      const onTimeUpdate = vi.fn()
+      engine.onTimeUpdate = onTimeUpdate
+      playingAt()
+
+      expect(onTimeUpdate).toHaveBeenLastCalledWith(200)
+    })
+
+    it('asks for the same audio again from where it dropped', async () => {
+      playingAt()
+
+      dropConnection()
+      await vi.advanceTimersByTimeAsync(1000)
+
+      // A different URL, not a seek: there is nothing to seek within.
+      expect(audio.src).toBe('stream?start=200.000')
+      expect(audio.currentTime).toBe(0)
+    })
+
+    it('keeps reporting track positions after reconnecting', async () => {
+      const onTimeUpdate = vi.fn()
+      playingAt()
+      dropConnection()
+      await vi.advanceTimersByTimeAsync(1000)
+
+      engine.onTimeUpdate = onTimeUpdate
+      audio.settleAt(5)
+      audio.dispatchEvent(new Event('timeupdate'))
+
+      expect(onTimeUpdate).toHaveBeenLastCalledWith(205)
+    })
+
+    it('reports the buffered band in the same seconds as the playhead', () => {
+      // Unshifted, this landed three minutes behind the playhead, where
+      // SongWaveform.vue's own clamp hid the band entirely.
+      const onBufferedChange = vi.fn()
+      playingAt()
+      engine.onBufferedChange = onBufferedChange
+      audio.setBuffered([[0, 45]])
+
+      audio.dispatchEvent(new Event('progress'))
+
+      expect(onBufferedChange).toHaveBeenLastCalledWith(225)
+    })
+
+    it('reports nothing buffered as nothing, rather than as the stream start', () => {
+      const onBufferedChange = vi.fn()
+      playingAt()
+      engine.onBufferedChange = onBufferedChange
+      audio.setBuffered([])
+
+      audio.dispatchEvent(new Event('progress'))
+
+      expect(onBufferedChange).toHaveBeenLastCalledWith(0)
+    })
+
+    it('ignores the length the element works out for itself', () => {
+      // What it eventually reports is the length of what it was *sent* —
+      // a track resumed at 3:00 reports 1:10 — which would rescale the
+      // seek bar at the very end of the song.
+      const onDurationChange = vi.fn()
+      engine.onDurationChange = onDurationChange
+      playingAt()
+
+      audio.duration = 70
+      audio.dispatchEvent(new Event('durationchange'))
+
+      expect(onDurationChange).not.toHaveBeenCalled()
+    })
+
+    describe('a stream that ends before the track does', () => {
+      it('picks the connection back up instead of ending the song', async () => {
+        // Without a length, a connection going away mid-track reaches the
+        // element as a stream that simply finished. The track is 600s long
+        // and this stopped at 200.
+        const onEnded = vi.fn()
+        engine.onEnded = onEnded
+        playingAt(600)
+
+        audio.dispatchEvent(new Event('ended'))
+        await vi.advanceTimersByTimeAsync(1000)
+
+        expect(onEnded).not.toHaveBeenCalled()
+        expect(audio.src).toBe('stream?start=200.000')
+      })
+
+      it('ends the song when the stream really did reach the end', async () => {
+        const onEnded = vi.fn()
+        engine.onEnded = onEnded
+        engine.playFrom(urlFor, 180, 1, 202)
+        audio.settleAt(20)
+        audio.dispatchEvent(new Event('timeupdate'))
+
+        audio.dispatchEvent(new Event('ended'))
+
+        expect(onEnded).toHaveBeenCalledOnce()
+      })
+
+      it('ends the song when there is no length to judge against', () => {
+        const onEnded = vi.fn()
+        engine.onEnded = onEnded
+        playingAt(null)
+
+        audio.dispatchEvent(new Event('ended'))
+
+        expect(onEnded).toHaveBeenCalledOnce()
+      })
+
+      it('gives up on a stream that keeps ending straight away', async () => {
+        // A server handing out a moment of audio and hanging up each time:
+        // every attempt "succeeds" enough to reset the reconnect ladder, so
+        // this needs a count of its own or it retries forever.
+        const onEnded = vi.fn()
+        engine.onEnded = onEnded
+        playingAt(600)
+
+        for (let i = 0; i < 5; i++) {
+          audio.dispatchEvent(new Event('ended'))
+          await vi.advanceTimersByTimeAsync(8000)
+          audio.dispatchEvent(new Event('playing'))
+        }
+        audio.dispatchEvent(new Event('ended'))
+
+        expect(onEnded).toHaveBeenCalledOnce()
+      })
+
+      it('keeps trying for a track that plays on between drops', async () => {
+        // The same five attempts, reset by playback actually getting
+        // somewhere — a long track on a flaky connection is not a broken
+        // one.
+        const onEnded = vi.fn()
+        engine.onEnded = onEnded
+        playingAt(600)
+
+        for (let i = 0; i < 8; i++) {
+          audio.dispatchEvent(new Event('ended'))
+          await vi.advanceTimersByTimeAsync(8000)
+          audio.dispatchEvent(new Event('playing'))
+          // Twenty seconds of music between each drop, which is what tells
+          // this apart from a stream that never gets anywhere.
+          audio.settleAt(20)
+          audio.dispatchEvent(new Event('timeupdate'))
+        }
+
+        expect(onEnded).not.toHaveBeenCalled()
+      })
+    })
+
+    it('treats a playhead that has stood still for too long as a drop', async () => {
+      // Same failure a station has: a held response whose far end goes
+      // quiet produces no error at all. Far longer than a station's four
+      // seconds — see TRANSCODE_STALL_SECONDS.
+      playingAt()
+      audio.play.mockClear()
+
+      await vi.advanceTimersByTimeAsync(14_000)
+      expect(audio.play).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(2_000)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(audio.src).toBe('stream?start=200.000')
+    })
+
+    it('leaves a plain file to the browser', async () => {
+      // A file has a real buffer behind it and the element's own error
+      // event in front of it; a watchdog here would only fight rebuffering.
+      engine.play('song.mp3')
+      audio.paused = false
+      audio.settleAt(42)
+      audio.dispatchEvent(new Event('timeupdate'))
+      audio.play.mockClear()
+
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      expect(audio.play).not.toHaveBeenCalled()
+    })
+
+    it('can still reconnect after a pause and a resume', async () => {
+      // A pause used to clear the reconnect target outright, so a drop
+      // after resuming was reported as an error instead — worst for a
+      // transcode, which is exactly what a long pause kills at the far end.
+      playingAt()
+      const onError = vi.fn()
+      engine.onError = onError
+
+      engine.pause()
+      engine.resume()
+      dropConnection()
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(onError).not.toHaveBeenCalled()
+      expect(audio.src).toBe('stream?start=200.000')
+    })
+
+    it('still drops a retry that was already waiting when the pause came', async () => {
+      playingAt()
+      audio.play.mockClear()
+
+      dropConnection()
+      engine.pause()
+      await vi.advanceTimersByTimeAsync(8000)
+
+      // The one thing the pause has to prevent: sound resuming by itself.
+      expect(audio.play).not.toHaveBeenCalled()
+    })
+
+    it('does not reconnect through the previous track once another loads', async () => {
+      playingAt()
+      dropConnection()
+
+      engine.playFrom((s) => `other?start=${s.toFixed(3)}`, 0, 1, 300)
+      await vi.advanceTimersByTimeAsync(8000)
+
+      expect(audio.src).toBe('other?start=0.000')
+    })
+  })
+
   describe('getAudioEngine()', () => {
     it('hands every caller the one element actually making sound', () => {
       // A second instance would hold its own silent <audio>, leaving whoever

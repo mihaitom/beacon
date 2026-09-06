@@ -1234,6 +1234,13 @@ async def get_radio_metadata(
     waits out the local buffer before announcing a song) simply stays
     unacknowledged: that client keeps sending the older `since` and keeps
     being handed the one entry until it applies it."""
+    # What the relay is handing this device right now, and why — null for a
+    # station passed through untouched, which is the common case. Carried
+    # here rather than only in the cast status because local playback comes
+    # through the same relay (see routes/stream.py's /stream/radio-local)
+    # and has no cast status to read: without this, a station being brought
+    # down to this device's own quality ceiling had nowhere to say so.
+    relay = session.radio_relay
     return {
         "title": session.radio_title,
         "history": session.radio_title_log(
@@ -1241,6 +1248,14 @@ async def get_radio_metadata(
         ),
         "bitrate": session.radio_bitrate,
         "codec": session.radio_codec,
+        "relay_bitrate": relay.output_bitrate_kbps if relay is not None else None,
+        "relay_reason": relay.reencode_reason if relay is not None else None,
+        # What the relay is actually handing out. Reported rather than left
+        # to the frontend to assume: since the quality setting can ask for
+        # AAC, "a station is always MP3 out of the relay" stopped being true
+        # — and local playback can inherit a relay a cast started, so even
+        # the format nobody chose on this device can be the one arriving.
+        "relay_content_type": relay.device_content_type if relay is not None else None,
     }
 
 

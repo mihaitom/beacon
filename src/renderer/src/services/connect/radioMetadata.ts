@@ -58,6 +58,18 @@ export interface RadioMetadata {
    * the same on every device. StreamInfoSection.vue is the consumer. */
   bitrate: number | null
   codec: string | null
+  /** What Beacon's own relay is handing this device, and why it is not
+   * simply passing the station through: `relayReason` is null whenever it
+   * is (the common case), and otherwise one of connect's REASON_* keys —
+   * the same ones a cast stream reports. Both are null for a station
+   * played straight from its own URL, which no relay touches. */
+  relayBitrate: number | null
+  relayReason: string | null
+  /** The content type the relay is handing out — "audio/mpeg" or
+   * "audio/aac". Reported rather than assumed: a local player can inherit
+   * the relay a cast started, so even a format nobody chose on this device
+   * can be the one arriving. */
+  relayContentType: string | null
 }
 
 /** The watch's current title, what the station has played and what it
@@ -72,11 +84,19 @@ export interface RadioMetadata {
 export async function fetchRadioMetadata(since?: number): Promise<RadioMetadata> {
   const query = since === undefined ? '' : `?since=${encodeURIComponent(since)}`
   const response = await fetchConnect<RadioMetadata>(`/radio-metadata${query}`)
+  const raw = response as RadioMetadata & {
+    relay_bitrate?: number | null
+    relay_reason?: string | null
+    relay_content_type?: string | null
+  }
   return {
     title: response.title ?? null,
     history: response.history ?? [],
     bitrate: response.bitrate ?? null,
     codec: response.codec ?? null,
+    relayBitrate: raw.relay_bitrate ?? null,
+    relayReason: raw.relay_reason ?? null,
+    relayContentType: raw.relay_content_type ?? null,
   }
 }
 

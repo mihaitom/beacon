@@ -7,6 +7,8 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
 import { useConnectStore } from '@/stores/connect'
+import { useAuthStore } from '@/stores/auth'
+import { useAutoplayStore } from '@/stores/autoplay'
 import PlayerToolbar from '../PlayerToolbar.vue'
 import { _resetVolumeGuards } from '@/services/connect/volumeGuard'
 import { makeStatus } from '@/stores/__tests__/fixtures'
@@ -365,6 +367,38 @@ describe('PlayerToolbar', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
 
       expect(document.querySelector('.volume-popover .volume-slider')).not.toBeNull()
+    })
+  })
+
+  /** Autoplay tops the queue up as it runs out, and a live stream never
+   * does - the same reason CenterControls.vue greys out shuffle, repeat
+   * and skip on a station. */
+  describe('autoplay button', () => {
+    function autoplayButton(wrapper: ReturnType<typeof mountToolbar>) {
+      return wrapper.findAll('button').find((b) => b.find('.mdi-infinity').exists())!
+        .element as HTMLButtonElement
+    }
+
+    it('greys out on a station, and drops its lit state', async () => {
+      useAuthStore().capabilities.songRadio = true
+      const wrapper = mountToolbar()
+      const playback = usePlaybackStore()
+      useAutoplayStore().enabled = true
+      await wrapper.vm.$nextTick()
+
+      expect(autoplayButton(wrapper).disabled).toBe(false)
+      expect(autoplayButton(wrapper).classList).toContain('text-primary')
+
+      playback.radioStation = {
+        id: '',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      await wrapper.vm.$nextTick()
+
+      expect(autoplayButton(wrapper).disabled).toBe(true)
+      expect(autoplayButton(wrapper).classList).not.toContain('text-primary')
     })
   })
 })
