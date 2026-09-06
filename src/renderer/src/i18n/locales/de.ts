@@ -17,6 +17,7 @@ export default {
     createNewPlaylist: 'Neue Playlist erstellen…',
   },
   nav: {
+    nowPlaying: 'Läuft gerade',
     home: 'Home',
     library: 'Bibliothek',
     albums: 'Alben',
@@ -338,6 +339,7 @@ export default {
     pairHint:
       'Diesen Code mit der Handykamera scannen, oder die Adresse unten öffnen und die PIN eingeben.',
     address: 'Adresse',
+    turnOff: 'Ausschalten',
     regenerate: 'Code neu erzeugen',
     needsRegenerate:
       'Der vorherige Pairing-Code ist nicht mehr verfügbar. Erzeuge einen neuen, um ein Handy zu koppeln — bereits gekoppelte Handys werden dabei getrennt.',
@@ -348,7 +350,7 @@ export default {
     logout: 'Abmelden',
     language: 'Sprache',
     libraryTitle: 'Bibliothek',
-    libraryScanHint: 'Navidrome nach neuen, geänderten oder entfernten Dateien durchsuchen lassen.',
+    libraryScanHint: '{server} nach neuen, geänderten oder entfernten Dateien durchsuchen lassen.',
     rescanLibrary: 'Bibliothek neu scannen',
     scanning: 'Scan läuft … ({count})',
     scanningPercent: 'Scan l\u00e4uft \u2026 ({percent}%)',

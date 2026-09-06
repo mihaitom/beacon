@@ -67,3 +67,22 @@ export function observeShelfEdges(
     },
   }
 }
+
+/** Whether the row shows everything it has without scrolling at all.
+ *
+ * The same measurement the chevrons are drawn from, asked a different
+ * question: a row that fits is a row where laying the cards out as a grid
+ * would produce the very same single line of them, so the grid toggle in a
+ * shelf's header has nothing to offer and says so by going dim (see
+ * AlbumShelf.vue and CardShelf.vue).
+ *
+ * Both ends reached is exactly that condition — it is true for a row with
+ * four cards in it and false for one with forty, without either shelf
+ * having to guess at a card count that depends on how wide the window is.
+ * SHELF_EDGES_UNMEASURED reports `atEnd: false`, so a shelf nobody has laid
+ * out yet counts as scrollable and the toggle stays live until a real
+ * measurement says otherwise.
+ */
+export function shelfFitsWithoutScrolling(edges: ShelfEdges): boolean {
+  return edges.atStart && edges.atEnd
+}

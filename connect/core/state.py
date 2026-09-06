@@ -201,6 +201,14 @@ class EventBus:
         if q in self._queues:
             self._queues.remove(q)
 
+    @property
+    def subscriber_count(self) -> int:
+        """How many clients are listening. Used by the Remote Control
+        relay to tell the desktop how many phones are on it (see
+        routes/remote.py's phone_events()) - one open stream is one phone,
+        which is the only count of them this backend keeps."""
+        return len(self._queues)
+
     async def broadcast(self, payload: dict) -> None:
         """Push `payload` to all of this session's connected SSE clients."""
         if not self._queues:

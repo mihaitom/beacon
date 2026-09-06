@@ -49,29 +49,27 @@
         class="now-playing__toolbar"
         :class="{ 'now-playing__toolbar--docked': compact }"
       >
-        <!-- PlayerBar.vue's own lyrics button (the normal way to reach this
-       - on desktop) is outside .now-playing entirely, so fullscreen — which
-       - only ever shows this element's own subtree, see toggleFullscreen()'s
-       - comment — hides it along with the rest of the app chrome. Compact
-       - mode has no PlayerBar equivalent at all (MobileTransportControls.vue
-       - has no lyrics button — no side-by-side split there to reach it from
-       - either, see the flip-card container query below), so this is the
-       - *only* way to reach lyrics on mobile, not just a fullscreen
-       - stand-in. Neither condition applies on desktop outside fullscreen,
-       - where PlayerBar's own button already covers it — no redundant
-       - second lyrics button there. -->
+        <!-- The only lyrics button in the app, on every layout. It used to
+       - be shown here just in fullscreen (which shows nothing but this
+       - element's own subtree, see toggleFullscreen()) and on the phone
+       - (MobileTransportControls.vue has no equivalent), standing in for
+       - PlayerBar.vue's own copy the rest of the time — but the lyrics,
+       - and a station's title log in their place, now only ever appear on
+       - this screen, so the switch for them belongs on it rather than in
+       - the chrome of every other page. PlayerBar's copy went with the
+       - drawer it used to open (2026-09-06). -->
         <v-btn
-          v-if="hasPlayable && (compact || isFullscreen)"
+          v-if="hasPlayable"
           :icon="
             playbackStore.radioStation && !currentSong ? 'mdi-history' : 'mdi-script-text-outline'
           "
-          :color="drawersStore.lyricsDrawerOpen ? 'primary' : undefined"
+          :color="showLyrics ? 'primary' : undefined"
           variant="text"
           density="comfortable"
           :title="
             playbackStore.radioStation && !currentSong ? $t('radio.titleLog') : $t('lyrics.title')
           "
-          @click="drawersStore.toggleLyricsDrawer()"
+          @click="showLyrics = !showLyrics"
         />
         <!-- Same reasoning as the lyrics button just above — PlayerBar.vue's
        - own Autoplay button (next to Queue) is outside .now-playing
@@ -228,6 +226,7 @@
                  - but the station's own title log to read instead. -->
               <radio-title-log
                 v-else-if="showLyrics && playbackStore.radioStation"
+                variant="immersive"
                 :entries="playbackStore.radioTitleLog"
                 :has-more="!playbackStore.radioTitleLogComplete"
                 class="now-playing__lyrics"
@@ -452,25 +451,25 @@ export default {
         ? 'clamp(88px, min(58cqh, 90cqw, calc(100cqh - 100px)), 480px)'
         : 'clamp(180px, min(70cqh, 50cqw), 900px)'
     },
-    // Backed by the same store flag PlayerBar's lyrics button drives
-    // (drawersStore.lyricsDrawerOpen) instead of its own local state —
-    // there used to be two independent lyrics toggles (this view's own
-    // toolbar button, and PlayerBar's), which was confusing since they
-    // controlled two different-looking presentations (this view's inline
-    // split panel vs. LyricsDrawer.vue's slide-out) of the same lyrics.
-    // Now there's one flag and one button (PlayerBar's, always visible —
-    // see DefaultLayout.vue); this view just renders it inline instead of
-    // as a drawer while it's the active route (see DefaultLayout.vue's own
-    // now-playing check, which keeps LyricsDrawer closed here so the two
-    // presentations don't both show at once). The setter is still needed
-    // for the currentSong watcher below, which turns lyrics back off when
-    // switching to radio.
+    // Kept in the store rather than in this view's own data, because this
+    // view is unmounted every time the user goes anywhere else and the
+    // panel is expected to be as they left it when they come back — a
+    // click on a title in a station's log leaves for the search page and
+    // is meant to be followed by Back.
+    //
+    // The only lyrics state in the app. There used to be a second
+    // presentation - a drawer sliding the same content over whatever page
+    // was being browsed - with a flag of its own that this view shared;
+    // both are gone (2026-09-06). PlayerBar's button now brings the user
+    // here instead of opening anything of its own, so there is one place
+    // this content lives and one thing to remember about it. See the
+    // store's own comment on lyricsPanelOpen.
     showLyrics: {
       get(): boolean {
-        return this.drawersStore.lyricsDrawerOpen
+        return this.drawersStore.lyricsPanelOpen
       },
       set(value: boolean) {
-        this.drawersStore.lyricsDrawerOpen = value
+        this.drawersStore.lyricsPanelOpen = value
       },
     },
     // Radio has no track for the backend to analyze while casting to

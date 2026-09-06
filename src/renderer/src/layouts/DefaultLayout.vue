@@ -79,8 +79,8 @@
     </v-main>
 
     <player-bar />
-    <!-- Not mounted at all until first opened (see queueDrawerEverOpened/
-     - lyricsDrawerEverOpened below) — v-navigation-drawer briefly showed
+    <!-- Not mounted at all until first opened (see queueDrawerEverOpened
+     - below) — v-navigation-drawer briefly showed
      - its open position on the very first paint at app start even with
      - model-value already false, before the closed transform took effect.
      - Nothing to flash if it isn't in the DOM yet. Stays mounted for the
@@ -103,11 +103,6 @@
       :model-value="queueDrawerFirstMountSettled && drawersStore.queueDrawerOpen"
       @update:model-value="drawersStore.setQueueDrawerOpen($event)"
     />
-    <lyrics-drawer
-      v-if="lyricsDrawerEverOpened"
-      :model-value="onNowPlaying ? false : drawersStore.lyricsDrawerOpen"
-      @update:model-value="drawersStore.lyricsDrawerOpen = $event"
-    />
     <cast-takeover-confirm-dialog />
   </v-app>
 </template>
@@ -115,7 +110,6 @@
 <script lang="ts">
 import PlayerBar from '@/components/player/PlayerBar.vue'
 import QueueDrawer from '@/components/queue/QueueDrawer.vue'
-import LyricsDrawer from '@/components/lyrics/LyricsDrawer.vue'
 import CastTakeoverConfirmDialog from '@/components/connect/CastTakeoverConfirmDialog.vue'
 import TopBarSearch from '@/components/TopBarSearch.vue'
 import NavHistoryControls from '@/components/NavHistoryControls.vue'
@@ -133,7 +127,6 @@ export default {
   components: {
     PlayerBar,
     QueueDrawer,
-    LyricsDrawer,
     CastTakeoverConfirmDialog,
     TopBarSearch,
     NavHistoryControls,
@@ -142,10 +135,9 @@ export default {
     return {
       drawerOpen: true,
       sidebarCollapsed: loadSidebarCollapsed(),
-      // Flips true the first time each drawer opens and never resets —
-      // see the queue-drawer/lyrics-drawer v-if above for why.
+      // Flips true the first time the drawer opens and never resets — see
+      // the queue-drawer v-if above for why.
       queueDrawerEverOpened: false,
-      lyricsDrawerEverOpened: false,
       // See the queue-drawer's own model-value comment above — released
       // one tick after queueDrawerEverOpened first flips true.
       queueDrawerFirstMountSettled: false,
@@ -165,17 +157,17 @@ export default {
     authStore() {
       return useAuthStore()
     },
-    // NowPlayingView.vue renders lyrics inline (its own split-panel
-    // transition) whenever drawersStore.lyricsDrawerOpen is true, driven
-    // by the same PlayerBar button as this drawer — without this check
-    // both would show at once while on that route, one full-panel and one
-    // slid out on top of it.
-    onNowPlaying() {
-      return this.$route.name === 'now-playing'
-    },
     navItems() {
       const capabilities = this.authStore.capabilities
       return [
+        // First, and above the library places below it: this is the one
+        // entry that is about what the app is doing rather than about what
+        // is in it. It is also the only way to reach that screen from the
+        // rail - the lyrics button in the player bar used to open a drawer
+        // instead, and now sends the user here (see PlayerToolbar.vue).
+        // Always listed, even with nothing playing: the alternative is a
+        // nav that reorders itself the moment playback stops.
+        { to: '/now-playing', icon: 'mdi-play-circle-outline', title: this.$t('nav.nowPlaying') },
         { to: '/', icon: 'mdi-home', title: this.$t('nav.home') },
         { to: '/albums', icon: 'mdi-album', title: this.$t('nav.albums') },
         { to: '/artists', icon: 'mdi-account-music', title: this.$t('nav.artists') },
@@ -197,9 +189,6 @@ export default {
   watch: {
     'drawersStore.queueDrawerOpen'(open: boolean) {
       if (open) this.queueDrawerEverOpened = true
-    },
-    'drawersStore.lyricsDrawerOpen'(open: boolean) {
-      if (open) this.lyricsDrawerEverOpened = true
     },
     // Fires exactly once, right after the mount this same tick's v-if
     // triggers — see the queue-drawer's own model-value comment above for

@@ -106,16 +106,16 @@ describe('the store wiring the audio engine', () => {
     expect(engine.setVolume).toHaveBeenCalledWith(0.4)
   })
 
-  it('opens with both drawers shut, whatever the last session left open', () => {
+  it('opens with the queue drawer and the lyrics panel shut, whatever the last session left open', () => {
     const playback = usePlaybackStore()
     const drawers = useDrawersStore()
     drawers.queueDrawerOpen = true
-    drawers.lyricsDrawerOpen = true
+    drawers.lyricsPanelOpen = true
 
     playback.init()
 
     expect(drawers.queueDrawerOpen).toBe(false)
-    expect(drawers.lyricsDrawerOpen).toBe(false)
+    expect(drawers.lyricsPanelOpen).toBe(false)
   })
 
   it('wires the element up once, however often App.vue calls it', () => {

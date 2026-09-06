@@ -98,7 +98,7 @@ async function mountWithSongAndLyrics(compact = false) {
   vi.spyOn(lyrics, 'ensureLoaded').mockResolvedValue()
   lyrics.synced = true
   lyrics.lines = LYRIC_LINES
-  drawers.lyricsDrawerOpen = true
+  drawers.lyricsPanelOpen = true
   await mounted.wrapper.vm.$nextTick()
   return mounted
 }

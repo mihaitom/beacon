@@ -324,10 +324,9 @@ export const useLyricsStore = defineStore('lyrics', {
 
   actions: {
     /** Fetches (or reuses the persisted cache for) `song`'s lyrics. Not
-     * called eagerly on every song change — only when a lyrics surface
-     * (the drawer, or Now Playing's immersive lyrics mode) is actually
-     * visible, see LyricsPanel.vue's consumers (LyricsDrawer.vue,
-     * NowPlayingView.vue). */
+     * called eagerly on every song change — only when the lyrics are
+     * actually on screen, which is Now Playing's own panel: see
+     * LyricsPanel.vue's one consumer, NowPlayingView.vue. */
     /** Re-asks the file about a song whose cached lyrics came from a
      * third-party provider. Written for the case that actually happens:
      * someone tags their library *after* having played the song, which

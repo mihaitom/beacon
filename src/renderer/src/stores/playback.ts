@@ -118,8 +118,8 @@ interface PlaybackState {
    * screen while the poll below catches up to the new one. */
   radioNowPlaying: string | null
   /** Every title the current station has played this session, newest
-   * first — LyricsDrawer.vue shows this in place of the lyrics a radio
-   * station never has. Kept per station by the backend (see connect/core/
+   * first — Now Playing shows this in place of the lyrics a radio
+   * station never has (RadioTitleLog.vue). Kept per station by the backend (see connect/core/
    * session.py's radio_title_history), so switching away and back finds
    * this station's own log rather than a merged one; reset here alongside
    * radioNowPlaying purely so the previous station's log is never on

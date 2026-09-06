@@ -19,6 +19,7 @@ export default {
     createNewPlaylist: 'Crear nueva lista de reproducción…',
   },
   nav: {
+    nowPlaying: 'Reproducción',
     home: 'Inicio',
     library: 'Biblioteca',
     albums: 'Álbumes',
@@ -342,6 +343,7 @@ export default {
     pairHint:
       'Escanea este código con la cámara de tu teléfono, o abre la dirección de abajo e introduce el PIN.',
     address: 'Dirección',
+    turnOff: 'Desactivar',
     regenerate: 'Regenerar código',
     needsRegenerate:
       'El código de emparejamiento anterior ya no está disponible. Genera uno nuevo para emparejar un teléfono — esto desconectará cualquier teléfono emparejado anteriormente.',
@@ -352,7 +354,7 @@ export default {
     logout: 'Cerrar sesión',
     language: 'Idioma',
     libraryTitle: 'Biblioteca',
-    libraryScanHint: 'Haz que Navidrome busque archivos nuevos, modificados o eliminados.',
+    libraryScanHint: 'Haz que {server} busque archivos nuevos, modificados o eliminados.',
     rescanLibrary: 'Volver a escanear biblioteca',
     scanning: 'Escaneando … ({count})',
     scanningPercent: 'Analizando \u2026 ({percent}%)',

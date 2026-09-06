@@ -144,9 +144,28 @@ describe('NowPlayingView', () => {
       expect(ensureLoadedSpy).toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }))
     })
 
+    /** Reported live 2026-09-06: clicking a title in a station's log
+     * navigates to search, and coming back with the Back arrow found the
+     * panel gone. This view is unmounted while the user is away, so the
+     * panel cannot be remembered in it - it lives in the drawers store
+     * (which is also where the flag it used to share with a slide-out
+     * lyrics drawer has been left alone since that drawer was removed). */
+    it('still has its panel open when the view is mounted again', async () => {
+      const { wrapper, host } = await mountWithSong()
+      useDrawersStore().lyricsPanelOpen = true
+      await wrapper.vm.$nextTick()
+      expect((wrapper.vm as unknown as { showLyrics: boolean }).showLyrics).toBe(true)
+
+      // Away, and back.
+      host.unmount()
+      const again = await mountWithSong()
+
+      expect((again.wrapper.vm as unknown as { showLyrics: boolean }).showLyrics).toBe(true)
+    })
+
     it('turns showLyrics off again when switching away to no song', async () => {
       const { wrapper, playback } = await mountWithSong()
-      useDrawersStore().lyricsDrawerOpen = true
+      useDrawersStore().lyricsPanelOpen = true
       await wrapper.vm.$nextTick()
       expect((wrapper.vm as unknown as { showLyrics: boolean }).showLyrics).toBe(true)
 
@@ -436,15 +455,45 @@ describe('NowPlayingView', () => {
       return button(wrapper, icon).classList.contains('text-primary')
     }
 
-    it('colors the lyrics button while lyrics are showing', async () => {
-      // Only rendered where it's the only way to reach lyrics at all.
-      const { wrapper } = await mountToolbar({ compact: true })
+    it.each([
+      ['desktop', {}],
+      ['mobile (compact)', { compact: true }],
+    ])('colors the lyrics button while lyrics are showing, on %s', async (_name, props) => {
+      const { wrapper } = await mountToolbar(props)
       expect(isAmber(wrapper, 'mdi-script-text-outline')).toBe(false)
 
-      useDrawersStore().lyricsDrawerOpen = true
+      useDrawersStore().lyricsPanelOpen = true
       await wrapper.vm.$nextTick()
 
       expect(isAmber(wrapper, 'mdi-script-text-outline')).toBe(true)
+    })
+
+    /** It used to be here only on the phone and in fullscreen, standing in
+     * for PlayerBar's own copy. That copy is gone along with the drawer it
+     * opened, so this is the switch for lyrics everywhere - including the
+     * ordinary desktop window, which is exactly where it was missing. */
+    it('shows the lyrics button on the plain desktop view, not only in fullscreen', async () => {
+      const { wrapper } = await mountToolbar()
+
+      expect(wrapper.find('.now-playing__toolbar .mdi-script-text-outline').exists()).toBe(true)
+    })
+
+    /** Radio has no lyrics; the same button opens that station's title log
+     * and says so with its own icon. */
+    it('offers the title log instead while a station is playing', async () => {
+      const { wrapper } = await mountToolbar()
+      const playback = usePlaybackStore()
+      playback.setQueue([], -1)
+      playback.radioStation = {
+        id: '',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('.now-playing__toolbar .mdi-history').exists()).toBe(true)
+      expect(wrapper.find('.now-playing__toolbar .mdi-script-text-outline').exists()).toBe(false)
     })
 
     it('colors the autoplay button while autoplay is on', async () => {
@@ -481,7 +530,7 @@ describe('NowPlayingView', () => {
     it('colors the lyrics button on mobile too, where it is the only way to reach lyrics', async () => {
       const { wrapper } = await mountToolbar({ compact: true })
 
-      useDrawersStore().lyricsDrawerOpen = true
+      useDrawersStore().lyricsPanelOpen = true
       await wrapper.vm.$nextTick()
 
       expect(isAmber(wrapper, 'mdi-script-text-outline')).toBe(true)

@@ -34,6 +34,13 @@ interface RemoteControlState {
   lanIp: string
   port: number
   needsRegenerate: boolean
+  /** How many phones currently hold an open event stream (see
+   * routes/remote.py's phone_events()). Shown on the Remote Control
+   * button, and watched by the pairing dialog, which closes itself when
+   * this goes *up* - a count rather than a "a phone connected" event
+   * because the button needs the number anyway, and one source of truth
+   * for both is one thing that can be wrong. */
+  phoneCount: number
 }
 
 const KEEPALIVE_INTERVAL_MS = 20_000
@@ -76,6 +83,7 @@ export const useRemoteControlStore = defineStore('remoteControl', {
     lanIp: '',
     port: 0,
     needsRegenerate: false,
+    phoneCount: 0,
   }),
 
   getters: {
@@ -105,6 +113,10 @@ export const useRemoteControlStore = defineStore('remoteControl', {
       this.lanIp = creds.lan_ip
       this.port = creds.port
       this.needsRegenerate = false
+      // A new password locks out whatever was paired with the old one (see
+      // connect/core/remote.py's enable()), so whoever was counted here is
+      // on their way off. The backend says so again as each stream drops.
+      this.phoneCount = 0
       this.startRelay()
     },
 
@@ -116,6 +128,10 @@ export const useRemoteControlStore = defineStore('remoteControl', {
         this.password = null
         this.pin = null
         this.needsRegenerate = false
+        // Nothing can be connected to a feature that is off, and no
+        // further count will arrive to say so: the agent stream this one
+        // would have come down is exactly what stopRelay() closes.
+        this.phoneCount = 0
         this.stopRelay()
       }
     },
@@ -138,6 +154,7 @@ export const useRemoteControlStore = defineStore('remoteControl', {
       this.pin = status.pin
       this.lanIp = status.lan_ip
       this.port = status.port
+      this.phoneCount = status.phone_count
       if (status.enabled) {
         this.needsRegenerate = !this.password
         this.startRelay()
@@ -183,6 +200,9 @@ export const useRemoteControlStore = defineStore('remoteControl', {
             console.error('[remoteControl] Failed to handle command:', error)
             return respondToRemoteCommand(message.request_id, { error: String(error) })
           })
+      }
+      agentSource.onPhoneCount = (count: number) => {
+        this.phoneCount = count
       }
       agentSource.onQuery = (message) => {
         void resolveRemoteQuery(message.type, message.payload)

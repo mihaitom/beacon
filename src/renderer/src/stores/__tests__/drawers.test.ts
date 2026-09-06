@@ -151,13 +151,25 @@ describe('the drawer toggles', () => {
     expect(drawers.queueDrawerOpen).toBe(true)
   })
 
-  it('opens and closes the lyrics drawer', () => {
+  /** The one lyrics state left. It belongs to Now Playing, which is
+   * unmounted every time the user goes anywhere else, so it has to be
+   * remembered here rather than in the view - a click on a title in a
+   * station's log leaves for the search page and is meant to be followed
+   * by Back. There used to be a second flag for a drawer carrying the
+   * same content; closing that drawer emptied this panel, and the drawer
+   * is gone (see the store's own comment). */
+  it('remembers whether the Now Playing panel is open', () => {
     const drawers = useDrawersStore()
 
-    drawers.toggleLyricsDrawer()
-    expect(drawers.lyricsDrawerOpen).toBe(true)
+    drawers.toggleLyricsPanel()
+    expect(drawers.lyricsPanelOpen).toBe(true)
 
-    drawers.toggleLyricsDrawer()
-    expect(drawers.lyricsDrawerOpen).toBe(false)
+    drawers.toggleLyricsPanel()
+    expect(drawers.lyricsPanelOpen).toBe(false)
+
+    // And a fresh start begins shut, the same as the queue drawer.
+    drawers.toggleLyricsPanel()
+    drawers.resetDrawers()
+    expect(drawers.lyricsPanelOpen).toBe(false)
   })
 })

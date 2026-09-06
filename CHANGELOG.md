@@ -8,25 +8,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- Now Playing has its own entry at the top of the sidebar, rather than being reachable only through the player bar
 - You can now vote for a station in "Discover stations" by clicking its vote count, which is what the "most voted" ranking there is built on. Radio Browser counts one vote per station a day, shared by everyone using the same Beacon server, and a station whose vote for today is already spent says so instead of quietly dropping yours
-- Internet radio played on this device now goes through Beacon's own backend too, which keeps hold of the station on your behalf: a tunnel or a cell handover while listening away from home no longer skips ahead, because the seconds you missed are kept for you and catch up once you are back. A station is also fetched only once, for the sound and the now-playing title together
+- Internet radio played on this device now goes through Beacon's own backend too, which keeps hold of the station on your behalf: a tunnel or a cell handover while listening away from home no longer skips ahead, because the seconds you missed are kept for you and catch up once you are back
 - A radio station that goes quiet is now noticed within seconds instead of minutes and brought back automatically, and the player bar offers a Reconnect button if it stays away
 
 ### Changed
 
-- A station's title history now loads as you scroll it instead of arriving all at once, and the app no longer re-fetches the whole list every few seconds while a station plays. On a long history that is several megabytes an hour less over the connection, which is the difference between a comfortable and an expensive hour of radio on mobile data
-- The full-size artwork view now dims the rest of the window much further, so the picture is what you are looking at rather than a dialog over a lit page
+- A station's title history is now laid out as a timeline: one card per title on a line down the panel with the time beside it, the track playing right now marked on the line, and anything that does not read as an artist and a track - a programme name, the news, a station slogan - marked as a plain line of text. A longer break, where the station was off or you were listening to something else, shows as a gap in the line
+- A station's title history now loads as you scroll it instead of arriving all at once, and the app no longer re-fetches the whole list every few seconds while a station plays, which saves a good deal of mobile data on a long history
 - The Playback setting "Send radio straight to the device" is now "Play radio straight from the station" and decides it for this device's own player as well as for casting
+- The Remote Control pairing window now closes itself as soon as the phone connects, unless you were using it for something else, such as copying the address or generating a new code
+- The Remote Control button in the player bar now shows how many phones are connected and opens the pairing code again, and switching Remote Control off moved into that window
+- The full-size artwork view now dims the rest of the window much further, so the picture is what you are looking at rather than a dialog over a lit page
+- The grid button above a row of cards is now greyed out when the row already shows everything it has, on Favorites, Search and an artist's albums
+
+### Removed
+
+- The lyrics panel that slid out over whichever page you were browsing is gone, along with its button in the player bar. Lyrics are now shown on Now Playing, where the button for them sits in that screen's own toolbar
+- The panel that slid out with a radio station's played titles is gone the same way, and that list is now shown on Now Playing as well
 
 ### Fixed
 
-- Where a station marks an ad by putting the advertiser's web address in place of the artist, it is now kept out of the title history and off the lock screen. Ads that look like an ordinary song still come through
-- Rows in the queue now slide into place as soon as they move, instead of sitting visibly out of position for a moment first and then taking twice as long to settle
-- The elapsed time beside "Live" no longer freezes at the length of whatever track was playing before the station started
-- Radio stations that send iHeartRadio-style now-playing metadata now show the artist and track like every other station, instead of a line of internal identifiers
-- While casting a radio station, the artist and track under the station name no longer disappears until the next song starts
-- Switching stations while casting no longer flickers back to the previous station for a moment before settling on the new one
+- A library scan now keeps running in view after you leave Settings: it is followed to the end wherever you are, the finished scan's results show up without a restart, and coming back to Settings picks up a scan that is still going
+- The "Rescan library" button in Settings no longer changes size while it runs, and it now shows how far the scan has got: the ring in the button fills up where your server reports a percentage (Jellyfin, Plex) and keeps turning where it only counts files (Navidrome), with the figure beside it either way
+- The line above the rescan button named Navidrome even when signed in to Jellyfin or Plex; it now names the server the scan will actually run on
+- Now Playing remembers whether the lyrics, or a station's title list, were open, so leaving that screen and coming back shows them again instead of the plain artwork
 - A very long radio title no longer pushes the artwork out of view on Now Playing; it is shortened with an ellipsis, and the full title stays in the station's title list
+- Where a station marks an ad by putting the advertiser's web address in place of the artist, it is now kept out of the title history and off the lock screen. Ads that look like an ordinary song still come through
+- Radio stations that send iHeartRadio-style now-playing metadata now show the artist and track like every other station, instead of a line of internal identifiers
+- The elapsed time beside "Live" no longer freezes at the length of whatever track was playing before the station started
+- While casting a radio station, the artist and track under the station name no longer disappear until the next song starts
+- Switching stations while casting no longer flickers back to the previous station for a moment before settling on the new one
+- Rows in the queue now slide into place as soon as they move, instead of sitting out of position for a moment first
 
 ## [1.1.0] - 2026-09-05
 

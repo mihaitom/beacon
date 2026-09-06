@@ -29,11 +29,20 @@ export interface RemoteQueryMessage {
   payload: Record<string, unknown>
 }
 
+/** How many phones hold an open event stream — see routes/remote.py's
+ * phone_events(), which sends this both when one arrives and when one
+ * drops off. */
+export interface RemotePhoneCountMessage {
+  kind: 'phones'
+  count: number
+}
+
 export class RemoteAgentEventSource {
   private source: ReconnectingEventSource | null = null
 
   onCommand: ((message: RemoteCommandMessage) => void) | null = null
   onQuery: ((message: RemoteQueryMessage) => void) | null = null
+  onPhoneCount: ((count: number) => void) | null = null
 
   constructor(
     private readonly connectUrl: string,
@@ -47,7 +56,7 @@ export class RemoteAgentEventSource {
       `${this.connectUrl}/remote/agent-events?${params.toString()}`,
       {
         onMessage: (event) => {
-          let message: RemoteCommandMessage | RemoteQueryMessage
+          let message: RemoteCommandMessage | RemoteQueryMessage | RemotePhoneCountMessage
           try {
             message = JSON.parse(event.data)
           } catch {
@@ -55,6 +64,7 @@ export class RemoteAgentEventSource {
           }
           if (message.kind === 'command') this.onCommand?.(message)
           else if (message.kind === 'query') this.onQuery?.(message)
+          else if (message.kind === 'phones') this.onPhoneCount?.(message.count)
         },
       },
     )

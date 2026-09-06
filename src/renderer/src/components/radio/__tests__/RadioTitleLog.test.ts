@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createVuetify } from 'vuetify'
+import * as components from 'vuetify/components'
+import * as directives from 'vuetify/directives'
 import { isMobileWebNow } from '@/composables/useIsMobileWeb'
 import RadioTitleLog from '../RadioTitleLog.vue'
 
@@ -7,8 +10,14 @@ vi.mock('@/composables/useIsMobileWeb', () => ({ isMobileWebNow: vi.fn(() => fal
 
 const push = vi.fn()
 
+// The component renders a v-timeline, so the plugin has to be here even in
+// jsdom: without it the timeline items resolve to nothing and these tests
+// would be asserting against markup the app never renders.
+const vuetify = createVuetify({ components, directives })
+
 const i18n = {
   global: {
+    plugins: [vuetify],
     mocks: { $t: (key: string) => key, $router: { push } },
   },
 }
@@ -90,7 +99,9 @@ describe('RadioTitleLog', () => {
   it('searches the library for a song row, by its track title', () => {
     const wrapper = mountLog(['WizTheMc, bees & honey - Show Me Love'])
 
-    wrapper.find('.title-log__text--searchable').trigger('click')
+    // The whole card, not the title on it - see the component's template
+    // for why a row-sized target beats a text-sized one.
+    wrapper.find('.title-log__item--searchable').trigger('click')
 
     // The track alone, not "artist track": an ICY artist field routinely
     // carries what a library never matches on, and a combined query that
@@ -104,7 +115,7 @@ describe('RadioTitleLog', () => {
     vi.mocked(isMobileWebNow).mockReturnValue(true)
     const wrapper = mountLog(['WizTheMc, bees & honey - Show Me Love'])
 
-    wrapper.find('.title-log__text--searchable').trigger('click')
+    wrapper.find('.title-log__item--searchable').trigger('click')
 
     expect(push).toHaveBeenCalledWith({ name: 'm-library', query: { q: 'Show Me Love' } })
   })
@@ -112,8 +123,49 @@ describe('RadioTitleLog', () => {
   it('offers no search on a row that is not a song', () => {
     const wrapper = mountLog(['Informationen am Morgen'])
 
-    expect(wrapper.find('.title-log__text--searchable').exists()).toBe(false)
+    expect(wrapper.find('.title-log__item--searchable').exists()).toBe(false)
+    // Not a <button> either: a card that cannot do anything must not read
+    // as one that can.
     expect(wrapper.find('button').exists()).toBe(false)
+  })
+
+  describe('a break in the listening', () => {
+    /** Nothing logged for a long while means the station was off or
+     * something else was playing - drawn as a gap so an evening reads as
+     * the sittings it was. */
+    it('marks the entry after a long silence', () => {
+      const wrapper = mountEntries([
+        { title: 'Artist - After the break', at: at(6, 12, 0) },
+        { title: 'Artist - Before the break', at: at(6, 11, 0) },
+      ])
+
+      const items = wrapper.findAll('.v-timeline-item')
+      expect(items[0]!.classes()).not.toContain('title-log__break')
+      expect(items[1]!.classes()).toContain('title-log__break')
+    })
+
+    it('leaves an ordinary run of titles alone', () => {
+      // Four minutes apart is a station playing one song after another.
+      const wrapper = mountEntries([
+        { title: 'Artist - Newer', at: at(6, 12, 0) },
+        { title: 'Artist - Older', at: at(6, 11, 56) },
+      ])
+
+      expect(wrapper.findAll('.v-timeline-item')[1]!.classes()).not.toContain('title-log__break')
+    })
+
+    it('does not add one under a date heading, which already separates them', () => {
+      vi.setSystemTime(new Date(2026, 8, 6, 12, 30))
+      const wrapper = mountEntries([
+        { title: 'Artist - This morning', at: at(6, 8, 0) },
+        { title: 'Artist - Last night', at: at(5, 23, 0) },
+      ])
+
+      const items = wrapper.findAll('.v-timeline-item')
+      // heading, then the entry it introduces
+      expect(items[1]!.find('.title-log__day').exists()).toBe(true)
+      expect(items[2]!.classes()).not.toContain('title-log__break')
+    })
   })
 
   describe('when the log runs past midnight', () => {
@@ -164,6 +216,43 @@ describe('RadioTitleLog', () => {
       // one language's exact wording.
       expect(heading).toContain('3')
     })
+  })
+
+  it('marks what is playing and what is not a song, and leaves songs plain', () => {
+    const wrapper = mountEntries([
+      { title: 'Years & Years - Eyes Shut', at: at(6, 11, 59) },
+      { title: 'Mark Forster - Übermorgen', at: at(6, 11, 48) },
+      { title: 'Informationen am Morgen', at: at(6, 11, 19) },
+    ])
+
+    const dots = wrapper.findAll('.v-timeline-divider__dot')
+    expect(dots).toHaveLength(3)
+    // Playing right now.
+    expect(dots[0]!.find('.mdi-play').exists()).toBe(true)
+    // An ordinary song in the log - an icon on every row would be texture
+    // rather than information. Vuetify renders an (empty) icon element
+    // either way, so what is asserted is that it carries no glyph.
+    expect(dots[1]!.find('.mdi-play').exists()).toBe(false)
+    expect(dots[1]!.find('.mdi-text-short').exists()).toBe(false)
+    // Not shaped like a song: a programme name, a news item, a slogan.
+    // A neutral text glyph rather than the microphone this used to be -
+    // what the mark is built on is the missing " - ", which is not the
+    // same claim as "this is speech" (see dotIcon()).
+    expect(dots[2]!.find('.mdi-text-short').exists()).toBe(true)
+    expect(dots[2]!.find('.mdi-microphone').exists()).toBe(false)
+  })
+
+  it('gives an entry a dot on the line and a date heading none', () => {
+    vi.setSystemTime(new Date(2026, 8, 6, 8, 30))
+    const wrapper = mountEntries([{ title: 'Artist - Last night', at: at(5, 23, 50) }])
+
+    // The heading is a break in the line, not something that played at the
+    // start of a day - see the component's own template.
+    const items = wrapper.findAll('.v-timeline-item')
+    expect(items).toHaveLength(2)
+    expect(items[0]!.find('.title-log__day').exists()).toBe(true)
+    expect(items[0]!.find('.v-timeline-divider__dot').exists()).toBe(false)
+    expect(items[1]!.find('.v-timeline-divider__dot').exists()).toBe(true)
   })
 
   describe('asking for older entries as the end comes into reach', () => {

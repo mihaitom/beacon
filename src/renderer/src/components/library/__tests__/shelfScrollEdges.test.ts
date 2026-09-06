@@ -3,7 +3,12 @@
 // answers with is arithmetic on three numbers jsdom reports as zero — so a
 // component test would only ever see the unmeasured case.
 import { describe, expect, it, vi } from 'vitest'
-import { observeShelfEdges, SHELF_EDGES_UNMEASURED, type ShelfEdges } from '../shelfScrollEdges'
+import {
+  observeShelfEdges,
+  SHELF_EDGES_UNMEASURED,
+  shelfFitsWithoutScrolling,
+  type ShelfEdges,
+} from '../shelfScrollEdges'
 
 /** A row element with the three numbers a browser would have laid out. */
 function makeRow(box: { clientWidth: number; scrollWidth: number; scrollLeft: number }) {
@@ -116,5 +121,20 @@ describe('observeShelfEdges', () => {
     row.dispatchEvent(new Event('scroll'))
 
     expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('shelfFitsWithoutScrolling', () => {
+  it('is true only for a row that has both of its ends on screen at once', () => {
+    expect(shelfFitsWithoutScrolling({ atStart: true, atEnd: true })).toBe(true)
+    expect(shelfFitsWithoutScrolling({ atStart: true, atEnd: false })).toBe(false)
+    expect(shelfFitsWithoutScrolling({ atStart: false, atEnd: true })).toBe(false)
+    expect(shelfFitsWithoutScrolling({ atStart: false, atEnd: false })).toBe(false)
+  })
+
+  it('treats a shelf nobody has measured yet as one that scrolls', () => {
+    // Otherwise the grid toggle would start dim on every page load and only
+    // wake up once a ResizeObserver got round to it.
+    expect(shelfFitsWithoutScrolling(SHELF_EDGES_UNMEASURED)).toBe(false)
   })
 })

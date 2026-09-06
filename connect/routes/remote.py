@@ -118,6 +118,9 @@ async def remote_status():
         "pin": remote.pin if remote.enabled else None,
         "lan_ip": get_local_ip(),
         "port": PORT,
+        # So a renderer that just started knows what to put on its button
+        # without waiting for a phone to connect or drop off.
+        "phone_count": remote.event_bus.subscriber_count,
     }
 
 
@@ -225,9 +228,32 @@ async def get_state():
     return remote.snapshot
 
 
+async def _broadcast_phone_count() -> None:
+    """Tells the renderer how many phones currently hold an event stream."""
+    await remote.command_bus.broadcast(
+        {"kind": "phones", "count": remote.event_bus.subscriber_count}
+    )
+
+
 @router.get("/events", dependencies=[Depends(require_remote_password)])
 async def phone_events():
     queue = remote.event_bus.subscribe()
+
+    # How many phones are on the line, told to the desktop as it changes.
+    # An open stream is the only sign of a phone this backend has: the QR
+    # code carries the password itself, so a scan never touches
+    # /remote/login and there is no pairing round trip to notice either.
+    #
+    # The desktop shows the count on its Remote Control button and closes
+    # its pairing dialog when the number goes up. Nothing depends on it, so
+    # a dropped message costs a stale badge until the next change.
+    #
+    # Sent here rather than from inside the generator below, which would
+    # read as "after the first snapshot went out" but does not: the code
+    # after a yield does not run until the *next* value is pulled, so it
+    # would arrive one event late, or not at all for a phone that connects
+    # and then goes quiet.
+    await _broadcast_phone_count()
 
     async def generator():
         try:
@@ -241,6 +267,7 @@ async def phone_events():
                     yield ": heartbeat\n\n"
         finally:
             remote.event_bus.unsubscribe(queue)
+            await _broadcast_phone_count()
 
     return StreamingResponse(
         generator(),

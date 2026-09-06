@@ -56,7 +56,7 @@ async function mountAt(w: number, h: number, radio = false) {
       title: `Artist ${i} - Track ${i}`,
       at: 1_757_000_000 + i * 200,
     }))
-    useDrawersStore().lyricsDrawerOpen = true
+    useDrawersStore().lyricsPanelOpen = true
   } else {
     playback.queue = [makeSong('s1')]
     playback.currentIndex = 0

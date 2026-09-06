@@ -1,4 +1,6 @@
 import { defineStore } from 'pinia'
+import { emitter } from '@/emitter'
+import { i18n } from '@/i18n'
 import { useAuthStore } from './auth'
 import { SubsonicClient } from '@/services/subsonic/client'
 import { accountScopedKey, getAccountKey } from '@/services/accountKey'
@@ -313,6 +315,15 @@ interface LibraryState {
   // concept there — see SubsonicClient.search3()), so the UI falls back to
   // an indeterminate bar in that case.
   songScanProgress: { loaded: number; total: number | null } | null
+  /** A server-side library scan this app started, and how far it has got:
+   * Navidrome counts processed items, the Jellyfin and Plex bridges report
+   * a percentage, and a server may report neither (see SettingsView's own
+   * label). Kept here rather than in the view that starts it because a
+   * scan outlives that view - a Plex scan runs for minutes, and nobody
+   * stays on the settings page for it. */
+  scanning: boolean
+  scanCount: number | null
+  scanPercent: number | null
   playlists: Playlist[]
   radioStations: RadioStation[]
   starred: { artists: Artist[]; albums: Album[]; songs: Song[] }
@@ -331,6 +342,24 @@ interface LibraryState {
   error: string | null
 }
 
+// How often the running scan is asked about. Frequent enough that the
+// figure beside the button moves, sparse enough that a scan running for
+// several minutes (a large Plex library) does not hammer the server.
+const SCAN_POLL_INTERVAL_MS = 2000
+
+// How many polls in a row may fail before the app gives up on a scan it
+// knows is running. A scan takes minutes, and over that span a single
+// hiccup - a proxy timeout, a moment of server load - is ordinary; giving
+// up on the first one used to leave the button looking idle with the scan
+// still going.
+const SCAN_POLL_FAILURES_ALLOWED = 3
+
+// The poll timer lives outside the store: it belongs to the scan, not to
+// any component, and must survive every navigation while the scan runs
+// (which is the whole point of this living here at all).
+let scanTimer: ReturnType<typeof setTimeout> | null = null
+let scanPollFailures = 0
+
 export const useLibraryStore = defineStore('library', {
   state: (): LibraryState => ({
     artists: [],
@@ -338,6 +367,9 @@ export const useLibraryStore = defineStore('library', {
     allSongs: [],
     allSongsLoaded: false,
     songScanProgress: null,
+    scanning: false,
+    scanCount: null,
+    scanPercent: null,
     playlists: [],
     radioStations: [],
     starred: { artists: [], albums: [], songs: [] },
@@ -418,6 +450,106 @@ export const useLibraryStore = defineStore('library', {
       return cleared
     },
 
+    /** Starts a scan on the media server and follows it to the end, no
+     * matter where the person goes in the meantime.
+     *
+     * Everything about a scan used to live in SettingsView: its state, its
+     * poll timer, and the cache invalidation at the end. Leaving that page
+     * cleared the timer, so a scan longer than the visit simply stopped
+     * being watched - the button read as idle on the way back (a second
+     * click would have started a second scan), and, worse, the
+     * invalidateCache() that makes the scan's results actually show up
+     * never ran. That is the very complaint the feature exists for.
+     *
+     * Rejects only when the scan could not be *started*; a scan that is
+     * running is then followed by pollScanStatus() below. */
+    async startScan(): Promise<void> {
+      this.scanning = true
+      this.scanCount = null
+      this.scanPercent = null
+      scanPollFailures = 0
+      try {
+        const status = await this.client().startScan()
+        this.scanCount = status.count
+        this.scanPercent = status.percent
+      } catch (error) {
+        this.scanning = false
+        throw error
+      }
+      void this.pollScanStatus()
+    },
+
+    /** Picks a scan back up that is already running on the server - one
+     * this app started and then forgot across a restart, or one somebody
+     * kicked off elsewhere. Asked once, by whoever shows the scan control.
+     * Silent about failure: not knowing whether a scan is running is not
+     * worth telling anyone about. */
+    async resumeScanIfRunning(): Promise<void> {
+      if (this.scanning) return
+      try {
+        const status = await this.client().getScanStatus()
+        if (!status.scanning) return
+        this.scanning = true
+        this.scanCount = status.count
+        this.scanPercent = status.percent
+        scanPollFailures = 0
+        scanTimer = setTimeout(() => void this.pollScanStatus(), SCAN_POLL_INTERVAL_MS)
+      } catch {
+        // No scan control on this account, server unreachable, ... - the
+        // button simply stays as it is.
+      }
+    },
+
+    /** Asks how the running scan is doing and either schedules the next
+     * ask or finishes up: the cache goes (a scan can add, remove or re-tag
+     * songs, and without this Beacon keeps serving what it already had)
+     * and the person is told, wherever they happen to be by then. */
+    async pollScanStatus(): Promise<void> {
+      let status
+      try {
+        status = await this.client().getScanStatus()
+        scanPollFailures = 0
+      } catch (error) {
+        scanPollFailures += 1
+        console.error('[library] Failed to poll library scan status:', error)
+        if (scanPollFailures < SCAN_POLL_FAILURES_ALLOWED) {
+          scanTimer = setTimeout(() => void this.pollScanStatus(), SCAN_POLL_INTERVAL_MS)
+          return
+        }
+        this.stopScanTracking()
+        emitter.emit('toast', {
+          level: 'error',
+          title: i18n.global.t('settings.rescanLibrary'),
+          message: i18n.global.t('settings.scanFailed'),
+        })
+        return
+      }
+
+      this.scanCount = status.count
+      this.scanPercent = status.percent
+      if (status.scanning) {
+        scanTimer = setTimeout(() => void this.pollScanStatus(), SCAN_POLL_INTERVAL_MS)
+        return
+      }
+
+      this.stopScanTracking()
+      void this.invalidateCache()
+      emitter.emit('toast', {
+        level: 'success',
+        title: i18n.global.t('settings.rescanLibrary'),
+        message: i18n.global.t('settings.scanComplete', { count: this.scanCount }),
+      })
+    },
+
+    /** Stops following a scan — on logout as well as at the end of one, so
+     * a poll cannot outlive the account it was started under. */
+    stopScanTracking(): void {
+      if (scanTimer) clearTimeout(scanTimer)
+      scanTimer = null
+      scanPollFailures = 0
+      this.scanning = false
+    },
+
     /** Called from authStore.logout() — without this, a different account
      * signing in afterwards would see the previous account's playlists,
      * radio stations, starred items, and search results, not just its
@@ -426,6 +558,10 @@ export const useLibraryStore = defineStore('library', {
      * a singleton for the app's whole lifetime, so nothing else clears it
      * between accounts. */
     resetForLogout(): void {
+      // Before the reset: $reset() clears the flag but not the timer that
+      // keeps setting it, and a poll left running would ask the next
+      // account's server about the previous account's scan.
+      this.stopScanTracking()
       clearLibraryCache()
       this.$reset()
     },

@@ -135,16 +135,45 @@
       <h2 class="section-title">{{ $t('settings.libraryTitle') }}</h2>
       <div class="beacon-panel">
         <div v-if="authStore.capabilities.libraryScan" class="setting">
-          <p class="setting__description">{{ $t('settings.libraryScanHint') }}</p>
-          <v-btn
-            color="primary"
-            prepend-icon="mdi-refresh"
-            :loading="scanning"
-            :disabled="scanning"
-            @click="rescanLibrary"
-          >
-            {{ scanning ? scanLabel : $t('settings.rescanLibrary') }}
-          </v-btn>
+          <p class="setting__description">
+            {{ $t('settings.libraryScanHint', { server: serverName }) }}
+          </p>
+          <!-- The label stays put while the scan runs; the progress is the
+             - ring in the button and the figure beside it. Vuetify hides a
+             - loading button's own content (`.v-btn__content { opacity: 0 }`)
+             - but keeps it in the layout, so a label swapped for a progress
+             - one was invisible *and* still sized the button: it shrank on
+             - the first click, grew again with every digit the count gained,
+             - and snapped back to full width at the end. -->
+          <div class="setting__control-row">
+            <v-btn
+              color="primary"
+              prepend-icon="mdi-refresh"
+              :loading="scanning"
+              :disabled="scanning"
+              @click="rescanLibrary"
+            >
+              <!-- The spinner Vuetify would draw, made to say how far
+                 - along the scan is wherever the server knows: Jellyfin and
+                 - Plex report a percentage, Navidrome counts items with no
+                 - total to divide by and so keeps the ring turning
+                 - instead. -->
+              <template #loader>
+                <v-progress-circular
+                  :indeterminate="scanPercent === null"
+                  :model-value="scanPercent ?? undefined"
+                  size="24"
+                  width="2"
+                />
+              </template>
+              {{ $t('settings.rescanLibrary') }}
+            </v-btn>
+            <!-- Beside the button rather than under it: it is the state of
+               - that button, not a note about the section, and a ring that
+               - only turns (Navidrome, which counts items with no total)
+               - needs the number to say anything at all. -->
+            <span v-if="scanning" class="setting__status">{{ scanLabel }}</span>
+          </div>
         </div>
 
         <!-- Jellyfin has no server-side scan-trigger of its own (see
@@ -154,6 +183,10 @@
          - take a couple of minutes (see stores/library.ts's refreshLibrary()). -->
         <div v-else-if="authStore.serverType === 'jellyfin'" class="setting">
           <p class="setting__description">{{ $t('settings.libraryRefreshHint') }}</p>
+          <!-- Same fixed label, same reason as the scan button above. This
+             - one already had somewhere to put its progress; it now carries
+             - the count as well, which used to be written invisibly into the
+             - button. -->
           <v-btn
             color="primary"
             prepend-icon="mdi-refresh"
@@ -161,7 +194,7 @@
             :disabled="refreshingLibrary"
             @click="refreshLibrary"
           >
-            {{ refreshingLibrary ? refreshProgressLabel : $t('settings.refreshLibrary') }}
+            {{ $t('settings.refreshLibrary') }}
           </v-btn>
           <v-progress-linear
             v-if="refreshingLibrary"
@@ -172,6 +205,9 @@
             height="6"
             rounded
           />
+          <p v-if="refreshingLibrary && refreshProgressLabel" class="setting__hint">
+            {{ refreshProgressLabel }}
+          </p>
         </div>
 
         <!-- Discover's seed artists come out of the library itself, which is
@@ -379,12 +415,6 @@ import SegmentedControl from '@/components/SegmentedControl.vue'
 import { useIsMobileWeb } from '@/composables/useIsMobileWeb'
 import packageJson from '../../../../package.json'
 
-// How often getScanStatus.view is polled while a scan is running — frequent
-// enough that the live count feels responsive, not so frequent it hammers
-// Navidrome for no real benefit (a scan takes at least several seconds even
-// for a small library).
-const SCAN_POLL_INTERVAL_MS = 2000
-
 export default {
   name: 'SettingsView',
   components: { NavidromeIcon, JellyfinIcon, PlexIcon, PrivacyDialog, SegmentedControl },
@@ -404,15 +434,6 @@ export default {
       // the button has to say it is working rather than look ignored.
       clearingCache: false,
       privacyOpen: false,
-      scanning: false,
-      // How far the running scan has got, in whichever of the two ways the
-      // server can say (see the client's ScanProgress): Navidrome counts
-      // items, the Jellyfin and Plex bridges report a percentage, and
-      // either can be null — hence scanLabel below rather than one fixed
-      // string. Only meaningful while `scanning` is true.
-      scanCount: null as number | null,
-      scanPercent: null as number | null,
-      scanTimer: null as ReturnType<typeof setTimeout> | null,
       resettingAirplay: false,
       // null until loadLogLevel() (created() below) resolves — the
       // v-select stays disabled/loading until then rather than guessing a
@@ -426,6 +447,28 @@ export default {
     // processed items (Navidrome), a percentage (the Jellyfin and Plex
     // bridges), or nothing at all — in which case it still has to say that
     // something is happening.
+    /** What to call the media server in the text next to the scan button.
+     * All three server types show that button (it is gated on being an
+     * admin, not on which server it is), and it used to tell a Plex or
+     * Jellyfin admin that Navidrome was about to scan their files. Same
+     * three names the login screen offers. */
+    serverName(): string {
+      if (this.authStore.serverType === 'jellyfin') return this.$t('auth.serverTypeJellyfin')
+      if (this.authStore.serverType === 'plex') return this.$t('auth.serverTypePlex')
+      return this.$t('auth.serverTypeSubsonic')
+    },
+
+    /** The scan is the library store's, not this page's — it outlives the
+     * page (see its startScan()). These three only read it. */
+    scanning(): boolean {
+      return this.libraryStore.scanning
+    },
+    scanCount(): number | null {
+      return this.libraryStore.scanCount
+    },
+    scanPercent(): number | null {
+      return this.libraryStore.scanPercent
+    },
     scanLabel(): string {
       if (this.scanCount != null) return this.$t('settings.scanning', { count: this.scanCount })
       if (this.scanPercent != null) {
@@ -540,9 +583,10 @@ export default {
     // this feeds (capabilities.logLevelControl) — no point asking connect
     // for something nobody here can act on.
     if (this.authStore.capabilities.logLevelControl) void this.loadLogLevel()
-  },
-  beforeUnmount() {
-    if (this.scanTimer) clearTimeout(this.scanTimer)
+    // A scan may already be running — one this app started before a
+    // restart, or one somebody kicked off on the server itself. Asked
+    // once, and only where the control that shows it exists.
+    if (this.authStore.capabilities.libraryScan) void this.libraryStore.resumeScanIfRunning()
   },
   methods: {
     formatLabel(format: StreamFormat): string {
@@ -600,58 +644,23 @@ export default {
     showReleaseNotes() {
       this.$emitter.emit('openReleaseNotes')
     },
+    /** Hands the whole scan to the library store — see its startScan() for
+     * why it lives there and not here. Only the "could not even start"
+     * case is this page's to report; everything after that is announced
+     * wherever the person happens to be by then. */
     async rescanLibrary() {
-      this.scanning = true
-      this.scanCount = null
-      this.scanPercent = null
       try {
-        const status = await this.libraryStore.client().startScan()
-        this.scanCount = status.count
-        this.scanPercent = status.percent
+        await this.libraryStore.startScan()
       } catch (error) {
-        this.scanning = false
         this.$emitter.emit('toast', {
           level: 'error',
           title: this.$t('settings.rescanLibrary'),
           message: this.$t('settings.scanFailed'),
         })
         console.error('[settings] Failed to start library scan:', error)
-        return
       }
-      void this.pollScanStatus()
     },
-    // Navidrome's Subsonic extension has no push notification for "scan
-    // finished" — polling getScanStatus.view until `scanning` flips back to
-    // false is the only way to know. Schedules its own next tick via
-    // setTimeout rather than setInterval, so a slow response can't ever
-    // stack a second poll on top of one still in flight.
-    async pollScanStatus() {
-      let status
-      try {
-        status = await this.libraryStore.client().getScanStatus()
-      } catch (error) {
-        this.scanning = false
-        console.error('[settings] Failed to poll library scan status:', error)
-        return
-      }
-      this.scanCount = status.count
-      this.scanPercent = status.percent
-      if (status.scanning) {
-        this.scanTimer = setTimeout(() => this.pollScanStatus(), SCAN_POLL_INTERVAL_MS)
-        return
-      }
-      this.scanning = false
-      // A scan can add, remove, or re-tag songs — without this, Beacon
-      // would keep showing whatever it already had cached in memory until
-      // the app restarts, same "missing songs never appear" complaint
-      // that prompted this feature in the first place.
-      void this.libraryStore.invalidateCache()
-      this.$emitter.emit('toast', {
-        level: 'success',
-        title: this.$t('settings.rescanLibrary'),
-        message: this.$t('settings.scanComplete', { count: this.scanCount }),
-      })
-    },
+
     async refreshLibrary() {
       try {
         await this.libraryStore.refreshLibrary()
@@ -775,6 +784,21 @@ export default {
   border-top: 1px solid var(--beacon-hairline);
 }
 
+/* A control and whatever it has to say about itself, side by side, and
+ * wrapping under each other where there is no room. */
+.setting__control-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* Tabular figures, because this counts upwards: proportional digits make
+ * the whole line twitch on every poll. */
+.setting__status {
+  font-variant-numeric: tabular-nums;
+}
+
 .setting__label {
   font-size: 0.875rem;
   font-weight: 600;
@@ -794,7 +818,8 @@ export default {
  * app uses those, and a hint sitting a hair off would read as a mistake
  * rather than a choice. */
 .setting__description,
-.setting__hint {
+.setting__hint,
+.setting__status {
   font-size: 0.75rem;
   font-weight: 400;
   line-height: 1.3333333333;

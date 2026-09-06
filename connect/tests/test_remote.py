@@ -370,6 +370,51 @@ async def test_agent_events_opens_with_retry_and_flips_renderer_connected():
     assert remote.renderer_connected is False
 
 
+async def test_phone_events_tells_the_renderer_how_many_phones_are_on_the_line():
+    """The QR code carries the password itself, so a scan never touches
+    /remote/login and there is no pairing round trip to notice. An open
+    event stream is the only sign of a phone this backend has, and the
+    count of them is what the desktop puts on its button and watches for a
+    rise to close its pairing dialog."""
+    from routes.remote import phone_events
+
+    agent_queue = remote.command_bus.subscribe()
+    resp = await phone_events()
+    gen = resp.body_iterator
+    try:
+        # Started before the assertion below, not because the message needs
+        # it, but because an async generator that never ran does not run
+        # its finally either - the phone's own subscription would be left
+        # behind for the next test to trip over.
+        await gen.__anext__()
+
+        # Already sent, before anything has been pulled from the stream:
+        # code placed after a yield inside the generator would not run
+        # until the phone asked for the next event, which for a phone that
+        # connects and then sits quiet is never.
+        assert await asyncio.wait_for(agent_queue.get(), timeout=1.0) == {
+            "kind": "phones",
+            "count": 1,
+        }
+    finally:
+        await gen.aclose()
+
+    # And again when it goes away, so the button does not keep counting a
+    # phone that has been put down.
+    assert await asyncio.wait_for(agent_queue.get(), timeout=1.0) == {"kind": "phones", "count": 0}
+    remote.command_bus.unsubscribe(agent_queue)
+
+
+def test_status_reports_how_many_phones_are_connected(client):
+    """So a desktop that just started knows what to put on its button
+    without waiting for a phone to connect or drop off."""
+    client.post("/remote/enable")
+
+    body = client.get("/remote/status").json()
+
+    assert body["phone_count"] == 0
+
+
 async def test_agent_events_overlapping_reconnect_does_not_clobber_the_new_connection():
     """Regression test: a quick renderer reconnect (a brief network blip, a
     page reload) can briefly overlap — the *new* connection lands and sets

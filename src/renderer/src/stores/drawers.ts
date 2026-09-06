@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia'
 import type { Song } from '@/types/library'
 
-/** The queue and lyrics drawers: whether they are open, and the reveal
- * animation QueueDrawer.vue plays when the queue changes underneath it.
+/** The queue drawer and Now Playing's lyrics panel: whether they are
+ * open, and the reveal animation QueueDrawer.vue plays when the queue
+ * changes underneath it.
  *
  * Split out of stores/playback.ts (2026-08-29), where this had grown up
  * alongside the queue itself: it is interface state, not playback state -
@@ -62,7 +63,19 @@ interface DrawersState {
   // handed down from here, not something QueueDrawer.vue can work out for
   // itself by watching what it's already rendered.
   queueRevealSongs: Song[]
-  lyricsDrawerOpen: boolean
+  /** Now Playing's inline panel - the lyrics split, or a station's title
+   * log in the same place (see NowPlayingView.vue).
+   *
+   * The only lyrics state there is. There used to be a slide-out drawer
+   * carrying the same content over whatever page was being browsed, with a
+   * flag of its own, and the two disagreed in a way that cost the user
+   * their panel: leaving Now Playing handed the shared flag to the drawer,
+   * and closing that drawer closed the panel behind it - reported live
+   * 2026-09-06 as coming back to a missing title list. The drawer went
+   * (2026-09-06) rather than the two being kept in step: Now Playing is
+   * where this content has a screen built for it, and the button that used
+   * to open the drawer goes there now. */
+  lyricsPanelOpen: boolean
 }
 
 export const useDrawersStore = defineStore('drawers', {
@@ -71,7 +84,7 @@ export const useDrawersStore = defineStore('drawers', {
     queueRevealSeq: 0,
     queueRevealNeedsOpenDelay: false,
     queueRevealSongs: [],
-    lyricsDrawerOpen: false,
+    lyricsPanelOpen: false,
   }),
 
   actions: {
@@ -173,14 +186,13 @@ export const useDrawersStore = defineStore('drawers', {
       cancelQueueDrawerAutoCloseTimer()
     },
 
-    toggleLyricsDrawer(): void {
-      this.lyricsDrawerOpen = !this.lyricsDrawerOpen
+    toggleLyricsPanel(): void {
+      this.lyricsPanelOpen = !this.lyricsPanelOpen
     },
 
-    /** Both drawers closed, any pending auto-close dropped. Called by the
-     * playback store on init() (a fresh app start always begins with both
-     * closed - none of this was ever meant to survive a restart) and on
-     * logout. */
+    /** Everything shut, any pending auto-close dropped. Called by the
+     * playback store on init() (a fresh app start always begins closed -
+     * none of this was ever meant to survive a restart) and on logout. */
     resetDrawers(): void {
       cancelQueueDrawerAutoCloseTimer()
       this.$reset()

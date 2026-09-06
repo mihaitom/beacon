@@ -12,6 +12,10 @@ export interface RemoteControlStatus {
   pin: string | null
   lan_ip: string
   port: number
+  /** Phones holding an open event stream right now. Read at startup so the
+   * button is right straight away; after that the agent stream keeps it
+   * up to date (see stores/remoteControl.ts). */
+  phone_count: number
 }
 
 /** Thin wrappers over the connect backend's /remote/* control plane — all

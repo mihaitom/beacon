@@ -28,7 +28,6 @@ async function mountLayout() {
       stubs: {
         PlayerBar: true,
         QueueDrawer: true,
-        LyricsDrawer: true,
         CastTakeoverConfirmDialog: true,
         TopBarSearch: true,
       },
@@ -131,5 +130,22 @@ describe('DefaultLayout back/forward arrows', () => {
     const wrapper = await mountLayout()
 
     expect(wrapper.findComponent(NavHistoryControls).exists()).toBe(true)
+  })
+
+  /** Now Playing had no entry in the rail at all: it was reachable only by
+   * clicking the artwork in the player bar. Listed first, above the
+   * library places, and listed whether or not anything is playing - an
+   * entry that came and went with playback would reorder the nav under
+   * the pointer. */
+  it('lists Now Playing first in the rail', async () => {
+    const wrapper = await mountLayout()
+
+    const links = wrapper
+      .findAll('.v-navigation-drawer .v-list-item')
+      .map((item) => item.attributes('href'))
+      .filter((href): href is string => href !== undefined)
+
+    expect(links[0]).toBe('/now-playing')
+    expect(links).toContain('/')
   })
 })

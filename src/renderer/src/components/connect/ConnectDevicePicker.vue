@@ -393,7 +393,7 @@ export default {
   word-break: break-word;
 }
 
-/* Same dark-chrome system as QueueDrawer.vue/LyricsDrawer.vue's own
+/* Same dark-chrome system as QueueDrawer.vue's own
  * .beacon-drawer/.beacon-drawer__toolbar (Vue scoped styles don't share
  * across components just by reusing a class name, so this redeclares it
  * rather than actually reusing theirs) — this floats the same way those

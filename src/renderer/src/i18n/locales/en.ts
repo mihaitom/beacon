@@ -19,6 +19,7 @@ export default {
     createNewPlaylist: 'Create new playlist…',
   },
   nav: {
+    nowPlaying: 'Now playing',
     home: 'Home',
     library: 'Library',
     albums: 'Albums',
@@ -338,6 +339,7 @@ export default {
     pairHint:
       "Scan this code with your phone's camera, or open the address below and enter the PIN.",
     address: 'Address',
+    turnOff: 'Turn off',
     regenerate: 'Regenerate code',
     needsRegenerate:
       'The pairing code from last time is no longer available. Regenerate a new one to pair a phone — this disconnects any phone paired earlier.',
@@ -348,7 +350,7 @@ export default {
     logout: 'Log out',
     language: 'Language',
     libraryTitle: 'Library',
-    libraryScanHint: 'Have Navidrome scan for new, changed, or removed files.',
+    libraryScanHint: 'Have {server} scan for new, changed, or removed files.',
     rescanLibrary: 'Rescan library',
     scanning: 'Scanning … ({count})',
     scanningPercent: 'Scanning \u2026 ({percent}%)',

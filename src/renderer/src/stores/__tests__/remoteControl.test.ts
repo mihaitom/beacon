@@ -166,6 +166,7 @@ describe('remoteControl store', () => {
         pin: null,
         lan_ip: '',
         port: 0,
+        phone_count: 0,
       })
       const store = useRemoteControlStore()
 
@@ -181,6 +182,7 @@ describe('remoteControl store', () => {
         pin: '654321',
         lan_ip: '10.0.0.9',
         port: 9000,
+        phone_count: 0,
       })
       const store = useRemoteControlStore()
 
@@ -205,6 +207,7 @@ describe('remoteControl store', () => {
         pin: '123456',
         lan_ip: '192.168.1.5',
         port: 8080,
+        phone_count: 0,
       })
 
       await store.refreshStatus()

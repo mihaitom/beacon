@@ -68,7 +68,7 @@ async function mountPanel(synced: boolean, lineCount = 12, positionSeconds = 0) 
     time: i * 4,
     text: `Line ${i + 1}`,
   }))
-  drawers.lyricsDrawerOpen = true
+  drawers.lyricsPanelOpen = true
   await wrapper.vm.$nextTick()
   await new Promise((resolve) => setTimeout(resolve, 150))
   return wrapper

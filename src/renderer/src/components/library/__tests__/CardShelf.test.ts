@@ -104,6 +104,55 @@ describe('CardShelf', () => {
       expect(wrapper.get('.card-shelf__row').classes()).not.toContain('card-shelf__row--wrap')
     })
 
+    /** A row that shows everything it has would look exactly the same
+     * wrapped, so the toggle says so instead of doing nothing. */
+    it('goes dim once the row fits without scrolling', async () => {
+      const wrapper = mountShelf({ wrapToggle: true })
+      const row = wrapper.get('.card-shelf__row').element as HTMLElement
+      const button = () => wrapper.get('.mdi-view-grid-outline').element.closest('button')!
+
+      // Before anything has been measured it stays live - see
+      // SHELF_EDGES_UNMEASURED.
+      expect(button().disabled).toBe(false)
+
+      // A row no wider than its own box: both ends reached at once.
+      Object.defineProperty(row, 'clientWidth', { value: 1000, configurable: true })
+      Object.defineProperty(row, 'scrollWidth', { value: 900, configurable: true })
+      Object.defineProperty(row, 'scrollLeft', { value: 0, writable: true, configurable: true })
+      row.dispatchEvent(new Event('scroll'))
+      await wrapper.vm.$nextTick()
+
+      expect(button().disabled).toBe(true)
+    })
+
+    it('stays live for a row with more cards than fit', async () => {
+      const wrapper = mountShelf({ wrapToggle: true })
+      const row = wrapper.get('.card-shelf__row').element as HTMLElement
+      Object.defineProperty(row, 'clientWidth', { value: 1000, configurable: true })
+      Object.defineProperty(row, 'scrollWidth', { value: 3000, configurable: true })
+      Object.defineProperty(row, 'scrollLeft', { value: 0, writable: true, configurable: true })
+
+      row.dispatchEvent(new Event('scroll'))
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.get('.mdi-view-grid-outline').element.closest('button')!.disabled).toBe(false)
+    })
+
+    /** A wrapped shelf does not scroll, so it always measures as "fits" -
+     * dimming the toggle there would leave no way back to the row. */
+    it('never dims itself while the grid is on', async () => {
+      const wrapper = mountShelf({ wrapToggle: true, wrap: true })
+      const row = wrapper.get('.card-shelf__row').element as HTMLElement
+      Object.defineProperty(row, 'clientWidth', { value: 1000, configurable: true })
+      Object.defineProperty(row, 'scrollWidth', { value: 900, configurable: true })
+      Object.defineProperty(row, 'scrollLeft', { value: 0, writable: true, configurable: true })
+
+      row.dispatchEvent(new Event('scroll'))
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.get('.mdi-view-grid-outline').element.closest('button')!.disabled).toBe(false)
+    })
+
     it('asks to switch back when it is already wrapping', async () => {
       const wrapper = mountShelf({ wrapToggle: true, wrap: true })
 

@@ -25,6 +25,7 @@
         variant="text"
         size="small"
         density="comfortable"
+        :disabled="gridWouldChangeNothing"
         :title="$t('library.showAsGrid')"
         @click="$emit('update:wrap', !wrap)"
       />
@@ -81,7 +82,11 @@
 import AlbumCard from './AlbumCard.vue'
 import type { Album } from '@/types/library'
 import { cardsAcross, observeCardsAcross, skeletonsAcross } from './cardRowFit'
-import { observeShelfEdges, SHELF_EDGES_UNMEASURED } from './shelfScrollEdges'
+import {
+  observeShelfEdges,
+  SHELF_EDGES_UNMEASURED,
+  shelfFitsWithoutScrolling,
+} from './shelfScrollEdges'
 
 // Matches .album-card's fixed width + .album-shelf-row's gap — shared with
 // every other shelf, see cardRowFit.ts.
@@ -166,6 +171,18 @@ export default {
     }
   },
   computed: {
+    /** Why the grid toggle is dim: a row that shows everything it has
+     * would lay out as the very same single line of cards, so switching
+     * would change nothing on screen. Measured rather than counted (see
+     * shelfFitsWithoutScrolling) — how many cards fit is a question about
+     * the window, not about the shelf.
+     *
+     * Never while the grid is *on*: a wrapped shelf does not scroll, so it
+     * always looks like it fits, and dimming the toggle there would leave
+     * no way back to the row. */
+    gridWouldChangeNothing(): boolean {
+      return !this.wrap && shelfFitsWithoutScrolling(this.edges)
+    },
     displayedAlbums(): Album[] {
       if (!this.fitToScreen) return this.albums
       return this.albums.slice(0, this.visibleCount)

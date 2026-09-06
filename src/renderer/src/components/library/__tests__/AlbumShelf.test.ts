@@ -187,6 +187,55 @@ describe('AlbumShelf', () => {
       expect(wrapper.get('.album-shelf-row').classes()).not.toContain('album-shelf-row--wrap')
     })
 
+    /** A row that shows every album it has would look exactly the same
+     * wrapped, so the toggle says so instead of doing nothing. Measured,
+     * not counted: how many cards fit is a question about the window. */
+    it('goes dim once the row fits without scrolling', async () => {
+      const wrapper = await mountShelf({ wrapToggle: true })
+      const row = wrapper.get('.album-shelf-row').element as HTMLElement
+      const button = () => wrapper.get('.mdi-view-grid-outline').element.closest('button')!
+
+      // Live until something has actually been measured - see
+      // SHELF_EDGES_UNMEASURED.
+      expect(button().disabled).toBe(false)
+
+      Object.defineProperty(row, 'clientWidth', { value: 1000, configurable: true })
+      Object.defineProperty(row, 'scrollWidth', { value: 900, configurable: true })
+      Object.defineProperty(row, 'scrollLeft', { value: 0, writable: true, configurable: true })
+      row.dispatchEvent(new Event('scroll'))
+      await wrapper.vm.$nextTick()
+
+      expect(button().disabled).toBe(true)
+    })
+
+    it('stays live for a row with more albums than fit', async () => {
+      const wrapper = await mountShelf({ wrapToggle: true })
+      const row = wrapper.get('.album-shelf-row').element as HTMLElement
+      Object.defineProperty(row, 'clientWidth', { value: 1000, configurable: true })
+      Object.defineProperty(row, 'scrollWidth', { value: 3000, configurable: true })
+      Object.defineProperty(row, 'scrollLeft', { value: 0, writable: true, configurable: true })
+
+      row.dispatchEvent(new Event('scroll'))
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.get('.mdi-view-grid-outline').element.closest('button')!.disabled).toBe(false)
+    })
+
+    /** A wrapped shelf does not scroll, so it always measures as "fits" -
+     * dimming the toggle there would leave no way back to the row. */
+    it('never dims itself while the grid is on', async () => {
+      const wrapper = await mountShelf({ wrapToggle: true, wrap: true })
+      const row = wrapper.get('.album-shelf-row').element as HTMLElement
+      Object.defineProperty(row, 'clientWidth', { value: 1000, configurable: true })
+      Object.defineProperty(row, 'scrollWidth', { value: 900, configurable: true })
+      Object.defineProperty(row, 'scrollLeft', { value: 0, writable: true, configurable: true })
+
+      row.dispatchEvent(new Event('scroll'))
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.get('.mdi-view-grid-outline').element.closest('button')!.disabled).toBe(false)
+    })
+
     it('asks to switch back when it is already wrapping', async () => {
       const wrapper = await mountShelf({ wrapToggle: true, wrap: true })
 
