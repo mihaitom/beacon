@@ -1,8 +1,13 @@
 version: 2
+# Every PR targets "development", not the default branch "main": that is where
+# work happens, main only sees the updates once development is merged into it.
+# Note that Dependabot *security* updates ignore target-branch and are still
+# opened against main, so those have to be merged there and carried over.
 updates:
   # Frontend/Electron deps (pnpm-managed, see package.json's packageManager)
   - package-ecosystem: "npm"
     directory: "/"
+    target-branch: "development"
     schedule:
       interval: "weekly"
     groups:
@@ -14,6 +19,7 @@ updates:
   # Connect backend deps (uv-managed, see connect/pyproject.toml + uv.lock)
   - package-ecosystem: "uv"
     directory: "/connect"
+    target-branch: "development"
     schedule:
       interval: "weekly"
     groups:
@@ -25,11 +31,13 @@ updates:
   # Dockerfile base images
   - package-ecosystem: "docker"
     directory: "/"
+    target-branch: "development"
     schedule:
       interval: "weekly"
 
   # GitHub Actions workflows (see .github/workflows/)
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "development"
     schedule:
       interval: "weekly"
