@@ -3,6 +3,7 @@
 import asyncio
 import io
 import logging
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -1337,6 +1338,68 @@ def test_chromecast_play_uses_passed_content_type():
         thumb=None,
         metadata={"metadataType": 3, "title": "Title", "artist": ""},
     )
+
+
+# ── ChromecastDelivery.get_position ───────────────────────────────────────────
+# A Chromecast's position comes out of the status it last *pushed*, not out
+# of a request — see get_position()'s own comment, and the 2026-09-07 case it
+# records: 48s of "nothing usable" from a device that had been playing the
+# whole time.
+
+
+def test_chromecast_position_comes_from_the_pushed_status_while_it_is_playing():
+    cast = _mock_cast()
+    cast.media_controller.status.player_state = "PLAYING"
+    cast.media_controller.status.adjusted_current_time = 42.5
+    d = ChromecastDelivery("TV")
+
+    with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
+        assert asyncio.run(d.get_position()) == 42.5
+
+    # Nothing to ask about: the cached status answered.
+    cast.media_controller.update_status.assert_not_called()
+
+
+def test_chromecast_asks_for_a_fresh_status_when_the_cached_one_says_nothing():
+    """The pushed status can be stale rather than true — a Chromecast object
+    is reused across dispatches, so this can be the previous session's. The
+    device is asked, and the answer it pushes back is read by the next
+    poll."""
+    cast = _mock_cast()
+    cast.media_controller.status.player_state = "BUFFERING"
+    d = ChromecastDelivery("TV")
+
+    with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
+        assert asyncio.run(d.get_position()) is None
+
+    cast.media_controller.update_status.assert_called_once()
+
+
+def test_chromecast_does_not_ask_twice_within_the_refresh_window():
+    """core/radio_position.py polls every 0.5s while waiting for a device to
+    start, and a device that really is buffering would otherwise be asked on
+    every one of them for as long as that lasts."""
+    cast = _mock_cast()
+    cast.media_controller.status.player_state = "BUFFERING"
+    d = ChromecastDelivery("TV")
+
+    with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
+        for _ in range(4):
+            asyncio.run(d.get_position())
+
+    cast.media_controller.update_status.assert_called_once()
+
+    # And again once the window has passed.
+    with (
+        patch.object(ChromecastDelivery, "_get_device", return_value=cast),
+        patch(
+            "delivery.chromecast.time.monotonic",
+            return_value=time.monotonic() + _chromecast_mod._STATUS_REFRESH_SECONDS + 1,
+        ),
+    ):
+        asyncio.run(d.get_position())
+
+    assert cast.media_controller.update_status.call_count == 2
 
 
 def test_chromecast_pause_resume_stop_delegate_to_controller():

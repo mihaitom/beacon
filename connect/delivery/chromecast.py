@@ -9,6 +9,13 @@ from .base import BaseDelivery
 
 logger = logging.getLogger("delivery")
 
+# How often get_position() may ask a Chromecast for a fresh media status
+# while its cached one says nothing usable — see the comment there. Twice
+# the 0.5s poll core/radio_position.py uses while waiting for a device to
+# start, so a stale cache is corrected within a poll or two without a
+# genuinely buffering device being asked on every single one.
+_STATUS_REFRESH_SECONDS = 1.0
+
 # Module-level long-lived zeroconf + CastBrowser. Started once on first use and
 # kept alive for the process lifetime. All chromecast operations (discovery and
 # playback) share these — cast objects' socket clients need a live zeroconf for
@@ -144,6 +151,11 @@ class ChromecastDelivery(BaseDelivery):
     # other target falls back to AAC for it (see core/streamer.py's
     # _codec_for_ceiling()).
     PLAYABLE_CODECS: frozenset[str] = frozenset({"mp3", "aac", "flac", "vorbis", "opus"})
+    # When this delivery last asked the device for a fresh media status —
+    # see get_position(). Class-level default, assigned per instance on
+    # first use; a delivery object is per target and per dispatch, and a
+    # brand-new one asking immediately is exactly right.
+    _status_refreshed_at: float = 0.0
 
     def _get_device(self):
         import pychromecast
@@ -229,6 +241,37 @@ class ChromecastDelivery(BaseDelivery):
         cast = await asyncio.to_thread(self._get_device)
         status = cast.media_controller.status
         if status.player_state not in ("PLAYING", "PAUSED"):
+            # Nothing usable in whatever this device last *pushed*. Two very
+            # different situations look identical from here: a device
+            # genuinely still buffering, and a cached status nothing ever
+            # sent an update for — pychromecast keeps the last pushed one,
+            # and a Chromecast object is reused across dispatches (see
+            # _chromecast_cache above, and core/radio_position.py's own
+            # _REBASELINE_AFTER_SECONDS for the other half of that hazard).
+            #
+            # Asking settles it: a GET_STATUS over the socket that is
+            # already open. Its answer arrives asynchronously and is read by
+            # the next poll — the point of the call is that there *is* a
+            # next answer, rather than waiting on a device that has stopped
+            # pushing. Rate-limited because core/radio_position.py polls
+            # every 0.5s while waiting for a device to start, and a device
+            # that keeps answering "buffering" should not be asked twice a
+            # second for as long as that lasts.
+            #
+            # Observed live 2026-09-07: a Chromecast reporting nothing
+            # usable for 48s after a pause/resume, while audibly playing the
+            # whole time — its position, when it finally arrived, was 35.61s
+            # into a stream dispatched 48s earlier, i.e. it had been playing
+            # all along. The radio buffering indicator and the visualizer
+            # both wait on this reading, so both sat frozen for those 48s.
+            now = time.monotonic()
+            if now - self._status_refreshed_at > _STATUS_REFRESH_SECONDS:
+                self._status_refreshed_at = now
+                logger.debug(
+                    f"[Chromecast:{self.target}] no usable position "
+                    f"(player_state={status.player_state}) — asking for a fresh status"
+                )
+                await asyncio.to_thread(cast.media_controller.update_status)
             return None
         return status.adjusted_current_time
 
