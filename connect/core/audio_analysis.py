@@ -274,6 +274,18 @@ _STALL_RECHECK_SECONDS = 1.0
 # an ordinary hold-off (which is bounded by _MAX_LOOKAHEAD_SECONDS worth of
 # lead), so this only fires when the clock behind it really has stopped.
 _STALL_REPORT_AFTER_SECONDS = 5.0
+# How far the clock may move within a hold-off before it counts as
+# advancing after all, and the report window starts over. Decode that sits
+# a hair *above* _MAX_LOOKAHEAD_SECONDS for minutes on end - a live source
+# feeding a clock running at the same real-time rate - never drops back
+# under the cap, so the window never reset and the warning fired against a
+# perfectly healthy clock, claiming in so many words that it "is not
+# advancing" while the same line's own numbers showed it doing exactly
+# that. Observed 2026-09-07 (content_position 10.52s against a clock
+# reading 7.47s, i.e. 3.05s: the cap, not a stall). Half a second is well
+# under what a real hold-off costs and well over the ~0.5s steps a
+# poll-driven clock arrives in.
+_STALL_CLOCK_MOVED_SECONDS = 0.5
 # How far past its own moment a frame may still be released, before
 # _release_frames() drops it instead. Decode normally runs comfortably ahead
 # of playback (see _MAX_LOOKAHEAD_SECONDS), so this only ever comes up at
@@ -496,9 +508,11 @@ class AudioAnalyzer:
         self.last_release_lead: tuple[float, bool] | None = None
         self._pcm_position = start_offset
         self._reading_done = False
-        # When the current decode hold-off began, and whether it has
-        # already been reported — see _wait_out_lookahead().
+        # When the current decode hold-off began, what the clock read at
+        # that moment, and whether it has already been reported — see
+        # _wait_out_lookahead().
         self._stalled_since: float | None = None
+        self._stalled_clock: float = 0.0
         self._stall_reported = False
         # Whether start() actually got as far as a running process — checked
         # by core/visualizer_feed.py to tell a working analyzer apart from
@@ -716,8 +730,18 @@ class AudioAnalyzer:
             await asyncio.sleep(delay)
             return
         now = time.monotonic()
+        clock = self._elapsed_fn()
         if self._stalled_since is None:
             self._stalled_since = now
+            self._stalled_clock = clock
+        elif clock - self._stalled_clock > _STALL_CLOCK_MOVED_SECONDS:
+            # Held, but against a clock that is moving — decode is simply
+            # running at the cap, which is the throttle working. Start the
+            # window over rather than accumulating towards a warning about
+            # a stall that isn't one. See _STALL_CLOCK_MOVED_SECONDS.
+            self._stalled_since = now
+            self._stalled_clock = clock
+            self._stall_reported = False
         elif now - self._stalled_since > _STALL_REPORT_AFTER_SECONDS and not self._stall_reported:
             # Once per stall, not once per check — this is a diagnosis for a
             # clock that isn't advancing, and repeating it every second

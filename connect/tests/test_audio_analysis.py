@@ -1076,3 +1076,31 @@ async def test_a_stalled_clock_is_reported_once_not_every_check(caplog):
 
     stalls = [r for r in caplog.records if "decode held for" in r.message]
     assert len(stalls) == 1
+
+
+async def test_a_moving_clock_is_not_reported_as_a_stall(caplog):
+    """Decode sitting a hair above the lookahead cap for minutes is the
+    throttle working, not a stall: a live source and a clock both running at
+    real time never bring the lead back *under* the cap, so the hold-off is
+    permanent while the clock is perfectly healthy. Reported live 2026-09-07
+    as a warning whose own numbers (content 10.52s, clock 7.47s - the cap to
+    the centisecond) contradicted its "is not advancing"."""
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+    # A clock advancing in step with wall time, exactly as it does live.
+    reading = iter([0.0, 9.0, 18.0, 27.0])
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: next(reading), source_queue=queue)
+    analyzer._pcm_position = 60.0
+    clock = iter([100.0, 100.0 + 9, 100.0 + 18, 100.0 + 27])
+
+    async def _noop(_delay: float) -> None:
+        pass
+
+    with (
+        caplog.at_level(logging.WARNING, logger="connect.audio"),
+        patch("core.audio_analysis.time.monotonic", side_effect=lambda: next(clock)),
+        patch("core.audio_analysis.asyncio.sleep", _noop),
+    ):
+        for _ in range(4):
+            await analyzer._wait_out_lookahead(60.0)
+
+    assert [r for r in caplog.records if "decode held for" in r.message] == []
