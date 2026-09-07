@@ -47,6 +47,44 @@ describe('RadioStationCard', () => {
     expect(wrapper.emitted('play')).toEqual([[wrapper.props('station')]])
   })
 
+  /** A station added from the discover dialog carries Radio Browser's own
+   * favicon URL and may have no homepage at all — asking only when there is
+   * a homepage left exactly those stations without a logo here, while the
+   * player bar showed one. */
+  describe('the station logo', () => {
+    function faviconOf(wrapper: ReturnType<typeof mountCard>) {
+      return wrapper.findComponent({ name: 'CoverArt' }).props('radioFavicon') as {
+        homePageUrl: string
+        hint: string
+      } | null
+    }
+
+    it('is looked up from the homepage and the discover hint together', () => {
+      const wrapper = mountCard({
+        station: makeStation({ favicon: 'https://cdn.example/logo.png' }),
+      })
+
+      expect(faviconOf(wrapper)).toMatchObject({
+        homePageUrl: 'https://www.chillfm.example',
+        hint: 'https://cdn.example/logo.png',
+      })
+    })
+
+    it('is still looked up for a station that has only the hint', () => {
+      const wrapper = mountCard({
+        station: makeStation({ homePageUrl: null, favicon: 'https://cdn.example/logo.png' }),
+      })
+
+      expect(faviconOf(wrapper)).toMatchObject({ hint: 'https://cdn.example/logo.png' })
+    })
+
+    it('is not asked for at all when there is nothing to look one up with', () => {
+      const wrapper = mountCard({ station: makeStation({ homePageUrl: null }) })
+
+      expect(faviconOf(wrapper)).toBeNull()
+    })
+  })
+
   it('shows the homepage host as the caption, without the www prefix', () => {
     const wrapper = mountCard()
 

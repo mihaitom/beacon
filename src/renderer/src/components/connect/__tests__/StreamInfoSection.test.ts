@@ -205,7 +205,7 @@ describe('StreamInfoSection', () => {
         'lossless_container',
         'codec_not_castable',
         'codec_unknown',
-        'relay_mp3_only',
+        'relay_format_limit',
       ]) {
         setStreamInfo({ transcoding: true, transcode_reason: reason })
         const wrapper = mountSection()
@@ -230,13 +230,13 @@ describe('StreamInfoSection', () => {
         streamUrl: 'https://stream.example/chill',
         homePageUrl: null,
       }
-      setStreamInfo({ transcoding: true, transcode_reason: 'relay_mp3_only' })
+      setStreamInfo({ transcoding: true, transcode_reason: 'relay_format_limit' })
 
       const wrapper = mountSection()
 
       expect(wrapper.find('.stream-info-reason').exists()).toBe(true)
       expect(wrapper.vm.reasonShort).toBe(
-        i18n.global.t('connect.streamInfo.reasonsShort.relay_mp3_only'),
+        i18n.global.t('connect.streamInfo.reasonsShort.relay_format_limit'),
       )
     })
 

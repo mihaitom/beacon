@@ -18,11 +18,7 @@
        - already use everywhere else in the app, not CoverArt.vue's oddly-
        - named `rounded` (a literal square v-avatar, no radius at all —
        - see that component's own comment). -->
-      <cover-art
-        :radio-favicon="station.homePageUrl ? faviconRequest(station.homePageUrl, 48) : null"
-        :size="72"
-        fallback-icon="mdi-radio"
-      />
+      <cover-art :radio-favicon="radioFavicon" :size="72" fallback-icon="mdi-radio" />
       <!-- Hover-reveal on desktop, same idea as AlbumCard.vue's own play
        - overlay — but pinned visible for the station actually playing right
        - now (see RadioView.vue's own comment on why this can't be
@@ -114,6 +110,17 @@ export default {
     // than showing nothing.
     hostname(): string {
       return this.hostnameOf(this.station.homePageUrl || this.station.streamUrl)
+    },
+    /** The station's logo, or null for a station that has nothing to look
+     * one up with. Both halves count: a station added from the discover
+     * dialog carries Radio Browser's own favicon URL and may have no
+     * homepage at all (see RadioStation.favicon), and asking only when
+     * there is a homepage left exactly those stations with the fallback
+     * icon here while the player bar, which never had that guard, showed
+     * their logo. */
+    radioFavicon(): RadioFaviconRequest | null {
+      if (!this.station.homePageUrl && !this.station.favicon) return null
+      return this.faviconRequest(this.station.homePageUrl ?? '', 48)
     },
   },
   methods: {

@@ -71,6 +71,61 @@ _READRATE_ARGS = [
     "2",
 ]
 
+# What ffmpeg does when the connection to the *media server* drops
+# mid-track — a different question from what the listener's own connection
+# does, and one nothing here used to answer: without these, a single dropped
+# TCP connection to Navidrome/Jellyfin/Plex ends the encode outright, which
+# reaches a cast device as a track that stopped and the local player as a
+# stream that simply finished (see the frontend's endedEarly(), which then
+# has to reconnect and re-encode from that second). Reconnecting inside
+# ffmpeg costs none of that: it resumes the same source at the byte it left
+# off, and the output pipe never notices.
+#
+# Only for an http(s) source, and that is not caution but a hard
+# requirement: these are private options of ffmpeg's http protocol, and
+# ffmpeg refuses to *start* when they are passed alongside any other kind of
+# input — "Option reconnect not found.", exit 8, measured against ffmpeg
+# 9.0.1 with a plain file path. Every source that reaches ffmpeg today is an
+# http(s) URL (a media server's stream URL, or a station's), so the check
+# guards nothing that currently happens; it is here because the failure it
+# guards against is "no audio at all" rather than "no reconnect", which is
+# too steep a price for a local path finding its way in later.
+#
+# Deliberately without -reconnect_streamed, which is the one that looks like
+# it belongs here and does not: it covers sources that *cannot* be resumed
+# at an offset, and it "resumes" them by reconnecting without a Range header
+# — i.e. by replaying the source from the top into the middle of an encode
+# that was already minutes in. A source that can't be resumed cleanly is
+# better off failing, where both callers already have a recovery path.
+#
+# -reconnect_delay_max 5 rather than ffmpeg's own default of 120: the
+# backoff doubles and gives up once the next step would exceed this, so 5
+# means roughly seven seconds of trying. Past that, the caller's own
+# recovery is the better answer — the frontend's ladder is already retrying
+# by then (MAX_RECONNECT_ATTEMPTS in services/audioEngine.ts), and a cast
+# device's is too.
+_HTTP_RECONNECT_ARGS = [
+    "-reconnect",
+    "1",
+    # The connect *attempt* itself, not just a mid-transfer drop. That is
+    # the moment this matters most for the local player: a track start is
+    # the one point where the browser has no buffer in hand yet, so a
+    # source connection that fails there is audible immediately, while one
+    # that fails mid-track is hidden behind minutes of already-fetched
+    # audio.
+    "-reconnect_on_network_error",
+    "1",
+    "-reconnect_delay_max",
+    "5",
+]
+
+
+def http_reconnect_args(url: str) -> list[str]:
+    """_HTTP_RECONNECT_ARGS for an http(s) `url`, nothing for anything else
+    — see that constant for why the distinction is load-bearing."""
+    return list(_HTTP_RECONNECT_ARGS) if url.lower().startswith(("http://", "https://")) else []
+
+
 _FFMPEG_BASE_CMD = [
     "ffmpeg",
     "-hide_banner",
@@ -230,6 +285,46 @@ def lossy_encode_args(
     return args, _CONTENT_TYPE_FOR_MUXER[muxer]
 
 
+def lossless_encode_args(resample_args: list[str] | None = None) -> tuple[list[str], str]:
+    """ffmpeg output args for a lossless re-encode, plus the content type.
+
+    Where a source has to change container without being allowed to lose
+    anything: an ALAC or APE track for a cast device (resolve_output_format()
+    below), and the same track for a browser that cannot decode it while the
+    listener has asked for Original (routes/local_stream.py). Both mean the
+    same thing — keep every bit, change only the wrapper — so both ask here
+    rather than each spelling out an encoder.
+
+    `resample_args` for the case where the container is not the only problem:
+    a source past a device's sample rate or bit depth is re-encoded *and*
+    brought down to it, and those arguments come from the device's own
+    limits. Nothing for the local path, which has no device to be limited
+    by."""
+    return [
+        "-acodec",
+        "flac",
+        # The FLAC encoder takes its block size from the first frame it is
+        # handed, and refuses to start on one shorter than FLAC allows:
+        # "invalid block size: 8", and not a byte is produced. That is
+        # reachable from an ordinary request — an ALAC source with any `-ss`
+        # at all decodes to a short first frame (measured against ffmpeg
+        # 9.0.1; the same source without `-ss` encodes fine, and moving the
+        # seek to the output side does not help), which is a cast resuming
+        # mid-track and every seek the local player makes. Naming the block
+        # size outright takes the decision away from whatever frame happens
+        # to arrive first.
+        #
+        # 4096 because it is what the encoder picks for itself at these
+        # sample rates. Verified lossless with it: the PCM decoded back out
+        # of the FLAC is byte-identical to the PCM decoded from the ALAC.
+        "-frame_size",
+        "4096",
+        "-f",
+        "flac",
+        *(resample_args or []),
+    ], "audio/flac"
+
+
 # Which lossy encoder to fall back to when a device cannot decode the one
 # the listener asked for, best first. Efficiency order, not preference
 # order: opus is never *chosen* here (a listener who picks it and casts to
@@ -307,7 +402,7 @@ _BIT_DEPTH_RE = re.compile(rb"\((\d+)\s*bit\)")
 # thing the pacing bug this backend already fixed once read (the container
 # summary line's "Duration: ..., bitrate: N kb/s", which includes embedded
 # cover art and is *not* the audio's own bitrate; see
-# docs/playback-bugs/fixed-pacing-used-container-bitrate.md). Bound to the
+# docs/investigations/fixed-pacing-used-container-bitrate.md). Bound to the
 # same per-line search as sample rate/bit depth above, for the same reason.
 # Absent for lossless codecs (FLAC/ALAC/PCM never report one here) — never
 # guessed at, same convention as sample_rate/bit_depth being None.
@@ -392,13 +487,18 @@ REASON_REPLAY_GAIN = "replay_gain"  # copying rules out the volume filter Replay
 REASON_LOSSLESS_CONTAINER = "lossless_container"  # lossless, but not in a castable container
 REASON_CODEC_NOT_CASTABLE = "codec_not_castable"  # decodable, deliberately not copied (opus)
 REASON_CODEC_UNKNOWN = "codec_unknown"  # nothing recognized it
-# Radio only: the relay hands every device MP3 (see core/radio_relay.py),
-# so a station arriving as anything else is re-encoded on the way through
-# no matter what any device could have played. Deliberately not
-# REASON_CODEC_NOT_CASTABLE, which says the source codec is the problem —
-# a Chromecast takes AAC quite happily, and telling the listener otherwise
-# describes a limit that is Beacon's, not their device's.
-REASON_RELAY_MP3_ONLY = "relay_mp3_only"
+# Radio only: the relay's own repertoire is MP3 and AAC (see
+# core/radio_relay.py), so a station arriving as anything else is re-encoded
+# on the way through no matter what any device could have played.
+# Deliberately not REASON_CODEC_NOT_CASTABLE, which says the source codec is
+# the problem — a Chromecast takes Opus quite happily, and telling the
+# listener otherwise describes a limit that is Beacon's, not their device's.
+#
+# It was REASON_RELAY_MP3_ONLY while MP3 really was the whole repertoire.
+# The listener never read the key itself (the sentence under it says
+# "converted for the device", which stayed true throughout), but a name that
+# has outlived its reason is one more thing to have to know.
+REASON_RELAY_FORMAT_LIMIT = "relay_format_limit"
 # Radio only, and not a property of the audio at all: the device refused
 # the station's own stream (see routes/upnp.py and /play-url's own retry),
 # so Beacon re-encodes it to plain MP3 and serves that instead. Beacon
@@ -648,7 +748,7 @@ async def resolve_output_format(
     file's own bytes untouched, and there's no such thing as a device-
     compatible copy of a stream whose sample rate the device can't decode
     at all — confirmed live (see
-    docs/playback-bugs/copy-tier-device-limits.md): a 24-bit/96kHz FLAC
+    docs/investigations/copy-tier-device-limits.md): a 24-bit/96kHz FLAC
     copied straight to a Sonos reported ERROR_UNSUPPORTED_FREQ and stopped
     1.1s in. It's re-encoded losslessly to FLAC instead, resampled down to
     the limit — the same tier _LOSSLESS_REENCODE_CODECS below already
@@ -730,9 +830,10 @@ async def resolve_output_format(
             f"{info.sample_rate}Hz/{info.bit_depth}bit exceeds this target's limit "
             f"({max_sample_rate}Hz/{max_bit_depth}bit) — re-encoding to flac, resampled"
         )
+        flac_args, flac_type = lossless_encode_args(resample_args)
         return OutputFormat(
-            ffmpeg_args=["-acodec", "flac", "-f", "flac", *resample_args],
-            content_type="audio/flac",
+            ffmpeg_args=flac_args,
+            content_type=flac_type,
             label=f"{codec} → flac (resampled for device limit)",
             source_codec=info.codec,
             source_sample_rate=info.sample_rate,
@@ -770,9 +871,10 @@ async def resolve_output_format(
             )
             return _fallback(REASON_CODEC_NOT_CASTABLE, info.duration)
         label = f"{codec} → flac" + (" (resampled for device limit)" if resample_args else "")
+        flac_args, flac_type = lossless_encode_args(resample_args)
         return OutputFormat(
-            ffmpeg_args=["-acodec", "flac", "-f", "flac", *resample_args],
-            content_type="audio/flac",
+            ffmpeg_args=flac_args,
+            content_type=flac_type,
             label=label,
             source_codec=info.codec,
             source_sample_rate=info.sample_rate,
@@ -850,6 +952,9 @@ async def stream_tracks(
             on_track_start(i)
 
         cmd = [arg if arg != "{url}" else url for arg in _FFMPEG_BASE_CMD]
+        # Input options, so before -i — same insertion the -ss below does.
+        i_pos = cmd.index("-i")
+        cmd = cmd[:i_pos] + http_reconnect_args(url) + cmd[i_pos:]
         cmd = cmd + fmt_args + ["pipe:1"]
         if i == 0 and start_offset > 0.5:
             # Insert -ss before -i for fast input-side seeking on the resumed track

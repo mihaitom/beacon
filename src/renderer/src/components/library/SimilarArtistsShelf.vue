@@ -122,7 +122,7 @@ export default {
       // Discover album shelf next to it are the two that take long enough
       // to load for anyone to see them, which is why a count that only
       // looked right on a narrow window showed up here first.
-      skeletonCount: 6,
+      skeletonCount: 15,
       resizeObserver: null as ResizeObserver | null,
     }
   },

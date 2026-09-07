@@ -550,7 +550,7 @@ export default {
       if (this.playbackStore.isCasting) {
         if (this.currentSong) return true
         const connectStore = useConnectStore()
-        return connectStore.activeTargets.some((t) => connectStore.isRadioPositionCapable(t.type))
+        return connectStore.activeTargets.some((t) => connectStore.isRadioPositionCapable(t))
       }
       return getAudioEngine().hasAnalyser
     },

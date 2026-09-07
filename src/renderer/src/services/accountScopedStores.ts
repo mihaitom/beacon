@@ -31,6 +31,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { reloadLyricsCacheForAccount } from '@/stores/lyrics'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import { useRadioSettingsStore } from '@/stores/radioSettings'
+import { useDrawersStore } from '@/stores/drawers'
 import {
   useLyricsProvidersStore,
   LYRIC_PROVIDERS,
@@ -106,6 +107,7 @@ export function initAccountScopedStores(): void {
     useLyricsProvidersStore().reloadForAccount()
     useAutoplayStore().reloadForAccount()
     useRadioSettingsStore().reloadForAccount()
+    useDrawersStore().reloadForAccount()
     void pullAccountSettings()
   })
 }

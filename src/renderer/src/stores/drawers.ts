@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { loadQueueDrawerOpen, saveQueueDrawerOpen } from '@/services/queueDrawerSetting'
 import type { Song } from '@/types/library'
 
 /** The queue drawer and Now Playing's lyrics panel: whether they are
@@ -7,8 +8,11 @@ import type { Song } from '@/types/library'
  *
  * Split out of stores/playback.ts (2026-08-29), where this had grown up
  * alongside the queue itself: it is interface state, not playback state -
- * nothing here survives a reload, none of it is sent to connect, and no
- * playback decision reads it. The store still drives it (playSongList()/
+ * none of it is sent to connect, and no playback decision reads it. Nor
+ * did any of it survive a reload, until the queue drawer became the only
+ * drawer there is and started being remembered instead (see
+ * services/queueDrawerSetting.ts); everything else here is still a
+ * this-session-only affair. The store still drives it (playSongList()/
  * addToQueue()/queueNext() call peekQueueDrawer), but only ever in one
  * direction, so this file knows nothing about playback.
  *
@@ -28,6 +32,17 @@ const QUEUE_DRAWER_PEEK_MS = 4000
 // timer id isn't something Pinia needs to track/persist/react to.
 let queueDrawerAutoCloseTimer: ReturnType<typeof setTimeout> | null = null
 
+/** The one place queueDrawerOpen is written, so that what is on screen and
+ * what is remembered for next time cannot come apart. Every route in here
+ * counts, a peek included: a peek that the user then keeps open (the
+ * mouseenter cancels its auto-close) never passes through
+ * setQueueDrawerOpen(), so persisting only "deliberate" changes would
+ * forget exactly the arrangement somebody settled on. */
+function applyQueueDrawerOpen(store: { queueDrawerOpen: boolean }, open: boolean): void {
+  store.queueDrawerOpen = open
+  saveQueueDrawerOpen(open)
+}
+
 function cancelQueueDrawerAutoCloseTimer(): void {
   if (queueDrawerAutoCloseTimer === null) return
   clearTimeout(queueDrawerAutoCloseTimer)
@@ -38,7 +53,7 @@ function armQueueDrawerAutoCloseTimer(store: { queueDrawerOpen: boolean }): void
   cancelQueueDrawerAutoCloseTimer()
   queueDrawerAutoCloseTimer = setTimeout(() => {
     queueDrawerAutoCloseTimer = null
-    store.queueDrawerOpen = false
+    applyQueueDrawerOpen(store, false)
   }, QUEUE_DRAWER_PEEK_MS)
 }
 
@@ -80,7 +95,11 @@ interface DrawersState {
 
 export const useDrawersStore = defineStore('drawers', {
   state: (): DrawersState => ({
-    queueDrawerOpen: false,
+    // Where it was left last time — see services/queueDrawerSetting.ts.
+    // At app boot this reads the pre-login scope (nothing, i.e. closed);
+    // reloadForAccount() below is what brings the real account's own
+    // answer in once login has resolved.
+    queueDrawerOpen: loadQueueDrawerOpen(),
     queueRevealSeq: 0,
     queueRevealNeedsOpenDelay: false,
     queueRevealSongs: [],
@@ -96,7 +115,7 @@ export const useDrawersStore = defineStore('drawers', {
     // manually within that same few-second window.
     setQueueDrawerOpen(open: boolean): void {
       cancelQueueDrawerAutoCloseTimer()
-      this.queueDrawerOpen = open
+      applyQueueDrawerOpen(this, open)
     },
 
     toggleQueueDrawer(): void {
@@ -159,7 +178,7 @@ export const useDrawersStore = defineStore('drawers', {
     // nothing for a row Vue already rendered and animated an await ago.
     peekQueueDrawer(revealSongs: Song[]): void {
       const wasAlreadyOpen = this.queueDrawerOpen
-      this.queueDrawerOpen = true
+      applyQueueDrawerOpen(this, true)
       this.queueRevealNeedsOpenDelay = !wasAlreadyOpen
       this.queueRevealSongs = revealSongs
       this.queueRevealSeq++
@@ -190,9 +209,27 @@ export const useDrawersStore = defineStore('drawers', {
       this.lyricsPanelOpen = !this.lyricsPanelOpen
     },
 
-    /** Everything shut, any pending auto-close dropped. Called by the
-     * playback store on init() (a fresh app start always begins closed -
-     * none of this was ever meant to survive a restart) and on logout. */
+    /** Re-reads the remembered queue-drawer state for whoever is actually
+     * logged in — see services/accountScopedStores.ts, which calls this.
+     * The state() factory above runs once, at app boot, before login has
+     * resolved an account to scope by.
+     *
+     * Deliberately not routed through applyQueueDrawerOpen(): this is
+     * reading what was stored, not deciding something new to store. */
+    reloadForAccount(): void {
+      cancelQueueDrawerAutoCloseTimer()
+      this.queueDrawerOpen = loadQueueDrawerOpen()
+    },
+
+    /** Back to what a fresh session starts as, any pending auto-close
+     * dropped. Called by the playback store on init() and on logout.
+     *
+     * The queue drawer comes back to wherever it was left rather than to
+     * closed — $reset() re-runs the state factory above, which reads it —
+     * and everything else here is genuinely per-session and starts empty.
+     * On logout that read lands in the signed-out scope, so the drawer
+     * comes up closed for the login screen and the next account's own
+     * answer arrives with reloadForAccount(). */
     resetDrawers(): void {
       cancelQueueDrawerAutoCloseTimer()
       this.$reset()

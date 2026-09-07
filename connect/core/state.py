@@ -390,6 +390,56 @@ def find_sonos(active: BaseDelivery | DeliveryManager | None) -> list[SonosDeliv
     return []
 
 
+# The delivery types whose own reported position can drive
+# core/radio_position.py's RadioPositionTracker for a *station*. The one
+# definition of that set: first_radio_position_delivery() picks the
+# reference device out of it, and supports_radio_position() answers the
+# same question for a target as the status reports it, which is what the
+# frontend reads instead of keeping a second copy of this list (it used to
+# keep one, as a string comparison in stores/connect.ts, with nothing but a
+# pair of comments tying the two together).
+#
+# AirPlay is missing on purpose although it also sets SUPPORTS_POSITION —
+# that is a position for *tracks*, and it has none to poll for radio at all
+# (see core/radio_position.py's own module docstring).
+_RADIO_POSITION_DELIVERIES: tuple[type[BaseDelivery], ...] = (
+    ChromecastDelivery,
+    DlnaDelivery,
+    SonosDelivery,
+)
+
+
+def _class_supports_radio_position(cls: type[BaseDelivery], dispatch_url: str) -> bool:
+    """Whether a delivery of this class, handed `dispatch_url` for the
+    current station, reports a position worth watching.
+
+    The Sonos exception is what makes this depend on the URL at all:
+    delivery/sonos.py's own _dispatch_uri() rewrites a Beacon-hosted radio
+    URL onto Sonos's x-rincon-mp3radio:// scheme (see its docstring for
+    why, added 2026-09-04 after IcyMuxer alone wasn't enough to fix
+    Sonos-only dropouts while relayed), and a Sonos dispatched that way
+    reports 0.00s for the entire run. Watching that would leave
+    radio_buffering stuck True forever rather than ever clearing — worse
+    than the pre-2026-09-02 behaviour (no tracker, no indicator) this
+    deliberately reproduces for that one case. Chromecast/DLNA are never
+    rewritten and so never depend on the URL."""
+    if not issubclass(cls, _RADIO_POSITION_DELIVERIES):
+        return False
+    return not (issubclass(cls, SonosDelivery) and is_beacon_hosted_radio_uri(dispatch_url))
+
+
+def supports_radio_position(target_type: str, dispatch_url: str = "") -> bool:
+    """The same question as first_radio_position_delivery() answers, asked
+    about a target *type* — the shape a status target has (see
+    list_target_pairs(), whose type strings are these very keys).
+
+    Reported per target in SessionState.build_status_dict() so a client can
+    read the answer rather than reimplementing this list, which is what
+    stores/connect.ts's isRadioPositionCapable() now does."""
+    cls = _DELIVERY_TYPES.get(target_type)
+    return cls is not None and _class_supports_radio_position(cls, dispatch_url)
+
+
 def first_radio_position_delivery(
     active: BaseDelivery | DeliveryManager | None,
     dispatch_url: str = "",
@@ -424,10 +474,10 @@ def first_radio_position_delivery(
     a caller that hasn't settled on a URL yet, which then simply gets the
     pre-2026-09-04 behaviour (Sonos included) rather than an error.
 
-    stores/connect.ts's isRadioPositionCapable() has to be kept in sync BY
-    HAND with the isinstance check below — nothing ties the two together,
-    and this is not exposed to the frontend as data it could read instead.
-    Check that function too if this list ever changes."""
+    Which types those are, and the Sonos exception, both live in
+    _RADIO_POSITION_DELIVERIES/_class_supports_radio_position() above —
+    the same rule the status reports per target, so the frontend reads the
+    answer instead of keeping a hand-synced copy of this list."""
     deliveries = (
         active.deliveries
         if isinstance(active, DeliveryManager)
@@ -435,11 +485,8 @@ def first_radio_position_delivery(
         if active is not None
         else []
     )
-    skip_sonos = is_beacon_hosted_radio_uri(dispatch_url)
     for d in deliveries:
-        if isinstance(d, SonosDelivery) and skip_sonos:
-            continue
-        if isinstance(d, (ChromecastDelivery, DlnaDelivery, SonosDelivery)):
+        if _class_supports_radio_position(type(d), dispatch_url):
             return d
     return None
 

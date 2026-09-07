@@ -55,6 +55,42 @@ describe('MobileRadioRow', () => {
     expect(wrapper.get('.radio-row__host').text()).toBe('cdn.streamprovider.example')
   })
 
+  /** A station added from the discover dialog carries Radio Browser's own
+   * favicon URL and may have no homepage at all — asking only when there is
+   * a homepage left exactly those stations without a logo here, while the
+   * player bar showed one. */
+  describe('the station logo', () => {
+    function faviconOf(wrapper: ReturnType<typeof mountRow>) {
+      return wrapper.findComponent({ name: 'CoverArt' }).props('radioFavicon') as {
+        homePageUrl: string
+        hint: string
+      } | null
+    }
+
+    it('is looked up from the homepage and the discover hint together', () => {
+      const wrapper = mountRow(makeStation({ favicon: 'https://cdn.example/logo.png' }))
+
+      expect(faviconOf(wrapper)).toMatchObject({
+        homePageUrl: 'https://www.chill.example',
+        hint: 'https://cdn.example/logo.png',
+      })
+    })
+
+    it('is still looked up for a station that has only the hint', () => {
+      const wrapper = mountRow(
+        makeStation({ homePageUrl: null, favicon: 'https://cdn.example/logo.png' }),
+      )
+
+      expect(faviconOf(wrapper)).toMatchObject({ hint: 'https://cdn.example/logo.png' })
+    })
+
+    it('is not asked for at all when there is nothing to look one up with', () => {
+      const wrapper = mountRow(makeStation({ homePageUrl: null }))
+
+      expect(faviconOf(wrapper)).toBeNull()
+    })
+  })
+
   it('shows no caption at all for an unparseable saved URL', () => {
     const wrapper = mountRow(makeStation({ homePageUrl: null, streamUrl: 'not a url' }))
 

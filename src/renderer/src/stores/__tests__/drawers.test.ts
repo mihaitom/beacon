@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDrawersStore } from '../drawers'
+import { makeSong } from './fixtures'
 
 // Split out of playback.peek-queue-drawer.test.ts when the drawers moved
 // into their own store (2026-08-29). What stayed behind there is the other
@@ -10,6 +11,10 @@ import { useDrawersStore } from '../drawers'
 describe('peekQueueDrawer', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    // The drawer's open state is remembered now (see
+    // services/queueDrawerSetting.ts), so one test's drawer would open the
+    // next one's.
+    localStorage.clear()
   })
 
   afterEach(() => {
@@ -171,5 +176,89 @@ describe('the drawer toggles', () => {
     drawers.toggleLyricsPanel()
     drawers.resetDrawers()
     expect(drawers.lyricsPanelOpen).toBe(false)
+  })
+})
+
+/** The queue drawer is the only drawer left, so "open" is an arrangement
+ * somebody settled on rather than a moment — see
+ * services/queueDrawerSetting.ts. */
+describe('remembering where the drawer was left', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('starts closed when nothing was ever stored', () => {
+    expect(useDrawersStore().queueDrawerOpen).toBe(false)
+  })
+
+  it('comes back open for a store built after it was opened', () => {
+    useDrawersStore().setQueueDrawerOpen(true)
+
+    setActivePinia(createPinia())
+
+    expect(useDrawersStore().queueDrawerOpen).toBe(true)
+  })
+
+  it('comes back closed after it was closed again', () => {
+    const drawers = useDrawersStore()
+    drawers.setQueueDrawerOpen(true)
+    drawers.setQueueDrawerOpen(false)
+
+    setActivePinia(createPinia())
+
+    expect(useDrawersStore().queueDrawerOpen).toBe(false)
+  })
+
+  /** A peek the user then keeps open never passes through
+   * setQueueDrawerOpen() — its auto-close is cancelled by the mouseenter
+   * instead — so remembering only deliberate toggles would forget exactly
+   * the arrangement somebody settled on. */
+  it('remembers a peek that was kept open', () => {
+    const drawers = useDrawersStore()
+    drawers.peekQueueDrawer([])
+    drawers.cancelQueueDrawerAutoClose()
+
+    setActivePinia(createPinia())
+
+    expect(useDrawersStore().queueDrawerOpen).toBe(true)
+  })
+
+  it('does not remember a peek that closed itself again', () => {
+    vi.useFakeTimers()
+    useDrawersStore().peekQueueDrawer([])
+
+    vi.advanceTimersByTime(10_000)
+    setActivePinia(createPinia())
+
+    expect(useDrawersStore().queueDrawerOpen).toBe(false)
+  })
+
+  it('survives the reset a fresh session does', () => {
+    // stores/playback.ts's init() calls this; it clears the per-session
+    // reveal state without throwing away where the drawer was left.
+    const drawers = useDrawersStore()
+    drawers.setQueueDrawerOpen(true)
+    drawers.queueRevealSongs = [makeSong('a')]
+
+    drawers.resetDrawers()
+
+    expect(drawers.queueDrawerOpen).toBe(true)
+    expect(drawers.queueRevealSongs).toEqual([])
+  })
+
+  it('picks up the account whose login resolved after the store was built', () => {
+    // The state factory runs at app boot, before there is an account to
+    // scope by — see services/accountScopedStores.ts, which calls this.
+    const drawers = useDrawersStore()
+    localStorage.setItem('beacon.queueDrawerOpen', 'true')
+
+    drawers.reloadForAccount()
+
+    expect(drawers.queueDrawerOpen).toBe(true)
   })
 })

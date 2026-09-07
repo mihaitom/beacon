@@ -32,7 +32,16 @@ const realTransitions = { stubs: { transition: false, 'transition-group': false 
 beforeEach(() => {
   push.mockClear()
   vi.mocked(isMobileWebNow).mockReturnValue(false)
+  // Every entry below carries a real date (see at()), and what "today" is
+  // decides whether a date heading is written above it - which pushes each
+  // timeline item down by one and breaks assertions that count them. Frozen
+  // here so the suite reads the same on every day it runs rather than only
+  // on the day it was written; the tests that need a different "now" set
+  // their own on top of this one.
+  vi.setSystemTime(new Date(2026, 8, 6, 12, 30))
 })
+
+afterEach(() => vi.useRealTimers())
 
 function mountLog(titles: string[]) {
   return mount(RadioTitleLog, {

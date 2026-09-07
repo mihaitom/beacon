@@ -84,8 +84,15 @@
      - its open position on the very first paint at app start even with
      - model-value already false, before the closed transform took effect.
      - Nothing to flash if it isn't in the DOM yet. Stays mounted for the
-     - rest of the session once opened, same "persistent, not temporary"
-     - behavior as before either way.
+     - rest of the session once opened — page changes happen under it (this
+     - sits outside <router-view>), and closing it only slides it away.
+     -
+     - Declared after <v-main> and the player bar on purpose: Vuetify sizes
+     - a layout drawer against the items registered before it, which is what
+     - keeps this one between the app bar and the player bar rather than
+     - over either (see QueueDrawer.vue's own template comment, and the
+     - layout test that pins it).
+     -
      - model-value is forced false for this same first mount, on top of
      - that: queueDrawerOpen is already true in the store by the moment
      - queueDrawerEverOpened flips (that's what triggered it), so without

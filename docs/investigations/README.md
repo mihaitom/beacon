@@ -1,30 +1,41 @@
-# Playback bug log
+# Investigations
 
-Playback is the part of Beacon that has to work. It is also the part that has
-produced the most whack-a-mole: a bug gets found and fixed, tests get added,
-coverage stays at 100%, and a few days later something else in the same area
-breaks. This file exists so that each round leaves something behind besides a
-commit.
+Every case in here cost more than an afternoon. The point of the folder is
+that the next round starts from what was already learned rather than from
+zero - **including the theories that were ruled out**, which is the half that
+stops the next investigation from re-testing the same five ideas.
 
-This is a record of what was already learned, including the dead ends - not a
-task list. **The ruled-out list on an open entry is the most valuable part**;
-it is what stops the next investigation from re-testing the same five
-theories.
+Most of it is playback, because playback is the part of Beacon that has to
+work and the part that produced the most whack-a-mole: a bug gets found and
+fixed, tests get added, coverage stays at 100%, and a few days later
+something else in the same area breaks. But the folder is not limited to
+playback bugs, and not to bugs at all. Anything that was hard enough to be
+worth writing down belongs here - a measurement series, an approach that was
+tried and dropped, a decision whose reasoning nobody will reconstruct from
+the diff.
 
-Add an entry when a playback bug is understood, whether or not it is fixed.
-For a fixed one, always answer "why did the test suite not catch this?".
+Add an entry when a case is understood, whether or not anything was fixed.
+For a fixed bug, always answer "why did the test suite not catch this?". A
+bug that was found on first look does not need an entry.
 
-Split 2026-08-24 from one long `playback-bugs.md` into one file per bug, after
-two genuinely distinct root causes (the reverse-proxy 403 and the test-suite
-Sonos-discovery leak) had been tangled together in a single entry because they
-share the exact same device-side symptom. If a bug is fixed, its status says
-so **in the heading**, not just in the body - skim the list below rather than
-opening every file.
+Two conventions worth keeping:
+
+- **Status goes in the heading, not just the body** (`fixed-`, `OPEN`), so
+  the list below can be skimmed instead of opening every file.
+- **One file per case.** Split 2026-08-24 out of a single long
+  `playback-bugs.md`, after two genuinely distinct root causes (the
+  reverse-proxy 403 and the test-suite Sonos-discovery leak) had been tangled
+  together in one entry because they share the exact same device-side
+  symptom.
+
+Keep entries anonymous: no IPs, no real speaker or room names ("room A",
+"room B").
 
 ---
 
 ## Open
 
+- [The queue drawer's first-ever reveal does not animate](queue-reveal-first-open.md) - **OPEN**; `appear` tried again and reverted 2026-09-07, behaviour in the app unchanged. Read it before the next attempt: the browser-test harness does not reproduce the bug, and two timing mechanisms are dead ends there
 - [One device dropping out of a multi-target cast is never surfaced](multi-target-partial-drop-not-surfaced.md) - **OPEN, shelved 2026-08-28** (code gap unfixed; its original 2026-08-22 trigger is now suspected to be the test-suite leak too, and it has not happened since - to be picked up if it ever becomes a real problem, see the file for why there is no small fix)
 
 ## Fixed

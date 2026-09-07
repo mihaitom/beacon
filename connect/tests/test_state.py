@@ -3,6 +3,8 @@
 import asyncio
 import time
 
+import pytest
+
 from core.session import SessionState, compute_position
 from core.state import (
     EventBus,
@@ -441,6 +443,53 @@ def test_first_radio_position_delivery_returns_none_for_sonos_only_when_beacon_h
 
     manager = DeliveryManager.from_deliveries([SonosDelivery("Küche"), SonosDelivery("Bad")])
     assert first_radio_position_delivery(manager, _BEACON_RADIO_URL) is None
+
+
+# ── supports_radio_position — the same rule, asked by target type ───────────
+# What the status reports per target so the frontend can read the answer
+# instead of keeping its own copy of the list (stores/connect.ts used to,
+# hand-synced, with nothing to catch the two drifting apart).
+
+
+@pytest.mark.parametrize(
+    "target_type,expected",
+    [("chromecast", True), ("dlna", True), ("sonos", True), ("airplay", False)],
+)
+def test_supports_radio_position_matches_the_delivery_it_names(target_type, expected):
+    from core.state import supports_radio_position
+
+    assert supports_radio_position(target_type) is expected
+
+
+def test_supports_radio_position_says_no_to_a_type_that_does_not_exist():
+    """A target type from a newer backend, or a typo — anything this cannot
+    identify is not something whose position can be watched."""
+    from core.state import supports_radio_position
+
+    assert supports_radio_position("bluetooth") is False
+
+
+def test_supports_radio_position_applies_the_sonos_exception_too():
+    """The half the frontend's own copy of this list could never have
+    known: it depends on the URL being dispatched, not on the device."""
+    from core.state import supports_radio_position
+
+    assert supports_radio_position("sonos", _BEACON_RADIO_URL) is False
+    assert supports_radio_position("sonos", _STATION_URL) is True
+    # Never rewritten, so never affected by the URL.
+    assert supports_radio_position("chromecast", _BEACON_RADIO_URL) is True
+
+
+@pytest.mark.parametrize("dispatch_url", ["", _BEACON_RADIO_URL, _STATION_URL])
+def test_supports_radio_position_agrees_with_first_radio_position_delivery(dispatch_url):
+    """The point of the whole exercise: one rule, two ways of asking it.
+    This is what would have caught the two lists drifting apart, back when
+    the second one lived in the frontend where no test could see it."""
+    from core.state import _DELIVERY_TYPES, first_radio_position_delivery, supports_radio_position
+
+    for target_type, cls in _DELIVERY_TYPES.items():
+        picked = first_radio_position_delivery(cls("Ein Gerät"), dispatch_url) is not None
+        assert supports_radio_position(target_type, dispatch_url) is picked, target_type
 
 
 # ── audio_capability_limits ─────────────────────────────────────────────────

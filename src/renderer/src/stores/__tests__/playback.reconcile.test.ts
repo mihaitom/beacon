@@ -476,7 +476,7 @@ describe('reconcileFromStatus / adoptCastQueue', () => {
      * leaves the stream still feeding the device on an older generation:
      * it plays to the end and then declines to report that end, so playback
      * never finishes. Reported live 2026-09-05; see
-     * docs/playback-bugs/track-end-never-reported.md. */
+     * docs/investigations/fixed-track-end-never-reported.md. */
     it('sends one /play when the same song is started twice before the first lands', async () => {
       const playback = usePlaybackStore()
       const connect = useConnectStore()

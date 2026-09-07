@@ -17,7 +17,7 @@
  *     produced exactly the same request rate as one being used, for
  *     readings nothing renders. "Generate fewer requests in the
  *     background" has been point 2 of the fix list in
- *     docs/playback-bugs/mid-track-drop-reverse-proxy-403.md since that
+ *     docs/investigations/mid-track-drop-reverse-proxy-403.md since that
  *     outage.
  *
  * Deliberately a gate the pollers ask rather than something fetchConnect

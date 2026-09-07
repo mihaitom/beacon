@@ -1243,24 +1243,15 @@ describe('AudioEngine', () => {
       expect(onTimeUpdate).toHaveBeenLastCalledWith(205)
     })
 
-    it('reports the buffered band in the same seconds as the playhead', () => {
-      // Unshifted, this landed three minutes behind the playhead, where
-      // SongWaveform.vue's own clamp hid the band entirely.
+    it('draws no buffered band, however much the element claims to hold', () => {
+      // A length-less stream's `buffered` describes how far the demuxer
+      // has parsed, not what the browser is holding — a flat couple of
+      // seconds while the real buffer is minutes deep. See
+      // reportBuffered().
       const onBufferedChange = vi.fn()
       playingAt()
       engine.onBufferedChange = onBufferedChange
       audio.setBuffered([[0, 45]])
-
-      audio.dispatchEvent(new Event('progress'))
-
-      expect(onBufferedChange).toHaveBeenLastCalledWith(225)
-    })
-
-    it('reports nothing buffered as nothing, rather than as the stream start', () => {
-      const onBufferedChange = vi.fn()
-      playingAt()
-      engine.onBufferedChange = onBufferedChange
-      audio.setBuffered([])
 
       audio.dispatchEvent(new Event('progress'))
 

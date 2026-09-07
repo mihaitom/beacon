@@ -104,30 +104,29 @@ export const useConnectStore = defineStore('connect', {
     isActive(): boolean {
       return this.activeTargets.length > 0
     },
-    // Which device types would make the fullscreen radio visualizer
-    // available — see connect/core/radio_position.py — gated off
-    // altogether right now by RADIO_VISUALIZER_ENABLED above, so this
-    // always answers false regardless of type until that flag flips back.
-    // AirPlay would stay excluded even then: it supports position for
-    // *tracks* but has none to poll for radio at all. Sonos, Chromecast and
-    // DLNA do report one, Sonos calibrated against a fixed estimate rather
-    // than a live position while relayed (core/visualizer_feed.py's
-    // _FirstByteClock) since delivery/sonos.py's own _dispatch_uri() went
-    // back to x-rincon-mp3radio:// for that case on 2026-09-04, to fix a
-    // Sonos-only audio-dropout problem unrelated to this — see that
-    // function's own docstring. Centralized here for the same reason as
-    // isVolumePushCapable() above — NowPlayingView.vue's visualizerAvailable
-    // is the one consumer today, but any second one should agree with it
-    // rather than growing its own copy of this set.
+    // Whether a target would make the fullscreen radio visualizer
+    // available — gated off altogether right now by
+    // RADIO_VISUALIZER_ENABLED above, so this always answers false until
+    // that flag flips back.
     //
-    // This set has to be kept in sync BY HAND with
-    // connect/core/state.py's first_radio_position_delivery() — nothing
-    // ties the two together, and the backend does not expose this as data
-    // for the frontend to read instead. Check that function first if this
-    // set ever needs to change.
+    // The device half of the answer is the backend's: it is decided in one
+    // place there (connect/core/state.py's supports_radio_position, which
+    // is also what picks the reference device for the position tracker)
+    // and reported per target in the status. It used to be a second copy
+    // of that list living here, a string comparison against three device
+    // types, with nothing but a pair of comments tying the two together —
+    // and the copy could not have been right anyway: a Sonos playing a
+    // relayed station reports a flat 0.00s (delivery/sonos.py rewrites the
+    // URL onto x-rincon-mp3radio://), which is a fact about the URL this
+    // session is dispatching, not about the device type.
+    //
+    // Centralized here for the same reason as isVolumePushCapable() above
+    // — NowPlayingView.vue's visualizerAvailable is the one consumer
+    // today, but any second one should agree with it rather than reading
+    // the flag its own way.
     isRadioPositionCapable() {
-      return (type: DeviceType): boolean =>
-        RADIO_VISUALIZER_ENABLED && (type === 'chromecast' || type === 'dlna' || type === 'sonos')
+      return (target: ConnectStatusTarget): boolean =>
+        RADIO_VISUALIZER_ENABLED && target.supports_radio_position === true
     },
     // Which devices push their volume/mute into `status.targets` instead
     // of only ever needing to be polled for it: a RenderingControl

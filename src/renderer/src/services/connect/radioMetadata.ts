@@ -38,6 +38,18 @@ export interface RadioTitleEntry {
 export const RADIO_TITLE_PAGE_SIZE = 200
 
 export interface RadioMetadata {
+  /** Which station everything else in here describes — the backend's own
+   * current station, which is not necessarily the one this device just
+   * started: a relayed station only becomes current there once the player
+   * has opened the new stream and the relay has connected to it, so a poll
+   * in between is answered for the station before it. The caller compares
+   * this against the station it is showing and drops what belongs to
+   * another one (see stores/playback.ts's poll).
+   *
+   * null both while no station is current on the backend and when talking
+   * to a connect too old to send it — which is why a mismatch, rather than
+   * a missing match, is what a caller acts on. */
+  url: string | null
   title: string | null
   /** What this station has played, newest first. Built by the backend
    * rather than accumulated here from these very answers: the poll runs
@@ -90,6 +102,7 @@ export async function fetchRadioMetadata(since?: number): Promise<RadioMetadata>
     relay_content_type?: string | null
   }
   return {
+    url: response.url ?? null,
     title: response.title ?? null,
     history: response.history ?? [],
     bitrate: response.bitrate ?? null,
@@ -100,17 +113,23 @@ export async function fetchRadioMetadata(since?: number): Promise<RadioMetadata>
   }
 }
 
+export interface RadioTitleHistoryPage {
+  /** Same meaning as RadioMetadata.url, for the same reason. */
+  url: string | null
+  history: RadioTitleEntry[]
+}
+
 /** One page of entries older than `before` (the `at` of the oldest entry
- * the caller holds), newest first — what the title log asks for as the
- * reader scrolls towards the end of what is on screen.
+ * the caller holds), newest first, and the station it is a page of — see
+ * RadioMetadata.url for why a page has to name its own station.
  *
  * Fewer than RADIO_TITLE_PAGE_SIZE entries means the beginning of the log
  * has been reached. That is deliberately the only signal: a separate "has
  * more" flag is one more thing that can disagree with the list it
  * describes. */
-export async function fetchRadioTitleHistory(before: number): Promise<RadioTitleEntry[]> {
-  const response = await fetchConnect<{ history: RadioTitleEntry[] }>(
+export async function fetchRadioTitleHistory(before: number): Promise<RadioTitleHistoryPage> {
+  const response = await fetchConnect<{ history: RadioTitleEntry[]; url?: string | null }>(
     `/radio-metadata/history?before=${encodeURIComponent(before)}&limit=${RADIO_TITLE_PAGE_SIZE}`,
   )
-  return response.history ?? []
+  return { url: response.url ?? null, history: response.history ?? [] }
 }

@@ -127,7 +127,7 @@ _CACHE_CONTROL = "public, max-age=604800"
 # leaks a bucket of 4xx responses per source IP), and it is what got a
 # legitimate user's own IP banned after RADIO_FAVICON_CACHE_VERSION was
 # raised and every previously cached hit turned into a miss at once. See
-# docs/playback-bugs/radio-favicon-4xx-ban.md.
+# docs/investigations/radio-favicon-4xx-ban.md.
 _NEGATIVE_CACHE_CONTROL = "public, max-age=21600"
 
 # rel values that plausibly point at a usable icon. Deliberately broad
@@ -154,6 +154,14 @@ class _Candidate:
     # dimensions, so the "already have something at least this big" skip in
     # radio_favicon() below must never treat it as one.
     is_declared_size: bool = True
+    # True for an icon that is vector art, so it is sharp at any size this
+    # app draws it at — read from what the page says about it rather than
+    # from the bytes, because this decides what is worth *fetching*.
+    # Deliberately not the same question as size >= _SCALABLE_PIXELS: that
+    # only happens for sizes="any", and an SVG icon is normally declared
+    # with no sizes attribute at all, which reads as 0 (unknown) and used
+    # to sort it behind every raster.
+    is_scalable: bool = False
     # True for a <link rel="mask-icon"> — see _ICON_RELS' own comment: a
     # monochrome silhouette meant to be recolored by Safari's own CSS
     # masking, not a real likeness of the station's logo at all. Read by
@@ -161,6 +169,19 @@ class _Candidate:
     # genuine logo SVG does — being vector doesn't make a silhouette a
     # *good* result, just a scalable one.
     is_mask_icon: bool = False
+
+
+def _is_scalable(url: str, type_attr: str = "", sizes: str = "") -> bool:
+    """Whether an icon is vector art, from the three things a page can say
+    about it: its declared type, `sizes="any"` (which only a scalable icon
+    may claim), and its own file extension. The extension is not a
+    formality — an <link rel="icon" href="/logo.svg"> with neither type nor
+    sizes is the common way to declare one."""
+    if type_attr.strip().lower().startswith("image/svg"):
+        return True
+    if "any" in sizes.lower().split():
+        return True
+    return urlparse(url).path.lower().endswith(".svg")
 
 
 def _parse_sizes(sizes: str) -> int:
@@ -190,7 +211,11 @@ class _IconLinkParser(HTMLParser):
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.links: list[tuple[str, str, bool]] = []  # (href, sizes, is_mask_icon)
+        self.links: list[tuple[str, str, str, bool]] = []  # (href, sizes, type, is_mask_icon)
+        #: The page's web app manifest, if it declares one - see
+        #: _manifest_candidates(). The first one only: a second <link
+        #: rel="manifest"> is invalid HTML, and a browser takes the first.
+        self.manifest_href: str | None = None
         self.head_done = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -203,11 +228,80 @@ class _IconLinkParser(HTMLParser):
         rel = (values.get("rel") or "").strip().lower()
         href = values.get("href")
         if rel in _ICON_RELS and href:
-            self.links.append((href, values.get("sizes", ""), rel == "mask-icon"))
+            self.links.append(
+                (href, values.get("sizes", ""), values.get("type", ""), rel == "mask-icon")
+            )
+        elif rel == "manifest" and href and self.manifest_href is None:
+            self.manifest_href = href
 
     def handle_endtag(self, tag: str) -> None:
         if tag in ("head", "html"):
             self.head_done = True
+
+
+# A web app manifest is a small JSON file; anything remotely this large is
+# not one, and reading it would be a caller-supplied host deciding how much
+# memory this backend spends.
+_MAX_MANIFEST_BYTES = 128 * 1024
+
+
+async def _manifest_candidates(manifest_url: str) -> list[_Candidate]:
+    """The icons a page's web app manifest declares.
+
+    Worth the extra request because it is the one place a site routinely
+    publishes a *large* icon: a `<link rel="icon">` is normally 32-192px,
+    while a manifest exists to feed an installed-app launcher and so tends
+    to carry the 512px version of the same logo. Measured across a sample
+    of stations, one in six declares a manifest at all - but the ones that
+    do are exactly the ones this used to answer with a small icon for.
+
+    Only the declared `sizes` are read, never the images themselves: this
+    hands back candidates, and _resolve_favicon() decides which are worth
+    fetching, the same as for every <link>-declared one.
+
+    Never raises. A manifest that is missing, malformed, enormous or not
+    JSON at all leaves the lookup exactly where it was."""
+    try:
+        resp = await _client.get(manifest_url)
+        if resp.status_code != 200 or len(resp.content) > _MAX_MANIFEST_BYTES:
+            return []
+        icons = json.loads(resp.content).get("icons")
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError, AttributeError) as e:
+        logger.info(f"[radio-favicon] manifest {manifest_url} unusable: {type(e).__name__}: {e}")
+        return []
+    if not isinstance(icons, list):
+        return []
+
+    candidates: list[_Candidate] = []
+    for icon in icons:
+        if not isinstance(icon, dict):
+            continue
+        src = icon.get("src")
+        if not isinstance(src, str) or not src:
+            continue
+        # "maskable" is an icon drawn with a safe zone around it, so that a
+        # launcher can crop it to whatever shape it likes - the logo itself
+        # sits small in the middle of its own padding. Shown as a station
+        # logo that reads as a picture that failed to fill its frame, so
+        # one is only taken when it is *also* offered as a normal icon
+        # ("any maskable", which is one file serving both purposes).
+        purpose = icon.get("purpose")
+        if isinstance(purpose, str) and purpose.split() == ["maskable"]:
+            continue
+        try:
+            resolved = urljoin(manifest_url, src)
+        except ValueError:
+            continue
+        sizes = icon.get("sizes") if isinstance(icon.get("sizes"), str) else ""
+        icon_type = icon.get("type") if isinstance(icon.get("type"), str) else ""
+        candidates.append(
+            _Candidate(
+                url=resolved,
+                size=_parse_sizes(sizes),
+                is_scalable=_is_scalable(resolved, icon_type, sizes),
+            )
+        )
+    return candidates
 
 
 # Parsed candidate lists (not the image bytes themselves — those still go
@@ -237,6 +331,10 @@ async def _discover_candidates(homepage_url: str) -> list[_Candidate]:
     # requested URL when the fetch never got far enough to have a final one.
     base_url = homepage_url
     candidates: list[_Candidate] = []
+    # Read out of the parser below rather than used from it directly: the
+    # manifest is fetched once the page's own response is done with, and
+    # `parser` only exists inside that block.
+    manifest_href: str | None = None
 
     try:
         async with _client.stream("GET", homepage_url) as resp:
@@ -288,7 +386,7 @@ async def _discover_candidates(homepage_url: str) -> list[_Candidate]:
                 # a bare /favicon.ico.
                 parser.feed(decoder.decode(b"", True))
                 parser.close()
-                for href, sizes, is_mask_icon in parser.links:
+                for href, sizes, type_attr, is_mask_icon in parser.links:
                     # urljoin parses `href` and raises for a malformed one
                     # ("Invalid IPv6 URL" for a stray "//[", say). One
                     # broken <link> in a station's HTML is no reason to
@@ -301,11 +399,24 @@ async def _discover_candidates(homepage_url: str) -> list[_Candidate]:
                         continue
                     candidates.append(
                         _Candidate(
-                            url=resolved, size=_parse_sizes(sizes), is_mask_icon=is_mask_icon
+                            url=resolved,
+                            size=_parse_sizes(sizes),
+                            is_scalable=_is_scalable(resolved, type_attr, sizes),
+                            is_mask_icon=is_mask_icon,
                         )
                     )
+                manifest_href = parser.manifest_href
     except httpx.HTTPError as e:
         logger.info(f"[radio-favicon] {homepage_url} unreachable: {type(e).__name__}: {e}")
+
+    # Outside the stream above, so the page's connection is already back in
+    # the pool while this one runs, and skipped entirely for the common case
+    # of a page that declares no manifest at all.
+    if manifest_href:
+        try:
+            candidates.extend(await _manifest_candidates(urljoin(base_url, manifest_href)))
+        except ValueError:
+            logger.info(f"[radio-favicon] {homepage_url}: unusable manifest href {manifest_href!r}")
 
     # The implicit browser convention (no <link> needed) — always included
     # as the last resort, even when the HTML fetch above found nothing (or
@@ -517,18 +628,50 @@ def _no_favicon_response(status_code: int) -> Response:
     return Response(status_code=status_code, headers=_cache_headers(_NEGATIVE_CACHE_CONTROL))
 
 
+# Above this, a request is for a logo rather than for a row's icon, and a
+# vector one is taken ahead of a raster that merely meets the size (see
+# _select()). Not below it: a list row's icon travels back with up to 200
+# others in one batch answer (see /radio-favicon/batch), where the smallest
+# thing that fits is worth more than a sharpness nobody can see at 32px.
+_PREFER_SCALABLE_ABOVE = 64
+
+
 def _select(candidates: list[_Candidate], min_size: int) -> list[_Candidate]:
-    """Orders candidates best-first for the requested min_size: the
-    smallest one that still meets it (no point downloading a 512px icon
-    for a 24px list row), then every other size-meeting candidate, then
-    every remaining (too-small) candidate largest-first — so a request
-    that can't be satisfied still ends up trying the closest thing
-    available rather than the worst one, before finally giving up."""
-    meets = sorted((c for c in candidates if c.size >= min_size), key=lambda c: c.size)
-    remainder = sorted(
-        (c for c in candidates if c.size < min_size), key=lambda c: c.size, reverse=True
+    """Orders candidates best-first for the requested min_size: a scalable
+    one for a caller that wants a real logo, then the smallest one that
+    still meets the size (no point downloading a 512px icon for a 24px list
+    row), then every other size-meeting candidate, then every remaining
+    (too-small) candidate largest-first — so a request that can't be
+    satisfied still ends up trying the closest thing available rather than
+    the worst one, before finally giving up.
+
+    The scalable-first rule exists because reading a page's web app
+    manifest (see _manifest_candidates()) put real 512px rasters in reach
+    for the first time, and "the smallest that meets it" then quietly
+    started answering with one of those for stations whose logo was
+    available as an SVG — a downgrade, since this same icon is drawn at up
+    to 900px on Now Playing. A mask-icon is excluded from it by name: it is
+    scalable and useless, a monochrome silhouette (see _pixel_size()), and
+    ranking it first would spend one of _MAX_FETCHES on it every time.
+
+    A scalable candidate is taken ahead of the size ordering entirely,
+    including one that declares no size at all — which is how an SVG icon
+    normally *is* declared, and why keying this on the declared size (the
+    first attempt at it) changed nothing for the stations it was written
+    for."""
+
+    scalable = (
+        [c for c in candidates if c.is_scalable and not c.is_mask_icon]
+        if min_size > _PREFER_SCALABLE_ABOVE
+        else []
     )
-    return meets + remainder
+    # By identity: two <link>s can legitimately name the same file, and
+    # equality would then drop the wrong one out of the rest.
+    taken = {id(c) for c in scalable}
+    rest = [c for c in candidates if id(c) not in taken]
+    meets = sorted((c for c in rest if c.size >= min_size), key=lambda c: c.size)
+    remainder = sorted((c for c in rest if c.size < min_size), key=lambda c: c.size, reverse=True)
+    return scalable + meets + remainder
 
 
 async def _try_candidate(candidate: _Candidate) -> _Fetched | None:
@@ -1242,6 +1385,18 @@ async def get_radio_metadata(
     # down to this device's own quality ceiling had nowhere to say so.
     relay = session.radio_relay
     return {
+        # Which station every other field below describes. The client
+        # cannot infer it: it knows only which station *it* started, and
+        # this backend catches up to a station switch on its own schedule -
+        # a relayed station is only switched over once the player actually
+        # opens the new stream (routes/stream.py's /stream/radio-local),
+        # which is a connect to the station away. A poll landing in that
+        # window used to be answered with the *previous* station's title
+        # and its whole log, with nothing in the answer to say so, and the
+        # client showed one station's history under another's name until a
+        # reload (reported live 2026-09-07, on switching stations quickly).
+        # null while no station is current at all.
+        "url": session.current_radio_station_url,
         "title": session.radio_title,
         "history": session.radio_title_log(
             since=since, limit=None if since is not None else _HISTORY_FIRST_PAGE
@@ -1274,9 +1429,15 @@ async def get_radio_title_history(
     beginning of the log — there is no separate "has more" flag that could
     then fall out of step with it, and a log whose length happens to be an
     exact multiple of the page size costs one empty response to discover
-    that."""
+    that.
+
+    Names the station the page is from for the same reason /radio-metadata
+    above does: a page fetched across a station switch belongs to whichever
+    station this backend held at the time, not to the one the reader is
+    looking at."""
     return {
+        "url": session.current_radio_station_url,
         "history": session.radio_title_log(
             before=before, limit=max(1, min(limit, _HISTORY_MAX_PAGE))
-        )
+        ),
     }

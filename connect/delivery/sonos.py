@@ -126,7 +126,7 @@ class SonosDelivery(BaseDelivery):
     """Controls a Sonos speaker via SoCo."""
 
     SUPPORTS_POSITION: bool = True
-    # Confirmed the hard way (see docs/playback-bugs/copy-tier-device-limits.md):
+    # Confirmed the hard way (see docs/investigations/copy-tier-device-limits.md):
     # a 24-bit/96kHz FLAC
     # sent as-is reported ERROR_UNSUPPORTED_FREQ over UPnP eventing and
     # stopped 1.1s in. Sonos' own published spec tops out at 24-bit/48kHz.

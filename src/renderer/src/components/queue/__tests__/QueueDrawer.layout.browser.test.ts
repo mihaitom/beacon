@@ -18,7 +18,7 @@
 // centering scroll never ran. Every later close/reopen already had a live
 // instance around to watch a real transition on, which is why this read as
 // "sometimes works" rather than "always broken".
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { mount } from '@vue/test-utils'
 import { h, ref } from 'vue'
@@ -52,6 +52,15 @@ const REAL_TRANSITIONS = { transition: false, 'transition-group': false }
 // that fails never reaches its last line, turning one genuine failure into
 // a cascade of misleading ones in every test after it.
 const mounted: { unmount: () => void }[] = []
+beforeEach(() => {
+  // A real browser keeps localStorage between tests, and the drawer's open
+  // state is remembered there now (see services/queueDrawerSetting.ts) — a
+  // peek in one test would otherwise have the next one's drawer mounted
+  // already open, which is the case half of these tests exist to test the
+  // other side of.
+  localStorage.clear()
+})
+
 afterEach(() => {
   while (mounted.length) mounted.pop()!.unmount()
 })
@@ -214,13 +223,10 @@ describe('QueueDrawer reveal animation layout', () => {
     // drawer first opens, so a Song Radio started from a closed drawer
     // renders every row as part of this TransitionGroup's *initial*
     // render. That case used to animate too, via `appear` — removed
-    // 2026-08-26 (see the template's own comment) after it turned out to be
-    // exactly what raced against a Vue TransitionGroup bug (no guard, in
-    // any released or pre-release version checked, against an element still
-    // mid-enter when the list re-renders again), non-deterministically
-    // landing rows up to 50px off from the rest of the list. Trading the
-    // slide-in away for this one case is the actual fix — rows just render
-    // at their final position immediately, same as this test now asserts.
+    // 2026-08-26 (see the template's own comment), and tried again and
+    // reverted on 2026-09-07 (see
+    // docs/investigations/queue-reveal-first-open.md). Rows render at their
+    // final position immediately, which is what this asserts.
     await page.viewport(1200, 800)
     setActivePinia(createPinia())
     const playback = usePlaybackStore()
@@ -235,14 +241,10 @@ describe('QueueDrawer reveal animation layout', () => {
     expect(getComputedStyle(firstRow).opacity).toBe('1')
 
     // Not instantly at rest, though: something still re-renders this list a
-    // second time shortly after its own first mount — never pinned down
-    // exactly what (see the template's own comment), independent of the
-    // `appear` removal above. Before that removal this collided with the
-    // still-active enter transition and corrupted it (the actual bug this
-    // fix closes); with no enter transition to collide with any more, the
-    // same re-render's own TransitionGroup .move class just plays out as an
-    // ordinary, correctly-completing FLIP settle instead — confirmed to
-    // reach and *stay* at rest, not the old bug's snap-back.
+    // second time shortly after its own first mount — measured at ~110ms,
+    // never traced (see the investigation above). With no enter transition
+    // to collide with, the re-render's own .move class just plays out as an
+    // ordinary FLIP settle that reaches and *stays* at rest.
     await new Promise((resolve) => setTimeout(resolve, 700))
     expect(getComputedStyle(firstRow).transform).toBe('none')
     await new Promise((resolve) => setTimeout(resolve, 300))
@@ -350,5 +352,131 @@ describe('QueueDrawer reveal animation layout', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 800))
     expect(rows.map((row) => getComputedStyle(row).opacity)).toEqual(['1', '1', '1'])
+  })
+})
+
+/** The drawer is part of the layout rather than floating over it (see its
+ * own template comment): the page beside it has to actually give up the
+ * width. Only a real browser can answer that — the layout Vuetify computes
+ * here is exactly what jsdom does not have. */
+describe('QueueDrawer taking its space out of the page', () => {
+  /** The shell in miniature: a page under <v-main>, the drawer beside it. */
+  function mountWithPage(open: { value: boolean }) {
+    return track(
+      mount(
+        {
+          render: () =>
+            h(components.VApp, null, {
+              default: () => [
+                h(components.VMain, null, { default: () => h('div', { class: 'page' }, 'page') }),
+                h(QueueDrawer, { modelValue: open.value }),
+              ],
+            }),
+        },
+        { attachTo: document.body, global: { plugins: [vuetify, i18n], stubs: REAL_TRANSITIONS } },
+      ),
+    )
+  }
+
+  /** The page's own box, not <v-main>'s: the layout insets the content by
+   * padding rather than by shrinking the element, so v-main stays the width
+   * of the window either way. */
+  function pageWidth() {
+    return (document.querySelector('.page') as HTMLElement).getBoundingClientRect().width
+  }
+
+  it('narrows the page by its own width while open, and gives it back on close', async () => {
+    await page.viewport(1200, 800)
+    setActivePinia(createPinia())
+    usePlaybackStore().setQueue([makeSong('a')], 0)
+
+    const open = ref(false)
+    const wrapper = mountWithPage(open)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const closedWidth = pageWidth()
+
+    open.value = true
+    await wrapper.setProps({})
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    const openWidth = pageWidth()
+
+    // The whole point of this change: the page is smaller, by the drawer.
+    expect(closedWidth - openWidth).toBeGreaterThan(300)
+
+    open.value = false
+    await wrapper.setProps({})
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(pageWidth()).toBeCloseTo(closedWidth, 0)
+  })
+
+  /** A Vuetify drawer turns temporary again by itself below the `mobile`
+   * breakpoint (1280px by default) — which is an ordinary desktop window,
+   * and would mean the page stops making room exactly where it matters
+   * most. */
+  it('still takes its space in a window narrower than the mobile breakpoint', async () => {
+    await page.viewport(1000, 800)
+    setActivePinia(createPinia())
+    usePlaybackStore().setQueue([makeSong('a')], 0)
+
+    const open = ref(false)
+    const wrapper = mountWithPage(open)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const closedWidth = pageWidth()
+
+    open.value = true
+    await wrapper.setProps({})
+    await new Promise((resolve) => setTimeout(resolve, 400))
+
+    expect(closedWidth - pageWidth()).toBeGreaterThan(300)
+    await page.viewport(1200, 800)
+  })
+
+  /** The shell's own arrangement (DefaultLayout.vue): an app bar above, the
+   * player bar below, and the drawer declared after both — which is what
+   * keeps it between the two instead of over them. Vuetify decides that
+   * from the order the layout items register in, so it is a template
+   * ordering nothing else would catch if it changed. */
+  it('sits between the app bar and the player bar, covering neither', async () => {
+    await page.viewport(1200, 800)
+    setActivePinia(createPinia())
+    usePlaybackStore().setQueue([makeSong('a')], 0)
+
+    track(
+      mount(
+        {
+          render: () =>
+            h(components.VApp, null, {
+              default: () => [
+                h(components.VAppBar, { height: 64 }),
+                h(components.VMain, null, { default: () => h('div', { class: 'page' }, 'page') }),
+                h(components.VFooter, { app: true, height: 88 }),
+                h(QueueDrawer, { modelValue: true }),
+              ],
+            }),
+        },
+        { attachTo: document.body, global: { plugins: [vuetify, i18n], stubs: REAL_TRANSITIONS } },
+      ),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 400))
+
+    const drawer = (document.querySelector('.beacon-drawer') as HTMLElement).getBoundingClientRect()
+    const appBar = (document.querySelector('.v-app-bar') as HTMLElement).getBoundingClientRect()
+    const footer = (document.querySelector('.v-footer') as HTMLElement).getBoundingClientRect()
+
+    expect(drawer.top).toBeGreaterThanOrEqual(appBar.bottom)
+    expect(drawer.bottom).toBeLessThanOrEqual(footer.top)
+  })
+
+  it('leaves no scrim over the page it is sharing the window with', async () => {
+    // A drawer that dimmed the page would make "keep browsing with the
+    // queue beside you" pointless.
+    await page.viewport(1200, 800)
+    setActivePinia(createPinia())
+    usePlaybackStore().setQueue([makeSong('a')], 0)
+
+    mountWithPage(ref(true))
+    await new Promise((resolve) => setTimeout(resolve, 400))
+
+    expect(document.querySelector('.v-navigation-drawer__scrim')).toBeNull()
   })
 })

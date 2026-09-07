@@ -691,6 +691,258 @@ def test_radio_favicon_default_min_size_still_costs_one_fetch(client):
     mock_get.assert_awaited_once()
 
 
+# ── Web app manifest icons ───────────────────────────────────────────────────
+
+
+def _manifest_page() -> bytes:
+    return (
+        b"<html><head>"
+        b'<link rel="icon" href="/small.png" sizes="32x32">'
+        b'<link rel="manifest" href="/site.webmanifest">'
+        b"</head><body></body></html>"
+    )
+
+
+def _json_response(payload) -> MagicMock:
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.content = json.dumps(payload).encode()
+    resp.headers = {"content-type": "application/manifest+json"}
+    return resp
+
+
+def test_manifest_icons_are_found_when_the_page_declares_only_small_ones(client):
+    """The one place a site routinely publishes a large icon: a <link
+    rel="icon"> is normally 32-192px, while a manifest exists to feed an
+    installed-app launcher and carries the 512px version of the same logo.
+    Without this a station like that was answered with its 32px favicon
+    and Now Playing drew that across the whole artwork slot."""
+    responses = {
+        "https://example.com/site.webmanifest": _json_response(
+            {"icons": [{"src": "/icons/512.png", "sizes": "512x512"}]}
+        ),
+        "https://example.com/icons/512.png": _fake_get_response(
+            content=_sized_png(512), content_type="image/png"
+        ),
+    }
+    mock_get = AsyncMock(side_effect=lambda url: responses[url])
+
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(_manifest_page())),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com/", "min_size": "512"})
+
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+    # The 32px <link> icon was never even fetched — the manifest's own
+    # entry meets the size and sorts ahead of it.
+    assert "https://example.com/small.png" not in [c.args[0] for c in mock_get.await_args_list]
+
+
+def test_manifest_icon_srcs_resolve_against_the_manifest_not_the_page(client):
+    """A manifest may sit in a subdirectory, and its icon paths are relative
+    to it — resolving them against the page would point at a directory that
+    never had them."""
+    responses = {
+        "https://example.com/static/site.webmanifest": _json_response(
+            {"icons": [{"src": "icons/512.png", "sizes": "512x512"}]}
+        ),
+        "https://example.com/static/icons/512.png": _fake_get_response(
+            content=_sized_png(512), content_type="image/png"
+        ),
+    }
+    mock_get = AsyncMock(side_effect=lambda url: responses[url])
+    html = b'<html><head><link rel="manifest" href="/static/site.webmanifest"></head></html>'
+
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com/", "min_size": "512"})
+
+    assert r.status_code == 200
+
+
+def test_manifest_maskable_only_icons_are_left_alone(client):
+    """A maskable icon is drawn with a safe zone so a launcher can crop it
+    to any shape — the logo sits small inside its own padding, which as a
+    station logo reads as a picture that failed to fill its frame."""
+    manifest = _json_response(
+        {
+            "icons": [
+                {"src": "/masked.png", "sizes": "512x512", "purpose": "maskable"},
+                {"src": "/plain.png", "sizes": "512x512", "purpose": "any maskable"},
+            ]
+        }
+    )
+    responses = {
+        "https://example.com/site.webmanifest": manifest,
+        "https://example.com/plain.png": _fake_get_response(
+            content=_sized_png(512), content_type="image/png"
+        ),
+    }
+    mock_get = AsyncMock(side_effect=lambda url: responses[url])
+
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(_manifest_page())),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com/", "min_size": "512"})
+
+    assert r.status_code == 200
+    fetched = [c.args[0] for c in mock_get.await_args_list]
+    assert "https://example.com/masked.png" not in fetched
+    # "any maskable" is one file serving both purposes and stays usable.
+    assert "https://example.com/plain.png" in fetched
+
+
+def test_a_broken_manifest_leaves_the_lookup_where_it_was(client):
+    """A manifest that is missing, not JSON, or not shaped like one is one
+    extra source that did not pan out, never a failed lookup."""
+    responses = {
+        "https://example.com/site.webmanifest": _fake_get_response(
+            content=b"<html>not json</html>", content_type="text/html"
+        ),
+        "https://example.com/small.png": _fake_get_response(
+            content=_sized_png(32), content_type="image/png"
+        ),
+    }
+    mock_get = AsyncMock(side_effect=lambda url: responses.get(url, _fake_get_response(404)))
+
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(_manifest_page())),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com/", "min_size": "512"})
+
+    # The page's own 32px icon, which is all there ever was.
+    assert r.status_code == 200
+
+
+def test_an_oversized_manifest_is_not_read_at_all(client):
+    huge = _json_response({"icons": [{"src": "/512.png", "sizes": "512x512"}]})
+    huge.content = b" " * (radio_mod._MAX_MANIFEST_BYTES + 1)
+    responses = {
+        "https://example.com/site.webmanifest": huge,
+        "https://example.com/small.png": _fake_get_response(
+            content=_sized_png(32), content_type="image/png"
+        ),
+    }
+    mock_get = AsyncMock(side_effect=lambda url: responses.get(url, _fake_get_response(404)))
+
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(_manifest_page())),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        client.get("/radio-favicon", params={"url": "https://example.com/", "min_size": "512"})
+
+    assert "https://example.com/512.png" not in [c.args[0] for c in mock_get.await_args_list]
+
+
+def test_a_page_without_a_manifest_costs_no_extra_request(client):
+    html = b'<html><head><link rel="icon" href="/icon.png" sizes="512x512"></head></html>'
+    mock_get = AsyncMock(
+        return_value=_fake_get_response(content=_sized_png(512), content_type="image/png")
+    )
+
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        client.get("/radio-favicon", params={"url": "https://example.com/", "min_size": "512"})
+
+    assert mock_get.await_count == 1
+
+
+# ── Ordering: a vector logo beats a raster that merely fits ──────────────────
+
+
+def test_a_scalable_icon_wins_over_a_raster_that_meets_the_size(client):
+    """Reading manifests put real 512px rasters in reach, and "smallest
+    that meets it" then started answering with one of those for stations
+    whose logo was also published as an SVG — a downgrade, since the same
+    icon is drawn at up to 900px on Now Playing."""
+    candidates = [
+        radio_mod._Candidate(url="https://example.com/512.png", size=512),
+        # No declared size, which is how an SVG icon normally is declared.
+        radio_mod._Candidate(url="https://example.com/logo.svg", size=0, is_scalable=True),
+    ]
+
+    assert radio_mod._select(candidates, 512)[0].url == "https://example.com/logo.svg"
+
+
+def test_a_list_row_still_gets_the_smallest_icon_that_fits(client):
+    """Below _PREFER_SCALABLE_ABOVE the caller is drawing a row, and up to
+    200 of those travel back in one batch answer — the smallest thing that
+    fits is worth more there than a sharpness nobody can see at 32px."""
+    candidates = [
+        radio_mod._Candidate(url="https://example.com/logo.svg", size=0, is_scalable=True),
+        radio_mod._Candidate(url="https://example.com/64.png", size=64),
+    ]
+
+    assert radio_mod._select(candidates, 64)[0].url == "https://example.com/64.png"
+
+
+def test_an_svg_icon_is_recognised_from_any_of_the_three_things_a_page_says(client):
+    """Its declared type, sizes="any", or simply the file extension — the
+    last of which is the common way an SVG icon is declared, with neither
+    of the other two present."""
+    assert radio_mod._is_scalable("https://example.com/logo", type_attr="image/svg+xml")
+    assert radio_mod._is_scalable("https://example.com/logo", sizes="any")
+    assert radio_mod._is_scalable("https://example.com/logo.svg")
+    assert radio_mod._is_scalable("https://example.com/LOGO.SVG?v=2")
+    assert not radio_mod._is_scalable("https://example.com/logo.png", sizes="512x512")
+
+
+def test_an_undeclared_svg_still_wins_over_a_manifests_512px_raster(client):
+    """The end-to-end version: reading manifests is what put a 512px raster
+    in reach for stations that also publish an SVG, and the SVG is what
+    should still come back — the same icon is drawn at up to 900px."""
+    html = (
+        b"<html><head>"
+        b'<link rel="icon" href="/logo.svg">'
+        b'<link rel="manifest" href="/site.webmanifest">'
+        b"</head></html>"
+    )
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path d="M1 1z"/></svg>'
+    responses = {
+        "https://example.com/site.webmanifest": _json_response(
+            {"icons": [{"src": "/512.png", "sizes": "512x512"}]}
+        ),
+        "https://example.com/logo.svg": _fake_get_response(
+            content=svg, content_type="image/svg+xml"
+        ),
+    }
+    mock_get = AsyncMock(side_effect=lambda url: responses[url])
+
+    with (
+        patch.object(radio_mod._client, "stream", _mock_stream(html)),
+        patch.object(radio_mod._client, "get", mock_get),
+    ):
+        r = client.get("/radio-favicon", params={"url": "https://example.com/", "min_size": "512"})
+
+    assert r.headers["content-type"] == "image/svg+xml"
+    assert "https://example.com/512.png" not in [c.args[0] for c in mock_get.await_args_list]
+
+
+def test_a_mask_icon_is_never_ranked_first_for_being_scalable(client):
+    """It is a monochrome silhouette by convention (see _pixel_size), so
+    ranking it ahead of a real logo would spend one of _MAX_FETCHES on
+    something that cannot win anyway."""
+    candidates = [
+        radio_mod._Candidate(
+            url="https://example.com/mask.svg",
+            size=radio_mod._SCALABLE_PIXELS,
+            is_scalable=True,
+            is_mask_icon=True,
+        ),
+        radio_mod._Candidate(url="https://example.com/512.png", size=512),
+    ]
+
+    assert radio_mod._select(candidates, 512)[0].url == "https://example.com/512.png"
+
+
 # ── Malformed candidates must never reach the caller as a 500 ────────────────
 
 
@@ -1335,6 +1587,7 @@ def test_radio_metadata_returns_the_sessions_current_title(client, default_sessi
     # No history: setting the field directly is not a title *arriving*, and
     # nothing is playing for one to belong to.
     assert r.json() == {
+        "url": None,
         "title": "Artist - Track",
         "history": [],
         "bitrate": None,
@@ -1386,6 +1639,7 @@ def test_radio_metadata_returns_null_before_anything_has_been_seen(client, defau
     r = client.get("/radio-metadata")
     assert r.status_code == 200
     assert r.json() == {
+        "url": None,
         "title": None,
         "history": [],
         "bitrate": None,
@@ -1495,6 +1749,43 @@ def test_radio_history_never_hands_out_more_than_one_page_however_much_is_asked_
     r = client.get("/radio-metadata/history", params={"before": entries[0]["at"], "limit": 5000})
 
     assert len(r.json()["history"]) == 200
+
+
+def test_radio_metadata_names_the_station_its_answer_is_about(client, default_session):
+    """The client cannot work this out on its own: this backend reaches a
+    station on its own schedule (a relayed one only when the player opens
+    the stream), so a poll sent right after a switch is answered, correctly,
+    for the station before it. Without the station in the answer the client
+    put one station's log under another's name and kept it there until a
+    reload."""
+    default_session._radio_metadata_url = "http://station-a"
+    default_session._set_radio_title("Artist - Track")
+
+    body = client.get("/radio-metadata").json()
+
+    assert body["url"] == "http://station-a"
+
+
+def test_radio_metadata_names_the_relays_station_while_one_is_running(client, default_session):
+    # The relay is the reader for a cast (and for a relayed local) station,
+    # so it is what "current station" means then — see
+    # SessionState.current_radio_station_url.
+    default_session.radio_relay = SimpleNamespace(
+        output_bitrate_kbps=None,
+        reencode_reason=None,
+        device_content_type="audio/mpeg",
+        url="http://station-b",
+    )
+
+    assert client.get("/radio-metadata").json()["url"] == "http://station-b"
+
+
+def test_radio_history_names_the_station_the_page_is_from(client, default_session):
+    entries = _fill_history(default_session, "http://station", 30)
+
+    r = client.get("/radio-metadata/history", params={"before": entries[9]["at"], "limit": 200})
+
+    assert r.json()["url"] == "http://station"
 
 
 def test_radio_history_is_empty_when_nothing_is_playing(client, default_session):

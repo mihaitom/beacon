@@ -77,7 +77,7 @@ import httpx
 from lyrics.shared import USER_AGENT
 
 from .icy_metadata import IcyDemuxer, parse_bitrate, parse_codec
-from .streamer import _READRATE_ARGS, REASON_QUALITY_LIMIT, REASON_RELAY_MP3_ONLY
+from .streamer import _READRATE_ARGS, REASON_QUALITY_LIMIT, REASON_RELAY_FORMAT_LIMIT
 
 logger = logging.getLogger("connect.radio_relay")
 
@@ -299,7 +299,7 @@ def _device_output_args(
 
     The reason returned is not cosmetic. A station re-encoded because it is
     over the ceiling reports that; one re-encoded only because it arrives
-    in a format the listener did not ask for reports REASON_RELAY_MP3_ONLY,
+    in a format the listener did not ask for reports REASON_RELAY_FORMAT_LIMIT,
     which says the relay's own doing rather than blaming the device (an
     earlier version reported the quality ceiling for it, which told the
     listener their setting was doing something it was not).
@@ -356,7 +356,7 @@ def _device_output_args(
         _encode_args(bitrate, aac=wants_aac),
         out_content_type,
         bitrate,
-        REASON_QUALITY_LIMIT if bitrate == max_bitrate_kbps else REASON_RELAY_MP3_ONLY,
+        REASON_QUALITY_LIMIT if bitrate == max_bitrate_kbps else REASON_RELAY_FORMAT_LIMIT,
     )
 
 
@@ -382,7 +382,7 @@ def relay_format_for_target(
     station rather than converting it whenever the format it arrives in is
     the one being aimed at, so aiming at AAC is what *stops* an AAC station
     from being re-encoded — with None it was converted to MP3 instead,
-    losing quality for nothing and reporting `relay_mp3_only` for a station
+    losing quality for nothing and reporting `relay_format_limit` for a station
     the device would have taken as it was. Reported live 2026-09-06: an AAC
     station at 256k arriving as MP3 at 256k, while picking AAC by hand
     played the station untouched. An MP3 station is copied under either

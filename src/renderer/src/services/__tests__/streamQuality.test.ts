@@ -146,13 +146,38 @@ describe('streamQuality', () => {
     })
 
     it('does nothing at all while the setting is original', () => {
-      // Not even for a source no browser can decode: asking for the
-      // untouched file is an explicit choice, and quietly converting it
-      // anyway would make the setting mean something else.
-      expect(plan({ format: 'ape', bitRate: 900 }, { format: 'original', bitrate: 0 })).toEqual({
+      // Asking for the untouched file is an explicit choice, and a source
+      // this browser can play is handed over exactly as it is.
+      expect(plan({ format: 'flac', bitRate: 900 }, { format: 'original', bitrate: 0 })).toEqual({
         quality: { format: 'original', bitrate: 0 },
         reason: null,
       })
+    })
+
+    it('rescues a source original cannot play, losslessly', () => {
+      // The one exception, and the reason it is not a broken promise:
+      // untouched audio that plays nothing is not what anybody chose, and
+      // FLAC re-wraps the same bits rather than re-encoding them. Without
+      // this, an ALAC library was silent on the *default* setting while
+      // every other setting rescued it.
+      expect(plan({ format: 'ape', bitRate: 900 }, { format: 'original', bitrate: 0 })).toEqual({
+        quality: { format: 'flac', bitrate: 0 },
+        reason: 'browser_unsupported',
+      })
+    })
+
+    it('rescues to a lossy format only where flac is refused too', () => {
+      // Then it is a choice between something audible and nothing at all,
+      // rather than a quality trade anybody asked for.
+      vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((type: string) =>
+        type.startsWith('audio/mpeg') || type.startsWith('audio/aac') ? 'probably' : '',
+      )
+
+      const rescued = plan({ format: 'ape', bitRate: 900 }, { format: 'original', bitrate: 0 })
+
+      expect(rescued.reason).toBe('browser_unsupported')
+      expect(rescued.quality.format).toBe('aac')
+      expect(rescued.quality.bitrate).toBeGreaterThan(0)
     })
 
     it('leaves a lossy source of unknown bitrate alone', () => {

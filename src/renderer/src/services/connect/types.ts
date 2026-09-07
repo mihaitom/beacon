@@ -31,6 +31,19 @@ export interface ConnectStatusTarget extends ConnectDeviceRef {
    * anything else. Absent from an older backend's status, which is read as
    * "no" — polling then continues exactly as it used to. */
   volume_push?: boolean
+  /** Whether this device's own reported position is worth watching while a
+   * *station* is playing — what the radio visualizer and the cast
+   * buffering indicator need (see connect/core/radio_position.py).
+   *
+   * Answered by the backend, out of the one place that decides it
+   * (core/state.py's supports_radio_position). This used to be a list of
+   * device types kept here as well, hand-synced with that one and unable
+   * to know about its Sonos-while-relayed exception at all, since that
+   * depends on the URL the session is dispatching. Absent from an older
+   * backend's status, which reads as "no": the visualizer stays off, which
+   * is exactly what it does today anyway (see stores/connect.ts's
+   * RADIO_VISUALIZER_ENABLED). */
+  supports_radio_position?: boolean
 }
 
 export interface DiscoveredDevice {

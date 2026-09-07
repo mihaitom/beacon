@@ -35,6 +35,7 @@ interface DialogInstance {
   browseCountry: string | null
   browseOrder: 'votes' | 'clickcount'
   countryOptions: { name: string; code: string }[]
+  countryItems: { name?: string; code?: string; type?: string }[]
   addBrowsedStation(result: RadioBrowserStation): Promise<void>
   voteForStation(result: RadioBrowserStation): Promise<void>
 }
@@ -219,6 +220,73 @@ describe('RadioDiscoverDialog', () => {
     await openAndSettle(second)
 
     expect(instanceOf(second).browseCountry).toBe('DE')
+  })
+
+  /** The three countries somebody listens to are one glance away instead
+   * of one scroll through the ~250 the directory has, and the divider is
+   * what says where that block ends. */
+  it('pins the countries picked before, most recent first, above a divider', async () => {
+    vi.mocked(radioBrowser.listRadioBrowserCountries).mockResolvedValue([
+      { name: 'Austria', code: 'AT' },
+      { name: 'France', code: 'FR' },
+      { name: 'Germany', code: 'DE' },
+    ])
+    const wrapper = mountDialog()
+    await openAndSettle(wrapper)
+
+    instanceOf(wrapper).browseCountry = 'DE'
+    await flushPromises()
+    instanceOf(wrapper).browseCountry = 'FR'
+    await flushPromises()
+
+    expect(instanceOf(wrapper).countryItems).toEqual([
+      { name: 'France', code: 'FR' },
+      { name: 'Germany', code: 'DE' },
+      { type: 'divider', name: '', code: '' },
+      { name: 'Austria', code: 'AT' },
+    ])
+  })
+
+  /** Moved up, not copied: a country listed twice would show up twice
+   * while typing filters the picker, and both rows would be drawn as the
+   * selected one. */
+  it('leaves the picker untouched while nothing has been picked yet', async () => {
+    vi.mocked(radioBrowser.listRadioBrowserCountries).mockResolvedValue([
+      { name: 'Austria', code: 'AT' },
+      { name: 'Germany', code: 'DE' },
+    ])
+    const wrapper = mountDialog()
+    await openAndSettle(wrapper)
+
+    expect(instanceOf(wrapper).countryItems).toEqual([
+      { name: 'Austria', code: 'AT' },
+      { name: 'Germany', code: 'DE' },
+    ])
+  })
+
+  it('keeps the pinned countries across a remount, and clearing the filter does not drop them', async () => {
+    vi.mocked(radioBrowser.listRadioBrowserCountries).mockResolvedValue([
+      { name: 'Austria', code: 'AT' },
+      { name: 'Germany', code: 'DE' },
+    ])
+    const first = mountDialog()
+    await openAndSettle(first)
+    instanceOf(first).browseCountry = 'DE'
+    await flushPromises()
+    // The picker's own clear button — "no country" is not a country that
+    // was picked, so it must not empty the pinned block.
+    instanceOf(first).browseCountry = null
+    await flushPromises()
+    first.unmount()
+
+    const second = mountDialog()
+    await openAndSettle(second)
+
+    expect(instanceOf(second).countryItems).toEqual([
+      { name: 'Germany', code: 'DE' },
+      { type: 'divider', name: '', code: '' },
+      { name: 'Austria', code: 'AT' },
+    ])
   })
 
   it('searches immediately when the order toggle changes', async () => {

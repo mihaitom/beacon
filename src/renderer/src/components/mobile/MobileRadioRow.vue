@@ -11,7 +11,7 @@
      - than a grid of bordered boxes — one line per station, tap anywhere
      - to play. -->
     <cover-art
-      :radio-favicon="station.homePageUrl ? faviconRequest(station.homePageUrl, 48) : null"
+      :radio-favicon="radioFavicon"
       :size="MOBILE_ROW_ART_SIZE"
       rounded
       fallback-icon="mdi-radio"
@@ -93,6 +93,17 @@ export default {
     },
     hostname(): string {
       return this.hostnameOf(this.station.homePageUrl || this.station.streamUrl)
+    },
+    /** The station's logo, or null for a station that has nothing to look
+     * one up with. Both halves count: a station added from the discover
+     * dialog carries Radio Browser's own favicon URL and may have no
+     * homepage at all (see RadioStation.favicon), and asking only when
+     * there is a homepage left exactly those stations with the fallback
+     * icon here while the player bar, which never had that guard, showed
+     * their logo. */
+    radioFavicon(): RadioFaviconRequest | null {
+      if (!this.station.homePageUrl && !this.station.favicon) return null
+      return this.faviconRequest(this.station.homePageUrl ?? '', 48)
     },
   },
   methods: {

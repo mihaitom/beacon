@@ -168,10 +168,15 @@ function formatKhz(hz: number): string {
 /** The three reasons a station is really being re-encoded rather than
  * passed through: a device refused the raw stream (Beacon re-encodes to
  * rescue the cast), the station is over the cast-quality ceiling and the
- * relay brings it down, or it does not arrive as MP3 and the device would
- * not take it as it is — see connect's core/radio_relay.py. Anything else
+ * relay brings it down, or it arrives in a format the relay does not hand
+ * out at all — its repertoire is MP3 and AAC, whatever the device itself
+ * would have taken — see connect's core/radio_relay.py. Anything else
  * `transcoding` claims for a station is bookkeeping, not a conversion. */
-export const RADIO_REENCODED_REASONS = ['device_rejected_stream', 'quality_limit', 'relay_mp3_only']
+export const RADIO_REENCODED_REASONS = [
+  'device_rejected_stream',
+  'quality_limit',
+  'relay_format_limit',
+]
 
 function isRadioReencoded(reason: string | null | undefined): boolean {
   return reason != null && RADIO_REENCODED_REASONS.includes(reason)
@@ -276,7 +281,11 @@ export default {
       if (!this.isCasting) {
         if (!this.activePlan) return ''
         const { format, bitrate } = this.activePlan.quality
-        return `${format.toUpperCase()}, ${bitrate} kb/s`
+        // No bitrate for the lossless rescue Original falls back to (see
+        // plan()) — "FLAC, 0 kb/s" would be a number where there is none,
+        // and the panel says the same thing about a cast FLAC by leaving
+        // it out too.
+        return bitrate > 0 ? `${format.toUpperCase()}, ${bitrate} kb/s` : format.toUpperCase()
       }
       return this.castTargetLabel
     },

@@ -305,6 +305,21 @@ function cancelPendingRadioTitle(): void {
   pendingRadioTitle = null
 }
 
+// How often the metadata poll asks while the backend is still catching up
+// with a station that has just been started, and how many times before it
+// gives up and leaves the 8s interval to it. Roughly 20 seconds of it: a
+// relay has to connect to the station, and a slow one still gets its log
+// on screen without the reader waiting out a whole interval on top.
+const RADIO_METADATA_CATCHUP_INTERVAL_MS = 1000
+const RADIO_METADATA_CATCHUP_TRIES = 20
+
+let radioMetadataCatchupTimer: ReturnType<typeof setInterval> | null = null
+
+function stopRadioMetadataCatchup(): void {
+  if (radioMetadataCatchupTimer !== null) clearInterval(radioMetadataCatchupTimer)
+  radioMetadataCatchupTimer = null
+}
+
 // A ceiling on that hold. The buffer this is read from is normally a
 // handful of seconds; a much larger reading means something unusual
 // (a stall that refilled hugely, a browser deciding to fetch far ahead),
@@ -517,10 +532,12 @@ export const usePlaybackStore = defineStore('playback', {
       if (this.initialized) return
       this.initialized = true
 
-      // Explicit, not just relying on the drawer store's own defaults —
-      // these were never meant to be restored across a restart, only
-      // toggled during the running session, so a fresh app start should
-      // always begin with both closed.
+      // Explicit, not just relying on the drawer store having been created
+      // in its own default state — a reload of the renderer alone (an
+      // update, an HMR round) leaves a store that has been running. The
+      // queue drawer's own remembered position survives this (see
+      // stores/drawers.ts's resetDrawers); the rest is per-session and
+      // starts empty.
       useDrawersStore().resetDrawers()
 
       this.restoreFromStorage()
@@ -651,117 +668,26 @@ export const usePlaybackStore = defineStore('playback', {
         this.localPosition = positionTracker.extrapolate(performance.now(), this.positionClamp)
       }, 200)
 
-      // Polls this session's ICY "now playing" tag (services/connect/
-      // radioMetadata.ts) for whichever station is current - pushed from
-      // the connect backend's own background watch, not derived locally,
-      // since a plain HTML5 <audio> element never sees it at all itself.
-      // A no-op whenever no radio is playing, same as the position-
-      // smoothing interval above, so this is cheap to just leave running
-      // for the app's whole lifetime rather than starting/stopping it
-      // around every radio play/stop.
-      const pollRadioMetadata = () => {
-        const station = this.radioStation
-        if (!station) return
-        // The newest entry already on screen is what this asks to be
-        // brought up to date from; without one (a station just started, a
-        // reload) the backend hands over its newest page instead. A title
-        // being held back below deliberately does not count as held: it is
-        // not in the log yet, so it keeps being re-delivered until it is,
-        // which costs one entry per poll and needs no buffer of its own.
-        fetchRadioMetadata(this.radioTitleLog[0]?.at)
-          .then((metadata) => {
-            // The station may have changed while this was in flight - a
-            // stale answer for the *previous* one must never overwrite
-            // this one's (already-reset-to-null) title.
-            if (this.radioStation?.streamUrl !== station.streamUrl) return
-            // Immediately, both of them: they describe the station itself,
-            // not a moment in it, so there is nothing to line them up with.
-            this.radioBitrate = metadata.bitrate
-            this.radioCodec = metadata.codec
-            // Same "describes the station, not a moment in it" reasoning as
-            // the two above — see the relay's own note in routes/radio.py.
-            this.radioRelayBitrate = metadata.relayBitrate
-            this.radioRelayReason = metadata.relayReason
-            this.radioRelayContentType = metadata.relayContentType
-
-            const showTitle = () => {
-              this.radioNowPlaying = metadata.title
-              this.applyRadioTitleDelta(metadata.history)
-            }
-            // Nothing new to line up. The log still moves, unless a title
-            // is being held — then its newest entry is the held one, and
-            // letting it through would put the song on screen in the list
-            // while the line above it still shows the previous one.
-            if (
-              metadata.title === this.radioNowPlaying ||
-              metadata.title === pendingRadioTitle?.title
-            ) {
-              if (pendingRadioTitleTimer === null) this.applyRadioTitleDelta(metadata.history)
-              return
-            }
-
-            // The backend reads the station's tag at the live edge, but
-            // this device is playing out of a buffer that was handed to it
-            // as fast as the network allowed - a station's own
-            // burst-on-connect, or the relay's head start
-            // (connect/core/streamer.py's LOOKAHEAD_SECONDS, measured at
-            // ~15s). Showing the tag when it arrives therefore announces
-            // the next song while the previous one is still audibly
-            // playing. Held back by exactly what this element has buffered
-            // ahead, which is the same number (see the engine's
-            // bufferedAhead).
-            //
-            // Only for local playback: while casting, the buffer that
-            // matters belongs to the speaker and nothing here can measure
-            // it, so a hold would be a guess laid on top of an unknown.
-            //
-            // How much that is in practice, measured live 2026-09-06 on a
-            // relayed station: 2.4s half a minute in, 0.3s twelve minutes
-            // in. Small, and shrinking — the relay delivers at exactly 1x
-            // (core/streamer.py's -readrate), so a player can never build
-            // a lead, and the head start it is handed on connect is spent
-            // for good the first time a stall eats into it. So this
-            // corrects a few seconds early on and almost nothing later,
-            // which is worth having and is not the whole gap: with 2.4s
-            // held, a counted track change still showed 4s before it was
-            // audible. The rest sits between the tag being demuxed on the
-            // relay's *input* side and that audio leaving ffmpeg, and is
-            // not measured yet — see TODO.md before adding a constant for
-            // it.
-            const holdSeconds = this.isCasting
-              ? 0
-              : Math.min(getAudioEngine().bufferedAhead, MAX_RADIO_TITLE_HOLD_SECONDS)
-            if (holdSeconds <= 0) {
-              cancelPendingRadioTitle()
-              showTitle()
-              return
-            }
-            cancelPendingRadioTitle()
-            pendingRadioTitle = { title: metadata.title, url: station.streamUrl }
-            pendingRadioTitleTimer = setTimeout(() => {
-              pendingRadioTitleTimer = null
-              pendingRadioTitle = null
-              // Same guard as above, for the wait rather than the request:
-              // a station change during the hold makes this title somebody
-              // else's.
-              if (this.radioStation?.streamUrl !== station.streamUrl) return
-              showTitle()
-            }, holdSeconds * 1000)
-          })
-          .catch(() => {})
-      }
+      // Polls this session's ICY "now playing" tag and the station's title
+      // log for whichever station is current — see pollRadioMetadata()
+      // below, which is an action of its own rather than a closure here
+      // because starting a station calls it too (see
+      // startRadioMetadataCatchup()). A no-op whenever no radio is
+      // playing, same as the position-smoothing interval above, so this is
+      // cheap to just leave running for the app's whole lifetime rather
+      // than starting/stopping it around every radio play/stop.
       setInterval(() => {
         // Skipped while the window is hidden or the app is being denied by
         // whatever sits in front of the backend (see pollGate.ts). Nothing
         // renders this title but SongInfo.vue, so a hidden window was
         // asking for it several hundred times an hour for nobody.
-        if (pollingAllowed()) pollRadioMetadata()
+        if (pollingAllowed()) this.pollRadioMetadata()
       }, 8000)
       // ...which would leave a stale title on screen for up to one interval
       // on the way back, so the return is what refreshes it rather than the
       // next tick after it.
       document.addEventListener('visibilitychange', () => {
-        if (pollingAllowed()) pollRadioMetadata()
+        if (pollingAllowed()) this.pollRadioMetadata()
       })
 
       // Keeps the persisted snapshot fresh so a reload always has something
@@ -966,6 +892,10 @@ export const usePlaybackStore = defineStore('playback', {
           // remote-initiated path.
           this.duration = 0
           positionTracker.reset()
+          // Same reason as playRadioStation()'s own call — the station is
+          // new to this client either way, and the log it has none of yet
+          // should not wait out a poll interval.
+          this.startRadioMetadataCatchup()
         }
         return
       }
@@ -1321,6 +1251,12 @@ export const usePlaybackStore = defineStore('playback', {
         // second connection to the station rather than a no-op.
         this.startLocalRadio(streamUrl)
       }
+      // Both branches: neither has told the backend anything it has
+      // finished acting on yet (the cast dispatch above has returned, but
+      // a local station's relay only starts when the player opens the
+      // stream), and this is what gets the station's log on screen without
+      // waiting out an 8s interval on top of that.
+      this.startRadioMetadataCatchup()
       this.isPlaying = true
     },
 
@@ -1354,7 +1290,7 @@ export const usePlaybackStore = defineStore('playback', {
       // declines to report that end (routes/stream.py's _advance_or_end
       // guards on exactly that) — leaving playback stuck "playing" for
       // good. Reported live 2026-09-05, two /play 143ms apart; see
-      // docs/playback-bugs/track-end-never-reported.md.
+      // docs/investigations/fixed-track-end-never-reported.md.
       //
       // Ahead of everything below, startCurrentGuard included: a duplicate
       // that got as far as begin()ing that guard would invalidate the very
@@ -1577,10 +1513,167 @@ export const usePlaybackStore = defineStore('playback', {
       await this.switchToIndex(index)
     },
 
+    /** One round of the ICY "now playing" poll (services/connect/
+     * radioMetadata.ts): the current station's title, what it has played
+     * since the newest entry already held, and what it broadcasts at.
+     * Pushed from the connect backend's own watch rather than derived
+     * locally, since a plain HTML5 <audio> element never sees any of it.
+     *
+     * Called on a timer from init() and, at a faster cadence, right after a
+     * station starts - see startRadioMetadataCatchup(). A no-op when no
+     * station is playing, so both callers can fire it unconditionally. */
+    pollRadioMetadata(): void {
+      const station = this.radioStation
+      if (!station) return
+      // The newest entry already on screen is what this asks to be
+      // brought up to date from; without one (a station just started, a
+      // reload) the backend hands over its newest page instead. A title
+      // being held back below deliberately does not count as held: it is
+      // not in the log yet, so it keeps being re-delivered until it is,
+      // which costs one entry per poll and needs no buffer of its own.
+      fetchRadioMetadata(this.radioTitleLog[0]?.at)
+        .then((metadata) => {
+          // The station may have changed while this was in flight - a
+          // stale answer for the *previous* one must never overwrite
+          // this one's (already-reset-to-null) title.
+          if (this.radioStation?.streamUrl !== station.streamUrl) return
+          // And the other half of the same question, which this side
+          // cannot answer on its own: whether the *backend* had caught up
+          // with the switch when it answered. It reaches a station on its
+          // own schedule - a relayed station only becomes current there
+          // once this device's player has opened the new stream and the
+          // relay has connected to the station, a second or more after the
+          // click - and until then it answers, correctly for its own
+          // state, with the previous station's title and log. Applied
+          // blindly that put one station's history under another one's
+          // name, and it stayed there: every later poll asks for what is
+          // newer than the newest entry held, so nothing ever replaced it
+          // short of a reload. Reported live 2026-09-07.
+          //
+          // A null url is not a mismatch: it is both "no station current
+          // there" (nothing to apply anyway) and what a connect too old to
+          // send it answers, which must keep working.
+          if (metadata.url !== null && metadata.url !== station.streamUrl) return
+          // Whatever the poll was waiting for has arrived, so the faster
+          // cadence a station start turns on has done its job.
+          stopRadioMetadataCatchup()
+          // Immediately, both of them: they describe the station itself,
+          // not a moment in it, so there is nothing to line them up with.
+          this.radioBitrate = metadata.bitrate
+          this.radioCodec = metadata.codec
+          // Same "describes the station, not a moment in it" reasoning as
+          // the two above — see the relay's own note in routes/radio.py.
+          this.radioRelayBitrate = metadata.relayBitrate
+          this.radioRelayReason = metadata.relayReason
+          this.radioRelayContentType = metadata.relayContentType
+
+          const showTitle = () => {
+            this.radioNowPlaying = metadata.title
+            this.applyRadioTitleDelta(metadata.history)
+          }
+          // Nothing new to line up. The log still moves, unless a title
+          // is being held — then its newest entry is the held one, and
+          // letting it through would put the song on screen in the list
+          // while the line above it still shows the previous one.
+          if (
+            metadata.title === this.radioNowPlaying ||
+            metadata.title === pendingRadioTitle?.title
+          ) {
+            if (pendingRadioTitleTimer === null) this.applyRadioTitleDelta(metadata.history)
+            return
+          }
+
+          // The backend reads the station's tag at the live edge, but
+          // this device is playing out of a buffer that was handed to it
+          // as fast as the network allowed - a station's own
+          // burst-on-connect, or the relay's head start
+          // (connect/core/streamer.py's LOOKAHEAD_SECONDS, measured at
+          // ~15s). Showing the tag when it arrives therefore announces
+          // the next song while the previous one is still audibly
+          // playing. Held back by exactly what this element has buffered
+          // ahead, which is the same number (see the engine's
+          // bufferedAhead).
+          //
+          // Only for local playback: while casting, the buffer that
+          // matters belongs to the speaker and nothing here can measure
+          // it, so a hold would be a guess laid on top of an unknown.
+          //
+          // How much that is in practice, measured live 2026-09-06 on a
+          // relayed station: 2.4s half a minute in, 0.3s twelve minutes
+          // in. Small, and shrinking — the relay delivers at exactly 1x
+          // (core/streamer.py's -readrate), so a player can never build
+          // a lead, and the head start it is handed on connect is spent
+          // for good the first time a stall eats into it. So this
+          // corrects a few seconds early on and almost nothing later,
+          // which is worth having and is not the whole gap: with 2.4s
+          // held, a counted track change still showed 4s before it was
+          // audible. The rest sits between the tag being demuxed on the
+          // relay's *input* side and that audio leaving ffmpeg, and is
+          // not measured yet — see TODO.md before adding a constant for
+          // it.
+          const holdSeconds = this.isCasting
+            ? 0
+            : Math.min(getAudioEngine().bufferedAhead, MAX_RADIO_TITLE_HOLD_SECONDS)
+          if (holdSeconds <= 0) {
+            cancelPendingRadioTitle()
+            showTitle()
+            return
+          }
+          cancelPendingRadioTitle()
+          pendingRadioTitle = { title: metadata.title, url: station.streamUrl }
+          pendingRadioTitleTimer = setTimeout(() => {
+            pendingRadioTitleTimer = null
+            pendingRadioTitle = null
+            // Same guard as above, for the wait rather than the request:
+            // a station change during the hold makes this title somebody
+            // else's.
+            if (this.radioStation?.streamUrl !== station.streamUrl) return
+            showTitle()
+          }, holdSeconds * 1000)
+        })
+        .catch(() => {})
+    },
+
+    /** Polls faster than the 8s interval for as long as it takes the
+     * backend to catch up with a station this device has just started.
+     *
+     * Without it the title log arrives up to a full interval late, and
+     * later than that in the usual (relayed) case: the backend only knows
+     * which station is current once the player has opened the new stream
+     * and the relay has connected to it, so the first poll after a click
+     * is normally still answered for the station before it and dropped.
+     * That read as "the log only appears once the station is buffered",
+     * which is exactly what it was.
+     *
+     * Stops on the first answer that is actually for this station (see
+     * pollRadioMetadata()), and gives up after RADIO_METADATA_CATCHUP_TRIES
+     * either way - a station whose stream never comes up must not leave a
+     * poll running at this rate for as long as it is on screen. */
+    startRadioMetadataCatchup(): void {
+      stopRadioMetadataCatchup()
+      let tries = 0
+      const tick = () => {
+        if (!this.radioStation || ++tries > RADIO_METADATA_CATCHUP_TRIES) {
+          stopRadioMetadataCatchup()
+          return
+        }
+        // Same gate as the interval in init(): a hidden window has nobody
+        // to show a title to, and its return polls on its own.
+        if (pollingAllowed()) this.pollRadioMetadata()
+      }
+      radioMetadataCatchupTimer = setInterval(tick, RADIO_METADATA_CATCHUP_INTERVAL_MS)
+      tick()
+    },
+
     /** Clears the title log and everything that describes how much of it
      * has been fetched. Called wherever a station stops being the current
      * one, which is the moment all three stop meaning anything. */
     resetRadioTitleLog(): void {
+      // Every caller is a station ceasing to be the current one, so a
+      // catch-up still running is one for a station nobody is on any more.
+      // The two callers that go on to start a *new* station arm it again
+      // themselves, after this.
+      stopRadioMetadataCatchup()
       this.radioRelayBitrate = null
       this.radioRelayReason = null
       this.radioRelayContentType = null
@@ -1635,10 +1728,14 @@ export const usePlaybackStore = defineStore('playback', {
       try {
         const page = await fetchRadioTitleHistory(oldest.at)
         // The station may have changed while this was in flight — that
-        // page belongs to a log nobody is looking at any more.
+        // page belongs to a log nobody is looking at any more. Both halves
+        // of it, exactly as the poll checks them: whether this client has
+        // moved on, and whether the backend had already moved on when it
+        // answered (see pollRadioMetadata() for what that window is).
         if (this.radioStation?.streamUrl !== station.streamUrl) return
-        if (page.length) this.radioTitleLog = [...this.radioTitleLog, ...page]
-        if (page.length < RADIO_TITLE_PAGE_SIZE) this.radioTitleLogComplete = true
+        if (page.url !== null && page.url !== station.streamUrl) return
+        if (page.history.length) this.radioTitleLog = [...this.radioTitleLog, ...page.history]
+        if (page.history.length < RADIO_TITLE_PAGE_SIZE) this.radioTitleLogComplete = true
       } catch (error) {
         console.error('[playback] Failed to load older radio titles:', error)
       } finally {

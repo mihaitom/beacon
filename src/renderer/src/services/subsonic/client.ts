@@ -19,7 +19,7 @@ import type {
 } from './types'
 import { mapAlbum, mapArtist, mapPlaylist, mapRadioStation, mapSong } from './mappers'
 import type { Album, Artist, Playlist, RadioStation, Song } from '@/types/library'
-import type { StreamQuality } from '@/services/streamQuality'
+import type { LocalStreamQuality } from '@/services/streamQuality'
 
 const API_VERSION = '1.16.1'
 const APP_NAME = 'beacon'
@@ -137,7 +137,10 @@ export class SubsonicClient {
    * untouched path keeps working exactly as it always has — same URL, same
    * Range handling by the media server itself — instead of gaining a
    * second implementation that has to be kept identical to the first. */
-  streamUrl(songId: string, quality: StreamQuality = { format: 'original', bitrate: 0 }): string {
+  streamUrl(
+    songId: string,
+    quality: LocalStreamQuality = { format: 'original', bitrate: 0 },
+  ): string {
     const params = this.authParams()
     if (this.connectToken) params.set('token', this.connectToken)
     if (this.sessionId) params.set('session', this.sessionId)
@@ -148,7 +151,10 @@ export class SubsonicClient {
       if (this.connectToken) transcodeParams.set('token', this.connectToken)
       if (this.sessionId) transcodeParams.set('session', this.sessionId)
       transcodeParams.set('fmt', quality.format)
-      transcodeParams.set('br', String(quality.bitrate))
+      // No bitrate for the lossless rescue, and connect rejects one rather
+      // than ignoring it: there is no number that would mean anything here
+      // (see LOSSLESS_FORMAT in connect/routes/local_stream.py).
+      if (quality.format !== 'flac') transcodeParams.set('br', String(quality.bitrate))
       return `${this.proxyBaseUrl}/stream/local/${encodeURIComponent(songId)}?${transcodeParams.toString()}`
     }
     params.set('id', songId)

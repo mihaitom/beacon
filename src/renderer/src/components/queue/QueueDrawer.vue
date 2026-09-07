@@ -1,18 +1,32 @@
 <template>
-  <!-- `temporary` so this floats over the main content instead of pushing/
-   - resizing it (Vuetify's default non-temporary drawer reserves layout
-   - space, which reflowed every view underneath every time this opened/
-   - closed) — `persistent` keeps it open across navigation and on an
-   - outside click regardless, and `scrim="false"` drops the darkening
-   - backdrop `temporary` would otherwise add, since the point is to keep
-   - browsing the rest of the app comfortably while this stays open. -->
+  <!-- Part of the layout rather than floating over it: the page beside it
+   - gives up the width this takes and lays itself out in what is left, the
+   - way the navigation rail on the other side already does. It used to be
+   - `temporary` (floating, with the scrim switched off), on the reasoning
+   - that reflowing every view underneath was too much to ask of a drawer
+   - that comes and goes — but it does not come and go any more. It is the
+   - only drawer left and it stays where it was put, across navigation and
+   - across restarts (see services/queueDrawerSetting.ts), and something
+   - that floats over the page permanently covers what is under it
+   - permanently.
+   -
+   - `permanent` is Vuetify's word for exactly that, and it is what makes it
+   - hold at every window size: a plain layout drawer goes back to being
+   - temporary on its own below the `mobile` breakpoint (1280px by default,
+   - an ordinary desktop window), and the resize watcher that comes with it
+   - then opens and closes the drawer as the window crosses that line. This
+   - is the desktop shell; the phone has its own (views/mobile/), and no
+   - width of this window should change what this drawer is.
+   -
+   - It still opens and closes: `permanent` decides what the drawer *is*
+   - (part of the layout, never floating), `model-value` decides whether it
+   - is out — Vuetify's own docs describe permanent drawers as always
+   - visible because that is what they do when nothing is bound to them. -->
   <v-navigation-drawer
     :model-value="modelValue"
     location="right"
-    width="380"
-    temporary
-    persistent
-    :scrim="false"
+    :width="DRAWER_WIDTH"
+    permanent
     color="#0B0D13"
     class="beacon-drawer"
     @update:model-value="$emit('update:modelValue', $event)"
@@ -104,7 +118,10 @@
          - lifecycle own the property changes sidesteps both problems
          - directly instead of re-solving them by hand. -->
         <!-- No `appear`, deliberately — see below for why, and for what
-         - this costs. -->
+         - this costs. Tried again on 2026-09-07 and reverted the same day:
+         - see docs/investigations/queue-reveal-first-open.md for what was
+         - measured, what the measurement was mistaken for, and why the
+         - workaround is still the shipped behaviour. -->
         <!-- `appear` used to be bound to queueRevealSeq > 0, so a peek that's
          - *also* the drawer's first-ever open (DefaultLayout.vue doesn't
          - mount this component at all until the drawer first opens — see its
@@ -253,6 +270,22 @@ const ROW_ENTER_TRANSITION_MS = 300
 // uses this to work out how long its whole staggered fade-out takes.
 const CLEARING_FADE_MS = 250
 
+// Wider than the 380 it opened at until now. That number came from a time
+// when this shared the screen with a second drawer; it is the only one
+// left, it is meant to stay open beside the library (see
+// services/queueDrawerSetting.ts), and at 380 a row spent its width on the
+// title alone - the artist underneath it was clipped for most tracks.
+//
+// A plain figure rather than a share of the window: this is also the width
+// the layout takes away from the page beside it (see the template), so a
+// queue row stays the same size whatever the window does and only the page
+// next to it gives and takes. Capping it in CSS for a narrow window is not
+// the answer either - Vuetify reserves *this* number for the drawer
+// whatever the element then measures, so a cap would only open a gap
+// between the two. A window too narrow for both is a window to close the
+// drawer in.
+const DRAWER_WIDTH = 400
+
 export default {
   name: 'QueueDrawer',
   components: { QueueRow },
@@ -308,6 +341,7 @@ export default {
     }
   },
   computed: {
+    DRAWER_WIDTH: () => DRAWER_WIDTH,
     playbackStore() {
       return usePlaybackStore()
     },

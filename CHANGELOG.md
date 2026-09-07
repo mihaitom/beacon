@@ -27,6 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The Remote Control button in the player bar now shows how many phones are connected and opens the pairing code again, and switching Remote Control off moved into that window
 - The full-size artwork view now dims the rest of the window much further, so the picture is what you are looking at rather than a dialog over a lit page
 - The grid button above a row of cards is now greyed out when the row already shows everything it has, on Favorites, Search and an artist's albums
+- The country filter in "Discover stations" now lists the countries you picked before at the top, above a divider, so the ones you listen to are not buried in a list of some 250
+- The queue drawer is now part of the window rather than something floating over it: the page beside it makes room for it and lays itself out in what is left, the way the navigation rail on the other side already does. It also stays where you left it - across pages and across restarts, instead of starting closed every time - and is a little wider, long enough for an artist name to fit next to the track it belongs to
 
 ### Removed
 
@@ -35,15 +37,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- A radio station's logo is now also looked for in the station site's app manifest, which is where a site tends to keep the large version of it, so some stations show a sharper logo than before
+- A station added from "Discover stations" that has no homepage of its own now shows its logo in the radio list too, not only in the player bar
+- Switching radio stations quickly could put the previous station's played titles under the new station's name, where they stayed until the app was reloaded
+- A station's played titles now show up as soon as the station itself is up, instead of up to eight seconds after it
 - Both audio-quality settings now apply to internet radio as well, on this device and when casting: a station broadcasting above the limit you picked is brought down to it, one already below it is passed through untouched, and the stream panel says which of the two happened. A station that already sends AAC now reaches the speaker exactly as it left the station, whether you picked AAC or left the setting on Original; it used to be converted to MP3 on the way. Stations sent straight to the device are still untouched by both settings, since there is nothing in between to convert them
 - Switching to a speaker while a song is already playing now applies the cast audio quality to that song too. It used to reach the speaker untouched, and the setting only appeared to take hold from the next track on
 - Casting to an AirPlay device with the quality set to AAC played nothing at all, since such a device cannot decode AAC. Beacon now converts to a format the device on the other end really plays
 - Casting with the quality set to AAC now works in the Docker version. The media tool bundled there was built without an AAC encoder, so the cast failed as soon as a track needed converting; the desktop app was never affected, since it uses the one installed on your machine
-- A recording in a format the browser cannot open is now converted for it on this device too, which Safari needed and never got: an Ogg Vorbis track stayed silent there even with an audio quality set
+- A recording in a format the browser cannot open is now converted for it on this device too, which Safari needed and never got: an Ogg Vorbis track stayed silent there, and so did an ALAC or APE one everywhere. That now holds whatever the audio quality is set to, Original included - there it is rewrapped as FLAC, so every bit of the original is kept and only the wrapper changes
 - A library scan now keeps running in view after you leave Settings: it is followed to the end wherever you are, the finished scan's results show up without a restart, and coming back to Settings picks up a scan that is still going
 - The "Rescan library" button in Settings no longer changes size while it runs, and it now shows how far the scan has got: the ring in the button fills up where your server reports a percentage (Jellyfin, Plex) and keeps turning where it only counts files (Navidrome), with the figure beside it either way
 - The line above the rescan button named Navidrome even when signed in to Jellyfin or Plex; it now names the server the scan will actually run on
 - A connection lost after pausing and resuming is now reconnected like any other. Pausing used to stand down the automatic reconnect for good, so a song or a station that dropped after the pause simply stopped
+- A brief hiccup between Beacon and your media server no longer cuts a track short. It is picked back up where it left off, on this device and while casting alike
+- Casting an ALAC or APE track and resuming it from the middle produced no sound at all. It now plays from wherever it was picked up
 - Now Playing no longer scrolls in a phone browser: the page is sized to what is actually visible, so the artwork stays put instead of sliding out of view above the browser's own toolbar
 - Now Playing remembers whether the lyrics, or a station's title list, were open, so leaving that screen and coming back shows them again instead of the plain artwork
 - A very long radio title no longer pushes the artwork out of view on Now Playing; it is shortened with an ellipsis, and the full title stays in the station's title list

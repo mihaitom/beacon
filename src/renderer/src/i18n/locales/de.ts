@@ -309,7 +309,7 @@ export default {
         quality_limit: 'Qualitätsgrenze',
         browser_unsupported: 'Browser-Format',
         device_rejected_stream: 'Gerät abgelehnt',
-        relay_mp3_only: 'Für das Gerät umgewandelt',
+        relay_format_limit: 'Für das Gerät umgewandelt',
       },
       reasons: {
         device_limit: 'Quelle liegt über der Qualität, die dieses Gerät unterstützt',
@@ -322,7 +322,7 @@ export default {
         browser_unsupported: 'Quellformat kann vom Browser nicht abgespielt werden',
         device_rejected_stream:
           'Das Gerät hat den Stream des Senders abgelehnt, Beacon wandelt ihn deshalb um',
-        relay_mp3_only:
+        relay_format_limit:
           'Der Sender liefert kein Format, das so weitergereicht wird, deshalb wandelt Beacon ihn um - unter Audioqualität lässt sich statt MP3 auch AAC wählen',
       },
     },

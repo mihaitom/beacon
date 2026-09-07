@@ -133,7 +133,7 @@ class ChromecastDelivery(BaseDelivery):
     # target (Google's own Default Media Receiver's real ceiling isn't
     # published as clearly), but a documented number beats a guess, and
     # it's the more permissive end of what's out there rather than the
-    # restrictive one — see docs/playback-bugs/copy-tier-device-limits.md,
+    # restrictive one — see docs/investigations/copy-tier-device-limits.md,
     # for why guessing wrong in the *restrictive* direction is the one that
     # actually breaks playback.
     MAX_SAMPLE_RATE_HZ: int | None = 96000

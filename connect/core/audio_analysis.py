@@ -45,7 +45,7 @@ there's nothing to seek to, only "start decoding from here, now". AirPlay
 used to be excluded here too, on two grounds that both turned out not to
 hold up: it
 was believed to push a whole track into the device ahead of time (fixed
-2026-08-26 — see docs/playback-bugs/fixed-airplay-silent-death.md, the
+2026-08-26 — see docs/investigations/fixed-airplay-silent-death.md, the
 _ResponseReader half — AirPlay streams incrementally like everything else
 now), and its playback clock was a fixed estimate rather than something
 calibrated against playback. The second stopped being true as well when

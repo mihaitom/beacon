@@ -55,6 +55,10 @@ const BOTTOM_HALF = { clientY: 1 }
 describe('QueueDrawer', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    // The drawer's open state is remembered now (see
+    // services/queueDrawerSetting.ts), so one test's drawer would open the
+    // next one's.
+    localStorage.clear()
   })
 
   afterEach(() => {

@@ -121,6 +121,47 @@ def test_every_lossy_format_is_offered_here(client, default_session):
     assert set(local_stream.ALLOWED_BITRATES) == {"mp3", "aac", "opus"}
 
 
+def test_the_lossless_format_is_offered_without_a_bitrate(client, default_session):
+    """Original's answer for a source the browser cannot decode. A bitrate
+    for it would be a number with nothing to mean — see LOSSLESS_FORMAT."""
+    response, cmd = _request(client, default_session, "/stream/local/1?fmt=flac")
+
+    assert response.status_code == 200
+    assert cmd[cmd.index("-acodec") + 1] == "flac"
+    assert "-b:a" not in cmd
+    # Not resampled either: a device's sample-rate limit is what that is
+    # for, and a browser has none.
+    assert "-ar" not in cmd
+
+
+def test_a_bitrate_alongside_the_lossless_format_is_rejected(client, default_session):
+    """Rejected rather than ignored: a caller sending one has misunderstood
+    something, and answering anyway hides it."""
+    response, _ = _request(client, default_session, "/stream/local/1?fmt=flac&br=192")
+
+    assert response.status_code == 400
+
+
+def test_a_missing_bitrate_is_still_rejected_for_a_lossy_format(client, default_session):
+    """br only became optional so flac could do without it. Leaving it off
+    an mp3 request is still a caller that has not said what it wants."""
+    response, _ = _request(client, default_session, "/stream/local/1?fmt=mp3")
+
+    assert response.status_code == 400
+
+
+def test_the_lossless_format_declares_no_length_to_seek_against(client, default_session):
+    """FLAC's output size is unknowable ahead of the encode, so there is no
+    `bitrate x duration` to declare and nothing for a media element to seek
+    against. The one thing that must never happen is a plausible-looking
+    number here."""
+    response, _ = _request(client, default_session, "/stream/local/1?fmt=flac")
+
+    assert response.headers.get("content-length") is None
+    assert "accept-ranges" not in response.headers
+    assert response.headers["content-type"].startswith("audio/flac")
+
+
 @pytest.mark.parametrize("fmt", ["mp3", "aac", "opus"])
 def test_each_format_reaches_ffmpeg_with_its_own_encoder(fmt, client, default_session):
     """The bitrates differ per format, so each one is asked for at a value
@@ -163,6 +204,25 @@ def test_the_encode_is_not_paced(client, default_session):
     _, cmd = _request(client, default_session, f"/stream/local/1?fmt=mp3&br={_BR}")
 
     assert "-readrate" not in cmd
+
+
+def test_a_dropped_source_connection_is_picked_back_up_inside_ffmpeg(client, default_session):
+    """Without this, one dropped TCP connection to the media server ends the
+    encode, and the browser sees a stream that simply finished — recoverable
+    (the frontend's endedEarly() does it) but audible, and audible in the
+    one place that has no buffer to hide it: the start of a track."""
+    _, cmd = _request(client, default_session, f"/stream/local/1?fmt=mp3&br={_BR}")
+
+    assert cmd[cmd.index("-reconnect") + 1] == "1"
+    assert cmd[cmd.index("-reconnect_on_network_error") + 1] == "1"
+    assert cmd[cmd.index("-reconnect_delay_max") + 1] == "5"
+    # Input options — after -i they would be output options and ffmpeg
+    # would reject the command outright.
+    assert cmd.index("-reconnect") < cmd.index("-i")
+    # Never -reconnect_streamed: on a source that cannot resume at an
+    # offset it reconnects without a Range and replays from the top, into
+    # the middle of an encode that was already minutes in.
+    assert "-reconnect_streamed" not in cmd
 
 
 def test_a_source_of_unknown_duration_still_plays(client, default_session):

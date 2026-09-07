@@ -117,7 +117,7 @@ class TestDeviceOutputArgs:
         assert bitrate == 256
         # The relay hands every device MP3 — not a claim about what the
         # device could have played.
-        assert reason == "relay_mp3_only"
+        assert reason == "relay_format_limit"
 
     def test_guesses_high_for_a_station_that_never_said_its_bitrate(self):
         args, _, bitrate, _ = _device_output_args("audio/aacp")
@@ -201,7 +201,7 @@ class TestDeviceOutputArgs:
         args, content_type, _, reason = _device_output_args("audio/aacp", 256, None, "mp3")
         assert "libmp3lame" in args
         assert content_type == "audio/mpeg"
-        assert reason == "relay_mp3_only"
+        assert reason == "relay_format_limit"
 
     def test_still_re_encodes_a_non_mp3_station_over_the_ceiling(self):
         args, _, _, reason = _device_output_args("audio/aacp", 256, 96)

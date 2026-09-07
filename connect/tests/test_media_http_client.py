@@ -5,7 +5,7 @@ The point of the module is connection *reuse*: `httpx.get()` per call builds
 a client, resolves DNS, does a TLS handshake and throws it all away, which
 under a library-browsing burst was enough to overrun the host's DNS stub and
 take a cast session down with it (see
-docs/playback-bugs/fixed-slow-media-lookup-froze-streaming.md).
+docs/investigations/fixed-slow-media-lookup-froze-streaming.md).
 """
 
 import httpx

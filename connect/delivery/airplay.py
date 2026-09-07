@@ -367,7 +367,7 @@ class AirPlayDelivery(BaseDelivery):
                     # dying closes it and routes/stream.py sees the absence.
                     # AirPlay is pushed to, and a failed push is the only
                     # trace there is — which is why this used to be a silent
-                    # death (see docs/playback-bugs/airplay-silent-death.md).
+                    # death (see docs/investigations/fixed-airplay-silent-death.md).
                     #
                     # Reported without a grace period, deliberately, unlike
                     # _mark_disconnected_if_not_reconnected()'s 10s wait: a

@@ -12,6 +12,10 @@ import { makeSong } from './fixtures'
 describe('playSongList peeking', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    // The drawer's open state is remembered now (see
+    // services/queueDrawerSetting.ts), so a peek in one test would leave
+    // the next one's drawer open before it started.
+    localStorage.clear()
   })
 
   it('peeks in the same tick as the queue mutation, before awaiting the track start', async () => {

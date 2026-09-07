@@ -312,7 +312,7 @@ export default {
         quality_limit: 'Limite di qualità',
         browser_unsupported: 'Formato browser',
         device_rejected_stream: 'Rifiutato',
-        relay_mp3_only: 'Convertita per il dispositivo',
+        relay_format_limit: 'Convertita per il dispositivo',
       },
       reasons: {
         device_limit: 'La sorgente supera la qualità supportata da questo dispositivo',
@@ -326,7 +326,7 @@ export default {
         browser_unsupported: 'Il browser non può riprodurre il formato di origine',
         device_rejected_stream:
           "Il dispositivo ha rifiutato il flusso originale dell'emittente, quindi Beacon lo converte",
-        relay_mp3_only:
+        relay_format_limit:
           'La stazione non invia un formato che si possa inoltrare così com’è, quindi Beacon la converte; in Qualità audio puoi scegliere AAC invece di MP3',
       },
     },

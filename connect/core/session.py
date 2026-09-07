@@ -25,7 +25,15 @@ from .device_volume import pushes_volume
 from .loop_health import peak_lag
 from .radio_position import RadioPositionTracker
 from .radio_relay import RadioRelay
-from .state import AppState, EventBus, delivery_class_for, list_target_pairs, stream_url
+from .state import (
+    AppState,
+    EventBus,
+    delivery_class_for,
+    list_target_pairs,
+    radio_dispatch_url,
+    stream_url,
+    supports_radio_position,
+)
 from .visualizer_feed import ASSUMED_DEVICE_LEAD_SECONDS, VisualizerFeed
 
 logger = logging.getLogger("connect.session")
@@ -673,6 +681,11 @@ def build_status_dict(
         }
 
     targets = []
+    # What a device would be handed for the station playing right now — the
+    # Sonos half of supports_radio_position() depends on it (see
+    # core/state.py). Empty when no station is playing, which is also when
+    # the flag it feeds means nothing to anybody.
+    radio_url = radio_dispatch_url(session.session_id, st.radio_info) if st.radio_info else ""
     for target_type, name in list_target_pairs(st.active_delivery):
         volume, muted = st.device_volumes.get(f"{target_type}:{name}", (None, None))
         targets.append(
@@ -686,6 +699,18 @@ def build_status_dict(
                 # not per type: two DLNA renderers differ on whether they
                 # accept a subscription at all. See core/device_volume.py.
                 "volume_push": pushes_volume(target_type, name),
+                # Whether this device's own reported position is worth
+                # watching for a *station* — what makes the radio
+                # visualizer and the buffering indicator possible for a
+                # cast (see core/radio_position.py). Reported rather than
+                # left to the client to work out: the frontend used to keep
+                # its own copy of the delivery-type list in
+                # stores/connect.ts, hand-synced with core/state.py's, with
+                # nothing to catch the two drifting apart — and the copy
+                # could not have known about the Sonos-while-relayed
+                # exception at all, since that depends on the URL this
+                # session is dispatching.
+                "supports_radio_position": supports_radio_position(target_type, radio_url),
             }
         )
 
@@ -1024,7 +1049,7 @@ async def reap_once() -> list[str]:
         # speaker stopped — proven on the wire, our Stop at 00:27:50.133 UTC
         # and the device's FIN 840ms later. From the outside that is
         # indistinguishable from the unexplained drops in
-        # docs/playback-bugs/mid-track-drop-symptom.md, which is how it went
+        # docs/investigations/mid-track-drop-symptom.md, which is how it went
         # unnoticed.
         #
         # Whatever is still streaming is by definition not abandoned, so it

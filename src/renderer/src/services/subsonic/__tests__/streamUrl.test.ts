@@ -24,6 +24,17 @@ describe('SubsonicClient.streamUrl', () => {
     expect(url.searchParams.get('session')).toBe('session-1')
   })
 
+  it('sends no bitrate for the lossless rescue', () => {
+    // connect rejects one rather than ignoring it — there is no number
+    // that would mean anything for a FLAC encode. See LOSSLESS_FORMAT in
+    // connect/routes/local_stream.py.
+    const url = new URL(client.streamUrl('song-1', { format: 'flac', bitrate: 0 }))
+
+    expect(url.pathname).toBe('/stream/local/song-1')
+    expect(url.searchParams.get('fmt')).toBe('flac')
+    expect(url.searchParams.has('br')).toBe(false)
+  })
+
   it('treats an explicit "original" the same as no preference at all', () => {
     expect(client.streamUrl('song-1', { format: 'original', bitrate: 192 })).toBe(
       client.streamUrl('song-1'),

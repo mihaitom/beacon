@@ -151,7 +151,7 @@ class DlnaDelivery(BaseDelivery):
 
     SUPPORTS_POSITION: bool = True
     # "Varies per renderer" is the honest answer (see
-    # docs/playback-bugs/copy-tier-device-limits.md) — DLNA covers
+    # docs/investigations/copy-tier-device-limits.md) — DLNA covers
     # everything from budget soundbars to full AV receivers, with no
     # single real spec ceiling the way Sonos/Chromecast Audio publish one.
     # Reuses Sonos' own 24-bit/48kHz as the least-surprising shared

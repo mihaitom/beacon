@@ -107,14 +107,19 @@ one, not the development history in between:
   Added/Changed entry instead so it describes the end state.
 - Entries are non-technical: what a user can see, not which function changed.
 
-### docs/playback-bugs/
+### docs/investigations/
 
-Playback is the part that has produced the most whack-a-mole, so every hard
-bug leaves a file behind - **including the theories that were ruled out**,
-which is the most valuable part of an entry. Start there before investigating
-anything about streaming, casting or the playback clock. A bug that was found
-on first look does not need an entry. Keep those docs anonymous: no IPs, no
-real speaker or room names ("room A", "room B").
+Every case that cost more than an afternoon leaves a file behind -
+**including the theories that were ruled out**, which is the most valuable
+part of an entry. Read `docs/investigations/README.md` before investigating
+anything about streaming, casting or the playback clock; most of the folder
+is playback, and it is where the dead ends are recorded.
+
+It is not restricted to playback, or to bugs: a measurement series, an
+approach that was tried and dropped, a decision nobody will reconstruct from
+the diff belongs there too. A bug that was found on first look does not need
+an entry. Keep those docs anonymous: no IPs, no real speaker or room names
+("room A", "room B").
 
 ## Working agreements
 

@@ -205,14 +205,16 @@ export class AudioEngine {
   // file needs neither: it has a length, the element seeks within it, and
   // its currentTime already is the position.
   //
-  // Applied to onBufferedChange as well, and that is not a detail: the
-  // element's `buffered` ranges are in its own time, while everything the
-  // seek bar draws them alongside — the playhead, the track length — is in
-  // reported time. A live stream never renders the band at all
-  // (RadioLiveStatus.vue takes the whole seek bar's place for one), but a
-  // transcode does, and reporting an offset stream's buffer unshifted put
-  // the band three minutes behind the playhead, where SongWaveform.vue's
-  // own clamp then hid it entirely.
+  // Applied to onBufferedChange as well, for the one kind of stream that
+  // still reports one: the element's `buffered` ranges are in its own
+  // time, while everything the seek bar draws them alongside — the
+  // playhead, the track length — is in reported time, and reporting them
+  // unshifted put the band three minutes behind the playhead, where
+  // SongWaveform.vue's own clamp then hid it entirely. Neither kind of
+  // offset stream draws a band today (a live one has the whole seek bar
+  // replaced by RadioLiveStatus.vue, and a transcode's `buffered` says
+  // nothing useful — see reportBuffered()), so the shift is there for the
+  // reported position rather than for the band.
   private positionOffset = 0
   // The track's real length, for an offset stream that carries none of its
   // own (see playFrom()). Only ever used to tell a stream that ended from
@@ -395,8 +397,27 @@ export class AudioEngine {
    * would draw a buffered band in the wrong place, or one that extends
    * past a gap the playhead would actually stall at. Reports 0 when
    * nothing covers the current position (nothing buffered there yet, most
-   * often right after a reconnectOnDrop() retry). */
+   * often right after a reconnectOnDrop() retry), which the seek bar draws
+   * as no band at all.
+   *
+   * Nothing at all for an offset stream, where 0 means "not knowable"
+   * rather than "nothing held". A transcode is served without a length
+   * (see playFrom()), so the browser has no way to map the bytes it is
+   * holding onto seconds, and what `buffered` reports there is only how
+   * far the demuxer has parsed ahead of the playhead — measured against
+   * Chromium 151, it sat at a flat 2.3-2.4s for the entire length of a
+   * track, at 192k mp3 and at 128k opus alike, while the browser was in
+   * fact holding around 9.5 MiB of that stream: seven minutes of audio at
+   * either bitrate, enough to play an 18-second network outage straight
+   * through without a single 'waiting' event. A band that says two
+   * seconds while seven minutes are in hand is not a smaller truth, it is
+   * the wrong one — and it is wrong in the direction that makes a healthy
+   * stream look like it is about to run dry. */
   private reportBuffered(): void {
+    if (this.offsetStream) {
+      this.onBufferedChange?.(0)
+      return
+    }
     const { buffered, currentTime } = this.audio
     let end = 0
     for (let i = 0; i < buffered.length; i++) {

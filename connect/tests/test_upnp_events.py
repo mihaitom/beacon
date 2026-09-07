@@ -572,6 +572,7 @@ async def test_notify_broadcasts_the_updated_status_with_the_new_volume(client, 
             "volume": 42,
             "muted": False,
             "volume_push": False,
+            "supports_radio_position": True,
         }
     ]
 
@@ -785,7 +786,14 @@ async def test_a_pushing_device_says_so_in_the_status(client, default_session):
 
     before = build_status_dict(default_session)["targets"]
     assert before == [
-        {"name": "Wohnzimmer", "type": "dlna", "volume": None, "muted": None, "volume_push": False}
+        {
+            "name": "Wohnzimmer",
+            "type": "dlna",
+            "volume": None,
+            "muted": None,
+            "volume_push": False,
+            "supports_radio_position": True,
+        }
     ]
 
     mark_pushes_volume("dlna", "Wohnzimmer")

@@ -511,7 +511,7 @@ async def _finish_orphaned_track(session: SessionState, generation: int) -> bool
     does. Observed live 2026-09-05: `ended` never reached the frontend, so
     isPlaying stayed true, the visualizer froze on its last frame, and this
     very resync loop was still polling a stopped speaker five minutes past a
-    229s track. See docs/playback-bugs/track-end-never-reported.md.
+    229s track. See docs/investigations/fixed-track-end-never-reported.md.
 
     Rather than teach that guard to distinguish the two cases (it cannot -
     from inside the generator, "superseded but still feeding" and
@@ -785,7 +785,7 @@ def playback_error_reporter(session: SessionState) -> Callable[[str], Awaitable[
     the same thing. For a multi-target one they are not, and the session
     would be marked interrupted while the other devices play on. That gap
     is the same one documented in
-    docs/playback-bugs/multi-target-partial-drop-not-surfaced.md, which
+    docs/investigations/multi-target-partial-drop-not-surfaced.md, which
     _mark_disconnected_if_not_reconnected() has for the same reason: there
     is no per-device notion of "streaming" to flip. Reporting a real
     failure against the session beats today's alternative of not reporting

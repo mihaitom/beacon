@@ -470,7 +470,7 @@ async def _resume_after_interruption(session: SessionState) -> bool:
     reaction so far was to mark the session not-streaming and go quiet - the
     music simply ended and stayed ended. Whatever makes these speakers stop
     has resisted a full day of investigation (see
-    docs/playback-bugs/mid-track-drop-symptom.md; the cause is outside this
+    docs/investigations/mid-track-drop-symptom.md; the cause is outside this
     codebase), so the useful thing left to do is to
     stop letting it end the session.
 

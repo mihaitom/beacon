@@ -54,6 +54,7 @@ describe('radioMetadata', () => {
     it('resolves to the title, log and stream info the backend reports', async () => {
       const history = [{ title: 'Artist - Track', at: 1_757_000_000 }]
       vi.mocked(fetchConnect).mockResolvedValue({
+        url: 'http://station',
         title: 'Artist - Track',
         history,
         bitrate: 320,
@@ -64,6 +65,7 @@ describe('radioMetadata', () => {
       })
 
       await expect(fetchRadioMetadata()).resolves.toEqual({
+        url: 'http://station',
         title: 'Artist - Track',
         history,
         bitrate: 320,
@@ -77,6 +79,7 @@ describe('radioMetadata', () => {
 
     it('resolves to an empty log when nothing has been seen yet', async () => {
       vi.mocked(fetchConnect).mockResolvedValue({
+        url: null,
         title: null,
         history: [],
         bitrate: null,
@@ -87,6 +90,7 @@ describe('radioMetadata', () => {
       })
 
       await expect(fetchRadioMetadata()).resolves.toEqual({
+        url: null,
         title: null,
         history: [],
         bitrate: null,
@@ -138,6 +142,9 @@ describe('radioMetadata', () => {
       vi.mocked(fetchConnect).mockResolvedValue({ title: 'Artist - Track' })
 
       await expect(fetchRadioMetadata()).resolves.toEqual({
+        // Which is exactly why a *missing* station is not treated as a
+        // mismatch by the poll that reads this — see RadioMetadata.url.
+        url: null,
         title: 'Artist - Track',
         history: [],
         bitrate: null,
@@ -152,9 +159,12 @@ describe('radioMetadata', () => {
   describe('fetchRadioTitleHistory', () => {
     it('asks for one page older than the oldest entry held', async () => {
       const page = [{ title: 'Artist - Older', at: 1_756_000_000 }]
-      vi.mocked(fetchConnect).mockResolvedValue({ history: page })
+      vi.mocked(fetchConnect).mockResolvedValue({ url: 'http://station', history: page })
 
-      await expect(fetchRadioTitleHistory(1_757_000_000.5)).resolves.toEqual(page)
+      await expect(fetchRadioTitleHistory(1_757_000_000.5)).resolves.toEqual({
+        url: 'http://station',
+        history: page,
+      })
 
       expect(fetchConnect).toHaveBeenCalledWith(
         `/radio-metadata/history?before=1757000000.5&limit=${RADIO_TITLE_PAGE_SIZE}`,
@@ -164,7 +174,10 @@ describe('radioMetadata', () => {
     it('reads an answer with no history at all as the end of the log', async () => {
       vi.mocked(fetchConnect).mockResolvedValue({})
 
-      await expect(fetchRadioTitleHistory(1_757_000_000)).resolves.toEqual([])
+      await expect(fetchRadioTitleHistory(1_757_000_000)).resolves.toEqual({
+        url: null,
+        history: [],
+      })
     })
   })
 })

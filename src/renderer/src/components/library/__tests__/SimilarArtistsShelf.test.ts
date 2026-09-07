@@ -146,7 +146,7 @@ describe('SimilarArtistsShelf', () => {
     const wrapper = mountShelf([], true)
     await nextTick()
 
-    expect(wrapper.findAll('.similar-artists-card')).toHaveLength(6)
+    expect(wrapper.findAll('.similar-artists-card')).toHaveLength(15)
   })
 
   it('hides itself entirely when the lookup came back with nobody', () => {

@@ -255,8 +255,36 @@ def test_play_with_paused_claims_the_target_without_dispatching(client, default_
     assert compute_position(default_session) == 42.0
     assert claims.owner_of("chromecast", "TV") == default_session.session_id
     assert build_status_dict(default_session)["targets"] == [
-        {"name": "TV", "type": "chromecast", "volume": None, "muted": None, "volume_push": False}
+        {
+            "name": "TV",
+            "type": "chromecast",
+            "volume": None,
+            "muted": None,
+            "volume_push": False,
+            "supports_radio_position": True,
+        }
     ]
+
+
+def test_status_says_a_relayed_sonos_has_no_radio_position_to_watch(client, default_session):
+    """The half of this the frontend could never have worked out for
+    itself, back when it kept its own list of capable device types:
+    delivery/sonos.py rewrites a Beacon-hosted station onto
+    x-rincon-mp3radio://, and a Sonos dispatched that way reports a flat
+    0.00s — a fact about the URL this session is dispatching, not about
+    Sonos. See core/state.py's supports_radio_position()."""
+    from delivery import SonosDelivery
+
+    st = default_session.state
+    st.active_delivery = SonosDelivery("Küche")
+
+    st.radio_info = {"url": "http://stream.example.com/live.mp3", "relayed": True}
+    assert build_status_dict(default_session)["targets"][0]["supports_radio_position"] is False
+
+    # The same speaker, the same station, sent straight to the device
+    # (PlayUrlRequest.cast_directly): plain http://, and a real position.
+    st.radio_info = {"url": "http://stream.example.com/live.mp3"}
+    assert build_status_dict(default_session)["targets"][0]["supports_radio_position"] is True
 
 
 def test_resume_dispatches_a_target_claimed_by_a_paused_play(client, default_session):

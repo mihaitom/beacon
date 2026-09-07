@@ -43,7 +43,7 @@
            - the search box next to it wants. -->
           <v-autocomplete
             v-model="browseCountry"
-            :items="countryOptions"
+            :items="countryItems"
             item-title="name"
             item-value="code"
             :label="$t('radio.discoverCountryLabel')"
@@ -52,7 +52,15 @@
             hide-details
             clearable
             class="discover-filters__country"
-          />
+          >
+            <!-- The recently picked countries sit above this one, the full
+             - alphabetical list below it. Own slot only for the spacing:
+             - a bare divider between two dense list rows reads as a line
+             - somebody drew through the list rather than as a break. -->
+            <template #divider>
+              <v-divider class="discover-country-divider" />
+            </template>
+          </v-autocomplete>
         </div>
         <segmented-control
           :model-value="browseOrder"
@@ -299,6 +307,56 @@ function loadSavedBrowseCountry(): string {
   }
 }
 
+// The countries picked before this one, most recent first, pinned above
+// the alphabetical list. Five, not more: the point is that the two or
+// three countries somebody actually listens to are one glance away, and a
+// longer block would push the alphabetical list off the first screen of
+// the menu - at which point every pick needs scrolling again.
+const RECENT_COUNTRY_LIMIT = 5
+const RECENT_COUNTRIES_STORAGE_KEY = 'beacon.radioDiscoverRecentCountries'
+
+function loadRecentCountries(): string[] {
+  try {
+    const raw = localStorage.getItem(accountScopedKey(RECENT_COUNTRIES_STORAGE_KEY))
+    const parsed: unknown = raw ? JSON.parse(raw) : []
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((code): code is string => typeof code === 'string' && code !== '')
+      .slice(0, RECENT_COUNTRY_LIMIT)
+  } catch {
+    // Same as loadSavedBrowseCountry() below - an unreadable list costs
+    // the shortcut, nothing else.
+    return []
+  }
+}
+
+/** The list with `code` moved to the front, capped at RECENT_COUNTRY_LIMIT.
+ * Pure so that both the initial read in data() and every later selection go
+ * through the same rule; an empty code (the picker's clear button) leaves
+ * the list alone rather than emptying it - "no country filter" is not a
+ * country somebody picked. */
+function withRecentCountry(codes: string[], code: string | null): string[] {
+  if (!code) return codes
+  return [code, ...codes.filter((existing) => existing !== code)].slice(0, RECENT_COUNTRY_LIMIT)
+}
+
+/** The break between the pinned block and the alphabetical list.
+ * `type: 'divider'` is Vuetify's own item shape for this; name/code are
+ * empty only so that the title/value it derives from every item stay out
+ * of the rendered element's attributes. Vuetify drops the divider by
+ * itself while typing filters the list down to one side of it. */
+type CountryDividerItem = { type: 'divider'; name: ''; code: '' }
+const COUNTRY_DIVIDER: CountryDividerItem = { type: 'divider', name: '', code: '' }
+
+function saveRecentCountries(codes: string[]): void {
+  try {
+    localStorage.setItem(accountScopedKey(RECENT_COUNTRIES_STORAGE_KEY), JSON.stringify(codes))
+  } catch {
+    // Storage full/unavailable - the pinned block still works for this
+    // session, it just starts empty next time.
+  }
+}
+
 function saveBrowseCountry(code: string | null): void {
   try {
     // The autocomplete's own clear button sets the model to null rather
@@ -356,6 +414,10 @@ export default {
       // filter persists across dialog opens (and app restarts) while the
       // query text and order toggle deliberately start fresh each time.
       browseCountry: loadSavedBrowseCountry() as string | null,
+      // Seeded with the persisted selection folded in, so the country that
+      // was already the active filter before this list existed shows up
+      // pinned right away instead of only after being re-picked once.
+      recentCountryCodes: withRecentCountry(loadRecentCountries(), loadSavedBrowseCountry()),
       browseOrder: DEFAULT_BROWSE_ORDER as 'votes' | 'clickcount',
       browseResults: [] as RadioBrowserStation[],
       browseLoading: false,
@@ -419,6 +481,26 @@ export default {
     radioBrowserHomepage(): string {
       return RADIO_BROWSER_HOMEPAGE
     },
+    /** What the country picker actually shows: the recently picked
+     * countries, a divider, then the rest alphabetically the way Radio
+     * Browser hands them over. A recent country is *moved* up rather than
+     * copied, so typing into the picker never turns up the same country
+     * twice - and so the selected row is the selected row, instead of two
+     * rows both drawn as active. Unknown codes (a country that dropped out
+     * of the directory, or a list written before the options loaded) fall
+     * out silently. */
+    countryItems(): (RadioBrowserFilterOption | CountryDividerItem)[] {
+      const recent = this.recentCountryCodes
+        .map((code) => this.countryOptions.find((option) => option.code === code))
+        .filter((option): option is RadioBrowserFilterOption => option !== undefined)
+      if (recent.length === 0) return this.countryOptions
+      const pinned = new Set(recent.map((option) => option.code))
+      return [
+        ...recent,
+        COUNTRY_DIVIDER,
+        ...this.countryOptions.filter((option) => !pinned.has(option.code)),
+      ]
+    },
   },
   watch: {
     // immediate, so being mounted already open works the same as being
@@ -438,6 +520,8 @@ export default {
     },
     browseCountry() {
       saveBrowseCountry(this.browseCountry)
+      this.recentCountryCodes = withRecentCountry(this.recentCountryCodes, this.browseCountry)
+      saveRecentCountries(this.recentCountryCodes)
       clearTimeout(browseDebounceTimer)
       void this.runBrowseSearch()
     },
@@ -649,6 +733,15 @@ export default {
 .discover-filters__country {
   flex: 1;
   min-width: 0;
+}
+
+/* Inside the picker's menu, which is teleported out of this component -
+ * the scope attribute travels with the element, so this still applies. The
+ * margin is what makes it read as a section break between the pinned
+ * countries and the alphabetical list rather than as a line through two
+ * neighbouring rows. */
+.discover-country-divider {
+  margin: 4px 0;
 }
 
 /* Side by side needs roughly 480px between them before the country name

@@ -23,6 +23,7 @@ from core.streamer import (
     OutputFormat,
     SourceInfo,
     _probe_source,
+    lossless_encode_args,
     lossy_encode_args,
     resolve_output_format,
     stream_tracks,
@@ -103,7 +104,7 @@ def test_probe_source_does_not_read_past_the_audio_streams_own_line():
 
 
 def test_probe_source_reads_bitrate_from_the_streams_own_line_not_the_container_summary():
-    # Regression guard for the exact mistake docs/playback-bugs/
+    # Regression guard for the exact mistake docs/investigations/
     # fixed-pacing-used-container-bitrate.md documents: the container
     # summary line's bitrate includes embedded cover art and is *not* the
     # audio's own bitrate. Deliberately different numbers on each line here
@@ -252,7 +253,7 @@ def test_resolve_output_format_replay_gain_does_not_affect_the_lossless_reencode
     needed."""
     with patch("core.streamer._probe_source", AsyncMock(return_value=_info("alac"))):
         fmt = asyncio.run(resolve_output_format("http://nav/stream", gain=0.8))
-    assert fmt.ffmpeg_args == ["-acodec", "flac", "-f", "flac"]
+    assert fmt.ffmpeg_args == ["-acodec", "flac", "-frame_size", "4096", "-f", "flac"]
 
 
 def test_resolve_output_format_unity_gain_still_uses_the_copy_tier():
@@ -268,7 +269,7 @@ def test_resolve_output_format_unity_gain_still_uses_the_copy_tier():
 def test_resolve_output_format_lossless_reencode_tier(codec):
     with patch("core.streamer._probe_source", AsyncMock(return_value=_info(codec))):
         fmt = asyncio.run(resolve_output_format("http://nav/stream"))
-    assert fmt.ffmpeg_args == ["-acodec", "flac", "-f", "flac"]
+    assert fmt.ffmpeg_args == ["-acodec", "flac", "-frame_size", "4096", "-f", "flac"]
     assert fmt.content_type == "audio/flac"
     assert "-ar" not in fmt.ffmpeg_args
 
@@ -305,7 +306,7 @@ def test_resolve_output_format_falls_back_for_opus():
 
 # ── resolve_output_format device sample-rate/bit-depth limits ───────────────
 # Regression tests for a real bug (root-caused 2026-08-22, fixed 2026-08-24 —
-# see docs/playback-bugs/copy-tier-device-limits.md): a 24-bit/96kHz FLAC
+# see docs/investigations/copy-tier-device-limits.md): a 24-bit/96kHz FLAC
 # copied straight to a Sonos reported
 # ERROR_UNSUPPORTED_FREQ over UPnP eventing and stopped 1.1s in.
 
@@ -332,7 +333,16 @@ def test_resolve_output_format_resamples_a_copy_eligible_codec_over_the_rate_lim
             resolve_output_format("http://nav/stream", max_sample_rate=48000, max_bit_depth=24)
         )
     assert "copy" not in fmt.ffmpeg_args
-    assert fmt.ffmpeg_args == ["-acodec", "flac", "-f", "flac", "-ar", "48000"]
+    assert fmt.ffmpeg_args == [
+        "-acodec",
+        "flac",
+        "-frame_size",
+        "4096",
+        "-f",
+        "flac",
+        "-ar",
+        "48000",
+    ]
     assert fmt.content_type == "audio/flac"
     # Bit depth (24) is within the limit here — only the rate needs fixing.
     assert "-sample_fmt" not in fmt.ffmpeg_args
@@ -346,7 +356,16 @@ def test_resolve_output_format_resamples_over_the_bit_depth_limit_too():
         fmt = asyncio.run(
             resolve_output_format("http://nav/stream", max_sample_rate=48000, max_bit_depth=16)
         )
-    assert fmt.ffmpeg_args == ["-acodec", "flac", "-f", "flac", "-sample_fmt", "s16"]
+    assert fmt.ffmpeg_args == [
+        "-acodec",
+        "flac",
+        "-frame_size",
+        "4096",
+        "-f",
+        "flac",
+        "-sample_fmt",
+        "s16",
+    ]
 
 
 def test_resolve_output_format_never_upsamples_a_source_below_the_limit():
@@ -400,7 +419,16 @@ def test_resolve_output_format_resamples_the_lossless_reencode_tier_too():
         fmt = asyncio.run(
             resolve_output_format("http://nav/stream", max_sample_rate=48000, max_bit_depth=24)
         )
-    assert fmt.ffmpeg_args == ["-acodec", "flac", "-f", "flac", "-ar", "48000"]
+    assert fmt.ffmpeg_args == [
+        "-acodec",
+        "flac",
+        "-frame_size",
+        "4096",
+        "-f",
+        "flac",
+        "-ar",
+        "48000",
+    ]
 
 
 def test_resolve_output_format_resample_tier_ignores_replay_gain():
@@ -417,7 +445,16 @@ def test_resolve_output_format_resample_tier_ignores_replay_gain():
                 "http://nav/stream", gain=0.8, max_sample_rate=48000, max_bit_depth=24
             )
         )
-    assert fmt.ffmpeg_args == ["-acodec", "flac", "-f", "flac", "-ar", "48000"]
+    assert fmt.ffmpeg_args == [
+        "-acodec",
+        "flac",
+        "-frame_size",
+        "4096",
+        "-f",
+        "flac",
+        "-ar",
+        "48000",
+    ]
 
 
 # ── resolve_output_format source info (for the stream-info overlay) ─────────
@@ -851,7 +888,10 @@ def test_stream_tracks_copy_tier_omits_forced_resample():
 
 
 def test_stream_tracks_lossless_reencode_tier_omits_forced_resample():
-    fmt = OutputFormat(ffmpeg_args=["-acodec", "flac", "-f", "flac"], content_type="audio/flac")
+    fmt = OutputFormat(
+        ffmpeg_args=["-acodec", "flac", "-frame_size", "4096", "-f", "flac"],
+        content_type="audio/flac",
+    )
     cmd = asyncio.run(_drain("http://nav/stream", fmt))
     assert "-ar" not in cmd
 
@@ -1083,7 +1123,7 @@ def test_stream_tracks_kills_the_process_and_reraises_on_an_unexpected_error():
     "args,content_type",
     [
         (["-acodec", "copy", "-f", "mp3"], "audio/mpeg"),
-        (["-acodec", "flac", "-f", "flac"], "audio/flac"),
+        (["-acodec", "flac", "-frame_size", "4096", "-f", "flac"], "audio/flac"),
         (list(FALLBACK_FORMAT.ffmpeg_args), FALLBACK_FORMAT.content_type),
     ],
 )
@@ -1154,6 +1194,74 @@ def test_stream_tracks_keeps_readrate_ahead_of_a_resume_seek():
     assert captured[captured.index("-readrate_initial_burst") + 1] == "15"
     assert captured.index("-readrate_initial_burst") < captured.index("-ss")
     assert captured.index("-ss") < captured.index("-i")
+
+
+def test_the_lossless_encode_names_its_own_block_size():
+    """Without this, a seek into an ALAC source produced no audio at all:
+    the flac encoder takes its block size from the first frame it is handed,
+    an ALAC frame after `-ss` is shorter than FLAC allows, and the encoder
+    refuses to start ("invalid block size: 8"). That is a cast resuming
+    mid-track, and every seek the local player makes."""
+    args, content_type = lossless_encode_args()
+
+    assert args[args.index("-frame_size") + 1] == "4096"
+    assert content_type == "audio/flac"
+
+
+def test_the_lossless_encode_keeps_a_device_resample_alongside_it():
+    """The block size is this encoder's own business; the resample comes
+    from the target device's limits and must survive next to it."""
+    args, _ = lossless_encode_args(["-ar", "48000"])
+
+    assert "-frame_size" in args
+    assert args[args.index("-ar") + 1] == "48000"
+
+
+def test_stream_tracks_reconnects_to_an_http_source_rather_than_ending_the_encode():
+    """A dropped connection to the media server used to end the track at
+    whatever second it happened, which reaches the device as a stream that
+    stopped. See _HTTP_RECONNECT_ARGS."""
+    captured = []
+    proc = _ConfigurableFakeProc(stdout_chunks=[b"x" * 1024, b""])
+
+    async def _fake_exec(*cmd, **kwargs):
+        captured.extend(cmd)
+        return proc
+
+    async def _run():
+        with patch("asyncio.create_subprocess_exec", _fake_exec):
+            async for _ in stream_tracks(["http://nav/stream"]):
+                pass
+
+    asyncio.run(_run())
+
+    assert captured[captured.index("-reconnect") + 1] == "1"
+    assert captured[captured.index("-reconnect_on_network_error") + 1] == "1"
+    assert captured[captured.index("-reconnect_delay_max") + 1] == "5"
+    assert captured.index("-reconnect") < captured.index("-i")
+    assert "-reconnect_streamed" not in captured
+
+
+def test_stream_tracks_leaves_a_non_http_source_without_them():
+    """ffmpeg's reconnect options belong to its http protocol and it
+    refuses to start at all when they are passed with any other input —
+    "Option reconnect not found.", exit 8. A source that isn't a URL must
+    therefore carry none of them, not merely gain nothing from them."""
+    captured = []
+    proc = _ConfigurableFakeProc(stdout_chunks=[b"x" * 1024, b""])
+
+    async def _fake_exec(*cmd, **kwargs):
+        captured.extend(cmd)
+        return proc
+
+    async def _run():
+        with patch("asyncio.create_subprocess_exec", _fake_exec):
+            async for _ in stream_tracks(["/music/a.flac"]):
+                pass
+
+    asyncio.run(_run())
+
+    assert not [arg for arg in captured if arg.startswith("-reconnect")]
 
 
 def test_stream_tracks_swallows_a_kill_error_after_an_unexpected_error():

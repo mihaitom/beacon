@@ -40,6 +40,23 @@ export interface StreamQuality {
 }
 
 /**
+ * The formats a *plan* can name, which is one more than a setting can:
+ * 'flac' is never something anyone picks, it is what Original falls back
+ * to for a source this browser cannot decode (see plan()). Keeping it out
+ * of StreamFormat is what keeps it out of the settings dropdown, out of
+ * the stored value, and out of the cast payload — none of which have any
+ * business offering it.
+ */
+export type LocalPlanFormat = StreamFormat | 'flac'
+
+export interface LocalStreamQuality {
+  format: LocalPlanFormat
+  /** kbps, and 0 where the format carries no such number — 'original' and
+   * 'flac' both. */
+  bitrate: number
+}
+
+/**
  * Bitrates offered per format. The mp3 list mirrors connect's
  * ALLOWED_BITRATES (routes/local_stream.py), which rejects anything outside
  * it: a value that only exists on this side would produce a 400 rather than
@@ -290,13 +307,33 @@ export type LocalTranscodeReason = 'quality_limit' | 'browser_unsupported'
 export interface LocalStreamPlan {
   /** What to actually request. `original` means the untouched file, even
    * where the setting names a format — see plan(). */
-  quality: StreamQuality
+  quality: LocalStreamQuality
   reason: LocalTranscodeReason | null
 }
 
 const PLAY_ORIGINAL: LocalStreamPlan = {
   quality: { format: 'original', bitrate: 0 },
   reason: null,
+}
+
+/**
+ * What Original asks for when the source cannot be decoded here — the one
+ * case where "untouched" and "audible" cannot both be had.
+ *
+ * FLAC wherever this browser takes it, which is everywhere that matters
+ * (Chrome, Firefox, and Safari since 11): the audio is re-wrapped, not
+ * re-encoded, so nothing is lost and the listener's choice is still
+ * honoured. Only where even that is refused does this fall to a lossy
+ * format, and then it is a choice between something audible and nothing at
+ * all rather than a quality trade anybody asked for.
+ */
+function losslessRescue(): LocalStreamQuality {
+  if (browserPlays('flac')) return { format: 'flac', bitrate: 0 }
+  const available = localFormats()
+  const substitute = FORMAT_FALLBACK_ORDER.find((candidate) => available.includes(candidate))
+  return substitute
+    ? { format: substitute, bitrate: DEFAULT_BITRATE[substitute] }
+    : { format: 'mp3', bitrate: DEFAULT_BITRATE.mp3 }
 }
 
 /**
@@ -325,10 +362,26 @@ export function plan(
   source: { format: string | null; bitRate: number | null },
   setting: StreamQuality,
 ): LocalStreamPlan {
-  if (setting.format === 'original') return PLAY_ORIGINAL
   const suffix = source.format?.toLowerCase() ?? null
+  const undecodable = suffix != null && !browserPlays(suffix)
 
-  if (suffix && !browserPlays(suffix)) {
+  // Asked before the Original shortcut below rather than after it, which
+  // is the one thing that changed here: Original used to return untouched
+  // audio for a source the browser has no decoder for, and untouched audio
+  // that plays nothing is not the choice anybody was making. An ALAC
+  // library — or an Ogg one on an iPhone — was silent on the *default*
+  // setting while every other setting rescued it.
+  //
+  // What it is rescued *to* is the whole reason this can be done without
+  // making the setting mean something else: losslessRescue() changes the
+  // container and nothing else, so "Original" is still true of every bit
+  // that comes out. See LOSSLESS_FORMAT in connect/routes/local_stream.py.
+  if (setting.format === 'original') {
+    if (!undecodable) return PLAY_ORIGINAL
+    return { quality: losslessRescue(), reason: 'browser_unsupported' }
+  }
+
+  if (undecodable) {
     return { quality: { ...setting }, reason: 'browser_unsupported' }
   }
   if (suffix && LOSSLESS.has(suffix)) {

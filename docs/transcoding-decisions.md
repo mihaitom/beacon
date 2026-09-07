@@ -28,14 +28,20 @@ Read top to bottom; the first row that matches wins.
 
 | Source                                       | Setting        | Result                      | Told as               |
 | -------------------------------------------- | -------------- | --------------------------- | --------------------- |
-| anything                                     | Original       | untouched                   | -                     |
+| a format this browser cannot decode          | Original       | re-wrapped as FLAC          | `browser_unsupported` |
+| anything else                                | Original       | untouched                   | -                     |
 | a format this browser cannot decode          | any conversion | converted to the chosen one | `browser_unsupported` |
 | lossless (flac, wav, alac, ape, wv, aiff, …) | any conversion | converted to the chosen one | `quality_limit`       |
 | bitrate above the chosen number              | any conversion | converted to the chosen one | `quality_limit`       |
 | everything else                              | any            | untouched                   | -                     |
 
-Two things worth knowing about this table:
+Three things worth knowing about this table:
 
+- **Original is the one setting that converts nothing it does not have to.**
+  It reaches for FLAC only where the alternative is silence, and FLAC
+  changes the container rather than the audio, so what comes out is still
+  every bit of the original. Anything the browser can decode is handed over
+  untouched.
 - **"Below the limit" is left alone even when the format differs.** MP3 at
   128 with AAC 192 chosen stays MP3: the setting is a ceiling, not a target,
   and re-encoding one lossy format into another only loses.
@@ -77,8 +83,8 @@ lossy, and a second lossy pass into Opus gains nothing back.
 | MP3                               | any      | copied                             | -                        |
 | AAC                               | Original | copied, where the target takes AAC | -                        |
 | AAC                               | AAC      | copied                             | -                        |
-| AAC                               | MP3      | re-encoded to MP3                  | `relay_mp3_only`         |
-| anything else                     | any      | re-encoded to AAC, else MP3        | `relay_mp3_only`         |
+| AAC                               | MP3      | re-encoded to MP3                  | `relay_format_limit`     |
+| anything else                     | any      | re-encoded to AAC, else MP3        | `relay_format_limit`     |
 | above the ceiling                 | any      | re-encoded down to it              | `quality_limit`          |
 | the device refused the raw stream | any      | re-encoded                         | `device_rejected_stream` |
 
@@ -98,25 +104,21 @@ row at all rather than a raw identifier.
 Radio is the exception worth remembering: `transcoding` is true for a cast
 station either way as bookkeeping, so the panel only calls it a conversion
 for the three reasons that really are one (`device_rejected_stream`,
-`quality_limit`, `relay_mp3_only`).
+`quality_limit`, `relay_format_limit`).
 
 ## Where this is still uneven
 
-- **"Original" skips the browser check.** `plan()` returns early for
-  Original, before asking whether the browser can decode the source at all.
-  An ALAC or WavPack file — or an Ogg one in Safari — is handed over
-  untouched and stays silent, where every other setting would have rescued
-  it. Defensible (Original means original, and the Settings text says so),
-  but it is the one case where the app knows the answer and does not act on
-  it.
-- **AirPlay is assumed not to decode AAC.** `AirPlayDelivery.PLAYABLE_CODECS`
-  lists mp3, flac and vorbis, so every AAC source is converted on the way to
-  one. If that is too pessimistic for real hardware, it costs a needless
-  re-encode on every AAC track. Worth one listening test rather than a
-  reading of the spec.
-- **`relay_mp3_only` no longer only means MP3.** The relay produces AAC too,
-  so the key name is a leftover. Internal only: the sentence the listener
-  reads says "converted for the device", which is still true.
+- **AirPlay gets AAC re-encoded to MP3, and the lossless landing place is
+  right there.** The missing `aac` in `AirPlayDelivery.PLAYABLE_CODECS` is
+  settled and no listening test can move it: nothing is handed to an AirPlay
+  target in the format it arrived in, because RAOP takes PCM and pyatv
+  decodes to it with miniaudio, whose whole repertoire is WAV, FLAC, MP3 and
+  Vorbis. An AAC source there failed inside pyatv ("failed to init
+  decoder"), not on the speaker. What is still open is the format it lands
+  on instead: an AAC track a device cannot take falls to the MP3 fallback,
+  a second lossy pass, when miniaudio would equally have taken FLAC — free
+  of loss from that point on, and over a LAN, where the size hardly counts.
 
-_Written 2026-09-06 while reviewing the transcoding paths end to end. Change
+_Written 2026-09-06 while reviewing the transcoding paths end to end;
+revisited 2026-09-07, when two of its three open points were closed. Change
 the code and this file goes stale; it is a map, not a contract._

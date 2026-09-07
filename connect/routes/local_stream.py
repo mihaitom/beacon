@@ -39,7 +39,16 @@ stays mp3-shaped for the same reason it always was.
 No pacing (core/streamer.py's _READRATE_ARGS) on this path, deliberately.
 Those exist so a cast device isn't handed an hour of audio in one go over a
 connection that then sits idle long enough for something in between to close
-it. A browser holds its own buffer and wants it filled.
+it. A browser holds its own buffer and wants it filled — and it is worth
+knowing how much it takes, because it is the whole of what a listener on a
+flaky connection is riding on. Measured against Chromium 151 (a response
+shaped exactly like this one, served as fast as it was taken, then cut off):
+about 9.5 MiB accepted before the browser stops reading, whatever the
+bitrate — seven minutes of audio at 192k mp3, the same at 128k opus, over
+thirteen at 96k. A full 18-second network outage played straight through it
+without the element reporting so much as a 'waiting'. That budget is in
+bytes rather than seconds, which is the argument for this route existing at
+all: the same 9.5 MiB is half a minute of a 24/96 FLAC fetched untouched.
 """
 
 import asyncio
@@ -55,6 +64,8 @@ from core.session import SessionState, require_authenticated_session
 from core.streamer import (
     SourceInfo,
     _probe_source,
+    http_reconnect_args,
+    lossless_encode_args,
     lossy_encode_args,
     transcoded_byte_length,
 )
@@ -105,6 +116,29 @@ ALLOWED_BITRATES: dict[str, tuple[int, ...]] = {
     "aac": (256, 192, 128, 96),
     "opus": (192, 128, 96, 64),
 }
+
+# The fourth format, and the one that carries no bitrate at all: a lossless
+# re-encode, for a source the browser cannot decode while the listener has
+# asked for **Original** (see plan() in services/streamQuality.ts). Every
+# other setting rescues such a source by converting it to the chosen lossy
+# format; Original had no answer and simply played nothing, which on a
+# library of ALAC — or of Ogg on an iPhone — is the default setting being
+# silent.
+#
+# FLAC because it is the only answer that keeps Original honest: the
+# container changes, nothing else does, and it is the same answer the cast
+# path has always given the same source (resolve_output_format()'s
+# `lossless_container` tier). Asking for `br` here would be asking which
+# bitrate a lossless stream should have, so the parameter is simply not
+# required for it — and it is rejected rather than ignored, since a caller
+# that sends one has misunderstood something this route would rather say
+# out loud.
+#
+# It could not have been offered before the `start` seeking arrived: FLAC's
+# length is unknowable ahead of the encode, and the byte-offset arithmetic
+# that used to do the seeking needed a declared one. Nothing declares a
+# length on this path any more, so the objection is gone with it.
+LOSSLESS_FORMAT = "flac"
 
 # Only the two forms a browser actually sends: "from here to the end" when
 # it resumes or seeks, and an explicit window when it is probing (Safari
@@ -272,8 +306,8 @@ async def local_stream_info(
 async def local_stream(
     track_id: str,
     request: Request,
-    fmt: str = Query(description="mp3 | aac | opus"),
-    br: int = Query(description="bitrate in kbps, see ALLOWED_BITRATES"),
+    fmt: str = Query(description="mp3 | aac | opus | flac"),
+    br: int | None = Query(None, description="bitrate in kbps, see ALLOWED_BITRATES; not for flac"),
     start: float | None = Query(
         None, ge=0.0, description="seconds to start from; its presence disables byte ranges"
     ),
@@ -285,7 +319,9 @@ async def local_stream(
     wants the untouched file gets the ordinary /rest/stream.view URL from
     the frontend instead, so that path keeps behaving exactly as it always
     has rather than gaining a second implementation that has to be kept
-    identical to the first.
+    identical to the first. `fmt=flac` is not that passthrough either — it
+    is a real re-encode, for the one case where "untouched" and "audible"
+    cannot both be had (see LOSSLESS_FORMAT).
 
     Two ways to start somewhere other than the beginning, and they are
     mutually exclusive:
@@ -306,13 +342,20 @@ async def local_stream(
     one anyway would invite the media element to seek against it behind
     that caller's back, which is exactly what the caller took over to
     avoid."""
+    lossless = fmt == LOSSLESS_FORMAT
     allowed = ALLOWED_BITRATES.get(fmt)
-    if allowed is None:
+    if allowed is None and not lossless:
+        expected = sorted([*ALLOWED_BITRATES, LOSSLESS_FORMAT])
         return JSONResponse(
-            {"error": f"Unsupported format '{fmt}' — expected one of {sorted(ALLOWED_BITRATES)}"},
+            {"error": f"Unsupported format '{fmt}' — expected one of {expected}"},
             status_code=400,
         )
-    if br not in allowed:
+    if lossless and br is not None:
+        return JSONResponse(
+            {"error": f"{LOSSLESS_FORMAT} carries no bitrate — drop the br parameter"},
+            status_code=400,
+        )
+    if not lossless and br not in allowed:
         return JSONResponse(
             {"error": f"Unsupported bitrate {br} for {fmt} — expected one of {sorted(allowed)}"},
             status_code=400,
@@ -327,7 +370,15 @@ async def local_stream(
         return JSONResponse({"error": f"Track not available: {e}"}, status_code=502)
 
     info = await _probe_cached(session.session_id, track_id, source_url)
-    args, content_type = lossy_encode_args(fmt, br, info.sample_rate if info else None)
+    # No sample rate is passed to the lossless branch, and none is wanted:
+    # resampling is a device's limit to impose (see lossless_encode_args()),
+    # and the browser this is for has none — it is being handed the source
+    # rate exactly as it came.
+    args, content_type = (
+        lossless_encode_args()
+        if lossless
+        else lossy_encode_args(fmt, br, info.sample_rate if info else None)
+    )
 
     headers = {"Cache-Control": "no-store"}
     status_code = 200
@@ -380,6 +431,15 @@ async def local_stream(
             headers["Content-Length"] = str(byte_limit)
 
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "warning"]
+    # Lets a dropped connection to the media server be picked back up
+    # inside ffmpeg rather than ending the encode — see
+    # http_reconnect_args(). It matters more here than on the cast path,
+    # because a track start is the one moment the browser has no buffer to
+    # hide anything behind: everything after it is playing out of several
+    # minutes of already-fetched audio (measured: Chromium holds around
+    # 9.5 MiB of a length-less stream, seven minutes at 128k), while the
+    # first second of a new track is playing out of nothing.
+    cmd += http_reconnect_args(source_url)
     if start_seconds > 0:
         # Before -i, for input-side seeking — same as stream_tracks()'s
         # start_offset handling.
@@ -393,7 +453,7 @@ async def local_stream(
     # indistinguishable from it not running.
     logger.info(
         f"[local-stream] {track_id}: "
-        f"{info.codec if info else 'unknown'} → {fmt} {br}k"
+        f"{info.codec if info else 'unknown'} → {fmt}{'' if lossless else f' {br}k'}"
         f"{f', from {start_seconds:.1f}s' if start_seconds else ''}"
     )
     return StreamingResponse(
