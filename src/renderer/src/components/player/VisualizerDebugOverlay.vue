@@ -296,7 +296,7 @@ export default {
   font-size: 12px;
   line-height: 1.5;
   user-select: text;
-  min-width: 200px;
+  min-width: 225px;
 }
 
 .visualizer-debug-overlay-delta {

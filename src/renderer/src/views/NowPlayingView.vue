@@ -155,8 +155,9 @@
      - the browser just ignores it), so this one only ever gets plain flex
      - sizing, and .now-playing__content (and everything inside it)
      - measures against this ancestor instead. -->
-    <div class="now-playing__stage">
+    <div ref="stage" class="now-playing__stage">
       <div
+        ref="content"
         class="now-playing__content"
         :class="{ 'now-playing__content--split': hasPlayable && showLyrics }"
       >
@@ -171,8 +172,8 @@
            - positioned as the back one — see that rule's own comment for
            - why a flip instead of the side-by-side split's flex-wrap
            - fallback there. -->
-          <div class="now-playing__flip-card">
-            <div class="now-playing__primary">
+          <div ref="flipCard" class="now-playing__flip-card">
+            <div ref="primary" class="now-playing__primary">
               <div class="now-playing__art-wrap">
                 <div class="now-playing__art-glow" :style="{ background: glowColor }" />
                 <cover-art
@@ -384,6 +385,12 @@ export default {
        * toolbar in — see the Teleport in the template. Checked rather than
        * assumed: this view is also mounted on its own, outside any shell. */
       canDock: false,
+      // The flip-boundary slide — see onStageResized(). Unread by the
+      // template, so writing them costs no re-render.
+      stageObserver: null as ResizeObserver | null,
+      wasFlipped: null as boolean | null,
+      splitOffset: 0,
+      endSlide: null as (() => void) | null,
       // Both belong to the debug button in the toolbar — see its own
       // comment. Off, and empty, for everyone who is not chasing something.
       debugEnabled: false,
@@ -705,6 +712,15 @@ export default {
   },
   mounted() {
     document.addEventListener('fullscreenchange', this.onFullscreenChange)
+    // Watches the stage rather than the window: the container query that
+    // decides the flip is answered by this box, not by the viewport (a
+    // sidebar opening changes one without the other).
+    const stage = this.$refs.stage as HTMLElement | undefined
+    if (stage) {
+      this.stageObserver = new ResizeObserver(() => this.onStageResized())
+      this.stageObserver.observe(stage)
+    }
+
     // Best-effort, exactly as VisualizerDebugOverlay.vue does it: a failed
     // call just leaves the debug button away, which is the right outcome
     // for anyone who was not looking for it.
@@ -716,12 +732,85 @@ export default {
   },
   beforeUnmount() {
     if (this.visualizerHideTimer) clearTimeout(this.visualizerHideTimer)
+    this.stageObserver?.disconnect()
+    this.endSlide?.()
     document.removeEventListener('fullscreenchange', this.onFullscreenChange)
     // Leaving the view (route change, logout, ...) shouldn't strand the
     // whole window in fullscreen with nothing controlling it anymore.
     if (document.fullscreenElement === this.$refs.root) void document.exitFullscreen()
   },
   methods: {
+    /** Slides the artwork column across the flip boundary instead of
+     * letting it jump. `position` is not animatable, so the lyrics panel
+     * enters the flex row at its full width in one frame and the centered
+     * column lands ~80px away; this puts it back where it was and
+     * transitions that away, the way TransitionGroup animates a move.
+     *
+     * The flip state is read off the card's computed `display` so the
+     * container query in <style> stays the only place the boundary is
+     * defined. */
+    onStageResized(): void {
+      const card = this.$refs.flipCard as HTMLElement | undefined
+      const primary = this.$refs.primary as HTMLElement | undefined
+      if (!card || !primary) {
+        this.wasFlipped = null
+        this.splitOffset = 0
+        return
+      }
+      const flipped = getComputedStyle(card).display !== 'contents'
+      const crossed = this.wasFlipped !== null && flipped !== this.wasFlipped
+      this.wasFlipped = flipped
+      if (!flipped) this.splitOffset = this.measureSplitOffset(primary)
+      if (!crossed || this.splitOffset <= 0) return
+      // Only a crossing cancels a running slide. A drag keeps firing this
+      // while one runs, and cancelling there is what made a fast drag snap:
+      // the transform was cleared a frame after it went on.
+      this.endSlide?.()
+      this.slidePrimaryFrom(primary, ((flipped ? -1 : 1) * this.splitOffset) / 2, flipped)
+    },
+    /** How much room the lyrics panel takes out of the centred row: its own
+     * width plus the gap before it. Half of that is how far the artwork
+     * column moves when the panel enters or leaves the flow, which is the
+     * jump the slide compensates.
+     *
+     * Measured rather than derived from the previous frame's position: a
+     * fast drag moves the window a long way between two resize callbacks,
+     * and the column's own travel over that distance would then be
+     * mistaken for the crossing. It is read while the row is split and
+     * kept for the crossing back, which cannot measure it - the panel is
+     * out of the flow by then. */
+    measureSplitOffset(primary: HTMLElement): number {
+      const panel = (this.$refs.stage as HTMLElement).querySelector('.now-playing__lyrics')
+      if (!panel) return 0
+      return panel.getBoundingClientRect().right - primary.getBoundingClientRect().right
+    },
+    /** Inside the container query .now-playing__primary carries an explicit
+     * rotateY(0deg) (see that rule for Chromium's backface check), and an
+     * inline transform replaces the whole value, rotation included. */
+    primaryTransform(flipped: boolean, dx = 0): string {
+      const parts = [dx ? `translateX(${dx}px)` : '', flipped ? 'rotateY(0deg)' : '']
+      return parts.filter(Boolean).join(' ') || 'none'
+    },
+    slidePrimaryFrom(primary: HTMLElement, dx: number, flipped: boolean): void {
+      if (Math.abs(dx) < 2) return
+      primary.style.transition = 'none'
+      primary.style.transform = this.primaryTransform(flipped, dx)
+      // Takes the start state before the transition is armed; without it
+      // both writes land in the same frame with nothing to animate from.
+      void primary.offsetWidth
+      primary.style.transition = 'transform 0.45s ease'
+      primary.style.transform = this.primaryTransform(flipped)
+      const done = (): void => {
+        primary.removeEventListener('transitionend', done)
+        primary.style.transition = ''
+        primary.style.transform = ''
+        this.endSlide = null
+      }
+      // Also called by the next crossing and by beforeUnmount, so a slide
+      // never outlives what it was measured against.
+      this.endSlide = done
+      primary.addEventListener('transitionend', done)
+    },
     /** One made-up title, handed to the log the way a real one arrives —
      * see the debug button in the toolbar. The counter goes in the title
      * because two presses inside the same second would otherwise produce
@@ -958,16 +1047,13 @@ export default {
    * containers (already handled by the flex-wrap safety net below) don't
    * shift at all. */
   gap: clamp(40px, 6cqw, 120px);
-  /* Safety net for narrow containers: .now-playing__primary and
-   * .now-playing__lyrics are both flex-shrink: 0 by design (see each's own
-   * comment) — their combined natural width can still exceed this row's
-   * own box on a narrow enough container despite artSize's own cqw-aware
-   * clamp above. Wrapping to two centered rows there beats the alternative
-   * (this row's content silently bleeding past .now-playing__stage's own
-   * overflow: hidden, clipping straight through the middle of the artwork
-   * or the lyrics text) — rare in practice once artSize is already
-   * width-aware, but a real fallback rather than an unhandled edge case. */
-  flex-wrap: wrap;
+  /* Never wrap. A row that wraps puts the lyrics *under* the artwork, and
+   * that reads as the layout breaking rather than as a tight fit - it was
+   * the safety net here until 2026-09-07, when it turned out to be the
+   * more visible failure of the two. The panel gives way instead (see
+   * .now-playing__lyrics' flex-shrink), which costs reading width and
+   * nothing else. */
+  flex-wrap: nowrap;
 }
 
 /* Transparent to layout by default — see the template's own comment on
@@ -992,7 +1078,13 @@ export default {
  * (not vw/vh) for the same reason as artSize above — measured against the
  * real available stage, not the raw viewport. */
 .now-playing__lyrics {
-  flex-shrink: 0;
+  /* Shrinkable, unlike .now-playing__primary: this is a column of text
+   * that scrolls, so a narrower box costs reading width, while the artwork
+   * has a size of its own to keep. min-width: 0 because a flex item does
+   * not shrink below its content otherwise. The width below stays the
+   * target the enter/leave transition animates to. */
+  flex-shrink: 1;
+  min-width: 0;
   width: min(38cqw, 560px);
   height: 85cqh;
   overflow: hidden;
@@ -1058,10 +1150,14 @@ export default {
   (max-aspect-ratio: 4/5) or ((max-width: 1560px) and (max-aspect-ratio: 3/2))
 ) {
   .now-playing__content--split {
-    /* No longer sizing a side-by-side row — a single card, same footprint
-     * as the non-split base rule above. */
+    /* A single card now, sized by its own content — no max-width of its
+     * own on purpose: max-width is transitioned (see
+     * .now-playing__content), and a container query ceasing to match
+     * animates it like any other change. Narrowing it here left the row
+     * growing back to 1800px for 0.45s while both panels were already in
+     * flow needing more than that, so they wrapped into two rows on the
+     * way out. */
     width: auto;
-    max-width: 1000px;
     gap: 0;
     perspective: 2000px;
   }
@@ -1195,8 +1291,9 @@ export default {
  * verbatim under a plain class selector rather than depend on that query
  * also happening to match. */
 .now-playing--compact .now-playing__content--split {
+  /* No max-width, same reason as the @container block above — and
+   * `compact` changes live too (see its watcher). */
   width: auto;
-  max-width: 1000px;
   gap: 0;
   perspective: 2000px;
 }

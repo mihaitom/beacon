@@ -263,6 +263,87 @@ describe('NowPlayingView layout', () => {
         mountedWrappers.pop()
       }
     })
+
+    /** The same contract *during* a resize, not only after one. Widening a
+     * window out of the flip state used to show the two panels stacked for
+     * a sixth of a second before they snapped side by side - reported live
+     * 2026-09-07, and measured in this harness at 168ms.
+     *
+     * The cause was max-width being a transitioned property on
+     * .now-playing__content: a container query ceasing to match changes it
+     * like anything else, so the row grew 1000px -> 1800px over the full
+     * 0.45s while both panels were already back in flow needing ~1340px
+     * between them, and flex-wrap (there as a safety net for genuinely
+     * narrow containers) did exactly what it is for. Sampling every frame
+     * is the point - the end state was correct the whole time, which is
+     * why the existing tests above never saw it. */
+    it('never stacks the panels while a window is being widened out of the flip', async () => {
+      await page.viewport(900, 1000)
+      const { wrapper } = await mountWithSongAndLyrics()
+      // Settled in the flip state before the resize under test.
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      await page.viewport(1920, 1080)
+      // Well past the 0.45s the gap/max-width transitions run for.
+      const deadline = performance.now() + 600
+      const stackedAt: number[] = []
+      const started = performance.now()
+      while (performance.now() < deadline) {
+        if (isWrapped(wrapper)) stackedAt.push(Math.round(performance.now() - started))
+        await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
+      }
+
+      expect(stackedAt, `stacked at ${stackedAt.join('ms, ')}ms after widening`).toEqual([])
+    })
+
+    /** The artwork column has to *slide* across the boundary, not teleport.
+     *
+     * Toggling lyrics with the button gets that for free: the panel's own
+     * width animates up from 0, so the row re-centres a little further left
+     * every frame. Crossing the boundary by resizing has no in-between -
+     * the panel switches between an absolutely positioned back face and a
+     * full-width flex child, and `position` cannot be animated - so the
+     * column used to land ~270px away in a single frame.
+     *
+     * Dragged in small steps rather than resized in one jump, which is both
+     * what a pointer does and what makes the assertion mean anything: over
+     * 20px of window the column's own travel is a few pixels, so a large
+     * step can only be the crossing. Measured at the crossing: ~271px
+     * without the slide, ~39px with it (the animation's own travel between
+     * two samples). */
+    it('slides the artwork across the flip boundary instead of jumping it', async () => {
+      await page.viewport(1440, 1000)
+      const { wrapper } = await mountWithSongAndLyrics()
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      const flipped = (): boolean =>
+        getComputedStyle(wrapper.get('.now-playing__flip-card').element).display !== 'contents'
+
+      async function drag(from: number, to: number, by: number): Promise<number> {
+        let previous: number | null = null
+        let biggest = 0
+        for (let width = from; by > 0 ? width <= to : width >= to; width += by) {
+          await page.viewport(width, 1000)
+          await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
+          const left = rect(wrapper.get('.now-playing__primary').element).left
+          if (previous !== null) biggest = Math.max(biggest, Math.abs(left - previous))
+          previous = left
+        }
+        return biggest
+      }
+
+      expect(flipped(), 'the drag has to start on the flip side of the boundary').toBe(true)
+      const widening = await drag(1440, 1640, 20)
+      expect(flipped(), 'the drag never crossed the boundary').toBe(false)
+      expect(widening, `artwork jumped ${Math.round(widening)}px while widening`).toBeLessThan(80)
+
+      await new Promise((resolve) => setTimeout(resolve, 600))
+      const narrowing = await drag(1640, 1440, -20)
+      expect(flipped(), 'the drag back never crossed the boundary').toBe(true)
+      expect(narrowing, `artwork jumped ${Math.round(narrowing)}px while narrowing`).toBeLessThan(
+        80,
+      )
+    })
   })
 
   // The title line is not always a song title: a radio station's ICY tag
