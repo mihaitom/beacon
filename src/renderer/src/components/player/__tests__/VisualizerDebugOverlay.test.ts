@@ -67,8 +67,8 @@ describe('VisualizerDebugOverlay', () => {
     })
 
     /** Lead is a Sonos-radio-only reading, and radio casting has the
-     * visualizer switched off entirely right now (RADIO_VISUALIZER_ENABLED
-     * in stores/connect.ts) — so in practice the line is absent and the
+     * visualizer switched off entirely again (RADIO_VISUALIZER_ENABLED in
+     * stores/connect.ts) — so in practice the line is absent and the
      * legend must not explain a number nobody can see. */
     it('leaves out the lead entry when there is no lead line', async () => {
       const wrapper = await mountOverlay('DEBUG', { visualizer: 12.34, cast: 12.11 })
@@ -90,6 +90,77 @@ describe('VisualizerDebugOverlay', () => {
       await help.trigger('click')
 
       expect(wrapper.find('.visualizer-debug-overlay__legend').exists()).toBe(false)
+    })
+  })
+
+  /** These numbers update several times a second, so selecting them by
+   * pointer loses the selection to the next re-render — reported live
+   * 2026-09-07 while pasting readings next to connect's own log lines. */
+  describe('copying a reading', () => {
+    function stubClipboard() {
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
+      })
+      return writeText
+    }
+
+    it('copies the readings as they are shown, plus the time they were taken', async () => {
+      const writeText = stubClipboard()
+      const wrapper = await mountOverlay()
+
+      await wrapper.get('.visualizer-debug-overlay__copy').trigger('click')
+
+      const copied = writeText.mock.calls[0]![0] as string
+      expect(copied).toContain('Visualizer: 12.34s')
+      expect(copied).toContain('Cast: 12.11s')
+      // The sign is part of the reading: which clock is ahead is the whole
+      // question, and a bare "0.23" in a paste answers none of it.
+      expect(copied).toContain('Δ: +0.23s')
+      expect(copied).toContain('Lead: 4.70s (guessed)')
+      // A timestamp to line the paste up against the log — the reason this
+      // button exists at all.
+      expect(copied.split('\n')[0]).toMatch(/^Visualizer sync @ .+/)
+    })
+
+    it('leaves the lead line out when there is none, rather than pasting an empty field', async () => {
+      const writeText = stubClipboard()
+      const wrapper = await mountOverlay('DEBUG', { visualizer: 12.34, cast: 12.72 })
+
+      await wrapper.get('.visualizer-debug-overlay__copy').trigger('click')
+
+      const copied = writeText.mock.calls[0]![0] as string
+      expect(copied).not.toContain('Lead')
+      expect(copied).toContain('Δ: -0.38s')
+    })
+
+    it('acknowledges the copy, so a click that did nothing is visible', async () => {
+      stubClipboard()
+      const wrapper = await mountOverlay()
+      const button = wrapper.get('.visualizer-debug-overlay__copy')
+      expect(button.text()).toBe('⧉')
+
+      await button.trigger('click')
+      await flushPromises()
+
+      expect(button.text()).toBe('✓')
+    })
+
+    /** No clipboard at all outside a secure context — the throw comes from
+     * the property access itself, before any promise exists. The numbers
+     * stay on screen either way, so this must not take the overlay down. */
+    it('survives a clipboard that is not there', async () => {
+      Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const wrapper = await mountOverlay()
+
+      await wrapper.get('.visualizer-debug-overlay__copy').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('.visualizer-debug-overlay__copy').text()).toBe('⧉')
+      expect(error).toHaveBeenCalled()
+      error.mockRestore()
     })
   })
 })

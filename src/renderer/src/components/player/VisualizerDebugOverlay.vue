@@ -9,12 +9,26 @@
      - way twice (see the component comment below). -->
     <button
       type="button"
-      class="visualizer-debug-overlay__help"
+      class="visualizer-debug-overlay__action visualizer-debug-overlay__help"
       :aria-expanded="showLegend"
       :title="showLegend ? 'Hide what these mean' : 'What do these mean?'"
       @click="showLegend = !showLegend"
     >
       {{ showLegend ? '×' : '?' }}
+    </button>
+    <!-- These numbers change several times a second, which makes selecting
+     - them with the pointer a race nobody wins: the selection is dropped by
+     - the re-render before it can be copied. Reported live 2026-09-07 while
+     - pasting readings next to connect's own log lines, which is what they
+     - are for. Copies one timestamped snapshot, the timestamp included
+     - precisely so a pasted reading can be lined up against those lines. -->
+    <button
+      type="button"
+      class="visualizer-debug-overlay__action visualizer-debug-overlay__copy"
+      :title="copied ? 'Copied' : 'Copy this reading'"
+      @click="copyReading"
+    >
+      {{ copied ? '✓' : '⧉' }}
     </button>
     <div>Visualizer: {{ debug.visualizer.toFixed(2) }}s</div>
     <div>Cast: {{ debug.cast.toFixed(2) }}s</div>
@@ -105,6 +119,10 @@ export default {
       // learn what the four lines are, and wants the numbers unobstructed
       // afterwards.
       showLegend: false,
+      // Checkmark on the copy button, cleared again after a moment — the
+      // same acknowledgement ServerLoginView.vue's own copy button gives.
+      copied: false,
+      copiedTimer: undefined as ReturnType<typeof setTimeout> | undefined,
     }
   },
   computed: {
@@ -146,6 +164,50 @@ export default {
       })
       .catch(() => {})
   },
+  beforeUnmount() {
+    clearTimeout(this.copiedTimer)
+  },
+  methods: {
+    /** The reading as text, in the same order and wording it is shown in —
+     * whoever pastes this is describing what they saw, so it should read
+     * as what they saw. The Lead line only exists for relayed Sonos and is
+     * left out entirely otherwise, rather than pasted as an empty field. */
+    readingText(): string {
+      if (!this.debug) return ''
+      const at = new Date().toLocaleTimeString()
+      const lines = [
+        `Visualizer sync @ ${at}`,
+        `Visualizer: ${this.debug.visualizer.toFixed(2)}s`,
+        `Cast: ${this.debug.cast.toFixed(2)}s`,
+        `Δ: ${this.debugDelta >= 0 ? '+' : ''}${this.debugDelta.toFixed(2)}s`,
+      ]
+      if (this.debug.lead) {
+        const measured = this.debug.lead.measured ? 'measured' : 'guessed'
+        lines.push(`Lead: ${this.debug.lead.seconds.toFixed(2)}s (${measured})`)
+      }
+      return lines.join('\n')
+    },
+    /** A failure is only logged, the same way ServerLoginView.vue's own
+     * copy button handles it: the numbers are on screen either way, and
+     * the checkmark not appearing says clearly enough that nothing was
+     * copied. navigator.clipboard is absent altogether outside a secure
+     * context, which is why this is a try/catch and not a promise chain —
+     * the throw comes from the property access, before any promise. */
+    async copyReading(): Promise<void> {
+      const text = this.readingText()
+      if (!text) return
+      try {
+        await navigator.clipboard.writeText(text)
+        clearTimeout(this.copiedTimer)
+        this.copied = true
+        this.copiedTimer = setTimeout(() => {
+          this.copied = false
+        }, 2000)
+      } catch (error) {
+        console.error('[visualizer] Failed to copy the sync reading:', error)
+      }
+    },
+  },
 }
 </script>
 
@@ -157,9 +219,11 @@ export default {
   max-width: 320px;
 }
 
-/* Sits in the top corner beside the first reading rather than above it, so
- * opening the legend does not push the numbers down the screen. */
-.visualizer-debug-overlay__help {
+/* Both sit in the top corner beside the first reading rather than above
+ * it, so opening the legend does not push the numbers down the screen.
+ * Floated, which stacks them right-to-left in source order: the help
+ * button is the outer one, the copy button sits inside it. */
+.visualizer-debug-overlay__action {
   float: right;
   margin-left: 10px;
   width: 16px;
@@ -175,7 +239,7 @@ export default {
   transition: background 0.15s ease;
 }
 
-.visualizer-debug-overlay__help:hover {
+.visualizer-debug-overlay__action:hover {
   background: rgba(255, 255, 255, 0.22);
 }
 
