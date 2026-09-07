@@ -4,7 +4,7 @@
 // passes whatever the rule says, including the `:first-child` this used to
 // be, which stops matching the moment a date heading takes the first <li>
 // slot in the list (see RadioTitleLog.vue's own comment).
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createVuetify } from 'vuetify'
@@ -38,6 +38,20 @@ function mountLog(entries: { title: string; at: number }[], variant?: 'compact' 
   wrappers.push(wrapper)
   return wrapper
 }
+
+// Every entry in this file is dated (see at()), and what "today" is decides
+// whether the log writes a date heading above it - a heading is a timeline
+// item of its own, so it shifts every item these tests measure by index down
+// by one. Frozen to the day the entries are from, so the suite reads the same
+// on any day it runs rather than only on the one it was written; Date alone
+// and not the timers, because the animation tests below wait on real
+// requestAnimationFrame and setTimeout. The tests that want a heading set
+// their own "now" on top of this.
+beforeEach(() => {
+  vi.setSystemTime(new Date(2026, 8, 6, 12, 30))
+})
+
+afterEach(() => vi.useRealTimers())
 
 /** The colour the browser actually resolved for the newest track line. */
 function newestTrackColor(wrapper: VueWrapper): string {
