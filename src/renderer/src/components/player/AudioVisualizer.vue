@@ -164,6 +164,13 @@ export default {
       const ratio = window.devicePixelRatio || 1
       canvas.width = Math.max(1, Math.round(rect.width * ratio))
       canvas.height = Math.max(1, Math.round(rect.height * ratio))
+      // Setting either dimension wipes the canvas, and this runs after the
+      // frame's own draw() but before it is painted - so every frame of a
+      // window drag was painted empty, which reads as flicker. Repainting
+      // here fills it again in the same frame. Not while reduced motion is
+      // on: nothing has ever painted then (see mounted()), and one static
+      // frame appearing on resize would be worse than none.
+      if (!this.reducedMotion) this.renderFrame()
     },
     draw() {
       this.rafId = requestAnimationFrame(this.draw)
