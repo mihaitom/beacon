@@ -279,20 +279,16 @@ describe('NowPlayingView', () => {
       )
     })
 
-    it('is unavailable casting radio to Sonos while RADIO_VISUALIZER_ENABLED is off', async () => {
-      // Sonos would otherwise qualify: a cast over the "real" radio URI
-      // scheme (x-rincon-mp3radio://) reports position 0.00s for a
-      // continuous stream, no device feedback to calibrate against — but
-      // delivery/sonos.py deliberately dispatches radio over plain http://
-      // instead (see its own comment), which makes Sonos treat it like a
-      // regular file and report a real, live position. Confirmed live
-      // 2026-09-02 (device=6.00s at wall=8.08s) — see connect/core/
-      // radio_position.py's module docstring. But connect.ts's own
-      // RADIO_VISUALIZER_ENABLED flag (off since 2026-09-04, after days
-      // spent unable to keep this synced to the audio a cast device
-      // actually plays) makes isRadioPositionCapable() answer false for
-      // every type regardless, so this stays unavailable until it flips
-      // back on.
+    it('is unavailable casting radio to Sonos, which reports no position for it', async () => {
+      // The one cast type that stays out with RADIO_VISUALIZER_ENABLED on.
+      // delivery/sonos.py rewrites a Beacon-hosted station onto Sonos's own
+      // x-rincon-mp3radio:// scheme (its docstring has why: IcyMuxer alone
+      // did not stop Sonos-only dropouts while relayed), and a Sonos
+      // dispatched that way reports a flat 0.00s for the whole run. So the
+      // backend answers supports_radio_position: false for it — the same
+      // decision made in one place there (core/state.py's
+      // _class_supports_radio_position, which depends on the URL for
+      // exactly this reason) rather than in a device-type list here.
       const { wrapper } = await mountView()
       const playback = usePlaybackStore()
       const connect = useConnectStore()
@@ -302,7 +298,9 @@ describe('NowPlayingView', () => {
         streamUrl: 'https://stream.example/chill',
         homePageUrl: null,
       }
-      connect.status = statusWithTargets([{ name: 'Kitchen', type: 'sonos' }])
+      connect.status = statusWithTargets([
+        { name: 'Kitchen', type: 'sonos', supports_radio_position: false },
+      ])
       await wrapper.vm.$nextTick()
 
       expect((wrapper.vm as unknown as { visualizerAvailable: boolean }).visualizerAvailable).toBe(
@@ -328,12 +326,15 @@ describe('NowPlayingView', () => {
       )
     })
 
-    it('is unavailable casting radio to Chromecast while RADIO_VISUALIZER_ENABLED is off', async () => {
-      // Chromecast would otherwise qualify — measured live 2026-09-02
-      // (connect/scripts/icy_sync_probe.py against a real device): its own
-      // reported position is real and stable once past its own startup
-      // buffer, see connect/core/radio_position.py — but see the Sonos test
-      // above for why this is false regardless right now.
+    it('is unavailable casting radio to Chromecast, capable though it is', async () => {
+      // The device half of the answer is yes: a Chromecast reports a real,
+      // stable position for radio (measured 2026-09-02, see
+      // connect/core/radio_position.py) and nothing rewrites its URL the
+      // way Sonos's is, so the backend sets the flag. RADIO_VISUALIZER_
+      // ENABLED overrides it — off again after the 2026-09-07 measurements
+      // found the picture drawn from the live edge while the device plays
+      // ~13s behind it, which no clock correction can close. See the
+      // flag's own comment in stores/connect.ts.
       const { wrapper } = await mountView()
       const playback = usePlaybackStore()
       const connect = useConnectStore()
@@ -343,7 +344,9 @@ describe('NowPlayingView', () => {
         streamUrl: 'https://stream.example/chill',
         homePageUrl: null,
       }
-      connect.status = statusWithTargets([{ name: 'Living Room', type: 'chromecast' }])
+      connect.status = statusWithTargets([
+        { name: 'Living Room', type: 'chromecast', supports_radio_position: true },
+      ])
       await wrapper.vm.$nextTick()
 
       expect((wrapper.vm as unknown as { visualizerAvailable: boolean }).visualizerAvailable).toBe(
@@ -351,7 +354,7 @@ describe('NowPlayingView', () => {
       )
     })
 
-    it('is unavailable casting radio to DLNA while RADIO_VISUALIZER_ENABLED is off', async () => {
+    it('is unavailable casting radio to DLNA, which reports one too', async () => {
       const { wrapper } = await mountView()
       const playback = usePlaybackStore()
       const connect = useConnectStore()
@@ -361,7 +364,9 @@ describe('NowPlayingView', () => {
         streamUrl: 'https://stream.example/chill',
         homePageUrl: null,
       }
-      connect.status = statusWithTargets([{ name: 'TV', type: 'dlna' }])
+      connect.status = statusWithTargets([
+        { name: 'TV', type: 'dlna', supports_radio_position: true },
+      ])
       await wrapper.vm.$nextTick()
 
       expect((wrapper.vm as unknown as { visualizerAvailable: boolean }).visualizerAvailable).toBe(
@@ -369,13 +374,13 @@ describe('NowPlayingView', () => {
       )
     })
 
-    it('stays unavailable casting radio even when one of several targets would be position-capable', async () => {
+    it('stays unavailable casting radio even where one of several targets is position-capable', async () => {
       // Multi-target casting can mix protocols (e.g. AirPlay and a
       // Chromecast at once) — the backend picks the first position-capable
       // delivery as its reference (core/state.py's
-      // first_radio_position_delivery()), which would normally be enough to
-      // make the visualizer worth showing, but RADIO_VISUALIZER_ENABLED
-      // being off overrides that for every type, Chromecast included.
+      // first_radio_position_delivery()), which would otherwise be enough
+      // to offer the visualizer. The flag overrides that for every type,
+      // Chromecast included.
       const { wrapper } = await mountView()
       const playback = usePlaybackStore()
       const connect = useConnectStore()
@@ -387,7 +392,7 @@ describe('NowPlayingView', () => {
       }
       connect.status = statusWithTargets([
         { name: 'Living Room', type: 'airplay' },
-        { name: 'Kitchen', type: 'chromecast' },
+        { name: 'Kitchen', type: 'chromecast', supports_radio_position: true },
       ])
       await wrapper.vm.$nextTick()
 
@@ -403,7 +408,12 @@ describe('NowPlayingView', () => {
       return mounted
     }
 
-    function statusWithTargets(targets: { name: string; type: string }[]) {
+    // supports_radio_position is the backend's own answer per target (see
+    // connect/core/state.py) and is what decides the radio visualizer here,
+    // so these tests set it rather than letting a device type imply it.
+    function statusWithTargets(
+      targets: { name: string; type: string; supports_radio_position?: boolean }[],
+    ) {
       return {
         current_song: null,
         stream_info: {

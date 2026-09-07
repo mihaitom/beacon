@@ -533,15 +533,16 @@ export default {
     // to poll for radio at all, so it gets the "honestly absent" treatment
     // decided live 2026-09-01, after shipping a guessed-constant version
     // and measuring it roughly a second off and station-dependent.
-    // Chromecast/DLNA/Sonos would be different — all three were measured
-    // live 2026-09-02 to report a real, stable position for radio once past
-    // their own startup buffer (see connect/core/radio_position.py) — but
-    // isRadioPositionCapable() below currently answers false for all of
-    // them regardless: connect.ts's own RADIO_VISUALIZER_ENABLED flag,
-    // flipped off 2026-09-04 after days spent unable to keep this in sync
-    // with the audio a cast device actually plays. They fall into the same
-    // "honestly absent" treatment as AirPlay until that flag flips back —
-    // see connect.ts for the full reasoning.
+    // Chromecast and DLNA do report a real position for radio (measured
+    // live 2026-09-02, see connect/core/radio_position.py), Sonos does not
+    // (its radio goes out over x-rincon-mp3radio:// and reports a flat
+    // 0.00s, see delivery/sonos.py). None of that is decided here: the
+    // backend answers it per target (core/state.py). It is moot for now
+    // either way — connect.ts's RADIO_VISUALIZER_ENABLED answers false for
+    // every type, off again after the 2026-09-07 measurements, so all
+    // three fall into the same "honestly absent" treatment as AirPlay.
+    // See connect.ts, and docs/investigations/radio-visualizer-cast-sync.md
+    // for why that is not one constant away from working.
     visualizerAvailable() {
       // Casting reads its frequency data from the backend rather than from
       // this device's own audio, so it needs no local analyser at all —

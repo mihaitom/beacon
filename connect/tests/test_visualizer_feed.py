@@ -627,81 +627,44 @@ class TestOffsetTrackerClock:
             assert clock.elapsed() == pytest.approx(0.9)
 
 
-# ── _OffsetTrackerClock — folding RadioPositionTracker.buffer_lag() into the
-# baseline ────────────────────────────────────────────────────────────────
-# Regression coverage for the bug found live 2026-09-03/04, after the whole
-# radio-visualizer architecture switched to tapping the relay's own device-
-# audio fan-out with a private ffmpeg (see core/audio_analysis.py's module
-# docstring): the tests above establish that _OffsetTrackerClock's baseline
-# subtraction fixes the *absolute-vs-relative* offset problem, but on their
-# own they also describe (see e.g. test_reads_zero_until_the_first_byte_is_
-# marked's "content_position 0 is *now*") a clock that, algebraically,
-# reduces to plain wall-clock time since mark() once a device is playing
-# steadily — the device's own startup-buffering delay cancels out of
-# `tracker.elapsed_fn() - baseline` instead of surviving it, so every frame
-# this clock ever released came out exactly that many seconds ahead of what
-# the device was actually playing. Worst on Chromecast (~10-11s of its own
-# startup buffer measured live, see core/radio_position.py's module
-# docstring), smaller but still audible on DLNA and Sonos.
-class TestOffsetTrackerClockBufferLag:
-    def test_lag_shifts_the_baseline_once_ready(self):
+# ── _OffsetTrackerClock — the device's own startup delay, measured and
+# deliberately not applied ────────────────────────────────────────────────
+# Between 2026-09-03 and 2026-09-07 this clock folded
+# RadioPositionTracker.buffer_lag() into its baseline, on the algebra in
+# _OffsetTrackerClock's own docstring: the device's startup delay cancels
+# out of `tracker.elapsed_fn() - baseline`, so the picture was reasoned to
+# run that whole delay ahead of the sound. The reasoning outlived the only
+# instrument that could have checked it — the debug overlay re-based both
+# sides of its delta until 2026-09-05 and could only ever read +0.00s (see
+# core/audio_analysis.py's own note).
+#
+# Measured on Chromecast once it could read an absolute delta, 2026-09-07:
+# lag 11.67s folded in and logged as such, the overlay's Δ starting near
+# -11s and settling within seconds at -2.2s, with the listener hearing the
+# picture arrive about 2.2s *late*. The fold could not do what it promised
+# — this analyzer reads the relay's live edge (lossy, no burst), so it can
+# never show content older than its own decode buffer, and the remainder
+# evaporated in elapsed()'s own clamp-and-extrapolate. These tests hold
+# that end state: the lag is read, logged, and left alone.
+class TestOffsetTrackerClockLeadCorrection:
+    def test_the_measured_lag_is_not_folded_into_the_baseline(self):
         tracker = _FakeTracker(position=0.0, ready=False)
         clock = _OffsetTrackerClock(_TrackerHolder(tracker))
         clock.mark()  # baseline = 0.0, device still buffering
 
         tracker.position = 2.0
         tracker.ready = True
-        tracker._lag = 8.0  # this device's own measured startup buffer
+        tracker._lag = 8.0  # this device started 8s after its own dispatch
 
-        # Without the fix, raw would be max(0, 2.0 - 0.0) = 2.0 here —
-        # content already "due" despite the 8s the device is known to have
-        # spent buffering before any of it became audible. With the fix,
-        # the lag folds into the baseline first: 2.0 - (0.0 + 8.0) clamps
-        # to 0.0 — correctly still nothing due, since none of this content
-        # is audible yet either.
-        assert clock.elapsed() == 0.0
+        # 2.0s of content is due, i.e. exactly what the device says it has
+        # played since the baseline was taken. The 8s are a fact about the
+        # dispatch, not about how far behind the sound this picture is.
+        assert clock.elapsed() == pytest.approx(2.0)
 
-    def test_output_latency_is_folded_in_alongside_the_measured_lag(self):
-        """The Chromecast half of the 2026-09-05 report. A polled position
-        says where the device's *decoder* is; the output stage after it —
-        HDMI hand-off, an amplifier, a TV — reports nothing and is invisible
-        to any protocol-level measurement. Reported live: the visualizer ran
-        about a second ahead of the audio on Chromecast in the same way it
-        did on Sonos, which shares no measurement code with this path at
-        all. Two independent methods do not acquire the same bias by
-        chance, so the correction belongs here rather than in either
-        measurement."""
-        tracker = _FakeTracker(position=0.0, ready=False)
-        clock = _OffsetTrackerClock(_TrackerHolder(tracker))
-        clock.mark()  # baseline = 0.0
-
-        tracker.position = 5.5
-        tracker.ready = True
-        tracker._lag = 5.0
-
-        # baseline becomes 0.0 + 5.0 + tracker_lead_correction(). With the
-        # default of 0 that is 5.5 - 5.0 = 0.5s of content already due.
-        assert clock.elapsed() == pytest.approx(0.5)
-
-        # Configured, it shifts the baseline by exactly that much more —
-        # 5.5 - (5.0 + 0.5) = 0.0, nothing due yet.
-        monkey = pytest.MonkeyPatch()
-        monkey.setenv(visualizer_feed.TRACKER_LEAD_CORRECTION_ENV, "0.5")
-        try:
-            fresh = _OffsetTrackerClock(_TrackerHolder(tracker))
-            fresh.mark()
-            assert fresh.elapsed() == 0.0
-        finally:
-            monkey.undo()
-
-    def test_lag_is_applied_only_once(self):
-        """A device's own buffering delay is a steady pipeline constant for
-        the run (Chromecast's own decode+HDMI pipeline, DLNA's own render
-        buffer, Sonos's own buffer over the http:// dispatch delivery/
-        sonos.py uses) — not something expected to wander, and re-adding a
-        later reading of it would keep compounding onto _baseline forever
-        instead of settling once. buffer_lag() itself is only ever queried
-        the one time this needs it, not on every elapsed() call."""
+    def test_the_lag_is_still_read_once_so_it_can_be_logged(self):
+        """The reading is the useful half of what the fold left behind — it
+        is the one number saying how long a device took to start. Read once
+        per baseline, at the same defined moment the correction lands."""
         tracker = _FakeTracker(position=10.0, ready=True, lag=8.0)
         clock = _OffsetTrackerClock(_TrackerHolder(tracker))
         clock.mark()
@@ -717,6 +680,91 @@ class TestOffsetTrackerClockBufferLag:
 
         assert tracker.buffer_lag_calls == 1
 
+    def test_the_configured_correction_shifts_the_baseline(self):
+        """What is left for a residual somebody actually measures — the
+        output stage no protocol reports, and whatever else the eye finds.
+        0 by default (see TRACKER_LEAD_CORRECTION_ENV's own comment on why
+        the first figure taken this way was retracted)."""
+        tracker = _FakeTracker(position=0.0, ready=False)
+        clock = _OffsetTrackerClock(_TrackerHolder(tracker))
+        clock.mark()  # baseline = 0.0
+
+        tracker.position = 5.5
+        tracker.ready = True
+        tracker._lag = 5.0
+
+        assert clock.elapsed() == pytest.approx(5.5)
+
+        # Configured, the same run reads exactly that much less as due —
+        # a second clock over its own tracker, so its baseline is taken at
+        # the same moment the first one's was (mark() before the device has
+        # played anything), not at the position reached since.
+        monkey = pytest.MonkeyPatch()
+        monkey.setenv(visualizer_feed.TRACKER_LEAD_CORRECTION_ENV, "0.5")
+        try:
+            corrected_tracker = _FakeTracker(position=0.0, ready=False)
+            fresh = _OffsetTrackerClock(_TrackerHolder(corrected_tracker))
+            fresh.mark()
+            corrected_tracker.position = 5.5
+            corrected_tracker.ready = True
+            corrected_tracker._lag = 5.0
+            assert fresh.elapsed() == pytest.approx(5.0)
+        finally:
+            monkey.undo()
+
+    def test_a_correction_holds_the_clock_instead_of_evaporating(self):
+        """The regression this class exists for as much as for the fold
+        itself. A baseline pushed ahead of the device makes `raw` negative,
+        and elapsed() used to clamp that to 0 *and* seed its extrapolation
+        anchor from the clamped value — which then free-ran forward at real
+        time, so a hold of any size was over by the next call. That is what
+        made the old buffer_lag() fold unobservable in the shape-checking
+        tests around it while a listener could hear it doing nothing.
+        Anything set here has to actually hold."""
+        monkey = pytest.MonkeyPatch()
+        monkey.setenv(visualizer_feed.TRACKER_LEAD_CORRECTION_ENV, "3.0")
+        try:
+            tracker = _FakeTracker(position=0.0, ready=True, lag=1.0)
+            clock = _OffsetTrackerClock(_TrackerHolder(tracker))
+            clock.mark()  # baseline = 0.0, then +3.0 for the correction
+
+            # Wall clock running on, the device playing on: still nothing
+            # due, because the first 3s of this content are the correction
+            # being served.
+            for now, position in ((100.0, 0.5), (101.0, 1.5), (102.5, 2.5)):
+                tracker.position = position
+                with patch("core.visualizer_feed.time.monotonic", return_value=now):
+                    assert clock.elapsed() == 0.0
+
+            # And it resumes from the device's own position once past the
+            # correction, not from a value the extrapolation ran up in the
+            # meantime — 3.5 played, 3.0 of it held back, 0.5s due.
+            tracker.position = 3.5
+            with patch("core.visualizer_feed.time.monotonic", return_value=103.0):
+                assert clock.elapsed() == pytest.approx(0.5)
+        finally:
+            monkey.undo()
+
+    def test_a_correction_still_lands_when_the_lag_is_not_measurable(self):
+        """buffer_lag() reads None for a ready tracker whose dispatch
+        reference is wrong by construction — routes/devices.py's
+        /device-stop builds one for a device that has been playing all
+        along and was never re-dispatched. The reading is for the log; the
+        calibration must not be quietly skipped along with it."""
+        monkey = pytest.MonkeyPatch()
+        monkey.setenv(visualizer_feed.TRACKER_LEAD_CORRECTION_ENV, "0.4")
+        try:
+            tracker = _FakeTracker(position=0.0, ready=True, lag=None)
+            clock = _OffsetTrackerClock(_TrackerHolder(tracker))
+            clock.mark()  # baseline 0.0, then +0.4 for the correction
+
+            tracker.position = 0.3
+            assert clock.elapsed() == 0.0  # still inside the correction
+            tracker.position = 1.0
+            assert clock.elapsed() == pytest.approx(0.6)
+        finally:
+            monkey.undo()
+
     def test_no_lag_measured_yet_behaves_exactly_as_before(self):
         """buffer_lag() reads None until the tracker's own `ready` fires —
         see RadioPositionTracker.buffer_lag(). Nothing here should change
@@ -731,25 +779,23 @@ class TestOffsetTrackerClockBufferLag:
         tracker.position = 64.0
         assert clock.elapsed() == pytest.approx(4.0)
 
-    def test_swapping_trackers_measures_the_new_devices_own_lag(self):
+    def test_swapping_trackers_reads_the_new_devices_own_lag(self):
         """A device dropping out of a multi-target radio cast
         (routes/devices.py's device-stop) can hand this clock a different
         RadioPositionTracker without tearing the whole analyzer down — see
-        _rebase_if_tracker_changed(). The new device's own buffering delay
-        must be measured and folded in independently of whatever the old
-        one's was, not inherited from it and not skipped."""
+        _rebase_if_tracker_changed(). The new device is a new calibration:
+        its own lag is read for the log, and the correction is applied to
+        the rebased baseline rather than skipped as already done."""
         old_tracker = _FakeTracker(position=10.0, ready=True, lag=8.0)
         holder = _TrackerHolder(old_tracker)
         clock = _OffsetTrackerClock(holder)
         clock.mark()
-        assert clock.elapsed() == 0.0  # folds old_tracker's 8.0s lag in
+        assert clock.elapsed() == 0.0  # baseline taken at 10.0, nothing due yet
 
         new_tracker = _FakeTracker(position=1.0, ready=True, lag=2.0)
         holder.radio_position_tracker = new_tracker
         # Continuity carries elapsed() on from wherever it left off on the
-        # old tracker; the very next call still folds in the *new*
-        # tracker's own, smaller lag rather than keeping the old one or
-        # applying none at all.
+        # old tracker — and the new device's own reading is taken.
         assert clock.elapsed() == pytest.approx(0.0)
         assert new_tracker.buffer_lag_calls == 1
 

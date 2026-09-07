@@ -282,21 +282,39 @@ class _OffsetTrackerClock:
     then freezing for 0.5-1s, repeating roughly every poll: exactly this
     round-trip of over-extrapolating and then snapping back.
 
-    Folds in RadioPositionTracker.buffer_lag() once it's measurable — see
-    _apply_measured_lag(). Without it, `raw` above reduces algebraically to
-    plain wall-clock time since mark() regardless of the device's own
-    buffering delay: for a steady-state device, elapsed_fn() at any later
-    moment equals its value at mark() plus however much wall time has
-    passed, so subtracting the two cancels that delay out of the result
-    instead of preserving it. That is invisible in a unit test that only
-    checks the *shape* of the output (which is exactly right — smoothed,
-    monotonic, forward-only) but not its absolute lag against real device
-    audio, and it was invisible live too, for the same reason: a visualizer
-    that free-runs fast doesn't look broken by itself, it looks broken next
-    to the speaker. Reported live 2026-09-03/04 as the cast visualizer
-    running seconds ahead of the actual audio — worst on Chromecast (~10-11s
-    own startup buffer, see core/radio_position.py's module docstring),
-    smaller but still audible on DLNA and Sonos."""
+    Deliberately does *not* hold itself back by the device's own startup
+    delay, although RadioPositionTracker.buffer_lag() measures one and this
+    class folded it into _baseline between 2026-09-03 and 2026-09-07 (see
+    _apply_lead_correction(), which still reads and logs it). The algebra
+    behind that fold was right as far as it went — `raw` above reduces to
+    plain wall-clock time since mark(), the device's delay cancelling out
+    of the subtraction rather than surviving it — but the conclusion drawn
+    from it, that the picture therefore runs the whole delay ahead of the
+    sound, was not, and the fold never delivered what it promised:
+
+      * This analyzer reads the relay's *live edge* — a lossy subscription
+        with no burst, see core/radio_relay.py's subscribe_audio() — so the
+        oldest content it can possibly show is whatever its own decode
+        buffer holds (_MAX_LOOKAHEAD_SECONDS in core/audio_analysis.py).
+        A hold of ten seconds cannot be served from a three-second buffer:
+        the surplus is thrown away by the lossy queue, chunk by chunk.
+      * Whatever was left of it then evaporated in elapsed() below: while
+        the folded baseline sat ahead of the device, `raw` clamped at 0,
+        and the extrapolation seeded itself from that 0 and free-ran
+        forward at real time. The hold lasted exactly one call.
+
+    Measured live 2026-09-07 on Chromecast, with the debug overlay finally
+    able to show an absolute delta (see core/audio_analysis.py's own note
+    on the stretch when it could not): buffer_lag() 11.67s, folded in and
+    logged as such, Δ starting near -11s and settling within seconds at
+    -2.2s — and the listener hearing the picture arrive late by about that
+    same 2.2s, i.e. the opposite of the complaint the fold was built for.
+    Two runs, -2.46s and -2.19s.
+
+    So the picture is paced by the device's reported position and nothing
+    else. A residual that a listener can actually see belongs in
+    tracker_lead_correction(), which is a calibration set from what someone
+    measured, not a quantity derived from a model of the pipeline."""
 
     def __init__(self, session: SessionState) -> None:
         self._session = session
@@ -310,12 +328,12 @@ class _OffsetTrackerClock:
         # Set once mark() fires, even if no tracker was available at that
         # exact moment — see _try_set_baseline().
         self._first_byte_seen: bool = False
-        # Whether this run's _baseline already has the current tracker's
-        # measured buffer_lag() folded in — see _apply_measured_lag(). Reset
+        # Whether this run's _baseline already carries the one-time
+        # tracker_lead_correction() — see _apply_lead_correction(). Reset
         # whenever the tracker itself changes (_rebase_if_tracker_changed()),
-        # since a swapped-in tracker can belong to a different device with
-        # its own, differently-lagging buffer.
-        self._lag_applied: bool = False
+        # since a swapped-in tracker is a different device, whose own delay
+        # the correction is being read against.
+        self._correction_applied: bool = False
 
     def _rebase_if_tracker_changed(self, tracker: RadioPositionTracker) -> None:
         """Follow whichever RadioPositionTracker the session currently
@@ -336,11 +354,12 @@ class _OffsetTrackerClock:
             return
         self._tracker = tracker
         # A new tracker means a new device (or the same device re-dispatched
-        # from scratch) with its own buffer_lag() to measure — whatever was
-        # folded into _baseline for the old one no longer applies. Cleared
-        # unconditionally, not just in the branch below: _try_set_baseline()
-        # must not skip the fold for a first-ever baseline either.
-        self._lag_applied = False
+        # from scratch), and the correction is a per-device calibration —
+        # whatever was applied to _baseline for the old one no longer holds.
+        # Cleared unconditionally, not just in the branch below:
+        # _try_set_baseline() must not skip the correction for a first-ever
+        # baseline either.
+        self._correction_applied = False
         if self._baseline is None:
             # Nothing decoded yet — mark() still owns the first baseline,
             # and taking one here would put it back at construction time,
@@ -361,11 +380,9 @@ class _OffsetTrackerClock:
         the device — the same mistake _FirstByteClock exists to avoid, and
         the reason that class's own comment about the tracker "having
         nothing to zero" was wrong: the tracker needs no zeroing, but the
-        baseline drawn from it still has to be taken at the right moment —
-        and, since that fix alone still left the device's own buffering
-        delay cancelled out of the result (see this class's own docstring
-        and _apply_measured_lag()), corrected for that too, once it's
-        measurable."""
+        baseline drawn from it still has to be taken at the right moment.
+        Nothing beyond that moment is folded in — see this class's own
+        docstring for the delay that was, and why it went again."""
         self._first_byte_seen = True
         self._try_set_baseline()
 
@@ -405,8 +422,25 @@ class _OffsetTrackerClock:
             # elapsed. Judging that first frame against a baseline that
             # doesn't exist yet is exactly what mark() prevents.
             return 0.0
-        self._apply_measured_lag(tracker)
-        raw = max(0.0, tracker.elapsed_fn() - self._baseline)
+        self._apply_lead_correction(tracker)
+        raw = tracker.elapsed_fn() - self._baseline
+        if raw < 0.0:
+            # The baseline sits ahead of the device: a correction that has
+            # not been served yet (see _apply_lead_correction). Strictly
+            # below zero, so an ordinary raw of exactly 0.0 — every run's
+            # first call after mark() — still goes the normal way and gets
+            # its smoothing anchor. Held at 0 *without* seeding the
+            # extrapolation below — seeding it from a clamped 0 is what
+            # silently swallowed the buffer_lag() fold this class used to
+            # apply: _last_value latched 0 and then free-ran forward at
+            # real time, so a hold meant to last several seconds was over
+            # by the next call and the picture carried on as though nothing
+            # had been applied at all. Anything set here has to actually
+            # hold, or it is not a calibration, it is a decoration.
+            self._last_value = None
+            self._last_seen_at = 0.0
+            self._last_elapsed = 0.0
+            return 0.0
         if not tracker.ready:
             self._last_elapsed = raw
             return raw
@@ -425,58 +459,53 @@ class _OffsetTrackerClock:
         self._last_elapsed = extrapolated
         return extrapolated
 
-    def _apply_measured_lag(self, tracker: RadioPositionTracker) -> None:
-        """Fold RadioPositionTracker.buffer_lag() into _baseline, once it's
-        actually measurable — i.e. once `tracker.ready`, same gate that
-        method uses itself.
+    def _apply_lead_correction(self, tracker: RadioPositionTracker) -> None:
+        """Shift _baseline once by tracker_lead_correction() — and read the
+        device's own buffer_lag() alongside it, for the log only.
 
-        Without this, _baseline is exactly what _try_set_baseline() /
-        _rebase_if_tracker_changed() leave it at: the device's own (already
-        lagging) reported position, taken once. `raw` in elapsed() is then
-        `tracker.elapsed_fn() - _baseline`, and for a device playing at
-        real-time speed that reduces to plain wall-clock time since the
-        baseline was taken — do the algebra: elapsed_fn() at any later
-        moment is (baseline_value + buffer_lag) - buffer_lag +
-        wall_time_since = baseline_value + wall_time_since, so the lag term
-        cancels out of the subtraction instead of surviving it. Every frame
-        this clock ever releases would then be exactly `lag` seconds ahead
-        of what the device is actually playing — reported live 2026-09-03/
-        04, worst on Chromecast (~10-11s of its own startup buffer, see
-        core/radio_position.py's module docstring for the measured numbers)
-        but present on DLNA and Sonos too, just by less.
+        Gated on that reading being available (i.e. on `tracker.ready`, the
+        same gate buffer_lag() uses itself) rather than applied at the first
+        opportunity: a correction is a statement about a device that is
+        actually playing, and this way it lands at a defined moment that the
+        log line below can report a real measurement with.
 
-        Adding the measured lag to _baseline instead keeps that quantity in
-        the subtraction: `raw` becomes tracker.elapsed_fn() - (baseline +
-        lag), i.e. exactly `lag` seconds *behind* where it would otherwise
-        read, until the device (and content_position, decode having spent
-        that same stretch paused against its own lookahead cap — see
-        core/audio_analysis.py's _MAX_LOOKAHEAD_SECONDS) genuinely catches
-        up to it. That is a one-time, real hold at the point this first
-        applies (typically right as `ready` flips, seconds into the run) —
-        the visualizer staying dark that long is correct, not a bug: none
-        of this content was actually audible yet either.
+        The measured lag used to be added here as well, on the algebra in
+        this class's own docstring — that is what the log line's `lag=`
+        still reports. It was removed 2026-09-07 after the first
+        measurement that could see an absolute delta: it never survived the
+        pipeline it was applied to, and what did survive put the picture
+        late rather than early. The docstring has the numbers. Keeping the
+        reading in the log costs nothing and is the one number that says
+        how far behind its own dispatch a device really started.
 
-        Applied once per baseline (see _lag_applied and its own reset in
-        _rebase_if_tracker_changed()), not re-applied on every call even
-        though buffer_lag() itself is a live measurement that could in
-        principle be read again and again: a real device's own buffering
-        delay is a steady pipeline constant for the run, not something
-        expected to wander, and re-adding a slightly different reading
-        later would jump _baseline (and so elapsed()'s output) by that
-        difference for no benefit — the same class of visible glitch the
-        monotonic-extrapolation logic above exists to avoid for tracker
-        jitter generally."""
-        if self._lag_applied:
+        Applied once per baseline (see _correction_applied and its own reset
+        in _rebase_if_tracker_changed()) rather than on every call: it is a
+        fixed calibration, and re-adding it would walk _baseline away by
+        that much per call."""
+        if self._correction_applied or not tracker.ready:
             return
-        lag = tracker.buffer_lag()
-        if lag is None:
-            return
-        # Plus the output stage the device does not report — the same term
+        # The output stage the device does not report — the same term
         # _FirstByteClock adds to its own, unrelated measurement, for the
-        # reason spelled out at VISUALIZER_LEAD_CORRECTION_ENV: a polled position
-        # is where the decoder is, not where the sound is.
-        self._baseline += lag + tracker_lead_correction()
-        self._lag_applied = True
+        # reason spelled out at TRACKER_LEAD_CORRECTION_ENV: a polled
+        # position is where the decoder is, not where the sound is. 0 until
+        # somebody measures one, which is the point of that constant.
+        correction = tracker_lead_correction()
+        self._baseline += correction
+        self._correction_applied = True
+        # Gated on `ready` above rather than on this reading being usable:
+        # buffer_lag() also returns None for a tracker whose dispatch
+        # reference is wrong by construction (routes/devices.py's
+        # /device-stop hands one over for a device that was never
+        # re-dispatched), and a calibration that quietly never applied for
+        # that session would be the same class of silent no-op the removed
+        # fold turned out to be.
+        lag = tracker.buffer_lag()
+        started = f"{lag:.2f}s after its own dispatch" if lag is not None else "unmeasurably"
+        logger.debug(
+            f"[visualizer] tracker ready: device started {started} "
+            f"(measured, not applied — see _apply_lead_correction), "
+            f"baseline correction {correction:.2f}s"
+        )
 
 
 class VisualizerFeed:

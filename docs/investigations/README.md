@@ -35,6 +35,7 @@ Keep entries anonymous: no IPs, no real speaker or room names ("room A",
 
 ## Open
 
+- [The radio visualizer never lined up with the cast audio](radio-visualizer-cast-sync.md) - **OPEN, feature switched off again 2026-09-07**; the picture is fed the relay's live edge while the device plays ~13s behind it, which is not a clock offset and cannot be corrected as one. Read it before trusting any note dated before 2026-09-05 - the instrument itself was broken until then, and the overlay's delta reads ~0 for exactly this failure
 - [The queue drawer's first-ever reveal does not animate](queue-reveal-first-open.md) - **OPEN**; `appear` tried again and reverted 2026-09-07, behaviour in the app unchanged. Read it before the next attempt: the browser-test harness does not reproduce the bug, and two timing mechanisms are dead ends there
 - [One device dropping out of a multi-target cast is never surfaced](multi-target-partial-drop-not-surfaced.md) - **OPEN, shelved 2026-08-28** (code gap unfixed; its original 2026-08-22 trigger is now suspected to be the test-suite leak too, and it has not happened since - to be picked up if it ever becomes a real problem, see the file for why there is no small fix)
 

@@ -39,15 +39,33 @@ interface ConnectErrors {
 
 // Feature flag: the radio-casting visualizer (backend plumbing in
 // connect/core/visualizer_feed.py's radio branch and
-// connect/core/radio_position.py) still doesn't stay in sync with the
-// audio a cast device is actually playing after several days spent on it
-// - most recently, delivery/sonos.py's own 2026-09-04 revert back to
-// x-rincon-mp3radio:// (needed to fix a Sonos audio-dropout problem, see
-// its own docstring) took away the live position Sonos briefly had for
-// this too. Flipped off here on 2026-09-04 rather than pulled out of the
-// codebase, since the rest of the plumbing is otherwise in place and
-// tested - flip back to `true` once the sync problem actually has a fix.
-// The only consumer is isRadioPositionCapable() below.
+// connect/core/radio_position.py). Off since 2026-09-04, re-opened on
+// 2026-09-07 for one evening of measurements and closed again the same
+// evening - this time with a number behind it rather than an impression.
+//
+// What that evening established, in short (the long version, with the
+// readings, is docs/investigations/radio-visualizer-cast-sync.md):
+//
+//   * The picture is drawn from the relay's *live edge*, while a cast
+//     device plays from ~13s behind it (measured on Chromecast, three
+//     runs). Those 13s cannot be corrected in a clock, which is what the
+//     removed buffer_lag() fold tried: the analyzer can only be held back
+//     by its own decode buffer, 3s. Feeding it delayed audio would be the
+//     actual fix, and that is a real piece of work.
+//   * The debug overlay's delta cannot see this at all. Open the
+//     visualizer mid-station and it reads +0.09s while eye and ear are
+//     seconds apart, because both sides of the delta start counting at
+//     that same moment. Δ near zero is not evidence of sync.
+//
+// So this is not a calibration away from working, and nothing in this
+// evening's notes should be read as "one more constant and it's done".
+// The code stays in the repo, tested, behind this flag.
+//
+// Note if it is ever opened again: the flag is all-or-nothing, the
+// blocker is not. Sonos additionally has no real position under
+// x-rincon-mp3radio://; Chromecast and DLNA do report one (see
+// connect/core/radio_position.py) and are only caught by the blanket
+// flag. The only consumer is isRadioPositionCapable() below.
 const RADIO_VISUALIZER_ENABLED = false
 
 interface ConnectState {
