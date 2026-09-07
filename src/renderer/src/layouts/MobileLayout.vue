@@ -70,8 +70,60 @@ export default {
       return this.$route.name === 'm-now-playing'
     },
   },
+  // On <html> rather than in a scoped block: the rules below have to reach
+  // the document itself, and only while this shell is the one on screen -
+  // the desktop app scrolls its own pages normally.
+  mounted() {
+    document.documentElement.classList.add('mobile-shell')
+  },
+  beforeUnmount() {
+    document.documentElement.classList.remove('mobile-shell')
+  },
 }
 </script>
+
+<style>
+/* The page itself must not scroll on a phone; the content between the two
+ * bars does.
+ *
+ * Every mobile view is a plain block that grows with its content, so the
+ * document was the scroller - and the two bars hang off Vuetify's layout
+ * with `position: fixed`, which iOS pins to the *layout* viewport rather
+ * than to what is on screen. Installed as a PWA that came apart: reported
+ * 2026-09-07 as the tab bar travelling up the screen while scrolling and
+ * then staying in the middle of it.
+ *
+ * Nothing here is a workaround for that one browser - a shell with fixed
+ * chrome and one scrolling pane between it is what this layout has always
+ * meant, and the document scrolling underneath it was accidental. */
+html.mobile-shell,
+html.mobile-shell body {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Sticky headers clamp against the pane below, which already starts below
+ * the app bar - offsetting them by its height again (the desktop's own
+ * --v-layout-top) left a strip above them with rows scrolling through it.
+ * See StickyFilter.vue. */
+html.mobile-shell {
+  --beacon-sticky-top: 0px;
+}
+
+/* dvh, with vh under it for engines that know neither: this box sits
+ * *between* the bars rather than behind them, so it wants the viewport as
+ * it currently is. Where a browser gets dvh wrong the bars stay put
+ * regardless - only this pane is then a little too tall or short, which
+ * costs a few pixels of scroll rather than the layout. */
+html.mobile-shell .v-main {
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  /* A flick that reaches the end of the list stays in the list instead of
+   * pulling the page behind it. */
+  overscroll-behavior: contain;
+}
+</style>
 
 <style scoped>
 .mobile-app-bar__logo {

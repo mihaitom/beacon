@@ -719,6 +719,35 @@ input[type="range"]:disabled::-moz-range-thumb {
   color: var(--text);
 }
 
+/* Title on the left, the sheet's own icon actions on the right. */
+.sheet-title-row {
+  display: flex;
+  align-items: center;
+  padding-right: 12px;
+}
+
+.sheet-title-row .sheet-title { flex: 1; }
+
+.btn-sheet-icon {
+  border: none;
+  background: none;
+  padding: 6px;
+  font-size: 1.2rem;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.btn-sheet-icon:disabled { opacity: 0.5; }
+
+/* Turns while a sweep runs - the only feedback a sweep of several seconds
+ * gets, since the list underneath deliberately keeps showing the previous
+ * result until the new one arrives. */
+.btn-sheet-icon--busy i { animation: sheet-icon-spin 1s linear infinite; display: inline-block; }
+
+@keyframes sheet-icon-spin {
+  to { transform: rotate(360deg); }
+}
+
 .sheet-header {
   padding: 10px 20px 4px;
   font-size: 0.75rem;
@@ -762,6 +791,25 @@ input[type="range"]:disabled::-moz-range-thumb {
 /* Every action the sheet has, in one row: the destructive one on the left,
  * the confirming one on the right, with the list above holding nothing but
  * destinations. Same arrangement as the desktop picker's own action bar. */
+/* The two lines that describe the stream, between the device list and the
+ * footer - the same place the desktop's own cast sheet keeps them. */
+.sheet-stream-info {
+  padding: 0 20px 4px;
+}
+
+.sheet-stream-info .stream-info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 3px 0;
+  font-size: 0.85rem;
+}
+
+.sheet-stream-info .stream-info-row span:last-child {
+  text-align: right;
+  color: var(--text);
+}
+
 .sheet-footer {
   display: flex;
   align-items: center;

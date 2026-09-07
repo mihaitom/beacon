@@ -36,6 +36,7 @@
           {{ $t('connect.stopAll') }}
         </v-btn>
         <v-btn
+          class="mobile-device-picker__done"
           variant="flat"
           size="small"
           :color="selectedKeys.size > 0 ? 'primary' : undefined"
@@ -44,6 +45,35 @@
           {{ $t('common.done') }}
         </v-btn>
       </div>
+
+      <!-- The same three notices ConnectDevicePicker.vue shows above its
+       - list. They were missing here entirely, so a phone got a sheet that
+       - simply stayed empty where the desktop said why. -->
+      <connect-error-banner
+        v-if="connectStore.errors.apiUnreachable"
+        variant="api-unreachable"
+        class="mobile-device-picker__notice"
+        @retry="connectStore.refreshDevices(true)"
+      />
+      <connect-error-banner
+        v-if="authStore.health?.ffmpeg === false"
+        variant="ffmpeg-missing"
+        class="mobile-device-picker__notice"
+      />
+      <v-alert
+        v-if="connectStore.errors.message"
+        type="error"
+        variant="tonal"
+        density="compact"
+        closable
+        class="mobile-device-picker__notice"
+        @click:close="connectStore.clearError()"
+      >
+        {{ connectStore.errors.message }}
+        <div v-if="connectStore.errors.detail" class="connect-error-detail">
+          {{ connectStore.errors.detail }}
+        </div>
+      </v-alert>
 
       <div
         v-if="connectStore.isScanning && allDevices.length === 0"
@@ -95,13 +125,25 @@
           {{ $t('connect.noDevicesFound') }}
         </div>
       </v-list>
+
+      <!-- What is playing and how it is being sent, the same section the
+       - desktop picker ends with. Inside the sheet rather than in the
+       - player bar: this is the one surface on a phone where the cast
+       - destination is being decided, which is when the format matters. -->
+      <template v-if="showStreamInfo">
+        <v-divider class="mobile-device-picker__rule" />
+        <stream-info-section class="mobile-device-picker__stream-info" />
+      </template>
     </v-card>
   </v-bottom-sheet>
 </template>
 
 <script lang="ts">
+import { useAuthStore } from '@/stores/auth'
 import { useConnectStore } from '@/stores/connect'
 import { usePlaybackStore } from '@/stores/playback'
+import ConnectErrorBanner from '@/components/connect/ConnectErrorBanner.vue'
+import StreamInfoSection, { hasStreamInfo } from '@/components/connect/StreamInfoSection.vue'
 import MobileDeviceRow from './MobileDeviceRow.vue'
 import type { DeviceType, DiscoveredDevice } from '@/services/connect/types'
 
@@ -128,7 +170,7 @@ const TYPE_LABELS: Record<DeviceType, string> = {
 
 export default {
   name: 'MobileDevicePicker',
-  components: { MobileDeviceRow },
+  components: { ConnectErrorBanner, MobileDeviceRow, StreamInfoSection },
   props: {
     modelValue: {
       type: Boolean,
@@ -152,6 +194,15 @@ export default {
   computed: {
     connectStore() {
       return useConnectStore()
+    },
+    authStore() {
+      return useAuthStore()
+    },
+    // Whether stream-info-section renders anything at all — see
+    // hasStreamInfo() in StreamInfoSection.vue, the same gate the desktop
+    // picker's own divider uses.
+    showStreamInfo(): boolean {
+      return hasStreamInfo()
     },
     activeKeys(): string[] {
       return this.connectStore.activeTargets.map(
@@ -286,10 +337,9 @@ export default {
           // docstring.
           await usePlaybackStore().applyTargets(targets)
         } catch {
-          // The sheet has no error surface of its own, and it stays open
-          // on failure so the selection is still there to retry from —
-          // without this, "Done" simply did nothing visible and the
-          // rejection went unhandled.
+          // Stays open on failure, so the selection is still there to
+          // retry from — the error itself is shown by the alert at the top
+          // of the sheet, the same one the desktop picker has.
           this.reportError()
           return
         }
@@ -304,10 +354,15 @@ export default {
      * renders connectStore.errors inline, this sheet has nowhere to put
      * them, so they go to the same toast every other mobile failure uses. */
     reportError() {
+      // Only where the sheet's own alert has nothing to show. A failure
+      // normally leaves a message on the store, and that is what the alert
+      // at the top renders - toasting it as well would report one failure
+      // twice, in two places, on a screen this size.
+      if (this.connectStore.errors.message) return
       this.$emitter.emit('toast', {
         level: 'error',
         title: this.$t('connect.title'),
-        message: this.connectStore.errors.message ?? this.$t('connect.unknownError'),
+        message: this.$t('connect.unknownError'),
       })
     },
   },
@@ -320,6 +375,20 @@ export default {
   align-items: center;
   gap: 4px;
   padding: 16px 16px 8px;
+}
+
+.mobile-device-picker__notice {
+  margin: 0 16px 12px;
+}
+
+/* The section brings its own vertical rhythm; this only insets it to the
+ * sheet's own margin and keeps it off the safe-area edge. */
+.mobile-device-picker__rule {
+  margin-top: 4px;
+}
+
+.mobile-device-picker__stream-info {
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
 }
 
 .mobile-device-picker__rescan {

@@ -67,7 +67,9 @@ describe('playback persistence', () => {
 
       playback.persistNow()
 
-      expect(sessionStorage.getItem(SESSION_KEY)).toBe('true')
+      // The moment it was still running, not a flag - see RESUME_WINDOW_MS
+      // in services/playback/persistence.ts.
+      expect(Number(sessionStorage.getItem(SESSION_KEY))).toBeGreaterThan(Date.now() - 5000)
     })
 
     it('does not mark a session whose sound is coming out of a speaker elsewhere', () => {
@@ -81,7 +83,7 @@ describe('playback persistence', () => {
 
       playback.persistNow()
 
-      expect(sessionStorage.getItem(SESSION_KEY)).toBe('false')
+      expect(sessionStorage.getItem(SESSION_KEY)).toBe('0')
     })
 
     it('carries on when storage refuses the write', () => {

@@ -108,6 +108,27 @@ async def _dispatch_queued_track(session: SessionState, target, track, gain: flo
     return True
 
 
+# Ceiling on the over-fetch below. Mirrors stores/playback.ts's
+# autoplayCandidateCount() — the two implementations of the same top-up have
+# to agree on how many songs a top-up adds.
+_AUTOPLAY_CANDIDATE_CAP = 100
+
+
+def _candidate_count(st) -> int:
+    """How many candidates to ask for to end up with autoplay_batch_size new
+    ones.
+
+    The similar-songs pool keeps returning tracks that are already queued, so
+    asking for exactly the batch size adds however few of them happen to be
+    new — measured 2026-09-07 against Navidrome with AudioMuse, on a 40-song
+    queue: 10 asked for, 10 returned, 5 new. Worst case every queued song
+    comes back as a candidate, so batch size plus queue length is what makes
+    the batch fillable. See stores/playback.ts's autoplayCandidateCount() for
+    the frontend half of this, and _AUTOPLAY_CANDIDATE_CAP for the ceiling.
+    """
+    return min(st.autoplay_batch_size + len(st.queue), _AUTOPLAY_CANDIDATE_CAP)
+
+
 async def _maybe_autoplay_topup(session: SessionState) -> None:
     """Backend-side fallback for Autoplay — appends similar songs straight
     onto session.state.queue/original_queue, the same way stores/
@@ -136,7 +157,7 @@ async def _maybe_autoplay_topup(session: SessionState) -> None:
     seed_id = st.queue[-1]
     try:
         similar = await asyncio.to_thread(
-            session.media.get_similar_songs2, seed_id, st.autoplay_batch_size
+            session.media.get_similar_songs2, seed_id, _candidate_count(st)
         )
     except Exception as e:
         logger.warning(f"[stream] Autoplay top-up failed: {e}")
@@ -145,7 +166,7 @@ async def _maybe_autoplay_topup(session: SessionState) -> None:
     # otherwise keeps circling back to whatever's already just been
     # played, same reasoning as stores/playback.ts's maybeAutoplay().
     existing_ids = set(st.queue)
-    fresh_ids = [t.id for t in similar if t.id not in existing_ids]
+    fresh_ids = [t.id for t in similar if t.id not in existing_ids][: st.autoplay_batch_size]
     if not fresh_ids:
         return
     st.queue.extend(fresh_ids)

@@ -13,7 +13,7 @@ import {
 import { useLibraryStore } from './library'
 import { useConnectStore } from './connect'
 import { useAuthStore } from './auth'
-import { AUTOPLAY_BATCH_SIZE, useAutoplayStore } from './autoplay'
+import { AUTOPLAY_BATCH_SIZE, autoplayCandidateCount, useAutoplayStore } from './autoplay'
 import { useRadioSettingsStore } from './radioSettings'
 import { useDrawersStore } from './drawers'
 import * as connectPlayback from '@/services/connect/playback'
@@ -33,6 +33,7 @@ import { resolveRadioStation } from '@/services/playback/radioStation'
 import {
   fetchRadioMetadata,
   fetchRadioTitleHistory,
+  searchRadioTitleHistory,
   RADIO_TITLE_PAGE_SIZE,
   type RadioTitleEntry,
   startRadioMetadataWatch,
@@ -148,6 +149,22 @@ interface PlaybackState {
   radioRelayBitrate: number | null
   radioRelayReason: string | null
   radioRelayContentType: string | null
+  /** The search in force over the station's title log, and what it
+   * matched — both empty whenever nothing is being searched for, which is
+   * what the log itself is shown for.
+   *
+   * Separate from radioTitleLog rather than filtering it in place: that
+   * list is what the 8s poll appends to and what paging extends, and a
+   * search answers from the backend's whole log instead (see
+   * searchRadioTitleHistory()). Keeping the two apart is what lets a
+   * search be dropped without re-fetching the log behind it.
+   */
+  radioTitleSearch: string
+  radioTitleSearchResults: RadioTitleEntry[]
+  /** A search request is out. Rendered as a quiet state on the search row
+   * rather than as an empty result, which reads as "nothing found" for
+   * however long the round trip takes. */
+  radioTitleSearchPending: boolean
   /** Whether radioTitleLog has reached the beginning of the backend's log
    * for this station, so there is nothing older left to ask for. Set from
    * a page that came back shorter than it could have been, which is the
@@ -209,6 +226,15 @@ const endedEdge = createEdgeDetector()
 // id, since adopting now means mirroring the whole queue, not just the
 // current song.
 const queueReconcileGuard = createKeyedGuard<string>()
+
+// The seed maybeAutoplay() last got nothing new for. Same question, same
+// answer: without this, a library whose whole similar-songs pool is already
+// in the queue is re-asked on every status tick — every ~2s while casting,
+// since adoptCastQueue() calls the top-up on each one — for as long as the
+// last song plays. Cleared implicitly rather than explicitly: the seed is
+// the queue's last song, so anything that extends the queue makes the id
+// stop matching on its own.
+let autoplayExhaustedSeedId: string | null = null
 
 // Guards maybeAutoplay() against firing a second, overlapping fetch —
 // startCurrent() and adoptCastQueue() both call it on every song change,
@@ -295,6 +321,11 @@ const positionTracker = createPositionTracker()
 // nothing renders it, and the scroll handler that triggers the load fires
 // far more often than the request completes.
 let radioTitleLogPageInFlight = false
+
+// Only the newest search may write its results: typing "wonder" fires one
+// request per keystroke past the debounce, and a slower earlier one landing
+// afterwards would put the matches for "wond" under the word on screen.
+const radioTitleSearchGuard = createSequenceGuard()
 
 let pendingRadioTitle: { title: string | null; url: string } | null = null
 let pendingRadioTitleTimer: ReturnType<typeof setTimeout> | null = null
@@ -433,6 +464,9 @@ export const usePlaybackStore = defineStore('playback', {
       radioStation: null,
       radioNowPlaying: null,
       radioTitleLog: [],
+      radioTitleSearch: '',
+      radioTitleSearchResults: [],
+      radioTitleSearchPending: false,
       radioRelayBitrate: null,
       radioRelayReason: null,
       radioRelayContentType: null,
@@ -592,71 +626,82 @@ export const usePlaybackStore = defineStore('playback', {
       initMediaSession()
 
       const connect = useConnectStore()
-      connect.$subscribe((_mutation, state) => {
-        // As soon as we know for sure whether a cast session already owns
-        // playback (the first real status tick), decide whether local
-        // <audio> should resume instead — see decideLocalResume().
-        if (state.status) this.decideLocalResume()
+      // detached: true, same reason as the persistence subscription below —
+      // init() runs from App.vue's created(), so without it Pinia ties this
+      // subscription to that component instance and drops it when the
+      // instance goes away (an HMR round reloading App.vue does exactly
+      // that). The `initialized` guard above then keeps it from ever being
+      // set up again, leaving the store deaf to every further status tick
+      // while the backend keeps a cast playing — observed live 2026-09-07 as
+      // a player bar stuck at one track's end for the rest of the queue.
+      connect.$subscribe(
+        (_mutation, state) => {
+          // As soon as we know for sure whether a cast session already owns
+          // playback (the first real status tick), decide whether local
+          // <audio> should resume instead — see decideLocalResume().
+          if (state.status) this.decideLocalResume()
 
-        const status = state.status
-        const activeNow = connect.isActive
-        // A live end-of-cast transition (not "wasn't casting at boot",
-        // which decideLocalResume() above already handles) — this.isPlaying
-        // /this.localPosition below still hold the last real values reported
-        // while casting, since this same tick's early return (right below)
-        // skips overwriting them from a now-inactive status. Exactly what
-        // local playback should pick back up from.
-        const castingEdge = castingActiveEdge.update(activeNow)
-        if (localResumeDecided && castingEdge === 'falling') {
-          // A takeover displacing this session from its target is not the
-          // user asking to stop — picking playback back up over local
-          // speakers would be audibly wrong (nobody asked this machine to
-          // start making sound). Just go quiet instead; see ConnectStatus.
-          // displaced's comment and displace_target() in session.py.
-          if (status?.displaced) this.isPlaying = false
-          else void this.handOffToLocalPlayback()
-        }
+          const status = state.status
+          const activeNow = connect.isActive
+          // A live end-of-cast transition (not "wasn't casting at boot",
+          // which decideLocalResume() above already handles) — this.isPlaying
+          // /this.localPosition below still hold the last real values reported
+          // while casting, since this same tick's early return (right below)
+          // skips overwriting them from a now-inactive status. Exactly what
+          // local playback should pick back up from.
+          const castingEdge = castingActiveEdge.update(activeNow)
+          if (localResumeDecided && castingEdge === 'falling') {
+            // A takeover displacing this session from its target is not the
+            // user asking to stop — picking playback back up over local
+            // speakers would be audibly wrong (nobody asked this machine to
+            // start making sound). Just go quiet instead; see ConnectStatus.
+            // displaced's comment and displace_target() in session.py.
+            if (status?.displaced) this.isPlaying = false
+            else void this.handOffToLocalPlayback()
+          }
 
-        // Once per payload, not once per mutation — see
-        // interruptedPayloadHandled. Checked before the guard below, since
-        // that returns early whenever targets are already gone.
-        if (status?.interrupted && status !== interruptedPayloadHandled) {
-          interruptedPayloadHandled = status
-          this.notifyCastInterrupted()
-        }
+          // Once per payload, not once per mutation — see
+          // interruptedPayloadHandled. Checked before the guard below, since
+          // that returns early whenever targets are already gone.
+          if (status?.interrupted && status !== interruptedPayloadHandled) {
+            interruptedPayloadHandled = status
+            this.notifyCastInterrupted()
+          }
 
-        if (!status || !activeNow) return
+          if (!status || !activeNow) return
 
-        this.isPlaying = status.streaming && !status.paused
-        this.radioBuffering = status.radio_buffering
-        if (status.current_song) this.duration = status.current_song.duration
-        // Through the tracker, never straight from status.elapsed: the
-        // smoothing interval below reads that same tracker, so writing the
-        // raw value here as well put two disagreeing numbers on screen in
-        // turn — the raw one for the ~200ms until the next interval tick,
-        // the smoothed one for the rest of the ~2s until the next status
-        // tick. As long as the two agreed to within a second that stayed
-        // invisible behind formatTime()'s rounding; once the tracker was
-        // carrying any real lead (see positionTracker.ts's CATCH_UP_SECONDS)
-        // it read as the counter jumping a second or two backwards and
-        // forwards, twice per status tick, with the lyrics highlight
-        // following it. Ordered after the duration above so a tick that
-        // brings a new song's length clamps against that one, not the
-        // previous song's. Once per payload, same as the interruption above
-        // — see positionPayloadHandled for what re-recording a stale
-        // elapsed does to the tracker.
-        if (status !== positionPayloadHandled) {
-          positionPayloadHandled = status
-          const now = performance.now()
-          positionTracker.record(status.elapsed, now)
-          this.localPosition = positionTracker.extrapolate(now, this.positionClamp)
-        }
-        this.checkScrobbleThreshold()
+          this.isPlaying = status.streaming && !status.paused
+          this.radioBuffering = status.radio_buffering
+          if (status.current_song) this.duration = status.current_song.duration
+          // Through the tracker, never straight from status.elapsed: the
+          // smoothing interval below reads that same tracker, so writing the
+          // raw value here as well put two disagreeing numbers on screen in
+          // turn — the raw one for the ~200ms until the next interval tick,
+          // the smoothed one for the rest of the ~2s until the next status
+          // tick. As long as the two agreed to within a second that stayed
+          // invisible behind formatTime()'s rounding; once the tracker was
+          // carrying any real lead (see positionTracker.ts's CATCH_UP_SECONDS)
+          // it read as the counter jumping a second or two backwards and
+          // forwards, twice per status tick, with the lyrics highlight
+          // following it. Ordered after the duration above so a tick that
+          // brings a new song's length clamps against that one, not the
+          // previous song's. Once per payload, same as the interruption above
+          // — see positionPayloadHandled for what re-recording a stale
+          // elapsed does to the tracker.
+          if (status !== positionPayloadHandled) {
+            positionPayloadHandled = status
+            const now = performance.now()
+            positionTracker.record(status.elapsed, now)
+            this.localPosition = positionTracker.extrapolate(now, this.positionClamp)
+          }
+          this.checkScrobbleThreshold()
 
-        void this.reconcileFromStatus(status)
+          void this.reconcileFromStatus(status)
 
-        if (endedEdge.update(status.ended) === 'rising') void this.advanceOnSongEnd()
-      })
+          if (endedEdge.update(status.ended) === 'rising') void this.advanceOnSongEnd()
+        },
+        { detached: true },
+      )
 
       // Smooths the ~2s-stepped position above into something that moves
       // every 200ms instead — see positionTracker.ts's own comment. A no-op
@@ -1026,6 +1071,9 @@ export const usePlaybackStore = defineStore('playback', {
      * shuffle only kicking in from the second song onward. */
     setQueue(songs: Song[], startIndex = 0, pinFirst = true): void {
       this.leaveRadio()
+      // A different queue is a different question, even where its last song
+      // happens to be the one Autoplay gave up on before.
+      autoplayExhaustedSeedId = null
       this.originalQueue = [...songs]
       // Unshuffled, this.queue is `songs` in the same order, so startIndex
       // already *is* the right index — re-deriving it by id below would
@@ -1680,6 +1728,10 @@ export const usePlaybackStore = defineStore('playback', {
       this.radioTitleLog = []
       this.radioTitleLogComplete = false
       radioTitleLogPageInFlight = false
+      // A search is about one station's log, so it cannot survive into the
+      // next one — the results would be another station's evening under
+      // this one's name.
+      this.clearRadioTitleSearch()
     },
 
     /** Puts what a poll brought back at the top of the log.
@@ -1741,6 +1793,56 @@ export const usePlaybackStore = defineStore('playback', {
       } finally {
         radioTitleLogPageInFlight = false
       }
+    },
+
+    /** Searches the station's whole log for `query`, replacing what the
+     * title list shows for as long as one is in force. An empty query is
+     * how a search is dropped, so the caller needs no second action for
+     * "stop searching".
+     *
+     * Asked of the backend rather than filtered here: this client holds
+     * the newest page or three, and the entry somebody is looking for is
+     * usually the one they did not scroll to. See
+     * searchRadioTitleHistory().
+     *
+     * The station is checked on the way back exactly as
+     * loadOlderRadioTitles() checks it, and for the same reason — both
+     * halves, since either side can have moved on while this was in
+     * flight. */
+    async searchRadioTitles(query: string): Promise<void> {
+      const trimmed = query.trim()
+      this.radioTitleSearch = trimmed
+      const token = radioTitleSearchGuard.begin()
+      if (!trimmed) {
+        // begin() above is what makes this cancel rather than merely
+        // clear: a request already out for the text that was just deleted
+        // can no longer write its results.
+        this.radioTitleSearchResults = []
+        this.radioTitleSearchPending = false
+        return
+      }
+
+      const station = this.radioStation
+      if (!station) return
+      this.radioTitleSearchPending = true
+      try {
+        const page = await searchRadioTitleHistory(trimmed)
+        if (!radioTitleSearchGuard.isCurrent(token)) return
+        if (this.radioStation?.streamUrl !== station.streamUrl) return
+        if (page.url !== null && page.url !== station.streamUrl) return
+        this.radioTitleSearchResults = page.history
+      } catch (error) {
+        console.error('[playback] Radio title search failed:', error)
+      } finally {
+        // Only the latest search owns the pending state — an older one
+        // finishing late would otherwise clear it while the current
+        // request is still out.
+        if (radioTitleSearchGuard.isCurrent(token)) this.radioTitleSearchPending = false
+      }
+    },
+
+    clearRadioTitleSearch(): void {
+      void this.searchRadioTitles('')
     },
 
     /** Drops whatever radio state is set, if any — the station itself, its
@@ -2051,11 +2153,12 @@ export const usePlaybackStore = defineStore('playback', {
 
       const seed = this.queue[this.queue.length - 1]
       if (!seed) return
+      if (seed.id === autoplayExhaustedSeedId) return // asked already, nothing came back
       autoplayLock.acquire()
       try {
         const { songs: similar, plexPassRequired } = await useLibraryStore()
           .client()
-          .getSimilarSongs2(seed.id, AUTOPLAY_BATCH_SIZE)
+          .getSimilarSongs2(seed.id, autoplayCandidateCount(this.queue.length))
         if (plexPassRequired) {
           // Unlike Song/Artist Radio's own one-shot notify-and-move-on
           // (startSongRadio()/startArtistRadio()), Autoplay is a standing
@@ -2075,9 +2178,14 @@ export const usePlaybackStore = defineStore('playback', {
         // library's similar-songs pool keeps circling back to whatever's
         // already just been played, and autoplay would spend its fetches
         // re-adding songs still sitting right there in the queue instead
-        // of actually extending it.
+        // of actually extending it. The batch size is applied after the
+        // filter, on what is actually new — the request over-fetched for
+        // exactly this, see autoplayCandidateCount().
         const existingIds = new Set(this.queue.map((t) => t.id))
-        const fresh = similar.filter((t) => !existingIds.has(t.id))
+        const fresh = similar.filter((t) => !existingIds.has(t.id)).slice(0, AUTOPLAY_BATCH_SIZE)
+        // Only on a successful round trip: a lookup that threw (below) is a
+        // failure to ask, not an answer, and must stay retryable.
+        autoplayExhaustedSeedId = fresh.length ? null : seed.id
         if (fresh.length) this.addToQueue(fresh)
       } catch (error) {
         console.error('[playback] Autoplay top-up failed:', error)
@@ -2238,6 +2346,7 @@ export const usePlaybackStore = defineStore('playback', {
     resetForLogout(): void {
       getAudioEngine().stop()
       useDrawersStore().resetDrawers()
+      autoplayExhaustedSeedId = null // module-level, so $reset() below doesn't reach it
       this.$reset()
     },
 

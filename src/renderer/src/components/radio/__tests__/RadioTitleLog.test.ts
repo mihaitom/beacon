@@ -43,9 +43,13 @@ beforeEach(() => {
 
 afterEach(() => vi.useRealTimers())
 
+/** The plain case: the list *is* the station's log, so its first entry is
+ * the one on air — which is what `currentAt` says explicitly now that a
+ * search can hand this component a list where that is not true. */
 function mountLog(titles: string[]) {
+  const entries = titles.map((title, i) => ({ title, at: 1_757_000_000 + i }))
   return mount(RadioTitleLog, {
-    props: { entries: titles.map((title, i) => ({ title, at: 1_757_000_000 + i })) },
+    props: { entries, currentAt: entries[0]?.at ?? null },
     global: { ...i18n.global, ...realTransitions },
   })
 }
@@ -58,7 +62,7 @@ function at(day: number, hour: number, minute = 0): number {
 
 function mountEntries(entries: { title: string; at: number }[]) {
   return mount(RadioTitleLog, {
-    props: { entries },
+    props: { entries, currentAt: entries[0]?.at ?? null },
     global: { ...i18n.global, ...realTransitions },
   })
 }
@@ -144,8 +148,148 @@ describe('RadioTitleLog', () => {
 
     expect(wrapper.find('.title-log__item--searchable').exists()).toBe(false)
     // Not a <button> either: a card that cannot do anything must not read
-    // as one that can.
-    expect(wrapper.find('button').exists()).toBe(false)
+    // as one that can. Scoped to the row rather than the whole panel,
+    // which has a real button of its own in its head (the log search).
+    expect(wrapper.find('.title-log__item').element.tagName).toBe('DIV')
+  })
+
+  describe('searching the log', () => {
+    /** The head swaps its two states through a <transition mode="out-in">,
+     * so the incoming one is only in the DOM a tick after the outgoing one
+     * has left. */
+    async function openSearch(wrapper: ReturnType<typeof mountLog>) {
+      await wrapper.find('.title-log__head button').trigger('click')
+      await wrapper.vm.$nextTick()
+    }
+
+    /** The search itself runs against the backend (see
+     * playbackStore.searchRadioTitles()) — this component only opens the
+     * field, reports what is typed, and renders whatever it is handed
+     * back. These pin its half of that. */
+    it('keeps the field out of the way until it is asked for', () => {
+      const wrapper = mountLog(['WizTheMc - Show Me Love'])
+
+      expect(wrapper.find('.title-log__search-field').exists()).toBe(false)
+      expect(wrapper.find('.title-log__head-title').exists()).toBe(true)
+    })
+
+    it("opens the field from the magnifier, taking the heading's place", async () => {
+      const wrapper = mountLog(['WizTheMc - Show Me Love'])
+
+      await openSearch(wrapper)
+
+      expect(wrapper.find('.title-log__search-field').exists()).toBe(true)
+      expect(wrapper.find('.title-log__head-title').exists()).toBe(false)
+    })
+
+    it('reports what is typed rather than filtering the rows itself', async () => {
+      const wrapper = mountLog(['WizTheMc - Show Me Love', 'Oasis - Wonderwall'])
+
+      await openSearch(wrapper)
+      await wrapper.find('.title-log__search-field input').setValue('wonder')
+
+      expect(wrapper.emitted('update:query')?.at(-1)).toEqual(['wonder'])
+      // Still both rows: what is shown is the caller's answer, not a local
+      // filter racing it.
+      expect(wrapper.findAll('.title-log__item')).toHaveLength(2)
+    })
+
+    it('opens already showing a search that is in force', () => {
+      const wrapper = mount(RadioTitleLog, {
+        props: { entries: [], query: 'wonder' },
+        global: { ...i18n.global, ...realTransitions },
+      })
+
+      expect(wrapper.find('.title-log__search-field').exists()).toBe(true)
+    })
+
+    it('drops the search when the field is closed, so no invisible filter is left', async () => {
+      const wrapper = mount(RadioTitleLog, {
+        props: { entries: [], query: 'wonder' },
+        global: { ...i18n.global, ...realTransitions },
+      })
+
+      await wrapper.find('.title-log__search-field input').trigger('keydown.esc')
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.emitted('update:query')?.at(-1)).toEqual([''])
+      // The heading and its magnifier are back, which is what "the field
+      // is gone" looks like from the outside. Asserted on those rather
+      // than on the field's absence: the field leaves through a
+      // transition, so it lingers in the DOM for the length of it.
+      expect(wrapper.find('.title-log__head-idle').exists()).toBe(true)
+    })
+
+    it('says a search found nothing, rather than that the station has played nothing', () => {
+      const wrapper = mount(RadioTitleLog, {
+        props: { entries: [], query: 'wonder' },
+        global: { ...i18n.global, ...realTransitions },
+      })
+
+      expect(wrapper.find('.title-log__empty').text()).toContain('titleLogFilterEmpty')
+    })
+
+    it('leaves the top match unmarked when it is not what is playing', () => {
+      // The results are matches from all over the evening; the newest of
+      // them is not "on air" just for being first. Marking it would put
+      // the play icon and the lit card on a track that finished hours ago.
+      const wrapper = mount(RadioTitleLog, {
+        props: {
+          entries: [
+            { title: 'Oasis - Wonderwall', at: at(6, 18) },
+            { title: 'Stevie Wonder - Superstition', at: at(6, 15) },
+          ],
+          query: 'wonder',
+          currentAt: at(6, 20),
+        },
+        global: { ...i18n.global, ...realTransitions },
+      })
+
+      expect(wrapper.find('.title-log__item--now').exists()).toBe(false)
+      expect(wrapper.findAll('.mdi-play')).toHaveLength(0)
+    })
+
+    it('still marks the playing track when the search happens to find it', () => {
+      const wrapper = mount(RadioTitleLog, {
+        props: {
+          entries: [
+            { title: 'Oasis - Wonderwall', at: at(6, 20) },
+            { title: 'Stevie Wonder - Superstition', at: at(6, 15) },
+          ],
+          query: 'wonder',
+          currentAt: at(6, 20),
+        },
+        global: { ...i18n.global, ...realTransitions },
+      })
+
+      const marked = wrapper.findAll('.title-log__item--now')
+      expect(marked).toHaveLength(1)
+      expect(marked[0]!.text()).toContain('Wonderwall')
+    })
+
+    it('draws no listening breaks between matches', () => {
+      // Hours between two matches is the music that did not match, not a
+      // pause in the evening — a broken line there would be a lie about it.
+      const wrapper = mount(RadioTitleLog, {
+        props: {
+          entries: [
+            { title: 'Oasis - Wonderwall', at: at(6, 20) },
+            { title: 'Stevie Wonder - Superstition', at: at(6, 9) },
+          ],
+          query: 'wonder',
+          currentAt: at(6, 20),
+        },
+        global: { ...i18n.global, ...realTransitions },
+      })
+
+      expect(wrapper.find('.title-log__break').exists()).toBe(false)
+    })
+
+    it('says the log is empty when nothing is being searched for', () => {
+      const wrapper = mountEntries([])
+
+      expect(wrapper.find('.title-log__empty').text()).toContain('titleLogEmpty')
+    })
   })
 
   describe('a break in the listening', () => {

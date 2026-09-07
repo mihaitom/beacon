@@ -22,8 +22,13 @@ function at(day: number, hour: number, minute = 0): number {
 }
 
 function mountLog(entries: { title: string; at: number }[], variant?: 'compact' | 'immersive') {
+  // currentAt: the list here is always the log itself, so its first entry
+  // is the one on air. A search hands the component a list where that is
+  // not true, which is why this is said rather than assumed - see the
+  // prop's own comment.
+  const current = entries[0]?.at ?? null
   const wrapper = mount(RadioTitleLog, {
-    props: variant ? { entries, variant } : { entries },
+    props: variant ? { entries, variant, currentAt: current } : { entries, currentAt: current },
     attachTo: document.body,
     global: {
       plugins: [vuetify, i18n],
@@ -540,5 +545,37 @@ describe('RadioTitleLog highlight', () => {
     expect(plain.find('.title-log__day').exists()).toBe(false)
 
     expect(newestTrackColor(dated)).toBe(newestTrackColor(plain))
+  })
+})
+
+describe('the search field', () => {
+  /** A real browser because the thing being checked only exists once the
+   * scoped rule is applied and resolved: what a phone browser reads to
+   * decide whether to zoom the page in is the input's *computed* font
+   * size, and jsdom computes none. Below 16px iOS Safari zooms on focus
+   * and does not zoom back out when the field closes, leaving the whole
+   * log oversized. */
+  it('gives the input at least the 16px a phone needs to leave the page alone', async () => {
+    const wrapper = mountLog([{ title: 'Oasis - Wonderwall', at: at(6, 20) }])
+
+    await wrapper.find('.title-log__head button').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const input = document.querySelector('.title-log__search-field input') as HTMLInputElement
+    expect(parseFloat(getComputedStyle(input).fontSize)).toBeGreaterThanOrEqual(16)
+  })
+
+  it('sits above the scrolling log, so an arriving title cannot push it away', async () => {
+    const wrapper = mountLog([{ title: 'Oasis - Wonderwall', at: at(6, 20) }])
+
+    await wrapper.find('.title-log__head button').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const field = document.querySelector('.title-log__search-field') as HTMLElement
+    const scroller = document.querySelector('.title-log__scroll') as HTMLElement
+    expect(scroller.contains(field)).toBe(false)
+    expect(field.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      scroller.getBoundingClientRect().top + 1,
+    )
   })
 })

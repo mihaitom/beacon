@@ -277,6 +277,35 @@ describe('NowPlayingView layout', () => {
      * narrow containers) did exactly what it is for. Sampling every frame
      * is the point - the end state was correct the whole time, which is
      * why the existing tests above never saw it. */
+    /** The flip card is as tall as the stage, not as tall as its own
+     * contents. Only the artwork is sized by artSize(); the back face - the
+     * lyrics, or a station's title log, a list that can always show more -
+     * is sized to this box, and the rest of the height was going unused.
+     * Measured before this: 708px of a 1000px stage at 1200x1000. The
+     * phone had the same problem and was fixed first; this is the same
+     * change on the window that flips. */
+    it('gives the flipped card the whole stage height', async () => {
+      await page.viewport(1200, 1000)
+      const { wrapper } = await mountWithSongAndLyrics()
+
+      const card = rect(wrapper.get('.now-playing__flip-card').element)
+      const stage = rect(wrapper.get('.now-playing__stage').element)
+      const content = getComputedStyle(wrapper.get('.now-playing__content').element)
+      const padY = parseFloat(content.paddingTop) + parseFloat(content.paddingBottom)
+
+      // Actually flipped at this size, or this measures the wrong thing.
+      expect(getComputedStyle(wrapper.get('.now-playing__flip-card').element).display).not.toBe(
+        'contents',
+      )
+      expect(card.height).toBeCloseTo(stage.height - padY, -0.5)
+
+      // And the front face still reads as it did: artwork and title
+      // centred in the taller box rather than pinned to its top.
+      const art = rect(wrapper.get('.now-playing__art-wrap').element)
+      const info = rect(wrapper.get('.now-playing__info').element)
+      expect(Math.abs(art.top - stage.top - (stage.bottom - info.bottom))).toBeLessThan(24)
+    })
+
     it('never stacks the panels while a window is being widened out of the flip', async () => {
       await page.viewport(900, 1000)
       const { wrapper } = await mountWithSongAndLyrics()
@@ -319,29 +348,42 @@ describe('NowPlayingView layout', () => {
       const flipped = (): boolean =>
         getComputedStyle(wrapper.get('.now-playing__flip-card').element).display !== 'contents'
 
-      async function drag(from: number, to: number, by: number): Promise<number> {
+      /** How far the column moved on the one step that crossed the
+       * boundary. Not the largest step of the whole drag: the steps after
+       * it carry the slide still easing off, which is real movement and
+       * lands in the same range, so the largest one was as often that as
+       * it was the crossing. */
+      async function crossingStep(from: number, to: number, by: number): Promise<number> {
         let previous: number | null = null
-        let biggest = 0
+        let wasFlipped: boolean | null = null
+        let atCrossing: number | null = null
         for (let width = from; by > 0 ? width <= to : width >= to; width += by) {
           await page.viewport(width, 1000)
           await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
           const left = rect(wrapper.get('.now-playing__primary').element).left
-          if (previous !== null) biggest = Math.max(biggest, Math.abs(left - previous))
+          const nowFlipped = flipped()
+          if (previous !== null && wasFlipped !== null && nowFlipped !== wasFlipped) {
+            atCrossing = Math.abs(left - previous)
+          }
           previous = left
+          wasFlipped = nowFlipped
         }
-        return biggest
+        if (atCrossing === null) throw new Error('the drag never crossed the boundary')
+        return atCrossing
       }
 
       expect(flipped(), 'the drag has to start on the flip side of the boundary').toBe(true)
-      const widening = await drag(1440, 1640, 20)
-      expect(flipped(), 'the drag never crossed the boundary').toBe(false)
-      expect(widening, `artwork jumped ${Math.round(widening)}px while widening`).toBeLessThan(80)
+      // Measured at the crossing: ~271px without the slide, ~10px with it,
+      // which is the 20px of window that step moved and nothing else.
+      const widening = await crossingStep(1440, 1640, 20)
+      expect(flipped()).toBe(false)
+      expect(widening, `artwork jumped ${Math.round(widening)}px while widening`).toBeLessThan(60)
 
       await new Promise((resolve) => setTimeout(resolve, 600))
-      const narrowing = await drag(1640, 1440, -20)
-      expect(flipped(), 'the drag back never crossed the boundary').toBe(true)
+      const narrowing = await crossingStep(1640, 1440, -20)
+      expect(flipped()).toBe(true)
       expect(narrowing, `artwork jumped ${Math.round(narrowing)}px while narrowing`).toBeLessThan(
-        80,
+        60,
       )
     })
   })

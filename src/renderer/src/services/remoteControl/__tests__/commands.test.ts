@@ -638,6 +638,22 @@ describe('resolveRemoteQuery', () => {
     expect(result).toEqual({ items: [{ id: 's1', name: 'Chill FM', favicon_url: null }] })
   })
 
+  /** Opening the sheet takes the last sweep's result; its rescan button
+   * asks for a real one, which costs seconds. Two different calls, so a
+   * phone opening the picker does not pay for a sweep it did not ask
+   * for. */
+  it('devices-request only sweeps for real when the phone asks it to', async () => {
+    const connect = useConnectStore()
+    const refreshSpy = vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+    connect.devices = { sonos: [], airplay: [], chromecast: [], dlna: [] }
+
+    await resolveRemoteQuery('devices-request', {})
+    expect(refreshSpy).toHaveBeenLastCalledWith(false)
+
+    await resolveRemoteQuery('devices-request', { rescan: true })
+    expect(refreshSpy).toHaveBeenLastCalledWith(true)
+  })
+
   it('devices-request refreshes, then groups/sorts/flattens devices in the fixed Sonos/AirPlay/Chromecast/DLNA order', async () => {
     const connect = useConnectStore()
     const refreshSpy = vi.spyOn(connect, 'refreshDevices').mockResolvedValue()

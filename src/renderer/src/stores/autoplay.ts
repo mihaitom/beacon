@@ -10,8 +10,31 @@ const ENABLED_KEY = 'beacon.autoplay-enabled'
  * about before trying it — the kind of question the app should answer
  * itself (see the README's own note on staying lean). Ten is roughly a
  * side's worth of listening: long enough that a top-up is rare, short
- * enough that a queue nobody wanted doesn't run for an hour. */
+ * enough that a queue nobody wanted doesn't run for an hour.
+ *
+ * Ten songs *added*, which is not the same as ten asked for: the similar-
+ * songs pool keeps returning tracks that are already in the queue, so the
+ * request has to over-fetch and the batch size applies to what survives
+ * the dedup. See autoplayCandidateCount(). */
 export const AUTOPLAY_BATCH_SIZE = 10
+
+/** How many candidates to ask the media server for to end up with
+ * AUTOPLAY_BATCH_SIZE genuinely new ones.
+ *
+ * Worst case every song already queued comes back as a candidate again, so
+ * asking for the batch size plus the queue length is what guarantees the
+ * batch can be filled. Measured 2026-09-07 against Navidrome with AudioMuse
+ * as its similar-songs provider, on a 40-song queue: asking for 10 returned
+ * 10 of which 5 were new, asking for 50 returned 48 of which 36 were new.
+ *
+ * Capped because the number is otherwise unbounded — a queue left running
+ * for a day would ask for hundreds of candidates to use ten of them, and
+ * both the server's work and the response grow with it. Above the cap a
+ * top-up can come up short; that is a queue long past the point where its
+ * own contents have exhausted the pool anyway. */
+export function autoplayCandidateCount(queueLength: number): number {
+  return Math.min(AUTOPLAY_BATCH_SIZE + queueLength, 100)
+}
 
 // Absent (never toggled before) defaults to *disabled* — unlike
 // recommendations.ts's equivalent, this doesn't just change what a shelf

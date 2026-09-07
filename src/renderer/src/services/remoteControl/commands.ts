@@ -394,7 +394,10 @@ export async function resolveRemoteQuery(
     }
     case 'devices-request': {
       const connect = useConnectStore()
-      await connect.refreshDevices()
+      // A plain open takes whatever the last sweep found; the sheet's own
+      // rescan button asks for a real one, the same distinction
+      // ConnectDevicePicker.vue's rescan makes with refreshDevices(true).
+      await connect.refreshDevices(payload.rescan === true)
       // Same grouping/order as the desktop's ConnectDevicePicker.vue
       // (TYPE_ORDER) — Sonos/AirPlay first as this app's best-supported
       // targets, DLNA last. Unlike that first attempt at this endpoint,

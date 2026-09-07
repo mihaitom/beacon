@@ -139,6 +139,34 @@ describe('Now Playing on the phone', () => {
     expect(content.right).toBeLessThanOrEqual(stage.right + 1)
   })
 
+  /** The back face is sized to the card, and the card used to be sized to
+   * its own contents: a 421px box in a 647px stage on a 390x844 phone,
+   * with the rest going unused. A station's title log is a list that can
+   * always show more of itself, which is what made it visible. */
+  it.each(PORTRAIT)('gives the title log the whole stage at %ix%i', async (w, h) => {
+    await mountAt(w, h, true)
+    const stage = box('.now-playing__stage')
+    const log = box('.now-playing__lyrics')
+    const content = getComputedStyle(document.querySelector('.now-playing__content')!)
+    const padY = parseFloat(content.paddingTop) + parseFloat(content.paddingBottom)
+
+    // Everything the stage has, less the content padding around it.
+    expect(log.height).toBeCloseTo(stage.height - padY, -0.5)
+  })
+
+  it('leaves the artwork and the title where they were while doing it', async () => {
+    // The card grew, its front face did not: artwork and title stay
+    // centred rather than drifting to the top of a taller box.
+    await mountAt(390, 844, true)
+    const stage = box('.now-playing__stage')
+    const art = box('.now-playing__primary .v-avatar, .now-playing__primary .cover-art')
+    const info = box('.now-playing__info')
+
+    const above = art.top - stage.top
+    const below = stage.bottom - info.bottom
+    expect(Math.abs(above - below)).toBeLessThan(24)
+  })
+
   it('puts its buttons in the app bar instead of on top of the artwork', async () => {
     // They used to float in the artwork's top-right corner, which only
     // worked while the artwork left a corner free. Now that it uses the

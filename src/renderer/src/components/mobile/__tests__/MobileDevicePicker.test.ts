@@ -12,6 +12,8 @@ import { makeStatus } from '@/stores/__tests__/fixtures'
 import { emitter } from '@/emitter'
 import MobileDevicePicker from '../MobileDevicePicker.vue'
 import MobileDeviceRow from '../MobileDeviceRow.vue'
+import ConnectErrorBanner from '@/components/connect/ConnectErrorBanner.vue'
+import StreamInfoSection from '@/components/connect/StreamInfoSection.vue'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -35,8 +37,17 @@ function rescanButton(wrapper: ReturnType<typeof mountPicker>) {
   return wrapper.getComponent<typeof VBtn>('.mobile-device-picker__rescan')
 }
 
+// By its own class, not by position: the sheet grew notices and a stream
+// info section around the header, and "the last button" stopped being this
+// one the moment an error alert with a close button rendered above it.
+// Still found through the component list rather than a DOM query, for the
+// teleport reason above.
 function doneButton(wrapper: ReturnType<typeof mountPicker>) {
-  return wrapper.findAllComponents<typeof VBtn>(VBtn).at(-1)!
+  const done = wrapper
+    .findAllComponents<typeof VBtn>(VBtn)
+    .find((button) => button.classes().includes('mobile-device-picker__done'))
+  if (!done) throw new Error('the sheet has no Done button')
+  return done
 }
 
 function withDevices(sonos: string[]) {
@@ -138,12 +149,14 @@ describe('MobileDevicePicker', () => {
     await doneButton(wrapper).trigger('click')
     await wrapper.vm.$nextTick()
 
-    // This sheet has no inline error surface the way the desktop picker
-    // does, so a failure used to make "Done" simply do nothing visible
-    // while the rejection went unhandled.
-    expect(toast).toHaveBeenCalledWith(
-      expect.objectContaining({ level: 'error', message: 'Speaker unreachable.' }),
-    )
+    // Shown in the sheet itself now, the same alert the desktop picker
+    // has — and not *also* toasted, which would report one failure twice
+    // on a screen this size.
+    // Through the document, not the wrapper: the sheet is teleported (see
+    // mountPicker's own note).
+    expect(document.body.textContent).toContain('Speaker unreachable.')
+    expect(toast).not.toHaveBeenCalled()
+    // Still open, so the selection is there to retry from.
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     emitter.off('toast', toast)
   })
@@ -180,6 +193,35 @@ describe('MobileDevicePicker', () => {
 
     expect(applySpy).not.toHaveBeenCalled()
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([false])
+  })
+
+  /** The sheet used to end at the device list: no stream info, no error
+   * banners, where the desktop picker had all three. Reported 2026-09-07
+   * as "stream info sehe ich in mobile überhaupt nicht". */
+  it('shows what is playing and how, the same section the desktop picker ends with', async () => {
+    const connect = withDevices(['Kitchen'])
+    vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+    // Casting at all is what the section keys off (hasStreamInfo()); what
+    // it then puts in its rows is StreamInfoSection's own business.
+    connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+    const wrapper = mountPicker()
+    await wrapper.vm.$nextTick()
+
+    // The section's own contents are its own tests' business (see
+    // StreamInfoSection.test.ts) - what is new here is that the sheet
+    // renders it at all, above the safe area and below the list.
+    expect(wrapper.findComponent(StreamInfoSection).exists()).toBe(true)
+    expect(document.querySelector('.stream-info-section')).not.toBeNull()
+  })
+
+  it('says the backend is unreachable rather than showing an empty sheet', async () => {
+    const connect = withDevices([])
+    vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+    connect.errors.apiUnreachable = true
+    const wrapper = mountPicker()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findComponent(ConnectErrorBanner).exists()).toBe(true)
   })
 
   it('kicks off a fresh scan from the rescan button, and locks it while one runs', async () => {

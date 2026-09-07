@@ -7,6 +7,74 @@
        - LyricsPanel.vue has for the same reason. A root that tried to be
        - the scroller too would be fighting whichever stylesheet loaded
        - last for both properties. -->
+    <!-- The log's own head, and the only chrome this panel has. It carries
+       - the search because that is where searching happens: the screen's
+       - own toolbar sits at the far corner and is shared with the lyrics
+       - switch, fullscreen and the visualizer, none of which is about this
+       - list.
+       -
+       - Collapsed to a magnifier until it is wanted. A field standing open
+       - permanently would spend a row of a panel that is 85cqh tall on a
+       - question most readings of a log never ask, and it would draw the
+       - eye to itself rather than to the title playing now, which is what
+       - this panel is opened for. -->
+    <div class="title-log__head">
+      <!-- The field arrives the way a title does — same fall from above,
+         - same 0.3s (see the transition-group's own entrance below). It is
+         - the one other thing that appears at the top of this panel, so
+         - borrowing that movement is what makes it read as part of the log
+         - rather than as chrome dropped on top of it.
+         -
+         - The two states are stacked in one grid cell rather than laid
+         - out side by side, so the field can arrive over the heading
+         - instead of the row reflowing around both of them for a frame.
+         -
+         - It sits outside .title-log__scroll on purpose, so a title
+         - arriving mid-search cannot push it down — the list moves under
+         - it, the field stays where it was typed into. -->
+      <transition name="title-log-search">
+        <!-- v-text-field over a bare <input>: it brings the clear button,
+           - the focus ring and the label wiring, and matches every other
+           - search box in the app (`.library-search`). `hide-details`
+           - because a message row under it would be a second line of
+           - chrome for a control that cannot be invalid. -->
+        <v-text-field
+          v-if="searching"
+          key="field"
+          :model-value="query"
+          class="title-log__search-field"
+          variant="solo-filled"
+          density="compact"
+          flat
+          hide-details
+          clearable
+          autofocus
+          prepend-inner-icon="mdi-magnify"
+          :loading="pending"
+          :placeholder="$t('radio.titleLogFilterPlaceholder')"
+          @update:model-value="$emit('update:query', $event ?? '')"
+          @click:clear="closeSearch"
+          @keydown.esc="closeSearch"
+        />
+      </transition>
+      <!-- One element, not a heading and a button side by side: it shares
+         - the grid cell with the field above and the two are mutually
+         - exclusive, so only ever one of them is in it. -->
+      <div v-if="!searching" class="title-log__head-idle">
+        <h3 class="eyebrow-label panel-title title-log__head-title">
+          {{ $t('radio.titleLog') }}
+        </h3>
+        <v-btn
+          icon="mdi-magnify"
+          size="small"
+          variant="text"
+          density="comfortable"
+          color="primary"
+          :title="$t('radio.titleLogFilter')"
+          @click="searching = true"
+        />
+      </div>
+    </div>
     <div ref="scroller" class="title-log__scroll" @scroll.passive="onScroll">
       <!-- A timeline rather than a plain list: what this shows is a
          - sequence of moments on one station, and the dots carry two
@@ -107,7 +175,9 @@
           </template>
         </transition-group>
       </v-timeline>
-      <p v-else class="title-log__empty">{{ $t('radio.titleLogEmpty') }}</p>
+      <p v-else class="title-log__empty">
+        {{ query ? $t('radio.titleLogFilterEmpty', { query }) : $t('radio.titleLogEmpty') }}
+      </p>
     </div>
   </div>
 </template>
@@ -129,11 +199,13 @@ interface LogRow {
   key: string
   entry?: RadioTitleEntry
   divider?: string
-  /** The newest entry, i.e. what is playing right now. Marked here rather
-   * than left to a positional CSS selector: a date heading is a sibling
-   * <li>, so neither :first-child nor :first-of-type (which counts by tag,
-   * not by class) still picks out the first *entry* once one appears above
-   * it — caught by RadioTitleLog.layout.browser.test.ts. */
+  /** The entry that is playing right now — matched against `currentAt`,
+   * never inferred from being first (see that prop). Marked here rather
+   * than left to a positional CSS selector for a second reason too: a date
+   * heading is a sibling <li>, so neither :first-child nor :first-of-type
+   * (which counts by tag, not by class) still picks out the first *entry*
+   * once one appears above it — caught by
+   * RadioTitleLog.layout.browser.test.ts. */
   newest?: boolean
   /** Not readable as artist and track — usually a programme name, a news
    * item or the station's own slogan. Marked on the timeline dot rather
@@ -197,13 +269,37 @@ export default {
      * had. False both while a log is complete and while none is playing,
      * and in both cases scrolling to the bottom asks for nothing. */
     hasMore: { type: Boolean, default: false },
+    /** What `entries` is currently the result of, empty when it is simply
+     * the log. Named `query` rather than `search` because this component
+     * already has a search() of its own, which is the other kind entirely:
+     * looking a track up in the user's library. Held by the caller rather than here because the search runs
+     * against the backend (see playbackStore.searchRadioTitles()) and this
+     * component only ever renders the entries it is handed — the same
+     * arrangement `entries`/`load-more` already has for paging. */
+    query: { type: String, default: '' },
+    /** A search request is out. Rendered on the field itself, so an
+     * as-yet-unanswered search does not read as "nothing found". */
+    pending: { type: Boolean, default: false },
+    /** The `at` of the entry that is playing right now, or null when
+     * nothing is.
+     *
+     * Passed in rather than taken to be the first row: that only holds
+     * while the list *is* the log. A search answers with matches from all
+     * over the station's evening, and its topmost row is simply the newest
+     * match — marking it as "on air" would put the play icon, the amber
+     * dot and the lit card on a track that finished hours ago. */
+    currentAt: { type: Number as PropType<number | null>, default: null },
   },
-  emits: ['load-more'],
+  emits: ['load-more', 'update:query'],
   data() {
     return {
       // Whether the *next* render is allowed to animate - see the watcher
       // below, and the transition group in the template.
       animateInsert: false,
+      // Whether the search field is showing. Local, unlike the query
+      // itself: an open-but-empty field is this panel's own business, and
+      // nothing outside it can act on the difference.
+      searching: this.query !== '',
     }
   },
   watch: {
@@ -268,7 +364,7 @@ export default {
         out.push({
           key: `${entry.at}-${entry.title}`,
           entry,
-          newest: previous === null,
+          newest: this.currentAt !== null && entry.at === this.currentAt,
           // Whether this reads as a song at all - the same question the
           // row body asks to decide on a search button, asked once here so
           // the dot beside it can say the same thing.
@@ -278,8 +374,15 @@ export default {
           // Not marked where a date heading has just been written: that
           // already separates the two sittings, and a gap under it as well
           // reads as two breaks for one night's sleep.
+          // Never in a filtered list: the gap between two matches is the
+          // music between them, not a pause in the listening, and marking
+          // every one of them would draw a broken line through a search
+          // that simply skipped a few hours of songs.
           afterBreak:
-            !dayChanged && previous !== null && previous.at - entry.at > LISTENING_BREAK_SECONDS,
+            !this.query &&
+            !dayChanged &&
+            previous !== null &&
+            previous.at - entry.at > LISTENING_BREAK_SECONDS,
         })
         previous = entry
       }
@@ -324,6 +427,13 @@ export default {
       if (row.newest) return 'mdi-play'
       if (row.plain) return 'mdi-text-short'
       return undefined
+    },
+    /** Puts the field away and drops the search with it — the two are one
+     * gesture. Leaving the query in force behind a closed field would show
+     * a filtered log with nothing on screen saying why. */
+    closeSearch(): void {
+      this.searching = false
+      if (this.query) this.$emit('update:query', '')
     },
     dayLabel(day: number): string {
       if (day === startOfDay(new Date()) - DAY_MS) return this.$t('radio.titleLogYesterday')
@@ -397,6 +507,100 @@ export default {
    * a 380px drawer and in Now Playing's much wider half, and only its own
    * width decides which of the two it has to fit. */
   container-type: inline-size;
+}
+
+/* The head sits above the scroller rather than inside it, so it stays put
+ * while the log runs under it. `flex-shrink: 0` for the same reason the
+ * lyrics panel's own toolbar has it: the scroller below is the flexible
+ * part, and without this a long log squeezes the chrome instead of
+ * scrolling.
+ *
+ * The horizontal padding matches .title-log__list's own left inset (10px)
+ * plus the timeline gutter, so the magnifier lines up over the column of
+ * times rather than floating between the two. No bottom padding: the
+ * scroller's mask fades the first rows in right under it, and a gap there
+ * would read as the head being detached from the list it belongs to. */
+/* One cell, two states stacked in it: the field arrives over the heading
+ * rather than beside it, and neither can push the other sideways on the
+ * way past. Both children are placed in the same grid area below. */
+.title-log__head {
+  display: grid;
+  flex-shrink: 0;
+  grid-template-columns: 1fr;
+  align-items: center;
+  min-height: 38px;
+  padding: 2px 8px 0 10px;
+}
+
+.title-log__head > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+
+.title-log__head-idle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The same fall from above a new title gets, and the same 0.3s — see the
+ * transition-group's entrance further down, which this deliberately
+ * mirrors. Only entering: on the way out the row is being replaced by the
+ * other state (mode="out-in"), and a leave animation there would hold an
+ * empty row open before the replacement drops in. */
+.title-log-search-enter-active {
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
+}
+
+.title-log-search-enter-from {
+  opacity: 0;
+  transform: translateY(-14px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .title-log-search-enter-active {
+    transition: none;
+  }
+}
+
+/* .panel-title brings its own trailing hairline and a 10px bottom margin,
+ * which is right between two groups of fields in a dialog and wrong here,
+ * where the head is one row of a panel that is already tight for height. */
+.title-log__head-title {
+  flex: 1 1 auto;
+  margin-bottom: 0;
+}
+
+/* Fills the row the heading gives up, so the field is as wide as the log
+ * is rather than a box floating in the corner. */
+.title-log__search-field {
+  flex: 1 1 auto;
+}
+
+/* Vuetify's own `solo-filled` fill is built to stand out from a page; on
+ * the blurred artwork it reads as a slab of grey. Toned down to the same
+ * faint white the panel's own surfaces use, and rounded to the 8px step
+ * the style guide keeps for a small element inside a surface. :deep(),
+ * since this is the field's inner control. */
+.title-log__search-field :deep(.v-field) {
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* 16px is a floor, not a taste: a phone browser zooms the page in when a
+ * focused input's text is smaller than that, and it does not zoom back out
+ * when the field is closed again — the log is then left oversized until the
+ * reader pinches it back themselves. The rest of this panel is smaller than
+ * 16px and stays that way; only the control that takes focus has to clear
+ * the bar. */
+.title-log__search-field :deep(input) {
+  font-size: 16px;
+}
+
+.title-log__search-field :deep(.v-field:hover) {
+  background: rgba(255, 255, 255, 0.09);
 }
 
 /* No min-height: 0 needed on this one, unusually: a flex item whose own

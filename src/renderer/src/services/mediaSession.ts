@@ -156,11 +156,18 @@ export function initMediaSession(): void {
     if (playback.isPlaying) void playback.togglePlay()
   })
 
-  playback.$subscribe(() => {
-    updateMetadata()
-    updatePlaybackState()
-    updateQueueHandlers()
-  })
+  // detached: true — initMediaSession() is called from playbackStore.init(),
+  // which itself runs inside App.vue's created(); an attached subscription
+  // would be dropped with that component instance and never restored, so
+  // the OS media widget would freeze on whatever it last showed.
+  playback.$subscribe(
+    () => {
+      updateMetadata()
+      updatePlaybackState()
+      updateQueueHandlers()
+    },
+    { detached: true },
+  )
   updateMetadata()
   updatePlaybackState()
   updateQueueHandlers()

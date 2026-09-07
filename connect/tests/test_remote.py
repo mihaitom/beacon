@@ -302,6 +302,29 @@ def test_albums_query_401_with_a_wrong_password(client):
     assert resp.status_code == 401
 
 
+def test_devices_query_relays_the_rescan_flag(client, monkeypatch):
+    """Opening the sheet takes whatever the last sweep found; its rescan
+    button asks for a real one, which costs seconds. Asserted on the
+    relayed payload, for the reason in
+    test_albums_query_relays_search_and_paging_to_the_renderer."""
+    monkeypatch.setattr(remote_routes, "QUERY_TIMEOUT", 0.05)
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["payload"] = payload
+        return {"items": []}
+
+    monkeypatch.setattr(remote_routes, "_query", capture)
+
+    client.get("/remote/devices", headers={"X-Remote-Password": remote.password})
+    assert seen["payload"] == {"rescan": False}
+
+    client.get("/remote/devices?rescan=true", headers={"X-Remote-Password": remote.password})
+    assert seen["payload"] == {"rescan": True}
+
+
 def test_devices_query_503_when_no_renderer_connected(client):
     client.post("/remote/enable")
     resp = client.get("/remote/devices", headers={"X-Remote-Password": remote.password})

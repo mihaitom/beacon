@@ -113,8 +113,8 @@ export function fetchRadioStations() {
   return request('/remote/radio-stations');
 }
 
-export function fetchDevices() {
-  return request('/remote/devices');
+export function fetchDevices({ rescan = false } = {}) {
+  return request(`/remote/devices${rescan ? '?rescan=true' : ''}`);
 }
 
 export function fetchDeviceVolume(deviceType, name) {

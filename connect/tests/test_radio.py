@@ -1751,6 +1751,62 @@ def test_radio_history_never_hands_out_more_than_one_page_however_much_is_asked_
     assert len(r.json()["history"]) == 200
 
 
+def test_radio_history_search_reaches_past_what_a_page_would_hold(client, default_session):
+    """The point of searching rather than scrolling: a match 400 entries
+    down is exactly what a reader cannot page to by hand."""
+    entries = _fill_history(default_session, "http://station", 500)
+    deep = entries[450]
+    deep["title"] = "Wonderwall - Oasis"
+
+    r = client.get("/radio-metadata/history", params={"q": "wonderwall"})
+
+    assert r.status_code == 200
+    assert r.json()["history"] == [deep]
+
+
+def test_radio_history_search_ignores_case_and_accents_the_station_chose(client, default_session):
+    """casefold(), not lower() — a station broadcasting in German sends
+    "Straße" and a reader types "strasse" (or shouts it in caps)."""
+    entries = _fill_history(default_session, "http://station", 3)
+    entries[1]["title"] = "Auf der Straße - Band"
+
+    r = client.get("/radio-metadata/history", params={"q": "STRASSE"})
+
+    assert [e["title"] for e in r.json()["history"]] == ["Auf der Straße - Band"]
+
+
+def test_radio_history_search_answers_newest_first_within_the_page_limit(client, default_session):
+    """Ordered like the log itself, and bounded by the same page cap: a
+    search that matches everything must not hand out the whole log."""
+    entries = _fill_history(default_session, "http://station", 400)
+
+    r = client.get("/radio-metadata/history", params={"q": "Track", "limit": 200})
+
+    history = r.json()["history"]
+    assert len(history) == 200
+    assert history == entries[:200]
+
+
+def test_radio_history_search_finds_nothing_rather_than_everything(client, default_session):
+    """An empty result is a real answer here. Falling back to the unfiltered
+    log would read as "your search matched all 400 of these"."""
+    _fill_history(default_session, "http://station", 400)
+
+    r = client.get("/radio-metadata/history", params={"q": "nothing here plays this"})
+
+    assert r.json()["history"] == []
+
+
+def test_radio_history_still_pages_when_no_search_is_given(client, default_session):
+    """The cursor path is untouched by the search parameter being optional
+    — `before` alone still means what it meant."""
+    entries = _fill_history(default_session, "http://station", 50)
+
+    r = client.get("/radio-metadata/history", params={"before": entries[9]["at"], "limit": 200})
+
+    assert r.json()["history"] == entries[10:]
+
+
 def test_radio_metadata_names_the_station_its_answer_is_about(client, default_session):
     """The client cannot work this out on its own: this backend reaches a
     station on its own schedule (a relayed one only when the player opens

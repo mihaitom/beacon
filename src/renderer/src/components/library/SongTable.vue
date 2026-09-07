@@ -817,7 +817,7 @@ export default {
  * outside this component's own scoped template. */
 :deep(.song-table-header--sticky) {
   position: sticky;
-  top: calc(var(--v-layout-top, 0px) + var(--sticky-header-offset, 0px));
+  top: calc(var(--beacon-sticky-top, var(--v-layout-top, 0px)) + var(--sticky-header-offset, 0px));
   z-index: 2;
   background: rgb(var(--v-theme-background));
   /* Forces its own compositing layer — without this, Chromium sometimes

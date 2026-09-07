@@ -7,7 +7,7 @@ import { useAutoplayStore } from '../autoplay'
 import * as remoteHttp from '@/services/remoteControl/http'
 import * as commands from '@/services/remoteControl/commands'
 import { RemoteAgentEventSource } from '@/services/remoteControl/agent'
-import { makeSong } from './fixtures'
+import { makeSong, makeStatus } from './fixtures'
 
 vi.mock('@/services/remoteControl/http', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/remoteControl/http')>()
@@ -540,6 +540,68 @@ describe('remoteControl store', () => {
         unknown
       >
       expect(snapshot.device_volume).toBe(45)
+    })
+
+    /** The phone's own cast sheet ends with the same two lines the desktop
+     * picker does, and is handed them ready-made rather than formatting
+     * the raw fields a second time (see streamInfoLabels.ts). */
+    it('sends what the speakers are being fed, as finished lines, while casting', async () => {
+      vi.useFakeTimers()
+      vi.mocked(remoteHttp.enableRemoteControl).mockResolvedValue({
+        password: 'secret',
+        pin: '1',
+        lan_ip: '',
+        port: 0,
+      })
+      const store = useRemoteControlStore()
+      const connect = useConnectStore()
+      connect.status = makeStatus({
+        targets: [{ name: 'Kitchen', type: 'sonos' }],
+        stream_info: {
+          label: 'flac',
+          content_type: 'audio/flac',
+          transcoding: true,
+          source_codec: 'flac',
+          source_sample_rate: 96000,
+          source_bit_depth: 24,
+          source_bitrate_kbps: null,
+          target_sample_rate: 48000,
+          target_bit_depth: null,
+          target_bitrate_kbps: null,
+          transcode_reason: 'device_limit',
+          active_connections: 1,
+          loop_lag: 0,
+        },
+      })
+      vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(null)
+
+      await store.enable()
+      await vi.advanceTimersByTimeAsync(300)
+
+      const [snapshot] = vi.mocked(remoteHttp.pushRemoteState).mock.calls.at(-1)!
+      expect((snapshot as Record<string, unknown>).stream_info).toEqual({
+        transcoding: true,
+        target: 'FLAC, 48 kHz',
+        source: 'FLAC, 96 kHz / 24-bit',
+      })
+    })
+
+    it('leaves the stream lines out entirely when nothing is being cast', async () => {
+      vi.useFakeTimers()
+      vi.mocked(remoteHttp.enableRemoteControl).mockResolvedValue({
+        password: 'secret',
+        pin: '1',
+        lan_ip: '',
+        port: 0,
+      })
+      const store = useRemoteControlStore()
+      useConnectStore().status = makeStatus({ targets: [] })
+
+      await store.enable()
+      await vi.advanceTimersByTimeAsync(300)
+
+      const [snapshot] = vi.mocked(remoteHttp.pushRemoteState).mock.calls.at(-1)!
+      expect((snapshot as Record<string, unknown>).stream_info).toBeNull()
     })
 
     it('reports device_volume as null once there is no longer exactly one active target', async () => {

@@ -305,6 +305,7 @@ class SessionState:
         since: float | None = None,
         before: float | None = None,
         limit: int | None = None,
+        query: str | None = None,
     ) -> list[dict]:
         """The current station's own history, newest first — the order it
         is read in. Empty whenever nothing is playing, which is also what
@@ -324,12 +325,20 @@ class SessionState:
         page shorter than the limit it asked for is the end of the log,
         which is what saves a separate "is there more" flag.
 
+        `query` filters by substring, case-insensitively, over the whole log
+        rather than over a page of it — the point of searching here is to
+        reach what the reader has not scrolled to yet. It combines with
+        `limit` (the newest matches), and the caller pages by *not* paging:
+        see routes/radio.py's own note on why a search answers in one go.
+
         The timestamps used as cursors are `time.time()` floats recorded
         per title (see _record_radio_title()), so two entries sharing one
         is not a case that occurs."""
         url = self.current_radio_station_url
         if not url:
             return []
+
+        needle = query.strip().casefold() if query else None
 
         out: list[dict] = []
         # reversed() over the deque, so this walks newest first and can
@@ -340,6 +349,11 @@ class SessionState:
             if since is not None and at <= since:
                 break
             if before is not None and at >= before:
+                continue
+            # casefold(), not lower(): this matches titles in whatever
+            # language the station broadcasts in, and lower() leaves the
+            # German sharp s alone, so "STRASSE" would not find "Straße".
+            if needle and needle not in entry["title"].casefold():
                 continue
             out.append(entry)
             if limit is not None and len(out) >= limit:

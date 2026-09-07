@@ -19,6 +19,7 @@ vi.mock('@/services/connect/radioMetadata', () => ({
   stopRadioMetadataWatch: vi.fn(),
   fetchRadioMetadata: vi.fn().mockResolvedValue(null),
   fetchRadioTitleHistory: vi.fn().mockResolvedValue({ url: null, history: [] }),
+  searchRadioTitleHistory: vi.fn().mockResolvedValue({ url: null, history: [] }),
   RADIO_TITLE_PAGE_SIZE: 200,
 }))
 
@@ -676,6 +677,120 @@ describe('the store wiring the audio engine', () => {
       await vi.advanceTimersByTimeAsync(15_000)
 
       expect(playback.radioNowPlaying).toBeNull()
+    })
+  })
+
+  describe('searching the title log', () => {
+    function playChillFm() {
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      playback.radioTitleLog = [{ title: 'Artist - Newest', at: 3000 }]
+      return playback
+    }
+
+    it('asks the backend rather than filtering the pages it happens to hold', async () => {
+      // The whole point: the entry somebody looks for is usually one they
+      // have not scrolled to. A local filter could never find it.
+      const playback = playChillFm()
+      vi.mocked(radioMetadata.searchRadioTitleHistory).mockResolvedValue({
+        url: 'https://stream.example/chill',
+        history: [{ title: 'Oasis - Wonderwall', at: 500 }],
+      })
+
+      await playback.searchRadioTitles('wonder')
+
+      expect(radioMetadata.searchRadioTitleHistory).toHaveBeenCalledWith('wonder')
+      expect(playback.radioTitleSearchResults.map((e) => e.title)).toEqual(['Oasis - Wonderwall'])
+      // The log itself is untouched, so dropping the search costs no fetch.
+      expect(playback.radioTitleLog.map((e) => e.title)).toEqual(['Artist - Newest'])
+    })
+
+    it('drops the search on an empty query instead of searching for nothing', async () => {
+      const playback = playChillFm()
+      vi.mocked(radioMetadata.searchRadioTitleHistory).mockResolvedValue({
+        url: 'https://stream.example/chill',
+        history: [{ title: 'Oasis - Wonderwall', at: 500 }],
+      })
+      await playback.searchRadioTitles('wonder')
+      vi.mocked(radioMetadata.searchRadioTitleHistory).mockClear()
+
+      await playback.searchRadioTitles('   ')
+
+      expect(radioMetadata.searchRadioTitleHistory).not.toHaveBeenCalled()
+      expect(playback.radioTitleSearch).toBe('')
+      expect(playback.radioTitleSearchResults).toEqual([])
+    })
+
+    it('lets the newest search win, however the answers are ordered', async () => {
+      // One request per keystroke past the debounce: "wond" going out
+      // before "wonder" must not land after it.
+      const playback = playChillFm()
+      const resolvers: ((page: radioMetadata.RadioTitleHistoryPage) => void)[] = []
+      vi.mocked(radioMetadata.searchRadioTitleHistory).mockImplementation(
+        () => new Promise((resolve) => resolvers.push(resolve)),
+      )
+
+      const stale = playback.searchRadioTitles('wond')
+      const fresh = playback.searchRadioTitles('wonder')
+      resolvers[1]!({
+        url: 'https://stream.example/chill',
+        history: [{ title: 'Oasis - Wonderwall', at: 500 }],
+      })
+      await fresh
+      resolvers[0]!({
+        url: 'https://stream.example/chill',
+        history: [{ title: 'Stevie Wonder - Superstition', at: 400 }],
+      })
+      await stale
+
+      expect(playback.radioTitleSearchResults.map((e) => e.title)).toEqual(['Oasis - Wonderwall'])
+    })
+
+    it('throws away results the backend built for a different station', async () => {
+      const playback = playChillFm()
+      vi.mocked(radioMetadata.searchRadioTitleHistory).mockResolvedValue({
+        url: 'https://stream.example/other',
+        history: [{ title: 'Other FM - Wonderwall', at: 500 }],
+      })
+
+      await playback.searchRadioTitles('wonder')
+
+      expect(playback.radioTitleSearchResults).toEqual([])
+    })
+
+    it('forgets a search when the station changes', async () => {
+      const playback = playChillFm()
+      vi.mocked(radioMetadata.searchRadioTitleHistory).mockResolvedValue({
+        url: 'https://stream.example/chill',
+        history: [{ title: 'Oasis - Wonderwall', at: 500 }],
+      })
+      await playback.searchRadioTitles('wonder')
+
+      playback.resetRadioTitleLog()
+
+      expect(playback.radioTitleSearch).toBe('')
+      expect(playback.radioTitleSearchResults).toEqual([])
+    })
+
+    it('reports a search still being out, so an empty list does not read as no matches', async () => {
+      const playback = playChillFm()
+      let resolvePage: (page: radioMetadata.RadioTitleHistoryPage) => void = () => {}
+      vi.mocked(radioMetadata.searchRadioTitleHistory).mockImplementation(
+        () => new Promise((resolve) => (resolvePage = resolve)),
+      )
+
+      const pending = playback.searchRadioTitles('wonder')
+      expect(playback.radioTitleSearchPending).toBe(true)
+
+      resolvePage({ url: 'https://stream.example/chill', history: [] })
+      await pending
+
+      expect(playback.radioTitleSearchPending).toBe(false)
     })
   })
 

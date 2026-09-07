@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { AUTOPLAY_BATCH_SIZE, useAutoplayStore } from '../autoplay'
 import { useConnectStore } from '../connect'
 import { useLibraryStore } from '../library'
+import { useDrawersStore } from '../drawers'
 import { usePlaybackStore } from '../playback'
 import * as connectPlayback from '@/services/connect/playback'
 import { emitter } from '@/emitter'
@@ -54,20 +55,66 @@ describe('maybeAutoplay', () => {
     expect(playback.queue.map((s) => s.id)).toEqual(['a', 'b', 'x', 'y'])
   })
 
-  /** How many songs a top-up asks for is the app's own answer now, not a
+  /** How many songs a top-up adds is the app's own answer now, not a
    * setting: the four-way select in Settings asked people to pick a number
    * none of them could have an opinion about before trying it. Pinned to
    * the literal 10 rather than to the constant alone, so changing it back
    * is a deliberate edit here too, not something a refactor does quietly. */
-  it('asks for ten similar songs, the number the app settled on', async () => {
+  it('adds ten songs, the number the app settled on', async () => {
+    const playback = usePlaybackStore()
+    stubSimilar({ songs: Array.from({ length: 30 }, (_, i) => makeSong(`x${i}`)) })
+    playback.setQueue([makeSong('a'), makeSong('b')], 1)
+
+    await playback.maybeAutoplay()
+
+    expect(playback.queue).toHaveLength(2 + 10)
+    expect(AUTOPLAY_BATCH_SIZE).toBe(10)
+  })
+
+  // Reported live 2026-09-07: ten asked for, five already in the queue,
+  // three added. The batch size counts songs that actually extend the
+  // queue, so the request has to over-fetch by however much of it the
+  // queue could swallow.
+  it('still adds ten new songs when half the pool is already queued', async () => {
+    const playback = usePlaybackStore()
+    const queued = Array.from({ length: 20 }, (_, i) => makeSong(`q${i}`))
+    // What a real pool looks like once the queue grew out of it: every
+    // second candidate is something this queue already holds.
+    stubSimilar({
+      songs: Array.from({ length: 40 }, (_, i) =>
+        i % 2 === 0 ? makeSong(`q${i / 2}`) : makeSong(`new${i}`),
+      ),
+    })
+    playback.setQueue(queued, queued.length - 1)
+
+    await playback.maybeAutoplay()
+
+    const added = playback.queue.slice(20).map((s) => s.id)
+    expect(added).toHaveLength(10)
+    expect(added.every((id) => id.startsWith('new'))).toBe(true)
+  })
+
+  it('asks for enough candidates that a queue-length worth of repeats cannot starve it', async () => {
     const playback = usePlaybackStore()
     stubSimilar({ songs: [makeSong('x')] })
     playback.setQueue([makeSong('a'), makeSong('b')], 1)
 
     await playback.maybeAutoplay()
 
-    expect(similar).toHaveBeenCalledWith('b', 10)
-    expect(AUTOPLAY_BATCH_SIZE).toBe(10)
+    expect(similar).toHaveBeenCalledWith('b', 12)
+  })
+
+  // Without a ceiling the request grows with the queue forever — a session
+  // left running all day would ask for hundreds of candidates to use ten.
+  it('stops asking for more candidates once the queue is very long', async () => {
+    const playback = usePlaybackStore()
+    const queue = Array.from({ length: 300 }, (_, i) => makeSong(`q${i}`))
+    stubSimilar({ songs: [makeSong('x')] })
+    playback.setQueue(queue, queue.length - 1)
+
+    await playback.maybeAutoplay()
+
+    expect(similar).toHaveBeenCalledWith('q299', 100)
   })
 
   it('leaves a queue with plenty left in it alone', async () => {
@@ -139,6 +186,61 @@ describe('maybeAutoplay', () => {
     await playback.maybeAutoplay()
 
     expect(playback.queue.map((s) => s.id)).toEqual(['a', 'x'])
+  })
+
+  // A library small enough that its whole similar-songs pool is already in
+  // the queue: nothing to add is a normal end, not an error. The queue runs
+  // out and playback stops there, rather than the same songs being cycled
+  // back in to keep it going.
+  it('adds nothing, quietly, once the pool holds nothing the queue lacks', async () => {
+    const playback = usePlaybackStore()
+    const drawers = useDrawersStore()
+    stubSimilar({ songs: [makeSong('a'), makeSong('b')] })
+    playback.setQueue([makeSong('a'), makeSong('b')], 1)
+
+    // Counted across the call, not read as a state: setQueue() above peeks
+    // on its own, so what matters is that the top-up adds no peek of its
+    // own on top of it.
+    const peeksBefore = drawers.queueRevealSeq
+
+    await playback.maybeAutoplay()
+
+    expect(playback.queue.map((s) => s.id)).toEqual(['a', 'b'])
+    // "Quietly" is the whole point: a top-up that added nothing must not
+    // peek the queue drawer open at whoever is listening, and would on
+    // every song change from here to the end of the queue.
+    expect(drawers.queueRevealSeq).toBe(peeksBefore)
+  })
+
+  // Casting turns every status tick into a top-up call (adoptCastQueue()),
+  // so a pool with nothing left to give was re-asked every ~2s for as long
+  // as the last song played — a request storm at exactly the library size
+  // where the answer can never change.
+  it('asks once for a seed that came back empty, not on every status tick', async () => {
+    const playback = usePlaybackStore()
+    const library = Array.from({ length: 10 }, (_, i) => makeSong(`s${i}`))
+    stubSimilar({ songs: library })
+    playback.setQueue(library, library.length - 1)
+
+    for (let tick = 0; tick < 10; tick++) await playback.maybeAutoplay()
+
+    expect(similar).toHaveBeenCalledOnce()
+  })
+
+  it('asks again once the queue has grown past the seed it gave up on', async () => {
+    const playback = usePlaybackStore()
+    const library = [makeSong('s0'), makeSong('s1')]
+    stubSimilar({ songs: library })
+    playback.setQueue(library, 1)
+
+    await playback.maybeAutoplay()
+    // Anything extending the queue moves the seed, and the new one has
+    // never been asked — a manual "add to queue" while listening, say.
+    playback.addToQueue([makeSong('manual')])
+    await playback.maybeAutoplay()
+
+    expect(similar).toHaveBeenCalledTimes(2)
+    expect(similar.mock.calls.at(-1)![0]).toBe('manual')
   })
 
   it('runs one top-up at a time, however many song changes ask for one', async () => {

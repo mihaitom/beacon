@@ -133,3 +133,19 @@ export async function fetchRadioTitleHistory(before: number): Promise<RadioTitle
   )
   return { url: response.url ?? null, history: response.history ?? [] }
 }
+
+/** The station's log searched by substring, newest match first — the whole
+ * log the backend holds, not the pages this client happens to have pulled.
+ * That is the point of it: what a reader can already see is what scrolling
+ * would have found anyway.
+ *
+ * No cursor, unlike the paging call above. The backend caps a station's log
+ * at 1000 entries and answers a search from all of it in one go (see
+ * routes/radio.py), so what comes back is the whole result unless a station
+ * really has played one title more than RADIO_TITLE_PAGE_SIZE times. */
+export async function searchRadioTitleHistory(query: string): Promise<RadioTitleHistoryPage> {
+  const response = await fetchConnect<{ history: RadioTitleEntry[]; url?: string | null }>(
+    `/radio-metadata/history?q=${encodeURIComponent(query)}&limit=${RADIO_TITLE_PAGE_SIZE}`,
+  )
+  return { url: response.url ?? null, history: response.history ?? [] }
+}

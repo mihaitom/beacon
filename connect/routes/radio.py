@@ -1416,12 +1416,21 @@ async def get_radio_metadata(
 
 @router.get("/radio-metadata/history")
 async def get_radio_title_history(
-    before: float = Query(...),
+    before: float | None = Query(default=None),
     limit: int = Query(default=_HISTORY_MAX_PAGE),
+    q: str | None = Query(default=None),
     session: SessionState = Depends(require_authenticated_session),
 ) -> dict:
     """One page of the current station's log older than `before` (the `at`
     of the oldest entry the caller holds), newest first.
+
+    With `q`, the newest matches from the *whole* log instead, and `before`
+    is left off: a reader searching wants what they have not scrolled to,
+    which is the half a page cursor cannot reach. Answered in one go rather
+    than paged — the log is capped at 1000 entries per station and a search
+    over it returns a handful, so a second page is a cursor to maintain for
+    a case that needs it about as often as a station plays one title a
+    thousand times.
 
     Asked for by the title log as the reader scrolls towards the end of
     what it has rather than by a button: arriving at the bottom is already
@@ -1438,6 +1447,6 @@ async def get_radio_title_history(
     return {
         "url": session.current_radio_station_url,
         "history": session.radio_title_log(
-            before=before, limit=max(1, min(limit, _HISTORY_MAX_PAGE))
+            before=before, limit=max(1, min(limit, _HISTORY_MAX_PAGE)), query=q
         ),
     }

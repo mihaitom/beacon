@@ -62,10 +62,37 @@ Three layers, and which one a test belongs in is a real decision:
 - **pytest** (`connect/tests/`) - the backend, including the Jellyfin/Plex
   bridges and every delivery target.
 
+### How much to test where
+
+The two halves are deliberately not held to the same standard.
+
+**The backend gets thorough coverage.** A fault there surfaces as silence in
+another room, across three device classes, often on hardware that isn't on
+the development machine - the suite is the only place it can be caught early.
+
+**The frontend is tested on function, not on appearance.** Its
+backend-shaped half - `stores/`, `services/`, everything that computes,
+reconciles or holds state - counts as logic and gets the same thorough
+coverage as `connect/`; that is where the real bugs have been. Components are
+tested for behaviour: a click does what it should, an empty result shows the
+empty state, an error path is reachable. Layout is the exception, not the
+routine - and only what jsdom genuinely cannot answer (see the browser layer
+above).
+
+**Don't pin down what is meant to change.** Counts of rendered elements,
+their order, class names, copy, sizes - a test over those never finds a bug
+and turns every deliberate design change red. Before writing one, ask what a
+failure would mean: a real defect, or someone having redesigned something on
+purpose? Only the first is worth a test. This is the question the mutation
+check below does _not_ answer - a skeleton-loader count passes it happily and
+is still worth nothing. When a test like that goes red on an intentional
+change, delete it rather than adjusting its numbers.
+
 Coverage is reported over _every_ renderer source file, not only the imported
-ones - a number that rises as coverage gets narrower is worse than none.
-And coverage is not the measure: **check a test by breaking the code it
-covers.** If the suite stays green, the test does not test.
+ones - a number that rises as coverage gets narrower is worse than none. But
+a renderer coverage percentage is not a goal in itself, and neither half's
+number is the measure: **check a test by breaking the code it covers.** If
+the suite stays green, the test does not test.
 
 ## Conventions
 
@@ -90,10 +117,18 @@ Two rules that come up on every frontend change:
 
 ### Comments
 
-The codebase comments _why_, at length, and expects the same back. A number
-with no explanation is a number nobody dares change later. Existing comments
-are load-bearing - when you rewrite the code around one, rewrite the comment
-too rather than leaving it describing what used to happen.
+Comment the _why_, and keep it short. A comment that has to get long is
+usually a sign the code itself is unclear - clarify the code first (a named
+helper, a named constant) and see what is left to say.
+
+At length only for hard problems: browser and device quirks, measured
+numbers, and places that look wrong but are deliberate. A number with no
+explanation is still a number nobody dares change later. The story of an
+investigation belongs in `docs/investigations/`, not in the code.
+
+Existing comments are load-bearing - when you rewrite the code around one,
+rewrite the comment too rather than leaving it describing what used to
+happen.
 
 ### CHANGELOG.md
 

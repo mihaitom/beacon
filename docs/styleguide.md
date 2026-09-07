@@ -97,6 +97,20 @@ Body text stays on Vuetify's scale: `text-body-medium`, `text-body-small`,
 The serif face is the app's signature and is rationed deliberately - two or
 three per screen at most, never for a label or a row.
 
+### The one type floor
+
+Anything the reader can put a cursor in - a search box, a form field - keeps
+its **input text at 16px or larger**, whatever the surrounding type scale is.
+Below that, a phone browser zooms the page in when the field takes focus, and
+it does not zoom back out when the field is left: the screen behind it stays
+oversized until somebody pinches it back by hand. Half of Beacon runs on a
+phone, so this applies to every field in the app rather than to the mobile
+shell alone.
+
+The panel around it is free to stay smaller - only the control that takes
+focus has to clear the bar. `RadioTitleLog.layout.browser.test.ts` measures
+the computed size of one, since this is a rule jsdom cannot check.
+
 ### Column headings
 
 A song table's column labels wear the same small-label shape as
@@ -305,7 +319,7 @@ copied, not scanned.
 ## Advice on a setting
 
 A setting says what it is in its label, and what it does in the `.setting__hint`
-line under it. Neither of those is the place for *which value to pick* - that
+line under it. Neither of those is the place for _which value to pick_ - that
 is a paragraph, it is only wanted once, and permanently parked under the
 control it pushes the rest of the page down for everyone who has already
 chosen.

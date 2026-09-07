@@ -467,6 +467,62 @@ async def test_advance_or_end_autoplay_skipped_under_repeat(default_session):
     assert default_session.state.is_streaming is False
 
 
+async def test_advance_or_end_autoplay_asks_for_more_than_the_batch_size(default_session):
+    """The batch size counts songs that actually extend the queue, so the
+    request has to over-fetch by however much of it the queue could swallow
+    — reported live 2026-09-07 as ten asked for and three added. Mirrors
+    stores/playback.ts's autoplayCandidateCount()."""
+    target = ChromecastDelivery("TV")
+    generation = _playing_session(default_session, ["1", "2", "3"], target=target)
+    default_session.state.queue_index = 2
+    default_session.state.autoplay_enabled = True
+
+    with patch.object(default_session.media, "get_similar_songs2", return_value=[]) as similar_mock:
+        await _advance_or_end(default_session, generation)
+
+    assert similar_mock.call_args.args[1] == 13
+
+
+async def test_advance_or_end_autoplay_adds_no_more_than_the_batch_size(default_session):
+    """The other half of over-fetching: a pool that comes back full of new
+    songs must still only extend the queue by one batch, not by everything
+    the larger request happened to return."""
+    target = ChromecastDelivery("TV")
+    generation = _playing_session(default_session, ["1"], target=target)
+    default_session.state.autoplay_enabled = True
+    pool = [
+        Track(id=f"new{i}", title=f"S{i}", artist="Artist", duration=180, cover_art_id="c")
+        for i in range(30)
+    ]
+
+    with (
+        patch.object(default_session.media, "get_similar_songs2", return_value=pool),
+        patch.object(default_session.media, "get_track", return_value=pool[0]),
+        patch("routes.stream.resolve_output_format", AsyncMock(return_value=FALLBACK_FORMAT)),
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+    ):
+        await _advance_or_end(default_session, generation)
+
+    batch = default_session.state.autoplay_batch_size
+    assert len(default_session.state.queue) == 1 + batch
+    assert default_session.state.original_queue[-batch:] == [f"new{i}" for i in range(batch)]
+
+
+async def test_advance_or_end_autoplay_caps_the_candidate_request(default_session):
+    """Unbounded, the request grows with the queue forever — a session left
+    running all day would ask for hundreds of candidates to use ten."""
+    target = ChromecastDelivery("TV")
+    queue = [str(i) for i in range(300)]
+    generation = _playing_session(default_session, queue, target=target)
+    default_session.state.queue_index = len(queue) - 1
+    default_session.state.autoplay_enabled = True
+
+    with patch.object(default_session.media, "get_similar_songs2", return_value=[]) as similar_mock:
+        await _advance_or_end(default_session, generation)
+
+    assert similar_mock.call_args.args[1] == 100
+
+
 async def test_advance_or_end_autoplay_filters_songs_already_queued(default_session):
     """A small library's similar-songs pool circling back to something
     already in the queue must not re-add it — same by-id dedup reasoning

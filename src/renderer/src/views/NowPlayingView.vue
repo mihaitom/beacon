@@ -254,9 +254,13 @@
                 v-else-if="showLyrics && playbackStore.radioStation"
                 variant="immersive"
                 :entries="titleLogEntries"
-                :has-more="!playbackStore.radioTitleLogComplete"
+                :has-more="!playbackStore.radioTitleSearch && !playbackStore.radioTitleLogComplete"
+                :query="playbackStore.radioTitleSearch"
+                :current-at="playbackStore.radioTitleLog[0]?.at ?? null"
+                :pending="playbackStore.radioTitleSearchPending"
                 class="now-playing__lyrics"
                 @load-more="playbackStore.loadOlderRadioTitles()"
+                @update:query="searchTitleLog"
               />
             </transition>
           </div>
@@ -362,6 +366,12 @@ const DEBUG_TITLES: [string, string][] = [
   ['Sed Do Eiusmod', 'Tempor Incididunt'],
   ['Ut Labore', 'Et Dolore Magna'],
 ]
+
+// Debounces the title-log search box. Module-level like SongsView.vue's own
+// debounce timer, and for the same reason: one search box per instance, and
+// a timer that cannot outlive the component that armed it.
+const TITLE_LOG_SEARCH_DEBOUNCE_MS = 200
+let titleLogSearchTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'NowPlayingView',
@@ -527,6 +537,12 @@ export default {
      * reaches the log exactly the way a real one does, animation included.
      */
     titleLogEntries(): RadioTitleEntry[] {
+      // A search answers from the backend's whole log, so its results
+      // replace the list rather than filtering the one on screen — see
+      // playbackStore.searchRadioTitles(). The debug titles stay out of it:
+      // they exist to exercise the timeline's own rendering and were never
+      // in the log being searched.
+      if (this.playbackStore.radioTitleSearch) return this.playbackStore.radioTitleSearchResults
       const log = this.playbackStore.radioTitleLog
       return this.debugTitles.length ? [...this.debugTitles, ...log] : log
     },
@@ -740,6 +756,23 @@ export default {
     if (document.fullscreenElement === this.$refs.root) void document.exitFullscreen()
   },
   methods: {
+    /** Hands a keystroke to the store, 200ms after the last one — the same
+     * delay every other search box in the app waits (SongsView.vue). This
+     * one reaches the backend rather than a local array, so the wait is
+     * doing more work here; what makes it safe is that the store's own
+     * sequence guard decides which answer counts, not the order they
+     * arrive in. Cleared eagerly so a search dropped mid-typing does not
+     * fire one last time after the field is already closed. */
+    searchTitleLog(query: string): void {
+      clearTimeout(titleLogSearchTimer)
+      if (!query) {
+        this.playbackStore.clearRadioTitleSearch()
+        return
+      }
+      titleLogSearchTimer = setTimeout(() => {
+        void this.playbackStore.searchRadioTitles(query)
+      }, TITLE_LOG_SEARCH_DEBOUNCE_MS)
+    },
     /** Slides the artwork column across the flip boundary instead of
      * letting it jump. `position` is not animatable, so the lyrics panel
      * enters the flex row at its full width in one frame and the centered
@@ -1162,9 +1195,19 @@ export default {
     perspective: 2000px;
   }
 
+  /* As tall as the stage, not as tall as its own contents - see the
+   * .now-playing--compact rules below, where the same thing was measured:
+   * only the artwork is sized by artSize(), and the back face (lyrics, or
+   * a station's title log) is sized to this box. A 1200x1000 window left
+   * 292px of it unused. */
+  .now-playing__content {
+    height: 100%;
+  }
+
   .now-playing__flip-card {
     display: block;
     position: relative;
+    height: 100%;
     transform-style: preserve-3d;
     transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
     /* NOT container-type: size on this element itself — it has no explicit
@@ -1192,6 +1235,10 @@ export default {
   }
 
   .now-playing__primary {
+    /* Fills the taller card, with its own contents still centred in it, so
+     * the artwork and the title under it stay where they were. */
+    height: 100%;
+    justify-content: center;
     /* An explicit identity rotation, not just the absence of one — Chromium
      * only reliably factors an ancestor's preserve-3d rotation into *this*
      * element's own backface-visibility check once it has a 3D transform of
@@ -1309,7 +1356,25 @@ export default {
   transform: rotateY(180deg);
 }
 
+/* The card is as tall as the stage on a phone, not as tall as its own
+ * contents. Only the artwork is sized by artSize(); the rest of the height
+ * was going unused, and the back face - a station's title log, which is a
+ * list that can always show more - is sized to exactly this box. Measured
+ * on a 390x844 phone: a 421px card in a 647px stage.
+ *
+ * The front face keeps its contents centred, so the artwork and the title
+ * under it sit where they did. */
+.now-playing--compact .now-playing__content {
+  height: 100%;
+}
+
+.now-playing--compact .now-playing__flip-card {
+  height: 100%;
+}
+
 .now-playing--compact .now-playing__primary {
+  height: 100%;
+  justify-content: center;
   /* See the @container block above's matching rule for why this needs an
    * explicit identity transform, not just the absence of one. */
   transform: rotateY(0deg);

@@ -20,6 +20,7 @@ import { useConnectStore } from './connect'
 import { isBackingOff } from '@/services/connect/pollGate'
 import { useAuthStore } from './auth'
 import { useAutoplayStore } from './autoplay'
+import { castTargetLabel, sourceLine } from '@/services/connect/streamInfoLabels'
 
 interface RemoteControlState {
   enabled: boolean
@@ -277,6 +278,22 @@ export const useRemoteControlStore = defineStore('remoteControl', {
           // target — see startDeviceVolumePoll()'s own comment for why
           // 2+ targets has no single value to report here either.
           device_volume: connect.activeTargets.length === 1 ? deviceVolumeCache : null,
+          // What the speakers are being sent, and what it was made from -
+          // the two lines the desktop's own cast sheet ends with. Sent as
+          // finished text rather than as the raw fields, so the phone's
+          // sheet (plain JS, no build step) renders what
+          // StreamInfoSection.vue renders instead of formatting a second
+          // time; see services/connect/streamInfoLabels.ts. Only while
+          // casting: the rest of that panel describes this device's own
+          // playback, which is not what the phone's sheet is about.
+          stream_info:
+            connect.isActive && connect.status?.stream_info
+              ? {
+                  transcoding: connect.status.stream_info.transcoding,
+                  target: castTargetLabel(connect.status.stream_info),
+                  source: sourceLine(connect.status.stream_info),
+                }
+              : null,
         }
         void pushRemoteState(snapshot).catch(() => {})
       }

@@ -53,26 +53,42 @@ export function savePersisted(snapshot: PersistedPlaybackState): void {
 // sessionStorage, deliberately not part of PersistedPlaybackState above —
 // resumeLocalPlayback()'s decision to actually make sound needs to tell a
 // reload apart from a genuine app restart, and localStorage can't do that on
-// its own (it survives both identically). sessionStorage is the platform's
-// own answer to exactly this: it survives a reload of the same window/tab
-// but is gone the moment that window/tab is closed, so it's only ever still
-// there to read back if this boot is a reload of a session that was already
-// running — never on a real restart (a fresh process/window/tab, Electron or
-// web alike). Read once, first thing, in restoreFromStorage() below, before
-// anything in this fresh instance's own life could overwrite it.
+// its own (it survives both identically). sessionStorage survives a reload
+// of the same window/tab and is gone once that tab is closed. Read once,
+// first thing, in restoreFromStorage(), before anything in this fresh
+// instance's own life could overwrite it.
 const SESSION_WAS_PLAYING_KEY = 'beacon.playback.session-was-playing'
+
+// How recently playback has to have been running for this boot to count as
+// a reload of it.
+//
+// The marker alone used to be the whole answer, on the reasoning that only
+// a reload can leave sessionStorage behind. That is true of a desktop, and
+// false of a phone: an installed PWA that goes into the background is
+// discarded by the OS and *restored* later, which is the same tab as far as
+// storage is concerned. Beacon read that as "the user reloaded" and started
+// the station again by itself, in a pocket, hours later - reported
+// 2026-09-07.
+//
+// A real reload is back within seconds, and the marker is rewritten on
+// every persist while playback runs, so it is never older than the persist
+// debounce. Anything past this window was the system restoring a page, not
+// somebody reloading one.
+const RESUME_WINDOW_MS = 30_000
 
 export function readSessionWasPlaying(): boolean {
   try {
-    return sessionStorage.getItem(SESSION_WAS_PLAYING_KEY) === 'true'
+    const marked = Number(sessionStorage.getItem(SESSION_WAS_PLAYING_KEY))
+    return marked > 0 && Date.now() - marked <= RESUME_WINDOW_MS
   } catch {
     return false
   }
 }
 
+/** Stamped with the moment rather than a flag - see RESUME_WINDOW_MS. */
 export function writeSessionWasPlaying(wasPlaying: boolean): void {
   try {
-    sessionStorage.setItem(SESSION_WAS_PLAYING_KEY, String(wasPlaying))
+    sessionStorage.setItem(SESSION_WAS_PLAYING_KEY, wasPlaying ? String(Date.now()) : '0')
   } catch {
     // Same acceptable degradation as savePersisted() above — worst case a
     // reload no longer resumes audio either, just like a restart already

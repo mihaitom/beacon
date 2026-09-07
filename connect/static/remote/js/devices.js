@@ -63,7 +63,20 @@ export async function openDevicePicker() {
     return;
   }
 
-  sheet.innerHTML = '<div class="sheet-title">Play on</div>';
+  sheet.innerHTML = '';
+  // Title and rescan in one row: the sheet's list is only ever
+  // destinations, and every action it has lives either here or in the
+  // footer - the same split ConnectDevicePicker.vue and
+  // MobileDevicePicker.vue have.
+  const titleRow = document.createElement('div');
+  titleRow.className = 'sheet-title-row';
+  titleRow.innerHTML = '<div class="sheet-title">Play on</div>';
+  const rescanBtn = document.createElement('button');
+  rescanBtn.className = 'btn-sheet-icon';
+  rescanBtn.setAttribute('aria-label', 'Search again');
+  rescanBtn.innerHTML = '<i class="mdi mdi-refresh"></i>';
+  titleRow.appendChild(rescanBtn);
+  sheet.appendChild(titleRow);
 
   // Pre-checked with whatever's already casting — matches DeviceListItem.vue's
   // own `checked = isMyActiveTarget || selected` starting point.
@@ -89,111 +102,149 @@ export async function openDevicePicker() {
     doneBtn.classList.toggle('btn-sheet-action--active', selectedKeys.size > 0);
   }
 
-  const list = document.createElement('div');
-  list.className = 'device-list';
-
-  // Local playback as one destination among the speakers, with the same
-  // tick a picked speaker gets when it is where the sound is going. There
-  // used to be two rows here — a red "Stop all" and "This device" — firing
-  // the identical cast-stop command; one list of destinations with the
-  // current one marked is a choice, two differently coloured rows doing the
-  // same thing is a puzzle. Stopping is offered once, as an action next to
-  // Done (see the footer below), which is also where the desktop's own
-  // picker keeps it.
   const casting = (state.snapshot.casting?.length ?? 0) > 0;
-  const localRow = document.createElement('button');
-  localRow.className = casting ? 'device-row-local' : 'device-row-local device-row-local--active';
-  localRow.innerHTML = `<i class="mdi ${casting ? 'mdi-speaker' : 'mdi-circle-slice-8'}"></i><span>This device</span>${
-    casting ? '' : '<i class="mdi mdi-check device-row-check"></i>'
-  }`;
-  localRow.addEventListener('click', () => {
-    // Already local: nothing to apply, so this is just a way out of the
-    // sheet rather than a stop dispatched at nothing.
-    if (casting) fireCommand('cast-stop');
-    close();
-  });
-  list.appendChild(localRow);
 
-  // Grouped/ordered like the desktop's ConnectDevicePicker.vue (TYPE_ORDER) —
-  // `devices` already arrives pre-sorted in that order from commands.ts, so
-  // a header just needs to be inserted whenever the type changes.
-  let lastType = null;
-  for (const device of devices) {
-    if (device.type !== lastType) {
-      lastType = device.type;
-      const header = document.createElement('div');
-      header.className = 'sheet-header';
-      header.textContent = TYPE_LABELS[device.type] ?? device.type;
-      list.appendChild(header);
-    }
+  // Rebuilt rather than patched when a rescan comes back with a
+  // different set of devices - see the rescan handler below.
+  function buildList() {
+    const list = document.createElement('div');
+    list.className = 'device-list';
 
-    const row = document.createElement('button');
-    const icon = TYPE_ICONS[device.type] ?? 'mdi-cast';
-
-    if (device.needs_pairing) {
-      // No PIN-entry flow exists on the phone (see commands.ts's own
-      // comment) — shown greyed out with an explanation instead of just
-      // vanishing, so an unpaired AirPlay speaker doesn't read as "Beacon
-      // can't see it at all".
-      row.className = 'device-row-disabled';
-      row.disabled = true;
-      row.innerHTML = `<i class="mdi ${icon}"></i><span>${escapeHtml(device.name)}<br /><span class="muted device-row-hint">Pair from the Beacon app first</span></span><i class="mdi mdi-lock-outline device-row-check"></i>`;
-      list.appendChild(row);
-      continue;
-    }
-
-    const key = deviceKey(device);
-    const renderCheck = () =>
-      selectedKeys.has(key) ? '<i class="mdi mdi-check device-row-check"></i>' : '';
-    row.innerHTML = `<i class="mdi ${icon}"></i><span>${escapeHtml(device.name)}${
-      device.in_use_by_name ? ` <span class="muted">(${escapeHtml(device.in_use_by_name)})</span>` : ''
-    }</span>${renderCheck()}`;
-    row.addEventListener('click', () => {
-      if (selectedKeys.has(key)) selectedKeys.delete(key);
-      else selectedKeys.add(key);
-      row.querySelector('.device-row-check')?.remove();
-      if (selectedKeys.has(key)) row.insertAdjacentHTML('beforeend', '<i class="mdi mdi-check device-row-check"></i>');
-      updateDoneButton();
+    // Local playback as one destination among the speakers, with the same
+    // tick a picked speaker gets when it is where the sound is going. There
+    // used to be two rows here — a red "Stop all" and "This device" — firing
+    // the identical cast-stop command; one list of destinations with the
+    // current one marked is a choice, two differently coloured rows doing the
+    // same thing is a puzzle. Stopping is offered once, as an action next to
+    // Done (see the footer below), which is also where the desktop's own
+    // picker keeps it.
+    const localRow = document.createElement('button');
+    localRow.className = casting ? 'device-row-local' : 'device-row-local device-row-local--active';
+    localRow.innerHTML = `<i class="mdi ${casting ? 'mdi-speaker' : 'mdi-circle-slice-8'}"></i><span>This device</span>${
+      casting ? '' : '<i class="mdi mdi-check device-row-check"></i>'
+    }`;
+    localRow.addEventListener('click', () => {
+      // Already local: nothing to apply, so this is just a way out of the
+      // sheet rather than a stop dispatched at nothing.
+      if (casting) fireCommand('cast-stop');
+      close();
     });
-    list.appendChild(row);
+    list.appendChild(localRow);
 
-    // Per-device volume, shown for every *currently active* volume-capable
-    // target — independent of the pending checkbox state above. With 2+
-    // active targets this is the only place any of them gets a slider at
-    // all (see stores/remoteControl.ts's own comment on why the Now Playing
-    // screen's single slider only ever represents exactly one). Fetched
-    // once on open rather than polled continuously — this sheet is a
-    // short-lived popover, not worth the same standing 4s poll
-    // DeviceListItem.vue/startDeviceVolumePoll() run for it.
-    if (isActive(device) && device.volume_capable) {
-      // Marked on the row above as well, so the two read as one block —
-      // a slider between two device rows otherwise looks like it could
-      // belong to either.
-      row.classList.add('device-row-has-volume');
-      const volumeRow = document.createElement('div');
-      volumeRow.className = 'device-volume-row';
-      volumeRow.innerHTML =
-        '<i class="mdi mdi-volume-high"></i><input type="range" min="0" max="100" step="1" value="0" disabled />';
-      list.appendChild(volumeRow);
+    // Grouped/ordered like the desktop's ConnectDevicePicker.vue (TYPE_ORDER) —
+    // `devices` already arrives pre-sorted in that order from commands.ts, so
+    // a header just needs to be inserted whenever the type changes.
+    let lastType = null;
+    for (const device of devices) {
+      if (device.type !== lastType) {
+        lastType = device.type;
+        const header = document.createElement('div');
+        header.className = 'sheet-header';
+        header.textContent = TYPE_LABELS[device.type] ?? device.type;
+        list.appendChild(header);
+      }
 
-      const slider = volumeRow.querySelector('input');
-      paintRange(slider);
-      fetchDeviceVolume(device.type, device.name)
-        .then(({ volume }) => {
-          if (volume == null) return; // stays disabled — e.g. a DLNA renderer without volume support
-          slider.value = String(volume);
-          slider.disabled = false;
-          paintRange(slider);
-        })
-        .catch(() => {});
-      slider.addEventListener('input', () => paintRange(slider));
-      slider.addEventListener('change', () => {
-        fireCommand('set-device-volume', { deviceType: device.type, name: device.name, volume: Number(slider.value) });
+      const row = document.createElement('button');
+      const icon = TYPE_ICONS[device.type] ?? 'mdi-cast';
+
+      if (device.needs_pairing) {
+        // No PIN-entry flow exists on the phone (see commands.ts's own
+        // comment) — shown greyed out with an explanation instead of just
+        // vanishing, so an unpaired AirPlay speaker doesn't read as "Beacon
+        // can't see it at all".
+        row.className = 'device-row-disabled';
+        row.disabled = true;
+        row.innerHTML = `<i class="mdi ${icon}"></i><span>${escapeHtml(device.name)}<br /><span class="muted device-row-hint">Pair from the Beacon app first</span></span><i class="mdi mdi-lock-outline device-row-check"></i>`;
+        list.appendChild(row);
+        continue;
+      }
+
+      const key = deviceKey(device);
+      const renderCheck = () =>
+        selectedKeys.has(key) ? '<i class="mdi mdi-check device-row-check"></i>' : '';
+      row.innerHTML = `<i class="mdi ${icon}"></i><span>${escapeHtml(device.name)}${
+        device.in_use_by_name ? ` <span class="muted">(${escapeHtml(device.in_use_by_name)})</span>` : ''
+      }</span>${renderCheck()}`;
+      row.addEventListener('click', () => {
+        if (selectedKeys.has(key)) selectedKeys.delete(key);
+        else selectedKeys.add(key);
+        row.querySelector('.device-row-check')?.remove();
+        if (selectedKeys.has(key)) row.insertAdjacentHTML('beforeend', '<i class="mdi mdi-check device-row-check"></i>');
+        updateDoneButton();
       });
+      list.appendChild(row);
+
+      // Per-device volume, shown for every *currently active* volume-capable
+      // target — independent of the pending checkbox state above. With 2+
+      // active targets this is the only place any of them gets a slider at
+      // all (see stores/remoteControl.ts's own comment on why the Now Playing
+      // screen's single slider only ever represents exactly one). Fetched
+      // once on open rather than polled continuously — this sheet is a
+      // short-lived popover, not worth the same standing 4s poll
+      // DeviceListItem.vue/startDeviceVolumePoll() run for it.
+      if (isActive(device) && device.volume_capable) {
+        // Marked on the row above as well, so the two read as one block —
+        // a slider between two device rows otherwise looks like it could
+        // belong to either.
+        row.classList.add('device-row-has-volume');
+        const volumeRow = document.createElement('div');
+        volumeRow.className = 'device-volume-row';
+        volumeRow.innerHTML =
+          '<i class="mdi mdi-volume-high"></i><input type="range" min="0" max="100" step="1" value="0" disabled />';
+        list.appendChild(volumeRow);
+
+        const slider = volumeRow.querySelector('input');
+        paintRange(slider);
+        fetchDeviceVolume(device.type, device.name)
+          .then(({ volume }) => {
+            if (volume == null) return; // stays disabled — e.g. a DLNA renderer without volume support
+            slider.value = String(volume);
+            slider.disabled = false;
+            paintRange(slider);
+          })
+          .catch(() => {});
+        slider.addEventListener('input', () => paintRange(slider));
+        slider.addEventListener('change', () => {
+          fireCommand('set-device-volume', { deviceType: device.type, name: device.name, volume: Number(slider.value) });
+        });
+      }
     }
+    return list;
   }
 
+  let list = buildList();
+
   sheet.appendChild(list);
+
+  // A real sweep, unlike opening the sheet, which takes whatever the last
+  // one found. Seconds long, so the button says so while it runs and the
+  // list is replaced rather than the whole sheet - a rebuild would drop
+  // the selection being made.
+  rescanBtn.addEventListener('click', async () => {
+    if (rescanBtn.disabled) return;
+    rescanBtn.disabled = true;
+    rescanBtn.classList.add('btn-sheet-icon--busy');
+    try {
+      const { items } = await fetchDevices({ rescan: true });
+      devices = items;
+      // Anything checked that the sweep no longer finds cannot be applied,
+      // and leaving it checked would send Done at a device that is gone.
+      const found = new Set(devices.map(deviceKey));
+      for (const key of selectedKeys) {
+        if (!found.has(key)) selectedKeys.delete(key);
+      }
+      const fresh = buildList();
+      list.replaceWith(fresh);
+      list = fresh;
+      updateDoneButton();
+    } catch {
+      // Nothing to say beyond the list staying as it was - the sheet is
+      // still usable with what the previous sweep found.
+    } finally {
+      rescanBtn.disabled = false;
+      rescanBtn.classList.remove('btn-sheet-icon--busy');
+    }
+  });
 
   updateDoneButton();
   doneBtn.addEventListener('click', () => {
@@ -221,7 +272,34 @@ export async function openDevicePicker() {
     footer.appendChild(stopBtn);
   }
   footer.appendChild(doneBtn);
+  const streamInfo = buildStreamInfo();
+  if (streamInfo) sheet.appendChild(streamInfo);
   sheet.appendChild(footer);
+}
+
+/** What the speakers are being sent, and what it was made from - the same
+ * two lines the desktop's cast sheet ends with. Both arrive as finished
+ * text in the snapshot (see stores/remoteControl.ts): the formatting lives
+ * in one place over there, not a second time here.
+ *
+ * Absent whenever nothing is being cast, which is also when the desktop
+ * panel says nothing. */
+function buildStreamInfo() {
+  const info = state.snapshot.stream_info;
+  if (!info) return null;
+  const rows = [['Sending', info.transcoding ? info.target : 'Unchanged']];
+  if (info.source) rows.push(['Source', info.source]);
+  const box = document.createElement('div');
+  box.className = 'sheet-stream-info';
+  box.innerHTML =
+    '<div class="sheet-header">Stream</div>' +
+    rows
+      .map(
+        ([label, value]) =>
+          `<div class="stream-info-row"><span class="muted">${escapeHtml(label)}</span><span>${escapeHtml(value)}</span></div>`,
+      )
+      .join('');
+  return box;
 }
 
 function escapeHtml(text) {

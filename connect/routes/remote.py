@@ -349,8 +349,11 @@ async def list_radio_stations():
 
 
 @router.get("/devices", dependencies=[Depends(require_remote_password)])
-async def list_devices():
-    return await _query("devices-request", {})
+async def list_devices(rescan: bool = False):
+    """Opening the sheet asks for the cached list; the sheet's own rescan
+    button asks for a fresh sweep, which takes seconds and is why it is not
+    what an open costs."""
+    return await _query("devices-request", {"rescan": rescan})
 
 
 @router.get("/device-volume", dependencies=[Depends(require_remote_password)])

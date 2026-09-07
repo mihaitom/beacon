@@ -54,7 +54,21 @@ export default {
   border-top: 1px solid var(--beacon-hairline);
 }
 
+/* Vuetify gives each button a min-width of 80px and `grow` only ever
+ * stretches them, never shrinks. Five tabs are 400px, which is wider than
+ * every common phone: the row centred itself and hung 5px off each end at
+ * 390px, more on a narrower screen, so the last tab (Radio) was the one
+ * with a slice missing and a shrunken touch target. Sharing the bar
+ * equally instead is what `grow` reads as anyway. */
+.mobile-tabbar :deep(.v-btn) {
+  min-width: 0;
+  flex: 1 1 0;
+}
+
 .mobile-tabbar__label {
   font-size: 0.65rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

@@ -83,7 +83,13 @@ export default {
 
 .sticky-filter {
   position: sticky;
-  top: var(--v-layout-top, 0px);
+  /* How far below the top of the scrolling area this clamps. On the
+   * desktop that area is the page itself, so it has to clear the app bar
+   * (--v-layout-top); in the mobile shell the scroller starts below the
+   * bar already and the shell sets --beacon-sticky-top to 0 (see
+   * MobileLayout.vue). Adding the bar's height there again parked this
+   * 56px too low, with rows scrolling visibly through the gap above it. */
+  top: var(--beacon-sticky-top, var(--v-layout-top, 0px));
   background: rgb(var(--v-theme-background));
   padding-top: 12px;
   padding-bottom: 16px;

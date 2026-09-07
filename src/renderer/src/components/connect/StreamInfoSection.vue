@@ -77,6 +77,13 @@ import { usePlaybackStore } from '@/stores/playback'
 import type { ConnectStreamInfo } from '@/services/connect/types'
 import type { LocalStreamPlan } from '@/services/streamQuality'
 import { fetchLocalSourceInfo, type LocalSourceInfo } from '@/services/connect/localStreamInfo'
+// Shared with the phone remote's own cast sheet, which is handed these
+// lines ready-made in the snapshot - see streamInfoLabels.ts.
+import {
+  castTargetLabel,
+  sourceLine,
+  TARGET_LABEL_FOR_CONTENT_TYPE,
+} from '@/services/connect/streamInfoLabels'
 
 const FALLBACK_INFO: ConnectStreamInfo = {
   label: '',
@@ -109,25 +116,6 @@ const NO_LOCAL_SOURCE: LocalSourceInfo = {
 // (the fallback's fixed 192k, or whatever ceiling the listener set), and a
 // hardcoded number would be a guess for all but one of them. Each tier
 // reports its own via target_bitrate_kbps instead.
-const TARGET_LABEL_FOR_CONTENT_TYPE: Record<string, string> = {
-  'audio/flac': 'FLAC',
-  'audio/mpeg': 'MP3',
-  'audio/aac': 'AAC',
-  // Reachable since Opus joined CAST_FORMATS: a Chromecast declares it
-  // (see its PLAYABLE_CODECS), so a cast at that quality really does come
-  // out as Ogg. Without this the row read "audio/ogg" at the listener.
-  'audio/ogg': 'Opus',
-}
-
-// e.g. 96000 -> "96 kHz", 44100 -> "44.1 kHz". Shared by the source and
-// target lines so a resampled dispatch reads as one comparison
-// ("96 kHz / 24-bit" -> "48 kHz") rather than two differently-formatted
-// numbers.
-function formatKhz(hz: number): string {
-  const khz = hz / 1000
-  return `${Number.isInteger(khz) ? khz : khz.toFixed(1)} kHz`
-}
-
 /** Whether this panel has anything to describe at all. Nothing is loaded
  * before the first track, and a radio station has no local stream of ours
  * behind it (the URL is the station's own) — in both cases the panel says
@@ -298,15 +286,7 @@ export default {
     // that's the case worth spelling out, since "FLAC" alone reads as an
     // unchanged copy of a FLAC source when it's really a downsampled one.
     castTargetLabel(): string {
-      const base =
-        TARGET_LABEL_FOR_CONTENT_TYPE[this.castInfo.content_type] ?? this.castInfo.content_type
-      const { target_sample_rate, target_bit_depth, target_bitrate_kbps } = this.castInfo
-      const changed = [
-        target_sample_rate ? formatKhz(target_sample_rate) : null,
-        target_bit_depth ? `${target_bit_depth}-bit` : null,
-        target_bitrate_kbps ? `${target_bitrate_kbps} kb/s` : null,
-      ].filter(Boolean)
-      return changed.length > 0 ? `${base}, ${changed.join(' / ')}` : base
+      return castTargetLabel(this.castInfo)
     },
     // e.g. "FLAC, 96 kHz / 24-bit, 320 kb/s" — omits whichever parts weren't
     // detected (see OutputFormat's own docstring on why any of them can be
@@ -328,16 +308,7 @@ export default {
         const parts = [radioCodec, radioBitrate ? `${radioBitrate} kb/s` : null].filter(Boolean)
         return parts.length > 0 ? parts.join(', ') : null
       }
-      const source = this.isCasting ? this.castInfo : this.localSource
-      const { source_codec, source_sample_rate, source_bit_depth, source_bitrate_kbps } = source
-      if (!source_codec) return null
-      const parts = [source_codec.toUpperCase()]
-      if (source_sample_rate) {
-        const rate = formatKhz(source_sample_rate)
-        parts.push(source_bit_depth ? `${rate} / ${source_bit_depth}-bit` : rate)
-      }
-      if (source_bitrate_kbps) parts.push(`${source_bitrate_kbps} kb/s`)
-      return parts.join(', ')
+      return sourceLine(this.isCasting ? this.castInfo : this.localSource)
     },
     // Why it's being transcoded, spelled out. Backend-side keys (see
     // connect/core/streamer.py's REASON_* constants) rather than a

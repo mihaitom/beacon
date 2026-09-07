@@ -17,13 +17,19 @@ vi.mock('@/services/connect/radioMetadata', () => ({
   RADIO_TITLE_PAGE_SIZE: 200,
 }))
 
-// resumeLocalPlayback() tells a reload (sessionStorage survives it) apart
-// from a genuine app restart (sessionStorage starts empty) via the
-// SESSION_WAS_PLAYING_KEY marker restoreFromStorage() reads — see both
-// functions' own comments in playback.ts. Setting/clearing that key directly
-// is what stands in for "the previous instance, right before this boot" here,
+// resumeLocalPlayback() tells a reload apart from a genuine app restart via
+// the SESSION_WAS_PLAYING_KEY marker restoreFromStorage() reads — see both
+// functions' own comments in playback.ts, and RESUME_WINDOW_MS in
+// services/playback/persistence.ts for why the marker carries the moment
+// playback was last running rather than a flag. Writing that key directly is
+// what stands in for "the previous instance, right before this boot" here,
 // since jsdom's sessionStorage otherwise behaves just like a real one.
 const SESSION_WAS_PLAYING_KEY = 'beacon.playback.session-was-playing'
+
+/** The marker as the previous instance would have left it moments ago. */
+function markedPlaying(agoMs = 0): string {
+  return String(Date.now() - agoMs)
+}
 
 /** The two arguments playLive() is handed for `streamUrl` in the default
  * (relayed) mode: Beacon's own relay URL with the station's own inside it,
@@ -72,7 +78,7 @@ describe('resumeLocalPlayback', () => {
   })
 
   it('actually resumes playing on a reload of a session that was already playing', async () => {
-    sessionStorage.setItem(SESSION_WAS_PLAYING_KEY, 'true') // the previous instance's own persistNow()
+    sessionStorage.setItem(SESSION_WAS_PLAYING_KEY, markedPlaying()) // the previous instance's own persistNow()
     const playback = usePlaybackStore()
     setUpSong(playback)
     playback.restoreFromStorage() // marker survived the reload — this boot reads as a reload
@@ -104,8 +110,30 @@ describe('resumeLocalPlayback', () => {
     expect(radioMetadata.startRadioMetadataWatch).not.toHaveBeenCalled()
   })
 
+  /** The phone case the window exists for: an installed PWA that goes into
+   * the background is discarded and restored by the OS, which leaves
+   * sessionStorage intact and looks exactly like a reload from in here.
+   * Beacon used to start the station again by itself hours later, in a
+   * pocket - reported 2026-09-07. */
+  it('does not start a station again when the page was restored long after it played', async () => {
+    sessionStorage.setItem(SESSION_WAS_PLAYING_KEY, markedPlaying(60 * 60 * 1000))
+    const playback = usePlaybackStore()
+    playback.radioStation = {
+      id: '',
+      name: 'Chill FM',
+      streamUrl: 'https://stream.example/chill',
+      homePageUrl: null,
+    }
+    playback.restoreFromStorage()
+
+    await playback.resumeLocalPlayback()
+
+    expect(getAudioEngine().playLive).not.toHaveBeenCalled()
+    expect(playback.isPlaying).toBe(false)
+  })
+
   it('reconnects a restored radio station on a reload of a session that was already playing', async () => {
-    sessionStorage.setItem(SESSION_WAS_PLAYING_KEY, 'true')
+    sessionStorage.setItem(SESSION_WAS_PLAYING_KEY, markedPlaying())
     const playback = usePlaybackStore()
     playback.radioStation = {
       id: '',
