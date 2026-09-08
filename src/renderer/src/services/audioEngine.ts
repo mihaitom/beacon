@@ -61,6 +61,17 @@ const MAX_LIVE_RECONNECT_DELAY_SECONDS = 15
 const LIVE_STALL_SECONDS = 4
 const LIVE_STALL_CHECK_MS = 1000
 
+// How much later than its own interval a watchdog tick may arrive before
+// the gap counts as this process not having run — the machine suspended, a
+// hidden window's timers throttled — rather than as time the stream stood
+// still. Both look identical from inside checkForStall(): the playhead has
+// not moved for however long the gap lasted. But nothing was asked of the
+// connection in that time, so a tick this late measures nothing about it,
+// and treating it as a stall would report a station as gone (or drop a
+// perfectly good relay connection) on the strength of the machine having
+// been asleep.
+const STALL_CHECK_LATE_MS = 3000
+
 // How long a *held* live stream may stand still before this gives up on it
 // — see playLive()'s `holdsConnection`.
 //
@@ -168,6 +179,13 @@ export class AudioEngine {
   private lastKnownPosition = 0
   private reconnectAttempts = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  // What onReconnectStateChange was last told, so the "delivering again"
+  // signal in 'timeupdate' below can be sent once instead of on every
+  // event. Cleared by loadSource() (a new source is nobody's reconnect),
+  // never by a retry of the reconnect currently running.
+  private reconnecting = false
+  // When checkForStall() last ran — see STALL_CHECK_LATE_MS.
+  private lastStallCheckAt = 0
   // Whether what is loaded is a live stream rather than a file — set by
   // playLive() and cleared by every other load(). Changes three things:
   // the reconnect ladder used (see MAX_LIVE_RECONNECT_ATTEMPTS), whether a
@@ -308,7 +326,17 @@ export class AudioEngine {
       // browser keeps firing 'timeupdate' at a stalled playhead on some
       // platforms, so "the event arrived" is not the same question as "the
       // stream is still feeding us" that checkForStall() below asks.
-      if (position !== this.lastKnownPosition) this.lastProgressAt = Date.now()
+      if (position !== this.lastKnownPosition) {
+        this.lastProgressAt = Date.now()
+        // A moving playhead is the stream delivering, and the only
+        // evidence of it that always arrives. 'playing' below does not: it
+        // fires when the *element* was stalled, and checkForStall() also
+        // reports stalls the element never noticed — a suspended process,
+        // an audio sink that stopped consuming — which then end with no
+        // event at all. Reported live 2026-09-08: a station that had been
+        // playing cleanly for hours kept the buffering bar until a reload.
+        this.reportReconnecting(false)
+      }
       this.lastKnownPosition = position
       this.onTimeUpdate?.(position)
     })
@@ -355,6 +383,11 @@ export class AudioEngine {
     // exactly the "not reconnecting" state that callback describes too.
     this.audio.addEventListener('playing', () => {
       this.reconnectAttempts = 0
+      // Not through reportReconnecting(): this one fires whether or not
+      // this engine ever reported a reconnect, because the store can be
+      // showing that state on its own — reconnectRadio() sets it the
+      // moment the button is pressed, before anything is even loaded.
+      this.reconnecting = false
       this.onReconnectStateChange?.(false)
     })
     this.audio.addEventListener('error', () => {
@@ -457,6 +490,16 @@ export class AudioEngine {
     return this.earlyEnds < MAX_EARLY_ENDS
   }
 
+  /** Edge-triggered onReconnectStateChange — the callback fires only
+   * when the state actually changes, so the watchdog can keep saying "still
+   * stalled" every second and 'timeupdate' can keep saying "still moving"
+   * four times a second without either of them being a stream of events. */
+  private reportReconnecting(reconnecting: boolean): void {
+    if (this.reconnecting === reconnecting) return
+    this.reconnecting = reconnecting
+    this.onReconnectStateChange?.(reconnecting)
+  }
+
   /** Reconnects after a dropped (not merely slow) connection — see
    * MEDIA_ERR_NETWORK's own comment for why only that error code lands
    * here. Retries the same url from the last position timeupdate reported,
@@ -474,7 +517,7 @@ export class AudioEngine {
       this.giveUp('after dropped connection')
       return
     }
-    this.onReconnectStateChange?.(true)
+    this.reportReconnecting(true)
     this.reconnectAttempts++
     const delaySeconds = Math.min(2 ** (this.reconnectAttempts - 1), maxDelay)
     this.reconnectTimer = setTimeout(() => {
@@ -537,6 +580,7 @@ export class AudioEngine {
     this.disarmStallWatchdog()
     if (!this.watchedForStalls()) return
     this.lastProgressAt = Date.now()
+    this.lastStallCheckAt = Date.now()
     this.stallTimer = setInterval(() => this.checkForStall(), LIVE_STALL_CHECK_MS)
   }
 
@@ -563,6 +607,17 @@ export class AudioEngine {
    * the "reconnecting" signal and the give-up handling all exist once
    * rather than twice. */
   private checkForStall(): void {
+    const now = Date.now()
+    const sinceLastCheck = now - this.lastStallCheckAt
+    this.lastStallCheckAt = now
+    // A tick that arrives long after it was due timed this process being
+    // away, not the stream standing still — see STALL_CHECK_LATE_MS. The
+    // budget starts again from here, so the connection gets a real
+    // interval to prove itself in before anything is decided about it.
+    if (sinceLastCheck > LIVE_STALL_CHECK_MS + STALL_CHECK_LATE_MS) {
+      this.lastProgressAt = now
+      return
+    }
     // paused covers both an actual pause and the moment between a
     // reconnect's src assignment and its play() landing; reconnectTimer
     // covers the backoff wait itself, where the playhead is standing still
@@ -570,7 +625,7 @@ export class AudioEngine {
     if (!this.watchedForStalls() || this.audio.paused) return
     if (this.reconnectUrl === null || this.reconnectTimer !== null) return
     const budget = this.stallBudgetSeconds()
-    const stalledForMs = Date.now() - this.lastProgressAt
+    const stalledForMs = now - this.lastProgressAt
     if (stalledForMs < budget * 1000) return
 
     if (!this.holdsConnection) {
@@ -584,7 +639,7 @@ export class AudioEngine {
     // is the one thing that can still recover the missing seconds rather
     // than skipping them — see LIVE_HOLD_SECONDS.
     if (stalledForMs < LIVE_HOLD_SECONDS * 1000) {
-      this.onReconnectStateChange?.(true)
+      this.reportReconnecting(true)
       return
     }
     this.giveUp(`after ${LIVE_HOLD_SECONDS}s with nothing arriving`)
@@ -600,6 +655,8 @@ export class AudioEngine {
     this.reconnectUrl = null
     this.disarmStallWatchdog()
     console.error(`[audio-engine] Giving up on ${url} ${reason}`)
+    // Unconditional for the same reason as 'playing' — see the listener.
+    this.reconnecting = false
     this.onReconnectStateChange?.(false)
     this.onConnectionLost?.()
     this.onError?.('Playback error: connection lost')
@@ -617,7 +674,7 @@ export class AudioEngine {
     // nothing pending has nothing to clear, and calling this on every
     // pause/stop/load regardless would fire "not reconnecting" far more
     // than the handful of call sites that could actually be mid-backoff.
-    this.onReconnectStateChange?.(false)
+    this.reportReconnecting(false)
   }
 
   /** The same, and this stream is finished: nothing that arrives later,
@@ -741,6 +798,7 @@ export class AudioEngine {
     this.positionAtLastEarlyEnd = startPosition
     this.reconnectUrl = url
     this.reconnectAttempts = 0
+    this.reconnecting = false
     this.lastKnownPosition = startPosition
     this.audio.src = url
     // Never for a live stream: see reconnectOnDrop()'s own branch for why

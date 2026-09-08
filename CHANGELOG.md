@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- A station that stops arriving for a moment no longer keeps the buffering bar up once it is audibly playing again
+- A station is no longer reported as lost after the computer has been asleep or the app has been left in the background for a while
+
 ## [1.2.0] - 2026-09-07
 
 ### Highlights

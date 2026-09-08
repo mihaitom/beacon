@@ -775,6 +775,45 @@ describe('AudioEngine', () => {
         expect(onReconnectStateChange).not.toHaveBeenCalledWith(true)
       })
 
+      // The same recovery, without the element saying anything about it.
+      // 'playing' only fires when the *element* was stalled, and the
+      // watchdog also reports stalls it never noticed — a process that was
+      // suspended, an audio sink that stopped consuming. Reported live
+      // 2026-09-08: the buffering bar stayed on a station that had been
+      // playing cleanly for hours, and only a reload cleared it.
+      it('clears the stall when the playhead moves again, with no playing event to go on', async () => {
+        const onReconnectStateChange = vi.fn()
+        engine.onReconnectStateChange = onReconnectStateChange
+        engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+        playing(3)
+        await vi.advanceTimersByTimeAsync(20_000)
+        expect(onReconnectStateChange).toHaveBeenLastCalledWith(true)
+
+        playing(9)
+
+        expect(onReconnectStateChange).toHaveBeenLastCalledWith(false)
+      })
+
+      // A watchdog tick that arrives a minute late timed the machine being
+      // asleep, not the stream. The playhead stood still for exactly the
+      // same reason, and giving up on a station over it would take a
+      // perfectly good connection down on waking.
+      it('does not condemn a stream because the watchdog itself was suspended', async () => {
+        const onConnectionLost = vi.fn()
+        const onReconnectStateChange = vi.fn()
+        engine.onConnectionLost = onConnectionLost
+        engine.onReconnectStateChange = onReconnectStateChange
+        engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+        playing(3)
+
+        // Wall clock jumps; nothing ran while it did.
+        vi.setSystemTime(Date.now() + 90_000)
+        await vi.advanceTimersByTimeAsync(1000)
+
+        expect(onConnectionLost).not.toHaveBeenCalled()
+        expect(onReconnectStateChange).not.toHaveBeenCalledWith(true)
+      })
+
       it('gives up once waiting has stopped being worth it', async () => {
         const onConnectionLost = vi.fn()
         engine.onConnectionLost = onConnectionLost
