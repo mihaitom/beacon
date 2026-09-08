@@ -48,6 +48,24 @@ verify() {
 # every component present, every command shape working, and four Homebrew
 # dylibs in the load commands.
 check_self_contained() {
+    # Skipped rather than failed when the tool that reads a binary's
+    # dependencies isn't there. It is there wherever the binary is *built* —
+    # which is the run that matters — but not on every path that reaches
+    # here: a release runs `pnpm run publish:win` from PowerShell, which
+    # reaches this script through Git Bash, where the binary is already up to
+    # date and objdump does not exist. Failing there would fail the release
+    # over a check that has already passed in MSYS2.
+    inspector=""
+    case "$(uname -s)" in
+        Linux) inspector=file ;;
+        Darwin) inspector=otool ;;
+        MINGW* | MSYS*) inspector=objdump ;;
+    esac
+    if [ -n "$inspector" ] && ! command -v "$inspector" >/dev/null 2>&1; then
+        echo "[ffmpeg] Skipping the self-contained check: no $inspector here"
+        return 0
+    fi
+
     case "$(uname -s)" in
         Linux)
             # Fully static: musl, openssl and the codec libraries are all in
