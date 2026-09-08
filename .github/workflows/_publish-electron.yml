@@ -3,7 +3,7 @@ name: (internal) Publish Electron
 # Reusable workflow, not meant to be dispatched directly — builds and
 # publishes the Electron desktop app for whichever platform legs the
 # caller's `matrix` input lists. Shared by every "Publish *" workflow that
-# ships the desktop app (publish.yml, publish-electron-all-plattforms.yml,
+# ships the desktop app (publish.yml, publish-electron-all-platforms.yml,
 # publish-linux.yml, publish-macos.yml, publish-windows.yml): each supplies
 # its own subset of platforms as a JSON array of
 # {os, script, arm64_build_tools?, node_options?} entries (see the `matrix`

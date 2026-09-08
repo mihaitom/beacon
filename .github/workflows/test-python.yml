@@ -1,4 +1,4 @@
-name: Python Tests
+name: Test backend
 
 on:
     workflow_dispatch:

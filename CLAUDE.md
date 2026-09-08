@@ -142,6 +142,28 @@ one, not the development history in between:
   Added/Changed entry instead so it describes the end state.
 - Entries are non-technical: what a user can see, not which function changed.
 
+### .github/workflows/
+
+Four rules, all of them already visible in the existing files:
+
+- A leading `_` means the workflow only ever runs as a `workflow_call`
+  building block, never on its own. Its `name:` says `(internal) ...` too,
+  so a run in the Actions list is recognisable as somebody else's job.
+- Everything else is `<verb>-<subject>.yml`, and the `name:` reads the same
+  way round: `Test ...`, `Publish ...`. The Actions sidebar sorts by name,
+  so verb-first is what keeps the test workflows together and the publish
+  ones together instead of interleaving them.
+- `... (Manual)` in the name means dispatch-only. A workflow that also runs
+  on push doesn't carry it.
+- A workflow triggered by `push` always names its branches, or it runs on
+  every Dependabot branch too - which for the packaging ones is four
+  platform builds at a time. Which branches depends on what the workflow
+  answers: the frontend and backend suites are development feedback and
+  watch `[main, development]`, while `test-ffmpeg` and `test-package`
+  answer a release question and watch `[main]` only, since the merge to
+  main is when that question comes up. Both kinds keep
+  `workflow_dispatch`, so either can be run earlier by hand.
+
 ### docs/investigations/
 
 Every case that cost more than an afternoon leaves a file behind -

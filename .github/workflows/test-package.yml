@@ -19,10 +19,20 @@ name: Test desktop package
 on:
     workflow_dispatch:
     push:
+        # main only, same reasoning as test-ffmpeg.yml: this answers a
+        # release question, and the merge to main is when it gets asked.
+        #
+        # The paths are only what this actually answers for: what goes into
+        # the package (build/ffmpeg), where it is put (electron-builder.yml),
+        # and the script chain that does it (package.json's package:*
+        # scripts). `src/main/**` is deliberately not here — this checks that
+        # files arrive in the package, not what the main process does with
+        # them, and it changes far more often than the packaging does.
+        branches:
+            - main
         paths:
             - 'electron-builder.yml'
             - 'package.json'
-            - 'src/main/**'
             - 'build/ffmpeg/**'
             - 'scripts/build-ffmpeg.sh'
             - 'scripts/verify-ffmpeg.sh'

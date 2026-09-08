@@ -1,4 +1,4 @@
-name: Test ffmpeg build
+name: Test ffmpeg
 
 # Builds the bundled ffmpeg on each platform and lets verify-ffmpeg.sh check
 # what came out — without publishing anything. The publish workflows build it
@@ -14,11 +14,21 @@ name: Test ffmpeg build
 on:
     workflow_dispatch:
     push:
+        # main only, unlike the frontend/backend suites: this is a
+        # release-preparation check, not development feedback. The merge to
+        # main is what happens right before a release, which is the moment
+        # its answer is worth four platform builds. Run it earlier from the
+        # Actions tab whenever the recipe is being worked on.
+        branches:
+            - main
         paths:
             - 'build/ffmpeg/**'
             - 'scripts/build-ffmpeg.sh'
             - 'scripts/verify-ffmpeg.sh'
             - 'scripts/check-ffmpeg-recipe.sh'
+            # The Linux binary is built from the Dockerfile's own builder
+            # stage, so a change there changes what ships.
+            - 'Dockerfile'
             - '.github/workflows/test-ffmpeg.yml'
 
 env:

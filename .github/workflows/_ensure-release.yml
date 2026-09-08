@@ -3,7 +3,7 @@ name: (internal) Ensure release draft exists
 # Reusable workflow, not meant to be dispatched directly — called as a job
 # by every "Publish *" workflow that needs a GitHub release draft to exist
 # before any platform build starts (publish.yml, publish-electron-
-# all-plattforms.yml, publish-linux.yml, publish-macos.yml,
+# all-platforms.yml, publish-linux.yml, publish-macos.yml,
 # publish-windows.yml).
 #
 # electron-builder's GitHub publisher (releaseType: draft, see
