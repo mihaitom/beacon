@@ -114,3 +114,19 @@
 # One self-contained executable to copy into an image or an app bundle.
 --disable-shared
 --enable-static
+
+# Autodetected extras, off by name rather than by absence. --disable-everything
+# above covers components, not the host libraries and frameworks configure
+# goes looking for on its own — and what it finds depends on what happens to
+# be installed on the machine that built it. A macOS runner with Homebrew
+# produced an ffmpeg linked against libX11, libxcb, libXau and libXdmcp from
+# /opt/homebrew (measured 2026-09-08), none of which a listener's Mac has.
+# X11 is for grabbing a screen, the Apple frameworks for hardware video —
+# neither is anything an audio-only build has a use for.
+--disable-xlib
+--disable-libxcb
+--disable-videotoolbox
+--disable-audiotoolbox
+--disable-coreimage
+--disable-metal
+--disable-sdl2

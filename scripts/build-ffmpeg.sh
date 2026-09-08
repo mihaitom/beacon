@@ -41,12 +41,57 @@ verify() {
     sh "$repo_root/scripts/verify-ffmpeg.sh" "$output" "$ffmpeg_dir/required-components"
 }
 
+# What the app ships has to run on a machine that has none of this build's
+# tooling on it. Nothing in verify-ffmpeg.sh can see that — it asks a binary
+# that is standing next to its own libraries — so it is asked here, per
+# platform, before the stamp. The first macOS build failed exactly this way:
+# every component present, every command shape working, and four Homebrew
+# dylibs in the load commands.
+check_self_contained() {
+    case "$(uname -s)" in
+        Linux)
+            # Fully static: musl, openssl and the codec libraries are all in
+            # the file, so there is no interpreter to name.
+            if ! file "$output" | grep -q "static"; then
+                echo "[ffmpeg] ERROR: not statically linked:" >&2
+                ldd "$output" >&2 || true
+                exit 1
+            fi
+            ;;
+        Darwin)
+            # System frameworks and /usr/lib are on every Mac; anything from
+            # a package manager's prefix is not.
+            foreign="$(otool -L "$output" | tail -n +2 | awk '{print $1}' |
+                grep -Ev '^(/usr/lib/|/System/Library/)' || true)"
+            if [ -n "$foreign" ]; then
+                echo "[ffmpeg] ERROR: links libraries that a user's Mac won't have:" >&2
+                echo "$foreign" | sed 's/^/    /' >&2
+                exit 1
+            fi
+            ;;
+        MINGW* | MSYS*)
+            # Same idea: the mingw runtime and the codec libraries have to be
+            # inside the .exe, leaving only Windows' own DLLs.
+            foreign="$(objdump -p "$output" | awk '/DLL Name:/ { print tolower($3) }' |
+                grep -Ev '^(kernel32|kernelbase|msvcrt|user32|advapi32|shell32|ole32|oleaut32|ws2_32|bcrypt|crypt32|secur32|gdi32|winmm|psapi|shlwapi|version|imm32|setupapi|cfgmgr32|powrprof|dwmapi|uxtheme)\.dll$' || true)"
+            if [ -n "$foreign" ]; then
+                echo "[ffmpeg] ERROR: needs DLLs that would have to ship alongside it:" >&2
+                echo "$foreign" | sed 's/^/    /' >&2
+                exit 1
+            fi
+            ;;
+    esac
+    echo "[ffmpeg] Self-contained: no libraries to ship beside it"
+}
+
+
 # Checked even when nothing is rebuilt, which is the case that matters most
 # in CI: the publish workflow restores this binary from a cache, and a
 # component added to required-components since it was built has to fail here
 # rather than reach a release.
 if [ -x "$output" ] && [ "$(cat "$stamp_file" 2>/dev/null || true)" = "$(build_stamp)" ]; then
     echo "[ffmpeg] Up to date: $output"
+    check_self_contained
     verify
     exit 0
 fi
@@ -91,23 +136,43 @@ build_linux() {
     docker cp "$container:/usr/local/bin/ffmpeg" "$output"
 }
 
-# Homebrew's lame/opus/openssl each ship a static library alongside the
-# dylib, so only the system frameworks end up linked dynamically — which is
-# as static as a macOS binary gets, and enough to be self-contained inside
-# the app bundle.
+# Homebrew ships a static library beside every dylib, and on macOS the
+# linker takes the dylib whenever both are in the same directory — so
+# pointing -L at Homebrew's own lib directory produces a binary that loads
+# libmp3lame, libopus and libssl from /opt/homebrew at startup and refuses
+# to run anywhere else. Measured on the first CI build, 2026-09-08.
+#
+# So the dependencies are staged into a directory that holds only the static
+# archives, and configure is pointed at that: with no dylib in reach there is
+# nothing else for the linker to pick. The .pc files come along with their
+# prefix rewritten, or pkg-config would hand back Homebrew's paths again.
+stage_macos_deps() {
+    deps="$work/deps"
+    mkdir -p "$deps/lib/pkgconfig" "$deps/include"
+    for formula in lame opus openssl@3; do
+        prefix="$(brew --prefix "$formula")"
+        cp "$prefix"/lib/*.a "$deps/lib/" 2>/dev/null || true
+        cp -R "$prefix"/include/. "$deps/include/" 2>/dev/null || true
+        for pc in "$prefix"/lib/pkgconfig/*.pc; do
+            [ -f "$pc" ] || continue
+            sed "s|^prefix=.*|prefix=$deps|" "$pc" > "$deps/lib/pkgconfig/$(basename "$pc")"
+        done
+    done
+    echo "[ffmpeg] Staged static dependencies: $(ls "$deps/lib"/*.a | tr '\n' ' ')"
+}
+
 build_macos() {
     echo "[ffmpeg] Installing build dependencies via Homebrew"
     brew install --quiet nasm pkg-config lame opus openssl@3
-    local prefix
-    prefix="$(brew --prefix)"
     fetch_ffmpeg_source
+    stage_macos_deps
     cd "$work/ffmpeg-src"
     # shellcheck disable=SC2046  # word splitting is what turns the file into flags
-    PKG_CONFIG_PATH="$prefix/opt/openssl@3/lib/pkgconfig:$prefix/lib/pkgconfig" ./configure \
+    PKG_CONFIG_PATH="$deps/lib/pkgconfig" PKG_CONFIG_LIBDIR="$deps/lib/pkgconfig" ./configure \
         $(configure_flags) \
         --pkg-config-flags="--static" \
-        --extra-cflags="-I$prefix/include" \
-        --extra-ldflags="-L$prefix/lib"
+        --extra-cflags="-I$deps/include" \
+        --extra-ldflags="-L$deps/lib"
     make -j"$(sysctl -n hw.ncpu)"
     cp ffmpeg "$output"
 }
@@ -148,8 +213,10 @@ case "$(uname -s)" in
 esac
 
 chmod +x "$output"
+
 # Before the stamp on purpose: a binary that came out short must not be
 # recorded as up to date, or the next build skips it and packages it anyway.
+check_self_contained
 verify
 build_stamp > "$stamp_file"
 "$output" -hide_banner -version | head -1
