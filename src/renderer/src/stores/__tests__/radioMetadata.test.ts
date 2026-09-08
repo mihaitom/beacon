@@ -365,8 +365,36 @@ describe('the radio metadata store', () => {
       await radioMeta.search('   ')
 
       expect(radioMetadata.searchRadioTitleHistory).not.toHaveBeenCalled()
-      expect(radioMeta.searchQuery).toBe('')
       expect(radioMeta.searchResults).toEqual([])
+      // Whitespace alone fetches nothing and does not count as a search,
+      // but it is still what the field holds - see below.
+      expect(radioMeta.hasActiveSearch).toBe(false)
+    })
+
+    it('hands back exactly what was typed, spaces and all', () => {
+      // The search field is driven by this value (NowPlayingView passes it
+      // straight back down), so anything this normalises is deleted out of
+      // the field mid-typing. Trimming here made a space impossible to
+      // type: "kate " became "kate" the moment the debounce landed, and
+      // the caret jumped with it.
+      const radioMeta = useRadioMetadataStore()
+
+      void radioMeta.search('kate ')
+
+      expect(radioMeta.searchQuery).toBe('kate ')
+    })
+
+    it('trims the text it sends to the backend, not the text it shows', () => {
+      const radioMeta = useRadioMetadataStore()
+      usePlaybackStore().radioStation = { streamUrl: 'http://s/1' } as never
+      vi.mocked(radioMetadata.searchRadioTitleHistory).mockResolvedValue({
+        url: 'http://s/1',
+        history: [],
+      })
+
+      void radioMeta.search('  kate bush  ')
+
+      expect(radioMetadata.searchRadioTitleHistory).toHaveBeenCalledWith('kate bush')
     })
 
     it('lets the newest search win, however the answers are ordered', async () => {

@@ -194,6 +194,39 @@ describe('RadioTitleLog', () => {
       expect(wrapper.findAll('.title-log__item')).toHaveLength(2)
     })
 
+    /** The caller only learns what was typed after a debounce and a round
+     * trip, so while typing, `query` holds an older string than the field
+     * does. Vue patches an <input> against its live value, so any re-render
+     * in that window writes the older one back - which is what swallowed
+     * letters whenever the results landed mid-word. */
+    it('keeps what is typed while the caller is still catching up', async () => {
+      const wrapper = mountLog(['Oasis - Wonderwall'])
+      await openSearch(wrapper)
+      const input = wrapper.find('.title-log__search-field input')
+
+      await input.setValue('wonder')
+      // Results for the previous keystrokes arrive, and the caller is still
+      // echoing the query from before them.
+      await wrapper.setProps({ entries: [], query: 'wond', pending: false })
+
+      expect((input.element as HTMLInputElement).value).toBe('wonder')
+    })
+
+    it('still empties the field when the search is reset from outside', async () => {
+      // A station change drops the search, and the field has to follow -
+      // holding the text locally must not make it deaf to that.
+      const wrapper = mount(RadioTitleLog, {
+        props: { entries: [], query: 'wonder' },
+        global: { ...i18n.global, ...realTransitions },
+      })
+      const input = wrapper.find('.title-log__search-field input')
+      expect((input.element as HTMLInputElement).value).toBe('wonder')
+
+      await wrapper.setProps({ query: '' })
+
+      expect((input.element as HTMLInputElement).value).toBe('')
+    })
+
     it('opens already showing a search that is in force', () => {
       const wrapper = mount(RadioTitleLog, {
         props: { entries: [], query: 'wonder' },

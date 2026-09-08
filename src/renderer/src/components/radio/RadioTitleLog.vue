@@ -41,7 +41,7 @@
         <v-text-field
           v-if="searching"
           key="field"
-          :model-value="query"
+          :model-value="text"
           class="title-log__search-field"
           variant="solo-filled"
           density="compact"
@@ -52,7 +52,7 @@
           prepend-inner-icon="mdi-magnify"
           :loading="pending"
           :placeholder="$t('radio.titleLogFilterPlaceholder')"
-          @update:model-value="$emit('update:query', $event ?? '')"
+          @update:model-value="onQueryInput"
           @click:clear="closeSearch"
           @keydown.esc="closeSearch"
         />
@@ -300,9 +300,30 @@ export default {
       // itself: an open-but-empty field is this panel's own business, and
       // nothing outside it can act on the difference.
       searching: this.query !== '',
+      // What the field shows, held here and updated on the keystroke.
+      //
+      // It cannot be bound to `query` directly, which is the same value one
+      // debounce and one round trip later: Vue patches an <input> against
+      // its *live* value, so any re-render while the two disagree writes
+      // the older one back and the characters typed since are gone. The
+      // results arriving is exactly such a re-render, which is why typing
+      // fast lost letters precisely while the list updated.
+      text: this.query,
     }
   },
   watch: {
+    /** A reset is the only thing that travels back *down* into the field.
+     *
+     * Every other value the caller can hold is one this field sent it, and
+     * it arrives late — several keystrokes late while someone is typing.
+     * Adopting those is what swallowed letters, and there is nothing to
+     * gain from it: the field is upstream of the query, not the other way
+     * round. A reset (a station change, the caller clearing the search) is
+     * the one direction that has to work, and an empty string is the whole
+     * of it. */
+    query(value: string) {
+      if (value === '') this.text = ''
+    },
     /** Arms the entrance for one render, and only for the one change that
      * should have it: a title the station has just started playing,
      * arriving at the top of the list.
@@ -433,7 +454,13 @@ export default {
      * a filtered log with nothing on screen saying why. */
     closeSearch(): void {
       this.searching = false
+      this.text = ''
       if (this.query) this.$emit('update:query', '')
+    },
+    /** One keystroke. `null` is what the clear button reports. */
+    onQueryInput(value: string | null): void {
+      this.text = value ?? ''
+      this.$emit('update:query', this.text)
     },
     dayLabel(day: number): string {
       if (day === startOfDay(new Date()) - DAY_MS) return this.$t('radio.titleLogYesterday')

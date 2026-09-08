@@ -155,6 +155,14 @@ export const useRadioMetadataStore = defineStore('radioMetadata', {
     relayContentType: null,
   }),
 
+  getters: {
+    /** Whether a search is actually narrowing anything, as opposed to a
+     * field that merely has something in it. Whitespace alone is not a
+     * search — it fetches nothing (see search()) and must not hide the log
+     * behind an empty result list either. */
+    hasActiveSearch: (state): boolean => state.searchQuery.trim() !== '',
+  },
+
   actions: {
     /** One round of the ICY "now playing" poll (services/connect/
      * radioMetadata.ts): the current station's title, what it has played
@@ -422,7 +430,14 @@ export const useRadioMetadataStore = defineStore('radioMetadata', {
      * have moved on while this was in flight. */
     async search(query: string): Promise<void> {
       const trimmed = query.trim()
-      this.searchQuery = trimmed
+      // Deliberately the raw text, not `trimmed`: this is what the search
+      // field displays (NowPlayingView passes it straight back down as
+      // `query`), and a field whose value is rewritten as it is typed
+      // cannot be typed into. Handing back the trimmed text meant the
+      // space in "kate bush" was deleted the moment the debounce landed,
+      // which reads as a field that refuses spaces. Only the *request*
+      // below is trimmed, which is the only place it ever mattered.
+      this.searchQuery = query
       const token = searchGuard.begin()
       if (!trimmed) {
         // begin() above is what makes this cancel rather than merely

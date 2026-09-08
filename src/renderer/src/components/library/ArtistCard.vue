@@ -19,9 +19,23 @@
       />
     </div>
     <div class="artist-card-name text-body-medium">{{ artist.name }}</div>
+    <!-- Icons rather than words, because there are two counts now and
+     - "0 Alben · 3 Songs" spelled out does not survive a tile this narrow.
+     - Both icons are the ones the app already uses for the two things (the
+     - sidebar's Albums/Songs entries, CoverArt's fallbacks). -->
     <div class="artist-card-meta text-body-small text-medium-emphasis">
-      {{ artist.albumCount }}
-      {{ artist.albumCount === 1 ? $t('library.album1') : $t('library.albumsN') }}
+      <span class="artist-card-count" :title="albumCountLabel">
+        <v-icon icon="mdi-album" size="13" />
+        {{ artist.albumCount }}
+      </span>
+      <!-- Only once the catalogue it is counted from has arrived. Drawing
+       - the icon before that put a bare note on every tile with nothing
+       - beside it; showing 0 instead would be worse, because it is wrong
+       - rather than merely absent. -->
+      <span v-if="songCount !== null" class="artist-card-count" :title="songCountLabel">
+        <v-icon icon="mdi-music-note" size="13" />
+        {{ songCount }}
+      </span>
     </div>
     <!-- Right-click, not a click: the card's own click opens the artist.
      - Playing anything here needs the artist's tracks, which a listing
@@ -61,6 +75,7 @@ import CoverArt from './CoverArt.vue'
 import TileContextMenu from './TileContextMenu.vue'
 import ContextMenuSection from './ContextMenuSection.vue'
 import { useLibraryStore } from '@/stores/library'
+import { artistNameKey } from '@/services/artistCredits'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { emitter } from '@/emitter'
@@ -81,6 +96,26 @@ export default {
     },
     hasArtwork(): boolean {
       return Boolean(this.artist.coverArtId || this.artist.imageUrl)
+    },
+    /** The icons carry no words, so the numbers say what they are on hover
+     * and to a screen reader. */
+    albumCountLabel(): string {
+      const n = this.artist.albumCount
+      return `${n} ${n === 1 ? this.$t('library.album1') : this.$t('library.albumsN')}`
+    },
+    /** Tracks this artist is on, counted out of the library the app has
+     * already loaded (see the store's trackCountByArtistName) - null while
+     * that is still arriving. No server we speak to reports this number,
+     * and the ones that would count it wrong: an artist heard only on a
+     * compilation is exactly who it is for. */
+    songCount(): number | null {
+      const store = useLibraryStore()
+      if (!store.allSongsLoaded) return null
+      return store.trackCountByArtistName.get(artistNameKey(this.artist.name)) ?? 0
+    },
+    songCountLabel(): string {
+      const n = this.songCount ?? 0
+      return `${n} ${n === 1 ? this.$t('library.song1') : this.$t('library.songsN')}`
     },
   },
   methods: {
@@ -209,9 +244,23 @@ export default {
 /* Both lines under the portrait stay single. */
 .artist-card-name,
 .artist-card-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.artist-card-count {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+
+/* The icon sits a touch high against the digits at this size. */
+.artist-card-count :deep(.v-icon) {
+  margin-top: -1px;
+  opacity: 0.85;
 }
 
 .artist-card-name {

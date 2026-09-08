@@ -132,6 +132,7 @@
 
 <script lang="ts">
 import { useLibraryStore, TOP_SONGS_LIMIT } from '@/stores/library'
+import { artistNameKey } from '@/services/artistCredits'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import DetailHeader from '@/components/library/DetailHeader.vue'
@@ -193,8 +194,22 @@ export default {
     authStore() {
       return useAuthStore()
     },
-    totalSongCount() {
-      return this.artist?.albums.reduce((sum, album) => sum + album.songCount, 0) ?? 0
+    /** How many songs this artist has, for the header and for deciding
+     * whether the "show all" toggle has anything to offer.
+     *
+     * The server's own figure wherever it reports one: summing their albums
+     * misses exactly the tracks the table below now shows, the ones on
+     * somebody else's record (see fetchAllSongsForArtist()). Where it does
+     * not, the album sum is still the best guess available, floored by what
+     * has actually been loaded so an artist with no albums at all does not
+     * claim to have nothing. */
+    totalSongCount(): number {
+      const counted = this.artist
+        ? this.libraryStore.trackCountByArtistName.get(artistNameKey(this.artist.name))
+        : undefined
+      if (this.libraryStore.allSongsLoaded && counted !== undefined) return counted
+      const fromAlbums = this.artist?.albums.reduce((sum, album) => sum + album.songCount, 0) ?? 0
+      return Math.max(fromAlbums, this.allTopSongs?.length ?? this.topSongs.length)
     },
     // Whether there's actually a reason to offer the toggle at all — an
     // artist with TOP_SONGS_LIMIT songs or fewer has nothing more for

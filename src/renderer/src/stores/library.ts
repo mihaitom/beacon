@@ -12,6 +12,7 @@ import {
   type StoredLibraryField,
 } from '@/services/library/libraryCacheStore'
 import type { Album, Artist, Genre, Playlist, RadioStation, Song } from '@/types/library'
+import { creditedNames, creditsArtist } from '@/services/artistCredits'
 
 // Default cap for fetchTopSongsForArtist() below — exported so
 // ArtistDetailView.vue's "Show all" toggle can tell whether an artist
@@ -381,6 +382,30 @@ export const useLibraryStore = defineStore('library', {
   }),
 
   getters: {
+    /**
+     * How many tracks each artist is credited on, keyed by name.
+     *
+     * Counted here rather than read off the server, because no server we
+     * speak to reports it: Subsonic's ArtistID3 carries albumCount and
+     * nothing more, and albums are exactly what the artists this is for do
+     * not have. The catalogue is already in memory (App.vue asks for it on
+     * startup, and it is cached in IndexedDB), so this costs one pass over
+     * it and no request at all - and unlike a server count it includes the
+     * compilations and guest spots, which is the whole reason anyone wants
+     * the number.
+     *
+     * Empty until the catalogue is loaded; read it alongside
+     * `allSongsLoaded` so "not counted yet" is not shown as zero.
+     */
+    trackCountByArtistName(state): Map<string, number> {
+      const counts = new Map<string, number>()
+      for (const song of state.allSongs) {
+        for (const name of creditedNames(song.artist)) {
+          counts.set(name, (counts.get(name) ?? 0) + 1)
+        }
+      }
+      return counts
+    },
     loading: (state): boolean => state.loadingCount > 0,
     /** Derived from allSongs rather than its own fetch — every field a
      * Genre needs (name, songCount, distinct albumCount) is already right
@@ -680,9 +705,39 @@ export const useLibraryStore = defineStore('library', {
      * each album's full song list via the same cache as fetchAlbum(), since
      * neither Subsonic endpoint returns song-level data for an artist
      * directly. */
+    /**
+     * Every song this artist is on, not only the ones on albums that are
+     * *theirs*.
+     *
+     * Walking `artist.albums` alone misses a whole category: a track on a
+     * compilation belongs to an album whose artist is "Various Artists", so
+     * the performer has no album of their own and their page came out
+     * completely empty - no albums, and a song table that never rendered.
+     * The same gap hid a guest appearance on somebody else's record.
+     *
+     * The second source is the loaded catalogue, sifted by creditsArtist().
+     * Deliberately not a search against the server: this client already
+     * holds every track (App.vue asks for the catalogue on startup, and it
+     * is cached in IndexedDB), so filtering locally costs no request, has
+     * no result limit to overflow, and behaves the same on all three
+     * backends - where a search would have cost seconds per artist page on
+     * Jellyfin, whose bridge measures ~9ms per item it returns.
+     */
     async fetchAllSongsForArtist(artist: Artist): Promise<Song[]> {
-      const albums = await Promise.all(artist.albums.map((album) => this.fetchAlbum(album.id)))
-      return albums.flatMap((album) => album.songs)
+      const [fromAlbums] = await Promise.all([
+        Promise.all(artist.albums.map((album) => this.fetchAlbum(album.id))).then((albums) =>
+          albums.flatMap((album) => album.songs),
+        ),
+        // Deduped and cached - usually finished, or already in flight,
+        // long before anyone opens an artist.
+        this.fetchAllSongs(),
+      ])
+      const credited = this.allSongs.filter((song) => creditsArtist(song, artist))
+      // The album copy wins on a tie: it is the same song, and it came from
+      // the album endpoint with whatever that fills in more completely.
+      const byId = new Map(credited.map((song) => [song.id, song]))
+      for (const song of fromAlbums) byId.set(song.id, song)
+      return [...byId.values()]
     },
 
     /** Top songs for an artist by local playCount, sorted descending.

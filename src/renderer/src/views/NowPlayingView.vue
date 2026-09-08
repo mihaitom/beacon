@@ -252,7 +252,7 @@
                 v-else-if="showLyrics && playbackStore.radioStation"
                 variant="immersive"
                 :entries="titleLogEntries"
-                :has-more="!radioMeta.searchQuery && !radioMeta.titleLogComplete"
+                :has-more="!radioMeta.hasActiveSearch && !radioMeta.titleLogComplete"
                 :query="radioMeta.searchQuery"
                 :current-at="radioMeta.titleLog[0]?.at ?? null"
                 :pending="radioMeta.searchPending"
@@ -544,7 +544,7 @@ export default {
       // the radio-metadata store's search(). The debug titles stay out of
       // it: they exist to exercise the timeline's own rendering and were
       // never in the log being searched.
-      if (this.radioMeta.searchQuery) return this.radioMeta.searchResults
+      if (this.radioMeta.hasActiveSearch) return this.radioMeta.searchResults
       const log = this.radioMeta.titleLog
       return this.debugTitles.length ? [...this.debugTitles, ...log] : log
     },
