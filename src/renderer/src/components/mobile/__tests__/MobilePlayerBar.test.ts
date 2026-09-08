@@ -10,6 +10,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import MobilePlayerBar from '../MobilePlayerBar.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import { MOBILE_ROW_ART_SIZE } from '../rowMetrics'
+import { useRadioMetadataStore } from '@/stores/radioMetadata'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -106,7 +107,7 @@ describe('MobilePlayerBar', () => {
     it('promotes the ICY tag to the title and drops the station to the second line', async () => {
       const wrapper = await mountBar()
       playRadio()
-      usePlaybackStore().radioNowPlaying = 'Some Artist - Some Song'
+      useRadioMetadataStore().nowPlaying = 'Some Artist - Some Song'
       await wrapper.vm.$nextTick()
 
       expect(labels(wrapper)).toEqual(['Some Artist - Some Song', 'Some Radio'])

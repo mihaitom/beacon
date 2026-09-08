@@ -7,7 +7,7 @@ from core.log_level import is_at_least
 
 from .base import BaseDelivery
 from .chromecast import _ensure_cast_browser, _wait_for_discovery
-from .dlna import UnsupportedDlnaDevice, _create_dmr_device, _location_cache
+from .dlna import _DISCOVERY_TIMEOUT, UnsupportedDlnaDevice, _create_dmr_device, _location_cache
 from .lazy_import import import_in_thread
 from .sonos import SonosDelivery
 
@@ -297,6 +297,13 @@ async def discover_chromecast() -> list[dict]:
     return await asyncio.to_thread(_scan)
 
 
+# SSDP is UDP with no retransmit, and async-upnp-client sends exactly one
+# M-SEARCH per search — a single lost packet leaves a reachable device out
+# of the list. (delay, MX) pairs, each short enough to finish inside the
+# first one's window, so a run still takes the five seconds it always did.
+_SEARCH_BURST = ((0.0, 5), (0.5, 4), (1.5, 3))
+
+
 async def discover_dlna(verbose: bool = False) -> list[dict]:
     """Discovers all DLNA/UPnP MediaRenderer devices on the network.
 
@@ -319,17 +326,31 @@ async def discover_dlna(verbose: bool = False) -> list[dict]:
         if location and usn not in responses:
             responses[usn] = headers
 
-    await async_search(
-        async_callback=_on_response,
-        search_target="urn:schemas-upnp-org:device:MediaRenderer:1",
-        timeout=5,
+    async def _search(delay: float, mx: int) -> None:
+        await asyncio.sleep(delay)
+        await async_search(
+            async_callback=_on_response,
+            search_target="urn:schemas-upnp-org:device:MediaRenderer:1",
+            timeout=mx,
+        )
+
+    searches = await asyncio.gather(
+        *(_search(delay, mx) for delay, mx in _SEARCH_BURST), return_exceptions=True
     )
+    failed = [outcome for outcome in searches if isinstance(outcome, BaseException)]
+    # One failing is what the burst is for; all of them failing is a real
+    # problem (no network, no socket) and is raised rather than listed as
+    # "no devices found".
+    if len(failed) == len(searches):
+        raise failed[0]
+    for failure in failed:
+        logger.debug(f"[discover] SSDP search failed: {failure}")
 
     result = []
     for headers in responses.values():
         location = headers["location"]
         try:
-            device = await _create_dmr_device(location)
+            device = await _create_dmr_device(location, timeout=_DISCOVERY_TIMEOUT)
         except UnsupportedDlnaDevice as e:
             logger.info(
                 f"[discover] '{e.friendly_name}' at {location} answered UPnP "

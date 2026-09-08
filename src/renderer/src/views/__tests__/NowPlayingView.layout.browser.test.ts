@@ -28,6 +28,7 @@ import { useDrawersStore } from '@/stores/drawers'
 import { useLyricsStore } from '@/stores/lyrics'
 import NowPlayingView from '../NowPlayingView.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
+import { useRadioMetadataStore } from '@/stores/radioMetadata'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -408,7 +409,7 @@ describe('NowPlayingView layout', () => {
         streamUrl: 'https://stream.example/chill',
         homePageUrl: null,
       }
-      playback.radioNowPlaying = LONG_TITLE
+      useRadioMetadataStore().nowPlaying = LONG_TITLE
       await mounted.wrapper.vm.$nextTick()
       return mounted
     }

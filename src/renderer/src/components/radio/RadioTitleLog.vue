@@ -273,7 +273,7 @@ export default {
      * the log. Named `query` rather than `search` because this component
      * already has a search() of its own, which is the other kind entirely:
      * looking a track up in the user's library. Held by the caller rather than here because the search runs
-     * against the backend (see playbackStore.searchRadioTitles()) and this
+     * against the backend (see the radio-metadata store's search()) and this
      * component only ever renders the entries it is handed — the same
      * arrangement `entries`/`load-more` already has for paging. */
     query: { type: String, default: '' },
@@ -397,7 +397,7 @@ export default {
      *
      * NEAR_END_PX is deliberately generous for that reason - roughly a
      * screenful of rows ahead. Fires on every scroll event without
-     * throttling of its own: the store's own loadOlderRadioTitles() is a
+     * throttling of its own: the store's own loadOlder() is a
      * no-op while a page is in flight and once the log is complete, which
      * is the same guard a throttle here would need and one that cannot
      * drift out of step with the request it guards. */

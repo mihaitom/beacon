@@ -35,7 +35,12 @@ from core.state import (
     test_tone_url,
 )
 from core.stream_format import probe_stream
-from core.streamer import FALLBACK_FORMAT, resolve_output_format, stream_tracks
+from core.streamer import (
+    FALLBACK_FORMAT,
+    resolve_output_format,
+    stream_tracks,
+    strip_stream_extension,
+)
 
 from .playback import (
     POSITION_RESYNC_INTERVAL,
@@ -76,7 +81,7 @@ async def _dispatch_queued_track(session: SessionState, target, track, gain: flo
         max_lossy_bitrate_kbps=st.max_lossy_bitrate_kbps,
         device_codecs=playable_codecs(target),
     )
-    url = stream_url(session.session_id)
+    url = stream_url(session.session_id, output_format.content_type)
 
     st.current_track = track
     st.current_output_format = output_format
@@ -570,7 +575,7 @@ async def resume_interrupted(session: SessionState = Depends(get_session)):
 @router.head("/stream/{session_id}")
 async def audio_stream_head(session_id: str = DEFAULT_SESSION_ID):
     """ffmpeg probes the URL with HEAD before streaming — answer without starting ffmpeg."""
-    session = await registry.get_or_create(session_id)
+    session = await registry.get_or_create(strip_stream_extension(session_id))
     return Response(
         media_type=session.state.current_output_format.content_type,
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -879,8 +884,9 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
     # Cast devices call this URL back with no way to send custom headers, so
     # the session id lives in the path itself (bare /stream is a compat alias
     # for DEFAULT_SESSION_ID — same reasoning as why this route has never had
-    # token auth: the device dialing back in can't send one either).
-    session = await registry.get_or_create(session_id)
+    # token auth: the device dialing back in can't send one either). The
+    # dispatched URL ends in the output format's extension; same session.
+    session = await registry.get_or_create(strip_stream_extension(session_id))
 
     if not session.state.current_track:
         logger.warning("[stream] No track loaded — returning 204")

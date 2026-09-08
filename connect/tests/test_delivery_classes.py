@@ -1778,3 +1778,40 @@ def test_dlna_get_device_or_evict_reraises_the_lookup_failure(monkeypatch):
     with pytest.raises(RuntimeError, match="not found"):
         asyncio.run(d.pause())
     assert "receiver" not in _dlna_mod._device_cache
+
+
+def test_dlna_poll_gives_up_on_a_device_that_stops_answering():
+    """A renderer can block its control port for a long time (upmpdcli does
+    while seeking). A reading that arrives after the next one was due is
+    worthless, so the poll bounds itself rather than parking the caller."""
+    device = _mock_dmr_device(media_position=93)
+
+    async def _never_answers(*args, **kwargs):
+        await asyncio.sleep(30)
+
+    device.async_update = AsyncMock(side_effect=_never_answers)
+    d = DlnaDelivery("Receiver")
+
+    with (
+        patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)),
+        patch.object(_dlna_mod, "_POLL_TIMEOUT", 0.05),
+        pytest.raises(TimeoutError),
+    ):
+        asyncio.run(d.get_position())
+
+
+def test_dlna_commands_get_a_longer_deadline_than_polls():
+    """A renderer taking several seconds to answer a transport switch is
+    still accepting it; giving up there loses a track that was about to
+    play, and evicts a working device from the cache with it."""
+    assert _dlna_mod._COMMAND_TIMEOUT > _dlna_mod._POLL_TIMEOUT
+
+    with (
+        patch("async_upnp_client.aiohttp.AiohttpRequester") as requester,
+        patch("async_upnp_client.client_factory.UpnpFactory") as factory,
+        patch("async_upnp_client.profiles.dlna.DmrDevice"),
+    ):
+        factory.return_value.async_create_device = AsyncMock()
+        asyncio.run(_dlna_mod._create_dmr_device("http://10.0.0.2/desc.xml"))
+
+    assert requester.call_args.kwargs["timeout"] == _dlna_mod._COMMAND_TIMEOUT

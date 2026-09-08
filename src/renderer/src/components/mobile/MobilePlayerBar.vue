@@ -34,12 +34,10 @@
      - never appeared anywhere on a phone except Now Playing. -->
     <div class="mobile-player-bar__labels">
       <div class="text-body-medium">
-        {{
-          currentSong?.title ?? playbackStore.radioNowPlaying ?? playbackStore.radioStation?.name
-        }}
+        {{ currentSong?.title ?? radioMeta.nowPlaying ?? playbackStore.radioStation?.name }}
       </div>
       <div class="text-body-small text-medium-emphasis">
-        {{ currentSong?.artist ?? (playbackStore.radioNowPlaying ? radioStationName : '') }}
+        {{ currentSong?.artist ?? (radioMeta.nowPlaying ? radioStationName : '') }}
       </div>
     </div>
     <!-- Previous/next flank play the same way every transport row does.
@@ -71,6 +69,7 @@
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
+import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import { MOBILE_ROW_ART_SIZE } from './rowMetrics'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import CoverArt from '@/components/library/CoverArt.vue'
@@ -84,6 +83,9 @@ export default {
   computed: {
     playbackStore() {
       return usePlaybackStore()
+    },
+    radioMeta() {
+      return useRadioMetadataStore()
     },
     currentSong() {
       return this.playbackStore.currentSong

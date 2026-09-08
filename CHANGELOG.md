@@ -9,7 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - A station that stops arriving for a moment no longer keeps the buffering bar up once it is audibly playing again
-- A station is no longer reported as lost after the computer has been asleep or the app has been left in the background for a while
+- A station now picks itself back up after the computer has been asleep or the app was left alone for a while, instead of being reported as lost or sitting silent until you press play
+- Network speakers now show up in the device list more reliably: the search is repeated a few times, so a single lost answer no longer hides a speaker that is right there
+- A network speaker that takes a few seconds to accept a track is no longer given up on halfway, and one that stops answering no longer holds up the playback position
+- Network speakers that judge a stream by its web address rather than by what the server tells them are now given the format there as well, so a speaker that refused to play anything at all may now work
 
 ## [1.2.0] - 2026-09-07
 

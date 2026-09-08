@@ -8,6 +8,7 @@ import * as remoteHttp from '@/services/remoteControl/http'
 import * as commands from '@/services/remoteControl/commands'
 import { RemoteAgentEventSource } from '@/services/remoteControl/agent'
 import { makeSong, makeStatus } from './fixtures'
+import { useRadioMetadataStore } from '../radioMetadata'
 
 vi.mock('@/services/remoteControl/http', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/remoteControl/http')>()
@@ -383,7 +384,7 @@ describe('remoteControl store', () => {
         streamUrl: 'https://stream.example/live',
         homePageUrl: null,
       }
-      playback.radioNowPlaying = 'Artist - Track'
+      useRadioMetadataStore().nowPlaying = 'Artist - Track'
       playback.radioBuffering = true
       await vi.waitFor(() => expect(remoteHttp.pushRemoteState).toHaveBeenCalled())
 

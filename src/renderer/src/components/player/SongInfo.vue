@@ -31,7 +31,7 @@
       <div class="text-body-medium">
         {{
           currentSong?.title ??
-          playbackStore.radioNowPlaying ??
+          radioMeta.nowPlaying ??
           playbackStore.radioStation?.name ??
           $t('player.nothingPlaying')
         }}
@@ -51,7 +51,7 @@
        - (mirrors the top label's own fallback chain above); with no tag the
        - station name already sits up there, so repeating it here would
        - just be noise. -->
-      <div v-else-if="playbackStore.radioNowPlaying" class="text-body-small text-medium-emphasis">
+      <div v-else-if="radioMeta.nowPlaying" class="text-body-small text-medium-emphasis">
         {{ playbackStore.radioStation?.name }}
       </div>
       <div v-else class="text-body-small text-medium-emphasis" />
@@ -71,6 +71,7 @@
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
+import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
@@ -87,6 +88,9 @@ export default {
   computed: {
     playbackStore() {
       return usePlaybackStore()
+    },
+    radioMeta() {
+      return useRadioMetadataStore()
     },
     authStore() {
       return useAuthStore()

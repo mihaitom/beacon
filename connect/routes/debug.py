@@ -229,7 +229,7 @@ async def play_test_tone(session: SessionState = Depends(require_authenticated_s
     st.clock.start(0.0)
     st.track_ended = False
 
-    url = stream_url(session.session_id)
+    url = stream_url(session.session_id, FALLBACK_FORMAT.content_type)
     try:
         await target.play(url, "Test Tone", "Debug", None, float(_DURATION_S), "")
     except Exception as e:

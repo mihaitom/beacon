@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import SongInfo from '../SongInfo.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
+import { useRadioMetadataStore } from '@/stores/radioMetadata'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -119,7 +120,7 @@ describe('SongInfo', () => {
         streamUrl: 'https://stream.example/chill',
         homePageUrl: null,
       }
-      usePlaybackStore().radioNowPlaying = 'Artist - Track'
+      useRadioMetadataStore().nowPlaying = 'Artist - Track'
       await wrapper.vm.$nextTick()
 
       expect(wrapper.get('.text-body-medium').text()).toBe('Artist - Track')
@@ -137,7 +138,7 @@ describe('SongInfo', () => {
         streamUrl: 'https://stream.example/chill',
         homePageUrl: null,
       }
-      usePlaybackStore().radioNowPlaying = 'Artist - Track'
+      useRadioMetadataStore().nowPlaying = 'Artist - Track'
       await wrapper.vm.$nextTick()
       const push = vi.spyOn(router, 'push')
 

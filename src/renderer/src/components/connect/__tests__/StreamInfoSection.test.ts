@@ -13,6 +13,7 @@ import * as localStreamInfo from '@/services/connect/localStreamInfo'
 import StreamInfoSection from '../StreamInfoSection.vue'
 import { makeStatus } from '@/stores/__tests__/fixtures'
 import type { ConnectStreamInfo } from '@/services/connect/types'
+import { useRadioMetadataStore } from '@/stores/radioMetadata'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -252,9 +253,9 @@ describe('StreamInfoSection', () => {
         homePageUrl: null,
       }
       // A 320k station brought down to this device's own ceiling.
-      playback.radioBitrate = 320
-      playback.radioRelayBitrate = 96
-      playback.radioRelayReason = 'quality_limit'
+      useRadioMetadataStore().bitrate = 320
+      useRadioMetadataStore().relayBitrate = 96
+      useRadioMetadataStore().relayReason = 'quality_limit'
 
       const wrapper = mountSection()
 
@@ -274,10 +275,10 @@ describe('StreamInfoSection', () => {
         streamUrl: 'https://stream.example/chill',
         homePageUrl: null,
       }
-      playback.radioBitrate = 256
-      playback.radioRelayBitrate = 128
-      playback.radioRelayReason = 'quality_limit'
-      playback.radioRelayContentType = 'audio/aac'
+      useRadioMetadataStore().bitrate = 256
+      useRadioMetadataStore().relayBitrate = 128
+      useRadioMetadataStore().relayReason = 'quality_limit'
+      useRadioMetadataStore().relayContentType = 'audio/aac'
 
       const wrapper = mountSection()
 
@@ -292,7 +293,7 @@ describe('StreamInfoSection', () => {
         streamUrl: 'https://stream.example/chill',
         homePageUrl: null,
       }
-      playback.radioBitrate = 128
+      useRadioMetadataStore().bitrate = 128
 
       const wrapper = mountSection()
 
@@ -655,9 +656,8 @@ describe('StreamInfoSection', () => {
       it('describes a station once it says what it broadcasts, locally', () => {
         useConnectStore().status = makeStatus()
         setRadio()
-        const playback = usePlaybackStore()
-        playback.radioCodec = 'MP3'
-        playback.radioBitrate = 320
+        useRadioMetadataStore().codec = 'MP3'
+        useRadioMetadataStore().bitrate = 320
 
         const wrapper = mountSection()
 
@@ -670,9 +670,8 @@ describe('StreamInfoSection', () => {
         // fussy speaker does not change what the station broadcasts.
         setStreamInfo({})
         setRadio()
-        const playback = usePlaybackStore()
-        playback.radioCodec = 'MP3'
-        playback.radioBitrate = 320
+        useRadioMetadataStore().codec = 'MP3'
+        useRadioMetadataStore().bitrate = 320
 
         const wrapper = mountSection()
 
@@ -682,8 +681,7 @@ describe('StreamInfoSection', () => {
       it('shows whichever half the station declared', () => {
         useConnectStore().status = makeStatus()
         setRadio()
-        const playback = usePlaybackStore()
-        playback.radioBitrate = 128
+        useRadioMetadataStore().bitrate = 128
 
         const wrapper = mountSection()
 
@@ -697,9 +695,8 @@ describe('StreamInfoSection', () => {
         // not served through.
         setStreamInfo({ transcoding: true, active_connections: 1 })
         setRadio()
-        const playback = usePlaybackStore()
-        playback.radioCodec = 'AAC'
-        playback.radioBitrate = 96
+        useRadioMetadataStore().codec = 'AAC'
+        useRadioMetadataStore().bitrate = 96
 
         const wrapper = mountSection()
         const labels = wrapper
@@ -713,9 +710,8 @@ describe('StreamInfoSection', () => {
       it('still shows the transcoding rows for a station that really is re-encoded', () => {
         setStreamInfo({ transcoding: true, transcode_reason: 'device_rejected_stream' })
         setRadio()
-        const playback = usePlaybackStore()
-        playback.radioCodec = 'MP3'
-        playback.radioBitrate = 320
+        useRadioMetadataStore().codec = 'MP3'
+        useRadioMetadataStore().bitrate = 320
 
         const wrapper = mountSection()
         const labels = wrapper

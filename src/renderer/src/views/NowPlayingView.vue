@@ -203,9 +203,7 @@
                 <div class="eyebrow-label">{{ eyebrow }}</div>
                 <h1 class="detail-title now-playing__title">
                   {{
-                    currentSong?.title ??
-                    playbackStore.radioNowPlaying ??
-                    playbackStore.radioStation?.name
+                    currentSong?.title ?? radioMeta.nowPlaying ?? playbackStore.radioStation?.name
                   }}
                 </h1>
                 <router-link
@@ -224,7 +222,7 @@
                  - tag the station name already sits up top, so repeating it
                  - here would just be noise. -->
                 <div
-                  v-else-if="playbackStore.radioNowPlaying"
+                  v-else-if="radioMeta.nowPlaying"
                   class="text-title-large text-medium-emphasis now-playing__radio-tag"
                 >
                   {{ playbackStore.radioStation?.name }}
@@ -254,12 +252,12 @@
                 v-else-if="showLyrics && playbackStore.radioStation"
                 variant="immersive"
                 :entries="titleLogEntries"
-                :has-more="!playbackStore.radioTitleSearch && !playbackStore.radioTitleLogComplete"
-                :query="playbackStore.radioTitleSearch"
-                :current-at="playbackStore.radioTitleLog[0]?.at ?? null"
-                :pending="playbackStore.radioTitleSearchPending"
+                :has-more="!radioMeta.searchQuery && !radioMeta.titleLogComplete"
+                :query="radioMeta.searchQuery"
+                :current-at="radioMeta.titleLog[0]?.at ?? null"
+                :pending="radioMeta.searchPending"
                 class="now-playing__lyrics"
-                @load-more="playbackStore.loadOlderRadioTitles()"
+                @load-more="radioMeta.loadOlder()"
                 @update:query="searchTitleLog"
               />
             </transition>
@@ -312,6 +310,7 @@
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
+import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import { useConnectStore } from '@/stores/connect'
 import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
@@ -440,6 +439,9 @@ export default {
     playbackStore() {
       return usePlaybackStore()
     },
+    radioMeta() {
+      return useRadioMetadataStore()
+    },
     drawersStore() {
       return useDrawersStore()
     },
@@ -539,11 +541,11 @@ export default {
     titleLogEntries(): RadioTitleEntry[] {
       // A search answers from the backend's whole log, so its results
       // replace the list rather than filtering the one on screen — see
-      // playbackStore.searchRadioTitles(). The debug titles stay out of it:
-      // they exist to exercise the timeline's own rendering and were never
-      // in the log being searched.
-      if (this.playbackStore.radioTitleSearch) return this.playbackStore.radioTitleSearchResults
-      const log = this.playbackStore.radioTitleLog
+      // the radio-metadata store's search(). The debug titles stay out of
+      // it: they exist to exercise the timeline's own rendering and were
+      // never in the log being searched.
+      if (this.radioMeta.searchQuery) return this.radioMeta.searchResults
+      const log = this.radioMeta.titleLog
       return this.debugTitles.length ? [...this.debugTitles, ...log] : log
     },
     // Radio has no track for the backend to analyze while casting to
@@ -766,11 +768,11 @@ export default {
     searchTitleLog(query: string): void {
       clearTimeout(titleLogSearchTimer)
       if (!query) {
-        this.playbackStore.clearRadioTitleSearch()
+        this.radioMeta.clearSearch()
         return
       }
       titleLogSearchTimer = setTimeout(() => {
-        void this.playbackStore.searchRadioTitles(query)
+        void this.radioMeta.search(query)
       }, TITLE_LOG_SEARCH_DEBOUNCE_MS)
     },
     /** Slides the artwork column across the flip boundary instead of

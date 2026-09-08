@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from core.streamer import (
+    _CONTENT_TYPE_FOR_MUXER,
     _LOSSY_ENCODERS,
     FALLBACK_FORMAT,
     LOOKAHEAD_SECONDS,
@@ -26,7 +27,9 @@ from core.streamer import (
     lossless_encode_args,
     lossy_encode_args,
     resolve_output_format,
+    stream_extension,
     stream_tracks,
+    strip_stream_extension,
     transcoded_byte_length,
 )
 
@@ -1459,3 +1462,48 @@ def test_a_lossless_source_a_target_cannot_decode_says_so_rather_than_blaming_th
 
     assert fmt.ffmpeg_args == FALLBACK_FORMAT.ffmpeg_args
     assert fmt.transcode_reason == REASON_CODEC_NOT_CASTABLE
+
+
+# ── stream URL extensions ─────────────────────────────────────────────────────
+# The URL a device is handed ends in the output format's extension, because
+# plenty of DLNA renderers read that instead of the Content-Type header.
+
+
+@pytest.mark.parametrize(
+    "content_type,expected",
+    [
+        ("audio/mpeg", "mp3"),
+        ("audio/flac", "flac"),
+        ("audio/aac", "aac"),
+        ("audio/ogg", "ogg"),
+        ("audio/mpeg; charset=binary", "mp3"),
+        ("AUDIO/FLAC", "flac"),
+    ],
+)
+def test_stream_extension_covers_every_format_we_serve(content_type, expected):
+    assert stream_extension(content_type) == expected
+
+
+@pytest.mark.parametrize("content_type", [None, "", "audio/wav", "application/octet-stream"])
+def test_stream_extension_is_none_for_a_type_we_do_not_serve(content_type):
+    """No extension is right where a wrong one would be actively harmful —
+    the renderers this exists for act on what they read there."""
+    assert stream_extension(content_type) is None
+
+
+def test_every_content_type_we_can_send_has_an_extension():
+    """The two tables are the same set of formats seen from either end; a
+    tier added to one and not the other would dispatch without an extension
+    and nothing would say so."""
+    for content_type in _CONTENT_TYPE_FOR_MUXER.values():
+        assert stream_extension(content_type) is not None
+
+
+def test_strip_stream_extension_removes_only_our_own():
+    assert strip_stream_extension("abc123.flac") == "abc123"
+    assert strip_stream_extension("abc123.mp3") == "abc123"
+    assert strip_stream_extension("abc123") == "abc123"
+    # Not one of ours: a session id that happens to contain a dot keeps it,
+    # rather than being truncated into a different (nonexistent) session.
+    assert strip_stream_extension("abc.123") == "abc.123"
+    assert strip_stream_extension("abc123.wav") == "abc123.wav"

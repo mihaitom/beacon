@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import routes.stream as stream_routes
-from core.session import build_status_dict, mark_interrupted
+from core.session import DEFAULT_SESSION_ID, build_status_dict, mark_interrupted
 from core.streamer import FALLBACK_FORMAT, OutputFormat
 from delivery import ChromecastDelivery
 from media import Track
@@ -1471,3 +1471,37 @@ async def test_fire_track_end_repolls_until_the_track_actually_finishes(client, 
     # _advance_or_end() ran for real once the loop broke — no queue/active
     # delivery here, so it fell through to the "mark ended" branch.
     assert default_session.state.track_ended is True
+
+
+# ── the extension on the dispatched URL ───────────────────────────────────────
+
+
+def test_stream_serves_the_session_when_the_url_carries_an_extension(client, default_session):
+    """A device fetches the URL it was dispatched, extension and all — see
+    core/streamer.py's stream_extension(). Reaching a different (empty)
+    session instead is a 204 and silence."""
+    _configure_and_set_track(client, default_session)
+    default_session.state.current_output_format = OutputFormat(
+        ffmpeg_args=["-acodec", "copy", "-f", "flac"], content_type="audio/flac"
+    )
+
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream):
+        r = client.get(f"/stream/{DEFAULT_SESSION_ID}.flac")
+
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("audio/flac")
+
+
+def test_stream_head_answers_the_same_url_a_device_probes(client, default_session):
+    """A HEAD landing in a fresh empty session instead answers audio/mpeg
+    from the default format — right by accident for MP3, wrong for
+    everything else, which is why this probes a FLAC session."""
+    _configure_and_set_track(client, default_session)
+    default_session.state.current_output_format = OutputFormat(
+        ffmpeg_args=["-acodec", "copy", "-f", "flac"], content_type="audio/flac"
+    )
+
+    r = client.head(f"/stream/{DEFAULT_SESSION_ID}.flac")
+
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("audio/flac")

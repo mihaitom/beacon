@@ -16,6 +16,7 @@ import NowPlayingView from '../NowPlayingView.vue'
 import { getAudioEngine } from '@/services/audioEngine'
 import { getLogLevel, type LogLevel } from '@/services/connect/logLevel'
 import { makeSong } from '@/stores/__tests__/fixtures'
+import { useRadioMetadataStore } from '@/stores/radioMetadata'
 
 // The view asks the engine whether a local analyser exists at all — jsdom
 // has no AudioContext, so a real one would always answer no and every
@@ -212,7 +213,7 @@ describe('NowPlayingView', () => {
         streamUrl: 'https://stream.example/chill',
         homePageUrl: null,
       }
-      playback.radioNowPlaying = 'Artist - Track'
+      useRadioMetadataStore().nowPlaying = 'Artist - Track'
       await wrapper.vm.$nextTick()
 
       expect(wrapper.get('.now-playing__title').text()).toBe('Artist - Track')
@@ -660,7 +661,7 @@ describe('NowPlayingView radio debug button', () => {
     const mounted = await mountView()
     const playback = usePlaybackStore()
     playback.radioStation = station
-    playback.radioTitleLog = [{ title: 'Artist - Real', at: 1_757_000_000 }]
+    useRadioMetadataStore().titleLog = [{ title: 'Artist - Real', at: 1_757_000_000 }]
     useDrawersStore().lyricsPanelOpen = true
     await flushPromises()
     return { ...mounted, playback }
@@ -686,7 +687,7 @@ describe('NowPlayingView radio debug button', () => {
   })
 
   it('adds a made-up title to the top of the log, and only in the browser', async () => {
-    const { wrapper, playback } = await mountWithRadio('DEBUG')
+    const { wrapper } = await mountWithRadio('DEBUG')
     expect(wrapper.findAll('.title-log__item')).toHaveLength(1)
 
     await debugButton(wrapper).element.closest('button')!.click()
@@ -697,7 +698,7 @@ describe('NowPlayingView radio debug button', () => {
     expect(items[0]!.text()).toContain('Lorem Ipsum')
     // The station's own log is untouched: nothing here is sent anywhere or
     // stored, it only rides along on the prop.
-    expect(playback.radioTitleLog).toHaveLength(1)
+    expect(useRadioMetadataStore().titleLog).toHaveLength(1)
   })
 
   it('drops its made-up titles when the station changes', async () => {

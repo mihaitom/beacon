@@ -74,6 +74,7 @@
 <script lang="ts">
 import { useConnectStore } from '@/stores/connect'
 import { usePlaybackStore } from '@/stores/playback'
+import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import type { ConnectStreamInfo } from '@/services/connect/types'
 import type { LocalStreamPlan } from '@/services/streamQuality'
 import { fetchLocalSourceInfo, type LocalSourceInfo } from '@/services/connect/localStreamInfo'
@@ -172,16 +173,17 @@ function isRadioReencoded(reason: string | null | undefined): boolean {
 
 export function hasStreamInfo(): boolean {
   const playback = usePlaybackStore()
+  const radioMeta = useRadioMetadataStore()
   const connect = useConnectStore()
   if (playback.radioStation) {
-    if (playback.radioBitrate !== null || playback.radioCodec !== null) return true
+    if (radioMeta.bitrate !== null || radioMeta.codec !== null) return true
     // Same two places the reason is read from as in the component's own
     // radioReencodeReason(): the cast status while casting, the relay's own
     // report otherwise. A station that says nothing about itself but is
     // being converted still has something worth showing.
     const reason = connect.isActive
       ? connect.status?.stream_info?.transcode_reason
-      : playback.radioRelayReason
+      : radioMeta.relayReason
     return isRadioReencoded(reason)
   }
   return (
@@ -203,6 +205,9 @@ export default {
     playbackStore() {
       return usePlaybackStore()
     },
+    radioMeta() {
+      return useRadioMetadataStore()
+    },
     isCasting(): boolean {
       return this.connectStore.isActive
     },
@@ -223,7 +228,7 @@ export default {
      * nothing at all here. */
     radioReencodeReason(): string | null {
       if (this.isCasting) return this.connectStore.status?.stream_info?.transcode_reason ?? null
-      return this.playbackStore.radioRelayReason
+      return this.radioMeta.relayReason
     },
     castInfo(): ConnectStreamInfo {
       return this.connectStore.status?.stream_info ?? FALLBACK_INFO
@@ -260,11 +265,10 @@ export default {
       // the relay a cast started, so "a station is always MP3 out of the
       // relay" stopped being true.
       if (this.isRadio && !this.isCasting) {
-        const { radioRelayBitrate, radioRelayContentType } = this.playbackStore
+        const { relayBitrate, relayContentType } = this.radioMeta
         const format =
-          (radioRelayContentType ? TARGET_LABEL_FOR_CONTENT_TYPE[radioRelayContentType] : null) ??
-          'MP3'
-        return radioRelayBitrate ? `${format}, ${radioRelayBitrate} kb/s` : format
+          (relayContentType ? TARGET_LABEL_FOR_CONTENT_TYPE[relayContentType] : null) ?? 'MP3'
+        return relayBitrate ? `${format}, ${relayBitrate} kb/s` : format
       }
       if (!this.isCasting) {
         if (!this.activePlan) return ''
@@ -304,8 +308,8 @@ export default {
       // carries a transcode reason and nothing else). Same two numbers
       // whether this device is playing the station or a speaker is.
       if (this.isRadio) {
-        const { radioCodec, radioBitrate } = this.playbackStore
-        const parts = [radioCodec, radioBitrate ? `${radioBitrate} kb/s` : null].filter(Boolean)
+        const { codec, bitrate } = this.radioMeta
+        const parts = [codec, bitrate ? `${bitrate} kb/s` : null].filter(Boolean)
         return parts.length > 0 ? parts.join(', ') : null
       }
       return sourceLine(this.isCasting ? this.castInfo : this.localSource)

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import delivery.dlna as _dlna_mod
 import delivery.manager as manager_mod
 from delivery import (
     AirPlayDelivery,
@@ -15,6 +16,7 @@ from delivery import (
     DlnaDelivery,
     SonosDelivery,
 )
+from delivery.dlna import _DISCOVERY_TIMEOUT
 
 
 @pytest.fixture(autouse=True)
@@ -219,7 +221,7 @@ def test_discover_dlna_filters_out_sonos_manufactured_devices():
     receiver_device.manufacturer = "Yamaha Corporation"
     receiver_device.name = "AV Receiver"
 
-    async def fake_create_dmr_device(location):
+    async def fake_create_dmr_device(location, timeout=None):
         return sonos_device if location == sonos_headers["location"] else receiver_device
 
     with (
@@ -246,7 +248,7 @@ def test_discover_dlna_skips_and_logs_non_media_renderer_devices(caplog):
     async def fake_async_search(async_callback, **kwargs):
         await async_callback(hue_headers)
 
-    async def fake_create_dmr_device(location):
+    async def fake_create_dmr_device(location, timeout=None):
         raise UnsupportedDlnaDevice("Philips Hue Bridge")
 
     with (
@@ -278,7 +280,7 @@ def test_discover_dlna_includes_sonos_when_debug_enabled(monkeypatch):
     sonos_device.manufacturer = "Sonos, Inc."
     sonos_device.name = "Sonos Media Renderer"
 
-    async def fake_create_dmr_device(location):
+    async def fake_create_dmr_device(location, timeout=None):
         return sonos_device
 
     with (
@@ -750,7 +752,7 @@ def test_discover_dlna_logs_skipped_sonos_devices_when_verbose(caplog):
     sonos_device.manufacturer = "Sonos, Inc."
     sonos_device.name = "Sonos Media Renderer"
 
-    async def fake_create_dmr_device(location):
+    async def fake_create_dmr_device(location, timeout=None):
         return sonos_device
 
     with (
@@ -779,7 +781,7 @@ def test_discover_dlna_skips_and_logs_a_device_that_errors_unexpectedly(caplog):
     async def fake_async_search(async_callback, **kwargs):
         await async_callback(flaky_headers)
 
-    async def fake_create_dmr_device(location):
+    async def fake_create_dmr_device(location, timeout=None):
         raise ConnectionError("connection reset")
 
     with (
@@ -791,3 +793,114 @@ def test_discover_dlna_skips_and_logs_a_device_that_errors_unexpectedly(caplog):
 
     assert result == []
     assert "10.0.0.7" in caplog.text
+
+
+def test_discover_dlna_sends_more_than_one_m_search():
+    """SSDP is UDP with no retransmit: a single lost packet — in either
+    direction — leaves a device that is perfectly reachable out of the
+    list."""
+    from delivery.manager import discover_dlna
+
+    headers = {"location": "http://10.0.0.2/desc.xml", "usn": "uuid:receiver"}
+    searches: list[int] = []
+
+    async def fake_async_search(async_callback, **kwargs):
+        searches.append(kwargs["timeout"])
+        await async_callback(headers)
+
+    device = MagicMock()
+    device.manufacturer = "Yamaha Corporation"
+    device.name = "AV Receiver"
+
+    async def fake_create_dmr_device(location, timeout=None):
+        return device
+
+    with (
+        patch("async_upnp_client.search.async_search", new=fake_async_search),
+        patch("delivery.manager._create_dmr_device", new=fake_create_dmr_device),
+        patch.object(manager_mod, "_SEARCH_BURST", ((0.0, 1), (0.0, 1))),
+    ):
+        result = asyncio.run(discover_dlna())
+
+    assert len(searches) == 2
+    # Answered twice, listed once — responses are deduplicated by USN.
+    assert result == [{"location": "http://10.0.0.2/desc.xml", "name": "AV Receiver"}]
+
+
+def test_search_burst_fits_inside_the_time_a_scan_already_took():
+    """Every repeat has to finish within the first search's window, or a
+    scan gets slower for everyone to serve the devices that drop packets."""
+    first_delay, first_mx = manager_mod._SEARCH_BURST[0]
+    assert len(manager_mod._SEARCH_BURST) > 1
+    for delay, mx in manager_mod._SEARCH_BURST:
+        assert delay + mx <= first_delay + first_mx
+
+
+def test_discover_dlna_still_lists_devices_when_one_search_fails():
+    from delivery.manager import discover_dlna
+
+    headers = {"location": "http://10.0.0.2/desc.xml", "usn": "uuid:receiver"}
+    attempts: list[int] = []
+
+    async def fake_async_search(async_callback, **kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise OSError("no route to host")
+        await async_callback(headers)
+
+    device = MagicMock()
+    device.manufacturer = "Yamaha Corporation"
+    device.name = "AV Receiver"
+
+    async def fake_create_dmr_device(location, timeout=None):
+        return device
+
+    with (
+        patch("async_upnp_client.search.async_search", new=fake_async_search),
+        patch("delivery.manager._create_dmr_device", new=fake_create_dmr_device),
+        patch.object(manager_mod, "_SEARCH_BURST", ((0.0, 1), (0.0, 1))),
+    ):
+        result = asyncio.run(discover_dlna())
+
+    assert [d["name"] for d in result] == ["AV Receiver"]
+
+
+def test_discover_dlna_raises_when_every_search_fails():
+    """No network at all is a real error, not an empty device list."""
+    from delivery.manager import discover_dlna
+
+    async def fake_async_search(async_callback, **kwargs):
+        raise OSError("no route to host")
+
+    with (
+        patch("async_upnp_client.search.async_search", new=fake_async_search),
+        patch.object(manager_mod, "_SEARCH_BURST", ((0.0, 1), (0.0, 1))),
+        pytest.raises(OSError),
+    ):
+        asyncio.run(discover_dlna())
+
+
+def test_discover_dlna_does_not_wait_a_command_timeout_per_unreachable_device():
+    """Discovery walks every SSDP responder in turn, so a device that
+    answers the search and then can't be reached holds up the whole list."""
+    from delivery.manager import discover_dlna
+
+    headers = {"location": "http://10.0.0.9/desc.xml", "usn": "uuid:ghost"}
+    timeouts: list[int] = []
+
+    async def fake_async_search(async_callback, **kwargs):
+        await async_callback(headers)
+
+    async def fake_create_dmr_device(location, timeout=None):
+        timeouts.append(timeout)
+        raise ConnectionError("unreachable")
+
+    with (
+        patch("async_upnp_client.search.async_search", new=fake_async_search),
+        patch("delivery.manager._create_dmr_device", new=fake_create_dmr_device),
+        patch.object(manager_mod, "_SEARCH_BURST", ((0.0, 1),)),
+    ):
+        asyncio.run(discover_dlna())
+
+    assert timeouts == [_DISCOVERY_TIMEOUT]
+    assert _DISCOVERY_TIMEOUT < _dlna_mod._COMMAND_TIMEOUT

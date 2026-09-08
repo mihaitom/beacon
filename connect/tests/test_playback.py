@@ -2541,3 +2541,26 @@ def test_leaves_radio_alone(default_session):
 
     assert asyncio.run(_finish_orphaned_track(default_session, st.clock.play_generation)) is False
     assert st.track_ended is False
+
+
+def test_play_dispatches_a_url_ending_in_the_output_formats_extension(client, default_session):
+    """What the device is told to expect and what the URL says it will get
+    come from the same resolved format — a renderer reading the URL rather
+    than the Content-Type header has to arrive at the same answer."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Test Song", artist="Test Artist", duration=180)
+    flac = OutputFormat(ffmpeg_args=["-acodec", "copy", "-f", "flac"], content_type="audio/flac")
+
+    with (
+        patch.object(default_session.media, "get_track", return_value=track),
+        patch("routes.playback.resolve_output_format", new=AsyncMock(return_value=flac)),
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play,
+    ):
+        client.post(
+            "/play",
+            json={"song_ids": ["1"], "target_name": "TV", "target_type": "chromecast"},
+        )
+
+    url, *_ = play.await_args.args
+    assert url.endswith("/stream/default.flac")
+    assert play.await_args.args[-1] == "audio/flac"

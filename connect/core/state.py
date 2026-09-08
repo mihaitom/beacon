@@ -20,7 +20,7 @@ from delivery import (
 from media import Track
 
 from .playback_clock import PlaybackClock
-from .streamer import FALLBACK_FORMAT, OutputFormat
+from .streamer import FALLBACK_FORMAT, OutputFormat, stream_extension
 
 PORT = int(os.getenv("PORT", "7071"))
 
@@ -254,8 +254,14 @@ def get_local_ip() -> str:
         s.close()
 
 
-def stream_url(session_id: str) -> str:
-    return f"http://{get_local_ip()}:{PORT}/stream/{session_id}"
+def stream_url(session_id: str, content_type: str | None = None) -> str:
+    """Where a device fetches this session's queued track from.
+    `content_type` only decides the extension on the end (see
+    core/streamer.py's stream_extension()) — pass the same type the device
+    is told about, so the URL and the announcement can't disagree."""
+    url = f"http://{get_local_ip()}:{PORT}/stream/{session_id}"
+    extension = stream_extension(content_type)
+    return f"{url}.{extension}" if extension else url
 
 
 def radio_stream_url(session_id: str) -> str:

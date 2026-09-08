@@ -163,7 +163,7 @@ describe('RadioTitleLog', () => {
     }
 
     /** The search itself runs against the backend (see
-     * playbackStore.searchRadioTitles()) — this component only opens the
+     * the radio-metadata store's search()) — this component only opens the
      * field, reports what is typed, and renders whatever it is handed
      * back. These pin its half of that. */
     it('keeps the field out of the way until it is asked for', () => {
@@ -475,7 +475,7 @@ describe('RadioTitleLog', () => {
     })
 
     it('asks again on the next scroll, leaving the throttling to the store', async () => {
-      // Deliberate: the store's own loadOlderRadioTitles() is a no-op
+      // Deliberate: the store's own loadOlder() is a no-op
       // while a page is in flight, and a guard here would be a second one
       // that can fall out of step with the request it guards.
       const wrapper = mountWithMore(true)

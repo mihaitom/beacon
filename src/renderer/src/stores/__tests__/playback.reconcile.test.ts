@@ -9,6 +9,7 @@ import * as connectPlayback from '@/services/connect/playback'
 import * as radioMetadata from '@/services/connect/radioMetadata'
 import type { PlayResponse } from '@/services/connect/types'
 import { makeSong, makeStatus } from './fixtures'
+import { useRadioMetadataStore } from '../radioMetadata'
 
 // Only `play()` needs to be under test control (its resolution timing is
 // what pendingLocalSongChange guards against) — every other export stays
@@ -265,31 +266,31 @@ describe('reconcileFromStatus / adoptCastQueue', () => {
       expect(playback.radioStation).toBe(stationAfterFirstTick)
     })
 
-    it('resets radioNowPlaying so a stale title from the previous station never lingers', async () => {
+    it('resets the now-playing tag so a stale title from the previous station never lingers', async () => {
       const playback = usePlaybackStore()
       await playback.reconcileFromStatus(
         makeStatus({ radio: { title: 'Chill FM', url: 'https://stream.example/chill' } }),
       )
-      playback.radioNowPlaying = 'Old Artist - Old Track'
+      useRadioMetadataStore().nowPlaying = 'Old Artist - Old Track'
 
       await playback.reconcileFromStatus(
         makeStatus({ radio: { title: 'Jazz FM', url: 'https://stream.example/jazz' } }),
       )
 
-      expect(playback.radioNowPlaying).toBeNull()
+      expect(useRadioMetadataStore().nowPlaying).toBeNull()
     })
 
-    it('leaves radioNowPlaying alone when the same station repeats on the next tick', async () => {
+    it('leaves the now-playing tag alone when the same station repeats on the next tick', async () => {
       const playback = usePlaybackStore()
       const status = makeStatus({
         radio: { title: 'Chill FM', url: 'https://stream.example/chill' },
       })
       await playback.reconcileFromStatus(status)
-      playback.radioNowPlaying = 'Artist - Track'
+      useRadioMetadataStore().nowPlaying = 'Artist - Track'
 
       await playback.reconcileFromStatus(status)
 
-      expect(playback.radioNowPlaying).toBe('Artist - Track')
+      expect(useRadioMetadataStore().nowPlaying).toBe('Artist - Track')
     })
 
     it("resets duration so a track's stale length never clamps the live radio clock", async () => {
@@ -562,7 +563,7 @@ describe('reconcileFromStatus / adoptCastQueue', () => {
         streamUrl: 'https://stream.example/chill',
         homePageUrl: null,
       }
-      playback.radioNowPlaying = 'Artist - Track'
+      useRadioMetadataStore().nowPlaying = 'Artist - Track'
 
       await playback.reconcileFromStatus(
         makeStatus({
@@ -581,7 +582,7 @@ describe('reconcileFromStatus / adoptCastQueue', () => {
       )
 
       expect(playback.radioStation).toBeNull()
-      expect(playback.radioNowPlaying).toBeNull()
+      expect(useRadioMetadataStore().nowPlaying).toBeNull()
       expect(radioMetadata.stopRadioMetadataWatch).toHaveBeenCalledOnce()
     })
 

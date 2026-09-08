@@ -64,12 +64,12 @@ const LIVE_STALL_CHECK_MS = 1000
 // How much later than its own interval a watchdog tick may arrive before
 // the gap counts as this process not having run — the machine suspended, a
 // hidden window's timers throttled — rather than as time the stream stood
-// still. Both look identical from inside checkForStall(): the playhead has
-// not moved for however long the gap lasted. But nothing was asked of the
-// connection in that time, so a tick this late measures nothing about it,
-// and treating it as a stall would report a station as gone (or drop a
-// perfectly good relay connection) on the strength of the machine having
-// been asleep.
+// still. The two look identical from inside checkForStall(): the playhead
+// has not moved for however long the gap lasted. But nothing was asked of
+// the connection in that time, so a tick this late has measured nothing
+// about it, and neither of the conclusions the ordinary budget reaches
+// (wait it out, or give up on the station) can be drawn from it. See
+// handleTickAfterAbsence() for what is asked instead.
 const STALL_CHECK_LATE_MS = 3000
 
 // How long a *held* live stream may stand still before this gives up on it
@@ -610,20 +610,18 @@ export class AudioEngine {
     const now = Date.now()
     const sinceLastCheck = now - this.lastStallCheckAt
     this.lastStallCheckAt = now
-    // A tick that arrives long after it was due timed this process being
-    // away, not the stream standing still — see STALL_CHECK_LATE_MS. The
-    // budget starts again from here, so the connection gets a real
-    // interval to prove itself in before anything is decided about it.
-    if (sinceLastCheck > LIVE_STALL_CHECK_MS + STALL_CHECK_LATE_MS) {
-      this.lastProgressAt = now
-      return
-    }
     // paused covers both an actual pause and the moment between a
     // reconnect's src assignment and its play() landing; reconnectTimer
     // covers the backoff wait itself, where the playhead is standing still
-    // precisely because a retry is already scheduled.
+    // precisely because a retry is already scheduled. Ahead of the
+    // late-tick branch below, which reconnects: waking a machine up must
+    // never start sound the listener had paused before it slept.
     if (!this.watchedForStalls() || this.audio.paused) return
     if (this.reconnectUrl === null || this.reconnectTimer !== null) return
+    if (sinceLastCheck > LIVE_STALL_CHECK_MS + STALL_CHECK_LATE_MS) {
+      this.handleTickAfterAbsence(now)
+      return
+    }
     const budget = this.stallBudgetSeconds()
     const stalledForMs = now - this.lastProgressAt
     if (stalledForMs < budget * 1000) return
@@ -643,6 +641,43 @@ export class AudioEngine {
       return
     }
     this.giveUp(`after ${LIVE_HOLD_SECONDS}s with nothing arriving`)
+  }
+
+  /** One tick of the watchdog that arrived long after it was due — see
+   * STALL_CHECK_LATE_MS. What it timed is this process not running (the
+   * machine asleep, a hidden window's timers throttled), so the gap says
+   * nothing about the connection and must not count towards giving up on
+   * it: the budget starts again from here either way.
+   *
+   * What it does say is that the element has been left alone for a while,
+   * and the one question that can be answered right now — without waiting
+   * for another event — is whether its playhead moved in the meantime.
+   *
+   * It did: the stream survived, and there is nothing to do beyond the
+   * fresh budget above.
+   *
+   * It did not: whatever was open did not survive being ignored, and
+   * waiting is the wrong response. Waiting is what a *stall* gets, on the
+   * reasoning that a held relay connection is keeping the missing seconds
+   * for us (see LIVE_HOLD_SECONDS) — which stops being worth anything
+   * across a lunch break, since those seconds are now an hour old and a
+   * station is only worth hearing at its edge. Reported live 2026-09-08:
+   * coming back to a sleeping machine left a silent station, first
+   * declared lost on the strength of time nobody had measured, and with
+   * that alone fixed it would have sat silent for another minute before
+   * reaching the same conclusion. Reconnecting is what actually gets the
+   * sound back, and a station genuinely gone still walks the ordinary
+   * ladder to the listener's own Reconnect button. */
+  private handleTickAfterAbsence(now: number): void {
+    this.lastProgressAt = now
+    // Read off the element rather than waiting for a 'timeupdate': this is
+    // the one moment where the difference between "the stream is fine" and
+    // "the stream is dead" is a minute of silence.
+    if (this.audio.currentTime + this.positionOffset !== this.lastKnownPosition) return
+    console.warn(
+      `[audio-engine] ${this.reconnectUrl} did not advance while this process was away — reconnecting`,
+    )
+    this.reconnectOnDrop()
   }
 
   /** Stops trying, by either route into it — the reconnect ladder running

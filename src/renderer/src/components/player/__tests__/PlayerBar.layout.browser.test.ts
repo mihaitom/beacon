@@ -57,6 +57,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useConnectStore } from '@/stores/connect'
 import PlayerBar from '../PlayerBar.vue'
 import { makeSong, makeStatus } from '@/stores/__tests__/fixtures'
+import { useRadioMetadataStore } from '@/stores/radioMetadata'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -83,7 +84,7 @@ async function mountRadioBar(nowPlaying: string) {
     streamUrl: 'http://stream.test/live',
     homePageUrl: null,
   }
-  playback.radioNowPlaying = nowPlaying
+  useRadioMetadataStore().nowPlaying = nowPlaying
   await wrapper.vm.$nextTick()
   return wrapper
 }

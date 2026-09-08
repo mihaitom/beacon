@@ -165,6 +165,36 @@ _CONTENT_TYPE_FOR_MUXER = {
     "ogg": "audio/ogg",
 }
 
+# The extension each of those puts on the end of the URL a device is
+# handed: plenty of DLNA renderers pick their decoder from the URL rather
+# than the Content-Type header, and refuse one without an extension. Only
+# ever a hint — routes/stream.py serves the session either way.
+_EXTENSION_FOR_CONTENT_TYPE = {
+    "audio/flac": "flac",
+    "audio/mpeg": "mp3",
+    "audio/aac": "aac",
+    "audio/ogg": "ogg",
+}
+
+STREAM_URL_EXTENSIONS = frozenset(_EXTENSION_FOR_CONTENT_TYPE.values())
+
+
+def stream_extension(content_type: str | None) -> str | None:
+    """The extension a stream URL for `content_type` ends in, or None for a
+    type we don't serve. Tolerates a parameterised type ("audio/mpeg; ...")."""
+    base_type = (content_type or "").split(";")[0].strip().lower()
+    return _EXTENSION_FOR_CONTENT_TYPE.get(base_type)
+
+
+def strip_stream_extension(session_id: str) -> str:
+    """The inverse, for the routes. Only our own extensions — a session id
+    that legitimately contains a dot keeps it."""
+    base, dot, extension = session_id.rpartition(".")
+    if dot and extension.lower() in STREAM_URL_EXTENSIONS:
+        return base
+    return session_id
+
+
 # Lossless source codecs that aren't good copy-tier targets for these devices
 # (wrong container, or not a format cast devices are expected to accept) —
 # re-encoded losslessly to FLAC instead, so there's still no quality loss

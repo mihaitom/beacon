@@ -16,6 +16,7 @@ import {
   remoteRadioFaviconUrl,
 } from '@/services/remoteControl/commands'
 import { usePlaybackStore } from './playback'
+import { useRadioMetadataStore } from './radioMetadata'
 import { useConnectStore } from './connect'
 import { isBackingOff } from '@/services/connect/pollGate'
 import { useAuthStore } from './auth'
@@ -258,7 +259,7 @@ export const useRemoteControlStore = defineStore('remoteControl', {
                 // Both null/false rather than absent for a station that
                 // reports neither, so the phone never has to tell "no tag"
                 // apart from "an older desktop that never sent one".
-                now_playing: playback.radioNowPlaying,
+                now_playing: useRadioMetadataStore().nowPlaying,
                 buffering: playback.radioBuffering,
               }
             : null,

@@ -16,7 +16,7 @@ from core.session import (
     require_authenticated_session,
 )
 from core.state import find_sonos, radio_dispatch_url, resolve_target, stream_url
-from core.stream_format import FALLBACK_CONTENT_TYPE, radio_content_type
+from core.stream_format import radio_content_type
 from delivery import (
     AirPlayDelivery,
     BaseDelivery,
@@ -131,18 +131,23 @@ async def join_stream(
         # Radio has no track loaded (session.state.current_track stays None
         # for it — see /play-url), so it must join on its own raw URL rather
         # than the FFmpeg /stream proxy, which 204s with no track loaded.
+
+        # URL extension and announced type out of one place. Radio: the
+        # station's own type as probed at play time — tell a device joining an
+        # AAC station anything else and it refuses the stream (see
+        # core/stream_format.py). A track: whatever /play resolved, which is
+        # what /stream is sending; this used to say audio/mpeg flat.
+        content_type = (
+            radio_content_type(st.radio_info)
+            if st.radio_info
+            else st.current_output_format.content_type
+        )
         url = (
             radio_dispatch_url(session.session_id, st.radio_info)
             if st.radio_info
-            else stream_url(session.session_id)
+            else stream_url(session.session_id, content_type)
         )
         title = st.radio_info["title"] if st.radio_info else "Connect"
-        # The station's own type, as probed when it started playing — a
-        # device joining an AAC station mid-play needs telling the same
-        # thing the first one was, or it refuses the stream the first one
-        # is happily playing (see core/stream_format.py). A queued track
-        # keeps play()'s own default, which is what it always used.
-        content_type = radio_content_type(st.radio_info) if st.radio_info else FALLBACK_CONTENT_TYPE
         logger.info(f"[join] {req.target_type}:{req.target_name} → {url}")
 
         try:

@@ -28,6 +28,7 @@ import { useDrawersStore } from '@/stores/drawers'
 import MobileNowPlayingView from '../mobile/MobileNowPlayingView.vue'
 import NowPlayingView from '../NowPlayingView.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
+import { useRadioMetadataStore } from '@/stores/radioMetadata'
 
 const vuetify = createVuetify({ components, directives })
 const wrappers: VueWrapper[] = []
@@ -52,7 +53,7 @@ async function mountAt(w: number, h: number, radio = false) {
       streamUrl: 'https://stream.example/chill',
       homePageUrl: null,
     }
-    playback.radioTitleLog = Array.from({ length: 50 }, (_, i) => ({
+    useRadioMetadataStore().titleLog = Array.from({ length: 50 }, (_, i) => ({
       title: `Artist ${i} - Track ${i}`,
       at: 1_757_000_000 + i * 200,
     }))

@@ -1,4 +1,5 @@
 import { usePlaybackStore } from '@/stores/playback'
+import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import { useLibraryStore } from '@/stores/library'
 
 // OS-level media keys (keyboard multimedia keys, Windows/macOS lock-screen
@@ -65,7 +66,7 @@ function updateMetadata(): void {
   // radioMetadata.ts) - shown as the "artist" the same lock-screen/media-
   // widget surfaces this whole service targets would show for a song,
   // since a station has no artist field of its own to put there instead.
-  const nowPlaying = radio ? playback.radioNowPlaying : null
+  const nowPlaying = radio ? useRadioMetadataStore().nowPlaying : null
   const key = song ? `song:${song.id}` : radio ? `radio:${radio.name}:${nowPlaying ?? ''}` : null
   if (key === lastMetadataKey) return
   lastMetadataKey = key

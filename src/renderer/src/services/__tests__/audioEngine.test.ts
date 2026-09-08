@@ -794,22 +794,70 @@ describe('AudioEngine', () => {
         expect(onReconnectStateChange).toHaveBeenLastCalledWith(false)
       })
 
-      // A watchdog tick that arrives a minute late timed the machine being
-      // asleep, not the stream. The playhead stood still for exactly the
-      // same reason, and giving up on a station over it would take a
-      // perfectly good connection down on waking.
-      it('does not condemn a stream because the watchdog itself was suspended', async () => {
+      // A watchdog tick that arrives a lunch break late timed the machine
+      // being asleep, not the stream: nothing was asked of the connection
+      // in all that time, so neither conclusion the ordinary budget
+      // reaches can be drawn from it.
+      //
+      // What the element itself says is the deciding evidence. Here the
+      // playhead has not moved, so the connection did not survive - and a
+      // held one has nothing worth waiting for either, since the seconds
+      // it kept are an hour old. Reconnecting is what gets the sound back.
+      it('reconnects rather than giving up when the watchdog itself was suspended', async () => {
+        const onConnectionLost = vi.fn()
+        engine.onConnectionLost = onConnectionLost
+        engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+        playing(3)
+        audio.play.mockClear()
+
+        // Wall clock jumps; nothing ran while it did.
+        vi.setSystemTime(Date.now() + 90_000)
+        await vi.advanceTimersByTimeAsync(1000)
+
+        expect(onConnectionLost).not.toHaveBeenCalled()
+
+        // The first backoff step of an ordinary reconnect, not another
+        // minute of waiting.
+        await vi.advanceTimersByTimeAsync(1000)
+
+        expect(audio.play).toHaveBeenCalledOnce()
+        expect(audio.src).toBe('http://beacon/stream/radio-local')
+      })
+
+      // The element can be paused with the watchdog still armed - the
+      // browser pausing one on its own, or the moment between a
+      // reconnect's src assignment and its play() landing. Whatever the
+      // gap was, waking up is not somebody pressing play.
+      it('does not start sound again on a paused element after a gap', async () => {
+        engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+        playing(3)
+        audio.paused = true
+        audio.play.mockClear()
+
+        vi.setSystemTime(Date.now() + 90_000)
+        await vi.advanceTimersByTimeAsync(3000)
+
+        expect(audio.play).not.toHaveBeenCalled()
+      })
+
+      // The other half of the same evidence: a stream that kept playing
+      // through a gap in this process's own timers is not to be touched.
+      it('leaves a stream that played on through the gap alone', async () => {
         const onConnectionLost = vi.fn()
         const onReconnectStateChange = vi.fn()
         engine.onConnectionLost = onConnectionLost
         engine.onReconnectStateChange = onReconnectStateChange
         engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
         playing(3)
+        audio.play.mockClear()
 
-        // Wall clock jumps; nothing ran while it did.
+        // The element is 90s further along by the time anything here runs
+        // again - read straight off it, without a 'timeupdate' of its own.
         vi.setSystemTime(Date.now() + 90_000)
-        await vi.advanceTimersByTimeAsync(1000)
+        audio.settleAt(93)
+        await vi.advanceTimersByTimeAsync(2000)
 
+        expect(audio.play).not.toHaveBeenCalled()
         expect(onConnectionLost).not.toHaveBeenCalled()
         expect(onReconnectStateChange).not.toHaveBeenCalledWith(true)
       })

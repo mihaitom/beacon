@@ -14,6 +14,7 @@ import { resolveRadioStreamUrl } from '@/services/connect/radio'
 import type { PlayResponse } from '@/services/connect/types'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import { makeSong, makeStatus } from './fixtures'
+import { useRadioMetadataStore } from '../radioMetadata'
 
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
 vi.mock('@/services/connect/radioBrowser', async (importOriginal) => {
@@ -588,7 +589,7 @@ describe('playback transport', () => {
       await playback.stop()
 
       expect(radioMetadata.stopRadioMetadataWatch).toHaveBeenCalledOnce()
-      expect(playback.radioNowPlaying).toBeNull()
+      expect(useRadioMetadataStore().nowPlaying).toBeNull()
     })
 
     it("leaves the radio-metadata watch to the backend's own /stop while casting", async () => {
@@ -729,7 +730,7 @@ describe('playback transport', () => {
         homePageUrl: null,
       })
       await flushPromises()
-      playback.radioNowPlaying = 'Fun. - We Are Young'
+      useRadioMetadataStore().nowPlaying = 'Fun. - We Are Young'
 
       // The tick that used to undo the switch.
       await playback.reconcileFromStatus(
@@ -737,7 +738,7 @@ describe('playback transport', () => {
       )
 
       expect(playback.radioStation?.streamUrl).toBe('https://stream.example/new')
-      expect(playback.radioNowPlaying).toBe('Fun. - We Are Young')
+      expect(useRadioMetadataStore().nowPlaying).toBe('Fun. - We Are Young')
 
       releaseDispatch()
       await dispatch
@@ -756,6 +757,43 @@ describe('playback transport', () => {
     // 200ms tick to that stale number instead of leaving live elapsed
     // unclamped — the seek bar's "Live · {time}" label sticking on the
     // previous track's duration. Reported live 2026-09-02.
+    // Both halves of what a new station does to the radio-metadata store,
+    // which is a different store and therefore the kind of call a refactor
+    // can drop without anything else noticing.
+    it("drops the previous station's log and tag rather than showing them under the new name", async () => {
+      const playback = usePlaybackStore()
+      const radioMeta = useRadioMetadataStore()
+      radioMeta.nowPlaying = 'Old Artist - Old Track'
+      radioMeta.titleLog = [{ title: 'Old Artist - Old Track', at: 1000 }]
+      radioMeta.codec = 'AAC'
+
+      await playback.playRadioStation({
+        id: 'r2',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      })
+
+      expect(radioMeta.nowPlaying).toBeNull()
+      expect(radioMeta.titleLog).toEqual([])
+      expect(radioMeta.codec).toBeNull()
+    })
+
+    // Without this the log waits out a whole 8s interval, and longer in the
+    // relayed case - see the metadata store's startCatchup().
+    it("starts asking for the new station's log straight away", async () => {
+      const playback = usePlaybackStore()
+
+      await playback.playRadioStation({
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      })
+
+      expect(radioMetadata.fetchRadioMetadata).toHaveBeenCalled()
+    })
+
     it('clears the leftover track duration so live elapsed is not clamped to it', async () => {
       const playback = usePlaybackStore()
       playback.duration = 195
@@ -921,7 +959,7 @@ describe('playback transport', () => {
       playback.setQueue([makeSong('a')], 0)
 
       expect(playback.radioStation).toBeNull()
-      expect(playback.radioNowPlaying).toBeNull()
+      expect(useRadioMetadataStore().nowPlaying).toBeNull()
       expect(radioMetadata.stopRadioMetadataWatch).toHaveBeenCalledOnce()
     })
 
@@ -1009,7 +1047,7 @@ describe('playback transport', () => {
         await playback.playAtIndex(1)
 
         expect(playback.radioStation).toBeNull()
-        expect(playback.radioNowPlaying).toBeNull()
+        expect(useRadioMetadataStore().nowPlaying).toBeNull()
         expect(radioMetadata.stopRadioMetadataWatch).toHaveBeenCalledOnce()
         expect(playback.currentSong?.id).toBe('b')
         expect(engine.play).toHaveBeenLastCalledWith(

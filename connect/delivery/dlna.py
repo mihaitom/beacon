@@ -7,6 +7,7 @@ via SSDP. `async-upnp-client`'s `DmrDevice` profile wraps that SOAP surface
 with plain async methods, so this stays about as small as chromecast.py.
 """
 
+import asyncio
 import logging
 import xml.etree.ElementTree as ET
 
@@ -26,11 +27,10 @@ _location_cache: dict[str, str] = {}
 _device_cache: dict = {}
 
 # Two upstream didl_lite gaps patched here, both discovered building metadata
-# for our stream (an audio/mpeg URL with no file extension, so it's always a
-# MusicTrack item, never a container). We build the DIDL-Lite item ourselves
-# (see _build_metadata below) rather than async-upnp-client's
-# DmrDevice.construct_play_media_metadata() helper, since neither gap can be
-# worked around through that helper's API:
+# for our stream (always a MusicTrack item — one track, never a container).
+# We build the DIDL-Lite item ourselves (see _build_metadata below) rather
+# than async-upnp-client's DmrDevice.construct_play_media_metadata() helper,
+# since neither gap can be worked around through that helper's API:
 #
 # 1. MusicTrack's didl_properties_defs (unlike MusicAlbum's) doesn't declare
 #    upnp:albumArtURI — DidlObject.to_xml() only serializes properties
@@ -125,13 +125,25 @@ class UnsupportedDlnaDevice(Exception):
         super().__init__(f"'{friendly_name}' is not a MediaRenderer")
 
 
-async def _create_dmr_device(location: str):
+# One five-second timeout for everything (async-upnp-client's default) is
+# wrong at both ends. A command may legitimately take several seconds —
+# transport switches of around seven have been reported — and giving up on
+# one loses a track that was about to play. A reading has to be back well
+# inside routes/playback.py's POSITION_RESYNC_INTERVAL to be worth
+# anything. Discovery keeps the old value: it walks every SSDP responder in
+# turn, so this is paid once per unreachable device before anything lists.
+_COMMAND_TIMEOUT = 15
+_POLL_TIMEOUT = 4.0
+_DISCOVERY_TIMEOUT = 5
+
+
+async def _create_dmr_device(location: str, timeout: int = _COMMAND_TIMEOUT):
     from async_upnp_client.aiohttp import AiohttpRequester
     from async_upnp_client.client_factory import UpnpFactory
     from async_upnp_client.exceptions import UpnpError
     from async_upnp_client.profiles.dlna import DmrDevice
 
-    requester = AiohttpRequester()
+    requester = AiohttpRequester(timeout=timeout)
     factory = UpnpFactory(requester)
     upnp_device = await factory.async_create_device(location)
     try:
@@ -288,20 +300,24 @@ class DlnaDelivery(BaseDelivery):
         await device.async_stop()
         logger.info(f"[DLNA:{self.target}] stopped")
 
-    async def get_position(self) -> float | None:
+    async def _poll_device(self):
+        """A device refreshed for a reading, under the short timeout. Raises
+        TimeoutError past it — every caller already treats that as no answer."""
         device = await self._get_device_or_evict()
-        await device.async_update(do_ping=False)
+        await asyncio.wait_for(device.async_update(do_ping=False), _POLL_TIMEOUT)
+        return device
+
+    async def get_position(self) -> float | None:
+        device = await self._poll_device()
         position = device.media_position
         return float(position) if position is not None else None
 
     async def current_uri(self) -> str | None:
-        device = await self._get_device_or_evict()
-        await device.async_update(do_ping=False)
+        device = await self._poll_device()
         return device.current_track_uri or None
 
     async def get_volume(self) -> float | None:
-        device = await self._get_device_or_evict()
-        await device.async_update(do_ping=False)
+        device = await self._poll_device()
         level = device.volume_level
         return round(level * 100) if level is not None else None
 

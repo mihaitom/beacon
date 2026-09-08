@@ -698,7 +698,7 @@ def _current_reconnect_args(
         return url, st.radio_info["title"], "", None, None, "", content_type
     title, artist, album_art_url, duration, album = _current_track_play_args(session)
     return (
-        stream_url(session.session_id),
+        stream_url(session.session_id, st.current_output_format.content_type),
         title,
         artist,
         album_art_url,
@@ -856,7 +856,6 @@ async def play_tracks(
             previous=session.state.active_delivery,
             on_playback_error=playback_error_reporter(session),
         )
-        url = stream_url(session.session_id)
         start_position = max(0.0, min(req.start_position, float(track.duration)))
         logger.info(
             f"[play] {track.artist} — {track.title} ({track.duration}s) → target={target}"
@@ -884,6 +883,8 @@ async def play_tracks(
             max_lossy_bitrate_kbps=req.max_lossy_bitrate_kbps,
             device_codecs=playable_codecs(target),
         )
+        # After the format, not before it: the URL ends in its extension.
+        url = stream_url(session.session_id, output_format.content_type)
 
         if target:
             conflict = await _claim_or_takeover(target, session, req.force)
