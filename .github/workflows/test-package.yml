@@ -71,14 +71,16 @@ jobs:
             - name: Check what ended up in the package
               run: |
                   set -euo pipefail
-                  resources="$(find dist -maxdepth 3 -type d -name resources | head -1)"
+                  resources="$(find dist -maxdepth 3 -type d -name resources | sed -n 1p)"
                   test -n "$resources" || { echo "no resources directory in dist/"; exit 1; }
                   echo "Packaged resources: $resources"
                   ls -la "$resources"
 
                   ffmpeg="$resources/ffmpeg/ffmpeg"
                   test -x "$ffmpeg" || { echo "MISSING: $ffmpeg is not in the package"; exit 1; }
-                  "$ffmpeg" -hide_banner -version | head -1
+                  # sed, not head: head closes the pipe and pipefail turns
+                  # ffmpeg's SIGPIPE into a failed step (exit 141).
+                  "$ffmpeg" -hide_banner -version | sed -n 1p
 
                   # The same contract the build checked, now against the copy
                   # that is actually shipping — extraResources could have

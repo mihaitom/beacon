@@ -149,7 +149,12 @@ build_linux() {
 stage_macos_deps() {
     deps="$work/deps"
     mkdir -p "$deps/lib/pkgconfig" "$deps/include"
-    for formula in lame opus openssl@3; do
+    # mpg123 is here for lame, which has depended on it since 4.0. A dylib
+    # carries that dependency with it and a static archive does not, so
+    # linking against libmp3lame.a alone fails configure's own test with
+    # "libmp3lame >= 3.98.3 not found" — which reads like the library is
+    # missing rather than one of its dependencies (measured 2026-09-08).
+    for formula in lame mpg123 opus openssl@3; do
         prefix="$(brew --prefix "$formula")"
         cp "$prefix"/lib/*.a "$deps/lib/" 2>/dev/null || true
         cp -R "$prefix"/include/. "$deps/include/" 2>/dev/null || true
@@ -163,16 +168,25 @@ stage_macos_deps() {
 
 build_macos() {
     echo "[ffmpeg] Installing build dependencies via Homebrew"
-    brew install --quiet nasm pkg-config lame opus openssl@3
+    brew install --quiet nasm pkg-config lame mpg123 opus openssl@3
     fetch_ffmpeg_source
     stage_macos_deps
     cd "$work/ffmpeg-src"
     # shellcheck disable=SC2046  # word splitting is what turns the file into flags
-    PKG_CONFIG_PATH="$deps/lib/pkgconfig" PKG_CONFIG_LIBDIR="$deps/lib/pkgconfig" ./configure \
+    # --extra-libs, not --extra-ldflags: configure's own link tests use it,
+    # which is where the missing mpg123 symbols surface.
+    if ! PKG_CONFIG_PATH="$deps/lib/pkgconfig" PKG_CONFIG_LIBDIR="$deps/lib/pkgconfig" ./configure \
         $(configure_flags) \
         --pkg-config-flags="--static" \
         --extra-cflags="-I$deps/include" \
-        --extra-ldflags="-L$deps/lib"
+        --extra-ldflags="-L$deps/lib" \
+        --extra-libs="-lmpg123"; then
+        # configure says which check failed; config.log says why, and without
+        # it a CI failure here is unreadable.
+        echo "[ffmpeg] configure failed — tail of ffbuild/config.log:" >&2
+        tail -40 ffbuild/config.log >&2 || true
+        exit 1
+    fi
     make -j"$(sysctl -n hw.ncpu)"
     cp ffmpeg "$output"
 }
@@ -219,5 +233,8 @@ chmod +x "$output"
 check_self_contained
 verify
 build_stamp > "$stamp_file"
-"$output" -hide_banner -version | head -1
+# `| head -1` would close the pipe on ffmpeg and, under pipefail, turn its
+# SIGPIPE into a failed build — intermittently, depending on whether the
+# output happened to fit the pipe buffer first. sed reads to the end.
+"$output" -hide_banner -version | sed -n 1p
 echo "[ffmpeg] Built $output ($(du -h "$output" | cut -f1))"

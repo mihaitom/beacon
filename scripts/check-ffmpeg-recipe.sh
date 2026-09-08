@@ -52,6 +52,24 @@ for kind in protocol demuxer decoder parser encoder muxer filter bsf; do
     done
 done
 
+# The flags that are not component lists — --disable-everything,
+# --enable-openssl, --disable-xlib and friends. configure rejects an option
+# it doesn't have outright, so these fail loudly on their own; the point of
+# checking them here is that an ffmpeg version bump says so in one line
+# instead of at the end of a configure run on four platforms. --help spells
+# each feature one way only (--disable-swresample, never --enable-), so both
+# spellings are matched against the bare name.
+./configure --help > "$work/help" 2>/dev/null || true
+sed -n 's/.*--\(enable\|disable\)-\([a-zA-Z0-9_-]*\).*/\2/p' "$work/help" | sort -u > "$work/options"
+
+for flag in $(sed 's/#.*//' "$flags" | sed -n 's/^--\(enable\|disable\)-\([a-zA-Z0-9_-]*\)$/\2/p'); do
+    grep -qxF "$flag" "$work/options" ||
+        {
+            echo "[check-recipe] UNKNOWN: --enable/--disable-$flag is not an option this ffmpeg has" >&2
+            failures=$((failures + 1))
+        }
+done
+
 if [ "$failures" -ne 0 ]; then
     echo "[check-recipe] $failures name(s) in build/ffmpeg/configure-flags would be ignored" >&2
     exit 1

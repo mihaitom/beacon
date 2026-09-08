@@ -110,7 +110,7 @@ jobs:
               shell: bash
               run: |
                   ls -la build/ffmpeg/${{ matrix.exe }}
-                  ./build/ffmpeg/${{ matrix.exe }} -hide_banner -version | head -1
+                  ./build/ffmpeg/${{ matrix.exe }} -hide_banner -version | sed -n 1p
                   ./build/ffmpeg/${{ matrix.exe }} -hide_banner -encoders |
                       awk '/^[[:space:]]*--/ { entries = 1; next } entries'
 

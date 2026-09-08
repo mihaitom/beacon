@@ -25,9 +25,14 @@ connect anything the browser cannot play. That is ~10MB instead of the ~130MB
 a distribution build costs, and it is the same binary the server image runs.
 
 `configure-flags` is the whole recipe and says why each format is on the list.
-`versions` pins ffmpeg and libopus. Both are read by the Dockerfile's
+`versions` pins ffmpeg and libopus, and is meant to follow ffmpeg's current
+release branch rather than sit still - the reasoning is in that file, and it
+matters more here than for an ordinary dependency because a radio station's
+bytes go straight into these demuxers. Both files are read by the Dockerfile's
 `ffmpeg-builder` stage *and* by `scripts/build-ffmpeg.sh`, so the container
-and the desktop app can never end up on builds that behave differently.
+and the desktop app can never end up on builds that behave differently. What
+they cannot cover is the machine you develop on, which uses whatever ffmpeg is
+on its PATH - worth a glance before writing a measured number into a comment.
 
 ## Why the build is checked afterwards
 
