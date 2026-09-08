@@ -67,7 +67,7 @@ jobs:
             # building the same thing twice. What is deliberately not in that
             # key is explained there.
             - name: Restore bundled ffmpeg
-              uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: |
                       build/ffmpeg/ffmpeg
@@ -128,7 +128,7 @@ jobs:
             # check and still misbehaves on a real file is the case no
             # automated check covers.
             - name: Upload binary
-              uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: ffmpeg-${{ matrix.name }}
                   path: build/ffmpeg/${{ matrix.exe }}
