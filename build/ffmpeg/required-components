@@ -1,0 +1,113 @@
+# What the built ffmpeg has to contain, checked by scripts/verify-ffmpeg.sh
+# after every build (the Dockerfile's ffmpeg-builder stage and
+# scripts/build-ffmpeg.sh both run it, so the container and the desktop app
+# are held to the same list).
+#
+# This is the *code's* side of the contract, not a copy of configure-flags:
+# these are the names Beacon can actually put on an ffmpeg command line or
+# needs in order to open a file a media server indexed. Adding a format to
+# the app means adding it here first — the build then fails until the
+# recipe grows to match, which is the whole point. configure warns about a
+# wrong name only when nothing else in the same comma list matched, so
+# "it built" has never meant "it is in there".
+#
+# `kind name`, one per line. The names are the ones the *binary* reports,
+# which differ from configure's in three places worth knowing about:
+# pcm_s16le muxer -> `s16le`, `shorten` demuxer -> `shn`, and .dff has no
+# demuxer of its own (it lives in `iff`). A demuxer that reports several
+# comma-separated names matches on any one of them.
+
+# --- Filters -----------------------------------------------------------
+# volume is ReplayGain (core/streamer.py, core/audio_analysis.py). The
+# other three are what ffmpeg inserts by itself for -ar/-ac/-sample_fmt.
+filter    volume
+filter    aresample
+filter    aformat
+filter    anull
+
+# --- Protocols ---------------------------------------------------------
+# http(s) for a media server's or station's URL, file for the test tone,
+# pipe for the radio relay's stdin/stdout. tls is what https rides on.
+protocol  file
+protocol  http
+protocol  https
+protocol  tls
+protocol  tcp
+protocol  pipe
+
+# --- Encoders and muxers -----------------------------------------------
+# Every format streamQuality.ts can offer (CAST_FORMATS/LOCAL_FORMATS),
+# plus flac as the lossless re-wrap target and s16le for the visualizer
+# and the seek-bar waveform.
+encoder   libmp3lame
+encoder   aac
+encoder   libopus
+encoder   flac
+encoder   pcm_s16le
+muxer     mp3
+muxer     adts
+muxer     ogg
+muxer     flac
+muxer     s16le
+
+# --- Containers a library actually holds -------------------------------
+demuxer   mp3
+demuxer   flac
+demuxer   ogg
+demuxer   wav
+demuxer   aac
+demuxer   mov
+demuxer   matroska
+demuxer   asf
+demuxer   ape
+demuxer   aiff
+demuxer   wv
+demuxer   dsf
+demuxer   iff
+demuxer   mpc
+demuxer   mpc8
+demuxer   tta
+demuxer   shn
+demuxer   loas
+
+# --- Codecs those containers hold --------------------------------------
+decoder   mp3
+decoder   mp3float
+decoder   mp2
+decoder   mp2float
+decoder   flac
+decoder   vorbis
+decoder   opus
+decoder   aac
+decoder   aac_latm
+decoder   alac
+decoder   ape
+decoder   wavpack
+decoder   tta
+decoder   shorten
+decoder   mpc7
+decoder   mpc8
+decoder   wmav1
+decoder   wmav2
+decoder   wmapro
+decoder   wmalossless
+decoder   dsd_lsbf
+decoder   dsd_msbf
+decoder   dsd_lsbf_planar
+decoder   dsd_msbf_planar
+
+# Every depth and byte order a WAV or AIFF can carry. AIFF is big-endian,
+# which is where this list was short: a 32-bit AIFF probed fine and then
+# failed everywhere after it.
+decoder   pcm_s8
+decoder   pcm_u8
+decoder   pcm_s16le
+decoder   pcm_s16be
+decoder   pcm_s24le
+decoder   pcm_s24be
+decoder   pcm_s32le
+decoder   pcm_s32be
+decoder   pcm_f32le
+decoder   pcm_f32be
+decoder   pcm_f64le
+decoder   pcm_f64be

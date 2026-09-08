@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.streamer import SourceInfo
+from core.streamer import _DSD_CODECS, _DSD_PCM_SAMPLE_RATE, SourceInfo
 from routes import local_stream
 from routes.local_stream import _parse_range, _probe_cached, reset_probe_cache
 
@@ -68,9 +68,12 @@ class _FakeProc:
         self.returncode = -9
 
 
-def _request(client, default_session, url: str, headers: dict | None = None):
+def _request(client, default_session, url: str, headers: dict | None = None, info=None):
     """Issue `url` against a configured session with the probe and ffmpeg
-    both faked, and hand back (response, ffmpeg argv)."""
+    both faked, and hand back (response, ffmpeg argv).
+
+    `info` is what the probe reports — the default 44.1kHz FLAC for
+    everything that isn't about the source's own numbers."""
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
     default_session.authenticated = True
     captured: dict = {}
@@ -80,7 +83,7 @@ def _request(client, default_session, url: str, headers: dict | None = None):
         return _FakeProc([b"audio-bytes"])
 
     with (
-        patch("routes.local_stream._probe_source", AsyncMock(return_value=_info())),
+        patch("routes.local_stream._probe_source", AsyncMock(return_value=info or _info())),
         patch(
             "media.SubsonicClient.get_stream_url",
             lambda self, track_id: f"http://nav:4533/rest/stream.view?id={track_id}",
@@ -132,6 +135,29 @@ def test_the_lossless_format_is_offered_without_a_bitrate(client, default_sessio
     # Not resampled either: a device's sample-rate limit is what that is
     # for, and a browser has none.
     assert "-ar" not in cmd
+
+
+@pytest.mark.parametrize("codec", sorted(_DSD_CODECS))
+def test_a_dsd_source_is_brought_down_to_a_rate_a_browser_decodes(codec, client, default_session):
+    """The exception to the rule above. A browser has no sample-rate limit
+    to impose, but DSD's decoded rate is an artefact of the format rather
+    than the music — 352800 Hz here, which no browser plays back."""
+    response, cmd = _request(
+        client,
+        default_session,
+        "/stream/local/1?fmt=flac",
+        info=SourceInfo(
+            codec=codec,
+            sample_rate=352800,
+            bit_depth=1,
+            bitrate_kbps=None,
+            duration=_DURATION,
+        ),
+    )
+
+    assert response.status_code == 200
+    assert cmd[cmd.index("-acodec") + 1] == "flac"
+    assert cmd[cmd.index("-ar") + 1] == str(_DSD_PCM_SAMPLE_RATE)
 
 
 def test_a_bitrate_alongside_the_lossless_format_is_rejected(client, default_session):

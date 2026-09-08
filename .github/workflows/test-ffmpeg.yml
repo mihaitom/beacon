@@ -1,0 +1,125 @@
+name: Test ffmpeg build
+
+# Builds the bundled ffmpeg on each platform and lets verify-ffmpeg.sh check
+# what came out — without publishing anything. The publish workflows build it
+# too, but the first time anyone finds out a recipe change doesn't compile on
+# macOS should not be halfway through a release.
+#
+# Runs on its own when the recipe changes, and by hand from the Actions tab
+# (Run workflow) for everything else. Every platform a release ships is a
+# leg, including Windows: its build is the one that goes through MSYS2
+# rather than the job's own shell, which makes it the most likely to break
+# on a recipe change and the least useful to find out about mid-release.
+
+on:
+    workflow_dispatch:
+    push:
+        paths:
+            - 'build/ffmpeg/**'
+            - 'scripts/build-ffmpeg.sh'
+            - 'scripts/verify-ffmpeg.sh'
+            - 'scripts/check-ffmpeg-recipe.sh'
+            - '.github/workflows/test-ffmpeg.yml'
+
+env:
+    # Silences a Node20-deprecation warning the JS actions below would
+    # otherwise print, same as the publish workflows.
+    FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+    build:
+        name: ${{ matrix.name }}
+        runs-on: ${{ matrix.os }}
+
+        # Checks out, builds and uploads an artifact — nothing that writes
+        # to the repo or a release, unlike the publish workflows.
+        permissions:
+            contents: read
+
+        strategy:
+            fail-fast: false
+            matrix:
+                # `exe` is what the build script names its output on that
+                # platform; `windows` picks the MSYS2 shell for every step
+                # that has to run in it (see the publish workflow).
+                include:
+                    - { os: ubuntu-latest, name: linux-x64, exe: ffmpeg }
+                    - { os: ubuntu-24.04-arm, name: linux-arm64, exe: ffmpeg }
+                    - { os: macos-26, name: macos-arm64, exe: ffmpeg }
+                    - { os: windows-latest, name: windows-x64, exe: ffmpeg.exe }
+
+        steps:
+            - name: Checkout git repo
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            # Same key as the publish workflow's, so a green run here leaves
+            # the binary ready for the next release on this branch instead of
+            # building the same thing twice. What is deliberately not in that
+            # key is explained there.
+            - name: Restore bundled ffmpeg
+              uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+              with:
+                  path: |
+                      build/ffmpeg/ffmpeg
+                      build/ffmpeg/ffmpeg.exe
+                      build/ffmpeg/.built
+                  key: ffmpeg-${{ matrix.os }}-${{ hashFiles('build/ffmpeg/versions', 'build/ffmpeg/configure-flags', 'scripts/build-ffmpeg.sh', 'Dockerfile') }}
+
+            # mingw64 toolchain and static libraries — the script's Windows
+            # branch expects to be run from here, and a binary built in the
+            # plain MSYS environment would need MSYS2's own runtime beside it.
+            - name: Set up MSYS2
+              if: startsWith(matrix.os, 'windows')
+              uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+              with:
+                  msystem: MINGW64
+                  update: false
+                  install: base-devel curl tar xz
+
+            # Two steps rather than one with an expression in `shell:`:
+            # `shell` takes no context at all, so `${{ matrix.* }}` there is
+            # silently not what it looks like.
+            - name: Build and verify (Windows)
+              if: startsWith(matrix.os, 'windows')
+              shell: msys2 {0}
+              run: ./scripts/build-ffmpeg.sh
+
+            - name: Build and verify
+              if: ${{ !startsWith(matrix.os, 'windows') }}
+              shell: bash
+              run: ./scripts/build-ffmpeg.sh
+
+            # The build script verifies what it produced, and also what it
+            # restored from the cache without building — so this is not the
+            # only check. What it adds is the *shell*: plain `bash` on
+            # Windows is Git Bash, not the MSYS2 shell above, and Git Bash
+            # is where a release actually verifies. `pnpm run publish:win`
+            # runs from PowerShell and reaches the script through `bash`,
+            # finds the build already up to date, and this check is all that
+            # is left of it.
+            #
+            # It is also what makes a change to required-components alone
+            # cheap: that file is not in the cache key above, so the binary
+            # is restored rather than rebuilt and only the contract is
+            # re-checked.
+            - name: Verify the restored binary
+              shell: bash
+              run: ./scripts/verify-ffmpeg.sh build/ffmpeg/${{ matrix.exe }} build/ffmpeg/required-components
+
+            - name: Report what was built
+              shell: bash
+              run: |
+                  ls -la build/ffmpeg/${{ matrix.exe }}
+                  ./build/ffmpeg/${{ matrix.exe }} -hide_banner -version | head -1
+                  ./build/ffmpeg/${{ matrix.exe }} -hide_banner -encoders |
+                      awk '/^[[:space:]]*--/ { entries = 1; next } entries'
+
+            # For trying the actual binary out — a build that passes every
+            # check and still misbehaves on a real file is the case no
+            # automated check covers.
+            - name: Upload binary
+              uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+              with:
+                  name: ffmpeg-${{ matrix.name }}
+                  path: build/ffmpeg/${{ matrix.exe }}
+                  retention-days: 7

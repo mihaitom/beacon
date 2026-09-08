@@ -251,6 +251,60 @@ describe('streamQuality', () => {
         null,
       )
     })
+
+    /** An `.m4a` is the one suffix whose answer does not settle anything: it
+     * is usually AAC, sometimes ALAC, and `canPlayType` can only be asked
+     * about the container, which every browser accepts. No backend
+     * distinguishes them either - Navidrome sends the file extension,
+     * Jellyfin and Plex the container - so a whole ALAC library was fetched
+     * untouched on the default setting and played nothing. */
+    describe('ALAC hiding in an .m4a', () => {
+      /** Chrome and Firefox: the container yes, the codec inside it no. */
+      function browserRefusesAlac() {
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((type: string) =>
+          type.includes('alac') ? '' : 'probably',
+        )
+      }
+
+      it('is repacked to flac on Original rather than played as nothing', () => {
+        browserRefusesAlac()
+
+        expect(plan({ format: 'm4a', bitRate: 900 }, { format: 'original', bitrate: 0 })).toEqual({
+          quality: { format: 'flac', bitrate: 0 },
+          reason: 'browser_unsupported',
+        })
+      })
+
+      it('leaves an ordinary AAC file in the same container alone', () => {
+        // The whole risk of judging this by bitrate: get it wrong and every
+        // AAC track is re-fetched as a much larger FLAC for no reason.
+        browserRefusesAlac()
+
+        expect(
+          plan({ format: 'm4a', bitRate: 256 }, { format: 'original', bitrate: 0 }).reason,
+        ).toBe(null)
+      })
+
+      it('leaves it alone in a browser that does decode ALAC', () => {
+        // Safari plays ALAC natively, so converting there would cost a
+        // transcode and gain nothing.
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('probably')
+
+        expect(
+          plan({ format: 'm4a', bitRate: 900 }, { format: 'original', bitrate: 0 }).reason,
+        ).toBe(null)
+      })
+
+      it('does not guess when the server reported no bitrate', () => {
+        // Same rule the rest of the module follows for a number it does not
+        // have: leave the file alone rather than act on a guess.
+        browserRefusesAlac()
+
+        expect(
+          plan({ format: 'm4a', bitRate: null }, { format: 'original', bitrate: 0 }).reason,
+        ).toBe(null)
+      })
+    })
   })
 
   describe('format lists', () => {

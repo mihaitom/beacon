@@ -69,6 +69,8 @@ from contextlib import suppress
 
 import numpy as np
 
+from .ffmpeg import FFMPEG_BIN
+
 logger = logging.getLogger("connect.audio_analysis")
 
 # Mono PCM at the same rate the Web Audio API's AnalyserNode typically sees
@@ -113,7 +115,7 @@ def _decode_cmd(source_url: str, start_offset: float, gain: float) -> list[str]:
     seek = ["-ss", f"{start_offset:.3f}"] if start_offset > 0.5 else []
     volume = ["-af", f"volume={gain}"] if gain != 1.0 else []
     return [
-        "ffmpeg",
+        FFMPEG_BIN,
         "-hide_banner",
         "-loglevel",
         "error",

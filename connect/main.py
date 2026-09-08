@@ -9,7 +9,6 @@ import asyncio
 import logging
 import os
 import re
-import shutil
 import traceback
 from contextlib import asynccontextmanager
 
@@ -29,6 +28,7 @@ load_dotenv()
 from core.auth import TOKEN as _CONNECT_TOKEN
 from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED
 from core.device_volume import capture_main_loop
+from core.ffmpeg import FFMPEG_BIN, ffmpeg_available
 from core.log_level import TRACE as _TRACE_LEVEL
 from core.log_level import apply as _apply_log_level
 from core.log_level import initial_level as _initial_log_level
@@ -258,10 +258,10 @@ async def lifespan(_: FastAPI):
     logger.info(f"🎵 Stream: http://{local_ip}:{PORT}/stream")
     logger.info(f"🔌 API:    http://{local_ip}:{PORT}/")
 
-    if shutil.which("ffmpeg"):
-        logger.info("✅ ffmpeg found")
+    if ffmpeg_available():
+        logger.info(f"✅ ffmpeg found ({FFMPEG_BIN})")
     else:
-        logger.error("❌ ffmpeg NOT FOUND — streaming will fail!")
+        logger.error(f"❌ ffmpeg NOT FOUND at '{FFMPEG_BIN}' — streaming will fail!")
 
     if not _CONNECT_TOKEN:
         logger.warning("⚠️  CONNECT_TOKEN explicitly set to empty — the Connect API has no auth!")

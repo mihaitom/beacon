@@ -314,7 +314,7 @@ export default {
       reasons: {
         device_limit: "Source is beyond this device's supported quality",
         lossless_container: "Lossless source in a format cast devices don't accept",
-        codec_not_castable: 'Source codec is not reliably supported by cast devices',
+        codec_not_castable: 'This device does not play the source codec',
         codec_unknown: 'Source codec was not recognized',
         probe_failed: 'Source format could not be detected',
         replay_gain: 'ReplayGain is applied, which rules out sending the file as-is',

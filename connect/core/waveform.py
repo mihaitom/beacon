@@ -17,13 +17,15 @@ import logging
 
 import numpy as np
 
+from .ffmpeg import FFMPEG_BIN
+
 logger = logging.getLogger("connect.waveform")
 
 # Mono, low rate — only the amplitude envelope is needed here, not frequency
 # detail, so this can be far cheaper than audio_analysis.py's decode.
 _SAMPLE_RATE = 11025
 _DECODE_CMD = [
-    "ffmpeg",
+    FFMPEG_BIN,
     "-hide_banner",
     "-loglevel",
     "error",

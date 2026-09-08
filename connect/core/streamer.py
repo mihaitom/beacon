@@ -8,6 +8,8 @@ import time
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
 
+from .ffmpeg import FFMPEG_BIN
+
 logger = logging.getLogger("connect.streamer")
 
 # How far ahead of real playback time a stream is allowed to run before
@@ -127,7 +129,7 @@ def http_reconnect_args(url: str) -> list[str]:
 
 
 _FFMPEG_BASE_CMD = [
-    "ffmpeg",
+    FFMPEG_BIN,
     "-hide_banner",
     "-loglevel",
     "warning",  # warning so codec/format issues surface in logs
@@ -144,19 +146,33 @@ _FFMPEG_BASE_CMD = [
 # Requires the matching muxer to be built into ffmpeg — see the Dockerfile's
 # ffmpeg-builder stage for the custom minimal build used in the Docker image.
 #
-# opus deliberately excluded despite ffmpeg supporting an opus-in-ogg copy —
-# confirmed live (2026-08-19) that a real Sonos speaker accepts the URI but
-# produces no audio for it. Sonos' own published format list covers MP3,
-# AAC, FLAC, ALAC, WMA, Ogg **Vorbis**, AIFF and WAV — Opus isn't on it,
-# unlike Chromecast's Default Media Receiver, which does support Opus. Opus
-# sources fall through to the mp3 fallback tier instead (see
-# resolve_output_format()) rather than risking silent playback on Sonos.
+# Opus is in here but on a stricter rule than the rest — see
+# _COPY_NEEDS_DECLARED_SUPPORT.
 _COPY_MUXER_FOR_CODEC = {
     "flac": "flac",
     "mp3": "mp3",
     "aac": "adts",
     "vorbis": "ogg",
+    "opus": "ogg",
 }
+
+# Codecs that may only be copied to a target that has *said* it plays them.
+#
+# For everything else, a target nobody knows anything about is not judged
+# (see _may_copy()) — the four above are what every delivery here declares,
+# and a device that refuses one of them says so and gets the mp3 fallback.
+# Opus is different because the failure is silent: a real Sonos accepts an
+# opus-in-ogg URI and then produces no audio at all (confirmed live
+# 2026-08-19; Sonos' own format list covers Ogg **Vorbis**, not Opus). There
+# is nothing to catch afterwards, so "nothing known about the target" has to
+# mean no.
+#
+# Only Chromecast's Default Media Receiver declares Opus today
+# (delivery/chromecast.py's PLAYABLE_CODECS), and it gets an Opus source
+# untouched. That is the point of the entry: re-encoding a 128kbps Opus file
+# to 192kbps MP3 produces a bigger stream that sounds worse, which is the
+# exact trade the quality ceiling exists to prevent.
+_COPY_NEEDS_DECLARED_SUPPORT = frozenset({"opus"})
 
 _CONTENT_TYPE_FOR_MUXER = {
     "flac": "audio/flac",
@@ -199,7 +215,84 @@ def strip_stream_extension(session_id: str) -> str:
 # (wrong container, or not a format cast devices are expected to accept) —
 # re-encoded losslessly to FLAC instead, so there's still no quality loss
 # even though the bytes on the wire change.
-_LOSSLESS_REENCODE_CODECS = {"alac", "pcm_s16le", "pcm_s24le", "pcm_s16be", "ape"}
+#
+# This has to hold every lossless codec the bundled ffmpeg can decode, not
+# just the common ones: what is missing here doesn't fail, it silently drops
+# to the mp3-192k fallback at the bottom of resolve_output_format(), so a
+# lossless source quietly casts as lossy and the only visible sign is the
+# stream-info panel saying "codec_unknown". The PCM entries are every depth
+# and byte order a WAV or AIFF can carry, matching the decoder list in
+# build/ffmpeg/required-components — a 32-bit WAV is not more exotic than a
+# 24-bit one.
+#
+# DSD is in here too, but only because _dsd_sample_rate_cap() below gives it
+# a rate anything can play first — see that constant.
+_LOSSLESS_REENCODE_CODECS = {
+    "alac",
+    "ape",
+    "wavpack",
+    "tta",
+    "shorten",
+    "wmalossless",
+    "pcm_s8",
+    "pcm_u8",
+    "pcm_s16le",
+    "pcm_s16be",
+    "pcm_s24le",
+    "pcm_s24be",
+    "pcm_s32le",
+    "pcm_s32be",
+    "pcm_f32le",
+    "pcm_f32be",
+    "pcm_f64le",
+    "pcm_f64be",
+    "dsd_lsbf",
+    "dsd_msbf",
+    "dsd_lsbf_planar",
+    "dsd_msbf_planar",
+}
+
+# DSD (.dsf/.dff) is one bit at 2.8MHz and upwards, and ffmpeg hands it on as
+# PCM at an eighth of that: 352800 Hz for DSD64, 705600 for DSD128 (measured
+# against a real DSF file). Nothing here plays a FLAC at those rates — cast
+# targets declare 48 or 96kHz, and a browser's own decoder stops well short
+# too — so a DSD source that kept its decoded rate would be a lossless stream
+# nobody can hear.
+#
+# 88200 Hz because that is what a DSD player picks for the same reason: an
+# exact quarter of DSD64's decoded rate, four times the audible band, and low
+# enough to leave behind the ultrasonic noise DSD's own one-bit shaping puts
+# up there — that noise is the format's, not the music's. The result is still
+# lossless in every sense a listener can check, and it is a FLAC every target
+# accepts instead of an MP3 re-encode.
+#
+# A device's own limit still wins where it is lower; this only decides what
+# happens when nothing else has capped the rate.
+_DSD_CODECS = frozenset({"dsd_lsbf", "dsd_msbf", "dsd_lsbf_planar", "dsd_msbf_planar"})
+_DSD_PCM_SAMPLE_RATE = 88200
+
+
+def dsd_sample_rate_cap(codec: str | None, max_sample_rate: int | None) -> int | None:
+    """`max_sample_rate` with DSD's own PCM ceiling folded in, unchanged for
+    every other codec — see _DSD_PCM_SAMPLE_RATE."""
+    if codec not in _DSD_CODECS:
+        return max_sample_rate
+    if max_sample_rate is None:
+        return _DSD_PCM_SAMPLE_RATE
+    return min(max_sample_rate, _DSD_PCM_SAMPLE_RATE)
+
+
+def dsd_resample_args(info: "SourceInfo | None") -> list[str]:
+    """The `-ar` arguments a DSD source needs on a path that has no device to
+    be limited by — routes/local_stream.py's lossless tier, which otherwise
+    hands the browser the source rate exactly as it came. [] for everything
+    else, including a DSD source already at or below the cap."""
+    if info is None or info.codec not in _DSD_CODECS:
+        return []
+    if info.sample_rate is not None and info.sample_rate <= _DSD_PCM_SAMPLE_RATE:
+        return []
+    return ["-ar", str(_DSD_PCM_SAMPLE_RATE)]
+
 
 _FALLBACK_BITRATE_KBPS = 192
 _FALLBACK_ARGS = [
@@ -515,7 +608,7 @@ REASON_DEVICE_LIMIT = "device_limit"  # source exceeds the target's sample rate/
 REASON_QUALITY_LIMIT = "quality_limit"  # source exceeds the quality ceiling the user set
 REASON_REPLAY_GAIN = "replay_gain"  # copying rules out the volume filter ReplayGain needs
 REASON_LOSSLESS_CONTAINER = "lossless_container"  # lossless, but not in a castable container
-REASON_CODEC_NOT_CASTABLE = "codec_not_castable"  # decodable, deliberately not copied (opus)
+REASON_CODEC_NOT_CASTABLE = "codec_not_castable"  # decodable, but this target cannot play it
 REASON_CODEC_UNKNOWN = "codec_unknown"  # nothing recognized it
 # Radio only: the relay's own repertoire is MP3 and AAC (see
 # core/radio_relay.py), so a station arriving as anything else is re-encoded
@@ -598,7 +691,7 @@ async def _probe_source(url: str) -> SourceInfo | None:
     """
     try:
         proc = await asyncio.create_subprocess_exec(
-            "ffmpeg",
+            FFMPEG_BIN,
             "-hide_banner",
             "-i",
             url,
@@ -678,6 +771,18 @@ def _resample_plan(
         args += ["-sample_fmt", "s16"]
         target_bit_depth = 16
     return args, target_sample_rate, target_bit_depth
+
+
+def _may_copy(codec: str, device_codecs: frozenset[str] | None) -> bool:
+    """Whether `codec` may be stream-copied to this target.
+
+    An unknown target is not judged — same rule the rest of this module
+    follows for something it does not know — except for the codecs in
+    _COPY_NEEDS_DECLARED_SUPPORT, where being wrong is silence rather than
+    an error and so has to be ruled out instead."""
+    if codec in _COPY_NEEDS_DECLARED_SUPPORT:
+        return device_codecs is not None and codec in device_codecs
+    return device_codecs is None or codec in device_codecs
 
 
 def _plays_flac(device_codecs: frozenset[str] | None) -> bool:
@@ -824,6 +929,10 @@ async def resolve_output_format(
     if info is None:
         return _fallback(REASON_PROBE_FAILED)
     codec = info.codec
+    # Before the plan below rather than inside it: this is a property of the
+    # source format, not of any device, and every tier past this point has to
+    # see the same ceiling.
+    max_sample_rate = dsd_sample_rate_cap(codec, max_sample_rate)
     resample_args, target_rate, target_depth = _resample_plan(info, max_sample_rate, max_bit_depth)
 
     if _exceeds_quality_ceiling(info, max_lossy_format, max_lossy_bitrate_kbps):
@@ -840,10 +949,14 @@ async def resolve_output_format(
     # question, which is how an AAC source reached an AirPlay device it
     # has never been able to decode (see AirPlayDelivery.PLAYABLE_CODECS)
     # — copied straight through, announced correctly, and silent.
-    if muxer and device_codecs is not None and codec not in device_codecs:
+    if muxer and not _may_copy(codec, device_codecs):
+        plays = (
+            "nothing is known about this target"
+            if device_codecs is None
+            else (f"this target plays only {sorted(device_codecs)}")
+        )
         logger.info(
-            f"[ffmpeg] format probe: '{codec}' could be copied, but this target "
-            f"plays only {sorted(device_codecs)} — using mp3 fallback"
+            f"[ffmpeg] format probe: '{codec}' could be copied, but {plays} — using mp3 fallback"
         )
         return _fallback(REASON_CODEC_NOT_CASTABLE, info.duration)
     if muxer and resample_args and not _plays_flac(device_codecs):
@@ -918,20 +1031,12 @@ async def resolve_output_format(
             transcode_reason=(REASON_DEVICE_LIMIT if resample_args else REASON_LOSSLESS_CONTAINER),
         )
 
-    # "opus" is the codec this backend never copies to anything (see
-    # _COPY_MUXER_FOR_CODEC); everything else reaching here was simply not
-    # recognized. A source the *target* cannot play never gets this far —
-    # it is answered above, where the device's own codec list is known.
-    not_castable = codec == "opus"
-    reason = (
-        "not broadly device-compatible (see _COPY_MUXER_FOR_CODEC's comment)"
-        if not_castable
-        else "unrecognized codec"
-    )
-    logger.info(f"[ffmpeg] format probe: {reason} '{codec}', using mp3 fallback")
-    return _fallback(
-        REASON_CODEC_NOT_CASTABLE if not_castable else REASON_CODEC_UNKNOWN, info.duration
-    )
+    # Everything reaching here is a codec no tier above recognised: not
+    # copyable, not lossless. A source a *target* cannot play never gets this
+    # far — that is answered at the copy guard, where the device's own codec
+    # list is known.
+    logger.info(f"[ffmpeg] format probe: unrecognized codec '{codec}', using mp3 fallback")
+    return _fallback(REASON_CODEC_UNKNOWN, info.duration)
 
 
 async def stream_tracks(

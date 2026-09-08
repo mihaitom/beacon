@@ -183,6 +183,13 @@ an entry. Keep those docs anonymous: no IPs, no real speaker or room names
   HTTP caching here.
 - **Waveforms are deliberately never cached** - decoding takes under a
   second, and a cache would be a new thing that can go stale.
+- **The bundled ffmpeg is built from a hand-written component list**, and
+  `./configure` ignores a name it doesn't know as long as something else in
+  the same comma list matched - so a forgotten format produces a build that
+  succeeds and a track that won't play. Adding a format to the app means
+  adding it to `build/ffmpeg/required-components` first; the backend suite
+  and `scripts/verify-ffmpeg.sh` then fail until the recipe catches up. Read
+  `build/ffmpeg/README.md` before touching anything in there.
 - **Navidrome sends Subsonic clients a synthesised file path**
   (`Artist/Album/01-03 - Title.mp3`), not the real one, unless that player
   has "Report Real Path" enabled. Beacon shows what the server sent; that is

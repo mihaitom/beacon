@@ -30,31 +30,13 @@ RUN pnpm run build:web
 
 # --- Build minimal ffmpeg (audio-only, statically linked)
 #
-# connect/core/streamer.py only ever transcodes audio — video is always
-# explicitly disabled (-vn). Alpine's `ffmpeg` apk package pulls in ~130MB
-# of codecs/libraries never touched here (AV1/H.264/H.265 encoders, Vulkan
-# shader compilation, X11/Wayland/SDL, Blu-ray, webcam capture...). Building
-# just what's needed — decode for common library formats, HTTPS input, and
-# the encoders below — gets that down to ~8MB with zero runtime dependencies
-# (fully static binary, just COPY it into the final stage below).
-#
-# The decoder list is the other half of the same rule, from the input side:
-# a library holds whatever the person put in it. The PCM entries are all of
-# the depths a WAV or AIFF can carry, not just 16-bit — this app reads and
-# displays a source's real bit depth (see core/streamer.py's own note on
-# probing it), so 24- and 32-bit files are expected rather than exotic, and
-# a missing decoder there is a track that simply refuses to play.
-#
-# The encoder list has to cover every format the app can actually ask for,
-# which is not the same as every format it usually uses. `aac` is in it
-# because Beacon offers AAC as a cast quality (streamQuality.ts's
-# CAST_FORMATS, reached through lossy_encode_args()); without it that
-# setting failed here with "Unknown encoder 'aac'" while working fine on the
-# desktop build, which uses the system ffmpeg rather than this one. Nothing
-# checks at startup which encoders exist, so an option offered in Settings
-# and an encoder missing here is a combination that fails at the moment the
-# user casts. Adding a format to CAST_FORMATS or LOCAL_FORMATS means adding
-# its encoder (and muxer) here too.
+# A distribution ffmpeg brings ~130MB of codecs and libraries nothing here
+# ever touches (AV1/H.264/H.265 encoders, Vulkan shader compilation,
+# X11/Wayland/SDL, Blu-ray, webcam capture). Building only what connect
+# actually reaches gets that to ~10MB with no runtime dependencies at all.
+# Which formats that is, and why each one is on the list, is documented in
+# build/ffmpeg/configure-flags — read that before changing a format
+# anywhere in the app.
 FROM alpine:3.24 AS ffmpeg-builder
 
 RUN apk add --no-cache \
@@ -80,15 +62,22 @@ WORKDIR /build
 # modules that a static link leaves out, i.e. an ffmpeg that cannot resolve
 # a hostname, and ffmpeg's input here is http(s) URLs. Prebuilt images
 # (mwader/static-ffmpeg, jrottenberg/ffmpeg) solve it too, at ~118MB
-# compressed against the ~8MB this produces, and with every video codec
+# compressed against the ~10MB this produces, and with every video codec
 # back in.
 #
 # --prefix=/usr/local is enough for ffmpeg's configure to find it: Alpine's
 # pkg-config already searches /usr/local/lib/pkgconfig first.
-RUN curl -fsSL -4 --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 10 \
-        -o opus-1.6.1.tar.gz https://downloads.xiph.org/releases/opus/opus-1.6.1.tar.gz \
-    && tar xf opus-1.6.1.tar.gz \
-    && cd opus-1.6.1 \
+#
+# Versions and configure flags come from build/ffmpeg/, shared with the
+# desktop app's own build of the same thing (scripts/build-ffmpeg.sh) so the
+# two can't drift apart — see build/ffmpeg/README.md.
+COPY build/ffmpeg/versions build/ffmpeg/configure-flags /build/ffmpeg/
+
+RUN . /build/ffmpeg/versions \
+    && curl -fsSL -4 --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 10 \
+        -o opus.tar.gz "https://downloads.xiph.org/releases/opus/opus-$OPUS_VERSION.tar.gz" \
+    && tar xf opus.tar.gz \
+    && cd "opus-$OPUS_VERSION" \
     && ./configure --disable-shared --enable-static --disable-doc --disable-extra-programs \
         --prefix=/usr/local \
     && make -j$(nproc) \
@@ -97,64 +86,44 @@ RUN curl -fsSL -4 --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout
 # ffmpeg.org's own server is occasionally flaky under CI load — retry with
 # backoff, and force IPv4 to sidestep the SSL handshake failures observed
 # over broken IPv6 paths on some CI/hosting networks.
-RUN curl -fsSL -4 --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 10 \
-        -o ffmpeg-8.1.2.tar.xz https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz \
-    && tar xf ffmpeg-8.1.2.tar.xz
+RUN . /build/ffmpeg/versions \
+    && curl -fsSL -4 --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 10 \
+        -o ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" \
+    && tar xf ffmpeg.tar.xz \
+    && mv "ffmpeg-$FFMPEG_VERSION" ffmpeg-src
 
-WORKDIR /build/ffmpeg-8.1.2
+WORKDIR /build/ffmpeg-src
 
-# core/audio_analysis.py's live FFT visualizer and core/waveform.py's
-# seek-bar peaks both decode to raw PCM via ffmpeg's "-f s16le" — which
-# needs BOTH the pcm_s16le *muxer* (the container/output-format) AND the
-# pcm_s16le *encoder* (ffmpeg still needs a registered encoder component to
-# write into that container, even though "encoding" raw PCM is really just
-# a passthrough) enabled below, or ffmpeg rejects it: missing the muxer is
-# "Unknown output format", missing the encoder is "Automatic encoder
-# selection failed ... probably disabled". Note the *configure-time* muxer
-# name has a pcm_ prefix the runtime `-f`/`-muxers` name doesn't —
-# `./configure --list-muxers` lists it as pcm_s16le, `ffmpeg -muxers` shows
-# the same thing as just "s16le" — and configure silently ignores an
-# unrecognized name instead of erroring, so getting this wrong doesn't fail
-# the build, it just quietly omits the muxer. Without both, both features
-# silently produce nothing in a build using this Dockerfile, even though
-# the same commands work fine against a system ffmpeg (which has every
-# muxer/encoder built in) — that's the whole reason this was easy to miss
-# locally and only show up once actually deployed.
-# core/streamer.py's resolve_output_format() prefers stream-copying a
-# track's source codec straight through over always re-encoding to MP3 —
-# flac/mp3/aac/vorbis sources each need their matching *muxer* below (copy
-# needs an output container, not an encoder). Opus is deliberately NOT in
-# that copy tier despite ffmpeg supporting an opus-in-ogg copy — a real
-# Sonos speaker accepts the URI but produces no audio for it (Sonos' own
-# published format list has no Opus entry, only Ogg Vorbis) — so the ogg
-# muxer below exists for Vorbis only. flac is also the universal re-encode
-# target for other lossless sources (alac, WAV/AIFF PCM, ape), which — same
-# pcm_s16le gotcha as above — needs both the flac muxer AND the flac
-# encoder, not just one. adts (AAC) and ogg (Vorbis) are copy-only here, so
-# they need only their muxer, no encoder.
+# Before the ten minutes of compiling: every name in the recipe has to be
+# one this ffmpeg version knows, or configure drops it without a word (see
+# scripts/check-ffmpeg-recipe.sh — this is the check that would have caught
+# `--enable-parser=mp3`).
+COPY scripts/check-ffmpeg-recipe.sh /build/
+RUN sh /build/check-ffmpeg-recipe.sh /build/ffmpeg-src /build/ffmpeg/configure-flags
+
+# What goes into this build and why is in build/ffmpeg/configure-flags,
+# which the desktop app's own build reads too. Only the two flags that
+# depend on *this* build being an Alpine/musl one are here: linking fully
+# static (which is what makes the result a single file with no runtime
+# dependencies to copy into the final stage) and telling pkg-config to
+# report static link lines to match.
 RUN ./configure \
-    --disable-everything \
-    --disable-doc \
-    --disable-debug \
-    --disable-avdevice \
-    --disable-swscale \
-    --enable-protocol=file,http,https,tls,tcp,udp,pipe \
-    --enable-openssl \
-    --enable-demuxer=mp3,flac,ogg,wav,aac,mov,matroska,asf,ape,aiff \
-    --enable-decoder=mp3,mp3float,flac,vorbis,opus,aac,aac_latm,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_u8,pcm_f32le,pcm_f64le,alac,wmav1,wmav2,ape \
-    --enable-parser=mp3,aac,flac,opus,vorbis \
-    --enable-encoder=aac,libmp3lame,libopus,pcm_s16le,flac \
-    --enable-muxer=mp3,pcm_s16le,flac,adts,ogg \
-    --enable-libmp3lame \
-    --enable-libopus \
-    --enable-swresample \
-    --enable-filter=aresample,anull,aformat \
-    --disable-shared \
-    --enable-static \
-    --extra-ldflags="-static" \
-    --pkg-config-flags="--static" \
+        $(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' /build/ffmpeg/configure-flags) \
+        --extra-ldflags="-static" \
+        --pkg-config-flags="--static" \
     && make -j$(nproc) \
     && make install
+
+# A build that succeeded is not yet a build that contains what connect asks
+# for: configure warns about a name it doesn't know only when *nothing* else
+# in the same comma list matched, so one wrong entry among a dozen right ones
+# passes silently and surfaces as a track that won't play. Every such miss so
+# far has been found in production. Copied after the build rather than
+# alongside the flags so that editing the contract re-runs the check without
+# rebuilding ffmpeg itself.
+COPY build/ffmpeg/required-components /build/ffmpeg/
+COPY scripts/verify-ffmpeg.sh /build/
+RUN sh /build/verify-ffmpeg.sh /usr/local/bin/ffmpeg /build/ffmpeg/required-components
 
 
 # --- Build Python venv

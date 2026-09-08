@@ -76,6 +76,7 @@ import httpx
 
 from lyrics.shared import USER_AGENT
 
+from .ffmpeg import FFMPEG_BIN
 from .icy_metadata import IcyDemuxer, parse_bitrate, parse_codec
 from .streamer import _READRATE_ARGS, REASON_QUALITY_LIMIT, REASON_RELAY_FORMAT_LIMIT
 
@@ -684,7 +685,7 @@ class RadioRelay:
 
     async def _start_ffmpeg(self) -> asyncio.subprocess.Process:
         cmd = [
-            "ffmpeg",
+            FFMPEG_BIN,
             "-hide_banner",
             "-loglevel",
             "warning",

@@ -37,6 +37,11 @@ connect/coverage.xml
 connect/build
 connect/dist
 
+# Built by scripts/build-ffmpeg.sh, packaged into the desktop app
+build/ffmpeg/ffmpeg
+build/ffmpeg/ffmpeg.exe
+build/ffmpeg/.built
+
 # docker-compose.yaml's persistent volume mount (AirPlay pairing credentials)
 /data
 

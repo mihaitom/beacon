@@ -56,6 +56,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 
+from core.ffmpeg import FFMPEG_BIN
 from core.icy_metadata import DEVICE_METAINT, IcyMuxer
 from core.session import SessionState, build_status_dict, require_authenticated_session
 from core.state import TEST_TONE_TRACK_ID, stream_url, test_tone_url
@@ -276,7 +277,7 @@ def _station_cmd(source: str) -> list[str]:
     dropped and reconnects, which would restart the audio at an unrelated
     moment mid-measurement."""
     return [
-        "ffmpeg",
+        FFMPEG_BIN,
         "-hide_banner",
         "-loglevel",
         "error",

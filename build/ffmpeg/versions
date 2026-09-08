@@ -1,0 +1,6 @@
+# Sourced by both ffmpeg builds — the Dockerfile's ffmpeg-builder stage and
+# scripts/build-ffmpeg.sh for the desktop app. One place, so the container
+# and the desktop app can't end up on ffmpeg versions that behave
+# differently (see build/ffmpeg/README.md).
+FFMPEG_VERSION=8.1.2
+OPUS_VERSION=1.6.1

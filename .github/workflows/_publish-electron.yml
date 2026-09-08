@@ -84,6 +84,63 @@ jobs:
             - name: Install dependencies
               run: pnpm install
 
+            # The bundled ffmpeg (build/ffmpeg/README.md). Keyed on what
+            # decides the binary's contents, and deliberately not on
+            # required-components or verify-ffmpeg.sh: those decide whether
+            # it is acceptable, and are checked against whatever this step
+            # ends up with either way — the build script runs that check on
+            # its up-to-date path too, so a restored binary is checked as
+            # thoroughly as a fresh one. Keying on them would only turn a
+            # one-line contract edit into a 10-minute rebuild per platform.
+            - name: Restore bundled ffmpeg
+              uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+              with:
+                  path: |
+                      build/ffmpeg/ffmpeg
+                      build/ffmpeg/ffmpeg.exe
+                      build/ffmpeg/.built
+                  key: ffmpeg-${{ matrix.os }}-${{ hashFiles('build/ffmpeg/versions', 'build/ffmpeg/configure-flags', 'scripts/build-ffmpeg.sh', 'Dockerfile') }}
+
+            # Windows builds it in MSYS2 (mingw64 toolchain and static
+            # libraries); the script's own Windows branch expects to be run
+            # from there, and a binary built in the plain MSYS environment
+            # would need MSYS2's own runtime beside it. Linux and macOS run
+            # it in the job's own shell — see build/ffmpeg/README.md for what
+            # each platform needs.
+            #
+            # Not redundant with the `publish:*` scripts building ffmpeg
+            # themselves, which is worth knowing before dropping it as such:
+            # those run from PowerShell and reach the script through Git
+            # Bash, where `uname -s` says MINGW64 and it takes this same
+            # Windows branch — which installs its toolchain with `pacman`,
+            # and Git Bash has none. It survives that only because this step
+            # has already built and stamped the binary.
+            - name: Set up MSYS2 (Windows ffmpeg build)
+              if: startsWith(matrix.os, 'windows')
+              uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+              with:
+                  msystem: MINGW64
+                  update: false
+                  install: base-devel curl tar xz
+
+            # Builds the binary, and fails the release if what came out is
+            # missing anything the app needs (scripts/verify-ffmpeg.sh, which
+            # the build script runs itself — including on a cache hit, where
+            # nothing is rebuilt).
+            #
+            # Two steps rather than one with an expression in `shell:`:
+            # `shell` is one of the few fields that take no context at all,
+            # so `${{ matrix.* }}` there is silently not what it looks like.
+            - name: Build bundled ffmpeg (Windows)
+              if: startsWith(matrix.os, 'windows')
+              shell: msys2 {0}
+              run: ./scripts/build-ffmpeg.sh
+
+            - name: Build bundled ffmpeg
+              if: ${{ !startsWith(matrix.os, 'windows') }}
+              shell: bash
+              run: ./scripts/build-ffmpeg.sh
+
             - name: Build and Publish releases
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

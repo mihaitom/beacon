@@ -1,0 +1,116 @@
+# ffmpeg configure flags, shared by every build of it Beacon ships — the
+# Dockerfile's ffmpeg-builder stage and scripts/build-ffmpeg.sh. Comments and
+# blank lines are stripped, everything else is passed to ./configure as-is.
+# Anything platform-specific (how to link, where to find libraries) stays with
+# the build that needs it; only what the app itself requires lives here.
+#
+# connect only ever transcodes audio — video is always explicitly disabled
+# (-vn). Starting from nothing and adding back what is actually reachable
+# gets a ~130MB distribution ffmpeg down to ~10MB with no runtime
+# dependencies at all.
+#
+# **A name in this file that ffmpeg doesn't know is not an error.** configure
+# builds one alternation out of a whole comma list and only warns when
+# *nothing* in it matched, so four correct names hide a fifth that is wrong
+# and the build succeeds with a component quietly missing. It has cost this
+# project several releases (a missing `volume` filter meant every track with
+# ReplayGain failed in the Docker image; `--enable-parser=mp3` did nothing
+# for a year because the parser is called `mpegaudio`). That is what
+# build/ffmpeg/required-components and scripts/verify-ffmpeg.sh exist for:
+# every build is checked against what the code can actually ask for, and a
+# name that fell through fails the build instead of a listener's track.
+--disable-everything
+--disable-doc
+--disable-debug
+--disable-avdevice
+--disable-swscale
+
+# Input is http(s) URLs (a media server's stream URL, or a radio station's),
+# plus the local file paths the test tone and analysis paths use and the
+# pipe the radio relay feeds a station's bytes through. tcp is what http
+# rides on, tls what https adds.
+#
+# udp is in the list for the linker, not for us: nothing here ever speaks
+# it, but ffmpeg's TLS code carries DTLS with it and calls into the udp
+# protocol unconditionally, so dropping it fails the build outright with
+# "undefined reference to ff_udp_get_last_recv_addr". Tried and measured,
+# 2026-09-08 — it is not a leftover.
+--enable-protocol=file,http,https,tls,tcp,udp,pipe
+--enable-openssl
+
+# The demuxer and decoder lists are the library side of the rule: a library
+# holds whatever the person put in it, and every format the three media
+# servers index has to at least be decodable — the app's own "Original"
+# setting hands connect anything the browser can't play (see
+# streamQuality.ts's LOSSLESS set) expecting a lossless FLAC re-wrap back.
+# A missing decoder there is a track that simply refuses to play.
+#
+# The two lists have to be read together, and their names differ from what
+# `ffmpeg -demuxers` prints for two of them: Shorten's demuxer configures as
+# `shorten` and reports as `shn`, and DSDIFF (.dff) has no demuxer of its
+# own — it is part of `iff`. required-components carries the reported names.
+--enable-demuxer=mp3,flac,ogg,wav,aac,mov,matroska,asf,ape,aiff,wv,dsf,iff,mpc,mpc8,tta,shorten,loas
+--enable-decoder=mp3,mp3float,mp2,mp2float,flac,vorbis,opus,aac,aac_latm,alac,ape,wavpack,tta,shorten,mpc7,mpc8,wmav1,wmav2,wmapro,wmalossless,dsd_lsbf,dsd_msbf,dsd_lsbf_planar,dsd_msbf_planar,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_s32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be
+
+# The PCM entries above are every depth *and byte order* a WAV or AIFF can
+# carry. AIFF is big-endian, which is the half that was missing: a 32-bit
+# AIFF probed perfectly and then failed at every step after it with "no
+# decoder found for pcm_s32be", because s16be and s24be were listed and
+# s32be was not.
+#
+# WMA needs three decoders for what looks like one format — wmav1/wmav2 for
+# ordinary WMA, wmapro and wmalossless for the other two the asf demuxer
+# happily hands over.
+#
+# `mpegaudio` covers MPEG layers 1-3, so it is the parser mp3 needs; `mp3`
+# is not a parser name at all. aac_latm is paired with the `loas` demuxer:
+# without it the decoder is unreachable and an AAC+ station in LOAS framing
+# has nothing to open it.
+--enable-parser=mpegaudio,aac,aac_latm,flac,opus,vorbis
+
+# The encoder list has to cover every format the app can actually ask for,
+# which is not the same as every format it usually uses. `aac` is in it
+# because Beacon offers AAC as a cast quality (streamQuality.ts's
+# CAST_FORMATS, reached through lossy_encode_args()); without it that setting
+# failed with "Unknown encoder 'aac'" in the Docker image while working fine
+# on a desktop install with a distribution ffmpeg. Adding a format to
+# CAST_FORMATS or LOCAL_FORMATS means adding its encoder (and muxer) here
+# too — and to required-components, which is what turns forgetting into a
+# failed build.
+#
+# core/audio_analysis.py's live FFT visualizer and core/waveform.py's
+# seek-bar peaks both decode to raw PCM via "-f s16le", which needs BOTH the
+# pcm_s16le muxer and the pcm_s16le encoder — ffmpeg needs a registered
+# encoder component to write into that container even though "encoding" raw
+# PCM is a passthrough. Missing the muxer is "Unknown output format", missing
+# the encoder is "Automatic encoder selection failed ... probably disabled".
+# The configure-time muxer name carries a pcm_ prefix the runtime `-f` name
+# doesn't, which is the second name in here that does not match what the
+# binary reports.
+#
+# The muxers are also what the copy tier needs: resolve_output_format()
+# prefers stream-copying a source codec straight through, and a copy needs an
+# output container rather than an encoder. Opus is deliberately not in that
+# tier despite ffmpeg supporting an opus-in-ogg copy — a real Sonos accepts
+# the URI and produces no audio for it — so the ogg muxer is here for Vorbis.
+# flac is also the universal re-encode target for other lossless sources
+# (alac, WAV/AIFF PCM, ape, WavPack, DSD, ...) and needs both its muxer and
+# its encoder; adts (AAC) and ogg (Vorbis) are copy-only and need only the
+# muxer.
+--enable-encoder=aac,libmp3lame,libopus,pcm_s16le,flac
+--enable-muxer=mp3,pcm_s16le,flac,adts,ogg
+--enable-libmp3lame
+--enable-libopus
+
+# Resampling for the device sample-rate ceilings, and every filter connect's
+# own command lines can name. `volume` is the ReplayGain one (streamer.py and
+# audio_analysis.py both build "-af volume=<gain>"), and its absence is what
+# a missing filter looks like: the build succeeds and playback fails at the
+# moment someone has ReplayGain on, with "Error parsing filterchain
+# 'volume=0.9'".
+--enable-swresample
+--enable-filter=aresample,anull,aformat,volume
+
+# One self-contained executable to copy into an image or an app bundle.
+--disable-shared
+--enable-static

@@ -6,8 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The desktop app now brings its own ffmpeg. Installing it separately is no longer necessary on Windows, macOS or Linux, and Beacon no longer depends on whichever version happened to be on the system. An `FFMPEG_PATH` in the environment still wins, for anyone who prefers their own
+- An Opus track is now sent to a Chromecast untouched instead of being converted to MP3, which made the stream bigger and the sound worse. Other speakers still get MP3 for it: they accept an Opus stream and then play silence rather than refusing it
+
 ### Fixed
 
+- Playing or casting with ReplayGain enabled failed outright in the Docker image, with nothing but an ffmpeg error in the log. Desktop installs were never affected
+- An ALAC library played nothing at all in Chrome and Firefox on the default quality setting. Those tracks are now converted on the way to the player, losslessly, so nothing is given up for it
+- Tracks in a number of formats did not play at all in the Docker image: WavPack, DSD, Musepack, TTA, Shorten, WMA Pro, WMA Lossless, MP2, and AIFF at 32 bit or in floating point. All of them now play and cast
+- A 24-bit AIFF, a 32-bit or floating-point WAV and a few other lossless formats were converted to MP3 on the way to a speaker instead of being sent losslessly
 - A station that stops arriving for a moment no longer keeps the buffering bar up once it is audibly playing again
 - A station now picks itself back up after the computer has been asleep or the app was left alone for a while, instead of being reported as lost or sitting silent until you press play
 - Network speakers now show up in the device list more reliably: the search is repeated a few times, so a single lost answer no longer hides a speaker that is right there

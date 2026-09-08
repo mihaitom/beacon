@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from core.auth import require_token
 from core.claims import claims
+from core.ffmpeg import ffmpeg_available
 from core.radio_position import RadioPositionTracker
 from core.session import (
     SessionState,
@@ -193,10 +194,8 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
 
 @router.get("/health")
 async def health(session: SessionState = Depends(get_session)):
-    import shutil
-
     return {
-        "ffmpeg": bool(shutil.which("ffmpeg")),
+        "ffmpeg": ffmpeg_available(),
         "navidrome_configured": bool(session.media.base_url),
         # Reachable pre-login (get_session doesn't require authenticated=True)
         # — ServerLoginView.vue checks this before rendering, so a

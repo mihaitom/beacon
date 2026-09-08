@@ -17,9 +17,14 @@ connect/.pytest_cache
 connect/.ruff_cache
 
 # Local build/packaging output — never needed to build the Docker image
-# itself.
+# itself. build/ffmpeg is the exception: its recipe is copied in and built
+# from (see build/ffmpeg/README.md), only the desktop app's built binary
+# next to it is not.
 dist
 out
+build/ffmpeg/ffmpeg
+build/ffmpeg/ffmpeg.exe
+build/ffmpeg/.built
 
 # Electron-desktop-only packaging/config — the Docker image is web-only.
 electron-builder.yml

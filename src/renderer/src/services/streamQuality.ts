@@ -258,9 +258,10 @@ export function bitrateFor(format: StreamFormat, current: number): number {
  * it meant a Vorbis track was fetched untouched and played nothing.
  *
  * `m4a` is here because it is overwhelmingly AAC, but it can also hold
- * ALAC, which Chrome and Firefox refuse. That case isn't distinguishable
- * from the suffix — it is caught by the bitrate rule instead, since ALAC's
- * is far above any ceiling on offer.
+ * ALAC, which Chrome and Firefox refuse. A yes for that entry is therefore
+ * not the whole answer — see hidesUndecodableAlac(), which is what the
+ * bitrate rule below was once assumed to cover and did not, because it only
+ * runs when a limit is set and "Original" sets none.
  */
 const SOURCE_MEDIA_TYPE: Record<string, string | undefined> = {
   mp3: 'audio/mpeg',
@@ -274,16 +275,12 @@ const SOURCE_MEDIA_TYPE: Record<string, string | undefined> = {
   aac: 'audio/aac',
 }
 
-/** Whether this browser plays a source with that suffix.
+/** Whether this browser decodes `type`.
  *
- * A suffix nothing here knows about is "no" — it is exactly the ALAC/APE/
- * WavPack case local transcoding was added for. An unusable answer (jsdom,
- * or anything else that says nothing to `audio/mpeg` either) falls back to
- * the fixed list this used to be, so nothing starts converting everything
- * because the question could not be asked. */
-function browserPlays(suffix: string): boolean {
-  const type = SOURCE_MEDIA_TYPE[suffix]
-  if (!type) return false
+ * An unusable answer (jsdom, or anything else that says nothing to
+ * `audio/mpeg` either) is treated as yes, so nothing starts converting
+ * everything because the question could not be asked. */
+function browserDecodes(type: string): boolean {
   try {
     const probe = document.createElement('audio')
     if (!probe.canPlayType?.(CAN_PLAY_TYPE.mp3)) return true
@@ -291,6 +288,68 @@ function browserPlays(suffix: string): boolean {
   } catch {
     return true
   }
+}
+
+/** Whether this browser plays a source with that suffix.
+ *
+ * A suffix nothing here knows about is "no" — it is exactly the APE/
+ * WavPack case local transcoding was added for. */
+function browserPlays(suffix: string): boolean {
+  const type = SOURCE_MEDIA_TYPE[suffix]
+  return type ? browserDecodes(type) : false
+}
+
+/**
+ * Suffixes that do not say what is inside them. `.m4a` is overwhelmingly
+ * AAC but is also where ALAC lives, and `canPlayType` can only be asked
+ * about the container, which every browser answers yes to — so the check
+ * above passes and the file then plays nothing.
+ *
+ * The suffix cannot resolve this on its own on any backend: Navidrome sends
+ * the file extension, and Jellyfin and Plex both send the *container*
+ * (`song["suffix"] = source["Container"]` in connect's bridges). None of
+ * them ever says "alac".
+ */
+const AMBIGUOUS_SUFFIXES = new Set(['m4a', 'mp4'])
+
+/** The media type to ask about ALAC specifically. Safari decodes it,
+ * Chrome and Firefox refuse it. */
+const ALAC_MEDIA_TYPE = 'audio/mp4; codecs="alac"'
+
+/**
+ * Above this many kbps, an `.m4a` is not the AAC its container suggests.
+ *
+ * AAC-LC tops out around 320 in practice — which is also the highest number
+ * any setting here offers — while ALAC of actual music runs 600-1000. 400
+ * leaves room for an unusually high AAC and still catches essentially every
+ * real ALAC file.
+ *
+ * A threshold is acceptable here only because both ways of being wrong are
+ * mild. Too low and an ordinary AAC track is repacked to FLAC: the right
+ * audio, a bigger stream than it needed. Too high and a very quiet ALAC
+ * track stays exactly as it is today, which is silent. Neither introduces a
+ * failure that is not already there.
+ */
+const AMBIGUOUS_SUFFIX_MAX_LOSSY_KBPS = 400
+
+/**
+ * Whether an ambiguous suffix is hiding lossless audio this browser cannot
+ * decode — in practice ALAC in an `.m4a`, which was silent on the default
+ * "Original" setting because every check upstream of this one said yes.
+ *
+ * The browser is still asked rather than assumed: on Safari, which does
+ * decode ALAC, this stays false and the file is played untouched.
+ *
+ * A source whose bitrate the server did not report is left alone, the same
+ * rule the rest of this module follows for a number it does not have.
+ */
+function hidesUndecodableAlac(suffix: string, bitRate: number | null): boolean {
+  return (
+    AMBIGUOUS_SUFFIXES.has(suffix) &&
+    bitRate != null &&
+    bitRate > AMBIGUOUS_SUFFIX_MAX_LOSSY_KBPS &&
+    !browserDecodes(ALAC_MEDIA_TYPE)
+  )
 }
 
 /**
@@ -363,7 +422,8 @@ export function plan(
   setting: StreamQuality,
 ): LocalStreamPlan {
   const suffix = source.format?.toLowerCase() ?? null
-  const undecodable = suffix != null && !browserPlays(suffix)
+  const undecodable =
+    suffix != null && (!browserPlays(suffix) || hidesUndecodableAlac(suffix, source.bitRate))
 
   // Asked before the Original shortcut below rather than after it, which
   // is the one thing that changed here: Original used to return untouched

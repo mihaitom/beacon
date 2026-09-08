@@ -16,6 +16,16 @@ extraResources:
       to: connect-server
       filter:
           - '**/*'
+    # The audio-only ffmpeg the backend runs, built by
+    # scripts/build-ffmpeg.sh (see build/ffmpeg/README.md). Same
+    # platform/arch rule as the backend binary above. Optional on purpose:
+    # a checkout that hasn't built one packages without it, and the backend
+    # falls back to PATH exactly as it did before this existed.
+    - from: build/ffmpeg
+      to: ffmpeg
+      filter:
+          - 'ffmpeg'
+          - 'ffmpeg.exe'
 
 # build/icon.png (1024x1024, the mdi-lighthouse-on glyph rendered straight
 # from @mdi/font's own TTF in the app's primary theme color — same source

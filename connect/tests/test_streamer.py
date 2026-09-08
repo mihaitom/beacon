@@ -11,6 +11,9 @@ import pytest
 
 from core.streamer import (
     _CONTENT_TYPE_FOR_MUXER,
+    _DSD_CODECS,
+    _DSD_PCM_SAMPLE_RATE,
+    _LOSSLESS_REENCODE_CODECS,
     _LOSSY_ENCODERS,
     FALLBACK_FORMAT,
     LOOKAHEAD_SECONDS,
@@ -268,13 +271,55 @@ def test_resolve_output_format_unity_gain_still_uses_the_copy_tier():
     assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "mp3"]
 
 
-@pytest.mark.parametrize("codec", ["alac", "pcm_s16le", "pcm_s24le", "pcm_s16be", "ape"])
+# Over the set itself rather than a copy of it: a lossless codec added to
+# the bundled ffmpeg and forgotten here doesn't fail, it silently casts as
+# mp3 (see the set's own comment), so the check has to grow with it.
+@pytest.mark.parametrize("codec", sorted(_LOSSLESS_REENCODE_CODECS - _DSD_CODECS))
 def test_resolve_output_format_lossless_reencode_tier(codec):
     with patch("core.streamer._probe_source", AsyncMock(return_value=_info(codec))):
         fmt = asyncio.run(resolve_output_format("http://nav/stream"))
     assert fmt.ffmpeg_args == ["-acodec", "flac", "-frame_size", "4096", "-f", "flac"]
     assert fmt.content_type == "audio/flac"
     assert "-ar" not in fmt.ffmpeg_args
+
+
+@pytest.mark.parametrize("codec", sorted(_DSD_CODECS))
+def test_dsd_is_cast_as_flac_at_a_rate_something_can_play(codec):
+    """ffmpeg hands DSD64 over as 352800 Hz PCM, which no target accepts as
+    FLAC — so the lossless tier brings it down to _DSD_PCM_SAMPLE_RATE even
+    though no device asked for a limit."""
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info(codec, sample_rate=352800)),
+    ):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
+    assert fmt.content_type == "audio/flac"
+    assert fmt.ffmpeg_args[fmt.ffmpeg_args.index("-ar") + 1] == str(_DSD_PCM_SAMPLE_RATE)
+    assert fmt.target_sample_rate == _DSD_PCM_SAMPLE_RATE
+
+
+def test_a_device_limit_below_the_dsd_rate_still_wins():
+    """The DSD ceiling is a floor under nothing: a target that only decodes
+    48kHz gets 48kHz, not 88.2."""
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("dsd_msbf", sample_rate=352800)),
+    ):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream", max_sample_rate=48000))
+    assert fmt.ffmpeg_args[fmt.ffmpeg_args.index("-ar") + 1] == "48000"
+    assert fmt.target_sample_rate == 48000
+
+
+def test_a_dsd_source_already_below_the_cap_is_left_alone():
+    """Never an upsample, and never a resample that changes nothing — same
+    rule every other tier here follows."""
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("dsd_msbf", sample_rate=44100)),
+    ):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
+    assert "-ar" not in fmt.ffmpeg_args
+    assert fmt.target_sample_rate is None
 
 
 def test_resolve_output_format_falls_back_when_detection_fails():
@@ -293,18 +338,63 @@ def test_resolve_output_format_falls_back_for_unrecognized_codec():
     assert fmt.transcode_reason == "codec_unknown"
 
 
-def test_resolve_output_format_falls_back_for_opus():
+# Opus is the one codec whose copy tier depends on the target having said it
+# plays it — the failure mode is silence rather than an error, so an unknown
+# target has to be treated as a no. See _COPY_NEEDS_DECLARED_SUPPORT.
+@pytest.mark.parametrize(
+    "device_codecs",
+    [
+        pytest.param(frozenset({"mp3", "aac", "flac", "vorbis"}), id="sonos-dlna"),
+        pytest.param(frozenset({"mp3", "flac", "vorbis"}), id="airplay"),
+        pytest.param(None, id="no-target-known"),
+    ],
+)
+def test_opus_is_not_copied_to_a_target_that_has_not_declared_it(device_codecs):
     """Regression test: confirmed live (2026-08-19) that a real Sonos speaker
-    accepts an opus-in-ogg stream-copy URI but produces no audio for it —
-    Sonos' own published format list has no Opus entry (only Ogg Vorbis).
-    Opus must stay out of the copy tier and fall through to the mp3
-    fallback instead of risking silent playback on real hardware."""
+    accepts an opus-in-ogg stream-copy URI and then produces no audio for it
+    — Sonos' own published format list has no Opus entry, only Ogg Vorbis.
+    Nothing downstream can notice that, so it must not be attempted, and
+    "no target known" counts as not declared."""
     with patch("core.streamer._probe_source", AsyncMock(return_value=_info("opus", 48000))):
-        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
+        fmt = asyncio.run(resolve_output_format("http://nav/stream", device_codecs=device_codecs))
     assert fmt.ffmpeg_args == FALLBACK_FORMAT.ffmpeg_args
-    # Not "unknown": opus is recognized and decodable, it's kept out of the
-    # copy tier on purpose (Sonos plays it silently).
+    # Not "unknown": opus is recognized and decodable, it is kept out of the
+    # copy tier for this target on purpose.
     assert fmt.transcode_reason == "codec_not_castable"
+
+
+def test_opus_is_copied_to_a_target_that_declares_it():
+    """A Chromecast decodes Opus, and re-encoding a 128kbps Opus source into
+    a 192kbps MP3 would hand it a bigger stream that sounds worse — the exact
+    trade the quality ceiling exists to prevent."""
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("opus", sample_rate=48000, bitrate_kbps=128)),
+    ):
+        fmt = asyncio.run(
+            resolve_output_format(
+                "http://nav/stream",
+                device_codecs=frozenset({"mp3", "aac", "flac", "vorbis", "opus"}),
+            )
+        )
+    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "ogg"]
+    assert fmt.content_type == "audio/ogg"
+    assert fmt.transcode_reason is None
+
+
+def test_opus_with_replay_gain_still_falls_back_even_where_it_could_be_copied():
+    """Copying rules out the volume filter, same as every other copyable
+    codec — a Chromecast is no exception."""
+    with patch("core.streamer._probe_source", AsyncMock(return_value=_info("opus", 48000))):
+        fmt = asyncio.run(
+            resolve_output_format(
+                "http://nav/stream",
+                gain=0.8,
+                device_codecs=frozenset({"mp3", "aac", "flac", "vorbis", "opus"}),
+            )
+        )
+    assert fmt.ffmpeg_args == FALLBACK_FORMAT.ffmpeg_args
+    assert fmt.transcode_reason == "replay_gain"
 
 
 # ── resolve_output_format device sample-rate/bit-depth limits ───────────────
@@ -1285,35 +1375,44 @@ def test_stream_tracks_swallows_a_kill_error_after_an_unexpected_error():
 
 
 class TestBundledFfmpegCoversWhatWeOffer:
-    """The Docker image builds its own minimal ffmpeg (see the Dockerfile),
-    and `--disable-everything` means every encoder and muxer has to be asked
-    for by name. That list and the formats Beacon offers are two places
-    saying the same thing, in two languages, with nothing tying them
-    together: `aac` was offered as a cast quality for months while the image
-    could not encode it, failing with "Unknown encoder 'aac'" at the moment
-    somebody cast - and never on the desktop build, which uses the system
-    ffmpeg instead. These tests are the tie.
+    """Beacon builds its own minimal ffmpeg — for the Docker image and, since
+    it stopped relying on one being installed, for the desktop app too (see
+    build/ffmpeg/README.md). `--disable-everything` means every encoder and
+    muxer has to be asked for by name, so that list and the formats Beacon
+    offers are two places saying the same thing in two languages, with
+    nothing tying them together: `aac` was offered as a cast quality for
+    months while the image could not encode it, failing with "Unknown
+    encoder 'aac'" at the moment somebody cast — and never on a desktop
+    install, which used the system ffmpeg instead. These tests are the tie,
+    and there is no system ffmpeg to fall back on now.
 
-    All three lossy formats are covered: opus joined them once the image
-    started building libopus from source (Alpine ships no static one - see
-    the Dockerfile), which is also what let it be offered for local
-    playback at all.
+    All three lossy formats are covered: opus joined them once the build
+    started compiling libopus from source (Alpine ships no static one), which
+    is also what let it be offered for local playback at all.
     """
 
     @staticmethod
     def _configure_line(flag: str) -> set[str]:
-        dockerfile = Path(__file__).resolve().parents[2] / "Dockerfile"
-        for line in dockerfile.read_text().splitlines():
-            stripped = line.strip().rstrip("\\").strip()
+        flags = Path(__file__).resolve().parents[2] / "build" / "ffmpeg" / "configure-flags"
+        for line in flags.read_text().splitlines():
+            stripped = line.strip()
             if stripped.startswith(f"--{flag}="):
                 return set(stripped.split("=", 1)[1].split(","))
-        raise AssertionError(f"no --{flag}= in the Dockerfile's ffmpeg configure")
+        raise AssertionError(f"no --{flag}= in build/ffmpeg/configure-flags")
 
     @pytest.mark.parametrize("fmt", ["mp3", "aac", "opus"])
-    def test_the_image_can_encode_every_format_the_app_offers(self, fmt):
+    def test_the_build_can_encode_every_format_the_app_offers(self, fmt):
         codec, muxer = _LOSSY_ENCODERS[fmt]
         assert codec in self._configure_line("enable-encoder")
         assert muxer in self._configure_line("enable-muxer")
+
+    def test_the_build_has_the_filter_replay_gain_needs(self):
+        """`-af volume=<gain>` is how every ReplayGain-adjusted stream is
+        produced (core/streamer.py, core/audio_analysis.py). configure
+        silently ignores a filter name it doesn't recognise, so leaving it
+        out builds fine and fails at playback — which is exactly what the
+        image shipped with until this test existed."""
+        assert "volume" in self._configure_line("enable-filter")
 
 
 # ── What the target can actually decode ──────────────────────────────────────

@@ -317,8 +317,7 @@ export default {
       reasons: {
         device_limit: 'La sorgente supera la qualità supportata da questo dispositivo',
         lossless_container: 'Sorgente lossless in un formato che i dispositivi non accettano',
-        codec_not_castable:
-          'Il codec di origine non è supportato in modo affidabile dai dispositivi',
+        codec_not_castable: 'Questo dispositivo non riproduce il codec di origine',
         codec_unknown: 'Codec di origine non riconosciuto',
         probe_failed: 'Impossibile rilevare il formato di origine',
         replay_gain: 'ReplayGain è attivo, quindi il file non può essere inviato così com’è',

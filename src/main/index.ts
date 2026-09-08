@@ -207,6 +207,18 @@ function findFreePort(): Promise<number> {
   })
 }
 
+// The ffmpeg shipped alongside the backend (see build/ffmpeg/README.md for
+// what it is and how it's built), or null when this build has none and the
+// backend should look on PATH as it always has. An FFMPEG_PATH already in
+// the environment wins over both, so a user with their own build can still
+// point us at it.
+function bundledFfmpegPath(): string | null {
+  if (process.env.FFMPEG_PATH) return null
+  const name = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+  const path = join(process.resourcesPath, 'ffmpeg', name)
+  return existsSync(path) ? path : null
+}
+
 function startConnectServer(): void {
   const binaryName = process.platform === 'win32' ? 'connect-server.exe' : 'connect-server'
   const binaryPath = join(process.resourcesPath, 'connect-server', binaryName)
@@ -214,6 +226,9 @@ function startConnectServer(): void {
     console.error(`[connect] Bundled binary not found: ${binaryPath}`)
     return
   }
+
+  const ffmpegPath = bundledFfmpegPath()
+  console.log(`[connect] ffmpeg: ${ffmpegPath ?? process.env.FFMPEG_PATH ?? 'from PATH'}`)
 
   connectProcess = spawn(binaryPath, [], {
     env: {
@@ -225,6 +240,7 @@ function startConnectServer(): void {
       // packaged binary's own resources folder, which gets replaced
       // wholesale on every update.
       CONNECT_DATA_DIR: app.getPath('userData'),
+      ...(ffmpegPath ? { FFMPEG_PATH: ffmpegPath } : {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })

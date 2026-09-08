@@ -189,7 +189,7 @@ pnpm run package        # current platform
 pnpm run package:linux  # or publish:linux / publish:mac / publish:win, etc. - see package.json
 ```
 
-Users need **ffmpeg** installed on their system (`apt install ffmpeg` / `brew install ffmpeg` / download from [ffmpeg.org](https://ffmpeg.org/download.html) on Windows) - it is not bundled.
+**ffmpeg** is built and bundled with the app - nothing to install. The build runs as part of every `package`/`publish` script and is skipped when it is already up to date; see [build/ffmpeg/README.md](build/ffmpeg/README.md) for what it needs per platform. Setting `FFMPEG_PATH` points Beacon at your own build instead.
 
 **Persistent backend data** (AirPlay 2 pairing credentials, log-level setting, per-account settings, recommendations cache, Jellyfin/Plex internet radio stations) lives in Electron's standard per-user data directory, which survives app updates:
 
@@ -289,11 +289,47 @@ The browser itself is never the problem: it always talks to Beacon's own Connect
 
 ## FAQ
 
-### ffmpeg required
+### Do I need ffmpeg installed?
 
-Beacon uses **ffmpeg** to prepare the audio stream for **Sonos, Chromecast, and DLNA**, which pull it over HTTP. Whenever the source is already in a format these devices support directly (FLAC, MP3, AAC, or Ogg Vorbis), ffmpeg just stream-copies it - no re-encoding, no quality loss. Other lossless sources (ALAC, WAV/AIFF, APE) get losslessly re-encoded to FLAC instead; anything else (Opus, WMA, ...) falls back to a 192kbps MP3 re-encode. (AirPlay takes the same ffmpeg-prepared stream but is pushed to rather than pulling it, via pyatv - only a live radio URL is handed to the device untouched.) It's already included in the Docker image; see Electron above for desktop installs. If ffmpeg is missing, the connect log prints a warning on startup, and casting to Sonos/Chromecast/DLNA fails.
+No. Both the Docker image and the desktop app bring their own build - an audio-only one, about a tenth the size of a full ffmpeg, built from the same recipe for both (see [build/ffmpeg/README.md](build/ffmpeg/README.md)). Setting `FFMPEG_PATH` points Beacon at your own build instead. Should it ever be missing - a build packaged without it, or a development checkout with no ffmpeg on PATH - the connect log says so on startup and casting fails.
 
-Settings -> Playback can cap that choice, and can also apply it to Beacon's own player. Both settings are upper limits rather than replacements: a source that already fits under one is sent untouched, so setting "MP3 320" does not re-encode a 128kbps file into a larger one. For casting, each device's own format limits still win on top. For this device's own playback the limit is also what makes ALAC, APE and other formats no browser decodes playable at all - they are always above it, so they always get converted. MP3 is the only conversion offered locally because it is the only one whose output size is predictable enough to seek in reliably; ffmpeg's AAC and Opus encoders don't hold the bitrate they're given, which would put every scrub in the wrong place. Both settings are stored per device, so a phone and a desktop can be set differently.
+### What actually gets sent to a speaker, and when is it converted?
+
+Sonos, Chromecast and DLNA pull the audio from Beacon over HTTP, so Beacon decides what shape it arrives in. (AirPlay is pushed to rather than pulling, via pyatv, but gets the same prepared stream; only a live radio URL goes to the device untouched.)
+
+The rule is **change as little as possible, and never in a way that makes the stream bigger and worse.** For each track, the first of these that applies wins:
+
+1. **A quality limit you set**, if the track is above it. Settings -> Playback caps what gets sent. Being a cap is the whole point: a 128kbps file under a "MP3 320" limit is left alone, because re-encoding it would lose quality *and* produce a larger stream. Only a track above the limit is brought down to it.
+2. **Sent as it is**, if the speaker plays that format. Nothing is decoded or re-encoded and nothing is lost - a 320kbps MP3 arrives as exactly that MP3.
+3. **Repacked to FLAC**, if the track is lossless but in a wrapper the speaker will not open. Every bit is kept, only the container changes.
+4. **Re-encoded to 192kbps MP3**, when none of the above fits. The last resort, and the one format every device here plays.
+
+Steps 2 and 3 depend on the speaker, and this is the whole of that difference:
+
+| Plays | MP3 | AAC | FLAC | Ogg Vorbis | Opus |
+| ---------- | --- | --- | ---- | ---------- | ---- |
+| Chromecast | yes | yes | yes  | yes        | yes  |
+| Sonos      | yes | yes | yes  | yes        | no   |
+| DLNA       | yes | yes | yes  | yes        | no   |
+| AirPlay    | yes | no  | yes  | yes        | no   |
+
+Which lands sources in three groups. Already in the table: MP3, AAC, FLAC, Ogg Vorbis and Opus, sent as they are wherever the row says yes. Lossless but not in the table, so repacked to FLAC: ALAC, WAV, AIFF, APE, WavPack, TTA, Shorten, WMA Lossless and DSD. Everything else, re-encoded to MP3: WMA, Musepack, MP2 and anything unrecognised.
+
+Three things are worth knowing because they surprise people:
+
+- **Opus is only sent untouched to a Chromecast.** A Sonos accepts an Opus stream and then plays silence rather than refusing it, and nothing downstream can notice that, so Beacon does not try. An Opus file becomes MP3 there. This is separate from Beacon being able to *encode* to Opus, which it does for any device that plays it.
+- **ReplayGain rules out step 2.** Adjusting the volume means decoding the audio, and a track sent as it is never gets decoded. With ReplayGain on, a track that would have been passed through is re-encoded instead.
+- **A speaker's sample-rate and bit-depth limits apply on top of all of this.** A 96kHz/24-bit FLAC sent to a device that stops at 48kHz is resampled down rather than sent and cut off a second in. DSD is brought down the same way: it decodes to 352.8kHz, which nothing plays, so it lands at 88.2kHz - the same conversion a DSD player makes.
+
+### And in Beacon's own player?
+
+Same idea, one step shorter, because there is no speaker to negotiate with - only the browser. Settings -> Playback has its own limit for this, separate from the casting one:
+
+1. **Converted, whatever the setting says**, if the browser cannot decode the file at all. On "Original" it is repacked to FLAC rather than re-encoded, so nothing is lost; only where even FLAC is refused does it become MP3 or AAC. This is what makes an ALAC, APE, WavPack, AIFF or DSD library playable in a browser at all.
+2. **Brought down to your limit**, if the track is above it. A lossless track always is, whatever number the limit names.
+3. **Played as it is**, otherwise.
+
+MP3, AAC and Opus are offered as limits here, and which of them you are shown depends on the browser: Beacon asks it what it can decode rather than assuming, because the answer differs. Safari has no Ogg decoder, so Opus is not offered there and an Ogg Vorbis or Opus *file* is converted for it - the same file plays untouched in Chrome or Firefox. Both limits are stored per device, so a phone on mobile data and a desktop on the LAN can be set differently.
 
 ### Why can Beacon feel slower with Jellyfin?
 

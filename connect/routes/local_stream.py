@@ -60,10 +60,12 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from core.auth import require_token
+from core.ffmpeg import FFMPEG_BIN
 from core.session import SessionState, require_authenticated_session
 from core.streamer import (
     SourceInfo,
     _probe_source,
+    dsd_resample_args,
     http_reconnect_args,
     lossless_encode_args,
     lossy_encode_args,
@@ -373,9 +375,11 @@ async def local_stream(
     # No sample rate is passed to the lossless branch, and none is wanted:
     # resampling is a device's limit to impose (see lossless_encode_args()),
     # and the browser this is for has none — it is being handed the source
-    # rate exactly as it came.
+    # rate exactly as it came. DSD is the one exception, and not a device
+    # limit either: its decoded rate is an artefact of the format that no
+    # browser decodes (see dsd_resample_args()).
     args, content_type = (
-        lossless_encode_args()
+        lossless_encode_args(dsd_resample_args(info))
         if lossless
         else lossy_encode_args(fmt, br, info.sample_rate if info else None)
     )
@@ -430,7 +434,7 @@ async def local_stream(
             headers["Content-Range"] = f"bytes {start}-{end}/{total}"
             headers["Content-Length"] = str(byte_limit)
 
-    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "warning"]
+    cmd = [FFMPEG_BIN, "-hide_banner", "-loglevel", "warning"]
     # Lets a dropped connection to the media server be picked back up
     # inside ffmpeg rather than ending the encode — see
     # http_reconnect_args(). It matters more here than on the cast path,
