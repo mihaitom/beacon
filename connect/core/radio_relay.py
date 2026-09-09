@@ -78,6 +78,7 @@ from lyrics.shared import USER_AGENT
 
 from .ffmpeg import FFMPEG_BIN
 from .icy_metadata import IcyDemuxer, parse_bitrate, parse_codec
+from .stream_format import is_station_refusal, usable_content_type
 from .streamer import _READRATE_ARGS, REASON_QUALITY_LIMIT, REASON_RELAY_FORMAT_LIMIT
 
 logger = logging.getLogger("connect.radio_relay")
@@ -416,9 +417,13 @@ class RadioRelay:
         preferred_format: str | None = None,
     ) -> None:
         self.url = url
-        # What the station itself sends, as probed before this was started —
-        # kept so a caller can restart this relay under a different ceiling
-        # without probing the station a second time.
+        # What the station itself sends. Starts as the caller's guess (the
+        # URL's own extension is enough for that — see
+        # core/stream_format.py's content_type_from_extension) and is
+        # replaced in _run_once() by what the station actually announces on
+        # this relay's own connection. That connection has to happen anyway,
+        # and its headers are the same ones a separate probe would read, so
+        # a relayed station costs one fetch of it rather than two.
         self.source_content_type = content_type
         # The quality ceiling this relay was started under, if any — see
         # _device_output_args(). Public so a caller can tell whether a
@@ -473,6 +478,12 @@ class RadioRelay:
         # /play-url checks this rather than dispatching a device at an
         # endpoint that would answer 200 and then stay silent forever.
         self.connected = False
+        # The status the station answered with, when it was one that means
+        # the station itself said no (see core/stream_format.py's
+        # is_station_refusal). _run() stops retrying into it, and
+        # routes/playback.py reports it to the listener instead of letting
+        # a speaker fail on the same 403 a moment later.
+        self.refused_status: int | None = None
         self._stopped = False
 
     async def start(self) -> None:
@@ -589,6 +600,17 @@ class RadioRelay:
                 self._started.set()
             if self._stopped:
                 return
+            # A station that answers 401/403/404/410 is not having a bad
+            # moment, it is refusing this listener — reconnecting into that
+            # every 60s for the rest of the session is what got Beacon's own
+            # favicon fetches banned once already (see
+            # docs/investigations/radio-favicon-4xx-ban.md). Only while this
+            # relay has never played anything: a refusal arriving mid-run
+            # (an expired token, a station reconfigured under a live
+            # listener) still reconnects, since something clearly worked a
+            # moment ago.
+            if self.refused_status is not None and not self._output_decided:
+                return
             delay = (
                 min(
                     _RECONNECT_DELAY_SECONDS * 2 ** min(failures - 1, 10),
@@ -601,7 +623,24 @@ class RadioRelay:
 
     async def _run_once(self) -> None:
         async with _client.stream("GET", self.url, headers={"Icy-MetaData": "1"}) as resp:
+            if is_station_refusal(resp.status_code):
+                self.refused_status = resp.status_code
             resp.raise_for_status()
+            # Past here the station is serving, so a refusal recorded on an
+            # earlier attempt is history — left standing, a later /play-url
+            # joining this very relay would report a station that is
+            # audibly playing as having refused.
+            self.refused_status = None
+            # What the station calls what it sends, off this relay's own
+            # connection — the answer a separate probe used to be made for.
+            # Only overwrites the caller's guess when the station said
+            # something usable; core/stream_format.py's own fallback rules
+            # decide that, so an Icecast mount answering
+            # `application/octet-stream` still leaves the extension guess in
+            # place.
+            announced = usable_content_type(resp.headers.get("content-type", ""))
+            if announced:
+                self.source_content_type = announced
             # What the station says it is broadcasting, same headers and
             # same handling as core/icy_metadata.py's watch — this relay
             # replaces that watch while it runs (see core/session.py), so

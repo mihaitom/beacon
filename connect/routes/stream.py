@@ -34,7 +34,7 @@ from core.state import (
     stream_url,
     test_tone_url,
 )
-from core.stream_format import probe_stream
+from core.stream_format import content_type_from_extension
 from core.streamer import (
     FALLBACK_FORMAT,
     resolve_output_format,
@@ -876,13 +876,15 @@ async def local_radio_stream(
     """
     relay = session.radio_relay
     if relay is None or relay.url != url:
-        # Only for a station that is not already relayed: probe_stream()
-        # is a request of its own, and this route is re-entered by every
-        # reconnect the element makes.
-        probed = await probe_stream(url)
         relay = await session.start_radio_relay(
             url,
-            probed.content_type,
+            # A guess, and only ever that: the relay reads what the station
+            # actually announces off its own connection (see
+            # RadioRelay.source_content_type), which is the same header a
+            # probe of its own would have cost a second fetch of the station
+            # to read. What this element receives is the relay's
+            # device_content_type below either way.
+            content_type_from_extension(url),
             max_bitrate_kbps=max_bitrate_kbps,
             # No device to narrow against: this stream ends up in a browser,
             # and which formats *it* plays is already decided on that side

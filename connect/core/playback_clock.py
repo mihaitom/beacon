@@ -32,6 +32,45 @@ from dataclasses import dataclass, field
 # responsive rather than sluggish.
 _OFFSET_SLEW_SECONDS = 2.0
 
+# How much a *newly measured* offset is allowed to differ from the
+# *already-applied* one before it's worth
+# recalibrating over — ordinary jitter rather than something a user
+# actually did. On this LAN, that jitter isn't network RTT (negligible for
+# a local SSDP+UPnP round trip) — it's SonosDelivery.get_position()'s own
+# H:M:S-string position, which only ever carries whole-second resolution.
+# That alone puts a ~1s floor under how tight this can usefully go: nothing
+# on our side can measure a real device more precisely than the device
+# itself reports it. Small enough to catch a "skip 10s" tap, large enough
+# that this quantization alone never crosses it on a stable stream.
+#
+# Deliberately NOT compared against the raw device/wall-clock delta on its
+# own (an earlier version of this did) — once a device has any lasting
+# offset at all (a Sonos's own several-second startup buffering, say), that
+# raw delta sits well past this threshold *permanently*, on every single
+# check, even though nothing further has actually changed since the offset
+# that already accounts for it was applied. That recalibrated (and
+# rebroadcast over SSE) every ~8s indefinitely once a track legitimately
+# needed any real correction at all — read live as the position UI
+# visibly jittering nonstop for the rest of the track, not just around the
+# one moment something really happened.
+# Lives here rather than with either caller because both of them
+# calibrate against a device reading and neither owns the answer:
+# routes/playback.py's resync loop for a track, core/radio_position.py's
+# tracker for a cast station.
+POSITION_RESYNC_THRESHOLD = 1.0
+
+
+# A device reporting itself this far *ahead* of the wall clock is a
+# stale/bogus reading, not real startup-buffering lag — a renderer left
+# sitting on a position from whatever it was playing a moment ago. Nothing
+# legitimate outruns a stream that just started, so this is only ever
+# checked where that holds: routes/playback.py's one-shot startup
+# calibration (its periodic resync deliberately allows a lead, since
+# somebody skipping forward on the device's own remote is exactly what it
+# is there to catch) and core/radio_position.py, where it holds for the
+# whole run — a live station has nothing to skip forward into.
+MAX_PLAUSIBLE_POSITION_LEAD = 15.0
+
 
 @dataclass
 class PlaybackClock:

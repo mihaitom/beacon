@@ -14,10 +14,6 @@ import asyncio
 import logging
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
-from core.stream_format import ProbedStream
-
 STATION = "http://mp3channels.webradio.rockantenne.de/rockantenne"
 
 
@@ -47,17 +43,8 @@ class FakeRelay:
         self.unsubscribed = q
 
 
-@pytest.fixture
-def probed():
-    with patch(
-        "routes.stream.probe_stream",
-        new=AsyncMock(return_value=ProbedStream(content_type="audio/mpeg")),
-    ) as probe:
-        yield probe
-
-
 class TestLocalRadioStream:
-    def test_starts_a_relay_for_the_station_and_serves_it(self, client, default_session, probed):
+    def test_starts_a_relay_for_the_station_and_serves_it(self, client, default_session):
         relay = FakeRelay()
         with patch.object(
             type(default_session), "start_radio_relay", new=AsyncMock(return_value=relay)
@@ -87,7 +74,7 @@ class TestLocalRadioStream:
         # someone listens on away from home.
         assert relay.burst_requested is True
 
-    def test_logs_how_long_the_connection_stood(self, client, default_session, probed, caplog):
+    def test_logs_how_long_the_connection_stood(self, client, default_session, caplog):
         """Opening one of these was the only half that got recorded, which
         made a player reconnecting mid-stream look exactly like a player
         that had been listening all along — several short connections and
@@ -106,7 +93,7 @@ class TestLocalRadioStream:
         assert "Serving relayed radio to a local player" in caplog.text
         assert "Relayed radio to a local player ended after" in caplog.text
 
-    def test_records_why_the_player_reconnected(self, client, default_session, probed, caplog):
+    def test_records_why_the_player_reconnected(self, client, default_session, caplog):
         """Only the player knows what made it ask again, and on a phone its
         own console is where nobody can read it — so it says so here, and a
         reconnect mid-station stops looking like somebody starting one."""
@@ -118,9 +105,7 @@ class TestLocalRadioStream:
         assert r.status_code == 200
         assert "(reconnect: absence, attempt 2)" in caplog.text
 
-    def test_says_nothing_extra_for_a_first_connection(
-        self, client, default_session, probed, caplog
-    ):
+    def test_says_nothing_extra_for_a_first_connection(self, client, default_session, caplog):
         default_session.radio_relay = FakeRelay()
 
         with caplog.at_level(logging.INFO, logger="connect.stream"):
@@ -129,9 +114,7 @@ class TestLocalRadioStream:
         assert r.status_code == 200
         assert "reconnect:" not in caplog.text
 
-    def test_does_not_put_a_clients_own_text_in_the_log(
-        self, client, default_session, probed, caplog
-    ):
+    def test_does_not_put_a_clients_own_text_in_the_log(self, client, default_session, caplog):
         """A query parameter is whatever the caller chose to send, and this
         one reaches the log. That a reconnect happened is still worth
         keeping; what it called itself is not."""
@@ -146,12 +129,10 @@ class TestLocalRadioStream:
         assert "everything is fine" not in caplog.text
         assert "(reconnect: unrecognised)" in caplog.text
 
-    def test_reuses_a_relay_already_running_for_the_same_station(
-        self, client, default_session, probed
-    ):
+    def test_reuses_a_relay_already_running_for_the_same_station(self, client, default_session):
         """The element re-requests this URL on every reconnect of its own,
         which is exactly when the station is least able to answer a second
-        connection — so a running relay must be joined, not re-probed and
+        connection — so a running relay must be joined rather than
         restarted."""
         default_session.radio_relay = FakeRelay()
 
@@ -160,9 +141,8 @@ class TestLocalRadioStream:
 
         assert r.status_code == 200
         start.assert_not_awaited()
-        probed.assert_not_awaited()
 
-    def test_starts_a_fresh_relay_for_a_different_station(self, client, default_session, probed):
+    def test_starts_a_fresh_relay_for_a_different_station(self, client, default_session):
         default_session.radio_relay = FakeRelay(url="http://some-other-station")
         relay = FakeRelay()
 
@@ -176,9 +156,7 @@ class TestLocalRadioStream:
             STATION, "audio/mpeg", max_bitrate_kbps=None, preferred_format="aac"
         )
 
-    def test_passes_this_devices_own_quality_ceiling_to_the_relay(
-        self, client, default_session, probed
-    ):
+    def test_passes_this_devices_own_quality_ceiling_to_the_relay(self, client, default_session):
         """Local radio comes through the relay too, so the setting for this
         device applies to a station the same way it applies to a song."""
         relay = FakeRelay()
@@ -193,7 +171,7 @@ class TestLocalRadioStream:
             STATION, "audio/mpeg", max_bitrate_kbps=96, preferred_format="aac"
         )
 
-    def test_passes_the_chosen_format_on_as_well(self, client, default_session, probed):
+    def test_passes_the_chosen_format_on_as_well(self, client, default_session):
         relay = FakeRelay()
 
         with patch.object(
@@ -206,9 +184,7 @@ class TestLocalRadioStream:
             STATION, "audio/mpeg", max_bitrate_kbps=96, preferred_format="aac"
         )
 
-    def test_opus_asks_the_relay_for_aac_rather_than_dropping_to_mp3(
-        self, client, default_session, probed
-    ):
+    def test_opus_asks_the_relay_for_aac_rather_than_dropping_to_mp3(self, client, default_session):
         """There is no Opus encoder in the relay. AAC is the closest thing
         it can produce, and every browser that plays Opus plays AAC — so
         the listener keeps the better of the two rather than landing on the
@@ -226,7 +202,7 @@ class TestLocalRadioStream:
         )
 
     def test_a_reconnect_never_restarts_a_running_relay_over_a_ceiling(
-        self, client, default_session, probed
+        self, client, default_session
     ):
         """The element re-requests this URL on every reconnect. Restarting
         the relay because the ceiling in the URL differs from the one it is
@@ -242,7 +218,7 @@ class TestLocalRadioStream:
         start.assert_not_awaited()
 
     def test_answers_200_while_the_relay_is_still_trying_to_reach_the_station(
-        self, client, default_session, probed
+        self, client, default_session
     ):
         """Not an error status, deliberately. A non-2xx is reported by an
         `<audio>` element as an unsupported source — the one MediaError

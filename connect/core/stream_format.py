@@ -88,8 +88,13 @@ _CANONICAL_CONTENT_TYPES = {
 }
 
 
-def _usable(content_type: str) -> str | None:
+def usable_content_type(content_type: str) -> str | None:
     """The name to announce for what the server said it sends, else None.
+
+    Public because the relay (core/radio_relay.py) reads the very same
+    header off its own connection to the station and needs the same answer
+    from it — see probe_stream() for why that connection makes a separate
+    probe unnecessary for a relayed station.
 
     Parameters are dropped (`audio/aacp;charset=UTF-8`), aliases are folded
     onto the spelling devices actually accept (see
@@ -130,6 +135,14 @@ class ProbedStream:
 _REFUSED_STATUSES = frozenset({401, 403, 404, 410})
 
 
+def is_station_refusal(status_code: int) -> bool:
+    """Whether `status_code` means the station itself said no — see
+    _REFUSED_STATUSES. Also asked by core/radio_relay.py, which reaches the
+    same conclusion off its own connection and must not keep reconnecting
+    into it."""
+    return status_code in _REFUSED_STATUSES
+
+
 async def probe_stream(url: str, client: httpx.AsyncClient | None = None) -> ProbedStream:
     """Ask the station what it sends, and whether it is serving at all.
 
@@ -144,11 +157,11 @@ async def probe_stream(url: str, client: httpx.AsyncClient | None = None) -> Pro
         async with client.stream("GET", url) as response:
             status = response.status_code
             response.raise_for_status()
-            probed = _usable(response.headers.get("content-type", ""))
+            probed = usable_content_type(response.headers.get("content-type", ""))
     except httpx.HTTPError as e:
         fallback = content_type_from_extension(url)
         status = e.response.status_code if isinstance(e, httpx.HTTPStatusError) else 0
-        refused = status in _REFUSED_STATUSES
+        refused = is_station_refusal(status)
         logger.info(
             f"[stream-format] {url} could not be probed "
             f"({type(e).__name__}: {e}) — announcing {fallback}"
@@ -187,14 +200,21 @@ def radio_content_type(radio_info: dict) -> str:
     written before the type was recorded, which is what every caller did
     unconditionally until now.
 
-    A relayed station (radio_info["relayed"] — see core/radio_relay.py) is
-    always MP3 on the device side regardless of what the station itself
-    sends: RadioRelay's own ffmpeg always muxes into an MP3 container,
-    whether or not it also re-encodes into one (see its _device_output_args()).
-    The probed content_type recorded below is the *station's* real type,
-    not what a relayed device actually receives — reusing it here for a
-    relayed station would tell a device connecting to /stream/radio that
-    it's getting, say, AAC, when it never does."""
+    `device_content_type` is what the last dispatch actually announced, and
+    is the answer whenever it is there. It matters for a station Beacon
+    re-serves itself (radio_info["relayed"], see core/radio_relay.py):
+    `content_type` alongside it is the *station's* own type, not what a
+    device connecting to /stream/radio receives, and the relay's output is
+    not always MP3 — the cast-quality setting can ask for AAC, and a relay
+    producing it while a reconnect announced `audio/mpeg` is the same
+    mismatch this function exists to prevent, just from Beacon's side.
+
+    The MP3 fallback below is for a relayed station recorded before that
+    was written down; the extension guess, for one recorded before any of
+    this was."""
+    announced = radio_info.get("device_content_type")
+    if announced:
+        return announced
     if radio_info.get("relayed"):
         return "audio/mpeg"
     return radio_info.get("content_type") or content_type_from_extension(radio_info["url"])

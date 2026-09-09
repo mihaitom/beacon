@@ -144,6 +144,23 @@ class TestRadioContentType:
         # type; a reconnect must still announce something sensible.
         assert radio_content_type({"url": AAC_URL}) == "audio/aac"
 
+    def test_announces_what_the_last_dispatch_did(self):
+        """A relayed station is served as whatever the relay produces, and
+        the cast-quality setting can ask for AAC — a reconnect announcing
+        the station's own type, or a blanket audio/mpeg, is the mismatch a
+        speaker answers with ERROR_UNSUPPORTED_FORMAT."""
+        info = {
+            "url": AAC_URL,
+            "content_type": "audio/aac",
+            "device_content_type": "audio/aac",
+            "relayed": True,
+        }
+        assert radio_content_type(info) == "audio/aac"
+
+    def test_a_relayed_station_recorded_before_that_still_reads_as_mp3(self):
+        info = {"url": AAC_URL, "content_type": "audio/aac", "relayed": True}
+        assert radio_content_type(info) == "audio/mpeg"
+
 
 class TestRefusedByTheStation:
     """A station answering 4xx is not a device problem, and nothing
