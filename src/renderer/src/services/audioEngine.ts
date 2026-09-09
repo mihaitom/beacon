@@ -38,6 +38,12 @@ const MAX_RECONNECT_DELAY_SECONDS = 8
 const MAX_LIVE_RECONNECT_ATTEMPTS = 6
 const MAX_LIVE_RECONNECT_DELAY_SECONDS = 15
 
+// What made a reconnect happen, as it is reported to the backend — see
+// withReconnectReason(). A closed set rather than free text: connect logs
+// it, and it only tells the four cases apart if both ends agree on the
+// spelling (connect/routes/stream.py's _RECONNECT_REASONS).
+type ReconnectReason = 'ended' | 'ended-early' | 'network-error' | 'stalled' | 'absence'
+
 // How long a live stream's playhead may stand still, while the element is
 // not paused, before the connection counts as dropped — and how often that
 // is checked.
@@ -349,7 +355,10 @@ export class AudioEngine {
       // reconnect a paused one. Without this the sound simply stopped,
       // with the row above it still reading "Live".
       if (this.liveStream && this.reconnectUrl !== null) {
-        this.reconnectOnDrop()
+        console.warn(
+          `[audio-engine] ${this.reconnectUrl} ended — treating it as a dropped connection`,
+        )
+        this.reconnectOnDrop('ended')
         return
       }
       // The same problem one step along: a transcode is served without a
@@ -369,7 +378,7 @@ export class AudioEngine {
         )
         this.earlyEnds++
         this.positionAtLastEarlyEnd = this.lastKnownPosition
-        this.reconnectOnDrop()
+        this.reconnectOnDrop('ended-early')
         return
       }
       this.onEnded?.()
@@ -393,7 +402,8 @@ export class AudioEngine {
     this.audio.addEventListener('error', () => {
       const code = (this.audio.error as { code?: number } | null)?.code
       if (code === MEDIA_ERR_NETWORK && this.reconnectUrl !== null) {
-        this.reconnectOnDrop()
+        console.warn(`[audio-engine] ${this.reconnectUrl} reported a network error — reconnecting`)
+        this.reconnectOnDrop('network-error')
         return
       }
       this.reconnectUrl = null
@@ -508,18 +518,25 @@ export class AudioEngine {
    * while retrying — no onError call, so a brief tunnel doesn't flip the
    * UI out of "playing" for what is, from the listener's chair, a
    * half-second gap in the sound. */
-  private reconnectOnDrop(): void {
+  private reconnectOnDrop(reason: ReconnectReason): void {
     const maxAttempts = this.liveStream ? MAX_LIVE_RECONNECT_ATTEMPTS : MAX_RECONNECT_ATTEMPTS
     const maxDelay = this.liveStream
       ? MAX_LIVE_RECONNECT_DELAY_SECONDS
       : MAX_RECONNECT_DELAY_SECONDS
+    // A retry is already scheduled. 'ended' and 'error' can both land for
+    // the same failed load, and neither handler guards against that the way
+    // checkForStall() does — without this the pending timer is overwritten
+    // rather than cancelled, so both fire and the element opens two
+    // connections a fraction of a second apart.
+    if (this.reconnectTimer !== null) return
     if (this.reconnectAttempts >= maxAttempts) {
       this.giveUp('after dropped connection')
       return
     }
     this.reportReconnecting(true)
     this.reconnectAttempts++
-    const delaySeconds = Math.min(2 ** (this.reconnectAttempts - 1), maxDelay)
+    const attempt = this.reconnectAttempts
+    const delaySeconds = Math.min(2 ** (attempt - 1), maxDelay)
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null
       const url = this.reconnectUrl
@@ -535,7 +552,7 @@ export class AudioEngine {
         this.positionOffset = this.lastKnownPosition
         this.audio.src = this.urlForPosition(this.lastKnownPosition)
       } else if (this.liveStream) {
-        this.audio.src = url
+        this.audio.src = this.withReconnectReason(url, reason, attempt)
         // A live stream has no position to come back to: it is only ever
         // served from its own edge, and writing a start position onto one
         // asks the element to seek somewhere that does not exist. What is
@@ -559,6 +576,25 @@ export class AudioEngine {
       // next backoff step.
       void this.audio.play().catch(() => {})
     }, delaySeconds * 1000)
+  }
+
+  /** The same relay URL with what caused this attempt attached, so the
+   * reconnect reports itself to the backend log.
+   *
+   * The console lines this duplicates are unreadable on the device that
+   * produces most of these: a phone, in a pocket, on a changing network.
+   * The reconnect is already a request to Beacon, so the reason rides on
+   * it rather than costing a second one over a link that has just proved
+   * unreliable — and an attempt that never arrives is still legible, since
+   * the next one carries a higher `attempt` than the log has seen.
+   *
+   * Only ever added to Beacon's own relay endpoint, which is what
+   * holdsConnection says this URL is (see playLive()). A station's own
+   * address belongs to somebody else and is passed on untouched. */
+  private withReconnectReason(url: string, reason: ReconnectReason, attempt: number): string {
+    if (!this.holdsConnection) return url
+    const separator = url.includes('?') ? '&' : '?'
+    return `${url}${separator}reconnect=${reason}&attempt=${attempt}`
   }
 
   /** Starts watching a live stream for a playhead that has stopped moving
@@ -619,7 +655,7 @@ export class AudioEngine {
     if (!this.watchedForStalls() || this.audio.paused) return
     if (this.reconnectUrl === null || this.reconnectTimer !== null) return
     if (sinceLastCheck > LIVE_STALL_CHECK_MS + STALL_CHECK_LATE_MS) {
-      this.handleTickAfterAbsence(now)
+      this.handleTickAfterAbsence(now, sinceLastCheck)
       return
     }
     const budget = this.stallBudgetSeconds()
@@ -630,7 +666,7 @@ export class AudioEngine {
       console.warn(
         `[audio-engine] ${this.reconnectUrl} stopped advancing for ${budget}s — treating it as a dropped connection`,
       )
-      this.reconnectOnDrop()
+      this.reconnectOnDrop('stalled')
       return
     }
     // Held: say so, and wait. The connection this element already has open
@@ -656,28 +692,46 @@ export class AudioEngine {
    * It did: the stream survived, and there is nothing to do beyond the
    * fresh budget above.
    *
-   * It did not: whatever was open did not survive being ignored, and
-   * waiting is the wrong response. Waiting is what a *stall* gets, on the
-   * reasoning that a held relay connection is keeping the missing seconds
-   * for us (see LIVE_HOLD_SECONDS) — which stops being worth anything
-   * across a lunch break, since those seconds are now an hour old and a
-   * station is only worth hearing at its edge. Reported live 2026-09-08:
-   * coming back to a sleeping machine left a silent station, first
-   * declared lost on the strength of time nobody had measured, and with
-   * that alone fixed it would have sat silent for another minute before
-   * reaching the same conclusion. Reconnecting is what actually gets the
-   * sound back, and a station genuinely gone still walks the ordinary
-   * ladder to the listener's own Reconnect button. */
-  private handleTickAfterAbsence(now: number): void {
+   * It did not, and this stream holds no connection: whatever was open did
+   * not survive being ignored, and waiting is the wrong response. Reported
+   * live 2026-09-08: coming back to a sleeping machine left a silent
+   * station, first declared lost on the strength of time nobody had
+   * measured, and with that alone fixed it would have sat silent for
+   * another minute before reaching the same conclusion. Reconnecting is
+   * what actually gets the sound back, and a station genuinely gone still
+   * walks the ordinary ladder to the listener's own Reconnect button.
+   *
+   * It did not, and the connection *is* held: how long the absence lasted
+   * is what decides it, because that is how far behind the relay's queue
+   * now is. Under LIVE_HOLD_SECONDS this is the case the hold was built
+   * for and the missing seconds are still worth having; past it they are
+   * further behind than a held stall is ever allowed to get, and the
+   * paragraph above applies. The distinction matters most on the device
+   * this is least able to observe: a phone throttles a backgrounded tab's
+   * timers as a matter of course, so an absence of a few seconds is
+   * routine there — and reconnecting through one discards exactly the
+   * buffer that would have made the gap inaudible. */
+  private handleTickAfterAbsence(now: number, absentForMs: number): void {
     this.lastProgressAt = now
     // Read off the element rather than waiting for a 'timeupdate': this is
     // the one moment where the difference between "the stream is fine" and
     // "the stream is dead" is a minute of silence.
     if (this.audio.currentTime + this.positionOffset !== this.lastKnownPosition) return
+    // A held connection has been queueing whatever was missed, so a short
+    // absence is the case that hold exists for — and on a phone (a
+    // throttled tab, a locked screen) it is most of them. Reconnecting
+    // here would discard exactly the seconds that make the gap inaudible,
+    // which is the stutter rather than the cure. Past LIVE_HOLD_SECONDS
+    // the queue is further behind than a held stall is ever allowed to
+    // get, and the reasoning above takes over unchanged.
+    if (this.holdsConnection && absentForMs < LIVE_HOLD_SECONDS * 1000) {
+      this.reportReconnecting(true)
+      return
+    }
     console.warn(
       `[audio-engine] ${this.reconnectUrl} did not advance while this process was away — reconnecting`,
     )
-    this.reconnectOnDrop()
+    this.reconnectOnDrop('absence')
   }
 
   /** Stops trying, by either route into it — the reconnect ladder running

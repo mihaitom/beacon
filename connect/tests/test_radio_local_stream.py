@@ -106,6 +106,46 @@ class TestLocalRadioStream:
         assert "Serving relayed radio to a local player" in caplog.text
         assert "Relayed radio to a local player ended after" in caplog.text
 
+    def test_records_why_the_player_reconnected(self, client, default_session, probed, caplog):
+        """Only the player knows what made it ask again, and on a phone its
+        own console is where nobody can read it — so it says so here, and a
+        reconnect mid-station stops looking like somebody starting one."""
+        default_session.radio_relay = FakeRelay()
+
+        with caplog.at_level(logging.INFO, logger="connect.stream"):
+            r = client.get(f"/stream/radio-local?url={STATION}&reconnect=absence&attempt=2")
+
+        assert r.status_code == 200
+        assert "(reconnect: absence, attempt 2)" in caplog.text
+
+    def test_says_nothing_extra_for_a_first_connection(
+        self, client, default_session, probed, caplog
+    ):
+        default_session.radio_relay = FakeRelay()
+
+        with caplog.at_level(logging.INFO, logger="connect.stream"):
+            r = client.get(f"/stream/radio-local?url={STATION}")
+
+        assert r.status_code == 200
+        assert "reconnect:" not in caplog.text
+
+    def test_does_not_put_a_clients_own_text_in_the_log(
+        self, client, default_session, probed, caplog
+    ):
+        """A query parameter is whatever the caller chose to send, and this
+        one reaches the log. That a reconnect happened is still worth
+        keeping; what it called itself is not."""
+        default_session.radio_relay = FakeRelay()
+
+        with caplog.at_level(logging.INFO, logger="connect.stream"):
+            r = client.get(
+                f"/stream/radio-local?url={STATION}&reconnect=INFO%20everything%20is%20fine"
+            )
+
+        assert r.status_code == 200
+        assert "everything is fine" not in caplog.text
+        assert "(reconnect: unrecognised)" in caplog.text
+
     def test_reuses_a_relay_already_running_for_the_same_station(
         self, client, default_session, probed
     ):

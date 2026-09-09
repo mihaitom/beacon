@@ -602,6 +602,9 @@ describe('AudioEngine', () => {
   // but four (see the method's own docstring); these cover the three that
   // are behaviour rather than plumbing.
   describe('live streams', () => {
+    // MediaError.MEDIA_ERR_NETWORK — see the 'connection drop' block above.
+    const NETWORK_ERROR_CODE = 2
+
     beforeEach(() => {
       vi.useFakeTimers()
     })
@@ -632,6 +635,60 @@ describe('AudioEngine', () => {
 
       expect(audio.play).toHaveBeenCalledOnce()
       expect(audio.src).toBe('http://station/stream')
+    })
+
+    // 'ended' and 'error' can both land for the same failed load, and
+    // neither handler guards against it the way the watchdog does. Each
+    // scheduled its own retry, and the second overwrote the first's timer
+    // without cancelling it — so both fired, and the element opened two
+    // connections a fraction of a second apart.
+    it('opens one connection when a drop reaches it through two events at once', async () => {
+      engine.playLive('http://station/stream')
+      playing(3)
+      audio.play.mockClear()
+
+      audio.dispatchEvent(new Event('ended'))
+      audio.error = { message: 'network error', code: NETWORK_ERROR_CODE }
+      audio.dispatchEvent(new Event('error'))
+
+      // Past both backoff steps (1s and 2s), short of the stall watchdog's
+      // own four seconds, which would otherwise start a retry of its own.
+      await vi.advanceTimersByTimeAsync(3000)
+
+      expect(audio.play).toHaveBeenCalledOnce()
+    })
+
+    // Three of the five ways into a reconnect used to say nothing at all,
+    // which left the two most common ones on a phone to be reconstructed
+    // from the backend's timestamps.
+    it('says why it is reconnecting on the paths that used to be silent', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      engine.playLive('http://station/stream')
+      playing(3)
+
+      audio.dispatchEvent(new Event('ended'))
+      expect(warn).toHaveBeenCalled()
+
+      warn.mockClear()
+      await vi.advanceTimersByTimeAsync(3000)
+      audio.error = { message: 'network error', code: NETWORK_ERROR_CODE }
+      audio.dispatchEvent(new Event('error'))
+
+      expect(warn).toHaveBeenCalled()
+    })
+
+    // Only Beacon's own endpoint is Beacon's to add parameters to. A
+    // station fetched straight from its own server is somebody else's
+    // address, and an unexpected parameter on it is a request they never
+    // agreed to answer.
+    it('leaves a station reconnected directly at its own address untouched', async () => {
+      engine.playLive('http://station/stream?listen=1')
+      playing(3)
+
+      audio.dispatchEvent(new Event('ended'))
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(audio.src).toBe('http://station/stream?listen=1')
     })
 
     it('leaves a stream alone for as long as it keeps advancing', async () => {
@@ -794,6 +851,27 @@ describe('AudioEngine', () => {
         expect(onReconnectStateChange).toHaveBeenLastCalledWith(false)
       })
 
+      // The other end of the same scale. A phone throttles a backgrounded
+      // tab's timers as a matter of course, so a tick a few seconds late is
+      // routine there — and the relay has spent those seconds queueing
+      // exactly what was missed. Reconnecting through one discards them,
+      // which is the stutter rather than the cure.
+      it('waits out a short absence instead of throwing the queued seconds away', async () => {
+        const onReconnectStateChange = vi.fn()
+        engine.onReconnectStateChange = onReconnectStateChange
+        engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+        playing(3)
+        audio.play.mockClear()
+
+        // Timers stood still for eight seconds; the playhead did not move
+        // either, which on a held stream says nothing yet.
+        vi.setSystemTime(Date.now() + 8000)
+        await vi.advanceTimersByTimeAsync(3000)
+
+        expect(audio.play).not.toHaveBeenCalled()
+        expect(onReconnectStateChange).toHaveBeenCalledWith(true)
+      })
+
       // A watchdog tick that arrives a lunch break late timed the machine
       // being asleep, not the stream: nothing was asked of the connection
       // in all that time, so neither conclusion the ordinary budget
@@ -821,7 +899,9 @@ describe('AudioEngine', () => {
         await vi.advanceTimersByTimeAsync(1000)
 
         expect(audio.play).toHaveBeenCalledOnce()
-        expect(audio.src).toBe('http://beacon/stream/radio-local')
+        // The same endpoint; what it now carries alongside is the subject
+        // of 'reporting the reason to the backend' below.
+        expect(audio.src).toContain('http://beacon/stream/radio-local')
       })
 
       // The element can be paused with the watchdog still armed - the
@@ -860,6 +940,48 @@ describe('AudioEngine', () => {
         expect(audio.play).not.toHaveBeenCalled()
         expect(onConnectionLost).not.toHaveBeenCalled()
         expect(onReconnectStateChange).not.toHaveBeenCalledWith(true)
+      })
+
+      // A browser console is unreadable on the device that produces most
+      // of these, so the reconnect says on its way out what caused it —
+      // the request is going to Beacon regardless.
+      describe('reporting the reason to the backend', () => {
+        it('names what caused the attempt, and which attempt it is', async () => {
+          engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+          playing(3)
+
+          audio.dispatchEvent(new Event('ended'))
+          await vi.advanceTimersByTimeAsync(1000)
+
+          expect(audio.src).toBe('http://beacon/stream/radio-local?reconnect=ended&attempt=1')
+        })
+
+        it('appends to a relay URL that already carries settings', async () => {
+          engine.playLive('http://beacon/stream/radio-local?url=http%3A%2F%2Fstation&format=aac', {
+            holdsConnection: true,
+          })
+          playing(3)
+
+          audio.dispatchEvent(new Event('ended'))
+          await vi.advanceTimersByTimeAsync(1000)
+
+          expect(audio.src).toContain('&reconnect=ended')
+        })
+
+        it('counts the attempts up while the retries keep failing', async () => {
+          engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+          playing(3)
+
+          audio.dispatchEvent(new Event('ended'))
+          await vi.advanceTimersByTimeAsync(1000)
+          audio.error = { message: 'network error', code: NETWORK_ERROR_CODE }
+          audio.dispatchEvent(new Event('error'))
+          await vi.advanceTimersByTimeAsync(2000)
+
+          // An attempt that never reaches Beacon leaves no line, so the
+          // count is what says how many did not arrive.
+          expect(audio.src).toContain('attempt=2')
+        })
       })
 
       it('gives up once waiting has stopped being worth it', async () => {

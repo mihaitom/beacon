@@ -8,7 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
-- The log now notes when a station's connection is re-established behind the scenes, and how long a player stayed connected, so a brief interruption while listening leaves a trace instead of none
+- The log now notes when a station's connection is re-established behind the scenes, how long a player stayed connected, and what made the player ask again. A stutter heard on the phone can be looked up afterwards instead of having to be reproduced
+
+### Fixed
+
+- A station no longer skips a moment when the phone has had it in the background for a few seconds. The connection Beacon holds keeps the audio that was missed, and it is played rather than thrown away
+- A dropped station is no longer reconnected twice over, which opened two connections at once and could be heard as a second stumble right after the first
 
 ## [1.2.1] - 2026-09-08
 

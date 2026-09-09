@@ -773,6 +773,25 @@ async def _relayed_radio_audio(
         logger.info(f"[stream] Relayed radio {label} ended after {time.monotonic() - started:.0f}s")
 
 
+# What the app may report as the cause of a reconnect — see
+# services/audioEngine.ts's ReconnectReason, which has to spell them the
+# same way. Checked against rather than logged as it arrives: this reaches
+# the log, and a query parameter is whatever a client chose to send.
+_RECONNECT_REASONS = frozenset({"ended", "ended-early", "network-error", "stalled", "absence"})
+
+
+def _reconnect_note(reason: str | None, attempt: int | None) -> str:
+    """The " (reconnect: …)" half of the line above, or nothing at all for
+    a first connection. An unrecognised reason still says a reconnect
+    happened — that it arrived is the fact worth keeping; what it called
+    itself is not, and passing it through would put a client's own text
+    into the log."""
+    if reason is None:
+        return ""
+    named = reason if reason in _RECONNECT_REASONS else "unrecognised"
+    return f" (reconnect: {named}, attempt {attempt})" if attempt else f" (reconnect: {named})"
+
+
 @router.get("/stream/radio-local")
 async def local_radio_stream(
     url: str = Query(...),
@@ -793,6 +812,15 @@ async def local_radio_stream(
     # pick. An `<audio>` element takes either, so this is purely about not
     # converting a station that already arrives in the format they chose.
     format: str | None = Query(default=None),
+    # Why the app is asking again, and how many attempts into its own
+    # ladder this is — absent on a first connection. Only the phone can
+    # answer that, and its console is exactly where nobody can read it:
+    # a reconnect mid-station looks identical in this log to somebody
+    # simply starting the station, which is what made a reported stutter
+    # something to reconstruct from timestamps. See
+    # services/audioEngine.ts's withReconnectReason().
+    reconnect: str | None = Query(default=None),
+    attempt: int | None = Query(default=None),
     session: SessionState = Depends(get_session),
     _token: None = Depends(require_token),
 ):
@@ -862,7 +890,9 @@ async def local_radio_stream(
             preferred_format=relay_format_for_target(format, None),
         )
     label = "to a local player"
-    logger.info(f"[stream] Serving relayed radio {label}: {url[:80]}")
+    logger.info(
+        f"[stream] Serving relayed radio {label}{_reconnect_note(reconnect, attempt)}: {url[:80]}"
+    )
     # No ICY muxing, unlike /stream/radio: an <audio> element has no way to
     # read it (that is why core/icy_metadata.py exists at all), and asking
     # for it would only interleave metadata blocks into audio nothing here
