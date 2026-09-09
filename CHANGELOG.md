@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The log now notes when a station's connection is re-established behind the scenes, and how long a player stayed connected, so a brief interruption while listening leaves a trace instead of none
+
 ## [1.2.1] - 2026-09-08
 
 ### Changed

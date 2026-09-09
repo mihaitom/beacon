@@ -699,8 +699,9 @@ async def radio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
         # this station once; this connection is just one more subscriber to
         # its device-audio fan-out, same as any other cast target's own
         # connection here (multi-target casting subscribes more than once).
-        logger.info(f"[stream] Serving relayed radio for {session_id}: {radio_info['url'][:80]}")
-        audio = _relayed_radio_audio(relay)
+        label = f"for {session_id}"
+        logger.info(f"[stream] Serving relayed radio {label}: {radio_info['url'][:80]}")
+        audio = _relayed_radio_audio(relay, label=label)
         if wants_icy:
             audio = _muxed_icy_audio(
                 audio, IcyMuxer(DEVICE_METAINT, current_title, record_injection)
@@ -737,7 +738,9 @@ def _latin1_header_value(text: str) -> str:
     return text.encode("latin-1", "replace").decode("latin-1")
 
 
-async def _relayed_radio_audio(relay: RadioRelay, *, burst: bool = False) -> AsyncGenerator[bytes]:
+async def _relayed_radio_audio(
+    relay: RadioRelay, *, burst: bool = False, label: str = ""
+) -> AsyncGenerator[bytes]:
     """One subscriber's view of the relay's device-audio fan-out — ends on
     a `None` sentinel (the relay stopped for good, see RadioRelay.stop())
     or, same as any other StreamingResponse generator, when the caller
@@ -750,8 +753,15 @@ async def _relayed_radio_audio(relay: RadioRelay, *, burst: bool = False) -> Asy
     rather than starting it at the live edge — see RadioRelay's
     subscribe_audio() and _BURST_SECONDS. Only a listener's own player asks
     for it; a cast device sits on the same network as this backend and gains
-    nothing from being seconds behind."""
+    nothing from being seconds behind.
+
+    `label` names this subscriber the same way its caller's own "Serving
+    relayed radio ..." line does, so the two read as a pair — how long a
+    connection stood is what says whether a player reconnected mid-stream
+    or simply kept listening, and opening one is otherwise the only half
+    of it that gets recorded."""
     queue = relay.subscribe_audio(burst=burst)
+    started = time.monotonic()
     try:
         while True:
             chunk = await queue.get()
@@ -760,6 +770,7 @@ async def _relayed_radio_audio(relay: RadioRelay, *, burst: bool = False) -> Asy
             yield chunk
     finally:
         relay.unsubscribe_audio(queue)
+        logger.info(f"[stream] Relayed radio {label} ended after {time.monotonic() - started:.0f}s")
 
 
 @router.get("/stream/radio-local")
@@ -850,7 +861,8 @@ async def local_radio_stream(
             # (see localFormats() in services/streamQuality.ts).
             preferred_format=relay_format_for_target(format, None),
         )
-    logger.info(f"[stream] Serving relayed radio to a local player: {url[:80]}")
+    label = "to a local player"
+    logger.info(f"[stream] Serving relayed radio {label}: {url[:80]}")
     # No ICY muxing, unlike /stream/radio: an <audio> element has no way to
     # read it (that is why core/icy_metadata.py exists at all), and asking
     # for it would only interleave metadata blocks into audio nothing here
@@ -860,7 +872,7 @@ async def local_radio_stream(
         # without it a player fed from here would hold no buffer at all and
         # every few seconds of lost connection would be audible. See
         # core/radio_relay.py's _BURST_SECONDS.
-        _relayed_radio_audio(relay, burst=True),
+        _relayed_radio_audio(relay, burst=True, label=label),
         media_type=relay.device_content_type,
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

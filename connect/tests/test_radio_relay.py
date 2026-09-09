@@ -1,6 +1,7 @@
 """Tests for core/radio_relay.py — the shared radio-to-cast relay."""
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -358,6 +359,60 @@ class TestRadioRelayStallDetection:
 
         assert attempts == ["http://station"]
         assert bytes(proc.stdin.written) == b"abcd"
+
+
+class TestCleanStationEnd:
+    """A station that closes the connection instead of failing on it —
+    _run_once() returns rather than raising, and _run() reconnects with
+    the same five-second gap a drop causes. Only the drop used to say so,
+    which left the one interruption a listener can hear as the one that
+    left no trace."""
+
+    async def test_logs_the_reconnect_after_a_station_closes_the_connection(self, caplog):
+        relay, _proc, _ = _relay_with_fake_ffmpeg()
+        stream = _mock_stream({}, [b"audio"])
+
+        with (
+            patch.object(relay_mod, "_RECONNECT_DELAY_SECONDS", 0.01),
+            patch.object(relay_mod._client, "stream", stream),
+            caplog.at_level(logging.INFO, logger="connect.radio_relay"),
+        ):
+            await relay.start()
+            await asyncio.sleep(0.05)
+            await relay.stop()
+
+        assert "ended cleanly" in caplog.text
+        # Not the other branch: nothing failed here, and a log that called
+        # this a drop would send the next reader looking for a fault.
+        assert "dropped" not in caplog.text
+
+    async def test_says_nothing_when_the_station_ends_because_it_was_stopped(self, caplog):
+        """A stop landing while the fetch is between chunks ends it the
+        same way a station closing does, and no reconnect follows — a line
+        there would report an interruption at every station change."""
+        relay, _proc, _ = _relay_with_fake_ffmpeg()
+
+        resp = MagicMock()
+        resp.headers = {}
+        resp.raise_for_status = MagicMock()
+
+        async def aiter_bytes():
+            yield b"audio"
+            relay._stopped = True  # what stop() sets, without cancelling this task
+
+        resp.aiter_bytes = aiter_bytes
+
+        @asynccontextmanager
+        async def stream(method, url, headers=None):
+            yield resp
+
+        with (
+            patch.object(relay_mod._client, "stream", stream),
+            caplog.at_level(logging.INFO, logger="connect.radio_relay"),
+        ):
+            await relay._run()
+
+        assert "ended cleanly" not in caplog.text
 
 
 class TestCastQualityCeiling:

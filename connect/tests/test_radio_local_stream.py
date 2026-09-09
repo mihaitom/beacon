@@ -11,6 +11,7 @@ _STALL_TIMEOUT_SECONDS for the other half.
 """
 
 import asyncio
+import logging
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -85,6 +86,25 @@ class TestLocalRadioStream:
         # reason this matters more here than for casting: this is the path
         # someone listens on away from home.
         assert relay.burst_requested is True
+
+    def test_logs_how_long_the_connection_stood(self, client, default_session, probed, caplog):
+        """Opening one of these was the only half that got recorded, which
+        made a player reconnecting mid-stream look exactly like a player
+        that had been listening all along — several short connections and
+        one long one read the same in the log."""
+        relay = FakeRelay()
+
+        with (
+            patch.object(
+                type(default_session), "start_radio_relay", new=AsyncMock(return_value=relay)
+            ),
+            caplog.at_level(logging.INFO, logger="connect.stream"),
+        ):
+            r = client.get(f"/stream/radio-local?url={STATION}")
+
+        assert r.status_code == 200
+        assert "Serving relayed radio to a local player" in caplog.text
+        assert "Relayed radio to a local player ended after" in caplog.text
 
     def test_reuses_a_relay_already_running_for_the_same_station(
         self, client, default_session, probed

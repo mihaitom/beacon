@@ -568,6 +568,14 @@ class RadioRelay:
             try:
                 await self._run_once()
                 failures = 0
+                if not self._stopped:
+                    # The station closed the connection rather than failing
+                    # on it. Logged because the reconnect below is otherwise
+                    # the one gap in the audio that leaves no trace at all.
+                    logger.info(
+                        f"[radio-relay] {self.url} ended cleanly — reconnecting in "
+                        f"{_RECONNECT_DELAY_SECONDS:.0f}s"
+                    )
             except asyncio.CancelledError:
                 raise
             except Exception as e:
