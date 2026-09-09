@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Starting a station, on this device or on a speaker, now opens one connection to it instead of two. It starts a little sooner, and stations that only allow a single listener at a time no longer fail on the second connection
+- A station playing on a speaker now asks that speaker where it is half as often. Two independent checks were running side by side, at their busiest in the first seconds after a station starts
+
+### Fixed
+
+- A speaker could refuse a station, or fall silent, after a pause, a jump or once another speaker joined, when the cast quality was set to AAC. It was told the station was MP3 while it was being sent AAC
+
 ## [1.2.1] - 2026-09-08
 
 ### Changed

@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from core.auth import require_token
 from core.claims import claims
+from core.playback_clock import MAX_PLAUSIBLE_POSITION_LEAD, POSITION_RESYNC_THRESHOLD
 from core.playlist_url import resolve_stream_url
 from core.radio_position import RadioPositionTracker
 from core.radio_relay import relay_format_for_target
@@ -39,7 +40,7 @@ from core.state import (
     resolve_target,
     stream_url,
 )
-from core.stream_format import probe_stream, radio_content_type
+from core.stream_format import content_type_from_extension, probe_stream, radio_content_type
 from core.streamer import (
     FALLBACK_FORMAT,
     REASON_DEVICE_REJECTED_STREAM,
@@ -147,12 +148,6 @@ async def _release_claims(target, session: SessionState) -> None:
         await claims.release(target_type, name, session.session_id)
 
 
-# A device reporting itself this far *ahead* of the wall clock this early
-# into a stream is a stale/bogus reading, not real startup-buffering lag —
-# see _apply_position_offset().
-MAX_PLAUSIBLE_POSITION_LEAD = 15.0
-
-
 def _reports_no_radio_position(st: AppState, delivery) -> bool:
     """Whether this delivery's own reported position is worthless for the
     station currently playing, and must not be calibrated against at all.
@@ -189,19 +184,43 @@ def _reports_no_radio_position(st: AppState, delivery) -> bool:
     return bool(st.radio_info.get("relayed") or st.radio_info.get("proxied"))
 
 
-def _position_candidate(st: AppState, target):
+def _tracked_for_radio(session: SessionState, delivery) -> bool:
+    """Whether core/radio_position.py's tracker is already measuring this
+    delivery for the station currently playing — in which case it also
+    calibrates the clock from those same readings (see its
+    _calibrate_clock()), and the two functions below must not ask the very
+    same device the very same question a second time.
+
+    A DlnaDelivery.get_position() is a real SOAP round trip and a Sonos's
+    is two HTTP ones, so a second poller is not free: for the first ten
+    seconds of a station the tracker and _apply_position_offset() polled at
+    0.5s each, doubling exactly the traffic _IDLE_POLL_INTERVAL_SECONDS
+    (core/radio_position.py) was introduced to bring down."""
+    tracker = session.radio_position_tracker
+    return tracker is not None and tracker.delivery is delivery
+
+
+def _position_candidate(session: SessionState, target):
     """The delivery to calibrate this session's clock against — the first
-    that can report a position and whose reading is actually usable right
-    now (see _reports_no_radio_position()).
+    that can report a position, whose reading is actually usable right now
+    (see _reports_no_radio_position()), and that nothing else is already
+    measuring (see _tracked_for_radio()).
 
     Skipping just the unusable delivery rather than giving up on the whole
     target matters for a multi-target cast: `candidate` is simply the first
     SUPPORTS_POSITION delivery, so a Sonos that happens to sort ahead of a
     Chromecast used to disable position resync for the session entirely,
     including for the Chromecast that does report a usable position."""
+    st = session.state
     deliveries = getattr(target, "deliveries", [target])
     return next(
-        (d for d in deliveries if d.SUPPORTS_POSITION and not _reports_no_radio_position(st, d)),
+        (
+            d
+            for d in deliveries
+            if d.SUPPORTS_POSITION
+            and not _reports_no_radio_position(st, d)
+            and not _tracked_for_radio(session, d)
+        ),
         None,
     )
 
@@ -258,7 +277,7 @@ async def _apply_position_offset(session: SessionState, target, generation: int)
     # beacon-hosted radio reports a flat 0.00s and calibrating against that
     # once is enough to pull position_offset seconds negative for the whole
     # run. See _reports_no_radio_position() for the full account.
-    candidate = _position_candidate(st, target)
+    candidate = _position_candidate(session, target)
     if candidate is None:
         return
 
@@ -342,29 +361,6 @@ async def _apply_position_offset(session: SessionState, target, generation: int)
 # — this runs for a whole session's entire track length, continuously, not
 # just while a UI happens to have a picker open.
 POSITION_RESYNC_INTERVAL = 8.0
-
-# How much the *newly measured* offset is allowed to differ from the
-# *already-applied* one (offset_before, below) before it's worth
-# recalibrating over — ordinary jitter rather than something a user
-# actually did. On this LAN, that jitter isn't network RTT (negligible for
-# a local SSDP+UPnP round trip) — it's SonosDelivery.get_position()'s own
-# H:M:S-string position, which only ever carries whole-second resolution.
-# That alone puts a ~1s floor under how tight this can usefully go: nothing
-# on our side can measure a real device more precisely than the device
-# itself reports it. Small enough to catch a "skip 10s" tap, large enough
-# that this quantization alone never crosses it on a stable stream.
-#
-# Deliberately NOT compared against the raw device/wall-clock delta on its
-# own (an earlier version of this did) — once a device has any lasting
-# offset at all (a Sonos's own several-second startup buffering, say), that
-# raw delta sits well past this threshold *permanently*, on every single
-# check, even though nothing further has actually changed since the offset
-# that already accounts for it was applied. That recalibrated (and
-# rebroadcast over SSE) every ~8s indefinitely once a track legitimately
-# needed any real correction at all — read live as the position UI
-# visibly jittering nonstop for the rest of the track, not just around the
-# one moment something really happened.
-POSITION_RESYNC_THRESHOLD = 1.0
 
 
 async def _resync_position_once(session: SessionState, candidate, generation: int) -> None:
@@ -576,7 +572,7 @@ async def _resync_position_periodically(session: SessionState, target, generatio
     _resync_position_once()'s own comment.
     """
     st = session.state
-    if _position_candidate(st, target) is None:
+    if _position_candidate(session, target) is None:
         return
 
     while True:
@@ -593,7 +589,7 @@ async def _resync_position_periodically(session: SessionState, target, generatio
         # happened, would then spend the rest of the run recalibrating
         # against that constant every 8s and pin elapsed() near 0 — the very
         # thing that predicate exists to prevent.
-        candidate = _position_candidate(st, target)
+        candidate = _position_candidate(session, target)
         if candidate is None:
             return
         # Retires this task when /device-stop removed `candidate` from the
@@ -638,6 +634,17 @@ def _current_track_play_args(
     )
 
 
+def _no_longer_relayed(radio_info: dict | None) -> dict | None:
+    """`radio_info` with its relay forgotten — for a rollback to a station
+    whose relay has already been torn down by the switch that then failed.
+    Drops the announced device type along with the flag: that described the
+    relay's output, and without one this station would be dispatched
+    straight to the device again (see radio_content_type())."""
+    if radio_info is None:
+        return None
+    return {**radio_info, "relayed": False, "device_content_type": None}
+
+
 async def retry_radio_via_proxy(session: SessionState, target) -> bool:
     """Point a device at Beacon's own re-encoded copy of the station it
     just refused. Returns whether it started.
@@ -667,7 +674,12 @@ async def retry_radio_via_proxy(session: SessionState, target) -> bool:
         logger.exception("[play-url] Re-encoded retry failed too")
         return False
 
-    st.radio_info = {**st.radio_info, "proxied": True, "content_type": FALLBACK_FORMAT.content_type}
+    st.radio_info = {
+        **st.radio_info,
+        "proxied": True,
+        "content_type": FALLBACK_FORMAT.content_type,
+        "device_content_type": FALLBACK_FORMAT.content_type,
+    }
     # What the stream-info panel reads — the listener sees that Beacon is
     # re-encoding and why, rather than a station that silently sounds
     # different from the one they picked (see StreamInfoSection.vue and
@@ -1125,38 +1137,6 @@ async def play_url(
         # be set before the dispatch — and rolled back with everything else
         # if nothing ends up playing.
         previous_radio_info = st.radio_info
-        # Asked of the station rather than guessed from its file extension:
-        # a `.aac` URL is routinely served as `audio/aacp` (HE-AAC), and
-        # announcing the extension's own `audio/aac` is what a Sonos
-        # rejects with ERROR_UNSUPPORTED_FORMAT — for a stream it plays
-        # fine once told the truth. See core/stream_format.py; the
-        # extension guess is still the fallback there.
-        probed = await probe_stream(url)
-        if probed.refused:
-            # The station answered Beacon's own probe with a 4xx. It will
-            # answer the device the same way, and re-encoding it can't
-            # help either — ffmpeg has to fetch the very same URL. Said
-            # plainly here instead of letting the speaker fail on it and
-            # the re-encode fail behind that, which is what a listener was
-            # left to interpret: a speaker reporting ERROR_ACCESS_DENIED,
-            # then ERROR_CORRUPT_FILE for the empty re-encode, reads as if
-            # the *speaker* were broken.
-            #
-            # Only the handful of codes that mean the station itself said
-            # no (see _REFUSED_STATUSES) — a timeout, a refused connection
-            # or a 5xx still dispatch as before, since a station can be
-            # slow or briefly broken and play fine anyway, and refusing to
-            # try would be worse than trying and failing.
-            logger.info(f"[play-url] {url} refused the connection — not dispatching")
-            st.radio_info = previous_radio_info
-            await _release_claims(target, session)
-            return {
-                "error": "delivery_failed",
-                "reason": REASON_STATION_REFUSED,
-                "device": device_label(target),
-                "detail": probed.detail or url,
-            }
-        content_type = probed.content_type
 
         # Relayed (default) routes the device at Beacon's own relay
         # (core/radio_relay.py) instead of the station directly — one fetch
@@ -1167,7 +1147,23 @@ async def play_url(
         # to know where the relay's device-audio actually is.
         relayed = not req.cast_directly
         dispatch_url = url
+        # The station's own type, which is what a device connecting straight
+        # to it has to be told before it connects — a `.aac` URL is
+        # routinely served as `audio/aacp` (HE-AAC), and announcing the
+        # extension's own `audio/aac` is what a Sonos rejects with
+        # ERROR_UNSUPPORTED_FORMAT for a stream it plays fine once told the
+        # truth. Seeded from the extension here and settled below by
+        # whichever connection to the station this dispatch makes anyway:
+        # the relay's own for a relayed station, a probe of its own only for
+        # a station going directly to the device.
+        content_type = content_type_from_extension(url)
         dispatch_content_type = content_type
+        # What the station answered, when it answered with one of the
+        # handful of codes that mean it is refusing this listener rather
+        # than having a bad moment (see core/stream_format.py's
+        # is_station_refusal). Reported below instead of letting the speaker
+        # fail on the same answer a moment later.
+        refusal: str | None = None
         if relayed:
             # A relay may already be running for this very station, started
             # by *local* playback (routes/stream.py's /stream/radio-local)
@@ -1199,19 +1195,27 @@ async def play_url(
                 await session.stop_radio_relay()
             relay = await session.start_radio_relay(
                 url,
-                content_type,
+                content_type,  # a guess until the relay's own connection settles it
                 max_bitrate_kbps=req.max_lossy_bitrate_kbps,
                 preferred_format=relay_format,
             )
-            if relay.connected:
+            if relay.refused_status is not None and not relay.connected:
+                refusal = f"HTTP {relay.refused_status}"
+            elif relay.connected:
+                # What the station itself announced, read off the relay's
+                # own connection (see RadioRelay.source_content_type). Kept
+                # in radio_info below because that is what a later direct
+                # re-dispatch of this same station is told to expect —
+                # retry_radio_via_proxy(), a device added mid-station.
+                content_type = relay.source_content_type
                 dispatch_url = radio_stream_url(session.session_id)
                 dispatch_content_type = relay.device_content_type
             else:
-                # The relay never got as far as a running ffmpeg (the
-                # station refused this second connection, or never answered
-                # — probe_radio_stream() above used a connection of its own,
-                # and some stations allow exactly one at a time). Pointing
-                # the device at /stream/radio anyway would answer 200 with a
+                # The relay never got as far as a running ffmpeg: the
+                # station never answered, or dropped the connection before
+                # ffmpeg was up. (One that answered with a refusal is the
+                # branch above, not this one.) Pointing the device at
+                # /stream/radio anyway would answer 200 with a
                 # body that stays silent indefinitely, which reads as a
                 # broken speaker rather than a station problem. Fall back to
                 # what "direct to device" does instead: hand over the
@@ -1223,10 +1227,54 @@ async def play_url(
         else:
             await session.stop_radio_relay()
 
+        if not relayed and refusal is None:
+            # The one case the station is still worth a request of its own:
+            # the device is about to fetch the station itself, and is told
+            # what to expect before it connects. A relayed station never
+            # reaches this — its relay has already read the same headers off
+            # the connection it needs anyway, so probing again would be a
+            # second fetch of the station for an answer already in hand, and
+            # some stations allow exactly one connection at a time.
+            probed = await probe_stream(url)
+            if probed.refused:
+                refusal = probed.detail or url
+            else:
+                content_type = probed.content_type
+                dispatch_content_type = content_type
+
+        if refusal is not None:
+            # It will answer the device the same way, and re-encoding can't
+            # help either — ffmpeg has to fetch the very same URL. Said
+            # plainly here rather than letting the speaker fail on it and
+            # the re-encode fail behind that, which is what a listener was
+            # left to interpret: a speaker reporting ERROR_ACCESS_DENIED,
+            # then ERROR_CORRUPT_FILE for the empty re-encode, reads as if
+            # the *speaker* were broken.
+            logger.info(f"[play-url] {url} refused the connection ({refusal})")
+            await session.stop_radio_relay()
+            # Whatever was playing before is gone either way: starting this
+            # relay tore down the previous station's, and rolling the info
+            # back unchanged would leave the status claiming a live relay
+            # that no longer exists — same correction the dispatch-failure
+            # path below makes, for the same reason.
+            st.radio_info = _no_longer_relayed(previous_radio_info)
+            await _release_claims(target, session)
+            return {
+                "error": "delivery_failed",
+                "reason": REASON_STATION_REFUSED,
+                "device": device_label(target),
+                "detail": refusal,
+            }
+
         st.radio_info = {
             "title": req.title,
             "url": url,
             "content_type": content_type,
+            # What this dispatch announced, which for a relayed station is
+            # the relay's output rather than the station's own type — every
+            # later reconnect and every device joining mid-station has to be
+            # told the same thing (see radio_content_type()).
+            "device_content_type": dispatch_content_type,
             "relayed": relayed,
         }
 
@@ -1273,8 +1321,7 @@ async def play_url(
                         # longer exists. Left uncorrected, the status/UI
                         # would report a live relay indefinitely, until some
                         # unrelated later /play-url happened to fix it.
-                        if st.radio_info is not None:
-                            st.radio_info = {**st.radio_info, "relayed": False}
+                        st.radio_info = _no_longer_relayed(st.radio_info)
                     # See /play's identical comment — don't leave the device
                     # locked to this session when nothing actually started
                     # playing on it.
@@ -1325,12 +1372,11 @@ async def play_url(
         if relayed:
             # Superseded by the relay's own ICY parsing (same fetch, same
             # _set_radio_title callback) — stop whatever independent watch
-            # might already be running for this session. stores/playback.ts's
-            # playRadioStation() always calls /radio-metadata/start once,
-            # even when about to cast (local playback needs it and casting
-            # doesn't know that in advance) — left running here, that would
-            # be exactly the second connection per station this mode exists
-            # to avoid.
+            # might already be running for this session. That is the
+            # ordinary way of it: somebody listening on this device (which
+            # starts one, see stores/playback.ts's startLocalRadio) sends
+            # the station to a speaker. Left running, it would be exactly
+            # the second connection per station this mode exists to avoid.
             session.stop_radio_metadata_watch()
         else:
             # See core/icy_metadata.py's own docstring - a cast radio play is
@@ -1348,10 +1394,6 @@ async def play_url(
         st.queue = []
         st.queue_index = 0
 
-        asyncio.create_task(_apply_position_offset(session, target, st.clock.play_generation))
-        asyncio.create_task(
-            _resync_position_periodically(session, target, st.clock.play_generation)
-        )
         # Chromecast/DLNA/Sonos — see core/radio_position.py's module
         # docstring, and core/state.py's first_radio_position_delivery()
         # for why Sonos is conditional on the URL actually dispatched: a
@@ -1374,6 +1416,13 @@ async def play_url(
             session.radio_position_tracker = tracker
         else:
             session.radio_position_tracker = None
+        # After the tracker, not before: where there is one, it calibrates
+        # the clock from its own readings and these two stand aside rather
+        # than poll the same device again (see _tracked_for_radio()).
+        asyncio.create_task(_apply_position_offset(session, target, st.clock.play_generation))
+        asyncio.create_task(
+            _resync_position_periodically(session, target, st.clock.play_generation)
+        )
         await session.event_bus.broadcast(build_status_dict(session))
         return {"status": "playing", "url": url}
 
@@ -1445,30 +1494,10 @@ async def resume_playback(session: SessionState = Depends(require_authenticated_
                 logger.exception("[resume] Delivery error")
                 return delivery_error_response(e, st.active_delivery)
 
-            # The reconnect above starts a *fresh* stream (FFmpeg output
-            # restarts near 0 again), re-incurring the device's startup-
-            # buffering delay exactly like a brand new /play or a /seek —
-            # see _apply_position_offset()'s docstring and the identical
-            # calls from /play, /play-url, and /seek. Without this,
-            # position_offset keeps whatever value was measured before the
-            # pause, so elapsed()/lyrics-sync/the visualizer run ahead of
-            # what's actually audible until the periodic resync below's
-            # first tick catches up, up to POSITION_RESYNC_INTERVAL later.
-            asyncio.create_task(
-                _apply_position_offset(session, st.active_delivery, st.clock.play_generation)
-            )
-            # clock.resume() above bumped play_generation, same as seek_to()
-            # does — any _resync_position_periodically() task still running
-            # from before the pause sees that mismatch on its next wake and
-            # quietly exits (see that function's own docstring), so without
-            # this, periodic resync would silently stop working for good
-            # after the *first* pause/resume of any given track.
-            asyncio.create_task(
-                _resync_position_periodically(session, st.active_delivery, st.clock.play_generation)
-            )
-            # Same generation-bump problem, for core/radio_position.py's
-            # RadioPositionTracker — radio only (st.radio_info), since
-            # tracks don't use it at all. Without this, a pause/resume
+            # clock.resume() above bumped play_generation, and
+            # core/radio_position.py's RadioPositionTracker retires itself
+            # on exactly that — radio only (st.radio_info), since tracks
+            # don't use it at all. Without this, a pause/resume
             # during the device's own startup buffering (observed live
             # 2026-09-02: Sonos auto-pauses/resumes as part of a normal
             # dispatch, mere seconds after /play-url) leaves the tracker
@@ -1507,6 +1536,32 @@ async def resume_playback(session: SessionState = Depends(require_authenticated_
                     # released again.
                     session.radio_position_tracker = None
 
+            # The reconnect above starts a *fresh* stream (FFmpeg output
+            # restarts near 0 again), re-incurring the device's startup-
+            # buffering delay exactly like a brand new /play or a /seek —
+            # see _apply_position_offset()'s docstring and the identical
+            # calls from /play, /play-url, and /seek. Without this,
+            # position_offset keeps whatever value was measured before the
+            # pause, so elapsed()/lyrics-sync/the visualizer run ahead of
+            # what's actually audible until the periodic resync below's
+            # first tick catches up, up to POSITION_RESYNC_INTERVAL later.
+            # clock.resume() above bumped play_generation, same as seek_to()
+            # does — any _resync_position_periodically() task still running
+            # from before the pause sees that mismatch on its next wake and
+            # quietly exits (see that function's own docstring), so without
+            # this, periodic resync would silently stop working for good
+            # after the *first* pause/resume of any given track.
+            #
+            # After the radio tracker above, for the reason /play-url gives:
+            # where there is one, these two stand aside instead of polling
+            # the same device a second time.
+            asyncio.create_task(
+                _apply_position_offset(session, st.active_delivery, st.clock.play_generation)
+            )
+            asyncio.create_task(
+                _resync_position_periodically(session, st.active_delivery, st.clock.play_generation)
+            )
+
         await session.event_bus.broadcast(build_status_dict(session))
         return {"paused": False}
 
@@ -1538,22 +1593,8 @@ async def seek_playback(
                 # See /resume's identical comment.
                 logger.exception("[seek] Delivery error")
                 return delivery_error_response(e, st.active_delivery)
-            # The reconnect above starts a *fresh* stream (FFmpeg output restarts
-            # near 0 again), which re-incurs the device's startup-buffering delay
-            # — same as a brand new /play. Without recalibrating here,
-            # position_offset keeps whatever value was measured for the *previous*
-            # stream (or 0.0 right after a fresh /play), so elapsed() runs ahead
-            # of what's actually audible until the track ends. See
-            # _apply_position_offset()'s docstring and the identical calls from
-            # /play and /play-url above.
-            asyncio.create_task(
-                _apply_position_offset(session, st.active_delivery, st.clock.play_generation)
-            )
-            asyncio.create_task(
-                _resync_position_periodically(session, st.active_delivery, st.clock.play_generation)
-            )
-            # See /resume's identical comment — same generation-bump problem
-            # for core/radio_position.py's RadioPositionTracker. Radio has
+            # See /resume's identical comment — clock.seek_to() bumps
+            # play_generation, which retires the tracker. Radio has
             # no seek UI today (SeekBar.vue swaps it out entirely for the
             # live-elapsed label), so this is defensive symmetry with
             # /resume rather than a path known to be hit in practice.
@@ -1586,6 +1627,22 @@ async def seek_playback(
                     # reads a frozen elapsed_fn() from it — no frame is ever
                     # released again.
                     session.radio_position_tracker = None
+
+            # The reconnect above starts a *fresh* stream (FFmpeg output restarts
+            # near 0 again), which re-incurs the device's startup-buffering delay
+            # — same as a brand new /play. Without recalibrating here,
+            # position_offset keeps whatever value was measured for the *previous*
+            # stream (or 0.0 right after a fresh /play), so elapsed() runs ahead
+            # of what's actually audible until the track ends. See
+            # _apply_position_offset()'s docstring and the identical calls from
+            # /play and /play-url above — including why these come after the
+            # radio tracker rather than before it.
+            asyncio.create_task(
+                _apply_position_offset(session, st.active_delivery, st.clock.play_generation)
+            )
+            asyncio.create_task(
+                _resync_position_periodically(session, st.active_delivery, st.clock.play_generation)
+            )
 
         logger.info(f"[seek] ⏩ {position:.1f}s")
         await session.event_bus.broadcast(build_status_dict(session))

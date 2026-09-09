@@ -437,11 +437,6 @@ async def stop_device(
                 except Exception:
                     logger.exception("[device-stop] Restart error")
 
-            if st.is_streaming and matched is not None and resync_candidate is matched:
-                asyncio.create_task(
-                    _resync_position_periodically(session, new_delivery, st.clock.play_generation)
-                )
-
             # Same handover, for core/radio_position.py's tracker (radio
             # only, and only when the removed device was the one it was
             # actually polling — matched is the delivery instance being
@@ -484,6 +479,16 @@ async def stop_device(
                     session.radio_position_tracker = new_tracker
                 else:
                     session.radio_position_tracker = None
+
+            # After the tracker handover above, not before: where a tracker
+            # covers this delivery it calibrates the clock from its own
+            # readings, and the resync task stands aside instead of polling
+            # the same device again (see routes/playback.py's
+            # _tracked_for_radio()).
+            if st.is_streaming and matched is not None and resync_candidate is matched:
+                asyncio.create_task(
+                    _resync_position_periodically(session, new_delivery, st.clock.play_generation)
+                )
 
     await session.event_bus.broadcast(build_status_dict(session))
     if stop_error:

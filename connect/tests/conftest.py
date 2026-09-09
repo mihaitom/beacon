@@ -117,6 +117,10 @@ def _stub_stream_probe(monkeypatch):
     (test_stream_format.py) call it directly, and the ones about /play-url's
     own handling of it override this fixture.
 
+    Only the direct-to-device path still probes; a relayed station learns
+    the same thing from the relay's own connection, which
+    _stub_relay_station_fetch below is the equivalent stub for.
+
     Deliberately not a network *block*: the point is one predictable answer,
     not a failure a test would then have to interpret."""
     from core.stream_format import ProbedStream, content_type_from_extension
@@ -125,6 +129,32 @@ def _stub_stream_probe(monkeypatch):
         return ProbedStream(content_type_from_extension(url))
 
     monkeypatch.setattr("routes.playback.probe_stream", _fake_probe)
+
+
+@pytest.fixture(autouse=True)
+def _stub_relay_station_fetch(monkeypatch):
+    """core/radio_relay.py connects to the station the moment a relay is
+    started — the default for both /play-url and /stream/radio-local — and
+    that connection is now also where the station's own content type and
+    any refusal come from (see _stub_stream_probe above). Left unstubbed,
+    the suite fetches whatever station URL a test happens to name, for real.
+
+    Stubbed to "could not be reached", which every route already handles:
+    /play-url falls back to dispatching the station directly, exactly the
+    behaviour tests that set no relay up were written against.
+
+    Patched on the relay's own httpx client rather than on _run_once, so a
+    test that substitutes its own station (test_radio_relay.py patches this
+    very attribute, test_radio_reencode.py patches _run_once) still takes
+    precedence over it — this is the floor, not a ceiling."""
+    import httpx
+
+    from core import radio_relay as relay_mod
+
+    def _unreachable(*args, **kwargs):
+        raise httpx.ConnectError("stubbed: tests do not fetch real stations")
+
+    monkeypatch.setattr(relay_mod._client, "stream", _unreachable)
 
 
 @pytest.fixture(autouse=True)

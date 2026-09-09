@@ -4,6 +4,8 @@ import asyncio
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
+
 import core.radio_relay as relay_mod
 from core.radio_relay import RadioRelay, _device_output_args, relay_format_for_target
 
@@ -431,6 +433,150 @@ class TestCeilingReachesFfmpeg:
         assert "-f" in relay._device_args
         assert relay._device_args[relay._device_args.index("-f") + 1] == "adts"
         assert relay.device_content_type == "audio/aac"
+
+
+class TestStationsOwnContentType:
+    """The relay reads what the station announces off its own connection.
+    That is the whole reason /play-url no longer probes a relayed station
+    separately (routes/playback.py): the answer is in headers this fetch
+    has to make anyway, and some stations allow exactly one connection at a
+    time."""
+
+    async def test_takes_the_type_the_station_announces(self):
+        # Started on the extensionless URL's own guess, which is what
+        # /play-url hands over now that it no longer probes — the station
+        # is what corrects it.
+        relay, _, _ = _relay_with_fake_ffmpeg(content_type="audio/mpeg")
+        # `audio/aacp` is HE-AAC as SHOUTcast spells it, and announcing it
+        # verbatim to a Sonos is refused — folded onto the spelling devices
+        # accept, exactly as a probe would have.
+        stream = _mock_stream({"content-type": "audio/aacp"}, [b"audio"])
+
+        with patch.object(relay_mod._client, "stream", stream):
+            await relay.start()
+            await asyncio.sleep(0.05)
+            await relay.stop()
+
+        assert relay.source_content_type == "audio/aac"
+
+    async def test_keeps_the_callers_guess_when_the_station_says_nothing_usable(self):
+        """An Icecast mount that was never configured answers
+        `application/octet-stream`. That is worse than the guess the caller
+        arrived with, so it is not taken."""
+        relay, _, _ = _relay_with_fake_ffmpeg(content_type="audio/mpeg")
+        stream = _mock_stream({"content-type": "application/octet-stream"}, [b"audio"])
+
+        with patch.object(relay_mod._client, "stream", stream):
+            await relay.start()
+            await asyncio.sleep(0.05)
+            await relay.stop()
+
+        assert relay.source_content_type == "audio/mpeg"
+
+
+class TestStationRefusal:
+    """A station answering 401/403/404/410 is refusing this listener, not
+    having a bad moment. /play-url reports that instead of dispatching a
+    device into the same answer, and the reconnect loop must not keep
+    knocking — repeated uncacheable 4xx is what got Beacon banned by a
+    station's own front end once already (see
+    docs/investigations/radio-favicon-4xx-ban.md)."""
+
+    def _refusing_stream(self, status: int, attempts: list[str]):
+        @asynccontextmanager
+        async def stream(method, url, headers=None):
+            attempts.append(url)
+            resp = MagicMock()
+            resp.status_code = status
+            resp.headers = {}
+            resp.raise_for_status = MagicMock(
+                side_effect=httpx.HTTPStatusError(
+                    f"HTTP {status}",
+                    request=httpx.Request(method, url),
+                    response=httpx.Response(status, request=httpx.Request(method, url)),
+                )
+            )
+            yield resp
+
+        return stream
+
+    async def test_records_what_the_station_answered(self):
+        relay, _, _ = _relay_with_fake_ffmpeg()
+        attempts: list[str] = []
+
+        with patch.object(relay_mod._client, "stream", self._refusing_stream(403, attempts)):
+            await relay.start()
+            await relay.stop()
+
+        assert relay.refused_status == 403
+        assert relay.connected is False
+
+    async def test_does_not_keep_reconnecting_into_a_refusal(self):
+        relay, _, _ = _relay_with_fake_ffmpeg()
+        attempts: list[str] = []
+
+        with (
+            patch.object(relay_mod._client, "stream", self._refusing_stream(403, attempts)),
+            patch.object(relay_mod, "_RECONNECT_DELAY_SECONDS", 0.01),
+        ):
+            await relay.start()
+            await asyncio.sleep(0.1)
+            await relay.stop()
+
+        assert attempts == [relay.url]
+
+    async def test_a_refusal_after_a_working_connection_still_reconnects(self):
+        """An expired token, a station reconfigured under a live listener:
+        something clearly worked a moment ago, so giving up on the first 403
+        would end a session that may well come back. The refusal also has to
+        stop standing once the station serves again — a later /play-url
+        joining this relay reads it, and would report an audibly playing
+        station as refused."""
+        relay, _, _ = _relay_with_fake_ffmpeg()
+        attempts: list[str] = []
+        refusing = self._refusing_stream(403, attempts)
+        serving = _mock_stream({"icy-br": "128"}, [b"audio"])
+
+        @asynccontextmanager
+        async def first_serves_then_refuses_then_serves(method, url, headers=None):
+            attempts_so_far = len(attempts)
+            if attempts_so_far == 1:
+                async with refusing(method, url, headers) as resp:
+                    yield resp
+                return
+            attempts.append(url)
+            async with serving(method, url, headers) as resp:
+                yield resp
+
+        with (
+            patch.object(relay_mod._client, "stream", first_serves_then_refuses_then_serves),
+            patch.object(relay_mod, "_RECONNECT_DELAY_SECONDS", 0.01),
+            patch.object(relay_mod, "_STALL_TIMEOUT_SECONDS", 0.05),
+        ):
+            await relay.start()
+            await asyncio.sleep(0.3)
+            await relay.stop()
+
+        assert len(attempts) > 2
+        assert relay.refused_status is None
+
+    async def test_a_station_that_is_merely_broken_is_retried(self):
+        """503 is not a refusal — a station can be briefly broken and play
+        fine a moment later, and giving up on it would be worse than
+        trying."""
+        relay, _, _ = _relay_with_fake_ffmpeg()
+        attempts: list[str] = []
+
+        with (
+            patch.object(relay_mod._client, "stream", self._refusing_stream(503, attempts)),
+            patch.object(relay_mod, "_RECONNECT_DELAY_SECONDS", 0.01),
+        ):
+            await relay.start()
+            await asyncio.sleep(0.1)
+            await relay.stop()
+
+        assert relay.refused_status is None
+        assert len(attempts) > 1
 
 
 class TestOutputStaysPutAcrossReconnects:

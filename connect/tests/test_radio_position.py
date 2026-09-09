@@ -308,3 +308,71 @@ def test_buffer_lag_uses_a_handed_over_started_at(default_session):
     handover.ready = True
     with patch("core.radio_position.time.monotonic", return_value=original.started_at + 304.7):
         assert handover.buffer_lag() == pytest.approx(4.7)
+
+
+class TestClockCalibration:
+    """The tracker is the only thing polling a station's device, so it is
+    also what keeps the session clock in step with it — the job
+    routes/playback.py's _apply_position_offset()/
+    _resync_position_periodically() do for a track, and deliberately step
+    aside from here (see _tracked_for_radio() there). Two pollers asking
+    one DLNA renderer the same SOAP question is what this replaces."""
+
+    def test_folds_a_real_lag_into_the_clock(self, default_session):
+        """A device several seconds behind the wall clock is the ordinary
+        case for a fresh station: it buffers before it plays. Without this
+        the station's elapsed readout runs that whole buffer ahead of what
+        is audible."""
+        tracker, delivery = _tracker(default_session)
+        clock = default_session.state.clock
+        clock.play_start_time = time.time() - 10.0
+
+        with patch.object(delivery, "get_position", new=AsyncMock(return_value=4.0)):
+            asyncio.run(tracker._poll_once())
+
+        assert clock.position_offset == pytest.approx(-6.0, abs=0.2)
+
+    def test_ignores_jitter_below_the_threshold(self, default_session):
+        """A device reports whole seconds at best, so a reading a fraction
+        off the offset already applied is quantization, not a change worth
+        rebroadcasting over SSE every poll."""
+        tracker, delivery = _tracker(default_session)
+        clock = default_session.state.clock
+        clock.play_start_time = time.time() - 10.0
+        clock.position_offset = -6.0
+
+        with patch.object(delivery, "get_position", new=AsyncMock(return_value=4.3)):
+            asyncio.run(tracker._poll_once())
+
+        assert clock.position_offset == -6.0
+
+    def test_a_device_still_stalled_at_zero_is_calibrated_too(self, default_session):
+        """Not gated on `ready`: the buffering stall is exactly when the
+        clock is furthest from what is audible, and leaving it uncorrected
+        until the device moves is what the old one-shot calibration in
+        routes/playback.py already refused to do (its own comment on a real
+        0.0 being a legitimate reading)."""
+        tracker, delivery = _tracker(default_session)
+        clock = default_session.state.clock
+        clock.play_start_time = time.time() - 8.0
+
+        with patch.object(delivery, "get_position", new=AsyncMock(return_value=0.0)):
+            asyncio.run(tracker._poll_once())
+
+        assert tracker.ready is False
+        assert clock.position_offset == pytest.approx(-8.0, abs=0.2)
+
+    def test_ignores_a_reading_that_outruns_the_wall_clock(self, default_session):
+        """A Chromecast object is reused across dispatches, so the first
+        poll after a fresh station can catch leftover status from what it
+        was playing before — see _REBASELINE_AFTER_SECONDS. Calibrating
+        against that would throw the station's elapsed readout minutes
+        forward."""
+        tracker, delivery = _tracker(default_session)
+        clock = default_session.state.clock
+        clock.play_start_time = time.time() - 2.0
+
+        with patch.object(delivery, "get_position", new=AsyncMock(return_value=180.0)):
+            asyncio.run(tracker._poll_once())
+
+        assert clock.position_offset == 0.0

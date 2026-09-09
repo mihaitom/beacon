@@ -5,6 +5,7 @@ import contextlib
 import time
 from unittest.mock import AsyncMock, patch
 
+from core.radio_position import RadioPositionTracker
 from core.session import build_status_dict, compute_position
 from core.stream_format import ProbedStream, content_type_from_extension
 from core.streamer import FALLBACK_FORMAT, OutputFormat
@@ -1882,6 +1883,81 @@ def test_apply_position_offset_calibrates_correctly_with_start_position(
     # device is ~1s into the post-seek stream, ~0.5s of that is the poll delay
     # -> offset should be a small buffering correction, NOT ~-start_position (-10s).
     assert -2.0 < default_session.state.clock.position_offset < 2.0
+
+
+class TestStandsAsideForTheRadioTracker:
+    """core/radio_position.py's tracker polls a station's device on its own
+    schedule and calibrates the clock from those readings — so for that one
+    delivery these two must not ask the same device the same question
+    again. A DLNA get_position() is a real SOAP round trip; both polling at
+    0.5s for the first ten seconds of a station doubled exactly the traffic
+    that tracker's idle interval exists to bring down."""
+
+    def _radio_on(self, session, delivery):
+        session.state.is_streaming = True
+        session.state.clock.start(0.0)
+        session.state.active_delivery = delivery
+        session.state.radio_info = {"url": "http://station", "title": "S", "relayed": True}
+
+    def test_the_one_shot_calibration_leaves_a_tracked_device_alone(self, default_session):
+        delivery = ChromecastDelivery("TV")
+        self._radio_on(default_session, delivery)
+        default_session.radio_position_tracker = RadioPositionTracker(
+            default_session, delivery, default_session.state.clock.play_generation
+        )
+
+        with patch.object(delivery, "get_position", new=AsyncMock(return_value=4.0)) as read:
+            asyncio.run(
+                _apply_position_offset(
+                    default_session, delivery, default_session.state.clock.play_generation
+                )
+            )
+
+        read.assert_not_awaited()
+        # Not even the provisional guess: the tracker's own first reading is
+        # what sets this now, and a guess written here would be overwritten
+        # by it a fraction of a second later anyway.
+        assert default_session.state.clock.position_offset == 0.0
+
+    def test_it_still_measures_a_device_no_tracker_covers(self, default_session):
+        """A relayed Sonos and an AirPlay station both get no tracker at all
+        (core/state.py's first_radio_position_delivery), so for them this is
+        still the only thing measuring — and a second delivery alongside a
+        tracked one is too."""
+        delivery = ChromecastDelivery("TV")
+        other = SonosDelivery("Küche")
+        self._radio_on(default_session, delivery)
+        default_session.radio_position_tracker = RadioPositionTracker(
+            default_session, other, default_session.state.clock.play_generation
+        )
+
+        with patch.object(delivery, "get_position", new=AsyncMock(return_value=4.0)) as read:
+            asyncio.run(
+                _apply_position_offset(
+                    default_session, delivery, default_session.state.clock.play_generation
+                )
+            )
+
+        read.assert_awaited()
+
+    def test_the_periodic_resync_retires_for_a_tracked_device(self, default_session):
+        delivery = ChromecastDelivery("TV")
+        self._radio_on(default_session, delivery)
+        default_session.radio_position_tracker = RadioPositionTracker(
+            default_session, delivery, default_session.state.clock.play_generation
+        )
+
+        with patch.object(delivery, "get_position", new=AsyncMock(return_value=4.0)) as read:
+            asyncio.run(
+                asyncio.wait_for(
+                    _resync_position_periodically(
+                        default_session, delivery, default_session.state.clock.play_generation
+                    ),
+                    timeout=1.0,
+                )
+            )
+
+        read.assert_not_awaited()
 
 
 def test_apply_position_offset_returns_when_nothing_supports_position(default_session):

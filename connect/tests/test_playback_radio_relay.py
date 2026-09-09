@@ -39,6 +39,13 @@ class FakeRelay:
         self.reencode_reason = None
         self.output_bitrate_kbps = None
         self.device_content_type = "audio/mpeg"
+        # Mirrors RadioRelay.source_content_type: the caller's guess until
+        # the relay's own connection to the station replaces it with what
+        # the station announces. /play-url reads it back for radio_info.
+        self.source_content_type = content_type
+        # Mirrors RadioRelay.refused_status — set only when the station
+        # answered with a 4xx meaning it refuses this listener.
+        self.refused_status = None
         self._on_title_change = on_title_change
         self.started = False
         self.stopped = False
@@ -63,6 +70,74 @@ def _play_url(client, **overrides):
     }
     body.update(overrides)
     return client.post("/play-url", json=body)
+
+
+def test_does_not_probe_a_station_it_is_about_to_relay(client, default_session):
+    """The relay fetches the station itself and reads the same headers a
+    probe would (see core/radio_relay.py) — probing on top of that is a
+    second connection to the station for an answer already in hand, and
+    some stations allow exactly one at a time."""
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch("routes.playback.probe_stream", new=AsyncMock()) as probe,
+        patch("core.session.RadioRelay", FakeRelay),
+    ):
+        r = _play_url(client)
+
+    assert r.json()["status"] == "playing"
+    probe.assert_not_awaited()
+
+
+def test_records_the_type_the_relay_read_off_the_station(client, default_session):
+    """What the station itself announced, for anything that later
+    re-dispatches it straight to a device — retry_radio_via_proxy(), a
+    device joining mid-station (see core/stream_format.py's
+    radio_content_type)."""
+
+    class AacStation(FakeRelay):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.source_content_type = "audio/aac"
+            self.device_content_type = "audio/aac"
+
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play,
+        patch("core.session.RadioRelay", AacStation),
+    ):
+        r = _play_url(client)
+
+    assert r.json()["status"] == "playing"
+    assert default_session.state.radio_info["content_type"] == "audio/aac"
+    # And what the device was told, which for a relayed station is the
+    # relay's output rather than the station's own type — here both, since
+    # this relay hands AAC through untouched.
+    assert play.await_args.kwargs["content_type"] == "audio/aac"
+    assert default_session.state.radio_info["device_content_type"] == "audio/aac"
+
+
+def test_reports_a_station_that_refuses_the_relay(client, default_session):
+    """The relay is what asks the station, so it is what finds a 403 — and
+    the listener is told, rather than the speaker being dispatched into the
+    same answer. Covered end-to-end in test_radio_reencode.py; this is the
+    relay-shaped half of it."""
+
+    class RefusedStation(FakeRelay):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.connected = False
+            self.refused_status = 403
+
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play,
+        patch("core.session.RadioRelay", RefusedStation),
+    ):
+        r = _play_url(client)
+
+    body = r.json()
+    assert body["reason"] == "station_refused"
+    assert body["detail"] == "HTTP 403"
+    play.assert_not_awaited()
+    assert default_session.state.radio_info is None
 
 
 def test_dispatches_the_device_to_beacons_own_relay_by_default(client, default_session):

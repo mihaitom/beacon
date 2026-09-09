@@ -14,12 +14,13 @@ import asyncio
 import time
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
 from core.claims import claims
 from core.icy_metadata import ICY_ROUND_TRIP_ENV, IcyDemuxer, strip_pulse
 from core.session import radio_is_buffering
-from core.stream_format import ProbedStream
+from core.stream_format import ProbedStream, is_station_refusal
 from core.streamer import REASON_DEVICE_REJECTED_STREAM
 from delivery import ChromecastDelivery, SonosDelivery
 from routes import upnp
@@ -152,6 +153,22 @@ class TestPlayUrlRetries:
         assert claims.owner_of("chromecast", "TV") is None
 
 
+def _station_answering(status: int):
+    """A RadioRelay._run_once that behaves as a station answering `status`
+    does: it records a refusal for the codes that mean the station itself
+    said no, and raises either way — the same two things the real one does
+    off its own connection (see core/radio_relay.py)."""
+    request = httpx.Request("GET", STATION)
+    response = httpx.Response(status, request=request)
+
+    async def _run_once(self):
+        if is_station_refusal(status):
+            self.refused_status = status
+        response.raise_for_status()
+
+    return _run_once
+
+
 class TestStationRefusesTheConnection:
     """Seen live: a stored station answering 403 to everything. The speaker
     reported ERROR_ACCESS_DENIED, the re-encode fallback fetched the same
@@ -163,14 +180,12 @@ class TestStationRefusesTheConnection:
     def test_says_so_instead_of_letting_the_device_and_the_re_encode_fail(
         self, client, default_session, status
     ):
+        """The relay is what actually asks the station (the default path —
+        see core/radio_relay.py), so it is what finds the refusal; /play-url
+        reports it rather than dispatching a device into the same answer."""
         with (
             patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play,
-            patch(
-                "routes.playback.probe_stream",
-                new=AsyncMock(
-                    return_value=ProbedStream("audio/mpeg", refused=True, detail=f"HTTP {status}")
-                ),
-            ),
+            patch("core.radio_relay.RadioRelay._run_once", _station_answering(status)),
         ):
             r = client.post(
                 "/play-url",
@@ -192,15 +207,13 @@ class TestStationRefusesTheConnection:
         assert default_session.state.radio_info is None
         assert claims.owner_of("chromecast", "TV") is None
 
+    @pytest.mark.parametrize("status", [500, 503])
     def test_still_dispatches_a_station_that_is_merely_slow_or_briefly_broken(
-        self, client, default_session
+        self, client, default_session, status
     ):
         with (
             patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play,
-            patch(
-                "routes.playback.probe_stream",
-                new=AsyncMock(return_value=ProbedStream("audio/mpeg", refused=False)),
-            ),
+            patch("core.radio_relay.RadioRelay._run_once", _station_answering(status)),
         ):
             r = client.post(
                 "/play-url",

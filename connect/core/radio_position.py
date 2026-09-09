@@ -1,10 +1,16 @@
 """core/radio_position.py — tracks a cast device's own reported position for
-radio, for the two things that both need "has the device started really
+radio, for the three things that all need "has the device started really
 playing yet, and if so what does it say": the radio-cast visualizer's
-frame-release clock (core/visualizer_feed.py) and the frontend's "still
-buffering" label (core/session.py's build_status_dict()). One shared poller
-for both, not two — DlnaDelivery.get_position() is a real SOAP round trip
-per call (see delivery/dlna.py), and this shouldn't double it.
+frame-release clock (core/visualizer_feed.py), the frontend's "still
+buffering" label (core/session.py's build_status_dict()), and the session
+clock itself, so the station's elapsed readout counts what is audible
+rather than what has been sent (see _calibrate_clock()). One shared poller
+for all three, not one each — DlnaDelivery.get_position() is a real SOAP
+round trip per call (see delivery/dlna.py), a Sonos's is two HTTP ones, and
+this shouldn't multiply them. That is also why routes/playback.py's own
+_apply_position_offset()/_resync_position_periodically() stand aside for a
+device this covers (see _tracked_for_radio() there): they used to poll it
+in parallel, at 0.5s each for a station's first ten seconds.
 
 Chromecast, DLNA, and Sonos — not AirPlay, which has no device-side
 position to poll for radio at all. Chromecast/DLNA were measured live
@@ -25,6 +31,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from .playback_clock import MAX_PLAUSIBLE_POSITION_LEAD, POSITION_RESYNC_THRESHOLD
 from .state import is_still_targeted
 
 if TYPE_CHECKING:  # avoids a session <-> radio_position import cycle at runtime
@@ -214,6 +221,63 @@ class RadioPositionTracker:
         lag = time.monotonic() - self._started_at - self._position
         return lag if lag > 0 else None
 
+    async def _calibrate_clock(self, position: float) -> None:
+        """Fold this poll's reading into the session clock, which is what
+        makes the station's "playing since" count what is audible rather
+        than what has been sent.
+
+        Done here rather than by routes/playback.py's own
+        _apply_position_offset()/_resync_position_periodically(), which do
+        exactly this for a track: both ask the same device the same
+        question this tracker is already asking, and for a DLNA renderer
+        (or a Sonos) that question is a real round trip, not a cached
+        value. Two pollers on one device is precisely what
+        _IDLE_POLL_INTERVAL_SECONDS above exists to avoid — so for a
+        station on a device this tracker covers, those two step aside (see
+        routes/playback.py's _position_candidate) and this is the only
+        thing measuring it.
+
+        `position` is used straight from the caller's own reading rather
+        than re-read: the wall-clock comparison below is only meaningful
+        against the instant the position was measured, and any await in
+        between would bias it by however long that took.
+        """
+        st = self._session.state
+        wall_elapsed = st.clock.elapsed_since_stream_start()
+        # See MAX_PLAUSIBLE_POSITION_LEAD (core/playback_clock.py). A
+        # station is live: the device cannot be further into it than the
+        # time since it was dispatched, so a reading well ahead of the wall
+        # clock is a leftover from whatever this device was playing before —
+        # exactly the poisoned first sample _REBASELINE_AFTER_SECONDS above
+        # already describes for a reused Chromecast object. Calibrating
+        # against one would throw the station's elapsed readout forward by
+        # however stale it was.
+        if position - wall_elapsed > MAX_PLAUSIBLE_POSITION_LEAD:
+            logger.warning(
+                f"[radio-position] {self.delivery.target}: ignoring implausible "
+                f"device position {position:.2f}s vs. wall {wall_elapsed:.2f}s"
+            )
+            return
+        offset_before = st.clock.position_offset
+        # See POSITION_RESYNC_THRESHOLD (core/playback_clock.py): how far
+        # this reading would move the offset already applied, not the raw
+        # device/wall-clock gap, which for any device with real startup
+        # buffering sits past the threshold permanently.
+        change = (position - wall_elapsed) - offset_before
+        if abs(change) < POSITION_RESYNC_THRESHOLD:
+            return
+        offset = st.clock.calibrate(position)
+        logger.info(
+            f"[radio-position] {self.delivery.target}: position_offset "
+            f"{offset_before:.2f}s -> {offset:.2f}s (device {position:.2f}s)"
+        )
+        # Imported here rather than at module scope: core/session.py builds
+        # the tracker, so the other direction closes the loop. Same
+        # workaround core/device_volume.py already uses for the same reason.
+        from .session import build_status_dict
+
+        await self._session.event_bus.broadcast(build_status_dict(self._session))
+
     async def _run(self) -> None:
         try:
             while True:
@@ -291,6 +355,7 @@ class RadioPositionTracker:
         if position is None or position < 0:
             return True
         self._position = position
+        await self._calibrate_clock(position)
         now = time.monotonic()
         if self._baseline is None:
             self._baseline = position
