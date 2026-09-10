@@ -93,7 +93,7 @@ They do nothing while you are typing in a field or a dialog is open, and leave a
 
 ### Jellyfin and Plex support
 
-Jellyfin and Plex can both be selected as a server type at login. Neither has a Subsonic-compatible API of its own, so the `connect` backend translates Subsonic-shaped requests into real Jellyfin/Plex API calls on the fly (see `connect/media/jellyfin_bridge.py` and `connect/media/plex_bridge.py`) - the frontend doesn't know the difference. Features a given backend has no equivalent for (or that just aren't bridged yet) are hidden automatically rather than shown as dead-end controls. Both paths are newer and less exercised than the Navidrome/Subsonic one, and a couple of things genuinely work differently there - the table below says which. Besides the usual unit tests, which can only check the bridges against Beacon's own understanding of the foreign API, there is a suite that runs them against real servers (`connect/tests/test_bridges_live.py`, excluded from the default test run): playlist creation, reordering, renaming and track add/remove, favorites, the browsing response shapes, library scans and lyrics - against Navidrome as well, since the assumptions Beacon makes about it are just as worth checking. It creates only throwaway playlists and deletes them again. What it does not cover yet is cover art and audio streaming, which take a different code path.
+Jellyfin and Plex can both be selected as a server type at login. Neither has a Subsonic-compatible API of its own, so the `connect` backend translates Subsonic-shaped requests into real Jellyfin/Plex API calls on the fly (see `connect/media/jellyfin_bridge.py` and `connect/media/plex_bridge.py`) - the frontend doesn't know the difference. Features a given backend has no equivalent for (or that just aren't bridged yet) are hidden automatically rather than shown as dead-end controls. Both paths are newer and less exercised than the Navidrome/Subsonic one, and a couple of things genuinely work differently there - the table below says which. Besides the usual unit tests, which can only check the bridges against Beacon's own understanding of the foreign API, there is a suite that runs them against real servers (`connect/tests/test_bridges_live.py`, excluded from the default test run): playlist creation, reordering, renaming and track add/remove, favorites, the browsing response shapes, library scans and lyrics - against Navidrome as well, since the assumptions Beacon makes about it are just as worth checking. It creates only throwaway playlists and deletes them again. Cover art and audio streaming are covered too, including the bare stream URL that casting and local playback hand to FFmpeg, which authenticates differently from every other call.
 
 | Feature                                     | Navidrome / Subsonic |  Jellyfin   |              Plex              |
 | ------------------------------------------- | :------------------: | :---------: | :----------------------------: |
@@ -335,7 +335,14 @@ MP3, AAC and Opus are offered as limits here, and which of them you are shown de
 
 **Mostly on the very first load, and then it stops mattering.**
 
-Navidrome/Subsonic is the primary, most-exercised backend. Jellyfin has no Subsonic-compatible API of its own, so `connect` translates every request on the fly into real Jellyfin API calls (see `connect/media/jellyfin_bridge.py`) - and Jellyfin's own API just isn't as optimized for this access pattern as Navidrome's. Its recursive item query measured at roughly 9ms per track on the one real server this was timed against, so the first full catalog fetch on a large library is a matter of minutes rather than seconds. This is inherent to Jellyfin/the bridge, not something Beacon's UI does differently per backend - see "Jellyfin and Plex support" above.
+Jellyfin has no Subsonic-compatible API of its own, so `connect` translates every request on the fly into real Jellyfin API calls (see "Jellyfin and Plex support" above). That translating is not what costs the time - Plex goes through the same kind of bridge - Jellyfin's own API is simply slower at handing out a whole library at once. The first full scan of the same 20,000-track library:
+
+| Server             | First full catalog scan |
+| ------------------ | ----------------------: |
+| Navidrome/Subsonic |                  ~2 sec |
+| Plex               |                  ~4 sec |
+| Jellyfin 12        |                 ~18 sec |
+| Jellyfin 10        |                  ~3 min |
 
 That cost is paid once, not on every visit:
 
@@ -343,7 +350,7 @@ That cost is paid once, not on every visit:
 - **Cover art never goes back to Jellyfin twice** either, with three caches in front of it (see "Artwork caching" above) and a whole screenful fetched in a single request.
 - **Changed something in Jellyfin and don't want to wait?** The rescan button in Settings drops the copy and fetches fresh right away.
 
-Both the timing and the workarounds around it are a snapshot rather than a law: the bridge is written and verified against **Jellyfin 10.11.11**, and how fast that API answers is Jellyfin's to change from one release to the next. If a newer Jellyfin has become quicker at this, the numbers here are simply out of date.
+How fast that API answers is Jellyfin's to change from one release to the next, in either direction - if your own numbers look nothing like these, the server version is the first thing to check.
 
 ### No devices found
 

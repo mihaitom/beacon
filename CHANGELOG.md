@@ -6,8 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Support for Jellyfin 12: signing in, browsing, playback and casting all work against it. Servers still on Jellyfin 10.x keep working exactly as before
+
 ### Changed
 
+- A large Jellyfin library finishes loading noticeably faster: on Jellyfin 12, a 20,000-track catalog is fully in place after around 18 seconds
 - Starting a station, on this device or on a speaker, now opens one connection to it instead of two, so it starts a little sooner and a station that allows only one listener at a time is no longer asked for a second
 - A station cast to a Chromecast or a DLNA speaker now sends that speaker half as many requests while it plays. Two separate checks were asking it the same thing, most heavily in the first seconds after a station starts
 - The log now notes when a station's connection is re-established behind the scenes, how long a player stayed connected, and what made the player ask again. A stutter heard on the phone can be looked up afterwards instead of having to be reproduced

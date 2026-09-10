@@ -61,11 +61,11 @@ interface LibraryCacheTypes {
 // How long a cached field is used without a background refresh behind it.
 //
 // An hour for a Subsonic/Navidrome server, where re-fetching the catalog is
-// a handful of quick calls. Far longer for Jellyfin, where it is not: its
-// recursive Items query runs at roughly 9ms per item (see
-// fetchAllSongsNow()), so a large library is minutes of scanning — paid on
-// every app start that happens to fall outside the window, in the
-// background, while the user is trying to browse. A library's contents do
+// a handful of quick calls. Far longer for Jellyfin, where it is not: a
+// 20k-track catalog is ~18s of scanning there against ~2s for Navidrome
+// (see fetchAllSongsNow()) — paid on every app start outside the window, in
+// the background, while the user is trying to browse. Jellyfin 12 cut that
+// down from minutes, but the gap is still wide enough to keep the day. A library's contents do
 // not change hourly, and the parts that do have their own paths: the manual
 // rescan in Settings (invalidateCache()) and a forced fetchAlbums(true).
 const CACHE_TTL_MS = 60 * 60 * 1000
@@ -602,8 +602,11 @@ export const useLibraryStore = defineStore('library', {
      * see that branch's own comment for why. */
     async fetchAlbums(force = false): Promise<void> {
       if (!force && this.albums.length > 0) return
-      // Same reasoning as fetchAllSongsNow()'s PAGE_SIZE — smaller pages
-      // for Jellyfin mean a faster first paint.
+      // Smaller pages for Jellyfin mean a faster first paint. Deliberately
+      // not raised alongside fetchAllSongsNow()'s PAGE_SIZE: these pages go
+      // out ALBUM_PAGE_CONCURRENCY at a time rather than one after another,
+      // so the per-request overhead a bigger page would save is already
+      // overlapped away here.
       const ALBUM_PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 200 : 500
       if (force) {
         await this.withLoading(async () => {
@@ -830,16 +833,13 @@ export const useLibraryStore = defineStore('library', {
     },
 
     async fetchAllSongsNow(): Promise<void> {
-      // Jellyfin's recursive Items query (what search3.view is bridged to —
-      // see connect/media/jellyfin_bridge.py) scales roughly linearly with
-      // page size on at least one real server tested (~9ms/item), making a
-      // 3000-item page take 25-35s there vs. under a second for Subsonic/
-      // Navidrome. A much smaller page means the first real data shows up
-      // in ~2s instead of ~30s — the rest still streams in progressively via
-      // the .push() loop below either way, so total time to fully load a
-      // very large library is about the same, just no longer spent staring
-      // at an empty screen.
-      const PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 200 : 3000
+      // These pages go out one after another, so the size trades how fast
+      // the first tracks appear against how long the whole catalog takes.
+      // Measured on Jellyfin 12.0.0, 20k tracks: 200 puts data on screen
+      // after 0.3s but needs 33s in total, 1000 needs 0.9s and 18s. The far
+      // slower 10.11.11 is what made 200 the right end of that trade before.
+      // The rest streams in via the .push() loop below either way.
+      const PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 1000 : 3000
       const client = this.client()
 
       const cached = await readCacheField('songs')
@@ -896,7 +896,7 @@ export const useLibraryStore = defineStore('library', {
      * on any server tested so far they're fast enough not to need one. */
     async refreshLibrary(): Promise<void> {
       const client = this.client()
-      const PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 200 : 3000
+      const PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 1000 : 3000
       this.songScanProgress = { loaded: 0, total: null }
       try {
         const fresh = await fetchSongPages(client, PAGE_SIZE, (progress) => {

@@ -488,11 +488,12 @@ async def search3(params: dict, media: JellyfinClient) -> dict:
         # Jellyfin's default response entirely, silently dropping that field
         # from every bulk-loaded track; (2) measured directly against a real
         # library (curl, Limit=100 vs. 3000): response time scales linearly
-        # with item count (~9ms/item) rather than a fixed per-request cost,
-        # meaning Jellyfin is doing real per-item work — asking for less
-        # should do less of it. Deliberately excludes heavier optional
-        # fields this bulk load doesn't need (MediaSources, Overview,
-        # People, ...).
+        # with item count rather than a fixed per-request cost, meaning
+        # Jellyfin is doing real per-item work — asking for less should do
+        # less of it. The slope is the server's and moves with its version:
+        # ~9ms/item on 10.11.11, ~1.2ms on 12.0.0. Deliberately excludes
+        # heavier optional fields this bulk load doesn't need (MediaSources,
+        # Overview, People, ...).
         "Fields": "Genres,ArtistItems",
     }
     if query:

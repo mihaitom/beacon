@@ -146,7 +146,18 @@ class JellyfinClient:
     def _auth_header(self) -> dict:
         if not self.token:
             return {}
-        return {"X-Emby-Token": self.token}
+        # The token travels in the same MediaBrowser Authorization header the
+        # login calls above use, not in X-Emby-Token: Jellyfin 12 dropped the
+        # inherited Emby auth surface, and that header (like the `api_key`
+        # query parameter) now answers 401 on every route. Jellyfin 10.x has
+        # always accepted this form too, so there is one header for both.
+        return {
+            "Authorization": (
+                'MediaBrowser Client="Beacon", Device="Beacon", '
+                f'DeviceId="{_device_id()}", Version="{_CLIENT_VERSION}", '
+                f'Token="{self.token}"'
+            )
+        }
 
     def auth_headers(self) -> dict:
         """Public accessor for media/jellyfin_bridge.py, which calls several
@@ -210,9 +221,14 @@ class JellyfinClient:
         # (not a naive f-string join) so a malformed/adversarial track_id
         # can't escape the /Items/{id}/ path segment — see get_cover_art_url
         # below and jellyfin_bridge.py's _quote_id for the same reasoning.
+        # Both spellings of the token parameter, because the two Jellyfin
+        # generations share none: 10.x reads `api_key`, 12 reads `ApiKey`
+        # (case-insensitively, but the underscore keeps them apart) and
+        # rejects the old name outright. A header would avoid the duplication,
+        # but this is a bare URL handed to FFmpeg.
         return (
             f"{self.internal_url}/Items/{quote(track_id, safe='')}/Download"
-            f"?{urlencode({'api_key': self.token})}"
+            f"?{urlencode({'api_key': self.token, 'ApiKey': self.token})}"
         )
 
     def get_cover_art_url(

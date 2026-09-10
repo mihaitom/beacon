@@ -897,7 +897,7 @@ def test_stream_view_forwards_range_header(client, jellyfin_session, monkeypatch
     r = client.get("/rest/stream.view?id=song-1", headers={"Range": "bytes=0-100"})
     assert r.status_code == 200
     assert captured["headers"]["Range"] == "bytes=0-100"
-    assert captured["url"] == "http://jf:8096/Items/song-1/Download?api_key=tok"
+    assert captured["url"] == "http://jf:8096/Items/song-1/Download?api_key=tok&ApiKey=tok"
 
 
 def test_cover_art_view_builds_jellyfin_image_url(client, jellyfin_session, monkeypatch):
