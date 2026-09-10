@@ -353,6 +353,15 @@ async def _jf_get(media: JellyfinClient, path: str, **params: str) -> dict:
     return await _jf_request("GET", media, path, params=params)
 
 
+async def _jf_get_items(media: JellyfinClient, item_id: str = "", **params: str) -> dict:
+    """The user-scoped item endpoints, in the only shape both Jellyfin
+    generations answer: 10.9 moved these off /Users/{userId}/Items to
+    /Items?userId= and marked the old form obsolete, and 12 dropped it from
+    the API altogether. `item_id` must already be _quote_id()'d."""
+    path = f"/Items/{item_id}" if item_id else "/Items"
+    return await _jf_get(media, path, userId=media.user_id, **params)
+
+
 # ── JSON handlers ─────────────────────────────────────────────────────────────
 # Each takes the raw query params (as a plain dict) + the session's
 # JellyfinClient, and returns a dict merged into the standard envelope.
@@ -372,9 +381,8 @@ _ALBUM_SORT_PARAMS: dict[str, dict[str, str]] = {
 async def get_album_list2(params: dict, media: JellyfinClient) -> dict:
     sort_type = params.get("type", "alphabeticalByName")
     sort_params = _ALBUM_SORT_PARAMS.get(sort_type, _ALBUM_SORT_PARAMS["alphabeticalByName"])
-    data = await _jf_get(
+    data = await _jf_get_items(
         media,
-        f"/Users/{media.user_id}/Items",
         IncludeItemTypes="MusicAlbum",
         Recursive="true",
         StartIndex=params.get("offset", "0"),
@@ -387,10 +395,9 @@ async def get_album_list2(params: dict, media: JellyfinClient) -> dict:
 
 async def get_album(params: dict, media: JellyfinClient) -> dict:
     album_id = params["id"]
-    item = await _jf_get(media, f"/Users/{media.user_id}/Items/{_quote_id(album_id)}")
-    songs = await _jf_get(
+    item = await _jf_get_items(media, _quote_id(album_id))
+    songs = await _jf_get_items(
         media,
-        f"/Users/{media.user_id}/Items",
         ParentId=album_id,
         IncludeItemTypes="Audio",
         Recursive="true",
@@ -402,7 +409,7 @@ async def get_album(params: dict, media: JellyfinClient) -> dict:
 
 
 async def get_song(params: dict, media: JellyfinClient) -> dict:
-    item = await _jf_get(media, f"/Users/{media.user_id}/Items/{_quote_id(params['id'])}")
+    item = await _jf_get_items(media, _quote_id(params["id"]))
     # The detailed mapping, not the list one: this is the single-track
     # lookup, and the only caller that wants more than a row's worth of
     # fields (the track-info sheet) comes through here.
@@ -410,9 +417,8 @@ async def get_song(params: dict, media: JellyfinClient) -> dict:
 
 
 async def get_artists(_params: dict, media: JellyfinClient) -> dict:
-    data = await _jf_get(
+    data = await _jf_get_items(
         media,
-        f"/Users/{media.user_id}/Items",
         IncludeItemTypes="MusicArtist",
         Recursive="true",
         SortBy="SortName",
@@ -430,10 +436,9 @@ async def get_artists(_params: dict, media: JellyfinClient) -> dict:
 
 async def get_artist(params: dict, media: JellyfinClient) -> dict:
     artist_id = params["id"]
-    item = await _jf_get(media, f"/Users/{media.user_id}/Items/{_quote_id(artist_id)}")
-    albums = await _jf_get(
+    item = await _jf_get_items(media, _quote_id(artist_id))
+    albums = await _jf_get_items(
         media,
-        f"/Users/{media.user_id}/Items",
         ArtistIds=artist_id,
         IncludeItemTypes="MusicAlbum",
         Recursive="true",
@@ -488,17 +493,18 @@ async def search3(params: dict, media: JellyfinClient) -> dict:
         # Jellyfin's default response entirely, silently dropping that field
         # from every bulk-loaded track; (2) measured directly against a real
         # library (curl, Limit=100 vs. 3000): response time scales linearly
-        # with item count (~9ms/item) rather than a fixed per-request cost,
-        # meaning Jellyfin is doing real per-item work — asking for less
-        # should do less of it. Deliberately excludes heavier optional
-        # fields this bulk load doesn't need (MediaSources, Overview,
-        # People, ...).
+        # with item count rather than a fixed per-request cost, meaning
+        # Jellyfin is doing real per-item work — asking for less should do
+        # less of it. The slope is the server's and moves with its version:
+        # ~9ms/item on 10.11.11, ~1.2ms on 12.0.0. Deliberately excludes
+        # heavier optional fields this bulk load doesn't need (MediaSources,
+        # Overview, People, ...).
         "Fields": "Genres,ArtistItems",
     }
     if query:
         jf_params["searchTerm"] = query
 
-    data = await _jf_get(media, f"/Users/{media.user_id}/Items", **jf_params)
+    data = await _jf_get_items(media, **jf_params)
     items = data.get("Items", [])
     logger.info(
         f"[jellyfin-bridge] search3 query={query!r} StartIndex={jf_params['StartIndex']} "
@@ -535,23 +541,20 @@ async def get_starred2(_params: dict, media: JellyfinClient) -> dict:
     # a given Jellyfin version actually combines Filters with a multi-type
     # IncludeItemTypes in one call; three guaranteed-correct calls beat one
     # call that might silently only filter the first type.
-    songs = await _jf_get(
+    songs = await _jf_get_items(
         media,
-        f"/Users/{media.user_id}/Items",
         IncludeItemTypes="Audio",
         Filters="IsFavorite",
         Recursive="true",
     )
-    albums = await _jf_get(
+    albums = await _jf_get_items(
         media,
-        f"/Users/{media.user_id}/Items",
         IncludeItemTypes="MusicAlbum",
         Filters="IsFavorite",
         Recursive="true",
     )
-    artists = await _jf_get(
+    artists = await _jf_get_items(
         media,
-        f"/Users/{media.user_id}/Items",
         IncludeItemTypes="MusicArtist",
         Filters="IsFavorite",
         Recursive="true",
@@ -576,7 +579,8 @@ async def star(params: dict, media: JellyfinClient) -> dict:
     await _jf_request(
         "POST",
         media,
-        f"/Users/{media.user_id}/FavoriteItems/{_quote_id(_favorite_item_id(params))}",
+        f"/UserFavoriteItems/{_quote_id(_favorite_item_id(params))}",
+        params={"userId": media.user_id},
     )
     return {}
 
@@ -585,7 +589,8 @@ async def unstar(params: dict, media: JellyfinClient) -> dict:
     await _jf_request(
         "DELETE",
         media,
-        f"/Users/{media.user_id}/FavoriteItems/{_quote_id(_favorite_item_id(params))}",
+        f"/UserFavoriteItems/{_quote_id(_favorite_item_id(params))}",
+        params={"userId": media.user_id},
     )
     return {}
 
@@ -594,15 +599,13 @@ async def unstar(params: dict, media: JellyfinClient) -> dict:
 
 
 async def get_playlists(_params: dict, media: JellyfinClient) -> dict:
-    data = await _jf_get(
-        media, f"/Users/{media.user_id}/Items", IncludeItemTypes="Playlist", Recursive="true"
-    )
+    data = await _jf_get_items(media, IncludeItemTypes="Playlist", Recursive="true")
     return {"playlists": {"playlist": _map_all(_map_playlist, data.get("Items", []))}}
 
 
 async def get_playlist(params: dict, media: JellyfinClient) -> dict:
     playlist_id = params["id"]
-    item = await _jf_get(media, f"/Users/{media.user_id}/Items/{_quote_id(playlist_id)}")
+    item = await _jf_get_items(media, _quote_id(playlist_id))
     songs = await _jf_get(media, f"/Playlists/{_quote_id(playlist_id)}/Items", userId=media.user_id)
     playlist = _map_playlist(item)
     playlist["entry"] = _map_all(_map_song, songs.get("Items", []))
@@ -941,7 +944,7 @@ async def scrobble(params: dict, media: JellyfinClient) -> dict:
     # from Jellyfin's perspective this reads the same as a listen that
     # ran to completion, which is enough to cross its own play/no-play
     # ratio check and bump UserData.PlayCount + LastPlayedDate.
-    item = await _jf_get(media, f"/Users/{media.user_id}/Items/{_quote_id(track_id)}")
+    item = await _jf_get_items(media, _quote_id(track_id))
     position_ticks = item.get("RunTimeTicks") or 0
     await _jf_request(
         "POST",

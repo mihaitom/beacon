@@ -176,7 +176,7 @@ def test_batch_uses_jellyfin_client_and_auth_header(client, default_session, mon
     assert "results" in response.json()
     assert "Items/item-1/Images/Primary" in captured["url"]
     assert "maxHeight=96" in captured["url"]
-    assert captured["headers"] == {"X-Emby-Token": "tok"}
+    assert 'Token="tok"' in captured["headers"]["Authorization"]
 
 
 def test_batch_uses_plex_client_ignoring_requested_size(client, default_session, monkeypatch):

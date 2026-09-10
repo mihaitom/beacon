@@ -21,6 +21,14 @@ def _client(url="http://proxy:9180", internal_url="", token="tok", user_id="u1")
     return JellyfinClient(url, token=token, user_id=user_id, internal_url=internal_url)
 
 
+def _assert_authenticated(headers: dict, token: str) -> None:
+    """Every authenticated call carries the token in the MediaBrowser
+    Authorization header — and carries no X-Emby-Token, which Jellyfin 12
+    answers with a 401 (see JellyfinClient._auth_header)."""
+    assert f'Token="{token}"' in headers["Authorization"]
+    assert "X-Emby-Token" not in headers
+
+
 # ── internal_url Fallback ─────────────────────────────────────────────────────
 
 
@@ -48,7 +56,7 @@ def test_trailing_slash_stripped():
 def test_stream_url_uses_download_endpoint():
     c = _client(url="http://proxy:9180", internal_url="http://jf:8096", token="t0k")
     url = c.get_stream_url("track-123")
-    assert url == "http://jf:8096/Items/track-123/Download?api_key=t0k"
+    assert url == "http://jf:8096/Items/track-123/Download?api_key=t0k&ApiKey=t0k"
 
 
 def test_stream_url_uses_base_when_no_internal():
@@ -112,8 +120,10 @@ def test_get_track_parses_item(monkeypatch):
     }
 
     def fake_get(url, headers=None, params=None, timeout=None):
-        assert url.endswith("/Users/u1/Items/abc")
-        assert headers == {"X-Emby-Token": "tok"}
+        # /Items/{id}?userId=, not the user-scoped path Jellyfin 12 removed.
+        assert url.endswith("/Items/abc")
+        assert params == {"userId": "u1"}
+        _assert_authenticated(headers, "tok")
         return httpx.Response(200, json=item, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(http_client, "get", fake_get)
@@ -158,7 +168,7 @@ def test_auth_headers_public_accessor_delegates_to_auth_header():
     module calls several Jellyfin endpoints this class has no method of
     its own for."""
     c = _client(token="tok")
-    assert c.auth_headers() == {"X-Emby-Token": "tok"}
+    _assert_authenticated(c.auth_headers(), "tok")
 
 
 # ── get_similar_songs2 (Autoplay's internal-code-path Instant Mix) ──────────
@@ -243,7 +253,7 @@ def test_ping_hits_authenticated_endpoint_with_token(monkeypatch):
     c = _client(url="http://proxy:9180", internal_url="http://jf:8096", token="tok")
     assert c.ping() is True
     assert captured["url"] == "http://jf:8096/Users/Me"
-    assert captured["headers"] == {"X-Emby-Token": "tok"}
+    _assert_authenticated(captured["headers"], "tok")
 
 
 def test_ping_returns_false_on_error(monkeypatch):

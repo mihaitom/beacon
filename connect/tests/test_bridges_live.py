@@ -38,6 +38,7 @@ a fixture teardown that runs even when the test fails — nothing existing is
 ever touched.
 """
 
+import asyncio
 import hashlib
 import os
 import uuid
@@ -780,6 +781,27 @@ async def test_jellyfin_streams_a_ranged_slice_of_a_track(jellyfin):
     response = await handle("stream.view", _ranged_request(track_id), jellyfin)
 
     _assert_streams_audio(response, await _read_stream_start(response))
+
+
+async def test_jellyfin_stream_url_plays_without_going_through_the_bridge(jellyfin):
+    """get_stream_url() is the other way a Jellyfin track is fetched: casting,
+    local playback and the waveform all hand this bare URL to FFmpeg instead
+    of calling stream.view above, so it authenticates by query parameter
+    rather than by header and nothing else in this suite would notice it
+    being rejected."""
+    from media.jellyfin_bridge import get_album, get_album_list2
+
+    track_id = await _first_track_id(get_album_list2, get_album, jellyfin)
+    url = await asyncio.to_thread(jellyfin.get_stream_url, track_id)
+
+    async with httpx.AsyncClient(timeout=30) as http:
+        response = await http.get(url, headers={"Range": "bytes=0-1023"})
+
+    assert response.status_code == 206, (
+        f"{response.status_code} for the URL handed to FFmpeg — "
+        "casting and local playback fetch the track this way"
+    )
+    assert response.content, "no audio bytes came back"
 
 
 async def test_plex_streams_a_ranged_slice_of_a_track(plex):

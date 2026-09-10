@@ -225,7 +225,7 @@ async def test_jf_request_logs_when_a_call_takes_over_a_second(
     import logging
     import time as time_mod
 
-    fake_client, _ = _fake_jf_client({"/Users/u1/Items/song-1": {"Id": "song-1"}})
+    fake_client, _ = _fake_jf_client({"/Items/song-1": {"Id": "song-1"}})
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
     # Only the two calls _jf_request() itself makes are faked — anything
     # else touching time.monotonic() (asyncio/pytest internals during
@@ -243,7 +243,7 @@ async def test_jf_request_logs_when_a_call_takes_over_a_second(
     monkeypatch.setattr(time_mod, "monotonic", _fake_monotonic)
 
     with caplog.at_level(logging.INFO, logger="connect.jellyfin_bridge"):
-        await jellyfin_bridge._jf_get(jellyfin_session.media, "/Users/u1/Items/song-1")
+        await jellyfin_bridge._jf_get(jellyfin_session.media, "/Items/song-1")
 
     assert "took 1.50s" in caplog.text
 
@@ -254,7 +254,7 @@ async def test_jf_request_logs_when_a_call_takes_over_a_second(
 def test_proxy_dispatches_jellyfin_session_to_bridge(client, jellyfin_session, monkeypatch):
     fake_client, _calls = _fake_jf_client(
         {
-            "/Users/u1/Items/song-1": {
+            "/Items/song-1": {
                 "Id": "song-1",
                 "Name": "T",
                 "RunTimeTicks": 0,
@@ -325,7 +325,7 @@ def test_search3_empty_query_omits_search_term(client, jellyfin_session, monkeyp
     # whole track catalog via search3('', 3000, 0, 0, offset) — an empty
     # query must NOT be sent to Jellyfin as searchTerm="" (which returns
     # nothing), unlike Subsonic where an empty query means "match everything".
-    fake_client, calls = _fake_jf_client({"/Users/u1/Items": {"Items": []}})
+    fake_client, calls = _fake_jf_client({"/Items": {"Items": []}})
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
     r = client.get(
@@ -338,7 +338,7 @@ def test_search3_empty_query_omits_search_term(client, jellyfin_session, monkeyp
 
 
 def test_search3_nonempty_query_sends_search_term(client, jellyfin_session, monkeypatch):
-    fake_client, calls = _fake_jf_client({"/Users/u1/Items": {"Items": []}})
+    fake_client, calls = _fake_jf_client({"/Items": {"Items": []}})
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
     client.get("/rest/search3.view?query=beatles&songCount=25&albumCount=25&artistCount=25")
@@ -348,7 +348,7 @@ def test_search3_nonempty_query_sends_search_term(client, jellyfin_session, monk
 def test_search3_maps_song_offset_to_start_index(client, jellyfin_session, monkeypatch):
     # Regression test: without this, every "page" of a paginated bulk load
     # re-fetched the exact same items — pagination never actually advanced.
-    fake_client, calls = _fake_jf_client({"/Users/u1/Items": {"Items": []}})
+    fake_client, calls = _fake_jf_client({"/Items": {"Items": []}})
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
     client.get(
@@ -361,7 +361,7 @@ def test_search3_only_requests_nonzero_count_types(client, jellyfin_session, mon
     # Regression test: fetchAllTracks() sets albumCount=artistCount=0 — Jellyfin
     # must not be asked for those types too, since they'd otherwise crowd
     # unwanted results into the one shared Limit meant entirely for songs.
-    fake_client, calls = _fake_jf_client({"/Users/u1/Items": {"Items": []}})
+    fake_client, calls = _fake_jf_client({"/Items": {"Items": []}})
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
     client.get("/rest/search3.view?query=&songCount=3000&albumCount=0&artistCount=0")
@@ -380,10 +380,31 @@ def test_search3_all_zero_counts_skips_request_entirely(client, jellyfin_session
     assert calls == []
 
 
+def test_item_calls_use_the_query_parameter_form_not_the_user_scoped_paths(
+    client, jellyfin_session, monkeypatch
+):
+    """Jellyfin 10.9 marked /Users/{userId}/Items and /Users/{userId}/
+    FavoriteItems obsolete and 12 removed them outright, so every call has
+    to go to /Items?userId= and /UserFavoriteItems?userId=. The path mocks
+    elsewhere in this file match on a suffix, which a reverted /Users/u1/
+    Items would still satisfy — this is what actually pins the shape."""
+    fake_client, calls = _fake_jf_client({"/Items": {"Items": []}})
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    client.get("/rest/getAlbumList2.view?type=alphabeticalByName")
+    client.get("/rest/getAlbum.view?id=album-1")
+    client.get("/rest/star.view?id=song-1")
+
+    assert calls, "no request was made"
+    for method, url, params, _body in calls:
+        assert "/Users/" not in url, f"{method} {url} still uses a user-scoped path"
+        assert (params or {}).get("userId") == "u1", f"{method} {url} sent no userId"
+
+
 def test_search3_buckets_results_by_type(client, jellyfin_session, monkeypatch):
     fake_client, _calls = _fake_jf_client(
         {
-            "/Users/u1/Items": {
+            "/Items": {
                 "Items": [
                     {"Id": "s1", "Name": "Song", "Type": "Audio", "RunTimeTicks": 0},
                     {"Id": "a1", "Name": "Album", "Type": "MusicAlbum"},
@@ -404,9 +425,7 @@ def test_search3_buckets_results_by_type(client, jellyfin_session, monkeypatch):
 def test_search3_surfaces_total_record_count(client, jellyfin_session, monkeypatch):
     # Extra, non-Subsonic-standard field — lets stores/library.ts's bulk
     # track load show real progress ("6000 / 20147") for Jellyfin.
-    fake_client, _calls = _fake_jf_client(
-        {"/Users/u1/Items": {"Items": [], "TotalRecordCount": 20147}}
-    )
+    fake_client, _calls = _fake_jf_client({"/Items": {"Items": [], "TotalRecordCount": 20147}})
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
     r = client.get("/rest/search3.view?query=&songCount=200&albumCount=0&artistCount=0")
@@ -419,7 +438,7 @@ def test_search3_skips_malformed_item_instead_of_failing_whole_page(
 ):
     fake_client, _calls = _fake_jf_client(
         {
-            "/Users/u1/Items": {
+            "/Items": {
                 "Items": [
                     {"Name": "Missing Id", "Type": "Audio"},  # no "Id" -> KeyError in _map_song
                     {"Id": "s2", "Name": "Good Song", "Type": "Audio", "RunTimeTicks": 0},
@@ -442,7 +461,7 @@ def test_get_album_list2_maps_albums_and_forwards_sort_params(
     client, jellyfin_session, monkeypatch
 ):
     fake_client, calls = _fake_jf_client(
-        {"/Users/u1/Items": {"Items": [{"Id": "album-1", "Name": "Album", "RunTimeTicks": 0}]}}
+        {"/Items": {"Items": [{"Id": "album-1", "Name": "Album", "RunTimeTicks": 0}]}}
     )
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
@@ -455,7 +474,7 @@ def test_get_album_list2_maps_albums_and_forwards_sort_params(
 
 
 def test_get_album_list2_uses_random_sort_when_requested(client, jellyfin_session, monkeypatch):
-    fake_client, calls = _fake_jf_client({"/Users/u1/Items": {"Items": []}})
+    fake_client, calls = _fake_jf_client({"/Items": {"Items": []}})
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
     client.get("/rest/getAlbumList2.view?type=random")
@@ -466,8 +485,8 @@ def test_get_album_list2_uses_random_sort_when_requested(client, jellyfin_sessio
 def test_get_album_includes_its_songs(client, jellyfin_session, monkeypatch):
     fake_client, _ = _fake_jf_client(
         {
-            "/Users/u1/Items/album-1": {"Id": "album-1", "Name": "Album", "RunTimeTicks": 0},
-            "/Users/u1/Items": {"Items": [{"Id": "song-1", "Name": "Song", "RunTimeTicks": 0}]},
+            "/Items/album-1": {"Id": "album-1", "Name": "Album", "RunTimeTicks": 0},
+            "/Items": {"Items": [{"Id": "song-1", "Name": "Song", "RunTimeTicks": 0}]},
         }
     )
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
@@ -485,7 +504,7 @@ def test_get_artists_buckets_by_first_letter(client, jellyfin_session, monkeypat
     own comment — bucketed client-side to match Subsonic's shape."""
     fake_client, _ = _fake_jf_client(
         {
-            "/Users/u1/Items": {
+            "/Items": {
                 "Items": [
                     {"Id": "a1", "Name": "ABBA"},
                     {"Id": "b1", "Name": "Beatles"},
@@ -508,10 +527,8 @@ def test_get_artists_buckets_by_first_letter(client, jellyfin_session, monkeypat
 def test_get_artist_includes_its_albums(client, jellyfin_session, monkeypatch):
     fake_client, calls = _fake_jf_client(
         {
-            "/Users/u1/Items/artist-1": {"Id": "artist-1", "Name": "Radiohead"},
-            "/Users/u1/Items": {
-                "Items": [{"Id": "album-1", "Name": "OK Computer", "RunTimeTicks": 0}]
-            },
+            "/Items/artist-1": {"Id": "artist-1", "Name": "Radiohead"},
+            "/Items": {"Items": [{"Id": "album-1", "Name": "OK Computer", "RunTimeTicks": 0}]},
         }
     )
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
@@ -538,7 +555,7 @@ def test_star_uses_id_over_album_and_artist_id(client, jellyfin_session, monkeyp
     assert r.json()["subsonic-response"]["status"] == "ok"
     method, url, _params, _json = calls[0]
     assert method == "POST"
-    assert url.endswith("/Users/u1/FavoriteItems/song-1")
+    assert url.endswith("/UserFavoriteItems/song-1")
 
 
 def test_star_falls_back_to_album_id(client, jellyfin_session, monkeypatch):
@@ -546,7 +563,7 @@ def test_star_falls_back_to_album_id(client, jellyfin_session, monkeypatch):
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
     client.get("/rest/star.view?albumId=album-1")
-    assert calls[0][1].endswith("/Users/u1/FavoriteItems/album-1")
+    assert calls[0][1].endswith("/UserFavoriteItems/album-1")
 
 
 def test_unstar_sends_delete(client, jellyfin_session, monkeypatch):
@@ -569,7 +586,7 @@ def test_star_without_any_id_fails_cleanly(client, jellyfin_session, monkeypatch
 
 def test_get_starred2_issues_three_type_scoped_calls(client, jellyfin_session, monkeypatch):
     fake_client, calls = _fake_jf_client(
-        {"/Users/u1/Items": {"Items": []}},
+        {"/Items": {"Items": []}},
     )
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
@@ -588,7 +605,7 @@ def test_get_starred2_issues_three_type_scoped_calls(client, jellyfin_session, m
 def test_get_playlists_maps_items(client, jellyfin_session, monkeypatch):
     fake_client, _calls = _fake_jf_client(
         {
-            "/Users/u1/Items": {
+            "/Items": {
                 "Items": [{"Id": "p1", "Name": "Road Trip", "ChildCount": 12, "RunTimeTicks": 0}]
             }
         }
@@ -612,7 +629,7 @@ def test_get_playlists_maps_items(client, jellyfin_session, monkeypatch):
 def test_get_playlist_includes_entries(client, jellyfin_session, monkeypatch):
     fake_client, _calls = _fake_jf_client(
         {
-            "/Users/u1/Items/p1": {
+            "/Items/p1": {
                 "Id": "p1",
                 "Name": "Road Trip",
                 "ChildCount": 1,
@@ -820,9 +837,7 @@ def test_get_similar_songs2_requires_id(client, jellyfin_session):
 
 
 def test_scrobble_submission_true_reports_playback_stopped(client, jellyfin_session, monkeypatch):
-    fake_client, calls = _fake_jf_client(
-        {"/Users/u1/Items/song-1": {"RunTimeTicks": 1_800_000_000}}
-    )
+    fake_client, calls = _fake_jf_client({"/Items/song-1": {"RunTimeTicks": 1_800_000_000}})
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
     r = client.get("/rest/scrobble.view?id=song-1&submission=true")
@@ -834,7 +849,7 @@ def test_scrobble_submission_true_reports_playback_stopped(client, jellyfin_sess
     # completed listen — see scrobble()'s comment.
     get_calls = [c for c in calls if c[0] == "GET"]
     assert len(get_calls) == 1
-    assert get_calls[0][1].endswith("/Users/u1/Items/song-1")
+    assert get_calls[0][1].endswith("/Items/song-1")
     post_calls = [c for c in calls if c[0] == "POST"]
     assert len(post_calls) == 1
     _method, url, _params, json_body = post_calls[0]
@@ -897,7 +912,7 @@ def test_stream_view_forwards_range_header(client, jellyfin_session, monkeypatch
     r = client.get("/rest/stream.view?id=song-1", headers={"Range": "bytes=0-100"})
     assert r.status_code == 200
     assert captured["headers"]["Range"] == "bytes=0-100"
-    assert captured["url"] == "http://jf:8096/Items/song-1/Download?api_key=tok"
+    assert captured["url"] == "http://jf:8096/Items/song-1/Download?api_key=tok&ApiKey=tok"
 
 
 def test_cover_art_view_builds_jellyfin_image_url(client, jellyfin_session, monkeypatch):
@@ -1370,7 +1385,7 @@ def test_song_lists_stay_free_of_the_detail_fields():
 def test_get_song_answers_with_the_detailed_mapping(client, jellyfin_session, monkeypatch):
     fake_client, _calls = _fake_jf_client(
         {
-            "/Users/u1/Items/song-1": {
+            "/Items/song-1": {
                 "Id": "song-1",
                 "Name": "Song",
                 "MediaSources": [{"Path": "/music/a/song.flac"}],

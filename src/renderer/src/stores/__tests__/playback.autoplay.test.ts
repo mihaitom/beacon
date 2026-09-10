@@ -216,7 +216,7 @@ describe('maybeAutoplay', () => {
   // so a pool with nothing left to give was re-asked every ~2s for as long
   // as the last song played — a request storm at exactly the library size
   // where the answer can never change.
-  it('asks once for a seed that came back empty, not on every status tick', async () => {
+  it('stops asking once the seeds it can try came back empty, whatever the tick count', async () => {
     const playback = usePlaybackStore()
     const library = Array.from({ length: 10 }, (_, i) => makeSong(`s${i}`))
     stubSimilar({ songs: library })
@@ -224,7 +224,64 @@ describe('maybeAutoplay', () => {
 
     for (let tick = 0; tick < 10; tick++) await playback.maybeAutoplay()
 
-    expect(similar).toHaveBeenCalledOnce()
+    // One per seed in the window (see AUTOPLAY_SEED_ATTEMPTS), and then
+    // silence — ten status ticks must not mean ten rounds of asking.
+    expect(similar).toHaveBeenCalledTimes(3)
+  })
+
+  it('carries on from the same artist when no seed has similar songs', async () => {
+    const playback = usePlaybackStore()
+    const queue = [makeSong('a1'), makeSong('a2')]
+    const sameArtist = { ...makeSong('a3'), artist: 'Seed Artist' }
+    const other = { ...makeSong('z9'), artist: 'Somebody Else' }
+    queue.forEach((song) => (song.artist = 'Seed Artist'))
+    const library = useLibraryStore()
+    library.allSongs = [...queue, sameArtist, other]
+    library.allSongsLoaded = true
+    stubSimilar({ songs: [] }) // the server knows nothing similar for anything
+
+    playback.setQueue(queue, 1)
+    await playback.maybeAutoplay()
+
+    // The artist just played, not a random pick out of the whole library.
+    expect(playback.queue.map((t) => t.id)).toContain('a3')
+    expect(playback.queue.map((t) => t.id)).not.toContain('z9')
+  })
+
+  it('does not reach into the catalog while a seed still has something', async () => {
+    const playback = usePlaybackStore()
+    const queue = [makeSong('b1')]
+    const fromServer = makeSong('server-pick')
+    const library = useLibraryStore()
+    library.allSongs = [...queue, makeSong('catalog-pick')]
+    library.allSongsLoaded = true
+    stubSimilar({ songs: [fromServer] })
+
+    playback.setQueue(queue, 0)
+    await playback.maybeAutoplay()
+
+    expect(playback.queue.map((t) => t.id)).toContain('server-pick')
+    expect(playback.queue.map((t) => t.id)).not.toContain('catalog-pick')
+  })
+
+  it('falls back to an earlier song when the last one has no similar songs', async () => {
+    const playback = usePlaybackStore()
+    const queue = [makeSong('has-neighbours'), makeSong('dead-end')]
+    const nextUp = makeSong('fresh')
+    stubSimilar() // wires client() up; the per-seed answers come from below
+    // Only the earlier song gets an answer — Jellyfin returns nothing at all
+    // for some tracks, and the last one never changes on its own.
+    similar.mockImplementation(async (id: string) =>
+      id === 'has-neighbours'
+        ? { songs: [nextUp], plexPassRequired: false }
+        : { songs: [], plexPassRequired: false },
+    )
+    playback.setQueue(queue, 1)
+
+    await playback.maybeAutoplay()
+
+    expect(similar).toHaveBeenCalledTimes(2)
+    expect(playback.queue.map((t) => t.id)).toContain('fresh')
   })
 
   it('asks again once the queue has grown past the seed it gave up on', async () => {
@@ -234,12 +291,13 @@ describe('maybeAutoplay', () => {
     playback.setQueue(library, 1)
 
     await playback.maybeAutoplay()
-    // Anything extending the queue moves the seed, and the new one has
-    // never been asked — a manual "add to queue" while listening, say.
+    // Anything extending the queue brings in a seed that has never been
+    // asked — a manual "add to queue" while listening, say.
     playback.addToQueue([makeSong('manual')])
     await playback.maybeAutoplay()
 
-    expect(similar).toHaveBeenCalledTimes(2)
+    // Both songs of the original queue, then the added one.
+    expect(similar).toHaveBeenCalledTimes(3)
     expect(similar.mock.calls.at(-1)![0]).toBe('manual')
   })
 

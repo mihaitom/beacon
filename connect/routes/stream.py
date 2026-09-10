@@ -118,6 +118,11 @@ async def _dispatch_queued_track(session: SessionState, target, track, gain: flo
 # to agree on how many songs a top-up adds.
 _AUTOPLAY_CANDIDATE_CAP = 100
 
+# How far back from the end a seed is looked for when the last song has no
+# similar songs to offer. Mirrors stores/playback.ts's
+# AUTOPLAY_SEED_ATTEMPTS — same reasoning, same number.
+_AUTOPLAY_SEED_ATTEMPTS = 3
+
 
 def _candidate_count(st) -> int:
     """How many candidates to ask for to end up with autoplay_batch_size new
@@ -159,24 +164,32 @@ async def _maybe_autoplay_topup(session: SessionState) -> None:
         return
     if not hasattr(session.media, "get_similar_songs2") or not st.queue:
         return
-    seed_id = st.queue[-1]
-    try:
-        similar = await asyncio.to_thread(
-            session.media.get_similar_songs2, seed_id, _candidate_count(st)
-        )
-    except Exception as e:
-        logger.warning(f"[stream] Autoplay top-up failed: {e}")
-        return
-    # By id, not just "new objects" — a small library's similar-songs pool
-    # otherwise keeps circling back to whatever's already just been
-    # played, same reasoning as stores/playback.ts's maybeAutoplay().
-    existing_ids = set(st.queue)
-    fresh_ids = [t.id for t in similar if t.id not in existing_ids][: st.autoplay_batch_size]
-    if not fresh_ids:
-        return
-    st.queue.extend(fresh_ids)
-    st.original_queue.extend(fresh_ids)
-    logger.info(f"[stream] Autoplay topped up the queue with {len(fresh_ids)} song(s)")
+    # The last song is the seed, but not the only candidate: some tracks
+    # have no similar songs at all (~3% of a real Jellyfin library, where a
+    # genre tag is one semicolon-joined string shared with nobody), and a
+    # single dead seed would end playback here even though its neighbour
+    # would have carried on fine. Frontend half: maybeAutoplay()'s own seed
+    # loop in stores/playback.ts.
+    for seed_id in reversed(st.queue[-_AUTOPLAY_SEED_ATTEMPTS:]):
+        try:
+            similar = await asyncio.to_thread(
+                session.media.get_similar_songs2, seed_id, _candidate_count(st)
+            )
+        except Exception as e:
+            # A failed lookup is a failure to ask, not an answer — stop
+            # rather than spending the remaining seeds on the same outage.
+            logger.warning(f"[stream] Autoplay top-up failed: {e}")
+            return
+        # By id, not just "new objects" — a small library's similar-songs
+        # pool otherwise keeps circling back to whatever's already just been
+        # played, same reasoning as stores/playback.ts's maybeAutoplay().
+        existing_ids = set(st.queue)
+        fresh_ids = [t.id for t in similar if t.id not in existing_ids][: st.autoplay_batch_size]
+        if fresh_ids:
+            st.queue.extend(fresh_ids)
+            st.original_queue.extend(fresh_ids)
+            logger.info(f"[stream] Autoplay topped up the queue with {len(fresh_ids)} song(s)")
+            return
 
 
 async def _resolve_track(session: SessionState, track_id: str, context: str):
