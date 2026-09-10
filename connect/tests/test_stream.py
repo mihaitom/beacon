@@ -431,6 +431,53 @@ async def test_advance_or_end_autoplay_tops_up_and_advances(default_session):
     assert default_session.state.track_ended is False
 
 
+async def test_advance_or_end_autoplay_falls_back_to_an_earlier_seed(default_session):
+    """A track the media server has nothing similar for used to end playback
+    here: the queue's last song is the seed, and if that one draws a blank
+    there was nothing else to try. Some tracks genuinely have no neighbours
+    (~3% of a real Jellyfin library), so this walks back through the queue -
+    same as stores/playback.ts's maybeAutoplay() does on the frontend."""
+    target = ChromecastDelivery("TV")
+    generation = _playing_session(default_session, ["1", "dead-end"], target=target)
+    default_session.state.queue_index = 1
+    default_session.state.autoplay_enabled = True
+    similar_track = Track(id="2", title="Similar", artist="Artist", duration=200, cover_art_id="c")
+
+    def similar_for(seed_id, _count):
+        return [] if seed_id == "dead-end" else [similar_track]
+
+    with (
+        patch.object(default_session.media, "get_similar_songs2", side_effect=similar_for),
+        patch.object(default_session.media, "get_track", return_value=similar_track),
+        patch("routes.stream.resolve_output_format", AsyncMock(return_value=FALLBACK_FORMAT)),
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play_mock,
+    ):
+        await _advance_or_end(default_session, generation)
+
+    assert default_session.state.queue == ["1", "dead-end", "2"]
+    assert play_mock.await_count == 1
+    assert default_session.state.track_ended is False
+
+
+async def test_advance_or_end_autoplay_gives_up_after_its_seed_attempts(default_session):
+    """The walk back is bounded — a queue where nothing has neighbours must
+    not turn one exhausted queue into a request per song."""
+    target = ChromecastDelivery("TV")
+    queue = [str(i) for i in range(10)]
+    generation = _playing_session(default_session, queue, target=target)
+    default_session.state.queue_index = len(queue) - 1
+    default_session.state.autoplay_enabled = True
+
+    with (
+        patch.object(default_session.media, "get_similar_songs2", return_value=[]) as similar_mock,
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+    ):
+        await _advance_or_end(default_session, generation)
+
+    assert similar_mock.call_count == 3
+    assert default_session.state.track_ended is True
+
+
 async def test_advance_or_end_autoplay_disabled_marks_ended(default_session):
     """Off by default (see stores/autoplay.ts's own default) — a media
     client that *could* supply similar songs must not get called at all
