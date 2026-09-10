@@ -18,7 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- Autoplay no longer falls silent at the end of the queue when the server has nothing similar to offer for the last track. It looks a little further back for something to continue from, and where that comes up empty too it carries on with more from the artist just played
+- Autoplay no longer falls silent at the end of the queue when the server has nothing similar to offer for the last track. It keeps the queue going instead
 - Sending a station to a speaker while a track was playing no longer makes the player bar flicker: the station showed, the track came back, and the station returned a few seconds later. The elapsed time no longer starts at wherever the track had got to either
 - The buffering bar on a station sent to a speaker clears a little sooner, closer to when the speaker actually starts playing
 - A station no longer skips a moment when the phone has had it in the background for a few seconds. The connection Beacon holds keeps the audio that was missed, and it is played rather than thrown away
