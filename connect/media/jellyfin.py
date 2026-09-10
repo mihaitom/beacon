@@ -173,7 +173,10 @@ class JellyfinClient:
     def get_track(self, track_id: str) -> Track:
         if not self.user_id:
             raise RuntimeError("Jellyfin user_id missing — re-send /config")
-        item = self._get(f"/Users/{self.user_id}/Items/{track_id}")
+        # /Items/{id}?userId=, not /Users/{id}/Items/{id}: Jellyfin 10.9
+        # marked the user-scoped form obsolete and 12 removed it. quote() on
+        # the id for the same reason get_stream_url() below does it.
+        item = self._get(f"/Items/{quote(track_id, safe='')}", userId=self.user_id)
         artists = item.get("Artists") or []
         return Track(
             id=item["Id"],

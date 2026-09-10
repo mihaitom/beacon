@@ -26,6 +26,7 @@ import { initMediaSession } from '@/services/mediaSession'
 import { createPositionTracker } from '@/services/playback/positionTracker'
 import { createSequenceGuard } from '@/services/playback/sequenceGuard'
 import { createKeyedGuard } from '@/services/playback/keyedGuard'
+import { shuffled } from '@/services/shuffle'
 import { createLock } from '@/services/playback/lock'
 import { createEdgeDetector } from '@/services/playback/edgeDetector'
 import { diffCastQueue } from '@/services/playback/queueReconcile'
@@ -136,6 +137,13 @@ const RESTART_THRESHOLD_SECONDS = 5
 // queue would otherwise actually run dry.
 const AUTOPLAY_TRIGGER_REMAINING = 1
 
+// How many songs back from the end Autoplay will look for a seed that
+// actually has similar songs. Three because the dead ends measured against
+// a real Jellyfin library are scattered (~3% of tracks), not clustered —
+// two neighbours are enough to get past one, and every extra attempt is
+// another request on a queue that may simply have run out of pool.
+const AUTOPLAY_SEED_ATTEMPTS = 3
+
 // Edge-detects status.ended's false→true transition across SSE updates
 // (module-level: the SSE subscription in init() is set up once per app
 // lifetime, not per store-consumer, so this doesn't belong in state).
@@ -148,14 +156,34 @@ const endedEdge = createEdgeDetector()
 // current song.
 const queueReconcileGuard = createKeyedGuard<string>()
 
-// The seed maybeAutoplay() last got nothing new for. Same question, same
-// answer: without this, a library whose whole similar-songs pool is already
-// in the queue is re-asked on every status tick — every ~2s while casting,
-// since adoptCastQueue() calls the top-up on each one — for as long as the
-// last song plays. Cleared implicitly rather than explicitly: the seed is
-// the queue's last song, so anything that extends the queue makes the id
-// stop matching on its own.
-let autoplayExhaustedSeedId: string | null = null
+// The seeds maybeAutoplay() already got nothing new for. Same question,
+// same answer: without this, a library whose whole similar-songs pool is
+// already in the queue is re-asked on every status tick — every ~2s while
+// casting, since adoptCastQueue() calls the top-up on each one — for as
+// long as the last song plays. A set rather than the single last-seed id
+// it used to be, because the top-up now walks back through the queue for
+// another seed (see maybeAutoplay) and has to remember each one it has
+// already written off. Emptied wherever the queue is replaced outright.
+const autoplayExhaustedSeedIds = new Set<string>()
+
+/** Autoplay's last resort, once every seed it could try came back with
+ * nothing. Answered from the catalog already in memory rather than another
+ * request: the server has just said it knows nothing similar, and asking it
+ * something else would only be a different way of getting the same silence.
+ *
+ * More of what was playing before anything else — a server with no
+ * similarity data at all (Jellyfin without genre tags, say) would otherwise
+ * turn the end of every queue into a jump from metal to classical. Only
+ * where that artist is exhausted too does this reach for the whole library,
+ * which is still better than the queue simply stopping. */
+function localFollowUp(queue: Song[], seed: Song | undefined, count: number): Song[] {
+  const library = useLibraryStore()
+  if (!library.allSongsLoaded) return [] // nothing browsed yet, nothing to pick from
+  const queued = new Set(queue.map((song) => song.id))
+  const pool = library.allSongs.filter((song) => !queued.has(song.id))
+  const sameArtist = seed ? pool.filter((song) => song.artist === seed.artist) : []
+  return shuffled(sameArtist.length ? sameArtist : pool).slice(0, count)
+}
 
 // Guards maybeAutoplay() against firing a second, overlapping fetch —
 // startCurrent() and adoptCastQueue() both call it on every song change,
@@ -932,8 +960,8 @@ export const usePlaybackStore = defineStore('playback', {
     setQueue(songs: Song[], startIndex = 0, pinFirst = true): void {
       this.leaveRadio()
       // A different queue is a different question, even where its last song
-      // happens to be the one Autoplay gave up on before.
-      autoplayExhaustedSeedId = null
+      // happens to be one Autoplay gave up on before.
+      autoplayExhaustedSeedIds.clear()
       this.originalQueue = [...songs]
       // Unshuffled, this.queue is `songs` in the same order, so startIndex
       // already *is* the right index — re-deriving it by id below would
@@ -1720,42 +1748,73 @@ export const usePlaybackStore = defineStore('playback', {
       if (this.queue.length - 1 - this.currentIndex > AUTOPLAY_TRIGGER_REMAINING) return
       if (autoplayLock.isLocked()) return // already topping up from an earlier call
 
-      const seed = this.queue[this.queue.length - 1]
-      if (!seed) return
-      if (seed.id === autoplayExhaustedSeedId) return // asked already, nothing came back
+      // The queue's last song is the seed, but not the only candidate: some
+      // tracks come back with nothing at all (Jellyfin's InstantMix answers
+      // ~3% of a real library with just the seed itself, mostly where the
+      // genre tag is one semicolon-joined string it shares with nobody).
+      // The last song stops changing once nothing is appended, so a single
+      // dead seed used to end Autoplay for the rest of the queue — walking
+      // back a few songs finds one that still has neighbours.
+      // A fixed window of the last few songs, not "the last few that are not
+      // written off yet": once those are all exhausted this has to go quiet
+      // until the queue actually changes, rather than walking further back
+      // on every status tick and asking again for the whole queue.
+      const seeds: Song[] = []
+      for (
+        let i = this.queue.length - 1;
+        i >= 0 && this.queue.length - i <= AUTOPLAY_SEED_ATTEMPTS;
+        i--
+      ) {
+        const candidate = this.queue[i]
+        if (candidate && !autoplayExhaustedSeedIds.has(candidate.id)) seeds.push(candidate)
+      }
+      if (!seeds.length) return
       autoplayLock.acquire()
       try {
-        const { songs: similar, plexPassRequired } = await useLibraryStore()
-          .client()
-          .getSimilarSongs2(seed.id, autoplayCandidateCount(this.queue.length))
-        if (plexPassRequired) {
-          // Unlike Song/Artist Radio's own one-shot notify-and-move-on
-          // (startSongRadio()/startArtistRadio()), Autoplay is a standing
-          // setting — leaving it on would just mean the exact same 403
-          // again at the next song change, and the one right after that,
-          // for as long as playback continues. Switching it back off is
-          // what actually stops the repeat performance; the toast is what
-          // explains why it turned itself off rather than that just being
-          // silently confusing.
-          this.setAutoplayEnabled(false)
-          notifyPlexPassRequired('player.autoplay')
-          return
+        for (const seed of seeds) {
+          const { songs: similar, plexPassRequired } = await useLibraryStore()
+            .client()
+            .getSimilarSongs2(seed.id, autoplayCandidateCount(this.queue.length))
+          if (plexPassRequired) {
+            // Unlike Song/Artist Radio's own one-shot notify-and-move-on
+            // (startSongRadio()/startArtistRadio()), Autoplay is a standing
+            // setting — leaving it on would just mean the exact same 403
+            // again at the next song change, and the one right after that,
+            // for as long as playback continues. Switching it back off is
+            // what actually stops the repeat performance; the toast is what
+            // explains why it turned itself off rather than that just being
+            // silently confusing. Returns rather than trying the next seed:
+            // the Plex Pass is missing for every one of them alike.
+            this.setAutoplayEnabled(false)
+            notifyPlexPassRequired('player.autoplay')
+            return
+          }
+          // Filtered by id, not just dedupeForQueue()'s object-identity
+          // dedup below (which only stops the *same* Song object landing in
+          // the queue twice, not a genuine repeat) — otherwise a small
+          // library's similar-songs pool keeps circling back to whatever's
+          // already just been played, and autoplay would spend its fetches
+          // re-adding songs still sitting right there in the queue instead
+          // of actually extending it. The batch size is applied after the
+          // filter, on what is actually new — the request over-fetched for
+          // exactly this, see autoplayCandidateCount().
+          const existingIds = new Set(this.queue.map((t) => t.id))
+          const fresh = similar.filter((t) => !existingIds.has(t.id)).slice(0, AUTOPLAY_BATCH_SIZE)
+          if (fresh.length) {
+            this.addToQueue(fresh)
+            return
+          }
+          // Only on a successful round trip: a lookup that threw (below) is
+          // a failure to ask, not an answer, and must stay retryable. Kept
+          // rather than cleared on the next success — a seed that has no
+          // neighbours will not grow any, and the queue this is filtered
+          // against only ever gets longer.
+          autoplayExhaustedSeedIds.add(seed.id)
         }
-        // Filtered by id, not just dedupeForQueue()'s object-identity
-        // dedup below (which only stops the *same* Song object landing in
-        // the queue twice, not a genuine repeat) — otherwise a small
-        // library's similar-songs pool keeps circling back to whatever's
-        // already just been played, and autoplay would spend its fetches
-        // re-adding songs still sitting right there in the queue instead
-        // of actually extending it. The batch size is applied after the
-        // filter, on what is actually new — the request over-fetched for
-        // exactly this, see autoplayCandidateCount().
-        const existingIds = new Set(this.queue.map((t) => t.id))
-        const fresh = similar.filter((t) => !existingIds.has(t.id)).slice(0, AUTOPLAY_BATCH_SIZE)
-        // Only on a successful round trip: a lookup that threw (below) is a
-        // failure to ask, not an answer, and must stay retryable.
-        autoplayExhaustedSeedId = fresh.length ? null : seed.id
-        if (fresh.length) this.addToQueue(fresh)
+        // Every seed drew a blank — carry on from the local catalog rather
+        // than letting the queue run out (see localFollowUp).
+        const local = localFollowUp(this.queue, seeds[0], AUTOPLAY_BATCH_SIZE)
+        if (local.length) this.addToQueue(local)
       } catch (error) {
         console.error('[playback] Autoplay top-up failed:', error)
       } finally {
@@ -1912,7 +1971,7 @@ export const usePlaybackStore = defineStore('playback', {
     resetForLogout(): void {
       getAudioEngine().stop()
       useDrawersStore().resetDrawers()
-      autoplayExhaustedSeedId = null // module-level, so $reset() below doesn't reach it
+      autoplayExhaustedSeedIds.clear() // module-level, so $reset() below doesn't reach it
       this.$reset()
     },
 

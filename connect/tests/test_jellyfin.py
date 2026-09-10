@@ -120,7 +120,9 @@ def test_get_track_parses_item(monkeypatch):
     }
 
     def fake_get(url, headers=None, params=None, timeout=None):
-        assert url.endswith("/Users/u1/Items/abc")
+        # /Items/{id}?userId=, not the user-scoped path Jellyfin 12 removed.
+        assert url.endswith("/Items/abc")
+        assert params == {"userId": "u1"}
         _assert_authenticated(headers, "tok")
         return httpx.Response(200, json=item, request=httpx.Request("GET", url))
 

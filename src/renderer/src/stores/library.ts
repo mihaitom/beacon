@@ -836,9 +836,12 @@ export const useLibraryStore = defineStore('library', {
       // These pages go out one after another, so the size trades how fast
       // the first tracks appear against how long the whole catalog takes.
       // Measured on Jellyfin 12.0.0, 20k tracks: 200 puts data on screen
-      // after 0.3s but needs 33s in total, 1000 needs 0.9s and 18s. The far
-      // slower 10.11.11 is what made 200 the right end of that trade before.
-      // The rest streams in via the .push() loop below either way.
+      // after 0.3s but needs 33s in total, 1000 needs 0.9s and 18s. On the
+      // ~7x slower 10.11.11 that same 1000 costs about 9s before anything
+      // shows, which is what 200 was picked to avoid — knowingly given up
+      // here rather than branching on the server version, since 12 is where
+      // this is measured and 10.x is on its way out. The rest streams in via
+      // the .push() loop below either way.
       const PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 1000 : 3000
       const client = this.client()
 

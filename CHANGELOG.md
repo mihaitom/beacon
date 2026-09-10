@@ -8,17 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- Support for Jellyfin 12: signing in, browsing, playback and casting all work against it. Servers still on Jellyfin 10.x keep working exactly as before
+- Support for Jellyfin 12: signing in, browsing, playback and casting all work against it. Servers on Jellyfin 10.9 and newer keep working too
 
 ### Changed
 
-- A large Jellyfin library finishes loading noticeably faster: on Jellyfin 12, a 20,000-track catalog is fully in place after around 18 seconds
 - Starting a station, on this device or on a speaker, now opens one connection to it instead of two, so it starts a little sooner and a station that allows only one listener at a time is no longer asked for a second
 - A station cast to a Chromecast or a DLNA speaker now sends that speaker half as many requests while it plays. Two separate checks were asking it the same thing, most heavily in the first seconds after a station starts
 - The log now notes when a station's connection is re-established behind the scenes, how long a player stayed connected, and what made the player ask again. A stutter heard on the phone can be looked up afterwards instead of having to be reproduced
 
 ### Fixed
 
+- Autoplay no longer falls silent at the end of the queue when the server has nothing similar to offer for the last track. It looks a little further back for something to continue from, and where that comes up empty too it carries on with more from the artist just played
 - A station no longer skips a moment when the phone has had it in the background for a few seconds. The connection Beacon holds keeps the audio that was missed, and it is played rather than thrown away
 - A dropped station is no longer reconnected twice over, which opened two connections at once and could be heard as a second stumble right after the first
 - A speaker could refuse a station after a pause, or once a second speaker joined, when the cast quality was set to AAC: it was announced as MP3 and then sent AAC
