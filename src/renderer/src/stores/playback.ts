@@ -536,7 +536,17 @@ export const usePlaybackStore = defineStore('playback', {
 
           this.isPlaying = status.streaming && !status.paused
           this.radioBuffering = status.radio_buffering
-          if (status.current_song) this.duration = status.current_song.duration
+          // A tick still carrying a song while this client is mid-switch to
+          // a station was built before /play-url reached the backend, and
+          // everything it says about position belongs to the track that is
+          // already over — see localRadioChangeGuard. Left in, it wrote the
+          // old track's length and elapsed onto a station that has neither,
+          // so the "Live · {elapsed}" readout started at wherever the track
+          // had got to and counted on from there.
+          const supersededByPendingRadio = !!status.current_song && localRadioChangeGuard.hasAny()
+          if (status.current_song && !supersededByPendingRadio) {
+            this.duration = status.current_song.duration
+          }
           // Through the tracker, never straight from status.elapsed: the
           // smoothing interval below reads that same tracker, so writing the
           // raw value here as well put two disagreeing numbers on screen in
@@ -552,7 +562,7 @@ export const usePlaybackStore = defineStore('playback', {
           // previous song's. Once per payload, same as the interruption above
           // — see positionPayloadHandled for what re-recording a stale
           // elapsed does to the tracker.
-          if (status !== positionPayloadHandled) {
+          if (status !== positionPayloadHandled && !supersededByPendingRadio) {
             positionPayloadHandled = status
             const now = performance.now()
             positionTracker.record(status.elapsed, now)
@@ -807,6 +817,14 @@ export const usePlaybackStore = defineStore('playback', {
 
       if (!status.current_song) return
       if (localSongChangeGuard.hasAny()) return // our own song switch hasn't been confirmed yet — see above
+      // The same race the radio branch above guards, arrived at from the
+      // other side: this client has just told the backend to play a
+      // *station*, and the tick in hand still reports the song that station
+      // replaced. Without this, leaveRadio() below drops the station the
+      // listener already sees, the player bar falls back to the old track,
+      // and only the first confirmed tick puts the station back — the
+      // several seconds a /play-url dispatch takes later.
+      if (localRadioChangeGuard.hasAny()) return
 
       // The session is playing a song, so whatever station this client
       // still shows is over — including one adopted from a stale tick a

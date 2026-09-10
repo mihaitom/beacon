@@ -18,7 +18,7 @@ from core.icy_metadata import (
     pulsed_title,
 )
 from core.loop_health import peak_lag
-from core.radio_relay import RadioRelay, relay_format_for_target
+from core.radio_relay import RadioRelay, buffer_probe_enabled, relay_format_for_target
 from core.session import (
     DEFAULT_SESSION_ID,
     SessionState,
@@ -701,7 +701,18 @@ async def radio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
         # connection here (multi-target casting subscribes more than once).
         label = f"for {session_id}"
         logger.info(f"[stream] Serving relayed radio {label}: {radio_info['url'][:80]}")
-        audio = _relayed_radio_audio(relay, label=label)
+        # When the device's own startup buffer began filling — the reference
+        # radio_is_buffering() measures against instead of the dispatch. Only
+        # the first connection since that dispatch counts; see
+        # SessionState.radio_device_connected_at for why a later one must not
+        # push the window out again.
+        if session.radio_device_connected_at is None:
+            session.radio_device_connected_at = time.monotonic()
+        # burst only while the probe is armed: the measurement needs the
+        # device handed more audio than it can take at once, and outside it
+        # a cast device gains nothing from starting seconds behind live.
+        probing = buffer_probe_enabled()
+        audio = _relayed_radio_audio(relay, burst=probing, probe=probing, label=label)
         if wants_icy:
             audio = _muxed_icy_audio(
                 audio, IcyMuxer(DEVICE_METAINT, current_title, record_injection)
@@ -738,8 +749,44 @@ def _latin1_header_value(text: str) -> str:
     return text.encode("latin-1", "replace").decode("latin-1")
 
 
+# How long a single write to the device's socket has to block before the
+# probe calls the receiving side saturated. At 8KiB chunks a 128kbps station
+# spends about half a second per chunk once it is playing in real time, so
+# anything appreciably below that is still the receiver taking audio as fast
+# as it is offered.
+_PROBE_PUSHBACK_SECONDS = 0.25
+
+
+def _log_buffer_probe(
+    relay: RadioRelay, label: str, absorbed: int, saturated_after: float | None
+) -> None:
+    """The device-buffer measurement's one line of output — see
+    core/radio_relay.py's RADIO_BUFFER_PROBE_ENV and
+    docs/investigations/radio-buffering-window.md.
+
+    `absorbed` is what the receiving side took before it first declined
+    more, which is its own buffer *plus* this machine's socket send buffer.
+    Nothing here can separate those two; the doc has the reference run that
+    subtracts the second."""
+    kbps = relay.output_bitrate_kbps
+    seconds = f"{absorbed * 8 / (kbps * 1000):.2f}s" if kbps else f"{absorbed} bytes"
+    if saturated_after is None:
+        # Everything on offer was taken, so the reading is a lower bound
+        # rather than a measurement: whatever the receiver's buffer is, it
+        # is at least this and the cushion ran out before it did.
+        logger.info(
+            f"[probe] {label}: took all {seconds} offered without pushing back — "
+            f"buffer is larger than the cushion, raise _PROBE_BURST_SECONDS"
+        )
+        return
+    logger.info(
+        f"[probe] {label}: absorbed {seconds} of audio in {saturated_after:.2f}s "
+        f"before pushing back (device buffer + this machine's socket send buffer)"
+    )
+
+
 async def _relayed_radio_audio(
-    relay: RadioRelay, *, burst: bool = False, label: str = ""
+    relay: RadioRelay, *, burst: bool = False, probe: bool = False, label: str = ""
 ) -> AsyncGenerator[bytes]:
     """One subscriber's view of the relay's device-audio fan-out — ends on
     a `None` sentinel (the relay stopped for good, see RadioRelay.stop())
@@ -759,18 +806,39 @@ async def _relayed_radio_audio(
     relayed radio ..." line does, so the two read as a pair — how long a
     connection stood is what says whether a player reconnected mid-stream
     or simply kept listening, and opening one is otherwise the only half
-    of it that gets recorded."""
+    of it that gets recorded.
+
+    `probe` logs how fast this subscriber actually takes the audio, for the
+    device-buffer measurement — see RadioRelay.buffer_probe_enabled() and
+    docs/investigations/radio-buffering-window.md."""
     queue = relay.subscribe_audio(burst=burst)
     started = time.monotonic()
+    # Bytes the receiver swallowed before it first pushed back, and when
+    # that happened — the whole of the probe's reading. See _log_buffer_probe().
+    absorbed = 0
+    saturated_after: float | None = None
     try:
         while True:
             chunk = await queue.get()
             if chunk is None:
                 return
+            before = time.monotonic()
             yield chunk
+            if probe and saturated_after is None:
+                # Time spent *inside* the yield is time Starlette spent
+                # writing this chunk to the device's socket, so a wait here
+                # is the receiving side declining to take more — the one
+                # thing about the device that is observable from here.
+                if time.monotonic() - before > _PROBE_PUSHBACK_SECONDS:
+                    saturated_after = time.monotonic() - started
+                else:
+                    absorbed += len(chunk)
     finally:
         relay.unsubscribe_audio(queue)
-        logger.info(f"[stream] Relayed radio {label} ended after {time.monotonic() - started:.0f}s")
+        stood = time.monotonic() - started
+        logger.info(f"[stream] Relayed radio {label} ended after {stood:.0f}s")
+        if probe:
+            _log_buffer_probe(relay, label, absorbed, saturated_after)
 
 
 # What the app may report as the cause of a reconnect — see

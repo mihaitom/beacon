@@ -1294,6 +1294,11 @@ async def play_url(
             f"play-url:{target}:{url}:{req.max_lossy_format}:{req.max_lossy_bitrate_kbps}"
         )
         if not _is_duplicate_dispatch(st, dispatch_key):
+            # This device is about to buffer from scratch, so the connection
+            # radio_is_buffering() measures against is the one it is about to
+            # open — not whichever it had for the previous station. Cleared
+            # before the dispatch, since the device connects inside it.
+            session.radio_device_connected_at = None
             try:
                 await target.play(dispatch_url, req.title, content_type=dispatch_content_type)
             except Exception as e:

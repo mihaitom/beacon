@@ -231,6 +231,20 @@ class SessionState:
         # itself changes, so a fresh station starts with a fresh allowance
         # rather than inheriting the previous one's cooldown.
         self.last_radio_redispatch: float = 0.0
+        # time.monotonic() of the moment a cast device first opened its own
+        # connection to the relay for the station playing now — set by
+        # routes/stream.py's radio_stream(), read by radio_is_buffering()
+        # as the one observed (rather than assumed) part of its answer. The
+        # device's buffer fills from that connection at exactly 1x, measured
+        # 2026-09-10 (see docs/investigations/radio-buffering-window.md), so
+        # wall time since it is how much audio the device holds.
+        #
+        # Earliest connection wins until the next dispatch clears it: a
+        # Sonos opens several per cast (see radio_stream()'s
+        # record_injection), and a later one re-arming this would extend the
+        # window every time. A redispatch (routes/upnp.py) does clear it —
+        # that device really does buffer again from scratch.
+        self.radio_device_connected_at: float | None = None
 
     def touch(self) -> None:
         self.last_seen = time.time()
@@ -515,6 +529,9 @@ class SessionState:
         if self.radio_relay is not None:
             relay, self.radio_relay = self.radio_relay, None
             self.last_radio_redispatch = 0.0
+            # Whatever connection a device had is over with the relay it was
+            # to — nothing left for radio_is_buffering() to measure against.
+            self.radio_device_connected_at = None
             await relay.stop()
 
 
@@ -606,9 +623,13 @@ def radio_is_buffering(session: SessionState) -> bool:
     one exists: it watches the device's own reported position and latches
     `ready` the moment it actually starts moving.
 
-    Where none exists, this falls back to elapsed time against the expected
-    device lead. That case used to just report False, which read as "done
-    buffering" — and since 2026-09-04 it is the *normal* case for a relayed
+    Where none exists, this falls back to how long the device has been
+    connected to the relay, against the expected size of its buffer. Only
+    the second half of that is a guess: the connection is observed (see
+    SessionState.radio_device_connected_at) and the relay was measured
+    handing it exactly 1x real time, so wall time since it *is* the audio
+    the device holds. That case used to just report False, which read as
+    "done buffering" — and since 2026-09-04 it is the *normal* case for a relayed
     Sonos, the device with the largest measured buffer of the three
     (4.7-5.0s, see core/visualizer_feed.py's ASSUMED_DEVICE_LEAD_SECONDS):
     core/state.py's first_radio_position_delivery() excludes it from
@@ -641,12 +662,24 @@ def radio_is_buffering(session: SessionState) -> bool:
     lead = session.radio_icy_measured_lag
     if lead is None:
         lead = ASSUMED_DEVICE_LEAD_SECONDS
-    # elapsed_since_stream_start(), not elapsed(): this is wall time since
-    # the device was last (re)dispatched, which is what the device's own
-    # buffer fills against. It re-zeroes on /resume and /seek, correctly —
-    # a device that reconnects re-incurs that same startup buffer, and a
-    # Sonos auto-pause/resume seconds into its own dispatch is routine (see
-    # core/radio_position.py).
+    # The device's buffer fills from the moment *it* connected to the relay,
+    # which this session records rather than assumes (see
+    # SessionState.radio_device_connected_at). /play-url's own clock.start()
+    # runs after target.play() has returned and the device connects inside
+    # that call, so the fallback below starts the window late by whatever is
+    # left of the dispatch after that — which is time the device has already
+    # spent buffering.
+    connected_at = session.radio_device_connected_at
+    if connected_at is not None:
+        return time.monotonic() - connected_at < lead
+    # No connection of the device's own to go by: casting straight to the
+    # station (PlayUrlRequest.cast_directly) never opens one here. Wall time
+    # since the dispatch is the only reference left.
+    #
+    # elapsed_since_stream_start(), not elapsed(): it re-zeroes on /resume
+    # and /seek, correctly — a device that reconnects re-incurs that same
+    # startup buffer, and a Sonos auto-pause/resume seconds into its own
+    # dispatch is routine (see core/radio_position.py).
     return st.clock.elapsed_since_stream_start() < lead
 
 

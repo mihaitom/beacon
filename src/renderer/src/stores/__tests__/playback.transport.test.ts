@@ -751,6 +751,122 @@ describe('playback transport', () => {
       expect(playback.radioStation?.streamUrl).toBe('https://stream.example/third')
     })
 
+    // The same race arrived at from a *track* rather than another station,
+    // which is the far more common way into radio and went unguarded: the
+    // ticks in flight while /play-url runs still carry the song the station
+    // is replacing, so reconcileFromStatus() took its song branch and
+    // leaveRadio()'d the station the listener could already see. Reported
+    // live as the station appearing, the track coming back, and the station
+    // returning several seconds later.
+    it('ignores a status tick still naming the previous track while its own dispatch is in flight', async () => {
+      const playback = usePlaybackStore()
+      const song = makeSong('a')
+      castTo()
+      playback.setQueue([song], 0)
+      playback.duration = 180
+      let releaseDispatch: () => void = () => {}
+      vi.mocked(connectPlayback.playUrl).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            releaseDispatch = () => resolve({ status: 'playing' } as PlayResponse)
+          }),
+      )
+
+      const dispatch = playback.playRadioStation({
+        id: 'r1',
+        name: 'New FM',
+        streamUrl: 'https://stream.example/new',
+        homePageUrl: null,
+      })
+      await flushPromises()
+
+      // The tick that used to undo the switch.
+      await playback.reconcileFromStatus(
+        makeStatus({
+          current_song: {
+            id: 'a',
+            artist: '',
+            album: '',
+            cover_art_url: null,
+            duration: 180,
+            title: 'Song a',
+          },
+          queue: ['a'],
+          original_queue: ['a'],
+          current_song_index: 0,
+        }),
+      )
+
+      expect(playback.radioStation?.streamUrl).toBe('https://stream.example/new')
+
+      releaseDispatch()
+      await dispatch
+
+      // ...and once the dispatch has landed, a tick genuinely reporting a
+      // song again ends the station as it always did.
+      await playback.reconcileFromStatus(
+        makeStatus({
+          current_song: {
+            id: 'a',
+            artist: '',
+            album: '',
+            cover_art_url: null,
+            duration: 180,
+            title: 'Song a',
+          },
+          queue: ['a'],
+          original_queue: ['a'],
+          current_song_index: 0,
+        }),
+      )
+      expect(playback.radioStation).toBeNull()
+    })
+
+    // The other half of the same stale tick: it carries the old track's
+    // length and elapsed, which a station has neither of, so the "Live ·
+    // {elapsed}" readout started wherever the track had got to.
+    it("does not take the outgoing track's position onto the station it is replacing", async () => {
+      const playback = usePlaybackStore()
+      castTo()
+      playback.setQueue([makeSong('a')], 0)
+      playback.init()
+      let releaseDispatch: () => void = () => {}
+      vi.mocked(connectPlayback.playUrl).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            releaseDispatch = () => resolve({ status: 'playing' } as PlayResponse)
+          }),
+      )
+
+      const dispatch = playback.playRadioStation({
+        id: 'r1',
+        name: 'New FM',
+        streamUrl: 'https://stream.example/new',
+        homePageUrl: null,
+      })
+      await flushPromises()
+
+      castTo({
+        current_song: {
+          id: 'a',
+          artist: '',
+          album: '',
+          cover_art_url: null,
+          duration: 180,
+          title: 'Song a',
+        },
+        elapsed: 97,
+        streaming: true,
+      })
+      await flushPromises()
+
+      expect(playback.localPosition).toBe(0)
+      expect(playback.duration).toBe(0)
+
+      releaseDispatch()
+      await dispatch
+    })
+
     // Regression test: status.current_song is always null for radio, so
     // nothing else ever clears whatever `duration` held from the last
     // track played, and positionTracker.extrapolate() then clamps every

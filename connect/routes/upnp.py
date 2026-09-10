@@ -340,6 +340,10 @@ async def _redispatch_relayed_station(session: SessionState, label: str, problem
         )
         return
     st.clock.restream_from(st.clock.stream_restart_position())
+    # Same re-basing for the other reference radio_is_buffering() uses: this
+    # device is reconnecting and buffering again from nothing, so the
+    # connection it is about to open is the one to measure against.
+    session.radio_device_connected_at = None
     # Not just left to the next periodic status tick — a listener staring
     # at a frozen "Live" readout for however long that tick takes to come
     # around is exactly the confusing gap this whole fix exists to close.

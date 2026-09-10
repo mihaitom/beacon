@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Sending a station to a speaker while a track was playing no longer makes the player bar flicker: the station showed, the track came back, and the station returned a few seconds later. The elapsed time no longer starts at wherever the track had got to either
+- The buffering bar on a station sent to a speaker clears a little sooner, closer to when the speaker actually starts playing
 - A station no longer skips a moment when the phone has had it in the background for a few seconds. The connection Beacon holds keeps the audio that was missed, and it is played rather than thrown away
 - A dropped station is no longer reconnected twice over, which opened two connections at once and could be heard as a second stumble right after the first
 - A speaker could refuse a station after a pause, or once a second speaker joined, when the cast quality was set to AAC: it was announced as MP3 and then sent AAC

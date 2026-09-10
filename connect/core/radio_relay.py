@@ -67,6 +67,7 @@ the difference is one truncated trailing frame).
 
 import asyncio
 import logging
+import os
 import time
 from collections import deque
 from collections.abc import Callable
@@ -152,6 +153,51 @@ _BURST_SECONDS = 6.0
 # Far above six seconds of any real radio bitrate (320kbps is 240KB), so it
 # is a backstop against unbounded memory rather than a second policy.
 _BURST_MAX_BYTES = 1_000_000
+
+# Diagnostics only, off unless this is set — see buffer_probe_enabled() and
+# docs/investigations/radio-buffering-window.md. It answers the one number
+# radio_is_buffering() still has to assume: how many seconds of audio a cast
+# device holds before it starts playing. There is no device-side signal for
+# that on a relayed Sonos (no position over x-rincon-mp3radio://, and ICY
+# echo is an upper bound, not a reading), so it is measured from the outside
+# instead: hand the device far more audio than it can take at once and watch
+# where it stops accepting.
+#
+# That needs a cushion much larger than the ordinary one. 6s of a 128kbps
+# station is 96KB, and this machine's own socket send buffer autotunes to
+# 4MB (/proc/sys/net/ipv4/tcp_wmem), so an ordinary burst disappears into
+# the kernel without the device having read a byte — the measurement would
+# be of the send buffer, not of the speaker. The probe values below are past
+# any plausible send buffer, which is what puts the device back in charge of
+# the rate.
+#
+# The reading still *includes* the send buffer, and nothing here can
+# separate the two on its own. A reference run against a client that reads
+# nothing at all (`curl --limit-rate 1 <relay url>`) measures the send
+# buffer by itself; the device's own buffer is the difference. See that doc.
+RADIO_BUFFER_PROBE_ENV = "BEACON_RADIO_BUFFER_PROBE"
+_PROBE_BURST_SECONDS = 120.0
+_PROBE_BURST_MAX_BYTES = 8_000_000
+
+
+def buffer_probe_enabled() -> bool:
+    """Whether the device-buffer probe is armed — see
+    RADIO_BUFFER_PROBE_ENV. Read per call, same as
+    icy_round_trip_measurement_enabled(), so it can be switched on for one
+    measurement without restarting the backend."""
+    return os.environ.get(RADIO_BUFFER_PROBE_ENV, "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _burst_limits() -> tuple[float, int]:
+    """(seconds, bytes) the rolling burst buffer is trimmed to."""
+    if buffer_probe_enabled():
+        return _PROBE_BURST_SECONDS, _PROBE_BURST_MAX_BYTES
+    return _BURST_SECONDS, _BURST_MAX_BYTES
 
 
 # Device-audio output. Deliberately not core/streamer.py's full tier ladder
@@ -819,12 +865,13 @@ class RadioRelay:
         self._trim_burst()
 
     def _trim_burst(self) -> None:
-        """Drops everything older than _BURST_SECONDS (and anything past
+        """Drops everything older than the burst window (and anything past
         the byte ceiling). Also on the way *out*, not only on the way in:
         while the station is down nothing new arrives, so age alone is what
         empties this — which is what keeps a listener reconnecting after an
         outage from being handed audio from before it."""
-        cutoff = time.monotonic() - _BURST_SECONDS
-        while self._burst and (self._burst[0][0] < cutoff or self._burst_bytes > _BURST_MAX_BYTES):
+        window, max_bytes = _burst_limits()
+        cutoff = time.monotonic() - window
+        while self._burst and (self._burst[0][0] < cutoff or self._burst_bytes > max_bytes):
             _, chunk = self._burst.popleft()
             self._burst_bytes -= len(chunk)

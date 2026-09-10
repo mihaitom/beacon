@@ -11,6 +11,7 @@ failure paths."""
 
 import asyncio
 import json
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -372,6 +373,35 @@ def test_radio_buffering_prefers_a_measured_lag_over_the_fixed_guess(default_ses
     default_session.radio_position_tracker = None
     default_session.radio_icy_measured_lag = 1.0
     st.clock.play_start_time -= 2.0  # past the measurement, well short of the guess
+    assert build_status_dict(default_session)["radio_buffering"] is False
+
+
+def test_radio_buffering_measures_from_the_device_connection_not_the_dispatch(default_session):
+    """The device's buffer fills from the moment *it* connected to the
+    relay, and the relay was measured feeding it at exactly 1x (see
+    docs/investigations/radio-buffering-window.md). /play-url's clock.start()
+    runs after target.play() has returned, and the device connects inside
+    that call, so counting from the clock held the indicator up for the tail
+    of the dispatch on top of the device's real buffer."""
+    st = _casting_radio(default_session)
+    default_session.radio_position_tracker = None
+    # The device connected a full lead ago; the dispatch it belongs to only
+    # finished afterwards, which is what the clock records.
+    default_session.radio_device_connected_at = time.monotonic() - ASSUMED_DEVICE_LEAD_SECONDS - 0.5
+    st.clock.start()
+    assert build_status_dict(default_session)["radio_buffering"] is False
+
+
+def test_radio_buffering_still_counts_from_the_dispatch_with_no_device_connection(
+    default_session,
+):
+    """Casting straight to the station (cast_directly) opens no connection
+    here to observe, so the dispatch is the only reference left."""
+    st = _casting_radio(default_session)
+    default_session.radio_position_tracker = None
+    default_session.radio_device_connected_at = None
+    assert build_status_dict(default_session)["radio_buffering"] is True
+    st.clock.play_start_time -= ASSUMED_DEVICE_LEAD_SECONDS + 0.5
     assert build_status_dict(default_session)["radio_buffering"] is False
 
 
