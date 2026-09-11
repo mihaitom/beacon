@@ -1032,6 +1032,15 @@ async def displace_target(owner_session: SessionState, target_type: str, name: s
 
 SESSION_REAP_INTERVAL = 60
 SESSION_IDLE_TIMEOUT = int(os.getenv("SESSION_IDLE_TIMEOUT", str(60 * 30)))
+# How long a *paused* cast keeps its speaker, its claim and its queue after
+# the last client went away — see reap_once(), which measures it against the
+# same last_seen as SESSION_IDLE_TIMEOUT, since /pause is itself a request
+# and touches it. Deliberately much longer than the ordinary idle timeout:
+# coming back to a paused cast after a while is normal use, and stopping the
+# device under somebody is the one teardown nobody asked for. But it is a
+# limit rather than an exemption — an unbounded one left a Sonos claimed
+# from 17:01 to 22:17 with nobody listening (observed live 2026-09-11).
+PAUSED_IDLE_TIMEOUT = int(os.getenv("PAUSED_IDLE_TIMEOUT", str(60 * 60 * 2)))
 
 
 async def _device_is_still_ours(session: SessionState) -> bool:
@@ -1077,7 +1086,8 @@ async def reap_once() -> list[str]:
     stream. Returns the session ids that were reaped, mainly so tests don't
     need to duplicate this logic to assert on it.
 
-    "Idle" is deliberately two conditions, not one — see the loop below."""
+    "Idle" is deliberately more than just last_seen, and a paused cast gets
+    its own, much longer PAUSED_IDLE_TIMEOUT — see the loop below."""
     now = time.time()
     reaped = []
     for session in registry.all():
@@ -1100,18 +1110,32 @@ async def reap_once() -> list[str]:
         # unnoticed.
         #
         # Whatever is still streaming is by definition not abandoned, so it
-        # is not reaped at all. Covers a paused cast too: somebody may well
-        # come back to it, and stopping the device under them would be the
-        # same rudeness one step later.
+        # is not reaped at all.
+        #
+        # A paused cast is still_streaming as far as this flag goes (nothing
+        # clears it on /pause, so a pause-time disconnect isn't mistaken for
+        # a device drop — see routes/stream.py's
+        # _mark_disconnected_if_not_reconnected). It gets its own, far longer
+        # grace instead of that same exemption: somebody may well come back
+        # to it, but "may well" runs out, and an unbounded exemption meant a
+        # paused session was never reaped at all, however long ago anyone
+        # last touched it.
         if session.state.is_streaming:
-            logger.debug(
-                f"[reap] {session.session_id}: idle since "
-                f"{now - session.last_seen:.0f}s but still streaming — left alone"
+            idle_for = now - session.last_seen
+            if not session.state.clock.is_paused or idle_for <= PAUSED_IDLE_TIMEOUT:
+                logger.debug(
+                    f"[reap] {session.session_id}: idle since {idle_for:.0f}s but still "
+                    f"{'paused' if session.state.clock.is_paused else 'streaming'} — left alone"
+                )
+                continue
+            logger.info(
+                f"[reap] {session.session_id}: paused and untouched for "
+                f"{idle_for / 60:.0f}min — releasing its device"
             )
-            continue
-        # Not streaming any more, but the device may still be sitting on
-        # this session's stream — a false-positive drop, or a queue that
-        # ended without the device letting go. Stop it only if it really is
+        # Nothing is flowing any more (or a pause has outlasted its grace),
+        # but the device may still be sitting on this session's stream — a
+        # false-positive drop, or a queue that ended without the device
+        # letting go. Stop it only if it really is
         # still ours: a reap is the one teardown nobody asked for, and the
         # speaker is shared far more widely than this process can see.
         # Observed live 2026-08-22: a session whose cast had ended hours

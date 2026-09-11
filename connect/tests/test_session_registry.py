@@ -183,7 +183,9 @@ def test_reap_once_never_reaps_a_session_that_is_still_streaming():
 
 def test_reap_once_leaves_a_paused_cast_alone():
     """Same reasoning one step later: somebody may well come back to it, and
-    stopping the device under them is the same rudeness."""
+    stopping the device under them is the same rudeness. Unlike a session
+    that is actually streaming, though, this one is on a clock — see the
+    test below."""
     from core.session import reap_once, registry
 
     session, delivery = _stale_session("paused-cast", uri=None, streaming=True)
@@ -192,6 +194,23 @@ def test_reap_once_leaves_a_paused_cast_alone():
     assert asyncio.run(reap_once()) == []
     assert registry.get("paused-cast") is not None
     delivery.stop.assert_not_awaited()
+
+
+def test_reap_once_reaps_a_cast_paused_past_the_pause_grace():
+    """The other half of the rule above, and the reason it has a bound at
+    all: is_streaming stays True across a pause, so exempting it outright
+    meant a paused session was never reaped, however long ago anyone last
+    touched it. Observed live 2026-09-11 — paused at 17:01, the Sonos still
+    claimed at 22:17."""
+    from core.session import PAUSED_IDLE_TIMEOUT, reap_once, registry
+
+    session, delivery = _stale_session("long-paused-cast", uri=None, streaming=True)
+    session.state.clock.is_paused = True
+    session.last_seen = time.time() - PAUSED_IDLE_TIMEOUT - 1
+
+    assert asyncio.run(reap_once()) == ["long-paused-cast"]
+    assert registry.get("long-paused-cast") is None
+    delivery.stop.assert_awaited()
 
 
 # ── what a reap does to the device it finds ──────────────────────────────────
