@@ -1079,3 +1079,162 @@ def test_relay_format_keeps_aac_where_the_device_takes_it():
 
 def test_relay_format_with_no_known_device_trusts_the_setting():
     assert relay_format_for_target("aac", None) == "aac"
+
+
+class TestOrphanedRelay:
+    """Nothing is listening any more — see _watch_for_orphan().
+
+    The case that made this necessary: radio stopped at the speaker itself,
+    which this backend only ever learns from the device closing its
+    connection. Everything that used to end a relay (/stop, a station
+    change, /radio-metadata/stop, the session reaper) needs either the app
+    or a session the reaper is willing to touch, and a casting radio
+    session is neither — so the station went on being fetched, re-encoded
+    and logged for as long as the backend ran.
+    """
+
+    def test_the_visualizers_analyzer_does_not_count_as_a_listener(self):
+        """Otherwise an app left open on the visualizer keeps a station
+        alive that no speaker is taking any more."""
+        relay, _proc, _ = _relay_with_fake_ffmpeg()
+        relay.subscribe_audio(lossy=True)
+        assert relay.listeners == 0
+        device = relay.subscribe_audio()
+        assert relay.listeners == 1
+        relay.unsubscribe_audio(device)
+        assert relay.listeners == 0
+
+    def test_a_listener_stops_the_clock_and_leaving_restarts_it(self):
+        relay, _proc, _ = _relay_with_fake_ffmpeg()
+        assert relay.orphaned_for() > 0  # nothing has ever connected
+        q = relay.subscribe_audio()
+        assert relay.orphaned_for() == 0
+        relay.unsubscribe_audio(q)
+        assert relay.orphaned_for() >= 0
+        assert relay._no_listeners_since is not None
+
+    def test_a_reconnect_within_the_window_starts_the_wait_over(self):
+        """A device that drops and comes back — the ordinary case the
+        timeout is long enough to sit through — must not accumulate its
+        gaps towards it."""
+        relay, _proc, _ = _relay_with_fake_ffmpeg()
+        relay._no_listeners_since = relay_mod.time.monotonic() - 89
+        q = relay.subscribe_audio()
+        relay.unsubscribe_audio(q)
+        assert relay.orphaned_for() < 1
+
+    async def test_it_hands_off_once_nothing_has_listened_long_enough(self):
+        calls: list[int] = []
+
+        async def on_orphaned() -> bool:
+            calls.append(1)
+            return True
+
+        relay, _proc, _ = _relay_with_fake_ffmpeg()
+        relay._on_orphaned = on_orphaned
+        stream = _mock_stream({}, [])
+
+        with (
+            patch.object(relay_mod._client, "stream", stream),
+            patch.object(relay_mod, "_ORPHAN_TIMEOUT_SECONDS", 0.0),
+            patch.object(relay_mod, "_ORPHAN_CHECK_INTERVAL_SECONDS", 0.01),
+        ):
+            await relay.start()
+            await asyncio.sleep(0.05)
+            await relay.stop()
+
+        assert calls == [1]
+
+    async def test_a_relay_with_a_listener_is_left_alone(self):
+        calls: list[int] = []
+
+        async def on_orphaned() -> bool:
+            calls.append(1)
+            return True
+
+        relay, _proc, _ = _relay_with_fake_ffmpeg()
+        relay._on_orphaned = on_orphaned
+        stream = _mock_stream({}, [])
+
+        with (
+            patch.object(relay_mod._client, "stream", stream),
+            patch.object(relay_mod, "_ORPHAN_TIMEOUT_SECONDS", 0.0),
+            patch.object(relay_mod, "_ORPHAN_CHECK_INTERVAL_SECONDS", 0.01),
+        ):
+            await relay.start()
+            relay.subscribe_audio()
+            await asyncio.sleep(0.05)
+            await relay.stop()
+
+        assert calls == []
+
+    async def test_a_declined_handoff_keeps_the_relay_and_waits_again(self):
+        """A paused session has an expected reason for nothing being
+        connected — see SessionState._radio_relay_orphaned."""
+        calls: list[int] = []
+
+        async def on_orphaned() -> bool:
+            calls.append(1)
+            return False
+
+        relay, _proc, _ = _relay_with_fake_ffmpeg()
+        relay._on_orphaned = on_orphaned
+        stream = _mock_stream({}, [])
+
+        with (
+            patch.object(relay_mod._client, "stream", stream),
+            patch.object(relay_mod, "_ORPHAN_TIMEOUT_SECONDS", 0.0),
+            patch.object(relay_mod, "_ORPHAN_CHECK_INTERVAL_SECONDS", 0.01),
+        ):
+            await relay.start()
+            await asyncio.sleep(0.05)
+            assert relay._stopped is False
+            await relay.stop()
+
+        assert len(calls) > 1  # asked again rather than giving up after the first no
+
+    async def test_without_a_callback_it_stops_itself(self):
+        relay, proc, _ = _relay_with_fake_ffmpeg()
+        stream = _mock_stream({}, [])
+
+        with (
+            patch.object(relay_mod._client, "stream", stream),
+            patch.object(relay_mod, "_ORPHAN_TIMEOUT_SECONDS", 0.0),
+            patch.object(relay_mod, "_ORPHAN_CHECK_INTERVAL_SECONDS", 0.01),
+        ):
+            await relay.start()
+            await asyncio.sleep(0.05)
+
+        assert relay._stopped is True
+        assert proc.killed is True
+
+    async def test_a_callback_that_stops_the_relay_is_not_cancelled_mid_teardown(self):
+        """The ordinary path: the callback lands in
+        SessionState._radio_relay_orphaned(), which calls stop_radio_relay()
+        — so stop() runs *inside* the very task it would otherwise cancel.
+        Everything after that call has to still run, and that "everything"
+        is what actually matters: releasing this session's device claims
+        and broadcasting the new status both await, and an await is exactly
+        where a pending cancellation lands."""
+        finished: list[str] = []
+
+        relay, _proc, _ = _relay_with_fake_ffmpeg()
+
+        async def on_orphaned() -> bool:
+            await relay.stop()
+            await asyncio.sleep(0)  # stands in for the two awaits that follow it
+            finished.append("after stop")
+            return True
+
+        relay._on_orphaned = on_orphaned
+        stream = _mock_stream({}, [])
+
+        with (
+            patch.object(relay_mod._client, "stream", stream),
+            patch.object(relay_mod, "_ORPHAN_TIMEOUT_SECONDS", 0.0),
+            patch.object(relay_mod, "_ORPHAN_CHECK_INTERVAL_SECONDS", 0.01),
+        ):
+            await relay.start()
+            await asyncio.sleep(0.05)
+
+        assert finished == ["after stop"]

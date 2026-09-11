@@ -3,7 +3,9 @@
 One instance per session, owned by core/session.py (SessionState.radio_relay),
 started when radio casting begins (routes/playback.py's /play-url, unless
 the listener opted into PlayUrlRequest.cast_directly — see that field's own
-comment) and stopped on station change, /stop, or session reap.
+comment) and stopped on station change, /stop, session reap, or — when the
+listening stopped somewhere this backend cannot see, at the speaker
+itself — by _watch_for_orphan() below.
 
 Exists so that casting a station costs exactly one fetch of it, instead of
 the up to three independent connections "direct to device" means today: the
@@ -70,7 +72,7 @@ import logging
 import os
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 
 import httpx
@@ -282,6 +284,34 @@ _ANALYSIS_QUEUE_MAXSIZE = 48
 # subsequent /play and /play-url on the session behind it, indefinitely.
 _START_TIMEOUT_SECONDS = 10.0
 
+# How long this may go on fetching a station nobody is listening to before
+# it gives up on it — see _watch_for_orphan().
+#
+# Nothing else ever ends a relay whose listener stopped somewhere this
+# backend cannot see. Stopping at the speaker itself is the plain case: the
+# device closes its connection here, and /stop, a station change and
+# /radio-metadata/stop (which deliberately leaves a casting session's relay
+# alone) are all things only the *app* can ask for. The session reaper is
+# no backstop either — a casting radio session has is_streaming True for as
+# long as it exists, and the reaper leaves streaming sessions alone on
+# purpose. So the station went on being fetched, demuxed and re-encoded, and
+# its now-playing titles went on being logged, for as long as the backend
+# ran. Reported live 2026-09-11.
+#
+# Ninety seconds, because two existing recoveries have to be allowed to
+# finish first, and both of them legitimately leave this without a listener
+# while they work: a Sonos that reports a transport problem is redispatched
+# at most once every 30s (routes/upnp.py), and whichever device is coming
+# back then spends its own startup buffering (~5-11s measured, see
+# core/radio_position.py) before it opens a connection here. That is one
+# full retry cycle plus room for a second, which is the difference between
+# ending a station nobody is listening to and cutting off one that is about
+# to come back.
+_ORPHAN_TIMEOUT_SECONDS = 90.0
+# How often that is checked. Coarse on purpose — this decides a timeout
+# measured in minutes, not a moment.
+_ORPHAN_CHECK_INTERVAL_SECONDS = 5.0
+
 
 def _send_sentinel(q: "asyncio.Queue[bytes | None]") -> None:
     """Hand a subscriber the `None` that means "the relay has stopped for
@@ -459,6 +489,7 @@ class RadioRelay:
         content_type: str,
         on_title_change: Callable[[str], None],
         on_stream_info: Callable[[int | None, str | None], None] | None = None,
+        on_orphaned: Callable[[], Awaitable[bool]] | None = None,
         max_bitrate_kbps: int | None = None,
         preferred_format: str | None = None,
     ) -> None:
@@ -500,15 +531,23 @@ class RadioRelay:
         self._output_decided = False
         self._on_title_change = on_title_change
         self._on_stream_info = on_stream_info
+        self._on_orphaned = on_orphaned
         self._proc: asyncio.subprocess.Process | None = None
         self._fetch_task: asyncio.Task | None = None
         self._audio_fanout_task: asyncio.Task | None = None
+        self._orphan_task: asyncio.Task | None = None
         self._audio_subscribers: list[asyncio.Queue[bytes | None]] = []
         # id() of the subscribers that asked for `lossy` — an asyncio.Queue
         # isn't hashable-by-value in a way that would make a set of the
         # queues themselves any clearer, and identity is exactly the
         # question being asked.
         self._lossy_subscribers: set[int] = set()
+        # Since when nothing has been listening — see _watch_for_orphan().
+        # Starts now rather than at the first subscriber: a relay whose
+        # device never connects at all (a dispatch the speaker silently
+        # dropped) is exactly as orphaned as one whose device has left, and
+        # is otherwise the one case nothing would ever notice.
+        self._no_listeners_since: float | None = time.monotonic()
         # The most recent _BURST_SECONDS of device audio, as (emitted_at,
         # chunk), handed to a listening subscriber the moment it arrives so
         # it starts with a buffer instead of at the live edge. See
@@ -538,6 +577,7 @@ class RadioRelay:
         _START_TIMEOUT_SECONDS; see that constant for why waiting here
         can't be open-ended."""
         self._fetch_task = asyncio.create_task(self._run())
+        self._orphan_task = asyncio.create_task(self._watch_for_orphan())
         try:
             await asyncio.wait_for(self._started.wait(), _START_TIMEOUT_SECONDS)
         except TimeoutError:
@@ -555,6 +595,12 @@ class RadioRelay:
             self._fetch_task.cancel()
         if self._audio_fanout_task:
             self._audio_fanout_task.cancel()
+        # Never cancels itself: the ordinary way this relay ends after
+        # _watch_for_orphan() has concluded nobody is listening is that
+        # very task awaiting the callback that lands here. Cancelling it
+        # from inside would abort the teardown it is running.
+        if self._orphan_task and self._orphan_task is not asyncio.current_task():
+            self._orphan_task.cancel()
         if self._proc:
             try:
                 self._proc.kill()
@@ -603,6 +649,7 @@ class RadioRelay:
         self._audio_subscribers.append(q)
         if lossy:
             self._lossy_subscribers.add(id(q))
+        self._note_listener_change()
         if burst:
             # Before the append above would matter either way — nothing is
             # fed into this queue until the next chunk arrives — but
@@ -618,6 +665,77 @@ class RadioRelay:
         if q in self._audio_subscribers:
             self._audio_subscribers.remove(q)
         self._lossy_subscribers.discard(id(q))
+        self._note_listener_change()
+
+    @property
+    def listeners(self) -> int:
+        """How many subscribers are actually *playing* this station — a
+        cast device's own connection, the app's `<audio>` element. The
+        visualizer's analyzer is deliberately not one of them: it only ever
+        subscribes because something else is playing, and counting it would
+        let an app left open on the visualizer keep a station alive that no
+        speaker is taking any more."""
+        return len(self._audio_subscribers) - len(self._lossy_subscribers)
+
+    def _note_listener_change(self) -> None:
+        """Keeps the "nothing is listening since" stamp _watch_for_orphan()
+        reads. Set on the way down to zero and cleared on the way back up,
+        so an ordinary reconnect resets the clock rather than accumulating
+        against it."""
+        if self.listeners > 0:
+            self._no_listeners_since = None
+        elif self._no_listeners_since is None:
+            self._no_listeners_since = time.monotonic()
+
+    def orphaned_for(self) -> float:
+        """How long nothing has been listening, or 0.0 while something is.
+        Split out from the loop below purely so it is testable without
+        waiting a real _ORPHAN_TIMEOUT_SECONDS out."""
+        since = self._no_listeners_since
+        return 0.0 if since is None else time.monotonic() - since
+
+    async def _watch_for_orphan(self) -> None:
+        """Ends a relay nothing is listening to any more — see
+        _ORPHAN_TIMEOUT_SECONDS for the case this exists for and why the
+        timeout is as long as it is.
+
+        Hands off rather than tearing itself down: what else has to happen
+        (the session's own state, and telling whoever is watching it) is
+        core/session.py's to decide, the same division this class already
+        keeps for the now-playing title. A relay built without that callback
+        — a test, or any future caller that wants to own the lifetime
+        itself — just logs and stops fetching.
+
+        The callback answers whether it actually ended this: a session that
+        is merely *paused* has an entirely expected reason for nothing being
+        connected (a cast device that stops its transport on pause closes
+        its connection here too), and says so by declining. The same
+        question routes/stream.py's _mark_disconnected_if_not_reconnected()
+        asks of clock.is_paused before concluding a track's device is
+        gone."""
+        while not self._stopped:
+            await asyncio.sleep(_ORPHAN_CHECK_INTERVAL_SECONDS)
+            # "Is anything listening" asked directly rather than read off
+            # orphaned_for(), whose 0.0 means both "somebody is" and "the
+            # last one left this instant".
+            if self._stopped or self._no_listeners_since is None:
+                continue
+            if self.orphaned_for() < _ORPHAN_TIMEOUT_SECONDS:
+                continue
+            if self._on_orphaned is None:
+                logger.info(f"[radio-relay] {self.url}: nothing is listening — stopping")
+                await self.stop()
+                return
+            if not await self._on_orphaned():
+                # Declined — start the wait over rather than asking again
+                # on every tick for as long as the pause lasts.
+                self._no_listeners_since = time.monotonic()
+                continue
+            logger.info(
+                f"[radio-relay] {self.url}: nothing has been listening for "
+                f"{_ORPHAN_TIMEOUT_SECONDS:.0f}s — letting the station go"
+            )
+            return
 
     async def _run(self) -> None:
         failures = 0

@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A station no longer skips a moment when the phone has had it in the background for a few seconds. The connection Beacon holds keeps the audio that was missed, and it is played rather than thrown away
 - A dropped station is no longer reconnected twice over, which opened two connections at once and could be heard as a second stumble right after the first
 - A speaker could refuse a station after a pause, or once a second speaker joined, when the cast quality was set to AAC: it was announced as MP3 and then sent AAC
+- Stopping a station at the speaker itself now ends it in Beacon as well. The station went on being fetched and re-encoded for as long as Beacon ran, with nothing playing it any more, and the app kept showing it as playing
 
 ## [1.2.1] - 2026-09-08
 
