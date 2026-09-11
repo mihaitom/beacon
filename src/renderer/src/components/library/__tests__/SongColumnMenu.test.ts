@@ -9,6 +9,7 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useSongColumnsStore } from '@/stores/songColumns'
+import { useAuthStore } from '@/stores/auth'
 import { OPTIONAL_SONG_COLUMNS, resolveSongColumns } from '@/services/library/songColumns'
 import SongTableHeader from '../SongTableHeader.vue'
 
@@ -29,7 +30,9 @@ function menuItems(): HTMLElement[] {
 /** One column's entry in the open menu, by its translated label. */
 function entryFor(labelKey: string): HTMLElement {
   const label = i18n.global.t(labelKey)
-  const found = menuItems().find((item) => item.textContent?.trim() === label)
+  const found = menuItems().find(
+    (item) => item.querySelector('.v-list-item-title')?.textContent?.trim() === label,
+  )
   if (!found) throw new Error(`no menu entry labelled ${label}`)
   return found
 }
@@ -108,6 +111,18 @@ describe('the song table column menu', () => {
 
     expect(store.columns).toContain('album')
     expect(store.columns).not.toContain('path')
+  })
+
+  it('greys out what this server cannot fill, and says why', async () => {
+    useAuthStore().serverType = 'jellyfin'
+    const wrapper = mountHeader()
+    await wrapper.get('.column-menu-button').trigger('click')
+
+    const bpm = entryFor('songInfo.bpm')
+    expect(bpm.classList.contains('v-list-item--disabled')).toBe(true)
+    expect(bpm.textContent).toContain(i18n.global.t('library.columnNotReported'))
+    // A column Jellyfin does report is untouched.
+    expect(entryFor('library.album').classList.contains('v-list-item--disabled')).toBe(false)
   })
 
   it('is not offered at all on a table whose columns the page fixed', () => {

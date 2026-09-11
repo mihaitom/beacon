@@ -11,7 +11,7 @@ import * as directives from 'vuetify/directives'
 import 'vuetify/styles'
 import '@mdi/font/css/materialdesignicons.css'
 import '@/assets/base.css'
-import { i18n } from '@/i18n'
+import { i18n, SUPPORTED_LOCALES } from '@/i18n'
 import SongTableHeader from '../SongTableHeader.vue'
 import SongRow from '../SongRow.vue'
 import { emitter } from '@/emitter'
@@ -94,6 +94,80 @@ describe('SongTableHeader', () => {
     expect(getComputedStyle(heading('year')).color).toBe(signal)
     expect(getComputedStyle(heading('title')).color).not.toBe(signal)
     expect(getComputedStyle(heading('album')).color).not.toBe(signal)
+  })
+
+  /** The complaint this answers: a heading that does not fit its column.
+   * Every label is a translation, and the longest of the five decides -
+   * "Plays" is 5 characters and "Reproducciones" is 14, in a column holding
+   * a three-digit number. The widths in the registry were measured here (a
+   * heading's real width is a browser question, not a jsdom one) and carry
+   * roughly 10px of headroom each, because the app does not ship Inter:
+   * every platform resolves the stack to a slightly different face.
+   *
+   * The tolerance is that headroom, not a licence to overflow - it is what
+   * separates "this machine's font is a little wider" from the case this
+   * catches, a heading that needs three times its column. */
+  it('fits every heading in its own column, in every language', () => {
+    const columns = resolveSongColumns(OPTIONAL_SONG_COLUMNS.map((column) => column.key))
+    const frame = document.createElement('div')
+    // Wide enough that nothing is shrinking: this is about the widths
+    // themselves, not about what a narrow window does to them.
+    frame.style.width = '2600px'
+    document.body.append(frame)
+    framesToRemove.push(frame)
+
+    for (const locale of SUPPORTED_LOCALES) {
+      i18n.global.locale = locale
+      const header = mount(SongTableHeader, {
+        props: { columns },
+        attachTo: frame,
+        global: { plugins: [vuetify, i18n] },
+      })
+      wrappers.push(header)
+
+      for (const column of columns) {
+        // The label, not the button around it: the button is capped at the
+        // cell's width and clips nothing itself, so measuring it reports a
+        // comfortable fit for a heading three times too wide. The ellipsis
+        // lives on the label, and scrollWidth past clientWidth is exactly
+        // when it appears - i.e. when the reader can no longer read it.
+        const label = header.element.querySelector(
+          `[data-column="${column.key}"] .sort-header__label`,
+        ) as HTMLElement | null
+        if (!label) continue
+        const clipped = label.scrollWidth - label.clientWidth
+        expect(clipped, `${column.key} heading in ${locale}`).toBeLessThanOrEqual(8)
+      }
+      header.unmount()
+      wrappers.pop()
+    }
+    i18n.global.locale = 'en'
+  })
+
+  /** With every column switched on, the flexible ones used to be shrunk to
+   * nothing - the title column measured 1px at 1280px wide and every
+   * heading sat over its neighbour's column. The floor under each column is
+   * what stops that; a table that no longer fits scrolls sideways instead,
+   * which is a thing the reader can see and undo. */
+  it('never shrinks a column below its floor, however many are on', () => {
+    const columns = resolveSongColumns(OPTIONAL_SONG_COLUMNS.map((column) => column.key))
+    const frame = document.createElement('div')
+    frame.style.width = '1280px'
+    document.body.append(frame)
+    framesToRemove.push(frame)
+
+    const header = mount(SongTableHeader, {
+      props: { columns },
+      attachTo: frame,
+      global: { plugins: [vuetify, i18n] },
+    })
+    wrappers.push(header)
+
+    for (const column of columns) {
+      const cell = header.element.querySelector(`[data-column="${column.key}"]`) as HTMLElement
+      const width = cell!.getBoundingClientRect().width
+      expect(width, column.key).toBeGreaterThanOrEqual(parseInt(column.minWidth, 10) - 1)
+    }
   })
 
   /** The failure this whole arrangement exists to prevent: a heading

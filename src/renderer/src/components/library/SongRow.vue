@@ -31,7 +31,7 @@
         v-if="column.cell === 'index'"
         :data-column="column.key"
         class="song-col song-col--index text-medium-emphasis text-body-small"
-        :style="{ flex: column.flex }"
+        :style="{ flex: column.flex, minWidth: column.minWidth }"
       >
         <v-checkbox-btn
           v-if="selectionMode || isHovered"
@@ -56,7 +56,7 @@
         :size="40"
         :data-column="column.key"
         class="song-col song-col--cover"
-        :style="{ flex: column.flex }"
+        :style="{ flex: column.flex, minWidth: column.minWidth }"
         @click.stop="onCoverClick"
       />
 
@@ -64,7 +64,7 @@
         v-else-if="column.cell === 'title'"
         :data-column="column.key"
         class="song-col song-col--text"
-        :style="{ flex: column.flex }"
+        :style="{ flex: column.flex, minWidth: column.minWidth }"
       >
         <div class="text-body-medium" :class="{ 'text-primary': isCurrentSong }">
           {{ song.title }}
@@ -82,7 +82,7 @@
         v-else-if="column.cell === 'album'"
         :data-column="column.key"
         class="song-col song-col--text"
-        :style="{ flex: column.flex }"
+        :style="{ flex: column.flex, minWidth: column.minWidth }"
       >
         <router-link
           :to="`/albums/${song.albumId}`"
@@ -97,7 +97,7 @@
         v-else-if="column.cell === 'actions'"
         :data-column="column.key"
         class="song-col song-col--actions"
-        :style="{ flex: column.flex }"
+        :style="{ flex: column.flex, minWidth: column.minWidth }"
       >
         <transition name="rating-fade" style="margin-right: 1rem">
           <v-rating
@@ -137,7 +137,7 @@
         :data-column="column.key"
         class="song-col song-col--text text-body-small text-medium-emphasis"
         :class="{ 'song-col--end': column.align === 'end' }"
-        :style="{ flex: column.flex }"
+        :style="{ flex: column.flex, minWidth: column.minWidth }"
       >
         {{ cellText(column) }}
       </div>
@@ -509,6 +509,8 @@ export default {
  * SongTableHeader.vue binds the same values - see that file's docstring.
  * What is left here is how a cell *behaves*, which differs between the two
  * (a heading is one word, a row cell holds two lines, a link, or artwork). */
+/* Both the width and the floor under it are bound inline from the column
+ * registry; this is only the fallback for a cell rendered without one. */
 .song-col {
   min-width: 0;
 }

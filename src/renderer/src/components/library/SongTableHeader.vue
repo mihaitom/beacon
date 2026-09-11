@@ -6,15 +6,22 @@
       :data-column="column.key"
       class="song-col"
       :class="{ 'song-col--end': column.align === 'end', 'song-col--actions': isActions(column) }"
-      :style="{ flex: column.flex }"
+      :style="{ flex: column.flex, minWidth: column.minWidth }"
     >
       <button
         v-if="column.sortValue"
         type="button"
         class="sort-header"
+        :title="$t(column.labelKey)"
         @click="$emit('sort', column.key)"
       >
-        {{ $t(column.labelKey) }}
+        <!-- Every column is wide enough for its own heading in all five
+           - languages (SongTableHeader.layout.browser.test.ts measures it),
+           - so this should never actually clip - but a heading that does,
+           - through a font that falls back or a language added later, has to
+           - end in an ellipsis rather than in the next column. The title
+           - attribute above is what it can still be read with. -->
+        <span class="sort-header__label">{{ $t(column.labelKey) }}</span>
         <v-icon v-if="sortKey === column.key" :icon="arrowIcon" size="12" />
       </button>
     </div>
@@ -103,9 +110,9 @@ export default {
 /* Column widths come from services/library/songColumns.ts (bound inline
  * above), not from a class per column: SongRow.vue binds the same value
  * from the same array, which is what keeps a heading over its own column
- * without the two files having to agree by hand. */
+ * without the two files having to agree by hand - the minimum included. */
 .song-col {
-  min-width: 0;
+  overflow: hidden;
 }
 
 .song-col--end .sort-header {
@@ -126,6 +133,9 @@ export default {
 .sort-header {
   display: inline-flex;
   align-items: center;
+  /* Or the button, sized to its own content, simply runs past the cell and
+   * the ellipsis on the label inside it never comes into play. */
+  max-width: 100%;
   gap: 4px;
   background: none;
   border: none;
@@ -141,6 +151,14 @@ export default {
    * above it, which is exactly how it rendered on the first attempt. */
   text-transform: inherit;
   letter-spacing: inherit;
+}
+
+/* The label, not the button: the sort arrow beside it must keep its full
+ * 12px rather than being the thing that gets cut off. */
+.sort-header__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sort-header:hover {

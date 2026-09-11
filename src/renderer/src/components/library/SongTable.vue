@@ -189,6 +189,7 @@ import CreatePlaylistDialog from './CreatePlaylistDialog.vue'
 import AlphabetIndexBar from './AlphabetIndexBar.vue'
 import InfiniteScrollTrigger from '@/components/InfiniteScrollTrigger.vue'
 import { useSongColumnsStore } from '@/stores/songColumns'
+import { useAuthStore } from '@/stores/auth'
 import {
   resolveSongColumns,
   songColumn,
@@ -340,7 +341,13 @@ export default {
      * whole to the header and to every row, so the two cannot disagree
      * about which columns exist or how wide they are. */
     resolvedColumns(): SongColumn[] {
-      return resolveSongColumns(this.columns ?? this.songColumnsStore.columns, this.excludeColumns)
+      return resolveSongColumns(
+        this.columns ?? this.songColumnsStore.columns,
+        this.excludeColumns,
+        // A column this server's song lists cannot fill is left out rather
+        // than drawn as a column of dashes - see songColumnAvailable().
+        useAuthStore().serverType,
+      )
     },
     skeletonRowCount(): number {
       return Math.min(this.songs.length || 8, 8)

@@ -18,6 +18,7 @@
  */
 
 import type { Song } from '@/types/library'
+import type { ServerType } from '@/services/capabilities'
 import { formatDate, formatDuration, formatSampleRate, formatSize } from './songFormat'
 
 export type SongColumnKey =
@@ -60,6 +61,13 @@ export interface SongColumn {
   /** The CSS `flex` shorthand for this column, in both the header and the
    * row - see this file's own docstring for why it lives here. */
   flex: string
+  /** The width this column may never fall below, however many other columns
+   * are switched on. Without it, flex-shrink takes the text columns to
+   * nothing long before the fixed ones give up a pixel: with every column
+   * on, the title column measured 1px wide and every heading sat over its
+   * neighbour. A table too wide for the window now scrolls sideways
+   * instead, which is a thing the reader can see and undo. */
+  minWidth: string
   align: 'start' | 'end'
   /** Offered in the column menu. False for the four structural ones. */
   optional: boolean
@@ -70,7 +78,19 @@ export interface SongColumn {
   sortValue: ((song: Song) => string | number) | null
   /** Null for the cells that are not text (see `cell`). */
   text: ((song: Song, locale: string) => string) | null
+  /** The servers whose *list* responses carry this field, or null for the
+   * ones every server answers. A column is only as good as the data behind
+   * it: Jellyfin's song lists deliberately leave out the file's own figures
+   * (see jellyfin_bridge.py's _SONG_LIST_FIELDS - asking for them costs real
+   * time per item), and Plex sends the size but not the path or the audio
+   * stream. Rather than a column of dashes on every row, those are left out
+   * of the table and shown in the menu as something this server does not
+   * report. */
+  servers: ServerType[] | null
 }
+
+/** Everything an OpenSubsonic server answers with, and nothing else does. */
+const SUBSONIC_ONLY: ServerType[] = ['subsonic']
 
 /** What an empty cell shows - a column the server has no data for reads as
  * a blank, not as a zero or a gap. */
@@ -99,108 +119,127 @@ export const SONG_COLUMNS: SongColumn[] = [
     labelKey: '',
     cell: 'index',
     flex: '0 0 44px',
+    minWidth: '44px',
     align: 'end',
     optional: false,
     skeletonWidth: '0',
     sortValue: null,
     text: null,
+    servers: null,
   },
   {
     key: 'cover',
     labelKey: 'library.cover',
     cell: 'cover',
     flex: '0 0 40px',
+    minWidth: '40px',
     align: 'start',
     optional: true,
     skeletonWidth: '40',
     sortValue: null,
     text: null,
+    servers: null,
   },
   {
     key: 'title',
     labelKey: 'library.title',
     cell: 'title',
-    flex: '3 1 160px',
+    flex: '3 1 200px',
+    minWidth: '160px',
     align: 'start',
     optional: false,
     skeletonWidth: '60%',
     sortValue: (song) => lower(song.title),
     text: null,
+    servers: null,
   },
   {
     key: 'album',
     labelKey: 'library.album',
     cell: 'album',
-    flex: '2 1 120px',
+    flex: '2 1 160px',
+    minWidth: '120px',
     align: 'start',
     optional: true,
     skeletonWidth: '70%',
     sortValue: (song) => lower(song.album),
     text: null,
+    servers: null,
   },
   {
     key: 'genre',
     labelKey: 'library.genre',
     cell: 'text',
-    flex: '1.5 1 90px',
+    flex: '1.2 1 120px',
+    minWidth: '90px',
     align: 'start',
     optional: true,
     skeletonWidth: '60%',
     sortValue: (song) => lower(song.genre),
     text: (song) => text(song.genre),
+    servers: null,
   },
   {
     key: 'year',
     labelKey: 'library.year',
     cell: 'text',
-    flex: '0 0 44px',
+    flex: '0 0 72px',
+    minWidth: '72px',
     align: 'end',
     optional: true,
     skeletonWidth: '28',
     sortValue: (song) => song.year ?? 0,
     text: (song) => text(song.year),
+    servers: null,
   },
   {
     key: 'track',
     labelKey: 'songInfo.track',
     cell: 'text',
-    flex: '0 0 44px',
+    flex: '0 0 84px',
+    minWidth: '84px',
     align: 'end',
     optional: true,
     skeletonWidth: '24',
     sortValue: (song) => song.trackNumber ?? 0,
     text: (song) => text(song.trackNumber),
+    servers: null,
   },
   {
     key: 'disc',
     labelKey: 'songInfo.disc',
     cell: 'text',
-    flex: '0 0 44px',
+    flex: '0 0 76px',
+    minWidth: '76px',
     align: 'end',
     optional: true,
     skeletonWidth: '20',
     sortValue: (song) => song.discNumber ?? 0,
     text: (song) => text(song.discNumber),
+    servers: null,
   },
   {
     key: 'bpm',
     labelKey: 'songInfo.bpm',
     cell: 'text',
-    flex: '0 0 52px',
+    flex: '0 0 56px',
+    minWidth: '56px',
     align: 'end',
     optional: true,
     skeletonWidth: '24',
     sortValue: (song) => song.bpm ?? 0,
     text: (song) => text(song.bpm),
+    servers: SUBSONIC_ONLY,
   },
   {
     // Both figures in one column, the way the format column already reads
     // "MP3 · 320 kbps": bit depth on its own is three characters of column
     // for a number that only means anything next to the rate.
     key: 'sampleRate',
-    labelKey: 'songInfo.sampleRate',
+    labelKey: 'library.sampleRate',
     cell: 'text',
-    flex: '0 0 110px',
+    flex: '0 0 120px',
+    minWidth: '120px',
     align: 'end',
     optional: true,
     skeletonWidth: '70',
@@ -211,79 +250,93 @@ export const SONG_COLUMNS: SongColumn[] = [
       if (rate && depth) return `${rate} · ${depth}`
       return text(rate ?? depth)
     },
+    servers: SUBSONIC_ONLY,
   },
   {
     key: 'size',
-    labelKey: 'songInfo.size',
+    labelKey: 'library.size',
     cell: 'text',
-    flex: '0 0 76px',
+    flex: '0 0 106px',
+    minWidth: '106px',
     align: 'end',
     optional: true,
     skeletonWidth: '52',
     sortValue: (song) => song.size ?? 0,
     text: (song) => text(formatSize(song.size)),
+    servers: ['subsonic', 'plex'],
   },
   {
     key: 'path',
     labelKey: 'songInfo.path',
     cell: 'text',
-    flex: '2 1 120px',
+    flex: '2 1 160px',
+    minWidth: '120px',
     align: 'start',
     optional: true,
     skeletonWidth: '80%',
     sortValue: (song) => lower(song.path),
     text: (song) => text(song.path),
+    servers: SUBSONIC_ONLY,
   },
   {
     key: 'comment',
     labelKey: 'songInfo.comment',
     cell: 'text',
-    flex: '1.5 1 90px',
+    flex: '1.5 1 150px',
+    minWidth: '126px',
     align: 'start',
     optional: true,
     skeletonWidth: '65%',
     sortValue: (song) => lower(song.comment),
     text: (song) => text(song.comment),
+    servers: SUBSONIC_ONLY,
   },
   {
     key: 'added',
     labelKey: 'songInfo.added',
     cell: 'text',
-    flex: '0 0 92px',
+    flex: '0 0 116px',
+    minWidth: '116px',
     align: 'end',
     optional: true,
     skeletonWidth: '64',
     sortValue: (song) => timeValue(song.added),
     text: (song, locale) => text(formatDate(song.added, locale)),
+    servers: null,
   },
   {
     key: 'lastPlayed',
-    labelKey: 'songInfo.lastPlayed',
+    labelKey: 'library.lastPlayed',
     cell: 'text',
-    flex: '0 0 92px',
+    flex: '0 0 116px',
+    minWidth: '116px',
     align: 'end',
     optional: true,
     skeletonWidth: '64',
     sortValue: (song) => timeValue(song.lastPlayed),
     text: (song, locale) => text(formatDate(song.lastPlayed, locale)),
+    servers: null,
   },
   {
     key: 'playCount',
     labelKey: 'library.plays',
     cell: 'text',
-    flex: '0 0 44px',
+    flex: '0 0 96px',
+    minWidth: '96px',
     align: 'end',
     optional: true,
     skeletonWidth: '20',
     sortValue: (song) => song.playCount ?? 0,
     // A play count of zero is a real answer, unlike an absent field.
     text: (song) => String(song.playCount ?? 0),
+    servers: null,
   },
   {
     key: 'format',
     labelKey: 'library.format',
     cell: 'text',
     flex: '0 0 120px',
+    minWidth: '120px',
     align: 'end',
     optional: true,
     skeletonWidth: '60',
@@ -296,17 +349,20 @@ export const SONG_COLUMNS: SongColumn[] = [
       if (format && bitRate) return `${format} · ${bitRate}`
       return text(format ?? bitRate)
     },
+    servers: null,
   },
   {
     key: 'duration',
     labelKey: 'library.duration',
     cell: 'text',
-    flex: '0 0 44px',
+    flex: '0 0 96px',
+    minWidth: '96px',
     align: 'end',
     optional: false,
     skeletonWidth: '30',
     sortValue: (song) => song.duration ?? 0,
     text: (song) => text(formatDuration(song.duration)),
+    servers: null,
   },
   {
     // The rating stars, the favorite heart and the "..." menu. Only the
@@ -316,11 +372,13 @@ export const SONG_COLUMNS: SongColumn[] = [
     labelKey: 'library.rating',
     cell: 'actions',
     flex: '0 0 200px',
+    minWidth: '200px',
     align: 'end',
     optional: false,
     skeletonWidth: '0',
     sortValue: (song) => song.rating ?? 0,
     text: null,
+    servers: null,
   },
 ]
 
@@ -359,10 +417,22 @@ export const DEFAULT_SONG_COLUMNS: SongColumnKey[] = [
 export function resolveSongColumns(
   selected: readonly SongColumnKey[],
   exclude: readonly SongColumnKey[] = [],
+  serverType: ServerType | null = null,
 ): SongColumn[] {
   const chosen = new Set(selected)
   const vetoed = new Set(exclude)
   return SONG_COLUMNS.filter(
-    (column) => !vetoed.has(column.key) && (!column.optional || chosen.has(column.key)),
+    (column) =>
+      !vetoed.has(column.key) &&
+      songColumnAvailable(column, serverType) &&
+      (!column.optional || chosen.has(column.key)),
   )
+}
+
+/** Whether this server's song lists carry what the column shows. A column
+ * it cannot fill is left out of the table entirely rather than drawn as a
+ * row of dashes - and stays in the selection, so it comes back on a server
+ * that does report it. */
+export function songColumnAvailable(column: SongColumn, serverType: ServerType | null): boolean {
+  return !serverType || !column.servers || column.servers.includes(serverType)
 }

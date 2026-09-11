@@ -11,6 +11,7 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { emitter } from '@/emitter'
 import { useSongColumnsStore } from '@/stores/songColumns'
+import { useAuthStore } from '@/stores/auth'
 import SongTable from '../SongTable.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
 
@@ -120,6 +121,26 @@ describe('song table columns', () => {
       '90',
       '180',
     ])
+  })
+
+  it('leaves out a column this server has nothing to put in it', async () => {
+    // The complaint this answers: on Jellyfin, BPM and the file's own
+    // figures were a column of dashes on every row.
+    useAuthStore().serverType = 'jellyfin'
+    const store = useSongColumnsStore()
+    store.setColumns(['bpm', 'album'])
+    const wrapper = mountTable()
+    await wrapper.vm.$nextTick()
+
+    expect(columnsOf(wrapper, '.song-row')).toEqual([
+      'index',
+      'title',
+      'album',
+      'duration',
+      'actions',
+    ])
+    // Still selected, so it is back on the next Navidrome login.
+    expect(store.columns).toContain('bpm')
   })
 
   it('keeps the skeleton row in the shape of the table it stands in for', async () => {

@@ -5,15 +5,22 @@
      - the same as for every row and tile menu in the app. -->
   <tile-context-menu ref="menu" :close-on-content-click="false">
     <context-menu-section :label="$t('library.columns')" />
+    <!-- A column the connected server has nothing to fill stays on the
+       - list, greyed out and saying so: it answers "where is BPM?" at the
+       - one place somebody goes looking for it, which hiding it would
+       - not. -->
     <v-list-item
       v-for="column in optionalColumns"
       :key="column.key"
       :title="$t(column.labelKey)"
+      :subtitle="available(column) ? undefined : $t('library.columnNotReported')"
+      :disabled="!available(column)"
       @click="store.toggle(column.key)"
     >
       <template #prepend>
         <v-checkbox-btn
           :model-value="store.columns.includes(column.key)"
+          :disabled="!available(column)"
           density="compact"
           class="column-check"
           @click.stop="store.toggle(column.key)"
@@ -41,7 +48,12 @@
 import TileContextMenu from './TileContextMenu.vue'
 import ContextMenuSection from './ContextMenuSection.vue'
 import { useSongColumnsStore } from '@/stores/songColumns'
-import { OPTIONAL_SONG_COLUMNS } from '@/services/library/songColumns'
+import { useAuthStore } from '@/stores/auth'
+import {
+  OPTIONAL_SONG_COLUMNS,
+  songColumnAvailable,
+  type SongColumn,
+} from '@/services/library/songColumns'
 
 export default {
   name: 'SongColumnMenu',
@@ -55,6 +67,9 @@ export default {
     },
   },
   methods: {
+    available(column: SongColumn): boolean {
+      return songColumnAvailable(column, useAuthStore().serverType)
+    },
     /** Called by the header, from its own right-click or its button. */
     open(event: MouseEvent): void {
       ;(this.$refs.menu as { open: (event: MouseEvent) => void }).open(event)

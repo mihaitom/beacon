@@ -10,6 +10,10 @@
  * Adding Plex later touches exactly this one function — no call site
  * elsewhere needs to change.
  */
+/** The three media servers Beacon speaks to. It lives here because this is
+ * the file that decides what each of them can do. */
+export type ServerType = 'subsonic' | 'jellyfin' | 'plex'
+
 export interface ServerCapabilities {
   /** Boolean favorite toggle (star.view/unstar.view/getStarred2.view) —
    * the heart icon, the Favorites nav item/page. True for Subsonic and

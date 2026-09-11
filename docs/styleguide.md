@@ -130,10 +130,28 @@ headings carry a picker (right-click, or the button at the row's right edge)
 writing to one app-wide selection, and a page only ever *vetoes* a column
 that would say nothing on it - an album's tracklist has no "Album" column.
 Every column is one entry in `services/library/songColumns.ts`: its label,
-its width, its alignment, what its cell says and what it sorts by. Add a
-column there and the heading row, the rows and the loading skeleton all grow
-it together; a width written into a stylesheet instead is a heading standing
-over the wrong column, which is what the layout test measures.
+its width, the floor under that width, its alignment, what its cell says and
+what it sorts by. Add a column there and the heading row, the rows and the
+loading skeleton all grow it together; a width written into a stylesheet
+instead is a heading standing over the wrong column, which is what the
+layout test measures.
+
+Two things decide a column's width, and the heading is usually the wider of
+them: "Plays" is five characters and "Reproducciones" is fourteen, over a
+three-digit number. The widths in the registry were measured in a real
+browser across all five languages, with roughly 10px of headroom each,
+because the app does not ship Inter and every platform resolves the stack to
+a slightly different face. Where the field's own name is simply too long for
+a column - "Frequenza di campionamento" - the column gets a shorter label of
+its own under `library.*` and the dialog keeps the full one. A heading that
+still does not fit ends in an ellipsis and carries a `title`, rather than
+running into the next column.
+
+The floor matters as much: without a `min-width`, flex-shrink takes the text
+columns to nothing long before a fixed one gives up a pixel, so switching on
+enough columns left the title column 1px wide. A table that no longer fits
+is allowed to be wider than the window instead - the page scrolls sideways,
+which the reader can see and undo by switching a column off.
 
 ### The two section headings
 

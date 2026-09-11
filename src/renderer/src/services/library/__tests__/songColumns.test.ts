@@ -5,6 +5,7 @@ import {
   SONG_COLUMNS,
   resolveSongColumns,
   songColumn,
+  songColumnAvailable,
   type SongColumnKey,
 } from '../songColumns'
 import { makeSong } from '@/stores/__tests__/fixtures'
@@ -47,6 +48,44 @@ describe('songColumns', () => {
       'actions',
     ])
     expect(selection).toEqual(['cover', 'album', 'genre'])
+  })
+
+  it('leaves out a column the connected server cannot fill', () => {
+    const selection: SongColumnKey[] = ['bpm', 'size', 'album']
+
+    // Jellyfin's song lists carry neither (asking for the file's own
+    // figures costs real time per item - see _SONG_LIST_FIELDS), Plex sends
+    // the size but not the BPM, Navidrome sends both.
+    expect(keys(resolveSongColumns(selection, [], 'jellyfin'))).toEqual([
+      'index',
+      'title',
+      'album',
+      'duration',
+      'actions',
+    ])
+    expect(keys(resolveSongColumns(selection, [], 'plex'))).toContain('size')
+    expect(keys(resolveSongColumns(selection, [], 'plex'))).not.toContain('bpm')
+    expect(keys(resolveSongColumns(selection, [], 'subsonic'))).toContain('bpm')
+    // The selection itself is untouched, so the column is back the moment
+    // the account is on a server that reports it.
+    expect(selection).toEqual(['bpm', 'size', 'album'])
+  })
+
+  it('answers for every column whether a given server reports it', () => {
+    for (const column of SONG_COLUMNS) {
+      expect(songColumnAvailable(column, 'subsonic')).toBe(true)
+      // No server type given at all (a test, an export) filters nothing.
+      expect(songColumnAvailable(column, null)).toBe(true)
+    }
+    expect(songColumnAvailable(songColumn('path')!, 'jellyfin')).toBe(false)
+    expect(songColumnAvailable(songColumn('genre')!, 'jellyfin')).toBe(true)
+  })
+
+  it('gives every column a width and a floor under it', () => {
+    for (const column of SONG_COLUMNS) {
+      expect(column.flex, column.key).toMatch(/\d+px$/)
+      expect(parseInt(column.minWidth, 10), column.key).toBeGreaterThan(0)
+    }
   })
 
   it('offers every optional column and only those', () => {

@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Support for Jellyfin 12: signing in, browsing, playback and casting all work against it. Servers on Jellyfin 10.9 and newer keep working too
 - The columns of every track list can now be chosen: right-click the column headings (or use the button at their right edge) to switch columns on and off. The choice applies to every track list and follows the account to your other devices
-- Eight more columns to choose from, alongside album, genre, year, plays and format: track and disc number, BPM, sample rate, file size, comment, path, when a track was added and when it was last played. Each can be sorted by, and anything your server does not report stays blank
+- Eight more columns to choose from, alongside album, genre, year, plays and format: track and disc number, BPM, sample rate, file size, comment, path, when a track was added and when it was last played. Each can be sorted by, and a column your server has no data for is not offered at all rather than standing empty
 
 ### Changed
 
