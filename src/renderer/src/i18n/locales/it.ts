@@ -149,6 +149,8 @@ export default {
       'Serve un abbonamento Plex Pass attivo - è Plex stesso a bloccare la propria funzione Sonic Analysis (Radio brano/artista, Autoplay) dietro questo abbonamento, Beacon non può aggirarlo.',
     viewOnService: 'Vedi su {service}',
     selected: 'selezionati',
+    selectAll: 'Seleziona tutto',
+    selectNone: 'Annulla selezione',
     star: 'Aggiungi ai preferiti',
     unstar: 'Rimuovi dai preferiti',
   },

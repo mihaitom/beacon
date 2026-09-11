@@ -149,6 +149,8 @@ export default {
       "This needs an active Plex Pass subscription - it's what Plex's own Sonic Analysis feature (Song/Artist Radio, Autoplay) is gated behind on their side, not something Beacon can work around.",
     viewOnService: 'View on {service}',
     selected: 'selected',
+    selectAll: 'Select all',
+    selectNone: 'Clear selection',
     star: 'Add to favorites',
     unstar: 'Remove from favorites',
   },

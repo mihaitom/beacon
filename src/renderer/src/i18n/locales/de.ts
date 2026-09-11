@@ -147,6 +147,8 @@ export default {
       'Dafür braucht es ein aktives Plex-Pass-Abo - Plex sperrt die eigene Sonic-Analysis-Funktion (Song-/Artist-Radio, Autoplay) selbst dahinter, das kann Beacon nicht umgehen.',
     viewOnService: 'Auf {service} ansehen',
     selected: 'ausgewählt',
+    selectAll: 'Alle auswählen',
+    selectNone: 'Auswahl aufheben',
     star: 'Favorisieren',
     unstar: 'Favorit entfernen',
   },

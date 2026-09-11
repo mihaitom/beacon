@@ -6,7 +6,10 @@
       :configurable="!columns"
       :sort-key="sortKey"
       :sort-direction="sortDirection"
+      :selected-count="selectedRowKeys.size"
+      :total-count="sortedSongs.length"
       @sort="onSort"
+      @toggle-select-all="toggleSelectAll"
     />
     <template v-if="loading">
       <div v-for="n in skeletonRowCount" :key="n" class="song-row song-row--skeleton">
@@ -490,11 +493,10 @@ export default {
     window.removeEventListener('keydown', this.onKeydown)
   },
   methods: {
-    // The two keys a running multi-selection answers to: Escape drops it —
-    // the only way to back out of one now that the old floating selection
-    // bar (Play Next/Add to Queue, already duplicating what a selected
-    // row's own "..." menu does via selectedOrSingle, plus a close button)
-    // was removed as redundant — and Ctrl/Cmd+A grows it to the whole list.
+    // The two keys a running multi-selection answers to: Escape drops it
+    // and Ctrl/Cmd+A grows it to the whole list. Both have an on-screen
+    // counterpart in the heading row's select-all checkbox, which is what
+    // says so to anyone who wouldn't try either.
     // Both are skipped while the create-playlist dialog is open, so Escape
     // closes that (Vuetify's own default dialog behavior) instead of
     // silently clearing the selection underneath it, and typing a playlist
@@ -783,6 +785,13 @@ export default {
     selectAll() {
       this.selectedRowKeys = new Set(this.sortedSongs.map((_song, index) => index))
       this.ensurePlaylistsForSelection()
+    },
+    /** The heading row's own checkbox (SongTableHeader.vue): all of it, or
+     * none of it. Clearing was Escape-only before, which is not something a
+     * list tells anyone about. */
+    toggleSelectAll() {
+      if (this.selectedRowKeys.size >= this.sortedSongs.length) this.clearSelection()
+      else this.selectAll()
     },
     clearSelection() {
       this.selectedRowKeys.clear()

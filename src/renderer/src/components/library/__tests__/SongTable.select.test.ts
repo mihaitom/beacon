@@ -131,6 +131,36 @@ describe('selecting songs in a table', () => {
     expect(event.defaultPrevented).toBe(false)
   })
 
+  it('takes the whole list, and gives it back, from the heading checkbox', async () => {
+    // The way out of a selection that isn't a keyboard shortcut: Escape and
+    // a second Ctrl+A were the only ones, and neither is visible.
+    const wrapper = mountTable()
+    const header = wrapper.get('.song-table-header')
+
+    await header.trigger('mouseenter')
+    await header.get('.select-all-checkbox input').trigger('click')
+    expect(selected(wrapper)).toEqual([0, 1, 2, 3, 4, 5])
+
+    await header.get('.select-all-checkbox input').trigger('click')
+    expect(selected(wrapper)).toEqual([])
+  })
+
+  it('grows a part-way selection to the whole list before it clears it', async () => {
+    const wrapper = mountTable()
+    await pick(wrapper, 2)
+
+    // Visible without hovering the heading row at all, since a selection is
+    // already running.
+    await wrapper.get('.song-table-header .select-all-checkbox input').trigger('click')
+    expect(selected(wrapper)).toEqual([0, 1, 2, 3, 4, 5])
+  })
+
+  it('keeps the heading checkbox out of the way while nothing is selected', () => {
+    const wrapper = mountTable()
+
+    expect(wrapper.find('.select-all-checkbox').exists()).toBe(false)
+  })
+
   it('drops the anchor with the selection, so a later range cannot span the old list', async () => {
     const wrapper = mountTable()
     await pick(wrapper, 1)

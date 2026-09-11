@@ -1,15 +1,39 @@
 <template>
-  <div class="song-table-header" @contextmenu.prevent="openColumnMenu">
+  <div
+    class="song-table-header"
+    @contextmenu.prevent="openColumnMenu"
+    @mouseenter="isHovered = true"
+    @mouseleave="isHovered = false"
+  >
     <div
       v-for="column in columns"
       :key="column.key"
       :data-column="column.key"
       class="song-col"
-      :class="{ 'song-col--end': column.align === 'end' }"
+      :class="{
+        'song-col--end': column.align === 'end',
+        'song-col--select': column.cell === 'index',
+      }"
       :style="{ flex: column.flex, minWidth: column.minWidth, paddingRight: column.labelInset }"
     >
+      <!-- The index column carries no heading of its own, so in a list that
+         - can be selected it carries the select-all instead - sitting
+         - directly over the row checkboxes it switches (SongRow.vue draws
+         - them in the same cell). Escape and a second Ctrl+A already
+         - cleared a selection, but only the keyboard ever said so. -->
+      <v-checkbox-btn
+        v-if="column.cell === 'index' && showSelectAll"
+        :model-value="allSelected"
+        :indeterminate="someSelected"
+        density="compact"
+        class="select-all-checkbox"
+        :title="selectAllLabel"
+        :aria-label="selectAllLabel"
+        @click.stop="$emit('toggle-select-all')"
+      />
+
       <button
-        v-if="column.sortValue"
+        v-else-if="column.sortValue"
         type="button"
         class="sort-header"
         :title="$t(column.labelKey)"
@@ -61,11 +85,34 @@ export default {
     /** False for a table whose columns the view fixed itself (Home's
      * top-songs chart) - there is nothing for the menu to change there. */
     configurable: { type: Boolean, default: true },
+    /** How much of the list below is currently selected. Both counts come
+     * from SongTable.vue, which owns the selection; together they decide
+     * whether the select-all reads as off, part-way (indeterminate) or on. */
+    selectedCount: { type: Number, default: 0 },
+    totalCount: { type: Number, default: 0 },
   },
-  emits: ['sort'],
+  emits: ['sort', 'toggle-select-all'],
+  data() {
+    return { isHovered: false }
+  },
   computed: {
     arrowIcon() {
       return this.sortDirection === 'desc' ? 'mdi-arrow-down' : 'mdi-arrow-up'
+    },
+    // Same rule as a row's own checkbox (SongRow.vue): shown while the
+    // pointer is on it, and shown to everyone the moment a selection is
+    // running - which is when the way back out of one is what is wanted.
+    showSelectAll(): boolean {
+      return this.totalCount > 0 && (this.selectedCount > 0 || this.isHovered)
+    },
+    allSelected(): boolean {
+      return this.totalCount > 0 && this.selectedCount >= this.totalCount
+    },
+    someSelected(): boolean {
+      return this.selectedCount > 0 && !this.allSelected
+    },
+    selectAllLabel(): string {
+      return this.allSelected ? this.$t('library.selectNone') : this.$t('library.selectAll')
     },
   },
   methods: {
@@ -102,6 +149,26 @@ export default {
   color: rgba(255, 255, 255, 0.42);
   border-bottom: 1px solid var(--beacon-hairline);
   gap: 12px;
+  /* Room for the select-all below (20px) plus this row's own bottom
+   * padding: the checkbox is taller than a line of 11px label, and without
+   * the space held open the whole table would drop a few pixels the moment
+   * the pointer touched the heading row. */
+  min-height: 26px;
+}
+
+/* Smaller than the row's own checkbox (28px at density compact): the
+ * heading row is a third the height of a song row, and a checkbox at row
+ * size would be by far the tallest thing in it. The negative margin is
+ * SongRow.vue's, for the same reason - the hit area is wider than the 44px
+ * index column - and it is also what puts this checkbox exactly over the
+ * ones underneath. */
+.select-all-checkbox {
+  --v-selection-control-size: 20px;
+  margin: 0 -8px;
+}
+
+:deep(.select-all-checkbox .v-icon) {
+  font-size: 16px;
 }
 
 /* Column widths come from services/library/songColumns.ts (bound inline
@@ -110,6 +177,14 @@ export default {
  * without the two files having to agree by hand - the minimum included. */
 .song-col {
   overflow: hidden;
+}
+
+/* The one cell holding something wider than itself - see the negative
+ * margin on .select-all-checkbox below, which the clipping above would
+ * otherwise take a bite out of. The rows' own cells don't clip at all
+ * (SongRow.vue), which is why their checkbox never needed this. */
+.song-col--select {
+  overflow: visible;
 }
 
 .song-col--end .sort-header {

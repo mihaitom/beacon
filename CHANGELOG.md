@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Support for Jellyfin 12: signing in, browsing, playback and casting all work against it. Servers on Jellyfin 10.9 and newer keep working too
 - The columns of every track list can now be chosen: right-click the column headings (or use the button at their right edge) to switch columns on and off. The choice applies to every track list and follows the account to your other devices
 - Eight more columns to choose from, alongside album, genre, year, plays and format: track and disc number, BPM, sample rate, file size, comment, path, when a track was added and when it was last played. Each can be sorted by, and a column your server has no data for is not offered at all rather than standing empty
-- Shift-click selects a whole range of tracks at once, and Ctrl/Cmd+A extends a selection to the entire list
+- Shift-click selects a whole range of tracks at once, Ctrl/Cmd+A extends a selection to the entire list, and the checkbox in the column headings selects the whole list or clears the selection again
 
 ### Changed
 
@@ -22,7 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- A library with more than 500 albums stopped at the first 500 in the Albums view, with the rest missing from browsing, searching and the A-Z index. The whole catalog loads again
+- A library with more than 500 albums stopped at the first 500 in the Albums view, with the rest missing from browsing, searching and the A-Z index. The whole catalog loads again (reported by @flugster, #24)
 - A track list kept room at its right edge for a star rating on Jellyfin and for a favorite heart on Plex, neither of which those servers have. That space now goes to the track and album names, and the rating heading is gone where there is no rating to sort by
 - The format column stayed empty for every track on a Jellyfin server
 - Album and playlist tracks from a Jellyfin server showed no genre

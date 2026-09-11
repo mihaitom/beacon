@@ -170,6 +170,51 @@ describe('SongTableHeader', () => {
     }
   })
 
+  /** The select-all sits over the very checkboxes it switches, and it is
+   * pulled left out of its own 44px cell to get there - while the heading
+   * cells, unlike a row's, clip what runs past them. Both halves of that
+   * are computed layout: a clipped checkbox still reports its full width in
+   * jsdom, and so does one sitting 8px off. */
+  it('puts the select-all over the row checkboxes, whole', async () => {
+    const columns = resolveSongColumns(['album'])
+    const frame = document.createElement('div')
+    frame.style.width = '1280px'
+    document.body.append(frame)
+    framesToRemove.push(frame)
+
+    const header = mount(SongTableHeader, {
+      props: { columns, selectedCount: 1, totalCount: 4 },
+      attachTo: frame,
+      global: { plugins: [vuetify, i18n] },
+    })
+    wrappers.push(header)
+    const row = mount(SongRow, {
+      props: { columns, song: makeSong('a'), index: 0, selectionMode: true },
+      attachTo: frame,
+      global: {
+        plugins: [vuetify, i18n],
+        stubs: { RouterLink: true, CoverArt: true },
+        mocks: { $emitter: emitter },
+      },
+    })
+    wrappers.push(row)
+
+    const selectAll = header.element.querySelector('.select-all-checkbox') as HTMLElement
+    const rowBox = row.element.querySelector('.song-select-checkbox') as HTMLElement
+    const cell = header.element.querySelector('[data-column="index"]') as HTMLElement
+
+    // Same left edge as the checkbox in the row underneath, give or take
+    // the rounding of two differently sized hit areas.
+    expect(
+      Math.abs(selectAll.getBoundingClientRect().left - rowBox.getBoundingClientRect().left),
+    ).toBeLessThanOrEqual(1)
+    // And not clipped by its own cell on the way there.
+    expect(selectAll.getBoundingClientRect().left).toBeLessThan(
+      cell.getBoundingClientRect().left + 1,
+    )
+    expect(getComputedStyle(cell).overflowX).toBe('visible')
+  })
+
   /** Right-aligned columns hold figures, and proportional digits make each
    * of them a slightly different width - the column visibly wobbles as it
    * is scrolled. Computed style, so jsdom has nothing to say about it. */
