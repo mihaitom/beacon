@@ -5,8 +5,8 @@
       :key="column.key"
       :data-column="column.key"
       class="song-col"
-      :class="{ 'song-col--end': column.align === 'end', 'song-col--actions': isActions(column) }"
-      :style="{ flex: column.flex, minWidth: column.minWidth }"
+      :class="{ 'song-col--end': column.align === 'end' }"
+      :style="{ flex: column.flex, minWidth: column.minWidth, paddingRight: column.labelInset }"
     >
       <button
         v-if="column.sortValue"
@@ -69,9 +69,6 @@ export default {
     },
   },
   methods: {
-    isActions(column: SongColumn): boolean {
-      return column.cell === 'actions'
-    },
     openColumnMenu(event: MouseEvent): void {
       if (!this.configurable) return
       ;(this.$refs.columnMenu as { open: (event: MouseEvent) => void } | undefined)?.open(event)
@@ -118,14 +115,6 @@ export default {
 .song-col--end .sort-header {
   justify-content: flex-end;
   width: 100%;
-}
-
-/* Matches the rating + star + menu buttons' combined width in SongRow.
- * The heart/menu buttons have no header label of their own, so the
- * "Rating" label is padded off the right edge by roughly their combined
- * width - lining it up over the star icons rather than the far edge. */
-.song-col--actions {
-  padding-right: 76px;
 }
 
 /* The gap carries the sort arrow, which is why no icon in here needs a

@@ -78,6 +78,11 @@ export interface SongColumn {
   sortValue: ((song: Song) => string | number) | null
   /** Null for the cells that are not text (see `cell`). */
   text: ((song: Song, locale: string) => string) | null
+  /** Only the actions column has one: how far its heading sits from the
+   * column's right edge, so "Rating" lands over the stars rather than over
+   * the menu button. It moves with what that column actually holds, which
+   * is a question of what the server can do - see actionsColumnFor(). */
+  labelInset?: string
   /** The servers whose *list* responses carry this field, or null for the
    * ones every server answers. A column is only as good as the data behind
    * it: Jellyfin's song lists deliberately leave out the file's own figures
@@ -365,14 +370,15 @@ export const SONG_COLUMNS: SongColumn[] = [
     servers: null,
   },
   {
-    // The rating stars, the favorite heart and the "..." menu. Only the
-    // stars have a heading, which is why its label is padded off the right
-    // edge by the other two's width - see SongTableHeader.vue.
+    // The rating stars, the favorite heart and the "..." menu. Sized for
+    // all three; a server that has only some of them gets a narrower column
+    // through actionsColumnFor() below.
     key: 'actions',
     labelKey: 'library.rating',
     cell: 'actions',
     flex: '0 0 200px',
     minWidth: '200px',
+    labelInset: '72px',
     align: 'end',
     optional: false,
     skeletonWidth: '0',
@@ -418,6 +424,7 @@ export function resolveSongColumns(
   selected: readonly SongColumnKey[],
   exclude: readonly SongColumnKey[] = [],
   serverType: ServerType | null = null,
+  capabilities: SongActionCapabilities = { favorites: true, personalRating: true },
 ): SongColumn[] {
   const chosen = new Set(selected)
   const vetoed = new Set(exclude)
@@ -426,7 +433,54 @@ export function resolveSongColumns(
       !vetoed.has(column.key) &&
       songColumnAvailable(column, serverType) &&
       (!column.optional || chosen.has(column.key)),
-  )
+  ).map((column) => (column.cell === 'actions' ? actionsColumnFor(column, capabilities) : column))
+}
+
+/** What the row's trailing cell can hold on this server - see
+ * services/capabilities.ts, which is where these two come from. */
+export interface SongActionCapabilities {
+  favorites: boolean
+  personalRating: boolean
+}
+
+// Measured in a real browser (see the layout test): the stars come to 100px
+// plus the 16px they keep between themselves and the buttons, and each icon
+// button to 28px. The widths below are those sums with a little room for a
+// focus ring.
+const ACTIONS_WIDTH = { both: 200, ratingOnly: 168, favoritesOnly: 80, neither: 52 }
+
+/**
+ * The trailing cell, sized for what this server actually puts in it.
+ *
+ * It used to be 200px everywhere, which is right only where all three
+ * controls render. Jellyfin has no 1-5 star rating and Plex no favorite
+ * heart (see services/capabilities.ts), so on those the column reserved up
+ * to 120px per row for something that was never drawn - width the title and
+ * album columns were being squeezed out of.
+ *
+ * The heading goes with it: "Rating" over a server with no rating sorted
+ * every row by the same zero, so where there are no stars there is no
+ * heading to sort by either.
+ */
+function actionsColumnFor(column: SongColumn, capabilities: SongActionCapabilities): SongColumn {
+  const { favorites, personalRating } = capabilities
+  const width = personalRating
+    ? favorites
+      ? ACTIONS_WIDTH.both
+      : ACTIONS_WIDTH.ratingOnly
+    : favorites
+      ? ACTIONS_WIDTH.favoritesOnly
+      : ACTIONS_WIDTH.neither
+  return {
+    ...column,
+    flex: `0 0 ${width}px`,
+    minWidth: `${width}px`,
+    // The stars' distance from the right edge: the heart and the menu where
+    // both are there, the menu alone where the heart is not.
+    labelInset: favorites ? '72px' : '44px',
+    labelKey: personalRating ? column.labelKey : '',
+    sortValue: personalRating ? column.sortValue : null,
+  }
 }
 
 /** Whether this server's song lists carry what the column shows. A column

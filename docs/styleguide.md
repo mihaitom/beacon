@@ -147,6 +147,12 @@ its own under `library.*` and the dialog keeps the full one. A heading that
 still does not fit ends in an ellipsis and carries a `title`, rather than
 running into the next column.
 
+One column is measured rather than fixed: the trailing cell holding the
+rating, the favorite heart and the row menu is only as wide as what the
+connected server actually puts in it (`actionsColumnFor()`), since Jellyfin
+has no star rating and Plex no heart. Right-aligned columns are all figures
+and are set in `tabular-nums`, or the column wobbles as it scrolls.
+
 The floor matters as much: without a `min-width`, flex-shrink takes the text
 columns to nothing long before a fixed one gives up a pixel, so switching on
 enough columns left the title column 1px wide. A table that no longer fits

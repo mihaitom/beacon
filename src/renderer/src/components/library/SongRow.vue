@@ -10,7 +10,7 @@
       'song-row--dragging': dragging,
     }"
     :draggable="reorderable"
-    @click="selectionMode && $emit('toggle-select', song, index)"
+    @click="selectionMode && $emit('toggle-select', song, index, $event)"
     @dblclick="$emit('play', song, index)"
     @contextmenu.prevent="openMenu($event)"
     @mouseenter="isHovered = true"
@@ -38,7 +38,7 @@
           :model-value="selected"
           density="compact"
           class="song-select-checkbox"
-          @click.stop="$emit('toggle-select', song, index)"
+          @click.stop="$emit('toggle-select', song, index, $event)"
         />
         <template v-else-if="isCurrentSong">
           <v-icon icon="mdi-volume-high" size="14" color="primary" />
@@ -524,8 +524,14 @@ export default {
   white-space: nowrap;
 }
 
+/* Every right-aligned column is a figure - a year, a count, a size, a
+ * running time, a date. Proportional digits make each of them a slightly
+ * different width, so the column wobbles as it is scrolled; tabular ones
+ * line up under each other, which is the whole point of aligning them
+ * right. */
 .song-col--end {
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .song-select-checkbox {
@@ -535,8 +541,8 @@ export default {
   margin: 0 -8px;
 }
 
-/* tabular-nums so digit width stays consistent regardless of which digits
- * actually show up - the column is right-aligned and narrow. */
+/* Right-aligned like the figure columns above, and for the same reason -
+ * this one just gets there without a heading. */
 .song-col--index {
   text-align: right;
   font-variant-numeric: tabular-nums;

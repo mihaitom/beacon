@@ -143,6 +143,42 @@ describe('song table columns', () => {
     expect(store.columns).toContain('bpm')
   })
 
+  it('sizes the trailing cell for what this server actually puts in it', async () => {
+    // Jellyfin has no 1-5 star rating and Plex no favorite heart (see
+    // services/capabilities.ts) - reserving the full 200px there spent up
+    // to 120px a row on controls that were never drawn.
+    const width = (wrapper: ReturnType<typeof mountTable>): string =>
+      wrapper.get('.song-row [data-column="actions"]').attributes('style') ?? ''
+
+    useAuthStore().serverType = 'subsonic'
+    expect(width(mountTable())).toContain('200px')
+
+    setActivePinia(createPinia())
+    useAuthStore().serverType = 'jellyfin'
+    expect(width(mountTable())).toContain('80px')
+
+    setActivePinia(createPinia())
+    useAuthStore().serverType = 'plex'
+    expect(width(mountTable())).toContain('168px')
+  })
+
+  it('drops the rating heading on a server with no rating to sort by', async () => {
+    useAuthStore().serverType = 'jellyfin'
+    const wrapper = mountTable()
+    await wrapper.vm.$nextTick()
+
+    // Every row's rating is 0 there, so the heading offered a sort that
+    // could only ever shuffle the list by nothing.
+    expect(wrapper.find('.song-table-header [data-column="actions"] .sort-header').exists()).toBe(
+      false,
+    )
+    setActivePinia(createPinia())
+    useAuthStore().serverType = 'subsonic'
+    expect(
+      mountTable().find('.song-table-header [data-column="actions"] .sort-header').exists(),
+    ).toBe(true)
+  })
+
   it('keeps the skeleton row in the shape of the table it stands in for', async () => {
     useSongColumnsStore().setColumns(['cover', 'bpm'])
     const wrapper = mountTable({ loading: true })

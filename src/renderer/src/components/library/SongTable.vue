@@ -324,6 +324,11 @@ export default {
       // selected. See selectedSongs for resolving these back to real
       // Song objects when a bulk action needs them.
       selectedRowKeys: new Set<number>(),
+      // Where a shift-click measures its range from: the last row picked
+      // by hand. Null until something is selected, and cleared with the
+      // selection, so a range can never span a list the rows have since
+      // moved around in.
+      selectionAnchor: null as number | null,
 
       // Drag state for a reorderable list — same three fields (and the
       // same before/after boundary handling) as QueueDrawer.vue's own
@@ -341,12 +346,16 @@ export default {
      * whole to the header and to every row, so the two cannot disagree
      * about which columns exist or how wide they are. */
     resolvedColumns(): SongColumn[] {
+      const auth = useAuthStore()
       return resolveSongColumns(
         this.columns ?? this.songColumnsStore.columns,
         this.excludeColumns,
         // A column this server's song lists cannot fill is left out rather
         // than drawn as a column of dashes - see songColumnAvailable().
-        useAuthStore().serverType,
+        auth.serverType,
+        // And the trailing cell is only as wide as what this server puts in
+        // it - see actionsColumnFor().
+        auth.capabilities,
       )
     },
     skeletonRowCount(): number {
@@ -481,19 +490,32 @@ export default {
     window.removeEventListener('keydown', this.onKeydown)
   },
   methods: {
-    // Escape clears a multi-selection — the only way to back out of one
-    // now that the old floating selection bar (Play Next/Add to Queue,
-    // already duplicating what a selected row's own "..." menu does via
-    // selectedOrSingle, plus a close button) was removed as redundant.
-    // Skipped while the create-playlist dialog is open so Escape closes
-    // that (Vuetify's own default dialog behavior) instead of also
-    // silently clearing the selection underneath it.
+    // The two keys a running multi-selection answers to: Escape drops it —
+    // the only way to back out of one now that the old floating selection
+    // bar (Play Next/Add to Queue, already duplicating what a selected
+    // row's own "..." menu does via selectedOrSingle, plus a close button)
+    // was removed as redundant — and Ctrl/Cmd+A grows it to the whole list.
+    // Both are skipped while the create-playlist dialog is open, so Escape
+    // closes that (Vuetify's own default dialog behavior) instead of
+    // silently clearing the selection underneath it, and typing a playlist
+    // name keeps its own select-all.
     onKeydown(event: KeyboardEvent) {
       // The dialog owns its own open state now (see CreatePlaylistDialog),
       // so this asks it rather than tracking a flag of its own.
       const dialog = this.$refs.createPlaylistDialog as { visible: boolean } | undefined
-      if (event.key !== 'Escape' || !this.selectionMode || dialog?.visible) return
-      this.clearSelection()
+      if (!this.selectionMode || dialog?.visible) return
+      if (event.key === 'Escape') {
+        this.clearSelection()
+        return
+      }
+      // Only once a selection is already running: this is a window-level
+      // listener, and a page can hold more than one table. Hijacking the
+      // browser's own select-everything before the reader has shown any
+      // interest in selecting rows would be taking a key that isn't ours.
+      if (event.key.toLowerCase() === 'a' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault()
+        this.selectAll()
+      }
     },
     loadMoreVisible() {
       this.visibleCount += PAGE_SIZE
@@ -721,22 +743,50 @@ export default {
         ? this.selectedSongs
         : [song]
     },
-    toggleSelect(_song: Song, index: number) {
+    toggleSelect(_song: Song, index: number, event?: MouseEvent) {
+      // Shift extends from wherever the selection was last anchored, which
+      // is what turns picking out an album's worth of tracks into two
+      // clicks instead of twelve. Additive on purpose: a second shift-click
+      // grows the same selection rather than silently dropping the range
+      // the first one made.
+      if (event?.shiftKey && this.selectionAnchor !== null) {
+        const from = Math.min(this.selectionAnchor, index)
+        const to = Math.max(this.selectionAnchor, index)
+        const extended = new Set(this.selectedRowKeys)
+        for (let row = from; row <= to; row++) extended.add(row)
+        // Replaced rather than added to one key at a time: every mutation
+        // of a reactive Set is its own update, and a range can be thousands
+        // of rows long.
+        this.selectedRowKeys = extended
+        this.ensurePlaylistsForSelection()
+        return
+      }
       if (this.selectedRowKeys.has(index)) {
         this.selectedRowKeys.delete(index)
+        // The anchor follows the last row actually touched, deselection
+        // included - a shift-click after one extends from there.
+        this.selectionAnchor = index
       } else {
         this.selectedRowKeys.add(index)
-        // Same "fetch eagerly once selection starts" reasoning as
-        // SongRow's own openMenu() — the playlist submenu below shouldn't
-        // open empty on the very first use just because nothing had
-        // fetched it yet.
-        if (this.libraryStore.playlists.length === 0) {
-          void this.libraryStore.fetchPlaylists()
-        }
+        this.selectionAnchor = index
+        this.ensurePlaylistsForSelection()
       }
+    },
+    /** Same "fetch eagerly once selection starts" reasoning as SongRow's
+     * own openMenu() — the playlist submenu shouldn't open empty on the
+     * very first use just because nothing had fetched it yet. */
+    ensurePlaylistsForSelection() {
+      if (this.libraryStore.playlists.length === 0) {
+        void this.libraryStore.fetchPlaylists()
+      }
+    },
+    selectAll() {
+      this.selectedRowKeys = new Set(this.sortedSongs.map((_song, index) => index))
+      this.ensurePlaylistsForSelection()
     },
     clearSelection() {
       this.selectedRowKeys.clear()
+      this.selectionAnchor = null
     },
   },
 }

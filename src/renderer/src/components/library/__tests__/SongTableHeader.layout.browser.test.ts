@@ -170,6 +170,28 @@ describe('SongTableHeader', () => {
     }
   })
 
+  /** Right-aligned columns hold figures, and proportional digits make each
+   * of them a slightly different width - the column visibly wobbles as it
+   * is scrolled. Computed style, so jsdom has nothing to say about it. */
+  it('sets the figure columns in tabular numerals', () => {
+    const columns = resolveSongColumns(['year', 'playCount'])
+    const row = mount(SongRow, {
+      props: { columns, song: makeSong('a'), index: 0 },
+      attachTo: document.body,
+      global: {
+        plugins: [vuetify, i18n],
+        stubs: { RouterLink: true, CoverArt: true },
+        mocks: { $emitter: emitter },
+      },
+    })
+    wrappers.push(row)
+
+    for (const key of ['year', 'playCount', 'duration']) {
+      const cell = row.element.querySelector(`[data-column="${key}"]`) as HTMLElement
+      expect(getComputedStyle(cell).fontVariantNumeric, key).toContain('tabular-nums')
+    }
+  })
+
   /** The failure this whole arrangement exists to prevent: a heading
    * standing over the wrong column. The widths used to be written out twice,
    * once per file, and the only thing keeping them equal was a comment in
