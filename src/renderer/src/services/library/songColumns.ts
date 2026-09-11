@@ -15,6 +15,16 @@
  * which is also why the data behind them is mapped onto every Song
  * (services/subsonic/mappers.ts) rather than fetched per row: on an
  * OpenSubsonic server a list entry already carries all of it.
+ *
+ * Between those four, the order is by subject rather than by the order the
+ * columns were built: the track itself (album, disc, track, genre, year,
+ * BPM, comment), then what this library knows about listening to it (added,
+ * last played, plays), then the file behind it (format, sample rate, size,
+ * path). Two columns that answer the same kind of question should be read
+ * without looking past the ones that don't - the file's own figures used to
+ * sit three columns apart with the play count between them. The picker
+ * lists the optional ones in this same order (OPTIONAL_SONG_COLUMNS), so it
+ * reads as a picture of the table.
  */
 
 import type { Song } from '@/types/library'
@@ -26,19 +36,19 @@ export type SongColumnKey =
   | 'cover'
   | 'title'
   | 'album'
+  | 'disc'
+  | 'track'
   | 'genre'
   | 'year'
-  | 'track'
-  | 'disc'
   | 'bpm'
-  | 'sampleRate'
-  | 'size'
-  | 'path'
   | 'comment'
   | 'added'
   | 'lastPlayed'
   | 'playCount'
   | 'format'
+  | 'sampleRate'
+  | 'size'
+  | 'path'
   | 'duration'
   | 'actions'
 
@@ -158,6 +168,8 @@ export const SONG_COLUMNS: SongColumn[] = [
     text: null,
     servers: null,
   },
+  // The track itself: where it sits in a release, and what the tags say
+  // about it.
   {
     key: 'album',
     labelKey: 'library.album',
@@ -169,6 +181,32 @@ export const SONG_COLUMNS: SongColumn[] = [
     skeletonWidth: '70%',
     sortValue: (song) => lower(song.album),
     text: null,
+    servers: null,
+  },
+  {
+    key: 'disc',
+    labelKey: 'songInfo.disc',
+    cell: 'text',
+    flex: '0 0 76px',
+    minWidth: '76px',
+    align: 'end',
+    optional: true,
+    skeletonWidth: '20',
+    sortValue: (song) => song.discNumber ?? 0,
+    text: (song) => text(song.discNumber),
+    servers: null,
+  },
+  {
+    key: 'track',
+    labelKey: 'songInfo.track',
+    cell: 'text',
+    flex: '0 0 84px',
+    minWidth: '84px',
+    align: 'end',
+    optional: true,
+    skeletonWidth: '24',
+    sortValue: (song) => song.trackNumber ?? 0,
+    text: (song) => text(song.trackNumber),
     servers: null,
   },
   {
@@ -198,32 +236,6 @@ export const SONG_COLUMNS: SongColumn[] = [
     servers: null,
   },
   {
-    key: 'track',
-    labelKey: 'songInfo.track',
-    cell: 'text',
-    flex: '0 0 84px',
-    minWidth: '84px',
-    align: 'end',
-    optional: true,
-    skeletonWidth: '24',
-    sortValue: (song) => song.trackNumber ?? 0,
-    text: (song) => text(song.trackNumber),
-    servers: null,
-  },
-  {
-    key: 'disc',
-    labelKey: 'songInfo.disc',
-    cell: 'text',
-    flex: '0 0 76px',
-    minWidth: '76px',
-    align: 'end',
-    optional: true,
-    skeletonWidth: '20',
-    sortValue: (song) => song.discNumber ?? 0,
-    text: (song) => text(song.discNumber),
-    servers: null,
-  },
-  {
     key: 'bpm',
     labelKey: 'songInfo.bpm',
     cell: 'text',
@@ -235,6 +247,84 @@ export const SONG_COLUMNS: SongColumn[] = [
     sortValue: (song) => song.bpm ?? 0,
     text: (song) => text(song.bpm),
     servers: SUBSONIC_ONLY,
+  },
+  {
+    key: 'comment',
+    labelKey: 'songInfo.comment',
+    cell: 'text',
+    flex: '1.5 1 150px',
+    minWidth: '126px',
+    align: 'start',
+    optional: true,
+    skeletonWidth: '65%',
+    sortValue: (song) => lower(song.comment),
+    text: (song) => text(song.comment),
+    servers: SUBSONIC_ONLY,
+  },
+
+  // This library's own history with it.
+  {
+    key: 'added',
+    labelKey: 'songInfo.added',
+    cell: 'text',
+    flex: '0 0 116px',
+    minWidth: '116px',
+    align: 'end',
+    optional: true,
+    skeletonWidth: '64',
+    sortValue: (song) => timeValue(song.added),
+    text: (song, locale) => text(formatDate(song.added, locale)),
+    servers: null,
+  },
+  {
+    key: 'lastPlayed',
+    labelKey: 'library.lastPlayed',
+    cell: 'text',
+    flex: '0 0 116px',
+    minWidth: '116px',
+    align: 'end',
+    optional: true,
+    skeletonWidth: '64',
+    sortValue: (song) => timeValue(song.lastPlayed),
+    text: (song, locale) => text(formatDate(song.lastPlayed, locale)),
+    servers: null,
+  },
+  {
+    key: 'playCount',
+    labelKey: 'library.plays',
+    cell: 'text',
+    flex: '0 0 96px',
+    minWidth: '96px',
+    align: 'end',
+    optional: true,
+    skeletonWidth: '20',
+    sortValue: (song) => song.playCount ?? 0,
+    // A play count of zero is a real answer, unlike an absent field.
+    text: (song) => String(song.playCount ?? 0),
+    servers: null,
+  },
+
+  // The file behind it. Sample rate and size are the two most often read
+  // next to the format, which is why they follow it directly.
+  {
+    key: 'format',
+    labelKey: 'library.format',
+    cell: 'text',
+    flex: '0 0 120px',
+    minWidth: '120px',
+    align: 'end',
+    optional: true,
+    skeletonWidth: '60',
+    // Format has no natural order of its own - bitrate is the meaningful
+    // "quality" ranking underneath that column.
+    sortValue: (song) => song.bitRate ?? 0,
+    text: (song) => {
+      const format = song.format ? song.format.toUpperCase() : null
+      const bitRate = song.bitRate ? `${song.bitRate} kbps` : null
+      if (format && bitRate) return `${format} · ${bitRate}`
+      return text(format ?? bitRate)
+    },
+    servers: null,
   },
   {
     // Both figures in one column, the way the format column already reads
@@ -283,79 +373,8 @@ export const SONG_COLUMNS: SongColumn[] = [
     text: (song) => text(song.path),
     servers: SUBSONIC_ONLY,
   },
-  {
-    key: 'comment',
-    labelKey: 'songInfo.comment',
-    cell: 'text',
-    flex: '1.5 1 150px',
-    minWidth: '126px',
-    align: 'start',
-    optional: true,
-    skeletonWidth: '65%',
-    sortValue: (song) => lower(song.comment),
-    text: (song) => text(song.comment),
-    servers: SUBSONIC_ONLY,
-  },
-  {
-    key: 'added',
-    labelKey: 'songInfo.added',
-    cell: 'text',
-    flex: '0 0 116px',
-    minWidth: '116px',
-    align: 'end',
-    optional: true,
-    skeletonWidth: '64',
-    sortValue: (song) => timeValue(song.added),
-    text: (song, locale) => text(formatDate(song.added, locale)),
-    servers: null,
-  },
-  {
-    key: 'lastPlayed',
-    labelKey: 'library.lastPlayed',
-    cell: 'text',
-    flex: '0 0 116px',
-    minWidth: '116px',
-    align: 'end',
-    optional: true,
-    skeletonWidth: '64',
-    sortValue: (song) => timeValue(song.lastPlayed),
-    text: (song, locale) => text(formatDate(song.lastPlayed, locale)),
-    servers: null,
-  },
-  {
-    key: 'playCount',
-    labelKey: 'library.plays',
-    cell: 'text',
-    flex: '0 0 96px',
-    minWidth: '96px',
-    align: 'end',
-    optional: true,
-    skeletonWidth: '20',
-    sortValue: (song) => song.playCount ?? 0,
-    // A play count of zero is a real answer, unlike an absent field.
-    text: (song) => String(song.playCount ?? 0),
-    servers: null,
-  },
-  {
-    key: 'format',
-    labelKey: 'library.format',
-    cell: 'text',
-    flex: '0 0 120px',
-    minWidth: '120px',
-    align: 'end',
-    optional: true,
-    skeletonWidth: '60',
-    // Format has no natural order of its own - bitrate is the meaningful
-    // "quality" ranking underneath that column.
-    sortValue: (song) => song.bitRate ?? 0,
-    text: (song) => {
-      const format = song.format ? song.format.toUpperCase() : null
-      const bitRate = song.bitRate ? `${song.bitRate} kbps` : null
-      if (format && bitRate) return `${format} · ${bitRate}`
-      return text(format ?? bitRate)
-    },
-    servers: null,
-  },
+
+  // Closing the row, as the number and the title open it.
   {
     key: 'duration',
     labelKey: 'library.duration',
