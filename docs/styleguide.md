@@ -125,6 +125,16 @@ neither `text-transform` nor `letter-spacing` (the UA stylesheet resets both,
 and `font: inherit` covers neither). Both have to be handed down explicitly -
 see `SongTableHeader.vue` and its layout test.
 
+Which columns there are is the reader's own choice, not the page's: the
+headings carry a picker (right-click, or the button at the row's right edge)
+writing to one app-wide selection, and a page only ever *vetoes* a column
+that would say nothing on it - an album's tracklist has no "Album" column.
+Every column is one entry in `services/library/songColumns.ts`: its label,
+its width, its alignment, what its cell says and what it sorts by. Add a
+column there and the heading row, the rows and the loading skeleton all grow
+it together; a width written into a stylesheet instead is a heading standing
+over the wrong column, which is what the layout test measures.
+
 ### The two section headings
 
 `.section-title`'s little lit mark is the same beacon-glow as the nav rail's

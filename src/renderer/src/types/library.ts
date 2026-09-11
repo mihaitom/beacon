@@ -30,6 +30,27 @@ export interface Song {
     trackPeak?: number
     albumPeak?: number
   } | null
+  // Everything below backs an optional column (see
+  // services/library/songColumns.ts) and comes out of the same list
+  // response as the fields above - no extra request per row. Optional
+  // rather than `| null` like the rest of the model: a Song can also come
+  // from a queue snapshot persisted by an older build, which has none of
+  // them, and a column reads "the server doesn't report this" the same way
+  // whether the field is absent or null.
+  /** ISO 8601, when the file was added to the library. */
+  added?: string | null
+  /** ISO 8601, when this account last played it. */
+  lastPlayed?: string | null
+  /** Bytes. */
+  size?: number | null
+  bpm?: number | null
+  /** Hz. */
+  sampleRate?: number | null
+  bitDepth?: number | null
+  comment?: string | null
+  /** Whatever the server calls the file's location - Navidrome synthesises
+   * this one for Subsonic clients unless "Report Real Path" is on. */
+  path?: string | null
 }
 
 export interface Album {

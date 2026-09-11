@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - Support for Jellyfin 12: signing in, browsing, playback and casting all work against it. Servers on Jellyfin 10.9 and newer keep working too
+- The columns of every track list can now be chosen: right-click the column headings (or use the button at their right edge) to switch columns on and off. The choice applies to every track list and follows the account to your other devices
+- Eight more columns to choose from, alongside album, genre, year, plays and format: track and disc number, BPM, sample rate, file size, comment, path, when a track was added and when it was last played. Each can be sorted by, and anything your server does not report stays blank
 
 ### Changed
 
@@ -18,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The format column stayed empty for every track on a Jellyfin server
+- Album and playlist tracks from a Jellyfin server showed no genre
 - Autoplay no longer falls silent at the end of the queue when the server has nothing similar to offer for the last track. It keeps the queue going instead
 - Sending a station to a speaker while a track was playing no longer makes the player bar flicker: the station showed, the track came back, and the station returned a few seconds later. The elapsed time no longer starts at wherever the track had got to either
 - The buffering bar on a station sent to a speaker clears a little sooner, closer to when the speaker actually starts playing

@@ -213,6 +213,16 @@ def _map_song(item: dict) -> dict:
         song["suffix"] = media0["container"]
     if media0.get("bitrate"):
         song["bitRate"] = media0["bitrate"]
+    # Three song-table columns (see services/library/songColumns.ts) that
+    # cost nothing here: Plex puts addedAt/lastViewedAt on the track itself
+    # and the file's size in the Part it already sends with every list
+    # entry. The rest of what _map_song_detail reads (path, the audio
+    # stream's own figures) stays where it is - those are bytes per entry
+    # for fields only the track-info sheet shows.
+    parts = media0.get("Part") or []
+    _set(song, "size", (parts[0] if parts else {}).get("size"))
+    _set(song, "created", _epoch_to_iso(item.get("addedAt")))
+    _set(song, "played", _epoch_to_iso(item.get("lastViewedAt")))
     user_rating = _map_user_rating(item)
     if user_rating is not None:
         song["userRating"] = user_rating
@@ -261,13 +271,11 @@ def _map_song_detail(item: dict) -> dict:
     # streamType 2 is Plex's own marker for an audio stream.
     audio = next((stream for stream in streams if stream.get("streamType") == 2), {})
 
+    # Size, added and last played are already on the list mapping above.
     _set(song, "path", part0.get("file"))
-    _set(song, "size", part0.get("size"))
     _set(song, "bitDepth", audio.get("bitDepth"))
     _set(song, "samplingRate", audio.get("samplingRate"))
     _set(song, "channelCount", media0.get("audioChannels") or audio.get("channels"))
-    _set(song, "created", _epoch_to_iso(item.get("addedAt")))
-    _set(song, "played", _epoch_to_iso(item.get("lastViewedAt")))
     _set(song, "sortName", item.get("titleSort"))
     _set(song, "musicBrainzId", _musicbrainz_id(item))
     _set(song, "genres", [{"name": genre} for genre in _tags(item, "Genre")])

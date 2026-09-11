@@ -18,7 +18,12 @@
    - every right-click while the menu itself never appeared. Reported live
    - 2026-09-04; see TileContextMenu.layout.browser.test.ts, which is in a
    - real browser precisely because none of that is observable in jsdom. -->
-  <v-menu v-model="menuOpen" :target="menuTarget" scroll-strategy="close">
+  <v-menu
+    v-model="menuOpen"
+    :target="menuTarget"
+    scroll-strategy="close"
+    :close-on-content-click="closeOnContentClick"
+  >
     <v-list density="compact">
       <slot />
     </v-list>
@@ -46,6 +51,10 @@ export default {
      * actions available to it (an empty playlist, artwork that doesn't
      * exist) should not answer a right-click with an empty list. */
     enabled: { type: Boolean, default: true },
+    /** Off for a menu whose entries are settings rather than actions (see
+     * SongColumnMenu.vue): picking three columns should take one opening of
+     * the menu, not three. */
+    closeOnContentClick: { type: Boolean, default: true },
   },
   data() {
     return {

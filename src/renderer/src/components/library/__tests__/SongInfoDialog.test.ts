@@ -16,6 +16,7 @@ import type { SubsonicClient } from '@/services/subsonic/client'
 import type { RawSongDetail } from '@/services/subsonic/types'
 import type { Song } from '@/types/library'
 import SongRow from '../SongRow.vue'
+import { resolveSongColumns } from '@/services/library/songColumns'
 import SongInfoDialog from '../SongInfoDialog.vue'
 
 const vuetify = createVuetify({ components, directives })
@@ -83,7 +84,10 @@ const detail: RawSongDetail = {
 const mounted: { unmount: () => void }[] = []
 
 function openRow(props: { song: Song; index: number }) {
-  const wrapper = mount(SongRow, { props, global: globalOptions })
+  const wrapper = mount(SongRow, {
+    props: { ...props, columns: resolveSongColumns([]) },
+    global: globalOptions,
+  })
   mounted.push(wrapper)
   return wrapper
 }

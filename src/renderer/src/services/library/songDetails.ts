@@ -1,4 +1,5 @@
 import type { RawSongDetail } from '@/services/subsonic/types'
+import { formatDuration, formatSampleRate, formatSize, formatTimestamp } from './songFormat'
 
 /**
  * Turns one track's record from the media server into the rows the info
@@ -33,39 +34,6 @@ export interface SongDetailSection {
 
 function names(entries?: { name: string }[]): string[] {
   return entries?.map((entry) => entry.name).filter(Boolean) ?? []
-}
-
-function formatDuration(seconds?: number): string | null {
-  if (seconds == null) return null
-  const total = Math.round(seconds)
-  const minutes = Math.floor(total / 60)
-  return `${minutes}:${String(total % 60).padStart(2, '0')}`
-}
-
-/** Binary MB, the unit a file manager shows for the same file. Two
- * decimals below 10 MB so a short track is not just "4 MB". */
-function formatSize(bytes?: number): string | null {
-  if (bytes == null) return null
-  const mb = bytes / 1024 / 1024
-  if (mb < 10) return `${mb.toFixed(2)} MB`
-  return `${Math.round(mb)} MB`
-}
-
-function formatSampleRate(hz?: number): string | null {
-  if (!hz) return null
-  // 44100 reads as 44.1 kHz, 48000 as 48 kHz - trailing zeroes dropped
-  // rather than always printing one decimal.
-  return `${String(Number((hz / 1000).toFixed(1)))} kHz`
-}
-
-/** Timestamps come through as ISO strings. Shown in the reader's own
- * locale, and left out entirely when the server sent something unparseable
- * rather than printing "Invalid Date". */
-function formatDate(value: string | undefined, locale: string): string | null {
-  if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
-  return date.toLocaleString(locale)
 }
 
 function formatGain(db?: number): string | null {
@@ -148,8 +116,8 @@ export function songDetailSections(
     ]),
     section('songInfo.sectionLibrary', [
       ['songInfo.playCount', detail.playCount ?? null],
-      ['songInfo.lastPlayed', formatDate(detail.played, locale)],
-      ['songInfo.added', formatDate(detail.created, locale)],
+      ['songInfo.lastPlayed', formatTimestamp(detail.played, locale)],
+      ['songInfo.added', formatTimestamp(detail.created, locale)],
       // 0 means unrated, same as everywhere else in the app - not a rating
       // of zero stars.
       ['songInfo.rating', detail.userRating ? `${detail.userRating}/5` : null],

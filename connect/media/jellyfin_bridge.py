@@ -82,6 +82,25 @@ async def close() -> None:
 # usual job on top of whatever this produces.
 
 
+# What every song *list* asks Jellyfin for on top of its default response.
+# Explicit and minimal, for two reasons: (1) without it, ArtistItems (needed
+# for _map_song's artistId) and Genres are excluded from the default
+# response entirely, silently dropping those fields from every listed track;
+# (2) measured directly against a real library (curl, Limit=100 vs. 3000):
+# response time scales linearly with item count rather than a fixed
+# per-request cost, meaning Jellyfin is doing real per-item work - asking
+# for less should do less of it. The slope is the server's and moves with
+# its version: ~9ms/item on 10.11.11, ~1.2ms on 12.0.0.
+#
+# DateCreated is the one column field cheap enough to belong here: a
+# scalar the server already has. The heavier optional fields stay out
+# (MediaSources, Overview, People, ...) - which is why the file size, path
+# and sample rate columns have nothing behind them on Jellyfin, and show
+# blank rather than a guess. Last played needs nothing at all: UserData
+# comes with every user-scoped item response anyway.
+_SONG_LIST_FIELDS = "Genres,ArtistItems,DateCreated"
+
+
 def _is_favorite(item: dict) -> bool:
     return bool((item.get("UserData") or {}).get("IsFavorite"))
 
@@ -127,10 +146,21 @@ def _map_song(item: dict) -> dict:
     artist_items = item.get("ArtistItems") or []
     if artist_items:
         song["artistId"] = artist_items[0]["Id"]
-    if source.get("Container"):
-        song["suffix"] = source["Container"]
+    # MediaSources only comes back when it was asked for, which the song
+    # lists deliberately don't do (see _SONG_LIST_FIELDS) - the container is
+    # on the item itself there, so a listed track keeps its format even
+    # though nothing else about its file is available.
+    container = source.get("Container") or item.get("Container")
+    if container:
+        song["suffix"] = container
     if source.get("Bitrate"):
         song["bitRate"] = int(source["Bitrate"] / 1000)
+    # Both back a song-table column (see services/library/songColumns.ts)
+    # and both are already in hand: DateCreated is one scalar field asked
+    # for with the list, LastPlayedDate rides along in UserData.
+    user_data = item.get("UserData") or {}
+    _set(song, "created", item.get("DateCreated"))
+    _set(song, "played", user_data.get("LastPlayedDate"))
     # Presence, not value, is mappers.ts's whole signal (raw.starred != null)
     # — omitted entirely when not favorited, never sent as false.
     if _is_favorite(item):
@@ -167,15 +197,13 @@ def _map_song_detail(item: dict) -> dict:
     source = sources[0] if sources else {}
     streams = source.get("MediaStreams") or item.get("MediaStreams") or []
     audio = next((stream for stream in streams if stream.get("Type") == "Audio"), {})
-    user_data = item.get("UserData") or {}
 
+    # Added and last played are already on the list mapping above.
     _set(song, "path", source.get("Path") or item.get("Path"))
     _set(song, "size", source.get("Size"))
     _set(song, "bitDepth", audio.get("BitDepth"))
     _set(song, "samplingRate", audio.get("SampleRate"))
     _set(song, "channelCount", audio.get("Channels"))
-    _set(song, "created", item.get("DateCreated"))
-    _set(song, "played", user_data.get("LastPlayedDate"))
     _set(song, "sortName", item.get("SortName"))
     _set(song, "musicBrainzId", (item.get("ProviderIds") or {}).get("MusicBrainzTrack"))
     _set(song, "genres", [{"name": genre} for genre in (item.get("Genres") or [])])
@@ -402,6 +430,7 @@ async def get_album(params: dict, media: JellyfinClient) -> dict:
         IncludeItemTypes="Audio",
         Recursive="true",
         SortBy="IndexNumber",
+        Fields=_SONG_LIST_FIELDS,
     )
     album = _map_album(item)
     album["song"] = _map_all(_map_song, songs.get("Items", []))
@@ -488,18 +517,10 @@ async def search3(params: dict, media: JellyfinClient) -> dict:
         # sends (see its signature) — without mapping it to StartIndex, every
         # "page" of a paginated bulk load re-fetched the exact same items.
         "StartIndex": params.get("songOffset", "0"),
-        # Explicit, minimal Fields — two reasons: (1) without this,
-        # ArtistItems (needed for _map_song's artistId) is excluded from
-        # Jellyfin's default response entirely, silently dropping that field
-        # from every bulk-loaded track; (2) measured directly against a real
-        # library (curl, Limit=100 vs. 3000): response time scales linearly
-        # with item count rather than a fixed per-request cost, meaning
-        # Jellyfin is doing real per-item work — asking for less should do
-        # less of it. The slope is the server's and moves with its version:
-        # ~9ms/item on 10.11.11, ~1.2ms on 12.0.0. Deliberately excludes
-        # heavier optional fields this bulk load doesn't need (MediaSources,
-        # Overview, People, ...).
-        "Fields": "Genres,ArtistItems",
+        # See _SONG_LIST_FIELDS for why this list is as short as it is -
+        # it matters most here, where a bulk load asks for thousands of
+        # items at once.
+        "Fields": _SONG_LIST_FIELDS,
     }
     if query:
         jf_params["searchTerm"] = query
@@ -546,6 +567,7 @@ async def get_starred2(_params: dict, media: JellyfinClient) -> dict:
         IncludeItemTypes="Audio",
         Filters="IsFavorite",
         Recursive="true",
+        Fields=_SONG_LIST_FIELDS,
     )
     albums = await _jf_get_items(
         media,
@@ -606,7 +628,12 @@ async def get_playlists(_params: dict, media: JellyfinClient) -> dict:
 async def get_playlist(params: dict, media: JellyfinClient) -> dict:
     playlist_id = params["id"]
     item = await _jf_get_items(media, _quote_id(playlist_id))
-    songs = await _jf_get(media, f"/Playlists/{_quote_id(playlist_id)}/Items", userId=media.user_id)
+    songs = await _jf_get(
+        media,
+        f"/Playlists/{_quote_id(playlist_id)}/Items",
+        userId=media.user_id,
+        Fields=_SONG_LIST_FIELDS,
+    )
     playlist = _map_playlist(item)
     playlist["entry"] = _map_all(_map_song, songs.get("Items", []))
     return {"playlist": playlist}
@@ -907,7 +934,11 @@ async def get_similar_songs2(params: dict, media: JellyfinClient) -> dict:
         raise ValueError("getSimilarSongs2.view requires id")
     count = params.get("count", "50")
     data = await _jf_get(
-        media, f"/Items/{_quote_id(item_id)}/InstantMix", userId=media.user_id, Limit=count
+        media,
+        f"/Items/{_quote_id(item_id)}/InstantMix",
+        userId=media.user_id,
+        Limit=count,
+        Fields=_SONG_LIST_FIELDS,
     )
     return {"similarSongs2": {"song": _map_all(_map_song, data.get("Items", []))}}
 

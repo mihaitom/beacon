@@ -27,10 +27,7 @@
       :songs="album.songs"
       :default-sort-key="null"
       group-by-disc
-      show-genre
-      show-year
-      show-play-count
-      show-format
+      :exclude-columns="['cover', 'album']"
     />
   </v-container>
   <v-container v-else>

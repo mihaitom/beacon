@@ -2,48 +2,48 @@
   <div :class="{ 'song-table--with-alphabet-bar': showAlphabetBar }">
     <song-table-header
       :class="{ 'song-table-header--sticky': stickyHeader }"
-      :show-cover="showCover"
-      :show-album="showAlbum"
-      :show-genre="showGenre"
-      :show-year="showYear"
-      :show-play-count="showPlayCount"
-      :show-format="showFormat"
+      :columns="resolvedColumns"
+      :configurable="!columns"
       :sort-key="sortKey"
       :sort-direction="sortDirection"
       @sort="onSort"
     />
     <template v-if="loading">
       <div v-for="n in skeletonRowCount" :key="n" class="song-row song-row--skeleton">
-        <div class="song-index" />
-        <v-skeleton-loader v-if="showCover" type="image" width="40" height="40" class="rounded" />
-        <!-- Heights straight off the real row's typography (SongRow.vue):
+        <!-- The same resolved columns the real rows will use, so the
+         - placeholder has the shape of the table it stands in for.
+         - Heights straight off the real row's typography (SongRow.vue):
          - the title is text-body-medium at 20px, and everything else in
          - the row - the artist under it and every other column - is
          - text-body-small at 16px. Getting the second title line wrong
          - made every skeleton row 4px taller than the row replacing it. -->
-        <div class="song-title min-width-0">
-          <v-skeleton-loader type="text" width="60%" height="20" />
-          <v-skeleton-loader type="text" width="38%" height="16" />
-        </div>
-        <div v-if="showAlbum" class="song-album">
-          <v-skeleton-loader type="text" width="70%" height="16" />
-        </div>
-        <div v-if="showGenre" class="song-genre">
-          <v-skeleton-loader type="text" width="60%" height="16" />
-        </div>
-        <div v-if="showYear" class="song-year">
-          <v-skeleton-loader type="text" width="28" height="16" class="ml-auto" />
-        </div>
-        <div v-if="showPlayCount" class="song-playcount">
-          <v-skeleton-loader type="text" width="20" height="16" class="ml-auto" />
-        </div>
-        <div v-if="showFormat" class="song-format">
-          <v-skeleton-loader type="text" width="60" height="16" class="ml-auto" />
-        </div>
-        <div class="song-duration">
-          <v-skeleton-loader type="text" width="30" height="16" class="ml-auto" />
-        </div>
-        <div class="song-actions" style="width: 200px" />
+        <template v-for="column in resolvedColumns" :key="column.key">
+          <v-skeleton-loader
+            v-if="column.cell === 'cover'"
+            type="image"
+            width="40"
+            height="40"
+            class="rounded skeleton-cell"
+            :style="{ flex: column.flex }"
+          />
+          <div
+            v-else-if="column.cell === 'title'"
+            class="skeleton-cell"
+            :style="{ flex: column.flex }"
+          >
+            <v-skeleton-loader type="text" :width="column.skeletonWidth" height="20" />
+            <v-skeleton-loader type="text" width="38%" height="16" />
+          </div>
+          <div
+            v-else-if="column.cell === 'text'"
+            class="skeleton-cell"
+            :class="{ 'skeleton-cell--end': column.align === 'end' }"
+            :style="{ flex: column.flex }"
+          >
+            <v-skeleton-loader type="text" :width="column.skeletonWidth" height="16" />
+          </div>
+          <div v-else class="skeleton-cell" :style="{ flex: column.flex }" />
+        </template>
       </div>
     </template>
     <template v-else-if="showDiscGroups">
@@ -57,12 +57,7 @@
           :song="row.song"
           :index="row.index"
           :display-number="row.song.trackNumber ?? row.index + 1"
-          :show-cover="showCover"
-          :show-album="showAlbum"
-          :show-genre="showGenre"
-          :show-year="showYear"
-          :show-play-count="showPlayCount"
-          :show-format="showFormat"
+          :columns="resolvedColumns"
           :selection-mode="selectionMode"
           :reorderable="canReorder"
           :drag-over-position="dragOverPosition(row.index)"
@@ -108,12 +103,7 @@
           :key="`${song.id}-${index}`"
           :song="song"
           :index="index"
-          :show-cover="showCover"
-          :show-album="showAlbum"
-          :show-genre="showGenre"
-          :show-year="showYear"
-          :show-play-count="showPlayCount"
-          :show-format="showFormat"
+          :columns="resolvedColumns"
           :selection-mode="selectionMode"
           :reorderable="canReorder"
           :drag-over-position="dragOverPosition(index)"
@@ -144,12 +134,7 @@
         :data-song-index="index"
         :song="song"
         :index="index"
-        :show-cover="showCover"
-        :show-album="showAlbum"
-        :show-genre="showGenre"
-        :show-year="showYear"
-        :show-play-count="showPlayCount"
-        :show-format="showFormat"
+        :columns="resolvedColumns"
         :selection-mode="selectionMode"
         :reorderable="canReorder"
         :drag-over-position="dragOverPosition(index)"
@@ -203,9 +188,18 @@ import SongTableHeader from './SongTableHeader.vue'
 import CreatePlaylistDialog from './CreatePlaylistDialog.vue'
 import AlphabetIndexBar from './AlphabetIndexBar.vue'
 import InfiniteScrollTrigger from '@/components/InfiniteScrollTrigger.vue'
+import { useSongColumnsStore } from '@/stores/songColumns'
+import {
+  resolveSongColumns,
+  songColumn,
+  type SongColumn,
+  type SongColumnKey,
+} from '@/services/library/songColumns'
 import type { Song } from '@/types/library'
 
-type SortKey = 'title' | 'album' | 'genre' | 'year' | 'playCount' | 'format' | 'duration' | 'rating'
+// Anything with a sortValue in the column registry, which is every column
+// except the cover.
+type SortKey = SongColumnKey
 
 const PAGE_SIZE = 100
 // See the v-virtual-scroll template comment (above the v-else-if="virtualizeSongs"
@@ -236,12 +230,17 @@ export default {
       type: Array as () => Song[],
       required: true,
     },
-    showCover: { type: Boolean, default: false },
-    showAlbum: { type: Boolean, default: false },
-    showGenre: { type: Boolean, default: false },
-    showYear: { type: Boolean, default: false },
-    showPlayCount: { type: Boolean, default: false },
-    showFormat: { type: Boolean, default: false },
+    // Which columns this page has no use for - not a preference, a veto:
+    // an album's own tracklist says nothing with an "Album" column of one
+    // repeated value, and every row of a genre page has the same genre. A
+    // column vetoed here stays in the user's selection and comes back on
+    // every other page.
+    excludeColumns: { type: Array as PropType<SongColumnKey[]>, default: () => [] },
+    // A fixed column set for a table that isn't a browsable list at all -
+    // Home's top-songs chart, which is a shelf among other shelves and
+    // keeps its own compact shape. Given this, the user's own selection is
+    // ignored here and the column menu doesn't offer itself.
+    columns: { type: Array as PropType<SongColumnKey[] | null>, default: null },
     // Overridable for views that hand over an already-meaningfully-ordered
     // list — null means "leave it in the order the list was given in" (no
     // column highlighted as active), used by album/playlist detail so
@@ -334,6 +333,15 @@ export default {
     }
   },
   computed: {
+    songColumnsStore() {
+      return useSongColumnsStore()
+    },
+    /** The columns this table actually draws, in registry order - handed
+     * whole to the header and to every row, so the two cannot disagree
+     * about which columns exist or how wide they are. */
+    resolvedColumns(): SongColumn[] {
+      return resolveSongColumns(this.columns ?? this.songColumnsStore.columns, this.excludeColumns)
+    },
     skeletonRowCount(): number {
       return Math.min(this.songs.length || 8, 8)
     },
@@ -503,13 +511,11 @@ export default {
         document.querySelector(`[data-song-index="${index}"]`)?.scrollIntoView({ block: 'center' })
       })
     },
+    // The column knows what it sorts by - see
+    // services/library/songColumns.ts, where a column's heading, its cell
+    // and its sort order are one entry.
     sortValue(song: Song, key: SortKey): string | number {
-      // Format has no single natural sort order of its own — bitrate is the
-      // meaningful "quality" ranking underneath that column.
-      if (key === 'format') return song.bitRate ?? 0
-      const value = song[key]
-      if (typeof value === 'string') return value.toLowerCase()
-      return value ?? 0
+      return songColumn(key)?.sortValue?.(song) ?? 0
     },
     // The drag/drop half below mirrors QueueDrawer.vue's, including the
     // original-index vs. post-removal-index conversion — see its own
@@ -738,10 +744,10 @@ export default {
   margin-right: 40px;
 }
 
-/* Column widths/flex mirror SongRow.vue's so a skeleton row lines up with
- * the real rows that replace it once loading finishes. */
 /* The skeleton row's own box — the real rows are SongRow.vue, which
- * carries the identical rule so the two line up column for column. */
+ * carries the identical rule so the two line up column for column. The
+ * widths themselves are bound from the column registry, as they are in the
+ * header and in the real rows. */
 .song-row {
   display: flex;
   align-items: center;
@@ -749,41 +755,18 @@ export default {
   gap: 12px;
 }
 
-.song-index {
-  flex: 0 0 44px;
-}
-
-.song-cover {
-  flex: 0 0 auto;
-}
-
-.song-title {
-  flex: 3 1 160px;
-}
-
-.song-album {
-  flex: 2 1 120px;
+.skeleton-cell {
   min-width: 0;
 }
 
-.song-genre {
-  flex: 1.5 1 90px;
-  min-width: 0;
-}
-
-.song-year,
-.song-playcount,
-.song-format,
-.song-duration {
-  flex: 0 0 44px;
-}
-
-.song-format {
-  flex-basis: 120px;
-}
-
-.song-actions {
-  flex: 0 0 200px;
+/* The placeholder bar sits where the real column's text will: a right-
+ * aligned column's figure ends at the column's right edge, so a bar
+ * starting at its left edge would jump sideways when the data arrives.
+ * Done on the cell rather than on the bone inside it, which the rule
+ * further down deliberately strips of every margin. */
+.skeleton-cell--end {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .disc-header {
@@ -802,10 +785,6 @@ export default {
   margin: 0;
   width: 100%;
   height: 100%;
-}
-
-.min-width-0 {
-  min-width: 0;
 }
 
 /* Pins the column-label row right below the page's own sticky title/filter

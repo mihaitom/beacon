@@ -52,12 +52,6 @@
       sticky-header
       :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
       :queue-whole-list="false"
-      show-cover
-      show-album
-      show-genre
-      show-year
-      show-play-count
-      show-format
     />
 
     <v-alert v-if="!libraryStore.loading && filteredSongs.length === 0" type="info" variant="tonal">

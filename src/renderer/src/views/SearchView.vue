@@ -47,16 +47,7 @@
          - songs with "moon" in the title queued behind it is not what the
          - click asked for. The row's own menu still offers Play next, Add
          - to queue and Song Radio for building a queue on purpose. -->
-      <song-table
-        :songs="libraryStore.searchResults.songs"
-        :queue-whole-list="false"
-        show-cover
-        show-album
-        show-genre
-        show-year
-        show-play-count
-        show-format
-      />
+      <song-table :songs="libraryStore.searchResults.songs" :queue-whole-list="false" />
     </template>
 
     <v-progress-circular v-if="libraryStore.loading" indeterminate />

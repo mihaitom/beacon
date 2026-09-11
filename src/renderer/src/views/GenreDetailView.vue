@@ -52,11 +52,7 @@
         :queue-whole-list="false"
         sticky-header
         :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
-        show-cover
-        show-album
-        show-year
-        show-play-count
-        show-format
+        :exclude-columns="['genre']"
       />
       <v-alert v-if="filteredSongs.length === 0" type="info" variant="tonal">
         {{

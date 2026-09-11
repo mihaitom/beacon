@@ -35,15 +35,7 @@
       <!-- Not a shelf: a table has its own vertical rhythm, and there is
        - nothing to page through sideways. -->
       <h2 class="section-title">{{ $t('favorites.songs') }}</h2>
-      <song-table
-        :songs="libraryStore.starred.songs"
-        show-cover
-        show-album
-        show-genre
-        show-year
-        show-play-count
-        show-format
-      />
+      <song-table :songs="libraryStore.starred.songs" />
     </template>
 
     <v-alert

@@ -21,98 +21,127 @@
     @drop="onDrop"
     @dragend="onDragEnd"
   >
-    <div class="song-index text-medium-emphasis text-body-small">
-      <v-checkbox-btn
-        v-if="selectionMode || isHovered"
-        :model-value="selected"
-        density="compact"
-        class="song-select-checkbox"
-        @click.stop="$emit('toggle-select', song, index)"
-      />
-      <template v-else-if="isCurrentSong">
-        <v-icon icon="mdi-volume-high" size="14" color="primary" />
-      </template>
-      <template v-else>{{ displayNumber ?? (index != null ? index + 1 : '') }}</template>
-    </div>
-    <!-- Single click plays (or, mid-selection, toggles select like the rest
-     - of the row) — previously non-interactive, just a static thumbnail,
-     - unlike dblclick-anywhere-on-the-row which already played. -->
-    <cover-art
-      v-if="showCover"
-      :cover-art-id="song.coverArtId"
-      :size="40"
-      class="song-cover"
-      @click.stop="onCoverClick"
-    />
-    <div class="song-title min-width-0">
-      <div class="text-body-medium" :class="{ 'text-primary': isCurrentSong }">
-        {{ song.title }}
-      </div>
-      <router-link
-        :to="`/artists/${song.artistId}`"
-        class="song-artist-link text-body-small text-medium-emphasis"
-        @click.stop
+    <!-- One pass over the resolved column list (SongTable.vue hands the
+       - same array to SongTableHeader.vue), so a row can only ever draw the
+       - columns its heading row drew, at the same widths. The five branches
+       - below are the cells that hold something other than words - see
+       - services/library/songColumns.ts's `cell`. -->
+    <template v-for="column in columns" :key="column.key">
+      <div
+        v-if="column.cell === 'index'"
+        :data-column="column.key"
+        class="song-col song-col--index text-medium-emphasis text-body-small"
+        :style="{ flex: column.flex }"
       >
-        {{ song.artist }}
-      </router-link>
-    </div>
-    <div v-if="showAlbum" class="song-album">
-      <router-link
-        :to="`/albums/${song.albumId}`"
-        class="song-album-link text-body-small text-medium-emphasis"
-        @click.stop
-      >
-        {{ song.album }}
-      </router-link>
-    </div>
-    <div v-if="showGenre" class="song-genre text-body-small text-medium-emphasis">
-      {{ song.genre || '—' }}
-    </div>
-    <div v-if="showYear" class="song-year text-body-small text-medium-emphasis">
-      {{ song.year || '—' }}
-    </div>
-    <div v-if="showPlayCount" class="song-playcount text-body-small text-medium-emphasis">
-      {{ song.playCount }}
-    </div>
-    <div v-if="showFormat" class="song-format text-body-small text-medium-emphasis">
-      {{ formattedFormat }}
-    </div>
-    <div class="song-duration text-body-small text-medium-emphasis">
-      {{ formattedDuration }}
-    </div>
-    <div class="song-actions">
-      <transition name="rating-fade" style="margin-right: 1rem">
-        <v-rating
-          v-if="authStore.capabilities.personalRating && (song.rating > 0 || isHovered)"
-          :model-value="song.rating"
-          length="5"
-          size="small"
+        <v-checkbox-btn
+          v-if="selectionMode || isHovered"
+          :model-value="selected"
           density="compact"
-          active-color="primary"
-          hover
-          clearable
-          class="song-rating"
-          @click.stop
-          @update:model-value="$emit('set-rating', { song, rating: $event })"
+          class="song-select-checkbox"
+          @click.stop="$emit('toggle-select', song, index)"
         />
-      </transition>
-      <v-btn
-        v-if="authStore.capabilities.favorites"
-        :icon="song.starred ? 'mdi-heart' : 'mdi-heart-outline'"
-        :color="song.starred ? 'primary' : undefined"
-        variant="text"
-        density="comfortable"
-        size="small"
-        @click.stop="$emit('toggle-star', song)"
+        <template v-else-if="isCurrentSong">
+          <v-icon icon="mdi-volume-high" size="14" color="primary" />
+        </template>
+        <template v-else>{{ displayNumber ?? (index != null ? index + 1 : '') }}</template>
+      </div>
+
+      <!-- Single click plays (or, mid-selection, toggles select like the
+         - rest of the row) — previously non-interactive, just a static
+         - thumbnail, unlike dblclick-anywhere-on-the-row which already
+         - played. -->
+      <cover-art
+        v-else-if="column.cell === 'cover'"
+        :cover-art-id="song.coverArtId"
+        :size="40"
+        :data-column="column.key"
+        class="song-col song-col--cover"
+        :style="{ flex: column.flex }"
+        @click.stop="onCoverClick"
       />
-      <v-btn
-        icon="mdi-dots-vertical"
-        variant="text"
-        density="comfortable"
-        size="small"
-        @click.stop="openMenu($event)"
-      />
-    </div>
+
+      <div
+        v-else-if="column.cell === 'title'"
+        :data-column="column.key"
+        class="song-col song-col--text"
+        :style="{ flex: column.flex }"
+      >
+        <div class="text-body-medium" :class="{ 'text-primary': isCurrentSong }">
+          {{ song.title }}
+        </div>
+        <router-link
+          :to="`/artists/${song.artistId}`"
+          class="song-artist-link text-body-small text-medium-emphasis"
+          @click.stop
+        >
+          {{ song.artist }}
+        </router-link>
+      </div>
+
+      <div
+        v-else-if="column.cell === 'album'"
+        :data-column="column.key"
+        class="song-col song-col--text"
+        :style="{ flex: column.flex }"
+      >
+        <router-link
+          :to="`/albums/${song.albumId}`"
+          class="song-album-link text-body-small text-medium-emphasis"
+          @click.stop
+        >
+          {{ song.album }}
+        </router-link>
+      </div>
+
+      <div
+        v-else-if="column.cell === 'actions'"
+        :data-column="column.key"
+        class="song-col song-col--actions"
+        :style="{ flex: column.flex }"
+      >
+        <transition name="rating-fade" style="margin-right: 1rem">
+          <v-rating
+            v-if="authStore.capabilities.personalRating && (song.rating > 0 || isHovered)"
+            :model-value="song.rating"
+            length="5"
+            size="small"
+            density="compact"
+            active-color="primary"
+            hover
+            clearable
+            class="song-rating"
+            @click.stop
+            @update:model-value="$emit('set-rating', { song, rating: $event })"
+          />
+        </transition>
+        <v-btn
+          v-if="authStore.capabilities.favorites"
+          :icon="song.starred ? 'mdi-heart' : 'mdi-heart-outline'"
+          :color="song.starred ? 'primary' : undefined"
+          variant="text"
+          density="comfortable"
+          size="small"
+          @click.stop="$emit('toggle-star', song)"
+        />
+        <v-btn
+          icon="mdi-dots-vertical"
+          variant="text"
+          density="comfortable"
+          size="small"
+          @click.stop="openMenu($event)"
+        />
+      </div>
+
+      <div
+        v-else
+        :data-column="column.key"
+        class="song-col song-col--text text-body-small text-medium-emphasis"
+        :class="{ 'song-col--end': column.align === 'end' }"
+        :style="{ flex: column.flex }"
+      >
+        {{ cellText(column) }}
+      </div>
+    </template>
 
     <!-- The shared tile/row menu — see TileContextMenu.vue for the
      - positioning, the one-open-at-a-time rule and the scroll lock all of
@@ -173,10 +202,10 @@
         @create="$emit('create-playlist', { song, index })"
         @select="$emit('add-to-playlist', { song, playlistId: $event, index })"
       />
-      <!-- The row's own columns already link to both, but a view can hide
-         - either of them (see showAlbum) and the player-bar-sized rows show
-         - neither — so this is the one way to reach them that is always
-         - there. -->
+      <!-- The row's own columns already link to both, but the album column
+         - can be switched off (or vetoed by the page, as on an album's own
+         - tracklist) and the player-bar-sized rows show neither — so this is
+         - the one way to reach them that is always there. -->
       <context-menu-section :label="$t('library.menuNavigation')" />
       <v-list-item v-if="song.albumId" :to="`/albums/${song.albumId}`">
         <template #prepend><v-icon icon="mdi-album" size="small" /></template>
@@ -219,6 +248,8 @@ import AddToPlaylistSubmenu from './AddToPlaylistSubmenu.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
+import type { PropType } from 'vue'
+import type { SongColumn } from '@/services/library/songColumns'
 import type { Song } from '@/types/library'
 
 export default {
@@ -244,29 +275,13 @@ export default {
       type: Number,
       default: null,
     },
-    showCover: {
-      type: Boolean,
-      default: false,
-    },
-    showAlbum: {
-      type: Boolean,
-      default: false,
-    },
-    showGenre: {
-      type: Boolean,
-      default: false,
-    },
-    showYear: {
-      type: Boolean,
-      default: false,
-    },
-    showPlayCount: {
-      type: Boolean,
-      default: false,
-    },
-    showFormat: {
-      type: Boolean,
-      default: false,
+    /** The resolved columns, in draw order - the same array
+     * SongTableHeader.vue is given, straight from
+     * services/library/songColumns.ts. A row never decides for itself which
+     * columns exist, which is what keeps it aligned with its heading. */
+    columns: {
+      type: Array as PropType<SongColumn[]>,
+      required: true,
     },
     // True once at least one row in the list is selected — see
     // SongTable.vue's selectionMode getter. Reveals every row's checkbox
@@ -347,18 +362,6 @@ export default {
     isCurrentSong() {
       return this.playbackStore.currentSong?.id === this.song.id
     },
-    formattedDuration() {
-      const total = Math.round(this.song.duration ?? 0)
-      const minutes = Math.floor(total / 60)
-      const seconds = total % 60
-      return `${minutes}:${String(seconds).padStart(2, '0')}`
-    },
-    formattedFormat() {
-      const format = this.song.format ? this.song.format.toUpperCase() : null
-      const bitRate = this.song.bitRate ? `${this.song.bitRate} kbps` : null
-      if (format && bitRate) return `${format} · ${bitRate}`
-      return format || bitRate || '—'
-    },
     // See the v-list-subheader's own template comment — only once this row
     // is part of an actual multi-selection, not for a lone selected row
     // (where the subheader would just be redundant noise on top of normal
@@ -368,6 +371,12 @@ export default {
     },
   },
   methods: {
+    /** What a plain text cell says. The column itself knows - this only
+     * hands it the song and the locale it should be written in (a date
+     * column reads differently in de than in en). */
+    cellText(column: SongColumn): string {
+      return column.text ? column.text(this.song as Song, this.$i18n.locale) : ''
+    },
     /** Shows this song's cover full size, through the app-wide viewer
      * (ArtworkLightbox.vue in App.vue) rather than as an event this row's
      * parents would have to carry — SongTable.vue sits under a dozen
@@ -495,8 +504,28 @@ export default {
   background: rgba(var(--v-theme-primary), 0.18);
 }
 
-/* Widths/flex-grow here must mirror SongTableHeader.vue's exactly, column
- * for column, or the header labels drift out of alignment with the rows. */
+/* Column widths are not here: they come from
+ * services/library/songColumns.ts, bound inline on each cell, and
+ * SongTableHeader.vue binds the same values - see that file's docstring.
+ * What is left here is how a cell *behaves*, which differs between the two
+ * (a heading is one word, a row cell holds two lines, a link, or artwork). */
+.song-col {
+  min-width: 0;
+}
+
+/* Every column in a row is one line — the row has a fixed height, so a
+ * long title would push the rest of the table out of alignment. */
+.song-col--text,
+.song-col--text > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.song-col--end {
+  text-align: right;
+}
+
 .song-select-checkbox {
   /* Overrides v-checkbox-btn's default hit-area padding, which is sized
    * for a standalone checkbox, not a 44px-wide index column — without
@@ -504,36 +533,25 @@ export default {
   margin: 0 -8px;
 }
 
-/* 44px, same width as the other narrow right-aligned columns
- * (.song-year/.song-playcount/.song-duration below) — comfortably fits a
- * 5-digit track number, tabular-nums so digit width stays consistent
- * regardless of which digits actually show up. */
-.song-index {
-  flex: 0 0 44px;
+/* tabular-nums so digit width stays consistent regardless of which digits
+ * actually show up - the column is right-aligned and narrow. */
+.song-col--index {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-.song-cover {
-  flex: 0 0 auto;
+/* The width is bound from the registry like every other column's, so the
+ * heading above it cannot end up over the title instead - the artwork's own
+ * `size` fills that box rather than deciding it. */
+.song-col--cover {
   cursor: pointer;
 }
 
-.song-title {
-  flex: 3 1 160px;
-}
-
-.song-album {
-  flex: 2 1 120px;
-  min-width: 0;
-}
-
-/* Same width: fit-content reasoning as .song-artist-link — .song-album
- * itself stays full-column-width (a flex item, must keep matching
- * SongTableHeader.vue's own .song-album sizing for column alignment), but
- * the actual link inside it is sized to the album name text, not the
- * whole column, so a double-click landing in the empty space next to a
- * short album name doesn't misfire as "go to album page". */
+/* Same fit-content reasoning as .song-artist-link — the cell itself stays
+ * full-column-width (it is the flex item that has to line up with its
+ * heading), but the actual link inside it is sized to the album name text,
+ * not the whole column, so a double-click landing in the empty space next
+ * to a short album name doesn't misfire as "go to album page". */
 .song-album-link {
   display: block;
   text-decoration: none;
@@ -564,35 +582,9 @@ export default {
   color: rgb(var(--v-theme-primary));
 }
 
-.song-genre {
-  flex: 1.5 1 90px;
-  min-width: 0;
-}
-
-.song-year {
-  flex: 0 0 44px;
-  text-align: right;
-}
-
-.song-playcount {
-  flex: 0 0 44px;
-  text-align: right;
-}
-
-.song-format {
-  flex: 0 0 120px;
-  text-align: right;
-}
-
-.song-duration {
-  flex: 0 0 44px;
-  text-align: right;
-}
-
-.song-actions {
+.song-col--actions {
   display: flex;
   align-items: center;
-  flex: 0 0 200px;
   justify-content: flex-end;
 }
 
@@ -608,20 +600,5 @@ export default {
 .rating-fade-enter-from,
 .rating-fade-leave-to {
   opacity: 0;
-}
-
-.min-width-0 {
-  min-width: 0;
-}
-
-/* Every column in a row is one line — the row has a fixed height, so a
- * long title would push the rest of the table out of alignment. */
-.song-title > *,
-.song-album > *,
-.song-genre,
-.song-format {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 </style>

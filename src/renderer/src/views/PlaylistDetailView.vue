@@ -50,12 +50,6 @@
       :queue-whole-list="false"
       :default-sort-key="null"
       :reorderable="isOwnPlaylist"
-      show-cover
-      show-album
-      show-genre
-      show-year
-      show-play-count
-      show-format
       @reorder="onReorder"
     />
   </v-container>

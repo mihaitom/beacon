@@ -38,6 +38,8 @@ import {
   type LyricProvider,
 } from '@/stores/lyricsProviders'
 import { useAutoplayStore } from '@/stores/autoplay'
+import { useSongColumnsStore } from '@/stores/songColumns'
+import { OPTIONAL_SONG_COLUMNS, type SongColumnKey } from '@/services/library/songColumns'
 import { parseLocale } from '@/i18n'
 import { adoptLocale, reloadLocaleForAccount } from '@/services/localeSetting'
 import { fetchAccountSettings } from '@/services/connect/accountSettings'
@@ -86,6 +88,19 @@ async function pullAccountSettings(): Promise<void> {
     if (typeof remote.castRadioDirectly === 'boolean') {
       useRadioSettingsStore().setCastDirectly(remote.castRadioDirectly)
     }
+
+    if (Array.isArray(remote.songColumns)) {
+      const known = new Set<string>(OPTIONAL_SONG_COLUMNS.map((column) => column.key))
+      const valid = remote.songColumns.filter((key): key is SongColumnKey => known.has(key))
+      // Same distinction the lyrics providers make above: an empty list is
+      // a deliberate "every optional column off", but a non-empty one this
+      // build recognizes nothing in (a newer build's columns) is not -
+      // applying it would strip the table here and push the empty list
+      // straight back up, taking the other device's selection with it.
+      if (valid.length > 0 || remote.songColumns.length === 0) {
+        useSongColumnsStore().setColumns(valid)
+      }
+    }
   } catch (error) {
     // Best-effort — connect being briefly unreachable shouldn't block using
     // the app with whatever's already local.
@@ -108,6 +123,7 @@ export function initAccountScopedStores(): void {
     useAutoplayStore().reloadForAccount()
     useRadioSettingsStore().reloadForAccount()
     useDrawersStore().reloadForAccount()
+    useSongColumnsStore().reloadForAccount()
     void pullAccountSettings()
   })
 }

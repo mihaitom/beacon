@@ -28,24 +28,15 @@ export interface RawSong {
   suffix?: string
   bitRate?: number
   replayGain?: RawReplayGain
-}
-
-/**
- * Everything getSong.view can carry about one track, beyond the handful of
- * fields the library models keep (see mappers.ts's mapSong).
- *
- * Deliberately not folded into Song: this is read once, by the info dialog,
- * for one track at a time. Carrying it on every song in a 20000-track
- * library would cost memory and a much larger cache for a set of fields
- * nothing else reads.
- *
- * Every field is optional because every one of them is: a plain Subsonic
- * server sends few of these, Navidrome sends most (they are OpenSubsonic
- * extensions), and the Jellyfin/Plex bridges send whatever those two
- * expose. See services/library/songDetails.ts, which drops whatever is
- * missing rather than showing an empty row.
- */
-export interface RawSongDetail extends RawSong {
+  // The fields below are the optional song columns (see
+  // services/library/songColumns.ts). They live here, on the *list* shape,
+  // because that is where they actually arrive: an OpenSubsonic server
+  // answers a list entry with the same field set as getSong.view (verified
+  // against Navidrome 2026-09-11 - getRandomSongs, getAlbum and getSong
+  // returned an identical set), so a column over them costs no extra
+  // request. The Jellyfin and Plex bridges fill in whichever of them their
+  // own list responses already carry and omit the rest; a column with
+  // nothing behind it renders empty rather than being faked.
   path?: string
   size?: number
   contentType?: string
@@ -58,6 +49,26 @@ export interface RawSongDetail extends RawSong {
   played?: string
   comment?: string
   bpm?: number
+}
+
+/**
+ * What getSong.view carries on top of a list entry: the fields the info
+ * dialog shows and nothing above it reads - identifiers, the split-out
+ * artist objects, the tag as written.
+ *
+ * Deliberately not folded into Song: these are read once, by the info
+ * dialog, for one track at a time. Carrying an artists array on every song
+ * in a 20000-track library would cost memory and a much larger cache for a
+ * set of fields nothing else reads. The fields a *column* can show live on
+ * RawSong above instead.
+ *
+ * Every field is optional because every one of them is: a plain Subsonic
+ * server sends few of these, Navidrome sends most (they are OpenSubsonic
+ * extensions), and the Jellyfin/Plex bridges send whatever those two
+ * expose. See services/library/songDetails.ts, which drops whatever is
+ * missing rather than showing an empty row.
+ */
+export interface RawSongDetail extends RawSong {
   sortName?: string
   musicBrainzId?: string
   isrc?: string[]

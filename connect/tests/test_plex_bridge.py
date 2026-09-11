@@ -1365,15 +1365,38 @@ def test_map_song_detail_omits_what_the_server_did_not_report():
 
 
 def test_song_lists_stay_free_of_the_detail_fields():
-    """Only the single-track lookup builds them — see the Jellyfin bridge's
-    own test of the same rule."""
+    """The line between the two mappings: a listed track carries what a
+    column can show and costs nothing extra to send, and stops there. The
+    path and the audio stream's own figures are a lot of bytes on every
+    entry of a 20000-track response for fields only the track-info sheet
+    reads."""
     item = {
         "ratingKey": 1,
         "title": "Song",
-        "Media": [{"Part": [{"file": "/music/song.flac", "size": 1}]}],
+        "addedAt": 1700000000,
+        "lastViewedAt": 1700003600,
+        "Media": [
+            {
+                "audioChannels": 2,
+                "Part": [{"file": "/music/song.flac", "size": 1}],
+            }
+        ],
     }
 
     song = plex_bridge._map_song(item)
 
-    assert "path" not in song
-    assert "size" not in song
+    assert song["size"] == 1
+    assert song["created"] == "2023-11-14T22:13:20+00:00"
+    assert song["played"] == "2023-11-14T23:13:20+00:00"
+    for field in ("path", "bitDepth", "samplingRate", "channelCount"):
+        assert field not in song
+
+
+def test_song_lists_omit_the_column_fields_the_server_did_not_report():
+    """A track Plex has never played, and one whose Part it did not send:
+    the columns behind them stay absent rather than arriving as a zero or an
+    epoch date."""
+    song = plex_bridge._map_song({"ratingKey": 1, "title": "Song"})
+
+    for field in ("size", "created", "played"):
+        assert field not in song

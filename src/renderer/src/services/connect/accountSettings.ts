@@ -16,6 +16,10 @@ export interface AccountSettingsPayload {
   // through Beacon's own relay (core/radio_relay.py) — see
   // stores/radioSettings.ts. Absent/false is the default (relayed).
   castRadioDirectly?: boolean
+  // Which optional columns the song tables show - see
+  // stores/songColumns.ts. An empty array is a real selection (every
+  // optional column off), not "never set".
+  songColumns?: string[]
 }
 
 function identity(): { server_type: string; server_url: string; username: string } {

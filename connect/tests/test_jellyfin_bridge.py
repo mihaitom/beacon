@@ -499,6 +499,35 @@ def test_get_album_includes_its_songs(client, jellyfin_session, monkeypatch):
     assert [s["id"] for s in album["song"]] == ["song-1"]
 
 
+def test_every_song_list_asks_for_the_same_fields(client, jellyfin_session, monkeypatch):
+    """Jellyfin leaves Genres, ArtistItems and DateCreated out of its default
+    response, so a list that forgets to ask loses the genre column, the
+    artist link and the added date without any error to notice — this is the
+    guard that they all ask. See _SONG_LIST_FIELDS."""
+    fake_client, calls = _fake_jf_client(
+        {
+            "/Items/album-1": {"Id": "album-1", "Name": "Album", "RunTimeTicks": 0},
+            "/Items/playlist-1": {"Id": "playlist-1", "Name": "Playlist"},
+            "/Items": {"Items": []},
+            "/InstantMix": {"Items": []},
+            "/Playlists/playlist-1/Items": {"Items": []},
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    for url in (
+        "/rest/getAlbum.view?id=album-1",
+        "/rest/search3.view?query=a",
+        "/rest/getStarred2.view",
+        "/rest/getPlaylist.view?id=playlist-1",
+        "/rest/getSimilarSongs2.view?id=song-1",
+    ):
+        calls.clear()
+        assert client.get(url).status_code == 200
+        asked = [call[2].get("Fields") for call in calls if call[2]]
+        assert jellyfin_bridge._SONG_LIST_FIELDS in asked, url
+
+
 def test_get_artists_buckets_by_first_letter(client, jellyfin_session, monkeypatch):
     """Jellyfin has no native indexed-by-letter grouping — see get_artists()'s
     own comment — bucketed client-side to match Subsonic's shape."""
@@ -1380,6 +1409,43 @@ def test_song_lists_stay_free_of_the_detail_fields():
 
     assert "path" not in song
     assert "size" not in song
+
+
+def test_song_lists_carry_the_two_column_fields_that_cost_nothing():
+    """Added and last played back a song-table column each and are already
+    in hand: DateCreated is one scalar asked for with the list (see
+    _SONG_LIST_FIELDS), LastPlayedDate rides along in UserData."""
+    item = {
+        "Id": "song-1",
+        "Name": "Song",
+        "DateCreated": "2026-04-25T18:51:26.4738000Z",
+        "UserData": {"PlayCount": 3, "LastPlayedDate": "2026-09-10T16:45:53.0472277Z"},
+    }
+
+    song = jellyfin_bridge._map_song(item)
+
+    assert song["created"] == "2026-04-25T18:51:26.4738000Z"
+    assert song["played"] == "2026-09-10T16:45:53.0472277Z"
+
+
+def test_song_lists_omit_a_last_played_the_server_never_recorded():
+    """Jellyfin leaves LastPlayedDate out entirely for a track that has
+    never been played — the column reads blank, not 1970."""
+    song = jellyfin_bridge._map_song(
+        {"Id": "song-1", "Name": "Song", "UserData": {"PlayCount": 0, "Played": False}}
+    )
+
+    assert "played" not in song
+    assert "created" not in song
+
+
+def test_song_lists_keep_the_format_without_asking_for_media_sources():
+    """The song lists deliberately don't ask for MediaSources, so a listed
+    track's container has to come off the item itself — without this the
+    format column was blank for every Jellyfin library."""
+    song = jellyfin_bridge._map_song({"Id": "song-1", "Name": "Song", "Container": "flac"})
+
+    assert song["suffix"] == "flac"
 
 
 def test_get_song_answers_with_the_detailed_mapping(client, jellyfin_session, monkeypatch):

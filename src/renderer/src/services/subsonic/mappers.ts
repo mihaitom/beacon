@@ -28,6 +28,21 @@ export function mapSong(raw: RawSong): Song {
           albumPeak: raw.replayGain.albumPeak,
         }
       : null,
+    // The optional columns. A server that sends none of these (plain
+    // Subsonic, or a bridge whose list response doesn't carry the field)
+    // leaves them null, which is what the column renders as blank - see
+    // services/library/songColumns.ts.
+    added: raw.created ?? null,
+    lastPlayed: raw.played ?? null,
+    size: raw.size ?? null,
+    // Navidrome writes a 0 into bpm and samplingRate/bitDepth for a file
+    // that has no such tag at all, so a plain ?? would turn "unknown" into
+    // a printed zero.
+    bpm: raw.bpm || null,
+    sampleRate: raw.samplingRate || null,
+    bitDepth: raw.bitDepth || null,
+    comment: raw.comment || null,
+    path: raw.path ?? null,
   }
 }
 

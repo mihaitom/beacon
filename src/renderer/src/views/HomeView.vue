@@ -53,9 +53,7 @@
         :loading="loadingTopSongs"
         default-sort-key="playCount"
         default-sort-direction="desc"
-        show-cover
-        show-album
-        show-play-count
+        :columns="['cover', 'album', 'playCount']"
       />
     </section>
 

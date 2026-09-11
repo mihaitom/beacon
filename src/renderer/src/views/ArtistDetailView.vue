@@ -113,12 +113,6 @@
         :loading="loadingTopSongs"
         default-sort-key="playCount"
         default-sort-direction="desc"
-        show-cover
-        show-album
-        show-genre
-        show-year
-        show-play-count
-        show-format
       />
     </template>
   </v-container>
