@@ -573,3 +573,84 @@ def test_track_label_none_when_nothing_playing(default_session):
     from core.session import track_label
 
     assert track_label(default_session) is None
+
+
+# ── A relay nothing is listening to any more ──────────────────────────────
+# See SessionState._radio_relay_orphaned() and core/radio_relay.py's
+# _watch_for_orphan(): radio stopped at the speaker itself reaches this
+# backend only as the device closing its connection, and nothing used to
+# draw a conclusion from that — the station went on being fetched for as
+# long as the backend ran.
+
+
+def _session_with_a_relay(radio_info=None):
+    from types import SimpleNamespace
+
+    from core.session import SessionState
+
+    session = SessionState("s")
+    session.radio_relay = SimpleNamespace(url="http://station/a", stop=_noop_stop)
+    session.state.radio_info = radio_info
+    return session
+
+
+async def test_an_orphaned_cast_relay_ends_the_station_for_the_session():
+    session = _session_with_a_relay({"url": "http://station/a", "relayed": True})
+    st = session.state
+    st.is_streaming = True
+    st.active_delivery = object()
+    broadcasts = []
+
+    async def record(status):
+        broadcasts.append(status)
+
+    session.event_bus.broadcast = record
+
+    assert await session._radio_relay_orphaned() is True
+
+    assert session.radio_relay is None
+    assert st.radio_info is None
+    assert st.is_streaming is False
+    assert st.active_delivery is None
+    # Every client watching has to be told, or the app keeps showing a
+    # station that stopped playing minutes ago.
+    assert len(broadcasts) == 1
+
+
+async def test_an_orphaned_local_relay_is_torn_down_without_touching_the_session():
+    """Local playback's relay is started lazily by /stream/radio-local and
+    would have been stopped by /radio-metadata/stop — an app that was
+    closed or killed never gets that call out. There is nothing else of
+    this session's to end: it was never casting."""
+    session = _session_with_a_relay(None)
+    st = session.state
+    st.is_streaming = False
+    broadcasts = []
+
+    async def record(status):
+        broadcasts.append(status)
+
+    session.event_bus.broadcast = record
+
+    assert await session._radio_relay_orphaned() is True
+
+    assert session.radio_relay is None
+    assert broadcasts == []
+
+
+async def test_a_paused_cast_keeps_its_relay():
+    """A cast device with no native pause stops its transport, which closes
+    its connection here exactly like leaving would — and it is expected
+    back on /resume. Same question routes/stream.py's
+    _mark_disconnected_if_not_reconnected() asks before concluding a
+    track's device is gone."""
+    session = _session_with_a_relay({"url": "http://station/a", "relayed": True})
+    st = session.state
+    st.is_streaming = True
+    st.clock.pause(0.0)
+
+    assert await session._radio_relay_orphaned() is False
+
+    assert session.radio_relay is not None
+    assert st.radio_info is not None
+    assert st.is_streaming is True

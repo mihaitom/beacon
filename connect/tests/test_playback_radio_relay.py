@@ -25,6 +25,7 @@ class FakeRelay:
         content_type,
         on_title_change,
         on_stream_info=None,
+        on_orphaned=None,
         max_bitrate_kbps=None,
         preferred_format=None,
     ):
@@ -47,6 +48,9 @@ class FakeRelay:
         # answered with a 4xx meaning it refuses this listener.
         self.refused_status = None
         self._on_title_change = on_title_change
+        # Mirrors RadioRelay's own: what it calls once nothing has been
+        # listening for long enough — see SessionState._radio_relay_orphaned.
+        self._on_orphaned = on_orphaned
         self.started = False
         self.stopped = False
         # Mirrors RadioRelay.connected — /play-url only dispatches a device

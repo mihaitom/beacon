@@ -476,6 +476,52 @@ class SessionState:
         history.append(entry)
         radio_history.append(self.session_id, url, entry, _RADIO_HISTORY_PER_STATION)
 
+    async def _radio_relay_orphaned(self) -> bool:
+        """Nothing has been listening to this session's relay for long
+        enough to call the station over — see core/radio_relay.py's
+        _ORPHAN_TIMEOUT_SECONDS for what that conclusion rests on and
+        _watch_for_orphan() for what declining (False) means.
+
+        Two different endings, because a relay serves two different things:
+
+        - **A station this session is casting** (state.radio_info — set by
+          /play-url and by nothing else, the same question
+          /radio-metadata/stop already asks to tell the two apart).
+          Whatever was playing it has gone, so this brings the session to
+          the standstill /stop would leave it in and tells every client
+          watching. The device itself is deliberately *not* commanded to
+          stop: it has been silent since it closed its connection here, and
+          a teardown nobody asked for is how a session once stopped a
+          speaker another Beacon instance was using (see
+          docs/investigations/fixed-session-reap-stopped-someone-elses-speaker.md).
+        - **A station playing locally**, where the relay is started lazily
+          by /stream/radio-local and would have been stopped by
+          /radio-metadata/stop. Nothing else here belongs to it — the app
+          simply never got that call out (a closed window, a killed app) —
+          and the next /stream/radio-local starts a fresh one anyway.
+
+        Paused is the one absence that means nothing: a cast device with no
+        native pause stops its transport, which closes its connection here
+        exactly like leaving would, and it is expected back on /resume."""
+        st = self.state
+        if st.radio_info is not None and st.clock.is_paused:
+            return False
+        casting = st.radio_info is not None
+        await self.stop_radio_relay()
+        if not casting:
+            return True
+        st.radio_info = None
+        st.is_streaming = False
+        st.active_delivery = None
+        st.last_dispatch_key = None
+        # Same reason /stop notifies it here rather than leaving it to the
+        # next tick — see that handler.
+        self.visualizer.notify()
+        await claims.release_all_for_session(self.session_id)
+        logger.info("[radio] Station ended — nothing was listening to it any more")
+        await self.event_bus.broadcast(build_status_dict(self))
+        return True
+
     async def start_radio_relay(
         self,
         url: str,
@@ -500,6 +546,7 @@ class SessionState:
             content_type,
             self._set_radio_title,
             self._set_radio_stream_info,
+            self._radio_relay_orphaned,
             max_bitrate_kbps=max_bitrate_kbps,
             preferred_format=preferred_format,
         )
