@@ -53,3 +53,19 @@ which nothing did.
 minutes suspect, in both directions. Check whether a `[Sonos:<room>] stopped`
 line appears in the same second in the *same* instance's log, and whether the
 capture shows a `Stop` on the wire.
+
+
+## Addendum 2026-09-11: the pause half of that fix needed a bound
+
+The exemption above was written as "paused counts as streaming", with no
+limit, and `is_streaming` is never cleared on `/pause` - so a paused session
+was not reaped at all, however long ago anyone last touched it. Observed in
+production: paused at 17:01 with the app then closed, the Sonos still claimed
+and the session still whole at 22:17, five hours later. The reaper looked
+dead from the outside; it was running and skipping that session every 60s.
+
+A paused cast now keeps its device for `PAUSED_IDLE_TIMEOUT` (2h, env-
+overridable) measured against the same `last_seen` - `/pause` is itself a
+request and touches it, so "idle since" already means "paused since" once
+the clients are gone. Past that it is reaped like any other stopped session,
+device-ownership check included.
