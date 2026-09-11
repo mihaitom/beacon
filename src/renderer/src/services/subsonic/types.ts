@@ -114,7 +114,7 @@ export interface RawArtist {
 
 export interface RawArtistIndex {
   name: string
-  artist: RawArtist[]
+  artist?: RawArtist[]
 }
 
 export interface RawPlaylist {
@@ -136,7 +136,7 @@ export interface RawRadioStation {
 }
 
 export interface AlbumList2Response {
-  albumList2: { album: RawAlbum[] }
+  albumList2: { album?: RawAlbum[] }
 }
 
 export interface AlbumResponse {
@@ -144,7 +144,7 @@ export interface AlbumResponse {
 }
 
 export interface ArtistsResponse {
-  artists: { index: RawArtistIndex[] }
+  artists: { index?: RawArtistIndex[] }
 }
 
 export interface ArtistResponse {
@@ -152,7 +152,7 @@ export interface ArtistResponse {
 }
 
 export interface PlaylistsResponse {
-  playlists: { playlist: RawPlaylist[] }
+  playlists: { playlist?: RawPlaylist[] }
 }
 
 export interface PlaylistResponse {
@@ -180,7 +180,7 @@ export interface Starred2Response {
 }
 
 export interface InternetRadioStationsResponse {
-  internetRadioStations: { internetRadioStation: RawRadioStation[] }
+  internetRadioStations: { internetRadioStation?: RawRadioStation[] }
 }
 
 export interface SimilarSongs2Response {

@@ -197,7 +197,12 @@ export class SubsonicClient {
       size: String(size),
       offset: String(offset),
     })
-    return data.albumList2.album.map(mapAlbum)
+    // An empty result has no `album` field at all, not an empty array
+    // (Navidrome answers a bare `albumList2: {}`). fetchAlbumPages() asks
+    // for four pages at once and so overshoots the end of every library
+    // above one page: throwing here took the whole wave down with it and
+    // froze the catalog at what had loaded so far.
+    return (data.albumList2.album ?? []).map(mapAlbum)
   }
 
   async getAlbum(id: string): Promise<Album> {
@@ -243,7 +248,7 @@ export class SubsonicClient {
 
   async getArtists(): Promise<Artist[]> {
     const data = await this.get<ArtistsResponse>('getArtists.view')
-    return data.artists.index.flatMap((index) => index.artist.map(mapArtist))
+    return (data.artists.index ?? []).flatMap((index) => (index.artist ?? []).map(mapArtist))
   }
 
   async getArtist(id: string): Promise<Artist> {
@@ -273,7 +278,7 @@ export class SubsonicClient {
 
   async getPlaylists(): Promise<Playlist[]> {
     const data = await this.get<PlaylistsResponse>('getPlaylists.view')
-    return data.playlists.playlist.map(mapPlaylist)
+    return (data.playlists.playlist ?? []).map(mapPlaylist)
   }
 
   async getPlaylist(id: string): Promise<Playlist> {
@@ -413,7 +418,7 @@ export class SubsonicClient {
 
   async getInternetRadioStations(): Promise<RadioStation[]> {
     const data = await this.get<InternetRadioStationsResponse>('getInternetRadioStations.view')
-    return data.internetRadioStations.internetRadioStation.map(mapRadioStation)
+    return (data.internetRadioStations.internetRadioStation ?? []).map(mapRadioStation)
   }
 
   async createInternetRadioStation(

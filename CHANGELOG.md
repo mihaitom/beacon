@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- A library with more than 500 albums stopped at the first 500 in the Albums view, with the rest missing from browsing, searching and the A-Z index. The whole catalog loads again
 - A track list kept room at its right edge for a star rating on Jellyfin and for a favorite heart on Plex, neither of which those servers have. That space now goes to the track and album names, and the rating heading is gone where there is no rating to sort by
 - The format column stayed empty for every track on a Jellyfin server
 - Album and playlist tracks from a Jellyfin server showed no genre
