@@ -215,6 +215,38 @@ describe('SongTableHeader', () => {
     expect(getComputedStyle(cell).overflowX).toBe('visible')
   })
 
+  /** The rating used to live inside the trailing cell, whose 200px were
+   * measured here for exactly this reason: how wide Vuetify draws five
+   * stars at `size="small"` is a browser question. As its own column it
+   * carries that width itself, and a column too narrow for its own content
+   * is the kind of thing only real layout reports. */
+  it('holds five stars in the rating column', () => {
+    const columns = resolveSongColumns(['rating'])
+    const frame = document.createElement('div')
+    frame.style.width = '1280px'
+    document.body.append(frame)
+    framesToRemove.push(frame)
+
+    const row = mount(SongRow, {
+      props: { columns, song: makeSong('a', { rating: 5 }), index: 0 },
+      attachTo: frame,
+      global: {
+        plugins: [vuetify, i18n],
+        stubs: { RouterLink: true, CoverArt: true },
+        mocks: { $emitter: emitter },
+      },
+    })
+    wrappers.push(row)
+
+    const cell = row.element.querySelector('[data-column="rating"]') as HTMLElement
+    const stars = row.element.querySelector('.song-rating') as HTMLElement
+
+    expect(stars.getBoundingClientRect().width).toBeGreaterThan(0)
+    expect(stars.getBoundingClientRect().width).toBeLessThanOrEqual(
+      cell.getBoundingClientRect().width,
+    )
+  })
+
   /** Right-aligned columns hold figures, and proportional digits make each
    * of them a slightly different width - the column visibly wobbles as it
    * is scrolled. Computed style, so jsdom has nothing to say about it. */

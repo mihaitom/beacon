@@ -144,39 +144,50 @@ describe('song table columns', () => {
   })
 
   it('sizes the trailing cell for what this server actually puts in it', async () => {
-    // Jellyfin has no 1-5 star rating and Plex no favorite heart (see
-    // services/capabilities.ts) - reserving the full 200px there spent up
-    // to 120px a row on controls that were never drawn.
+    // Plex's core API has no favorite of its own (see
+    // services/capabilities.ts), so the heart's 28px there was width the
+    // title and album columns were being squeezed out of.
     const width = (wrapper: ReturnType<typeof mountTable>): string =>
       wrapper.get('.song-row [data-column="actions"]').attributes('style') ?? ''
 
     useAuthStore().serverType = 'subsonic'
-    expect(width(mountTable())).toContain('200px')
-
-    setActivePinia(createPinia())
-    useAuthStore().serverType = 'jellyfin'
     expect(width(mountTable())).toContain('80px')
 
     setActivePinia(createPinia())
     useAuthStore().serverType = 'plex'
-    expect(width(mountTable())).toContain('168px')
+    expect(width(mountTable())).toContain('52px')
   })
 
-  it('drops the rating heading on a server with no rating to sort by', async () => {
+  it('switches the rating off like any other column', async () => {
+    useAuthStore().serverType = 'subsonic'
+    const store = useSongColumnsStore()
+    store.setColumns(['rating'])
+    const wrapper = mountTable()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.song-table-header [data-column="rating"] .sort-header').exists()).toBe(
+      true,
+    )
+
+    store.toggle('rating')
+    await wrapper.vm.$nextTick()
+
+    // The whole column goes, not just the stars - which is the 112px this
+    // was worth doing for.
+    expect(columnsOf(wrapper, '.song-row')).not.toContain('rating')
+  })
+
+  it('does not offer a rating on a server that has no scale for one', async () => {
+    // Jellyfin has only a boolean favorite. A rating column there was five
+    // hollow stars on every row and a heading that sorted the list by
+    // nothing.
     useAuthStore().serverType = 'jellyfin'
+    useSongColumnsStore().setColumns(['rating'])
     const wrapper = mountTable()
     await wrapper.vm.$nextTick()
 
-    // Every row's rating is 0 there, so the heading offered a sort that
-    // could only ever shuffle the list by nothing.
-    expect(wrapper.find('.song-table-header [data-column="actions"] .sort-header').exists()).toBe(
-      false,
-    )
-    setActivePinia(createPinia())
-    useAuthStore().serverType = 'subsonic'
-    expect(
-      mountTable().find('.song-table-header [data-column="actions"] .sort-header').exists(),
-    ).toBe(true)
+    expect(columnsOf(wrapper, '.song-row')).not.toContain('rating')
+    // Still selected, so the stars are back on the next Navidrome login.
+    expect(useSongColumnsStore().columns).toContain('rating')
   })
 
   it('keeps the skeleton row in the shape of the table it stands in for', async () => {

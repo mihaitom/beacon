@@ -50,13 +50,14 @@ export type SongColumnKey =
   | 'size'
   | 'path'
   | 'duration'
+  | 'rating'
   | 'actions'
 
 /** How a cell draws itself. Everything that is just words is 'text' and
- * comes out of the column's own `text()`; the four named ones are the cells
- * that hold something else - artwork, two lines with a link in them, a link,
- * and the rating/star/menu cluster. */
-export type SongColumnCell = 'index' | 'cover' | 'title' | 'album' | 'actions' | 'text'
+ * comes out of the column's own `text()`; the named ones are the cells that
+ * hold something else - artwork, two lines with a link in them, a link, the
+ * rating stars, and the favorite/menu cluster. */
+export type SongColumnCell = 'index' | 'cover' | 'title' | 'album' | 'rating' | 'actions' | 'text'
 
 export interface SongColumn {
   key: SongColumnKey
@@ -88,11 +89,6 @@ export interface SongColumn {
   sortValue: ((song: Song) => string | number) | null
   /** Null for the cells that are not text (see `cell`). */
   text: ((song: Song, locale: string) => string) | null
-  /** Only the actions column has one: how far its heading sits from the
-   * column's right edge, so "Rating" lands over the stars rather than over
-   * the menu button. It moves with what that column actually holds, which
-   * is a question of what the server can do - see actionsColumnFor(). */
-  labelInset?: string
   /** The servers whose *list* responses carry this field, or null for the
    * ones every server answers. A column is only as good as the data behind
    * it: Jellyfin's song lists deliberately leave out the file's own figures
@@ -374,7 +370,8 @@ export const SONG_COLUMNS: SongColumn[] = [
     servers: SUBSONIC_ONLY,
   },
 
-  // Closing the row, as the number and the title open it.
+  // Closing the row, as the number and the title open it - the running
+  // time, then this listener's own marks on the track.
   {
     key: 'duration',
     labelKey: 'library.duration',
@@ -389,19 +386,38 @@ export const SONG_COLUMNS: SongColumn[] = [
     servers: null,
   },
   {
-    // The rating stars, the favorite heart and the "..." menu. Sized for
-    // all three; a server that has only some of them gets a narrower column
-    // through actionsColumnFor() below.
-    key: 'actions',
+    // Switchable like any other column, and kept next to the heart rather
+    // than filed with the play count: the two are one gesture - what this
+    // listener thinks of the track - and both are controls, not readings.
+    // The stars themselves only appear on a rated row or a hovered one (see
+    // SongRow.vue), so an unrated library shows a quiet column, not an
+    // empty one.
+    key: 'rating',
     labelKey: 'library.rating',
+    cell: 'rating',
+    flex: '0 0 112px',
+    minWidth: '112px',
+    align: 'end',
+    optional: true,
+    skeletonWidth: '0',
+    sortValue: (song) => song.rating ?? 0,
+    text: null,
+    // Jellyfin has only a boolean favorite, no 1-5 scale (see
+    // services/capabilities.ts) - there the column isn't offered at all.
+    servers: ['subsonic', 'plex'],
+  },
+  {
+    // The favorite heart and the "..." menu. No heading of its own: neither
+    // is a field, and there is nothing here to sort by.
+    key: 'actions',
+    labelKey: '',
     cell: 'actions',
-    flex: '0 0 200px',
-    minWidth: '200px',
-    labelInset: '72px',
+    flex: '0 0 80px',
+    minWidth: '80px',
     align: 'end',
     optional: false,
     skeletonWidth: '0',
-    sortValue: (song) => song.rating ?? 0,
+    sortValue: null,
     text: null,
     servers: null,
   },
@@ -427,6 +443,7 @@ export const DEFAULT_SONG_COLUMNS: SongColumnKey[] = [
   'year',
   'playCount',
   'format',
+  'rating',
 ]
 
 /**
@@ -443,7 +460,7 @@ export function resolveSongColumns(
   selected: readonly SongColumnKey[],
   exclude: readonly SongColumnKey[] = [],
   serverType: ServerType | null = null,
-  capabilities: SongActionCapabilities = { favorites: true, personalRating: true },
+  capabilities: SongActionCapabilities = { favorites: true },
 ): SongColumn[] {
   const chosen = new Set(selected)
   const vetoed = new Set(exclude)
@@ -456,50 +473,24 @@ export function resolveSongColumns(
 }
 
 /** What the row's trailing cell can hold on this server - see
- * services/capabilities.ts, which is where these two come from. */
+ * services/capabilities.ts, which is where this comes from. */
 export interface SongActionCapabilities {
   favorites: boolean
-  personalRating: boolean
 }
 
-// Measured in a real browser (see the layout test): the stars come to 100px
-// plus the 16px they keep between themselves and the buttons, and each icon
-// button to 28px. The widths below are those sums with a little room for a
-// focus ring.
-const ACTIONS_WIDTH = { both: 200, ratingOnly: 168, favoritesOnly: 80, neither: 52 }
+// Measured in a real browser (see the layout test): each icon button comes
+// to 28px, the sums below with a little room for a focus ring.
+const ACTIONS_WIDTH = { withFavorites: 80, menuOnly: 52 }
 
 /**
- * The trailing cell, sized for what this server actually puts in it.
- *
- * It used to be 200px everywhere, which is right only where all three
- * controls render. Jellyfin has no 1-5 star rating and Plex no favorite
- * heart (see services/capabilities.ts), so on those the column reserved up
- * to 120px per row for something that was never drawn - width the title and
- * album columns were being squeezed out of.
- *
- * The heading goes with it: "Rating" over a server with no rating sorted
- * every row by the same zero, so where there are no stars there is no
- * heading to sort by either.
+ * The trailing cell, sized for what this server actually puts in it: Plex's
+ * core API has no favorite of its own (see media/plex_bridge.py), so there
+ * the cell holds the menu button alone and the heart's 28px would be width
+ * the title and album columns are squeezed out of.
  */
 function actionsColumnFor(column: SongColumn, capabilities: SongActionCapabilities): SongColumn {
-  const { favorites, personalRating } = capabilities
-  const width = personalRating
-    ? favorites
-      ? ACTIONS_WIDTH.both
-      : ACTIONS_WIDTH.ratingOnly
-    : favorites
-      ? ACTIONS_WIDTH.favoritesOnly
-      : ACTIONS_WIDTH.neither
-  return {
-    ...column,
-    flex: `0 0 ${width}px`,
-    minWidth: `${width}px`,
-    // The stars' distance from the right edge: the heart and the menu where
-    // both are there, the menu alone where the heart is not.
-    labelInset: favorites ? '72px' : '44px',
-    labelKey: personalRating ? column.labelKey : '',
-    sortValue: personalRating ? column.sortValue : null,
-  }
+  const width = capabilities.favorites ? ACTIONS_WIDTH.withFavorites : ACTIONS_WIDTH.menuOnly
+  return { ...column, flex: `0 0 ${width}px`, minWidth: `${width}px` }
 }
 
 /** Whether this server's song lists carry what the column shows. A column

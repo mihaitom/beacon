@@ -93,15 +93,20 @@
         </router-link>
       </div>
 
+      <!-- Stars only on a row that has them or is hovered: an unrated
+         - library would otherwise show five hollow stars on every line, and
+         - the column is meant to be quiet until it is used. The column is
+         - only resolved at all where the server has a 1-5 scale, so nothing
+         - here asks about that a second time. -->
       <div
-        v-else-if="column.cell === 'actions'"
+        v-else-if="column.cell === 'rating'"
         :data-column="column.key"
-        class="song-col song-col--actions"
+        class="song-col song-col--rating"
         :style="{ flex: column.flex, minWidth: column.minWidth }"
       >
-        <transition name="rating-fade" style="margin-right: 1rem">
+        <transition name="rating-fade">
           <v-rating
-            v-if="authStore.capabilities.personalRating && (song.rating > 0 || isHovered)"
+            v-if="song.rating > 0 || isHovered"
             :model-value="song.rating"
             length="5"
             size="small"
@@ -114,6 +119,14 @@
             @update:model-value="$emit('set-rating', { song, rating: $event })"
           />
         </transition>
+      </div>
+
+      <div
+        v-else-if="column.cell === 'actions'"
+        :data-column="column.key"
+        class="song-col song-col--actions"
+        :style="{ flex: column.flex, minWidth: column.minWidth }"
+      >
         <v-btn
           v-if="authStore.capabilities.favorites"
           :icon="song.starred ? 'mdi-heart' : 'mdi-heart-outline'"
@@ -590,7 +603,8 @@ export default {
   color: rgb(var(--v-theme-primary));
 }
 
-.song-col--actions {
+.song-col--actions,
+.song-col--rating {
   display: flex;
   align-items: center;
   justify-content: flex-end;

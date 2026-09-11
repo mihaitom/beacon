@@ -150,11 +150,18 @@ describe('songColumns', () => {
   })
 
   it('gives every column a label and every sortable one something to sort by', () => {
+    // The two cells that hold no field: the row number, and the
+    // favorite/menu cluster at the end. Neither has a heading, and neither
+    // is a thing to sort a list by.
+    const fieldless = ['index', 'actions']
+
     for (const column of SONG_COLUMNS) {
-      if (column.key !== 'index') expect(column.labelKey).not.toBe('')
-      // The cover is the one column with nothing orderable behind it, so
-      // its heading is not a sort button.
-      expect(column.sortValue === null).toBe(column.key === 'cover' || column.key === 'index')
+      if (!fieldless.includes(column.key)) expect(column.labelKey).not.toBe('')
+      // The cover is the one labelled column with nothing orderable behind
+      // it, so its heading is not a sort button.
+      expect(column.sortValue === null, column.key).toBe(
+        column.key === 'cover' || fieldless.includes(column.key),
+      )
     }
   })
 })

@@ -14,7 +14,7 @@
         'song-col--end': column.align === 'end',
         'song-col--select': column.cell === 'index',
       }"
-      :style="{ flex: column.flex, minWidth: column.minWidth, paddingRight: column.labelInset }"
+      :style="{ flex: column.flex, minWidth: column.minWidth }"
     >
       <!-- The index column carries no heading of its own, so in a list that
          - can be selected it carries the select-all instead - sitting
