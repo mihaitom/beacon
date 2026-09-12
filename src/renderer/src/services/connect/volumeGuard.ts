@@ -25,16 +25,19 @@ import type { ConnectDeviceRef } from '@/services/connect/types'
  * per-device slider and the player bar's show the same device at once.
  */
 
-/** How long after a change the device's own readings stay ignored.
- *
- * Long enough to cover the round trip *and* the speaker's own lag in
- * reporting a new value (Sonos in particular answers with the old one for a
- * moment after accepting a change), short enough that turning the dial on
- * the speaker itself still shows up here within a couple of seconds. */
+/** How long after a change *has reached the device* its own readings stay
+ * ignored. Pure trailing slack: the round trip itself is covered by the
+ * write being in flight (see writing below), so this only has to outlast
+ * the speaker's own lag in reporting the new value — Sonos answers with
+ * the old one for a moment after accepting a change — while staying short
+ * enough that turning the dial on the speaker still shows up here within a
+ * couple of seconds. */
 export const VOLUME_SETTLE_MS = 2500
 
 interface GuardState {
   dragging: boolean
+  /** A value is queued or in flight for this device — see volumeWrite.ts. */
+  writing: boolean
   ignoreUntil: number
 }
 
@@ -48,7 +51,7 @@ function stateOf(device: ConnectDeviceRef): GuardState {
   const key = keyOf(device)
   let state = guards.get(key)
   if (!state) {
-    state = { dragging: false, ignoreUntil: 0 }
+    state = { dragging: false, writing: false, ignoreUntil: 0 }
     guards.set(key, state)
   }
   return state
@@ -73,10 +76,32 @@ export function noteVolumeChange(device: ConnectDeviceRef): void {
   stateOf(device).ignoreUntil = performance.now() + VOLUME_SETTLE_MS
 }
 
+/**
+ * A value is on its way to this device, and nothing it reports may be
+ * believed until it has landed — however long that takes.
+ *
+ * The settle window alone could not carry this. It is a fixed 2.5s started
+ * when the finger lifts, while a Sonos write carries the SSDP discovery
+ * cost and can take longer than that on its own: the window expired with
+ * the last command still unanswered, and the pushed reading arriving in
+ * that gap — still the pre-drag level — was believed and put the slider
+ * back where the drag began. Which is the snap-back the settle window was
+ * introduced to stop, surviving inside it.
+ */
+export function startVolumeWrite(device: ConnectDeviceRef): void {
+  stateOf(device).writing = true
+}
+
+/** Everything queued for this device has been sent; VOLUME_SETTLE_MS of
+ * trailing slack takes over from here. */
+export function endVolumeWrite(device: ConnectDeviceRef): void {
+  stateOf(device).writing = false
+}
+
 /** Whether a reading from this device may be applied right now. */
 export function acceptsVolumeReading(device: ConnectDeviceRef): boolean {
   const state = stateOf(device)
-  return !state.dragging && performance.now() >= state.ignoreUntil
+  return !state.dragging && !state.writing && performance.now() >= state.ignoreUntil
 }
 
 /** Test seam — the map outlives any one component, and a settle window left

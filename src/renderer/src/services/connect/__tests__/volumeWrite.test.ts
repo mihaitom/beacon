@@ -108,6 +108,11 @@ describe('writeDeviceVolume', () => {
     // A speaker taking its time - a Sonos call carries the SSDP discovery
     // cost - and the window the move opened has run out meanwhile.
     vi.advanceTimersByTime(VOLUME_SETTLE_MS + 1)
+    // Checked here, before the answer: this is the moment the reading
+    // actually arrives in. Nothing has acknowledged 85 yet, so anything the
+    // speaker reports is still the level the drag began at.
+    expect(acceptsVolumeReading(kitchen)).toBe(false)
+
     await answer()
     expect(acceptsVolumeReading(kitchen)).toBe(false)
 
@@ -117,6 +122,22 @@ describe('writeDeviceVolume', () => {
     // And it does expire: a hand on the speaker's own dial still shows up.
     vi.advanceTimersByTime(1)
     expect(acceptsVolumeReading(kitchen)).toBe(true)
+  })
+
+  // The same gap one layer in: the queue is briefly empty between an answer
+  // coming back and the next value being queued behind it, and the device
+  // is no more at the final level then than it was a moment earlier.
+  it('keeps readings out across the whole queue, not just one request', async () => {
+    vi.useFakeTimers()
+    const { send, answer } = deferredSend()
+
+    writeDeviceVolume(kitchen, 40, send)
+    writeDeviceVolume(kitchen, 85, send)
+    await answer()
+
+    // 85 is on its way but unanswered; the window from 40 has long gone.
+    vi.advanceTimersByTime(VOLUME_SETTLE_MS + 1)
+    expect(acceptsVolumeReading(kitchen)).toBe(false)
   })
 
   it('reports a refused change instead of swallowing it, and carries on', async () => {

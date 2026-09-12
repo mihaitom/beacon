@@ -1,4 +1,4 @@
-import { noteVolumeChange } from '@/services/connect/volumeGuard'
+import { endVolumeWrite, noteVolumeChange, startVolumeWrite } from '@/services/connect/volumeGuard'
 import type { ConnectDeviceRef } from '@/services/connect/types'
 
 /**
@@ -59,6 +59,10 @@ function stateOf(device: ConnectDeviceRef): WriteState {
 
 async function drain(state: WriteState): Promise<void> {
   state.sending = true
+  // Held for the whole queue, not per request: between one command coming
+  // back and the next going out the device is still not at the value the
+  // finger stopped on, so its readings stay untrusted across the gap too.
+  startVolumeWrite(state.device)
   try {
     while (state.pending != null && state.send) {
       const volume = state.pending
@@ -70,19 +74,17 @@ async function drain(state: WriteState): Promise<void> {
         // like a broken slider: the level bounced back with nothing said.
         console.error('[volume-write] Device refused the new level:', error)
       }
-      // The settle window runs from here, not from when the slider moved:
-      // queueing is instant, reaching the speaker is not. A Sonos call
-      // carries the SSDP discovery cost (see SonosDelivery._get_device),
-      // which puts the release of a drag and the last command actually
-      // going out a second or more apart - long enough for the window
-      // opened at release to expire while the speaker is still answering
-      // an *earlier* value, and that reading then lands on the slider.
-      // Which is the snap-back to roughly where the drag began, arriving
-      // by a second route than the flood this module already fixed.
+      // Restarted per command rather than once at the end, so the window
+      // is always measured from the last value the speaker actually
+      // acknowledged. What keeps a reading out while a command is still
+      // unanswered is the write flag above, not this.
       noteVolumeChange(state.device)
     }
   } finally {
     state.sending = false
+    // The settle window opened by the last noteVolumeChange above takes
+    // over from here.
+    endVolumeWrite(state.device)
   }
 }
 
