@@ -947,9 +947,9 @@ async def mark_interrupted(session: SessionState) -> None:
 async def mark_delivery_failed(session: SessionState, delivery_error: dict) -> None:
     """Record that a device already told to play never started, and say why.
 
-    For the one failure no request is left to answer: AirPlay's play()
-    returns once the connection is up, and the device can still refuse the
-    stream after that (see delivery/airplay.py). Stops the session exactly
+    For a failure no request is left to answer: a device refusing the stream
+    after play() has already returned (see delivery/airplay.py, and the late
+    LOAD answer in delivery/chromecast.py). Stops the session exactly
     as mark_interrupted() does, for the same reasons, but offers no resume:
     nothing had started that could be picked up again."""
     st = session.state

@@ -3,6 +3,7 @@ exception into something the frontend can say a useful sentence about."""
 
 import pytest
 from pyatv import exceptions as pyatv_exceptions
+from pychromecast import error as pychromecast_error
 from soco.exceptions import SoCoUPnPException
 
 from delivery.errors import (
@@ -12,6 +13,7 @@ from delivery.errors import (
     REASON_UNKNOWN,
     REASON_UNREACHABLE,
     DeviceNotFoundError,
+    MediaRejectedError,
     classify_delivery_error,
     classify_transport_problem,
     delivery_error_response,
@@ -161,3 +163,27 @@ class TestAirPlay:
 
     def test_a_device_discovery_could_not_find_reads_as_unreachable(self):
         assert classify_delivery_error(DeviceNotFoundError("HomePod")) == REASON_UNREACHABLE
+
+
+class TestChromecast:
+    """Like pyatv's, none of pychromecast's exceptions is an OSError."""
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "NotConnected",
+            "PyChromecastStopped",
+            "ChromecastConnectionError",
+            "ChromecastConnectionClosed",
+        ],
+    )
+    def test_a_device_that_cannot_be_reached_reads_as_unreachable(self, name):
+        error = getattr(pychromecast_error, name)("gone")
+        assert classify_delivery_error(error) == REASON_UNREACHABLE
+
+    def test_a_request_the_device_never_answered_reads_as_unreachable(self):
+        error = pychromecast_error.RequestTimeout("wait", 10.0)
+        assert classify_delivery_error(error) == REASON_UNREACHABLE
+
+    def test_a_device_refusing_what_it_was_handed_reads_as_rejected(self):
+        assert classify_delivery_error(MediaRejectedError("LOAD_FAILED")) == REASON_REJECTED

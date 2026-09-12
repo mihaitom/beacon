@@ -4,8 +4,10 @@ import asyncio
 import logging
 import threading
 import time
+from collections.abc import Callable
 
 from .base import BaseDelivery
+from .errors import DeviceNotFoundError, MediaRejectedError
 
 logger = logging.getLogger("delivery")
 
@@ -15,6 +17,67 @@ logger = logging.getLogger("delivery")
 # start, so a stale cache is corrected within a poll or two without a
 # genuinely buffering device being asked on every single one.
 _STATUS_REFRESH_SECONDS = 1.0
+
+# How long play() waits for the device to answer LOAD - the ten seconds it
+# used to wait for a media session. A device that has not answered by then
+# is not failed for it, since a live station can take about that long to
+# start on a Chromecast; a refusal that arrives later is still reported.
+_LOAD_ANSWER_SECONDS = 10.0
+
+# What a receiver answers LOAD with when it will not play what it was given.
+_LOAD_REFUSALS = frozenset({"LOAD_FAILED", "LOAD_CANCELLED", "INVALID_REQUEST"})
+
+
+def _load_refusal(msg_sent: bool, response: dict | None) -> Exception | None:
+    """The failure in a device's answer to LOAD, or None if it took the media."""
+    if not msg_sent:
+        return ConnectionError("the connection closed before the device answered LOAD")
+    kind = (response or {}).get("type")
+    if kind not in _LOAD_REFUSALS:
+        return None
+    from pychromecast.controllers.media import MEDIA_PLAYER_ERROR_CODES
+
+    code = response.get("detailedErrorCode")
+    detail = f" {code} ({MEDIA_PLAYER_ERROR_CODES.get(code, 'unknown code')})" if code else ""
+    return MediaRejectedError(f"{kind}{detail}")
+
+
+class _LoadAnswer:
+    """A device's answer to one LOAD. It arrives on pychromecast's own
+    thread, possibly after play() has stopped waiting - a refusal arriving
+    then goes to `on_late_refusal` instead of being raised."""
+
+    def __init__(self, on_late_refusal: Callable[[Exception], None]) -> None:
+        self._on_late_refusal = on_late_refusal
+        self._lock = threading.Lock()
+        self._answered = threading.Event()
+        self._refusal: Exception | None = None
+        self._abandoned = False
+
+    def callback(self, msg_sent: bool, response: dict | None) -> None:
+        refusal = _load_refusal(msg_sent, response)
+        with self._lock:
+            self._refusal = refusal
+            self._answered.set()
+            late = self._abandoned
+        if late and refusal is not None:
+            self._on_late_refusal(refusal)
+
+    def wait(self, timeout: float) -> Exception | None:
+        """The refusal, if the device refused within `timeout`; None if it
+        took the media or has not answered yet."""
+        self._answered.wait(timeout)
+        with self._lock:
+            self._abandoned = not self._answered.is_set()
+            return self._refusal
+
+
+def _has_media_session(cast) -> bool:
+    """Whether the device has media loaded for a pause or stop to act on.
+    Without it pychromecast warns and raises RequestFailed, for what only
+    ever means that nothing of ours is playing there."""
+    return cast.media_controller.status.media_session_id is not None
+
 
 # Module-level long-lived zeroconf + CastBrowser. Started once on first use and
 # kept alive for the process lifetime. All chromecast operations (discovery and
@@ -156,6 +219,9 @@ class ChromecastDelivery(BaseDelivery):
     # first use; a delivery object is per target and per dispatch, and a
     # brand-new one asking immediately is exactly right.
     _status_refreshed_at: float = 0.0
+    # Counts this delivery's LOADs, so a refusal answering one that a later
+    # play() has since replaced is not reported against the newer one.
+    _load_generation: int = 0
 
     def _get_device(self):
         import pychromecast
@@ -171,13 +237,19 @@ class ChromecastDelivery(BaseDelivery):
         for cast_info in browser.devices.values():
             if cast_info.friendly_name.lower() == target_lower:
                 cast = pychromecast.get_chromecast_from_cast_info(cast_info, zconf)
-                cast.wait(timeout=10)
+                try:
+                    cast.wait(timeout=10)
+                except Exception:
+                    # wait() has already started the connection's own thread,
+                    # which would otherwise go on trying to reach the device.
+                    cast.disconnect(timeout=0)
+                    raise
                 _chromecast_cache[target_lower] = cast
                 _register_volume_listener(cast, self.target)
                 return cast
 
         available = [info.friendly_name for info in browser.devices.values()]
-        raise RuntimeError(f"Chromecast '{self.target}' not found. Available: {available}")
+        raise DeviceNotFoundError(f"Chromecast '{self.target}' not found. Available: {available}")
 
     async def play(
         self,
@@ -210,6 +282,17 @@ class ChromecastDelivery(BaseDelivery):
             metadata["images"] = [{"url": album_art_url}]
         if album:
             metadata["albumName"] = album
+        loop = asyncio.get_running_loop()
+        self._load_generation += 1
+        generation = self._load_generation
+
+        def report_late_refusal(refusal: Exception) -> None:
+            if generation == self._load_generation:
+                asyncio.run_coroutine_threadsafe(
+                    self._report_playback_error(refusal, interrupted=False), loop
+                )
+
+        answer = _LoadAnswer(report_late_refusal)
         logger.debug(f"[Chromecast:{self.target}] → play: {stream_url}")
         await asyncio.to_thread(
             mc.play_media,
@@ -218,12 +301,22 @@ class ChromecastDelivery(BaseDelivery):
             title=title,
             thumb=album_art_url,
             metadata=metadata,
+            callback_function=answer.callback,
         )
-        await asyncio.to_thread(mc.block_until_active, 10)
+        # The device's own answer, rather than waiting for a media session:
+        # that wait ran out silently, so a refused stream read as success,
+        # with the app showing "playing" and no request for the stream ever
+        # arriving.
+        refusal = await asyncio.to_thread(answer.wait, _LOAD_ANSWER_SECONDS)
+        if refusal is not None:
+            raise refusal
         logger.info(f"[Chromecast:{self.target}] ✓ playing")
 
     async def pause(self) -> None:
         cast = await asyncio.to_thread(self._get_device)
+        if not _has_media_session(cast):
+            logger.debug(f"[Chromecast:{self.target}] nothing loaded to pause")
+            return
         await asyncio.to_thread(cast.media_controller.pause)
         logger.info(f"[Chromecast:{self.target}] paused")
 
@@ -234,6 +327,9 @@ class ChromecastDelivery(BaseDelivery):
 
     async def stop(self) -> None:
         cast = await asyncio.to_thread(self._get_device)
+        if not _has_media_session(cast):
+            logger.debug(f"[Chromecast:{self.target}] nothing loaded to stop")
+            return
         await asyncio.to_thread(cast.media_controller.stop)
         logger.info(f"[Chromecast:{self.target}] stopped")
 

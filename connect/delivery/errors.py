@@ -112,25 +112,35 @@ class DeviceNotFoundError(LookupError):
     """Discovery could not find a device by the name it was asked for."""
 
 
-# pyatv's exceptions, matched by name rather than imported: pyatv is only
-# loaded once an AirPlay device is actually used (see lazy_import.py), and
-# classifying an error must not load it. None of them is an OSError, so
-# without this a switched-off device read as "unknown".
-_PYATV_REASONS = {
-    "ConnectionFailedError": REASON_UNREACHABLE,
-    "ConnectionLostError": REASON_UNREACHABLE,
-    "AuthenticationError": REASON_NEEDS_PAIRING,
-    "NoCredentialsError": REASON_NEEDS_PAIRING,
-    "InvalidCredentialsError": REASON_NEEDS_PAIRING,
+class MediaRejectedError(Exception):
+    """A device answered a request to play something by refusing it."""
+
+
+# The protocol libraries' own exceptions, matched by module and name rather
+# than imported: both libraries are imported only where a device of their
+# kind is used, and classifying an error must not be what loads one. None of
+# these is an OSError, so without this a switched-off device read as
+# "unknown".
+_LIBRARY_REASONS = {
+    ("pyatv.exceptions", "ConnectionFailedError"): REASON_UNREACHABLE,
+    ("pyatv.exceptions", "ConnectionLostError"): REASON_UNREACHABLE,
+    ("pyatv.exceptions", "AuthenticationError"): REASON_NEEDS_PAIRING,
+    ("pyatv.exceptions", "NoCredentialsError"): REASON_NEEDS_PAIRING,
+    ("pyatv.exceptions", "InvalidCredentialsError"): REASON_NEEDS_PAIRING,
+    ("pychromecast.error", "NotConnected"): REASON_UNREACHABLE,
+    ("pychromecast.error", "PyChromecastStopped"): REASON_UNREACHABLE,
+    ("pychromecast.error", "ChromecastConnectionError"): REASON_UNREACHABLE,
+    ("pychromecast.error", "ChromecastConnectionClosed"): REASON_UNREACHABLE,
+    ("pychromecast.error", "RequestTimeout"): REASON_UNREACHABLE,
 }
 
 
-def _pyatv_reason(error: BaseException) -> str | None:
+def _library_reason(error: BaseException) -> str | None:
     return next(
         (
-            _PYATV_REASONS[cls.__name__]
+            _LIBRARY_REASONS[(cls.__module__, cls.__name__)]
             for cls in type(error).__mro__
-            if cls.__module__ == "pyatv.exceptions" and cls.__name__ in _PYATV_REASONS
+            if (cls.__module__, cls.__name__) in _LIBRARY_REASONS
         ),
         None,
     )
@@ -143,7 +153,9 @@ def classify_delivery_error(error: BaseException) -> str:
         return _UPNP_REASONS.get(str(error.error_code), REASON_UNKNOWN)
     if isinstance(error, DeviceNotFoundError):
         return REASON_UNREACHABLE
-    if (reason := _pyatv_reason(error)) is not None:
+    if isinstance(error, MediaRejectedError):
+        return REASON_REJECTED
+    if (reason := _library_reason(error)) is not None:
         return reason
     # ConnectionError and TimeoutError are both OSError subclasses, as is
     # everything requests raises through to here for a speaker that has

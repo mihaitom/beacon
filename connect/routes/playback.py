@@ -790,9 +790,10 @@ def playback_error_reporter(session: SessionState) -> Callable[[PlaybackFailure]
     """The callback a delivery uses to say "this stopped and nobody asked".
 
     See BaseDelivery.on_playback_error for why deliveries need one at all.
-    Only AirPlay ever calls it; every other target's failure surfaces as
-    its GET /stream connection closing, which routes/stream.py notices on
-    its own.
+    AirPlay calls it for any failure, since nothing else would notice one.
+    Chromecast calls it only for a stream refused after play() stopped
+    waiting for the answer. Every other failure surfaces as the device's GET
+    /stream connection closing, which routes/stream.py notices on its own.
 
     A failure after audio reached the device is an interruption, offered to
     be picked up again. One before it is a start that never happened, and

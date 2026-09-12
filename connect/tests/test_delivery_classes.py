@@ -4,12 +4,13 @@ import asyncio
 import io
 import logging
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 from pyatv import exceptions as pyatv_exceptions
 from pyatv.const import Protocol
+from pychromecast.error import RequestTimeout
 from soco.exceptions import SoCoUPnPException
 
 import delivery.chromecast as _chromecast_mod
@@ -30,7 +31,7 @@ from delivery.airplay import (
     _ResponseReader,
 )
 from delivery.base import PlaybackFailure
-from delivery.errors import DeviceNotFoundError
+from delivery.errors import DeviceNotFoundError, MediaRejectedError
 
 # ── BaseDelivery defaults (pause/resume are no-ops, position/volume unknown) ──
 
@@ -1364,18 +1365,58 @@ def test_chromecast_get_device_raises_with_available_names_when_not_found():
     with (
         patch("delivery.chromecast._ensure_cast_browser", return_value=(browser, MagicMock())),
         patch("delivery.chromecast._wait_for_discovery"),
-        pytest.raises(RuntimeError, match="Bedroom"),
+        pytest.raises(DeviceNotFoundError, match="Bedroom"),
     ):
         ChromecastDelivery("TV")._get_device()
+
+
+def test_chromecast_get_device_disconnects_a_device_that_never_answers():
+    """wait() has already started the connection's own thread, which would
+    otherwise go on trying to reach an unreachable device indefinitely."""
+    info = MagicMock()
+    info.friendly_name = "TV"
+    browser = MagicMock()
+    browser.devices = {"uuid-1": info}
+    cast = MagicMock()
+    cast.wait.side_effect = RequestTimeout("wait", 10)
+
+    with (
+        patch("delivery.chromecast._ensure_cast_browser", return_value=(browser, MagicMock())),
+        patch("delivery.chromecast._wait_for_discovery"),
+        patch("pychromecast.get_chromecast_from_cast_info", return_value=cast),
+        pytest.raises(RequestTimeout),
+    ):
+        ChromecastDelivery("TV")._get_device()
+
+    cast.disconnect.assert_called_once()
+    assert _chromecast_mod._chromecast_cache == {}
 
 
 # ── ChromecastDelivery playback ───────────────────────────────────────────────
 
 
-def _mock_cast():
+def _mock_cast(load_answer: dict | None = None):
+    """A cast whose device answers LOAD at once - by taking the media, unless
+    `load_answer` says otherwise."""
     cast = MagicMock()
     cast.media_controller = MagicMock()
+
+    def play_media(*args, callback_function, **kwargs):
+        callback_function(True, load_answer or {"type": "MEDIA_STATUS"})
+
+    cast.media_controller.play_media.side_effect = play_media
     return cast
+
+
+def _cast_answering_later():
+    """A cast whose device does not answer LOAD before play() stops waiting,
+    and the callbacks it was handed, to answer through afterwards."""
+    cast = MagicMock()
+    answers: list = []
+    cast.media_controller.play_media.side_effect = lambda *args, callback_function, **kw: (
+        answers.append(callback_function)
+    )
+    return cast, answers
 
 
 def test_chromecast_play_calls_media_controller():
@@ -1389,8 +1430,91 @@ def test_chromecast_play_calls_media_controller():
         title="Title",
         thumb=None,
         metadata={"metadataType": 3, "title": "Title", "artist": ""},
+        callback_function=ANY,
     )
-    cast.media_controller.block_until_active.assert_called_once_with(10)
+
+
+def test_chromecast_play_fails_when_the_device_refuses_the_stream():
+    """play() used to wait for a media session and carry on when none came,
+    so a refused LOAD read as success: the app showed "playing" and the
+    device never asked for the stream."""
+    cast = _mock_cast({"type": "LOAD_FAILED", "detailedErrorCode": 104})
+    d = ChromecastDelivery("TV")
+    with (
+        patch.object(ChromecastDelivery, "_get_device", return_value=cast),
+        pytest.raises(MediaRejectedError, match="LOAD_FAILED"),
+    ):
+        asyncio.run(d.play("http://stream", "Title"))
+
+
+def test_chromecast_play_fails_when_the_connection_goes_before_the_answer():
+    cast = MagicMock()
+    cast.media_controller.play_media.side_effect = lambda *args, callback_function, **kw: (
+        callback_function(False, None)
+    )
+    d = ChromecastDelivery("TV")
+    with (
+        patch.object(ChromecastDelivery, "_get_device", return_value=cast),
+        pytest.raises(ConnectionError),
+    ):
+        asyncio.run(d.play("http://stream", "Title"))
+
+
+def test_chromecast_play_carries_on_when_the_device_is_slow_to_answer():
+    """A live station can take about ten seconds to start on a Chromecast.
+    No answer yet is not a failure."""
+    cast, _ = _cast_answering_later()
+    d = ChromecastDelivery("TV")
+    with (
+        patch.object(ChromecastDelivery, "_get_device", return_value=cast),
+        patch("delivery.chromecast._LOAD_ANSWER_SECONDS", 0.01),
+    ):
+        asyncio.run(d.play("http://stream", "Title"))  # must not raise
+
+
+def _refuse_late(d: ChromecastDelivery, cast, answers: list, plays: int, refused: int) -> list:
+    """play() `plays` times against a device that answers none of them in
+    time, then have it refuse LOAD number `refused`. Returns what got
+    reported."""
+    reported: list[PlaybackFailure] = []
+
+    async def on_error(failure: PlaybackFailure) -> None:
+        reported.append(failure)
+
+    d.on_playback_error = on_error
+
+    async def run():
+        with (
+            patch.object(ChromecastDelivery, "_get_device", return_value=cast),
+            patch("delivery.chromecast._LOAD_ANSWER_SECONDS", 0.01),
+        ):
+            for _ in range(plays):
+                await d.play("http://stream", "Title")
+        await asyncio.to_thread(answers[refused], True, {"type": "LOAD_FAILED"})
+        await asyncio.sleep(0.05)
+
+    asyncio.run(run())
+    return reported
+
+
+def test_chromecast_reports_a_refusal_that_arrives_after_play_returned():
+    cast, answers = _cast_answering_later()
+    d = ChromecastDelivery("TV")
+
+    reported = _refuse_late(d, cast, answers, plays=1, refused=0)
+
+    assert len(reported) == 1
+    assert reported[0].interrupted is False
+    assert isinstance(reported[0].error, MediaRejectedError)
+
+
+def test_chromecast_ignores_a_late_refusal_for_a_load_since_replaced():
+    """The track that was refused is no longer what is playing, so its
+    refusal must not stop the one that replaced it."""
+    cast, answers = _cast_answering_later()
+    d = ChromecastDelivery("TV")
+
+    assert _refuse_late(d, cast, answers, plays=2, refused=0) == []
 
 
 def test_chromecast_play_switches_to_default_media_receiver_before_loading():
@@ -1422,6 +1546,7 @@ def test_chromecast_play_uses_passed_content_type():
         title="Title",
         thumb=None,
         metadata={"metadataType": 3, "title": "Title", "artist": ""},
+        callback_function=ANY,
     )
 
 
@@ -1497,6 +1622,19 @@ def test_chromecast_pause_resume_stop_delegate_to_controller():
     cast.media_controller.pause.assert_called_once()
     cast.media_controller.play.assert_called_once()
     cast.media_controller.stop.assert_called_once()
+
+
+def test_chromecast_pause_and_stop_with_nothing_loaded_are_not_errors():
+    """pychromecast raises RequestFailed for either without a media session,
+    seen live as a stop failing on a TV that had nothing of ours loaded."""
+    cast = _mock_cast()
+    cast.media_controller.status.media_session_id = None
+    d = ChromecastDelivery("TV")
+    with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
+        asyncio.run(d.pause())
+        asyncio.run(d.stop())
+    cast.media_controller.pause.assert_not_called()
+    cast.media_controller.stop.assert_not_called()
 
 
 def test_chromecast_play_includes_album_art_and_album_in_metadata():

@@ -6,7 +6,7 @@ import logging
 import httpx
 
 from . import credentials as creds_store
-from .base import BaseDelivery, PlaybackFailure
+from .base import BaseDelivery
 from .errors import DeviceNotFoundError
 from .lazy_import import import_in_thread
 
@@ -280,22 +280,6 @@ class AirPlayDelivery(BaseDelivery):
         else:
             logger.info(f"[AirPlay:{self.target}] Found: {match.address} ({kind})")
         return match
-
-    async def _report_playback_error(self, error: BaseException, interrupted: bool) -> None:
-        """Tell the session its playback died, if anyone is listening.
-
-        None whenever this delivery wasn't built through
-        core/state.py's resolve_target() — routes/devices.py constructs a
-        throwaway instance just to stop a device, and there is no session
-        behind that one to report to. A failure in the callback itself must
-        not take down the teardown that follows it in _stream()'s finally.
-        """
-        if self.on_playback_error is None:
-            return
-        try:
-            await self.on_playback_error(PlaybackFailure(self, error, interrupted))
-        except Exception:
-            logger.exception(f"[AirPlay:{self.target}] Reporting playback error failed")
 
     @staticmethod
     async def _close_atv(atv) -> None:

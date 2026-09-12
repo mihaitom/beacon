@@ -1,8 +1,11 @@
 """delivery/base.py — BaseDelivery abstract class"""
 
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+
+logger = logging.getLogger("delivery")
 
 
 @dataclass(frozen=True)
@@ -75,17 +78,37 @@ class BaseDelivery(ABC):
         # reference to one, and cannot be given one, because core/state.py
         # imports this package and the reverse would be circular.
         #
-        # Only AirPlay needs it, and only because of how it plays. Every
-        # other target pulls GET /stream for the duration of the track, so
-        # a device going away closes that connection and routes/stream.py
-        # notices without anything being reported to it. AirPlay is pushed
-        # to, and once the push fails there is nothing left holding a
-        # connection open for anyone to notice the absence of.
+        # AirPlay needs it most, because of how it plays. Every other target
+        # pulls GET /stream for the duration of the track, so a device going
+        # away closes that connection and routes/stream.py notices without
+        # anything being reported to it. AirPlay is pushed to, and once the
+        # push fails there is nothing left holding a connection open for
+        # anyone to notice the absence of. Chromecast uses it for one case of
+        # its own: a stream refused only after play() stopped waiting for the
+        # answer, when no GET /stream is ever opened to notice.
         #
         # Wired up in core/state.py's resolve_target(); left None for a
         # delivery built outside that path (tests, routes/devices.py's
         # one-shot stop), where there is no session to report to anyway.
         self.on_playback_error: Callable[[PlaybackFailure], Awaitable[None]] | None = None
+
+    async def _report_playback_error(self, error: BaseException, interrupted: bool) -> None:
+        """Tell the session its playback failed, if anyone is listening.
+
+        No one is whenever this delivery wasn't built through
+        core/state.py's resolve_target() — routes/devices.py constructs a
+        throwaway instance just to stop a device, and there is no session
+        behind that one to report to. A failure in the callback itself is
+        logged and swallowed: whoever called this still has its own teardown
+        to finish."""
+        if self.on_playback_error is None:
+            return
+        try:
+            await self.on_playback_error(PlaybackFailure(self, error, interrupted))
+        except Exception:
+            logger.exception(
+                f"[{type(self).__name__}:{self.target}] Reporting playback error failed"
+            )
 
     @abstractmethod
     async def play(
