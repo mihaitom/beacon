@@ -51,7 +51,12 @@ def test_join_releases_the_claim_when_the_device_fails_to_start(
     ):
         r = client.post("/join", json={"target_type": "chromecast", "target_name": "TV"})
 
-    assert r.json()["error"] == "unreachable"
+    # The same body /play answers with, so the app can name the speaker and
+    # say what went wrong instead of showing the library's raw text.
+    body = r.json()
+    assert body["error"] == "delivery_failed"
+    assert body["device"] == "TV"
+    assert body["detail"] == "unreachable"
     assert claims.owner_of("chromecast", "TV") is None
     # Never actually joined — active_delivery must be left exactly as it
     # was before this call, not pointing at a device nothing is playing on.

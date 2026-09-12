@@ -32,6 +32,7 @@ from delivery import (
     DlnaDelivery,
     SonosDelivery,
 )
+from delivery.sonos import halt_if_possible
 from media import JellyfinClient, PlexClient, SubsonicClient, server_type_name
 from routes.playback import _resync_position_periodically
 
@@ -373,7 +374,7 @@ async def stop_device(
                         await asyncio.to_thread(target_dev.unjoin)
                         await asyncio.sleep(0.1)
 
-                    await asyncio.to_thread(target_dev.stop)
+                    await asyncio.to_thread(halt_if_possible, target_dev.stop)
                     logger.info(f"[device-stop] {name} stopped")
             elif device_type == "chromecast":
                 await ChromecastDelivery(name).stop()

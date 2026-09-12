@@ -1447,7 +1447,13 @@ async def pause_playback(session: SessionState = Depends(require_authenticated_s
     async with session.play_lock:
         st = session.state
         if st.active_delivery:
-            await st.active_delivery.pause()
+            try:
+                await st.active_delivery.pause()
+            except Exception as e:
+                # Not marked paused: the speaker is still playing, and the
+                # clock has to go on agreeing with it.
+                logger.exception("[pause] Delivery error")
+                return delivery_error_response(e, st.active_delivery)
         elapsed = compute_position(session)
         st.clock.pause(elapsed)
         logger.info(f"[pause] ⏸ {elapsed:.1f}s into track")
@@ -1722,7 +1728,14 @@ async def stop_playback(session: SessionState = Depends(require_authenticated_se
     async with session.play_lock:
         st = session.state
         if st.active_delivery:
-            await st.active_delivery.stop()
+            # A stop always ends the session, whatever the device says: a
+            # raise here skipped everything below and left the speaker
+            # claimed and the session "playing", with no way out but a
+            # restart.
+            try:
+                await st.active_delivery.stop()
+            except Exception:
+                logger.exception("[stop] Stopping the device failed - ending the session anyway")
         st.is_streaming = False
         st.clock.is_paused = False
         st.track_ended = False

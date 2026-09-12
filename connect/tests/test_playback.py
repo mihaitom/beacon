@@ -1360,6 +1360,25 @@ def test_stop_is_idempotent(client, default_session):
     assert r2.json()["status"] == "stopped"
 
 
+def test_stop_ends_the_session_even_when_the_device_fails_to_stop(client, default_session):
+    """Otherwise the session stays "playing" and the speaker stays claimed,
+    and every further /stop fails the same way."""
+    st = default_session.state
+    st.is_streaming = True
+    st.current_track = Track("1", "Song", "Artist", 60, "")
+    st.active_delivery = SonosDelivery("Küche")
+    with (
+        patch.object(SonosDelivery, "stop", new=AsyncMock(side_effect=RuntimeError("gone"))),
+        patch("routes.playback.claims.release_all_for_session", new=AsyncMock()) as release,
+    ):
+        r = client.post("/stop")
+
+    assert r.status_code == 200
+    assert st.is_streaming is False
+    assert st.active_delivery is None
+    release.assert_awaited_once()
+
+
 # ── /pause + /resume ──────────────────────────────────────────────────────────
 
 
@@ -1617,6 +1636,23 @@ def test_pause_delegates_to_the_active_delivery(client, default_session):
 
     assert r.json()["paused"] is True
     pause.assert_awaited_once()
+
+
+def test_pause_reports_a_device_that_fails_to_pause_and_keeps_playing(client, default_session):
+    """This used to surface as a 500, with the app still showing "playing"
+    and nothing saying why."""
+    default_session.media = SubsonicClient("http://nav")
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_start_time = time.time() - 30
+    default_session.state.active_delivery = ChromecastDelivery("TV")
+
+    with patch.object(ChromecastDelivery, "pause", new=AsyncMock(side_effect=OSError("no route"))):
+        r = client.post("/pause")
+
+    body = r.json()
+    assert body["error"] == "delivery_failed"
+    assert body["reason"] == "unreachable"
+    assert default_session.state.clock.is_paused is False
 
 
 def test_resume_returns_an_error_when_the_delivery_reconnect_fails(client, default_session):

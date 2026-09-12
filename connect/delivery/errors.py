@@ -49,25 +49,38 @@ REASON_UNKNOWN = "unknown"
 # vendor-defined faults, and is what a Sonos answers with when it will not
 # take a URI it was given (an unplayable stream, most often), which is
 # exactly the "rejected" case as far as anyone listening is concerned.
+# 702-705 are taken from the spec and have not been seen from a Sonos yet;
+# only codes whose meaning leaves no doubt are listed.
 _UPNP_REASONS = {
     "701": REASON_REJECTED,  # Transition not available
+    "702": REASON_REJECTED,  # No contents
+    "703": REASON_REJECTED,  # Read error
+    "704": REASON_REJECTED,  # Format not supported for playback
     "714": REASON_REJECTED,  # Illegal MIME-type
     "716": REASON_REJECTED,  # Resource not found
     "800": REASON_REJECTED,  # Sonos vendor fault, in practice "I won't play that"
+    "705": REASON_BUSY,  # Transport is locked
     "715": REASON_BUSY,  # Resource is currently in use
 }
 
 
 # What a device reports on its own event channel, rather than raising at
 # the point it was asked (see routes/upnp.py). Sonos's AVTransport
-# TransportStatus values; the two seen in practice are the first two, both
-# for a station the speaker simply will not take from where it was told to
-# get it — a format it won't decode, or an https URL on a stranger's host.
+# TransportStatus values, each of them reported by a real speaker at least
+# once while casting from Beacon. UNSUPPORTED_FORMAT and ACCESS_DENIED are
+# the usual pair for a station the speaker will not take from where it was
+# told to get it - a format it won't decode, or an https URL on a
+# stranger's host.
 _TRANSPORT_STATUS_REASONS = {
     "ERROR_UNSUPPORTED_FORMAT": REASON_REJECTED,
+    "ERROR_UNSUPPORTED_FREQ": REASON_REJECTED,
+    "ERROR_CORRUPT_FILE": REASON_REJECTED,
+    "ERROR_NO_PLAYABLE_CONTENT": REASON_REJECTED,
     "ERROR_ACCESS_DENIED": REASON_REJECTED,
     "ERROR_CANT_REACH_SERVER": REASON_UNREACHABLE,
+    "ERROR_CANT_CONNECT": REASON_UNREACHABLE,
     "ERROR_CONNECT_FAILED": REASON_UNREACHABLE,
+    "ERROR_LOST_CONNECTION": REASON_UNREACHABLE,
 }
 
 

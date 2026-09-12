@@ -4,6 +4,8 @@ import asyncio
 import logging
 from xml.sax.saxutils import escape
 
+from soco.exceptions import SoCoUPnPException
+
 from core.upnp_events import (
     AVTRANSPORT_EVENT_PATH,
     RENDERINGCONTROL_EVENT_PATH,
@@ -13,6 +15,28 @@ from core.upnp_events import (
 from .base import BaseDelivery
 
 logger = logging.getLogger("delivery")
+
+# UPnP "Transition not available". A soundbar playing its TV input reports
+# PLAYING but offers only Set and Play there, so every Stop and Pause is
+# answered with this (measured on a Beam, 2026-09-12).
+_TRANSITION_NOT_AVAILABLE = "701"
+
+
+def halt_if_possible(action) -> bool:
+    """Runs a SoCo `stop` or `pause`. Returns whether it did anything.
+
+    A 701 means the speaker is on a source Beacon never put there, so
+    there is nothing of ours to halt - not a failure. Raising it aborted
+    every dispatch to a soundbar whose TV was on, and left /stop unable to
+    end the session."""
+    try:
+        action()
+    except SoCoUPnPException as e:
+        if str(e.error_code) != _TRANSITION_NOT_AVAILABLE:
+            raise
+        logger.debug(f"[Sonos] nothing to halt on the current source: {e}")
+        return False
+    return True
 
 
 # Resolved SoCo devices by (lower-cased) target name — see
@@ -218,7 +242,9 @@ class SonosDelivery(BaseDelivery):
         # have visibility into.
         logger.debug(f"[Sonos:{self.target}] transport state before dispatch: {state}")
         if state in ("PLAYING", "PAUSED_PLAYBACK", "TRANSITIONING"):
-            await asyncio.to_thread(device.stop)
+            # A TV input refuses the Stop; SetAVTransportURI below switches
+            # the speaker away from it all the same.
+            await asyncio.to_thread(halt_if_possible, device.stop)
 
         # See _dispatch_uri()'s own docstring — plain `stream_url` for
         # everything except Beacon's own re-served radio endpoint, which
@@ -313,8 +339,8 @@ class SonosDelivery(BaseDelivery):
 
     async def pause(self) -> None:
         device = await asyncio.to_thread(self._get_device)
-        await asyncio.to_thread(device.pause)
-        logger.info(f"[Sonos:{self.target}] paused")
+        if await asyncio.to_thread(halt_if_possible, device.pause):
+            logger.info(f"[Sonos:{self.target}] paused")
 
     async def resume(self) -> None:
         device = await asyncio.to_thread(self._get_device)
@@ -323,8 +349,8 @@ class SonosDelivery(BaseDelivery):
 
     async def stop(self) -> None:
         device = await asyncio.to_thread(self._get_device)
-        await asyncio.to_thread(device.stop)
-        logger.info(f"[Sonos:{self.target}] stopped")
+        if await asyncio.to_thread(halt_if_possible, device.stop):
+            logger.info(f"[Sonos:{self.target}] stopped")
 
     async def get_position(self) -> float | None:
         device = await asyncio.to_thread(self._get_device)

@@ -25,6 +25,7 @@ from delivery import (
     DlnaDelivery,
     SonosDelivery,
 )
+from delivery.errors import delivery_error_response
 from routes.playback import _release_claims, playback_error_reporter
 
 logger = logging.getLogger("connect.devices")
@@ -180,7 +181,7 @@ async def join_stream(
             # else) with nothing actually playing on it.
             logger.exception("[join] Delivery error")
             await _release_claims(new_d, session)
-            return {"error": str(e)}
+            return delivery_error_response(e, new_d)
 
         _add_target(st, new_d)
 

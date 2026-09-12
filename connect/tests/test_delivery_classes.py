@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from pyatv.const import Protocol
+from soco.exceptions import SoCoUPnPException
 
 import delivery.chromecast as _chromecast_mod
 import delivery.dlna as _dlna_mod
@@ -98,6 +99,46 @@ def test_sonos_play_stops_active_transport_before_setting_uri():
     with patch.object(SonosDelivery, "_get_device", return_value=dev):
         asyncio.run(d.play("http://stream"))
     dev.stop.assert_called_once()
+
+
+def _upnp_error(code: str) -> SoCoUPnPException:
+    return SoCoUPnPException(
+        message=f"UPnP Error {code} received:  from 10.0.0.1", error_code=code, error_xml="<xml/>"
+    )
+
+
+def test_sonos_play_dispatches_over_a_tv_input_that_refuses_stop():
+    """A soundbar on its TV input reports PLAYING but answers Stop with 701
+    (measured on a Beam). That aborted every cast while the TV was on."""
+    dev = _mock_sonos_device(transport_state="PLAYING")
+    dev.stop.side_effect = _upnp_error("701")
+    d = SonosDelivery("Küche")
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        asyncio.run(d.play("http://stream"))
+    dev.avTransport.SetAVTransportURI.assert_called_once()
+    dev.avTransport.Play.assert_called_once()
+
+
+def test_sonos_play_still_fails_on_any_other_stop_error():
+    dev = _mock_sonos_device(transport_state="PLAYING")
+    dev.stop.side_effect = _upnp_error("501")
+    d = SonosDelivery("Küche")
+    with (
+        patch.object(SonosDelivery, "_get_device", return_value=dev),
+        pytest.raises(SoCoUPnPException),
+    ):
+        asyncio.run(d.play("http://stream"))
+    dev.avTransport.SetAVTransportURI.assert_not_called()
+
+
+def test_sonos_stop_and_pause_on_a_tv_input_are_not_errors():
+    dev = MagicMock()
+    dev.stop.side_effect = _upnp_error("701")
+    dev.pause.side_effect = _upnp_error("701")
+    d = SonosDelivery("Küche")
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        asyncio.run(d.stop())
+        asyncio.run(d.pause())
 
 
 def test_sonos_play_includes_album_in_metadata():

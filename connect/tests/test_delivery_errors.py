@@ -42,15 +42,16 @@ class _FakeManager:
 
 
 class TestClassify:
-    @pytest.mark.parametrize("code", ["800", "701", "714", "716"])
+    @pytest.mark.parametrize("code", ["800", "701", "702", "703", "704", "714", "716"])
     def test_a_speaker_refusing_what_it_was_handed_reads_as_rejected(self, code):
         # 800 is the one this was written for: a Sonos vendor fault, in
         # practice "I won't play that", raised for the .m3u playlist file
         # a station was published as (see core/playlist_url.py).
         assert classify_delivery_error(_upnp(code)) == REASON_REJECTED
 
-    def test_a_speaker_already_busy_is_told_apart(self):
-        assert classify_delivery_error(_upnp("715")) == REASON_BUSY
+    @pytest.mark.parametrize("code", ["705", "715"])
+    def test_a_speaker_already_busy_is_told_apart(self, code):
+        assert classify_delivery_error(_upnp(code)) == REASON_BUSY
 
     def test_an_unmapped_upnp_code_falls_back_to_unknown(self):
         # A fault code nobody has hit yet must not be guessed at - it still
@@ -112,6 +113,11 @@ class TestTransportProblems:
             ("ERROR_ACCESS_DENIED", REASON_REJECTED),
             ("ERROR_CANT_REACH_SERVER", REASON_UNREACHABLE),
             ("ERROR_CONNECT_FAILED", REASON_UNREACHABLE),
+            ("ERROR_UNSUPPORTED_FREQ", REASON_REJECTED),
+            ("ERROR_CORRUPT_FILE", REASON_REJECTED),
+            ("ERROR_NO_PLAYABLE_CONTENT", REASON_REJECTED),
+            ("ERROR_CANT_CONNECT", REASON_UNREACHABLE),
+            ("ERROR_LOST_CONNECTION", REASON_UNREACHABLE),
             ("ERROR_SOMETHING_NEW", REASON_UNKNOWN),
         ],
     )
