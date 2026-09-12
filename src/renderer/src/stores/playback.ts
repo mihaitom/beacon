@@ -543,12 +543,19 @@ export const usePlaybackStore = defineStore('playback', {
           // local playback should pick back up from.
           const castingEdge = castingActiveEdge.update(activeNow)
           if (localResumeDecided && castingEdge === 'falling') {
-            // A takeover displacing this session from its target is not the
-            // user asking to stop — picking playback back up over local
-            // speakers would be audibly wrong (nobody asked this machine to
-            // start making sound). Just go quiet instead; see ConnectStatus.
-            // displaced's comment and displace_target() in session.py.
-            if (status?.displaced) this.isPlaying = false
+            // Two ways a cast can end without this person ending it, and
+            // neither is the user asking to stop — picking playback back up
+            // over local speakers would be audibly wrong (nobody asked this
+            // machine to start making sound). Just go quiet instead. A
+            // takeover stealing the device is `displaced` (see
+            // displace_target() in session.py); a station given up on
+            // because it was stopped at the speaker itself is `orphaned`
+            // (see _radio_relay_orphaned()) — reported live 2026-09-12 as a
+            // station that had been stopped on the speaker turning up on
+            // the phone's own speaker a minute and a half later. Whatever
+            // was playing stays on the player bar either way, paused, so
+            // pressing play is still all it takes to carry on here.
+            if (status?.displaced || status?.orphaned) this.isPlaying = false
             else void this.handOffToLocalPlayback()
           }
 

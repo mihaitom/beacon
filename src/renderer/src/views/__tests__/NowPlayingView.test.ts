@@ -448,6 +448,7 @@ describe('NowPlayingView', () => {
         total_songs: 0,
         displaced: false,
         interrupted: false,
+        orphaned: false,
         delivery_error: null,
       }
     }
