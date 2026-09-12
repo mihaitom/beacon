@@ -10,11 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Support for Jellyfin 12: signing in, browsing, playback and casting all work against it. Servers on Jellyfin 10.9 and newer keep working too
 - The columns of every track list can now be chosen: right-click the column headings (or use the button at their right edge) to switch columns on and off. The choice applies to every track list and follows the account to your other devices
-- Nine more columns to choose from, alongside album, genre, year, plays and format: track and disc number, BPM, sample rate, file size, comment, path, when a track was added and when it was last played. Each can be sorted by, and a column your server has no data for is not offered at all rather than standing empty
+- Nine more columns to choose from, alongside cover, album, genre, year, plays, format and the star rating: track and disc number, BPM, sample rate, file size, comment, path, when a track was added and when it was last played. Each can be sorted by, and a column your server has no data for is not offered at all rather than standing empty
 - Shift-click selects a whole range of tracks at once, Ctrl/Cmd+A extends a selection to the entire list, and the checkbox in the column headings selects the whole list or clears the selection again
 
 ### Changed
 
+- A large Jellyfin library loads in about half the time: a 20,000-track catalog in around 18 seconds instead of 33, measured on Jellyfin 12
 - Figures in a track list now line up under each other instead of shifting about from row to row
 - Starting a station, on this device or on a speaker, now opens one connection to it instead of two, so it starts a little sooner and a station that allows only one listener at a time is no longer asked for a second
 - A station cast to a Chromecast or a DLNA speaker now sends that speaker half as many requests while it plays
@@ -25,7 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A track list kept room at its right edge for a star rating on Jellyfin and for a favorite heart on Plex, neither of which those servers have. That space now goes to the track and album names
 - The format column stayed empty for every track on a Jellyfin server
 - Album and playlist tracks from a Jellyfin server showed no genre
-- Autoplay no longer falls silent at the end of the queue when the server has nothing similar to offer for the last track. It keeps the queue going instead
+- Autoplay no longer falls silent at the end of the queue when the server has nothing similar to offer for the last track. It asks about the songs just before it, and failing that carries on with more from the same artist or something else from your library
 - Sending a station to a speaker while a track was playing no longer makes the player bar flicker: the station showed, the track came back, and the station returned a few seconds later. The elapsed time no longer starts at wherever the track had got to either
 - The buffering bar on a station sent to a speaker clears a little sooner, closer to when the speaker actually starts playing
 - A station no longer skips a moment when the phone has had it in the background for a few seconds. The connection Beacon holds keeps the audio that was missed, and it is played rather than thrown away
