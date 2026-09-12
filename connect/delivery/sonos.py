@@ -13,6 +13,7 @@ from core.upnp_events import (
 )
 
 from .base import BaseDelivery
+from .errors import DeviceNotFoundError
 
 logger = logging.getLogger("delivery")
 
@@ -193,7 +194,7 @@ class SonosDelivery(BaseDelivery):
 
         devices = list(soco.discover() or [])
         if not devices:
-            raise RuntimeError("No Sonos devices found.")
+            raise DeviceNotFoundError("No Sonos devices found.")
         for d in devices:
             try:
                 if d.player_name.lower() == self.target.lower():
@@ -205,7 +206,7 @@ class SonosDelivery(BaseDelivery):
                     f"[Sonos:{self.target}] skipping unreadable device during discovery: {e}"
                 )
         available = [d.player_name for d in devices]
-        raise RuntimeError(f"Sonos '{self.target}' not found. Available: {available}")
+        raise DeviceNotFoundError(f"Sonos '{self.target}' not found. Available: {available}")
 
     async def play(
         self,

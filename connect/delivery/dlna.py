@@ -153,10 +153,10 @@ async def _create_dmr_device(location: str, timeout: int = _COMMAND_TIMEOUT):
         raise UnsupportedDlnaDevice(upnp_device.friendly_name) from e
 
 
-# The service a renderer's volume lives on. Version 1 is what every
-# MediaRenderer implements; async-upnp-client resolves a v2/v3 device's own
-# service for this id anyway.
-_RENDERING_CONTROL = "urn:schemas-upnp-org:service:RenderingControl:1"
+# The service a renderer's volume lives on, looked up by id rather than by
+# type: a lookup by type matches the version exactly, and missed every
+# renderer implementing RenderingControl:2 or :3.
+_RENDERING_CONTROL_ID = "urn:upnp-org:serviceId:RenderingControl"
 
 # Looked up by id rather than by type, so a renderer's AVTransport:2 or :3
 # is found as well as :1.
@@ -293,7 +293,7 @@ class DlnaDelivery(BaseDelivery):
             # The renderer publishes its own event URL in its device
             # description; unlike Sonos there is no fixed path to assume
             # (see core/upnp_events.py's own comment on that assumption).
-            service = device.profile_device.service(_RENDERING_CONTROL)
+            service = device.profile_device.service_id(_RENDERING_CONTROL_ID)
             event_url = service.event_sub_url if service else None
             if not event_url:
                 return

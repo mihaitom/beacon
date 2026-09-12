@@ -292,7 +292,7 @@ def test_sonos_get_device_raises_when_none_found_at_all():
     d = SonosDelivery("Küche")
     with (
         patch("soco.discover", return_value=None),
-        pytest.raises(RuntimeError, match="No Sonos devices found"),
+        pytest.raises(DeviceNotFoundError, match="No Sonos devices found"),
     ):
         d._get_device()
 
@@ -320,7 +320,7 @@ def test_sonos_get_device_raises_with_available_names_when_target_missing():
     d = SonosDelivery("Küche")
     with (
         patch("soco.discover", return_value=[other]),
-        pytest.raises(RuntimeError, match="Wohnzimmer"),
+        pytest.raises(DeviceNotFoundError, match="Wohnzimmer"),
     ):
         d._get_device()
 
@@ -397,7 +397,7 @@ def test_get_device_rediscovers_when_the_cached_speaker_was_renamed():
 
 def test_get_device_still_raises_when_the_target_is_nowhere():
     with patch("soco.discover", return_value=[_fake_sonos("Bad")]):
-        with pytest.raises(RuntimeError, match="not found"):
+        with pytest.raises(DeviceNotFoundError, match="not found"):
             SonosDelivery("Küche")._get_device()
 
 

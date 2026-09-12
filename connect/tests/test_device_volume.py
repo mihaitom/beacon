@@ -112,7 +112,7 @@ async def test_a_dlna_renderer_that_accepts_a_subscription_stops_being_polled(mo
 
     service = type("Service", (), {"event_sub_url": "http://10.0.0.9:49152/evt/RenderingControl"})()
     device = type(
-        "Device", (), {"profile_device": type("P", (), {"service": lambda self, _: service})()}
+        "Device", (), {"profile_device": type("P", (), {"service_id": lambda self, _: service})()}
     )()
     subscribed: dict = {}
 
@@ -139,7 +139,7 @@ async def test_a_dlna_renderer_that_refuses_one_keeps_being_polled(monkeypatch):
 
     service = type("Service", (), {"event_sub_url": "http://10.0.0.9:49152/evt/RenderingControl"})()
     device = type(
-        "Device", (), {"profile_device": type("P", (), {"service": lambda self, _: service})()}
+        "Device", (), {"profile_device": type("P", (), {"service_id": lambda self, _: service})()}
     )()
 
     async def refuses(*_args, **_kwargs):
@@ -156,7 +156,7 @@ async def test_a_renderer_without_a_rendering_control_service_is_left_alone(monk
     from delivery.dlna import DlnaDelivery
 
     device = type(
-        "Device", (), {"profile_device": type("P", (), {"service": lambda self, _: None})()}
+        "Device", (), {"profile_device": type("P", (), {"service_id": lambda self, _: None})()}
     )()
     called = False
 
