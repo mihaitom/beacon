@@ -100,19 +100,39 @@ export async function readLibraryField<T>(key: string): Promise<StoredLibraryFie
   return { items: record.items, fetchedAt: record.fetchedAt }
 }
 
-/** Stores one field. Fire-and-forget: the caller already has the data, and
- * nothing it does depends on this landing.
+/** Stores one field, resolving once it is actually on disk — the same
+ * reason clearLibraryFields() below does, and worth waiting on in the same
+ * kind of place.
+ *
+ * It used to be fire-and-forget, on the grounds that the caller already has
+ * the data. It does, but the *next* reader does not: cachedFetch() hands
+ * the cached copy back over whatever the store holds in memory, and then
+ * treats a recent `fetchedAt` as reason not to re-read at all. A write
+ * still in flight therefore loses to the very list it was meant to
+ * replace — a playlist created from the queue vanished again the moment
+ * the playlists page was opened, for as long as the TTL ran. Anything that
+ * re-reads a list after changing it has to await this; a caller that only
+ * wants the write to happen eventually can still ignore it.
  *
  * `fetchedAt` is passed in rather than stamped here, so carrying an older
  * cache over keeps its real age instead of looking freshly fetched. */
-export function writeLibraryField<T>(key: string, items: T[], fetchedAt = Date.now()): void {
-  void (async () => {
+export function writeLibraryField<T>(
+  key: string,
+  items: T[],
+  fetchedAt = Date.now(),
+): Promise<void> {
+  return (async () => {
     const db = await open()
     if (!db) return
     // Structured-cloned as-is, with no JSON round trip: what used to make
     // one field's write cost the size of all four is exactly that step.
     await run(db, 'readwrite', (store) => store.put({ key, items, fetchedAt }))
-  })()
+  })().catch((error) => {
+    // Swallowed so an un-awaited caller cannot raise an unhandled
+    // rejection, and so an awaiting one is never blocked by a cache that
+    // simply is not available (see open()).
+    console.error(`[library-cache] Could not store ${key}:`, error)
+  })
 }
 
 /** Forgets the given fields — logout, or a library rescan. */

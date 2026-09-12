@@ -96,8 +96,8 @@ async function readCacheField<K extends LibraryCacheField>(
 function saveLibraryCacheField<K extends LibraryCacheField>(
   field: K,
   value: LibraryCacheTypes[K][],
-): void {
-  writeLibraryField(fieldKey(field), value)
+): Promise<void> {
+  return writeLibraryField(fieldKey(field), value)
 }
 
 /** Moves an existing localStorage blob into the store, once per account per
@@ -301,7 +301,7 @@ async function cachedFetch<K extends LibraryCacheField>(
   await store.withLoading(async () => {
     const fresh = await fetcher()
     onResult(fresh)
-    saveLibraryCacheField(field, fresh)
+    await saveLibraryCacheField(field, fresh)
   })
 }
 
@@ -360,6 +360,21 @@ const SCAN_POLL_FAILURES_ALLOWED = 3
 // (which is the whole point of this living here at all).
 let scanTimer: ReturnType<typeof setTimeout> | null = null
 let scanPollFailures = 0
+
+/** Says a playlist change went through, for the places that cannot show it
+ * themselves. A playlist you are looking at reports its own changes — the
+ * rows move, the heading counts them (see PlaylistNotice.vue) — but every
+ * other way into these actions leaves you on a page where nothing visibly
+ * happens: the queue drawer, a track's context menu, an album tile, the
+ * phone's action sheet. Emitted here rather than in each of those, because
+ * four copies of one sentence drift apart. */
+function announce(message: string): void {
+  emitter.emit('toast', {
+    level: 'success',
+    title: i18n.global.t('playlists.title'),
+    message,
+  })
+}
 
 export const useLibraryStore = defineStore('library', {
   state: (): LibraryState => ({
@@ -614,7 +629,7 @@ export const useLibraryStore = defineStore('library', {
           await fetchAlbumPages(this.client(), ALBUM_PAGE_SIZE, (page) => {
             this.albums = this.albums.concat(page)
           })
-          saveLibraryCacheField('albums', this.albums)
+          await saveLibraryCacheField('albums', this.albums)
         })
         return
       }
@@ -646,7 +661,7 @@ export const useLibraryStore = defineStore('library', {
             this.loadingCount--
           }
         })
-        saveLibraryCacheField('albums', fresh)
+        await saveLibraryCacheField('albums', fresh)
       } catch (error) {
         if (!firstPageSeen) {
           this.error = error instanceof Error ? error.message : String(error)
@@ -679,7 +694,7 @@ export const useLibraryStore = defineStore('library', {
       if (force) {
         await this.withLoading(async () => {
           this.artists = await this.client().getArtists()
-          saveLibraryCacheField('artists', this.artists)
+          await saveLibraryCacheField('artists', this.artists)
         })
         return
       }
@@ -865,7 +880,7 @@ export const useLibraryStore = defineStore('library', {
       this.allSongs = first.songs
       if (first.songs.length < PAGE_SIZE) {
         this.allSongsLoaded = true
-        saveLibraryCacheField('songs', this.allSongs)
+        await saveLibraryCacheField('songs', this.allSongs)
         return
       }
       try {
@@ -878,7 +893,7 @@ export const useLibraryStore = defineStore('library', {
           offset += PAGE_SIZE
         }
         this.allSongsLoaded = true
-        saveLibraryCacheField('songs', this.allSongs)
+        await saveLibraryCacheField('songs', this.allSongs)
       } catch (error) {
         // Whatever loaded so far stays usable — allSongsLoaded stays false
         // so leaving and revisiting /songs retries from scratch instead of
@@ -907,7 +922,7 @@ export const useLibraryStore = defineStore('library', {
         })
         this.allSongs = fresh
         this.allSongsLoaded = true
-        saveLibraryCacheField('songs', fresh)
+        await saveLibraryCacheField('songs', fresh)
       } finally {
         this.songScanProgress = null
       }
@@ -921,7 +936,7 @@ export const useLibraryStore = defineStore('library', {
       if (force) {
         await this.withLoading(async () => {
           this.playlists = await this.client().getPlaylists()
-          saveLibraryCacheField('playlists', this.playlists)
+          await saveLibraryCacheField('playlists', this.playlists)
         })
         return
       }
@@ -942,6 +957,7 @@ export const useLibraryStore = defineStore('library', {
         await this.client().createPlaylist(name, songIds)
         await this.fetchPlaylists(true)
       })
+      announce(i18n.global.t('playlists.created', { name }))
     },
 
     async addToPlaylist(playlistId: string, songIds: string[]): Promise<void> {
@@ -952,6 +968,14 @@ export const useLibraryStore = defineStore('library', {
         // refetch — same reasoning as createPlaylist()'s identical call.
         await this.fetchPlaylists(true)
       })
+      // Named after the refetch above, so a playlist created moments ago is
+      // already in the list to look up.
+      const name = this.playlists.find((playlist) => playlist.id === playlistId)?.name ?? ''
+      announce(
+        songIds.length === 1
+          ? i18n.global.t('playlists.addedOne', { name })
+          : i18n.global.t('playlists.addedMany', { count: songIds.length, name }),
+      )
     },
 
     /** Persists a new song order (see the client's setPlaylistSongs()).
@@ -1003,7 +1027,7 @@ export const useLibraryStore = defineStore('library', {
         if (cached) {
           if (updates.name !== undefined) cached.name = updates.name
           if (updates.public !== undefined) cached.public = updates.public
-          saveLibraryCacheField('playlists', this.playlists)
+          await saveLibraryCacheField('playlists', this.playlists)
         }
       })
     },
@@ -1020,7 +1044,7 @@ export const useLibraryStore = defineStore('library', {
         // go stale. createPlaylist()/updatePlaylist() already avoid this
         // (via fetchPlaylists(true) / their own saveLibraryCacheField
         // call); this was the one mutation missing it.
-        saveLibraryCacheField('playlists', this.playlists)
+        await saveLibraryCacheField('playlists', this.playlists)
       })
     },
 

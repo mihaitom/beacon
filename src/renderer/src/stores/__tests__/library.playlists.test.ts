@@ -1,6 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useLibraryStore } from '../library'
+import { emitter } from '@/emitter'
+import type Toast from '@/types/toast'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import type { Playlist } from '@/types/library'
 
@@ -9,11 +11,15 @@ import type { Playlist } from '@/types/library'
 // library.cache.test.ts does. No account is logged in under test, so the
 // record key is the bare field name.
 const cache = vi.hoisted(() => new Map<string, { items: unknown[]; fetchedAt: number }>())
+// The real write goes to IndexedDB and takes a moment to land. Tests that
+// care about that moment turn this up; everything else leaves it at zero.
+const writeDelayMs = vi.hoisted(() => ({ value: 0 }))
 
 vi.mock('@/services/library/libraryCacheStore', () => ({
   LEGACY_CACHE_KEY: 'beacon.library-cache',
   readLibraryField: vi.fn(async (key: string) => cache.get(key) ?? null),
-  writeLibraryField: vi.fn((key: string, items: unknown[], fetchedAt = Date.now()) => {
+  writeLibraryField: vi.fn(async (key: string, items: unknown[], fetchedAt = Date.now()) => {
+    if (writeDelayMs.value) await new Promise((resolve) => setTimeout(resolve, writeDelayMs.value))
     cache.set(key, { items, fetchedAt })
   }),
   clearLibraryFields: vi.fn((keys: string[]) => {
@@ -61,12 +67,24 @@ function stubClient(
 }
 
 describe('library mutations', () => {
+  let toasts: Toast[]
+
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
     cache.clear()
+    writeDelayMs.value = 0
+    toasts = []
+    // The store emits on the real bus (see its announce()), not through a
+    // component's this.$emitter.
+    emitter.all.clear()
+    emitter.on('toast', (toast) => {
+      if (!Array.isArray(toast)) toasts.push(toast)
+    })
     vi.restoreAllMocks()
   })
+
+  afterEach(() => emitter.all.clear())
 
   it('writes a deleted playlist out of the cache, not just out of memory', async () => {
     // Otherwise the next mount reads the cache-first path and, within the
@@ -104,6 +122,59 @@ describe('library mutations', () => {
 
     expect(client.addToPlaylist).toHaveBeenCalledWith('p1', ['s1', 's2'])
     expect(library.playlists[0]!.songCount).toBe(5)
+  })
+
+  it('keeps a newly created playlist visible once the page is reopened', async () => {
+    // The bug this guards: creating a playlist re-reads the list and writes
+    // it to the cache, but the write is asynchronous. A page that then asks
+    // for the list unforced (PlaylistsView's created()) gets whatever the
+    // cache holds, and cachedFetch() hands that back over the newer list in
+    // memory — then treats its recent timestamp as reason not to re-read.
+    // The playlist created from the queue drawer disappeared again for as
+    // long as the TTL ran, on Jellyfin a whole day.
+    const library = useLibraryStore()
+    let listing = [makePlaylist('a')]
+    stubClient({
+      getPlaylists: vi.fn(async () => listing),
+      createPlaylist: vi.fn(async () => {
+        listing = [makePlaylist('a'), makePlaylist('new')]
+      }),
+    })
+
+    await library.fetchPlaylists() // an earlier visit fills the cache
+    writeDelayMs.value = 50 // from here the cache takes its time, as it does
+    await library.createPlaylist('New one')
+    expect(library.playlists.map((playlist) => playlist.id)).toEqual(['a', 'new'])
+
+    await library.fetchPlaylists() // reopening the playlists page
+
+    expect(library.playlists.map((playlist) => playlist.id)).toEqual(['a', 'new'])
+  })
+
+  it('says so when a playlist is created, for the pages that cannot show it', async () => {
+    const library = useLibraryStore()
+    stubClient()
+
+    await library.createPlaylist('Road trip')
+
+    expect(toasts.at(-1)?.level).toBe('success')
+    expect(toasts.at(-1)?.message).toContain('Road trip')
+  })
+
+  it('names the playlist a song was added to', async () => {
+    const library = useLibraryStore()
+    stubClient({
+      getPlaylists: vi.fn(async () => [makePlaylist('p1', { name: 'Road trip' })]),
+    })
+
+    await library.addToPlaylist('p1', ['s1'])
+    expect(toasts.at(-1)?.message).toContain('Road trip')
+
+    await library.addToPlaylist('p1', ['s1', 's2', 's3'])
+    // The count matters as much as the name: "add to playlist" on a
+    // multi-selection is one gesture and three tracks.
+    expect(toasts.at(-1)?.message).toContain('3')
+    expect(toasts.at(-1)?.message).toContain('Road trip')
   })
 
   it('refetches the list after removing songs, so the song count is not left stale', async () => {

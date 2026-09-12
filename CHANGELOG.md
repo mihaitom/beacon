@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Shift-click selects a whole range of tracks at once, Ctrl/Cmd+A extends a selection to the entire list, and the checkbox in the column headings selects the whole list or clears the selection again
 - An album page for the phone: tapping an album in the library, or the album name on Now Playing, opens it with the tracks in their own order and a button to play the lot
 - Tracks can be taken out of a playlist again, one or a whole selection at a time, from the track menu on the desktop and the action sheet on the phone. A notice above the list offers to undo it, and stays there until you put it away or leave the page
+- Creating a playlist, or adding tracks to one, now says so from wherever you did it: the queue, a track's menu, an album tile or the phone's action sheet. On the playlist's own page nothing is announced, because the change is already on screen there
 
 ### Changed
 
@@ -42,6 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A volume drag on a phone that the page took for a scroll left the slider running loose behind it: later swipes anywhere on the screen went on changing the speaker's level, one near the edge of the screen all the way down to silent, and the slider stopped following the speaker's own dial altogether. A finger on the slider now belongs to it for as long as the drag lasts
 - Moving a song to a new position in the queue on the phone no longer starts playing that song. The same fix in 1.1.0 only ever took hold with a mouse, never by touch
 - A playlist with no tracks in it now says so, instead of showing a bare row of column headings with nothing under it
+- A playlist created from the queue could disappear from the playlists page again, sometimes for an hour and on a Jellyfin server for a day, while the server had it all along. It stays where you put it now, and the same went for a track added to a playlist from anywhere outside it
 
 ## [1.2.1] - 2026-09-08
 
