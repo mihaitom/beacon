@@ -48,6 +48,7 @@ import httpx
 import pytest
 from starlette.requests import Request
 
+from media.base import split_artwork_id
 from media.jellyfin import JellyfinClient
 from media.plex import PlexClient
 
@@ -210,6 +211,97 @@ async def test_plex_adds_and_removes_playlist_entries(plex, plex_playlist):
     assert [e["id"] for e in entries] == [song_ids[0], song_ids[2], extra]
 
 
+async def test_plex_removes_several_playlist_entries_at_once(plex, plex_playlist):
+    """Removing a multi-song selection, which the app can do since tracks
+    became removable from the track menu.
+
+    Plex has no bulk delete: the bridge resolves every position to its
+    entry id from one listing and then issues a DELETE per entry. If it
+    ever re-read the playlist between those deletes, the later positions
+    would point into an already-shortened list — which is what the two
+    removals below, sent in opposite orders, would catch.
+    """
+    from media.plex_bridge import get_playlist, update_playlist
+
+    playlist_id, song_ids = plex_playlist
+    extra = (await _plex_song_ids(plex, 6))[3:]
+
+    await update_playlist(MultiParams({"songIdToAdd": extra}, playlistId=playlist_id), plex)
+    all_songs = [*song_ids, *extra]
+    entries = (await get_playlist({"id": playlist_id}, plex))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == all_songs
+
+    # Highest position first, the order the app sends them in.
+    await update_playlist(
+        MultiParams({"songIndexToRemove": ["4", "2", "0"]}, playlistId=playlist_id), plex
+    )
+    entries = (await get_playlist({"id": playlist_id}, plex))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == [all_songs[1], all_songs[3], all_songs[5]]
+
+    # And ascending, to show the result really doesn't depend on the order
+    # the positions arrive in.
+    await update_playlist(
+        MultiParams({"songIndexToRemove": ["0", "1"]}, playlistId=playlist_id), plex
+    )
+    entries = (await get_playlist({"id": playlist_id}, plex))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == [all_songs[5]]
+
+
+async def test_plex_keeps_a_playlist_that_loses_its_last_entry(plex, plex_playlist):
+    """Emptying a playlist is not the same as deleting it — the undo behind
+    a removal needs something left to restore into.
+
+    Worth asking of Plex in particular: it cannot *create* an empty
+    playlist (its creation endpoint always needs a starting uri, which is
+    what capabilities.ts's emptyPlaylistCreation is about), so whether it
+    can hold one does not follow.
+    """
+    from media.plex_bridge import create_playlist, get_playlist, get_playlists, update_playlist
+
+    playlist_id, song_ids = plex_playlist
+
+    await update_playlist(
+        MultiParams({"songIndexToRemove": ["2", "1", "0"]}, playlistId=playlist_id), plex
+    )
+    playlist = (await get_playlist({"id": playlist_id}, plex))["playlist"]
+    assert playlist.get("entry", []) == []
+    listed = (await get_playlists(_params(), plex))["playlists"]["playlist"]
+    assert any(p["id"] == playlist_id for p in listed), "the playlist went with its last track"
+
+    # Exactly what an undo sends: the whole list, into an empty playlist.
+    await create_playlist(MultiParams({"songId": song_ids}, playlistId=playlist_id), plex)
+    entries = (await get_playlist({"id": playlist_id}, plex))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == song_ids
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Plex refuses the duplicate: PUT /playlists/{id}/items with the uri of a "
+    "song the playlist already holds returns ok and adds nothing (measured 2026-09-12). "
+    "A Plex playlist therefore cannot hold the same song twice through this call, and "
+    "an undo cannot bring a second copy back — see docs/investigations/"
+    "playlist-duplicate-entries.md",
+)
+async def test_plex_removes_the_named_copy_of_a_song_listed_twice(plex, plex_playlist):
+    """A playlist may hold the same song more than once. Those are separate
+    entries with separate playlistItemIDs, and only the position says which
+    one is meant — the case that rules out ever resolving a removal by song
+    id."""
+    from media.plex_bridge import get_playlist, update_playlist
+
+    playlist_id, song_ids = plex_playlist
+    duplicate = song_ids[0]
+
+    await update_playlist(MultiParams({"songIdToAdd": [duplicate]}, playlistId=playlist_id), plex)
+    entries = (await get_playlist({"id": playlist_id}, plex))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == [*song_ids, duplicate]
+
+    # The second copy, at the end — the first one has to survive.
+    await update_playlist(MultiParams({"songIndexToRemove": ["3"]}, playlistId=playlist_id), plex)
+    entries = (await get_playlist({"id": playlist_id}, plex))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == song_ids
+
+
 async def test_plex_renames_a_playlist(plex, plex_playlist):
     from media.plex_bridge import get_playlist, update_playlist
 
@@ -322,6 +414,89 @@ async def test_jellyfin_adds_and_removes_playlist_entries(jellyfin, jellyfin_pla
     assert [e["id"] for e in entries] == [song_ids[0], song_ids[2], extra]
 
 
+async def test_jellyfin_removes_several_playlist_entries_at_once(jellyfin, jellyfin_playlist):
+    """Removing a multi-song selection. Unlike Plex this goes out as a
+    single DELETE with every PlaylistItemId in one comma-separated
+    EntryIds — a list form nothing exercised until tracks became removable
+    from the track menu."""
+    from media.jellyfin_bridge import get_playlist, update_playlist
+
+    playlist_id, song_ids = jellyfin_playlist
+    extra = (await _jellyfin_song_ids(jellyfin, 6))[3:]
+
+    await update_playlist(MultiParams({"songIdToAdd": extra}, playlistId=playlist_id), jellyfin)
+    all_songs = [*song_ids, *extra]
+    entries = (await get_playlist({"id": playlist_id}, jellyfin))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == all_songs
+
+    # Highest position first, the order the app sends them in.
+    await update_playlist(
+        MultiParams({"songIndexToRemove": ["4", "2", "0"]}, playlistId=playlist_id), jellyfin
+    )
+    entries = (await get_playlist({"id": playlist_id}, jellyfin))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == [all_songs[1], all_songs[3], all_songs[5]]
+
+    # And ascending, to show the result really doesn't depend on the order
+    # the positions arrive in.
+    await update_playlist(
+        MultiParams({"songIndexToRemove": ["0", "1"]}, playlistId=playlist_id), jellyfin
+    )
+    entries = (await get_playlist({"id": playlist_id}, jellyfin))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == [all_songs[5]]
+
+
+async def test_jellyfin_keeps_a_playlist_that_loses_its_last_entry(jellyfin, jellyfin_playlist):
+    """See the Plex case above — emptying a playlist must leave it standing,
+    or the undo behind a removal has nowhere to put the tracks back."""
+    from media.jellyfin_bridge import create_playlist, get_playlist, get_playlists, update_playlist
+
+    playlist_id, song_ids = jellyfin_playlist
+
+    await update_playlist(
+        MultiParams({"songIndexToRemove": ["2", "1", "0"]}, playlistId=playlist_id), jellyfin
+    )
+    playlist = (await get_playlist({"id": playlist_id}, jellyfin))["playlist"]
+    assert playlist.get("entry", []) == []
+    listed = (await get_playlists(_params(), jellyfin))["playlists"]["playlist"]
+    assert any(p["id"] == playlist_id for p in listed), "the playlist went with its last track"
+
+    await create_playlist(MultiParams({"songId": song_ids}, playlistId=playlist_id), jellyfin)
+    entries = (await get_playlist({"id": playlist_id}, jellyfin))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == song_ids
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Neither Jellyfin generation manages this, for opposite reasons (both "
+    "measured 2026-09-12): 10.9.11 refuses to hold the same song twice at all, so the "
+    "duplicate this adds never appears; 12.0.0 takes it but reports PlaylistItemId "
+    "identical to the item's own Id, leaving the two copies indistinguishable so that "
+    "DELETE ?EntryIds= removes both — see docs/investigations/"
+    "playlist-duplicate-entries.md",
+)
+async def test_jellyfin_removes_the_named_copy_of_a_song_listed_twice(jellyfin, jellyfin_playlist):
+    """The same song twice is two entries sharing one song id, told apart
+    only by their PlaylistItemId — see _playlist_entries' own comment. Only
+    the position says which copy a removal means."""
+    from media.jellyfin_bridge import get_playlist, update_playlist
+
+    playlist_id, song_ids = jellyfin_playlist
+    duplicate = song_ids[0]
+
+    await update_playlist(
+        MultiParams({"songIdToAdd": [duplicate]}, playlistId=playlist_id), jellyfin
+    )
+    entries = (await get_playlist({"id": playlist_id}, jellyfin))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == [*song_ids, duplicate]
+
+    # The second copy, at the end — the first one has to survive.
+    await update_playlist(
+        MultiParams({"songIndexToRemove": ["3"]}, playlistId=playlist_id), jellyfin
+    )
+    entries = (await get_playlist({"id": playlist_id}, jellyfin))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == song_ids
+
+
 async def test_jellyfin_favorites_round_trip(jellyfin):
     """getStarred2 makes three separate calls because it was never verified
     whether Filters=IsFavorite combines with several IncludeItemTypes in one
@@ -380,6 +555,12 @@ async def test_jellyfin_browsing_returns_usable_shapes(jellyfin):
 
 
 async def test_jellyfin_reads_the_files_own_lyrics(jellyfin):
+    """Which of Jellyfin's two lyric sources this covers is decided by the id
+    it is given, and they are not equivalent: only a lyric read out of the
+    media file's own tag carries the trailing NUL byte asserted below, and
+    only a server from 10.10 on reads one at all (10.9 sees a sidecar `.lrc`
+    and nothing else — see docs/investigations/jellyfin-10.9-vs-12.md). Point
+    it at a tagged track wherever the server can read one."""
     item_id = os.environ.get("JELLYFIN_TEST_LYRICS_ITEM_ID", "")
     if not item_id:
         pytest.skip("JELLYFIN_TEST_LYRICS_ITEM_ID not set")
@@ -593,6 +774,92 @@ async def test_subsonic_replaces_a_playlists_songs_in_the_order_given(subsonic):
         await subsonic.call("deletePlaylist.view", id=created["id"])
 
 
+@pytest.fixture
+async def subsonic_playlist(subsonic: SubsonicLive):
+    """A throwaway playlist of six distinct tracks, deleted again whatever
+    the test does. Six because the removal tests below take three out and
+    still need something left to check the order of."""
+    songs = [
+        s["id"]
+        for s in (await subsonic.call("getRandomSongs.view", size="6"))["randomSongs"]["song"]
+    ]
+    # getRandomSongs can in principle repeat one, which would make "did the
+    # right entry go?" unanswerable — the duplicate case is built on purpose
+    # in its own test below.
+    assert len(set(songs)) == 6, "getRandomSongs returned the same track twice"
+
+    name = f"Beacon live test {uuid.uuid4().hex[:8]}"
+    await subsonic.call("createPlaylist.view", name=name, songId=songs)
+    playlists = (await subsonic.call("getPlaylists.view"))["playlists"]["playlist"]
+    created = next(p for p in playlists if p["name"] == name)
+    try:
+        yield created["id"], songs
+    finally:
+        await subsonic.call("deletePlaylist.view", id=created["id"])
+
+
+async def test_subsonic_removes_several_playlist_entries_at_once(subsonic, subsonic_playlist):
+    """The one path where the positions really do reach a server as
+    positions — Jellyfin and Plex go through a bridge that turns them into
+    per-entry ids first (see their own tests above), so this is the only
+    place Beacon's assumption is actually on the line: that Navidrome
+    resolves every songIndexToRemove against the list as it was, not
+    against a list already shortened by the earlier ones.
+
+    The app sends them highest-first for exactly that reason; both orders
+    are checked here, because if the assumption is wrong the descending
+    case would quietly keep working and the ascending one would not.
+    """
+    playlist_id, songs = subsonic_playlist
+
+    await subsonic.call(
+        "updatePlaylist.view", playlistId=playlist_id, songIndexToRemove=["4", "2", "0"]
+    )
+    entries = (await subsonic.call("getPlaylist.view", id=playlist_id))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == [songs[1], songs[3], songs[5]]
+
+    await subsonic.call("updatePlaylist.view", playlistId=playlist_id, songIndexToRemove=["0", "1"])
+    entries = (await subsonic.call("getPlaylist.view", id=playlist_id))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == [songs[5]]
+
+
+async def test_subsonic_keeps_a_playlist_that_loses_its_last_entry(subsonic, subsonic_playlist):
+    """See the Plex case above. Navidrome answers an emptied playlist by
+    leaving `entry` out of the response altogether rather than sending an
+    empty list, which is why mapPlaylist() reads it as `raw.entry ?? []`."""
+    playlist_id, songs = subsonic_playlist
+
+    await subsonic.call(
+        "updatePlaylist.view",
+        playlistId=playlist_id,
+        songIndexToRemove=[str(i) for i in reversed(range(len(songs)))],
+    )
+    playlist = (await subsonic.call("getPlaylist.view", id=playlist_id))["playlist"]
+    assert playlist.get("entry", []) == []
+    listed = (await subsonic.call("getPlaylists.view"))["playlists"]["playlist"]
+    assert any(p["id"] == playlist_id for p in listed), "the playlist went with its last track"
+
+    await subsonic.call("createPlaylist.view", playlistId=playlist_id, songId=songs)
+    entries = (await subsonic.call("getPlaylist.view", id=playlist_id))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == songs
+
+
+async def test_subsonic_removes_the_named_copy_of_a_song_listed_twice(subsonic, subsonic_playlist):
+    """A playlist may hold the same song twice, and a removal has to take
+    the copy that was picked — which is why the app never resolves one by
+    song id."""
+    playlist_id, songs = subsonic_playlist
+
+    await subsonic.call("updatePlaylist.view", playlistId=playlist_id, songIdToAdd=[songs[0]])
+    entries = (await subsonic.call("getPlaylist.view", id=playlist_id))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == [*songs, songs[0]]
+
+    # The second copy, at the end — the one at position 0 has to survive.
+    await subsonic.call("updatePlaylist.view", playlistId=playlist_id, songIndexToRemove=["6"])
+    entries = (await subsonic.call("getPlaylist.view", id=playlist_id))["playlist"]["entry"]
+    assert [e["id"] for e in entries] == songs
+
+
 async def test_subsonic_serves_the_files_own_lyrics(subsonic):
     song_id = os.environ.get("SUBSONIC_TEST_LYRICS_SONG_ID", "")
     if not song_id:
@@ -652,14 +919,25 @@ def _assert_looks_like_an_image(response, body: bytes) -> None:
     assert "content-length" not in {k.lower() for k in response.headers}
 
 
+def _album_with_real_artwork(albums: list[dict]) -> str:
+    """The cover art id of the first album the server actually has a picture
+    for. Both bridges always fill `coverArt` and only attach the artwork
+    version when there is artwork (see media/base.py's artwork_id), so the
+    field alone says nothing: picking blindly hits an album without a
+    picture as soon as the library holds one, and the 404 reads like a
+    broken bridge (it did on a fresh Jellyfin 10.9 library, 2026-09-12)."""
+    versioned = [a["coverArt"] for a in albums if split_artwork_id(a.get("coverArt", ""))[1]]
+    assert versioned, "no album with real artwork came back"
+    return versioned[0]
+
+
 async def test_jellyfin_serves_real_cover_art(jellyfin):
     from media.jellyfin_bridge import get_album_list2, handle
 
-    albums = (await get_album_list2(_params(type="alphabeticalByName", size="5"), jellyfin))[
+    albums = (await get_album_list2(_params(type="alphabeticalByName", size="25"), jellyfin))[
         "albumList2"
     ]["album"]
-    cover_id = next((a["coverArt"] for a in albums if a.get("coverArt")), "")
-    assert cover_id, "no album with cover art came back"
+    cover_id = _album_with_real_artwork(albums)
 
     response = await handle(
         "getCoverArt.view",
@@ -673,11 +951,10 @@ async def test_jellyfin_serves_real_cover_art(jellyfin):
 async def test_plex_serves_real_cover_art(plex):
     from media.plex_bridge import get_album_list2, handle
 
-    albums = (await get_album_list2(_params(type="alphabeticalByName", size="5"), plex))[
+    albums = (await get_album_list2(_params(type="alphabeticalByName", size="25"), plex))[
         "albumList2"
     ]["album"]
-    cover_id = next((a["coverArt"] for a in albums if a.get("coverArt")), "")
-    assert cover_id, "no album with cover art came back"
+    cover_id = _album_with_real_artwork(albums)
 
     response = await handle(
         "getCoverArt.view",

@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Nine more columns to choose from, alongside cover, album, genre, year, plays, format and the star rating: track and disc number, BPM, sample rate, file size, comment, path, when a track was added and when it was last played. Each can be sorted by, and a column your server has no data for is not offered at all rather than standing empty
 - Shift-click selects a whole range of tracks at once, Ctrl/Cmd+A extends a selection to the entire list, and the checkbox in the column headings selects the whole list or clears the selection again
 - An album page for the phone: tapping an album in the library, or the album name on Now Playing, opens it with the tracks in their own order and a button to play the lot
+- Tracks can be taken out of a playlist again, one or a whole selection at a time, from the track menu on the desktop and the action sheet on the phone. A notice above the list offers to undo it, and stays there until you put it away or leave the page
 
 ### Changed
 
@@ -40,6 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The volume slider snapped back to roughly where the drag began after being let go while casting to a speaker, most visibly on a phone. Every moment of the drag was sent to the speaker as its own command, two dozen for one swipe, and it ended up at whichever of them it happened to answer last. It is now told once at a time, and the level you let go at is the last one it gets
 - A volume drag on a phone that the page took for a scroll left the slider running loose behind it: later swipes anywhere on the screen went on changing the speaker's level, one near the edge of the screen all the way down to silent, and the slider stopped following the speaker's own dial altogether. A finger on the slider now belongs to it for as long as the drag lasts
 - Moving a song to a new position in the queue on the phone no longer starts playing that song. The same fix in 1.1.0 only ever took hold with a mouse, never by touch
+- A playlist with no tracks in it now says so, instead of showing a bare row of column headings with nothing under it
 
 ## [1.2.1] - 2026-09-08
 

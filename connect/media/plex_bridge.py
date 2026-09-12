@@ -895,6 +895,9 @@ async def _set_playlist_songs(playlist_id: str, song_ids: list[str], media: Plex
 
 
 async def _add_to_playlist(playlist_id: str, song_ids: list[str], media: PlexClient) -> None:
+    # Plex answers ok and adds nothing for a song the playlist already holds,
+    # so this cannot produce a second copy — see
+    # docs/investigations/playlist-duplicate-entries.md.
     await _px_request(
         "PUT",
         media,

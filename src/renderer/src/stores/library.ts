@@ -965,6 +965,37 @@ export const useLibraryStore = defineStore('library', {
       await this.client().setPlaylistSongs(playlistId, songIds)
     },
 
+    /** Drops the entries at these positions (see the client's
+     * removeFromPlaylist()). Outside withLoading() for the same reason as
+     * reorderPlaylist() above — but unlike a reorder this does change
+     * songCount, so PlaylistsView's cached list has to be refreshed the
+     * way addToPlaylist() does it. */
+    async removeFromPlaylist(playlistId: string, songIndexes: number[]): Promise<void> {
+      await this.client().removeFromPlaylist(playlistId, songIndexes)
+      await this.refreshPlaylistCache()
+    },
+
+    /** Puts a playlist back to exactly this list of songs — the undo path
+     * for removeFromPlaylist(). setPlaylistSongs() re-adds what is missing
+     * rather than only reordering (see its own comment, and the bridges'
+     * _set_playlist_songs), so a removed entry really does come back. */
+    async restorePlaylistSongs(playlistId: string, songIds: string[]): Promise<void> {
+      await this.client().setPlaylistSongs(playlistId, songIds)
+      await this.refreshPlaylistCache()
+    },
+
+    /** Re-reads the playlist list after a write that changed a songCount.
+     * Its own failure is not the write's failure: the entry really is gone
+     * (or back), and passing this on would report a removal that worked as
+     * one that didn't — and offer to undo it. */
+    async refreshPlaylistCache(): Promise<void> {
+      try {
+        await this.fetchPlaylists(true)
+      } catch (error) {
+        console.error('[library] Could not refresh the playlist list after a write:', error)
+      }
+    },
+
     async updatePlaylist(id: string, updates: { name?: string; public?: boolean }): Promise<void> {
       await this.withLoading(async () => {
         await this.client().updatePlaylist(id, updates)

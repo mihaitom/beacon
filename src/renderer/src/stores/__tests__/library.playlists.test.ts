@@ -46,6 +46,7 @@ function stubClient(
     getPlaylists: vi.fn().mockResolvedValue([]),
     createPlaylist: vi.fn().mockResolvedValue(undefined),
     addToPlaylist: vi.fn().mockResolvedValue(undefined),
+    removeFromPlaylist: vi.fn().mockResolvedValue(undefined),
     setPlaylistSongs: vi.fn().mockResolvedValue(undefined),
     updatePlaylist: vi.fn().mockResolvedValue(undefined),
     deletePlaylist: vi.fn().mockResolvedValue(undefined),
@@ -103,6 +104,64 @@ describe('library mutations', () => {
 
     expect(client.addToPlaylist).toHaveBeenCalledWith('p1', ['s1', 's2'])
     expect(library.playlists[0]!.songCount).toBe(5)
+  })
+
+  it('refetches the list after removing songs, so the song count is not left stale', async () => {
+    const library = useLibraryStore()
+    const client = stubClient({
+      getPlaylists: vi.fn().mockResolvedValue([makePlaylist('p1', { songCount: 1 })]),
+    })
+    library.playlists = [makePlaylist('p1', { songCount: 3 })]
+
+    await library.removeFromPlaylist('p1', [2, 0])
+
+    expect(client.removeFromPlaylist).toHaveBeenCalledWith('p1', [2, 0])
+    expect(library.playlists[0]!.songCount).toBe(1)
+  })
+
+  it('removes without touching the shared loading flag', async () => {
+    // Same reasoning as the reorder below: the row is already gone from
+    // the view, so a loader over it would only flash.
+    const library = useLibraryStore()
+    const client = stubClient()
+    let loadingDuringCall = false
+    client.removeFromPlaylist!.mockImplementation(() => {
+      loadingDuringCall = library.loading
+      return Promise.resolve()
+    })
+
+    await library.removeFromPlaylist('p1', [0])
+
+    expect(loadingDuringCall).toBe(false)
+  })
+
+  it('restores a playlist by sending the complete list back, and refreshes the count', async () => {
+    const library = useLibraryStore()
+    const client = stubClient({
+      getPlaylists: vi.fn().mockResolvedValue([makePlaylist('p1', { songCount: 3 })]),
+    })
+    library.playlists = [makePlaylist('p1', { songCount: 2 })]
+
+    await library.restorePlaylistSongs('p1', ['a', 'b', 'c'])
+
+    expect(client.setPlaylistSongs).toHaveBeenCalledWith('p1', ['a', 'b', 'c'])
+    expect(library.playlists[0]!.songCount).toBe(3)
+  })
+
+  it('still counts as done when only the list refresh fails', async () => {
+    // The entry really is gone by then. Passing the refresh's failure on
+    // would report a removal that worked as one that didn't, and offer to
+    // undo it.
+    const library = useLibraryStore()
+    const client = stubClient({
+      getPlaylists: vi.fn().mockRejectedValue(new Error('offline')),
+    })
+
+    await expect(library.removeFromPlaylist('p1', [0])).resolves.toBeUndefined()
+    await expect(library.restorePlaylistSongs('p1', ['a'])).resolves.toBeUndefined()
+
+    expect(client.removeFromPlaylist).toHaveBeenCalledWith('p1', [0])
+    expect(client.setPlaylistSongs).toHaveBeenCalledWith('p1', ['a'])
   })
 
   it('reorders without touching the shared loading flag', async () => {

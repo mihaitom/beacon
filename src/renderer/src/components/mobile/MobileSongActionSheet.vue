@@ -34,6 +34,12 @@
           <v-list-item-title>{{ $t('common.addToPlaylistMenu') }}</v-list-item-title>
           <template #append><v-icon icon="mdi-menu-right" /></template>
         </v-list-item>
+        <!-- Only on a playlist's own page — the album page and the library
+           - open this same sheet, where "the playlist" would mean nothing. -->
+        <v-list-item v-if="removable" @click="remove">
+          <template #prepend><v-icon icon="mdi-playlist-minus" /></template>
+          <v-list-item-title>{{ $t('library.removeFromPlaylist') }}</v-list-item-title>
+        </v-list-item>
       </v-list>
       <v-list v-else density="compact" class="mobile-song-actions__playlists">
         <v-list-item @click="createPlaylistWithSong">
@@ -74,8 +80,14 @@ export default {
       type: Object as () => Song | null,
       default: null,
     },
+    // Set by the playlist page only (see its own comment) — everywhere else
+    // this sheet opens, there is no playlist to remove from.
+    removable: {
+      type: Boolean,
+      default: false,
+    },
   },
-  emits: ['update:modelValue'],
+  emits: ['update:modelValue', 'remove'],
   data() {
     return {
       playlistPicker: false,
@@ -112,6 +124,12 @@ export default {
       const song = this.song
       if (!song) return
       this.act(() => this.playbackStore.playSongList([song], 0))
+    },
+    // The page owns the removal itself — it is the only side that knows
+    // which playlist this is and which entry the sheet was opened on.
+    remove() {
+      if (!this.song) return
+      this.act(() => this.$emit('remove'))
     },
     playNext() {
       const song = this.song

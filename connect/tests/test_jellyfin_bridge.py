@@ -732,6 +732,59 @@ def test_remove_from_playlist_translates_index_to_playlist_item_id(
     assert delete_call[2]["EntryIds"] == "pi-2"
 
 
+def test_remove_from_playlist_takes_several_indexes_at_once(client, jellyfin_session, monkeypatch):
+    """Removing a multi-song selection is one call with several positions.
+
+    The positions are resolved against the playlist's own order, not
+    against the order they arrive in — the client sends them highest-first
+    so that a backend applying them one by one can't shift the later ones,
+    and this bridge must land on the same entries either way.
+    """
+    fake_client, calls = _fake_jf_client(
+        {
+            "/Playlists/p1/Items": {
+                "Items": [
+                    {"Id": "s1", "PlaylistItemId": "pi-1"},
+                    {"Id": "s2", "PlaylistItemId": "pi-2"},
+                    {"Id": "s3", "PlaylistItemId": "pi-3"},
+                    {"Id": "s4", "PlaylistItemId": "pi-4"},
+                ]
+            }
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get(
+        "/rest/updatePlaylist.view?playlistId=p1"
+        "&songIndexToRemove=3&songIndexToRemove=1&songIndexToRemove=0"
+    )
+    assert r.status_code == 200
+    delete_calls = [c for c in calls if c[0] == "DELETE"]
+    # One request, not one per entry — Jellyfin deletes by a list of ids.
+    assert len(delete_calls) == 1
+    assert delete_calls[0][2]["EntryIds"] == "pi-4,pi-2,pi-1"
+
+
+def test_remove_from_playlist_ignores_positions_the_playlist_does_not_have(
+    client, jellyfin_session, monkeypatch
+):
+    """A stale index (the playlist shrank since the client last read it)
+    drops out instead of raising or, worse, wrapping round to another
+    entry."""
+    fake_client, calls = _fake_jf_client(
+        {"/Playlists/p1/Items": {"Items": [{"Id": "s1", "PlaylistItemId": "pi-1"}]}}
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get(
+        "/rest/updatePlaylist.view?playlistId=p1&songIndexToRemove=7&songIndexToRemove=0"
+    )
+    assert r.status_code == 200
+    delete_calls = [c for c in calls if c[0] == "DELETE"]
+    assert len(delete_calls) == 1
+    assert delete_calls[0][2]["EntryIds"] == "pi-1"
+
+
 def test_update_playlist_rename_only_fails_cleanly(client, jellyfin_session, monkeypatch):
     fake_client, _calls = _fake_jf_client()
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)

@@ -797,6 +797,64 @@ def test_update_playlist_removes_by_index(client, plex_session, monkeypatch):
     assert delete_calls[0][1].endswith("/playlists/5001/items/112")
 
 
+def test_update_playlist_removes_several_indexes_at_once(client, plex_session, monkeypatch):
+    """Removing a multi-song selection. Plex has no bulk delete, so this is
+    one DELETE per entry — but every position is resolved to its entry id
+    from a single listing first, so the deletes can't shift each other.
+    """
+    fake_client, calls = _fake_px_client(
+        {
+            "/playlists/5001/items": {
+                "MediaContainer": {
+                    "Metadata": [
+                        {"ratingKey": "9001", "playlistItemID": 111},
+                        {"ratingKey": "9002", "playlistItemID": 112},
+                        {"ratingKey": "9003", "playlistItemID": 113},
+                        {"ratingKey": "9004", "playlistItemID": 114},
+                    ]
+                }
+            }
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get(
+        "/rest/updatePlaylist.view?playlistId=5001"
+        "&songIndexToRemove=3&songIndexToRemove=1&songIndexToRemove=0"
+    )
+    assert r.status_code == 200
+    delete_calls = [c for c in calls if c[0] == "DELETE"]
+    assert len(delete_calls) == 3
+    assert [c[1].rsplit("/", 1)[-1] for c in delete_calls] == ["114", "112", "111"]
+    # The listing is read once, before any of them — re-reading between
+    # deletes would resolve later positions against an already-shortened
+    # playlist.
+    assert calls.index(delete_calls[0]) == 1
+
+
+def test_update_playlist_ignores_positions_the_playlist_does_not_have(
+    client, plex_session, monkeypatch
+):
+    """A stale index drops out rather than raising or hitting another
+    entry — see the Jellyfin bridge's identical case."""
+    fake_client, calls = _fake_px_client(
+        {
+            "/playlists/5001/items": {
+                "MediaContainer": {"Metadata": [{"ratingKey": "9001", "playlistItemID": 111}]}
+            }
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get(
+        "/rest/updatePlaylist.view?playlistId=5001&songIndexToRemove=7&songIndexToRemove=0"
+    )
+    assert r.status_code == 200
+    delete_calls = [c for c in calls if c[0] == "DELETE"]
+    assert len(delete_calls) == 1
+    assert delete_calls[0][1].endswith("/playlists/5001/items/111")
+
+
 def test_update_playlist_renames(client, plex_session, monkeypatch):
     fake_client, calls = _fake_px_client()
     monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)

@@ -215,6 +215,14 @@
         @create="$emit('create-playlist', { song, index })"
         @select="$emit('add-to-playlist', { song, playlistId: $event, index })"
       />
+      <!-- Only on a playlist's own page, where "the playlist" is
+         - unambiguous. Selection-scoped like the entries above it (and
+         - unlike Song Radio, which hides instead): removing the rows you
+         - picked is exactly what a multi-selection means here. -->
+      <v-list-item v-if="removable" @click="$emit('remove', { song, index })">
+        <template #prepend><v-icon icon="mdi-playlist-minus" size="small" /></template>
+        <v-list-item-title>{{ $t('library.removeFromPlaylist') }}</v-list-item-title>
+      </v-list-item>
       <!-- The row's own columns already link to both, but the album column
          - can be switched off (or vetoed by the page, as on an album's own
          - tracklist) and the player-bar-sized rows show neither — so this is
@@ -318,6 +326,14 @@ export default {
       type: Boolean,
       default: false,
     },
+    // Playlist detail's own opt-in as well — adds "Remove from playlist"
+    // to the menu. Separate from reorderable because the two don't hold at
+    // the same times: a column sort takes the drag away (SongTable.vue's
+    // canReorder) but not the ability to remove a row.
+    removable: {
+      type: Boolean,
+      default: false,
+    },
     // Which side of this row a drop would land on — same two-position
     // indicator QueueRow.vue uses, and for the same reason: one
     // undifferentiated "drag-over" highlight can't say which side of the
@@ -350,6 +366,7 @@ export default {
     'add-to-queue',
     'add-to-playlist',
     'create-playlist',
+    'remove',
     'toggle-select',
     'dragstart',
     'dragover',

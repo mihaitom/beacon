@@ -656,9 +656,14 @@ async def create_playlist(params, media: JellyfinClient) -> dict:
 
 
 async def _playlist_entries(playlist_id: str, media: JellyfinClient) -> list[tuple[str, str]]:
-    """(PlaylistItemId, song id) per entry, in playlist order. The two ids
-    are distinct — the same song added twice is two entries sharing one song
-    id, and only the per-entry id addresses a specific one."""
+    """(PlaylistItemId, song id) per entry, in playlist order.
+
+    The two are meant to be distinct, so that the same song added twice is
+    two entries telling themselves apart by the per-entry id. Jellyfin 10.9
+    does that but refuses to hold a duplicate in the first place; Jellyfin 12
+    accepts one and reports both ids as the same value, offering nothing else
+    per entry, which makes the two copies indistinguishable here — see
+    docs/investigations/playlist-duplicate-entries.md for what that costs."""
     items = await _jf_get(media, f"/Playlists/{_quote_id(playlist_id)}/Items", userId=media.user_id)
     return [
         (entry["PlaylistItemId"], str(entry.get("Id", "")))
@@ -726,10 +731,11 @@ async def _remove_from_playlist(
     playlist_id: str, indexes: list[int], media: JellyfinClient
 ) -> None:
     # Subsonic addresses playlist entries by position; Jellyfin needs the
-    # per-entry PlaylistItemId (distinct from the underlying song id),
-    # obtainable only by listing the playlist first — a narrow race window
-    # exists if the playlist changes between this list and the delete below,
-    # same as any read-then-act sequence without a lock.
+    # per-entry PlaylistItemId, obtainable only by listing the playlist
+    # first — a narrow race window exists if the playlist changes between
+    # this list and the delete below, same as any read-then-act sequence
+    # without a lock. On v12 that id is not per-entry at all (see
+    # _playlist_entries), so a song listed twice loses both copies here.
     items = await _jf_get(media, f"/Playlists/{_quote_id(playlist_id)}/Items", userId=media.user_id)
     entries = items.get("Items", [])
     entry_ids = [

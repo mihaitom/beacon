@@ -63,6 +63,7 @@
           :columns="resolvedColumns"
           :selection-mode="selectionMode"
           :reorderable="canReorder"
+          :removable="removable"
           :drag-over-position="dragOverPosition(row.index)"
           :dragging="dragIndex === row.index"
           :selected="selectedRowKeys.has(row.index)"
@@ -75,6 +76,7 @@
           @add-to-queue="addToQueue"
           @add-to-playlist="addToPlaylist"
           @create-playlist="openCreatePlaylistDialog"
+          @remove="onRemoveRequested"
           @toggle-select="toggleSelect"
           @dragstart="onRowDragStart"
           @dragover="onRowDragOver"
@@ -109,6 +111,7 @@
           :columns="resolvedColumns"
           :selection-mode="selectionMode"
           :reorderable="canReorder"
+          :removable="removable"
           :drag-over-position="dragOverPosition(index)"
           :dragging="dragIndex === index"
           :selected="selectedRowKeys.has(index)"
@@ -121,6 +124,7 @@
           @add-to-queue="addToQueue"
           @add-to-playlist="addToPlaylist"
           @create-playlist="openCreatePlaylistDialog"
+          @remove="onRemoveRequested"
           @toggle-select="toggleSelect"
           @dragstart="onRowDragStart"
           @dragover="onRowDragOver"
@@ -140,6 +144,7 @@
         :columns="resolvedColumns"
         :selection-mode="selectionMode"
         :reorderable="canReorder"
+        :removable="removable"
         :drag-over-position="dragOverPosition(index)"
         :dragging="dragIndex === index"
         :selected="selectedRowKeys.has(index)"
@@ -152,6 +157,7 @@
         @add-to-queue="addToQueue"
         @add-to-playlist="addToPlaylist"
         @create-playlist="openCreatePlaylistDialog"
+        @remove="onRemoveRequested"
         @toggle-select="toggleSelect"
         @dragstart="onRowDragStart"
         @dragover="onRowDragOver"
@@ -298,8 +304,14 @@ export default {
     // on screen has nothing to do with its position in the playlist, so
     // dropping it "between two rows" couldn't mean anything.
     reorderable: { type: Boolean, default: false },
+    // Playlist detail's other opt-in — rows offer "Remove from playlist"
+    // and a pick emits `remove`. Unlike reorderable this survives a column
+    // sort: which rows you mean is still unambiguous when they are only
+    // displayed in a different order (see onRemoveRequested, which maps
+    // them back to real playlist positions).
+    removable: { type: Boolean, default: false },
   },
-  emits: ['reorder'],
+  emits: ['reorder', 'remove'],
   data() {
     return {
       sortKey: this.defaultSortKey as SortKey | null,
@@ -732,6 +744,34 @@ export default {
       const dialog = this.$refs.createPlaylistDialog as
         { open: (songIds: string[]) => void } | undefined
       dialog?.open(songs.map((track) => track.id))
+    },
+    /** Turns the rows the menu was used on into positions within `songs`
+     * as it was handed in, which for a playlist is the server's own order.
+     *
+     * Not the row indices this table works in: those count positions in
+     * sortedSongs, and under a column sort that is a reordered copy — the
+     * backend resolves the positions it is sent against a fresh listing in
+     * playlist order (see the bridges' _remove_from_playlist), so a
+     * view-order index would silently delete a different track. indexOf on
+     * the object, not a lookup by song id: mapPlaylist() builds one object
+     * per entry, so a playlist holding the same song twice still resolves
+     * to the copy that was actually clicked.
+     *
+     * Descending so that a server applying the positions one after another
+     * can't have earlier removals shift the later ones.
+     *
+     * A row that no longer resolves drops out of both halves together, so
+     * the count in the resulting message can't claim more than was
+     * actually sent. */
+    onRemoveRequested({ song, index }: { song: Song; index?: number }) {
+      const resolved = this.selectedOrSingle(song, index)
+        .map((track) => ({ track, position: this.songs.indexOf(track) }))
+        .filter((row) => row.position >= 0)
+      if (!resolved.length) return
+      this.$emit('remove', {
+        indexes: resolved.map((row) => row.position).sort((a, b) => b - a),
+        songs: resolved.map((row) => row.track),
+      })
     },
     // A row's own actions (play-next/add-to-queue/add-to-playlist, all via
     // SongRow.vue's "..." menu) apply to the *whole* current selection
