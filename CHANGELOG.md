@@ -33,6 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A speaker could refuse a station after a pause, or once a second speaker joined, when the cast quality was set to AAC: it was announced as MP3 and then sent AAC
 - A speaker paused and then left alone is no longer held forever. Beacon kept the connection to it for as long as it was running, so the speaker stayed unavailable to anyone else; it is now released after two hours without any activity
 - Stopping a station at the speaker itself now ends it in Beacon as well. The station went on being fetched and re-encoded for as long as Beacon ran, with nothing playing it any more, and the app kept showing it as playing
+- The volume slider on a phone snapped back to its old level a moment after being let go while casting to a speaker. It now stays where it was put
 
 ## [1.2.1] - 2026-09-08
 

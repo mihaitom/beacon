@@ -102,6 +102,8 @@
           density="compact"
           hide-details
           @update:model-value="onDeviceVolumeChange"
+          @start="onVolumeDragStart"
+          @end="onVolumeDragEnd"
         />
         <v-slider
           v-else
@@ -126,6 +128,12 @@
 import { usePlaybackStore } from '@/stores/playback'
 import { useConnectStore } from '@/stores/connect'
 import { pollingAllowed } from '@/services/connect/pollGate'
+import {
+  acceptsVolumeReading,
+  endVolumeDrag,
+  noteVolumeChange,
+  startVolumeDrag,
+} from '@/services/connect/volumeGuard'
 import SongWaveform from '@/components/player/SongWaveform.vue'
 import RadioLiveStatus from '@/components/player/RadioLiveStatus.vue'
 import { getAudioEngine } from '@/services/audioEngine'
@@ -256,7 +264,10 @@ export default {
       },
     },
     pushedDeviceVolume(value: number | null) {
-      if (value != null) this.deviceVolume = value
+      // See services/connect/volumeGuard.ts — a reading must not land on
+      // top of a drag in progress.
+      const target = this.singleActiveTarget
+      if (value != null && target && acceptsVolumeReading(target)) this.deviceVolume = value
     },
   },
   beforeUnmount() {
@@ -270,15 +281,28 @@ export default {
       return `${minutes}:${String(secs).padStart(2, '0')}`
     },
     async fetchDeviceVolume(target: ConnectDeviceRef) {
+      // Not even asked for while the user is setting it: the answer would
+      // be the value from before their change either way.
+      if (!acceptsVolumeReading(target)) return
       const raw = await this.connectStore.getDeviceVolume(target.type, target.name)
+      // Checked again on the way back — a drag can start while this is in
+      // flight, and this answer predates it.
+      if (!acceptsVolumeReading(target)) return
       this.deviceVolume = raw == null ? null : Math.round(raw)
     },
     async onDeviceVolumeChange(value: number) {
       const target = this.singleActiveTarget
       if (!target) return
       const rounded = Math.round(value)
+      noteVolumeChange(target)
       this.deviceVolume = rounded
       await this.connectStore.setDeviceVolume(target.type, target.name, rounded)
+    },
+    onVolumeDragStart() {
+      if (this.singleActiveTarget) startVolumeDrag(this.singleActiveTarget)
+    },
+    onVolumeDragEnd() {
+      if (this.singleActiveTarget) endVolumeDrag(this.singleActiveTarget)
     },
     async onSeekEnd(value: number) {
       await this.playbackStore.seek(value)

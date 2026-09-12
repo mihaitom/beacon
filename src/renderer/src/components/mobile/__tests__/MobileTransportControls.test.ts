@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -11,6 +11,7 @@ import MobileTransportControls from '../MobileTransportControls.vue'
 import { getAudioEngine } from '@/services/audioEngine'
 import type { DeviceType } from '@/services/connect/types'
 import { makeSong, makeStatus } from '@/stores/__tests__/fixtures'
+import { _resetVolumeGuards } from '@/services/connect/volumeGuard'
 
 // The volume row asks the engine whether this device's own level can be
 // changed at all. jsdom has no AudioContext, so a real engine would always
@@ -59,6 +60,9 @@ describe('MobileTransportControls', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     withLocalVolume(true)
+    // Module-level and keyed by device (see volumeGuard.ts) - a settle
+    // window left over from one test would swallow the next one's readings.
+    _resetVolumeGuards()
   })
 
   afterEach(() => {
@@ -426,6 +430,92 @@ describe('MobileTransportControls', () => {
 
       expect(setVolumeSpy).toHaveBeenCalledWith('sonos', 'Kitchen', 43)
       expect(wrapper.get('.mobile-transport__volume-value').text()).toBe('43%')
+    })
+
+    describe('not fighting the person setting it', () => {
+      // Regression: this surface never got the guard the desktop sliders
+      // did, so the device's own reading landed on top of the drag and the
+      // slider snapped back to where it started.
+      it('does not let a poll that was already in flight pull the slider back', async () => {
+        vi.useFakeTimers()
+        const wrapper = mountControls()
+        const connect = useConnectStore()
+        const getVolumeSpy = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
+        vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
+        castTo('Living Room', 'chromecast')
+        await wrapper.vm.$nextTick()
+        await vi.runOnlyPendingTimersAsync()
+
+        let answerPoll!: (volume: number) => void
+        getVolumeSpy.mockReturnValue(
+          new Promise<number>((resolve) => {
+            answerPoll = resolve
+          }),
+        )
+        await vi.advanceTimersByTimeAsync(4000)
+
+        wrapper.getComponent({ name: 'VSlider' }).vm.$emit('update:modelValue', 70)
+        await wrapper.vm.$nextTick()
+        expect(wrapper.get('.mobile-transport__volume-value').text()).toBe('70%')
+
+        answerPoll(30)
+        // Microtasks only - advancing the clock here would step past the
+        // settle window and change what is being tested.
+        await flushPromises()
+
+        expect(wrapper.get('.mobile-transport__volume-value').text()).toBe('70%')
+      })
+
+      it('ignores a pushed reading for as long as the drag lasts', async () => {
+        vi.useFakeTimers()
+        const wrapper = mountControls()
+        const connect = useConnectStore()
+        vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
+        vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
+        castTo('Kitchen', 'sonos', 30)
+        await wrapper.vm.$nextTick()
+        await vi.runOnlyPendingTimersAsync()
+
+        const slider = wrapper.getComponent({ name: 'VSlider' })
+        slider.vm.$emit('start', 30)
+        slider.vm.$emit('update:modelValue', 80)
+        await wrapper.vm.$nextTick()
+
+        // The speaker reports a level of its own mid-drag - Sonos answers
+        // with the pre-change value for a moment after accepting one.
+        castTo('Kitchen', 'sonos', 45)
+        await wrapper.vm.$nextTick()
+        expect(wrapper.get('.mobile-transport__volume-value').text()).toBe('80%')
+
+        // Let go, wait out the settle window, and pushes count again.
+        slider.vm.$emit('end', 80)
+        await vi.advanceTimersByTimeAsync(4000)
+        castTo('Kitchen', 'sonos', 25)
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.get('.mobile-transport__volume-value').text()).toBe('25%')
+      })
+
+      it('takes the device at its word again once it has had time to catch up', async () => {
+        vi.useFakeTimers()
+        const wrapper = mountControls()
+        const connect = useConnectStore()
+        const getVolumeSpy = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
+        vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
+        castTo('Living Room', 'chromecast')
+        await wrapper.vm.$nextTick()
+        await vi.runOnlyPendingTimersAsync()
+
+        wrapper.getComponent({ name: 'VSlider' }).vm.$emit('update:modelValue', 70)
+        await wrapper.vm.$nextTick()
+
+        // Someone turns the dial on the speaker itself a few seconds later:
+        // that has to reach the slider, or it would be stuck for good.
+        getVolumeSpy.mockResolvedValue(45)
+        await vi.advanceTimersByTimeAsync(8000)
+
+        expect(wrapper.get('.mobile-transport__volume-value').text()).toBe('45%')
+      })
     })
 
     it('mutes/unmutes the device instead of the local player', async () => {

@@ -4,7 +4,8 @@ import type { ConnectDeviceRef } from '@/services/connect/types'
  * Keeps a device's own volume readings from fighting the person setting it.
  *
  * Every place that shows a cast device's volume (PlayerToolbar.vue,
- * DeviceListItem.vue, MobileDeviceRow.vue) holds one number written from
+ * DeviceListItem.vue, MobileDeviceRow.vue, MobileTransportControls.vue)
+ * holds one number written from
  * two directions: the user, and the device itself — a 4s poll for
  * Chromecast/DLNA, a pushed reading for Sonos. The two disagree for as long
  * as it takes a change to reach the speaker and be reported back, so a
