@@ -386,9 +386,11 @@ body {
  * A finger that lands on a volume slider means to set the volume, so the
  * gesture is the slider's for as long as it lasts: the same
  * `touch-action: none` Vuetify already gives the thumb, extended to the
- * track, which is far easier to hit. Applied through a class rather than to
- * every .v-slider, since the seek bar and the settings sliders are not
- * necessarily the same call. */
+ * track, which is far easier to hit. Carried by a class rather than applied
+ * to every .v-slider, so a slider that does want to leave the page its
+ * scroll can still say so - every one in the app today is a volume slider
+ * and wants this, the seek bar (SongWaveform.vue, a canvas) settles it the
+ * same way on its own. */
 .volume-slider-touch .v-slider-track {
   touch-action: none;
 }
