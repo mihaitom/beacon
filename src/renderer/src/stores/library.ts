@@ -71,7 +71,30 @@ interface LibraryCacheTypes {
 const CACHE_TTL_MS = 60 * 60 * 1000
 const JELLYFIN_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
-function cacheTtl(): number {
+/** Playlists do not belong under the TTL above, and inheriting it is what
+ * made one created, renamed or deleted anywhere else keep showing its old
+ * self for an hour (a day on Jellyfin). That TTL is priced for the
+ * catalog: re-reading 20k tracks is seconds of paging. A playlist list is
+ * one call returning a few dozen rows, and it is the collection that
+ * actually changes - from this app, from a phone, from the server's own
+ * web UI.
+ *
+ * Not zero, though. Every track context menu warms its playlist picker
+ * with an unforced fetchPlaylists() (see SongRow.vue), so zero would put a
+ * request behind every right-click. Half a minute is short enough that a
+ * change made elsewhere appears while you are still looking at the page,
+ * and long enough that browsing does not drum on the server. Your own
+ * changes never wait for it: every mutation writes both the list and its
+ * cache itself. */
+const PLAYLISTS_TTL_MS = 30 * 1000
+
+const FIELD_TTL_MS: Partial<Record<LibraryCacheField, number>> = {
+  playlists: PLAYLISTS_TTL_MS,
+}
+
+function cacheTtl(field: LibraryCacheField): number {
+  const perField = FIELD_TTL_MS[field]
+  if (perField !== undefined) return perField
   return useAuthStore().serverType === 'jellyfin' ? JELLYFIN_CACHE_TTL_MS : CACHE_TTL_MS
 }
 
@@ -82,8 +105,8 @@ function fieldKey(field: LibraryCacheField): string {
   return account ? `${account}::${field}` : field
 }
 
-function isFresh(fetchedAt: number): boolean {
-  return Date.now() - fetchedAt < cacheTtl()
+function isFresh(field: LibraryCacheField, fetchedAt: number): boolean {
+  return Date.now() - fetchedAt < cacheTtl(field)
 }
 
 async function readCacheField<K extends LibraryCacheField>(
@@ -287,7 +310,7 @@ async function cachedFetch<K extends LibraryCacheField>(
   const cached = await readCacheField(field)
   if (cached) {
     onResult(cached.items)
-    if (isFresh(cached.fetchedAt)) return
+    if (isFresh(field, cached.fetchedAt)) return
     withRetry(fetcher)
       .then((fresh) => {
         onResult(fresh)
@@ -864,7 +887,7 @@ export const useLibraryStore = defineStore('library', {
       if (cached) {
         this.allSongs = cached.items
         this.allSongsLoaded = true
-        if (isFresh(cached.fetchedAt)) return
+        if (isFresh('songs', cached.fetchedAt)) return
         withRetry(() => fetchSongPages(client, PAGE_SIZE))
           .then((fresh) => {
             this.allSongs = fresh

@@ -99,6 +99,61 @@ describe('library mutations', () => {
     expect(cachedPlaylists().map((p) => p.id)).toEqual(['p2'])
   })
 
+  it('does not let a deleted playlist come back when the page is reopened', async () => {
+    // The cache write is asynchronous. If the delete returns before it has
+    // landed, the next unforced read serves the old list straight back over
+    // the in-memory one and the playlist reappears.
+    const library = useLibraryStore()
+    let listing = [makePlaylist('p1'), makePlaylist('p2')]
+    stubClient({
+      getPlaylists: vi.fn(async () => listing),
+      deletePlaylist: vi.fn(async () => {
+        listing = [makePlaylist('p2')]
+      }),
+    })
+    await library.fetchPlaylists() // an earlier visit fills the cache
+
+    writeDelayMs.value = 50
+    await library.deletePlaylist('p1')
+    await library.fetchPlaylists() // reopening the playlists page
+
+    expect(library.playlists.map((p) => p.id)).toEqual(['p2'])
+  })
+
+  it('re-reads the playlist list long before the catalog cache would expire', async () => {
+    // Playlists carry their own short TTL: the hour the catalog gets is
+    // priced for re-reading 20k tracks, and a playlist list is one small
+    // call that anything can change - another device, the server's own web
+    // UI. Half a minute old is stale here and fresh for the catalog.
+    const library = useLibraryStore()
+    cache.set('playlists', {
+      items: [makePlaylist('p1')],
+      fetchedAt: Date.now() - 60_000,
+    })
+    const client = stubClient({
+      getPlaylists: vi.fn(async () => [makePlaylist('p1'), makePlaylist('p2')]),
+    })
+
+    await library.fetchPlaylists()
+
+    await vi.waitFor(() => expect(client.getPlaylists).toHaveBeenCalled())
+    await vi.waitFor(() => expect(library.playlists.map((p) => p.id)).toEqual(['p1', 'p2']))
+  })
+
+  it('leaves a list it read seconds ago alone, so a context menu costs nothing', async () => {
+    // The other half of that TTL: every track menu warms its playlist
+    // picker with an unforced fetch, so this must not become a request per
+    // right-click.
+    const library = useLibraryStore()
+    cache.set('playlists', { items: [makePlaylist('p1')], fetchedAt: Date.now() - 2_000 })
+    const client = stubClient()
+
+    await library.fetchPlaylists()
+
+    expect(client.getPlaylists).not.toHaveBeenCalled()
+    expect(library.playlists.map((p) => p.id)).toEqual(['p1'])
+  })
+
   it('writes a rename through to the cache for the same reason', async () => {
     const library = useLibraryStore()
     stubClient()

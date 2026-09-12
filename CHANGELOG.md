@@ -43,7 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A volume drag on a phone that the page took for a scroll left the slider running loose behind it: later swipes anywhere on the screen went on changing the speaker's level, one near the edge of the screen all the way down to silent, and the slider stopped following the speaker's own dial altogether. A finger on the slider now belongs to it for as long as the drag lasts
 - Moving a song to a new position in the queue on the phone no longer starts playing that song. The same fix in 1.1.0 only ever took hold with a mouse, never by touch
 - A playlist with no tracks in it now says so, instead of showing a bare row of column headings with nothing under it
-- A playlist created from the queue could disappear from the playlists page again, sometimes for an hour and on a Jellyfin server for a day, while the server had it all along. It stays where you put it now, and the same went for a track added to a playlist from anywhere outside it
+- The playlists page could go on showing an out-of-date list, sometimes for an hour and on a Jellyfin server for a whole day: a playlist created from the queue was missing, a deleted one came back, and anything changed on another device took just as long to turn up. The list is kept current now
 
 ## [1.2.1] - 2026-09-08
 
