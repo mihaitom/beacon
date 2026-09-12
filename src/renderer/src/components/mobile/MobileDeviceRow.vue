@@ -43,19 +43,13 @@
      - target — same rule the LAN remote's devices.js already validated. -->
     <div v-if="showVolume" class="mobile-device-row__volume">
       <v-icon icon="mdi-volume-high" size="18" class="mobile-device-row__volume-icon" />
-      <v-slider
-        class="volume-slider-touch"
+      <touch-volume-slider
         :model-value="volume ?? 0"
         :max="100"
-        :step="1"
         :disabled="volume == null"
-        density="compact"
-        hide-details
-        style="flex: 1"
+        :aria-label="$t('player.volume')"
         @update:model-value="onVolumeInput"
-        @start="onVolumeDragStart"
-        @end="onVolumeCommit"
-        @touchcancel="endCancelledSliderTouch"
+        @commit="onVolumeCommit"
       />
       <span class="text-body-small text-medium-emphasis mobile-device-row__volume-value">{{
         volume != null ? `${volume}%` : '–'
@@ -72,11 +66,10 @@ import {
   acceptsVolumeReading,
   endVolumeDrag,
   noteVolumeChange,
-  startVolumeDrag,
 } from '@/services/connect/volumeGuard'
 import { writeDeviceVolume } from '@/services/connect/volumeWrite'
-import { endCancelledSliderTouch } from '@/services/sliderTouchCancel'
 import { useAuthStore } from '@/stores/auth'
+import TouchVolumeSlider from './TouchVolumeSlider.vue'
 import AirplayIcon from '@/components/connect/AirplayIcon.vue'
 import type { ConnectDeviceRef, DeviceType } from '@/services/connect/types'
 
@@ -88,7 +81,7 @@ const TYPE_ICONS: Record<string, string> = {
 
 export default {
   name: 'MobileDeviceRow',
-  components: { AirplayIcon },
+  components: { AirplayIcon, TouchVolumeSlider },
   props: {
     device: {
       type: Object,
@@ -190,11 +183,6 @@ export default {
     clearInterval(this.volumePollTimer ?? undefined)
   },
   methods: {
-    endCancelledSliderTouch,
-    onVolumeDragStart() {
-      startVolumeDrag(this.deviceRef)
-    },
-
     onRowClick() {
       // claimedByOther has its own explicit "Take over" button above instead
       // — a plain row tap there would either do nothing (confusing, no
@@ -210,9 +198,12 @@ export default {
       this.volume = raw == null ? null : Math.round(raw)
     },
     /** Moves the slider and nothing else — the speaker is told on release,
-     * same as MobileTransportControls.vue's own slider explains at length. */
+     * same as MobileTransportControls.vue's own slider explains at length.
+     * Each move holds the guard open; a native range has no drag start to
+     * do it once. */
     onVolumeInput(value: number) {
       this.volume = Math.round(value)
+      noteVolumeChange(this.deviceRef)
     },
     onVolumeCommit(value: number) {
       const rounded = Math.round(value)

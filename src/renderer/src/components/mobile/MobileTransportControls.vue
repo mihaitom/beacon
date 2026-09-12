@@ -93,19 +93,14 @@
           size="small"
           @click="toggleMute"
         />
-        <v-slider
+        <touch-volume-slider
           v-if="singleActiveTarget"
-          class="volume-slider-touch"
           :model-value="deviceVolume ?? 0"
           :max="100"
-          :step="1"
           :disabled="deviceVolume == null"
-          density="compact"
-          hide-details
+          :aria-label="$t('player.volume')"
           @update:model-value="onDeviceVolumeInput"
-          @start="onVolumeDragStart"
-          @end="onDeviceVolumeCommit"
-          @touchcancel="endCancelledSliderTouch"
+          @commit="onDeviceVolumeCommit"
         />
         <v-slider
           v-else
@@ -136,7 +131,6 @@ import {
   acceptsVolumeReading,
   endVolumeDrag,
   noteVolumeChange,
-  startVolumeDrag,
 } from '@/services/connect/volumeGuard'
 import { writeDeviceVolume } from '@/services/connect/volumeWrite'
 import { endCancelledSliderTouch } from '@/services/sliderTouchCancel'
@@ -144,11 +138,12 @@ import SongWaveform from '@/components/player/SongWaveform.vue'
 import RadioLiveStatus from '@/components/player/RadioLiveStatus.vue'
 import { getAudioEngine } from '@/services/audioEngine'
 import MobileDevicePicker from './MobileDevicePicker.vue'
+import TouchVolumeSlider from './TouchVolumeSlider.vue'
 import type { ConnectDeviceRef } from '@/services/connect/types'
 
 export default {
   name: 'MobileTransportControls',
-  components: { SongWaveform, RadioLiveStatus, MobileDevicePicker },
+  components: { SongWaveform, RadioLiveStatus, MobileDevicePicker, TouchVolumeSlider },
   data() {
     return {
       devicePickerOpen: false,
@@ -314,8 +309,13 @@ export default {
      * too.
      */
     onDeviceVolumeInput(value: number) {
-      if (!this.singleActiveTarget) return
+      const target = this.singleActiveTarget
+      if (!target) return
       this.deviceVolume = Math.round(value)
+      // A native range has no drag start/end to hold the guard open with,
+      // so each move does it: the window outlasts the gap between two
+      // moves many times over, and the release restarts it anyway.
+      noteVolumeChange(target)
     },
     /** The finger lifted: this is the value the speaker is actually told.
      * Also reached by a drag the browser took away - the synthesised
@@ -331,9 +331,6 @@ export default {
       writeDeviceVolume(target, rounded, (volume) =>
         this.connectStore.setDeviceVolume(target.type, target.name, volume),
       )
-    },
-    onVolumeDragStart() {
-      if (this.singleActiveTarget) startVolumeDrag(this.singleActiveTarget)
     },
     async onSeekEnd(value: number) {
       await this.playbackStore.seek(value)

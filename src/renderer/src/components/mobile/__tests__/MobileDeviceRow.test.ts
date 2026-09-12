@@ -196,7 +196,7 @@ describe('MobileDeviceRow', () => {
       await wrapper.vm.$nextTick()
 
       expect(wrapper.get('.mobile-device-row__volume-value').text()).toBe('–')
-      expect(wrapper.getComponent({ name: 'VSlider' }).props('disabled')).toBe(true)
+      expect(wrapper.getComponent({ name: 'TouchVolumeSlider' }).props('disabled')).toBe(true)
     })
 
     // Unlike DeviceListItem.vue, this row talks to the store itself rather
@@ -209,9 +209,9 @@ describe('MobileDeviceRow', () => {
       const wrapper = mountRow()
       await wrapper.vm.$nextTick()
 
-      const slider = wrapper.getComponent({ name: 'VSlider' })
+      const slider = wrapper.getComponent({ name: 'TouchVolumeSlider' })
       await slider.vm.$emit('update:modelValue', 42.6)
-      await slider.vm.$emit('end', 42.6)
+      await slider.vm.$emit('commit', 42.6)
 
       expect(setVolumeSpy).toHaveBeenCalledWith('sonos', 'Kitchen', 43)
       expect(wrapper.get('.mobile-device-row__volume-value').text()).toBe('43%')

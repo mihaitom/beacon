@@ -63,128 +63,84 @@ function label(): string {
   return document.querySelector('.mobile-transport__volume-value')!.textContent!.trim()
 }
 
-function touchAt(x: number, y: number, target: Element): Touch {
-  return new Touch({ identifier: 1, target, clientX: x, clientY: y })
+/** Drive the native range the way the browser does while a finger drags
+ * it: set the value, fire `input`, and fire `change` once on release. The
+ * browser owns the gesture itself, which is the whole point of using one -
+ * a synthetic touch sequence would be testing our own event faking, not
+ * the drag. */
+function range(): HTMLInputElement {
+  return document.querySelector('.touch-volume-slider') as HTMLInputElement
 }
 
-function fireTouch(type: string, on: EventTarget, x: number, y: number, target: Element) {
-  const touches = type === 'touchstart' || type === 'touchmove' ? [touchAt(x, y, target)] : []
-  on.dispatchEvent(
-    new TouchEvent(type, {
-      bubbles: true,
-      cancelable: true,
-      touches,
-      targetTouches: touches,
-      changedTouches: [touchAt(x, y, target)],
-    }),
-  )
-}
-
-/** A real press-move-release over the slider, the way a finger does it.
- * Touch events, not pointer ones: Vuetify's slider binds touchstart /
- * touchmove / touchend (see vuetify/lib/components/VSlider/slider.js), and
- * a PointerEvent drag moves nothing at all. */
-async function dragTo(fraction: number, steps = 1) {
-  const track = document.querySelector('.v-slider-track')! as HTMLElement
-  const box = track.getBoundingClientRect()
-  const y = box.top + box.height / 2
-  const thumb = document.querySelector('.v-slider-thumb')! as HTMLElement
-  const at = (f: number) => box.left + box.width * f
-
-  const from = 0.3
-  fireTouch('touchstart', thumb, at(from), y, thumb)
-  await new Promise((resolve) => setTimeout(resolve, 16))
-  // A finger produces a stream of moves, not one jump - steps of about a
-  // frame, which is what decides how many commands the speaker is sent.
+async function dragTo(percent: number, steps = 20) {
+  const el = range()
+  const from = Number(el.value)
   for (let step = 1; step <= steps; step++) {
-    fireTouch('touchmove', window, at(from + ((fraction - from) * step) / steps), y, thumb)
+    el.value = String(Math.round(from + ((percent - from) * step) / steps))
+    el.dispatchEvent(new Event('input', { bubbles: true }))
     await new Promise((resolve) => setTimeout(resolve, 16))
   }
-  fireTouch('touchend', thumb, at(fraction), y, thumb)
+  el.dispatchEvent(new Event('change', { bubbles: true }))
   await new Promise((resolve) => setTimeout(resolve, 50))
 }
 
-/** Control: the same synthetic drag against a bare v-slider. If this does
- * not move either, the events above are wrong and the test proves nothing
- * about the component. */
-describe('the drag harness itself', () => {
-  afterEach(() => {
-    currentWrapper?.unmount()
-    currentWrapper = null
-  })
-
-  it('moves a plain v-slider', async () => {
-    const seen: number[] = []
-    currentWrapper = mount(
-      {
-        render: () =>
-          h(components.VApp, null, {
-            default: () =>
-              h(components.VSlider, {
-                modelValue: 30,
-                max: 100,
-                step: 1,
-                'onUpdate:modelValue': (value: number) => seen.push(value),
-              }),
-          }),
-      },
-      { attachTo: document.body, global: { plugins: [vuetify, i18n] } },
-    )
-    await new Promise((resolve) => setTimeout(resolve, 50))
-
-    await dragTo(0.8)
-
-    expect(seen.length).toBeGreaterThan(0)
-  })
-})
-
-describe('the cast volume slider under a real drag', () => {
+describe('the cast volume slider', () => {
   afterEach(() => {
     currentWrapper?.unmount()
     currentWrapper = null
     vi.restoreAllMocks()
   })
 
+  // Why a native range at all: Vuetify's VSlider binds touchstart passively
+  // and moves with { passive: true }, so it can never preventDefault and
+  // has no way to stop the browser taking a drag for a scroll mid-gesture.
+  // On real hardware that showed as a drag moving a few percent and
+  // stopping, or doing nothing, while a tap always worked - and it
+  // reproduced on no emulator, because an emulated drag travels exactly
+  // horizontally and a finger never does. A native range is dragged by the
+  // browser itself, so there is no gesture to lose.
+  it('is a native range the browser drags itself', async () => {
+    await mountControls()
+    const el = range()
+
+    expect(el.tagName).toBe('INPUT')
+    expect(el.type).toBe('range')
+    // The page still must not claim a slightly-off-horizontal drag.
+    expect(getComputedStyle(el).touchAction).toBe('none')
+  })
+
   it('keeps the dragged-to level after the finger lifts, and sends it once', async () => {
     const { setDeviceVolume } = await mountControls()
     expect(label()).toBe('30%')
 
-    await dragTo(0.8)
+    await dragTo(80)
 
-    expect(label()).not.toBe('30%')
-    expect(setDeviceVolume).toHaveBeenCalled()
+    expect(label()).toBe('80%')
     expect(setDeviceVolume.mock.calls.at(-1)?.slice(0, 2)).toEqual(['sonos', 'Kitchen'])
   })
 
-  // The reported bug, and the shape of the fix: a finger reports every
-  // frame, and each move used to go straight out. Two dozen requests to a
-  // speaker answering in its own time meant its readings disagreed with the
-  // slider for as long as the backlog took to clear, and the slider was put
-  // back to roughly where the drag began. The speaker is now told once, on
-  // release - the way the LAN remote has always done it, see
-  // static/remote/js/views/now-playing.js.
+  // The speaker is told once per drag, the way the LAN remote has always
+  // done it (an `input` listener that only paints, a `change` listener that
+  // sends - see static/remote/js/views/now-playing.js). Sending every move
+  // instead meant a drag became ~25 requests to a speaker answering in its
+  // own time, and its readings then disagreed with the slider until the
+  // backlog cleared.
   it('tells the speaker once for a whole drag, on release', async () => {
     const { setDeviceVolume } = await mountControls('sonos', 60)
 
-    await dragTo(0.85, 25)
-    // Nothing may have gone out yet: the finger has lifted, but a move is
-    // not a command.
-    const duringDrag = setDeviceVolume.mock.calls.length
+    await dragTo(85, 25)
     await new Promise((resolve) => setTimeout(resolve, 300))
 
     const sent = setDeviceVolume.mock.calls.map((call) => call[2] as number)
-    expect(duringDrag).toBeLessThanOrEqual(1)
     expect(sent).toHaveLength(1)
-    expect(sent[0]).toBe(Number(label().replace('%', '')))
+    expect(sent[0]).toBe(85)
   })
 
-  // What all of this is actually for: the speaker goes on reporting the old
-  // level for a while after the drag, and that must not reach the slider.
+  // What the guard is actually for: the speaker goes on reporting the old
+  // level for a while after a change, and that must not reach the slider.
   it('keeps the released level while the speaker still reports the old one', async () => {
     await mountControls('sonos', 300)
-    await dragTo(0.85, 25)
-    const released = label()
-    expect(released).not.toBe('30%')
+    await dragTo(85, 25)
 
     const connect = useConnectStore()
     for (let tick = 0; tick < 8; tick++) {
@@ -194,113 +150,20 @@ describe('the cast volume slider under a real drag', () => {
       await new Promise((resolve) => setTimeout(resolve, 120))
     }
 
-    expect(label()).toBe(released)
-  })
-})
-
-// A drag does not always end in a touchend. The browser takes the touch
-// away - `touchcancel`, no touchend - as soon as it decides the gesture was
-// a scroll, which on a phone is a drag a few pixels off the horizontal, and
-// the track is the easy thing to hit rather than the thumb. What that used
-// to leave behind was not confined to the gesture: Vuetify's slider never
-// finished its drag, so the window-level touchmove listener it had
-// installed stayed installed and went on driving the slider from any later
-// finger anywhere on the page - a swipe up the page near its left edge set
-// the speaker to 0. See services/sliderTouchCancel.ts.
-describe('a drag the browser takes away', () => {
-  afterEach(() => {
-    currentWrapper?.unmount()
-    currentWrapper = null
-    vi.restoreAllMocks()
+    expect(label()).toBe('85%')
   })
 
-  async function cancelDragOnTrack() {
-    const track = document.querySelector('.v-slider-track')! as HTMLElement
-    const box = track.getBoundingClientRect()
-    const y = box.top + box.height / 2
-    fireTouch('touchstart', track, box.left + box.width * 0.5, y, track)
-    await new Promise((resolve) => setTimeout(resolve, 16))
-    fireTouch('touchmove', window, box.left + box.width * 0.55, y + 20, track)
-    await new Promise((resolve) => setTimeout(resolve, 16))
-    fireTouch('touchcancel', track, box.left + box.width * 0.55, y + 40, track)
-    await new Promise((resolve) => setTimeout(resolve, 50))
-  }
+  // And it does expire - a hand on the speaker's own dial still shows up.
+  it('believes the speaker again once it has had time to catch up', async () => {
+    await mountControls('sonos', 0)
+    await dragTo(85, 5)
 
-  it('keeps the level it was taken away at, and lets go of the slider', async () => {
-    const { setDeviceVolume } = await mountControls()
-
-    await cancelDragOnTrack()
-    const afterCancel = label()
-    expect(afterCancel).not.toBe('30%')
-    setDeviceVolume.mockClear()
-
-    // A later, unrelated finger: a swipe up the page, nowhere near the
-    // slider.
-    const elsewhere = document.querySelector('.mobile-transport__row')! as HTMLElement
-    fireTouch('touchstart', elsewhere, 5, 5, elsewhere)
-    fireTouch('touchmove', window, 5, 300, elsewhere)
-    await new Promise((resolve) => setTimeout(resolve, 50))
-
-    expect(setDeviceVolume).not.toHaveBeenCalled()
-    expect(label()).toBe(afterCancel)
-  })
-
-  // The other half of never finishing the drag: the guard was left holding
-  // one, and from then on the slider ignored every reading the speaker sent
-  // - turning the dial on the speaker itself no longer showed up here.
-  it('believes the speaker again afterwards', async () => {
-    await mountControls()
-    await cancelDragOnTrack()
-
-    const connect = useConnectStore()
-    connect.status = makeStatus({
+    await new Promise((resolve) => setTimeout(resolve, VOLUME_SETTLE_MS + 200))
+    useConnectStore().status = makeStatus({
       targets: [{ name: 'Kitchen', type: 'sonos', volume: 12, volume_push: true }],
     })
-    // Past the settle window a change of our own opens (see
-    // volumeGuard.VOLUME_SETTLE_MS), which is meant to expire - unlike a
-    // drag, which only ends when the finger lifts.
-    await new Promise((resolve) => setTimeout(resolve, VOLUME_SETTLE_MS + 100))
-    connect.status = makeStatus({
-      targets: [{ name: 'Kitchen', type: 'sonos', volume: 13, volume_push: true }],
-    })
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await new Promise((resolve) => setTimeout(resolve, 60))
 
-    expect(label()).toBe('13%')
-  })
-
-  // And what keeps the browser from taking the drag away in the first
-  // place. Vuetify ships the track as `touch-action: pan-y`, which lets the
-  // page claim any drag with a vertical component to it - but the track is
-  // not what a finger lands on. It is 6px high inside a 32px control, and
-  // the 26px around it are .v-slider__container at `touch-action: auto`.
-  // Covering only the track (as this once did, and passed) left most of the
-  // target open: the drag was cancelled mid-gesture and the slider moved a
-  // few percent or not at all. See base.css.
-  it('claims a drag anywhere on the control, not just on the track', async () => {
-    await mountControls()
-    const box = document.querySelector('.v-slider-track')!.getBoundingClientRect()
-
-    // What the browser actually applies is the intersection along the
-    // ancestor chain, not any one element's own value.
-    const effective = (el: Element | null): string => {
-      for (let node = el; node; node = node.parentElement) {
-        if (getComputedStyle(node).touchAction === 'none') return 'none'
-        if (node === document.body) break
-      }
-      return getComputedStyle(el!).touchAction
-    }
-
-    const x = box.left + box.width * 0.5
-    for (const y of [
-      box.top - 8,
-      box.top - 3,
-      box.top + box.height / 2,
-      box.bottom + 3,
-      box.bottom + 8,
-    ]) {
-      const hit = document.elementFromPoint(x, y)
-      expect(hit, `nothing at y offset ${Math.round(y - box.top)}`).toBeTruthy()
-      expect(effective(hit), `at y offset ${Math.round(y - box.top)}`).toBe('none')
-    }
+    expect(label()).toBe('12%')
   })
 })
