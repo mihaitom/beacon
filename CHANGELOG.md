@@ -12,39 +12,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The columns of every track list can now be chosen: right-click the column headings (or use the button at their right edge) to switch columns on and off. The choice applies to every track list and follows the account to your other devices
 - Nine more columns to choose from, alongside cover, album, genre, year, plays, format and the star rating: track and disc number, BPM, sample rate, file size, comment, path, when a track was added and when it was last played. Each can be sorted by, and a column your server has no data for is not offered at all rather than standing empty
 - Shift-click selects a whole range of tracks at once, Ctrl/Cmd+A extends a selection to the entire list, and the checkbox in the column headings selects the whole list or clears the selection again
-- An album page for the phone: tapping an album in the library, or the album name on Now Playing, opens it with the tracks in their own order and a button to play the lot
 - Tracks can be taken out of a playlist again, one or a whole selection at a time, from the track menu on the desktop and the action sheet on the phone. A notice above the list offers to undo it, and stays there until you put it away or leave the page
+- An album page for the phone: tapping an album in the library, or the album name on Now Playing, opens it with the tracks in their own order and a button to play the lot
 - Creating a playlist, or adding tracks to one, now says so from wherever you did it: the queue, a track's menu, an album tile or the phone's action sheet. On the playlist's own page nothing is announced, because the change is already on screen there
 
 ### Changed
 
 - Tapping an album in the phone's library opens it now instead of starting it straight away. The play button on the row still does that
 - The artist name on the phone's Now Playing screen is no longer a link. It opened the desktop artist page, which has no phone layout of its own
-- A large Jellyfin library loads in about half the time: a 20,000-track catalog in around 18 seconds instead of 33, measured on Jellyfin 12
 - Figures in a track list now line up under each other instead of shifting about from row to row
-- Starting a station, on this device or on a speaker, now opens one connection to it instead of two, so it starts a little sooner and a station that allows only one listener at a time is no longer asked for a second
-- A station cast to a Chromecast or a DLNA speaker now sends that speaker half as many requests while it plays
 
 ### Fixed
 
 - A library with more than 500 albums stopped at the first 500 in the Albums view, with the rest missing from browsing, searching and the A-Z index. The whole catalog loads again (reported by @flugster, #24)
-- A track list kept room at its right edge for a star rating on Jellyfin and for a favorite heart on Plex, neither of which those servers have. That space now goes to the track and album names
-- The format column stayed empty for every track on a Jellyfin server
-- Album and playlist tracks from a Jellyfin server showed no genre
-- Autoplay no longer falls silent at the end of the queue when the server has nothing similar to offer for the last track. It asks about the songs just before it, and failing that carries on with more from the same artist or something else from your library
-- Sending a station to a speaker while a track was playing no longer makes the player bar flicker: the station showed, the track came back, and the station returned a few seconds later. The elapsed time no longer starts at wherever the track had got to either
-- The buffering bar on a station sent to a speaker clears a little sooner, closer to when the speaker actually starts playing
-- A station no longer skips a moment when the phone has had it in the background for a few seconds. The connection Beacon holds keeps the audio that was missed, and it is played rather than thrown away
-- A dropped station is no longer reconnected twice over, which opened two connections at once and could be heard as a second stumble right after the first
-- A speaker could refuse a station after a pause, or once a second speaker joined, when the cast quality was set to AAC: it was announced as MP3 and then sent AAC
+- The playlists page could go on showing an out-of-date list, sometimes for an hour and on a Jellyfin server for a whole day: a playlist created from the queue was missing, a deleted one came back, and anything changed on another device took just as long to turn up. The list is kept current now
+- The volume slider on a phone often ignored the finger while casting to a speaker: it moved a few percent and stopped, or did not move at all, and roughly every second attempt failed to land on the level that was set. Tapping a spot always worked, dragging frequently did not. A drag now follows the finger and sets the level on the speaker once, when you let go, instead of sending every moment of it
+- Autoplay no longer falls silent at the end of the queue when the server has nothing similar to offer for the last track. It looks to the songs just before it, and failing that carries on with more from the same artist or something else from your library
+- Stopping a station at the speaker itself now ends it in Beacon as well. It went on being fetched and re-encoded for as long as Beacon ran, with nothing playing it any more, and the app kept showing it as playing. It no longer picks itself up on the device you were casting from either; pressing play is what carries it on there
 - A speaker paused and then left alone is no longer held forever. Beacon kept the connection to it for as long as it was running, so the speaker stayed unavailable to anyone else; it is now released after two hours without any activity
-- Stopping a station at the speaker itself now ends it in Beacon as well. The station went on being fetched and re-encoded for as long as Beacon ran, with nothing playing it any more, and the app kept showing it as playing. Beacon falls silent at that point instead of picking the station up on the device you were casting from, and pressing play is what carries it on there
-- Dragging the volume slider on a phone now sets the level on the speaker once, when you let go, the way the phone's Remote Control has always done it, instead of sending every moment of the drag. The level the speaker reports back also no longer lands on the slider while a change is still on its way there
-- The volume slider on a phone often ignored the finger while casting to a speaker: it moved a few percent and stopped, or did not move at all, and roughly every second attempt failed to land on the level that was set. Tapping a spot always worked, dragging frequently did not, and only on a real phone - never in a desktop browser's phone mode. The slider is now the same kind of control the phone's Remote Control uses, which the browser drags itself, so a drag can no longer be mistaken for a page scroll and taken away halfway
+- A speaker could refuse a station after a pause, or once a second speaker joined, when the cast quality was set to AAC: it was announced as MP3 and then sent AAC
+- A station that allows only one listener at a time no longer fails. Starting a station, on this device or on a speaker, now opens one connection to it instead of two, which also gets it going a little sooner
 - The sliders in the phone's Remote Control often did not notice a drag starting: the finger had to land within a few pixels of the thin line itself, and anywhere else did nothing at all. The whole height of the control now takes the touch, so seek, volume and the per-speaker volume all pick a drag up where it starts
 - Moving a song to a new position in the queue on the phone no longer starts playing that song. The same fix in 1.1.0 only ever took hold with a mouse, never by touch
+- The format column stayed empty for every track on a Jellyfin server
+- Album and playlist tracks from a Jellyfin server showed no genre
+- Sending a station to a speaker while a track was playing no longer makes the player bar flicker: the station showed, the track came back, and the station returned a few seconds later. The elapsed time no longer starts at wherever the track had got to either
+- A station no longer skips a moment when the phone has had it in the background for a few seconds. The connection Beacon holds keeps the audio that was missed, and it is played rather than thrown away
+- A dropped station is no longer reconnected twice over, which could be heard as a second stumble right after the first
+- A track list kept room at its right edge for a star rating on Jellyfin and for a favorite heart on Plex, neither of which those servers have. That space now goes to the track and album names
 - A playlist with no tracks in it now says so, instead of showing a bare row of column headings with nothing under it
-- The playlists page could go on showing an out-of-date list, sometimes for an hour and on a Jellyfin server for a whole day: a playlist created from the queue was missing, a deleted one came back, and anything changed on another device took just as long to turn up. The list is kept current now
+- The buffering bar on a station sent to a speaker clears a little sooner, closer to when the speaker actually starts playing
 
 ## [1.2.1] - 2026-09-08
 
