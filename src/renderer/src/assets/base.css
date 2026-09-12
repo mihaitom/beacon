@@ -385,12 +385,24 @@ body {
  *
  * A finger that lands on a volume slider means to set the volume, so the
  * gesture is the slider's for as long as it lasts: the same
- * `touch-action: none` Vuetify already gives the thumb, extended to the
- * track, which is far easier to hit. Carried by a class rather than applied
- * to every .v-slider, so a slider that does want to leave the page its
- * scroll can still say so - every one in the app today is a volume slider
- * and wants this, the seek bar (SongWaveform.vue, a canvas) settles it the
- * same way on its own. */
-.volume-slider-touch .v-slider-track {
+ * `touch-action: none` Vuetify already gives the thumb, on the whole
+ * control rather than on any one part of it.
+ *
+ * The whole control, because the part a finger actually lands on is not the
+ * part that looks like the slider. Measured in Chromium: the track is 6px
+ * high inside a 32px control, and everything in the 26px around it resolves
+ * to .v-slider__container, which is `touch-action: auto` - the browser may
+ * take that gesture for a scroll whenever it likes. Setting this on the
+ * track alone left a 6px target for a ~10mm finger, so most drags were
+ * cancelled mid-gesture: the slider moved a few percent and stopped, or
+ * never moved at all. Declared on the element itself, which is what the
+ * intersection along the ancestor chain is computed from, so every part
+ * inside it is covered whatever Vuetify's own rules say.
+ *
+ * Carried by a class rather than applied to every .v-slider, so a slider
+ * that does want to leave the page its scroll can still say so - every one
+ * in the app today is a volume slider and wants this, the seek bar
+ * (SongWaveform.vue, a canvas) settles it the same way on its own. */
+.volume-slider-touch {
   touch-action: none;
 }

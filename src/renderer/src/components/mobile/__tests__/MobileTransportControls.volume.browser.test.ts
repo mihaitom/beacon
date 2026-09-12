@@ -269,11 +269,38 @@ describe('a drag the browser takes away', () => {
   })
 
   // And what keeps the browser from taking the drag away in the first
-  // place: the track Vuetify ships is `touch-action: pan-y`, which lets the
-  // page claim any drag with a vertical component to it (see base.css).
-  it('claims a drag on the track rather than leaving it to the page', async () => {
+  // place. Vuetify ships the track as `touch-action: pan-y`, which lets the
+  // page claim any drag with a vertical component to it - but the track is
+  // not what a finger lands on. It is 6px high inside a 32px control, and
+  // the 26px around it are .v-slider__container at `touch-action: auto`.
+  // Covering only the track (as this once did, and passed) left most of the
+  // target open: the drag was cancelled mid-gesture and the slider moved a
+  // few percent or not at all. See base.css.
+  it('claims a drag anywhere on the control, not just on the track', async () => {
     await mountControls()
-    const track = document.querySelector('.v-slider-track')!
-    expect(getComputedStyle(track).touchAction).toBe('none')
+    const box = document.querySelector('.v-slider-track')!.getBoundingClientRect()
+
+    // What the browser actually applies is the intersection along the
+    // ancestor chain, not any one element's own value.
+    const effective = (el: Element | null): string => {
+      for (let node = el; node; node = node.parentElement) {
+        if (getComputedStyle(node).touchAction === 'none') return 'none'
+        if (node === document.body) break
+      }
+      return getComputedStyle(el!).touchAction
+    }
+
+    const x = box.left + box.width * 0.5
+    for (const y of [
+      box.top - 8,
+      box.top - 3,
+      box.top + box.height / 2,
+      box.bottom + 3,
+      box.bottom + 8,
+    ]) {
+      const hit = document.elementFromPoint(x, y)
+      expect(hit, `nothing at y offset ${Math.round(y - box.top)}`).toBeTruthy()
+      expect(effective(hit), `at y offset ${Math.round(y - box.top)}`).toBe('none')
+    }
   })
 })
