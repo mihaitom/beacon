@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 from didl_lite.didl_lite import MusicTrack, Resource, to_xml_string
 
 from .base import BaseDelivery
+from .errors import DeviceNotFoundError, MediaRejectedError
 
 logger = logging.getLogger("delivery")
 
@@ -157,6 +158,23 @@ async def _create_dmr_device(location: str, timeout: int = _COMMAND_TIMEOUT):
 # service for this id anyway.
 _RENDERING_CONTROL = "urn:schemas-upnp-org:service:RenderingControl:1"
 
+# Looked up by id rather than by type, so a renderer's AVTransport:2 or :3
+# is found as well as :1.
+_AV_TRANSPORT_ID = "urn:upnp-org:serviceId:AVTransport"
+
+
+async def _send_play(device) -> None:
+    """Play, sent whatever the renderer last said it allows.
+
+    DmrDevice.async_play() sends nothing at all when the allowed actions
+    from its last poll leave Play out, and reports nothing either. Sent
+    directly, a renderer that really will not play answers with a fault
+    instead of play() reporting success over silence."""
+    service = device.profile_device.service_id(_AV_TRANSPORT_ID)
+    if service is None or not service.has_action("Play"):
+        raise MediaRejectedError("the renderer has no Play action")
+    await service.action("Play").async_call(InstanceID=0, Speed="1")
+
 
 class DlnaDelivery(BaseDelivery):
     """Controls a DLNA/UPnP MediaRenderer device via async-upnp-client."""
@@ -200,7 +218,7 @@ class DlnaDelivery(BaseDelivery):
                     location = d["location"]
                     break
         if not location:
-            raise RuntimeError(f"DLNA device '{self.target}' not found")
+            raise DeviceNotFoundError(f"DLNA device '{self.target}' not found")
 
         device = await _create_dmr_device(location)
         await device.async_update()
@@ -239,7 +257,12 @@ class DlnaDelivery(BaseDelivery):
         logger.debug(f"[DLNA:{self.target}] → play: {stream_url}")
         try:
             await device.async_set_transport_uri(stream_url, title, xml_meta_data)
-            await device.async_play()
+            # The allowed actions change with the new URI, and the ones cached
+            # from the last poll can leave Play out - a renderer that was
+            # playing typically lists Pause and Stop, not Play. Waited for
+            # here, then sent regardless (see _send_play()).
+            await device.async_wait_for_can_play()
+            await _send_play(device)
         except Exception:
             _device_cache.pop(self.target.lower(), None)
             raise
@@ -285,8 +308,25 @@ class DlnaDelivery(BaseDelivery):
         except Exception as e:
             logger.debug(f"[DLNA:{self.target}] volume eventing unavailable: {e}")
 
+    @staticmethod
+    async def _refresh_allowed_actions(device) -> None:
+        """Ask the renderer afresh what it allows right now.
+
+        DmrDevice.async_pause() and async_stop() go by the allowed actions
+        from the last poll and send nothing when those leave the action out,
+        so a stop judged against a stale answer could leave the renderer
+        playing while Beacon reports it stopped. If a fresh answer still
+        leaves the action out, there is genuinely nothing to act on. A
+        renderer without the action at all is not that case: the library
+        raises for it, as it should."""
+        await device.async_update(do_ping=False)
+
     async def pause(self) -> None:
         device = await self._get_device_or_evict()
+        await self._refresh_allowed_actions(device)
+        if device.has_pause and not device.can_pause:
+            logger.debug(f"[DLNA:{self.target}] nothing to pause")
+            return
         await device.async_pause()
         logger.info(f"[DLNA:{self.target}] paused")
 
@@ -297,6 +337,10 @@ class DlnaDelivery(BaseDelivery):
 
     async def stop(self) -> None:
         device = await self._get_device_or_evict()
+        await self._refresh_allowed_actions(device)
+        if device.has_stop and not device.can_stop:
+            logger.debug(f"[DLNA:{self.target}] nothing to stop")
+            return
         await device.async_stop()
         logger.info(f"[DLNA:{self.target}] stopped")
 

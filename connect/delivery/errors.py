@@ -117,11 +117,17 @@ class MediaRejectedError(Exception):
 
 
 # The protocol libraries' own exceptions, matched by module and name rather
-# than imported: both libraries are imported only where a device of their
-# kind is used, and classifying an error must not be what loads one. None of
-# these is an OSError, so without this a switched-off device read as
-# "unknown".
+# than imported: each library is imported only where a device of its kind is
+# used, and classifying an error must not be what loads one. None of these is
+# an OSError, so without this a switched-off device read as "unknown".
+# Checked most specific class first, which is what lets an entry narrow down
+# a broader one further along.
 _LIBRARY_REASONS = {
+    ("async_upnp_client.exceptions", "UpnpConnectionError"): REASON_UNREACHABLE,
+    ("async_upnp_client.exceptions", "UpnpCommunicationError"): REASON_UNREACHABLE,
+    # The device did answer, with an HTTP error - listed so the
+    # UpnpCommunicationError it derives from does not call it unreachable.
+    ("async_upnp_client.exceptions", "UpnpResponseError"): REASON_UNKNOWN,
     ("pyatv.exceptions", "ConnectionFailedError"): REASON_UNREACHABLE,
     ("pyatv.exceptions", "ConnectionLostError"): REASON_UNREACHABLE,
     ("pyatv.exceptions", "AuthenticationError"): REASON_NEEDS_PAIRING,
@@ -146,11 +152,24 @@ def _library_reason(error: BaseException) -> str | None:
     )
 
 
+def _upnp_fault_code(error: BaseException) -> str | None:
+    """The UPnP fault code a device answered with, from either UPnP library -
+    SoCo for Sonos, async-upnp-client for DLNA. Both carry the same codes."""
+    if isinstance(error, SoCoUPnPException):
+        return str(error.error_code)
+    is_action_error = any(
+        (cls.__module__, cls.__name__) == ("async_upnp_client.exceptions", "UpnpActionError")
+        for cls in type(error).__mro__
+    )
+    code = getattr(error, "error_code", None) if is_action_error else None
+    return None if code is None else str(code)
+
+
 def classify_delivery_error(error: BaseException) -> str:
     """One of the REASON_* constants above for anything a delivery's play()
     can raise."""
-    if isinstance(error, SoCoUPnPException):
-        return _UPNP_REASONS.get(str(error.error_code), REASON_UNKNOWN)
+    if (code := _upnp_fault_code(error)) is not None:
+        return _UPNP_REASONS.get(code, REASON_UNKNOWN)
     if isinstance(error, DeviceNotFoundError):
         return REASON_UNREACHABLE
     if isinstance(error, MediaRejectedError):

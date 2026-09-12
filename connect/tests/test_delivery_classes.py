@@ -8,6 +8,7 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from async_upnp_client import exceptions as upnp_exceptions
 from pyatv import exceptions as pyatv_exceptions
 from pyatv.const import Protocol
 from pychromecast.error import RequestTimeout
@@ -1690,6 +1691,7 @@ def _clear_dlna_caches():
 def _mock_dmr_device(media_position=None, volume_level=None):
     device = MagicMock()
     device.async_set_transport_uri = AsyncMock()
+    device.async_wait_for_can_play = AsyncMock()
     device.async_play = AsyncMock()
     device.async_pause = AsyncMock()
     device.async_stop = AsyncMock()
@@ -1697,6 +1699,15 @@ def _mock_dmr_device(media_position=None, volume_level=None):
     device.async_set_volume_level = AsyncMock()
     device.media_position = media_position
     device.volume_level = volume_level
+    device.has_pause = device.can_pause = True
+    device.has_stop = device.can_stop = True
+    # The AVTransport Play action, reached by service id (see _send_play()).
+    device.play_action = MagicMock()
+    device.play_action.async_call = AsyncMock()
+    service = MagicMock()
+    service.has_action.return_value = True
+    service.action.return_value = device.play_action
+    device.profile_device.service_id.return_value = service
     return device
 
 
@@ -1709,7 +1720,48 @@ def test_dlna_play_sets_transport_uri_then_plays():
     assert call_args[0] == "http://stream"
     assert call_args[1] == "Title"
     assert "<upnp:artist>Artist</upnp:artist>" in call_args[2]
-    device.async_play.assert_called_once()
+    device.play_action.async_call.assert_awaited_once_with(InstanceID=0, Speed="1")
+
+
+def test_dlna_play_waits_for_the_renderer_to_allow_play_and_then_sends_it():
+    """async_play() goes by the allowed actions from the last poll, and a
+    renderer that was playing typically lists Pause and Stop but not Play -
+    so a track change could send the new URI and never the Play, while
+    play() reported success."""
+    device = _mock_dmr_device()
+    order: list[str] = []
+    device.async_set_transport_uri.side_effect = lambda *args: order.append("uri")
+    device.async_wait_for_can_play.side_effect = lambda *args, **kwargs: order.append("wait")
+    device.play_action.async_call.side_effect = lambda **kwargs: order.append("play")
+    d = DlnaDelivery("Receiver")
+    with patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)):
+        asyncio.run(d.play("http://stream", "Title"))
+    assert order == ["uri", "wait", "play"]
+    device.async_play.assert_not_called()
+
+
+def test_dlna_play_raises_when_the_renderer_refuses_to_play():
+    device = _mock_dmr_device()
+    device.play_action.async_call.side_effect = upnp_exceptions.UpnpActionError(
+        error_code=701, error_desc="Transition not available"
+    )
+    d = DlnaDelivery("Receiver")
+    with (
+        patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)),
+        pytest.raises(upnp_exceptions.UpnpActionError),
+    ):
+        asyncio.run(d.play("http://stream", "Title"))
+
+
+def test_dlna_play_raises_for_a_renderer_without_a_play_action():
+    device = _mock_dmr_device()
+    device.profile_device.service_id.return_value.has_action.return_value = False
+    d = DlnaDelivery("Receiver")
+    with (
+        patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)),
+        pytest.raises(MediaRejectedError),
+    ):
+        asyncio.run(d.play("http://stream", "Title"))
 
 
 def test_dlna_play_defaults_protocol_info_to_audio_mpeg():
@@ -1838,6 +1890,48 @@ def test_dlna_pause_resume_stop_delegate_to_device():
     device.async_stop.assert_called_once()
 
 
+def test_dlna_stop_is_sent_once_a_fresh_look_allows_it():
+    """The allowed actions from the last poll said no Stop; asked again, the
+    renderer allows it. Judged on the stale answer, the library would have
+    sent nothing and left the renderer playing."""
+    device = _mock_dmr_device()
+    device.can_stop = False
+
+    async def refresh(**kwargs):
+        device.can_stop = True
+
+    device.async_update.side_effect = refresh
+    d = DlnaDelivery("Receiver")
+    with patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)):
+        asyncio.run(d.stop())
+    device.async_stop.assert_awaited_once()
+
+
+def test_dlna_pause_and_stop_with_nothing_to_act_on_are_not_errors():
+    device = _mock_dmr_device()
+    device.can_pause = device.can_stop = False
+    d = DlnaDelivery("Receiver")
+    with patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)):
+        asyncio.run(d.pause())
+        asyncio.run(d.stop())
+    device.async_pause.assert_not_called()
+    device.async_stop.assert_not_called()
+
+
+def test_dlna_pause_on_a_renderer_without_a_pause_action_still_fails():
+    """Not the same as nothing to pause: this renderer cannot pause at all,
+    and saying nothing would leave it playing with the app showing paused."""
+    device = _mock_dmr_device()
+    device.has_pause = device.can_pause = False
+    device.async_pause.side_effect = upnp_exceptions.UpnpError("Missing action AVT/Pause")
+    d = DlnaDelivery("Receiver")
+    with (
+        patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)),
+        pytest.raises(upnp_exceptions.UpnpError),
+    ):
+        asyncio.run(d.pause())
+
+
 def test_dlna_get_position_returns_seconds():
     device = _mock_dmr_device(media_position=93)
     d = DlnaDelivery("Receiver")
@@ -1940,13 +2034,13 @@ def test_dlna_get_device_raises_when_not_found(monkeypatch):
     monkeypatch.setattr(_manager_mod, "discover_dlna", _fake_discover_dlna)
 
     d = DlnaDelivery("Nonexistent")
-    with pytest.raises(RuntimeError, match="not found"):
+    with pytest.raises(DeviceNotFoundError, match="not found"):
         asyncio.run(d._get_device())
 
 
 def test_dlna_play_evicts_cache_on_error():
     device = _mock_dmr_device()
-    device.async_play.side_effect = RuntimeError("device went away")
+    device.play_action.async_call.side_effect = RuntimeError("device went away")
     _dlna_mod._device_cache["receiver"] = device
 
     d = DlnaDelivery("Receiver")
@@ -1998,7 +2092,7 @@ def test_dlna_get_device_or_evict_reraises_the_lookup_failure(monkeypatch):
     monkeypatch.setattr(_manager_mod, "discover_dlna", _fake_discover_dlna)
 
     d = DlnaDelivery("Receiver")
-    with pytest.raises(RuntimeError, match="not found"):
+    with pytest.raises(DeviceNotFoundError, match="not found"):
         asyncio.run(d.pause())
     assert "receiver" not in _dlna_mod._device_cache
 

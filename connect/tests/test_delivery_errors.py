@@ -2,6 +2,7 @@
 exception into something the frontend can say a useful sentence about."""
 
 import pytest
+from async_upnp_client import exceptions as upnp_exceptions
 from pyatv import exceptions as pyatv_exceptions
 from pychromecast import error as pychromecast_error
 from soco.exceptions import SoCoUPnPException
@@ -187,3 +188,34 @@ class TestChromecast:
 
     def test_a_device_refusing_what_it_was_handed_reads_as_rejected(self):
         assert classify_delivery_error(MediaRejectedError("LOAD_FAILED")) == REASON_REJECTED
+
+
+class TestDlna:
+    """async-upnp-client carries the same UPnP fault codes SoCo does, and its
+    connection errors are no more OSErrors than pyatv's or pychromecast's."""
+
+    @pytest.mark.parametrize(
+        ("code", "expected"),
+        [
+            (701, REASON_REJECTED),
+            (714, REASON_REJECTED),
+            (716, REASON_REJECTED),
+            (715, REASON_BUSY),
+        ],
+    )
+    def test_a_soap_fault_reads_like_the_same_code_from_a_sonos(self, code, expected):
+        error = upnp_exceptions.UpnpActionError(error_code=code, error_desc="refused")
+        assert classify_delivery_error(error) == expected
+
+    def test_a_soap_fault_without_a_code_is_unknown(self):
+        error = upnp_exceptions.UpnpActionError(error_desc="refused")
+        assert classify_delivery_error(error) == REASON_UNKNOWN
+
+    @pytest.mark.parametrize("name", ["UpnpConnectionError", "UpnpCommunicationError"])
+    def test_a_renderer_that_cannot_be_reached_reads_as_unreachable(self, name):
+        error = getattr(upnp_exceptions, name)("refused")
+        assert classify_delivery_error(error) == REASON_UNREACHABLE
+
+    def test_a_renderer_answering_with_an_http_error_is_not_called_unreachable(self):
+        error = upnp_exceptions.UpnpResponseError(status=500)
+        assert classify_delivery_error(error) == REASON_UNKNOWN
