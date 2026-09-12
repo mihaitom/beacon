@@ -219,6 +219,22 @@ const switchToIndexGuard = createSequenceGuard()
 // for the latter's half of this fix).
 const togglePlayLock = createLock()
 
+// Recorded where every other device action records its failure (see the
+// connect store's stopDevice()), which is what the device picker shows.
+// Without it a pause or resume the speaker refused did nothing, silently.
+async function recordDeviceFailure(
+  connect: ReturnType<typeof useConnectStore>,
+  action: Promise<void>,
+): Promise<void> {
+  try {
+    await action
+    connect.clearError()
+  } catch (error) {
+    connect.setError(error)
+    throw error
+  }
+}
+
 // Guards startCurrent()'s own tail (the isPlaying=true flip and "now
 // playing" scrobble) against applying once a newer startCurrent() has since
 // superseded it — the same class of race switchToIndexGuard guards against
@@ -1350,7 +1366,7 @@ export const usePlaybackStore = defineStore('playback', {
         const connect = useConnectStore()
         if (connect.isActive) {
           if (this.isPlaying) {
-            await connectPlayback.pause()
+            await recordDeviceFailure(connect, connectPlayback.pause())
           } else if (connect.status?.ended) {
             // Mirrors the local <audio> engine's hasEnded branch below — a
             // connect session whose stream already ran to completion (last
@@ -1365,7 +1381,7 @@ export const usePlaybackStore = defineStore('playback', {
             // it playing again.
             await this.startCurrent()
           } else {
-            await connectPlayback.resume()
+            await recordDeviceFailure(connect, connectPlayback.resume())
           }
           return
         }

@@ -7,6 +7,7 @@ import { usePlaybackStore } from '../playback'
 import { useRadioSettingsStore } from '../radioSettings'
 import { getAudioEngine } from '@/services/audioEngine'
 import * as connectPlayback from '@/services/connect/playback'
+import { ConnectApiError } from '@/services/connect/http'
 import * as radioMetadata from '@/services/connect/radioMetadata'
 import * as radioBrowser from '@/services/connect/radioBrowser'
 import { rememberRadioBrowserStation } from '@/services/radioBrowserLinks'
@@ -270,6 +271,26 @@ describe('playback transport', () => {
       await playback.togglePlay()
 
       expect(connectPlayback.resume).toHaveBeenCalledOnce()
+    })
+
+    it('records a pause the speaker refused, so the device picker can say why', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('a')], 0)
+      playback.isPlaying = true
+      castTo()
+      vi.mocked(connectPlayback.pause).mockRejectedValue(
+        new ConnectApiError('delivery_failed', {
+          error: 'delivery_failed',
+          reason: 'unreachable',
+          device: 'Living Room',
+          detail: 'no route',
+        }),
+      )
+
+      await expect(playback.togglePlay()).rejects.toThrow()
+
+      expect(useConnectStore().errors.message).not.toBeNull()
+      expect(useConnectStore().errors.detail).toBe('no route')
     })
 
     it('restarts a session whose stream already ran out, which resume() cannot', async () => {

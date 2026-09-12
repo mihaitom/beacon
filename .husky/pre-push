@@ -1,0 +1,35 @@
+. .husky/lib.sh
+
+# The test suites, moved here from pre-commit, where they held every commit
+# up for minutes. Measured 2026-09-13: pytest ~150s, test:unit ~35s,
+# test:layout ~15s. CI runs them again, but only after the branch has left
+# this machine.
+
+# Everything the pushed commits change, across every ref in this push. git
+# hands each one over on stdin as
+#   <local ref> <local sha> <remote ref> <remote sha>
+changed=""
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  # An all-zero local sha is a branch being deleted: nothing to test.
+  case $local_sha in *[!0]*) ;; *) continue ;; esac
+  case $remote_sha in
+    *[!0]*) base=$remote_sha ;;
+    # A branch new to the remote: everything since it left main.
+    *) base=$(git merge-base "$local_sha" origin/main 2>/dev/null || true) ;;
+  esac
+  # A remote tip this clone has never fetched cannot be diffed against, and
+  # neither can a missing merge base. Test everything rather than nothing.
+  files=$(git diff --name-only "$base" "$local_sha" 2>/dev/null ||
+    git ls-tree -r --name-only "$local_sha")
+  changed="$changed
+$files"
+done
+
+if printf '%s\n' "$changed" | grep -qE '^(src/renderer/|vitest\.config\.ts|vitest\.browser\.config\.ts)'; then
+  run "Vue unit tests" "pnpm test:unit"
+  run "browser layout tests" "pnpm test:layout"
+fi
+
+if printf '%s\n' "$changed" | grep -q '^connect/'; then
+  run "Python tests" "cd connect && uv run --group dev pytest"
+fi
