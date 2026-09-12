@@ -489,9 +489,15 @@ class SessionState:
           /radio-metadata/stop already asks to tell the two apart).
           Whatever was playing it has gone, so this brings the session to
           the standstill /stop would leave it in and tells every client
-          watching. The device itself is deliberately *not* commanded to
-          stop: it has been silent since it closed its connection here, and
-          a teardown nobody asked for is how a session once stopped a
+          watching — as `orphaned`, because the two standstills are not the
+          same to a client: /stop is this person ending the cast and hands
+          playback back to their own speakers, while this one is the
+          station being stopped somewhere else entirely, where starting to
+          play it here instead is the last thing anyone asked for (see
+          build_status_dict()'s flag and playback.ts's cast-ended handler).
+          The device itself is deliberately *not* commanded to stop: it
+          has been silent since it closed its connection here, and a
+          teardown nobody asked for is how a session once stopped a
           speaker another Beacon instance was using (see
           docs/investigations/fixed-session-reap-stopped-someone-elses-speaker.md).
         - **A station playing locally**, where the relay is started lazily
@@ -519,7 +525,7 @@ class SessionState:
         self.visualizer.notify()
         await claims.release_all_for_session(self.session_id)
         logger.info("[radio] Station ended — nothing was listening to it any more")
-        await self.event_bus.broadcast(build_status_dict(self))
+        await self.event_bus.broadcast(build_status_dict(self, orphaned=True))
         return True
 
     async def start_radio_relay(
@@ -734,6 +740,7 @@ def build_status_dict(
     session: SessionState,
     displaced: bool = False,
     interrupted: bool = False,
+    orphaned: bool = False,
     delivery_error: dict | None = None,
 ) -> dict:
     """Build the full status payload shared by /status and SSE /events.
@@ -753,7 +760,18 @@ def build_status_dict(
     nothing to clear afterwards, and a client connecting later should not be
     told about an interruption it never witnessed.
 
-    `delivery_error` is a third one of the same shape, for the one failure
+    `orphaned` is the third, for a station given up on because nothing was
+    listening to it any more (_radio_relay_orphaned()). It says the same
+    thing `displaced` does about this streaming->false transition - the
+    person at this app did not ask for it, so nothing here should start
+    making sound on its own - and it is a separate flag only because the
+    reason differs: the device left, rather than being taken away. Not
+    `interrupted`, whose offer to carry on has nothing left to act on by
+    then: that resume re-dispatches active_delivery/current_track (see
+    routes/stream.py's _resume_after_interruption()), and a station has
+    neither.
+
+    `delivery_error` is a fourth one of the same shape, for the one failure
     that has no request to answer: a device that accepted what it was
     given and then reported on its own event channel that it isn't playing
     it (see routes/upnp.py). Same body delivery/errors.py builds for a
@@ -877,6 +895,7 @@ def build_status_dict(
         "total_songs": len(st.queue),
         "displaced": displaced,
         "interrupted": interrupted,
+        "orphaned": orphaned,
         "delivery_error": delivery_error,
     }
 

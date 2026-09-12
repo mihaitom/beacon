@@ -37,6 +37,12 @@ import { usePlaybackStore } from '@/stores/playback'
 import MobileQueueRow from '@/components/mobile/MobileQueueRow.vue'
 import type { Song } from '@/types/library'
 
+// Only reached when a drag ends without the browser synthesising any click
+// at all (released outside the list) — long enough to outlast a touch
+// click, which trails its pointerup by a frame or two rather than
+// following it in the same task.
+const CLICK_SUPPRESSION_MS = 500
+
 // Per-row identity keyed off the Song *object*, not its id — the queue can
 // legitimately hold the same song more than once (see playbackStore's own
 // dedupeForQueue()); an id-keyed map would collide both occurrences onto the
@@ -74,17 +80,9 @@ export default {
       // further than intended (a "swap with the very next track" drag
       // reliably overshot to the track after that).
       overHalf: null as 'before' | 'after' | null,
-      // Set the moment a drag ends, cleared on the next task. The browser
-      // synthesises a click out of the same pointer sequence that just
-      // finished the drag, and it lands on whichever element the press and
-      // the release share — the dragged row itself, whenever the pointer
-      // came back over it. A queue row's click plays it, so reordering the
-      // queue changed the track; with a station playing it also ended the
-      // station, since playAtIndex() leaves radio (see the playback
-      // store). MobileQueueRow's own `!dragging` guard was meant to cover
-      // this, but dragIndex is already back to null by the time that click
-      // arrives.
-      suppressNextRowClick: false,
+      // Timer id of the armed click suppression below, so a second drag
+      // doesn't leave the first one's timeout running.
+      clickSuppressionTimer: null as ReturnType<typeof setTimeout> | null,
     }
   },
   computed: {
@@ -94,6 +92,7 @@ export default {
   },
   beforeUnmount() {
     this.detachPointerListeners()
+    this.disarmClickSuppression()
   },
   methods: {
     rowKey,
@@ -136,16 +135,41 @@ export default {
       this.dragIndex = null
       this.overIndex = null
       this.overHalf = null
-      // Outlives this pointer sequence by exactly one task: the synthesised
-      // click is dispatched as part of the same input processing, before
-      // any timer gets a turn.
-      this.suppressNextRowClick = true
-      setTimeout(() => {
-        this.suppressNextRowClick = false
-      })
+      this.armClickSuppression()
+    },
+    /** Swallows the click the browser synthesises out of the pointer
+     * sequence that just finished the drag. It lands on whatever the press
+     * started on — the dragged row's own handle — and a queue row's click
+     * plays it, so reordering the queue changed the track; with a station
+     * playing it also ended the station, since playAtIndex() leaves radio
+     * (see the playback store).
+     *
+     * Caught in the capture phase rather than flagged for the row handler
+     * to skip: a mouse synthesises that click in the same task as
+     * pointerup, but touch does not, so a flag cleared on the next task was
+     * already back down by the time the click arrived — which is exactly
+     * the phone-only half of this bug. The listener is what expires now,
+     * not the window of time it covers, so the timeout below is only a
+     * fallback for the drag that ends without any click at all (released
+     * outside the list). */
+    armClickSuppression() {
+      const list = this.$refs.listEl as HTMLElement | undefined
+      if (!list) return
+      this.disarmClickSuppression()
+      list.addEventListener('click', this.swallowClick, true)
+      this.clickSuppressionTimer = setTimeout(this.disarmClickSuppression, CLICK_SUPPRESSION_MS)
+    },
+    swallowClick(event: Event) {
+      event.stopPropagation()
+      this.disarmClickSuppression()
+    },
+    disarmClickSuppression() {
+      const list = this.$refs.listEl as HTMLElement | undefined
+      list?.removeEventListener('click', this.swallowClick, true)
+      if (this.clickSuppressionTimer !== null) clearTimeout(this.clickSuppressionTimer)
+      this.clickSuppressionTimer = null
     },
     onRowPlay(index: number) {
-      if (this.suppressNextRowClick) return
       void this.playbackStore.playAtIndex(index)
     },
     detachPointerListeners() {

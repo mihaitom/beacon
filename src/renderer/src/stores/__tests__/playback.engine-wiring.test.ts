@@ -560,6 +560,60 @@ describe('the store wiring the audio engine', () => {
     })
   })
 
+  describe('a cast ending on its own', () => {
+    /** The station keeps playing on the phone's own speaker a minute and a
+     * half after it was stopped at the speaker itself — reported live
+     * 2026-09-12. The backend gives a station up once nothing has been
+     * listening to it (see _radio_relay_orphaned()), which clears the
+     * target and so looks exactly like the user ending the cast, and
+     * ending the cast is what hands playback back to local speakers. */
+    async function endCast(overrides: Record<string, unknown> = {}): Promise<void> {
+      const connect = useConnectStore()
+      connect.status = makeStatus({ targets: [], streaming: false, ...overrides })
+      await flushPromises()
+    }
+
+    /** Awaited, so the handler actually sees the cast *start* — it tracks
+     * the transition, and a test that sets both statuses in one go leaves
+     * it with nothing to fall from. */
+    async function playingStationOnACast(): Promise<ReturnType<typeof usePlaybackStore>> {
+      const playback = usePlaybackStore()
+      playback.init()
+      castTo()
+      await flushPromises()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      playback.isPlaying = true
+      return playback
+    }
+
+    it('goes quiet instead of playing a station on here that was stopped at the speaker', async () => {
+      const playback = await playingStationOnACast()
+
+      await endCast({ orphaned: true })
+
+      expect(engine.playLive).not.toHaveBeenCalled()
+      expect(playback.isPlaying).toBe(false)
+    })
+
+    it('still hands a station back to local speakers when the cast is ended from here', async () => {
+      // The other half of the same branch: ending the cast yourself is a
+      // handover and has to stay one.
+      const playback = await playingStationOnACast()
+
+      await endCast()
+
+      expect(engine.playLive).toHaveBeenCalledWith(
+        ...playingStation('https://stream.example/chill'),
+      )
+      expect(playback.isPlaying).toBe(true)
+    })
+  })
+
   describe('the radio now-playing poll', () => {
     it('picks up the backend-reported title while a station is playing', async () => {
       const playback = usePlaybackStore()

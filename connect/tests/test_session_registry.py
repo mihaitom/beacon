@@ -615,6 +615,11 @@ async def test_an_orphaned_cast_relay_ends_the_station_for_the_session():
     # Every client watching has to be told, or the app keeps showing a
     # station that stopped playing minutes ago.
     assert len(broadcasts) == 1
+    # Flagged, because to a client this otherwise looks exactly like the
+    # cast being ended from the app — which hands the station back to that
+    # machine's own speakers. Reported live 2026-09-12: a station stopped
+    # at the speaker started playing on the phone 90s later.
+    assert broadcasts[0]["orphaned"] is True
 
 
 async def test_an_orphaned_local_relay_is_torn_down_without_touching_the_session():

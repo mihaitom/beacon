@@ -20,13 +20,28 @@ function mountView() {
 
 /** The tail of a real drag: the browser dispatches pointerup, then
  * synthesises a click from the same pointer sequence onto whichever
- * element the press and the release share. Dispatched in one turn, as the
- * browser does, so the ordering the fix depends on is what is under test. */
-async function endDragOverRow(wrapper: ReturnType<typeof mountView>, index: number) {
+ * element the press and the release share. A mouse does that within the
+ * same task; `delayTasks` is how the same tail arrives from touch, which
+ * doesn't (see the phone case below). */
+async function endDragOverRow(
+  wrapper: ReturnType<typeof mountView>,
+  index: number,
+  delayTasks = false,
+) {
   window.dispatchEvent(new Event('pointerup'))
   await wrapper.vm.$nextTick()
+  if (delayTasks) await vi.advanceTimersByTimeAsync(0)
   wrapper.findAllComponents(MobileQueueRow)[index]!.trigger('click')
   await wrapper.vm.$nextTick()
+}
+
+/** Drags row `from` onto the far side of row `to` — a real reorder, unlike
+ * the release-in-place drags the click tests use. */
+function dragRowOnto(wrapper: ReturnType<typeof mountView>, from: number, to: number) {
+  wrapper.findAllComponents(MobileQueueRow)[from]!.vm.$emit('drag-start', new Event('pointerdown'))
+  const vm = wrapper.vm as unknown as { overIndex: number; overHalf: 'before' | 'after' }
+  vm.overIndex = to
+  vm.overHalf = 'after'
 }
 
 describe('MobileQueueView', () => {
@@ -58,8 +73,8 @@ describe('MobileQueueView', () => {
       expect(playAtIndex).not.toHaveBeenCalled()
     })
 
-    /** The suppression lasts exactly one task — a tap afterwards is a tap,
-     * not the tail of the drag before it. */
+    /** The suppression covers exactly one click — a tap afterwards is a
+     * tap, not the tail of the drag before it. */
     it('plays again on the next tap after a drag', async () => {
       vi.useFakeTimers()
       const wrapper = mountView()
@@ -74,6 +89,26 @@ describe('MobileQueueView', () => {
       await wrapper.findAllComponents(MobileQueueRow)[0]!.trigger('click')
 
       expect(playAtIndex).toHaveBeenCalledWith(0)
+      vi.useRealTimers()
+    })
+
+    /** Reported live 2026-09-12, phone only: swapping two rows started
+     * playing the one that had just been moved. Touch doesn't synthesise
+     * its click in the same task as pointerup the way a mouse does, so a
+     * suppression that expired on the next task was already gone again by
+     * the time the click landed. */
+    it('does not play the row a swap just moved, when the click trails the drag', async () => {
+      vi.useFakeTimers()
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('a'), makeSong('b'), makeSong('c')], 0)
+      const wrapper = mountView()
+      const playAtIndex = vi.spyOn(playback, 'playAtIndex').mockResolvedValue()
+
+      dragRowOnto(wrapper, 1, 2)
+      await endDragOverRow(wrapper, 2, true)
+
+      expect(playback.queue.map((song) => song.id)).toEqual(['a', 'c', 'b'])
+      expect(playAtIndex).not.toHaveBeenCalled()
       vi.useRealTimers()
     })
 

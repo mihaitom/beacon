@@ -335,6 +335,14 @@ export interface ConnectStatus {
   // one means nobody asked for the stop at all, which is why the frontend
   // offers to pick playback back up rather than deciding for the user.
   interrupted: boolean
+  // True only on the single status tick fired when a station was given up
+  // on because nothing had been listening to it for a minute and a half —
+  // see connect/core/session.py's _radio_relay_orphaned(). Read together
+  // with `displaced` by playback.ts's cast-ended handler: both say this
+  // session stopped casting without the user here asking it to, so local
+  // speakers must not pick the station up. Not `interrupted`, whose resume
+  // offer would have nothing left to act on.
+  orphaned: boolean
 }
 
 // One GET /visualizer frame — see connect/core/audio_analysis.py. Only ever
