@@ -52,9 +52,9 @@
         density="compact"
         hide-details
         style="flex: 1"
-        @update:model-value="onVolumeChange"
+        @update:model-value="onVolumeInput"
         @start="onVolumeDragStart"
-        @end="onVolumeDragEnd"
+        @end="onVolumeCommit"
         @touchcancel="endCancelledSliderTouch"
       />
       <span class="text-body-small text-medium-emphasis mobile-device-row__volume-value">{{
@@ -194,9 +194,6 @@ export default {
     onVolumeDragStart() {
       startVolumeDrag(this.deviceRef)
     },
-    onVolumeDragEnd() {
-      endVolumeDrag(this.deviceRef)
-    },
 
     onRowClick() {
       // claimedByOther has its own explicit "Take over" button above instead
@@ -212,11 +209,16 @@ export default {
       if (!acceptsVolumeReading(this.deviceRef)) return
       this.volume = raw == null ? null : Math.round(raw)
     },
-    onVolumeChange(value: number) {
+    /** Moves the slider and nothing else — the speaker is told on release,
+     * same as MobileTransportControls.vue's own slider explains at length. */
+    onVolumeInput(value: number) {
+      this.volume = Math.round(value)
+    },
+    onVolumeCommit(value: number) {
       const rounded = Math.round(value)
-      noteVolumeChange(this.deviceRef)
       this.volume = rounded
-      // Not awaited per move - see services/connect/volumeWrite.ts.
+      endVolumeDrag(this.deviceRef)
+      noteVolumeChange(this.deviceRef)
       writeDeviceVolume(this.deviceRef, rounded, (volume) =>
         this.connectStore.setDeviceVolume(this.type, this.device.name, volume),
       )

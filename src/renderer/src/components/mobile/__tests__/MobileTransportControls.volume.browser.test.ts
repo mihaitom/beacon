@@ -156,21 +156,45 @@ describe('the cast volume slider under a real drag', () => {
     expect(setDeviceVolume.mock.calls.at(-1)?.slice(0, 2)).toEqual(['sonos', 'Kitchen'])
   })
 
-  // The reported bug: a finger reports every frame, and each move used to
-  // go straight out. Two dozen unserialised requests land in whatever order
-  // the speaker answers them, so it ends up at an arbitrary one of them -
-  // often near where the drag began. See services/connect/volumeWrite.ts.
-  it('does not flood the speaker over one drag, and ends on the released level', async () => {
+  // The reported bug, and the shape of the fix: a finger reports every
+  // frame, and each move used to go straight out. Two dozen requests to a
+  // speaker answering in its own time meant its readings disagreed with the
+  // slider for as long as the backlog took to clear, and the slider was put
+  // back to roughly where the drag began. The speaker is now told once, on
+  // release - the way the LAN remote has always done it, see
+  // static/remote/js/views/now-playing.js.
+  it('tells the speaker once for a whole drag, on release', async () => {
     const { setDeviceVolume } = await mountControls('sonos', 60)
 
     await dragTo(0.85, 25)
-    // Long enough for the last queued write to go out after the finger
-    // lifted - that one is what leaves the speaker where it was released.
+    // Nothing may have gone out yet: the finger has lifted, but a move is
+    // not a command.
+    const duringDrag = setDeviceVolume.mock.calls.length
     await new Promise((resolve) => setTimeout(resolve, 300))
 
     const sent = setDeviceVolume.mock.calls.map((call) => call[2] as number)
-    expect(sent.length).toBeLessThan(25)
-    expect(sent.at(-1)).toBe(Number(label().replace('%', '')))
+    expect(duringDrag).toBeLessThanOrEqual(1)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toBe(Number(label().replace('%', '')))
+  })
+
+  // What all of this is actually for: the speaker goes on reporting the old
+  // level for a while after the drag, and that must not reach the slider.
+  it('keeps the released level while the speaker still reports the old one', async () => {
+    await mountControls('sonos', 300)
+    await dragTo(0.85, 25)
+    const released = label()
+    expect(released).not.toBe('30%')
+
+    const connect = useConnectStore()
+    for (let tick = 0; tick < 8; tick++) {
+      connect.status = makeStatus({
+        targets: [{ name: 'Kitchen', type: 'sonos', volume: 30, volume_push: true }],
+      })
+      await new Promise((resolve) => setTimeout(resolve, 120))
+    }
+
+    expect(label()).toBe(released)
   })
 })
 

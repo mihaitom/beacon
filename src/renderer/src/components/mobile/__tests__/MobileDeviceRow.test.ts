@@ -209,7 +209,9 @@ describe('MobileDeviceRow', () => {
       const wrapper = mountRow()
       await wrapper.vm.$nextTick()
 
-      await wrapper.getComponent({ name: 'VSlider' }).vm.$emit('update:modelValue', 42.6)
+      const slider = wrapper.getComponent({ name: 'VSlider' })
+      await slider.vm.$emit('update:modelValue', 42.6)
+      await slider.vm.$emit('end', 42.6)
 
       expect(setVolumeSpy).toHaveBeenCalledWith('sonos', 'Kitchen', 43)
       expect(wrapper.get('.mobile-device-row__volume-value').text()).toBe('43%')

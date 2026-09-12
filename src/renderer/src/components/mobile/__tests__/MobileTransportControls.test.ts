@@ -426,7 +426,13 @@ describe('MobileTransportControls', () => {
       castTo('Kitchen', 'sonos')
       await wrapper.vm.$nextTick()
 
-      await wrapper.getComponent({ name: 'VSlider' }).vm.$emit('update:modelValue', 42.6)
+      const slider = wrapper.getComponent({ name: 'VSlider' })
+      await slider.vm.$emit('update:modelValue', 42.6)
+      // Shown straight away, before anything has been sent.
+      expect(wrapper.get('.mobile-transport__volume-value').text()).toBe('43%')
+      expect(setVolumeSpy).not.toHaveBeenCalled()
+
+      await slider.vm.$emit('end', 42.6)
 
       expect(setVolumeSpy).toHaveBeenCalledWith('sonos', 'Kitchen', 43)
       expect(wrapper.get('.mobile-transport__volume-value').text()).toBe('43%')
@@ -454,7 +460,9 @@ describe('MobileTransportControls', () => {
         )
         await vi.advanceTimersByTimeAsync(4000)
 
-        wrapper.getComponent({ name: 'VSlider' }).vm.$emit('update:modelValue', 70)
+        const slider70 = wrapper.getComponent({ name: 'VSlider' })
+        slider70.vm.$emit('update:modelValue', 70)
+        slider70.vm.$emit('end', 70)
         await wrapper.vm.$nextTick()
         expect(wrapper.get('.mobile-transport__volume-value').text()).toBe('70%')
 
@@ -506,7 +514,9 @@ describe('MobileTransportControls', () => {
         await wrapper.vm.$nextTick()
         await vi.runOnlyPendingTimersAsync()
 
-        wrapper.getComponent({ name: 'VSlider' }).vm.$emit('update:modelValue', 70)
+        const slider = wrapper.getComponent({ name: 'VSlider' })
+        slider.vm.$emit('update:modelValue', 70)
+        slider.vm.$emit('end', 70)
         await wrapper.vm.$nextTick()
 
         // Someone turns the dial on the speaker itself a few seconds later:

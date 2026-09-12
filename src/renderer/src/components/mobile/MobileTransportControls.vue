@@ -102,9 +102,9 @@
           :disabled="deviceVolume == null"
           density="compact"
           hide-details
-          @update:model-value="onDeviceVolumeChange"
+          @update:model-value="onDeviceVolumeInput"
           @start="onVolumeDragStart"
-          @end="onVolumeDragEnd"
+          @end="onDeviceVolumeCommit"
           @touchcancel="endCancelledSliderTouch"
         />
         <v-slider
@@ -297,24 +297,43 @@ export default {
       if (!acceptsVolumeReading(target)) return
       this.deviceVolume = raw == null ? null : Math.round(raw)
     },
-    onDeviceVolumeChange(value: number) {
+    /**
+     * A move under the finger only moves the slider. Nothing is sent until
+     * it lifts.
+     *
+     * The speaker is told once, on release, the way the LAN remote has
+     * always done it (an `input` listener that only paints, a `change`
+     * listener that sends - see static/remote/js/views/now-playing.js).
+     * Sending every frame instead is what all the machinery around this
+     * was built to survive: a drag reports ~25 moves, each its own request
+     * to a speaker that answers in its own time, so the level it ended up
+     * at was whichever one landed last and its readings disagreed with the
+     * slider for as long as the backlog took to clear. None of that has to
+     * be survived if it is never created. The cost is no live ramp at the
+     * speaker while the finger moves, which is the trade the remote makes
+     * too.
+     */
+    onDeviceVolumeInput(value: number) {
+      if (!this.singleActiveTarget) return
+      this.deviceVolume = Math.round(value)
+    },
+    /** The finger lifted: this is the value the speaker is actually told.
+     * Also reached by a drag the browser took away - the synthesised
+     * touchend (see sliderTouchCancel.ts) makes Vuetify emit `end` - and by
+     * the mute button, neither of which should leave the level unsent. */
+    onDeviceVolumeCommit(value: number) {
       const target = this.singleActiveTarget
       if (!target) return
       const rounded = Math.round(value)
-      noteVolumeChange(target)
       this.deviceVolume = rounded
-      // Not awaited per move - see services/connect/volumeWrite.ts: a drag
-      // reports every frame, and sending each one straight out left the
-      // speaker at whichever command happened to land last.
+      endVolumeDrag(target)
+      noteVolumeChange(target)
       writeDeviceVolume(target, rounded, (volume) =>
         this.connectStore.setDeviceVolume(target.type, target.name, volume),
       )
     },
     onVolumeDragStart() {
       if (this.singleActiveTarget) startVolumeDrag(this.singleActiveTarget)
-    },
-    onVolumeDragEnd() {
-      if (this.singleActiveTarget) endVolumeDrag(this.singleActiveTarget)
     },
     async onSeekEnd(value: number) {
       await this.playbackStore.seek(value)
@@ -323,10 +342,10 @@ export default {
     toggleMute() {
       if (this.singleActiveTarget) {
         if (this.deviceVolume === 0) {
-          void this.onDeviceVolumeChange(this.deviceVolumeBeforeMute || 50)
+          this.onDeviceVolumeCommit(this.deviceVolumeBeforeMute || 50)
         } else {
           this.deviceVolumeBeforeMute = this.deviceVolume ?? 50
-          void this.onDeviceVolumeChange(0)
+          this.onDeviceVolumeCommit(0)
         }
         return
       }
