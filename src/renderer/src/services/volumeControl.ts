@@ -3,6 +3,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useConnectStore } from '@/stores/connect'
 import { STEP_FRACTION } from '@/services/volumeWheel'
 import { noteVolumeChange } from '@/services/connect/volumeGuard'
+import { writeDeviceVolume } from '@/services/connect/volumeWrite'
 import type { ConnectDeviceRef, ConnectStatusTarget } from '@/services/connect/types'
 
 /**
@@ -114,7 +115,13 @@ export async function setVolume(scope: VolumeScope, volume: number): Promise<voi
   // toggle was overwritten a second later by a poll that had been in
   // flight, or by a push carrying the pre-change value.
   noteVolumeChange(scope.device)
-  await useConnectStore().setDeviceVolume(scope.device.type, scope.device.name, rounded)
+  // Serialised like every slider's own writes - see volumeWrite.ts. A held
+  // arrow key repeats at the keyboard's own rate and a wheel spins faster
+  // still, which is the same burst a drag produces.
+  const device = scope.device
+  writeDeviceVolume(device, rounded, (volume) =>
+    useConnectStore().setDeviceVolume(device.type, device.name, volume),
+  )
 }
 
 /**

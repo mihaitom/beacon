@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -7,6 +7,7 @@ import { VBtn } from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useConnectStore } from '@/stores/connect'
+import { _resetVolumeWrites } from '@/services/connect/volumeWrite'
 import { usePlaybackStore } from '@/stores/playback'
 import ConnectDevicePicker from '../ConnectDevicePicker.vue'
 import { _resetPollGate, noteResponseStatus } from '@/services/connect/pollGate'
@@ -328,6 +329,33 @@ describe('ConnectDevicePicker', () => {
       .vm.$emit('volume-change', { type: 'sonos', device: { name: 'Kitchen' }, volume: 42 })
 
     expect(setVolumeSpy).toHaveBeenCalledWith('sonos', 'Kitchen', 42)
+  })
+
+  // This slider reports every drag tick like the others, and sending each
+  // one straight out left the speaker at whichever request it answered
+  // last - see services/connect/volumeWrite.ts.
+  it('collapses a drag into one request at a time, ending on the released level', async () => {
+    _resetVolumeWrites()
+    const connect = useConnectStore()
+    connect.devices = makeDevices({ sonos: [{ name: 'Kitchen' }] })
+    const wrapper = mountPicker()
+    let answer!: () => void
+    const setVolumeSpy = vi
+      .spyOn(connect, 'setDeviceVolume')
+      .mockImplementation(() => new Promise<void>((resolve) => (answer = resolve)))
+
+    const item = wrapper.getComponent(DeviceListItemStub)
+    for (const volume of [31, 45, 58, 66, 85]) {
+      item.vm.$emit('volume-change', { type: 'sonos', device: { name: 'Kitchen' }, volume })
+    }
+
+    // Only the first is out; the rest replaced each other while it was.
+    expect(setVolumeSpy).toHaveBeenCalledTimes(1)
+    answer()
+    await flushPromises()
+
+    expect(setVolumeSpy).toHaveBeenCalledTimes(2)
+    expect(setVolumeSpy).toHaveBeenLastCalledWith('sonos', 'Kitchen', 85)
   })
 
   it('polls refreshDevices() every 4s while mounted, and stops on unmount', async () => {

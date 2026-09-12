@@ -130,6 +130,7 @@
 <script lang="ts">
 import { useConnectStore } from '@/stores/connect'
 import { pollingAllowed } from '@/services/connect/pollGate'
+import { writeDeviceVolume } from '@/services/connect/volumeWrite'
 import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
 import ConnectErrorBanner from './ConnectErrorBanner.vue'
@@ -366,7 +367,7 @@ export default {
       this.pairingDeviceName = name
       this.pairingOpen = true
     },
-    async onVolumeChange({
+    onVolumeChange({
       type,
       device,
       volume,
@@ -375,7 +376,12 @@ export default {
       device: DiscoveredDevice
       volume: number
     }) {
-      await this.connectStore.setDeviceVolume(type, device.name, volume)
+      // Not awaited per move - see services/connect/volumeWrite.ts.
+      // DeviceListItem.vue reports every drag tick up here too, so this
+      // slider floods a speaker exactly the way the others did.
+      writeDeviceVolume({ type, name: device.name }, volume, (level) =>
+        this.connectStore.setDeviceVolume(type, device.name, level),
+      )
     },
   },
 }
