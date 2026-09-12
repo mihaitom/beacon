@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
@@ -12,6 +13,14 @@ import { makeSong } from '@/stores/__tests__/fixtures'
 import type { Album } from '@/types/library'
 
 const vuetify = createVuetify({ components, directives })
+
+// MobileAlbumRow is a link to the album page — without a real router its
+// <router-link> resolves to nothing and the row under test is not the one
+// that ships.
+const router = createRouter({
+  history: createMemoryHistory(),
+  routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
+})
 
 function makeAlbum(id: string, overrides: Partial<Album> = {}): Album {
   return {
@@ -33,7 +42,10 @@ function makeAlbum(id: string, overrides: Partial<Album> = {}): Album {
 
 function mountView() {
   return mount(MobileLibraryView, {
-    global: { plugins: [vuetify, i18n], stubs: { CoverArt: true, MobileSongActionSheet: true } },
+    global: {
+      plugins: [vuetify, i18n, router],
+      stubs: { CoverArt: true, MobileSongActionSheet: true },
+    },
   })
 }
 
@@ -155,11 +167,27 @@ describe('MobileLibraryView', () => {
     await flushPromises()
     await switchTo(wrapper, 'Albums')
 
-    await wrapper.getComponent({ name: 'MobileAlbumRow' }).trigger('click')
+    await wrapper.get('.mobile-album-row button').trigger('click')
     await flushPromises()
 
     // startIndex 0, pinFirst false, peek true — an album is a sequenced
     // work, not a pick made row by row.
     expect(playSongList).toHaveBeenCalledWith(songs, 0, false, true)
+  })
+
+  // The row itself opens the album rather than playing it. That the play
+  // button does *not* also navigate cannot be answered here - jsdom runs no
+  // anchor activation - and is covered in MobileAlbumRow.browser.test.ts.
+  it('links each album row to its page', async () => {
+    const library = stubStore()
+    library.allSongs = []
+    library.albums = [makeAlbum('1')]
+    vi.spyOn(library, 'fetchAlbum').mockResolvedValue(makeAlbum('1', { songs: [makeSong('x')] }))
+    vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+    const wrapper = mountView()
+    await flushPromises()
+    await switchTo(wrapper, 'Albums')
+
+    expect(wrapper.get('.mobile-album-row').attributes('href')).toBe('/m/albums/1')
   })
 })

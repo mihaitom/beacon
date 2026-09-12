@@ -45,6 +45,7 @@ function makeRouter() {
       { path: '/', component: { template: '<div />' } },
       { path: '/artists/:id', component: { template: '<div />' } },
       { path: '/albums/:id', component: { template: '<div />' } },
+      { path: '/m/albums/:id', component: { template: '<div />' } },
     ],
   })
 }
@@ -637,10 +638,36 @@ describe('NowPlayingView', () => {
   })
 
   describe('compact prop', () => {
+    async function mountCompactWithSong() {
+      const mounted = await mountView({ compact: true })
+      usePlaybackStore().setQueue(
+        [makeSong('a', { title: 'Track A', artist: 'Artist A', album: 'Album A' })],
+        0,
+      )
+      await mounted.wrapper.vm.$nextTick()
+      return mounted
+    }
+
     it('applies the compact modifier class', async () => {
       const { wrapper } = await mountView({ compact: true })
 
       expect(wrapper.classes()).toContain('now-playing--compact')
+    })
+
+    // The mobile shell has its own album page and no artist page at all
+    // (see the router's m-album-detail comment). Sending either tap to the
+    // desktop route left a table with no phone layout and no way back.
+    it('sends the album to the mobile shell own page', async () => {
+      const { wrapper } = await mountCompactWithSong()
+
+      expect(wrapper.get('.now-playing__album-link').attributes('href')).toBe('/m/albums/album-1')
+    })
+
+    it('names the artist without linking anywhere', async () => {
+      const { wrapper } = await mountCompactWithSong()
+
+      expect(wrapper.find('.now-playing__artist-link').exists()).toBe(false)
+      expect(wrapper.get('.now-playing__artist-label').text()).toBe('Artist A')
     })
   })
 })

@@ -12,9 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The columns of every track list can now be chosen: right-click the column headings (or use the button at their right edge) to switch columns on and off. The choice applies to every track list and follows the account to your other devices
 - Nine more columns to choose from, alongside cover, album, genre, year, plays, format and the star rating: track and disc number, BPM, sample rate, file size, comment, path, when a track was added and when it was last played. Each can be sorted by, and a column your server has no data for is not offered at all rather than standing empty
 - Shift-click selects a whole range of tracks at once, Ctrl/Cmd+A extends a selection to the entire list, and the checkbox in the column headings selects the whole list or clears the selection again
+- An album page for the phone: tapping an album in the library, or the album name on Now Playing, opens it with the tracks in their own order and a button to play the lot
 
 ### Changed
 
+- Tapping an album in the phone's library opens it now instead of starting it straight away. The play button on the row still does that
+- The artist name on the phone's Now Playing screen is no longer a link. It opened the desktop artist page, which has no phone layout of its own
 - A large Jellyfin library loads in about half the time: a 20,000-track catalog in around 18 seconds instead of 33, measured on Jellyfin 12
 - Figures in a track list now line up under each other instead of shifting about from row to row
 - Starting a station, on this device or on a speaker, now opens one connection to it instead of two, so it starts a little sooner and a station that allows only one listener at a time is no longer asked for a second

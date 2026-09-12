@@ -206,13 +206,24 @@
                     currentSong?.title ?? radioMeta.nowPlaying ?? playbackStore.radioStation?.name
                   }}
                 </h1>
+                <!-- A link only where there is an artist page to land on.
+                 - The mobile shell has none (its library tab plays an album
+                 - rather than opening one), and the desktop view rendered
+                 - inside it is a table with no phone layout and nothing to
+                 - get back with. -->
                 <router-link
-                  v-if="currentSong"
+                  v-if="currentSong && !compact"
                   :to="`/artists/${currentSong.artistId}`"
                   class="text-title-large text-medium-emphasis now-playing__artist-link"
                 >
                   {{ currentSong.artist }}
                 </router-link>
+                <div
+                  v-else-if="currentSong"
+                  class="text-title-large text-medium-emphasis now-playing__artist-label"
+                >
+                  {{ currentSong.artist }}
+                </div>
                 <!-- Station name, not the ICY tag — swapped with the title
                  - above so the tag (what's actually playing right now) is
                  - the prominent label and the station is the secondary one,
@@ -228,9 +239,13 @@
                   {{ playbackStore.radioStation?.name }}
                 </div>
                 <div v-else class="text-title-large text-medium-emphasis" />
+                <!-- Each shell to its own album page - see
+                 - views/mobile/MobileAlbumDetailView.vue. -->
                 <router-link
                   v-if="currentSong"
-                  :to="`/albums/${currentSong.albumId}`"
+                  :to="
+                    compact ? `/m/albums/${currentSong.albumId}` : `/albums/${currentSong.albumId}`
+                  "
                   class="text-body-medium text-medium-emphasis now-playing__album-link"
                 >
                   {{ currentSong.album }}
@@ -1552,7 +1567,11 @@ export default {
  * unlayered, so it now wins on that alone regardless of specificity —
  * the compound selector is belt-and-braces rather than required. Kept
  * because it costs nothing and stops the question being reopened. */
-.now-playing__info .now-playing__artist-link {
+.now-playing__info .now-playing__artist-link,
+/* The same line where it is not a link (see the template's compact
+ * branch) - only the sizing matters, and it has to be the identical
+ * number: artSize below measures this block's height. */
+.now-playing__info .now-playing__artist-label {
   font-size: clamp(0.9rem, min(3.4cqw, 4.5cqh), 1.5rem);
   /* Block, not the anchor's default inline — inline elements ignore
    * vertical margin (mb-2 here would otherwise silently do nothing) and
@@ -1657,7 +1676,8 @@ export default {
   -webkit-line-clamp: 2;
 }
 
-.now-playing--compact .now-playing__info .now-playing__artist-link {
+.now-playing--compact .now-playing__info .now-playing__artist-link,
+.now-playing--compact .now-playing__info .now-playing__artist-label {
   font-size: clamp(0.8rem, min(2.4cqw, 3.2cqh), 1.5rem);
 }
 

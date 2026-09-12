@@ -151,6 +151,14 @@ const router = createRouter({
       name: 'm-library',
       component: () => import('../views/mobile/MobileLibraryView.vue'),
     },
+    // Reached from the album name on Now Playing. There is deliberately no
+    // artist equivalent: that page is shelves of albums on the desktop and
+    // has no phone-sized design, so the artist name there stays text.
+    {
+      path: '/m/albums/:id',
+      name: 'm-album-detail',
+      component: () => import('../views/mobile/MobileAlbumDetailView.vue'),
+    },
     // The songs list grew an albums half and became the library (see
     // MobileLibraryView.vue), so the old path is kept as a redirect rather
     // than 404ing a bookmark or a link someone already has.

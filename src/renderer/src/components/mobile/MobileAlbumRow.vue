@@ -1,11 +1,9 @@
 <template>
-  <div class="mobile-album-row mobile-row" @click="$emit('play')">
-    <!-- Tapping the row plays the album, the same "tap is play" MobileSongRow
-     - uses — no hover state exists on touch to reveal anything else, and the
-     - desktop's album *grid* (AlbumCard.vue) has no mobile-sized design of
-     - its own. The explicit play button stays for the same reason
-     - MobilePlaylistRow.vue keeps one: it says the row is playable rather
-     - than leaving that to be discovered. -->
+  <router-link :to="`/m/albums/${album.id}`" class="mobile-album-row mobile-row">
+    <!-- Tapping the row opens the album, the same split MobilePlaylistRow.vue
+     - makes: a row that stands for a collection leads to it, and the button
+     - is what plays it. MobileSongRow's "tap is play" is for rows that are a
+     - single track, where there is nothing to open. -->
     <cover-art
       :cover-art-id="album.coverArtId"
       :size="MOBILE_ROW_ART_SIZE"
@@ -22,9 +20,9 @@
       size="small"
       color="primary"
       :title="$t('library.play')"
-      @click.stop="$emit('play')"
+      @click.prevent.stop="$emit('play')"
     />
-  </div>
+  </router-link>
 </template>
 
 <script lang="ts">
@@ -57,6 +55,7 @@ export default {
 
 <style scoped>
 .mobile-album-row {
-  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
 }
 </style>
