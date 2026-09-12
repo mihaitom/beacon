@@ -266,6 +266,11 @@ textarea {
 
 .seek-row { width: 100%; }
 .seek-row input[type="range"] { width: 100%; }
+/* The 32px hit area above, kept out of the layout: nothing either side of
+ * this row is touchable, so the overhang costs nothing and the screen does
+ * not grow by 28px. The volume rows need no such thing - their own buttons
+ * already make them that tall. */
+.seek-row input[type="range"] { margin-block: -14px; }
 .time-row { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); }
 
 /* What a station gets in place of the seek row — see now-playing.js.
@@ -406,17 +411,23 @@ textarea {
  * painted two different ways because the two engines expose it
  * differently: Firefox natively supports ::-moz-range-progress (styled
  * below, static CSS only); WebKit (what this PWA actually runs under on
- * iOS/Android — no equivalent pseudo-element at all) needs it painted as a
- * background gradient on the input itself instead — see range.js's
- * paintRange(), called after every value change. ::-webkit-slider-runnable-
- * track stays transparent so that gradient is what actually shows through. */
+ * iOS/Android — no equivalent pseudo-element at all) has no equivalent, so
+ * the fill is a gradient stop driven by the --fill custom property that
+ * range.js's paintRange() writes after every value change.
+ *
+ * The element is 32px high while the track it draws stays 4px. What a
+ * finger has to hit is the element, not the track: at the 4px this used to
+ * be, a touch that landed beside the line reached nothing at all and the
+ * drag simply never started - reported as the slider not registering that
+ * it was being dragged. The thumb looked bigger than the target because it
+ * overhangs on a negative margin. 32px is what the app's own phone slider
+ * uses (components/mobile/TouchVolumeSlider.vue). */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--surface-2);
+  height: 32px;
+  background: transparent;
   outline: none;
   margin: 0;
 }
@@ -424,7 +435,11 @@ input[type="range"] {
 input[type="range"]::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 2px;
-  background: transparent;
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--fill, 0%),
+    var(--surface-2) var(--fill, 0%)
+  );
 }
 
 input[type="range"]::-moz-range-track {
@@ -780,7 +795,9 @@ input[type="range"]:disabled::-moz-range-thumb {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 20px 14px 54px;
+  /* Was 14px at the bottom; the slider's own hit area now supplies most of
+   * that space itself. */
+  padding: 0 20px 4px 54px;
   color: var(--text-muted);
 }
 .device-volume-row i { font-size: 1rem; flex-shrink: 0; }

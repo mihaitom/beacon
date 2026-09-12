@@ -72,3 +72,23 @@ Every test written along the way passed while the bug was live:
 A test that drives the thing under test more precisely than a user can will
 pass regardless. The question worth asking earlier: _does the emulator do
 this too?_ - and _does the sound move, or only the display?_
+
+## The same class of fault in the LAN remote
+
+Found straight after, while checking whether the native element carries a
+weakness of its own. It does, and the remote had it: `input[type="range"]`
+was styled `height: 4px` in `connect/static/remote/app.css`, so the whole
+hit area was 4px. The thumb looks bigger only because it overhangs on a
+negative margin. A touch landing beside the line reached no element at all
+and the drag never started - reported as the slider not registering that it
+was being dragged.
+
+Raised to 32px, with the 4px track moved into the pseudo-elements and the
+fill driven by a `--fill` custom property (`js/range.js`) rather than a
+background on the element, which at 32px would have painted a thick bar
+instead of a line.
+
+Worth remembering as its own rule: **what a finger has to hit is the
+element, not the part of it that is painted.** Both halves of this
+investigation are that same mistake, once in Vuetify's markup and once in
+our own CSS.
