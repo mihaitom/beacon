@@ -65,8 +65,12 @@ async function switchTo(wrapper: ReturnType<typeof mountView>, label: string) {
 }
 
 describe('MobileLibraryView', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
+    // The view writes its search and its half into the address (see
+    // rememberSearch) and reads them back on mount, so a route left over
+    // from the previous test would decide where this one starts.
+    await router.replace('/')
   })
 
   it('starts on songs', async () => {
@@ -173,6 +177,66 @@ describe('MobileLibraryView', () => {
     // startIndex 0, pinFirst false, peek true — an album is a sequenced
     // work, not a pick made row by row.
     expect(playSongList).toHaveBeenCalledWith(songs, 0, false, true)
+  })
+
+  // Opening an album unmounts this view, so anything it kept in data()
+  // alone is gone by the time the back button brings it up again. Reported
+  // live: a search, an album, back, and the results were the whole library
+  // again on the wrong half.
+  describe('coming back from an album', () => {
+    async function searchThenLeave() {
+      const library = stubStore()
+      library.allSongs = [makeSong('a', { title: 'Blue Song' })]
+      library.albums = [makeAlbum('1', { name: 'Blue Album' }), makeAlbum('2', { name: 'Red' })]
+      const wrapper = mountView()
+      await flushPromises()
+      await switchTo(wrapper, 'Albums')
+      await wrapper.get('input[type="text"]').setValue('Blue')
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      await flushPromises()
+      expect(wrapper.findAllComponents({ name: 'MobileAlbumRow' })).toHaveLength(1)
+      wrapper.unmount()
+      return library
+    }
+
+    it('finds the search and the half it was on still there', async () => {
+      await searchThenLeave()
+
+      // The address is what survives the unmount, so a fresh mount on the
+      // same route is exactly what the back button produces.
+      const wrapper = mountView()
+      await flushPromises()
+
+      expect(wrapper.findAllComponents({ name: 'MobileAlbumRow' })).toHaveLength(1)
+      expect(wrapper.findAllComponents({ name: 'MobileSongRow' })).toHaveLength(0)
+      expect((wrapper.get('input[type="text"]').element as HTMLInputElement).value).toBe('Blue')
+    })
+
+    it('does not turn every keystroke into a step on the way back', async () => {
+      // A real entry to go back to, so "one step back" has somewhere to
+      // land other than the start of the history.
+      await router.push('/m/now-playing')
+      await router.push('/m/library')
+
+      const library = stubStore()
+      library.allSongs = []
+      library.albums = [makeAlbum('1', { name: 'Blue Album' }), makeAlbum('2', { name: 'Red' })]
+      const wrapper = mountView()
+      await flushPromises()
+      await switchTo(wrapper, 'Albums')
+      for (const term of ['B', 'Bl', 'Blu', 'Blue']) {
+        await wrapper.get('input[type="text"]').setValue(term)
+        await new Promise((resolve) => setTimeout(resolve, 250))
+      }
+      await flushPromises()
+      expect(router.currentRoute.value.query.q).toBe('Blue')
+
+      // replace(), not push(): one step leaves the library instead of
+      // walking the search backwards a letter at a time.
+      router.back()
+      await flushPromises()
+      expect(router.currentRoute.value.path).toBe('/m/now-playing')
+    })
   })
 
   // The row itself opens the album rather than playing it. That the play

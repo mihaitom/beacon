@@ -182,7 +182,9 @@ export default {
     view() {
       this.pageSize = PAGE_SIZE
       if (!this.showingSongs) void this.libraryStore.fetchAlbums()
+      this.rememberSearch()
     },
+    debouncedQuery: 'rememberSearch',
     // Not created() alone: Vue Router reuses this component when only the
     // query changes, so a second hand-over while already here would be
     // silently ignored. Same reason SearchView.vue watches its own.
@@ -207,11 +209,35 @@ export default {
       // Optional: this reads a nice-to-have, and the view is perfectly
       // usable mounted without a router at all (its own tests do exactly
       // that) — a hand-over that cannot be read is simply not one.
+      const tab = this.$route?.query?.tab
+      if (tab === 'albums' || tab === 'songs') this.view = tab
       const term = this.$route?.query?.q
       if (typeof term !== 'string' || !term) return
       this.filterQuery = term
       this.debouncedQuery = term
       this.pageSize = PAGE_SIZE
+    },
+    /** Puts the search and the half being browsed in the address, so coming
+     * back from an album (this list is the only way to one, see
+     * MobileAlbumRow.vue) finds them still there. This view is unmounted
+     * while the album is open, so anything held in data() alone is gone by
+     * the time it is looked at again.
+     *
+     * replace(), not push(): every keystroke would otherwise become a stop
+     * on the way out, and pressing back would walk the search backwards one
+     * letter at a time instead of leaving the library. */
+    rememberSearch() {
+      if (!this.$router || !this.$route) return
+      const query: Record<string, string> = {}
+      for (const [key, value] of Object.entries(this.$route.query)) {
+        if (typeof value === 'string') query[key] = value
+      }
+      if (this.debouncedQuery) query.q = this.debouncedQuery
+      else delete query.q
+      if (this.view === 'albums') query.tab = 'albums'
+      else delete query.tab
+      if (query.q === this.$route.query.q && query.tab === this.$route.query.tab) return
+      void this.$router.replace({ query })
     },
     /** The tapped song alone, not the list around it. This list is the
      * whole catalogue, or whatever a search term happened to match - a set
