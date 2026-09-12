@@ -1,5 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { _resetVolumeWrites, writeDeviceVolume } from '../volumeWrite'
+import {
+  VOLUME_SETTLE_MS,
+  _resetVolumeGuards,
+  acceptsVolumeReading,
+  noteVolumeChange,
+} from '../volumeGuard'
 import type { ConnectDeviceRef } from '../types'
 
 const kitchen: ConnectDeviceRef = { type: 'sonos', name: 'Kitchen' }
@@ -29,6 +35,11 @@ function deferredSend() {
 describe('writeDeviceVolume', () => {
   beforeEach(() => {
     _resetVolumeWrites()
+    _resetVolumeGuards()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('sends the first value straight away', async () => {
@@ -77,6 +88,35 @@ describe('writeDeviceVolume', () => {
 
     expect(sent).toEqual([40, 20])
     await answer()
+  })
+
+  // The settle window that keeps a device's own readings off the slider
+  // (see volumeGuard.ts) used to run from the moment the slider moved,
+  // which is not the moment the speaker hears about it: a value queued
+  // behind an in-flight request goes out later than the window lasts, and
+  // the reading that lands next is then still the one from before the
+  // change - the slider snapping back to roughly where the drag began.
+  it('holds the settle window open until the device has answered', async () => {
+    vi.useFakeTimers()
+    const { send, answer } = deferredSend()
+
+    // What a slider does on every move: open the window, queue the value.
+    noteVolumeChange(kitchen)
+    writeDeviceVolume(kitchen, 40, send)
+    writeDeviceVolume(kitchen, 85, send)
+
+    // A speaker taking its time - a Sonos call carries the SSDP discovery
+    // cost - and the window the move opened has run out meanwhile.
+    vi.advanceTimersByTime(VOLUME_SETTLE_MS + 1)
+    await answer()
+    expect(acceptsVolumeReading(kitchen)).toBe(false)
+
+    await answer()
+    vi.advanceTimersByTime(VOLUME_SETTLE_MS - 1)
+    expect(acceptsVolumeReading(kitchen)).toBe(false)
+    // And it does expire: a hand on the speaker's own dial still shows up.
+    vi.advanceTimersByTime(1)
+    expect(acceptsVolumeReading(kitchen)).toBe(true)
   })
 
   it('reports a refused change instead of swallowing it, and carries on', async () => {

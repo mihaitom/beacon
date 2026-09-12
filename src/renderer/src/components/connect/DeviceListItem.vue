@@ -82,6 +82,7 @@
           @click="onToggleMute"
         />
         <v-slider
+          class="volume-slider-touch"
           :model-value="volume ?? 0"
           :max="100"
           :step="1"
@@ -93,6 +94,7 @@
           @start="onVolumeDragStart"
           @end="onVolumeDragEnd"
           @wheel="onVolumeWheel"
+          @touchcancel="endCancelledSliderTouch"
         />
         <span class="text-body-small text-medium-emphasis volume-value">{{
           volume != null ? `${volume}%` : '–'
@@ -107,6 +109,7 @@ import type { PropType } from 'vue'
 import { useConnectStore } from '@/stores/connect'
 import { pollingAllowed } from '@/services/connect/pollGate'
 import { volumeAfterWheel } from '@/services/volumeWheel'
+import { endCancelledSliderTouch } from '@/services/sliderTouchCancel'
 import {
   acceptsVolumeReading,
   endVolumeDrag,
@@ -253,6 +256,7 @@ export default {
     clearInterval(this.volumePollTimer ?? undefined)
   },
   methods: {
+    endCancelledSliderTouch,
     onVolumeDragStart() {
       startVolumeDrag(this.deviceRef)
     },

@@ -1,3 +1,4 @@
+import { noteVolumeChange } from '@/services/connect/volumeGuard'
 import type { ConnectDeviceRef } from '@/services/connect/types'
 
 /**
@@ -37,6 +38,7 @@ import type { ConnectDeviceRef } from '@/services/connect/types'
  */
 
 interface WriteState {
+  device: ConnectDeviceRef
   /** Newest value not yet sent, null when everything is sent. */
   pending: number | null
   sending: boolean
@@ -49,7 +51,7 @@ function stateOf(device: ConnectDeviceRef): WriteState {
   const key = `${device.type}:${device.name}`
   let state = writes.get(key)
   if (!state) {
-    state = { pending: null, sending: false, send: null }
+    state = { device, pending: null, sending: false, send: null }
     writes.set(key, state)
   }
   return state
@@ -68,6 +70,16 @@ async function drain(state: WriteState): Promise<void> {
         // like a broken slider: the level bounced back with nothing said.
         console.error('[volume-write] Device refused the new level:', error)
       }
+      // The settle window runs from here, not from when the slider moved:
+      // queueing is instant, reaching the speaker is not. A Sonos call
+      // carries the SSDP discovery cost (see SonosDelivery._get_device),
+      // which puts the release of a drag and the last command actually
+      // going out a second or more apart - long enough for the window
+      // opened at release to expire while the speaker is still answering
+      // an *earlier* value, and that reading then lands on the slider.
+      // Which is the snap-back to roughly where the drag began, arriving
+      // by a second route than the flood this module already fixed.
+      noteVolumeChange(state.device)
     }
   } finally {
     state.sending = false

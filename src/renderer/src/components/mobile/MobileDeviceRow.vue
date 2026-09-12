@@ -44,6 +44,7 @@
     <div v-if="showVolume" class="mobile-device-row__volume">
       <v-icon icon="mdi-volume-high" size="18" class="mobile-device-row__volume-icon" />
       <v-slider
+        class="volume-slider-touch"
         :model-value="volume ?? 0"
         :max="100"
         :step="1"
@@ -54,6 +55,7 @@
         @update:model-value="onVolumeChange"
         @start="onVolumeDragStart"
         @end="onVolumeDragEnd"
+        @touchcancel="endCancelledSliderTouch"
       />
       <span class="text-body-small text-medium-emphasis mobile-device-row__volume-value">{{
         volume != null ? `${volume}%` : '–'
@@ -73,6 +75,7 @@ import {
   startVolumeDrag,
 } from '@/services/connect/volumeGuard'
 import { writeDeviceVolume } from '@/services/connect/volumeWrite'
+import { endCancelledSliderTouch } from '@/services/sliderTouchCancel'
 import { useAuthStore } from '@/stores/auth'
 import AirplayIcon from '@/components/connect/AirplayIcon.vue'
 import type { ConnectDeviceRef, DeviceType } from '@/services/connect/types'
@@ -187,6 +190,7 @@ export default {
     clearInterval(this.volumePollTimer ?? undefined)
   },
   methods: {
+    endCancelledSliderTouch,
     onVolumeDragStart() {
       startVolumeDrag(this.deviceRef)
     },

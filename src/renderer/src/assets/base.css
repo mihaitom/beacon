@@ -373,3 +373,22 @@ body {
    * the popover is pinned to. */
   transform-origin: bottom right;
 }
+
+/* ── Volume sliders ───────────────────────────────────────────────────────
+ *
+ * Vuetify leaves a horizontal slider's track scrollable
+ * (`touch-action: pan-y`), so a drag that wanders a few pixels off the
+ * horizontal is handed to the page as a scroll and the slider is sent a
+ * `touchcancel` instead of a `touchend` — with consequences that outlive
+ * the gesture, see services/sliderTouchCancel.ts, which catches the cancels
+ * this cannot prevent.
+ *
+ * A finger that lands on a volume slider means to set the volume, so the
+ * gesture is the slider's for as long as it lasts: the same
+ * `touch-action: none` Vuetify already gives the thumb, extended to the
+ * track, which is far easier to hit. Applied through a class rather than to
+ * every .v-slider, since the seek bar and the settings sliders are not
+ * necessarily the same call. */
+.volume-slider-touch .v-slider-track {
+  touch-action: none;
+}

@@ -40,7 +40,7 @@
       />
       <v-slider
         v-if="singleActiveTarget"
-        class="volume-slider"
+        class="volume-slider volume-slider-touch"
         :model-value="deviceVolume ?? 0"
         :max="100"
         :step="1"
@@ -51,10 +51,11 @@
         @start="onVolumeDragStart"
         @end="onVolumeDragEnd"
         @wheel="onVolumeWheel"
+        @touchcancel="endCancelledSliderTouch"
       />
       <v-slider
         v-else
-        class="volume-slider"
+        class="volume-slider volume-slider-touch"
         :model-value="playbackStore.volume"
         :max="1"
         density="compact"
@@ -62,6 +63,7 @@
         :disabled="playbackStore.isCasting"
         @update:model-value="playbackStore.setVolume($event)"
         @wheel="onVolumeWheel"
+        @touchcancel="endCancelledSliderTouch"
       />
       <span class="text-body-small text-medium-emphasis volume-value">{{
         volumePercentLabel
@@ -107,7 +109,7 @@
           />
           <v-slider
             v-if="singleActiveTarget"
-            class="volume-slider"
+            class="volume-slider volume-slider-touch"
             :model-value="deviceVolume ?? 0"
             :max="100"
             :step="1"
@@ -118,10 +120,11 @@
             @start="onVolumeDragStart"
             @end="onVolumeDragEnd"
             @wheel="onVolumeWheel"
+            @touchcancel="endCancelledSliderTouch"
           />
           <v-slider
             v-else
-            class="volume-slider"
+            class="volume-slider volume-slider-touch"
             :model-value="playbackStore.volume"
             :max="1"
             density="compact"
@@ -129,6 +132,7 @@
             :disabled="playbackStore.isCasting"
             @update:model-value="playbackStore.setVolume($event)"
             @wheel="onVolumeWheel"
+            @touchcancel="endCancelledSliderTouch"
           />
           <span class="text-body-small text-medium-emphasis volume-value">{{
             volumePercentLabel
@@ -151,6 +155,7 @@ import {
   startVolumeDrag,
 } from '@/services/connect/volumeGuard'
 import { writeDeviceVolume } from '@/services/connect/volumeWrite'
+import { endCancelledSliderTouch } from '@/services/sliderTouchCancel'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import ConnectButton from '@/components/connect/ConnectButton.vue'
@@ -322,6 +327,7 @@ export default {
     clearInterval(this.volumePollTimer ?? undefined)
   },
   methods: {
+    endCancelledSliderTouch,
     async fetchDeviceVolume(target: ConnectDeviceRef) {
       // Not even asked for while the user is setting it: the answer would
       // be the value from before their change either way.

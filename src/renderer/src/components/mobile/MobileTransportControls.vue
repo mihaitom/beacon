@@ -95,6 +95,7 @@
         />
         <v-slider
           v-if="singleActiveTarget"
+          class="volume-slider-touch"
           :model-value="deviceVolume ?? 0"
           :max="100"
           :step="1"
@@ -104,15 +105,18 @@
           @update:model-value="onDeviceVolumeChange"
           @start="onVolumeDragStart"
           @end="onVolumeDragEnd"
+          @touchcancel="endCancelledSliderTouch"
         />
         <v-slider
           v-else
+          class="volume-slider-touch"
           :model-value="playbackStore.volume"
           :max="1"
           density="compact"
           hide-details
           :disabled="playbackStore.isCasting"
           @update:model-value="playbackStore.setVolume($event)"
+          @touchcancel="endCancelledSliderTouch"
         />
         <span class="text-body-small text-medium-emphasis mobile-transport__volume-value">{{
           volumePercentLabel
@@ -135,6 +139,7 @@ import {
   startVolumeDrag,
 } from '@/services/connect/volumeGuard'
 import { writeDeviceVolume } from '@/services/connect/volumeWrite'
+import { endCancelledSliderTouch } from '@/services/sliderTouchCancel'
 import SongWaveform from '@/components/player/SongWaveform.vue'
 import RadioLiveStatus from '@/components/player/RadioLiveStatus.vue'
 import { getAudioEngine } from '@/services/audioEngine'
@@ -275,6 +280,7 @@ export default {
     clearInterval(this.volumePollTimer ?? undefined)
   },
   methods: {
+    endCancelledSliderTouch,
     formatTime(seconds: number): string {
       const total = Math.max(0, Math.round(seconds))
       const minutes = Math.floor(total / 60)
