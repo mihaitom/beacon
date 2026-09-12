@@ -72,6 +72,7 @@ import {
   noteVolumeChange,
   startVolumeDrag,
 } from '@/services/connect/volumeGuard'
+import { writeDeviceVolume } from '@/services/connect/volumeWrite'
 import { useAuthStore } from '@/stores/auth'
 import AirplayIcon from '@/components/connect/AirplayIcon.vue'
 import type { ConnectDeviceRef, DeviceType } from '@/services/connect/types'
@@ -207,11 +208,14 @@ export default {
       if (!acceptsVolumeReading(this.deviceRef)) return
       this.volume = raw == null ? null : Math.round(raw)
     },
-    async onVolumeChange(value: number) {
+    onVolumeChange(value: number) {
       const rounded = Math.round(value)
       noteVolumeChange(this.deviceRef)
       this.volume = rounded
-      await this.connectStore.setDeviceVolume(this.type, this.device.name, rounded)
+      // Not awaited per move - see services/connect/volumeWrite.ts.
+      writeDeviceVolume(this.deviceRef, rounded, (volume) =>
+        this.connectStore.setDeviceVolume(this.type, this.device.name, volume),
+      )
     },
   },
 }

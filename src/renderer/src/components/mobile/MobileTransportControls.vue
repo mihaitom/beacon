@@ -134,6 +134,7 @@ import {
   noteVolumeChange,
   startVolumeDrag,
 } from '@/services/connect/volumeGuard'
+import { writeDeviceVolume } from '@/services/connect/volumeWrite'
 import SongWaveform from '@/components/player/SongWaveform.vue'
 import RadioLiveStatus from '@/components/player/RadioLiveStatus.vue'
 import { getAudioEngine } from '@/services/audioEngine'
@@ -290,13 +291,18 @@ export default {
       if (!acceptsVolumeReading(target)) return
       this.deviceVolume = raw == null ? null : Math.round(raw)
     },
-    async onDeviceVolumeChange(value: number) {
+    onDeviceVolumeChange(value: number) {
       const target = this.singleActiveTarget
       if (!target) return
       const rounded = Math.round(value)
       noteVolumeChange(target)
       this.deviceVolume = rounded
-      await this.connectStore.setDeviceVolume(target.type, target.name, rounded)
+      // Not awaited per move - see services/connect/volumeWrite.ts: a drag
+      // reports every frame, and sending each one straight out left the
+      // speaker at whichever command happened to land last.
+      writeDeviceVolume(target, rounded, (volume) =>
+        this.connectStore.setDeviceVolume(target.type, target.name, volume),
+      )
     },
     onVolumeDragStart() {
       if (this.singleActiveTarget) startVolumeDrag(this.singleActiveTarget)

@@ -150,6 +150,7 @@ import {
   noteVolumeChange,
   startVolumeDrag,
 } from '@/services/connect/volumeGuard'
+import { writeDeviceVolume } from '@/services/connect/volumeWrite'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import ConnectButton from '@/components/connect/ConnectButton.vue'
@@ -335,14 +336,17 @@ export default {
       // volumeControl.ts.
       if (this.deviceVolume != null) recordDeviceVolume(target, this.deviceVolume)
     },
-    async onDeviceVolumeChange(value: number) {
+    onDeviceVolumeChange(value: number) {
       const target = this.singleActiveTarget
       if (!target) return
       const rounded = Math.round(value)
       noteVolumeChange(target)
       this.deviceVolume = rounded
       recordDeviceVolume(target, rounded)
-      await this.connectStore.setDeviceVolume(target.type, target.name, rounded)
+      // Not awaited per move - see services/connect/volumeWrite.ts.
+      writeDeviceVolume(target, rounded, (volume) =>
+        this.connectStore.setDeviceVolume(target.type, target.name, volume),
+      )
     },
     onVolumeDragStart() {
       if (this.singleActiveTarget) startVolumeDrag(this.singleActiveTarget)
