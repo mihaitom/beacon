@@ -289,6 +289,8 @@ export default {
         '«{device}» rechazó esta transmisión. El dispositivo no puede reproducir ese formato o esa dirección.',
       busy: '«{device}» está ocupado con otra cosa y rechazó iniciar la reproducción.',
       unreachable: 'No se pudo contactar con «{device}». ¿Está encendido y en la misma red?',
+      needs_pairing:
+        '«{device}» tiene que emparejarse primero. Emparéjalo desde la lista de dispositivos y vuelve a intentarlo.',
       station_refused:
         'La propia emisora rechazó la conexión. Beacon no pudo ni pasarla a «{device}» ni convertirla; probablemente la dirección de la emisora ya no sea válida',
       unknown: 'Falló la reproducción en «{device}».',

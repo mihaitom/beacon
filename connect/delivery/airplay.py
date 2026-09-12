@@ -6,7 +6,8 @@ import logging
 import httpx
 
 from . import credentials as creds_store
-from .base import BaseDelivery
+from .base import BaseDelivery, PlaybackFailure
+from .errors import DeviceNotFoundError
 from .lazy_import import import_in_thread
 
 logger = logging.getLogger("delivery")
@@ -35,6 +36,27 @@ _ARTWORK_TIMEOUT_SECONDS = 5.0
 # device has agreed to honour, not one measured off it afterwards.
 _RAOP_LATENCY_SECONDS = (22050 + 44100) / 44100
 
+# How often a starting stream is checked for its first frame having gone out.
+# It only decides how a failure in the first moments is reported, so it does
+# not need to be tight.
+_FIRST_FRAME_POLL_SECONDS = 0.5
+
+
+def _is_device_failure(error: BaseException) -> bool:
+    """Whether `error` is the device or the stream failing, rather than a bug
+    in this module.
+
+    Told apart by type, not message: pyatv reports a device lost mid-track as
+    ConnectionLostError, as a ProtocolError wrapping what the socket raised,
+    or - once the connection is already gone - as a bare RuntimeError, the
+    one case only its text identifies. pyatv and miniaudio are matched by
+    module rather than imported, since both load lazily."""
+    if isinstance(error, (OSError, httpx.HTTPError)):
+        return True
+    if isinstance(error, RuntimeError) and str(error) == "not connected to remote":
+        return True
+    return any(cls.__module__ in ("pyatv.exceptions", "miniaudio") for cls in type(error).__mro__)
+
 
 async def _fetch_artwork(url: str | None) -> bytes | None:
     """Raw JPEG bytes for `url`, or None if it can't be had.
@@ -55,7 +77,8 @@ async def _fetch_artwork(url: str | None) -> bytes | None:
                 logger.debug(f"[AirPlay] Artwork too large ({len(resp.content)}B), skipping")
                 return None
             return resp.content
-    except (httpx.HTTPError, ValueError) as e:
+    # InvalidURL is not an HTTPError, so it needs naming on its own.
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError) as e:
         logger.debug(f"[AirPlay] Artwork unavailable: {e}")
         return None
 
@@ -242,7 +265,7 @@ class AirPlayDelivery(BaseDelivery):
 
         if match is None:
             available = [d.name for d in devices]
-            raise RuntimeError(f"AirPlay '{self.target}' not found. Available: {available}")
+            raise DeviceNotFoundError(f"AirPlay '{self.target}' not found. Available: {available}")
 
         if stored_creds:
             # AirPlay 2 pairing yields HAP credentials valid for both protocols.
@@ -258,7 +281,7 @@ class AirPlayDelivery(BaseDelivery):
             logger.info(f"[AirPlay:{self.target}] Found: {match.address} ({kind})")
         return match
 
-    async def _report_playback_error(self, detail: str) -> None:
+    async def _report_playback_error(self, error: BaseException, interrupted: bool) -> None:
         """Tell the session its playback died, if anyone is listening.
 
         None whenever this delivery wasn't built through
@@ -270,7 +293,7 @@ class AirPlayDelivery(BaseDelivery):
         if self.on_playback_error is None:
             return
         try:
-            await self.on_playback_error(detail)
+            await self.on_playback_error(PlaybackFailure(self, error, interrupted))
         except Exception:
             logger.exception(f"[AirPlay:{self.target}] Reporting playback error failed")
 
@@ -323,6 +346,24 @@ class AirPlayDelivery(BaseDelivery):
             # whichever way this ends, including cancellation.
             http: httpx.AsyncClient | None = None
             resp: httpx.Response | None = None
+
+            # Whether pyatv has sent a first frame: a failure after it cut a
+            # track off part-way, one before it never let the track start.
+            # Polled off the send counter, because stream_file() resets that
+            # counter on its way out - by the time a failure reaches the
+            # except below, there is nothing left to read.
+            audio_sent = False
+
+            async def _watch_for_first_frame():
+                nonlocal audio_sent
+                while not audio_sent:
+                    await asyncio.sleep(_FIRST_FRAME_POLL_SECONDS)
+                    try:
+                        audio_sent = bool(await self._sent_position(captured_atv))
+                    except Exception as e:
+                        logger.debug(f"[AirPlay:{self.target}] No send position yet: {e}")
+
+            watcher = asyncio.create_task(_watch_for_first_frame())
             try:
                 if not stream_url:
                     logger.warning(f"[AirPlay:{self.target}] No stream URL")
@@ -360,28 +401,32 @@ class AirPlayDelivery(BaseDelivery):
                 logger.info(f"[AirPlay:{self.target}] Stream cancelled")
 
             except Exception as e:
-                if "not connected to remote" in str(e):
-                    # The device went away mid-track. Unlike the pull-based
-                    # targets, nothing else can notice this: they hold a GET
-                    # /stream connection open for the whole track, so their
-                    # dying closes it and routes/stream.py sees the absence.
-                    # AirPlay is pushed to, and a failed push is the only
-                    # trace there is — which is why this used to be a silent
-                    # death (see docs/investigations/fixed-airplay-silent-death.md).
-                    #
-                    # Reported without a grace period, deliberately, unlike
-                    # _mark_disconnected_if_not_reconnected()'s 10s wait: a
-                    # clean FIN there cannot be told apart from somebody
-                    # pressing stop on the speaker, so it waits to see if a
-                    # reconnect turns up. A push that failed is unambiguous.
-                    logger.warning(f"[AirPlay:{self.target}] Device disconnected during stream")
-                    await self._report_playback_error(
-                        f"AirPlay device '{self.target}' disconnected mid-track"
-                    )
-                else:
+                # Every failure is reported, because nothing else can notice
+                # one: the pull-based targets hold a GET /stream connection
+                # open for the whole track, so their dying closes it and
+                # routes/stream.py sees the absence. AirPlay is pushed to, and
+                # a failed push is the only trace there is (see
+                # docs/investigations/fixed-airplay-silent-death.md).
+                #
+                # Only a device failure after the first frame is an
+                # interruption to offer a resume for. A stream refused before
+                # a note played, or a bug here, is a start that never happened.
+                #
+                # Reported at once, unlike _mark_disconnected_if_not_reconnected()'s
+                # 10s wait: a clean FIN there cannot be told apart from somebody
+                # pressing stop on the speaker. A push that failed is unambiguous.
+                device_failure = _is_device_failure(e)
+                interrupted = device_failure and audio_sent
+                if not device_failure:
                     logger.exception(f"[AirPlay:{self.target}] Error")
+                elif interrupted:
+                    logger.warning(f"[AirPlay:{self.target}] Device lost mid-track: {e}")
+                else:
+                    logger.warning(f"[AirPlay:{self.target}] Device did not start the stream: {e}")
+                await self._report_playback_error(e, interrupted)
 
             finally:
+                watcher.cancel()
                 # Before the atv teardown: these hold an open connection to
                 # our own /stream, and leaving it dangling keeps ffmpeg
                 # producing for a target that has stopped listening.

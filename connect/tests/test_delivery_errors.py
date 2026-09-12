@@ -2,13 +2,16 @@
 exception into something the frontend can say a useful sentence about."""
 
 import pytest
+from pyatv import exceptions as pyatv_exceptions
 from soco.exceptions import SoCoUPnPException
 
 from delivery.errors import (
     REASON_BUSY,
+    REASON_NEEDS_PAIRING,
     REASON_REJECTED,
     REASON_UNKNOWN,
     REASON_UNREACHABLE,
+    DeviceNotFoundError,
     classify_delivery_error,
     classify_transport_problem,
     delivery_error_response,
@@ -138,3 +141,23 @@ class TestTransportProblems:
             "device": "Arbeitszimmer",
             "detail": problem,
         }
+
+
+class TestAirPlay:
+    """None of pyatv's exceptions is an OSError, so each one that says
+    something a listener can act on has to be named."""
+
+    @pytest.mark.parametrize("name", ["ConnectionFailedError", "ConnectionLostError"])
+    def test_a_device_that_cannot_be_reached_reads_as_unreachable(self, name):
+        error = getattr(pyatv_exceptions, name)("refused")
+        assert classify_delivery_error(error) == REASON_UNREACHABLE
+
+    @pytest.mark.parametrize(
+        "name", ["AuthenticationError", "NoCredentialsError", "InvalidCredentialsError"]
+    )
+    def test_a_device_that_wants_pairing_says_so(self, name):
+        error = getattr(pyatv_exceptions, name)("not authenticated")
+        assert classify_delivery_error(error) == REASON_NEEDS_PAIRING
+
+    def test_a_device_discovery_could_not_find_reads_as_unreachable(self):
+        assert classify_delivery_error(DeviceNotFoundError("HomePod")) == REASON_UNREACHABLE

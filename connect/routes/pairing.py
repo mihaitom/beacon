@@ -136,7 +136,13 @@ async def start_pairing(req: StartRequest):
                 logger.debug(f"[pairing] closing previous session for '{req.name}' failed: {e}")
 
         logger.info(f"[pairing] Scanning for '{req.name}' to pair...")
-        devices = await pyatv.scan(asyncio.get_event_loop(), timeout=10)
+        try:
+            devices = await pyatv.scan(asyncio.get_event_loop(), timeout=10)
+        except Exception as e:
+            logger.error(f"[pairing] Scan for '{req.name}' failed: {e}")
+            return JSONResponse(
+                {"error": f"Scanning for '{req.name}' failed: {e}"}, status_code=500
+            )
         conf = next((d for d in devices if d.name.lower() == req.name.lower()), None)
 
         if not conf:

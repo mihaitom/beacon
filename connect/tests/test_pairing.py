@@ -150,6 +150,17 @@ def test_start_device_not_found_lists_available_devices(client, default_session)
     }
 
 
+def test_start_reports_a_scan_that_fails_instead_of_crashing(client, default_session):
+    async def fake_scan(*args, **kwargs):
+        raise OSError("network unreachable")
+
+    with patch("pyatv.scan", side_effect=fake_scan):
+        r = client.post("/pair/airplay/start", json={"name": "Bedroom"})
+
+    assert r.status_code == 500
+    assert "network unreachable" in r.json()["error"]
+
+
 def test_start_surfaces_a_friendly_message_for_a_pending_tlv_rejection(client, default_session):
     """pyatv raises a bare KeyError (e.g. '<TlvValue.Salt: 2>') when the
     device still considers an earlier attempt pending — must not leak that

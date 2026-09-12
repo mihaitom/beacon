@@ -2676,3 +2676,44 @@ def test_play_dispatches_a_url_ending_in_the_output_formats_extension(client, de
     url, *_ = play.await_args.args
     assert url.endswith("/stream/default.flac")
     assert play.await_args.args[-1] == "audio/flac"
+
+
+# ── playback_error_reporter ──────────────────────────────────────────────────
+
+
+async def test_a_track_cut_off_part_way_is_offered_to_resume(default_session):
+    from delivery import AirPlayDelivery
+    from delivery.base import PlaybackFailure
+    from routes.playback import playback_error_reporter
+
+    default_session.state.is_streaming = True
+    failure = PlaybackFailure(AirPlayDelivery("HomePod"), ConnectionError("gone"), interrupted=True)
+    with patch.object(default_session.event_bus, "broadcast", new=AsyncMock()) as broadcast:
+        await playback_error_reporter(default_session)(failure)
+
+    status = broadcast.await_args.args[0]
+    assert status["interrupted"] is True
+    assert status.get("delivery_error") is None
+    assert default_session.state.is_streaming is False
+
+
+async def test_a_start_that_never_happened_says_why_without_offering_to_resume(default_session):
+    """AirPlay's play() has already answered "playing" by the time the device
+    refuses the stream, so this broadcast is the only way the app hears of it."""
+    from pyatv import exceptions as pyatv_exceptions
+
+    from delivery import AirPlayDelivery
+    from delivery.base import PlaybackFailure
+    from routes.playback import playback_error_reporter
+
+    default_session.state.is_streaming = True
+    refusal = pyatv_exceptions.AuthenticationError("not authenticated")
+    failure = PlaybackFailure(AirPlayDelivery("HomePod"), refusal, interrupted=False)
+    with patch.object(default_session.event_bus, "broadcast", new=AsyncMock()) as broadcast:
+        await playback_error_reporter(default_session)(failure)
+
+    status = broadcast.await_args.args[0]
+    assert not status.get("interrupted")
+    assert status["delivery_error"]["reason"] == "needs_pairing"
+    assert status["delivery_error"]["device"] == "HomePod"
+    assert default_session.state.is_streaming is False

@@ -944,6 +944,21 @@ async def mark_interrupted(session: SessionState) -> None:
     await session.event_bus.broadcast(build_status_dict(session, interrupted=True))
 
 
+async def mark_delivery_failed(session: SessionState, delivery_error: dict) -> None:
+    """Record that a device already told to play never started, and say why.
+
+    For the one failure no request is left to answer: AirPlay's play()
+    returns once the connection is up, and the device can still refuse the
+    stream after that (see delivery/airplay.py). Stops the session exactly
+    as mark_interrupted() does, for the same reasons, but offers no resume:
+    nothing had started that could be picked up again."""
+    st = session.state
+    position = compute_position(session)
+    st.is_streaming = False
+    st.clock.pause(position)
+    await session.event_bus.broadcast(build_status_dict(session, delivery_error=delivery_error))
+
+
 def track_label(session: SessionState) -> str | None:
     """Short "what's playing" label for a session — used to annotate a
     claimed device in /discover (e.g. "in use by X, playing Y") so another

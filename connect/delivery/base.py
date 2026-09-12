@@ -2,6 +2,18 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class PlaybackFailure:
+    """What a delivery hands to BaseDelivery.on_playback_error."""
+
+    delivery: "BaseDelivery"
+    error: BaseException
+    # Whether audio had already reached the device: a track cut off part-way,
+    # which the listener can pick up again, rather than one that never began.
+    interrupted: bool
 
 
 class BaseDelivery(ABC):
@@ -58,7 +70,7 @@ class BaseDelivery(ABC):
     def __init__(self, target: str):
         self.target = target
         # Called when a delivery discovers by itself that playback has
-        # failed, with a short description for the log. The one and only
+        # failed, with a PlaybackFailure saying how. The one and only
         # way back into the session from here: a delivery holds no
         # reference to one, and cannot be given one, because core/state.py
         # imports this package and the reverse would be circular.
@@ -73,7 +85,7 @@ class BaseDelivery(ABC):
         # Wired up in core/state.py's resolve_target(); left None for a
         # delivery built outside that path (tests, routes/devices.py's
         # one-shot stop), where there is no session to report to anyway.
-        self.on_playback_error: Callable[[str], Awaitable[None]] | None = None
+        self.on_playback_error: Callable[[PlaybackFailure], Awaitable[None]] | None = None
 
     @abstractmethod
     async def play(

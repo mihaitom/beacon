@@ -286,6 +286,8 @@ export default {
         '„{device}“ hat diesen Stream abgelehnt. Das Gerät kann das Format oder die Adresse nicht wiedergeben.',
       busy: '„{device}“ ist gerade anderweitig beschäftigt und hat die Wiedergabe abgelehnt.',
       unreachable: '„{device}“ war nicht erreichbar. Ist es eingeschaltet und im selben Netzwerk?',
+      needs_pairing:
+        '„{device}“ muss erst gekoppelt werden. Kopple es in der Geräteliste und versuche es dann noch einmal.',
       station_refused:
         'Der Sender selbst hat die Verbindung abgelehnt. Beacon konnte ihn weder an „{device}“ weiterreichen noch umwandeln - die Adresse des Senders stimmt vermutlich nicht mehr',
       unknown: 'Die Wiedergabe auf „{device}“ ist fehlgeschlagen.',

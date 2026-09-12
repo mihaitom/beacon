@@ -84,7 +84,7 @@ export interface DeviceInUseError {
  * message itself. */
 export interface DeliveryFailedError {
   error: 'delivery_failed'
-  reason: 'rejected' | 'busy' | 'unreachable' | 'station_refused' | 'unknown'
+  reason: 'rejected' | 'busy' | 'unreachable' | 'needs_pairing' | 'station_refused' | 'unknown'
   /** The speaker's own name, or every name in the group — see that
    * module's device_label() for why a group names all of them. */
   device: string

@@ -34,6 +34,9 @@ REASON_REJECTED = "rejected"
 REASON_BUSY = "busy"
 #: Nothing answered - powered off, off the network, a wrong address.
 REASON_UNREACHABLE = "unreachable"
+#: The device wants to be paired with Beacon first, or no longer accepts the
+#: pairing it had.
+REASON_NEEDS_PAIRING = "needs_pairing"
 #: The *station* refused the connection, not the device: it answered
 #: Beacon's own probe with 401/403/404/410. Kept apart from
 #: REASON_UNREACHABLE (which is about the speaker) because the two need
@@ -105,11 +108,43 @@ def transport_error_response(problem: str, target: object) -> dict:
     }
 
 
+class DeviceNotFoundError(LookupError):
+    """Discovery could not find a device by the name it was asked for."""
+
+
+# pyatv's exceptions, matched by name rather than imported: pyatv is only
+# loaded once an AirPlay device is actually used (see lazy_import.py), and
+# classifying an error must not load it. None of them is an OSError, so
+# without this a switched-off device read as "unknown".
+_PYATV_REASONS = {
+    "ConnectionFailedError": REASON_UNREACHABLE,
+    "ConnectionLostError": REASON_UNREACHABLE,
+    "AuthenticationError": REASON_NEEDS_PAIRING,
+    "NoCredentialsError": REASON_NEEDS_PAIRING,
+    "InvalidCredentialsError": REASON_NEEDS_PAIRING,
+}
+
+
+def _pyatv_reason(error: BaseException) -> str | None:
+    return next(
+        (
+            _PYATV_REASONS[cls.__name__]
+            for cls in type(error).__mro__
+            if cls.__module__ == "pyatv.exceptions" and cls.__name__ in _PYATV_REASONS
+        ),
+        None,
+    )
+
+
 def classify_delivery_error(error: BaseException) -> str:
     """One of the REASON_* constants above for anything a delivery's play()
     can raise."""
     if isinstance(error, SoCoUPnPException):
         return _UPNP_REASONS.get(str(error.error_code), REASON_UNKNOWN)
+    if isinstance(error, DeviceNotFoundError):
+        return REASON_UNREACHABLE
+    if (reason := _pyatv_reason(error)) is not None:
+        return reason
     # ConnectionError and TimeoutError are both OSError subclasses, as is
     # everything requests raises through to here for a speaker that has
     # gone away - one check covers the lot.

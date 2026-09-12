@@ -17,6 +17,7 @@ from delivery import (
     SonosDelivery,
     is_beacon_hosted_radio_uri,
 )
+from delivery.base import PlaybackFailure
 from media import Track
 
 from .playback_clock import PlaybackClock
@@ -338,7 +339,7 @@ def resolve_target(
     target_name: str | None = None,
     target_type: str | None = None,
     previous: BaseDelivery | DeliveryManager | None = None,
-    on_playback_error: Callable[[str], Awaitable[None]] | None = None,
+    on_playback_error: Callable[[PlaybackFailure], Awaitable[None]] | None = None,
 ) -> BaseDelivery | DeliveryManager | None:
     """Resolve one or more targets from a request into a single delivery object.
 

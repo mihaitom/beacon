@@ -286,6 +286,8 @@ export default {
       rejected: "“{device}” refused this stream. The device can't play that format or address.",
       busy: '“{device}” is busy with something else and refused to start playing.',
       unreachable: '“{device}” could not be reached. Is it powered on and on the same network?',
+      needs_pairing:
+        '“{device}” has to be paired first. Pair it from the device list, then try again.',
       station_refused:
         "The station itself refused the connection. Beacon could neither pass it to “{device}” nor convert it - the station's address is most likely out of date",
       unknown: 'Playback on “{device}” failed.',

@@ -23,6 +23,7 @@ from core.session import (
     check_claims,
     compute_position,
     displace_target,
+    mark_delivery_failed,
     mark_interrupted,
     registry,
     require_authenticated_session,
@@ -47,6 +48,7 @@ from core.streamer import (
     resolve_output_format,
 )
 from delivery import SonosDelivery
+from delivery.base import PlaybackFailure
 from delivery.errors import REASON_STATION_REFUSED, delivery_error_response, device_label
 
 logger = logging.getLogger("connect.playback")
@@ -784,13 +786,17 @@ class PlayRequest(BaseModel):
     max_lossy_bitrate_kbps: int | None = None
 
 
-def playback_error_reporter(session: SessionState) -> Callable[[str], Awaitable[None]]:
+def playback_error_reporter(session: SessionState) -> Callable[[PlaybackFailure], Awaitable[None]]:
     """The callback a delivery uses to say "this stopped and nobody asked".
 
     See BaseDelivery.on_playback_error for why deliveries need one at all.
     Only AirPlay ever calls it; every other target's failure surfaces as
     its GET /stream connection closing, which routes/stream.py notices on
     its own.
+
+    A failure after audio reached the device is an interruption, offered to
+    be picked up again. One before it is a start that never happened, and
+    is reported the way a failed /play dispatch is: why, with no resume.
 
     Note this marks the *session* interrupted, not one device. For a
     single-target cast — which is what AirPlay is in practice — those are
@@ -805,12 +811,17 @@ def playback_error_reporter(session: SessionState) -> Callable[[str], Awaitable[
     one.
     """
 
-    async def _report(detail: str) -> None:
+    async def _report(failure: PlaybackFailure) -> None:
         logger.error(
-            f"[playback] Delivery reported playback failure: {detail} | "
-            f"{track_label(session) or 'no track'}"
+            f"[playback] {failure.delivery.target} reported a playback failure: "
+            f"{failure.error} | {track_label(session) or 'no track'}"
         )
-        await mark_interrupted(session)
+        if failure.interrupted:
+            await mark_interrupted(session)
+        else:
+            await mark_delivery_failed(
+                session, delivery_error_response(failure.error, failure.delivery)
+            )
 
     return _report
 

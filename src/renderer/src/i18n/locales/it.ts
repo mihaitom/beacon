@@ -289,6 +289,8 @@ export default {
         "«{device}» ha rifiutato questo flusso. Il dispositivo non è in grado di riprodurre quel formato o quell'indirizzo.",
       busy: '«{device}» è occupato con altro e ha rifiutato di avviare la riproduzione.',
       unreachable: 'Impossibile raggiungere «{device}». È acceso e sulla stessa rete?',
+      needs_pairing:
+        "«{device}» deve prima essere associato. Associalo dall'elenco dei dispositivi e riprova.",
       station_refused:
         "L'emittente stessa ha rifiutato la connessione. Beacon non ha potuto né inoltrarla a «{device}» né convertirla: probabilmente il suo indirizzo non è più valido",
       unknown: 'Riproduzione su «{device}» non riuscita.',

@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from pyatv import exceptions as pyatv_exceptions
 from pyatv.const import Protocol
 from soco.exceptions import SoCoUPnPException
 
@@ -28,6 +29,8 @@ from delivery.airplay import (
     _fetch_artwork,
     _ResponseReader,
 )
+from delivery.base import PlaybackFailure
+from delivery.errors import DeviceNotFoundError
 
 # ── BaseDelivery defaults (pause/resume are no-ops, position/volume unknown) ──
 
@@ -882,7 +885,34 @@ def test_fetch_artwork_never_stops_the_music():
     assert _artwork("http://host/cover.jpg", error=httpx.ConnectError("refused")) is None
 
 
+def test_fetch_artwork_survives_a_malformed_url():
+    """httpx.InvalidURL is not an httpx.HTTPError, so a broken cover URL
+    slipped past the catch and took the whole track down with it."""
+    assert _artwork("http://host/cover.jpg", error=httpx.InvalidURL("bad url")) is None
+
+
 # ── AirPlayDelivery failure reporting ────────────────────────────────────────
+
+
+def _failure_recorder():
+    """An on_playback_error callback, and the list it records into."""
+    reported: list[PlaybackFailure] = []
+
+    async def on_error(failure: PlaybackFailure) -> None:
+        reported.append(failure)
+
+    return on_error, reported
+
+
+def _fails_after_audio_went_out(error: BaseException):
+    """A stream_file() that gets audio out for a moment before failing - long
+    enough for the first-frame watch to notice, with its poll set to zero."""
+
+    async def stream_file(*args, **kwargs):
+        await asyncio.sleep(0.1)
+        raise error
+
+    return stream_file
 
 
 def test_airplay_reports_a_device_that_died_mid_track():
@@ -892,17 +922,35 @@ def test_airplay_reports_a_device_that_died_mid_track():
     only trace, and it went into a log line and nowhere else. See
     docs/investigations/fixed-airplay-silent-death.md."""
     atv = MagicMock()
-    atv.stream.stream_file = AsyncMock(side_effect=Exception("not connected to remote"))
+    atv.stream.stream_file = AsyncMock(
+        side_effect=_fails_after_audio_went_out(RuntimeError("not connected to remote"))
+    )
     atv.close.return_value = []
-    reported: list[str] = []
+    on_error, reported = _failure_recorder()
 
-    async def on_error(detail: str) -> None:
-        reported.append(detail)
+    with patch("delivery.airplay._FIRST_FRAME_POLL_SECONDS", 0):
+        _run_airplay_track(_FakeStreamResponse([b"bytes"]), atv, on_playback_error=on_error)
+
+    assert len(reported) == 1
+    assert reported[0].interrupted is True
+    assert reported[0].delivery.target == "HomePod"
+
+
+def test_airplay_reports_a_stream_refused_before_it_started_as_a_failed_start():
+    """play() returns once the connection is up, and the device can still
+    refuse the stream after that - wanting to be paired, say. That went into
+    the log and nowhere else, with the app showing "playing" over silence."""
+    atv = MagicMock()
+    refusal = pyatv_exceptions.AuthenticationError("not authenticated")
+    atv.stream.stream_file = AsyncMock(side_effect=refusal)
+    atv.close.return_value = []
+    on_error, reported = _failure_recorder()
 
     _run_airplay_track(_FakeStreamResponse([b"bytes"]), atv, on_playback_error=on_error)
 
     assert len(reported) == 1
-    assert "HomePod" in reported[0]
+    assert reported[0].interrupted is False
+    assert reported[0].error is refusal
 
 
 def test_airplay_reports_nothing_when_we_stopped_it_ourselves():
@@ -911,31 +959,29 @@ def test_airplay_reports_nothing_when_we_stopped_it_ourselves():
     atv = MagicMock()
     atv.stream.stream_file = AsyncMock(side_effect=asyncio.CancelledError)
     atv.close.return_value = []
-    reported: list[str] = []
-
-    async def on_error(detail: str) -> None:
-        reported.append(detail)
+    on_error, reported = _failure_recorder()
 
     _run_airplay_track(_FakeStreamResponse([b"bytes"]), atv, on_playback_error=on_error)
 
     assert reported == []
 
 
-def test_airplay_reports_nothing_for_an_unrelated_error():
-    """Only the disconnect is a device death. An unexpected exception is a
-    bug in this code, logged as one, not an interruption to offer a Resume
-    button for."""
+def test_airplay_reports_an_unexpected_error_without_offering_to_resume():
+    """A bug in this code is not an interruption to offer a Resume button
+    for, even mid-track - but it must not leave the app showing "playing"
+    over silence either."""
     atv = MagicMock()
-    atv.stream.stream_file = AsyncMock(side_effect=ValueError("something else"))
+    atv.stream.stream_file = AsyncMock(
+        side_effect=_fails_after_audio_went_out(ValueError("something else"))
+    )
     atv.close.return_value = []
-    reported: list[str] = []
+    on_error, reported = _failure_recorder()
 
-    async def on_error(detail: str) -> None:
-        reported.append(detail)
+    with patch("delivery.airplay._FIRST_FRAME_POLL_SECONDS", 0):
+        _run_airplay_track(_FakeStreamResponse([b"bytes"]), atv, on_playback_error=on_error)
 
-    _run_airplay_track(_FakeStreamResponse([b"bytes"]), atv, on_playback_error=on_error)
-
-    assert reported == []
+    assert len(reported) == 1
+    assert reported[0].interrupted is False
 
 
 def test_airplay_survives_having_no_one_to_report_to():
@@ -943,7 +989,7 @@ def test_airplay_survives_having_no_one_to_report_to():
     it has no session behind it. The teardown in _stream()'s finally must
     still run."""
     atv = MagicMock()
-    atv.stream.stream_file = AsyncMock(side_effect=Exception("not connected to remote"))
+    atv.stream.stream_file = AsyncMock(side_effect=RuntimeError("not connected to remote"))
     atv.close.return_value = []
     response = _FakeStreamResponse([b"bytes"])
 
@@ -956,11 +1002,11 @@ def test_airplay_a_failing_reporter_does_not_break_the_teardown():
     """The callback reaches into session state and broadcasts over SSE —
     both of which can fail. The connection still has to be closed."""
     atv = MagicMock()
-    atv.stream.stream_file = AsyncMock(side_effect=Exception("not connected to remote"))
+    atv.stream.stream_file = AsyncMock(side_effect=RuntimeError("not connected to remote"))
     atv.close.return_value = []
     response = _FakeStreamResponse([b"bytes"])
 
-    async def on_error(detail: str) -> None:
+    async def on_error(failure: PlaybackFailure) -> None:
         raise RuntimeError("broadcast failed")
 
     _run_airplay_track(response, atv, on_playback_error=on_error)
@@ -1046,7 +1092,7 @@ def test_find_device_raises_when_not_found_in_either_scan():
     with (
         patch("delivery.airplay.creds_store.get", return_value=None),
         patch("pyatv.scan", new=fake_scan),
-        pytest.raises(RuntimeError, match="Kitchen Speaker"),
+        pytest.raises(DeviceNotFoundError, match="Kitchen Speaker"),
     ):
         asyncio.run(d._find_device())
 
@@ -1138,12 +1184,9 @@ def test_airplay_stream_task_cancellation_is_logged_and_swallowed(caplog):
     assert "Stream cancelled" in caplog.text
 
 
-def test_airplay_stream_logs_disconnection_without_traceback_for_a_known_teardown_error(
-    caplog,
-):
-    """'not connected to remote' is teardown noise from the Apple TV having
-    already dropped the connection — the actual cause was already logged by
-    pyatv itself, so this doesn't need (or want) its own traceback."""
+def test_airplay_stream_logs_a_device_failure_without_a_traceback(caplog):
+    """A device refusing or dropping the stream is not a bug here, and pyatv
+    has already logged the cause itself — no traceback of our own wanted."""
     d = AirPlayDelivery("HomePod")
     atv = MagicMock()
     atv.stream.stream_file = AsyncMock(side_effect=RuntimeError("not connected to remote"))
@@ -1159,7 +1202,8 @@ def test_airplay_stream_logs_disconnection_without_traceback_for_a_known_teardow
             await d._stream_task
 
     asyncio.run(run())
-    assert "Device disconnected during stream" in caplog.text
+    assert "not connected to remote" in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 def test_airplay_stream_logs_an_unexpected_error(caplog):

@@ -289,6 +289,8 @@ export default {
         "« {device} » a refusé ce flux. L'appareil ne peut pas lire ce format ou cette adresse.",
       busy: '« {device} » est occupé par autre chose et a refusé de démarrer la lecture.',
       unreachable: '« {device} » est injoignable. Est-il allumé et sur le même réseau ?',
+      needs_pairing:
+        "« {device} » doit d'abord être associé. Associez-le depuis la liste des appareils, puis réessayez.",
       station_refused:
         "La station elle-même a refusé la connexion. Beacon n'a pu ni la transmettre à « {device} » ni la convertir - son adresse n'est probablement plus valable",
       unknown: 'La lecture sur « {device} » a échoué.',
