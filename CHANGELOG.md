@@ -6,12 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [1.3.0] - 2026-09-13
 
-### Highlights
-
-- Jellyfin 12 is supported, and 10.9 and newer keep working
-- Track lists take the columns you choose, nine new ones among them
-- Tracks can be removed from a playlist, with an undo
-
 ### Added
 
 - Support for Jellyfin 12: signing in, browsing, playback and casting all work against it. Servers on Jellyfin 10.9 and newer keep working too
