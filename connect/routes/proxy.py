@@ -37,7 +37,24 @@ router = APIRouter(dependencies=[Depends(require_token)])
 
 _NAVIDROME_INTERNAL_URL = os.getenv("NAVIDROME_INTERNAL_URL", "").rstrip("/")
 
-_SKIP_REQ = {"host", "connection", "transfer-encoding"}
+# Which front door the browser came in through is Beacon's business, not the
+# media server's: a server that builds public URLs from these (Navidrome
+# mints its artist-photo /share/img/ links from X-Forwarded-Host and
+# -Proto whenever its own ShareURL/BaseHost are unset) otherwise hands back
+# links on *this* app's hostname, where nothing serves them - and connect,
+# asked to fetch one, sees its own reverse proxy's address and refuses it as
+# internal (see routes/coverart.py). X-Forwarded-For and X-Real-IP stay:
+# those name the client, which the media server is right to log.
+_SKIP_REQ = {
+    "host",
+    "connection",
+    "transfer-encoding",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "x-forwarded-scheme",
+    "x-forwarded-port",
+    "forwarded",
+}
 _SKIP_RESP = {"transfer-encoding", "connection", "content-encoding"}
 
 _ALL_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"]

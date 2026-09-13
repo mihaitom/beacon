@@ -419,8 +419,16 @@ async def _fetch_image_url(url: str, media: MediaClient) -> str | None:
     return None
 
 
-def _media_host(media: MediaClient) -> str:
-    return (httpx.URL(getattr(media, "base_url", "") or "").host or "").lower()
+def _media_hosts(media: MediaClient) -> set[str]:
+    """Every host this backend already talks to for the media server — the
+    URL the session logged in with, and the internal one it is actually
+    reached on when those differ (NAVIDROME_INTERNAL_URL and friends, see
+    media/subsonic.py). Both count: a server handing out an image URL builds
+    it from whichever of its own addresses the request came in on, and
+    checking only the login URL refused the picture whenever that was the
+    other one."""
+    urls = (getattr(media, "base_url", ""), getattr(media, "internal_url", ""))
+    return {(httpx.URL(url).host or "").lower() for url in urls if url}
 
 
 async def _points_somewhere_internal(url: str, media: MediaClient) -> bool:
@@ -437,11 +445,11 @@ async def _points_somewhere_internal(url: str, media: MediaClient) -> bool:
     cloud metadata endpoint — and read the answer back, base64-encoded,
     whenever it happens to look like an image.
 
-    The media server's own host stays allowed even when it is on the LAN
+    The media server's own hosts stay allowed even when they are on the LAN
     (the common case for a self-hosted install): a Subsonic server that
     hands out artist photos on its own address, not through our proxy, is a
-    real and legitimate shape, and it is a host this backend already talks
-    to on every other request.
+    real and legitimate shape, and those are hosts this backend already
+    talks to on every other request — see _media_hosts().
 
     A hostname is resolved to decide this. That leaves the usual gap between
     checking and connecting — a DNS answer can change in between — which is
@@ -451,7 +459,7 @@ async def _points_somewhere_internal(url: str, media: MediaClient) -> bool:
     host = (httpx.URL(url).host or "").lower()
     if not host:
         return True
-    if host == _media_host(media):
+    if host in _media_hosts(media):
         return False
     try:
         addresses = [ipaddress.ip_address(host.strip("[]"))]
