@@ -7,9 +7,18 @@ import { useRadioSettingsStore } from '../radioSettings'
 import { getAudioEngine } from '@/services/audioEngine'
 import * as connectPlayback from '@/services/connect/playback'
 import type { SubsonicClient } from '@/services/subsonic/client'
-import { makeSong } from './fixtures'
+import type { ConnectStatus } from '@/services/connect/types'
+import { makeSong, makeStatus } from './fixtures'
 
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
+vi.mock('@/services/mediaSession', () => ({ initMediaSession: vi.fn() }))
+vi.mock('@/services/connect/radioMetadata', () => ({
+  startRadioMetadataWatch: vi.fn(),
+  stopRadioMetadataWatch: vi.fn(),
+  fetchRadioMetadata: vi.fn().mockResolvedValue(null),
+  fetchRadioTitleHistory: vi.fn().mockResolvedValue({ url: null, history: [] }),
+  RADIO_TITLE_PAGE_SIZE: 200,
+}))
 
 vi.mock('@/services/connect/playback', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/connect/playback')>()
@@ -221,5 +230,128 @@ describe('castTo', () => {
     expect(claim).toHaveBeenCalledWith([kitchen])
     expect(connectPlayback.play).not.toHaveBeenCalled()
     expect(connectPlayback.playUrl).not.toHaveBeenCalled()
+  })
+})
+
+/** The same handoff arriving from the other side: another client sharing
+ * this connect session started casting, and all this one ever learns about
+ * it is a status tick. Its own `<audio>` element is still playing, and
+ * nothing in the UI can reach it once isCasting turns true — every engine
+ * callback goes quiet then, pause() addresses the cast, and a station would
+ * simply have run on forever. See yieldToCastPlayback(). */
+describe('a cast started by another client in the session', () => {
+  let engine: Record<string, ReturnType<typeof vi.fn>>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    sessionStorage.clear()
+    vi.clearAllMocks()
+    engine = {
+      setVolume: vi.fn(),
+      setReplayGain: vi.fn(),
+      play: vi.fn(),
+      playFrom: vi.fn(),
+      playLive: vi.fn(),
+      load: vi.fn(),
+      loadFrom: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+      stop: vi.fn(),
+      seek: vi.fn(),
+    }
+    vi.mocked(getAudioEngine).mockReturnValue(
+      engine as unknown as ReturnType<typeof getAudioEngine>,
+    )
+    vi.spyOn(useLibraryStore(), 'client').mockReturnValue({
+      streamUrl: vi.fn((id: string) => `https://server.example/stream/${id}`),
+      scrobble: vi.fn().mockResolvedValue(undefined),
+    } as unknown as SubsonicClient)
+  })
+
+  /** The session as this client finds it before anyone casts: init() done,
+   * status ticks arriving, no targets. Both halves matter and neither is
+   * shared setup, because the false→true transition *is* the subject here —
+   * and the detector behind it lives at module scope, so it carries over
+   * between tests in this file (see castingActiveEdge in playback.ts).
+   * Local playback is started *after* this, so nothing the resume decision
+   * does (see decideLocalResume(), which this first tick settles) can be
+   * mistaken for what joining the cast did. */
+  async function aSessionNobodyIsCastingIn(): Promise<void> {
+    usePlaybackStore().init()
+    useConnectStore().status = makeStatus()
+    await Promise.resolve()
+  }
+
+  /** A tick reporting a live cast, with nothing of its own for this client
+   * to adopt — the queue/station half of joining is reconcileFromStatus()'s
+   * and is tested in playback.reconcile.test.ts. What matters here is what
+   * happens to the local element. */
+  function castTick(overrides: Partial<ConnectStatus> = {}): ConnectStatus {
+    return makeStatus({ targets: [kitchen], streaming: true, ...overrides })
+  }
+
+  it("silences the song still playing out of this device's own speakers", async () => {
+    await aSessionNobodyIsCastingIn()
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a'), makeSong('b')], 0)
+    playback.isPlaying = true
+
+    useConnectStore().status = castTick()
+    await Promise.resolve()
+
+    expect(engine.stop).toHaveBeenCalled()
+  })
+
+  /** stop(), not pause(): a paused element holds its connection open, and
+   * for a relayed station that connection is a subscriber to the session's
+   * one relay — an element still retrying /stream/radio-local would restart
+   * that relay on its own station and cut the cast device off (see
+   * start_radio_relay() in core/session.py). */
+  it('lets go of a station playing locally rather than just pausing it', async () => {
+    await aSessionNobodyIsCastingIn()
+    const playback = usePlaybackStore()
+    playback.radioStation = { id: 's', name: 'Station', streamUrl: 'http://station/live' } as never
+    playback.startLocalRadio('http://station/live')
+    playback.isPlaying = true
+
+    // The same station, dispatched to the speaker from the other client, so
+    // this tick carries no station change for reconcileFromStatus() to adopt.
+    useConnectStore().status = castTick({
+      radio: { url: 'http://station/live', title: null } as never,
+    })
+    await Promise.resolve()
+
+    expect(engine.stop).toHaveBeenCalled()
+    expect(engine.pause).not.toHaveBeenCalled()
+  })
+
+  it('stays silent when the session it joined was dispatched paused', async () => {
+    await aSessionNobodyIsCastingIn()
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a')], 0)
+    playback.isPlaying = true
+
+    useConnectStore().status = castTick({ paused: true })
+    await Promise.resolve()
+
+    expect(engine.stop).toHaveBeenCalled()
+    expect(engine.resume).not.toHaveBeenCalled()
+    expect(engine.play).not.toHaveBeenCalled()
+    expect(playback.isPlaying).toBe(false)
+  })
+
+  it('drops what was buffered locally, and the offer to reconnect a station', async () => {
+    await aSessionNobodyIsCastingIn()
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a')], 0)
+    playback.bufferedPosition = 90
+    playback.radioConnectionLost = true
+
+    useConnectStore().status = castTick()
+    await Promise.resolve()
+
+    expect(playback.bufferedPosition).toBe(0)
+    expect(playback.radioConnectionLost).toBe(false)
   })
 })

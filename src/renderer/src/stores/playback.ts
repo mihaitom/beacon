@@ -558,6 +558,10 @@ export const usePlaybackStore = defineStore('playback', {
           // skips overwriting them from a now-inactive status. Exactly what
           // local playback should pick back up from.
           const castingEdge = castingActiveEdge.update(activeNow)
+          // The other direction, and with no localResumeDecided guard of its
+          // own: local audio has to stop however it came to be playing. See
+          // yieldToCastPlayback().
+          if (castingEdge === 'rising') this.yieldToCastPlayback()
           if (localResumeDecided && castingEdge === 'falling') {
             // Two ways a cast can end without this person ending it, and
             // neither is the user asking to stop — picking playback back up
@@ -813,6 +817,35 @@ export const usePlaybackStore = defineStore('playback', {
       const song = this.currentSong
       if (!song) return
       this.startLocalSong(song, this.localPosition, this.isPlaying)
+    },
+
+    /** Steps this device back when a cast becomes active — the mirror image
+     * of handOffToLocalPlayback().
+     *
+     * Only the client that dispatched it silences itself on the way (see
+     * castTo()). Every *other* client in the session hears of it from a
+     * status tick alone, and its `<audio>` element used to play on
+     * underneath the cast with nothing able to reach it: every engine
+     * callback in init() goes quiet once isCasting turns true, and pause()
+     * addresses the cast from then on.
+     *
+     * stop() rather than pause(), so the src and the reconnect ladder
+     * really go. The ladder matters beyond the silence for a relayed
+     * station: a session has one relay (core/session.py's
+     * start_radio_relay), and an element still retrying
+     * /stream/radio-local would restart it on *its* station and cut the
+     * cast device off.
+     *
+     * Nothing more is needed to join — the same tick carries the play state
+     * and position, and reconcileFromStatus() the queue and station. */
+    yieldToCastPlayback(): void {
+      getAudioEngine().stop()
+      // Both belonged to the element that just let go, and nothing refills
+      // either while casting: reconnectRadio() (which is what
+      // radioConnectionLost offers a button for) refuses to run then, and
+      // init()'s onBufferedChange has already gone quiet.
+      this.bufferedPosition = 0
+      this.radioConnectionLost = false
     },
 
     /** Keeps this.queue/currentIndex mirroring the connect backend's

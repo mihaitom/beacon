@@ -22,10 +22,15 @@ vi.mock('@/services/connect/radioMetadata', () => ({
 }))
 
 /** What the poll actually reads off the element — how far ahead it has
- * buffered, which is what a new title is held back by — plus the one call
- * the playback store's init() makes on the way to starting the poll
- * interval these tests run on. */
-let engine: { bufferedAhead: number; setVolume: ReturnType<typeof vi.fn> }
+ * buffered, which is what a new title is held back by — plus the two calls
+ * the playback store makes around these tests: one on init()'s way to
+ * starting the poll interval they run on, and one when castTo() below hands
+ * the station over (see yieldToCastPlayback()). */
+let engine: {
+  bufferedAhead: number
+  setVolume: ReturnType<typeof vi.fn>
+  stop: ReturnType<typeof vi.fn>
+}
 
 function castTo(): void {
   useConnectStore().status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos' }] })
@@ -38,7 +43,7 @@ describe('the radio metadata store', () => {
     localStorage.clear()
     sessionStorage.clear()
     vi.clearAllMocks()
-    engine = { bufferedAhead: 0, setVolume: vi.fn() }
+    engine = { bufferedAhead: 0, setVolume: vi.fn(), stop: vi.fn() }
     vi.mocked(getAudioEngine).mockReturnValue(
       engine as unknown as ReturnType<typeof getAudioEngine>,
     )
