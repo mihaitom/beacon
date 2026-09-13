@@ -63,10 +63,26 @@ export default {
 .mobile-tabbar :deep(.v-btn) {
   min-width: 0;
   flex: 1 1 0;
+  /* Vuetify's own 16px of side padding is a third of a tab at 320px, and it
+   * is padding around a centred icon and label that need none — the label
+   * gets that width instead. */
+  padding-inline: 2px;
+}
+
+/* The ellipsis below only works once the label has a width to be capped
+ * against: `max-width: 100%` resolves against Vuetify's .v-btn__content,
+ * which has none of its own and grows with the text instead. A label longer
+ * than its fifth of the bar (German's "Warteschlange", French's "File
+ * d'attente") therefore overflowed the button and was clipped mid-word at
+ * both ends. */
+.mobile-tabbar :deep(.v-btn__content) {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .mobile-tabbar__label {
   font-size: 0.65rem;
+  display: block;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;

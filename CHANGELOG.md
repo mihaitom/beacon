@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - Adding a radio station from Discover did nothing at all for accounts without administrator rights on Navidrome, which only lets administrators manage stations. Those accounts no longer see the add and edit controls, and a save the server refuses now says so instead of staying silent. Searching, listening and voting in Discover keep working for every account
+- The German interface said "Queue" and "Settings" in several places and now says "Warteschlange" and "Einstellungen" throughout
+- A tab label too long for its share of the phone's tab bar is now shortened with an ellipsis instead of being cut off mid-word at both ends
 
 ## [1.3.0] - 2026-09-13
 

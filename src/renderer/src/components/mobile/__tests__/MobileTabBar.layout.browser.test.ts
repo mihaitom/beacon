@@ -38,6 +38,7 @@ describe('mobile tab bar', () => {
   afterEach(() => {
     while (wrappers.length) wrappers.pop()?.unmount()
     document.body.innerHTML = ''
+    i18n.global.locale = 'en'
   })
 
   /** Five tabs at Vuetify's own 80px button minimum are 400px, which is
@@ -63,6 +64,31 @@ describe('mobile tab bar', () => {
       const label = button.text().replace(/\s+/g, ' ')
       expect(tab.left, `"${label}" starts left of the bar`).toBeGreaterThanOrEqual(bar.left - 0.5)
       expect(tab.right, `"${label}" runs past the bar`).toBeLessThanOrEqual(bar.right + 0.5)
+    }
+  })
+
+  /** A label longer than its own fifth of the bar used to overflow the
+   * button and be clipped mid-word at both ends, because the span's
+   * `max-width: 100%` resolved against Vuetify's .v-btn__content, which has
+   * no width of its own. French is the shipped language that shows it
+   * ("File d'attente", "Lecture en cours"); German lost its long one when
+   * the queue tab was shortened, which is exactly why this is pinned to a
+   * language rather than to whatever the default one says today. */
+  it.each([320, 390])('keeps a long label inside its own tab at %ipx', async (width) => {
+    await page.viewport(width, 844)
+    setActivePinia(createPinia())
+    useAuthStore().capabilities.internetRadio = true
+    i18n.global.locale = 'fr'
+    const wrapper = mountShell(vi.fn())
+    await new Promise((resolve) => setTimeout(resolve, 80))
+
+    for (const button of wrapper.findAll('.mobile-tabbar .v-btn')) {
+      const tab = button.element.getBoundingClientRect()
+      const label = button.get('.mobile-tabbar__label')
+      const box = label.element.getBoundingClientRect()
+      const text = label.text()
+      expect(box.left, `"${text}" spills left of its tab`).toBeGreaterThanOrEqual(tab.left - 0.5)
+      expect(box.right, `"${text}" spills right of its tab`).toBeLessThanOrEqual(tab.right + 0.5)
     }
   })
 
