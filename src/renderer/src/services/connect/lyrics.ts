@@ -34,8 +34,11 @@ export async function autoLyrics(
   return fetchConnect<AutoLyricsResult | null>(`/lyrics/auto?${params.toString()}`)
 }
 
-/** Per-source candidate lists (/lyrics/search) — not used yet, exists for a
- * future "pick a different match" affordance alongside getLyricsByRemoteId. */
+/** Per-source candidate lists (/lyrics/search) — what the "pick a different
+ * match" picker shows (LyricsCandidateList.vue). Metadata only: title,
+ * artist, duration and whether the sheet is timed. The sheet itself comes
+ * from getLyricsByRemoteId() below, for the one candidate that gets
+ * picked. */
 export async function searchLyrics(
   query: LyricsQuery,
   sources?: string[],
@@ -45,7 +48,9 @@ export async function searchLyrics(
 }
 
 /** Raw lyrics for one specific search candidate (/lyrics/by-remote-id) —
- * same future use as searchLyrics() above. */
+ * the second half of the picker above: called once a candidate is chosen.
+ * Answers are cached connect-side for 30 days (see routes/lyrics.py), so
+ * going back to a candidate already tried costs nothing. */
 export async function getLyricsByRemoteId(source: string, id: string): Promise<string | null> {
   const params = new URLSearchParams({ source, id })
   return fetchConnect<string | null>(`/lyrics/by-remote-id?${params.toString()}`)
