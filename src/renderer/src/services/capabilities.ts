@@ -38,6 +38,16 @@ export interface ServerCapabilities {
    * own station list for Jellyfin sessions instead (see
    * core/radio_stations.py) — true for both server types. */
   internetRadio: boolean
+  /** Adding, editing and deleting stations, as opposed to listing and
+   * playing them (internetRadio above). Two conditions again, the same
+   * split as libraryScan: every server type offers it, but on Navidrome
+   * create/update/deleteInternetRadioStation sit behind its own `adminOnly`
+   * route group — a non-admin account gets Subsonic error 50 back while
+   * getInternetRadioStations stays open to it, so the list plays fine and
+   * only the editing controls have to go. The Jellyfin and Plex sessions
+   * keep their stations in connect's own list (core/radio_stations.py),
+   * where no such rule exists — see capabilitiesFor()'s `isAdmin`. */
+  internetRadioManagement: boolean
   /** Triggering a library rescan from Settings. Two conditions, both
    * required: the server type has to expose it at all (all three do now —
    * Navidrome natively, Jellyfin and Plex through their bridges), *and*
@@ -87,6 +97,7 @@ const SUBSONIC_CAPABILITIES: ServerCapabilities = {
   emptyPlaylistCreation: true,
   personalRating: true,
   internetRadio: true,
+  internetRadioManagement: true,
   libraryScan: true,
   songRadio: true,
   fileLyrics: true,
@@ -99,6 +110,7 @@ const JELLYFIN_CAPABILITIES: ServerCapabilities = {
   emptyPlaylistCreation: true,
   personalRating: false,
   internetRadio: true,
+  internetRadioManagement: true,
   // Bridged onto Jellyfin's own library-scan task (see
   // jellyfin_bridge.py's start_scan) — server-admin only, which
   // capabilitiesFor()'s isAdmin argument takes care of.
@@ -145,6 +157,7 @@ const PLEX_CAPABILITIES: ServerCapabilities = {
   emptyPlaylistCreation: false,
   personalRating: true,
   internetRadio: true,
+  internetRadioManagement: true,
   // Bridged onto a refresh of the music section (see plex_bridge.py's
   // start_scan) — owner-only, which capabilitiesFor()'s isAdmin argument
   // takes care of.
@@ -182,6 +195,16 @@ export function capabilitiesFor(
       : serverType === 'plex'
         ? PLEX_CAPABILITIES
         : SUBSONIC_CAPABILITIES
-  if (isAdmin === false) return { ...base, libraryScan: false, logLevelControl: false }
+  if (isAdmin === false) {
+    return {
+      ...base,
+      libraryScan: false,
+      logLevelControl: false,
+      // Navidrome's own rule, not one of Beacon's: only a Subsonic session
+      // loses this, because that is where the station list belongs to the
+      // media server. Jellyfin and Plex sessions keep theirs in connect.
+      internetRadioManagement: base !== SUBSONIC_CAPABILITIES,
+    }
+  }
   return base
 }

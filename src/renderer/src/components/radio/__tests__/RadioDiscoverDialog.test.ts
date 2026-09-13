@@ -13,6 +13,7 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
+import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { emitter } from '@/emitter'
@@ -326,6 +327,61 @@ describe('RadioDiscoverDialog', () => {
     // services/radioBrowserLinks.ts.
     expect(radioBrowser.registerRadioBrowserClick).not.toHaveBeenCalled()
     expect(radioBrowserIdFor('http://example.com/stream')).toBe('uuid-1')
+  })
+
+  /** The dialog itself is open to everyone — searching the directory,
+   * playing a station and voting all go to Radio Browser, not to the media
+   * server. Only saving one does, and Navidrome answers a non-admin with
+   * Subsonic error 50 there (its `adminOnly` route group), which used to
+   * arrive as a plus button that simply did nothing when tapped. */
+  it('drops the add button for an account the server refuses a save from', async () => {
+    useAuthStore().$patch({ serverType: 'subsonic', isAdmin: false })
+    vi.mocked(radioBrowser.searchRadioBrowser).mockResolvedValue([makeResult()])
+    const wrapper = mountDialog()
+    await openAndSettle(wrapper)
+    await wrapper.vm.$nextTick()
+
+    expect(document.querySelector('.discover-results .discover-card__add')).toBeNull()
+    // Everything the directory itself answers stays: the result, its play
+    // target and the vote button.
+    expect(document.body.textContent).toContain('Example FM')
+    expect(document.querySelector('.discover-results .discover-card__art')).not.toBeNull()
+    expect(voteButton()).not.toBeNull()
+  })
+
+  it('keeps the add button for a non-admin Jellyfin account', async () => {
+    // Those stations live in connect's own list (core/radio_stations.py),
+    // where the media server's admin flag means nothing.
+    useAuthStore().$patch({ serverType: 'jellyfin', isAdmin: false })
+    vi.mocked(radioBrowser.searchRadioBrowser).mockResolvedValue([makeResult()])
+    const wrapper = mountDialog()
+    await openAndSettle(wrapper)
+    await wrapper.vm.$nextTick()
+
+    expect(document.querySelector('.discover-results .mdi-plus')).not.toBeNull()
+  })
+
+  /** A refused save used to end as an unhandled rejection: no checkmark, no
+   * message, nothing in the console — indistinguishable from a tap that
+   * never arrived, which is exactly how it was reported. */
+  it('says so when the save is refused instead of leaving the button as it was', async () => {
+    vi.mocked(radioBrowser.searchRadioBrowser).mockResolvedValue([makeResult()])
+    vi.spyOn(useLibraryStore(), 'saveRadioStation').mockRejectedValue(
+      new Error('Subsonic error 50: user is not authorized'),
+    )
+    const toasts: { level: string; title: string }[] = []
+    emitter.on('toast', (toast) => toasts.push(toast as { level: string; title: string }))
+    const wrapper = mountDialog()
+    await openAndSettle(wrapper)
+    await wrapper.vm.$nextTick()
+
+    document.querySelector('.discover-results .mdi-plus')!.closest('button')!.click()
+    await flushPromises()
+
+    expect(toasts).toEqual([expect.objectContaining({ level: 'error' })])
+    // Still offering the retry rather than claiming a station was saved.
+    expect(document.querySelector('.discover-results .mdi-check')).toBeNull()
+    expect(document.querySelector('.discover-results .mdi-plus')).not.toBeNull()
   })
 
   it('ignores a second add while the first save is still in flight', async () => {

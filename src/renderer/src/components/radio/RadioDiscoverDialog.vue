@@ -222,8 +222,13 @@
               </span>
             </div>
 
+            <!-- Play (the logo above) is open to everyone; saving a station
+             - is not on every server — Navidrome keeps
+             - createInternetRadioStation for administrators, so an ordinary
+             - account gets a refusal back instead of a saved station. See
+             - services/capabilities.ts's internetRadioManagement. -->
             <v-btn
-              v-if="addedStationuuids.has(item.stationuuid)"
+              v-if="canManage && addedStationuuids.has(item.stationuuid)"
               icon="mdi-check"
               variant="text"
               size="small"
@@ -231,7 +236,7 @@
               disabled
             />
             <v-btn
-              v-else
+              v-else-if="canManage"
               icon="mdi-plus"
               variant="text"
               size="small"
@@ -273,6 +278,7 @@
 // pending request and which results have already been added are this
 // dialog's business from opening to closing, and no page has anything to
 // say about them.
+import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { rememberRadioBrowserStation } from '@/services/radioBrowserLinks'
@@ -475,6 +481,9 @@ export default {
     libraryStore() {
       return useLibraryStore()
     },
+    canManage(): boolean {
+      return useAuthStore().capabilities.internetRadioManagement
+    },
     browseHasNoResults(): boolean {
       return !this.browseLoading && !this.browseError && this.browseResults.length === 0
     },
@@ -644,6 +653,20 @@ export default {
         // The link is what lets every later play of it be reported instead
         // — see services/radioBrowserLinks.ts.
         rememberRadioBrowserStation(result.url, result.stationuuid)
+      } catch (error) {
+        // A refusal used to end here as an unhandled rejection: the button
+        // stayed a plus, nothing was saved and nothing said so, which reads
+        // exactly like a tap that never arrived. The likeliest refusal is a
+        // server that reserves station management for administrators, which
+        // canManage above already hides this button for — but only once the
+        // server has actually answered who this account is (null leaves it
+        // visible on purpose, see capabilitiesFor()).
+        console.error('[radio-discover] Saving the station failed:', error)
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('radio.addFailedTitle'),
+          message: this.$t('radio.addFailedMessage'),
+        })
       } finally {
         this.addingStationuuids.delete(result.stationuuid)
       }

@@ -585,6 +585,9 @@ export default {
     station1: 'Sender',
     stationsN: 'Sender',
     addStation: 'Sender hinzufügen',
+    addFailedTitle: 'Sender nicht gespeichert',
+    addFailedMessage:
+      'Der Medienserver hat das Speichern abgelehnt. Radiosender zu verwalten erfordert auf manchen Servern ein Administratorkonto.',
     discoverStations: 'Sender entdecken',
     discoverTitle: 'Radiosender entdecken',
     discoverSearchLabel: 'Sender suchen',

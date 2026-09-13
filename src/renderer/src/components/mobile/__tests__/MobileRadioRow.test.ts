@@ -5,6 +5,7 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
+import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
 import MobileRadioRow from '../MobileRadioRow.vue'
 import type { RadioStation } from '@/types/library'
@@ -31,6 +32,28 @@ function mountRow(station = makeStation()) {
 describe('MobileRadioRow', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+  })
+
+  /** Navidrome reserves updating and deleting a station for administrators
+   * (its own `adminOnly` route group), so for anyone else those two menu
+   * entries could only ever end in a refusal the list never showed. Playing
+   * the station is unaffected — that is the whole row. */
+  it('drops the edit/delete menu for an account the server refuses those from', async () => {
+    useAuthStore().$patch({ serverType: 'subsonic', isAdmin: false })
+    const wrapper = mountRow()
+
+    expect(wrapper.find('.radio-row__menu').exists()).toBe(false)
+
+    await wrapper.get('.radio-row').trigger('click')
+    expect(wrapper.emitted('play')?.[0]?.[0]).toMatchObject({ id: 'r1' })
+  })
+
+  /** Jellyfin and Plex sessions keep their stations in connect's own list,
+   * which has no media-server admin to ask. */
+  it('keeps the menu for a non-admin Jellyfin account', () => {
+    useAuthStore().$patch({ serverType: 'jellyfin', isAdmin: false })
+
+    expect(mountRow().find('.radio-row__menu').exists()).toBe(true)
   })
 
   it('plays the station when the row is tapped', async () => {

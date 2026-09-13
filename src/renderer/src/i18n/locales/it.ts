@@ -588,6 +588,9 @@ export default {
     station1: 'stazione',
     stationsN: 'stazioni',
     addStation: 'Aggiungi stazione',
+    addFailedTitle: 'Stazione non salvata',
+    addFailedMessage:
+      'Il server multimediale ha rifiutato di salvarla. Su alcuni server, gestire le stazioni radio richiede un account amministratore.',
     discoverStations: 'Scopri stazioni',
     discoverTitle: 'Scopri stazioni radio',
     discoverSearchLabel: 'Cerca stazioni',

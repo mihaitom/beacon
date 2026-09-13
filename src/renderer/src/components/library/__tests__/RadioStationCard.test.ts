@@ -5,6 +5,7 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
+import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
 import RadioStationCard from '../RadioStationCard.vue'
 import type { RadioStation } from '@/types/library'
@@ -37,6 +38,19 @@ describe('RadioStationCard', () => {
 
   afterEach(() => {
     document.body.innerHTML = ''
+  })
+
+  /** Same rule the phone's row follows: Navidrome's own `adminOnly` group
+   * covers update/deleteInternetRadioStation, so for anyone else the menu
+   * offered two operations the server would refuse. Playing is untouched. */
+  it('drops the edit/delete menu for an account the server refuses those from', async () => {
+    useAuthStore().$patch({ serverType: 'subsonic', isAdmin: false })
+    const wrapper = mountCard()
+
+    expect(wrapper.find('.radio-tile__menu').exists()).toBe(false)
+
+    await wrapper.get('.radio-tile').trigger('click')
+    expect(wrapper.emitted('play')?.[0]?.[0]).toMatchObject({ id: 's1' })
   })
 
   it('plays the station when the card is clicked', async () => {

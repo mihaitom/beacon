@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Adding a radio station from Discover did nothing at all for accounts without administrator rights on Navidrome, which only lets administrators manage stations. Those accounts no longer see the add and edit controls, and a save the server refuses now says so instead of staying silent. Searching, listening and voting in Discover keep working for every account
+
 ## [1.3.0] - 2026-09-13
 
 ### Highlights

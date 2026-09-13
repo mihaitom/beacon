@@ -18,9 +18,18 @@
        - .detail-header__actions-row/comment for why. -->
       <template #actions>
         <div class="detail-header__actions-row">
-          <v-btn prepend-icon="mdi-plus" color="primary" rounded="pill" @click="openCreate">{{
-            $t('radio.addStation')
-          }}</v-btn>
+          <!-- Only for an account the server actually lets save one (see
+             - services/capabilities.ts's internetRadioManagement); Discover
+             - beside it stays either way, since playing a station it finds
+             - needs no such right. -->
+          <v-btn
+            v-if="authStore.capabilities.internetRadioManagement"
+            prepend-icon="mdi-plus"
+            color="primary"
+            rounded="pill"
+            @click="openCreate"
+            >{{ $t('radio.addStation') }}</v-btn
+          >
           <v-btn
             prepend-icon="mdi-compass-outline"
             rounded="pill"
@@ -163,6 +172,7 @@
 </template>
 
 <script lang="ts">
+import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import DetailHeader from '@/components/library/DetailHeader.vue'
@@ -211,6 +221,9 @@ export default {
     }
   },
   computed: {
+    authStore() {
+      return useAuthStore()
+    },
     libraryStore() {
       return useLibraryStore()
     },
