@@ -61,6 +61,71 @@ The fifth row is the one that widened the fix: a multichannel source was
 already silent on the plain copy tier, with no resampling involved at all,
 so this is not a fault in the resampled tier specifically.
 
+## The same blind spot in the local player
+
+Measured on a phone 2026-09-13 against the released 1.3.0, and the answer
+splits three ways:
+
+| setting  | what the browser got | result |
+| -------- | -------------------- | ------ |
+| Original | 5-channel FLAC, untouched | plays |
+| MP3      | stereo (libmp3lame has no surround mode, so ffmpeg folds it) | plays |
+| AAC      | 5.0 ADTS | plays |
+| Opus     | 5.0 Ogg  | **silent** |
+
+`routes/local_stream.py` called `lossy_encode_args()` with no channel count,
+so aac and opus both kept the surround they were handed. Only Opus actually
+failed on it.
+
+Worth separating from the cast side, because the reasoning is different and
+mostly is not about decoding at all. There is no device here declaring a
+limit; the argument is the listener's. Every one of those settings exists to
+make the stream *smaller*, and spreading a deliberately capped bitrate over
+five channels spends it on channels the phone folds together anyway - so AAC
+"working" was still the setting failing at its one job. The lossy branch
+therefore always folds to stereo (`_LOCAL_MAX_CHANNELS`), which fixes silence
+for Opus and wasted bitrate for AAC; the lossless branch deliberately does
+not, since "Original" has to stay true of every bit and the same measurement
+says it plays.
+
+`browserPlays()` in `services/streamQuality.ts` cannot help here either: it
+asks `canPlayType()`, which answers about container and codec and knows
+nothing about channel counts. A browser that decodes FLAC but not
+multichannel FLAC would answer yes and then play silence.
+
+## The downmix is 7.7dB quieter, and that is left alone
+
+Noticed by ear on the 1.3.0 measurement above: of the settings that played,
+MP3 was audibly quieter than AAC and Original on the same 5-channel track.
+It is the only one of the three being folded to stereo, and folding costs
+level.
+
+**Nothing here chose that level.** It is ffmpeg's default: swresample scales
+the mix coefficients so that even fully correlated channels cannot clip,
+which for 5.0 is `1 + 0.707 + 0.707 = 2.414`, i.e. -7.7dB. No gain stage in
+this codebase is involved, which is worth stating outright — the obvious
+first guess on hearing it is that Beacon turned something down. Measured on
+pink noise, mean volume:
+
+| | default `-ac 2` | `-rematrix_maxval 1000` |
+| --- | --- | --- |
+| mean volume | -24.7 dB | -17.0 dB |
+
+Undoing it was measured rather than dismissed, on peak level:
+
+| source | default | full level |
+| ------ | ------- | ---------- |
+| 5.0, all channels identical, loud (pathological) | -1.9 dBFS | **0.0 dBFS** |
+| 5.0, decorrelated channels (a real mix) | -11.5 dBFS | -3.8 dBFS |
+
+So full level is safe for material that is actually a surround mix, and
+lands exactly on the clipping point for material that is not. Left at
+ffmpeg's default by the maintainer's decision (2026-09-13), on the reasoning
+that too quiet is recoverable with the volume control and clipping is not
+recoverable at all. Worth knowing before someone "fixes" the quietness
+later: it is the intended state, not an oversight, and the cost of changing
+it is measured above.
+
 ## Why MP3 looked like it worked
 
 The listener's quality ceiling was set to MP3 320 during the first test, and

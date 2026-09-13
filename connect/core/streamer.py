@@ -846,6 +846,21 @@ def _device_fit_plan(
         plan.args += ["-sample_fmt", "s16"]
         plan.target_bit_depth = 16
     if max_channels is not None and info.channels is not None and info.channels > max_channels:
+        # Plain -ac, which leaves ffmpeg's own downmix normalisation in
+        # place. That normalisation is ffmpeg's default and not a level
+        # chosen here: swresample scales the mix coefficients so even fully
+        # correlated channels cannot clip, which for a 5.0 source means
+        # 1 + 0.707 + 0.707 and therefore 7.7dB of attenuation. Measured
+        # 2026-09-13, and audible — a surround album plays noticeably
+        # quieter than the rest of a library, which is worth knowing before
+        # anyone goes looking for the gain stage that did it. There isn't
+        # one.
+        #
+        # Undoing it (-rematrix_maxval) was measured too and deliberately
+        # not taken: realistic surround material keeps about 4dB of headroom
+        # at full level, but loud correlated material lands exactly on
+        # 0 dBFS. Quieter is recoverable by turning the volume up; clipping
+        # is not recoverable at all.
         plan.args += ["-ac", str(max_channels)]
         plan.target_channels = max_channels
     return plan
