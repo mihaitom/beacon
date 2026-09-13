@@ -4,7 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-09-13
+
+### Highlights
+
+- Jellyfin 12 is supported, and 10.9 and newer keep working
+- Track lists take the columns you choose, nine new ones among them
+- Tracks can be removed from a playlist, with an undo
 
 ### Added
 
