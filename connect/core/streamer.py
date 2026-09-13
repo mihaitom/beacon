@@ -850,11 +850,12 @@ def _device_fit_plan(
         # place. That normalisation is ffmpeg's default and not a level
         # chosen here: swresample scales the mix coefficients so even fully
         # correlated channels cannot clip, which for a 5.0 source means
-        # 1 + 0.707 + 0.707 and therefore 7.7dB of attenuation. Measured
-        # 2026-09-13, and audible — a surround album plays noticeably
-        # quieter than the rest of a library, which is worth knowing before
-        # anyone goes looking for the gain stage that did it. There isn't
-        # one.
+        # 1 + 0.707 + 0.707 and therefore 7.7dB of attenuation (4.7dB for
+        # quad, 9.9dB for 7.1 — it follows the layout, not the material).
+        # Measured 2026-09-13, and audible: a surround album plays
+        # noticeably quieter than the rest of a library, which is worth
+        # knowing before anyone goes looking for the gain stage that did
+        # it. There isn't one.
         #
         # Undoing it (-rematrix_maxval) was measured too and deliberately
         # not taken: realistic surround material keeps about 4dB of headroom

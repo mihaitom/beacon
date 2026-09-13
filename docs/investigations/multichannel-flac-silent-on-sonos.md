@@ -103,13 +103,25 @@ level.
 **Nothing here chose that level.** It is ffmpeg's default: swresample scales
 the mix coefficients so that even fully correlated channels cannot clip,
 which for 5.0 is `1 + 0.707 + 0.707 = 2.414`, i.e. -7.7dB. No gain stage in
-this codebase is involved, which is worth stating outright — the obvious
-first guess on hearing it is that Beacon turned something down. Measured on
-pink noise, mean volume:
+this codebase is involved, which is worth stating outright - the obvious
+first guess on hearing it is that Beacon turned something down.
 
-| | default `-ac 2` | `-rematrix_maxval 1000` |
-| --- | --- | --- |
-| mean volume | -24.7 dB | -17.0 dB |
+How much depends on the layout and on nothing else: the scaling is a fixed
+property of the mix matrix, so the same figure applies to quiet and loud
+material alike. Measured on decorrelated pink noise, mean volume:
+
+| layout | default `-ac 2` | `-rematrix_maxval 1000` | attenuation |
+| ------ | --------------- | ----------------------- | ----------- |
+| quad (4 ch) | -23.1 dB | -18.4 dB | -4.7 dB |
+| 5.0 (5 ch)  | -24.9 dB | -17.2 dB | -7.7 dB |
+| 5.1 (6 ch)  | -24.9 dB | -17.3 dB | -7.6 dB |
+| 7.1 (8 ch)  | -26.2 dB | -16.3 dB | -9.9 dB |
+
+Note what these two columns are: ffmpeg's normalised downmix against the
+*unnormalised* one, not the source against the fold. The first framing is
+the one that matters, because a browser folding the same file for itself
+does not apply the normalisation - which is exactly why "Original" and AAC
+sounded right on the phone while MP3 did not.
 
 Undoing it was measured rather than dismissed, on peak level:
 
