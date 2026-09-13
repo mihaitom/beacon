@@ -192,6 +192,11 @@ class DlnaDelivery(BaseDelivery):
     # this whole mechanism exists to prevent.
     MAX_SAMPLE_RATE_HZ: int | None = 48000
     MAX_BIT_DEPTH: int | None = 24
+    # Measured 2026-09-13 on a real renderer, unlike the two above: a
+    # 5-channel FLAC resampled to 48kHz for it still produced no sound at
+    # all. One renderer does not speak for every renderer, but the failure
+    # is silence either way, so a stereo downmix is the safe direction.
+    MAX_CHANNELS: int | None = 2
     # Same "varies per renderer" problem as the two limits above, and the
     # same answer: MP3 and AAC are what a MediaRenderer is in practice
     # guaranteed to decode, FLAC and Vorbis are what this backend has

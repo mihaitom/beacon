@@ -528,19 +528,20 @@ def is_still_targeted(
 
 def audio_capability_limits(
     delivery: BaseDelivery | DeliveryManager | None,
-) -> tuple[int | None, int | None]:
-    """The most restrictive (max_sample_rate_hz, max_bit_depth) across every
-    delivery currently active, for core/streamer.py's resolve_output_format().
+) -> tuple[int | None, int | None, int | None]:
+    """The most restrictive (max_sample_rate_hz, max_bit_depth, max_channels)
+    across every delivery currently active, for core/streamer.py's
+    resolve_output_format().
 
     Every active target shares the exact same encoded stream — there is only
     one ffmpeg process per session (see routes/stream.py's audio_stream()) —
     so a source that exceeds *any one* active delivery's own declared limit
-    (BaseDelivery.MAX_SAMPLE_RATE_HZ/MAX_BIT_DEPTH) can't be safely
-    stream-copied to *any* of them, not just the one it would have broken.
-    None in either slot means nothing currently active declares a limit at
-    all (no delivery active, or every active one's own attribute is None) —
-    resolve_output_format() then leaves a high-res source untouched, exactly
-    as it did before this function existed."""
+    (BaseDelivery.MAX_SAMPLE_RATE_HZ/MAX_BIT_DEPTH/MAX_CHANNELS) can't be
+    safely stream-copied to *any* of them, not just the one it would have
+    broken. None in a slot means nothing currently active declares that
+    limit at all (no delivery active, or every active one's own attribute is
+    None) — resolve_output_format() then leaves a high-res source untouched,
+    exactly as it did before this function existed."""
     deliveries: list[BaseDelivery]
     if isinstance(delivery, DeliveryManager):
         deliveries = delivery.deliveries
@@ -551,7 +552,12 @@ def audio_capability_limits(
 
     rates = [d.MAX_SAMPLE_RATE_HZ for d in deliveries if d.MAX_SAMPLE_RATE_HZ is not None]
     depths = [d.MAX_BIT_DEPTH for d in deliveries if d.MAX_BIT_DEPTH is not None]
-    return (min(rates) if rates else None, min(depths) if depths else None)
+    channels = [d.MAX_CHANNELS for d in deliveries if d.MAX_CHANNELS is not None]
+    return (
+        min(rates) if rates else None,
+        min(depths) if depths else None,
+        min(channels) if channels else None,
+    )
 
 
 def playable_codecs(

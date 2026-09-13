@@ -18,6 +18,7 @@ export interface LocalSourceInfo {
   source_sample_rate: number | null
   source_bit_depth: number | null
   source_bitrate_kbps: number | null
+  source_channels: number | null
 }
 
 export async function fetchLocalSourceInfo(trackId: string): Promise<LocalSourceInfo> {

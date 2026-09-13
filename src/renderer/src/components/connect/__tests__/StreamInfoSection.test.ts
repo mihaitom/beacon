@@ -67,8 +67,10 @@ function setStreamInfo(overrides: Partial<ConnectStreamInfo>) {
       source_sample_rate: null,
       source_bit_depth: null,
       source_bitrate_kbps: null,
+      source_channels: null,
       target_sample_rate: null,
       target_bit_depth: null,
+      target_channels: null,
       target_bitrate_kbps: null,
       transcode_reason: null,
       active_connections: 0,
@@ -152,6 +154,28 @@ describe('StreamInfoSection', () => {
       expect(mountSection().vm.targetLabel).toBe('FLAC, 44.1 kHz / 16-bit')
     })
 
+    // The whole point of the row for a surround source: "FLAC, 48 kHz"
+    // alone would hide that three channels were folded away.
+    it('spells out a downmix', () => {
+      setStreamInfo({
+        content_type: 'audio/flac',
+        transcoding: true,
+        source_channels: 6,
+        target_channels: 2,
+      })
+      expect(mountSection().vm.targetLabel).toBe('FLAC, Stereo')
+
+      setStreamInfo({
+        content_type: 'audio/flac',
+        transcoding: true,
+        source_sample_rate: 96000,
+        target_sample_rate: 48000,
+        source_channels: 6,
+        target_channels: 2,
+      })
+      expect(mountSection().vm.targetLabel).toBe('FLAC, 48 kHz / Stereo')
+    })
+
     it('stays a plain format name when nothing was forced away from the source', () => {
       // The lossless-container tier re-encodes but keeps rate and depth —
       // restating the source's own numbers as a "target" would read as a
@@ -163,6 +187,7 @@ describe('StreamInfoSection', () => {
         source_bit_depth: 16,
         target_sample_rate: null,
         target_bit_depth: null,
+        target_channels: null,
         target_bitrate_kbps: null,
       })
 
@@ -333,6 +358,7 @@ describe('StreamInfoSection', () => {
         source_sample_rate: 44100,
         source_bit_depth: null,
         source_bitrate_kbps: 320,
+        source_channels: null,
       })
       const wrapper = mountSection()
 
@@ -344,11 +370,38 @@ describe('StreamInfoSection', () => {
         source_codec: 'flac',
         source_sample_rate: 96000,
         source_bit_depth: 24,
+        source_channels: null,
         source_bitrate_kbps: null,
       })
       const wrapper = mountSection()
 
       expect(wrapper.vm.sourceLine).toBe('FLAC, 96 kHz / 24-bit')
+    })
+
+    it('names a surround source, so a downmix on the row above has a cause', () => {
+      setStreamInfo({
+        source_codec: 'flac',
+        source_sample_rate: 96000,
+        source_bit_depth: 24,
+        source_channels: 6,
+        source_bitrate_kbps: null,
+      })
+      const wrapper = mountSection()
+
+      expect(wrapper.vm.sourceLine).toBe('FLAC, 96 kHz / 24-bit, 6 ch')
+    })
+
+    it('stays quiet about a stereo source, which is what almost everything is', () => {
+      setStreamInfo({
+        source_codec: 'flac',
+        source_sample_rate: 44100,
+        source_bit_depth: 16,
+        source_channels: 2,
+        source_bitrate_kbps: null,
+      })
+      const wrapper = mountSection()
+
+      expect(wrapper.vm.sourceLine).toBe('FLAC, 44.1 kHz / 16-bit')
     })
 
     it('omits the rate entirely when it was never detected', () => {
@@ -417,6 +470,7 @@ describe('StreamInfoSection', () => {
         source_codec: 'flac',
         source_sample_rate: 96000,
         source_bit_depth: 24,
+        source_channels: null,
         source_bitrate_kbps: null,
       })
     })
@@ -583,6 +637,7 @@ describe('StreamInfoSection', () => {
         source_sample_rate: 44100,
         source_bit_depth: null,
         source_bitrate_kbps: 320,
+        source_channels: null,
       })
       await flushPromises()
 

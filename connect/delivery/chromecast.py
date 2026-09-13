@@ -208,6 +208,12 @@ class ChromecastDelivery(BaseDelivery):
     # actually breaks playback.
     MAX_SAMPLE_RATE_HZ: int | None = 96000
     MAX_BIT_DEPTH: int | None = 24
+    # Measured 2026-09-13 like the Sonos one, and with the same answer: the
+    # Default Media Receiver refuses a 5-channel FLAC outright. Note that
+    # the rate above lets such a source through the copy tier untouched, so
+    # this is the only thing standing between a surround track and silence
+    # on a Chromecast.
+    MAX_CHANNELS: int | None = 2
     # The one target here that does play Opus: Google's Default Media
     # Receiver lists it alongside MP3, AAC, Vorbis, FLAC and WAV. That is
     # the whole reason Opus is offered as a cast quality at all — every

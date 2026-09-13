@@ -50,6 +50,7 @@ Keep entries anonymous: no IPs, no real speaker or room names ("room A",
 - [The radio list gets the household banned](radio-favicon-4xx-ban.md) (2026-09-03) - the same proxy ban reached a second time, by uncacheable 404s from the station-logo route rather than by cover-art volume
 - [Cast device drops mid-track - test-suite Sonos-discovery leak](mid-track-drop-test-suite-sonos-leak.md) (2026-08-24, test-suite side) - assessed as probably the whole story, not independently wire-confirmed; days of ordinary use since, with no recurrence of the symptom (checked 2026-08-28)
 - [The copy tier never checks what the device can actually play](copy-tier-device-limits.md) (2026-08-24)
+- [A surround FLAC reaches a Sonos as silence](multichannel-flac-silent-on-sonos.md) (2026-09-13) - the same blind spot one capability further on: channel count. Has the two wrong theories (the empty STREAMINFO of a piped re-encode, and 24 bit) measured and ruled out, plus why a soundbar with surround satellites refuses it too and why the MP3 quality setting made the path look healthy
 - [An event-loop stall of 19.47s, cause unknown](event-loop-stall-19s.md) (2026-08-26, closed on the trigger side - the stalled frame itself was never isolated, see the file)
 - [AirPlay reports nothing when it dies mid-track](fixed-airplay-silent-death.md) (2026-08-26) - the RAM-buffering half of that entry is fixed with it
 - [Every cast track ended a fraction of a second early](fixed-track-end-cut-short.md) (2026-08-25)

@@ -302,6 +302,7 @@ def test_info_reports_what_the_probe_found(client, default_session):
             bit_depth=24,
             bitrate_kbps=None,
             duration=180.0,
+            channels=6,
         ),
     )
 
@@ -311,6 +312,7 @@ def test_info_reports_what_the_probe_found(client, default_session):
         "source_sample_rate": 96000,
         "source_bit_depth": 24,
         "source_bitrate_kbps": None,
+        "source_channels": 6,
     }
 
 
@@ -325,6 +327,7 @@ def test_info_says_unknown_rather_than_guessing_when_the_probe_fails(client, def
         "source_sample_rate": None,
         "source_bit_depth": None,
         "source_bitrate_kbps": None,
+        "source_channels": None,
     }
 
 
@@ -746,3 +749,77 @@ def test_a_range_header_on_an_aac_request_is_answered_with_the_whole_stream(
 
     assert response.status_code == 200
     assert "content-range" not in response.headers
+
+
+# ── A surround source for the browser ───────────────────────────────────────
+# Measured on a phone 2026-09-13: a 5-channel FLAC plays untouched on
+# "Original", and the same track at the Opus setting produced no sound at
+# all. See _LOCAL_MAX_CHANNELS for why the lossy branch folds it and the
+# lossless one deliberately does not.
+
+
+def _surround(channels: int = 5, codec: str = "flac"):
+    return SourceInfo(
+        codec=codec,
+        sample_rate=44100,
+        bit_depth=16,
+        bitrate_kbps=None,
+        duration=_DURATION,
+        channels=channels,
+    )
+
+
+@pytest.mark.parametrize(("fmt", "br"), [("opus", 128), ("aac", 256), ("mp3", 320)])
+def test_a_surround_source_is_folded_down_for_a_lossy_local_stream(
+    fmt, br, client, default_session
+):
+    response, cmd = _request(
+        client,
+        default_session,
+        f"/stream/local/1?fmt={fmt}&br={br}&start=0.1",
+        info=_surround(),
+    )
+
+    assert response.status_code == 200
+    assert cmd[cmd.index("-ac") + 1] == "2"
+
+
+def test_a_stereo_source_is_not_touched(client, default_session):
+    """The cap is a ceiling, not a target — and a mono source must not be
+    doubled into a stereo one either, which is why the downmix travels as a
+    number to apply rather than as a limit to enforce."""
+    response, cmd = _request(
+        client,
+        default_session,
+        "/stream/local/1?fmt=opus&br=128&start=0.1",
+        info=_surround(channels=1),
+    )
+
+    assert response.status_code == 200
+    assert "-ac" not in cmd
+
+
+def test_a_surround_source_keeps_its_channels_on_the_lossless_branch(client, default_session):
+    """ "Original" has to stay true of every bit, and the same measurement
+    says a browser plays it."""
+    response, cmd = _request(
+        client,
+        default_session,
+        "/stream/local/1?fmt=flac",
+        info=_surround(codec="alac"),
+    )
+
+    assert response.status_code == 200
+    assert "-ac" not in cmd
+
+
+def test_an_undetected_channel_count_is_left_alone(client, default_session):
+    response, cmd = _request(
+        client,
+        default_session,
+        "/stream/local/1?fmt=opus&br=128&start=0.1",
+        info=_surround(channels=None),
+    )
+
+    assert response.status_code == 200
+    assert "-ac" not in cmd

@@ -94,8 +94,10 @@ const FALLBACK_INFO: ConnectStreamInfo = {
   source_sample_rate: null,
   source_bit_depth: null,
   source_bitrate_kbps: null,
+  source_channels: null,
   target_sample_rate: null,
   target_bit_depth: null,
+  target_channels: null,
   target_bitrate_kbps: null,
   transcode_reason: null,
   active_connections: 0,
@@ -107,6 +109,7 @@ const NO_LOCAL_SOURCE: LocalSourceInfo = {
   source_sample_rate: null,
   source_bit_depth: null,
   source_bitrate_kbps: null,
+  source_channels: null,
 }
 
 // resolve_output_format()'s transcoding tiers only ever produce one of

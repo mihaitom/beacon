@@ -266,6 +266,44 @@ async def _encode(cmd: list[str], byte_limit: int | None):
             stderr_task.cancel()
 
 
+# What a lossy stream for a browser is folded down to, and the one number
+# here that is about the *listener* rather than about a device.
+#
+# Measured on a phone 2026-09-13 against 1.3.0, and only one of the four
+# settings actually failed: a 5-channel source played on "Original"
+# (browsers decode multichannel and fold it to whatever is plugged in), on
+# mp3 (libmp3lame has no surround mode, so ffmpeg was already folding it),
+# and on aac — and produced no sound at all on opus, whose encoder keeps
+# surround just as aac's does.
+#
+# Which is why this is not written as a decoder workaround. Every one of
+# these settings exists to make the stream *smaller* (see this module's
+# docstring — the phone away from home is the whole use case), so spreading
+# a deliberately capped bitrate over five channels the phone is about to
+# fold together anyway is the setting failing at its one job. aac
+# "working" was that failure going unnoticed.
+#
+# The lossless branch is deliberately not folded: "Original" has to stay
+# true of every bit, and the same measurement says it plays.
+# Folding costs 7.7dB of level for a 5.0 source. That is ffmpeg's own
+# clip-proof downmix normalisation, not something this route applies — see
+# core/streamer.py's _device_fit_plan() for the measurement and why it is
+# left alone there too. It is the reason mp3 already sounded quieter than
+# aac on a surround track before any of this: mp3 was the only setting
+# being folded.
+_LOCAL_MAX_CHANNELS = 2
+
+
+def _downmix(info: SourceInfo | None) -> int | None:
+    """_LOCAL_MAX_CHANNELS for a source that exceeds it, None otherwise —
+    the argument lossy_encode_args() wants, which is a downmix to perform
+    rather than a ceiling to apply (passing a ceiling would turn a mono
+    source into a stereo one for nothing)."""
+    if info is None or info.channels is None or info.channels <= _LOCAL_MAX_CHANNELS:
+        return None
+    return _LOCAL_MAX_CHANNELS
+
+
 @router.get("/stream/local/{track_id}/info")
 async def local_stream_info(
     track_id: str,
@@ -301,6 +339,7 @@ async def local_stream_info(
         "source_sample_rate": info.sample_rate if info else None,
         "source_bit_depth": info.bit_depth if info else None,
         "source_bitrate_kbps": info.bitrate_kbps if info else None,
+        "source_channels": info.channels if info else None,
     }
 
 
@@ -381,7 +420,7 @@ async def local_stream(
     args, content_type = (
         lossless_encode_args(dsd_resample_args(info))
         if lossless
-        else lossy_encode_args(fmt, br, info.sample_rate if info else None)
+        else lossy_encode_args(fmt, br, info.sample_rate if info else None, None, _downmix(info))
     )
 
     headers = {"Cache-Control": "no-store"}
