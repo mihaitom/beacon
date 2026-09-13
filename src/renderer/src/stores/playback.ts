@@ -551,33 +551,18 @@ export const usePlaybackStore = defineStore('playback', {
 
           const status = state.status
           const activeNow = connect.isActive
-          // A live end-of-cast transition (not "wasn't casting at boot",
-          // which decideLocalResume() above already handles) — this.isPlaying
-          // /this.localPosition below still hold the last real values reported
-          // while casting, since this same tick's early return (right below)
-          // skips overwriting them from a now-inactive status. Exactly what
-          // local playback should pick back up from.
+          // Both directions of the cast/local switch, and each has to be a
+          // transition rather than the current value: "wasn't casting at
+          // boot" is decideLocalResume()'s above, and local audio has to
+          // stop however it came to be playing, which is why the rising side
+          // carries no localResumeDecided guard of its own. On the falling
+          // side this.localPosition still holds the last position reported
+          // while casting — this same tick's early return (right below)
+          // skips overwriting it from a now-inactive status — which is where
+          // the local element is then loaded at.
           const castingEdge = castingActiveEdge.update(activeNow)
-          // The other direction, and with no localResumeDecided guard of its
-          // own: local audio has to stop however it came to be playing. See
-          // yieldToCastPlayback().
           if (castingEdge === 'rising') this.yieldToCastPlayback()
-          if (localResumeDecided && castingEdge === 'falling') {
-            // Two ways a cast can end without this person ending it, and
-            // neither is the user asking to stop — picking playback back up
-            // over local speakers would be audibly wrong (nobody asked this
-            // machine to start making sound). Just go quiet instead. A
-            // takeover stealing the device is `displaced` (see
-            // displace_target() in session.py); a station given up on
-            // because it was stopped at the speaker itself is `orphaned`
-            // (see _radio_relay_orphaned()) — reported live 2026-09-12 as a
-            // station that had been stopped on the speaker turning up on
-            // the phone's own speaker a minute and a half later. Whatever
-            // was playing stays on the player bar either way, paused, so
-            // pressing play is still all it takes to carry on here.
-            if (status?.displaced || status?.orphaned) this.isPlaying = false
-            else void this.handOffToLocalPlayback()
-          }
+          if (localResumeDecided && castingEdge === 'falling') this.prepareLocalPlayback()
 
           // Once per payload, not once per mutation — see
           // interruptedPayloadHandled. Checked before the guard below, since
@@ -787,19 +772,27 @@ export const usePlaybackStore = defineStore('playback', {
       if (restoredWasPlaying) this.isPlaying = true
     },
 
-    /** The live-session counterpart to resumeLocalPlayback() — called when
-     * a cast session ends mid-session (see init()'s connect $subscribe
-     * handler) instead of at app boot. The local <audio> element is never
-     * kept in sync while casting (every song start/advance goes to the
-     * connect backend instead — see startCurrent()/switchToIndex()), so
-     * without this it's left pointing at stale or empty state once casting
-     * stops, and play/pause afterwards does nothing or plays the wrong
-     * song. Picks up from this.isPlaying/this.localPosition (this
-     * session's own live values) rather than resumeLocalPlayback()'s
-     * restored-from-storage snapshot. */
-    async handOffToLocalPlayback(): Promise<void> {
+    /** Makes this device's own player usable again once a cast has ended —
+     * called from init()'s connect $subscribe handler, and the live-session
+     * counterpart to resumeLocalPlayback() at app boot.
+     *
+     * Loads, never plays, whoever ended the cast and however it ended. A
+     * device that starts making sound nobody asked it for is wrong even
+     * when it is the device the cast was started from: a shared session
+     * means every client sees the cast end, so anything audible here
+     * happens on all of them at once. Whatever was playing stays on the
+     * player bar, paused, and pressing play carries it on.
+     *
+     * The loading is the point: the local element is not kept in sync while
+     * casting (every song start goes to the backend instead, see
+     * startCurrent()), and yieldToCastPlayback() dropped its src outright,
+     * so without this play/pause afterwards would act on stale or empty
+     * state. Positioned from this.localPosition, this session's own live
+     * value, rather than resumeLocalPlayback()'s stored snapshot. */
+    prepareLocalPlayback(): void {
       // Casting is over; there is nothing left to resume on a device.
       this.castInterrupted = false
+      this.isPlaying = false
       if (this.radioStation) {
         // Casting is what radioBuffering describes (a cast target still
         // filling its own startup buffer — see SeekBar.vue's own comment);
@@ -807,20 +800,21 @@ export const usePlaybackStore = defineStore('playback', {
         // handler that normally clears this on the way down (playback.ts's
         // own $subscribe) has already stopped running by the time this
         // runs (`!activeNow` short-circuits it first). Left stale, the
-        // "Buffering…" indicator it drives would otherwise stick forever
-        // once audio has clearly already started.
+        // "Buffering…" indicator it drives would otherwise stick forever.
         this.radioBuffering = false
         this.radioConnectionLost = false
-        if (this.isPlaying) this.startLocalRadio(this.radioStation.streamUrl)
+        // Nothing to preload for a station: a live stream has no position
+        // to be loaded at, so pressing play is what opens the connection
+        // (see togglePlay()'s own radio branch).
         return
       }
       const song = this.currentSong
       if (!song) return
-      this.startLocalSong(song, this.localPosition, this.isPlaying)
+      this.startLocalSong(song, this.localPosition, false)
     },
 
     /** Steps this device back when a cast becomes active — the mirror image
-     * of handOffToLocalPlayback().
+     * of prepareLocalPlayback().
      *
      * Only the client that dispatched it silences itself on the way (see
      * castTo()). Every *other* client in the session hears of it from a
@@ -2027,7 +2021,7 @@ export const usePlaybackStore = defineStore('playback', {
       this.bufferedPosition = 0
       useRadioMetadataStore().reset()
       this.radioConnectionLost = false
-      // Same reasoning as handOffToLocalPlayback()'s identical reset —
+      // Same reasoning as prepareLocalPlayback()'s identical reset —
       // nothing is casting (or playing at all) any more to still be
       // filling a startup buffer, and the SSE handler that normally clears
       // this stopped updating the moment casting became inactive.

@@ -471,35 +471,26 @@ describe('the store wiring the audio engine', () => {
     })
   })
 
-  describe('handOffToLocalPlayback', () => {
-    it('picks the song back up here, from where the speaker had got to', async () => {
-      // The local element is never kept in sync while casting, so without
-      // this it still points at whatever was loaded before the cast began.
+  describe('prepareLocalPlayback', () => {
+    it('loads the song where the speaker left it, without starting to play it', async () => {
+      // The local element is never kept in sync while casting, and
+      // yieldToCastPlayback() dropped its src outright, so without this
+      // pressing play afterwards acts on nothing. Loading it is the whole
+      // job: a cast that was playing does not become sound here.
       const playback = usePlaybackStore()
       stubLibraryClient()
       playback.setQueue([makeSong('a'), makeSong('b')], 1)
       playback.localPosition = 75
       playback.isPlaying = true
 
-      await playback.handOffToLocalPlayback()
+      playback.prepareLocalPlayback()
 
-      expect(engine.play).toHaveBeenCalledWith('https://server.example/stream/b', 75, 1)
-    })
-
-    it('loads without playing when the cast session was paused', async () => {
-      const playback = usePlaybackStore()
-      stubLibraryClient()
-      playback.setQueue([makeSong('a')], 0)
-      playback.localPosition = 30
-      playback.isPlaying = false
-
-      await playback.handOffToLocalPlayback()
-
-      expect(engine.load).toHaveBeenCalledWith('https://server.example/stream/a', 30, 1)
+      expect(engine.load).toHaveBeenCalledWith('https://server.example/stream/b', 75, 1)
       expect(engine.play).not.toHaveBeenCalled()
+      expect(playback.isPlaying).toBe(false)
     })
 
-    it('reconnects a radio stream from the top, having no position to keep', async () => {
+    it('leaves a station for the play button to reconnect, with nothing to preload', async () => {
       const playback = usePlaybackStore()
       playback.radioStation = {
         id: 'r1',
@@ -509,24 +500,22 @@ describe('the store wiring the audio engine', () => {
       }
       playback.isPlaying = true
 
-      await playback.handOffToLocalPlayback()
+      playback.prepareLocalPlayback()
 
-      expect(engine.playLive).toHaveBeenCalledWith(
-        ...playingStation('https://stream.example/chill'),
-      )
-      // No separate now-playing watch: relayed is the default, and the
-      // relay reads the station's ICY tag out of the fetch it already
-      // holds (see startLocalRadio()). Direct mode is what still needs one
-      // — covered by its own test.
+      expect(engine.playLive).not.toHaveBeenCalled()
       expect(radioMetadata.startRadioMetadataWatch).not.toHaveBeenCalled()
+      // Still on the player bar, so pressing play is all it takes to carry
+      // the station on here (see togglePlay()'s radio branch).
+      expect(playback.radioStation?.streamUrl).toBe('https://stream.example/chill')
+      expect(playback.isPlaying).toBe(false)
     })
 
-    it('clears a stale buffering flag, there being no cast target left to still be filling one', async () => {
+    it('clears a stale buffering flag, there being no cast target left to still be filling one', () => {
       // The SSE handler that normally clears this stops updating it the
       // moment casting becomes inactive (see playback.ts's own
       // `!activeNow` early return) — without this, SeekBar.vue/
-      // MobileTransportControls.vue keep showing "Buffering…" forever
-      // despite local audio already playing.
+      // MobileTransportControls.vue keep showing "Buffering…" for a station
+      // that is not playing anywhere at all.
       const playback = usePlaybackStore()
       playback.radioStation = {
         id: 'r1',
@@ -536,37 +525,39 @@ describe('the store wiring the audio engine', () => {
       }
       playback.radioBuffering = true
 
-      await playback.handOffToLocalPlayback()
+      playback.prepareLocalPlayback()
 
       expect(playback.radioBuffering).toBe(false)
     })
 
-    it('clears the offer to resume, there being no device left to resume on', async () => {
+    it('clears the offer to resume, there being no device left to resume on', () => {
       const playback = usePlaybackStore()
       playback.castInterrupted = true
 
-      await playback.handOffToLocalPlayback()
+      playback.prepareLocalPlayback()
 
       expect(playback.castInterrupted).toBe(false)
     })
 
-    it('has nothing to hand off with an empty queue', async () => {
+    it('has nothing to load with an empty queue', () => {
       const playback = usePlaybackStore()
 
-      await playback.handOffToLocalPlayback()
+      playback.prepareLocalPlayback()
 
       expect(engine.play).not.toHaveBeenCalled()
       expect(engine.load).not.toHaveBeenCalled()
     })
   })
 
-  describe('a cast ending on its own', () => {
-    /** The station keeps playing on the phone's own speaker a minute and a
-     * half after it was stopped at the speaker itself — reported live
-     * 2026-09-12. The backend gives a station up once nothing has been
-     * listening to it (see _radio_relay_orphaned()), which clears the
-     * target and so looks exactly like the user ending the cast, and
-     * ending the cast is what hands playback back to local speakers. */
+  describe('a cast ending', () => {
+    /** Nothing starts playing here, whichever way it ended. The case that
+     * first made this a rule: a station kept playing on the phone's own
+     * speaker a minute and a half after it was stopped at the speaker
+     * itself (reported live 2026-09-12), the backend having given the
+     * station up once nothing was listening to it (see
+     * _radio_relay_orphaned()). It applies to a cast ended from this very
+     * device too — a session is shared, so anything audible on this end of
+     * a cast ending happens on every client at once. */
     async function endCast(overrides: Record<string, unknown> = {}): Promise<void> {
       const connect = useConnectStore()
       connect.status = makeStatus({ targets: [], streaming: false, ...overrides })
@@ -600,17 +591,13 @@ describe('the store wiring the audio engine', () => {
       expect(playback.isPlaying).toBe(false)
     })
 
-    it('still hands a station back to local speakers when the cast is ended from here', async () => {
-      // The other half of the same branch: ending the cast yourself is a
-      // handover and has to stay one.
+    it('goes quiet when the cast is ended from this device as well', async () => {
       const playback = await playingStationOnACast()
 
       await endCast()
 
-      expect(engine.playLive).toHaveBeenCalledWith(
-        ...playingStation('https://stream.example/chill'),
-      )
-      expect(playback.isPlaying).toBe(true)
+      expect(engine.playLive).not.toHaveBeenCalled()
+      expect(playback.isPlaying).toBe(false)
     })
   })
 

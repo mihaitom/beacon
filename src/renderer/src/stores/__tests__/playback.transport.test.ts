@@ -588,7 +588,7 @@ describe('playback transport', () => {
     })
 
     it('clears a stale buffering flag along with everything else', async () => {
-      // Same reasoning as handOffToLocalPlayback()'s identical reset —
+      // Same reasoning as prepareLocalPlayback()'s identical reset —
       // nothing is casting any more to still be filling a startup buffer.
       const playback = usePlaybackStore()
       playback.radioBuffering = true

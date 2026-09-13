@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Ending a cast no longer starts the music up over local speakers. Whatever was playing stays on the player bar, paused, and pressing play carries it on there. No device makes a sound it was not asked for now, on either end of a cast
+
 ### Fixed
 
 - Adding a radio station from Discover did nothing at all for accounts without administrator rights on Navidrome, which only lets administrators manage stations. Those accounts no longer see the add and edit controls, and a save the server refuses now says so instead of staying silent. Searching, listening and voting in Discover keep working for every account

@@ -318,9 +318,10 @@ export interface ConnectStatus {
   total_songs: number
   // True only on the single status tick right after a takeover displaced
   // this session from its target — see connect/core/session.py's
-  // displace_target(). Tells playback.ts's cast-ended handler not to hand
-  // playback off to local speakers, since the user didn't ask to stop
-  // casting, another session just took the device.
+  // displace_target(). Nothing here acts on it any more: a cast ending
+  // never starts local playback by itself now, so "the user didn't ask to
+  // stop casting" no longer needs telling apart (see
+  // prepareLocalPlayback() in stores/playback.ts).
   displaced: boolean
   /** Set only on the single status tick fired when a device reported, on
    * its own event channel, that what it was given isn't playing and
@@ -337,11 +338,9 @@ export interface ConnectStatus {
   interrupted: boolean
   // True only on the single status tick fired when a station was given up
   // on because nothing had been listening to it for a minute and a half —
-  // see connect/core/session.py's _radio_relay_orphaned(). Read together
-  // with `displaced` by playback.ts's cast-ended handler: both say this
-  // session stopped casting without the user here asking it to, so local
-  // speakers must not pick the station up. Not `interrupted`, whose resume
-  // offer would have nothing left to act on.
+  // see connect/core/session.py's _radio_relay_orphaned(). Unread here for
+  // the same reason as `displaced` above. Not `interrupted` either, whose
+  // resume offer would have nothing left to act on.
   orphaned: boolean
 }
 
