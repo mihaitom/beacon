@@ -30,8 +30,11 @@
     </div>
     <!-- What the remote's own list has no equivalent for, and the reason
      - this is not just a copy of it: editing and deleting a station has to
-     - stay reachable by a plain tap, there being no hover here. -->
+     - stay reachable by a plain tap, there being no hover here. Hidden for
+     - an account the server refuses those two operations from (see
+     - services/capabilities.ts's internetRadioManagement). -->
     <v-btn
+      v-if="canManage"
       icon="mdi-dots-vertical"
       variant="text"
       density="comfortable"
@@ -40,7 +43,7 @@
       :title="$t('common.edit')"
       @click.stop="openMenu($event)"
     />
-    <tile-context-menu ref="menu">
+    <tile-context-menu v-if="canManage" ref="menu">
       <v-list-item @click="$emit('edit', station)">
         <template #prepend><v-icon icon="mdi-pencil-outline" size="small" /></template>
         <v-list-item-title>{{ $t('common.edit') }}</v-list-item-title>
@@ -64,6 +67,7 @@ import type { PropType } from 'vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import { MOBILE_ROW_ART_SIZE } from './rowMetrics'
 import TileContextMenu from '@/components/library/TileContextMenu.vue'
+import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import type { RadioStation } from '@/types/library'
@@ -84,6 +88,9 @@ export default {
   computed: {
     playbackStore() {
       return usePlaybackStore()
+    },
+    canManage(): boolean {
+      return useAuthStore().capabilities.internetRadioManagement
     },
     // Same three derivations RadioStationCard.vue makes, and for the same
     // reasons — see its own comments on matching by id and on preferring

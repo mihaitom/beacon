@@ -464,6 +464,29 @@ def test_batch_allows_an_image_url_on_the_media_server_itself(client, default_se
     assert captured["url"] == url
 
 
+def test_batch_allows_an_image_url_on_the_internal_media_server_address(
+    client, default_session, monkeypatch
+):
+    # The shape a reverse-proxied install actually has: logged in against the
+    # public URL, reached over the LAN one (NAVIDROME_INTERNAL_URL). A server
+    # builds its image links from whichever of its own addresses the request
+    # arrived on, so the internal host has to count as the media server too -
+    # checking only the login URL refused exactly those pictures.
+    default_session.media = SubsonicClient(
+        "https://navidrome.example",
+        credential="u=t&t=a&s=b",
+        internal_url="http://10.0.0.5:4533",
+    )
+    fake_client, captured = _fake_client(content=b"internal-photo")
+    monkeypatch.setattr(coverart_module, "_image_client", fake_client)
+
+    url = "http://10.0.0.5:4533/share/img/token?size=600"
+    response = client.post("/cover-art/batch", json={"image_urls": [url]})
+
+    assert _decode(response.json()["image_results"][url])[1] == b"internal-photo"
+    assert captured["url"] == url
+
+
 def test_batch_retries_an_unresolvable_image_host_rather_than_remembering_it(
     client, default_session, monkeypatch
 ):

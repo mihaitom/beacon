@@ -583,6 +583,9 @@ export default {
     station1: 'station',
     stationsN: 'stations',
     addStation: 'Add station',
+    addFailedTitle: 'Station not saved',
+    addFailedMessage:
+      'The media server refused to save it. Managing radio stations needs an administrator account on some servers.',
     discoverStations: 'Discover stations',
     discoverTitle: 'Discover radio stations',
     discoverSearchLabel: 'Search stations',

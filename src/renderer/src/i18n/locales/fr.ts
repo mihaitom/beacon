@@ -589,6 +589,9 @@ export default {
     station1: 'station',
     stationsN: 'stations',
     addStation: 'Ajouter une station',
+    addFailedTitle: 'Station non enregistrée',
+    addFailedMessage:
+      "Le serveur multimédia a refusé de l'enregistrer. Sur certains serveurs, la gestion des stations de radio nécessite un compte administrateur.",
     discoverStations: 'Découvrir des stations',
     discoverTitle: 'Découvrir des stations de radio',
     discoverSearchLabel: 'Rechercher des stations',

@@ -60,19 +60,45 @@ describe('capabilitiesFor', () => {
     expect(capabilitiesFor('subsonic').libraryScan).toBe(true)
   })
 
-  it('changes nothing but the rescan and the log-level control, whatever the account is', () => {
+  it('changes nothing but the three admin-only controls, whatever the account is', () => {
     const {
       libraryScan: _adminScan,
       logLevelControl: _adminLog,
+      internetRadioManagement: _adminRadio,
       ...adminRest
     } = capabilitiesFor('subsonic', true)
     const {
       libraryScan: _plainScan,
       logLevelControl: _plainLog,
+      internetRadioManagement: _plainRadio,
       ...plainRest
     } = capabilitiesFor('subsonic', false)
 
     expect(adminRest).toEqual(plainRest)
+  })
+
+  /** Navidrome puts create/update/deleteInternetRadioStation behind its own
+   * `adminOnly` route group and answers a non-admin with Subsonic error 50,
+   * while getInternetRadioStations stays open — so the saved list still
+   * plays for everyone and only the editing controls have to go. */
+  it('takes station management away from a non-admin Subsonic account only', () => {
+    expect(capabilitiesFor('subsonic', false).internetRadioManagement).toBe(false)
+    // Not the browsing/playing half of the feature — that one is nobody's
+    // admin business.
+    expect(capabilitiesFor('subsonic', false).internetRadio).toBe(true)
+  })
+
+  /** Jellyfin and Plex sessions keep their stations in connect's own list
+   * (core/radio_stations.py), which has no notion of a media-server admin —
+   * so this is the one admin-gated flag that is not gated for them. */
+  it('leaves station management alone for Jellyfin and Plex, admin or not', () => {
+    expect(capabilitiesFor('jellyfin', false).internetRadioManagement).toBe(true)
+    expect(capabilitiesFor('plex', false).internetRadioManagement).toBe(true)
+  })
+
+  it('leaves station management alone while the server has not said either way', () => {
+    expect(capabilitiesFor('subsonic', null).internetRadioManagement).toBe(true)
+    expect(capabilitiesFor('subsonic').internetRadioManagement).toBe(true)
   })
 
   it('offers the log-level control on every server type, to an admin', () => {

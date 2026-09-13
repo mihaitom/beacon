@@ -47,8 +47,12 @@
     <!-- Not hover-gated like AlbumCard.vue's own corner star — this is
      - reused verbatim on mobile (MobileRadioView.vue, no hover there at
      - all), and edit/delete is the one thing a tile needs to offer beyond
-     - play, so it has to stay reachable by a plain tap. -->
+     - play, so it has to stay reachable by a plain tap. Gone entirely for
+     - an account the server won't let manage stations (see
+     - services/capabilities.ts's internetRadioManagement) — the tile still
+     - plays, which is what a listener keeps either way. -->
     <v-btn
+      v-if="canManage"
       icon="mdi-dots-vertical"
       variant="text"
       density="comfortable"
@@ -60,7 +64,7 @@
     <!-- The same menu from two places: the button above (which a touch
      - screen needs, having no right-click) and a right-click anywhere on
      - the tile, which every other tile in the library now answers too. -->
-    <tile-context-menu ref="menu">
+    <tile-context-menu v-if="canManage" ref="menu">
       <context-menu-section :label="$t('library.menuLibrary')" />
       <v-list-item @click="$emit('edit', station)">
         <template #prepend><v-icon icon="mdi-pencil-outline" size="small" /></template>
@@ -79,6 +83,7 @@ import type { PropType } from 'vue'
 import CoverArt from './CoverArt.vue'
 import TileContextMenu from './TileContextMenu.vue'
 import ContextMenuSection from './ContextMenuSection.vue'
+import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import type { RadioStation } from '@/types/library'
@@ -96,6 +101,9 @@ export default {
   computed: {
     playbackStore() {
       return usePlaybackStore()
+    },
+    canManage(): boolean {
+      return useAuthStore().capabilities.internetRadioManagement
     },
     // Matches on id, not streamUrl — the same station edited to a new URL
     // is still "the same station" for this purpose, and id is what

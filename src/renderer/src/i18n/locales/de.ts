@@ -12,7 +12,7 @@ export default {
     retry: 'Erneut versuchen',
     loadMore: 'Mehr laden',
     name: 'Name',
-    addToQueue: 'Zur Queue hinzufügen',
+    addToQueue: 'Zur Warteschlange hinzufügen',
     addToPlaylistMenu: 'Zu Playlist hinzufügen',
     createNewPlaylist: 'Neue Playlist erstellen…',
     undo: 'Rückgängig',
@@ -29,7 +29,7 @@ export default {
     radio: 'Radio',
     favorites: 'Favorites',
     stats: 'Statistik',
-    settings: 'Settings',
+    settings: 'Einstellungen',
     back: 'Zurück',
     forward: 'Vorwärts',
     collapseSidebar: 'Seitenleiste einklappen',
@@ -275,7 +275,7 @@ export default {
     takeOver: 'Übernehmen',
     pair: 'Koppeln',
     apiUnreachable:
-      'Connect-Backend nicht erreichbar. Läuft es und stimmt die URL in den Settings?',
+      'Connect-Backend nicht erreichbar. Läuft es und stimmt die URL in den Einstellungen?',
     authError: 'Connect-Session nicht authentifiziert. Bitte neu anmelden.',
     ffmpegMissing: 'ffmpeg fehlt auf dem Connect-Backend - Casting funktioniert nicht ohne.',
     unknownError: 'Unbekannter Fehler.',
@@ -341,10 +341,10 @@ export default {
     },
   },
   queue: {
-    title: 'Queue',
-    empty: 'Queue ist leer.',
-    clear: 'Queue leeren',
-    saveAsPlaylist: 'Queue als Playlist speichern',
+    title: 'Warteschlange',
+    empty: 'Warteschlange ist leer.',
+    clear: 'Warteschlange leeren',
+    saveAsPlaylist: 'Warteschlange als Playlist speichern',
   },
   remoteControl: {
     title: 'Fernsteuerung',
@@ -361,7 +361,7 @@ export default {
       'Der vorherige Pairing-Code ist nicht mehr verfügbar. Erzeuge einen neuen, um ein Handy zu koppeln - bereits gekoppelte Handys werden dabei getrennt.',
   },
   settings: {
-    title: 'Settings',
+    title: 'Einstellungen',
     account: 'Konto',
     logout: 'Abmelden',
     language: 'Sprache',
@@ -585,6 +585,9 @@ export default {
     station1: 'Sender',
     stationsN: 'Sender',
     addStation: 'Sender hinzufügen',
+    addFailedTitle: 'Sender nicht gespeichert',
+    addFailedMessage:
+      'Der Medienserver hat das Speichern abgelehnt. Radiosender zu verwalten erfordert auf manchen Servern ein Administratorkonto.',
     discoverStations: 'Sender entdecken',
     discoverTitle: 'Radiosender entdecken',
     discoverSearchLabel: 'Sender suchen',
@@ -680,7 +683,10 @@ export default {
   },
   mobile: {
     tabNowPlaying: 'Jetzt läuft',
-    tabQueue: 'Queue',
+    // Nicht "Warteschlange" wie überall sonst: ein Fünftel der Tab-Leiste
+    // ist auf einem 320px-Display 60px breit, das Wort braucht 95px und
+    // stünde dort dauerhaft abgeschnitten.
+    tabQueue: 'Nächste',
     playOn: 'Wiedergeben auf',
     needsPairing: 'Muss zuerst in der Beacon-App gepairt werden',
   },

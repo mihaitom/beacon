@@ -587,6 +587,9 @@ export default {
     station1: 'emisora',
     stationsN: 'emisoras',
     addStation: 'Añadir emisora',
+    addFailedTitle: 'Emisora no guardada',
+    addFailedMessage:
+      'El servidor multimedia rechazó guardarla. En algunos servidores, gestionar emisoras de radio requiere una cuenta de administrador.',
     discoverStations: 'Descubrir emisoras',
     discoverTitle: 'Descubrir emisoras de radio',
     discoverSearchLabel: 'Buscar emisoras',

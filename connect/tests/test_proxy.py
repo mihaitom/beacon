@@ -106,6 +106,40 @@ def test_proxy_strips_authentik_headers_before_forwarding(client, default_sessio
     )
 
 
+def test_proxy_strips_front_door_headers_but_keeps_the_client_ones(client, default_session):
+    # Navidrome builds its public /share/img/ links from X-Forwarded-Host and
+    # -Proto when its own ShareURL/BaseHost are unset. Forwarded from here,
+    # those describe Beacon's reverse proxy, so every artist photo came back
+    # as a link on Beacon's own hostname - where nothing serves it, and which
+    # routes/coverart.py then refused as an address on our own network.
+    from media import SubsonicClient
+
+    default_session.media = SubsonicClient("http://navidrome.internal:4533")
+    proxy_mod = _reload_proxy("http://navidrome.internal:4533")
+    mock_client_cls, captured = _mock_httpx_client()
+
+    with patch.object(proxy_mod.httpx, "AsyncClient", mock_client_cls):
+        client.get(
+            "/rest/getArtistInfo2.view?u=testuser&t=token&s=salt&v=1.16.1&c=test&f=json",
+            headers={
+                "X-Forwarded-Host": "beacon.example.com",
+                "X-Forwarded-Proto": "https",
+                "X-Forwarded-Port": "443",
+                "Forwarded": "host=beacon.example.com;proto=https",
+                # Who is browsing, not which front door they came through:
+                # the media server is right to log this one.
+                "X-Forwarded-For": "203.0.113.7",
+            },
+        )
+
+    sent = {k.lower(): v for k, v in captured["headers"].items()}
+    assert "x-forwarded-host" not in sent
+    assert "x-forwarded-proto" not in sent
+    assert "x-forwarded-port" not in sent
+    assert "forwarded" not in sent
+    assert sent.get("x-forwarded-for") == "203.0.113.7"
+
+
 # ── Repeated query params (Subsonic's list-argument convention) ──────────────
 #
 # createPlaylist.view/updatePlaylist.view send a song list as a repeated key
