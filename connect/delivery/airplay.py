@@ -206,6 +206,9 @@ class AirPlayDelivery(BaseDelivery):
     # limit" now that the mechanism exists.
     MAX_SAMPLE_RATE_HZ: int | None = 44100
     MAX_BIT_DEPTH: int | None = 16
+    # AirPlay 1's audio stream is stereo ALAC by definition — this one is
+    # the protocol, not an assumption about any particular receiver.
+    MAX_CHANNELS: int | None = 2
     # Not the AirPlay protocol's limit but this delivery's: nothing is
     # handed to the device in the format it arrives in, because RAOP takes
     # PCM and pyatv decodes to it with miniaudio, whose whole repertoire is

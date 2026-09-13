@@ -47,6 +47,11 @@ class BaseDelivery(ABC):
     # gets whatever the subclass declares, not a guess made here.
     MAX_SAMPLE_RATE_HZ: int | None = None
     MAX_BIT_DEPTH: int | None = None
+    # How many channels this device class can actually decode. Same rule and
+    # same enforcement as the two above, and it earns its own attribute for
+    # the same reason they do: a surround source reaches a stereo-only
+    # renderer as silence, not as an error.
+    MAX_CHANNELS: int | None = None
 
     # Which audio codecs this device class actually plays — read by
     # core/state.py's playable_codecs() and enforced in

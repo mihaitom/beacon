@@ -302,6 +302,7 @@ def test_info_reports_what_the_probe_found(client, default_session):
             bit_depth=24,
             bitrate_kbps=None,
             duration=180.0,
+            channels=6,
         ),
     )
 
@@ -311,6 +312,7 @@ def test_info_reports_what_the_probe_found(client, default_session):
         "source_sample_rate": 96000,
         "source_bit_depth": 24,
         "source_bitrate_kbps": None,
+        "source_channels": 6,
     }
 
 
@@ -325,6 +327,7 @@ def test_info_says_unknown_rather_than_guessing_when_the_probe_fails(client, def
         "source_sample_rate": None,
         "source_bit_depth": None,
         "source_bitrate_kbps": None,
+        "source_channels": None,
     }
 
 

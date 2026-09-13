@@ -301,6 +301,7 @@ async def local_stream_info(
         "source_sample_rate": info.sample_rate if info else None,
         "source_bit_depth": info.bit_depth if info else None,
         "source_bitrate_kbps": info.bitrate_kbps if info else None,
+        "source_channels": info.channels if info else None,
     }
 
 

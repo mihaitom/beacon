@@ -15,8 +15,16 @@ from core.session import (
     registry,
     require_authenticated_session,
 )
-from core.state import find_sonos, radio_dispatch_url, resolve_target, stream_url
+from core.state import (
+    audio_capability_limits,
+    find_sonos,
+    playable_codecs,
+    radio_dispatch_url,
+    resolve_target,
+    stream_url,
+)
 from core.stream_format import radio_content_type
+from core.streamer import resolve_output_format
 from delivery import (
     AirPlayDelivery,
     BaseDelivery,
@@ -26,7 +34,7 @@ from delivery import (
     SonosDelivery,
 )
 from delivery.errors import delivery_error_response
-from routes.playback import _release_claims, playback_error_reporter
+from routes.playback import _current_reconnect_args, _release_claims, playback_error_reporter
 
 logger = logging.getLogger("connect.devices")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -67,6 +75,69 @@ def _add_target(st, new_d: BaseDelivery) -> None:
         st.active_delivery = new_d
 
 
+def _prospective_deliveries(st, new_d: BaseDelivery) -> list[BaseDelivery]:
+    """The delivery set as it will be once `new_d` has joined."""
+    if isinstance(st.active_delivery, DeliveryManager):
+        current = list(st.active_delivery.deliveries)
+    elif st.active_delivery:
+        current = [st.active_delivery]
+    else:
+        current = []
+    return [*current, new_d]
+
+
+def _encode_capabilities(delivery) -> tuple:
+    """Everything about a delivery set that resolve_output_format() reads.
+    Two sets with the same signature cannot resolve to different formats,
+    which is what lets the common join skip re-probing the source."""
+    return (audio_capability_limits(delivery), playable_codecs(delivery))
+
+
+async def _refit_output_format(session: SessionState, new_d: BaseDelivery) -> bool:
+    """Re-resolve the current track against the target set `new_d` is about
+    to join, adopting the result and returning True when it differs from
+    what is currently being sent.
+
+    The format a session streams was resolved for the set as it stood at
+    /play, and until this existed nothing resolved it again — so the most
+    restrictive device only won if it was already there. A device joining
+    later got whatever the first one could take: measured live as a DLNA
+    renderer capped at 48kHz joining a Chromecast that had been handed a
+    24/96 source untouched on the copy tier, and receiving that same 96kHz
+    stream (see docs/investigations/multichannel-flac-silent-on-sonos.md).
+
+    False without probing at all when the joiner brings no new constraint,
+    which is the ordinary case — a second Sonos alongside a first changes
+    nothing, and paying for an ffmpeg probe to discover that on every join
+    would be a poor trade."""
+    st = session.state
+    if st.current_track is None:
+        return False
+    prospective = DeliveryManager.from_deliveries(_prospective_deliveries(st, new_d))
+    if _encode_capabilities(prospective) == _encode_capabilities(st.active_delivery):
+        return False
+
+    max_rate, max_depth, max_channels = audio_capability_limits(prospective)
+    track_url = await asyncio.to_thread(session.media.get_stream_url, st.current_track.id)
+    fmt = await resolve_output_format(
+        track_url,
+        gain=st.current_track_gain,
+        max_sample_rate=max_rate,
+        max_bit_depth=max_depth,
+        max_channels=max_channels,
+        max_lossy_format=st.max_lossy_format,
+        max_lossy_bitrate_kbps=st.max_lossy_bitrate_kbps,
+        device_codecs=playable_codecs(prospective),
+    )
+    # The args, not the whole dataclass: source_* and duration are the same
+    # track either way, and a difference there would not change a byte of
+    # what any device receives.
+    if fmt.ffmpeg_args == st.current_output_format.ffmpeg_args:
+        return False
+    st.current_output_format = fmt
+    return True
+
+
 @router.post("/join")
 async def join_stream(
     req: JoinRequest, session: SessionState = Depends(require_authenticated_session)
@@ -102,6 +173,18 @@ async def join_stream(
             owner_session = registry.get(owner)
             if owner_session:
                 await displace_target(owner_session, target_type, name)
+
+        # Before either branch below, so the reservation path benefits too:
+        # a device reserved while paused is dispatched by the /resume that
+        # follows, and /resume reuses whatever format is on the session by
+        # then (see _current_reconnect_args()). Radio is skipped entirely —
+        # it has no resolved format and joins on the station's own URL.
+        # Captured before the refit, which adopts its result on the session
+        # straight away so the reservation path and the URL below both see
+        # it — leaving the re-dispatch's rollback nothing to put back
+        # unless it is held onto here.
+        previous_format = st.current_output_format
+        refitted = not st.radio_info and await _refit_output_format(session, new_d)
 
         # Nothing to dispatch to a device joining a *paused* session: it
         # only has to be in active_delivery by the time playback starts
@@ -150,6 +233,50 @@ async def join_stream(
         )
         title = st.radio_info["title"] if st.radio_info else "Connect"
         logger.info(f"[join] {req.target_type}:{req.target_name} → {url}")
+
+        if refitted:
+            # One ffmpeg process per session, shared by every target (see
+            # routes/stream.py's audio_stream()), so a format that has to
+            # change cannot change for the joiner alone — the whole set is
+            # re-dispatched from where playback currently is, exactly as
+            # /seek does it. seek_to() bumps play_generation, which retires
+            # the connection still carrying the old encode, and
+            # DeliveryManager.play() redoes the Sonos grouping the branch
+            # below would otherwise do by hand.
+            #
+            # The cost is a short gap on the devices that were already
+            # playing, and it is deliberately confined to the case that is
+            # otherwise silent: a join that tightens nothing never reaches
+            # here.
+            previous_delivery = st.active_delivery
+            previous_members = (
+                list(st.active_delivery.deliveries)
+                if isinstance(st.active_delivery, DeliveryManager)
+                else None
+            )
+            _add_target(st, new_d)
+            st.clock.seek_to(st.clock.elapsed())
+            logger.info(
+                f"[join] {req.target_name} needs a narrower stream than the one running "
+                f"— re-dispatching every target as {st.current_output_format.label}"
+            )
+            try:
+                await st.active_delivery.play(*_current_reconnect_args(session))
+            except Exception as e:
+                # Same contract as the handler below, plus putting the
+                # target set and the format back: unlike that one, this
+                # path has already committed both before dispatching.
+                logger.exception("[join] Delivery error on re-dispatch")
+                if previous_members is not None:
+                    st.active_delivery.deliveries[:] = previous_members
+                else:
+                    st.active_delivery = previous_delivery
+                st.current_output_format = previous_format
+                await _release_claims(new_d, session)
+                return delivery_error_response(e, new_d)
+
+            await session.event_bus.broadcast(build_status_dict(session))
+            return {"status": "joined", "device": req.target_name}
 
         try:
             if req.target_type == "sonos":

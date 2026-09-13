@@ -30,17 +30,28 @@ export function formatKhz(hz: number): string {
   return `${Number.isInteger(khz) ? khz : khz.toFixed(1)} kHz`
 }
 
+/** e.g. 2 -> "Stereo", 6 -> "6 ch". Named where a name is the thing people
+ * actually say, counted where it isn't: nobody calls a 5.1 file "5.1" on
+ * the strength of a channel count alone, since the count doesn't say which
+ * layout produced it. */
+export function formatChannels(channels: number): string {
+  if (channels === 1) return 'Mono'
+  if (channels === 2) return 'Stereo'
+  return `${channels} ch`
+}
+
 /** What the speaker is being sent.
  *
- * The rate/depth are appended only where they were actually forced away
- * from the source's own (see ConnectStreamInfo.target_sample_rate) - that
- * is the case worth spelling out, since "FLAC" alone reads as an unchanged
- * copy of a FLAC source when it is really a downsampled one. */
+ * The rate/depth/channels are appended only where they were actually forced
+ * away from the source's own (see ConnectStreamInfo.target_sample_rate) -
+ * that is the case worth spelling out, since "FLAC" alone reads as an
+ * unchanged copy of a FLAC source when it is really a downsampled one. */
 export function castTargetLabel(info: ConnectStreamInfo): string {
   const base = TARGET_LABEL_FOR_CONTENT_TYPE[info.content_type] ?? info.content_type
   const changed = [
     info.target_sample_rate ? formatKhz(info.target_sample_rate) : null,
     info.target_bit_depth ? `${info.target_bit_depth}-bit` : null,
+    info.target_channels ? formatChannels(info.target_channels) : null,
     info.target_bitrate_kbps ? `${info.target_bitrate_kbps} kb/s` : null,
   ].filter(Boolean)
   return changed.length > 0 ? `${base}, ${changed.join(' / ')}` : base
@@ -56,12 +67,20 @@ export function sourceLine(source: {
   source_sample_rate: number | null
   source_bit_depth: number | null
   source_bitrate_kbps: number | null
+  source_channels?: number | null
 }): string | null {
   if (!source.source_codec) return null
   const parts = [source.source_codec.toUpperCase()]
   if (source.source_sample_rate) {
     const rate = formatKhz(source.source_sample_rate)
     parts.push(source.source_bit_depth ? `${rate} / ${source.source_bit_depth}-bit` : rate)
+  }
+  // Only surround, never "Stereo": stereo is what almost every track is, so
+  // naming it on every line costs a reader attention and tells them nothing.
+  // More than two channels is the case that explains a downmix on the row
+  // above it.
+  if (source.source_channels && source.source_channels > 2) {
+    parts.push(formatChannels(source.source_channels))
   }
   if (source.source_bitrate_kbps) parts.push(`${source.source_bitrate_kbps} kb/s`)
   return parts.join(', ')

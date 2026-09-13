@@ -365,9 +365,21 @@ def lossy_encode_args(
     bitrate_kbps: int,
     source_rate: int | None = None,
     max_sample_rate: int | None = None,
+    channels: int | None = None,
 ) -> tuple[list[str], str]:
     """ffmpeg output args for a lossy encode to `fmt`, plus the content type
     the result carries.
+
+    `channels` is a downmix the *source* actually needs (DeviceFitPlan's
+    target_channels, None when it doesn't), not a ceiling — passing a
+    ceiling would upmix a mono source to stereo for nothing. It has to be
+    stated here rather than left to ffmpeg, and that is not obvious:
+    libmp3lame has no surround mode at all, so ffmpeg downmixes a 5.1
+    source to stereo for it by itself and mp3 looked like proof the whole
+    path was fine. aac and opus *do* encode surround, so the same source
+    reaches the same speaker as a 5.1 stream it plays as silence (measured
+    on a Sonos — see
+    docs/investigations/multichannel-flac-silent-on-sonos.md).
 
     Opus is encoded in constrained VBR, and which of the three modes to use
     is a decided question rather than a taste: it was `-vbr off` (CBR) for
@@ -402,13 +414,15 @@ def lossy_encode_args(
     codec, muxer = _LOSSY_ENCODERS[fmt]
     rate = _lossy_sample_rate(fmt, source_rate, max_sample_rate)
     args = ["-acodec", codec, "-b:a", f"{bitrate_kbps}k", "-ar", str(rate)]
+    if channels is not None:
+        args += ["-ac", str(channels)]
     if fmt == "opus":
         args += ["-vbr", "constrained"]
     args += ["-f", muxer]
     return args, _CONTENT_TYPE_FOR_MUXER[muxer]
 
 
-def lossless_encode_args(resample_args: list[str] | None = None) -> tuple[list[str], str]:
+def lossless_encode_args(fit_args: list[str] | None = None) -> tuple[list[str], str]:
     """ffmpeg output args for a lossless re-encode, plus the content type.
 
     Where a source has to change container without being allowed to lose
@@ -418,11 +432,11 @@ def lossless_encode_args(resample_args: list[str] | None = None) -> tuple[list[s
     same thing — keep every bit, change only the wrapper — so both ask here
     rather than each spelling out an encoder.
 
-    `resample_args` for the case where the container is not the only problem:
-    a source past a device's sample rate or bit depth is re-encoded *and*
-    brought down to it, and those arguments come from the device's own
-    limits. Nothing for the local path, which has no device to be limited
-    by."""
+    `fit_args` for the case where the container is not the only problem: a
+    source past a device's sample rate, bit depth or channel count is
+    re-encoded *and* brought down to it, and those arguments come from the
+    device's own limits (see _device_fit_plan()). Nothing for the local
+    path, which has no device to be limited by."""
     return [
         "-acodec",
         "flac",
@@ -444,7 +458,7 @@ def lossless_encode_args(resample_args: list[str] | None = None) -> tuple[list[s
         "4096",
         "-f",
         "flac",
-        *(resample_args or []),
+        *(fit_args or []),
     ], "audio/flac"
 
 
@@ -520,6 +534,22 @@ _SAMPLE_RATE_RE = re.compile(rb",\s*(\d+)\s*Hz")
 # depth cap for those (_LOSSLESS_REENCODE_CODECS' own real-world sources are
 # overwhelmingly ALAC/FLAC-adjacent, where this pattern applies).
 _BIT_DEPTH_RE = re.compile(rb"\((\d+)\s*bit\)")
+# ffmpeg names the channel layout rather than counting it ("stereo", "5.0",
+# "7.1"), and falls back to "6 channels (FL+FR+...)" for a layout it has no
+# name for. Both forms are read here, plus the handful of named layouts
+# whose name carries no number at all. Anything unrecognised stays None —
+# same rule as every other probed field, see SourceInfo.
+_NAMED_CHANNEL_COUNTS = {
+    "mono": 1,
+    "stereo": 2,
+    "downmix": 2,
+    "quad": 4,
+    "hexagonal": 6,
+    "octagonal": 8,
+    "hexadecagonal": 16,
+}
+_NUMBERED_LAYOUT_RE = re.compile(r"^(\d+)\.(\d+)$")
+_LOOSE_CHANNELS_RE = re.compile(r"^(\d+)\s*channels?$")
 # The Audio stream's *own* line carries its bitrate for lossy codecs (e.g.
 # "mp3, 44100 Hz, stereo, fltp, 320 kb/s") — deliberately not the same
 # thing the pacing bug this backend already fixed once read (the container
@@ -564,12 +594,13 @@ class OutputFormat:
     fields it survives onto the fallback tiers wherever a probe did happen:
     how long the audio is doesn't depend on which tier ends up encoding it.
 
-    `target_sample_rate`/`target_bit_depth` are only set where this format
-    actually forces the output away from the source's own numbers (the
-    resampled tiers) — None everywhere else, since "the target equals the
-    source" is already visible from the source fields and repeating it
-    would just read as a second, redundant claim. `target_bitrate_kbps`
-    follows the same rule for a lossy re-encode's chosen bitrate.
+    `target_sample_rate`/`target_bit_depth`/`target_channels` are only set
+    where this format actually forces the output away from the source's own
+    numbers (the tiers that fit a source to a device) — None everywhere
+    else, since "the target equals the source" is already visible from the
+    source fields and repeating it would just read as a second, redundant
+    claim. `target_bitrate_kbps` follows the same rule for a lossy
+    re-encode's chosen bitrate.
 
     `transcode_reason` is a stable key, not prose: the frontend's
     stream-info section turns it into a translated sentence (see
@@ -585,8 +616,10 @@ class OutputFormat:
     source_bit_depth: int | None = None
     source_bitrate_kbps: int | None = None
     source_duration: float | None = None
+    source_channels: int | None = None
     target_sample_rate: int | None = None
     target_bit_depth: int | None = None
+    target_channels: int | None = None
     # The output's own bitrate, set only on the tiers that pick one. The
     # frontend used to hardcode "192 kb/s" against the mp3 content type,
     # which was accurate while the fallback was the only way to reach mp3;
@@ -669,6 +702,11 @@ class SourceInfo:
     # output carried no Duration line at all — a live/endless stream, or a
     # source ffmpeg couldn't measure.
     duration: float | None = None
+    # How many channels the source carries (see _parse_channels). Judged
+    # against a target's MAX_CHANNELS the same way sample_rate and bit_depth
+    # are — a surround source reaches a stereo-only device as silence, not
+    # as an error.
+    channels: int | None = None
 
 
 async def _probe_source(url: str) -> SourceInfo | None:
@@ -724,7 +762,31 @@ async def _probe_source(url: str) -> SourceInfo | None:
         bit_depth=int(depth_match.group(1)) if depth_match else None,
         bitrate_kbps=int(bitrate_match.group(1)) if bitrate_match else None,
         duration=_parse_duration(stderr),
+        channels=_parse_channels(line),
     )
+
+
+def _parse_channels(line: bytes) -> int | None:
+    """Channel count from the rest of the Audio stream's line, or None when
+    none of its comma-separated fields names a layout this recognises.
+
+    Reads the whole line field by field rather than matching one pattern
+    against it: the layout sits between the sample rate and the sample
+    format with nothing to anchor on, and a bare `\\d+\\.\\d+` loose in the
+    line would just as happily match part of a bitrate."""
+    for field_text in line.decode(errors="replace").split(","):
+        # "5.1(side)" and "6 channels (FL+FR+...)" both carry a
+        # parenthesised detail this doesn't need.
+        name = field_text.strip().split("(")[0].strip()
+        if name in _NAMED_CHANNEL_COUNTS:
+            return _NAMED_CHANNEL_COUNTS[name]
+        numbered = _NUMBERED_LAYOUT_RE.match(name)
+        if numbered:
+            return int(numbered.group(1)) + int(numbered.group(2))
+        loose = _LOOSE_CHANNELS_RE.match(name)
+        if loose:
+            return int(loose.group(1))
+    return None
 
 
 def _parse_duration(probe_output: bytes) -> float | None:
@@ -739,38 +801,67 @@ def _parse_duration(probe_output: bytes) -> float | None:
     )
 
 
-def _resample_plan(
-    info: SourceInfo, max_sample_rate: int | None, max_bit_depth: int | None
-) -> tuple[list[str], int | None, int | None]:
-    """ffmpeg args to bring `info` down to a device's declared limits, plus
-    the sample rate/bit depth those args actually produce (None for
-    whichever one isn't being changed). Args are [] if nothing needs to
-    change at all. Never upsamples or upgrades: a cap higher than the
-    source's own rate/depth (or a source whose rate/depth couldn't be
-    detected at all) leaves it alone rather than "helpfully" changing
-    anything not actually required to make the device happy.
+@dataclass
+class DeviceFitPlan:
+    """How a source has to be changed to fit a device's declared limits, and
+    what the result is. `args` is [] when nothing needs to change at all,
+    and each `target_*` is None unless that particular number is actually
+    being changed.
 
-    The two returned numbers exist purely to be reported (see
+    The target numbers exist purely to be reported (see
     OutputFormat.target_sample_rate) — they're derived from the same
-    condition as the args themselves rather than re-checked separately,
-    so what the stream-info section shows can't drift from what ffmpeg was
+    condition as the args themselves rather than re-checked separately, so
+    what the stream-info section shows can't drift from what ffmpeg was
     actually told to do."""
-    args = []
-    target_sample_rate = None
-    target_bit_depth = None
+
+    args: list[str] = field(default_factory=list)
+    target_sample_rate: int | None = None
+    target_bit_depth: int | None = None
+    target_channels: int | None = None
+
+
+def _device_fit_plan(
+    info: SourceInfo,
+    max_sample_rate: int | None,
+    max_bit_depth: int | None,
+    max_channels: int | None,
+) -> DeviceFitPlan:
+    """ffmpeg args to bring `info` down to a device's declared limits.
+
+    Never upsamples or upgrades: a cap higher than the source's own
+    rate/depth/channel count (or a source whose numbers couldn't be detected
+    at all) leaves it alone rather than "helpfully" changing anything not
+    actually required to make the device happy."""
+    plan = DeviceFitPlan()
     if (
         max_sample_rate is not None
         and info.sample_rate is not None
         and info.sample_rate > max_sample_rate
     ):
-        args += ["-ar", str(max_sample_rate)]
-        target_sample_rate = max_sample_rate
+        plan.args += ["-ar", str(max_sample_rate)]
+        plan.target_sample_rate = max_sample_rate
     if max_bit_depth is not None and info.bit_depth is not None and info.bit_depth > max_bit_depth:
         # FLAC/ALAC sources in practice are 16- or 24-bit; s16 is the only
         # meaningful "smaller" target once 24 itself isn't allowed.
-        args += ["-sample_fmt", "s16"]
-        target_bit_depth = 16
-    return args, target_sample_rate, target_bit_depth
+        plan.args += ["-sample_fmt", "s16"]
+        plan.target_bit_depth = 16
+    if max_channels is not None and info.channels is not None and info.channels > max_channels:
+        plan.args += ["-ac", str(max_channels)]
+        plan.target_channels = max_channels
+    return plan
+
+
+def _fit_description(plan: DeviceFitPlan) -> str:
+    """What a plan does, in words, for a log line and OutputFormat.label.
+    Empty for a plan that changes nothing — no caller asks in that case."""
+    parts = []
+    if plan.target_sample_rate is not None:
+        parts.append(f"resampled to {plan.target_sample_rate}Hz")
+    if plan.target_bit_depth is not None:
+        parts.append(f"reduced to {plan.target_bit_depth} bit")
+    if plan.target_channels is not None:
+        parts.append(f"downmixed to {plan.target_channels}ch")
+    return ", ".join(parts)
 
 
 def _may_copy(codec: str, device_codecs: frozenset[str] | None) -> bool:
@@ -823,15 +914,19 @@ def _lossy_ceiling_format(
     fmt: str,
     bitrate_kbps: int,
     max_sample_rate: int | None,
+    target_channels: int | None,
 ) -> OutputFormat:
     """The re-encode a source over the listener's ceiling lands on.
 
-    No `_resample_plan()` args here, unlike the FLAC tiers: a lossy encode
-    picks its own output rate anyway (see _lossy_sample_rate(), which is
-    handed the device's ceiling and honours it), and its bit depth is
-    whatever the encoder produces — `-sample_fmt s16` would be rejected by
-    libmp3lame rather than respected."""
-    args, content_type = lossy_encode_args(fmt, bitrate_kbps, info.sample_rate, max_sample_rate)
+    Takes only the channel half of `_device_fit_plan()`, not its args: a
+    lossy encode picks its own output rate anyway (see _lossy_sample_rate(),
+    which is handed the device's ceiling and honours it), and its bit depth
+    is whatever the encoder produces — `-sample_fmt s16` would be rejected
+    by libmp3lame rather than respected. A downmix is the one thing no lossy
+    encoder decides correctly on its own; see lossy_encode_args()."""
+    args, content_type = lossy_encode_args(
+        fmt, bitrate_kbps, info.sample_rate, max_sample_rate, target_channels
+    )
     logger.info(
         f"[ffmpeg] format probe: '{info.codec}' "
         f"{f'{info.bitrate_kbps}kbps ' if info.bitrate_kbps else ''}"
@@ -846,7 +941,9 @@ def _lossy_ceiling_format(
         source_bit_depth=info.bit_depth,
         source_bitrate_kbps=info.bitrate_kbps,
         source_duration=info.duration,
+        source_channels=info.channels,
         target_sample_rate=_lossy_sample_rate(fmt, info.sample_rate, max_sample_rate),
+        target_channels=target_channels,
         target_bitrate_kbps=bitrate_kbps,
         transcode_reason=REASON_QUALITY_LIMIT,
     )
@@ -857,12 +954,13 @@ async def resolve_output_format(
     gain: float = 1.0,
     max_sample_rate: int | None = None,
     max_bit_depth: int | None = None,
+    max_channels: int | None = None,
     max_lossy_format: str | None = None,
     max_lossy_bitrate_kbps: int | None = None,
     device_codecs: frozenset[str] | None = None,
 ) -> OutputFormat:
-    """Detect the real source codec/sample rate/bit depth and decide how
-    ffmpeg should handle it — stream-copy when the source is already
+    """Detect the real source codec/sample rate/bit depth/channel count and
+    decide how ffmpeg should handle it — stream-copy when the source is already
     device-compatible (preserving its exact quality/bitrate), lossless
     re-encode to FLAC (resampled down to a device's limit when it has one
     and the source exceeds it) for other lossless sources, or the existing
@@ -870,25 +968,28 @@ async def resolve_output_format(
     source is something else entirely (never a new failure mode, only ever
     an upgrade when detection succeeds).
 
-    `max_sample_rate`/`max_bit_depth` are the casting target's own declared
-    ceiling — see delivery/base.py's BaseDelivery.MAX_SAMPLE_RATE_HZ/
-    MAX_BIT_DEPTH and core/state.py's audio_capability_limits(), which every
-    caller here is expected to have already reduced a (possibly multi-
-    target) dispatch down to the single most restrictive pair. None (the
-    default) means no known limit — every caller from before these
-    parameters existed keeps behaving exactly as it did.
+    `max_sample_rate`/`max_bit_depth`/`max_channels` are the casting
+    target's own declared ceiling — see delivery/base.py's
+    BaseDelivery.MAX_SAMPLE_RATE_HZ/MAX_BIT_DEPTH/MAX_CHANNELS and
+    core/state.py's audio_capability_limits(), which every caller here is
+    expected to have already reduced a (possibly multi-target) dispatch
+    down to the single most restrictive set. None (the default) means no
+    known limit — every caller from before these parameters existed keeps
+    behaving exactly as it did.
 
-    A source that exceeds either is never stream-copied, even when its
-    codec would otherwise qualify: copying means the device gets the
-    file's own bytes untouched, and there's no such thing as a device-
-    compatible copy of a stream whose sample rate the device can't decode
-    at all — confirmed live (see
-    docs/investigations/copy-tier-device-limits.md): a 24-bit/96kHz FLAC
-    copied straight to a Sonos reported ERROR_UNSUPPORTED_FREQ and stopped
-    1.1s in. It's re-encoded losslessly to FLAC instead, resampled down to
-    the limit — the same tier _LOSSLESS_REENCODE_CODECS below already
-    uses, just also reached from a codec that would otherwise have
-    qualified for copy.
+    A source that exceeds any of them is never stream-copied, even when its
+    codec would otherwise qualify: copying means the device gets the file's
+    own bytes untouched, and there's no such thing as a device-compatible
+    copy of a stream the device cannot decode at all. Both halves of that
+    are measured rather than assumed: a 24-bit/96kHz FLAC copied straight
+    to a Sonos reported ERROR_UNSUPPORTED_FREQ and stopped 1.1s in (see
+    docs/investigations/copy-tier-device-limits.md), and a 5-channel FLAC
+    reported ERROR_UNSUPPORTED_FORMAT and never started — at any sample
+    rate, and on a soundbar with surround satellites just the same (see
+    docs/investigations/multichannel-flac-silent-on-sonos.md). It's
+    re-encoded losslessly to FLAC instead, brought down to the limit — the
+    same tier _LOSSLESS_REENCODE_CODECS below already uses, just also
+    reached from a codec that would otherwise have qualified for copy.
 
     `gain` (ReplayGain, see stream_tracks()'s own docstring) rules out the
     copy tier specifically: stream-copy means ffmpeg never decodes the
@@ -910,10 +1011,12 @@ async def resolve_output_format(
     a lossless source is always above it, whatever number it names.
 
     The device's own limits above still win where they disagree, and that
-    ordering is deliberate: `max_sample_rate` is what a device can decode at
-    all, so ignoring it produces silence (see the ERROR_UNSUPPORTED_FREQ
-    case above), while ignoring the listener's ceiling only produces a
-    bigger stream than they asked for.
+    ordering is deliberate: the device's limits are what it can decode at
+    all, so ignoring one produces silence (see the two measured cases
+    above), while ignoring the listener's ceiling only produces a bigger
+    stream than they asked for. The channel cap is the exception that
+    applies to both: a lossy ceiling encode is downmixed too, since aac and
+    opus will happily encode surround nobody can play.
 
     `device_codecs` is the same idea one level up: which codecs the target
     can decode at all (BaseDelivery.PLAYABLE_CODECS, reduced across every
@@ -933,7 +1036,7 @@ async def resolve_output_format(
     # source format, not of any device, and every tier past this point has to
     # see the same ceiling.
     max_sample_rate = dsd_sample_rate_cap(codec, max_sample_rate)
-    resample_args, target_rate, target_depth = _resample_plan(info, max_sample_rate, max_bit_depth)
+    fit = _device_fit_plan(info, max_sample_rate, max_bit_depth, max_channels)
 
     if _exceeds_quality_ceiling(info, max_lossy_format, max_lossy_bitrate_kbps):
         return _lossy_ceiling_format(
@@ -941,6 +1044,7 @@ async def resolve_output_format(
             _codec_for_ceiling(max_lossy_format, device_codecs),
             max_lossy_bitrate_kbps,
             max_sample_rate,
+            fit.target_channels,
         )
 
     muxer = _COPY_MUXER_FOR_CODEC.get(codec)
@@ -959,32 +1063,35 @@ async def resolve_output_format(
             f"[ffmpeg] format probe: '{codec}' could be copied, but {plays} — using mp3 fallback"
         )
         return _fallback(REASON_CODEC_NOT_CASTABLE, info.duration)
-    if muxer and resample_args and not _plays_flac(device_codecs):
-        # The resample below has to happen — the source is past what this
+    if muxer and fit.args and not _plays_flac(device_codecs):
+        # The conversion below has to happen — the source is past what this
         # device can decode — but its usual lossless landing place is out.
         logger.info(
             f"[ffmpeg] format probe: '{codec}' exceeds this target's limit and it does not "
             "play flac — using mp3 fallback"
         )
         return _fallback(REASON_DEVICE_LIMIT, info.duration)
-    if muxer and resample_args:
+    if muxer and fit.args:
         logger.info(
             f"[ffmpeg] format probe: '{codec}' would copy, but source "
-            f"{info.sample_rate}Hz/{info.bit_depth}bit exceeds this target's limit "
-            f"({max_sample_rate}Hz/{max_bit_depth}bit) — re-encoding to flac, resampled"
+            f"{info.sample_rate}Hz/{info.bit_depth}bit/{info.channels}ch exceeds this "
+            f"target's limit ({max_sample_rate}Hz/{max_bit_depth}bit/{max_channels}ch) "
+            f"— re-encoding to flac, {_fit_description(fit)}"
         )
-        flac_args, flac_type = lossless_encode_args(resample_args)
+        flac_args, flac_type = lossless_encode_args(fit.args)
         return OutputFormat(
             ffmpeg_args=flac_args,
             content_type=flac_type,
-            label=f"{codec} → flac (resampled for device limit)",
+            label=f"{codec} → flac ({_fit_description(fit)} for device limit)",
             source_codec=info.codec,
             source_sample_rate=info.sample_rate,
             source_bit_depth=info.bit_depth,
             source_bitrate_kbps=info.bitrate_kbps,
             source_duration=info.duration,
-            target_sample_rate=target_rate,
-            target_bit_depth=target_depth,
+            source_channels=info.channels,
+            target_sample_rate=fit.target_sample_rate,
+            target_bit_depth=fit.target_bit_depth,
+            target_channels=fit.target_channels,
             transcode_reason=REASON_DEVICE_LIMIT,
         )
     if muxer and gain == 1.0:
@@ -997,6 +1104,7 @@ async def resolve_output_format(
             source_bit_depth=info.bit_depth,
             source_bitrate_kbps=info.bitrate_kbps,
             source_duration=info.duration,
+            source_channels=info.channels,
         )
     if muxer:
         logger.info(
@@ -1013,8 +1121,10 @@ async def resolve_output_format(
                 "target does not play — using mp3 fallback"
             )
             return _fallback(REASON_CODEC_NOT_CASTABLE, info.duration)
-        label = f"{codec} → flac" + (" (resampled for device limit)" if resample_args else "")
-        flac_args, flac_type = lossless_encode_args(resample_args)
+        label = f"{codec} → flac" + (
+            f" ({_fit_description(fit)} for device limit)" if fit.args else ""
+        )
+        flac_args, flac_type = lossless_encode_args(fit.args)
         return OutputFormat(
             ffmpeg_args=flac_args,
             content_type=flac_type,
@@ -1024,11 +1134,14 @@ async def resolve_output_format(
             source_bit_depth=info.bit_depth,
             source_bitrate_kbps=info.bitrate_kbps,
             source_duration=info.duration,
-            target_sample_rate=target_rate,
-            target_bit_depth=target_depth,
-            # Both are true for a resampled one; the device limit is the
-            # more specific (and more actionable) of the two, so it wins.
-            transcode_reason=(REASON_DEVICE_LIMIT if resample_args else REASON_LOSSLESS_CONTAINER),
+            source_channels=info.channels,
+            target_sample_rate=fit.target_sample_rate,
+            target_bit_depth=fit.target_bit_depth,
+            target_channels=fit.target_channels,
+            # Both are true for one that also had to be brought down to a
+            # device limit; that is the more specific (and more actionable)
+            # of the two, so it wins.
+            transcode_reason=(REASON_DEVICE_LIMIT if fit.args else REASON_LOSSLESS_CONTAINER),
         )
 
     # Everything reaching here is a codec no tier above recognised: not

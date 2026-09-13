@@ -157,6 +157,13 @@ class SonosDelivery(BaseDelivery):
     # stopped 1.1s in. Sonos' own published spec tops out at 24-bit/48kHz.
     MAX_SAMPLE_RATE_HZ: int | None = 48000
     MAX_BIT_DEPTH: int | None = 24
+    # Measured on both a standalone Era 100 and a Beam with surround
+    # satellites (see docs/investigations/multichannel-flac-silent-on-sonos.md):
+    # a 5-channel FLAC is refused with ERROR_UNSUPPORTED_FORMAT and never
+    # starts, at 44.1kHz just as at 96kHz. A speaker set that plays surround
+    # from a TV still does not decode one out of an HTTP URI, so this is not
+    # per-speaker.
+    MAX_CHANNELS: int | None = 2
     # Sonos' own published format list: MP3, AAC, FLAC, ALAC, WMA, Ogg
     # Vorbis, AIFF and WAV. Opus is not on it, and is not merely
     # undocumented — a real speaker accepts the URI and then plays

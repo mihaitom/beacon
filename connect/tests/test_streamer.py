@@ -43,6 +43,9 @@ def _info(
     bit_depth: int | None = None,
     bitrate_kbps: int | None = None,
     duration: float | None = None,
+    # Every fixture line below says "stereo" — the default matches them so
+    # each test states only what it is actually about.
+    channels: int | None = 2,
 ) -> SourceInfo:
     return SourceInfo(
         codec=codec,
@@ -50,6 +53,7 @@ def _info(
         bit_depth=bit_depth,
         bitrate_kbps=bitrate_kbps,
         duration=duration,
+        channels=channels,
     )
 
 
@@ -661,6 +665,125 @@ def test_device_limit_reports_the_bit_depth_it_is_actually_reduced_to():
     assert fmt.target_sample_rate is None
 
 
+# ── resolve_output_format device channel limit ─────────────────────────────
+# Regression tests for the second half of the same class of bug (measured
+# 2026-09-13 — see docs/investigations/multichannel-flac-silent-on-sonos.md):
+# a 5-channel FLAC handed to a Sonos reported ERROR_UNSUPPORTED_FORMAT and
+# never started, at 44.1kHz just as at 96kHz, and on a soundbar with surround
+# satellites just the same.
+
+
+def test_resolve_output_format_downmixes_a_copy_eligible_surround_source():
+    # Nothing about the rate or depth is wrong here — the channel count
+    # alone has to be enough to rule out the copy tier.
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("flac", sample_rate=44100, bit_depth=16, channels=5)),
+    ):
+        fmt = asyncio.run(
+            resolve_output_format(
+                "http://nav/stream", max_sample_rate=48000, max_bit_depth=24, max_channels=2
+            )
+        )
+    assert "copy" not in fmt.ffmpeg_args
+    assert fmt.ffmpeg_args == [
+        "-acodec",
+        "flac",
+        "-frame_size",
+        "4096",
+        "-f",
+        "flac",
+        "-ac",
+        "2",
+    ]
+    assert fmt.transcode_reason == "device_limit"
+
+
+def test_resolve_output_format_downmixes_and_resamples_together():
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("flac", sample_rate=96000, bit_depth=24, channels=6)),
+    ):
+        fmt = asyncio.run(
+            resolve_output_format(
+                "http://nav/stream", max_sample_rate=48000, max_bit_depth=24, max_channels=2
+            )
+        )
+    assert fmt.ffmpeg_args[-4:] == ["-ar", "48000", "-ac", "2"]
+    assert fmt.target_sample_rate == 48000
+    assert fmt.target_channels == 2
+    assert fmt.source_channels == 6
+
+
+def test_resolve_output_format_never_upmixes_a_source_below_the_channel_limit():
+    # The cap is a ceiling, not a target: a mono source stays mono rather
+    # than being "helpfully" doubled into a stereo one.
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("flac", sample_rate=44100, bit_depth=16, channels=1)),
+    ):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream", max_channels=2))
+    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "flac"]
+
+
+def test_resolve_output_format_leaves_a_source_alone_when_channels_are_unknown():
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("flac", sample_rate=44100, bit_depth=16, channels=None)),
+    ):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream", max_channels=2))
+    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "flac"]
+
+
+def test_resolve_output_format_no_declared_channel_limit_leaves_surround_untouched():
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("flac", sample_rate=44100, bit_depth=16, channels=6)),
+    ):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
+    assert fmt.ffmpeg_args == ["-acodec", "copy", "-f", "flac"]
+
+
+def test_resolve_output_format_downmixes_the_lossless_reencode_tier_too():
+    with patch(
+        "core.streamer._probe_source",
+        AsyncMock(return_value=_info("alac", sample_rate=44100, bit_depth=16, channels=6)),
+    ):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream", max_channels=2))
+    assert fmt.ffmpeg_args[-2:] == ["-ac", "2"]
+    assert fmt.transcode_reason == "device_limit"
+
+
+@pytest.mark.parametrize(
+    ("layout", "expected"),
+    [
+        (b"mono", 1),
+        (b"stereo", 2),
+        (b"quad", 4),
+        (b"5.0", 5),
+        (b"5.1", 6),
+        (b"5.1(side)", 6),
+        (b"7.1", 8),
+        (b"6 channels (FL+FR+FC+BL+BR+LFE)", 6),
+        (b"something ffmpeg has never printed", None),
+    ],
+)
+def test_probe_source_reads_every_channel_layout_ffmpeg_prints(layout, expected):
+    stderr = b"Stream #0:0: Audio: flac, 44100 Hz, " + layout + b", s16"
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=_fake_probe_proc(stderr))):
+        result = asyncio.run(_probe_source("http://nav/stream"))
+    assert result.channels == expected
+
+
+def test_probe_source_does_not_read_a_channel_count_off_a_bitrate():
+    # "320 kb/s" and "44100 Hz" are both ", <number>..." fields on the same
+    # line the layout sits in.
+    stderr = b"Stream #0:0: Audio: mp3, 44100 Hz, stereo, fltp, 320 kb/s"
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=_fake_probe_proc(stderr))):
+        result = asyncio.run(_probe_source("http://nav/stream"))
+    assert result.channels == 2
+
+
 @pytest.mark.parametrize("codec", ["alac", "pcm_s16le", "ape"])
 def test_lossless_reencode_reports_the_container_as_the_reason(codec):
     with patch("core.streamer._probe_source", AsyncMock(return_value=_info(codec))):
@@ -717,6 +840,34 @@ def test_every_reason_the_frontend_knows_about_is_one_this_module_can_produce():
 def _resolve(info, **kwargs):
     with patch("core.streamer._probe_source", AsyncMock(return_value=info)):
         return asyncio.run(resolve_output_format("http://nav/stream", **kwargs))
+
+
+def test_quality_ceiling_downmixes_surround_too():
+    """The one place a device limit reaches into a *lossy* encode. aac and
+    opus both encode surround happily, so without this a 5.1 source reaches
+    the same silent speaker by a different route — mp3 only ever looked
+    fine because libmp3lame has no surround mode to fall into."""
+    fmt = _resolve(
+        _info("flac", sample_rate=44100, bit_depth=16, channels=6, duration=180.0),
+        max_sample_rate=48000,
+        max_channels=2,
+        max_lossy_format="aac",
+        max_lossy_bitrate_kbps=256,
+    )
+    assert "-ac" in fmt.ffmpeg_args
+    assert fmt.ffmpeg_args[fmt.ffmpeg_args.index("-ac") + 1] == "2"
+    assert fmt.target_channels == 2
+
+
+def test_quality_ceiling_leaves_a_stereo_source_at_its_own_channel_count():
+    fmt = _resolve(
+        _info("flac", sample_rate=44100, bit_depth=16, channels=2, duration=180.0),
+        max_channels=2,
+        max_lossy_format="aac",
+        max_lossy_bitrate_kbps=256,
+    )
+    assert "-ac" not in fmt.ffmpeg_args
+    assert fmt.target_channels is None
 
 
 def test_quality_ceiling_re_encodes_a_lossless_source():

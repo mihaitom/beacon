@@ -57,6 +57,13 @@ status ever seen in this investigation.
   `_dispatch_queued_track()` both call `audio_capability_limits(target)` and
   pass the result into `resolve_output_format()`.
 
+**The same blind spot had one capability left in it.** Channel count was
+never looked at either, and a 5-channel FLAC is refused by the same
+speakers for the same kind of reason - see
+[multichannel-flac-silent-on-sonos.md](multichannel-flac-silent-on-sonos.md)
+(2026-09-13), which extends `MAX_SAMPLE_RATE_HZ`/`MAX_BIT_DEPTH` with
+`MAX_CHANNELS` and turns `_resample_plan()` into `_device_fit_plan()`.
+
 **Why the test suite didn't catch it originally:** `resolve_output_format()`
 had no concept of a device limit to violate - the tier selection was correct
 for the information it had, which was incomplete by design, not by omission.

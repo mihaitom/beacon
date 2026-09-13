@@ -893,7 +893,7 @@ async def play_tracks(
         # lookup first (see media/plex.py's docstring); resolve_output_format()
         # itself shells out to ffmpeg, also blocking.
         track_url = await asyncio.to_thread(session.media.get_stream_url, track.id)
-        max_rate, max_depth = audio_capability_limits(target)
+        max_rate, max_depth, max_channels = audio_capability_limits(target)
         # Remembered before resolving, so auto-advance and the /resume and
         # /seek paths below all see the same ceiling this dispatch used.
         session.state.max_lossy_format = req.max_lossy_format
@@ -903,6 +903,7 @@ async def play_tracks(
             gain=req.gain,
             max_sample_rate=max_rate,
             max_bit_depth=max_depth,
+            max_channels=max_channels,
             max_lossy_format=req.max_lossy_format,
             max_lossy_bitrate_kbps=req.max_lossy_bitrate_kbps,
             device_codecs=playable_codecs(target),
