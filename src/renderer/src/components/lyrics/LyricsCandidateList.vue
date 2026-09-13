@@ -74,6 +74,11 @@ const DURATION_MISMATCH_THRESHOLD_S = 5
 
 export default {
   name: 'LyricsCandidateList',
+  // Picking a match is what closes the container showing this list; the
+  // list itself has no idea whether it is in a dropdown or a bottom sheet.
+  // The held candidates survive it (see the store's loadCandidates()), so
+  // reopening to try the next one costs nothing.
+  emits: ['select'],
   computed: {
     playbackStore() {
       return usePlaybackStore()
@@ -100,9 +105,9 @@ export default {
   },
   methods: {
     onSelectCandidate(source: string, candidate: LyricSearchResult) {
-      if (this.currentSong) {
-        void this.lyricsStore.selectCandidate(this.currentSong, source, candidate.id)
-      }
+      if (!this.currentSong) return
+      this.$emit('select')
+      void this.lyricsStore.selectCandidate(this.currentSong, source, candidate.id)
     },
     // `score` is a distance (0 = identical, larger = worse — see
     // connect/routes/lyrics.py's own MATCH_THRESHOLD comparison), not

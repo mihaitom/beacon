@@ -145,8 +145,13 @@
          - panel anchored to a small toolbar button is fiddly to hit and
          - easy to close by mis-touching; a bottom sheet gives the same list
          - full-width, thumb-reachable real estate instead. -->
+        <!-- close-on-content-click stays false so scrolling and mis-taps
+         - inside the list don't dismiss it; the one thing that *should*
+         - close it is a pick, which closePicker() below does through this
+         - v-model. -->
         <v-menu
           v-if="!mobile"
+          v-model="desktopPickerOpen"
           :close-on-content-click="false"
           location="top right"
           :offset="[12, 0]"
@@ -164,7 +169,7 @@
               {{ $t('lyrics.pickMatch') }}
             </v-btn>
           </template>
-          <lyrics-candidate-list />
+          <lyrics-candidate-list @select="closePicker" />
         </v-menu>
         <v-btn
           v-else
@@ -190,7 +195,7 @@
         <div class="lyrics-panel__mobile-sheet-header">
           <span class="text-body-large">{{ $t('lyrics.pickMatch') }}</span>
         </div>
-        <lyrics-candidate-list />
+        <lyrics-candidate-list @select="closePicker" />
       </v-card>
     </v-bottom-sheet>
   </div>
@@ -233,6 +238,7 @@ export default {
       // calibrates the offset instead of seeking (see onLineClick below).
       calibrating: false,
       mobilePickerOpen: false,
+      desktopPickerOpen: false,
     }
   },
   computed: {
@@ -408,9 +414,13 @@ export default {
     // Candidates are fetched on open (not eagerly) — same reasoning as
     // ensureLoaded() itself not being eager: don't hit three third-party
     // search APIs for a picker nobody opened.
+    //
+    // Closing deliberately keeps them: picking the right sheet usually
+    // takes a few tries, and loadCandidates() hands the held list straight
+    // back, so every open after the first is instant. The song-change
+    // watcher above is what drops them.
     onPickerToggle(open: boolean) {
       if (open && this.currentSong) void this.lyricsStore.loadCandidates(this.currentSong)
-      else this.lyricsStore.clearCandidates()
     },
     // v-bottom-sheet only emits update:model-value for state changes it
     // initiates itself (backdrop click, swipe-down) — setting its v-model
@@ -422,6 +432,18 @@ export default {
     openMobilePicker() {
       this.mobilePickerOpen = true
       this.onPickerToggle(true)
+    },
+    // Both presentations at once rather than branching on `mobile`: only
+    // one of the two is ever mounted, so clearing both is the cheaper
+    // statement of "the picker is done".
+    //
+    // No onPickerToggle(false) alongside it — neither container emits
+    // update:model-value for a change made from out here (see the bottom
+    // sheet's own comment above), and there is nothing left to clear
+    // anyway: selecting a candidate empties the list itself.
+    closePicker() {
+      this.mobilePickerOpen = false
+      this.desktopPickerOpen = false
     },
   },
 }

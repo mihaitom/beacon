@@ -40,10 +40,16 @@ interface LyricsState {
   // FILE_SOURCE (there's no candidate id, just "this file's own tags") and
   // while nothing is loaded.
   remoteId: string | null
-  // Per-source search results for the "pick a different match" flow, only
-  // populated while that picker is open — see loadCandidates()/
-  // selectCandidate() below.
+  // Per-source search results for the "pick a different match" flow. Held
+  // for as long as the song is playing rather than only while the picker
+  // is open: finding the right sheet usually takes several tries, and
+  // re-running the search on every open meant three third-party lookups
+  // and a spinner between each one. Dropped on a song change, by the
+  // watcher in LyricsPanel.vue — see loadCandidates() below.
   candidates: Record<string, LyricSearchResult[]> | null
+  // Which song `candidates` belongs to, so the held list is only reused
+  // for the song it was actually searched for.
+  candidatesSongId: string | null
   candidatesLoading: boolean
   // Seconds to shift this song's line timestamps by before comparing
   // against playback position — positive delays the lyrics (use when they
@@ -318,6 +324,7 @@ export const useLyricsStore = defineStore('lyrics', {
     source: null,
     remoteId: null,
     candidates: null,
+    candidatesSongId: null,
     candidatesLoading: false,
     offset: 0,
   }),
@@ -472,16 +479,30 @@ export const useLyricsStore = defineStore('lyrics', {
      * touch the song's own file lyrics (there's nothing to "pick" there,
      * it's either tagged or it isn't). */
     async loadCandidates(song: Song): Promise<void> {
+      // Already searched for this song, or searching for it right now:
+      // reopening the picker shows what was found instead of asking the
+      // three providers again.
+      if (this.candidatesSongId === song.id && this.candidates) return
+      if (this.candidatesLoading) return
+
       this.candidatesLoading = true
       try {
-        this.candidates = await searchLyrics({
+        const results = await searchLyrics({
           name: song.title,
           artist: song.artist,
           album: song.album,
           duration: song.duration,
         })
+        // The song can change while three providers are being asked.
+        // Storing the result anyway would file one song's matches under
+        // the next one's name and hand them straight back from the cache.
+        if (this.songId !== song.id) return
+        this.candidates = results
+        this.candidatesSongId = song.id
       } catch (error) {
         console.error('[lyrics] Failed to search lyrics candidates:', error)
+        // Shown as "no matches", but deliberately not filed under the song:
+        // a failed lookup should be retried on the next open, not kept.
         this.candidates = {}
       } finally {
         this.candidatesLoading = false
@@ -490,6 +511,7 @@ export const useLyricsStore = defineStore('lyrics', {
 
     clearCandidates(): void {
       this.candidates = null
+      this.candidatesSongId = null
     },
 
     /** Applies one specific candidate from loadCandidates() as `song`'s
@@ -497,7 +519,6 @@ export const useLyricsStore = defineStore('lyrics', {
      * override for when the automatic best match was wrong. */
     async selectCandidate(song: Song, source: string, id: string): Promise<void> {
       const startedAt = generation
-      this.candidates = null
       this.loading = true
       this.error = false
       try {

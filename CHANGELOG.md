@@ -47,6 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A track list kept room at its right edge for a star rating on Jellyfin and for a favorite heart on Plex, neither of which those servers have. That space now goes to the track and album names
 - A playlist with no tracks in it now says so, instead of showing a bare row of column headings with nothing under it
 - The buffering bar on a station sent to a speaker clears a little sooner, closer to when the speaker actually starts playing
+- Choosing a different set of lyrics for a track no longer leaves the list of matches sitting open and claiming there are none to be had. It closes once you have picked, and the matches found for the playing song are kept, so opening the list again to try the next one comes up at once instead of searching all over again
 
 ## [1.2.1] - 2026-09-08
 
