@@ -1471,3 +1471,47 @@ def test_song_lists_omit_the_column_fields_the_server_did_not_report():
 
     for field in ("size", "created", "played"):
         assert field not in song
+
+
+def test_stream_view_forwards_the_files_length(client, plex_session, monkeypatch):
+    """Safari plays a media response through only when it knows its length -
+    see docs/investigations/safari-transcode-jumps.md."""
+    monkeypatch.setattr(
+        plex_session.media,
+        "get_stream_url",
+        lambda track_id: "http://plex:32400/library/parts/999/file.mp3?X-Plex-Token=tok",
+    )
+    fake_client, _ = _mock_binary_httpx_client({"content-length": "3"})
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/stream.view?id=9001")
+
+    assert r.headers["content-length"] == "3"
+
+
+def test_stream_view_drops_the_length_of_a_compressed_body(client, plex_session, monkeypatch):
+    """httpx hands the body over decompressed, so the upstream length no
+    longer matches it."""
+    monkeypatch.setattr(
+        plex_session.media,
+        "get_stream_url",
+        lambda track_id: "http://plex:32400/library/parts/999/file.mp3?X-Plex-Token=tok",
+    )
+    fake_client, _ = _mock_binary_httpx_client({"content-length": "2", "content-encoding": "gzip"})
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/stream.view?id=9001")
+
+    assert r.headers.get("content-length") != "2"
+    assert r.content == b"abc"
+
+
+def test_cover_art_never_forwards_a_length(client, plex_session, monkeypatch):
+    """The reason content-length is skipped at all: an image endpoint whose
+    length and body disagreed crashed the response (see _SKIP_RESP_HEADERS)."""
+    fake_client, _ = _mock_binary_httpx_client({"content-length": "999"})
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getCoverArt.view?id=2001")
+
+    assert r.headers.get("content-length") != "999"

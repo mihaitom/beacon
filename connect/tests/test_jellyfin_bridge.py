@@ -1529,3 +1529,37 @@ def test_get_song_answers_with_the_detailed_mapping(client, jellyfin_session, mo
     r = client.get("/rest/getSong.view?id=song-1")
 
     assert r.json()["subsonic-response"]["song"]["path"] == "/music/a/song.flac"
+
+
+def test_stream_view_forwards_the_files_length(client, jellyfin_session, monkeypatch):
+    """Safari plays a media response through only when it knows its length -
+    see docs/investigations/safari-transcode-jumps.md."""
+    fake_client, _ = _mock_binary_httpx_client({"content-length": "3"})
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/stream.view?id=9001")
+
+    assert r.headers["content-length"] == "3"
+
+
+def test_stream_view_drops_the_length_of_a_compressed_body(client, jellyfin_session, monkeypatch):
+    """httpx hands the body over decompressed, so the upstream length no
+    longer matches it."""
+    fake_client, _ = _mock_binary_httpx_client({"content-length": "2", "content-encoding": "gzip"})
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/stream.view?id=9001")
+
+    assert r.headers.get("content-length") != "2"
+    assert r.content == b"abc"
+
+
+def test_cover_art_never_forwards_a_length(client, jellyfin_session, monkeypatch):
+    """The reason content-length is skipped at all: an image endpoint whose
+    length and body disagreed crashed the response (see _SKIP_RESP_HEADERS)."""
+    fake_client, _ = _mock_binary_httpx_client({"content-length": "999"})
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getCoverArt.view?id=2001")
+
+    assert r.headers.get("content-length") != "999"

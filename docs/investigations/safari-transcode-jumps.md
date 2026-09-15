@@ -1,7 +1,8 @@
 # A transcode on an iPhone jumps back to its start every ~45 seconds
 
-**Status: fix built 2026-09-15 (HLS for WebKit), waiting for a check on the phone
-against the real implementation.** Found and measured the same day.
+**Status: fixed 2026-09-15 (HLS for WebKit)**, checked on the phone the same day
+with the real implementation: aac 192k, mp3 128k and opus 128k each played
+through. Open: Safari on a Mac, see the end.
 
 ## Symptom
 
@@ -98,6 +99,11 @@ SIGTTIN. connect never has a terminal, but the HLS encoder passes
   has native HLS as well (Electron 44 answers "maybe") but refuses mp3
   segments, and its plain stream works, so it keeps that.
 - Bundled ffmpeg: the `mp4` muxer is new in the recipe.
+- The Jellyfin and Plex bridges now forward a track's Content-Length on
+  "Original" as the Navidrome proxy always did. They had dropped it for every
+  binary response since an image endpoint's wrong length crashed one; Safari's
+  range probe still got the total from Content-Range, so whether that path
+  was affected was never checked.
 
 ## Why the test suite did not catch it
 
@@ -105,3 +111,11 @@ The suite tested the response connect sends, and that response was correct
 HTTP. The failure is how WebKit's media loader consumes a response with no
 length, which only a real WebKit shows - jsdom has no media loader, and the
 browser-test layer runs Chromium.
+
+## Not checked: Safari on a Mac
+
+A Mac has a fine pointer, so the audio engine routes the element through Web
+Audio there (see `webAudioAllowed()` in services/audioEngine.ts) - on a phone it
+does not. WebKit has a history of `createMediaElementSource()` giving silence
+for HLS sources. No Mac was available to check whether that still holds; if
+it does, a transcode on a Mac would play silent rather than jump.

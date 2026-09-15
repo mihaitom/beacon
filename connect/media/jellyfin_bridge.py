@@ -1048,7 +1048,14 @@ _SKIP_RESP_HEADERS = {
 }
 
 
-async def _stream_binary(request: Request, url: str, media: JellyfinClient) -> StreamingResponse:
+async def _stream_binary(
+    request: Request, url: str, media: JellyfinClient, keep_length: bool = False
+) -> StreamingResponse:
+    """`keep_length` forwards the upstream Content-Length after all, for a
+    track's original file: Safari only plays a media response through when it
+    knows the length (docs/investigations/safari-transcode-jumps.md). Never
+    for a compressed body, which httpx decompresses and so makes longer than
+    the header says."""
     client = _get_client()
     headers = media.auth_headers()
     range_header = request.headers.get("range")
@@ -1064,9 +1071,10 @@ async def _stream_binary(request: Request, url: str, media: JellyfinClient) -> S
         finally:
             await response.aclose()
 
-    resp_headers = {
-        k: v for k, v in response.headers.items() if k.lower() not in _SKIP_RESP_HEADERS
-    }
+    skip = set(_SKIP_RESP_HEADERS)
+    if keep_length and "content-encoding" not in response.headers:
+        skip.discard("content-length")
+    resp_headers = {k: v for k, v in response.headers.items() if k.lower() not in skip}
     content_type = response.headers.get("content-type")
     apply_image_cache_control(resp_headers, content_type)
     return StreamingResponse(
@@ -1098,7 +1106,7 @@ async def _handle_binary(
         if not track_id:
             return subsonic_error(70, "No track id supplied")
         url = media.get_stream_url(track_id)
-    return await _stream_binary(request, url, media)
+    return await _stream_binary(request, url, media, keep_length=path == "stream.view")
 
 
 # ── Entry point ────────────────────────────────────────────────────────────
