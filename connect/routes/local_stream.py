@@ -57,7 +57,7 @@ import re
 import time
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from core.auth import require_token
 from core.ffmpeg import FFMPEG_BIN
@@ -210,22 +210,6 @@ def _parse_range(header: str | None, total: int) -> tuple[int, int] | None:
     return start, min(end, total - 1)
 
 
-def _requested_window(header: str | None) -> tuple[int, int | None] | None:
-    """(first_byte, last_byte or None for "to the end") for a Range header
-    on a stream with no declared length, or None when there is nothing to
-    honour."""
-    if not header:
-        return None
-    match = _RANGE_RE.match(header.strip())
-    if not match:
-        return None
-    first = int(match.group(1))
-    last = int(match.group(2)) if match.group(2) else None
-    if last is not None and last < first:
-        return None
-    return first, last
-
-
 async def _encode(cmd: list[str], byte_limit: int | None):
     """Run ffmpeg and yield its stdout, stopping after `byte_limit` bytes.
 
@@ -282,38 +266,6 @@ async def _encode(cmd: list[str], byte_limit: int | None):
             stderr_task.cancel()
 
 
-async def _encode_window(cmd: list[str], first: int, last: int | None) -> tuple[bytes, int | None]:
-    """Bytes `first`..`last` of what `cmd` produces, and the output's total
-    length if the encode reached its end (None when it was cut off at
-    `last`).
-
-    How a `Range` request on a `start` stream is answered. Safari fetches a
-    media element in blocks and asks for the next one from the byte it has
-    reached - on a stream with no length too - and there is no second to
-    seek ffmpeg to for a byte offset in aac or opus. But the same command
-    produces the same bytes every time (see _BITEXACT_ARGS), so the block
-    is found by encoding again and discarding what came before it. Answered
-    with the whole stream from 0 instead, Safari appended the track's
-    beginning to what it already had and the song started over part-way
-    through (reported from a phone 2026-09-15, aac 192k).
-
-    Collected rather than streamed, because the reply has to name its last
-    byte and, for an open-ended request, only the finished encode knows it.
-    Measured on the server: a 4-minute track encodes in 3.5s as aac 192k and
-    1.5s as opus 128k, while Safari asks for the next block with tens of
-    seconds still buffered."""
-    body = bytearray()
-    produced = 0
-    limit = None if last is None else last + 1
-    async for chunk in _encode(cmd, limit):
-        chunk_end = produced + len(chunk)
-        if chunk_end > first:
-            body += chunk[max(0, first - produced) :]
-        produced = chunk_end
-    total = produced if limit is None or produced < limit else None
-    return bytes(body), total
-
-
 # What a lossy stream for a browser is folded down to, and the one number
 # here that is about the *listener* rather than about a device.
 #
@@ -340,12 +292,6 @@ async def _encode_window(cmd: list[str], first: int, last: int | None) -> tuple[
 # aac on a surround track before any of this: mp3 was the only setting
 # being folded.
 _LOCAL_MAX_CHANNELS = 2
-
-# Makes the output a function of the command alone, which _encode_window()
-# depends on. mp3, aac and flac already were; the Ogg muxer picks a random
-# stream serial per run, so opus differed every time (checked against
-# ffmpeg 9.0.1: three encodes, three checksums, identical with this flag).
-_BITEXACT_ARGS = ["-fflags", "+bitexact"]
 
 
 def _downmix(info: SourceInfo | None) -> int | None:
@@ -404,7 +350,7 @@ async def local_stream(
     fmt: str = Query(description="mp3 | aac | opus | flac"),
     br: int | None = Query(None, description="bitrate in kbps, see ALLOWED_BITRATES; not for flac"),
     start: float | None = Query(
-        None, ge=0.0, description="seconds to start from; its presence means no declared length"
+        None, ge=0.0, description="seconds to start from; its presence disables byte ranges"
     ),
     session: SessionState = Depends(require_authenticated_session),
 ):
@@ -425,8 +371,7 @@ async def local_stream(
       stream that begins there and carries no length at all. Nothing has to
       agree about how bytes map onto time, which is what makes this the
       only one of the two that works for a format whose encoder does not
-      produce exactly `br` kbps. A `Range` alongside it is a byte offset
-      *within that stream*, never a seek - see _encode_window().
+      produce exactly `br` kbps.
     - A `Range` header, in bytes, against the declared `bitrate x duration`
       length. This is the browser seeking by itself, and it only lands
       correctly while the encoder really does hit `br` — see
@@ -502,8 +447,6 @@ async def local_stream(
     # percent and invited the element to seek against it — nothing here
     # asks for one (the app always sends `start`), and a caller that does
     # gets a plain stream rather than a plausible-looking lie.
-    range_header = request.headers.get("range")
-    window = _requested_window(range_header) if start is not None else None
     if start is None and fmt == "mp3" and info is not None and info.duration:
         total = transcoded_byte_length(br, info.duration)
         headers["Accept-Ranges"] = "bytes"
@@ -544,7 +487,7 @@ async def local_stream(
         # Before -i, for input-side seeking — same as stream_tracks()'s
         # start_offset handling.
         cmd += ["-ss", f"{start_seconds:.3f}"]
-    cmd += ["-i", source_url, "-vn", *args, *_BITEXACT_ARGS, "pipe:1"]
+    cmd += ["-i", source_url, "-vn", *args, "pipe:1"]
 
     # info, not debug: this is the one line that says a transcode is
     # happening at all. Casting has had an equivalent since the copy tiers
@@ -555,23 +498,7 @@ async def local_stream(
         f"[local-stream] {track_id}: "
         f"{info.codec if info else 'unknown'} → {fmt}{'' if lossless else f' {br}k'}"
         f"{f', from {start_seconds:.1f}s' if start_seconds else ''}"
-        f"{f', range {range_header}' if range_header else ''}"
     )
-
-    # Only past byte 0. A request from the beginning, Safari's `bytes=0-1`
-    # probe included, is answered as it always was: that is the start of
-    # every track, which plays, and which should not wait on the whole encode.
-    if window is not None and window[0] > 0:
-        first, last = window
-        body, total = await _encode_window(cmd, first, last)
-        length = "*" if total is None else str(total)
-        if not body:
-            return Response(
-                status_code=416, headers={**headers, "Content-Range": f"bytes */{length}"}
-            )
-        headers["Content-Range"] = f"bytes {first}-{first + len(body) - 1}/{length}"
-        return Response(body, status_code=206, media_type=content_type, headers=headers)
-
     return StreamingResponse(
         _encode(cmd, byte_limit),
         status_code=status_code,

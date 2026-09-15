@@ -8,11 +8,7 @@ perfectly right up until someone drags the scrub bar.
 """
 
 import asyncio
-import hashlib
 import logging
-import shutil
-import subprocess
-import wave
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -72,35 +68,25 @@ class _FakeProc:
         self.returncode = -9
 
 
-def _request(
-    client,
-    default_session,
-    url: str,
-    headers: dict | None = None,
-    info=None,
-    chunks: list[bytes] | None = None,
-    source_url: str | None = None,
-):
+def _request(client, default_session, url: str, headers: dict | None = None, info=None):
     """Issue `url` against a configured session with the probe and ffmpeg
     both faked, and hand back (response, ffmpeg argv).
 
     `info` is what the probe reports — the default 44.1kHz FLAC for
-    everything that isn't about the source's own numbers. `chunks` is what
-    the fake ffmpeg writes."""
+    everything that isn't about the source's own numbers."""
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
     default_session.authenticated = True
     captured: dict = {}
 
     async def _fake_exec(*cmd, **kwargs):
         captured["cmd"] = list(cmd)
-        captured["proc"] = _FakeProc(chunks or [b"audio-bytes"])
-        return captured["proc"]
+        return _FakeProc([b"audio-bytes"])
 
     with (
         patch("routes.local_stream._probe_source", AsyncMock(return_value=info or _info())),
         patch(
             "media.SubsonicClient.get_stream_url",
-            lambda self, track_id: source_url or f"http://nav:4533/rest/stream.view?id={track_id}",
+            lambda self, track_id: f"http://nav:4533/rest/stream.view?id={track_id}",
         ),
         patch("asyncio.create_subprocess_exec", _fake_exec),
     ):
@@ -433,155 +419,20 @@ def test_start_seeks_ffmpeg_without_declaring_a_length(client, default_session):
     assert cmd.index("-ss") < cmd.index("-i")
 
 
-def test_a_range_on_a_start_stream_is_a_byte_offset_into_that_stream(client, default_session):
-    """Safari fetches in blocks and asks for the next one from the byte it
-    has reached. Answered with the stream from 0, it appended the track's
-    beginning to what it had and the song started over part-way through.
-
-    The offset is found by encoding the same stream again, so ffmpeg still
-    starts at `start` - a byte count is never turned into a second."""
+def test_start_wins_over_a_range_header(client, default_session):
+    """Both at once is a caller contradicting itself. `start` is the one
+    that means "I am doing the seeking", so it is the one that counts -
+    and answering with a 206 against a length this response does not have
+    would be the worse of the two ways to be wrong."""
     response, cmd = _request(
         client,
         default_session,
-        "/stream/local/1?fmt=aac&br=192&start=30",
-        headers={"Range": "bytes=4-"},
-        chunks=[b"abcdef", b"ghij"],
-    )
-
-    assert response.status_code == 206
-    assert response.content == b"efghij"
-    assert response.headers["content-range"] == "bytes 4-9/10"
-    assert response.headers["content-length"] == "6"
-    assert cmd[cmd.index("-ss") + 1] == "30.000"
-
-
-def test_an_explicit_window_on_a_start_stream_stops_the_encode_at_its_end(client, default_session):
-    """The total is unknown when the encode is cut off at the window's end,
-    and `*` is how a Content-Range says so."""
-    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
-    default_session.authenticated = True
-    proc = _FakeProc([b"abcdef", b"ghij", b"never-read"])
-
-    async def _fake_exec(*cmd, **kwargs):
-        return proc
-
-    with (
-        patch("routes.local_stream._probe_source", AsyncMock(return_value=_info())),
-        patch("media.SubsonicClient.get_stream_url", lambda self, track_id: "http://nav/x"),
-        patch("asyncio.create_subprocess_exec", _fake_exec),
-    ):
-        response = client.get(
-            "/stream/local/1?fmt=opus&br=128&start=0", headers={"Range": "bytes=4-7"}
-        )
-
-    assert response.status_code == 206
-    assert response.content == b"efgh"
-    assert response.headers["content-range"] == "bytes 4-7/*"
-    assert proc.killed is True
-
-
-def test_a_window_the_encode_ends_inside_names_the_real_total(client, default_session):
-    response, _ = _request(
-        client,
-        default_session,
-        "/stream/local/1?fmt=aac&br=192&start=0",
-        headers={"Range": "bytes=8-100"},
-        chunks=[b"abcdef", b"ghij"],
-    )
-
-    assert response.status_code == 206
-    assert response.content == b"ij"
-    assert response.headers["content-range"] == "bytes 8-9/10"
-
-
-def test_a_range_past_the_end_of_a_start_stream_is_unsatisfiable(client, default_session):
-    """Unlike the mp3 length estimate (see _parse_range()), this total is the
-    encode's real length, so a start beyond it is not rounding."""
-    response, _ = _request(
-        client,
-        default_session,
-        "/stream/local/1?fmt=aac&br=192&start=0",
-        headers={"Range": "bytes=50-"},
-        chunks=[b"abcdef", b"ghij"],
-    )
-
-    assert response.status_code == 416
-    assert response.headers["content-range"] == "bytes */10"
-
-
-@pytest.mark.parametrize("range_header", ["bytes=0-", "bytes=0-1"])
-def test_a_range_from_the_beginning_of_a_start_stream_is_still_streamed(
-    range_header, client, default_session
-):
-    """Every track starts this way, Safari's `bytes=0-1` probe included, and
-    it has always played - waiting for the whole encode to answer it would
-    only delay the start."""
-    response, _ = _request(
-        client,
-        default_session,
-        "/stream/local/1?fmt=aac&br=192&start=0",
-        headers={"Range": range_header},
-        chunks=[b"abcdef", b"ghij"],
+        f"/stream/local/1?fmt=mp3&br={_BR}&start=30",
+        headers={"Range": f"bytes={int(_BYTES_PER_SECOND * 60)}-"},
     )
 
     assert response.status_code == 200
-    assert "content-range" not in response.headers
-    assert response.content == b"abcdefghij"
-
-
-def test_the_range_is_in_the_log_line(client, default_session, caplog):
-    """What a phone actually asked for is otherwise invisible - there is no
-    access log in front of connect."""
-    with caplog.at_level(logging.INFO, logger="connect.streamer"):
-        _request(
-            client,
-            default_session,
-            "/stream/local/1?fmt=aac&br=192&start=0",
-            headers={"Range": "bytes=1000-"},
-        )
-
-    assert "range bytes=1000-" in caplog.text
-
-
-def _write_noise_wav(path, seconds: float = 3.0, rate: int = 44100) -> None:
-    # A seeded generator rather than random bytes: the input has to be the
-    # same file for both encodes, and a reproducible one keeps a failure here
-    # reproducible too.
-    import random
-
-    rng = random.Random(1234)
-    frames = int(seconds * rate)
-    with wave.open(str(path), "wb") as out:
-        out.setnchannels(2)
-        out.setsampwidth(2)
-        out.setframerate(rate)
-        out.writeframes(bytes(rng.getrandbits(8) for _ in range(frames * 4)))
-
-
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs a real ffmpeg")
-@pytest.mark.parametrize(
-    "query", ["fmt=mp3&br=192", "fmt=aac&br=192", "fmt=opus&br=128", "fmt=flac"]
-)
-def test_the_same_request_encodes_to_the_same_bytes(query, tmp_path, client, default_session):
-    """What answering a Range by encoding again rests on. The command is
-    taken from the route itself, then run for real twice - with a `start`,
-    since that is what every request from the app carries."""
-    source = tmp_path / "source.wav"
-    _write_noise_wav(source)
-    _, cmd = _request(
-        client,
-        default_session,
-        f"/stream/local/1?{query}&start=0.750",
-        source_url=str(source),
-    )
-    cmd[0] = shutil.which("ffmpeg")
-
-    digests = {
-        hashlib.sha256(subprocess.run(cmd, capture_output=True, check=True).stdout).hexdigest()
-        for _ in range(2)
-    }
-
-    assert len(digests) == 1
+    assert cmd[cmd.index("-ss") + 1] == "30.000"
 
 
 def test_start_zero_still_means_the_caller_does_the_seeking(client, default_session):
