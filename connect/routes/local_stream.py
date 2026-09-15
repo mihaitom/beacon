@@ -55,19 +55,24 @@ import asyncio
 import logging
 import re
 import time
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 
+from core import hls
 from core.auth import require_token
 from core.ffmpeg import FFMPEG_BIN
 from core.session import SessionState, require_authenticated_session
 from core.streamer import (
+    FLAC_FRAME_SAMPLES,
     SourceInfo,
     _probe_source,
     dsd_resample_args,
     http_reconnect_args,
+    lossless_codec_args,
     lossless_encode_args,
+    lossy_codec_args,
     lossy_encode_args,
     transcoded_byte_length,
 )
@@ -304,6 +309,40 @@ def _downmix(info: SourceInfo | None) -> int | None:
     return _LOCAL_MAX_CHANNELS
 
 
+def _format_error(fmt: str, br: int | None) -> JSONResponse | None:
+    """The 400 for a format/bitrate pair this module does not offer, None
+    for one it does."""
+    lossless = fmt == LOSSLESS_FORMAT
+    allowed = ALLOWED_BITRATES.get(fmt)
+    if allowed is None and not lossless:
+        expected = sorted([*ALLOWED_BITRATES, LOSSLESS_FORMAT])
+        return JSONResponse(
+            {"error": f"Unsupported format '{fmt}' — expected one of {expected}"},
+            status_code=400,
+        )
+    if lossless and br is not None:
+        return JSONResponse(
+            {"error": f"{LOSSLESS_FORMAT} carries no bitrate — drop the br parameter"},
+            status_code=400,
+        )
+    if not lossless and br not in allowed:
+        return JSONResponse(
+            {"error": f"Unsupported bitrate {br} for {fmt} — expected one of {sorted(allowed)}"},
+            status_code=400,
+        )
+    return None
+
+
+async def _resolve_source(session: SessionState, track_id: str) -> str | JSONResponse:
+    # to_thread: instant for Subsonic/Jellyfin, a real network lookup for
+    # Plex — same reasoning as routes/playback.py's own call.
+    try:
+        return await asyncio.to_thread(session.media.get_stream_url, track_id)
+    except Exception as e:
+        logger.warning(f"[local-stream] Could not resolve track {track_id}: {e}")
+        return JSONResponse({"error": f"Track not available: {e}"}, status_code=502)
+
+
 @router.get("/stream/local/{track_id}/info")
 async def local_stream_info(
     track_id: str,
@@ -327,11 +366,9 @@ async def local_stream_info(
     Every field is null when the probe failed. That reads as "unknown" in
     the panel, which is honest; guessing from the file extension would not
     be."""
-    try:
-        source_url = await asyncio.to_thread(session.media.get_stream_url, track_id)
-    except Exception as e:
-        logger.warning(f"[local-stream] Could not resolve track {track_id}: {e}")
-        return JSONResponse({"error": f"Track not available: {e}"}, status_code=502)
+    source_url = await _resolve_source(session, track_id)
+    if isinstance(source_url, JSONResponse):
+        return source_url
 
     info = await _probe_cached(session.session_id, track_id, source_url)
     return {
@@ -383,32 +420,14 @@ async def local_stream(
     one anyway would invite the media element to seek against it behind
     that caller's back, which is exactly what the caller took over to
     avoid."""
+    error = _format_error(fmt, br)
+    if error is not None:
+        return error
     lossless = fmt == LOSSLESS_FORMAT
-    allowed = ALLOWED_BITRATES.get(fmt)
-    if allowed is None and not lossless:
-        expected = sorted([*ALLOWED_BITRATES, LOSSLESS_FORMAT])
-        return JSONResponse(
-            {"error": f"Unsupported format '{fmt}' — expected one of {expected}"},
-            status_code=400,
-        )
-    if lossless and br is not None:
-        return JSONResponse(
-            {"error": f"{LOSSLESS_FORMAT} carries no bitrate — drop the br parameter"},
-            status_code=400,
-        )
-    if not lossless and br not in allowed:
-        return JSONResponse(
-            {"error": f"Unsupported bitrate {br} for {fmt} — expected one of {sorted(allowed)}"},
-            status_code=400,
-        )
 
-    # to_thread: instant for Subsonic/Jellyfin, a real network lookup for
-    # Plex — same reasoning as routes/playback.py's own call.
-    try:
-        source_url = await asyncio.to_thread(session.media.get_stream_url, track_id)
-    except Exception as e:
-        logger.warning(f"[local-stream] Could not resolve track {track_id}: {e}")
-        return JSONResponse({"error": f"Track not available: {e}"}, status_code=502)
+    source_url = await _resolve_source(session, track_id)
+    if isinstance(source_url, JSONResponse):
+        return source_url
 
     info = await _probe_cached(session.session_id, track_id, source_url)
     # No sample rate is passed to the lossless branch, and none is wanted:
@@ -504,4 +523,155 @@ async def local_stream(
         status_code=status_code,
         media_type=content_type,
         headers=headers,
+    )
+
+
+# ── HLS, for WebKit ──────────────────────────────────────────────────────────
+#
+# The same transcode, cut into segments behind a playlist whose length is
+# known up front - see core/hls.py for why WebKit needs it. The frontend asks
+# for it only on WebKit (see prefersHls() in services/streamQuality.ts):
+# Chromium's own HLS player refuses mp3 segments of either kind, while the
+# plain stream above plays everywhere else.
+#
+# `start` means what it means above: the playlist begins there, and seeking
+# stays a new request rather than a seek within the playlist.
+
+_hls_encodes = hls.EncodeRegistry()
+# Encodes being set up, so requests that arrive together - a player fetching
+# two segments at once - share one instead of each starting its own.
+_hls_pending: dict[tuple, asyncio.Future] = {}
+
+_HLS_SEGMENT_RE = re.compile(r"^(\d+)\.(m4s|mp3)$")
+
+
+def reset_hls_encodes() -> None:
+    """Stop and drop every HLS encode (tests, shutdown)."""
+    _hls_encodes.clear()
+    _hls_pending.clear()
+
+
+async def _hls_encode(
+    session: SessionState, track_id: str, fmt: str, br: int | None, start: float
+) -> hls.Encode | JSONResponse | None:
+    """The encode for this stream, set up if it is not kept already. None
+    when the source's duration or output sample rate is unknown, which a
+    playlist cannot be written without."""
+    error = _format_error(fmt, br)
+    if error is not None:
+        return error
+    key = (session.session_id, track_id, fmt, br, round(start, 3))
+    encode = _hls_encodes.get(key)
+    if encode is not None:
+        return encode
+    pending = _hls_pending.get(key)
+    if pending is None:
+        pending = asyncio.ensure_future(_new_hls_encode(key, session, track_id, fmt, br, start))
+        _hls_pending[key] = pending
+        pending.add_done_callback(lambda _: _hls_pending.pop(key, None))
+    return await asyncio.shield(pending)
+
+
+async def _new_hls_encode(
+    key: tuple, session: SessionState, track_id: str, fmt: str, br: int | None, start: float
+) -> hls.Encode | JSONResponse | None:
+    source_url = await _resolve_source(session, track_id)
+    if isinstance(source_url, JSONResponse):
+        return source_url
+    info = await _probe_cached(session.session_id, track_id, source_url)
+    if fmt == LOSSLESS_FORMAT:
+        args = lossless_codec_args(dsd_resample_args(info))
+    else:
+        args = lossy_codec_args(fmt, br, info.sample_rate if info else None, None, _downmix(info))
+    sample_rate = int(args[args.index("-ar") + 1]) if "-ar" in args else None
+    sample_rate = sample_rate or (info.sample_rate if info else None)
+    if info is None or not info.duration or not sample_rate:
+        return None
+
+    layout = hls.segment_layout(
+        max(0.0, info.duration - start),
+        sample_rate,
+        hls.frame_samples(fmt, FLAC_FRAME_SAMPLES),
+    )
+    packed = hls.is_packed(fmt)
+    cmd = [FFMPEG_BIN, "-hide_banner", "-loglevel", "warning", *http_reconnect_args(source_url)]
+    if start > 0:
+        cmd += ["-ss", f"{start:.3f}"]
+    cmd += ["-i", source_url, "-vn", *args, *hls.container_args(layout, packed), "pipe:1"]
+
+    logger.info(
+        f"[local-hls] {track_id}: {info.codec} → {fmt}{f' {br}k' if br else ''}"
+        f"{f', from {start:.1f}s' if start else ''}, {layout.count} segments"
+    )
+    encode = hls.Encode(cmd, layout, packed, sample_rate)
+    # A seek asks for the same track from somewhere else, and the encode it
+    # replaces would otherwise run on to the end of the track for nobody.
+    return _hls_encodes.add(key, encode, supersedes=lambda other: other[:2] == key[:2])
+
+
+@router.get("/stream/local/{track_id}/hls/index.m3u8")
+async def local_hls_playlist(
+    track_id: str,
+    request: Request,
+    fmt: str = Query(description="mp3 | aac | opus | flac"),
+    br: int | None = Query(None, description="bitrate in kbps, see ALLOWED_BITRATES; not for flac"),
+    start: float = Query(0.0, ge=0.0, description="seconds the playlist begins at"),
+    session: SessionState = Depends(require_authenticated_session),
+):
+    encode = await _hls_encode(session, track_id, fmt, br, start)
+    if isinstance(encode, JSONResponse):
+        return encode
+    if encode is None:
+        # Nothing to write a playlist from. The plain stream still plays,
+        # which beats refusing the track outright.
+        return RedirectResponse(f"../../{quote(track_id, safe='')}?{request.url.query}", 307)
+    encode.start()
+    return Response(
+        hls.playlist(encode.layout, encode.packed, request.url.query),
+        media_type="application/vnd.apple.mpegurl",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/stream/local/{track_id}/hls/init.mp4")
+async def local_hls_init(
+    track_id: str,
+    fmt: str = Query(),
+    br: int | None = Query(None),
+    start: float = Query(0.0, ge=0.0),
+    session: SessionState = Depends(require_authenticated_session),
+):
+    encode = await _hls_encode(session, track_id, fmt, br, start)
+    if isinstance(encode, JSONResponse):
+        return encode
+    init = None if encode is None or encode.packed else await encode.init_segment()
+    if init is None:
+        return JSONResponse({"error": "No init segment"}, status_code=404)
+    return Response(init, media_type="audio/mp4", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/stream/local/{track_id}/hls/{segment}")
+async def local_hls_segment(
+    track_id: str,
+    segment: str,
+    fmt: str = Query(),
+    br: int | None = Query(None),
+    start: float = Query(0.0, ge=0.0),
+    session: SessionState = Depends(require_authenticated_session),
+):
+    match = _HLS_SEGMENT_RE.match(segment)
+    if match is None:
+        return JSONResponse({"error": f"Unknown segment '{segment}'"}, status_code=404)
+    encode = await _hls_encode(session, track_id, fmt, br, start)
+    if isinstance(encode, JSONResponse):
+        return encode
+    if encode is None or match.group(2) != hls.segment_extension(encode.packed):
+        return JSONResponse({"error": f"Unknown segment '{segment}'"}, status_code=404)
+    body = await encode.segment(int(match.group(1)))
+    if body is None:
+        return JSONResponse({"error": f"Segment {segment} was not produced"}, status_code=404)
+    return Response(
+        body,
+        media_type="audio/mpeg" if encode.packed else "audio/mp4",
+        headers={"Cache-Control": "no-store"},
     )

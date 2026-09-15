@@ -6,6 +6,7 @@ import {
   load as loadStreamQuality,
   save as saveStreamQuality,
   plan,
+  prefersHls,
   type LocalStreamPlan,
   type StreamFormat,
   type StreamQuality,
@@ -1690,7 +1691,9 @@ export const usePlaybackStore = defineStore('playback', {
     localStreamUrl(song: Song): string {
       const streamPlan = plan(song, this.localQuality)
       this.activeLocalStream = streamPlan
-      return useLibraryStore().client().streamUrl(song.id, streamPlan.quality)
+      return useLibraryStore()
+        .client()
+        .streamUrl(song.id, streamPlan.quality, { hls: prefersHls() })
     },
 
     /** Starts (or, with `autoplay: false`, only loads) `song` on the local
@@ -1729,8 +1732,9 @@ export const usePlaybackStore = defineStore('playback', {
       // element a length to seek against for as long as the track played
       // from the top.
       const urlFor = (seconds: number): string => `${url}&start=${Math.max(0, seconds).toFixed(3)}`
-      // A transcoded stream declares no length, so the element never
-      // reports a duration for it. The library already knows how long the
+      // A transcoded stream declares no length (or, as HLS, only that of
+      // what is left from `position`), so the element never reports the
+      // track's duration. The library already knows how long the
       // track is — and the engine needs the same number for a second
       // reason: without it, a stream cut off mid-track is indistinguishable
       // from one that finished, and the next song starts instead of the

@@ -9,6 +9,9 @@ perfectly right up until someone drags the scrub bar.
 
 import asyncio
 import logging
+import shutil
+import subprocess
+import wave
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -823,3 +826,248 @@ def test_an_undetected_channel_count_is_left_alone(client, default_session):
 
     assert response.status_code == 200
     assert "-ac" not in cmd
+
+
+# ── HLS ──────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _clean_hls_encodes():
+    local_stream.reset_hls_encodes()
+    yield
+    local_stream.reset_hls_encodes()
+
+
+def _fmp4_chunks(fragments: int) -> list[bytes]:
+    def box(kind: bytes, payload: bytes = b"") -> bytes:
+        return (8 + len(payload)).to_bytes(4, "big") + kind + payload
+
+    return [box(b"ftyp") + box(b"moov")] + [
+        box(b"moof", bytes([i])) + box(b"mdat", bytes([i]) * 4) for i in range(fragments)
+    ]
+
+
+def _hls_requests(client, default_session, urls: list[str], info=None, chunks=None):
+    """Issue each of `urls` in turn with the probe and ffmpeg faked, and hand
+    back (responses, every ffmpeg process started)."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    default_session.authenticated = True
+    procs: list[tuple[list[str], _FakeProc]] = []
+
+    async def _fake_exec(*cmd, **kwargs):
+        procs.append(
+            (list(cmd), _FakeProc(list(chunks if chunks is not None else _fmp4_chunks(30))))
+        )
+        return procs[-1][1]
+
+    with (
+        patch("routes.local_stream._probe_source", AsyncMock(return_value=info or _info())),
+        patch(
+            "media.SubsonicClient.get_stream_url",
+            lambda self, track_id: f"http://nav:4533/rest/stream.view?id={track_id}",
+        ),
+        patch("asyncio.create_subprocess_exec", _fake_exec),
+    ):
+        responses = [client.get(url) for url in urls]
+    return responses, procs
+
+
+def test_the_hls_playlist_lists_the_track_from_start_with_the_query_on_every_uri(
+    client, default_session
+):
+    (response,), procs = _hls_requests(
+        client, default_session, ["/stream/local/1/hls/index.m3u8?fmt=aac&br=192&start=60"]
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/vnd.apple.mpegurl")
+    text = response.text
+    durations = [float(line[8:-1]) for line in text.splitlines() if line.startswith("#EXTINF:")]
+    assert sum(durations) == pytest.approx(_DURATION - 60)
+    assert '#EXT-X-MAP:URI="init.mp4?fmt=aac&br=192&start=60"' in text
+    assert "0.m4s?fmt=aac&br=192&start=60" in text
+    cmd = procs[0][0]
+    assert cmd[cmd.index("-ss") + 1] == "60.000"
+    assert cmd.index("-ss") < cmd.index("-i")
+    assert cmd[cmd.index("-f") + 1] == "mp4"
+
+
+def test_an_mp3_hls_stream_is_packed_audio(client, default_session):
+    (response, init), procs = _hls_requests(
+        client,
+        default_session,
+        [
+            "/stream/local/1/hls/index.m3u8?fmt=mp3&br=192&start=0",
+            "/stream/local/1/hls/init.mp4?fmt=mp3&br=192&start=0",
+        ],
+    )
+
+    assert "EXT-X-MAP" not in response.text
+    assert "0.mp3?" in response.text
+    assert init.status_code == 404
+    assert procs[0][0][procs[0][0].index("-f") + 1] == "mp3"
+
+
+def test_the_hls_segments_of_one_stream_come_from_one_encode(client, default_session):
+    query = "fmt=aac&br=192&start=0"
+    chunks = _fmp4_chunks(30)
+    responses, procs = _hls_requests(
+        client,
+        default_session,
+        [
+            f"/stream/local/1/hls/index.m3u8?{query}",
+            f"/stream/local/1/hls/init.mp4?{query}",
+            f"/stream/local/1/hls/0.m4s?{query}",
+            f"/stream/local/1/hls/1.m4s?{query}",
+        ],
+        chunks=chunks,
+    )
+
+    assert [r.status_code for r in responses] == [200, 200, 200, 200]
+    assert responses[1].content == chunks[0]
+    assert responses[2].content == chunks[1]
+    assert responses[3].content == chunks[2]
+    assert responses[2].headers["content-type"] == "audio/mp4"
+    assert len(procs) == 1
+
+
+def test_a_seek_stops_the_encode_of_the_position_it_left(client, default_session):
+    """Each position is its own playlist, and the one before it would
+    otherwise encode on to the end of the track for nobody."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    default_session.authenticated = True
+    procs: list[_FakeProc] = []
+
+    class _Endless(_FakeProc):
+        async def read(self, _n: int) -> bytes:
+            await asyncio.sleep(3600)
+            return b""
+
+    async def _fake_exec(*cmd, **kwargs):
+        procs.append(_Endless([]))
+        return procs[-1]
+
+    with (
+        patch("routes.local_stream._probe_source", AsyncMock(return_value=_info())),
+        patch("media.SubsonicClient.get_stream_url", lambda self, track_id: "http://nav/x"),
+        patch("asyncio.create_subprocess_exec", _fake_exec),
+    ):
+        client.get("/stream/local/1/hls/index.m3u8?fmt=aac&br=192&start=0")
+        client.get("/stream/local/2/hls/index.m3u8?fmt=aac&br=192&start=0")
+        client.get("/stream/local/1/hls/index.m3u8?fmt=aac&br=192&start=90")
+
+    assert procs[0].killed is True
+    assert procs[1].killed is False
+
+
+async def test_requests_that_arrive_together_share_one_encode(default_session):
+    """A player fetching two segments at once, with nothing kept yet, must
+    not set up two encodes - the second would close the first under the
+    request waiting on it."""
+    probe = AsyncMock(return_value=_info())
+    with (
+        patch("routes.local_stream._probe_source", probe),
+        patch("media.SubsonicClient.get_stream_url", lambda self, track_id: "http://nav/x"),
+    ):
+        first, second = await asyncio.gather(
+            local_stream._hls_encode(default_session, "1", "aac", 192, 0.0),
+            local_stream._hls_encode(default_session, "1", "aac", 192, 0.0),
+        )
+
+    assert first is second
+    assert probe.await_count == 1
+
+
+def test_a_source_with_no_duration_is_redirected_to_the_plain_stream(client, default_session):
+    (response,), _ = _hls_requests(
+        client,
+        default_session,
+        ["/stream/local/a%20b/hls/index.m3u8?fmt=aac&br=192&start=12"],
+        info=_info(duration=None),
+    )
+
+    # TestClient follows the redirect; the history keeps the hop.
+    assert response.history[0].status_code == 307
+    assert response.history[0].headers["location"] == "../../a%20b?fmt=aac&br=192&start=12"
+
+
+@pytest.mark.parametrize(
+    "segment", ["99.m4s", "0.mp3", "x.m4s", "0.ts"], ids=["past-the-end", "wrong-kind", "nan", "ts"]
+)
+def test_a_segment_that_is_not_in_the_playlist_is_not_found(segment, client, default_session):
+    (response,), _ = _hls_requests(
+        client, default_session, [f"/stream/local/1/hls/{segment}?fmt=aac&br=192&start=0"]
+    )
+
+    assert response.status_code == 404
+
+
+def test_an_hls_request_for_an_unknown_format_is_rejected(client, default_session):
+    (response,), procs = _hls_requests(
+        client, default_session, ["/stream/local/1/hls/index.m3u8?fmt=wma&br=192"]
+    )
+
+    assert response.status_code == 400
+    assert procs == []
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs a real ffmpeg")
+@pytest.mark.parametrize(
+    "query", ["fmt=aac&br=192", "fmt=mp3&br=192", "fmt=flac", "fmt=opus&br=128"]
+)
+def test_an_hls_stream_plays_back_as_the_whole_track_from_start(
+    query, tmp_path, client, default_session
+):
+    """Through the routes, the real probe and a real encode: what a player
+    assembles from the playlist decodes, and lasts as long as it promised."""
+    source = tmp_path / "source.wav"
+    with wave.open(str(source), "wb") as out:
+        out.setnchannels(2)
+        out.setsampwidth(2)
+        out.setframerate(44100)
+        out.writeframes(bytes(4 * 44100 * 20))
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    default_session.authenticated = True
+    base = "/stream/local/1/hls"
+
+    with patch("media.SubsonicClient.get_stream_url", lambda self, track_id: str(source)):
+        playlist = client.get(f"{base}/index.m3u8?{query}&start=2.5").text
+        uris = [line for line in playlist.splitlines() if line and not line.startswith("#")]
+        parts = (
+            []
+            if query.startswith("fmt=mp3")
+            else [client.get(f"{base}/init.mp4?{query}&start=2.5")]
+        )
+        parts += [client.get(f"{base}/{uri}") for uri in uris]
+
+    assert [part.status_code for part in parts] == [200] * len(parts)
+    assembled = tmp_path / "assembled"
+    # A packed-audio player reads each segment's timestamp tag and plays the
+    # frames behind it; ffmpeg's mp3 demuxer only skips a tag at the start.
+    bodies = [
+        part.content[10 + int.from_bytes(part.content[6:10], "big") :]
+        if part.content[:3] == b"ID3"
+        else part.content
+        for part in parts
+    ]
+    assembled.write_bytes(b"".join(bodies))
+    decoded = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            str(assembled),
+            "-f",
+            "s16le",
+            "-ac",
+            "2",
+            "-ar",
+            "44100",
+            "-",
+        ],
+        capture_output=True,
+        check=True,
+    )
+    assert decoded.stderr == b""
+    assert len(decoded.stdout) / 4 / 44100 == pytest.approx(17.5, abs=0.1)

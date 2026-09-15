@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from core import audio_analysis, radio_relay, waveform
+from core import audio_analysis, hls, radio_relay, waveform
 from core.streamer import (
     _COPY_MUXER_FOR_CODEC,
     _FALLBACK_ARGS,
@@ -76,7 +76,8 @@ def _every_command() -> list[list[str]]:
     lossy_encode_args() — which is exactly where this would otherwise stop
     noticing. Everything else routes through the tiers above:
     routes/local_stream.py calls lossy_encode_args()/lossless_encode_args()
-    for its own output."""
+    for its own output, and the codec half of them inside core/hls.py's
+    containers."""
     commands = [
         list(_FALLBACK_ARGS),
         list(lossless_encode_args()[0]),
@@ -92,6 +93,8 @@ def _every_command() -> list[list[str]]:
         list(debug._station_cmd("http://station/stream")),
     ]
     commands += [list(lossy_encode_args(fmt, 192)[0]) for fmt in _LOSSY_ENCODERS]
+    layout = hls.segment_layout(60.0, 44100, 1024)
+    commands += [hls.container_args(layout, packed) for packed in (False, True)]
     commands += [["-acodec", "copy", "-f", muxer] for muxer in _COPY_MUXER_FOR_CODEC.values()]
     commands += [
         list(radio_relay._device_output_args(content_type, 320, limit, preferred)[0])

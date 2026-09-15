@@ -7,6 +7,7 @@ import {
   load,
   localFormats,
   plan,
+  prefersHls,
   save,
   type TranscodeFormat,
 } from '../streamQuality'
@@ -304,6 +305,33 @@ describe('streamQuality', () => {
           plan({ format: 'm4a', bitRate: null }, { format: 'original', bitrate: 0 }).reason,
         ).toBe(null)
       })
+    })
+  })
+
+  describe('HLS for WebKit', () => {
+    function browser(vendor: string, hls: CanPlayTypeResult) {
+      vi.spyOn(navigator, 'vendor', 'get').mockReturnValue(vendor)
+      vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((type: string) =>
+        type === 'application/vnd.apple.mpegurl' ? hls : 'probably',
+      )
+    }
+
+    it('is used on WebKit, where a stream with no length jumps back to its start', () => {
+      browser('Apple Computer, Inc.', 'maybe')
+
+      expect(prefersHls()).toBe(true)
+    })
+
+    it('is not used on Chromium, whose HLS refuses mp3 and whose plain stream plays', () => {
+      browser('Google Inc.', 'maybe')
+
+      expect(prefersHls()).toBe(false)
+    })
+
+    it('is not used on a WebKit that cannot play HLS', () => {
+      browser('Apple Computer, Inc.', '')
+
+      expect(prefersHls()).toBe(false)
     })
   })
 

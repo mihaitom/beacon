@@ -97,8 +97,12 @@
 # (alac, WAV/AIFF PCM, ape, WavPack, DSD, ...) and needs both its muxer and
 # its encoder; adts (AAC) and ogg (Vorbis) are copy-only and need only the
 # muxer.
+#
+# mp4 is for WebKit's HLS segments (core/hls.py): the local player's aac,
+# opus and flac reach Safari as fragmented MP4, cut at the fragments ffmpeg
+# writes. mp3 goes as packed audio through the mp3 muxer instead.
 --enable-encoder=aac,libmp3lame,libopus,pcm_s16le,flac
---enable-muxer=mp3,pcm_s16le,flac,adts,ogg
+--enable-muxer=mp3,pcm_s16le,flac,adts,ogg,mp4
 --enable-libmp3lame
 --enable-libopus
 

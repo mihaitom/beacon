@@ -140,6 +140,28 @@ export function localFormats(): StreamFormat[] {
 }
 
 /**
+ * Whether a transcode should reach this browser as HLS rather than as one
+ * stream with no length - see connect/core/hls.py for why WebKit needs it:
+ * Safari fetches such a stream in blocks, re-fetches each block from byte 0
+ * and appends it, so the song jumps back to its start every ~45 seconds.
+ *
+ * Asked of the engine rather than of HLS support alone. Chromium plays HLS
+ * too (Electron 44 answers "maybe"), but refuses mp3 segments of either
+ * kind, while its plain stream has always played. `navigator.vendor` is
+ * Apple's on every WebKit browser - iOS's Chrome and Firefox included - and
+ * on no other engine; canPlayType keeps a WebKit without HLS, and jsdom,
+ * which reports the same vendor, on the plain stream.
+ */
+export function prefersHls(): boolean {
+  try {
+    if (navigator.vendor !== 'Apple Computer, Inc.') return false
+    return !!document.createElement('audio').canPlayType?.('application/vnd.apple.mpegurl')
+  } catch {
+    return false
+  }
+}
+
+/**
  * What each format falls back to when the user switches to it from one
  * whose current bitrate it doesn't offer — 320 exists for mp3 and not for
  * aac, so switching mp3 320 -> aac has to land somewhere.

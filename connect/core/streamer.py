@@ -411,15 +411,32 @@ def lossy_encode_args(
     Shared with resolve_output_format()'s quality-ceiling tier so a track
     capped for a cast device and the same track transcoded for local
     playback are encoded by identical commands."""
-    codec, muxer = _LOSSY_ENCODERS[fmt]
+    muxer = _LOSSY_ENCODERS[fmt][1]
+    args = lossy_codec_args(fmt, bitrate_kbps, source_rate, max_sample_rate, channels)
+    return [*args, "-f", muxer], _CONTENT_TYPE_FOR_MUXER[muxer]
+
+
+def lossy_codec_args(
+    fmt: str,
+    bitrate_kbps: int,
+    source_rate: int | None = None,
+    max_sample_rate: int | None = None,
+    channels: int | None = None,
+) -> list[str]:
+    """lossy_encode_args() without the container, for a caller that wraps
+    the same encode in one of its own - routes/local_hls.py's HLS segments."""
+    codec = _LOSSY_ENCODERS[fmt][0]
     rate = _lossy_sample_rate(fmt, source_rate, max_sample_rate)
     args = ["-acodec", codec, "-b:a", f"{bitrate_kbps}k", "-ar", str(rate)]
     if channels is not None:
         args += ["-ac", str(channels)]
     if fmt == "opus":
         args += ["-vbr", "constrained"]
-    args += ["-f", muxer]
-    return args, _CONTENT_TYPE_FOR_MUXER[muxer]
+    return args
+
+
+# Samples per FLAC frame, named outright - see lossless_codec_args() for why.
+FLAC_FRAME_SAMPLES = 4096
 
 
 def lossless_encode_args(fit_args: list[str] | None = None) -> tuple[list[str], str]:
@@ -437,6 +454,11 @@ def lossless_encode_args(fit_args: list[str] | None = None) -> tuple[list[str], 
     re-encoded *and* brought down to it, and those arguments come from the
     device's own limits (see _device_fit_plan()). Nothing for the local
     path, which has no device to be limited by."""
+    return [*lossless_codec_args(), "-f", "flac", *(fit_args or [])], "audio/flac"
+
+
+def lossless_codec_args(fit_args: list[str] | None = None) -> list[str]:
+    """lossless_encode_args() without the container - see lossy_codec_args()."""
     return [
         "-acodec",
         "flac",
@@ -455,11 +477,9 @@ def lossless_encode_args(fit_args: list[str] | None = None) -> tuple[list[str], 
         # sample rates. Verified lossless with it: the PCM decoded back out
         # of the FLAC is byte-identical to the PCM decoded from the ALAC.
         "-frame_size",
-        "4096",
-        "-f",
-        "flac",
+        str(FLAC_FRAME_SAMPLES),
         *(fit_args or []),
-    ], "audio/flac"
+    ]
 
 
 # Which lossy encoder to fall back to when a device cannot decode the one

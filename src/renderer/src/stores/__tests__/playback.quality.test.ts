@@ -109,6 +109,20 @@ describe('playbackStore quality settings', () => {
       expect(url).toContain('/rest/stream.view')
       expect(url).not.toContain('/stream/local/')
     })
+
+    it('fetches a transcode as HLS on WebKit, and the plain stream elsewhere', () => {
+      const playback = usePlaybackStore()
+      playback.setLocalQuality('aac', 192)
+      const song = makeSong('song-1', { format: 'flac', bitRate: 900 })
+      vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe')
+      const vendor = vi.spyOn(navigator, 'vendor', 'get')
+
+      vendor.mockReturnValue('Apple Computer, Inc.')
+      expect(playback.localStreamUrl(song)).toContain('/stream/local/song-1/hls/index.m3u8?')
+
+      vendor.mockReturnValue('Google Inc.')
+      expect(playback.localStreamUrl(song)).toContain('/stream/local/song-1?')
+    })
   })
 
   it('persists a change so it survives a reload', () => {

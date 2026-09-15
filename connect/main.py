@@ -47,6 +47,7 @@ from routes.discovery import discover_all
 from routes.discovery import router as discovery_router
 from routes.jellyfin_auth import router as jellyfin_auth_router
 from routes.join import router as join_router
+from routes.local_stream import reset_hls_encodes
 from routes.local_stream import router as local_stream_router
 from routes.log_level import router as log_level_router
 from routes.lyrics import router as lyrics_router
@@ -313,6 +314,7 @@ async def lifespan(_: FastAPI):
         await close_proxy_client()
         await jellyfin_bridge.close()
         await plex_bridge.close()
+        reset_hls_encodes()
         # Stop actively-casting devices before the process actually exits —
         # Sonos/Chromecast/DLNA/AirPlay have no way to know this backend
         # died, so they'd otherwise just keep playing whatever they were

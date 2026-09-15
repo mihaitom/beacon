@@ -49,6 +49,22 @@ describe('SubsonicClient.streamUrl', () => {
     expect(url.searchParams.get('br')).toBe('192')
   })
 
+  it('asks for the same transcode as an HLS playlist for WebKit', () => {
+    const url = new URL(client.streamUrl('a/b', { format: 'aac', bitrate: 192 }, { hls: true }))
+
+    expect(url.pathname).toBe('/stream/local/a%2Fb/hls/index.m3u8')
+    expect(url.searchParams.get('fmt')).toBe('aac')
+    expect(url.searchParams.get('br')).toBe('192')
+    expect(url.searchParams.get('token')).toBe('connect-token')
+    expect(url.searchParams.get('session')).toBe('session-1')
+  })
+
+  it('never sends the untouched file through HLS', () => {
+    expect(client.streamUrl('song-1', { format: 'original', bitrate: 0 }, { hls: true })).toBe(
+      client.streamUrl('song-1'),
+    )
+  })
+
   it('still carries the connect token and session on the transcoded path', () => {
     // Both travel as query params for the same reason as above, and
     // require_authenticated_session 401s without the session.

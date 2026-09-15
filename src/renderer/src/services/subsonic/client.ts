@@ -136,10 +136,14 @@ export class SubsonicClient {
    * Two different endpoints rather than a flag on one, deliberately: the
    * untouched path keeps working exactly as it always has — same URL, same
    * Range handling by the media server itself — instead of gaining a
-   * second implementation that has to be kept identical to the first. */
+   * second implementation that has to be kept identical to the first.
+   *
+   * `hls` asks for the same transcode as an HLS playlist, for WebKit (see
+   * prefersHls() in services/streamQuality.ts). */
   streamUrl(
     songId: string,
     quality: LocalStreamQuality = { format: 'original', bitrate: 0 },
+    { hls = false }: { hls?: boolean } = {},
   ): string {
     const params = this.authParams()
     if (this.connectToken) params.set('token', this.connectToken)
@@ -155,7 +159,8 @@ export class SubsonicClient {
       // than ignoring it: there is no number that would mean anything here
       // (see LOSSLESS_FORMAT in connect/routes/local_stream.py).
       if (quality.format !== 'flac') transcodeParams.set('br', String(quality.bitrate))
-      return `${this.proxyBaseUrl}/stream/local/${encodeURIComponent(songId)}?${transcodeParams.toString()}`
+      const path = `/stream/local/${encodeURIComponent(songId)}${hls ? '/hls/index.m3u8' : ''}`
+      return `${this.proxyBaseUrl}${path}?${transcodeParams.toString()}`
     }
     params.set('id', songId)
     return `${this.proxyBaseUrl}/rest/stream.view?${params.toString()}`

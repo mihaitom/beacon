@@ -49,6 +49,8 @@ muxer     adts
 muxer     ogg
 muxer     flac
 muxer     s16le
+# WebKit's HLS segments for the local player (core/hls.py).
+muxer     mp4
 
 # --- Containers a library actually holds -------------------------------
 demuxer   mp3
