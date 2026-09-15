@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises } from '@vue/test-utils'
 import { useConnectStore } from '../connect'
@@ -1402,6 +1402,12 @@ describe('playback transport', () => {
    * format whose encoder pads every frame to size. Beacon asks for the
    * position instead now, which is what lets aac be offered locally at all. */
   describe('seeking a transcoded local stream', () => {
+    // The WebKit case below spies on the browser itself, which the outer
+    // beforeEach only clears rather than restores.
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
     function playingTranscoded(quality: { format: string; bitrate: number }) {
       const playback = usePlaybackStore()
       playback.setLocalQuality(quality.format as 'mp3' | 'aac', quality.bitrate)
@@ -1466,6 +1472,24 @@ describe('playback transport', () => {
 
       const [, , , duration] = engine.playFrom.mock.calls.at(-1)!
       expect(duration).toBe(playback.currentSong!.duration)
+    })
+
+    /** Which shape the same transcode arrives in matters to the engine as
+     * well: only an HLS playlist says how many seconds it is holding, and
+     * so only that one has a buffered band to report (see the engine's
+     * reportBuffered()). */
+    it('says whether the transcode is an HLS playlist or one plain stream', () => {
+      const playback = playingTranscoded({ format: 'aac', bitrate: 192 })
+      vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe')
+      const vendor = vi.spyOn(navigator, 'vendor', 'get')
+
+      vendor.mockReturnValue('Apple Computer, Inc.')
+      playback.startLocalSong(playback.currentSong!, 0, true)
+      expect(engine.playFrom.mock.calls.at(-1)![4]).toBe(true)
+
+      vendor.mockReturnValue('Google Inc.')
+      playback.startLocalSong(playback.currentSong!, 0, true)
+      expect(engine.playFrom.mock.calls.at(-1)![4]).toBe(false)
     })
 
     /** A transcode declares no duration, so the element never reports one.
