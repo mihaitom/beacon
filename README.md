@@ -57,7 +57,7 @@ Beacon is `connect` as the actual foundation instead of an add-on - a frontend b
 - **Browse your library** - Albums, Artists, Tracks, Genres, Playlists, Favorites, and search, all with local filtering across the whole library.
 - **A proper Home** - quick access to what you've been listening to, most played tracks, recently added albums, and real recommendations: a Discover shelf seeded from artists you actually play (via MusicBrainz + ListenBrainz), plus a "New to explore" shelf of similar artists not yet in your library, complete with photos and a link out. Toggleable in Settings.
 - **A Stats page** - library and listening totals, top tracks/artists/albums/genres, format and decade breakdowns.
-- **Local playback** - queue, shuffle, repeat, seek, volume, multiselect (bulk queue/playlist actions), starring and rating tracks, ReplayGain (track/album gain), synced/unsynced lyrics, a fullscreen Now Playing view, and a real-time frequency visualizer (local playback and casting alike). On phones and tablets, ReplayGain and the visualizer make way for playback that survives a screen lock - see the FAQ.
+- **Local playback** - queue, shuffle, repeat, seek, volume, multiselect (bulk queue/playlist actions), starring and rating tracks, ReplayGain (track/album gain), synced/unsynced lyrics, a fullscreen Now Playing view, and a real-time frequency visualizer (local playback and casting alike). On phones and tablets, ReplayGain and the visualizer make way for playback that survives a screen lock - see [the FAQ](docs/faq.md#why-is-there-no-visualizer-replaygain-or-volume-slider-in-the-mobile-web-player).
 - **Casting to Sonos, AirPlay, Chromecast, and DLNA devices** - including casting to several at once, taking over a device someone else is using (with a confirmation prompt), and per-device volume control. AirPlay 2 pairing is handled for devices that require it (HomePods, Apple TVs). Casting auto-advances through the queue server-side, so it keeps going even if the controlling window is asleep or a phone's screen is locked.
 - **Autoplay** - once the queue is down to its last song or so, similar songs get added automatically so playback never runs dry. Off by default; toggle it from the icon next to Queue in the player bar. Works the same for local playback and casting.
 - **Adjustable audio quality** - a ceiling rather than a fixed bitrate, set separately for this device's own playback and for casting: anything already under the limit plays untouched, only what's above it gets converted down as it plays. Set per device in Settings.
@@ -291,98 +291,25 @@ The browser itself is never the problem: it always talks to Beacon's own Connect
 
 ## FAQ
 
-### Do I need ffmpeg installed?
+The answers live in [docs/faq.md](docs/faq.md):
 
-No. Both the Docker image and the desktop app bring their own build - an audio-only one, about a tenth the size of a full ffmpeg, built from the same recipe for both (see [build/ffmpeg/README.md](build/ffmpeg/README.md)). Setting `FFMPEG_PATH` points Beacon at your own build instead. Should it ever be missing - a build packaged without it, or a development checkout with no ffmpeg on PATH - the connect log says so on startup and casting fails.
-
-### What actually gets sent to a speaker, and when is it converted?
-
-Sonos, Chromecast and DLNA pull the audio from Beacon over HTTP, so Beacon decides what shape it arrives in. (AirPlay is pushed to rather than pulling, via pyatv, but gets the same prepared stream; only a live radio URL goes to the device untouched.)
-
-The rule is **change as little as possible, and never in a way that makes the stream bigger and worse.** For each track, the first of these that applies wins:
-
-1. **A quality limit you set**, if the track is above it. Settings -> Playback caps what gets sent. Being a cap is the whole point: a 128kbps file under a "MP3 320" limit is left alone, because re-encoding it would lose quality *and* produce a larger stream. Only a track above the limit is brought down to it.
-2. **Sent as it is**, if the speaker plays that format. Nothing is decoded or re-encoded and nothing is lost - a 320kbps MP3 arrives as exactly that MP3.
-3. **Repacked to FLAC**, if the track is lossless but in a wrapper the speaker will not open. Every bit is kept, only the container changes.
-4. **Re-encoded to 192kbps MP3**, when none of the above fits. The last resort, and the one format every device here plays.
-
-Steps 2 and 3 depend on the speaker, and this is the whole of that difference:
-
-| Plays | MP3 | AAC | FLAC | Ogg Vorbis | Opus |
-| ---------- | --- | --- | ---- | ---------- | ---- |
-| Chromecast | yes | yes | yes  | yes        | yes  |
-| Sonos      | yes | yes | yes  | yes        | no   |
-| DLNA       | yes | yes | yes  | yes        | no   |
-| AirPlay    | yes | no  | yes  | yes        | no   |
-
-Which lands sources in three groups. Already in the table: MP3, AAC, FLAC, Ogg Vorbis and Opus, sent as they are wherever the row says yes. Lossless but not in the table, so repacked to FLAC: ALAC, WAV, AIFF, APE, WavPack, TTA, Shorten, WMA Lossless and DSD. Everything else, re-encoded to MP3: WMA, Musepack, MP2 and anything unrecognised.
-
-Three things are worth knowing because they surprise people:
-
-- **Opus is only sent untouched to a Chromecast.** A Sonos accepts an Opus stream and then plays silence rather than refusing it, and nothing downstream can notice that, so Beacon does not try. An Opus file becomes MP3 there. This is separate from Beacon being able to *encode* to Opus, which it does for any device that plays it.
-- **ReplayGain rules out step 2.** Adjusting the volume means decoding the audio, and a track sent as it is never gets decoded. With ReplayGain on, a track that would have been passed through is re-encoded instead.
-- **A speaker's sample-rate and bit-depth limits apply on top of all of this.** A 96kHz/24-bit FLAC sent to a device that stops at 48kHz is resampled down rather than sent and cut off a second in. DSD is brought down the same way: it decodes to 352.8kHz, which nothing plays, so it lands at 88.2kHz - the same conversion a DSD player makes.
-
-### And in Beacon's own player?
-
-Same idea, one step shorter, because there is no speaker to negotiate with - only the browser. Settings -> Playback has its own limit for this, separate from the casting one:
-
-1. **Converted, whatever the setting says**, if the browser cannot decode the file at all. On "Original" it is repacked to FLAC rather than re-encoded, so nothing is lost; only where even FLAC is refused does it become MP3 or AAC. This is what makes an ALAC, APE, WavPack, AIFF or DSD library playable in a browser at all.
-2. **Brought down to your limit**, if the track is above it. A lossless track always is, whatever number the limit names.
-3. **Played as it is**, otherwise.
-
-MP3, AAC and Opus are offered as limits here, and which of them you are shown depends on the browser: Beacon asks it what it can decode rather than assuming, because the answer differs. Safari has no Ogg decoder, so Opus is not offered there and an Ogg Vorbis or Opus *file* is converted for it - the same file plays untouched in Chrome or Firefox. Both limits are stored per device, so a phone on mobile data and a desktop on the LAN can be set differently.
-
-### Why can Beacon feel slower with Jellyfin?
-
-**Mostly on the very first load, and then it stops mattering.**
-
-Jellyfin has no Subsonic-compatible API of its own, so `connect` translates every request on the fly into real Jellyfin API calls (see "Jellyfin and Plex support" above). That translating is not what costs the time - Plex goes through the same kind of bridge - Jellyfin's own API is simply slower at handing out a whole library at once. The first full scan of the same 20,000-track library:
-
-| Server             | First full catalog scan |
-| ------------------ | ----------------------: |
-| Navidrome/Subsonic |                  ~2 sec |
-| Plex               |                  ~4 sec |
-| Jellyfin 12        |                 ~18 sec |
-| Jellyfin 10        |                  ~3 min |
-
-That cost is paid once, not on every visit:
-
-- **The catalog is kept and trusted for a full day on Jellyfin**, against an hour for Navidrome/Subsonic - precisely because re-fetching it is expensive there. Everything after that first scan is answered from Beacon's own copy, and the refresh once the day is up happens in the background while you carry on browsing.
-- **Cover art never goes back to Jellyfin twice** either, with three caches in front of it (see "Artwork caching" above) and a whole screenful fetched in a single request.
-- **Changed something in Jellyfin and don't want to wait?** The rescan button in Settings drops the copy and fetches fresh right away.
-
-How fast that API answers is Jellyfin's to change from one release to the next, in either direction - if your own numbers look nothing like these, the server version is the first thing to check.
-
-### No devices found
-
-Ensure the container is running with `network_mode: host`. Without host networking, mDNS/SSDP multicast packets can't reach the container and no devices will be discovered.
-
-### My Sonos speaker doesn't appear under AirPlay (or DLNA)
-
-That's intentional. Sonos speakers advertise AirPlay 2 but require MFi hardware authentication that the AirPlay backend (pyatv) can't perform, so they're filtered out of the AirPlay list - use the dedicated **Sonos** output instead, where they appear with full volume and grouping support. Same idea for DLNA - Sonos also answers UPnP discovery there, and gets filtered for the same reason (the dedicated Sonos output already covers it properly). At log level Debug or louder, both filters are off, showing Sonos devices there too - useful for exercising the AirPlay/DLNA code paths themselves without owning that hardware, though actually streaming to Sonos-as-AirPlay still fails for the MFi reason above.
-
-### Troubleshooting casting
-
-Set the log level to Trace in Settings (or `LOG_LEVEL=trace`, see Environment variables above, if the app never comes up far enough to reach Settings) - Debug only covers Beacon's own code, Trace also turns on the SoCo/pyatv/HTTP libraries actually talking to the device, which is normally what you need for a casting issue. Expect a lot of output either way.
-
-### Why is there no visualizer, ReplayGain or volume slider in the mobile web player?
-
-So that the music keeps playing when the screen locks. Both features need the audio routed through the browser's Web Audio graph, and on iOS that same routing is what makes Safari treat the playback as Web Audio, which it suspends the moment the screen locks or the tab goes to the background. A plain audio element is allowed to carry on, lock screen controls included. Phones and tablets therefore play without that graph, which leaves both features out there. The volume slider goes with them: a phone browser makes an audio element's volume read-only, so that slider never did anything there in the first place - the device's own volume buttons are what changes the level. Nothing changes in the desktop app, in a desktop browser, or while casting - the visualizer's data comes from the `connect` backend during a cast, not from the phone, so it works there either way.
-
-**Casting is unaffected by any of this** - Sonos/Chromecast/AirPlay/DLNA playback is driven entirely by the `connect` backend, independent of whether a browser tab or phone screen is even open, so locking the screen (or closing the tab) doesn't interrupt a cast already in progress.
-
-### Why don't OS media keys / lock screen controls work while casting?
-
-Media keys, the Windows/macOS lock screen controls, and the GNOME/KDE media widget on Linux are all driven by the browser's Media Session API, which only exposes a session to the OS while a real, audible `<audio>` element is actually playing in the tab. While casting, no audio plays locally at all - it goes straight to the Sonos/Chromecast/AirPlay/DLNA device - so there's nothing for the browser to report. Confirmed with local playback (works) vs. casting (doesn't) on both Chromium and Firefox/Gecko-based (e.g. Waterfox) browsers on Linux via `playerctl`. There's a known workaround (loop a silent `<audio>` element to keep a "real" session alive during casting) but it's fragile enough (autoplay policy quirks, volume-zero edge cases) that it's deliberately not implemented - the cast target's own controls (its companion app, physical buttons) already cover this case.
-
-### What does Discover send to Radio Browser?
-
-Searching sends what you type, plus the country filter if you set one. Playing a station you found there reports one listen back to the directory, which is what its "most played" ordering is built on: Beacon uses that ordering, so it contributes to it rather than only taking from it. A station you added by typing its address yourself is never reported, because Beacon has no reason to think the directory knows it. All of this goes out from the Beacon server, not from your browser, so what Radio Browser sees is the deployment's address rather than yours.
-
-### What does the recommendations feature send where?
-
-The Discover/"New to explore" shelves on Home resolve a handful of artist names already in your library against MusicBrainz (to get an artist ID) and ListenBrainz (to get similar artists back) - both free, no-account, no-API-key services from the MetaBrainz project. "New to explore" additionally looks up a photo and a link for artists not in your library via Deezer's public search API (also no API key) - the same source Navidrome itself defaults to for artist images. No listening history, usernames, or anything else leaves the deployment - just a short list of artist names. Turn it off in Settings if you'd rather not: that stops the Home shelves. Opening an artist's own page still looks that one artist up for its photo and links, on or off, since that is a single on-demand lookup for the page you are actually looking at rather than a background pass over artists nobody asked about.
+- [Do I need ffmpeg installed?](docs/faq.md#do-i-need-ffmpeg-installed)
+- [What actually gets sent to a speaker, and when is it converted?](docs/faq.md#what-actually-gets-sent-to-a-speaker-and-when-is-it-converted)
+- [And in Beacon's own player?](docs/faq.md#and-in-beacons-own-player)
+- [Why is a surround track quieter than everything else?](docs/faq.md#why-is-a-surround-track-quieter-than-everything-else)
+- [Why can Beacon feel slower with Jellyfin?](docs/faq.md#why-can-beacon-feel-slower-with-jellyfin)
+- [Why is there no visualizer, ReplayGain or volume slider in the mobile web player?](docs/faq.md#why-is-there-no-visualizer-replaygain-or-volume-slider-in-the-mobile-web-player)
+- [Why don't OS media keys / lock screen controls work while casting?](docs/faq.md#why-dont-os-media-keys--lock-screen-controls-work-while-casting)
+- [Why is there no loading strip on the seek bar while casting?](docs/faq.md#why-is-there-no-loading-strip-on-the-seek-bar-while-casting)
+- [Why doesn't the music carry on over my own speakers when I end a cast?](docs/faq.md#why-doesnt-the-music-carry-on-over-my-own-speakers-when-i-end-a-cast)
+- [Why is there no visualizer while a station is casting?](docs/faq.md#why-is-there-no-visualizer-while-a-station-is-casting)
+- [Why does the path column show a path that does not exist on disk?](docs/faq.md#why-does-the-path-column-show-a-path-that-does-not-exist-on-disk)
+- [I removed one of two identical tracks from a playlist and both disappeared](docs/faq.md#i-removed-one-of-two-identical-tracks-from-a-playlist-and-both-disappeared)
+- [No devices found](docs/faq.md#no-devices-found)
+- [My Sonos speaker doesn't appear under AirPlay (or DLNA)](docs/faq.md#my-sonos-speaker-doesnt-appear-under-airplay-or-dlna)
+- [Troubleshooting casting](docs/faq.md#troubleshooting-casting)
+- [What does Discover send to Radio Browser?](docs/faq.md#what-does-discover-send-to-radio-browser)
+- [What does the recommendations feature send where?](docs/faq.md#what-does-the-recommendations-feature-send-where)
 
 ---
 
