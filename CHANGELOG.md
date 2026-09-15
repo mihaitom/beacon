@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- On a Jellyfin server the sample rate, file size and path columns are now available too, and the format column shows each track's bitrate next to its format. Track lists from Jellyfin take a little longer to load for it
 - Ending a cast no longer starts the music up over local speakers. Whatever was playing stays on the player bar, paused, and pressing play carries it on there. No device makes a sound it was not asked for now, on either end of a cast
 
 ### Fixed
@@ -22,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The German interface said "Queue" and "Settings" in several places and now says "Warteschlange" and "Einstellungen" throughout
 - A tab label too long for its share of the phone's tab bar is now shortened with an ellipsis instead of being cut off mid-word at both ends
 - On an iPhone, a song played at a reduced quality setting (AAC, for instance) kept jumping back to where it had started, roughly every 45 seconds. It now plays through at every quality setting, and the lock screen shows its total time as it does at "Original"
+- On a Jellyfin server, the audio quality setting for this device had no effect on MP3, AAC and other compressed tracks, which always played unconverted. They are now converted whenever they exceed the chosen quality
 - Starting a cast from one device now silences another device in the same session that was playing over its own speakers, and that device follows the cast from then on. It used to carry on playing underneath the cast with nothing able to stop it, since pause addressed the speaker instead and a station ran on indefinitely
 
 ## [1.3.0] - 2026-09-13

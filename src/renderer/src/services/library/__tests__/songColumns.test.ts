@@ -51,24 +51,23 @@ describe('songColumns', () => {
   })
 
   it('leaves out a column the connected server cannot fill', () => {
-    const selection: SongColumnKey[] = ['bpm', 'size', 'album']
+    const selection: SongColumnKey[] = ['bpm', 'path', 'album']
 
-    // Jellyfin's song lists carry neither (asking for the file's own
-    // figures costs real time per item - see _SONG_LIST_FIELDS), Plex sends
-    // the size but not the BPM, Navidrome sends both.
-    expect(keys(resolveSongColumns(selection, [], 'jellyfin'))).toEqual([
+    // Neither Jellyfin nor Plex reports BPM; Jellyfin's lists carry the
+    // file's path, Plex's do not, Navidrome sends both.
+    expect(keys(resolveSongColumns(selection, [], 'plex'))).toEqual([
       'index',
       'title',
       'album',
       'duration',
       'actions',
     ])
-    expect(keys(resolveSongColumns(selection, [], 'plex'))).toContain('size')
-    expect(keys(resolveSongColumns(selection, [], 'plex'))).not.toContain('bpm')
+    expect(keys(resolveSongColumns(selection, [], 'jellyfin'))).toContain('path')
+    expect(keys(resolveSongColumns(selection, [], 'jellyfin'))).not.toContain('bpm')
     expect(keys(resolveSongColumns(selection, [], 'subsonic'))).toContain('bpm')
     // The selection itself is untouched, so the column is back the moment
     // the account is on a server that reports it.
-    expect(selection).toEqual(['bpm', 'size', 'album'])
+    expect(selection).toEqual(['bpm', 'path', 'album'])
   })
 
   it('answers for every column whether a given server reports it', () => {
@@ -77,8 +76,8 @@ describe('songColumns', () => {
       // No server type given at all (a test, an export) filters nothing.
       expect(songColumnAvailable(column, null)).toBe(true)
     }
-    expect(songColumnAvailable(songColumn('path')!, 'jellyfin')).toBe(false)
-    expect(songColumnAvailable(songColumn('genre')!, 'jellyfin')).toBe(true)
+    expect(songColumnAvailable(songColumn('path')!, 'plex')).toBe(false)
+    expect(songColumnAvailable(songColumn('genre')!, 'plex')).toBe(true)
   })
 
   it('gives every column a width and a floor under it', () => {

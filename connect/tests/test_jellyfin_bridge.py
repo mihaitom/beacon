@@ -1461,20 +1461,39 @@ def test_map_song_detail_omits_what_the_server_did_not_report():
         assert field not in song
 
 
-def test_song_lists_stay_free_of_the_detail_fields():
-    """Only the single-track lookup builds them — a path and an audio
-    stream's figures on every entry of a 20000-track response is a lot of
-    bytes for fields only the track-info sheet reads."""
+def test_song_lists_carry_the_files_own_figures():
+    """The bitrate is what the local quality setting decides on - without it
+    every lossy Jellyfin track played untouched - and size, sample rate and
+    path back a song-table column each. See _SONG_LIST_FIELDS."""
     item = {
         "Id": "song-1",
         "Name": "Song",
-        "MediaSources": [{"Path": "/music/a/song.flac", "Size": 1}],
+        "MediaSources": [
+            {
+                "Path": "/music/a/song.flac",
+                "Size": 12345,
+                "Container": "flac",
+                "Bitrate": 900000,
+                "MediaStreams": [
+                    {"Type": "Video", "BitDepth": 8},
+                    {"Type": "Audio", "BitDepth": 24, "SampleRate": 96000, "Channels": 2},
+                ],
+            }
+        ],
     }
 
     song = jellyfin_bridge._map_song(item)
 
-    assert "path" not in song
-    assert "size" not in song
+    assert song["bitRate"] == 900
+    assert song["size"] == 12345
+    assert song["path"] == "/music/a/song.flac"
+    assert song["samplingRate"] == 96000
+    assert song["bitDepth"] == 24
+    assert "channelCount" not in song
+
+
+def test_song_lists_ask_jellyfin_for_the_media_sources():
+    assert "MediaSources" in jellyfin_bridge._SONG_LIST_FIELDS.split(",")
 
 
 def test_song_lists_carry_the_two_column_fields_that_cost_nothing():
@@ -1506,9 +1525,9 @@ def test_song_lists_omit_a_last_played_the_server_never_recorded():
 
 
 def test_song_lists_keep_the_format_without_asking_for_media_sources():
-    """The song lists deliberately don't ask for MediaSources, so a listed
-    track's container has to come off the item itself — without this the
-    format column was blank for every Jellyfin library."""
+    """A response without MediaSources still has the container on the item
+    itself - without this the format column was blank for every Jellyfin
+    library, back when the lists did not ask for them."""
     song = jellyfin_bridge._map_song({"Id": "song-1", "Name": "Song", "Container": "flac"})
 
     assert song["suffix"] == "flac"

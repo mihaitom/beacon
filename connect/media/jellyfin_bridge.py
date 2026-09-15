@@ -92,13 +92,16 @@ async def close() -> None:
 # for less should do less of it. The slope is the server's and moves with
 # its version: ~9ms/item on 10.11.11, ~1.2ms on 12.0.0.
 #
-# DateCreated is the one column field cheap enough to belong here: a
-# scalar the server already has. The heavier optional fields stay out
-# (MediaSources, Overview, People, ...) - which is why the file size, path
-# and sample rate columns have nothing behind them on Jellyfin, and show
-# blank rather than a guess. Last played needs nothing at all: UserData
-# comes with every user-scoped item response anyway.
-_SONG_LIST_FIELDS = "Genres,ArtistItems,DateCreated"
+# DateCreated is a scalar the server already has. MediaSources is not cheap:
+# measured on 12.0.0 (20151 tracks), 3000 items took 4.15s with it against
+# 2.89s without, and Jellyfin's answer grew from 4.5MB to 10.8MB. It is asked
+# for anyway, because it is the only place Jellyfin reports a file's bitrate,
+# and without one the local quality setting left every lossy Jellyfin track
+# untouched (see plan() in services/streamQuality.ts) - and because it also
+# fills the size, sample rate and path columns. Overview, People and the like
+# stay out. Last played needs nothing at all: UserData comes with every
+# user-scoped item response anyway.
+_SONG_LIST_FIELDS = "Genres,ArtistItems,DateCreated,MediaSources"
 
 
 def _is_favorite(item: dict) -> bool:
@@ -146,15 +149,20 @@ def _map_song(item: dict) -> dict:
     artist_items = item.get("ArtistItems") or []
     if artist_items:
         song["artistId"] = artist_items[0]["Id"]
-    # MediaSources only comes back when it was asked for, which the song
-    # lists deliberately don't do (see _SONG_LIST_FIELDS) - the container is
-    # on the item itself there, so a listed track keeps its format even
-    # though nothing else about its file is available.
+    # MediaSources only comes back when it was asked for (see
+    # _SONG_LIST_FIELDS); the container is on the item itself as well, so a
+    # response without it still keeps the track's format.
     container = source.get("Container") or item.get("Container")
     if container:
         song["suffix"] = container
     if source.get("Bitrate"):
         song["bitRate"] = int(source["Bitrate"] / 1000)
+    streams = source.get("MediaStreams") or item.get("MediaStreams") or []
+    audio = next((stream for stream in streams if stream.get("Type") == "Audio"), {})
+    _set(song, "path", source.get("Path") or item.get("Path"))
+    _set(song, "size", source.get("Size"))
+    _set(song, "bitDepth", audio.get("BitDepth"))
+    _set(song, "samplingRate", audio.get("SampleRate"))
     # Both back a song-table column (see services/library/songColumns.ts)
     # and both are already in hand: DateCreated is one scalar field asked
     # for with the list, LastPlayedDate rides along in UserData.
@@ -183,10 +191,9 @@ def _map_song_detail(item: dict) -> dict:
     """Everything Jellyfin holds about one track, on top of what the lists
     need.
 
-    Built only by get_song(), never by the list handlers: a file path, the
-    audio stream's own figures and the artist objects are a lot of bytes to
-    attach to every entry of a 20000-track response for fields only the
-    track-info sheet reads.
+    Built only by get_song(), never by the list handlers: the channel count,
+    the artist objects and the rest are bytes on every entry of a
+    20000-track response for fields only the track-info sheet reads.
 
     Field names follow OpenSubsonic's own Child schema, so the frontend
     reads one shape whichever server answered (see subsonic/types.ts's
@@ -198,11 +205,8 @@ def _map_song_detail(item: dict) -> dict:
     streams = source.get("MediaStreams") or item.get("MediaStreams") or []
     audio = next((stream for stream in streams if stream.get("Type") == "Audio"), {})
 
-    # Added and last played are already on the list mapping above.
-    _set(song, "path", source.get("Path") or item.get("Path"))
-    _set(song, "size", source.get("Size"))
-    _set(song, "bitDepth", audio.get("BitDepth"))
-    _set(song, "samplingRate", audio.get("SampleRate"))
+    # The file's own figures, added and last played are already on the list
+    # mapping above.
     _set(song, "channelCount", audio.get("Channels"))
     _set(song, "sortName", item.get("SortName"))
     _set(song, "musicBrainzId", (item.get("ProviderIds") or {}).get("MusicBrainzTrack"))

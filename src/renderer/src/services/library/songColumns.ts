@@ -91,12 +91,10 @@ export interface SongColumn {
   text: ((song: Song, locale: string) => string) | null
   /** The servers whose *list* responses carry this field, or null for the
    * ones every server answers. A column is only as good as the data behind
-   * it: Jellyfin's song lists deliberately leave out the file's own figures
-   * (see jellyfin_bridge.py's _SONG_LIST_FIELDS - asking for them costs real
-   * time per item), and Plex sends the size but not the path or the audio
-   * stream. Rather than a column of dashes on every row, those are left out
-   * of the table and shown in the menu as something this server does not
-   * report. */
+   * it: Plex sends the size but not the path or the audio stream, and
+   * neither Jellyfin nor Plex reports BPM or a comment. Rather than a column
+   * of dashes on every row, those are left out of the table and shown in the
+   * menu as something this server does not report. */
   servers: ServerType[] | null
 }
 
@@ -341,7 +339,7 @@ export const SONG_COLUMNS: SongColumn[] = [
       if (rate && depth) return `${rate} · ${depth}`
       return text(rate ?? depth)
     },
-    servers: SUBSONIC_ONLY,
+    servers: ['subsonic', 'jellyfin'],
   },
   {
     key: 'size',
@@ -354,7 +352,7 @@ export const SONG_COLUMNS: SongColumn[] = [
     skeletonWidth: '52',
     sortValue: (song) => song.size ?? 0,
     text: (song) => text(formatSize(song.size)),
-    servers: ['subsonic', 'plex'],
+    servers: null,
   },
   {
     key: 'path',
@@ -367,7 +365,7 @@ export const SONG_COLUMNS: SongColumn[] = [
     skeletonWidth: '80%',
     sortValue: (song) => lower(song.path),
     text: (song) => text(song.path),
-    servers: SUBSONIC_ONLY,
+    servers: ['subsonic', 'jellyfin'],
   },
 
   // Closing the row, as the number and the title open it - the running
