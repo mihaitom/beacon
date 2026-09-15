@@ -36,6 +36,13 @@ import { useLibraryStore } from '@/stores/library'
 let lastMetadataKey: string | null = null
 let lastPlaybackState: MediaSessionPlaybackState | null = null
 let lastQueueHandlersSet: boolean | null = null
+let lastPositionState: { key: string; position: number; at: number } | null = null
+
+// How far the store's position may be from where the OS has been
+// extrapolating it since the last update before it is told again. Anything
+// past it is a seek; below it is the ~4x/sec position tick, which the OS
+// already advances by itself.
+const POSITION_RESYNC_SECONDS = 2
 
 /** Wrapped per-handler, not once around a whole block: Chromium accepts
  * every action this service registers, but a browser that only partially
@@ -92,6 +99,46 @@ function updateMetadata(): void {
     album: song?.album ?? '',
     artwork,
   })
+}
+
+/** The track's length and position, told to the OS directly. Otherwise it
+ * reads them off the <audio> element, and a transcode is served without a
+ * length (connect/routes/local_stream.py) - on an iPhone the lock screen
+ * then showed no total time for it, while the same track on Original did.
+ * Cleared for a station, which has neither. */
+function updatePositionState(): void {
+  const session = navigator.mediaSession
+  if (typeof session.setPositionState !== 'function') return
+  const playback = usePlaybackStore()
+  const song = playback.currentSong
+  const duration = song ? playback.duration : 0
+  if (!song || !(duration > 0)) {
+    if (lastPositionState === null) return
+    lastPositionState = null
+    try {
+      session.setPositionState()
+    } catch {
+      // Nothing to clear on a browser that rejects the call.
+    }
+    return
+  }
+
+  const key = `${song.id}:${duration}:${playback.isPlaying}`
+  const now = performance.now()
+  const position = Math.min(Math.max(0, playback.localPosition), duration)
+  if (lastPositionState?.key === key) {
+    const elapsed = playback.isPlaying ? (now - lastPositionState.at) / 1000 : 0
+    const expected = lastPositionState.position + elapsed
+    if (Math.abs(position - expected) < POSITION_RESYNC_SECONDS) return
+  }
+  lastPositionState = { key, position, at: now }
+  try {
+    // playbackRate stays 1 while paused: 0 is rejected, and the paused
+    // state already reaches the OS through playbackState.
+    session.setPositionState({ duration, position, playbackRate: 1 })
+  } catch {
+    // A browser that rejects it keeps reading the element, as before.
+  }
 }
 
 /** Registers (or withdraws) the queue-shaped actions, following whether a
@@ -166,10 +213,12 @@ export function initMediaSession(): void {
       updateMetadata()
       updatePlaybackState()
       updateQueueHandlers()
+      updatePositionState()
     },
     { detached: true },
   )
   updateMetadata()
   updatePlaybackState()
   updateQueueHandlers()
+  updatePositionState()
 }
