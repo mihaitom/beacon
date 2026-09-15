@@ -10,11 +10,17 @@ import * as radioMetadata from '@/services/connect/radioMetadata'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import { makeSong, makeStatus } from './fixtures'
 import { useRadioMetadataStore } from '../radioMetadata'
+import { useRadioSettingsStore } from '../radioSettings'
+import { reportRadioSilence } from '@/services/connect/radio'
 
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
 // Reaches for navigator.mediaSession, which jsdom has no implementation of
 // — and what it wires is covered by services/mediaSession.ts's own tests.
 vi.mock('@/services/mediaSession', () => ({ initMediaSession: vi.fn() }))
+vi.mock('@/services/connect/radio', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/connect/radio')>()
+  return { ...actual, reportRadioSilence: vi.fn() }
+})
 vi.mock('@/services/connect/radioMetadata', () => ({
   startRadioMetadataWatch: vi.fn(),
   stopRadioMetadataWatch: vi.fn(),
@@ -41,6 +47,7 @@ interface WiredEngine {
   onDurationChange: ((duration: number) => void) | null
   onReconnectStateChange: ((reconnecting: boolean) => void) | null
   onConnectionLost: (() => void) | null
+  onSilence: ((seconds: number) => void) | null
 }
 
 let engine: WiredEngine
@@ -89,6 +96,7 @@ describe('the store wiring the audio engine', () => {
       onDurationChange: null,
       onReconnectStateChange: null,
       onConnectionLost: null,
+      onSilence: null,
     }
     vi.mocked(getAudioEngine).mockReturnValue(
       engine as unknown as ReturnType<typeof getAudioEngine>,
@@ -390,6 +398,62 @@ describe('the store wiring the audio engine', () => {
       engine.onReconnectStateChange?.(false)
 
       expect(playback.radioBuffering).toBe(true)
+    })
+  })
+
+  // Behind a reverse proxy a stalled link never reaches the relay, so the
+  // player's own measurement is the only record of a gap.
+  describe('silence on a station', () => {
+    function playChillFm() {
+      const playback = usePlaybackStore()
+      playback.init()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: null,
+      }
+      playback.reconnectRadio()
+      return playback
+    }
+
+    function connectionIdOf(call: number): string | null {
+      const url = engine.playLive.mock.calls[call]![0] as string
+      return new URL(url).searchParams.get('conn')
+    }
+
+    it('is reported for the connection that heard it', () => {
+      playChillFm()
+
+      engine.onSilence?.(9.4)
+
+      expect(reportRadioSilence).toHaveBeenCalledWith(connectionIdOf(0), 9.4)
+    })
+
+    it('gives every start of a station its own connection id', () => {
+      const playback = playChillFm()
+      playback.reconnectRadio()
+
+      expect(connectionIdOf(0)).toBeTruthy()
+      expect(connectionIdOf(1)).not.toBe(connectionIdOf(0))
+    })
+
+    it('is not reported for a station fetched directly, which no relay serves', () => {
+      useRadioSettingsStore().castDirectly = true
+      playChillFm()
+
+      engine.onSilence?.(9.4)
+
+      expect(reportRadioSilence).not.toHaveBeenCalled()
+    })
+
+    it('is not reported while casting, this element not being what is playing', () => {
+      playChillFm()
+      castTo()
+
+      engine.onSilence?.(9.4)
+
+      expect(reportRadioSilence).not.toHaveBeenCalled()
     })
   })
 

@@ -798,6 +798,101 @@ describe('AudioEngine', () => {
 
     // holdsConnection — a station relayed by Beacon's own backend rather
     // than fetched from its own server.
+    describe('silence', () => {
+      it('reports how long the sound was gone once it is back', async () => {
+        const onSilence = vi.fn()
+        engine.onSilence = onSilence
+        engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+        playing(3)
+
+        await vi.advanceTimersByTimeAsync(9500)
+        playing(3.25)
+
+        expect(onSilence).toHaveBeenCalledOnce()
+        expect(onSilence.mock.calls[0]![0]).toBeCloseTo(9.25)
+      })
+
+      it('says nothing about a station playing normally', async () => {
+        const onSilence = vi.fn()
+        engine.onSilence = onSilence
+        engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+        for (let i = 0; i < 20; i++) {
+          playing(3 + i * 0.25)
+          await vi.advanceTimersByTimeAsync(250)
+        }
+
+        expect(onSilence).not.toHaveBeenCalled()
+      })
+
+      it('does not count a pause', async () => {
+        const onSilence = vi.fn()
+        engine.onSilence = onSilence
+        engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+        playing(3)
+
+        engine.pause()
+        await vi.advanceTimersByTimeAsync(30_000)
+        engine.resume()
+        playing(3.25)
+
+        expect(onSilence).not.toHaveBeenCalled()
+      })
+
+      it('does not count a pause that did not come from the app', async () => {
+        const onSilence = vi.fn()
+        engine.onSilence = onSilence
+        engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+        playing(3)
+
+        // Headphones unplugged, say: the element pauses by itself.
+        audio.paused = true
+        await vi.advanceTimersByTimeAsync(30_000)
+        engine.resume()
+        playing(3.25)
+
+        expect(onSilence).not.toHaveBeenCalled()
+      })
+
+      it('does not count the wait for a station to start', async () => {
+        const onSilence = vi.fn()
+        engine.onSilence = onSilence
+        engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+
+        await vi.advanceTimersByTimeAsync(3000)
+        playing(0.25)
+        playing(0.5)
+
+        expect(onSilence).not.toHaveBeenCalled()
+      })
+
+      it('counts a reconnect, which is silence too', async () => {
+        const onSilence = vi.fn()
+        engine.onSilence = onSilence
+        engine.playLive('http://station/stream')
+        playing(3)
+
+        // Four seconds standing still, the first one-second backoff, and
+        // the new connection's first quarter second of audio.
+        await vi.advanceTimersByTimeAsync(6000)
+        playing(0.25)
+
+        expect(onSilence).toHaveBeenCalledOnce()
+        expect(onSilence.mock.calls[0]![0]).toBeCloseTo(5.75)
+      })
+
+      it('is not measured for a song', async () => {
+        const onSilence = vi.fn()
+        engine.onSilence = onSilence
+        engine.play('http://server/song.mp3')
+        playing(3)
+
+        await vi.advanceTimersByTimeAsync(9500)
+        playing(3.25)
+
+        expect(onSilence).not.toHaveBeenCalled()
+      })
+    })
+
     describe('a held connection', () => {
       it('reports the stall but leaves the connection standing', async () => {
         const onReconnectStateChange = vi.fn()

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchConnect } from '../http'
 import {
   localRadioStreamUrl,
+  newRadioConnectionId,
   faviconSizeStep,
   radioFaviconKey,
   radioFaviconRequest,
@@ -202,9 +203,30 @@ describe('localRadioStreamUrl', () => {
     expect(new URL(url).searchParams.get('format')).toBe('aac')
   })
 
+  it('names the start of the station it belongs to', () => {
+    const url = localRadioStreamUrl(
+      'http://connect',
+      'tok',
+      'sess',
+      'https://station/stream',
+      undefined,
+      undefined,
+      'k3x9a',
+    )
+
+    expect(new URL(url).searchParams.get('conn')).toBe('k3x9a')
+  })
+
   it('leaves the ceiling out when the setting caps nothing', () => {
     const url = localRadioStreamUrl('http://connect', 'tok', 'sess', 'https://station/stream')
 
     expect(new URL(url).searchParams.has('max_bitrate_kbps')).toBe(false)
+  })
+})
+
+describe('newRadioConnectionId', () => {
+  // connect only logs an id matching ^[a-z0-9]{1,12}$ (routes/stream.py).
+  it('is something connect will put in its log', () => {
+    for (let i = 0; i < 50; i++) expect(newRadioConnectionId()).toMatch(/^[a-z0-9]{1,12}$/)
   })
 })

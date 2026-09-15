@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 
@@ -361,6 +361,100 @@ class TestRadioRelayStallDetection:
 
         assert attempts == ["http://station"]
         assert bytes(proc.stdin.written) == b"abcd"
+
+
+class _SlowStdout(FakeStdout):
+    """ffmpeg's output with a pause ahead of every chunk."""
+
+    def __init__(self, chunks: list[bytes], gap: float):
+        super().__init__(chunks)
+        self._gap = gap
+
+    async def read(self, n: int) -> bytes:
+        if self._chunks:
+            await asyncio.sleep(self._gap)
+        return await super().read(n)
+
+
+class TestSilenceIsLogged:
+    """A gap of a few seconds never reaches a reconnect, so it left no trace
+    while a listener heard it. These lines say whether the station or the
+    relay itself went quiet; with neither, the gap was between here and
+    the listener (see routes/stream.py's /stream/radio-local/gap)."""
+
+    async def test_logs_a_station_that_goes_quiet_for_a_while(self, caplog):
+        relay, _proc, _ = _relay_with_fake_ffmpeg()
+        stream = _stalling_stream([], [b"a", b"b", b"c"], gap=0.05)
+
+        with (
+            patch.object(relay_mod, "_SILENCE_LOG_SECONDS", 0.03),
+            patch.object(relay_mod, "_STALL_TIMEOUT_SECONDS", 5.0),
+            patch.object(relay_mod._client, "stream", stream),
+            caplog.at_level(logging.INFO, logger="connect.radio_relay"),
+        ):
+            await relay.start()
+            await asyncio.sleep(0.3)
+            await relay.stop()
+
+        # Not for the first chunk: that wait is the connection being set
+        # up, which says nothing about the station going quiet.
+        assert caplog.text.count("station sent nothing for") == 2
+
+    async def test_says_nothing_about_a_station_that_keeps_sending(self, caplog):
+        relay, _proc, _ = _relay_with_fake_ffmpeg()
+        stream = _stalling_stream([], [b"a", b"b", b"c"], gap=0.0)
+
+        with (
+            patch.object(relay_mod, "_SILENCE_LOG_SECONDS", 0.03),
+            patch.object(relay_mod, "_STALL_TIMEOUT_SECONDS", 5.0),
+            patch.object(relay_mod._client, "stream", stream),
+            caplog.at_level(logging.INFO, logger="connect.radio_relay"),
+        ):
+            await relay.start()
+            await asyncio.sleep(0.1)
+            await relay.stop()
+
+        assert "sent nothing" not in caplog.text
+
+    async def test_says_nothing_while_ffmpeg_is_pacing_the_read(self, caplog):
+        """ffmpeg reads at real time, so most of this loop's time goes into
+        waiting for it to take more - which is not the station being quiet."""
+        relay, proc, _ = _relay_with_fake_ffmpeg()
+
+        async def paced_drain():
+            await asyncio.sleep(0.05)
+
+        proc.stdin.drain = paced_drain
+        stream = _stalling_stream([], [b"a", b"b", b"c"], gap=0.0)
+
+        with (
+            patch.object(relay_mod, "_SILENCE_LOG_SECONDS", 0.03),
+            patch.object(relay_mod, "_STALL_TIMEOUT_SECONDS", 5.0),
+            patch.object(relay_mod._client, "stream", stream),
+            caplog.at_level(logging.INFO, logger="connect.radio_relay"),
+        ):
+            await relay.start()
+            await asyncio.sleep(0.3)
+            await relay.stop()
+
+        assert bytes(proc.stdin.written) == b"abc"
+        assert "sent nothing" not in caplog.text
+
+    async def test_logs_ffmpeg_holding_the_audio_back(self, caplog):
+        relay, proc, _ = _relay_with_fake_ffmpeg()
+        proc.stdout = _SlowStdout([b"a", b"b", b"c"], gap=0.05)
+
+        with (
+            patch.object(relay_mod, "_SILENCE_LOG_SECONDS", 0.03),
+            patch.object(relay_mod._client, "stream", _stalling_stream([], [], gap=0.0)),
+            caplog.at_level(logging.INFO, logger="connect.radio_relay"),
+        ):
+            await relay.start()
+            await asyncio.sleep(0.3)
+            await relay.stop()
+
+        assert caplog.text.count("produced no audio for") == 2
+        assert "station sent nothing" not in caplog.text
 
 
 class TestCleanStationEnd:
@@ -845,9 +939,12 @@ class TestRadioRelayFetchLoop:
 
         relay._start_ffmpeg = fake_start_ffmpeg
 
+        # The backoff shortened rather than asyncio.sleep mocked out: a mocked
+        # sleep never yields, so the relay's orphan watch spun on it until its
+        # real 90s timeout ended the relay, and this test took that long.
         with (
             patch.object(relay_mod._client, "stream", flaky_stream),
-            patch.object(relay_mod.asyncio, "sleep", AsyncMock()),
+            patch.object(relay_mod, "_RECONNECT_DELAY_SECONDS", 0.0),
         ):
             q = None
             task = asyncio.create_task(relay._run())

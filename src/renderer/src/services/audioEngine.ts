@@ -117,6 +117,12 @@ const LIVE_HOLD_SECONDS = 60
 // towards letting a slow stretch recover on its own.
 const TRANSCODE_STALL_SECONDS = 15
 
+// How much longer than the playhead moved the wall clock may run between two
+// position updates before the difference counts as silence worth reporting
+// (see onSilence). Well above the ~250ms between 'timeupdate' events, and
+// below anything a listener would call a gap.
+const SILENCE_REPORT_SECONDS = 1
+
 // How many times a stream may end early and be resumed before it counts as
 // broken rather than dropped — see the 'ended' handler. Separate from the
 // reconnect ladder's own count, which a successful 'playing' resets: a
@@ -254,6 +260,11 @@ export class AudioEngine {
   // last actually moved. See LIVE_STALL_SECONDS.
   private stallTimer: ReturnType<typeof setInterval> | null = null
   private lastProgressAt = 0
+  // Where the playhead and the wall clock were at the last position update
+  // of a live stream - see measureSilence(). Cleared by start(), which every
+  // (re)start after a pause or a new source goes through: standing still
+  // before that is expected, not heard.
+  private silenceAnchor: { position: number; at: number } | null = null
 
   onTimeUpdate: ((position: number) => void) | null = null
   onEnded: (() => void) | null = null
@@ -289,6 +300,13 @@ export class AudioEngine {
    * "and there is a way back from here" half, which is true for a station
    * and not for much else. */
   onConnectionLost: (() => void) | null = null
+  /** Fires once the sound is back after a live stream went quiet while it
+   * was meant to be playing, with how long that lasted. The one measurement
+   * of a gap that holds from wherever the listener is: a stall on the link
+   * to a remote backend is swallowed by buffers on the way long before the
+   * relay could notice it, and a held connection (LIVE_HOLD_SECONDS) rides
+   * it out without an event of its own. */
+  onSilence: ((seconds: number) => void) | null = null
 
   constructor() {
     this.audio = new Audio()
@@ -334,6 +352,7 @@ export class AudioEngine {
       // stream is still feeding us" that checkForStall() below asks.
       if (position !== this.lastKnownPosition) {
         this.lastProgressAt = Date.now()
+        if (this.liveStream) this.measureSilence(position)
         // A moving playhead is the stream delivering, and the only
         // evidence of it that always arrives. 'playing' below does not: it
         // fires when the *element* was stalled, and checkForStall() also
@@ -498,6 +517,21 @@ export class AudioEngine {
       this.earlyEnds = 0
     }
     return this.earlyEnds < MAX_EARLY_ENDS
+  }
+
+  /** Compares how far the playhead moved with how much time passed since
+   * the last position update. Read off the element's own clock rather than
+   * a timer, so a window whose timers are throttled - where a stall is most
+   * likely to go unnoticed - still measures it exactly. A reconnect in the
+   * middle counts: that is silence too, and positionOffset keeps the
+   * position continuous across it. */
+  private measureSilence(position: number): void {
+    const now = Date.now()
+    const anchor = this.silenceAnchor
+    this.silenceAnchor = { position, at: now }
+    if (anchor === null) return
+    const silent = (now - anchor.at) / 1000 - (position - anchor.position)
+    if (silent >= SILENCE_REPORT_SECONDS) this.onSilence?.(silent)
   }
 
   /** Edge-triggered onReconnectStateChange — the callback fires only
@@ -960,6 +994,8 @@ export class AudioEngine {
     // see resumeContext()'s own comment for why that matters.
     this.resumeContext()
     this.armStallWatchdog()
+    // Starting, or resuming, takes as long as it takes and is not a gap.
+    this.silenceAnchor = null
     void this.audio.play().catch((error: unknown) => {
       // Read off the value rather than narrowing by `instanceof Error`:
       // what lands here is a DOMException, which isn't reliably an Error

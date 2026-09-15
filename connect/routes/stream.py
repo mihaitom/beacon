@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
@@ -874,8 +875,63 @@ def _reconnect_note(reason: str | None, attempt: int | None) -> str:
     return f" (reconnect: {named}, attempt {attempt})" if attempt else f" (reconnect: {named})"
 
 
+# What the app may send as a connection id - see services/connect/radio.ts's
+# newRadioConnectionId(). Anything else is left out of the log rather than
+# written into it, same reasoning as _RECONNECT_REASONS.
+_CONNECTION_ID_RE = re.compile(r"^[a-z0-9]{1,12}$")
+
+# First match wins, so the more specific browsers come before the engines
+# they are built on: Edge and Electron both say "Chrome", Chrome says
+# "Safari".
+_BROWSERS = (
+    ("Electron/", "Electron"),
+    ("Edg/", "Edge"),
+    ("Firefox/", "Firefox"),
+    ("Chrome/", "Chrome"),
+    ("CriOS/", "Chrome"),
+    ("Safari/", "Safari"),
+)
+_PLATFORMS = (
+    ("iPhone", "iOS"),
+    ("iPad", "iOS"),
+    ("Android", "Android"),
+    ("Windows", "Windows"),
+    ("Mac OS X", "macOS"),
+    ("Linux", "Linux"),
+)
+
+
+def _client_kind(user_agent: str | None) -> str:
+    """ "Windows Chrome", "iOS Safari" - enough to tell a desktop, a phone
+    and the Electron app apart in the log, and deliberately no more: a
+    full User-Agent is a fingerprint, and the version numbers in it answer
+    nothing asked here."""
+    ua = user_agent or ""
+    platform = next((name for token, name in _PLATFORMS if token in ua), "unknown platform")
+    browser = next((name for token, name in _BROWSERS if token in ua), "unknown browser")
+    return f"{platform} {browser}"
+
+
+def _local_player_note(request: Request, conn: str | None) -> str:
+    """The " [conn …, client, range …]" part of a local player's radio lines.
+
+    Together these answer what a bare "Serving" line could not: the same
+    `conn` twice with no reconnect reason is the browser asking again by
+    itself, a different one is another start from the app, and the client
+    says which device it was."""
+    parts = []
+    if conn is not None and _CONNECTION_ID_RE.match(conn):
+        parts.append(f"conn {conn}")
+    parts.append(_client_kind(request.headers.get("user-agent")))
+    range_header = request.headers.get("range")
+    if range_header:
+        parts.append(f"range {range_header[:40]}")
+    return f" [{', '.join(parts)}]"
+
+
 @router.get("/stream/radio-local")
 async def local_radio_stream(
+    request: Request,
     url: str = Query(...),
     # This device's own audio-quality ceiling, in kbps — the same setting
     # /play-url carries for a cast device, for the same reason: since local
@@ -903,6 +959,9 @@ async def local_radio_stream(
     # services/audioEngine.ts's withReconnectReason().
     reconnect: str | None = Query(default=None),
     attempt: int | None = Query(default=None),
+    # Which start of the station this request belongs to - see
+    # _local_player_note().
+    conn: str | None = Query(default=None),
     session: SessionState = Depends(get_session),
     _token: None = Depends(require_token),
 ):
@@ -975,7 +1034,8 @@ async def local_radio_stream(
         )
     label = "to a local player"
     logger.info(
-        f"[stream] Serving relayed radio {label}{_reconnect_note(reconnect, attempt)}: {url[:80]}"
+        f"[stream] Serving relayed radio {label}{_reconnect_note(reconnect, attempt)}"
+        f"{_local_player_note(request, conn)}: {url[:80]}"
     )
     # No ICY muxing, unlike /stream/radio: an <audio> element has no way to
     # read it (that is why core/icy_metadata.py exists at all), and asking
@@ -990,6 +1050,31 @@ async def local_radio_stream(
         media_type=relay.device_content_type,
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/stream/radio-local/gap")
+async def local_radio_gap(
+    request: Request,
+    seconds: float = Query(ge=0.0, le=86400.0),
+    conn: str | None = Query(default=None),
+    _token: None = Depends(require_token),
+):
+    """A local player saying it went silent for `seconds` while a relayed
+    station was meant to be playing - sent once the sound is back.
+
+    The one place such a gap can be measured. This backend sits behind a
+    reverse proxy for a listener away from home, and a stalled link there
+    is absorbed by the proxy's buffers and both sockets' long before it
+    ever pushes back on the relay's queue: a gap of ten seconds is a few
+    hundred kilobytes, which nothing on this side notices. The player hears
+    it exactly. Logged next to the relay's own silence lines
+    (core/radio_relay.py's _SILENCE_LOG_SECONDS): a gap with neither of
+    those around it happened between here and the listener."""
+    logger.info(
+        f"[stream] Local player{_local_player_note(request, conn)} heard "
+        f"{seconds:.1f}s of silence in relayed radio"
+    )
+    return {}
 
 
 async def _muxed_icy_audio(audio: AsyncGenerator[bytes], muxer: IcyMuxer) -> AsyncGenerator[bytes]:

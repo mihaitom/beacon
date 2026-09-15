@@ -33,7 +33,12 @@ import { diffCastQueue } from '@/services/playback/queueReconcile'
 import type { RepeatMode } from '@/services/playback/types'
 import { resolveRadioStation } from '@/services/playback/radioStation'
 import { startRadioMetadataWatch, stopRadioMetadataWatch } from '@/services/connect/radioMetadata'
-import { localRadioStreamUrl, resolveRadioStreamUrl } from '@/services/connect/radio'
+import {
+  localRadioStreamUrl,
+  newRadioConnectionId,
+  reportRadioSilence,
+  resolveRadioStreamUrl,
+} from '@/services/connect/radio'
 import { registerRadioBrowserClick } from '@/services/connect/radioBrowser'
 import { radioBrowserIdFor } from '@/services/radioBrowserLinks'
 import { pollingAllowed } from '@/services/connect/pollGate'
@@ -286,6 +291,9 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null
 // above) says this is a reload of a session that was already playing — set
 // once by restoreFromStorage(), read once by resumeLocalPlayback().
 let restoredWasPlaying = false
+// The connection id of the relayed station playing locally, null for a
+// station fetched directly - see startLocalRadio() and onSilence below.
+let radioConnectionId: string | null = null
 // Sequences with connect's first SSE status tick (or a timeout, whichever
 // comes first) so local resume only ever gets decided once — see
 // decideLocalResume()/attemptLocalResumeAfterAuth().
@@ -524,6 +532,13 @@ export const usePlaybackStore = defineStore('playback', {
       // to offer them that they do not already have.
       engine.onConnectionLost = () => {
         if (!this.isCasting && this.radioStation) this.radioConnectionLost = true
+      }
+      // Into connect's log, next to the relay's own lines - see
+      // reportRadioSilence() for why only this side can measure it.
+      engine.onSilence = (seconds) => {
+        if (!this.isCasting && this.radioStation && radioConnectionId) {
+          reportRadioSilence(radioConnectionId, seconds)
+        }
       }
 
       // OS media keys / lock-screen / GNOME-KDE media widget — see that
@@ -1552,6 +1567,7 @@ export const usePlaybackStore = defineStore('playback', {
       // Whatever was waiting belonged to the connection being replaced -
       // the new one starts with its own buffer and its own tag.
       useRadioMetadataStore().cancelPendingTitle()
+      radioConnectionId = direct ? null : newRadioConnectionId()
       if (direct) {
         getAudioEngine().playLive(streamUrl)
         // The relay reports its own titles through the very same callback
@@ -1576,6 +1592,7 @@ export const usePlaybackStore = defineStore('playback', {
           // untouched). See connect/core/radio_relay.py.
           this.localQuality.format === 'original' ? undefined : this.localQuality.bitrate,
           this.localQuality.format === 'original' ? undefined : this.localQuality.format,
+          radioConnectionId ?? undefined,
         ),
         // The relay holds the station's connection and queues what this
         // device misses while it cannot be reached, so a gap here is

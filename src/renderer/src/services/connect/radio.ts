@@ -171,6 +171,7 @@ export function localRadioStreamUrl(
   streamUrl: string,
   maxBitrateKbps?: number,
   format?: string,
+  connectionId?: string,
 ): string {
   const params = new URLSearchParams({ url: streamUrl })
   if (token) params.set('token', token)
@@ -183,7 +184,28 @@ export function localRadioStreamUrl(
   // The format half of the same setting: it decides what a conversion comes
   // out as, and lets a station already in that format through untouched.
   if (format) params.set('format', format)
+  // Which start of the station this is. The element's own reconnects keep it
+  // (and add their reason), so the backend log can tell a browser asking
+  // again by itself - the same id with no reason - from a fresh start.
+  if (connectionId) params.set('conn', connectionId)
   return `${apiUrl}/stream/radio-local?${params.toString()}`
+}
+
+/** A short id for one start of a station - see localRadioStreamUrl(). Only
+ * has to tell the connections of one listening session apart in a log. */
+export function newRadioConnectionId(): string {
+  return Math.random().toString(36).slice(2, 8) || '0'
+}
+
+/** Tells connect this player heard `seconds` of silence on the relayed
+ * station - see AudioEngine.onSilence, and connect's
+ * /stream/radio-local/gap for why only the player can measure it. Best
+ * effort: a report that does not arrive changes nothing about playback. */
+export function reportRadioSilence(connectionId: string, seconds: number): void {
+  const params = new URLSearchParams({ seconds: seconds.toFixed(1), conn: connectionId })
+  void fetchConnect(`/stream/radio-local/gap?${params.toString()}`, { method: 'POST' }).catch(
+    () => {},
+  )
 }
 
 /** Matched on the path alone, so a query string (a cache-buster, an auth

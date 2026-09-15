@@ -7,6 +7,18 @@ Built into the app, always on:
 - `routes/stream.py`'s `DisconnectSnapshot` - on a real drop, logs position,
   `blocked_for` (how long the connection sat inside a single handoff), bytes
   delivered over wall time, loop lag, and the live connection count.
+- Radio gaps, split by where they happened (added 2026-09-15 for short gaps
+  heard on a desktop away from home). `[radio-relay] … station sent nothing
+  for Xs` and `… produced no audio for Xs` (`core/radio_relay.py`, from 2s)
+  are the station and the relay's ffmpeg. `[stream] Local player [...] heard
+  Xs of silence in relayed radio` is the player's own measurement, sent once
+  the sound is back (`AudioEngine.onSilence`), because a stall on the link to
+  a remote listener is swallowed by the reverse proxy's buffers and never
+  reaches the relay. A silence line with no relay line next to it happened
+  between connect and the listener. Every local radio line also carries
+  `[conn <id>, <platform browser>, range …]`: the same `conn` again without a
+  reconnect reason is the browser re-requesting by itself, a new `conn` is a
+  fresh start from the app.
 - `core/upnp_events.py` + `routes/upnp.py` - subscribes to a Sonos/DLNA
   renderer's AVTransport eventing and logs any device-reported transport
   problem. Log-only by design; it feeds nothing back into playback state.

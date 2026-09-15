@@ -120,6 +120,13 @@ _MAX_RECONNECT_DELAY_SECONDS = 60.0
 # working station produces.
 _STALL_TIMEOUT_SECONDS = 10.0
 
+# How long the station, or ffmpeg behind it, may go quiet before it is worth
+# a log line. Far below _STALL_TIMEOUT_SECONDS on purpose: a gap that short
+# never reaches a reconnect and left no trace at all, while a listener hears
+# anything past a player's few seconds of buffer. The station side is a
+# lower bound - see _run_once() - so a line here always means at least this.
+_SILENCE_LOG_SECONDS = 2.0
+
 # How much already-relayed audio a *listening* subscriber is handed the
 # moment it subscribes, and how much of it this keeps around to be able to.
 #
@@ -866,7 +873,14 @@ class RadioRelay:
                 # and drain below are paced on purpose and take as long as
                 # real time takes.
                 chunks = resp.aiter_bytes()
+                first = True
                 while True:
+                    # Only the wait for the station itself, not the drain()
+                    # below: data that arrived while this was held up by
+                    # ffmpeg's pacing is already buffered and returns at once,
+                    # which is also why a gap measured here can only be shorter
+                    # than the station's real one.
+                    waiting_since = time.monotonic()
                     try:
                         async with asyncio.timeout(_STALL_TIMEOUT_SECONDS):
                             chunk = await anext(chunks)
@@ -877,6 +891,12 @@ class RadioRelay:
                         # drop worth reconnecting and a clean return as a
                         # station that simply ended. A stall is the former.
                         raise RuntimeError(f"no data for {_STALL_TIMEOUT_SECONDS:.0f}s") from e
+                    waited = time.monotonic() - waiting_since
+                    if waited >= _SILENCE_LOG_SECONDS and not first:
+                        logger.info(
+                            f"[radio-relay] {self.url}: station sent nothing for {waited:.1f}s"
+                        )
+                    first = False
                     audio = demuxer.feed(chunk) if demuxer is not None else chunk
                     if not audio:
                         continue
@@ -950,10 +970,19 @@ class RadioRelay:
         the station. A subscriber's own GET /stream/radio connection just
         sees a brief gap in that case, not a hard close."""
         try:
+            first = True
             while True:
+                waiting_since = time.monotonic()
                 chunk = await stdout.read(8192)
                 if not chunk:
                     return
+                waited = time.monotonic() - waiting_since
+                if waited >= _SILENCE_LOG_SECONDS and not first:
+                    # Next to the station's own line, this says which of the
+                    # two went quiet: alone, it was ffmpeg (or this process)
+                    # that held the audio back.
+                    logger.info(f"[radio-relay] {self.url}: produced no audio for {waited:.1f}s")
+                first = False
                 self._remember_for_burst(chunk)
                 for q in list(self._audio_subscribers):
                     try:

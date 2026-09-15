@@ -14,7 +14,15 @@ import asyncio
 import logging
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
+from routes.stream import _client_kind
+
 STATION = "http://mp3channels.webradio.rockantenne.de/rockantenne"
+_WINDOWS_CHROME = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+)
 
 
 class FakeRelay:
@@ -128,6 +136,51 @@ class TestLocalRadioStream:
         assert r.status_code == 200
         assert "everything is fine" not in caplog.text
         assert "(reconnect: unrecognised)" in caplog.text
+
+    def test_names_the_connection_the_client_and_its_range(self, client, default_session, caplog):
+        """What tells a browser asking again by itself (the same conn, no
+        reason) from the app starting the station again (a new one), and a
+        desktop from a phone."""
+        default_session.radio_relay = FakeRelay()
+
+        with caplog.at_level(logging.INFO, logger="connect.stream"):
+            r = client.get(
+                f"/stream/radio-local?url={STATION}&conn=k3x9a",
+                headers={
+                    "User-Agent": _WINDOWS_CHROME,
+                    "Range": "bytes=0-",
+                },
+            )
+
+        assert r.status_code == 200
+        assert "[conn k3x9a, Windows Chrome, range bytes=0-]" in caplog.text
+
+    def test_leaves_a_malformed_connection_id_out_of_the_log(self, client, default_session, caplog):
+        default_session.radio_relay = FakeRelay()
+
+        with caplog.at_level(logging.INFO, logger="connect.stream"):
+            client.get(f"/stream/radio-local?url={STATION}&conn=INFO%20all%20fine")
+
+        assert "all fine" not in caplog.text
+        assert "conn " not in caplog.text
+
+    def test_a_player_reports_the_silence_it_heard(self, client, caplog):
+        """Behind a reverse proxy, a stalled link is swallowed by buffers
+        long before the relay could see it - only the player knows."""
+        with caplog.at_level(logging.INFO, logger="connect.stream"):
+            r = client.post(
+                "/stream/radio-local/gap?seconds=9.43&conn=k3x9a",
+                headers={"User-Agent": _WINDOWS_CHROME},
+            )
+
+        assert r.status_code == 200
+        assert (
+            "Local player [conn k3x9a, Windows Chrome] heard 9.4s of silence in relayed radio"
+            in caplog.text
+        )
+
+    def test_a_nonsensical_gap_is_rejected(self, client):
+        assert client.post("/stream/radio-local/gap?seconds=-1").status_code == 422
 
     def test_reuses_a_relay_already_running_for_the_same_station(self, client, default_session):
         """The element re-requests this URL on every reconnect of its own,
@@ -264,3 +317,36 @@ class TestLocalRelayTeardown:
 
         assert r.status_code == 200
         stop.assert_not_awaited()
+
+
+_WINDOWS_EDGE = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0"
+)
+_IPHONE_SAFARI = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
+)
+_LINUX_ELECTRON = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "beacon/1.3.0 Chrome/140.0.0.0 Electron/38.0.0 Safari/537.36"
+)
+_ANDROID_CHROME = (
+    "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/140.0.0.0 Mobile Safari/537.36"
+)
+
+
+@pytest.mark.parametrize(
+    ("user_agent", "expected"),
+    [
+        (_WINDOWS_CHROME, "Windows Chrome"),
+        (_WINDOWS_EDGE, "Windows Edge"),
+        (_IPHONE_SAFARI, "iOS Safari"),
+        (_LINUX_ELECTRON, "Linux Electron"),
+        (_ANDROID_CHROME, "Android Chrome"),
+        (None, "unknown platform unknown browser"),
+    ],
+)
+def test_client_kind(user_agent, expected):
+    assert _client_kind(user_agent) == expected
