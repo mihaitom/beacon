@@ -52,3 +52,9 @@ function parseDate(value: string | null | undefined): Date | null {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? null : date
 }
+
+/** A ReplayGain adjustment, signed so a boost cannot be mistaken for a cut. */
+export function formatGain(db?: number | null): string | null {
+  if (db == null) return null
+  return `${db > 0 ? '+' : ''}${db.toFixed(2)} dB`
+}

@@ -9,6 +9,7 @@ import {
   type SongColumnKey,
 } from '../songColumns'
 import { makeSong } from '@/stores/__tests__/fixtures'
+import type { Song } from '@/types/library'
 
 function keys(columns: { key: SongColumnKey }[]): SongColumnKey[] {
   return columns.map((column) => column.key)
@@ -113,6 +114,26 @@ describe('songColumns', () => {
     expect(cell('sampleRate', { sampleRate: 48000, bitDepth: null })).toBe('48 kHz')
     expect(cell('format', { format: 'flac', bitRate: 900 })).toBe('FLAC · 900 kbps')
     expect(cell('size', { size: 4 * 1024 * 1024 })).toBe('4.00 MB')
+  })
+
+  it('writes a gain signed, and an untagged track as a blank rather than 0 dB', () => {
+    expect(cell('trackGain', { replayGain: { trackGain: -7.5, albumGain: 1.25 } })).toBe('-7.50 dB')
+    expect(cell('albumGain', { replayGain: { trackGain: -7.5, albumGain: 1.25 } })).toBe('+1.25 dB')
+    expect(cell('albumGain', { replayGain: { trackGain: -7.5 } })).toBe('—')
+    expect(cell('trackGain', { replayGain: null })).toBe('—')
+  })
+
+  it('sorts an untagged track after every tagged one, a 0 dB track included', () => {
+    const sortValue = (replayGain: Song['replayGain']): number =>
+      Number(songColumn('trackGain')!.sortValue!(makeSong('s1', { replayGain })))
+
+    expect(sortValue(null)).toBeGreaterThan(sortValue({ trackGain: 0 }))
+    expect(sortValue(null)).toBeGreaterThan(sortValue({ trackGain: 24 }))
+  })
+
+  it('offers the gains only where the list responses carry them', () => {
+    expect(songColumnAvailable(songColumn('trackGain')!, 'jellyfin')).toBe(true)
+    expect(songColumnAvailable(songColumn('albumGain')!, 'plex')).toBe(false)
   })
 
   it("writes a date in the reader's own locale, and only the date", () => {

@@ -29,7 +29,7 @@
 
 import type { Song } from '@/types/library'
 import type { ServerType } from '@/services/capabilities'
-import { formatDate, formatDuration, formatSampleRate, formatSize } from './songFormat'
+import { formatDate, formatDuration, formatGain, formatSampleRate, formatSize } from './songFormat'
 
 export type SongColumnKey =
   | 'index'
@@ -47,6 +47,8 @@ export type SongColumnKey =
   | 'playCount'
   | 'format'
   | 'sampleRate'
+  | 'trackGain'
+  | 'albumGain'
   | 'size'
   | 'path'
   | 'duration'
@@ -92,7 +94,7 @@ export interface SongColumn {
   /** The servers whose *list* responses carry this field, or null for the
    * ones every server answers. A column is only as good as the data behind
    * it: Plex sends the size but not the path or the audio stream, and
-   * neither Jellyfin nor Plex reports BPM or a comment. Rather than a column
+   * neither Jellyfin nor Plex reports BPM or a comment, Plex no ReplayGain. Rather than a column
    * of dashes on every row, those are left out of the table and shown in the
    * menu as something this server does not report. */
   servers: ServerType[] | null
@@ -120,6 +122,12 @@ function timeValue(value: string | null | undefined): number {
   if (!value) return Number.MAX_SAFE_INTEGER
   const parsed = Date.parse(value)
   return Number.isNaN(parsed) ? Number.MAX_SAFE_INTEGER : parsed
+}
+
+/** An unset gain sorts after every real one, 0 dB included - which is a
+ * real answer, unlike an absent tag. */
+function gainValue(db: number | null | undefined): number {
+  return db ?? Number.MAX_SAFE_INTEGER
 }
 
 export const SONG_COLUMNS: SongColumn[] = [
@@ -339,6 +347,35 @@ export const SONG_COLUMNS: SongColumn[] = [
       if (rate && depth) return `${rate} · ${depth}`
       return text(rate ?? depth)
     },
+    servers: ['subsonic', 'jellyfin'],
+  },
+  // Two columns rather than one "track · album" pair like the sample rate:
+  // the two gains are the same unit and nothing but the heading would tell
+  // them apart, and each is a sort of its own.
+  {
+    key: 'trackGain',
+    labelKey: 'songInfo.replayGainTrack',
+    cell: 'text',
+    flex: '0 0 150px',
+    minWidth: '150px',
+    align: 'end',
+    optional: true,
+    skeletonWidth: '60',
+    sortValue: (song) => gainValue(song.replayGain?.trackGain),
+    text: (song) => text(formatGain(song.replayGain?.trackGain)),
+    servers: ['subsonic', 'jellyfin'],
+  },
+  {
+    key: 'albumGain',
+    labelKey: 'songInfo.replayGainAlbum',
+    cell: 'text',
+    flex: '0 0 150px',
+    minWidth: '150px',
+    align: 'end',
+    optional: true,
+    skeletonWidth: '60',
+    sortValue: (song) => gainValue(song.replayGain?.albumGain),
+    text: (song) => text(formatGain(song.replayGain?.albumGain)),
     servers: ['subsonic', 'jellyfin'],
   },
   {

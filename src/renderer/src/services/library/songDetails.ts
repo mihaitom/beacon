@@ -1,5 +1,11 @@
 import type { RawSongDetail } from '@/services/subsonic/types'
-import { formatDuration, formatSampleRate, formatSize, formatTimestamp } from './songFormat'
+import {
+  formatDuration,
+  formatGain,
+  formatSampleRate,
+  formatSize,
+  formatTimestamp,
+} from './songFormat'
 
 /**
  * Turns one track's record from the media server into the rows the info
@@ -34,11 +40,6 @@ export interface SongDetailSection {
 
 function names(entries?: { name: string }[]): string[] {
   return entries?.map((entry) => entry.name).filter(Boolean) ?? []
-}
-
-function formatGain(db?: number): string | null {
-  if (db == null) return null
-  return `${db > 0 ? '+' : ''}${db.toFixed(2)} dB`
 }
 
 function join(entries: string[]): string | null {

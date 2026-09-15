@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Two more columns for track lists: the ReplayGain adjustment of each track and of its album. Offered on Navidrome and Jellyfin, which report it; Plex does not
+
 ### Changed
 
 - On a Jellyfin server the sample rate, file size and path columns are now available too, and the format column shows each track's bitrate next to its format. Track lists from Jellyfin take a little longer to load for it
