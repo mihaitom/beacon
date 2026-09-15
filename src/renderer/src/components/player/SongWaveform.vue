@@ -17,12 +17,20 @@ import { getWaveform } from '@/services/connect/waveform'
 // the two player-adjacent visualizations.
 const PLAYED_COLOR = 'rgba(245, 169, 78, 0.85)'
 const UNPLAYED_COLOR = 'rgba(255, 255, 255, 0.22)'
-// A bit lighter than UNPLAYED_COLOR — the band between the playhead and how
-// far the stream is actually buffered, so a spotty connection reads as "some
-// of this is already downloaded" rather than looking identical to the part
-// nothing has fetched at all yet.
-const BUFFERED_COLOR = 'rgba(255, 255, 255, 0.4)'
 const MARKER_COLOR = 'rgba(255, 255, 255, 0.9)'
+// How far the stream is loaded gets its own thin bar below the waveform
+// instead of a third bar colour: the bars already carry position, and a
+// third shade of the same two colours on 1px-wide bars was a nuance
+// nobody could pick out on a dark screen. As a solid strip with a hard
+// edge at the buffer front it needs no fine gradation at all.
+const LOAD_BAR_COLOR = 'rgba(245, 169, 78, 0.75)'
+const LOAD_TRACK_COLOR = 'rgba(255, 255, 255, 0.1)'
+// CSS px, scaled by the device ratio in paint() — a fraction of the
+// height (the way the bars are sized) would turn this into a slab on a
+// taller instance of the component. The gap is what keeps the strip its
+// own row rather than a plinth the bars stand on.
+const LOAD_BAR_HEIGHT = 2
+const LOAD_BAR_GAP = 1
 
 export default {
   name: 'SongWaveform',
@@ -170,6 +178,34 @@ export default {
       // casting, same reasoning as PlayerBar.vue's seekPreviewPosition.
       this.$emit('end', this.positionFromEvent(e))
     },
+    /** The loading strip along the bottom edge: filled up to where the
+     * stream has got to, empty track beyond it, so the only hard edge in
+     * it is the buffer front.
+     *
+     * It runs from 0 rather than from the playhead, even though
+     * `buffered` only ever describes the range covering the current
+     * position (audioEngine.ts's reportBuffered()): whatever has played
+     * was there to play, and a strip starting mid-bar reads as broken
+     * rather than as "measured from here". After a seek forward into
+     * nothing the fill ends short of the playhead, which is honest — the
+     * playhead marker crosses the strip, so the gap is visible.
+     *
+     * Nothing is drawn at all when there is no buffer to report (casting,
+     * radio), rather than an empty track that would read as "nothing is
+     * loaded". */
+    paintLoadBar(
+      ctx: CanvasRenderingContext2D,
+      width: number,
+      y: number,
+      height: number,
+      bufferedX: number,
+    ) {
+      if (this.buffered <= 0) return
+      ctx.fillStyle = LOAD_TRACK_COLOR
+      ctx.fillRect(bufferedX, y, width - bufferedX, height)
+      ctx.fillStyle = LOAD_BAR_COLOR
+      ctx.fillRect(0, y, bufferedX, height)
+    },
     paint() {
       const canvas = this.$refs.canvasEl as HTMLCanvasElement | undefined
       const ctx = canvas?.getContext('2d')
@@ -183,16 +219,19 @@ export default {
       // drawing a marker off the visible edge.
       const playedRatio = this.duration > 0 ? this.modelValue / this.duration : 0
       const playedX = Math.min(width, playedRatio * width)
-      // Clamped to playedX: a stale buffered figure lagging behind a seek
-      // that just jumped past it must never paint the band *behind* the
-      // playhead instead of ahead of it.
-      const bufferedRatio =
-        this.duration > 0 ? Math.max(this.buffered, this.modelValue) / this.duration : 0
+      const bufferedRatio = this.duration > 0 ? this.buffered / this.duration : 0
       const bufferedX = Math.min(width, bufferedRatio * width)
-      // Baseline sits a bit above the component's actual bottom edge
-      // instead of bars touching it directly.
-      const bottomPadding = height * 0.12
-      const baseline = height - bottomPadding
+
+      const ratio = window.devicePixelRatio || 1
+      const loadBarHeight = Math.max(1, Math.round(LOAD_BAR_HEIGHT * ratio))
+      const loadBarY = height - loadBarHeight
+      // The bars end above the load bar, clear of it by at least a pixel.
+      // That room is reserved whether or not there is anything to load
+      // (casting and radio report 0), so the waveform keeps one height
+      // instead of growing a pixel the moment a local stream takes over
+      // from a cast.
+      const baseline = loadBarY - Math.max(1, Math.round(LOAD_BAR_GAP * ratio))
+      this.paintLoadBar(ctx, width, loadBarY, loadBarHeight, bufferedX)
 
       if (this.peaks.length === 0) {
         // A real track whose own waveform just hasn't loaded yet — radio
@@ -202,10 +241,6 @@ export default {
         // nothing honest to draw).
         ctx.fillStyle = UNPLAYED_COLOR
         ctx.fillRect(0, baseline - 2, width, 2)
-        if (bufferedX > playedX) {
-          ctx.fillStyle = BUFFERED_COLOR
-          ctx.fillRect(playedX, baseline - 2, bufferedX - playedX, 2)
-        }
         if (playedX > 0) {
           ctx.fillStyle = PLAYED_COLOR
           ctx.fillRect(0, baseline - 2, playedX, 2)
@@ -228,7 +263,7 @@ export default {
         // Only the upper half — bars grow up from a bottom baseline
         // instead of mirroring above/below a center line.
         const barHeight = Math.max(1, this.peaks[i]! * baseline * 0.9)
-        ctx.fillStyle = x < playedX ? PLAYED_COLOR : x < bufferedX ? BUFFERED_COLOR : UNPLAYED_COLOR
+        ctx.fillStyle = x < playedX ? PLAYED_COLOR : UNPLAYED_COLOR
         ctx.fillRect(x, baseline - barHeight, Math.max(0.5, barWidth - gap), barHeight)
       }
 

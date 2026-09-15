@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - On a Jellyfin server the sample rate, file size and path columns are now available too, and the format column shows each track's bitrate next to its format. Track lists from Jellyfin take a little longer to load for it
+- How far a track has loaded now shows as a thin strip along the bottom edge of the seek bar. It used to be a slightly lighter shade among the waveform bars themselves, which was hard to make out against the rest of the bar
 - Ending a cast no longer starts the music up over local speakers. Whatever was playing stays on the player bar, paused, and pressing play carries it on there. No device makes a sound it was not asked for now, on either end of a cast
 
 ### Fixed
