@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Running Beacon behind a reverse proxy no longer fills that proxy's log with a warning for every single request Beacon answers
 - Releasing a paused speaker after two hours now actually stops it. Beacon only forgot about it, so the speaker was left sitting on the paused stream with nothing able to end it any more
 - A cast that ended without the speaker letting go left the track's conversion running on the server, holding a connection to the music server open for as long as Beacon ran. One of those built up for every cast that ended that way; they now stop with the cast
 - A device added to a cast that was already running kept the stream shape of whichever device started it, so a speaker with tighter limits could be handed audio it cannot decode and stayed silent. The stream is now recalculated for the device that joins, and only interrupts the others when that device really does need something narrower

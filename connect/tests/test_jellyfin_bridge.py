@@ -962,11 +962,11 @@ def test_scrobble_requires_id_on_submission(client, jellyfin_session):
 # ── Binary passthrough (getCoverArt.view / stream.view) ─────────────────────
 
 
-def _mock_binary_httpx_client():
+def _mock_binary_httpx_client(extra_response_headers: dict | None = None):
     captured: dict = {}
     fake_response = MagicMock()
     fake_response.status_code = 200
-    fake_response.headers = {"content-type": "audio/mpeg"}
+    fake_response.headers = {"content-type": "audio/mpeg", **(extra_response_headers or {})}
 
     async def aiter_bytes():
         yield b"abc"
@@ -1004,6 +1004,19 @@ def test_cover_art_view_builds_jellyfin_image_url(client, jellyfin_session, monk
     r = client.get("/rest/getCoverArt.view?id=item-1&size=600")
     assert r.status_code == 200
     assert captured["url"] == "http://jf:8096/Items/item-1/Images/Primary?maxHeight=600"
+
+
+def test_binary_passthrough_drops_jellyfins_date_header(client, jellyfin_session, monkeypatch):
+    """Same reason as routes/proxy.py's own: uvicorn writes a Date, and a
+    forwarded one makes it two."""
+    upstream_date = "Mon, 01 Jan 1990 00:00:00 GMT"
+    fake_client, _ = _mock_binary_httpx_client({"date": upstream_date})
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/stream.view?id=song-1")
+
+    assert r.status_code == 200
+    assert r.headers.get("date") != upstream_date
 
 
 def test_cover_art_view_requires_id(client, jellyfin_session):

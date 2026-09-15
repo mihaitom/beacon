@@ -370,6 +370,36 @@ def test_proxy_drops_the_stale_content_length_when_the_response_was_compressed(
     assert r.headers.get("content-length") != "9999"
 
 
+def test_proxy_does_not_forward_the_media_servers_date_header(client, default_session):
+    """uvicorn writes a Date of its own, so a forwarded one arrives as a
+    second copy — which a reverse proxy in front of this drops, logging a
+    warning for every proxied request as it goes."""
+    from media import SubsonicClient
+
+    default_session.media = SubsonicClient("http://navidrome.internal:4533")
+    proxy_mod = _reload_proxy("http://navidrome.internal:4533")
+
+    upstream_date = "Mon, 01 Jan 1990 00:00:00 GMT"
+    fake_response = MagicMock()
+    fake_response.status_code = 200
+    fake_response.headers = {"content-type": "application/json", "date": upstream_date}
+
+    async def aiter_bytes():
+        yield b"{}"
+
+    fake_response.aiter_bytes = aiter_bytes
+    fake_response.aclose = AsyncMock()
+    mock_client = MagicMock()
+    mock_client.build_request = MagicMock(return_value=MagicMock())
+    mock_client.send = AsyncMock(return_value=fake_response)
+    mock_client.aclose = AsyncMock()
+
+    with patch.object(proxy_mod.httpx, "AsyncClient", MagicMock(return_value=mock_client)):
+        r = client.get("/rest/ping.view?u=user&t=token&s=salt&v=1.16.1&c=test&f=json")
+
+    assert r.headers.get("date") != upstream_date
+
+
 # ── Pairing-Liste (no hardware required) ──────────────────────────────────────
 
 

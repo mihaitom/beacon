@@ -55,7 +55,11 @@ _SKIP_REQ = {
     "x-forwarded-port",
     "forwarded",
 }
-_SKIP_RESP = {"transfer-encoding", "connection", "content-encoding"}
+# date: uvicorn writes its own, so forwarding the media server's leaves two
+# in the response. A reverse proxy in front of this drops one and logs a
+# warning for every single proxied request (1.4MB of nginx error.log in two
+# days, found 2026-09-15).
+_SKIP_RESP = {"transfer-encoding", "connection", "content-encoding", "date"}
 
 _ALL_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"]
 

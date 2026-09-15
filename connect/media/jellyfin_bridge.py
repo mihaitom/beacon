@@ -1036,7 +1036,16 @@ _BINARY_PATHS = {"getCoverArt.view", "stream.view"}
 # proven safe for Jellyfin specifically, just not yet hit. Dropping it lets
 # StreamingResponse fall back to chunked transfer encoding, which makes no
 # such promise to violate.
-_SKIP_RESP_HEADERS = {"transfer-encoding", "connection", "content-encoding", "content-length"}
+# date included for the same reason as in routes/proxy.py: uvicorn writes
+# its own, and a second one makes a reverse proxy in front of this log a
+# warning per request.
+_SKIP_RESP_HEADERS = {
+    "transfer-encoding",
+    "connection",
+    "content-encoding",
+    "content-length",
+    "date",
+}
 
 
 async def _stream_binary(request: Request, url: str, media: JellyfinClient) -> StreamingResponse:

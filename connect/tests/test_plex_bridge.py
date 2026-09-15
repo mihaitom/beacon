@@ -915,11 +915,11 @@ def test_stream_view_requires_id(client, plex_session):
 # ── Binary passthrough (getCoverArt.view) ────────────────────────────────────
 
 
-def _mock_binary_httpx_client():
+def _mock_binary_httpx_client(extra_response_headers: dict | None = None):
     captured: dict = {}
     fake_response = MagicMock()
     fake_response.status_code = 200
-    fake_response.headers = {"content-type": "image/jpeg"}
+    fake_response.headers = {"content-type": "image/jpeg", **(extra_response_headers or {})}
 
     async def aiter_bytes():
         yield b"abc"
@@ -938,6 +938,19 @@ def _mock_binary_httpx_client():
     mock_client.build_request = build_request
     mock_client.send = AsyncMock(return_value=fake_response)
     return mock_client, captured
+
+
+def test_binary_passthrough_drops_plexs_date_header(client, plex_session, monkeypatch):
+    """Same reason as routes/proxy.py's own: uvicorn writes a Date, and a
+    forwarded one makes it two."""
+    upstream_date = "Mon, 01 Jan 1990 00:00:00 GMT"
+    mock_client, _ = _mock_binary_httpx_client({"date": upstream_date})
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: mock_client)
+
+    r = client.get("/rest/getCoverArt.view?id=2001")
+
+    assert r.status_code == 200
+    assert r.headers.get("date") != upstream_date
 
 
 def test_get_cover_art_streams_binary(client, plex_session, monkeypatch):
