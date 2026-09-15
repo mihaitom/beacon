@@ -289,13 +289,41 @@ def test_reap_once_still_reaps_a_session_whose_delivery_wont_stop():
     assert registry.get("stale-unresponsive") is None
 
 
+def test_device_is_still_ours_matches_the_url_extension_the_device_was_given():
+    """Every dispatch builds its URL with a format extension (stream_url()'s
+    `content_type`) and the device reports that back verbatim, so comparing
+    against the bare URL never matched for a cast device at all. Observed
+    live 2026-09-14: a Sonos playing '.../stream/<id>.flac' was logged as
+    playing "not this session's stream" and left alone — the one check that
+    is supposed to decide whether a reap may stop a speaker always said no."""
+    from core.session import _device_is_still_ours
+    from core.state import stream_url
+
+    session, _ = _stale_session("flac-cast", f"{stream_url('flac-cast')}.flac")
+
+    assert asyncio.run(_device_is_still_ours(session)) is True
+
+
+def test_device_is_still_ours_is_not_fooled_by_another_session_with_an_extension():
+    """The extension is all that gets ignored — the session id in the URL
+    still has to be ours, or the 2026-08-22 incident is back."""
+    from core.session import _device_is_still_ours
+    from core.state import stream_url
+
+    session, _ = _stale_session("mine", f"{stream_url('someone-else')}.flac")
+
+    assert asyncio.run(_device_is_still_ours(session)) is False
+
+
 def test_device_is_still_ours_compares_against_the_station_url_for_radio():
     """Radio never goes through our own /stream — the station URL is what
-    was handed to the device, so that's what its answer has to match."""
+    was handed to the device, so that's what its answer has to match, whole.
+    A station URL ending in a format extension of its own is not ours to
+    trim off the way a /stream URL's is."""
     from core.session import _device_is_still_ours
 
-    session, _ = _stale_session("radio-session", "http://radio/stream")
-    session.state.radio_info = {"title": "FIP", "url": "http://radio/stream"}
+    session, _ = _stale_session("radio-session", "http://radio/stream.mp3")
+    session.state.radio_info = {"title": "FIP", "url": "http://radio/stream.mp3"}
 
     assert asyncio.run(_device_is_still_ours(session)) is True
 

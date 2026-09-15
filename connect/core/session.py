@@ -34,6 +34,7 @@ from .state import (
     stream_url,
     supports_radio_position,
 )
+from .streamer import strip_stream_extension
 from .visualizer_feed import ASSUMED_DEVICE_LEAD_SECONDS, VisualizerFeed
 
 logger = logging.getLogger("connect.session")
@@ -1146,7 +1147,6 @@ async def _device_is_still_ours(session: SessionState) -> bool:
     st = session.state
     if st.active_delivery is None:
         return False
-    expected = st.radio_info["url"] if st.radio_info else stream_url(session.session_id)
     try:
         uri = await st.active_delivery.current_uri()
     except Exception as e:
@@ -1154,7 +1154,18 @@ async def _device_is_still_ours(session: SessionState) -> bool:
         return True
     if uri is None:
         return True
-    if uri == expected:
+    if st.radio_info:
+        expected = st.radio_info["url"]
+        matches = uri == expected
+    else:
+        # Compared without the format extension the dispatched URL carries
+        # (stream_url()'s `content_type`) and the device reports back
+        # verbatim, rather than rebuilding it from the session's current
+        # format — which can have moved on, or not be set yet, since the
+        # dispatch.
+        expected = stream_url(session.session_id)
+        matches = strip_stream_extension(uri) == expected
+    if matches:
         return True
     logger.info(
         f"[reap] {session.session_id}: leaving {st.active_delivery!r} alone — it plays "

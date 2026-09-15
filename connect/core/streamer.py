@@ -1284,25 +1284,35 @@ async def stream_tracks(
 
         except asyncio.CancelledError:
             logger.info(f"[ffmpeg] Stream cancelled (Track {i + 1})")
-            if proc:
-                try:
-                    proc.kill()
-                except Exception as e:
-                    logger.debug(f"[ffmpeg] kill after cancellation failed: {e}")
-            if stderr_task:
-                stderr_task.cancel()
             raise  # propagate so stream_with_completion skips the track-end broadcast
 
         except Exception:
             logger.exception(f"[ffmpeg] Error on track {i + 1}")
-            if proc:
-                try:
-                    proc.kill()
-                except Exception as e:
-                    logger.debug(f"[ffmpeg] kill after error failed: {e}")
             # Propagate rather than `continue` — a genuine ffmpeg failure
             # (crash, decode error) is not a natural end either; see the
             # FileNotFoundError branch above for why this matters.
             raise
+
+        finally:
+            # Not in the except clauses, because the most common way out of
+            # this generator raises neither: a client disconnect cancels the
+            # *outer* generator (routes/stream.py's stream_with_completion)
+            # at its own yield, and `async for` doesn't close this one on
+            # the way out — it is finalised later, raising GeneratorExit, a
+            # BaseException. Left alive, ffmpeg blocks writing into a stdout
+            # nobody reads and holds its source connection open: one was
+            # found still running 19h after a play/pause (2026-09-14), with
+            # 5.8MB unread in its socket from the media server.
+            #
+            # Nothing here may await — a GeneratorExit that yields control
+            # becomes "async generator ignored GeneratorExit" — so the child
+            # is killed rather than waited on, and asyncio reaps it.
+            if proc and proc.returncode is None:
+                try:
+                    proc.kill()
+                except Exception as e:
+                    logger.debug(f"[ffmpeg] kill failed: {e}")
+            if stderr_task and not stderr_task.done():
+                stderr_task.cancel()
 
     logger.info("[ffmpeg] All tracks streamed")

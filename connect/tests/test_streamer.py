@@ -1222,7 +1222,10 @@ class _ConfigurableFakeProc:
     def __init__(
         self, stdout_chunks=(b"",), stderr: bytes = b"", returncode: int = 0, kill_error=None
     ):
-        self.returncode = returncode
+        # None until it exits, like a real Process — stream_tracks() reads
+        # this to decide whether a teardown still has anything to kill.
+        self.returncode = None
+        self._exit_code = returncode
         self.stdout = AsyncMock()
         self.stdout.read = AsyncMock(side_effect=list(stdout_chunks))
         self.stderr = AsyncMock()
@@ -1236,7 +1239,8 @@ class _ConfigurableFakeProc:
             raise self._kill_error
 
     async def wait(self):
-        return None
+        self.returncode = self._exit_code
+        return self.returncode
 
 
 def test_stream_tracks_yields_the_process_stdout_chunks():
@@ -1324,6 +1328,51 @@ def test_stream_tracks_kills_the_process_and_reraises_on_cancellation():
         asyncio.run(_run())
 
     assert proc.killed is True
+
+
+def test_stream_tracks_kills_the_process_when_the_generator_is_closed():
+    """The way this generator most often ends in practice, and the one that
+    used to leave ffmpeg behind: a client disconnect cancels the *outer*
+    generator (routes/stream.py's stream_with_completion) at its own yield,
+    while this one sits suspended at `yield chunk`. `async for` doesn't
+    close its iterator on the way out, so this one is finalised separately,
+    which raises GeneratorExit — a BaseException, invisible to both except
+    clauses. Observed live 2026-09-14: an ffmpeg still running 19h after a
+    play/pause, blocked writing into a stdout nobody read any more and
+    holding 5.8MB unread in its connection to the media server."""
+    proc = _ConfigurableFakeProc(stdout_chunks=[b"chunk", b"more", b""])
+
+    async def _fake_exec(*cmd, **kwargs):
+        return proc
+
+    async def _run():
+        with patch("asyncio.create_subprocess_exec", _fake_exec):
+            audio = stream_tracks(["http://nav/stream"])
+            assert await anext(audio) == b"chunk"
+            await audio.aclose()
+
+    asyncio.run(_run())
+
+    assert proc.killed is True
+
+
+def test_stream_tracks_leaves_a_finished_process_alone():
+    """The teardown only has something to do while ffmpeg is still running —
+    a track that ended normally has already been waited on, and killing it
+    again would mean signalling a pid that is no longer ffmpeg's."""
+    proc = _ConfigurableFakeProc(stdout_chunks=[b"chunk", b""])
+
+    async def _fake_exec(*cmd, **kwargs):
+        return proc
+
+    async def _run():
+        with patch("asyncio.create_subprocess_exec", _fake_exec):
+            async for _ in stream_tracks(["http://nav/stream"]):
+                pass
+
+    asyncio.run(_run())
+
+    assert proc.killed is False
 
 
 def test_stream_tracks_swallows_a_kill_error_during_cancellation():
