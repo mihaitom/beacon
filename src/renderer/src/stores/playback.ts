@@ -1687,13 +1687,15 @@ export const usePlaybackStore = defineStore('playback', {
      * else would leave that describing the previous track.
      *
      * Note this is not simply the setting — plan() applies it as a
-     * ceiling, so a track already below it is fetched untouched. */
-    localStreamUrl(song: Song): string {
+     * ceiling, so a track already below it is fetched untouched.
+     *
+     * `hls` is a parameter rather than asked here so that startLocalSong()
+     * can decide it once and act on the same answer the URL was built
+     * from — the engine has to be told which shape it is being handed. */
+    localStreamUrl(song: Song, hls = prefersHls()): string {
       const streamPlan = plan(song, this.localQuality)
       this.activeLocalStream = streamPlan
-      return useLibraryStore()
-        .client()
-        .streamUrl(song.id, streamPlan.quality, { hls: prefersHls() })
+      return useLibraryStore().client().streamUrl(song.id, streamPlan.quality, { hls })
     },
 
     /** Starts (or, with `autoplay: false`, only loads) `song` on the local
@@ -1718,7 +1720,8 @@ export const usePlaybackStore = defineStore('playback', {
      * happens either way - it is only the arithmetic in between that goes
      * away. */
     startLocalSong(song: Song, position: number, autoplay: boolean): void {
-      const url = this.localStreamUrl(song)
+      const hls = prefersHls()
+      const url = this.localStreamUrl(song, hls)
       const gain = this.replayGainMultiplier
       const engine = getAudioEngine()
       if (this.activeLocalStream?.quality.format === 'original') {
@@ -1740,8 +1743,8 @@ export const usePlaybackStore = defineStore('playback', {
       // from one that finished, and the next song starts instead of the
       // connection being picked back up (see playFrom()).
       const duration = song.duration ?? 0
-      if (autoplay) engine.playFrom(urlFor, position, gain, duration || null)
-      else engine.loadFrom(urlFor, position, gain, duration || null)
+      if (autoplay) engine.playFrom(urlFor, position, gain, duration || null, hls)
+      else engine.loadFrom(urlFor, position, gain, duration || null, hls)
       this.duration = duration
     },
 

@@ -210,6 +210,12 @@ export class AudioEngine {
   // seek back to, so the URL itself has to be asked for again at the
   // position playback had reached.
   private offsetStream = false
+  // Whether that offset stream is an HLS playlist rather than one
+  // continuous length-less response. Only reportBuffered() asks: a VOD
+  // playlist lists every segment's real duration (core/hls.py), so the
+  // element's `buffered` there is media time worth drawing, while the
+  // plain stream's is not.
+  private hlsStream = false
   // How an offset stream's URL is built for a given second. Held so a
   // reconnect can ask for the same stream again from where it dropped —
   // see reconnectOnDrop(). Null for every other kind of source.
@@ -235,16 +241,15 @@ export class AudioEngine {
   // file needs neither: it has a length, the element seeks within it, and
   // its currentTime already is the position.
   //
-  // Applied to onBufferedChange as well, for the one kind of stream that
-  // still reports one: the element's `buffered` ranges are in its own
-  // time, while everything the seek bar draws them alongside — the
-  // playhead, the track length — is in reported time, and reporting them
-  // unshifted put the band three minutes behind the playhead, where
-  // SongWaveform.vue's own clamp then hid it entirely. Neither kind of
-  // offset stream draws a band today (a live one has the whole seek bar
-  // replaced by RadioLiveStatus.vue, and a transcode's `buffered` says
-  // nothing useful — see reportBuffered()), so the shift is there for the
-  // reported position rather than for the band.
+  // Applied to onBufferedChange as well: the element's `buffered` ranges
+  // are in its own time, while everything the seek bar draws them
+  // alongside — the playhead, the track length — is in reported time, and
+  // reporting them unshifted put the band three minutes behind the
+  // playhead, where SongWaveform.vue's own clamp then hid it entirely.
+  // An HLS transcode is what that shift is actually for (see
+  // reportBuffered()); of the other two, a live stream has the whole seek
+  // bar replaced by RadioLiveStatus.vue and a continuous transcode
+  // reports no band at all.
   private positionOffset = 0
   // The track's real length, for an offset stream that carries none of its
   // own (see playFrom()). Only ever used to tell a stream that ended from
@@ -462,21 +467,28 @@ export class AudioEngine {
    * often right after a reconnectOnDrop() retry), which the seek bar draws
    * as no band at all.
    *
-   * Nothing at all for an offset stream, where 0 means "not knowable"
-   * rather than "nothing held". A transcode is served without a length
-   * (see playFrom()), so the browser has no way to map the bytes it is
-   * holding onto seconds, and what `buffered` reports there is only how
-   * far the demuxer has parsed ahead of the playhead — measured against
-   * Chromium 151, it sat at a flat 2.3-2.4s for the entire length of a
-   * track, at 192k mp3 and at 128k opus alike, while the browser was in
-   * fact holding around 9.5 MiB of that stream: seven minutes of audio at
-   * either bitrate, enough to play an 18-second network outage straight
-   * through without a single 'waiting' event. A band that says two
-   * seconds while seven minutes are in hand is not a smaller truth, it is
-   * the wrong one — and it is wrong in the direction that makes a healthy
-   * stream look like it is about to run dry. */
+   * Nothing at all for a *continuous* offset stream, where 0 means "not
+   * knowable" rather than "nothing held". A transcode is served without a
+   * length (see playFrom()), so the browser has no way to map the bytes
+   * it is holding onto seconds, and what `buffered` reports there is only
+   * how far the demuxer has parsed ahead of the playhead — measured
+   * against Chromium 151, it sat at a flat 2.3-2.4s for the entire length
+   * of a track, at 192k mp3 and at 128k opus alike, while the browser was
+   * in fact holding around 9.5 MiB of that stream: seven minutes of audio
+   * at either bitrate, enough to play an 18-second network outage
+   * straight through without a single 'waiting' event. A band that says
+   * two seconds while seven minutes are in hand is not a smaller truth,
+   * it is the wrong one — and it is wrong in the direction that makes a
+   * healthy stream look like it is about to run dry.
+   *
+   * The same transcode as HLS is the opposite case: the playlist lists
+   * every segment's duration up front (core/hls.py), so the element knows
+   * exactly how many seconds it is holding and its `buffered` is the real
+   * figure. Those seconds are counted from the playlist's own start,
+   * which is where playback was asked to begin, so positionOffset puts
+   * them back into the song's own time. */
   private reportBuffered(): void {
-    if (this.offsetStream) {
+    if (this.offsetStream && !this.hlsStream) {
       this.onBufferedChange?.(0)
       return
     }
@@ -850,14 +862,20 @@ export class AudioEngine {
    * stream does not carry. Only ever used to tell a stream that ended from
    * one that was cut off — see the 'ended' handler. Left out, a truncated
    * stream is indistinguishable from a finished one and the next song
-   * starts instead. */
+   * starts instead.
+   *
+   * `hls` says `urlFor` builds playlists rather than one continuous
+   * response — everything above holds either way, and the difference is
+   * only in how much of the buffer the element can account for (see
+   * reportBuffered()). */
   playFrom(
     urlFor: (seconds: number) => string,
     seconds: number,
     gain = 1,
     duration: number | null = null,
+    hls = false,
   ): void {
-    this.loadFrom(urlFor, seconds, gain, duration)
+    this.loadFrom(urlFor, seconds, gain, duration, hls)
     this.start()
   }
 
@@ -868,8 +886,9 @@ export class AudioEngine {
     seconds: number,
     gain = 1,
     duration: number | null = null,
+    hls = false,
   ): void {
-    this.loadSource(urlFor(seconds), seconds, gain, false, true)
+    this.loadSource(urlFor(seconds), seconds, gain, false, true, hls)
     this.urlForPosition = urlFor
     this.expectedDuration = duration
   }
@@ -903,6 +922,7 @@ export class AudioEngine {
     gain: number,
     live: boolean,
     offsetStream = false,
+    hls = false,
   ): void {
     this.cancelStartPositionRetry?.()
     this.cancelReconnect()
@@ -910,6 +930,7 @@ export class AudioEngine {
     this.liveStream = live
     this.holdsConnection = false
     this.offsetStream = offsetStream
+    this.hlsStream = hls
     this.positionOffset = offsetStream ? startPosition : 0
     // Cleared here rather than in each caller, so a plain file or a
     // station can never reconnect through the previous song's factory, and

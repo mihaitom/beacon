@@ -6,6 +6,7 @@ import SongWaveform from '../SongWaveform.vue'
 const CANVAS_WIDTH = 200
 const CANVAS_HEIGHT = 24
 const PLAYED_COLOR = 'rgba(245, 169, 78, 0.85)'
+const BUFFERED_COLOR = 'rgba(255, 255, 255, 0.4)'
 const MARKER_COLOR = 'rgba(255, 255, 255, 0.9)'
 
 interface FillRectCall {
@@ -55,6 +56,7 @@ function stubCanvas(): FillRectCall[] {
 function mountWaveform(props: {
   modelValue: number
   duration: number
+  buffered?: number
   disabled?: boolean
   dimmed?: boolean
 }) {
@@ -92,6 +94,37 @@ describe('SongWaveform', () => {
       expect(played?.w).toBe(CANVAS_WIDTH)
       const marker = calls.filter((c) => c.style === MARKER_COLOR).at(-1)
       expect(marker!.x).toBeLessThanOrEqual(CANVAS_WIDTH)
+    })
+
+    it('draws the buffered band from the playhead to where the stream has got to', () => {
+      const calls = stubCanvas()
+
+      mountWaveform({ modelValue: 60, duration: 240, buffered: 180, disabled: true })
+
+      const band = calls.filter((c) => c.style === BUFFERED_COLOR)
+      expect(band).toHaveLength(1)
+      expect(band[0]!.x).toBeCloseTo((60 / 240) * CANVAS_WIDTH, 5)
+      expect(band[0]!.w).toBeCloseTo((120 / 240) * CANVAS_WIDTH, 5)
+    })
+
+    it('draws none at all for a source with no buffer to report', () => {
+      // Casting and radio both pass 0 — the device buffers out of this
+      // app's reach, so there is nothing honest to draw.
+      const calls = stubCanvas()
+
+      mountWaveform({ modelValue: 60, duration: 240, buffered: 0, disabled: true })
+
+      expect(calls.some((c) => c.style === BUFFERED_COLOR)).toBe(false)
+    })
+
+    it('never draws it behind the playhead after a seek past it', () => {
+      // The buffered figure lags a seek by a moment: the element reports a
+      // new one only once it has fetched something at the new position.
+      const calls = stubCanvas()
+
+      mountWaveform({ modelValue: 200, duration: 240, buffered: 45, disabled: true })
+
+      expect(calls.some((c) => c.style === BUFFERED_COLOR)).toBe(false)
     })
 
     it('draws nothing played at duration 0, rather than a marker with no reference at all', () => {
