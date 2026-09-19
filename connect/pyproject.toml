@@ -25,6 +25,7 @@ dev = [
     "httpx2>=2.5.0",
     "ruff>=0.15.13",
     "pytest-cov>=7.1.0",
+    "pytest-timeout>=2.3",
 ]
 
 [tool.ruff]
@@ -80,6 +81,14 @@ ignore = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# A test that hangs would otherwise hold a CI runner until GitHub's own
+# six-hour ceiling and produce no output at all about where it stopped -
+# which is exactly what happened on 2026-09-19, twice, somewhere inside
+# test_playback.py. The slowest thing in this suite is a 5s teardown, so 60
+# is over ten times the real ceiling: it cannot fire on a merely slow
+# machine, and when it does fire it fails that one test with a traceback of
+# where it was stuck and lets the rest of the run finish.
+timeout = 60
 addopts = "-m 'not live'"
 markers = [
     "live: hits real third-party lyrics provider APIs over the network; excluded by default, run with `-m live`",
