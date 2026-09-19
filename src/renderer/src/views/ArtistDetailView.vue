@@ -17,6 +17,9 @@
         {{ totalSongCount }}
         {{ totalSongCount === 1 ? $t('library.song1') : $t('library.songsN') }}
       </template>
+      <template v-if="bio" #description>
+        <artist-bio :text="bio.text" :url="bio.url" :lang="bio.lang" />
+      </template>
       <!-- v-if on the template tag itself, not just the content inside —
        - DetailHeader.vue only renders its own #actions wrapper (reserving
        - margin-top, see that component's own comment on $slots.actions)
@@ -134,7 +137,13 @@ import AlbumShelf from '@/components/library/AlbumShelf.vue'
 import { readCardGridView, writeCardGridView } from '@/services/cardGridView'
 import SongTable from '@/components/library/SongTable.vue'
 import PageLoader from '@/components/PageLoader.vue'
-import { getArtistImages, getArtistLinks } from '@/services/connect/recommendations'
+import {
+  getArtistBio,
+  getArtistImages,
+  getArtistLinks,
+  type ArtistBio as ArtistBioData,
+} from '@/services/connect/recommendations'
+import ArtistBio from '@/components/library/ArtistBio.vue'
 import { toExternalLinkList, type ExternalLinkKey } from '@/components/library/externalArtistLinks'
 import type { Song } from '@/types/library'
 
@@ -149,7 +158,7 @@ const ALBUM_GRID_VIEW_KEY = 'beacon.artistGridView.albums'
 
 export default {
   name: 'ArtistDetailView',
-  components: { DetailHeader, AlbumShelf, SongTable, PageLoader },
+  components: { DetailHeader, AlbumShelf, SongTable, PageLoader, ArtistBio },
   data() {
     return {
       artist: null as ArtistDetail | null,
@@ -179,6 +188,7 @@ export default {
       // template only cares "is there a url for this key", not which
       // endpoint it came from.
       externalLinkUrls: {} as Partial<Record<ExternalLinkKey, string>>,
+      bio: null as ArtistBioData | null,
     }
   },
   computed: {
@@ -238,6 +248,10 @@ export default {
   },
   watch: {
     '$route.params.id': 'loadArtist',
+    // A different Wikipedia, not just different labels around the same text.
+    '$i18n.locale'() {
+      if (this.artist) void this.loadBio(this.artist.name, this.artist.id)
+    },
   },
   methods: {
     setAlbumGridView(value: boolean) {
@@ -250,6 +264,7 @@ export default {
       this.allTopSongs = null
       this.allSongsShown = false
       this.externalLinkUrls = {}
+      this.bio = null
       this.albumSortAscending = false
       // A newer navigation may resolve before this one, or move the route
       // on while a fetch is still in flight — the `$route.params.id === id`
@@ -266,6 +281,7 @@ export default {
       if (this.$route.params.id !== id) return
       this.artist = artist
       void this.loadExternalLinks(artist.name, id)
+      void this.loadBio(artist.name, id)
 
       this.loadingTopSongs = true
       try {
@@ -338,6 +354,19 @@ export default {
         console.error('[artist-detail] Artist links lookup failed:', links.reason)
       }
       this.externalLinkUrls = urls
+    },
+    // Same terms as loadExternalLinks() above: fired and forgotten, and a
+    // failure just leaves the paragraph out.
+    async loadBio(name: string, id: string) {
+      const locale = this.$i18n.locale
+      let bio: ArtistBioData | null = null
+      try {
+        bio = await getArtistBio(name, locale)
+      } catch (error) {
+        console.error('[artist-detail] Artist bio lookup failed:', error)
+      }
+      if (this.$route.params.id !== id || this.$i18n.locale !== locale) return
+      this.bio = bio
     },
     async toggleStar() {
       if (!this.artist) return

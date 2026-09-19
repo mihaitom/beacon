@@ -113,6 +113,7 @@ export default {
     newestFirst: 'Più recenti prima',
     oldestFirst: 'Più vecchi prima',
     showAllSongs: 'Mostra tutti',
+    showMore: 'Mostra altro',
     showLess: 'Mostra meno',
     allSongs: 'Tutti i brani',
     disc: 'Disco {number}',
@@ -559,7 +560,7 @@ export default {
       musicbrainz: {
         name: 'MusicBrainz',
         purpose:
-          'Associa i nomi degli artisti a un identificativo stabile, su cui si basano i consigli. Serve anche per i collegamenti nella pagina di un artista, che i consigli siano attivi o no.',
+          'Associa i nomi degli artisti a un identificativo stabile, su cui si basano i consigli. Serve anche per i collegamenti e il paragrafo di Wikipedia nella pagina di un artista, che i consigli siano attivi o no.',
         sends: 'Nomi di artisti della tua libreria.',
       },
       listenbrainz: {
@@ -574,6 +575,18 @@ export default {
           "Trova foto e pagina dell'artista per un artista suggerito e per la pagina dell'artista che hai aperto, che i consigli siano attivi o no.",
         sends:
           "Il nome dell'artista cercato: uno suggerito, oppure quello di cui hai aperto la pagina.",
+      },
+      wikidata: {
+        name: 'Wikidata',
+        purpose:
+          "Trovare l'articolo di Wikipedia sull'artista della pagina aperta, nella tua lingua se esiste.",
+        sends:
+          "L'identificativo Wikidata dell'artista, fornito da MusicBrainz, e la lingua dell'app - nessun nome.",
+      },
+      wikipedia: {
+        name: 'Wikipedia',
+        purpose: "Mostrare il primo paragrafo di quell'articolo nella pagina dell'artista.",
+        sends: "Il titolo dell'articolo. La lingua dell'app fa parte dell'indirizzo.",
       },
       plexAuth: {
         name: 'Plex',

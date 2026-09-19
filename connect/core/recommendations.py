@@ -30,9 +30,14 @@ to pull the artist's own MusicBrainz page plus whichever of Spotify/Apple
 Music/TIDAL/YouTube/Discogs it has on file, out of MusicBrainz's own
 url-rels relations, for an artist page ArtistDetailView.vue is already
 showing, via a second MusicBrainz call beyond the name search (see
-_fetch_artist_links()).
+_fetch_url_rels()).
 
-All four are cached to disk (see _load_cache()/_save_cache(), persisted
+A fifth (get_artist_bio()) rides on that same url-rels response: the
+Wikidata item MusicBrainz links there names the artist's Wikipedia article
+in every language, and Wikipedia's summary endpoint hands back its opening
+paragraph for the artist page.
+
+All five are cached to disk (see _load_cache()/_save_cache(), persisted
 the same CONNECT_DATA_DIR way as delivery/credentials.py/
 core/radio_stations.py) — an artist's MBID never changes, and neither
 similarity, a Deezer artist photo, nor these streaming links shift
@@ -52,8 +57,9 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
-from urllib.parse import urlparse
+from urllib.parse import quote, unquote, urlparse
 
 import httpx
 
@@ -69,6 +75,8 @@ _PATH = os.path.join(_DATA_DIR, "recommendations_cache.json")
 _MB_SEARCH_URL = "https://musicbrainz.org/ws/2/artist/"
 _LB_SIMILAR_URL = "https://labs.api.listenbrainz.org/similar-artists/json"
 _DEEZER_SEARCH_URL = "https://api.deezer.com/search/artist"
+_WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php"
+_WIKIPEDIA_SUMMARY_URL = "https://{lang}.wikipedia.org/api/rest_v1/page/summary/{title}"
 
 # Host -> our own short service key, for get_artist_links() below.
 # MusicBrainz's own relation `type` doesn't reliably distinguish these —
@@ -101,6 +109,14 @@ _LB_ALGORITHM = (
 # stay reasonably fresh too, without re-hitting ListenBrainz Labs on every
 # single Home load for seeds that keep recurring.
 _SIMILAR_TTL_SECONDS = 24 * 60 * 60  # 24 hours
+# Unlike an MBID or a streaming link, an article's opening gets edited - a
+# new album, a death, a split - so a bio is re-read now and then rather
+# than kept for good.
+_BIO_TTL_SECONDS = 30 * 24 * 60 * 60
+# The language ends up in a hostname (see _WIKIPEDIA_SUMMARY_URL), so only a
+# plain language code gets through; anything else falls back to English.
+_WIKI_LANG_RE = re.compile(r"^[a-z]{2,3}$")
+_WIKI_FALLBACK_LANG = "en"
 _TIMEOUT = 15.0
 
 _client = httpx.AsyncClient(timeout=_TIMEOUT, headers={"User-Agent": USER_AGENT})
@@ -177,25 +193,20 @@ def _musicbrainz_artist_url(mbid: str) -> str:
     return f"https://musicbrainz.org/artist/{mbid}"
 
 
-async def _fetch_artist_links(mbid: str) -> dict[str, str] | None:
-    """One MusicBrainz url-rels lookup for `mbid` — a second, separate call
-    from resolve_mbid()'s own search request, since MusicBrainz's search
-    endpoint doesn't support inc=url-rels, only a direct lookup-by-id does.
-    Shares resolve_mbid()'s _mb_lock/_mb_last_call rate limiting — both hit
-    musicbrainz.org, one shared budget, not a fresh one each.
+async def _fetch_url_rels(mbid: str) -> list[str] | None:
+    """Every URL MusicBrainz has on file for `mbid` - one url-rels lookup, a
+    second, separate call from resolve_mbid()'s own search request, since
+    MusicBrainz's search endpoint doesn't support inc=url-rels, only a
+    direct lookup-by-id does. Shares resolve_mbid()'s _mb_lock/_mb_last_call
+    rate limiting - both hit musicbrainz.org, one shared budget.
 
-    See _LINK_HOSTS' own comment for why matching is host-based rather than
-    trusting MusicBrainz's own relation `type`.
-
-    Returns None on a network/HTTP failure specifically — not a dict, even
-    an incomplete one — so _get_links_for_mbid() below can tell "MusicBrainz
-    is genuinely down/rate-limiting right now" apart from "a successful
-    response that just doesn't have any of these five services on file",
-    and only cache the latter. See resolve_mbid()'s identical fix for the
-    same class of bug, confirmed live: a burst of 503s here previously got
-    cached as this mbid's *permanent* answer (just the musicbrainz
-    self-link, everything else silently missing forever after), long after
-    MusicBrainz itself had recovered."""
+    Returns None on a network/HTTP failure specifically - not a list, even
+    an empty one - so callers can tell "MusicBrainz is down/rate-limiting
+    right now" apart from "a successful response with nothing useful in
+    it", and only cache the latter. See resolve_mbid()'s identical fix:
+    a burst of 503s here was once cached as this mbid's *permanent* answer
+    (just the musicbrainz self-link, everything else missing forever
+    after), long after MusicBrainz itself had recovered."""
     global _mb_last_call
     async with _mb_lock:
         wait = _MB_MIN_INTERVAL - (time.monotonic() - _mb_last_call)
@@ -213,59 +224,81 @@ async def _fetch_artist_links(mbid: str) -> dict[str, str] | None:
         finally:
             _mb_last_call = time.monotonic()
 
-    # MusicBrainz's own artist page — not from url-rels (an artist has no
-    # relation *to itself*), just the same MBID this whole lookup already
-    # required, same URL shape HomeView.vue's own fallback link already
-    # builds client-side for artists not yet in the library. Always
-    # present in a *successful* response, regardless of whether any of the
-    # five services below matched.
+    # Not every relation is a URL one (e.g. "member of band" points at
+    # another artist entity), so a missing resource is skipped, not an error.
+    urls = [(rel.get("url") or {}).get("resource") for rel in data.get("relations", [])]
+    return [url for url in urls if url]
+
+
+def _links_from_urls(mbid: str, urls: list[str]) -> dict[str, str]:
+    """See _LINK_HOSTS' own comment for why matching is host-based rather
+    than trusting MusicBrainz's own relation `type`."""
+    # MusicBrainz's own artist page - not from url-rels (an artist has no
+    # relation to itself), same URL shape HomeView.vue's own fallback link
+    # builds client-side. Always present, whether or not anything matched.
     links: dict[str, str] = {"musicbrainz": _musicbrainz_artist_url(mbid)}
-    for rel in data.get("relations", []):
-        url = (rel.get("url") or {}).get("resource")
-        if not url:
-            continue
+    for url in urls:
         host = urlparse(url).netloc.lower().removeprefix("www.")
         service = _LINK_HOSTS.get(host)
-        # First match wins — an artist can have more than one URL under the
-        # same generic MusicBrainz relation type (e.g. two "streaming"
-        # entries that both happen to be Apple Music, regional storefronts),
-        # and there's no signal here for which one is more "correct" than
-        # the other.
+        # First match wins - an artist can have several URLs for the same
+        # service (regional Apple Music storefronts), with no signal for
+        # which one is more "correct".
         if service and service not in links:
             links[service] = url
     return links
 
 
-async def _get_links_for_mbid(mbid: str) -> dict[str, str]:
-    """Cache-first wrapper around _fetch_artist_links() for one mbid —
-    shared by get_artist_links() and get_artist_links_by_mbid() below.
+def _wiki_ref_from_urls(urls: list[str]) -> dict[str, str | None]:
+    """Where get_artist_bio() finds the artist's article. MusicBrainz links
+    Wikidata almost everywhere now and Wikipedia itself only on older
+    entries, so the Wikidata item is the main route (it knows the article
+    in every language) and a direct Wikipedia link is the fallback."""
+    ref: dict[str, str | None] = {"wikidata": None, "wikipedia": None}
+    for url in urls:
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        if host == "www.wikidata.org" and parsed.path.startswith("/wiki/Q"):
+            ref["wikidata"] = ref["wikidata"] or parsed.path.removeprefix("/wiki/")
+        elif host.endswith(".wikipedia.org") and parsed.path.startswith("/wiki/"):
+            ref["wikipedia"] = ref["wikipedia"] or url
+    return ref
 
-    A fresh load/mutate/save around just this one mbid, not a shared cache
-    dict loaded once up front for a whole batch and saved once at the end
-    (the more obvious-looking shape, matching get_artist_images()'s own
-    batch) — when called from get_artist_links(), resolve_mbid() (called
-    per name, right before this) does its own independent load/save cycle
-    for the same underlying file. Holding a long-lived dict across those
-    calls would go stale the moment resolve_mbid() persists a newly-
-    resolved MBID mid-loop, and this function's own eventual save would
-    silently overwrite that with its own now-outdated snapshot — undoing
-    the very lookup that just happened.
 
-    A None from _fetch_artist_links() (a transient failure, see its own
-    comment) is deliberately never written to the cache — this returns a
-    one-off musicbrainz-only result for *this* call so the page still shows
-    something, but the next lookup for the same mbid gets a real retry
-    instead of being stuck with that incomplete answer forever."""
+async def _refresh_url_rels(mbid: str) -> tuple[dict[str, str], dict] | None:
+    """One url-rels lookup, feeding both caches that are built from it -
+    the external links and the Wikipedia reference - so neither ever costs
+    a second rate-limited MusicBrainz call for the same artist.
+
+    The cache is loaded *after* the fetch, not before: resolve_mbid() and
+    other requests save the same file while this one waits for its turn
+    under _mb_lock, and a copy loaded before that wait would overwrite
+    whatever they wrote in the meantime."""
+    urls = await _fetch_url_rels(mbid)
+    if urls is None:
+        return None
+    links = _links_from_urls(mbid, urls)
+    wiki = _wiki_ref_from_urls(urls)
     cache = _load_cache()
-    links_by_mbid = cache.setdefault("links_by_mbid", {})
-    if mbid in links_by_mbid:
-        return links_by_mbid[mbid]
-    links = await _fetch_artist_links(mbid)
-    if links is None:
-        return {"musicbrainz": _musicbrainz_artist_url(mbid)}
-    links_by_mbid[mbid] = links
+    cache.setdefault("links_by_mbid", {})[mbid] = links
+    cache.setdefault("wiki_by_mbid", {})[mbid] = wiki
     _save_cache(cache)
-    return links
+    return links, wiki
+
+
+async def _get_links_for_mbid(mbid: str) -> dict[str, str]:
+    """Cache-first external links for one mbid - shared by
+    get_artist_links() and get_artist_links_by_mbid() below.
+
+    A failed lookup (see _fetch_url_rels()) is never cached - this returns
+    a one-off musicbrainz-only result for *this* call so the page still
+    shows something, and the next lookup gets a real retry."""
+    cached = _load_cache().get("links_by_mbid", {}).get(mbid)
+    if cached is not None:
+        return cached
+    refreshed = await _refresh_url_rels(mbid)
+    if refreshed is None:
+        return {"musicbrainz": _musicbrainz_artist_url(mbid)}
+    return refreshed[0]
 
 
 async def get_artist_links(names: list[str]) -> dict[str, dict[str, str]]:
@@ -299,6 +332,111 @@ async def get_artist_links_by_mbid(mbids: list[str]) -> dict[str, dict[str, str]
     for mbid in mbids:
         results[mbid] = await _get_links_for_mbid(mbid)
     return results
+
+
+async def _wikipedia_title_from_wikidata(qid: str, lang: str) -> tuple[str, str] | None:
+    """(language, article title) for Wikidata item `qid` - the article in
+    `lang` if there is one, the English one otherwise. Raises on a
+    network/HTTP failure so the caller doesn't cache it as "no article"."""
+    sites = [f"{lang}wiki", f"{_WIKI_FALLBACK_LANG}wiki"]
+    r = await _client.get(
+        _WIKIDATA_API_URL,
+        params={
+            "action": "wbgetentities",
+            "ids": qid,
+            "props": "sitelinks",
+            "sitefilter": "|".join(sites),
+            "format": "json",
+        },
+    )
+    r.raise_for_status()
+    sitelinks = ((r.json().get("entities") or {}).get(qid) or {}).get("sitelinks") or {}
+    for site in sites:
+        title = (sitelinks.get(site) or {}).get("title")
+        if title:
+            return site.removesuffix("wiki"), title
+    return None
+
+
+def _wikipedia_title_from_url(url: str) -> tuple[str, str] | None:
+    parsed = urlparse(url)
+    lang = parsed.netloc.lower().removesuffix(".wikipedia.org").removeprefix("www.")
+    title = unquote(parsed.path.removeprefix("/wiki/"))
+    if not _WIKI_LANG_RE.match(lang) or not title:
+        return None
+    return lang, title
+
+
+async def _fetch_wikipedia_summary(lang: str, title: str) -> dict | None:
+    """The article's opening paragraph as plain text, plus the article's own
+    URL for the attribution link Wikipedia's licence asks for. None for a
+    missing article or a disambiguation page - the latter is a list of
+    other articles, not a description of anyone."""
+    r = await _client.get(
+        _WIKIPEDIA_SUMMARY_URL.format(lang=lang, title=quote(title.replace(" ", "_"), safe=""))
+    )
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    data = r.json()
+    text = (data.get("extract") or "").strip()
+    if data.get("type") != "standard" or not text:
+        return None
+    url = ((data.get("content_urls") or {}).get("desktop") or {}).get("page")
+    return {"text": text, "url": url, "lang": lang}
+
+
+async def _get_wiki_ref(mbid: str) -> dict | None:
+    """Cache-first - see _refresh_url_rels(). None only when MusicBrainz
+    couldn't be reached."""
+    cached = _load_cache().get("wiki_by_mbid", {}).get(mbid)
+    if cached is not None:
+        return cached
+    refreshed = await _refresh_url_rels(mbid)
+    return refreshed[1] if refreshed else None
+
+
+async def get_artist_bio(name: str, lang: str) -> dict | None:
+    """The opening paragraph of `name`'s Wikipedia article, in `lang` where
+    that Wikipedia has one and in English otherwise: `{text, url, lang}`,
+    `lang` being the one the text is actually in. None when there's nothing
+    to show - no MBID, no article, or a lookup that failed.
+
+    Cached per artist *and* requested language, since a German reader and
+    an English one get different articles for the same artist. A failed
+    lookup is not cached (same rule as resolve_mbid()); a genuine "no
+    article" is, for _BIO_TTL_SECONDS like any other answer."""
+    if not _WIKI_LANG_RE.match(lang):
+        lang = _WIKI_FALLBACK_LANG
+    mbid = await resolve_mbid(name)
+    if not mbid:
+        return None
+
+    cached = _load_cache().get("bio_by_mbid", {}).get(mbid, {}).get(lang)
+    if cached and time.time() - cached["fetched_at"] < _BIO_TTL_SECONDS:
+        return cached["bio"]
+
+    ref = await _get_wiki_ref(mbid)
+    if ref is None:
+        return None
+    try:
+        article = None
+        if ref.get("wikidata"):
+            article = await _wikipedia_title_from_wikidata(ref["wikidata"], lang)
+        if article is None and ref.get("wikipedia"):
+            article = _wikipedia_title_from_url(ref["wikipedia"])
+        bio = await _fetch_wikipedia_summary(*article) if article else None
+    except (httpx.HTTPError, ValueError) as e:
+        logger.warning(f"[recommendations] Wikipedia lookup failed for {name!r}: {e}")
+        return None
+
+    cache = _load_cache()
+    cache.setdefault("bio_by_mbid", {}).setdefault(mbid, {})[lang] = {
+        "fetched_at": time.time(),
+        "bio": bio,
+    }
+    _save_cache(cache)
+    return bio
 
 
 async def _fetch_similar_batch(mbids: list[str]) -> dict[str, list[dict]]:

@@ -9,12 +9,14 @@ import { i18n } from '@/i18n'
 import { useLibraryStore, TOP_SONGS_LIMIT } from '@/stores/library'
 import type { Album, Song } from '@/types/library'
 import { makeSong } from '@/stores/__tests__/fixtures'
+import { getArtistBio, type ArtistBio } from '@/services/connect/recommendations'
 import ArtistDetailView from '../ArtistDetailView.vue'
 
 // Fired and forgotten by loadArtist(); a real one would hit the network.
 vi.mock('@/services/connect/recommendations', () => ({
   getArtistImages: vi.fn().mockResolvedValue({}),
   getArtistLinks: vi.fn().mockResolvedValue({}),
+  getArtistBio: vi.fn().mockResolvedValue(null),
 }))
 
 const vuetify = createVuetify({ components, directives })
@@ -27,6 +29,7 @@ interface ArtistVm {
   topSongs: Song[]
   allTopSongs: Song[] | null
   allSongsShown: boolean
+  bio: ArtistBio | null
   loadingAllSongs: boolean
   readonly totalSongCount: number
   readonly canToggleAllSongs: boolean
@@ -88,6 +91,7 @@ async function mountArtist(artist: ArtistDetail | null, topSongs: Song[] = []) {
 beforeEach(() => {
   setActivePinia(createPinia())
   vi.clearAllMocks()
+  ;(i18n.global.locale as unknown as string) = 'en'
 })
 
 describe('ArtistDetailView album sorting', () => {
@@ -327,5 +331,83 @@ describe('ArtistDetailView navigating between artists', () => {
     await vm.loadArtist()
 
     expect(vm.topSongs).toEqual([])
+  })
+})
+
+describe('ArtistDetailView Wikipedia paragraph', () => {
+  const BIO: ArtistBio = {
+    text: 'Eine Band.',
+    url: 'https://de.wikipedia.org/wiki/X',
+    lang: 'de',
+  }
+
+  // clearAllMocks() leaves a resolved value set by an earlier test in place.
+  beforeEach(() => {
+    vi.mocked(getArtistBio).mockReset().mockResolvedValue(null)
+  })
+
+  it("asks in the app's language and shows what comes back", async () => {
+    ;(i18n.global.locale as unknown as string) = 'de'
+    vi.mocked(getArtistBio).mockResolvedValue(BIO)
+
+    const { vm } = await mountArtist(makeArtist([album('x', 2000)]))
+
+    expect(getArtistBio).toHaveBeenCalledWith('Artist One', 'de')
+    expect(vm.bio).toEqual(BIO)
+  })
+
+  it('asks again when the language changes', async () => {
+    vi.mocked(getArtistBio).mockResolvedValue(BIO)
+    await mountArtist(makeArtist([album('x', 2000)]))
+
+    ;(i18n.global.locale as unknown as string) = 'fr'
+    await flushPromises()
+
+    expect(getArtistBio).toHaveBeenLastCalledWith('Artist One', 'fr')
+  })
+
+  it('discards a paragraph that arrives after the route moved on', async () => {
+    const { vm, store, router } = await mountArtist(makeArtist([album('x', 2000)]))
+    let resolveStale: (b: ArtistBio | null) => void = () => {}
+    vi.mocked(getArtistBio).mockImplementationOnce(
+      () => new Promise<ArtistBio | null>((r) => (resolveStale = r)),
+    )
+    vi.mocked(store.fetchArtist).mockImplementation((id: string) =>
+      Promise.resolve(makeArtist([album('x', 2000)], id)),
+    )
+
+    const loading = vm.loadArtist()
+    await flushPromises()
+    await router.push('/artists/a2')
+    await flushPromises()
+    resolveStale(BIO)
+    await loading
+    await flushPromises()
+
+    expect(vm.bio).toBeNull()
+  })
+
+  it("does not show one artist's paragraph while the next one's is loading", async () => {
+    vi.mocked(getArtistBio).mockResolvedValueOnce(BIO)
+    const { vm, router, store } = await mountArtist(makeArtist([album('x', 2000)]))
+    vi.mocked(getArtistBio).mockReturnValue(new Promise<ArtistBio | null>(() => {}))
+    vi.mocked(store.fetchArtist).mockImplementation((id: string) =>
+      Promise.resolve(makeArtist([album('x', 2000)], id)),
+    )
+
+    await router.push('/artists/a2')
+    await flushPromises()
+
+    expect(vm.bio).toBeNull()
+  })
+
+  it('leaves the paragraph out when the lookup fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(getArtistBio).mockRejectedValue(new Error('offline'))
+
+    const { vm } = await mountArtist(makeArtist([album('x', 2000)]))
+
+    expect(vm.bio).toBeNull()
+    expect(vm.artist).not.toBeNull()
   })
 })

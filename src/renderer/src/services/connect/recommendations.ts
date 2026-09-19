@@ -122,3 +122,26 @@ export async function getArtistLinksByMbid(mbids: string[]): Promise<Record<stri
   )
   return data.links
 }
+
+export interface ArtistBio {
+  /** The article's opening paragraph, plain text. */
+  text: string
+  /** The article itself - Wikipedia's licence asks for the link back. */
+  url: string | null
+  /** The language `text` is in: the one asked for, or English where that
+   * Wikipedia has no article on the artist. */
+  lang: string
+}
+
+/** The opening paragraph of the artist's Wikipedia article, found through
+ * the Wikidata item MusicBrainz links (see connect/core/recommendations.py's
+ * get_artist_bio()), in `lang` where possible. Same terms as getArtistLinks():
+ * one lookup for the artist page actually open, not gated by the
+ * recommendations toggle. `null` means there is nothing to show. */
+export async function getArtistBio(name: string, lang: string): Promise<ArtistBio | null> {
+  const params = new URLSearchParams({ name, lang })
+  const data = await fetchConnect<{ bio: ArtistBio | null }>(
+    `/recommendations/artist-bio?${params.toString()}`,
+  )
+  return data.bio
+}

@@ -138,6 +138,10 @@ const SERVICES = {
       // Same partial gating as MusicBrainz above.
       optOut: 'recommendationsPartial',
     },
+    // Both only ever for the artist page that is open, like the links
+    // above, so neither carries a chip.
+    { key: 'wikidata', host: 'www.wikidata.org', url: 'https://www.wikidata.org/' },
+    { key: 'wikipedia', host: 'wikipedia.org', url: 'https://www.wikipedia.org/' },
     { key: 'plexAuth', host: 'plex.tv', url: 'https://www.plex.tv/' },
   ],
 } as const

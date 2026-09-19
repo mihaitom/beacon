@@ -19,13 +19,11 @@ def _tmp_path(tmp_dir: str) -> str:
 
 
 @pytest.fixture(autouse=True)
-def _reset_rate_limiter():
-    # Module-level, persists across tests otherwise — a cache-miss test
-    # running within _MB_MIN_INTERVAL of a previous one would otherwise
-    # incur a real sleep. 0.0 puts the "last call" far enough in
-    # time.monotonic()'s past that the very next call never waits.
-    recommendations._mb_last_call = 0.0
-    yield
+def _disable_rate_limiter():
+    # A name search followed by a url-rels lookup would otherwise sleep a
+    # real 1.1s inside a single test. Nothing here tests the limit itself.
+    with patch.object(recommendations, "_MB_MIN_INTERVAL", 0.0):
+        yield
 
 
 def _mb_response(url: str, mbid: str | None) -> httpx.Response:
@@ -995,3 +993,326 @@ def test_rank_similar_honours_the_limit():
     seed = [{"name": f"A{i}", "mbid": str(i), "score": 100 - i} for i in range(30)]
 
     assert len(rank_similar([seed], set(), 5)) == 5
+
+
+# ── get_artist_bio ────────────────────────────────────────────────────────
+
+
+def _json_response(url: str, payload: dict, status: int = 200) -> httpx.Response:
+    return httpx.Response(status, json=payload, request=httpx.Request("GET", url))
+
+
+def _summary(title: str, lang: str, text: str, page_type: str = "standard") -> dict:
+    return {
+        "type": page_type,
+        "extract": text,
+        "content_urls": {"desktop": {"page": f"https://{lang}.wikipedia.org/wiki/{title}"}},
+    }
+
+
+def _fake_web(relations: list[dict], sitelinks: dict[str, str], summaries: dict[str, dict]):
+    """One stand-in for all three hosts: MusicBrainz (name search and
+    url-rels), Wikidata's sitelinks and Wikipedia's summary endpoint, the
+    latter keyed by the URL's own "<lang>.wikipedia.org/.../<title>" tail."""
+
+    def fake_get(url, params=None):
+        if "musicbrainz.org" in url:
+            if params and "inc" in params:
+                return _mb_url_rels_response(url, relations)
+            return _mb_response(url, "mbid-1")
+        if "wikidata.org" in url:
+            wanted = params["sitefilter"].split("|")
+            links = {s: {"title": t} for s, t in sitelinks.items() if s in wanted}
+            return _json_response(url, {"entities": {params["ids"]: {"sitelinks": links}}})
+        for key, payload in summaries.items():
+            lang, title = key.split(":", 1)
+            if url.startswith(f"https://{lang}.wikipedia.org/") and url.endswith(f"/{title}"):
+                return _json_response(url, payload)
+        return _json_response(url, {}, status=404)
+
+    return fake_get
+
+
+_WIKIDATA_REL = _url_rel("wikidata", "https://www.wikidata.org/wiki/Q44190")
+
+
+async def test_get_artist_bio_reads_the_article_in_the_requested_language():
+    with tempfile.TemporaryDirectory() as d:
+        with (
+            patch.object(recommendations, "_PATH", _tmp_path(d)),
+            patch.object(recommendations, "_client") as client,
+        ):
+            client.get = AsyncMock(
+                side_effect=_fake_web(
+                    [_WIKIDATA_REL],
+                    {"dewiki": "Radiohead", "enwiki": "Radiohead"},
+                    {
+                        "de:Radiohead": _summary("Radiohead", "de", "Eine britische Band."),
+                        "en:Radiohead": _summary("Radiohead", "en", "An English band."),
+                    },
+                )
+            )
+            bio = await recommendations.get_artist_bio("Radiohead", "de")
+
+    assert bio == {
+        "text": "Eine britische Band.",
+        "url": "https://de.wikipedia.org/wiki/Radiohead",
+        "lang": "de",
+    }
+
+
+async def test_get_artist_bio_falls_back_to_english_without_an_article_in_the_language():
+    with tempfile.TemporaryDirectory() as d:
+        with (
+            patch.object(recommendations, "_PATH", _tmp_path(d)),
+            patch.object(recommendations, "_client") as client,
+        ):
+            client.get = AsyncMock(
+                side_effect=_fake_web(
+                    [_WIKIDATA_REL],
+                    {"enwiki": "Small Band"},
+                    {"en:Small_Band": _summary("Small_Band", "en", "A small band.")},
+                )
+            )
+            bio = await recommendations.get_artist_bio("Small Band", "it")
+
+    assert bio["lang"] == "en"
+    assert bio["text"] == "A small band."
+
+
+async def test_get_artist_bio_encodes_a_slash_in_the_title():
+    """AC/DC: an unencoded slash would ask Wikipedia for a sub-path instead
+    of the article."""
+    with tempfile.TemporaryDirectory() as d:
+        with (
+            patch.object(recommendations, "_PATH", _tmp_path(d)),
+            patch.object(recommendations, "_client") as client,
+        ):
+            client.get = AsyncMock(
+                side_effect=_fake_web(
+                    [_WIKIDATA_REL],
+                    {"enwiki": "AC/DC"},
+                    {"en:AC%2FDC": _summary("AC%2FDC", "en", "An Australian band.")},
+                )
+            )
+            bio = await recommendations.get_artist_bio("AC/DC", "en")
+
+    assert bio["text"] == "An Australian band."
+
+
+async def test_get_artist_bio_uses_a_direct_wikipedia_link_when_there_is_no_wikidata_item():
+    with tempfile.TemporaryDirectory() as d:
+        with (
+            patch.object(recommendations, "_PATH", _tmp_path(d)),
+            patch.object(recommendations, "_client") as client,
+        ):
+            client.get = AsyncMock(
+                side_effect=_fake_web(
+                    [_url_rel("wikipedia", "https://fr.wikipedia.org/wiki/Air_(groupe)")],
+                    {},
+                    {"fr:Air_%28groupe%29": _summary("Air_(groupe)", "fr", "Un duo.")},
+                )
+            )
+            bio = await recommendations.get_artist_bio("Air", "de")
+
+    assert bio == {
+        "text": "Un duo.",
+        "url": "https://fr.wikipedia.org/wiki/Air_(groupe)",
+        "lang": "fr",
+    }
+
+
+async def test_get_artist_bio_ignores_a_language_that_is_not_a_language_code():
+    """The language becomes part of a hostname - anything but a plain code
+    must not reach it."""
+    with tempfile.TemporaryDirectory() as d:
+        with (
+            patch.object(recommendations, "_PATH", _tmp_path(d)),
+            patch.object(recommendations, "_client") as client,
+        ):
+            client.get = AsyncMock(
+                side_effect=_fake_web(
+                    [_WIKIDATA_REL],
+                    {"enwiki": "Radiohead"},
+                    {"en:Radiohead": _summary("Radiohead", "en", "An English band.")},
+                )
+            )
+            bio = await recommendations.get_artist_bio("Radiohead", "evil.example.com/x")
+
+    assert bio["lang"] == "en"
+    requested = [str(c.args) + str(c.kwargs) for c in client.get.call_args_list]
+    assert not any("evil" in call for call in requested)
+
+
+async def test_get_artist_bio_skips_a_disambiguation_page():
+    with tempfile.TemporaryDirectory() as d:
+        with (
+            patch.object(recommendations, "_PATH", _tmp_path(d)),
+            patch.object(recommendations, "_client") as client,
+        ):
+            client.get = AsyncMock(
+                side_effect=_fake_web(
+                    [_WIKIDATA_REL],
+                    {"enwiki": "Mercury"},
+                    {
+                        "en:Mercury": _summary(
+                            "Mercury", "en", "Mercury may refer to:", "disambiguation"
+                        )
+                    },
+                )
+            )
+            bio = await recommendations.get_artist_bio("Mercury", "en")
+
+    assert bio is None
+
+
+async def test_get_artist_bio_is_none_without_an_mbid_and_asks_nobody():
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"mbid_by_name": {"obscure act": None}}, f)
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+            bio = await recommendations.get_artist_bio("Obscure Act", "en")
+
+    assert bio is None
+    client.get.assert_not_called()
+
+
+async def test_get_artist_bio_serves_a_fresh_cache_entry_without_the_network():
+    cached = {"text": "Cached.", "url": "https://en.wikipedia.org/wiki/X", "lang": "en"}
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "mbid_by_name": {"x": "mbid-1"},
+                    "bio_by_mbid": {"mbid-1": {"en": {"fetched_at": time.time(), "bio": cached}}},
+                },
+                f,
+            )
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+            bio = await recommendations.get_artist_bio("X", "en")
+
+    assert bio == cached
+    client.get.assert_not_called()
+
+
+async def test_get_artist_bio_rereads_a_stale_cache_entry():
+    stale = time.time() - recommendations._BIO_TTL_SECONDS - 1
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "mbid_by_name": {"radiohead": "mbid-1"},
+                    "wiki_by_mbid": {"mbid-1": {"wikidata": "Q44190", "wikipedia": None}},
+                    "bio_by_mbid": {"mbid-1": {"en": {"fetched_at": stale, "bio": None}}},
+                },
+                f,
+            )
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+            client.get = AsyncMock(
+                side_effect=_fake_web(
+                    [],
+                    {"enwiki": "Radiohead"},
+                    {"en:Radiohead": _summary("Radiohead", "en", "An English band.")},
+                )
+            )
+            bio = await recommendations.get_artist_bio("Radiohead", "en")
+
+    assert bio["text"] == "An English band."
+    # The Wikidata item was already known - no MusicBrainz call to find it.
+    assert not any("musicbrainz" in c.args[0] for c in client.get.call_args_list)
+
+
+async def test_get_artist_bio_does_not_cache_a_failed_wikipedia_call():
+    """Same rule as resolve_mbid(): an outage must not be remembered as
+    "this artist has no article"."""
+    with tempfile.TemporaryDirectory() as d:
+        with (
+            patch.object(recommendations, "_PATH", _tmp_path(d)),
+            patch.object(recommendations, "_client") as client,
+        ):
+            working = _fake_web(
+                [_WIKIDATA_REL],
+                {"enwiki": "Radiohead"},
+                {"en:Radiohead": _summary("Radiohead", "en", "An English band.")},
+            )
+
+            def wikipedia_down(url, params=None):
+                if "wikipedia.org" in url:
+                    return _json_response(url, {}, status=503)
+                return working(url, params)
+
+            client.get = AsyncMock(side_effect=wikipedia_down)
+            assert await recommendations.get_artist_bio("Radiohead", "en") is None
+            assert "bio_by_mbid" not in recommendations._load_cache()
+
+            client.get = AsyncMock(side_effect=working)
+            bio = await recommendations.get_artist_bio("Radiohead", "en")
+
+    assert bio["text"] == "An English band."
+
+
+async def test_links_and_wikipedia_reference_share_one_musicbrainz_lookup():
+    """Both come out of the same url-rels response; the second of the two
+    must not cost another rate-limited MusicBrainz call."""
+    with tempfile.TemporaryDirectory() as d:
+        with (
+            patch.object(recommendations, "_PATH", _tmp_path(d)),
+            patch.object(recommendations, "_client") as client,
+        ):
+            client.get = AsyncMock(
+                side_effect=_fake_web(
+                    [_WIKIDATA_REL, _url_rel("youtube", "https://www.youtube.com/channel/abc")],
+                    {"enwiki": "Radiohead"},
+                    {"en:Radiohead": _summary("Radiohead", "en", "An English band.")},
+                )
+            )
+            links = await recommendations.get_artist_links(["Radiohead"])
+            bio = await recommendations.get_artist_bio("Radiohead", "en")
+
+    assert links["Radiohead"]["youtube"] == "https://www.youtube.com/channel/abc"
+    assert bio["text"] == "An English band."
+    url_rels_calls = [
+        c for c in client.get.call_args_list if (c.kwargs.get("params") or {}).get("inc")
+    ]
+    assert len(url_rels_calls) == 1
+
+
+async def test_get_artist_bio_looks_up_the_wikidata_item_for_links_cached_before_it_existed():
+    """Artists whose links were cached before bios existed have no Wikipedia
+    reference stored - they get one url-rels lookup, not "no article"."""
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "mbid_by_name": {"radiohead": "mbid-1"},
+                    "links_by_mbid": {"mbid-1": {"musicbrainz": "https://musicbrainz.org/x"}},
+                },
+                f,
+            )
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+            client.get = AsyncMock(
+                side_effect=_fake_web(
+                    [_WIKIDATA_REL],
+                    {"enwiki": "Radiohead"},
+                    {"en:Radiohead": _summary("Radiohead", "en", "An English band.")},
+                )
+            )
+            bio = await recommendations.get_artist_bio("Radiohead", "en")
+
+    assert bio["text"] == "An English band."

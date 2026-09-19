@@ -69,6 +69,7 @@
         <div v-if="$slots.meta" class="detail-header__meta">
           <slot name="meta" />
         </div>
+        <slot name="description" />
         <div v-if="$slots.actions" class="detail-header__actions">
           <slot name="actions" />
         </div>
@@ -223,8 +224,12 @@ export default {
   padding: 48px 32px 32px;
 }
 
+/* Centred rather than bottom-aligned with the text: once the text column
+ * is the taller one (an artist's Wikipedia paragraph), the picture would
+ * otherwise sink to the header's bottom edge. */
 .detail-header__cover {
   flex-shrink: 0;
+  align-self: center;
 }
 
 .detail-header__cover--zoomable {

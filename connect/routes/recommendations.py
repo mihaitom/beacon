@@ -1,11 +1,12 @@
 """routes/recommendations.py — GET /recommendations/similar-artists,
 GET /recommendations/artist-images, GET /recommendations/artist-links,
-GET /recommendations/artist-links-by-mbid
+GET /recommendations/artist-links-by-mbid, GET /recommendations/artist-bio
 
 Machine-to-machine (CONNECT_TOKEN), not session-scoped — none of these
 touch session.media, all are pure MusicBrainz/ListenBrainz/Deezer lookups
 keyed on whatever artist names (or, for artist-links-by-mbid, MBIDs) the
-frontend already knows (see core/recommendations.py). Opt-out lives
+frontend already knows (see core/recommendations.py); artist-bio goes on to
+Wikidata and Wikipedia from there. Opt-out lives
 entirely in the frontend (a localStorage toggle — see
 stores/recommendations.ts): similar-artists and artist-images are only ever
 called from HomeView.vue's shelves, which just don't fire when the toggle
@@ -14,13 +15,15 @@ shelves) *and* from ArtistDetailView.vue for whichever artist page happens
 to be open — independent of the toggle there, since a single on-demand
 lookup for the one artist you're actively looking at isn't the kind of
 unasked-for background pass the toggle exists to guard against; see that
-view's own comment.
+view's own comment. artist-bio is only ever called from that artist page,
+on the same terms.
 """
 
 from fastapi import APIRouter, Depends, Query
 
 from core.auth import require_token
 from core.recommendations import (
+    get_artist_bio,
     get_artist_images,
     get_artist_links,
     get_artist_links_by_mbid,
@@ -52,3 +55,9 @@ async def artist_links(name: list[str] = Query(default=[])):
 async def artist_links_by_mbid(mbid: list[str] = Query(default=[])):
     links = await get_artist_links_by_mbid(mbid)
     return {"links": links}
+
+
+@router.get("/artist-bio")
+async def artist_bio(name: str, lang: str = "en"):
+    bio = await get_artist_bio(name, lang)
+    return {"bio": bio}
