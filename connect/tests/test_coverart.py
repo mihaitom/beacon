@@ -28,7 +28,9 @@ def _public_dns(monkeypatch):
     monkeypatch.setattr(coverart_module, "_resolve_addresses", AsyncMock(return_value=["93.0.0.1"]))
 
 
-def _fake_client(*, content=b"img-bytes", content_type="image/jpeg", status_ok=True, status=None):
+def _fake_client(
+    *, content=b"img-bytes", content_type="image/jpeg", status_ok=True, status=None, text=""
+):
     """A stand-in for the shared httpx.AsyncClient each backend's real fetch
     goes through — captures the request it was given and answers with a
     canned image (or a failure, if status_ok is False; 404 by default, i.e.
@@ -37,6 +39,9 @@ def _fake_client(*, content=b"img-bytes", content_type="image/jpeg", status_ok=T
     response = MagicMock()
     response.headers = {"content-type": content_type}
     response.content = content
+    # Only read for a reply that is not an image — see _decode_image, which
+    # has to tell a Subsonic error document apart from a real "no artwork".
+    response.text = text
     response.status_code = status if status is not None else (200 if status_ok else 404)
     # Explicit: an unset MagicMock attribute is truthy, which would read as
     # "this is a redirect" in _fetch_image_url().
@@ -374,6 +379,63 @@ def test_batch_does_not_remember_a_server_failure_as_a_missing_cover(
     assert first.json()["results"] == {}
     assert second.json()["results"] == {}
     assert fake_client.get.await_count == 2
+
+
+# A Subsonic server reports a *failed* getCoverArt as HTTP 200 with an error
+# document, so the status code says nothing at all and the error code in the
+# body is the only thing that does. Found live 2026-09-19: a Navidrome whose
+# disk had filled up answered every cover it had not already cached this way,
+# which was read as "this album has no artwork" and remembered as such.
+_DISK_FULL = (
+    '<subsonic-response xmlns="http://subsonic.org/restapi" status="failed" '
+    'version="1.16.1" type="navidrome"><error code="0" message="Internal Server Error: '
+    'copying data to cache: write /data/cache/images/44/c3/44c3: no space left on device">'
+    "</error></subsonic-response>"
+)
+_NOT_FOUND = (
+    '<subsonic-response xmlns="http://subsonic.org/restapi" status="failed" '
+    'version="1.16.1" type="navidrome"><error code="70" message="Artwork not found">'
+    "</error></subsonic-response>"
+)
+
+
+def test_batch_retries_a_subsonic_error_document_instead_of_caching_it(
+    client, default_session, monkeypatch
+):
+    """The disk-full case. Reported at HTTP 200, so only the error code
+    tells it apart from a real miss — and getting that wrong blanks every
+    cover the server could not serve, for as long as the answer is cached,
+    including after the server is healthy again."""
+    default_session.media = SubsonicClient("http://navidrome.internal", credential="u=t&t=a&s=b")
+    fake_client, _ = _fake_client(content_type="application/xml", text=_DISK_FULL)
+    monkeypatch.setattr(coverart_module, "_get_subsonic_client", lambda: fake_client)
+
+    first = client.post("/cover-art/batch", json={"ids": ["al-1"]})
+    second = client.post("/cover-art/batch", json={"ids": ["al-1"]})
+
+    # Absent from the results entirely, which is what tells the browser to
+    # come back to it rather than remember it as art-less.
+    assert first.json()["results"] == {}
+    assert second.json()["results"] == {}
+    assert fake_client.get.await_count == 2
+
+
+def test_batch_remembers_a_subsonic_not_found_as_a_settled_miss(
+    client, default_session, monkeypatch
+):
+    """The other half: code 70 really does mean this album has no artwork,
+    and must stay cacheable - otherwise every art-less album in a library
+    is re-asked on every render."""
+    default_session.media = SubsonicClient("http://navidrome.internal", credential="u=t&t=a&s=b")
+    fake_client, _ = _fake_client(content_type="application/xml", text=_NOT_FOUND)
+    monkeypatch.setattr(coverart_module, "_get_subsonic_client", lambda: fake_client)
+
+    first = client.post("/cover-art/batch", json={"ids": ["al-1"]})
+    second = client.post("/cover-art/batch", json={"ids": ["al-1"]})
+
+    assert first.json()["results"] == {"al-1": None}
+    assert second.json()["results"] == {"al-1": None}
+    assert fake_client.get.await_count == 1  # the second came from the cache
 
 
 def test_batch_counts_misses_against_the_cache_budget(client, default_session, monkeypatch):

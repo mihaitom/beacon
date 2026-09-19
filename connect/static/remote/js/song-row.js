@@ -10,7 +10,11 @@ export function renderSongRow(song, { onPlay } = {}) {
   const row = document.createElement('div');
   row.className = 'row';
 
-  row.appendChild(createArt(song.cover_art_url, null));
+  // Same placeholder the app falls back to (CoverArt.vue's own default):
+  // a track whose server has no art for it, or whose URL fails to load,
+  // otherwise leaves a bare grey square that reads as a broken row rather
+  // than as "no cover".
+  row.appendChild(createArt(song.cover_art_url, 'mdi-album'));
 
   const main = document.createElement('div');
   main.className = 'row-main';

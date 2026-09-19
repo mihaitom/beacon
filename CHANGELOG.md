@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Artwork a media server could not hand over for a reason of its own - a full disk, for instance - was taken as "this album has no cover" and remembered as such, so the affected covers stayed blank for the rest of the session and did not come back once the server was well again. Those covers are now retried, and only a server that really says the artwork does not exist is taken at its word
+- Tracks without cover art in the phone remote's playlists and queue left an empty grey square. They now show the same placeholder every other list in the app does
 - The tab bar on the phone highlighted whichever tab was last tapped instead of the page actually open. Opening an album from Now Playing left Now Playing lit in the library, reaching Now Playing through the mini player left the previous tab lit, and a page below a tab now leaves every tab unlit
 - The tab bar on the phone sat right on the bottom edge of the screen. Installed as an app, that is the strip the phone itself watches for its swipe-up gesture, so a tap on the lower half of a tab could send Beacon to the background instead of switching tabs. The bar now keeps a margin below the tabs, and only when it really is at the edge of the screen - in a normal browser tab, where the browser's own toolbar is down there, there is no margin
 - Four icons in the phone remote were invisible: the Autoplay switch, the rescan button in the device list, the "This device" row and the placeholder for an album without cover art. Each button was there and did its job, it just had nothing to look at

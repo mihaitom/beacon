@@ -62,7 +62,9 @@ export function renderQueue(root) {
     row.className = 'row' + (index === currentIndex ? ' playing' : '');
     row.dataset.index = String(index);
 
-    row.appendChild(createArt(song.cover_art_url, null));
+    // See song-row.js: a missing cover gets the app's own placeholder
+    // rather than an empty square.
+    row.appendChild(createArt(song.cover_art_url, 'mdi-album'));
 
     const main = document.createElement('div');
     main.className = 'row-main';

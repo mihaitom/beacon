@@ -49,6 +49,7 @@ import base64
 import ipaddress
 import logging
 import os
+import re
 import socket
 import time
 import weakref
@@ -505,6 +506,18 @@ async def _get_data_url(client, url: str, headers: dict[str, str], ref: str) -> 
 # remembered as a missing cover: see _FetchUnavailable.
 _MISSING_STATUS = (404, 410)
 
+# Subsonic's own "the data was not found" code. A Subsonic server answers a
+# failed getCoverArt with HTTP 200 and an error document rather than a
+# status, so this code is the only thing in such a reply that distinguishes
+# "this album has no art" from "something went wrong at my end" — see
+# _decode_image.
+_SUBSONIC_NOT_FOUND = "70"
+
+# Enough of the body to find the error code in, and a cap so a server
+# answering with something huge and non-image is not read into memory in
+# full just to classify it.
+_ERROR_SNIFF_BYTES = 2048
+
 
 def _decode_image(response: httpx.Response, ref: str) -> str | None:
     if response.status_code in _MISSING_STATUS:
@@ -513,13 +526,41 @@ def _decode_image(response: httpx.Response, ref: str) -> str | None:
         raise _FetchUnavailable(f"{ref}: HTTP {response.status_code}")
     content_type = response.headers.get("content-type", "")
     if not content_type.startswith("image/"):
-        # A settled answer, not a failure: the server replied, and what it
-        # replied with is not a picture (a Subsonic error document, an
-        # HTML placeholder page).
+        # Not a picture. Whether that is settled depends on what it is
+        # instead: a Subsonic server reports a *failed* getCoverArt as HTTP
+        # 200 with an error document, so the status says nothing and the
+        # error code in the body is the only thing that does.
+        #
+        # Found live 2026-09-19: a Navidrome whose disk had filled up
+        # answered every uncached cover with `error code="0" ... no space
+        # left on device`, at HTTP 200. Read as a settled "no artwork",
+        # that was remembered as such in all three caches, so every album
+        # it touched stayed blank for the rest of the session — and would
+        # have stayed blank after the disk was freed, too.
+        detail = _subsonic_error(response)
+        if detail and detail[0] != _SUBSONIC_NOT_FOUND:
+            raise _FetchUnavailable(f"{ref}: {detail[1]}")
         logger.debug(f"[cover-art-batch] {ref}: not an image ({content_type!r})")
         return None
     encoded = base64.b64encode(response.content).decode("ascii")
     return f"data:{content_type};base64,{encoded}"
+
+
+def _subsonic_error(response: httpx.Response) -> tuple[str, str] | None:
+    """The `(code, message)` of a Subsonic error document, or None if this
+    response is not one.
+
+    Matched on the text rather than parsed: the reply comes as XML or JSON
+    depending on what the caller asked for, both carry the same two
+    attributes, and all this has to decide is one code — a full parse of
+    either would be more machinery for the same answer.
+    """
+    body = response.text[:_ERROR_SNIFF_BYTES]
+    if "subsonic-response" not in body or 'status="failed"' not in body:
+        return None
+    code = re.search(r'code="(\d+)"', body)
+    message = re.search(r'message="([^"]*)"', body)
+    return (code.group(1) if code else "", message.group(1) if message else "unknown error")
 
 
 def _reset_cache() -> None:
