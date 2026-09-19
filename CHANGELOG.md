@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Switching Autoplay on while the last song of the queue is playing now tops the queue up right away. It used to wait for the next song change, which on the last song never comes, so playback ran out with Autoplay showing as on
+
 ## [1.3.1] - 2026-09-17
 
 ### Added

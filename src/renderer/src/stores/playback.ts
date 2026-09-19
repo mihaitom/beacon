@@ -1661,11 +1661,16 @@ export const usePlaybackStore = defineStore('playback', {
      * from the status the same way it does shuffle/repeat), so switching it
      * has to reach connect right away instead of riding along with whatever
      * queue update happens to come next — until it does, the backend keeps
-     * topping the queue up from the old value. A no-op beyond the local
-     * store when not casting, since syncCastQueue() returns early then. */
+     * topping the queue up from the old value. That part is skipped when
+     * not casting, since syncCastQueue() returns early then. */
     setAutoplayEnabled(value: boolean): void {
       useAutoplayStore().setEnabled(value)
       this.syncCastQueue()
+      // Switching it on has to top up here and not wait for the usual
+      // trigger, a song change: on the last song of the queue there is no
+      // next song change coming, so playback would stop anyway with the
+      // toggle sitting visibly on.
+      if (value) void this.maybeAutoplay()
     },
 
     /** Settings-driven — applies immediately to local playback (a live Web

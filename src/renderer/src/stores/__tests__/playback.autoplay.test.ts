@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { AUTOPLAY_BATCH_SIZE, useAutoplayStore } from '../autoplay'
 import { useConnectStore } from '../connect'
@@ -136,6 +137,33 @@ describe('maybeAutoplay', () => {
     await playback.maybeAutoplay()
 
     expect(similar).not.toHaveBeenCalled()
+  })
+
+  // Switching it on is usually followed by a song change, which is what
+  // tops the queue up — except on the last song, where the reason someone
+  // reaches for the toggle is that there is nothing after it.
+  it('tops up on the spot when it is switched on over the last song', async () => {
+    const playback = usePlaybackStore()
+    useAutoplayStore().enabled = false
+    stubSimilar({ songs: [makeSong('x')] })
+    playback.setQueue([makeSong('a')], 0)
+
+    playback.setAutoplayEnabled(true)
+    await flushPromises()
+
+    expect(playback.queue.map((s) => s.id)).toEqual(['a', 'x'])
+  })
+
+  it('leaves the queue alone when it is switched off', async () => {
+    const playback = usePlaybackStore()
+    useAutoplayStore().enabled = true
+    stubSimilar({ songs: [makeSong('x')] })
+    playback.setQueue([makeSong('a')], 0)
+
+    playback.setAutoplayEnabled(false)
+    await flushPromises()
+
+    expect(playback.queue.map((s) => s.id)).toEqual(['a'])
   })
 
   it('has nothing to extend for a radio station', async () => {
