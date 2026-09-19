@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - The lyrics source under the lyrics is now a link to that sheet on lrclib.net, NetEase or SimpMusic, so badly timed lyrics can be checked where they came from
+- A new "Rediscover" shelf on Home brings back songs you played a lot but haven't heard in at least three months, with a button to shuffle in a different set
 
 ## [1.3.2] - 2026-09-19
 

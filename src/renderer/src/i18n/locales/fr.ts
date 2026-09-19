@@ -69,6 +69,7 @@ export default {
     topSongs: 'Titres les plus écoutés',
     recentlyAdded: 'Ajouté récemment',
     recentlyPlayed: 'Écouté récemment',
+    rediscover: 'À redécouvrir',
     discover: 'Découvrir dans ta bibliothèque',
     reroll: 'Remélanger',
     playAll: 'Tout lire',

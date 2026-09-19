@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { toRaw } from 'vue'
 import { emitter } from '@/emitter'
 import { i18n } from '@/i18n'
 import { useAuthStore } from './auth'
@@ -13,6 +14,7 @@ import {
 } from '@/services/library/libraryCacheStore'
 import type { Album, Artist, Genre, Playlist, RadioStation, Song } from '@/types/library'
 import { creditedNames, creditsArtist } from '@/services/artistCredits'
+import { pickRediscoverSongs } from '@/services/library/rediscover'
 
 // Default cap for fetchTopSongsForArtist() below — exported so
 // ArtistDetailView.vue's "Show all" toggle can tell whether an artist
@@ -817,6 +819,32 @@ export const useLibraryStore = defineStore('library', {
           .sort((a, b) => b.playCount - a.playCount)
           .slice(0, limit)
       })
+    },
+
+    /** Home's Rediscover shelf. From the full catalogue rather than a
+     * server list: no Subsonic endpoint sorts by "played often, but long
+     * ago", and allSongs carries both fields on all three backends. */
+    async fetchRediscoverSongs(size: number): Promise<Song[]> {
+      await this.fetchAllSongs()
+      return pickRediscoverSongs(this.allSongs, { size })
+    },
+
+    /** A scrobble that went through, reflected locally until the next
+     * catalogue refresh brings the server's own numbers. The catalogue's
+     * copy is looked up separately because the one that was playing is
+     * often not it (an album page's tracks come from the album endpoint) -
+     * and without it a song just played from there would still be offered
+     * on Rediscover as not heard in months. */
+    notePlayed(song: Song): void {
+      const playedAt = new Date().toISOString()
+      const cataloged = this.allSongs.find((entry) => entry.id === song.id)
+      // Compared raw: the same object reaches here through one store's
+      // reactive proxy and sits in allSongs behind another.
+      const entries = cataloged && toRaw(cataloged) !== toRaw(song) ? [song, cataloged] : [song]
+      for (const entry of entries) {
+        entry.playCount = (entry.playCount ?? 0) + 1
+        entry.lastPlayed = playedAt
+      }
     },
 
     /** genres is derived from allSongs (see the getter above) — this just

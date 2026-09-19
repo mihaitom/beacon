@@ -73,6 +73,23 @@
       play-on-click
       @play-all="playAllAlbums(recentAlbums, 'recent')"
     />
+    <song-shelf
+      v-if="authStore.capabilities.playHistoryStats"
+      :title="$t('home.rediscover')"
+      :songs="rediscoverSongs"
+      :loading="loadingRediscover"
+      @play-all="playSongList(rediscoverSongs)"
+    >
+      <template #action>
+        <v-btn
+          icon="mdi-shuffle-variant"
+          variant="text"
+          size="small"
+          :title="$t('home.reroll')"
+          @click="loadRediscover"
+        />
+      </template>
+    </song-shelf>
 
     <!-- Scrolls like every other shelf now, fit-to-screen dropped — see
      - DISCOVER_SHELF_SIZE's own comment for why a fixed-size pool this
@@ -134,6 +151,7 @@ import type { SimilarArtistDisplay } from '@/components/library/SimilarArtistsSh
 import HeroBand from '@/components/home/HeroBand.vue'
 import AlbumShelf from '@/components/library/AlbumShelf.vue'
 import SimilarArtistsShelf from '@/components/library/SimilarArtistsShelf.vue'
+import SongShelf from '@/components/library/SongShelf.vue'
 import SongTable from '@/components/library/SongTable.vue'
 import { accountScopedKey } from '@/services/accountKey'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
@@ -201,7 +219,7 @@ function sameArtistPool(a: string[], b: string[]): boolean {
 
 export default {
   name: 'HomeView',
-  components: { HeroBand, AlbumShelf, SimilarArtistsShelf, SongTable },
+  components: { HeroBand, AlbumShelf, SimilarArtistsShelf, SongShelf, SongTable },
   data() {
     return {
       frequentAlbums: [] as Album[],
@@ -214,6 +232,8 @@ export default {
       // SimilarArtistsShelf component hides itself in all of those cases.
       newArtistDiscoveries: [] as SimilarArtistDisplay[],
       topSongs: [] as Song[],
+      rediscoverSongs: [] as Song[],
+      loadingRediscover: false,
       // Spinner on the hero's own Song Radio button while the mix is being
       // fetched — see onHeroSongRadio().
       heroRadioLoading: false,
@@ -404,6 +424,11 @@ export default {
     // of each firing its own fetchFrequentAlbums() call — see that
     // method's own `seedAlbums` param.
     frequentPromise.then((albums) => this.rerollDiscover(albums))
+
+    if (this.authStore.capabilities.playHistoryStats) {
+      this.loadingRediscover = true
+      this.loadRediscover()
+    }
 
     this.loadingTopSongs = true
     this.libraryStore
@@ -692,6 +717,18 @@ export default {
       // peek: replaces the queue with more than one song — see
       // peekQueueDrawer()'s own comment for the rule.
       await this.playbackStore.playSongList(songs, 0, false, songs.length > 1)
+    },
+    /** A fresh draw each time rather than cached: it comes from the
+     * catalogue already in memory, and a shelf that looks the same on
+     * every visit would defeat the point of it. */
+    async loadRediscover() {
+      try {
+        this.rediscoverSongs = await this.libraryStore.fetchRediscoverSongs(30)
+      } catch (error) {
+        console.error('[home] Rediscover shelf failed:', error)
+      } finally {
+        this.loadingRediscover = false
+      }
     },
     // AlbumShelf.vue's album cards only ever carry list-level Album data
     // (no song list — see fetchAlbum()'s own comment), so "play all" for a

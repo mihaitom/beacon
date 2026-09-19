@@ -1390,11 +1390,11 @@ export const usePlaybackStore = defineStore('playback', {
         .scrobble(song.id, true)
         .then(() => {
           // Optimistic, not re-fetched from the server — the count shown
-          // anywhere this same Song object is rendered (queue, song
-          // lists, Stats) would otherwise stay stale until something else
-          // happened to reload it, even though the scrobble itself
+          // anywhere this song is rendered (queue, song lists, Stats) and
+          // Home's Rediscover shelf would otherwise stay stale until the
+          // next catalogue refresh, even though the scrobble itself
           // genuinely succeeded server-side.
-          song.playCount = (song.playCount ?? 0) + 1
+          useLibraryStore().notePlayed(song)
         })
         .catch((error) => console.error('[scrobble] submission failed:', error))
     },

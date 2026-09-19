@@ -70,6 +70,7 @@ export default {
     topSongs: 'Canciones más reproducidas',
     recentlyAdded: 'Añadido recientemente',
     recentlyPlayed: 'Reproducido recientemente',
+    rediscover: 'Para redescubrir',
     discover: 'Descubrir en tu biblioteca',
     reroll: 'Volver a mezclar',
     playAll: 'Reproducir todo',

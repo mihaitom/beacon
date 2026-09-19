@@ -134,6 +134,41 @@ describe('scrobbling', () => {
     expect(song.playCount).toBe(8)
   })
 
+  it("updates the catalogue's copy too when the playing song came from elsewhere", async () => {
+    // Home's Rediscover shelf reads the catalogue; a song played from an
+    // album page is a different object, and without this it would still be
+    // offered there as not heard in months.
+    const playback = usePlaybackStore()
+    stubClient()
+    const song = uniqueSong({ duration: 200, playCount: 7, lastPlayed: '2025-01-01T00:00:00Z' })
+    const cataloged = { ...song }
+    useLibraryStore().allSongs = [cataloged]
+    playback.setQueue([song], 0)
+    playback.localPosition = 150
+
+    playback.checkScrobbleThreshold()
+    await flushPromises()
+
+    const inCatalogue = useLibraryStore().allSongs[0]!
+    expect(inCatalogue.playCount).toBe(8)
+    expect(Date.parse(inCatalogue.lastPlayed!)).toBeGreaterThan(Date.parse('2026-01-01'))
+    expect(song.lastPlayed).toBe(inCatalogue.lastPlayed)
+  })
+
+  it('counts a play once when the playing song is the catalogue entry itself', async () => {
+    const playback = usePlaybackStore()
+    stubClient()
+    useLibraryStore().allSongs = [uniqueSong({ duration: 200, playCount: 7 })]
+    const song = useLibraryStore().allSongs[0]!
+    playback.setQueue([song], 0)
+    playback.localPosition = 150
+
+    playback.checkScrobbleThreshold()
+    await flushPromises()
+
+    expect(useLibraryStore().allSongs[0]!.playCount).toBe(8)
+  })
+
   it('leaves the play count alone when the server refused the scrobble', async () => {
     const playback = usePlaybackStore()
     const client = stubClient()

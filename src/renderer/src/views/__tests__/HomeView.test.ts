@@ -16,6 +16,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import HomeView from '../HomeView.vue'
 import HeroBand from '@/components/home/HeroBand.vue'
 import SongTable from '@/components/library/SongTable.vue'
+import SongShelf from '@/components/library/SongShelf.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { Song } from '@/types/library'
 
@@ -30,6 +31,7 @@ function stubLibrary() {
   vi.spyOn(library, 'fetchRecentlyPlayedAlbums').mockResolvedValue([])
   vi.spyOn(library, 'fetchRandomAlbums').mockResolvedValue([])
   vi.spyOn(library, 'fetchTopSongs').mockResolvedValue([])
+  vi.spyOn(library, 'fetchRediscoverSongs').mockResolvedValue([])
   vi.spyOn(library, 'fetchArtists').mockResolvedValue()
   vi.spyOn(library, 'client').mockReturnValue({
     getAlbumList2: vi.fn().mockResolvedValue([]),
@@ -79,6 +81,45 @@ describe('HomeView top songs', () => {
     const table = wrapper.findComponent(SongTable)
     expect(table.exists()).toBe(true)
     expect(table.props('queueWholeList')).toBe(false)
+  })
+})
+
+describe('HomeView rediscover shelf', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('plays the songs it drew, in shelf order', async () => {
+    const drawn = [makeSong('a'), makeSong('b')]
+    const wrapper = await mountHome()
+    vi.mocked(useLibraryStore().fetchRediscoverSongs).mockResolvedValue(drawn)
+    const play = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+    await (wrapper.vm as unknown as { loadRediscover: () => Promise<void> }).loadRediscover()
+    await wrapper.vm.$nextTick()
+
+    wrapper.findComponent(SongShelf).vm.$emit('play-all')
+
+    expect(play).toHaveBeenCalledWith(drawn, 0, false, true)
+  })
+
+  it('draws again when shuffled', async () => {
+    const wrapper = await mountHome()
+    const fetch = vi.mocked(useLibraryStore().fetchRediscoverSongs)
+    fetch.mockResolvedValue([makeSong('a')])
+    await (wrapper.vm as unknown as { loadRediscover: () => Promise<void> }).loadRediscover()
+    await wrapper.vm.$nextTick()
+    const callsBefore = fetch.mock.calls.length
+
+    await wrapper
+      .findComponent(SongShelf)
+      .find(`[title="${i18n.global.t('home.reroll')}"]`)
+      .trigger('click')
+
+    expect(fetch.mock.calls.length).toBe(callsBefore + 1)
   })
 })
 

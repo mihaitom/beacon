@@ -69,6 +69,7 @@ export default {
     topSongs: 'Most played songs',
     recentlyAdded: 'Recently added',
     recentlyPlayed: 'Recently played',
+    rediscover: 'Rediscover',
     discover: 'Discover in your library',
     reroll: 'Shuffle again',
     playAll: 'Play all',
