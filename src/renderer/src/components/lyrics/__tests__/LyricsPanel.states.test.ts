@@ -6,7 +6,7 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
-import { useLyricsStore } from '@/stores/lyrics'
+import { FILE_SOURCE, useLyricsStore } from '@/stores/lyrics'
 import LyricsPanel from '../LyricsPanel.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
 
@@ -101,5 +101,49 @@ describe('LyricsPanel without lyrics', () => {
 
     expect(wrapper.find('.lyrics-panel__status').exists()).toBe(false)
     expect(wrapper.text()).toContain('Line one')
+  })
+})
+
+/** The source line doubles as the way to the sheet at its provider, where
+ * a mistimed one can be checked and corrected. */
+describe('LyricsPanel source link', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a')], 0)
+    const lyrics = useLyricsStore()
+    vi.spyOn(lyrics, 'ensureLoaded').mockResolvedValue()
+    lyrics.songId = 'a'
+    lyrics.synced = true
+    lyrics.lines = [{ time: 0, text: 'line' }]
+  })
+
+  function mountPanel() {
+    return mount(LyricsPanel, {
+      props: { variant: 'compact' },
+      global: { plugins: [vuetify, i18n] },
+    })
+  }
+
+  it('links a provider sheet to its page there', () => {
+    const lyrics = useLyricsStore()
+    lyrics.source = 'lrclib.net'
+    lyrics.remoteId = '19058030'
+
+    const link = mountPanel().get('a.lyrics-panel__source')
+
+    expect(link.attributes('href')).toBe('https://lrclib.net/tracks/19058030')
+    expect(link.attributes('target')).toBe('_blank')
+  })
+
+  it('leaves the file as its own source unlinked', () => {
+    const lyrics = useLyricsStore()
+    lyrics.source = FILE_SOURCE
+    lyrics.remoteId = null
+
+    const wrapper = mountPanel()
+
+    expect(wrapper.find('a.lyrics-panel__source').exists()).toBe(false)
+    expect(wrapper.find('.lyrics-panel__source').exists()).toBe(true)
   })
 })

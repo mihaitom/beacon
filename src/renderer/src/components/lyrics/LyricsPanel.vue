@@ -131,7 +131,16 @@
          - unreadable there, so they are shown here for as long as the song
          - plays rather than thrown away. -->
         <div class="lyrics-panel__attribution">
-          <span v-if="sourceLabel" class="lyrics-panel__source">{{
+          <a
+            v-if="sourceUrl"
+            :href="sourceUrl"
+            target="_blank"
+            rel="noopener"
+            class="lyrics-panel__source lyrics-panel__source--link"
+            :title="$t('library.viewOnService', { service: sourceLabel })"
+            >{{ $t('lyrics.source', { source: sourceLabel }) }}</a
+          >
+          <span v-else-if="sourceLabel" class="lyrics-panel__source">{{
             $t('lyrics.source', { source: sourceLabel })
           }}</span>
           <span v-for="credit in lyricsStore.credits" :key="credit" class="lyrics-panel__credit">{{
@@ -206,6 +215,7 @@ import type { PropType } from 'vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { FILE_SOURCE, useLyricsStore } from '@/stores/lyrics'
 import type { LyricLine } from '@/services/lyrics/parseLrc'
+import { lyricsPageUrl } from '@/services/lyrics/providerUrl'
 import LyricsCandidateList from '@/components/lyrics/LyricsCandidateList.vue'
 
 export default {
@@ -307,6 +317,9 @@ export default {
       const source = this.lyricsStore.source
       if (!source) return null
       return source === FILE_SOURCE ? this.$t('lyrics.sourceFile') : source
+    },
+    sourceUrl() {
+      return lyricsPageUrl(this.lyricsStore.source, this.lyricsStore.remoteId)
     },
   },
   watch: {
@@ -746,6 +759,15 @@ export default {
   color: rgba(255, 255, 255, 0.4);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.lyrics-panel__source--link {
+  text-decoration: none;
+}
+
+.lyrics-panel__source--link:hover {
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: underline;
 }
 
 /* Source and credits stack, so a song with three of them doesn't push the
