@@ -8,18 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
-- On the phone and in the phone remote, the cast button moved into the row of playback buttons, to the right of repeat, and Autoplay sits at its left end, next to shuffle. Play stays in the middle of the screen, and the volume slider has the row below to itself
-- The device list in the phone remote now matches the one in the app: "Stop all" and "Done" sit in the title row next to the rescan button instead of at the bottom, and the stream lines carry the app's own wording and the same icon for whether the audio is being converted or passed through unchanged
-- Now Playing in the phone remote is laid out like the one in the app: the seek bar sits below the playback buttons instead of above them, with elapsed and total time either side of it rather than underneath, and it draws the track's waveform instead of a plain slider
+- On the phone and in the phone remote, the cast button moved into the row of playback buttons, to the right of repeat, and Autoplay sits at its left end, next to shuffle. Play stays in the middle of the screen, and the volume slider has a row of its own
+- The device list in the phone remote now matches the one in the app: "Stop all" and "Done" sit in the title row next to the rescan button, and the stream lines use the app's own wording
+- Now Playing in the phone remote matches the app too: the seek bar sits below the playback buttons with elapsed and total time either side of it, and it draws the track's waveform instead of a plain slider
 
 ### Fixed
 
-- Artwork a media server could not hand over for a reason of its own - a full disk, for instance - was taken as "this album has no cover" and remembered as such, so the affected covers stayed blank for the rest of the session and did not come back once the server was well again. Those covers are now retried, and only a server that really says the artwork does not exist is taken at its word
-- Tracks without cover art in the phone remote's playlists and queue left an empty grey square. They now show the same placeholder every other list in the app does
-- The tab bar on the phone highlighted whichever tab was last tapped instead of the page actually open. Opening an album from Now Playing left Now Playing lit in the library, reaching Now Playing through the mini player left the previous tab lit, and a page below a tab now leaves every tab unlit
-- The tab bar on the phone sat right on the bottom edge of the screen. Installed as an app, that is the strip the phone itself watches for its swipe-up gesture, so a tap on the lower half of a tab could send Beacon to the background instead of switching tabs. The bar now keeps a margin below the tabs, and only when it really is at the edge of the screen - in a normal browser tab, where the browser's own toolbar is down there, there is no margin
+- Artwork a music server could not hand over, because its disk was full for instance, was taken as "this album has no cover" and stayed blank for the rest of the session, even after the server was well again. Those covers are retried now
+- Tracks without cover art in the phone remote's playlists and queue left an empty grey square instead of the placeholder every other list shows
+- The tab bar on the phone lit up whichever tab was last tapped rather than the page actually open, so opening an album from Now Playing left Now Playing lit, and reaching Now Playing from the mini player left the previous tab lit
+- The tab bar on the phone sat right on the bottom edge of the screen when installed as an app, where a tap on the lower half of a tab could trigger the phone's own swipe-up gesture instead. It keeps a margin there now
 - Four icons in the phone remote were invisible: the Autoplay switch, the rescan button in the device list, the "This device" row and the placeholder for an album without cover art. Each button was there and did its job, it just had nothing to look at
-- Switching Autoplay on while the last song of the queue is playing now tops the queue up right away. It used to wait for the next song change, which on the last song never comes, so playback ran out with Autoplay showing as on
+- Switching Autoplay on while the last song of the queue is playing now tops the queue up right away, instead of waiting for a next song change that on the last song never comes
 
 ## [1.3.1] - 2026-09-17
 
