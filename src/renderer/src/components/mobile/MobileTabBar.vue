@@ -4,9 +4,9 @@
     grow
     density="comfortable"
     color="primary"
-    :height="BAR_HEIGHT + GESTURE_GAP"
+    :height="BAR_HEIGHT + gestureGap"
     :model-value="activeTab"
-    :style="{ '--mobile-tabbar-gap': `${GESTURE_GAP}px` }"
+    :style="{ '--mobile-tabbar-gap': `${gestureGap}px` }"
     class="mobile-tabbar"
   >
     <v-btn v-for="item in items" :key="item.to" :value="item.to" @click="$router.push(item.to)">
@@ -26,10 +26,10 @@ const BAR_HEIGHT = 56
 /** Strip left empty below the buttons, added to the bar's height rather
  * than taken out of it so the touch targets keep their full 48px.
  *
- * Installed as a PWA the shell owns the whole screen, and the bar then ends
- * at the very bottom edge - which on both phone platforms is where the OS
- * listens for its own swipe-up gesture. A tap in a button's lower half was
- * as likely to send the app to the background as to switch tabs.
+ * Only where the bar really is at the bottom edge of the screen (see
+ * atScreenEdge): that is where both phone platforms listen for their own
+ * swipe-up gesture, and a tap in a button's lower half was as likely to
+ * send the app to the background as to switch tabs.
  *
  * A plain number, not env(safe-area-inset-bottom): the inset reads as 0
  * without `viewport-fit=cover` on the viewport meta, which this app
@@ -39,14 +39,36 @@ const BAR_HEIGHT = 56
  * OS draws over. */
 const GESTURE_GAP = 20
 
+/** The display modes in which nothing of the browser's own sits below us.
+ * In an ordinary tab the browser's toolbar is down there instead of the
+ * gesture strip, and the gap would be a band of dead space above it. */
+const AT_SCREEN_EDGE =
+  '(display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui)'
+
+/** ...and the gesture strip itself only exists where the screen is the
+ * input. The mobile shell is chosen on viewport width alone
+ * (useIsMobileWeb.ts), so the installed desktop PWA lands in it too once
+ * its window is dragged under 960px - standalone, at the screen edge, and
+ * with nothing down there to swipe. Kept as its own query rather than
+ * folded into the list above, which would need the `or` of Media Queries 4
+ * and fail silently to "never matches" wherever that is not understood. */
+const TOUCH_INPUT = '(pointer: coarse)'
+
 export default {
   name: 'MobileTabBar',
   data() {
-    return { BAR_HEIGHT, GESTURE_GAP }
+    return {
+      BAR_HEIGHT,
+      atScreenEdge: false,
+      edgeQuery: null as MediaQueryList | null,
+    }
   },
   computed: {
     authStore() {
       return useAuthStore()
+    },
+    gestureGap(): number {
+      return this.atScreenEdge ? GESTURE_GAP : 0
     },
     items() {
       return [
@@ -79,6 +101,23 @@ export default {
     activeTab(): string | null {
       const path = this.$route.path
       return this.items.some((item) => item.to === path) ? path : null
+    },
+  },
+  // Watched rather than read once: installing the app from the tab it is
+  // already running in switches the mode under a live page.
+  mounted() {
+    if (typeof window.matchMedia !== 'function') return
+    this.edgeQuery = window.matchMedia(AT_SCREEN_EDGE)
+    this.edgeQuery.addEventListener('change', this.updateScreenEdge)
+    this.updateScreenEdge()
+  },
+  beforeUnmount() {
+    this.edgeQuery?.removeEventListener('change', this.updateScreenEdge)
+  },
+  methods: {
+    updateScreenEdge() {
+      this.atScreenEdge =
+        (this.edgeQuery?.matches ?? false) && window.matchMedia(TOUCH_INPUT).matches
     },
   },
 }

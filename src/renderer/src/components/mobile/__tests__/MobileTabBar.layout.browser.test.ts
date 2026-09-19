@@ -16,6 +16,7 @@ import 'vuetify/styles'
 import { i18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import MobileLayout from '@/layouts/MobileLayout.vue'
+import MobileTabBar from '@/components/mobile/MobileTabBar.vue'
 
 const vuetify = createVuetify({ components, directives })
 const wrappers: VueWrapper[] = []
@@ -93,24 +94,31 @@ describe('mobile tab bar', () => {
     }
   })
 
-  /** Installed as a PWA the bar ends at the very bottom edge of the screen,
-   * which is the strip both phone platforms listen on for their own
-   * swipe-up gesture - a tap in a button's lower half was as likely to
-   * background the app as to switch tabs. The bar carries an empty strip
-   * below the buttons for it (GESTURE_GAP).
+  /** Where the bar really is at the bottom edge of the screen - installed
+   * as a PWA - it keeps an empty strip below the buttons, because that edge
+   * is the strip both phone platforms listen on for their own swipe-up
+   * gesture: a tap in a button's lower half was as likely to background the
+   * app as to switch tabs.
    *
-   * Two halves, because they are two different regressions: the gap has to
-   * be there at all, and it has to have come out of the bar's *height*
+   * Two halves, because they are two different regressions: the strip has
+   * to be there at all, and it has to have come out of the bar's *height*
    * rather than out of the buttons - padding without the matching height
-   * would squeeze the touch targets instead of moving them up. A floor
-   * rather than an equality on both, so deciding on a different gap one day
-   * doesn't turn this red for no reason. */
-  it('keeps the tabs clear of the bottom edge without shrinking them', async () => {
+   * would squeeze the touch targets instead of moving them up. Floors
+   * rather than equalities, so settling on a different gap one day does not
+   * turn this red for no reason.
+   *
+   * The display mode is set on the component rather than emulated: neither
+   * Playwright nor the browser runner can put a page into standalone mode,
+   * and the media query itself is one line with nothing to get wrong. */
+  it('keeps the tabs clear of the bottom edge on a screen it owns', async () => {
     await page.viewport(390, 844)
     setActivePinia(createPinia())
     useAuthStore().capabilities.internetRadio = true
     const wrapper = mountShell(vi.fn())
     await new Promise((resolve) => setTimeout(resolve, 80))
+
+    wrapper.findComponent(MobileTabBar).vm.atScreenEdge = true
+    await nextTick()
 
     const bar = wrapper.get('.mobile-tabbar').element.getBoundingClientRect()
     expect(Math.round(bar.bottom), 'the bar has left the bottom edge itself').toBe(844)
@@ -123,6 +131,32 @@ describe('mobile tab bar', () => {
         `"${label}" reaches the gesture strip`,
       ).toBeGreaterThanOrEqual(8)
       expect(tab.height, `"${label}" lost height to the gap`).toBeGreaterThanOrEqual(44)
+    }
+  })
+
+  /** ...and in an ordinary browser tab it does not, which is what this
+   * runner is. There the browser's own toolbar sits below the bar rather
+   * than the gesture strip, and the same empty strip was just a band of
+   * dead space between the tabs and that toolbar. */
+  it('leaves no gap when the browser has its own chrome below', async () => {
+    await page.viewport(390, 844)
+    setActivePinia(createPinia())
+    useAuthStore().capabilities.internetRadio = true
+    const wrapper = mountShell(vi.fn())
+    await new Promise((resolve) => setTimeout(resolve, 80))
+
+    expect(
+      wrapper.findComponent(MobileTabBar).vm.atScreenEdge,
+      'the runner is not in standalone mode, so this is the honest default',
+    ).toBe(false)
+
+    const bar = wrapper.get('.mobile-tabbar').element.getBoundingClientRect()
+    for (const button of wrapper.findAll('.mobile-tabbar .v-btn')) {
+      const tab = button.element.getBoundingClientRect()
+      const label = button.text().replace(/\s+/g, ' ')
+      expect(bar.bottom - tab.bottom, `"${label}" leaves dead space below it`).toBeLessThanOrEqual(
+        1,
+      )
     }
   })
 
