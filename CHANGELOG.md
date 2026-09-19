@@ -6,8 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- On the phone and in the phone remote, the cast button moved into the row of playback buttons, to the right of repeat, and Autoplay sits at its left end, next to shuffle. Play stays in the middle of the screen, and the volume slider has the row below to itself
+
 ### Fixed
 
+- Four icons in the phone remote were invisible: the Autoplay switch, the rescan button in the device list, the "This device" row and the placeholder for an album without cover art. Each button was there and did its job, it just had nothing to look at
 - Switching Autoplay on while the last song of the queue is playing now tops the queue up right away. It used to wait for the next song change, which on the last song never comes, so playback ran out with Autoplay showing as on
 
 ## [1.3.1] - 2026-09-17

@@ -718,6 +718,29 @@ def test_every_precached_shell_asset_is_actually_served(client):
             )
 
 
+def test_every_icon_the_remote_uses_has_a_glyph():
+    """fonts/mdi.css is a hand-copied subset of @mdi/font, so an icon class
+    that is not in it renders as nothing at all — the element is there, the
+    right size, and invisible. That is how the Autoplay button went missing
+    from the phone remote for a whole release: nobody can see a control
+    that has no glyph, and nothing else about the page looks wrong."""
+    import re
+
+    static = remote_routes._static_dir()
+    sources = [static / "index.html", static / "app.css", *sorted(static.glob("js/**/*.js"))]
+    used = {
+        name for source in sources for name in re.findall(r"mdi-[a-z0-9-]+", source.read_text())
+    }
+    assert "mdi-play" in used, "suspiciously empty icon sweep — did the markup change?"
+
+    subset = (static / "fonts" / "mdi.css").read_text()
+    defined = set(re.findall(r"^\.(mdi-[a-z0-9-]+)", subset, re.MULTILINE))
+
+    assert not (used - defined), (
+        f"used by the remote but missing from its icon subset: {sorted(used - defined)}"
+    )
+
+
 def test_app_files_are_always_revalidated(client):
     """Nothing in this shell is content-hashed, so without an explicit
     Cache-Control a browser applies its own heuristic freshness — commonly a

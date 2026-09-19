@@ -7,6 +7,7 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useConnectStore } from '@/stores/connect'
 import { usePlaybackStore } from '@/stores/playback'
+import { useAutoplayStore } from '@/stores/autoplay'
 import MobileTransportControls from '../MobileTransportControls.vue'
 import { getAudioEngine } from '@/services/audioEngine'
 import type { DeviceType } from '@/services/connect/types'
@@ -41,7 +42,7 @@ function mountControls() {
   })
 }
 
-/** The button carrying a given mdi icon — the transport row is five
+/** The button carrying a given mdi icon — the transport row is nothing but
  * icon-only buttons, so an index would say nothing about which is which. */
 function button(wrapper: ReturnType<typeof mountControls>, icon: string) {
   return wrapper.get(`.${icon}`).element.closest('button')!
@@ -246,6 +247,44 @@ describe('MobileTransportControls', () => {
       await wrapper.vm.$nextTick()
 
       expect(wrapper.findComponent({ name: 'SongWaveform' }).exists()).toBe(true)
+    })
+  })
+
+  /** The phone's only Autoplay switch — PlayerBar.vue's copy is desktop
+   * chrome and NowPlayingView.vue's only appears in fullscreen there. */
+  describe('autoplay button', () => {
+    it('toggles autoplay and lights up while it is on', async () => {
+      const wrapper = mountControls()
+      const spy = vi
+        .spyOn(usePlaybackStore(), 'setAutoplayEnabled')
+        .mockImplementation((value: boolean) => {
+          useAutoplayStore().enabled = value
+        })
+      await wrapper.vm.$nextTick()
+      expect(button(wrapper, 'mdi-infinity').classList.contains('text-primary')).toBe(false)
+
+      button(wrapper, 'mdi-infinity').click()
+      await wrapper.vm.$nextTick()
+
+      expect(spy).toHaveBeenCalledWith(true)
+      expect(button(wrapper, 'mdi-infinity').classList.contains('text-primary')).toBe(true)
+    })
+
+    /** Same reason the rest of the row is disabled on a station: autoplay
+     * tops a queue up as it runs out, and a live stream never does. */
+    it('is greyed out and unlit on radio', async () => {
+      const wrapper = mountControls()
+      useAutoplayStore().enabled = true
+      usePlaybackStore().radioStation = {
+        id: 'r1',
+        name: 'Some Radio',
+        streamUrl: 'http://x',
+        homePageUrl: null,
+      }
+      await wrapper.vm.$nextTick()
+
+      expect(button(wrapper, 'mdi-infinity').disabled).toBe(true)
+      expect(button(wrapper, 'mdi-infinity').classList.contains('text-primary')).toBe(false)
     })
   })
 

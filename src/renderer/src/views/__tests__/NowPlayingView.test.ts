@@ -479,6 +479,14 @@ describe('NowPlayingView', () => {
       return button(wrapper, icon).classList.contains('text-primary')
     }
 
+    /** Autoplay's button is fullscreen-only here: the ordinary desktop
+     * window has PlayerBar.vue's own copy, and the phone has one in its
+     * transport row (MobileTransportControls.vue). */
+    async function enterFullscreen(wrapper: VueWrapper): Promise<void> {
+      ;(wrapper.vm as unknown as { isFullscreen: boolean }).isFullscreen = true
+      await wrapper.vm.$nextTick()
+    }
+
     it.each([
       ['desktop', {}],
       ['mobile (compact)', { compact: true }],
@@ -525,7 +533,8 @@ describe('NowPlayingView', () => {
      * and skip on a station. The lit state goes with it, so the button
      * cannot advertise something it has no effect on. */
     it('greys out the autoplay button on a station, and drops its lit state', async () => {
-      const { wrapper } = await mountToolbar({ compact: true })
+      const { wrapper } = await mountToolbar()
+      await enterFullscreen(wrapper)
       useAutoplayStore().enabled = true
       await wrapper.vm.$nextTick()
       expect(isAmber(wrapper, 'mdi-infinity')).toBe(true)
@@ -546,7 +555,8 @@ describe('NowPlayingView', () => {
     })
 
     it('colors the autoplay button while autoplay is on', async () => {
-      const { wrapper } = await mountToolbar({ compact: true })
+      const { wrapper } = await mountToolbar()
+      await enterFullscreen(wrapper)
       expect(isAmber(wrapper, 'mdi-infinity')).toBe(false)
 
       useAutoplayStore().enabled = true

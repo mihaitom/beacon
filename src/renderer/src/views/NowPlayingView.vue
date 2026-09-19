@@ -73,16 +73,16 @@
         />
         <!-- Same reasoning as the lyrics button just above — PlayerBar.vue's
        - own Autoplay button (next to Queue) is outside .now-playing
-       - entirely, so it's unreachable in fullscreen and doesn't exist at
-       - all on mobile (MobileTransportControls.vue has no equivalent
-       - slot), making this the only way to reach it in both cases. Not
-       - shown outside fullscreen on desktop, where PlayerBar's own button
-       - already covers it.
+       - entirely, so it's unreachable in fullscreen, making this the only
+       - way to reach it there. Not shown outside fullscreen, where
+       - PlayerBar's own button already covers it, and not on the phone
+       - either: that one has its own copy in the transport row
+       - (MobileTransportControls.vue), next to shuffle.
        -
        - Disabled during radio for the reason PlayerBar's copy gives: there
        - is no queue for autoplay to top up while a live stream plays. -->
         <v-btn
-          v-if="(compact || isFullscreen) && authStore.capabilities.songRadio"
+          v-if="isFullscreen && authStore.capabilities.songRadio"
           icon="mdi-infinity"
           :color="!playbackStore.radioStation && autoplayStore.enabled ? 'primary' : undefined"
           variant="text"

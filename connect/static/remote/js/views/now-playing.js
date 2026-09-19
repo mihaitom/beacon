@@ -59,15 +59,19 @@ export function renderNowPlaying(root) {
         </div>
       </div>
       <div class="transport-row">
-        <button id="np-shuffle"><i class="mdi mdi-shuffle"></i></button>
-        <button id="np-prev"><i class="mdi mdi-skip-previous"></i></button>
+        <div class="transport-side">
+          <button id="np-autoplay" title="Autoplay"><i class="mdi mdi-infinity"></i></button>
+          <button id="np-shuffle"><i class="mdi mdi-shuffle"></i></button>
+          <button id="np-prev"><i class="mdi mdi-skip-previous"></i></button>
+        </div>
         <button id="np-play" class="play-pause"><i class="mdi mdi-play"></i></button>
-        <button id="np-next"><i class="mdi mdi-skip-next"></i></button>
-        <button id="np-repeat"><i class="mdi mdi-repeat"></i></button>
+        <div class="transport-side">
+          <button id="np-next"><i class="mdi mdi-skip-next"></i></button>
+          <button id="np-repeat"><i class="mdi mdi-repeat"></i></button>
+          <button id="np-cast" title="Play on…"><i class="mdi mdi-cast"></i></button>
+        </div>
       </div>
       <div class="volume-row">
-        <button id="np-autoplay" title="Autoplay"><i class="mdi mdi-infinity"></i></button>
-        <button id="np-cast" title="Play on…"><i class="mdi mdi-cast"></i></button>
         <button id="np-mute"><i class="mdi mdi-volume-high"></i></button>
         <input type="range" id="np-volume" min="0" max="100" step="1" value="100" />
       </div>

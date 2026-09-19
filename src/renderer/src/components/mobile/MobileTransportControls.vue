@@ -4,21 +4,37 @@
      - CenterControls.vue's identical gating — see its own comment: a live
      - stream has no queue for shuffle/repeat/prev/next to act on. -->
     <div class="mobile-transport__row">
-      <v-btn
-        icon="mdi-shuffle"
-        :color="!isRadio && playbackStore.shuffle ? 'primary' : undefined"
-        variant="text"
-        density="comfortable"
-        :disabled="isRadio"
-        @click="playbackStore.toggleShuffle()"
-      />
-      <v-btn
-        icon="mdi-skip-previous"
-        variant="text"
-        density="comfortable"
-        :disabled="isRadio || !hasPlayable"
-        @click="playbackStore.playPrevious()"
-      />
+      <div class="mobile-transport__row-side">
+        <!-- The phone's only Autoplay switch: PlayerBar.vue's own copy is
+         - desktop chrome, and NowPlayingView.vue's is for fullscreen
+         - there. Disabled on radio like everything else in this row -
+         - there is no queue for it to top up while a live stream plays. -->
+        <v-btn
+          v-if="authStore.capabilities.songRadio"
+          icon="mdi-infinity"
+          :color="!isRadio && autoplayStore.enabled ? 'primary' : undefined"
+          variant="text"
+          density="comfortable"
+          :disabled="isRadio"
+          :title="$t('player.autoplay')"
+          @click="playbackStore.setAutoplayEnabled(!autoplayStore.enabled)"
+        />
+        <v-btn
+          icon="mdi-shuffle"
+          :color="!isRadio && playbackStore.shuffle ? 'primary' : undefined"
+          variant="text"
+          density="comfortable"
+          :disabled="isRadio"
+          @click="playbackStore.toggleShuffle()"
+        />
+        <v-btn
+          icon="mdi-skip-previous"
+          variant="text"
+          density="comfortable"
+          :disabled="isRadio || !hasPlayable"
+          @click="playbackStore.playPrevious()"
+        />
+      </div>
       <v-btn
         class="mobile-transport__play-btn"
         :icon="playbackStore.isPlaying ? 'mdi-pause' : 'mdi-play'"
@@ -28,21 +44,30 @@
         :disabled="!hasPlayable"
         @click="playbackStore.togglePlay()"
       />
-      <v-btn
-        icon="mdi-skip-next"
-        variant="text"
-        density="comfortable"
-        :disabled="isRadio || !hasPlayable || !playbackStore.hasNext"
-        @click="playbackStore.playNext()"
-      />
-      <v-btn
-        :icon="repeatIcon"
-        :color="!isRadio && playbackStore.repeatMode !== 'off' ? 'primary' : undefined"
-        variant="text"
-        density="comfortable"
-        :disabled="isRadio"
-        @click="playbackStore.cycleRepeatMode()"
-      />
+      <div class="mobile-transport__row-side">
+        <v-btn
+          icon="mdi-skip-next"
+          variant="text"
+          density="comfortable"
+          :disabled="isRadio || !hasPlayable || !playbackStore.hasNext"
+          @click="playbackStore.playNext()"
+        />
+        <v-btn
+          :icon="repeatIcon"
+          :color="!isRadio && playbackStore.repeatMode !== 'off' ? 'primary' : undefined"
+          variant="text"
+          density="comfortable"
+          :disabled="isRadio"
+          @click="playbackStore.cycleRepeatMode()"
+        />
+        <v-btn
+          :icon="connectStore.isActive ? 'mdi-cast-connected' : 'mdi-cast'"
+          :color="connectStore.isActive ? 'primary' : undefined"
+          variant="text"
+          density="comfortable"
+          @click="devicePickerOpen = true"
+        />
+      </div>
     </div>
 
     <div class="mobile-transport__seek-row">
@@ -72,51 +97,41 @@
       </template>
     </div>
 
-    <div class="mobile-transport__bottom-row">
+    <!-- Left out entirely where this device's own level cannot be changed
+     - from here anyway - see volumeControlAvailable. A speaker being cast
+     - to keeps its slider either way, that one is set over the network. -->
+    <div v-if="volumeControlAvailable" class="mobile-transport__bottom-row">
       <v-btn
-        :icon="connectStore.isActive ? 'mdi-cast-connected' : 'mdi-cast'"
-        :color="connectStore.isActive ? 'primary' : undefined"
+        :icon="volumeIcon"
+        :disabled="muteDisabled"
         variant="text"
         density="comfortable"
-        @click="devicePickerOpen = true"
+        size="small"
+        @click="toggleMute"
       />
-      <!-- Left out entirely where this device's own level cannot be
-       - changed from here anyway - see volumeControlAvailable. A speaker
-       - being cast to keeps its slider either way, that one is set over
-       - the network. -->
-      <template v-if="volumeControlAvailable">
-        <v-btn
-          :icon="volumeIcon"
-          :disabled="muteDisabled"
-          variant="text"
-          density="comfortable"
-          size="small"
-          @click="toggleMute"
-        />
-        <touch-volume-slider
-          v-if="singleActiveTarget"
-          :model-value="deviceVolume ?? 0"
-          :max="100"
-          :disabled="deviceVolume == null"
-          :aria-label="$t('player.volume')"
-          @update:model-value="onDeviceVolumeInput"
-          @commit="onDeviceVolumeCommit"
-        />
-        <v-slider
-          v-else
-          class="volume-slider-touch"
-          :model-value="playbackStore.volume"
-          :max="1"
-          density="compact"
-          hide-details
-          :disabled="playbackStore.isCasting"
-          @update:model-value="playbackStore.setVolume($event)"
-          @touchcancel="endCancelledSliderTouch"
-        />
-        <span class="text-body-small text-medium-emphasis mobile-transport__volume-value">{{
-          volumePercentLabel
-        }}</span>
-      </template>
+      <touch-volume-slider
+        v-if="singleActiveTarget"
+        :model-value="deviceVolume ?? 0"
+        :max="100"
+        :disabled="deviceVolume == null"
+        :aria-label="$t('player.volume')"
+        @update:model-value="onDeviceVolumeInput"
+        @commit="onDeviceVolumeCommit"
+      />
+      <v-slider
+        v-else
+        class="volume-slider-touch"
+        :model-value="playbackStore.volume"
+        :max="1"
+        density="compact"
+        hide-details
+        :disabled="playbackStore.isCasting"
+        @update:model-value="playbackStore.setVolume($event)"
+        @touchcancel="endCancelledSliderTouch"
+      />
+      <span class="text-body-small text-medium-emphasis mobile-transport__volume-value">{{
+        volumePercentLabel
+      }}</span>
     </div>
 
     <mobile-device-picker v-model="devicePickerOpen" />
@@ -126,6 +141,8 @@
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
 import { useConnectStore } from '@/stores/connect'
+import { useAuthStore } from '@/stores/auth'
+import { useAutoplayStore } from '@/stores/autoplay'
 import { pollingAllowed } from '@/services/connect/pollGate'
 import {
   acceptsVolumeReading,
@@ -165,6 +182,12 @@ export default {
     },
     connectStore() {
       return useConnectStore()
+    },
+    authStore() {
+      return useAuthStore()
+    },
+    autoplayStore() {
+      return useAutoplayStore()
     },
     hasPlayable() {
       return this.playbackStore.currentSong != null || this.playbackStore.radioStation != null
@@ -362,12 +385,39 @@ export default {
   padding: 0 16px calc(6px + env(safe-area-inset-bottom));
 }
 
+/* Three columns rather than one centred row of buttons: the cast toggle
+ * sits at the end of it, which makes the two sides uneven, and the play
+ * button has to stay on the middle of the screen either way. The side
+ * columns are minmax(0, 1fr) so they stay exactly equal - a plain 1fr
+ * grows for content that does not fit and would take the play button off
+ * centre with it. */
 .mobile-transport__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+/* Both sides hug the play button in the middle, so the gap around it is
+ * the same on the left and on the right. */
+.mobile-transport__row-side {
   display: flex;
   align-items: center;
-  justify-content: center;
-  margin-bottom: 4px;
   gap: 4px;
+}
+
+.mobile-transport__row-side:first-child {
+  justify-content: flex-end;
+}
+
+/* Seven buttons are a few pixels too wide for a 320px screen, and a
+ * Vuetify button is flex-shrink: 0 of its own accord, so the row hung off
+ * both ends there instead of tightening up. They may give those pixels up
+ * to each other: the icon inside is 24px of the 36, so what is looked at
+ * and aimed at survives it. */
+.mobile-transport__row-side .v-btn {
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 /* The position, the waveform and the remaining time on one line. */

@@ -56,6 +56,10 @@
 .mdi-playlist-play::before { content: "\F0411"; }
 .mdi-volume-mute::before { content: "\F075F"; }
 .mdi-loading::before { content: "\F0772"; }
+.mdi-infinity::before { content: "\F06E4"; }
+.mdi-refresh::before { content: "\F0450"; }
+.mdi-circle-slice-8::before { content: "\F0AA5"; }
+.mdi-album::before { content: "\F0025"; }
 
 /* mdi-spin — sheet.js's in-flight action indicator. Codepoint/animation
  * copied the same way as the glyphs above (node_modules/@mdi/font). */

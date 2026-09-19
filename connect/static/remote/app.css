@@ -356,10 +356,23 @@ textarea {
   .live-buffering::after { animation: none; width: 100%; }
 }
 
-/* One row — shuffle, previous, play/pause, next, repeat — matching
- * MobileTransportControls.vue's own single-row layout instead of splitting
- * shuffle/repeat into a separate row below. */
-.transport-row { display: flex; align-items: center; justify-content: center; gap: 6px; }
+/* One row — autoplay, shuffle, previous, play/pause, next, repeat, cast —
+ * matching MobileTransportControls.vue's own single-row layout instead of
+ * splitting shuffle/repeat into a separate row below.
+ *
+ * Three columns rather than one centred row of buttons: the cast toggle at
+ * the end makes the two sides uneven, and play has to stay on the middle of
+ * the screen either way. minmax(0, 1fr) so the sides stay exactly equal — a
+ * plain 1fr grows for content that does not fit and takes play off centre
+ * with it. */
+.transport-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+}
+/* Both sides hug play, so the gap around it is the same either side. */
+.transport-side { display: flex; align-items: center; gap: 6px; }
+.transport-side:first-child { justify-content: flex-end; }
 .transport-row button {
   background: none;
   color: var(--text);
@@ -387,9 +400,9 @@ textarea {
   font-size: 1.7rem;
 }
 
-/* Cast + volume live in one row (see now-playing.js) — matches
- * MobileTransportControls.vue putting the cast toggle directly beside the
- * volume slider rather than grouped with shuffle/repeat. */
+/* The volume row (see now-playing.js) — matches
+ * MobileTransportControls.vue, where the volume slider has the row below
+ * the transport buttons to itself. */
 .volume-row { width: 100%; display: flex; align-items: center; gap: 10px; }
 .volume-row button {
   background: none;
@@ -400,9 +413,6 @@ textarea {
   display: flex;
 }
 .volume-row button.active { color: var(--accent); }
-/* Same treatment the transport row's own disabled buttons get - autoplay
- * sits in this row and is switched off on a station (now-playing.js). */
-.volume-row button:disabled { color: var(--text-muted); opacity: 0.4; }
 .volume-row input[type="range"] { flex: 1; }
 
 /* Themed range sliders (seek, volume, per-device volume) — matches
