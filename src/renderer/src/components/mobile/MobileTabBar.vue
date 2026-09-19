@@ -1,5 +1,13 @@
 <template>
-  <v-bottom-navigation app grow density="comfortable" color="primary" class="mobile-tabbar">
+  <v-bottom-navigation
+    app
+    grow
+    density="comfortable"
+    color="primary"
+    :height="BAR_HEIGHT + GESTURE_GAP"
+    :style="{ '--mobile-tabbar-gap': `${GESTURE_GAP}px` }"
+    class="mobile-tabbar"
+  >
     <v-btn
       v-for="item in items"
       :key="item.to"
@@ -16,8 +24,31 @@
 <script lang="ts">
 import { useAuthStore } from '@/stores/auth'
 
+// Vuetify's own default for this bar. `density="comfortable"` takes 8 off
+// whatever is passed, so the buttons themselves sit in 48px either way.
+const BAR_HEIGHT = 56
+
+/** Strip left empty below the buttons, added to the bar's height rather
+ * than taken out of it so the touch targets keep their full 48px.
+ *
+ * Installed as a PWA the shell owns the whole screen, and the bar then ends
+ * at the very bottom edge - which on both phone platforms is where the OS
+ * listens for its own swipe-up gesture. A tap in a button's lower half was
+ * as likely to send the app to the background as to switch tabs.
+ *
+ * A plain number, not env(safe-area-inset-bottom): the inset reads as 0
+ * without `viewport-fit=cover` on the viewport meta, which this app
+ * deliberately does not set (it would push the app bar under the status bar
+ * too). This is also a different quantity - the gesture strip is a hazard
+ * for our own touch targets, where the safe-area inset describes what the
+ * OS draws over. */
+const GESTURE_GAP = 20
+
 export default {
   name: 'MobileTabBar',
+  data() {
+    return { BAR_HEIGHT, GESTURE_GAP }
+  },
   computed: {
     authStore() {
       return useAuthStore()
@@ -52,6 +83,9 @@ export default {
 <style scoped>
 .mobile-tabbar {
   border-top: 1px solid var(--beacon-hairline);
+  /* Fed by the same constant that grew the bar (see GESTURE_GAP), so the
+   * two cannot drift apart into either a squeezed button row or no gap. */
+  padding-bottom: var(--mobile-tabbar-gap);
 }
 
 /* Vuetify gives each button a min-width of 80px and `grow` only ever

@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The tab bar on the phone sat right on the bottom edge of the screen. Installed as an app, that is the strip the phone itself watches for its swipe-up gesture, so a tap on the lower half of a tab could send Beacon to the background instead of switching tabs. The bar now keeps a margin below the tabs
 - Four icons in the phone remote were invisible: the Autoplay switch, the rescan button in the device list, the "This device" row and the placeholder for an album without cover art. Each button was there and did its job, it just had nothing to look at
 - Switching Autoplay on while the last song of the queue is playing now tops the queue up right away. It used to wait for the next song change, which on the last song never comes, so playback ran out with Autoplay showing as on
 

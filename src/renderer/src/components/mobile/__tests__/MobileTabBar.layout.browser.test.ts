@@ -92,6 +92,39 @@ describe('mobile tab bar', () => {
     }
   })
 
+  /** Installed as a PWA the bar ends at the very bottom edge of the screen,
+   * which is the strip both phone platforms listen on for their own
+   * swipe-up gesture - a tap in a button's lower half was as likely to
+   * background the app as to switch tabs. The bar carries an empty strip
+   * below the buttons for it (GESTURE_GAP).
+   *
+   * Two halves, because they are two different regressions: the gap has to
+   * be there at all, and it has to have come out of the bar's *height*
+   * rather than out of the buttons - padding without the matching height
+   * would squeeze the touch targets instead of moving them up. A floor
+   * rather than an equality on both, so deciding on a different gap one day
+   * doesn't turn this red for no reason. */
+  it('keeps the tabs clear of the bottom edge without shrinking them', async () => {
+    await page.viewport(390, 844)
+    setActivePinia(createPinia())
+    useAuthStore().capabilities.internetRadio = true
+    const wrapper = mountShell(vi.fn())
+    await new Promise((resolve) => setTimeout(resolve, 80))
+
+    const bar = wrapper.get('.mobile-tabbar').element.getBoundingClientRect()
+    expect(Math.round(bar.bottom), 'the bar has left the bottom edge itself').toBe(844)
+
+    for (const button of wrapper.findAll('.mobile-tabbar .v-btn')) {
+      const tab = button.element.getBoundingClientRect()
+      const label = button.text().replace(/\s+/g, ' ')
+      expect(
+        bar.bottom - tab.bottom,
+        `"${label}" reaches the gesture strip`,
+      ).toBeGreaterThanOrEqual(8)
+      expect(tab.height, `"${label}" lost height to the gap`).toBeGreaterThanOrEqual(44)
+    }
+  })
+
   /** The whole point of the above: the last tab has to be tappable, and at
    * its own centre rather than at whatever slice of it stayed on screen. */
   it('opens Radio when its tab is tapped', async () => {
