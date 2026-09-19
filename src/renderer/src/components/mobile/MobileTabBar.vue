@@ -5,16 +5,11 @@
     density="comfortable"
     color="primary"
     :height="BAR_HEIGHT + GESTURE_GAP"
+    :model-value="activeTab"
     :style="{ '--mobile-tabbar-gap': `${GESTURE_GAP}px` }"
     class="mobile-tabbar"
   >
-    <v-btn
-      v-for="item in items"
-      :key="item.to"
-      :value="item.to"
-      :active="isActive(item.to)"
-      @click="$router.push(item.to)"
-    >
+    <v-btn v-for="item in items" :key="item.to" :value="item.to" @click="$router.push(item.to)">
       <v-icon :icon="item.icon" />
       <span class="mobile-tabbar__label">{{ item.label }}</span>
     </v-btn>
@@ -68,13 +63,22 @@ export default {
           : null,
       ].filter((item): item is { to: string; icon: string; label: string } => item !== null)
     },
-  },
-  methods: {
-    // Only the exact tab routes themselves light up — a sub-page like
-    // /m/playlists/:id intentionally leaves every tab unlit rather than
-    // guessing which parent tab it "belongs" to.
-    isActive(to: string): boolean {
-      return this.$route.path === to
+    /** Which tab is lit, or null on a sub-page like /m/albums/:id - only
+     * the exact tab routes light up, rather than guessing which parent tab
+     * a sub-page "belongs" to.
+     *
+     * Bound as the group's own v-model rather than as each button's
+     * `active`: VBtn takes the `v-btn--active` class from `active` but its
+     * *colour* from the group's selection (see showColor in VBtn.js), and
+     * with nothing driving the group the last tab tapped stayed coloured
+     * for good - opening an album from Now Playing left that tab lit in
+     * the library.
+     *
+     * null, not undefined, or Vue drops the binding and the prop falls
+     * back to its own default. */
+    activeTab(): string | null {
+      const path = this.$route.path
+      return this.items.some((item) => item.to === path) ? path : null
     },
   },
 }

@@ -3,6 +3,7 @@
 // assert against numbers the app never has.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
+import { nextTick, reactive } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
@@ -21,12 +22,12 @@ const wrappers: VueWrapper[] = []
 
 // v-bottom-navigation needs v-app's layout injection, so this mounts the
 // shell rather than the bar on its own.
-function mountShell(push: () => void) {
+function mountShell(push: () => void, route = reactive({ path: '/m/library', name: 'm-library' })) {
   const wrapper = mount(MobileLayout, {
     attachTo: document.body,
     global: {
       plugins: [vuetify, i18n],
-      mocks: { $route: { path: '/m/library', name: 'm-library' }, $router: { push } },
+      mocks: { $route: route, $router: { push } },
       stubs: { RouterView: true, MobilePlayerBar: true, CastTakeoverConfirmDialog: true },
     },
   })
@@ -123,6 +124,56 @@ describe('mobile tab bar', () => {
       ).toBeGreaterThanOrEqual(8)
       expect(tab.height, `"${label}" lost height to the gap`).toBeGreaterThanOrEqual(44)
     }
+  })
+
+  /** Which tab the bar picks out has to follow the *route*, however it was
+   * reached - and it did not: VBtn takes the `v-btn--active` class from its
+   * own `active` prop but its *colour* from the button group's selection,
+   * and nothing was driving that group. Only tapping a tab ever moved it,
+   * so every other way of navigating left the previous tab coloured:
+   * opening an album from Now Playing kept Now Playing lit in the library,
+   * and reaching Now Playing through the mini player left whichever tab was
+   * open before it lit instead.
+   *
+   * Asserted on the rendered colour rather than on Vuetify's own selected
+   * class: the colour is what was actually wrong on screen, it survives
+   * that class being renamed, and it is the half jsdom cannot answer.
+   *
+   * No tap anywhere in here, deliberately - a tap is the one path that
+   * always worked. */
+  it('follows the route rather than the last tab tapped', async () => {
+    await page.viewport(390, 844)
+    setActivePinia(createPinia())
+    useAuthStore().capabilities.internetRadio = true
+    const route = reactive({ path: '/m/library', name: 'm-library' })
+    const wrapper = mountShell(vi.fn(), route)
+    await new Promise((resolve) => setTimeout(resolve, 80))
+
+    const tabs = ['/m/now-playing', '/m/queue', '/m/playlists', '/m/library', '/m/radio']
+    /** The one tab rendered in a colour no other tab has, or -1 when they
+     * all match and nothing is picked out. */
+    const litTab = () => {
+      const colours = wrapper
+        .findAll('.mobile-tabbar .v-btn')
+        .map((b) => getComputedStyle(b.element).color)
+      const tally = new Map<string, number>()
+      for (const colour of colours) tally.set(colour, (tally.get(colour) ?? 0) + 1)
+      return colours.findIndex((colour) => tally.get(colour) === 1)
+    }
+
+    expect(tabs[litTab()], 'the open tab is not picked out at all').toBe('/m/library')
+
+    // What tapping the mini player does.
+    route.path = '/m/now-playing'
+    route.name = 'm-now-playing'
+    await nextTick()
+    expect(tabs[litTab()], 'the tab left behind stayed lit').toBe('/m/now-playing')
+
+    // ...and what tapping the album cover on Now Playing does.
+    route.path = '/m/albums/42'
+    route.name = 'm-album-detail'
+    await nextTick()
+    expect(litTab(), 'a tab is still lit on a sub-page').toBe(-1)
   })
 
   /** The whole point of the above: the last tab has to be tappable, and at
