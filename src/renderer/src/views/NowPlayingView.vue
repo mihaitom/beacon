@@ -1608,7 +1608,7 @@ export default {
  * .now-playing.now-playing--compact (compound, not just the modifier class
  * alone) is deliberate — needs to outrank the base .now-playing rule's own
  * height regardless of source order, same reasoning as
- * .sheet-footer button.btn-sheet-action elsewhere in this app. */
+ * .sheet-title-row button.btn-sheet-action elsewhere in this app. */
 .now-playing.now-playing--compact {
   /* NOT the base rule's calc(100svh - ...) — that's the right height for
    * .now-playing when it's the *entire* routed view (desktop), but here

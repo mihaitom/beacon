@@ -64,16 +64,15 @@ export async function openDevicePicker() {
   }
 
   sheet.innerHTML = '';
-  // Title and rescan in one row: the sheet's list is only ever
-  // destinations, and every action it has lives either here or in the
-  // footer - the same split ConnectDevicePicker.vue and
-  // MobileDevicePicker.vue have.
+  // Every action the sheet has lives in this one row - rescan, stop, done
+  // - and the list below it is only ever destinations. Same header as
+  // MobileDevicePicker.vue's.
   const titleRow = document.createElement('div');
   titleRow.className = 'sheet-title-row';
   titleRow.innerHTML = '<div class="sheet-title">Play on</div>';
   const rescanBtn = document.createElement('button');
   rescanBtn.className = 'btn-sheet-icon';
-  rescanBtn.setAttribute('aria-label', 'Search again');
+  rescanBtn.setAttribute('aria-label', 'Rescan');
   rescanBtn.innerHTML = '<i class="mdi mdi-refresh"></i>';
   titleRow.appendChild(rescanBtn);
   sheet.appendChild(titleRow);
@@ -91,8 +90,7 @@ export async function openDevicePicker() {
     selectedKeys.size === initialKeys.size && [...selectedKeys].every((key) => initialKeys.has(key));
 
   // Created up front so the row toggle handlers below can update it, but
-  // appended to the sheet after the list (see the bottom of this function) —
-  // right-aligned (most people hold/tap a phone right-handed) and only
+  // appended to the title row at the end of this function — only
   // accent-colored once at least one device is checked, so "Done" reads as
   // "nothing to apply yet" vs. "ready to switch" at a glance.
   const doneBtn = document.createElement('button');
@@ -116,8 +114,8 @@ export async function openDevicePicker() {
     // the identical cast-stop command; one list of destinations with the
     // current one marked is a choice, two differently coloured rows doing the
     // same thing is a puzzle. Stopping is offered once, as an action next to
-    // Done (see the footer below), which is also where the desktop's own
-    // picker keeps it.
+    // Done in the header, which is also where the desktop's own picker
+    // keeps it.
     const localRow = document.createElement('button');
     localRow.className = casting ? 'device-row-local' : 'device-row-local device-row-local--active';
     localRow.innerHTML = `<i class="mdi ${casting ? 'mdi-speaker' : 'mdi-circle-slice-8'}"></i><span>This device</span>${
@@ -154,7 +152,7 @@ export async function openDevicePicker() {
         // can't see it at all".
         row.className = 'device-row-disabled';
         row.disabled = true;
-        row.innerHTML = `<i class="mdi ${icon}"></i><span>${escapeHtml(device.name)}<br /><span class="muted device-row-hint">Pair from the Beacon app first</span></span><i class="mdi mdi-lock-outline device-row-check"></i>`;
+        row.innerHTML = `<i class="mdi ${icon}"></i><span>${escapeHtml(device.name)}<br /><span class="muted device-row-hint">Needs pairing in the Beacon app first</span></span><i class="mdi mdi-lock-outline device-row-check"></i>`;
         list.appendChild(row);
         continue;
       }
@@ -257,10 +255,6 @@ export async function openDevicePicker() {
     }
     close();
   });
-  const footer = document.createElement('div');
-  footer.className = 'sheet-footer';
-  // Every action the sheet has, in one row: stop on the left, done on the
-  // right. The list above is only ever destinations.
   if (casting) {
     const stopBtn = document.createElement('button');
     stopBtn.className = 'btn-sheet-stop';
@@ -269,12 +263,11 @@ export async function openDevicePicker() {
       fireCommand('cast-stop');
       close();
     });
-    footer.appendChild(stopBtn);
+    titleRow.appendChild(stopBtn);
   }
-  footer.appendChild(doneBtn);
+  titleRow.appendChild(doneBtn);
   const streamInfo = buildStreamInfo();
   if (streamInfo) sheet.appendChild(streamInfo);
-  sheet.appendChild(footer);
 }
 
 /** What the speakers are being sent, and what it was made from - the same
@@ -283,20 +276,36 @@ export async function openDevicePicker() {
  * in one place over there, not a second time here.
  *
  * Absent whenever nothing is being cast, which is also when the desktop
- * panel says nothing. */
+ * panel says nothing.
+ *
+ * The labels are StreamInfoSection.vue's own wording, copied from the en
+ * locale - this surface has no i18n of its own, and a second set of words
+ * for the same two rows read as two different readings of the stream. */
 function buildStreamInfo() {
   const info = state.snapshot.stream_info;
   if (!info) return null;
-  const rows = [['Sending', info.transcoding ? info.target : 'Unchanged']];
-  if (info.source) rows.push(['Source', info.source]);
+  // The same icon StreamInfoSection.vue puts on this row — whether the audio
+  // is being re-encoded or handed over untouched is the one thing here worth
+  // reading at a glance, before the format name itself.
+  const rows = [
+    {
+      label: 'Transcoding',
+      value: info.transcoding ? info.target : 'No, direct copy',
+      icon: info.transcoding ? 'mdi-cog-sync-outline' : 'mdi-check-circle-outline',
+      tone: info.transcoding ? 'warn' : 'ok',
+    },
+  ];
+  if (info.source) rows.push({ label: 'Source', value: info.source });
   const box = document.createElement('div');
   box.className = 'sheet-stream-info';
   box.innerHTML =
-    '<div class="sheet-header">Stream</div>' +
+    '<div class="eyebrow-label stream-info-heading">Stream info</div>' +
     rows
       .map(
-        ([label, value]) =>
-          `<div class="stream-info-row"><span class="muted">${escapeHtml(label)}</span><span>${escapeHtml(value)}</span></div>`,
+        ({ label, value, icon, tone }) =>
+          `<div class="stream-info-row"><span class="muted">${escapeHtml(label)}</span><span class="stream-info-value">${
+            icon ? `<i class="mdi ${icon} stream-info-icon stream-info-icon--${tone}"></i>` : ''
+          }${escapeHtml(value)}</span></div>`,
       )
       .join('');
   return box;

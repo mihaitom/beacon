@@ -14,6 +14,10 @@
   --accent: #f5a94e;
   --accent-on: #12141c;
   --error: #e5484d;
+  /* Same two the app's own theme uses (see main.ts), so a status icon means
+   * the same colour on both surfaces. */
+  --warning: #f2a93b;
+  --success: #5fb489;
   --border: rgba(245, 169, 78, 0.14);
   --hover: rgba(245, 169, 78, 0.07);
 }
@@ -744,14 +748,30 @@ input[type="range"]:disabled::-moz-range-thumb {
   color: var(--text);
 }
 
-/* Title on the left, the sheet's own icon actions on the right. */
+/* Title on the left, every action the sheet has on the right: rescan, the
+ * destructive one, then the confirming one. The list below holds nothing
+ * but destinations. Same arrangement as the desktop picker's action bar
+ * and MobileDevicePicker.vue's header. */
 .sheet-title-row {
   display: flex;
   align-items: center;
+  gap: 4px;
   padding-right: 12px;
+  padding-bottom: 8px;
 }
 
-.sheet-title-row .sheet-title { flex: 1; }
+/* The standalone .sheet-title carries its own gap to the list below; in
+ * this row that spacing belongs to the row, or the title sits off-centre
+ * against the buttons beside it. */
+.sheet-title-row .sheet-title { flex: 1; padding-bottom: 0; white-space: nowrap; }
+
+/* Scoped like the two action buttons below, and for the same reason: the
+ * generic ".sheet button" rule's width:100% otherwise makes each of these
+ * claim the whole row and squeeze the title into a two-line column. */
+.sheet-title-row button {
+  width: auto;
+  flex-shrink: 0;
+}
 
 .btn-sheet-icon {
   border: none;
@@ -815,13 +835,27 @@ input[type="range"]:disabled::-moz-range-thumb {
 
 .sheet-loading { padding: 20px; color: var(--text-muted); text-align: center; }
 
-/* Every action the sheet has, in one row: the destructive one on the left,
- * the confirming one on the right, with the list above holding nothing but
- * destinations. Same arrangement as the desktop picker's own action bar. */
-/* The two lines that describe the stream, between the device list and the
- * footer - the same place the desktop's own cast sheet keeps them. */
+/* base.css's own .eyebrow-label, copied value for value: the small accent
+ * heading the app gives a section of its own. Deliberately not .sheet-header
+ * above - that is the muted label a *group* of device rows gets, which is a
+ * plain list subheader in the app too, and using one class for both left
+ * this sheet unable to tell a section from a group. */
+.eyebrow-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* The two lines that describe the stream, below the device list - the same
+ * place the desktop's own cast sheet keeps them. */
 .sheet-stream-info {
-  padding: 0 20px 4px;
+  padding: 4px 20px;
+}
+
+.sheet-stream-info .stream-info-heading {
+  padding: 4px 0 2px;
 }
 
 .sheet-stream-info .stream-info-row {
@@ -837,45 +871,45 @@ input[type="range"]:disabled::-moz-range-thumb {
   color: var(--text);
 }
 
-.sheet-footer {
+/* The right-hand column of a row whose value sits next to a status icon,
+ * mirroring StreamInfoSection.vue's own .stream-info-value. */
+.sheet-stream-info .stream-info-value {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 20px 4px;
+  justify-content: flex-end;
+  gap: 4px;
 }
 
-/* Pushes Done to the right on its own when there is no stop button (i.e.
- * nothing is casting), which is what justify-content: space-between would
- * otherwise leave left-aligned. */
-.sheet-footer > :only-child { margin-left: auto; }
+.stream-info-icon { font-size: 1rem; flex-shrink: 0; }
+.stream-info-icon--warn { color: var(--warning); }
+.stream-info-icon--ok { color: var(--success); }
 
-.sheet-footer button.btn-sheet-stop {
-  width: auto;
-  padding: 10px 12px;
-  font-size: 0.95rem;
+.sheet-title-row button.btn-sheet-stop {
+  padding: 8px 8px;
+  font-size: 0.9rem;
   font-weight: 600;
+  white-space: nowrap;
   color: var(--error);
 }
 
-/* Scoped through .sheet-footer (not just .btn-sheet-action alone) so this
+/* Scoped through .sheet-title-row (not just .btn-sheet-action alone) so this
  * actually outranks the generic ".sheet button" rule above — that one's
  * element+class specificity otherwise wins over a single class, silently
  * forcing this button back to width:100%/background:none/color:var(--text)
  * regardless of what's written here (confirmed live: the button rendered
  * full-width with no accent color ever showing, exactly what that
  * specificity loss looks like). */
-.sheet-footer button.btn-sheet-action {
-  width: auto;
+.sheet-title-row button.btn-sheet-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 10px 22px;
+  padding: 8px 16px;
   border-radius: 10px;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 600;
+  white-space: nowrap;
   background: var(--surface-2);
   color: var(--text-muted);
   transition: background 0.15s ease, color 0.15s ease;
 }
-.sheet-footer button.btn-sheet-action.btn-sheet-action--active { background: var(--accent); color: var(--accent-on); }
+.sheet-title-row button.btn-sheet-action.btn-sheet-action--active { background: var(--accent); color: var(--accent-on); }
