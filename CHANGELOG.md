@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - On the phone and in the phone remote, the cast button moved into the row of playback buttons, to the right of repeat, and Autoplay sits at its left end, next to shuffle. Play stays in the middle of the screen, and the volume slider has the row below to itself
 - The device list in the phone remote now matches the one in the app: "Stop all" and "Done" sit in the title row next to the rescan button instead of at the bottom, and the stream lines carry the app's own wording and the same icon for whether the audio is being converted or passed through unchanged
+- Now Playing in the phone remote is laid out like the one in the app: the seek bar sits below the playback buttons instead of above them, with elapsed and total time either side of it rather than underneath, and it draws the track's waveform instead of a plain slider
 
 ### Fixed
 

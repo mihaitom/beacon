@@ -287,6 +287,13 @@ export const useRemoteControlStore = defineStore('remoteControl', {
           // time; see services/connect/streamInfoLabels.ts. Only while
           // casting: the rest of that panel describes this device's own
           // playback, which is not what the phone's sheet is about.
+          // Which connect session the phone should ask for anything
+          // derived from the media server - currently the waveform peaks
+          // its Now Playing screen draws. Not a secret, just an identifier
+          // (the same one remoteCoverArtUrl() puts in the artwork URL);
+          // the phone authenticates with its own password header, so this
+          // is the one thing it cannot work out for itself.
+          session_id: useAuthStore().sessionId,
           stream_info:
             connect.isActive && connect.status?.stream_info
               ? {

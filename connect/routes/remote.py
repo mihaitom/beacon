@@ -42,6 +42,7 @@ from core.remote import remote
 from core.session import SessionState, get_session
 from core.state import PORT, get_local_ip
 from routes.radio import radio_favicon as _fetch_radio_favicon
+from routes.waveform import get_waveform as _fetch_waveform
 
 logger = logging.getLogger("connect.remote")
 router = APIRouter(prefix="/remote")
@@ -413,6 +414,24 @@ async def remote_radio_favicon(url: str = "", min_size: int = 0, hint: str = "")
     favicon URL as `hint` and no homepage at all, and that alone is enough
     to resolve a logo."""
     return await _fetch_radio_favicon(url=url, min_size=min_size, hint=hint)
+
+
+@router.get("/waveform", dependencies=[Depends(require_remote_password)])
+async def remote_waveform(id: str, session: SessionState = Depends(get_session)):
+    """Thin re-export of routes/waveform.py under the phone's own auth, so
+    its Now Playing screen can draw the same waveform seek bar the app has
+    (SongWaveform.vue) instead of a plain slider.
+
+    Answered here rather than by asking the desktop (the way /songs and
+    /playlists are): the peaks are connect's own work already — it decodes
+    them off the media server itself (core/waveform.py) — so a round trip
+    through the renderer would only add a hop to data this process is
+    holding anyway.
+
+    Named parameters for the same reason remote_radio_favicon above spells
+    its own out; `id` rather than a path segment so it reads like the
+    /cover-art next to it, which the phone asks in the same shape."""
+    return await _fetch_waveform(track_id=id, session=session)
 
 
 # ── Phone-facing: static web client ──────────────────────────────────────

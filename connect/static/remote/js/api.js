@@ -122,6 +122,16 @@ export function fetchDeviceVolume(deviceType, name) {
   return request(`/remote/device-volume?${params}`);
 }
 
+/** Peak data for the Now Playing seek bar. `sessionId` comes along in the
+ * snapshot (see stores/remoteControl.ts) because the peaks are read off the
+ * media server this session is signed in to - the password header alone
+ * says who is asking, not whose library to ask about. */
+export function fetchWaveform(songId, sessionId) {
+  const params = new URLSearchParams({ id: songId });
+  if (sessionId) params.set('session', sessionId);
+  return request(`/remote/waveform?${params}`);
+}
+
 export function fetchInitialState() {
   return request('/remote/state');
 }

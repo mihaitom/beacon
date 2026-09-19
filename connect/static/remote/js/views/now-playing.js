@@ -4,6 +4,7 @@ import { state, subscribe } from '../state.js';
 import { openDevicePicker } from '../devices.js';
 import { setArt } from '../art.js';
 import { paintRange } from '../range.js';
+import { createWaveform } from '../waveform.js';
 
 // How long the slider keeps its own value after a change, ignoring what
 // the desktop reports back. Matches VOLUME_SETTLE_MS in the app's own
@@ -40,24 +41,6 @@ export function renderNowPlaying(root) {
         <div class="song-title" id="np-title">Nothing playing</div>
         <div class="song-artist" id="np-artist"></div>
       </div>
-      <div class="seek-row" id="np-seek-row">
-        <input type="range" id="np-seek" min="0" max="100" step="1" value="0" />
-        <div class="time-row"><span id="np-elapsed">0:00</span><span id="np-duration">0:00</span></div>
-      </div>
-      <!-- What a station gets instead: it has no position or length a
-           slider could honestly represent. Mirrors the desktop/mobile app's
-           own RadioLiveStatus.vue, three states and all. Its own fixed
-           height, so buffering starting or ending never shifts the
-           transport buttons below. -->
-      <div class="live-row hidden" id="np-live-row">
-        <div class="live-buffering hidden" id="np-live-buffering"></div>
-        <div class="live-readout hidden" id="np-live-readout">
-          <span class="live-dot" id="np-live-dot"></span>
-          <span class="live-label">Live</span>
-          <span class="live-sep">·</span>
-          <span class="live-time" id="np-live-time">0:00</span>
-        </div>
-      </div>
       <div class="transport-row">
         <div class="transport-side">
           <button id="np-autoplay" title="Autoplay"><i class="mdi mdi-infinity"></i></button>
@@ -69,6 +52,27 @@ export function renderNowPlaying(root) {
           <button id="np-next"><i class="mdi mdi-skip-next"></i></button>
           <button id="np-repeat"><i class="mdi mdi-repeat"></i></button>
           <button id="np-cast" title="Play on…"><i class="mdi mdi-cast"></i></button>
+        </div>
+      </div>
+      <!-- Below the transport buttons, elapsed and total either side of the
+           bar - the same order and the same row MobileTransportControls.vue
+           has, rather than above them with the times stacked underneath. -->
+      <div class="seek-row" id="np-seek-row">
+        <span class="seek-time" id="np-elapsed">0:00</span>
+        <span class="seek-bar" id="np-seek"></span>
+        <span class="seek-time" id="np-duration">0:00</span>
+      </div>
+      <!-- What a station gets instead: it has no position or length a bar
+           could honestly represent. Mirrors the desktop/mobile app's own
+           RadioLiveStatus.vue, three states and all. Its own fixed height,
+           so buffering starting or ending never shifts the row below. -->
+      <div class="live-row hidden" id="np-live-row">
+        <div class="live-buffering hidden" id="np-live-buffering"></div>
+        <div class="live-readout hidden" id="np-live-readout">
+          <span class="live-dot" id="np-live-dot"></span>
+          <span class="live-label">Live</span>
+          <span class="live-sep">·</span>
+          <span class="live-time" id="np-live-time">0:00</span>
         </div>
       </div>
       <div class="volume-row">
@@ -83,7 +87,6 @@ export function renderNowPlaying(root) {
   const eyebrow = root.querySelector('#np-eyebrow');
   const title = root.querySelector('#np-title');
   const artist = root.querySelector('#np-artist');
-  const seek = root.querySelector('#np-seek');
   const seekRow = root.querySelector('#np-seek-row');
   const liveRow = root.querySelector('#np-live-row');
   const liveBuffering = root.querySelector('#np-live-buffering');
@@ -101,7 +104,16 @@ export function renderNowPlaying(root) {
   const muteBtn = root.querySelector('#np-mute');
   const volume = root.querySelector('#np-volume');
 
-  let seeking = false;
+  // The bar paints its own drag; this only keeps incoming snapshots from
+  // fighting the finger, and carries the elapsed label along with it.
+  const waveform = createWaveform({
+    onPreview: (position) => {
+      elapsedLabel.textContent = formatTime(position);
+    },
+    onSeek: (position) => fireCommand('seek', { position }),
+  });
+  root.querySelector('#np-seek').appendChild(waveform.element);
+
   let volumeDragging = false;
   // Until when an incoming snapshot's volume is ignored. Snapshots keep
   // arriving after the slider is let go (the desktop pushes a debounced
@@ -198,12 +210,17 @@ export function renderNowPlaying(root) {
       liveReadout.classList.toggle('live-readout--off-air', !snapshot.playing);
       liveDot.classList.toggle('live-dot--on-air', !!snapshot.playing);
       liveTime.textContent = formatLiveTime(position);
-    } else if (!seeking) {
-      seek.max = String(Math.max(snapshot.duration || 0, 1));
-      seek.value = String(snapshot.position || 0);
-      elapsedLabel.textContent = formatTime(snapshot.position || 0);
+      void waveform.load(null, snapshot.session_id);
+    } else {
+      // Peaks are keyed on the track, so this is a no-op on every snapshot
+      // but the first of a new one.
+      void waveform.load(song?.id ?? null, snapshot.session_id);
+      waveform.setDisabled(!song);
+      if (!waveform.dragging) {
+        waveform.setProgress(snapshot.position || 0, snapshot.duration || 0);
+        elapsedLabel.textContent = formatTime(snapshot.position || 0);
+      }
       durationLabel.textContent = formatTime(snapshot.duration || 0);
-      paintRange(seek);
     }
     // The value this snapshot would put on the slider — read before the
     // hold below, so a snapshot that already agrees with what was sent
@@ -244,16 +261,6 @@ export function renderNowPlaying(root) {
   repeatBtn.addEventListener('click', () => fireCommand('repeat'));
   autoplayBtn.addEventListener('click', () => fireCommand('autoplay'));
 
-  seek.addEventListener('input', () => {
-    seeking = true;
-    elapsedLabel.textContent = formatTime(Number(seek.value));
-    paintRange(seek);
-  });
-  seek.addEventListener('change', () => {
-    fireCommand('seek', { position: Number(seek.value) });
-    seeking = false;
-  });
-
   volume.addEventListener('input', () => {
     volumeDragging = true;
     paintRange(volume);
@@ -275,7 +282,10 @@ export function renderNowPlaying(root) {
     volumeHeldUntil = Date.now() + VOLUME_SETTLE_MS;
   });
 
-  return unsubscribe;
+  return () => {
+    unsubscribe();
+    waveform.destroy();
+  };
 }
 
 registerRoute('/now-playing', renderNowPlaying);

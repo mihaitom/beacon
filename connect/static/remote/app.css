@@ -268,14 +268,44 @@ textarea {
 }
 .song-artist { color: var(--text-muted); text-align: center; }
 
-.seek-row { width: 100%; }
-.seek-row input[type="range"] { width: 100%; }
-/* The 32px hit area above, kept out of the layout: nothing either side of
- * this row is touchable, so the overhang costs nothing and the screen does
- * not grow by 28px. The volume rows need no such thing - their own buttons
- * already make them that tall. */
-.seek-row input[type="range"] { margin-block: -14px; }
-.time-row { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); }
+/* Elapsed, bar, total - one row, the same shape
+ * MobileTransportControls.vue's own seek row has. */
+.seek-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+/* Both times reserve the same width so the bar between them keeps its
+ * length as the elapsed side ticks from 0:09 to 0:10, instead of jittering
+ * a pixel every ten seconds. */
+.seek-time {
+  flex: 0 0 auto;
+  min-width: 34px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.seek-time:last-child { text-align: right; }
+
+/* min-width: 0 so the canvas inside can be narrower than its own intrinsic
+ * 300px default - see SongWaveform.vue's own note on that, which is the
+ * same trap on the same element. */
+.seek-bar { flex: 1 1 auto; min-width: 0; display: flex; }
+
+.waveform {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  /* Taller than the 24px the app uses: this is the only pointer target in
+   * the row, where the app's sits under a mouse as well. */
+  height: 32px;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.waveform--disabled { opacity: 0.4; cursor: default; }
 
 /* What a station gets in place of the seek row — see now-playing.js.
  * Mirrors the app's own RadioLiveStatus.vue. Its own fixed height so that

@@ -620,6 +620,46 @@ def test_cover_art_redirects_without_leaking_connect_token(client, default_sessi
     assert "token=" not in location  # CONNECT_TOKEN must never reach the phone
 
 
+# ── /remote/waveform ─────────────────────────────────────────────────────
+# The peaks behind the phone's Now Playing seek bar. Connect decodes them
+# itself, so unlike /songs or /playlists this is answered here rather than
+# by asking the desktop — which is exactly why it needs its own password
+# gate instead of inheriting /waveform's CONNECT_TOKEN one.
+
+
+def test_waveform_requires_remote_password(client):
+    client.post("/remote/enable")
+    resp = client.get("/remote/waveform?id=abc123")
+    assert resp.status_code == 401
+
+
+def test_waveform_returns_peaks_for_the_named_session(client, default_session, monkeypatch):
+    default_session.media = SubsonicClient(
+        "http://navidrome.example:4533", user="alice", password="secret"
+    )
+    seen = {}
+
+    async def fake_get_waveform(track_id, url):
+        seen["track_id"] = track_id
+        seen["url"] = url
+        return [0.0, 0.5, 1.0]
+
+    monkeypatch.setattr("core.waveform.get_waveform", fake_get_waveform)
+    client.post("/remote/enable")
+    resp = client.get(
+        f"/remote/waveform?id=abc123&session={default_session.session_id}",
+        headers={"X-Remote-Password": remote.password},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"peaks": [0.0, 0.5, 1.0]}
+    assert seen["track_id"] == "abc123"
+    # The stream URL is built from the session's own media server, and like
+    # /cover-art above it must never carry connect's token to the phone —
+    # though here it is only ever read server-side.
+    assert seen["url"].startswith("http://navidrome.example:4533/")
+
+
 def test_radio_favicon_requires_remote_password(unauthed):
     resp = unauthed.get("/remote/radio-favicon?url=http://example.com")
     assert resp.status_code == 404  # feature not enabled in this fixture

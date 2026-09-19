@@ -20,6 +20,7 @@ const SHELL_PATHS = [
   './js/mini-player.js',
   './js/range.js',
   './js/state.js',
+  './js/waveform.js',
   './js/router.js',
   './js/sheet.js',
   './js/album-row.js',
