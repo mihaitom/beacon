@@ -48,15 +48,18 @@
      - the Discover dialog below has its own independent search against
      - Radio Browser's directory instead of this one. -->
     <sticky-filter v-if="libraryStore.radioStations.length > 8">
-      <v-text-field
-        v-model="filterQuery"
-        :label="$t('search.label')"
-        prepend-inner-icon="mdi-magnify"
-        variant="solo-filled"
-        density="compact"
-        clearable
-        class="library-search"
-      />
+      <div class="library-filter">
+        <v-text-field
+          v-model="filterQuery"
+          :label="$t('search.label')"
+          prepend-inner-icon="mdi-magnify"
+          variant="solo-filled"
+          density="compact"
+          clearable
+          class="library-search"
+        />
+        <exact-match-switch />
+      </div>
     </sticky-filter>
 
     <!-- See PlaylistsView.vue's identical block: placeholders shaped like
@@ -180,6 +183,7 @@ import RadioDiscoverDialog from '@/components/radio/RadioDiscoverDialog.vue'
 import RadioStationCard from '@/components/library/RadioStationCard.vue'
 import TileSkeleton from '@/components/library/TileSkeleton.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
+import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
 import { matchesAllTerms } from '@/services/textSearch'
 import type { RadioStation } from '@/types/library'
 
@@ -200,6 +204,7 @@ export default {
     RadioStationCard,
     TileSkeleton,
     StickyFilter,
+    ExactMatchSwitch,
   },
   data() {
     return {
@@ -237,7 +242,7 @@ export default {
       const query = this.debouncedQuery
       if (!query.trim()) return this.libraryStore.radioStations
       return this.libraryStore.radioStations.filter((station: RadioStation) =>
-        matchesAllTerms(query, station.name),
+        matchesAllTerms(query, [station.name], { exact: this.libraryStore.searchExact }),
       )
     },
   },

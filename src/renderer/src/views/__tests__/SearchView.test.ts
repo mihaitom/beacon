@@ -98,6 +98,23 @@ describe('SearchView reacting to the route', () => {
   })
 })
 
+describe('SearchView exact-match switch', () => {
+  it('stores the choice and re-runs the search when toggled', async () => {
+    const { wrapper, store } = await mountSearchView('/search?q=players')
+    const setExact = vi.spyOn(store, 'setSearchExact')
+
+    // The switch itself lives in ExactMatchSwitch.vue; this drives its inner
+    // Vuetify switch the way a click would.
+    wrapper.findComponent({ name: 'VSwitch' }).vm.$emit('update:modelValue', true)
+    await flushPromises()
+
+    expect(setExact).toHaveBeenCalledWith(true)
+    // The switch only holds the choice; the result list has to be asked for
+    // again with it.
+    expect(store.search).toHaveBeenCalledWith('players')
+  })
+})
+
 describe('SearchView result presence', () => {
   it('reports nothing found when every category is empty', async () => {
     const { store, vm } = await mountSearchView()
@@ -137,5 +154,8 @@ describe('SearchView playing a result', () => {
     const table = wrapper.findComponent(SongTable)
     expect(table.exists()).toBe(true)
     expect(table.props('queueWholeList')).toBe(false)
+    // And keeps the store's score order rather than SongTable's default
+    // alphabetical sort, which would bury an exact title among the rest.
+    expect(table.props('defaultSortKey')).toBeNull()
   })
 })

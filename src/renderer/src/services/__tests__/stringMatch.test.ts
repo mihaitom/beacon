@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { bigramSimilarity, foldDiacritics, normalize, similarity } from '../stringMatch'
+import {
+  bigramSimilarity,
+  foldDiacritics,
+  jaroWinkler,
+  normalize,
+  similarity,
+} from '../stringMatch'
 
 describe('foldDiacritics', () => {
   it('strips combining marks', () => {
@@ -45,5 +51,20 @@ describe('similarity', () => {
     const different = similarity('Smells Like Teen Spirit', 'Come As You Are')
     expect(variant).toBeGreaterThan(0.9)
     expect(different).toBeLessThan(0.3)
+  })
+})
+
+describe('jaroWinkler', () => {
+  it('stays high for a single missing or extra letter', () => {
+    // Where the bigram coefficient collapses (0.57 for earth/erth), this is
+    // what the token-level typo match relies on.
+    expect(jaroWinkler('earth', 'erth')).toBeGreaterThan(0.9)
+    expect(jaroWinkler('beatles', 'beattles')).toBeGreaterThan(0.9)
+    expect(jaroWinkler('metallica', 'metalica')).toBeGreaterThan(0.9)
+  })
+
+  it('stays low for a different word sharing a tail', () => {
+    expect(jaroWinkler('oasis', 'basis')).toBeLessThan(0.9)
+    expect(jaroWinkler('bush', 'push')).toBeLessThan(0.9)
   })
 })

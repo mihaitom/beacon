@@ -155,6 +155,20 @@ describe('resolveTracks', () => {
     expect(resolved[0]?.match?.song.artist).toBe('Portishead')
   })
 
+  it('searches without a bracketed addition the file does not carry', async () => {
+    // A station tags "Europe - The Final Countdown (1986)"; the file is
+    // "The Final Countdown". A server search matching every word finds
+    // neither when handed the year.
+    const search = vi.fn(async (query: string) =>
+      query === 'Europe The Final Countdown' ? [song('The Final Countdown', 'Europe')] : [],
+    )
+
+    const resolved = await resolveTracks([lastfm('The Final Countdown (1986)', 'Europe')], search)
+
+    expect(search).toHaveBeenCalledWith('Europe The Final Countdown', expect.any(Number))
+    expect(resolved[0]?.match?.song.title).toBe('The Final Countdown')
+  })
+
   it('does not run the title-only search when the first one already matched', async () => {
     const search = vi.fn(async () => [song('Roads', 'Portishead')])
     await resolveTracks([lastfm('Roads', 'Portishead')], search)

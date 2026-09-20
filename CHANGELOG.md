@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- The search in the top bar now runs over the library Beacon already holds instead of asking the music server, so it is forgiving in the same way: accents, punctuation and word order no longer have to match, a slightly misspelled word still finds the song, album or artist, and the closest match is listed first. The Songs and genre track lists order their filtered results the same way, and a third click on a column header returns them to that match order. A switch beside the search field on the library screens, and on the search results page, stops it accepting misspellings when you want to search exactly - a partial word still finds its match; on the phone and in the phone remote, which have no room for the switch, misspellings are never accepted
 - Searching a radio station's played titles is more forgiving now: accents and punctuation no longer have to match, the artist and the track can be typed in either order, and a half-typed or slightly misspelled word still finds the entry
 - The filter fields on the Songs, Albums, Artists, Genres, Playlists and Radio screens - and the phone remote's search - are forgiving the same way: punctuation and apostrophes no longer have to match, and a slightly misspelled word still finds the entry
 - Clicking a title in a radio station's played list now looks the song up in your library first and opens the search on that song's artist and title, so the exact track shows up instead of a page of near-misses

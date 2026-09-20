@@ -13,22 +13,15 @@
  * why that component exists at all).
  */
 
+import { readBooleanPreference, writeBooleanPreference } from './booleanPreference'
+
 /** One key per shelf, e.g. `beacon.favoritesGridView.artists`. Deliberately
  * not account-scoped: which way a row is laid out is a property of the
  * screen in front of the person, not of the account signed in to it. */
 export function readCardGridView(key: string): boolean {
-  try {
-    return localStorage.getItem(key) === 'true'
-  } catch {
-    // Private mode or blocked storage — the shelf simply starts as a shelf.
-    return false
-  }
+  return readBooleanPreference(key)
 }
 
 export function writeCardGridView(key: string, value: boolean): void {
-  try {
-    localStorage.setItem(key, String(value))
-  } catch {
-    // The toggle still works for this visit, it just won't be remembered.
-  }
+  writeBooleanPreference(key, value)
 }

@@ -164,7 +164,7 @@ export default {
       const query = this.debouncedQuery
       if (!query.trim()) return this.libraryStore.radioStations
       return this.libraryStore.radioStations.filter((station: RadioStation) =>
-        matchesAllTerms(query, station.name),
+        matchesAllTerms(query, [station.name], { exact: true }),
       )
     },
   },

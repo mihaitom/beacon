@@ -176,11 +176,14 @@ const CANDIDATES_PER_SEARCH = 20
  * without a server - and because the caller already holds the right
  * client for the session's server type.
  *
- * A track is looked up as "artist title" first. Only if that finds
- * nothing is the title tried on its own: a bare title search on a common
- * word returns a page of unrelated songs, and running it every time would
- * hand bestMatch() a much bigger field to go wrong in. Both searches are
- * skipped entirely for an empty name.
+ * A track is looked up as "artist title" first, and the title without its
+ * bracketed additions (coreTitle()): a station or a chart credits "The Final
+ * Countdown (1986)", the file is "The Final Countdown", and a server search
+ * that matches every word finds neither version when handed the year. Only if
+ * that finds nothing is the bare title tried on its own: a title search on a
+ * common word returns a page of unrelated songs, and running it every time
+ * would hand bestMatch() a much bigger field to go wrong in. Both searches
+ * are skipped entirely for an empty name.
  */
 export async function resolveTracks(
   tracks: LastfmTrack[],
@@ -200,10 +203,17 @@ export async function resolveTracks(
 
       let match: TrackMatch | null = null
       try {
-        const primary = await search(`${track.artist} ${track.title}`, CANDIDATES_PER_SEARCH)
+        // The bracketed additions a station's tag carries ("The Final
+        // Countdown (1986)", "Song (Remix)") are not in the file's title, and
+        // a server search that has to match every word chokes on them - the
+        // year is in no field at all. Searched without them; bestMatch still
+        // scores against the full title, so a library that really has the
+        // bracketed version is not penalised.
+        const core = coreTitle(track.title).trim() || track.title
+        const primary = await search(`${track.artist} ${core}`, CANDIDATES_PER_SEARCH)
         match = bestMatch(primary, track.title, track.artist)
         if (!match) {
-          const fallback = await search(track.title, CANDIDATES_PER_SEARCH)
+          const fallback = await search(core, CANDIDATES_PER_SEARCH)
           match = bestMatch(fallback, track.title, track.artist)
         }
       } catch {

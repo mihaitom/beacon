@@ -321,6 +321,7 @@ class SessionState:
         before: float | None = None,
         limit: int | None = None,
         query: str | None = None,
+        exact: bool = False,
     ) -> list[dict]:
         """The current station's own history, newest first — the order it
         is read in. Empty whenever nothing is playing, which is also what
@@ -345,9 +346,10 @@ class SessionState:
         scrolled to yet. The match is word-based and lenient (case, accents
         and punctuation ignored, artist and track searched together in any
         order, a half-typed word matched by prefix, a misspelling by
-        similarity) — see core/title_match.py. It combines with `limit` (the
-        newest matches), and the caller pages by *not* paging: see
-        routes/radio.py's own note on why a search answers in one go.
+        similarity) — see core/title_match.py. `exact` drops the misspelling
+        match, the mode the app's own filter fields have. It combines with
+        `limit` (the newest matches), and the caller pages by *not* paging:
+        see routes/radio.py's own note on why a search answers in one go.
 
         The timestamps used as cursors are `time.time()` floats recorded
         per title (see _record_radio_title()), so two entries sharing one
@@ -356,7 +358,7 @@ class SessionState:
         if not url:
             return []
 
-        matches_title = title_match.matcher(query) if query else None
+        matches_title = title_match.matcher(query, exact) if query else None
 
         out: list[dict] = []
         # reversed() over the deque, so this walks newest first and can

@@ -1,6 +1,13 @@
 <template>
   <v-container fluid>
-    <h1 v-if="query" class="page-title">{{ $t('search.resultsFor', { query }) }}</h1>
+    <!-- The exact-match switch lives with the heading rather than in the top
+       - bar: the top bar is where a search is typed, but whether it came back
+       - too broad is only visible here, and turning it on re-runs the search
+       - in place. -->
+    <div v-if="query" class="search-head">
+      <h1 class="page-title search-head__title">{{ $t('search.resultsFor', { query }) }}</h1>
+      <exact-match-switch class="search-head__exact" @change="rerunSearch" />
+    </div>
 
     <!-- Shelves, the same shape Home and the favorites page use, rather
      - than a list and a wrapping grid. A search for a common word can
@@ -46,8 +53,17 @@
          - listen to in order. Playing "Moon" and getting nineteen other
          - songs with "moon" in the title queued behind it is not what the
          - click asked for. The row's own menu still offers Play next, Add
-         - to queue and Song Radio for building a queue on purpose. -->
-      <song-table :songs="libraryStore.searchResults.songs" :queue-whole-list="false" />
+         - to queue and Song Radio for building a queue on purpose.
+         -
+         - default-sort-key null keeps the order the store ranked these in
+         - (best match first) instead of re-sorting them alphabetically,
+         - which would bury an exact title behind every other match. A click
+         - on a column still sorts them. -->
+      <song-table
+        :songs="libraryStore.searchResults.songs"
+        :queue-whole-list="false"
+        :default-sort-key="null"
+      />
     </template>
 
     <v-progress-circular v-if="libraryStore.loading" indeterminate />
@@ -62,6 +78,7 @@ import { useLibraryStore } from '@/stores/library'
 import AlbumCard from '@/components/library/AlbumCard.vue'
 import ArtistCard from '@/components/library/ArtistCard.vue'
 import CardShelf from '@/components/library/CardShelf.vue'
+import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
 import SongTable from '@/components/library/SongTable.vue'
 import { readCardGridView, writeCardGridView } from '@/services/cardGridView'
 
@@ -76,7 +93,7 @@ const GRID_VIEW_KEY: Record<CardSection, string> = {
 
 export default {
   name: 'SearchView',
-  components: { AlbumCard, ArtistCard, CardShelf, SongTable },
+  components: { AlbumCard, ArtistCard, CardShelf, ExactMatchSwitch, SongTable },
   data() {
     return {
       query: '',
@@ -120,6 +137,11 @@ export default {
       this.query = this.$route.query.q
       this.libraryStore.search(this.query)
     },
+    /** The switch itself stores the choice (see ExactMatchSwitch.vue); the
+     * result list has to be asked for again with it. */
+    rerunSearch() {
+      this.libraryStore.search(this.query)
+    },
   },
 }
 </script>
@@ -129,6 +151,23 @@ export default {
  * results per kind of match. */
 .page-title {
   margin-bottom: 16px;
+}
+
+/* The heading and the exact-match switch on one line, the switch to the far
+ * side; on a narrow window it wraps under the heading rather than squeezing
+ * it. The margin the heading normally carries moves here, so the two stay one
+ * block. */
+.search-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 16px;
+}
+
+.search-head__title {
+  margin-bottom: 0;
 }
 
 .section-title {

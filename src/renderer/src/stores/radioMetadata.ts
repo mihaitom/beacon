@@ -9,6 +9,7 @@ import {
   type RadioTitleEntry,
 } from '@/services/connect/radioMetadata'
 import { createSequenceGuard } from '@/services/playback/sequenceGuard'
+import { exactMatchingEnabled } from '@/services/textSearch'
 import { usePlaybackStore } from './playback'
 
 // A radio title that has arrived from the backend but is not on screen
@@ -453,7 +454,7 @@ export const useRadioMetadataStore = defineStore('radioMetadata', {
       if (!station) return
       this.searchPending = true
       try {
-        const page = await searchRadioTitleHistory(trimmed)
+        const page = await searchRadioTitleHistory(trimmed, exactMatchingEnabled())
         if (!searchGuard.isCurrent(token)) return
         if (playback.radioStation?.streamUrl !== station.streamUrl) return
         if (page.url !== null && page.url !== station.streamUrl) return

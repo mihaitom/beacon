@@ -19,15 +19,6 @@ def test_normalize_drops_apostrophes_without_splitting_the_word():
     assert title_match.normalize("Don't Stop") == "dont stop"
 
 
-def test_similarity_of_a_string_with_itself_is_one():
-    assert title_match.similarity("Wonderwall", "wonderwall") == 1.0
-
-
-def test_similarity_needs_bigrams_so_a_single_character_is_zero():
-    assert title_match.similarity("a", "a") == 1.0
-    assert title_match.similarity("a", "b") == 0.0
-
-
 def test_matches_searches_artist_and_track_in_any_order():
     title = "Kate Bush - Running Up That Hill"
     assert title_match.matches(title, "kate bush hill")
@@ -39,14 +30,36 @@ def test_matches_accepts_a_half_typed_word_by_prefix():
     assert title_match.matches("Wonderwall - Oasis", "wonder")
 
 
+def test_matches_accepts_a_fragment_from_the_middle_of_a_word():
+    # The substring search this replaced matched anywhere in the title, so a
+    # fragment has always found its word and still does.
+    assert title_match.matches("Earth Song - Michael Jackson", "rth song")
+
+
 def test_matches_tolerates_a_misspelling():
     assert title_match.matches("The Beatles - Hey Jude", "beattles")
     assert title_match.matches("Metallica - Nothing Else Matters", "metalica")
 
 
+def test_matches_tolerates_a_missing_letter():
+    # The bigram coefficient this used before scored "earth" against "erth"
+    # at 0.57 - every bigram shifts - so this is what the Jaro-Winkler switch
+    # is for.
+    assert title_match.matches("Earth Song - Michael Jackson", "erth song")
+
+
 def test_matches_rejects_a_different_word_that_merely_looks_similar():
-    # Dice similarity of "oasis" against "basis" is 0.75, under the floor.
+    # Jaro-Winkler of "oasis" against "basis" is 0.87, under the floor.
     assert not title_match.matches("Wonderwall - Oasis", "basis")
+
+
+def test_exact_mode_drops_the_misspelling_but_keeps_fragments():
+    title = "Earth Song - Michael Jackson"
+    assert title_match.matches(title, "erth song", exact=True) is False
+    assert title_match.matches(title, "rth song", exact=True) is True
+    assert title_match.matches(title, "earth song", exact=True) is True
+    # The same misspelling is lenient without the flag.
+    assert title_match.matches(title, "erth song") is True
 
 
 def test_matches_requires_every_query_word_to_land():

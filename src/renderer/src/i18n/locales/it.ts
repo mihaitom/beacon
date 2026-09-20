@@ -779,6 +779,7 @@ export default {
     artists: 'Artisti',
     albums: 'Album',
     songs: 'Brani',
+    exactMatch: 'Scrittura esatta',
     noResults: 'Nessun risultato per "{query}".',
   },
   releaseNotes: {

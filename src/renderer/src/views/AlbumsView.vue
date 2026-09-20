@@ -36,15 +36,18 @@
     </detail-header>
 
     <sticky-filter>
-      <v-text-field
-        v-model="filterQuery"
-        :label="$t('search.label')"
-        prepend-inner-icon="mdi-magnify"
-        variant="solo-filled"
-        density="compact"
-        clearable
-        class="library-search"
-      />
+      <div class="library-filter">
+        <v-text-field
+          v-model="filterQuery"
+          :label="$t('search.label')"
+          prepend-inner-icon="mdi-magnify"
+          variant="solo-filled"
+          density="compact"
+          clearable
+          class="library-search"
+        />
+        <exact-match-switch />
+      </div>
     </sticky-filter>
     <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
       {{ libraryStore.error }}
@@ -144,6 +147,7 @@ import AlbumCard from '@/components/library/AlbumCard.vue'
 import AlphabetIndexBar from '@/components/library/AlphabetIndexBar.vue'
 import InfiniteScrollTrigger from '@/components/InfiniteScrollTrigger.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
+import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
 import { cardsAcross, observeCardsAcross } from '@/components/library/cardRowFit'
 import type { Album } from '@/types/library'
 
@@ -179,7 +183,14 @@ let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'AlbumsView',
-  components: { DetailHeader, AlbumCard, AlphabetIndexBar, InfiniteScrollTrigger, StickyFilter },
+  components: {
+    DetailHeader,
+    AlbumCard,
+    AlphabetIndexBar,
+    InfiniteScrollTrigger,
+    StickyFilter,
+    ExactMatchSwitch,
+  },
   // Composition API escape hatch just for gridWidth (see useElementWidth's
   // own comment) — everything else stays Options API, same idiom as
   // App.vue's identical use of useIsMobileWeb.
@@ -234,7 +245,9 @@ export default {
     filteredAlbums(): Album[] {
       const query = this.debouncedQuery
       if (!query.trim()) return this.libraryStore.albums
-      return this.libraryStore.albums.filter((album: Album) => matchesAllTerms(query, album.name))
+      return this.libraryStore.albums.filter((album: Album) =>
+        matchesAllTerms(query, [album.name], { exact: this.libraryStore.searchExact }),
+      )
     },
     visibleAlbums(): Album[] {
       return this.filteredAlbums.slice(0, this.visibleCount)

@@ -5,6 +5,7 @@ import { emitter } from '@/emitter'
 import type Toast from '@/types/toast'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import type { Playlist } from '@/types/library'
+import { setExactMatching } from '@/services/textSearch'
 import { makeSong } from './fixtures'
 
 // The cache lives in IndexedDB now (services/library/libraryCacheStore.ts),
@@ -73,6 +74,9 @@ describe('library mutations', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+    // The exact mode is a module-wide preference; a test that turns it on
+    // must not leak it into the next one.
+    setExactMatching(false)
     cache.clear()
     writeDelayMs.value = 0
     toasts = []
@@ -326,33 +330,83 @@ describe('library mutations', () => {
     expect(client.getStarred2).toHaveBeenCalledTimes(2)
   })
 
-  it('clears the results for an empty search instead of querying for nothing', async () => {
+  it('clears the results for an empty search instead of searching for nothing', async () => {
     const library = useLibraryStore()
-    const client = stubClient()
+    const fetchSongs = vi.spyOn(library, 'fetchAllSongs')
     library.searchResults = { artists: [], albums: [], songs: [] }
 
     await library.search('   ')
 
-    expect(client.search3).not.toHaveBeenCalled()
+    expect(fetchSongs).not.toHaveBeenCalled()
+    expect(library.searchResults).toEqual({ artists: [], albums: [], songs: [] })
   })
 
-  /** The API's own default is 25 of each, which is a type-ahead dropdown's
-   * worth: a common first name matches more than that in any real library,
-   * and the results page gave no sign it had been cut short. Asserted here
-   * rather than left to the client's defaults, because that is where it
-   * silently was before. */
-  it('asks for a page worth of results, not the API default of 25', async () => {
+  /** The general search runs over the loaded library with the forgiving
+   * matcher the filter fields use, not over the server's own search — see
+   * search()'s own comment. */
+  it('searches the loaded library itself, tolerating a misspelling', async () => {
     const library = useLibraryStore()
-    const client = stubClient()
+    vi.spyOn(library, 'fetchAllSongs').mockResolvedValue()
+    vi.spyOn(library, 'fetchAlbums').mockResolvedValue()
+    vi.spyOn(library, 'fetchArtists').mockResolvedValue()
+    library.allSongs = [
+      makeSong('s1', { title: 'Earth Song', artist: 'Michael Jackson', album: 'HIStory' }),
+      makeSong('s2', { title: 'Unrelated', artist: 'Nobody', album: 'Else' }),
+    ]
 
-    await library.search('michael')
+    await library.search('erth song')
 
-    // `!` because the stub is a Record, so every lookup on it is optional.
-    const [query, songCount, albumCount, artistCount] = client.search3!.mock.calls[0]!
-    expect(query).toBe('michael')
-    expect(songCount).toBeGreaterThanOrEqual(100)
-    expect(albumCount).toBeGreaterThan(25)
-    expect(artistCount).toBeGreaterThan(25)
+    expect(library.searchResults.songs.map((s) => s.id)).toEqual(['s1'])
+  })
+
+  it('searches albums and artists as well as songs', async () => {
+    const library = useLibraryStore()
+    vi.spyOn(library, 'fetchAllSongs').mockResolvedValue()
+    vi.spyOn(library, 'fetchAlbums').mockResolvedValue()
+    vi.spyOn(library, 'fetchArtists').mockResolvedValue()
+    library.albums = [{ id: 'al1', name: 'Earth', artist: 'Michael Jackson' } as never]
+    library.artists = [{ id: 'ar1', name: 'Earth Wind & Fire' } as never]
+
+    await library.search('erth')
+
+    expect(library.searchResults.albums.map((a) => a.id)).toEqual(['al1'])
+    expect(library.searchResults.artists.map((a) => a.id)).toEqual(['ar1'])
+  })
+
+  it('orders the results by how well they match, not by catalog order', async () => {
+    const library = useLibraryStore()
+    vi.spyOn(library, 'fetchAllSongs').mockResolvedValue()
+    vi.spyOn(library, 'fetchAlbums').mockResolvedValue()
+    vi.spyOn(library, 'fetchArtists').mockResolvedValue()
+    library.allSongs = [
+      makeSong('s1', { title: 'Players Club', artist: 'Someone' }),
+      makeSong('s2', { title: 'Players', artist: 'Someone' }),
+      makeSong('s3', { title: 'Other', artist: 'The Players' }),
+    ]
+
+    await library.search('players')
+
+    // Exact title first, then the title containing the word, then the artist
+    // match - the reported case was the exact title landing far down the list.
+    expect(library.searchResults.songs.map((s) => s.id)).toEqual(['s2', 's1', 's3'])
+  })
+
+  it('drops the misspelling match once exact mode is on, keeping fragments', async () => {
+    const library = useLibraryStore()
+    vi.spyOn(library, 'fetchAllSongs').mockResolvedValue()
+    vi.spyOn(library, 'fetchAlbums').mockResolvedValue()
+    vi.spyOn(library, 'fetchArtists').mockResolvedValue()
+    library.allSongs = [
+      makeSong('s1', { title: 'Players', artist: 'Someone' }),
+      makeSong('s2', { title: 'Overplayers', artist: 'Someone' }),
+      makeSong('s3', { title: 'Playres', artist: 'Someone' }),
+    ]
+    library.setSearchExact(true)
+
+    await library.search('players')
+
+    // The fragment ("Overplayers") still matches; the misspelling does not.
+    expect(library.searchResults.songs.map((s) => s.id)).toEqual(['s1', 's2'])
   })
 
   describe('findLibrarySong', () => {

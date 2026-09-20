@@ -135,7 +135,10 @@ describe('SongTable drag to reorder', () => {
     expect(wrapper.get('.song-row').attributes('draggable')).toBe('true')
   })
 
-  it('keeps toggling asc/desc for a list that has no order of its own', async () => {
+  it('clears the sort on a third click for a list with no drag order too', async () => {
+    // The ranked SongsView list is the case: its own order is the match
+    // order, so this is how a filtered list gets back to it after a column
+    // was clicked.
     const wrapper = mountTable({ reorderable: false })
     const vm = wrapper.vm as unknown as {
       onSort(key: string): void
@@ -143,12 +146,12 @@ describe('SongTable drag to reorder', () => {
       sortDirection: string
     }
 
-    vm.onSort('title')
-    vm.onSort('title')
-    vm.onSort('title')
+    vm.onSort('title') // asc
+    vm.onSort('title') // desc
+    vm.onSort('title') // back to the list's own order
+    expect(vm.sortKey).toBeNull()
 
-    // Third click is back to ascending, not "no sort" — "unsorted" here is
-    // just whatever the API happened to return, nothing worth offering.
+    vm.onSort('title') // and the cycle starts again
     expect(vm.sortKey).toBe('title')
     expect(vm.sortDirection).toBe('asc')
   })

@@ -1816,6 +1816,27 @@ def test_radio_history_search_requires_every_typed_word(client, default_session)
     assert r.json()["history"] == []
 
 
+def test_radio_history_search_exact_drops_the_misspelling_but_keeps_fragments(
+    client, default_session
+):
+    """The exact mode the app's filter fields share: a fragment still matches,
+    a misspelling does not."""
+    entries = _fill_history(default_session, "http://station", 3)
+    entries[1]["title"] = "Players Club - Someone"
+
+    fragment = client.get("/radio-metadata/history", params={"q": "player"})
+    exact_fragment = client.get("/radio-metadata/history", params={"q": "player", "exact": "true"})
+    misspelling = client.get("/radio-metadata/history", params={"q": "playres"})
+    exact_misspelling = client.get(
+        "/radio-metadata/history", params={"q": "playres", "exact": "true"}
+    )
+
+    assert [e["title"] for e in fragment.json()["history"]] == ["Players Club - Someone"]
+    assert [e["title"] for e in exact_fragment.json()["history"]] == ["Players Club - Someone"]
+    assert [e["title"] for e in misspelling.json()["history"]] == ["Players Club - Someone"]
+    assert exact_misspelling.json()["history"] == []
+
+
 def test_radio_history_search_answers_newest_first_within_the_page_limit(client, default_session):
     """Ordered like the log itself, and bounded by the same page cap: a
     search that matches everything must not hand out the whole log."""

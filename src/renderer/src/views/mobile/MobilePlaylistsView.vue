@@ -89,7 +89,7 @@ export default {
       const query = this.debouncedQuery
       if (!query.trim()) return this.libraryStore.playlists
       return this.libraryStore.playlists.filter((playlist: Playlist) =>
-        matchesAllTerms(query, playlist.name),
+        matchesAllTerms(query, [playlist.name], { exact: true }),
       )
     },
     personalPlaylists(): Playlist[] {

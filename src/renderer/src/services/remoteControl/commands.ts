@@ -317,7 +317,9 @@ export async function resolveRemoteQuery(
       if (!library.allSongsLoaded) await library.fetchAllSongs()
       const search = String(payload.search ?? '').trim()
       const filtered = search
-        ? library.allSongs.filter((t) => matchesAllTerms(search, t.title, t.artist))
+        ? library.allSongs.filter((t) =>
+            matchesAllTerms(search, [t.title, t.artist], { exact: true }),
+          )
         : library.allSongs
       const offset = Number(payload.offset ?? 0)
       const limit = Number(payload.limit ?? 50)
@@ -330,7 +332,7 @@ export async function resolveRemoteQuery(
       if (!library.albums.length) await library.fetchAlbums()
       const search = String(payload.search ?? '').trim()
       const filtered = search
-        ? library.albums.filter((a) => matchesAllTerms(search, a.name, a.artist))
+        ? library.albums.filter((a) => matchesAllTerms(search, [a.name, a.artist], { exact: true }))
         : library.albums
       const offset = Number(payload.offset ?? 0)
       const limit = Number(payload.limit ?? 50)

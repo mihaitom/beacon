@@ -32,15 +32,18 @@
     </detail-header>
 
     <sticky-filter :z-index="3" :fade="false" @resize="stickyHeaderHeight = $event">
-      <v-text-field
-        v-model="filterQuery"
-        :label="$t('search.label')"
-        prepend-inner-icon="mdi-magnify"
-        variant="solo-filled"
-        density="compact"
-        clearable
-        class="library-search"
-      />
+      <div class="library-filter">
+        <v-text-field
+          v-model="filterQuery"
+          :label="$t('search.label')"
+          prepend-inner-icon="mdi-magnify"
+          variant="solo-filled"
+          density="compact"
+          clearable
+          class="library-search"
+        />
+        <exact-match-switch />
+      </div>
     </sticky-filter>
     <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
       {{ libraryStore.error }}
@@ -48,7 +51,7 @@
     <song-table
       :songs="filteredSongs"
       :loading="libraryStore.loading"
-      :default-sort-key="libraryStore.allSongsLoaded ? 'title' : null"
+      :default-sort-key="defaultSortKey"
       sticky-header
       :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
       :queue-whole-list="false"
@@ -68,8 +71,9 @@
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { shuffled } from '@/services/shuffle'
-import { matchesAllTerms } from '@/services/textSearch'
+import { rankByMatch } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
+import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
 import SongTable from '@/components/library/SongTable.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
 
@@ -86,7 +90,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'SongsView',
-  components: { DetailHeader, SongTable, StickyFilter },
+  components: { DetailHeader, ExactMatchSwitch, SongTable, StickyFilter },
   data() {
     return {
       filterQuery: '',
@@ -115,10 +119,26 @@ export default {
     filteredSongs() {
       const query = this.debouncedQuery
       if (!query.trim()) return this.libraryStore.allSongs
-      return this.libraryStore.allSongs.filter(
-        (song: { title: string; artist: string; album: string }) =>
-          matchesAllTerms(query, song.title, song.artist, song.album),
+      // Ranked by how well each song answers the query, best first, the same
+      // way the search page ranks its results - a plain alphabetical order
+      // buries an exact title among the rest.
+      return rankByMatch(
+        this.libraryStore.allSongs,
+        query,
+        (song: { title: string; artist: string; album: string }) => [
+          { text: song.title, weight: 2 },
+          { text: song.artist },
+          { text: song.album, weight: 0.5 },
+        ],
+        { exact: this.libraryStore.searchExact },
       )
+    },
+    /** While a filter is on, the songs arrive already ranked by match, so
+     * SongTable must not re-sort them by title. Without one, it keeps its
+     * usual title sort once the catalog is fully loaded. */
+    defaultSortKey(): 'title' | null {
+      if (this.debouncedQuery.trim()) return null
+      return this.libraryStore.allSongsLoaded ? 'title' : null
     },
   },
   watch: {

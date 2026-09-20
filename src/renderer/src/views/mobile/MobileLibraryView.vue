@@ -128,14 +128,14 @@ export default {
       const query = this.debouncedQuery
       if (!query.trim()) return this.libraryStore.allSongs
       return this.libraryStore.allSongs.filter((song: Song) =>
-        matchesAllTerms(query, song.title, song.artist, song.album),
+        matchesAllTerms(query, [song.title, song.artist, song.album], { exact: true }),
       )
     },
     filteredAlbums(): Album[] {
       const query = this.debouncedQuery
       if (!query.trim()) return this.libraryStore.albums
       return this.libraryStore.albums.filter((album: Album) =>
-        matchesAllTerms(query, album.name, album.artist),
+        matchesAllTerms(query, [album.name, album.artist], { exact: true }),
       )
     },
     visibleSongs(): Song[] {

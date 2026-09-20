@@ -16,6 +16,12 @@ import type { Album, Artist, Genre, Playlist, RadioStation, Song } from '@/types
 import { creditedNames, creditsArtist } from '@/services/artistCredits'
 import { resolveTracks } from '@/services/library/lastfmMatcher'
 import { pickRediscoverSongs } from '@/services/library/rediscover'
+import {
+  exactMatchingEnabled,
+  rankByMatch,
+  setExactMatching,
+  type MatchOptions,
+} from '@/services/textSearch'
 
 // Default cap for fetchTopSongsForArtist() below — exported so
 // ArtistDetailView.vue's "Show all" toggle can tell whether an artist
@@ -29,22 +35,20 @@ export const TOP_SONGS_LIMIT = 10
 // and kick off their own redundant parallel fetch of the whole catalog.
 let fetchAllSongsPromise: Promise<void> | null = null
 
-// How much of a search the results page asks for. Passed explicitly rather
-// than left to SubsonicClient.search3()'s own 25-per-kind default, which is
-// the API's convention for a type-ahead dropdown and far too small for a
-// page: a common first name matches more than 25 tracks in any real
-// library, and nothing on that page said the list had been cut short - it
-// simply looked like everything the server had.
-//
-// Songs get the larger share because that is the list people scan; albums
-// and artists are a handful of tiles above it. Still bounded, though, since
-// this is one request whose whole answer is rendered at once - and a
-// Jellyfin server splits a single shared limit across all three kinds (see
-// media/jellyfin_bridge.py's search3), so asking for thousands would cost
-// that answer its balance as well as its speed.
+// How much of a local search the results page renders per kind. Songs get
+// the larger share because that is the list people scan; albums and artists
+// are a handful of tiles above it. Bounded because the whole answer is
+// rendered at once - a common first name matches more than this in any real
+// library, and nothing on the page says the list was cut short.
 const SEARCH_SONG_LIMIT = 100
 const SEARCH_ALBUM_LIMIT = 40
 const SEARCH_ARTIST_LIMIT = 40
+
+// Whether the top-bar search matches whole words only, remembered across
+// visits. The mode itself lives in services/textSearch.ts, since every filter
+// field follows it too; this is only the copy the search page's switch binds
+// to. Not account-scoped: it is a property of the search box, not of who is
+// signed in.
 
 // The library data that's expensive to fetch in full but rarely changes
 // between app launches. One record per kind (see
@@ -355,6 +359,9 @@ interface LibraryState {
   radioStations: RadioStation[]
   starred: { artists: Artist[]; albums: Album[]; songs: Song[] }
   searchResults: { artists: Artist[]; albums: Album[]; songs: Song[] }
+  /** Whether search() matches whole words only — the search page's own
+   * switch, mirrored from services/textSearch.ts's app-wide mode. */
+  searchExact: boolean
   // Per-album cache for fetchAlbum() — list-level Album entries (from
   // fetchAlbums()/getAlbumList2) don't carry a full song list, so opening
   // a single album always needs its own getAlbum(id) call regardless.
@@ -416,6 +423,7 @@ export const useLibraryStore = defineStore('library', {
     radioStations: [],
     starred: { artists: [], albums: [], songs: [] },
     searchResults: { artists: [], albums: [], songs: [] },
+    searchExact: exactMatchingEnabled(),
     albumCache: {},
     artistCache: {},
     loadingCount: 0,
@@ -1100,20 +1108,62 @@ export const useLibraryStore = defineStore('library', {
       })
     },
 
+    /** The general search, run over the library this app already holds
+     * rather than asked of the media server: only this side knows the
+     * forgiving matching the filter fields use (services/textSearch.ts), so
+     * a typo like "erth song" finds "Earth Song" - which the server's own
+     * search cannot. The song catalog is loaded at login (App.vue) and the
+     * album/artist lists are cached, so this is usually instant; allSettled
+     * because one list failing to load must still search the others.
+     *
+     * Ranked by how well each hit answers the query (rankByMatch), not left
+     * in catalog order: a search for "Players" has to put the song actually
+     * called that above one that merely has the word in its title or artist.
+     *
+     * Deliberately no search3 fallback: mixing a server answer in would put
+     * results in front of the reader that the matcher would not have chosen,
+     * and bring back the inconsistency this replaces. */
     async search(query: string): Promise<void> {
       if (!query.trim()) {
         this.searchResults = { artists: [], albums: [], songs: [] }
         return
       }
       await this.withLoading(async () => {
-        const result = await this.client().search3(
-          query,
-          SEARCH_SONG_LIMIT,
-          SEARCH_ALBUM_LIMIT,
-          SEARCH_ARTIST_LIMIT,
-        )
-        this.searchResults = result
+        await Promise.allSettled([this.fetchAllSongs(), this.fetchAlbums(), this.fetchArtists()])
+        const options: MatchOptions = { exact: this.searchExact }
+        this.searchResults = {
+          songs: rankByMatch(
+            this.allSongs,
+            query,
+            (song) => [
+              { text: song.title, weight: 2 },
+              { text: song.artist },
+              { text: song.album, weight: 0.5 },
+            ],
+            options,
+          ).slice(0, SEARCH_SONG_LIMIT),
+          albums: rankByMatch(
+            this.albums,
+            query,
+            (album) => [{ text: album.name, weight: 2 }, { text: album.artist }],
+            options,
+          ).slice(0, SEARCH_ALBUM_LIMIT),
+          artists: rankByMatch(
+            this.artists,
+            query,
+            (artist) => [{ text: artist.name }],
+            options,
+          ).slice(0, SEARCH_ARTIST_LIMIT),
+        }
       })
+    },
+
+    /** Turns the general search's exact mode on or off and remembers it. The
+     * caller re-runs the search; this only holds and stores the choice. Every
+     * filter field follows it too (see services/textSearch.ts). */
+    setSearchExact(value: boolean): void {
+      this.searchExact = value
+      setExactMatching(value)
     },
 
     /** The library's own song for a radio entry's artist and title, or null

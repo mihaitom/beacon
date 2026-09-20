@@ -143,15 +143,20 @@ export async function fetchRadioTitleHistory(before: number): Promise<RadioTitle
  * punctuation are ignored, artist and track are searched together in any
  * order, and a half-typed or slightly misspelled word still matches (see
  * connect/core/title_match.py). So "kate bush hill" finds "Kate Bush -
- * Running Up That Hill", which a substring search would not.
+ * Running Up That Hill", which a substring search would not. `exact` narrows
+ * that to whole words, following the app-wide exact-search preference.
  *
  * No cursor, unlike the paging call above. The backend caps a station's log
  * at 1000 entries and answers a search from all of it in one go (see
  * routes/radio.py), so what comes back is the whole result unless a station
  * really has played one title more than RADIO_TITLE_PAGE_SIZE times. */
-export async function searchRadioTitleHistory(query: string): Promise<RadioTitleHistoryPage> {
+export async function searchRadioTitleHistory(
+  query: string,
+  exact = false,
+): Promise<RadioTitleHistoryPage> {
+  const exactParam = exact ? '&exact=true' : ''
   const response = await fetchConnect<{ history: RadioTitleEntry[]; url?: string | null }>(
-    `/radio-metadata/history?q=${encodeURIComponent(query)}&limit=${RADIO_TITLE_PAGE_SIZE}`,
+    `/radio-metadata/history?q=${encodeURIComponent(query)}&limit=${RADIO_TITLE_PAGE_SIZE}${exactParam}`,
   )
   return { url: response.url ?? null, history: response.history ?? [] }
 }

@@ -620,13 +620,12 @@ export default {
     onSort(key: SortKey) {
       this.userChangedSort = true
       if (this.sortKey === key) {
-        // A third click drops back to the list's own order, but only where
-        // that order means something the user can act on: in a reorderable
-        // list it's the playlist itself, and it's also the only way back
-        // to being able to drag rows at all (see canReorder). Everywhere
-        // else "unsorted" is just whatever the API happened to return, so
-        // those keep cycling asc/desc as before.
-        if (this.reorderable && this.sortDirection === 'desc') {
+        // A third click drops back to the list's own order - the order the
+        // caller passed in. That is a playlist's running order, an album's
+        // track order, the catalog order, and - the case this exists for - a
+        // ranked search result's match order, which there was otherwise no
+        // way back to once a column had been clicked.
+        if (this.sortDirection === 'desc') {
           this.sortKey = null
           return
         }

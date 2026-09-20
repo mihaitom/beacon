@@ -352,7 +352,7 @@ describe('the radio metadata store', () => {
 
       await radioMeta.search('wonder')
 
-      expect(radioMetadata.searchRadioTitleHistory).toHaveBeenCalledWith('wonder')
+      expect(radioMetadata.searchRadioTitleHistory).toHaveBeenCalledWith('wonder', false)
       expect(radioMeta.searchResults.map((e) => e.title)).toEqual(['Oasis - Wonderwall'])
       // The log itself is untouched, so dropping the search costs no fetch.
       expect(radioMeta.titleLog.map((e) => e.title)).toEqual(['Artist - Newest'])
@@ -399,7 +399,7 @@ describe('the radio metadata store', () => {
 
       void radioMeta.search('  kate bush  ')
 
-      expect(radioMetadata.searchRadioTitleHistory).toHaveBeenCalledWith('kate bush')
+      expect(radioMetadata.searchRadioTitleHistory).toHaveBeenCalledWith('kate bush', false)
     })
 
     it('lets the newest search win, however the answers are ordered', async () => {

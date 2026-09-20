@@ -2,15 +2,18 @@
   <v-container fluid>
     <sticky-filter>
       <h1 class="page-title">{{ $t('library.genres') }}</h1>
-      <v-text-field
-        v-model="filterQuery"
-        :label="$t('search.label')"
-        prepend-inner-icon="mdi-magnify"
-        variant="solo-filled"
-        density="compact"
-        clearable
-        class="library-search"
-      />
+      <div class="library-filter">
+        <v-text-field
+          v-model="filterQuery"
+          :label="$t('search.label')"
+          prepend-inner-icon="mdi-magnify"
+          variant="solo-filled"
+          density="compact"
+          clearable
+          class="library-search"
+        />
+        <exact-match-switch />
+      </div>
     </sticky-filter>
     <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
       {{ libraryStore.error }}
@@ -47,6 +50,7 @@
 import { useLibraryStore } from '@/stores/library'
 import { matchesAllTerms } from '@/services/textSearch'
 import StickyFilter from '@/components/StickyFilter.vue'
+import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
 import type { Genre } from '@/types/library'
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
@@ -62,7 +66,7 @@ type Tier = 'spotlight' | 'featured' | 'standard'
 
 export default {
   name: 'GenresView',
-  components: { StickyFilter },
+  components: { StickyFilter, ExactMatchSwitch },
   data() {
     return {
       filterQuery: '',
@@ -90,7 +94,9 @@ export default {
     filteredGenres(): Genre[] {
       if (!this.isFiltering) return this.sortedGenres.slice(0, TOP_COUNT)
       return this.libraryStore.genres.filter((genre) =>
-        matchesAllTerms(this.debouncedQuery, genre.name),
+        matchesAllTerms(this.debouncedQuery, [genre.name], {
+          exact: this.libraryStore.searchExact,
+        }),
       )
     },
     // Tile size reflects rank, not just decoration: #1 gets the spotlight

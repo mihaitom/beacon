@@ -7,15 +7,17 @@ that whole string, which misses the ordinary ways a listener types: without
 accents, with artist and track the other way round, or with a typo. This
 module normalises both sides (case, accents, punctuation), splits the entry
 into artist and track, and asks whether every word of the query has a match
-on either side — order independent, with prefix matching for a half-typed
-word and a bigram similarity for a misspelling.
+on either side — order independent, with a substring match for a half-typed
+word and a Jaro-Winkler similarity for a misspelling.
 
-The normalisation and the similarity are the ones
-services/library/lastfmMatcher.ts arrived at for the same kind of name
-comparison, ported here because this search runs on the backend over the whole
-log (see SessionState.radio_title_log) rather than over the page a client
-happens to hold. Keep the two in step: they are the same deliberate leniency,
-not two independent guesses.
+The normalisation is the one services/library/lastfmMatcher.ts uses for the
+same kind of name comparison, ported here because this search runs on the
+backend over the whole log (see SessionState.radio_title_log) rather than over
+the page a client happens to hold. The token-level typo match is Jaro-Winkler
+rather than that matcher's bigram coefficient: a single missing letter shifts
+every bigram ("earth" against "erth" scores 0.57 there), while Jaro-Winkler
+stays at 0.94. The same choice is made in services/stringMatch.ts for the
+in-app filter fields, so the two searches behave alike.
 """
 
 import re
@@ -28,9 +30,9 @@ from collections.abc import Callable
 _SEPARATOR = " - "
 
 # How close a query word has to be to an entry word to be that word
-# misspelled. High enough that "bush" is not "push" and "oasis" is not
-# "basis" (both 0.67/0.75); low enough that "beattles" finds "beatles" (0.92).
-_TOKEN_FLOOR = 0.8
+# misspelled. High enough that a different word sharing a tail ("oasis" /
+# "basis", 0.87) is not accepted, low enough that a one-letter slip is.
+_TOKEN_FLOOR = 0.9
 
 
 def fold_diacritics(value: str) -> str:
@@ -54,39 +56,55 @@ def normalize(value: str) -> str:
     return " ".join(text.split())
 
 
-def _bigram_similarity(left: str, right: str) -> float:
-    """Dice coefficient over character bigrams on two already-normalised
-    strings: the share of adjacent letter pairs they have in common. Chosen
-    over an edit distance because it barely punishes an extra word at the end
-    while a reordering or a different word drops the score sharply — the shape
-    of the difference between a spelling variant and a different title.
-    Returns 0..1."""
+def _jaro_winkler(left: str, right: str) -> float:
+    """Jaro-Winkler similarity of two already-normalised strings, 0..1.
+
+    Counts characters that match within a window, then rewards a shared
+    prefix — which is what lets a one-letter slip through ("earth" / "erth",
+    0.94) while keeping a different word with the same tail out ("oasis" /
+    "basis", 0.87)."""
     if not left or not right:
         return 0.0
     if left == right:
         return 1.0
-    # A single-character string has no bigrams at all, so the general path
-    # below would score it 0 against everything including itself.
-    if len(left) < 2 or len(right) < 2:
+
+    window = max(0, max(len(left), len(right)) // 2 - 1)
+    left_matched = [False] * len(left)
+    right_matched = [False] * len(right)
+
+    matches = 0
+    for i, char in enumerate(left):
+        for j in range(max(0, i - window), min(i + window + 1, len(right))):
+            if right_matched[j] or char != right[j]:
+                continue
+            left_matched[i] = True
+            right_matched[j] = True
+            matches += 1
+            break
+    if matches == 0:
         return 0.0
 
-    bigrams: dict[str, int] = {}
-    for i in range(len(left) - 1):
-        pair = left[i : i + 2]
-        bigrams[pair] = bigrams.get(pair, 0) + 1
+    transpositions = 0
+    j = 0
+    for i, matched in enumerate(left_matched):
+        if not matched:
+            continue
+        while not right_matched[j]:
+            j += 1
+        if left[i] != right[j]:
+            transpositions += 1
+        j += 1
+    transpositions //= 2
 
-    shared = 0
-    for i in range(len(right) - 1):
-        pair = right[i : i + 2]
-        remaining = bigrams.get(pair, 0)
-        if remaining:
-            bigrams[pair] = remaining - 1
-            shared += 1
-    return (2 * shared) / ((len(left) - 1) + (len(right) - 1))
+    jaro = (matches / len(left) + matches / len(right) + (matches - transpositions) / matches) / 3
 
+    prefix = 0
+    for i in range(min(4, len(left), len(right))):
+        if left[i] != right[i]:
+            break
+        prefix += 1
 
-def similarity(a: str, b: str) -> float:
-    return _bigram_similarity(normalize(a), normalize(b))
+    return jaro + prefix * 0.1 * (1 - jaro)
 
 
 def _entry_words(title: str) -> list[str]:
@@ -101,21 +119,26 @@ def _entry_words(title: str) -> list[str]:
     return normalize(title).split()
 
 
-def _word_matches(entry_word: str, query_word: str) -> bool:
-    if entry_word == query_word:
+def _word_matches(entry_word: str, query_word: str, exact: bool) -> bool:
+    # Anywhere in the word, not just at its start: the substring search this
+    # replaced matched across the whole title, so a fragment like "rth" has
+    # always found "earth" and has to keep doing so. `exact` only drops the
+    # misspelling below - a fragment still counts.
+    if query_word in entry_word:
         return True
-    # The listener is still typing: "wonder" is a prefix of "wonderwall".
-    if entry_word.startswith(query_word):
-        return True
-    return _bigram_similarity(entry_word, query_word) >= _TOKEN_FLOOR
+    if exact:
+        return False
+    return _jaro_winkler(entry_word, query_word) >= _TOKEN_FLOOR
 
 
-def matcher(query: str) -> Callable[[str], bool]:
+def matcher(query: str, exact: bool = False) -> Callable[[str], bool]:
     """A predicate over log titles for one search.
 
     The query is normalised once here rather than per entry, since a station's
     log runs to a thousand titles. An empty or punctuation-only query matches
-    everything, which is how "no search in force" is expressed."""
+    everything, which is how "no search in force" is expressed. `exact` drops
+    the misspelling match, the same mode the app's filter fields have
+    (services/textSearch.ts); a fragment still matches."""
     wanted = normalize(query).split()
     if not wanted:
         return lambda _title: True
@@ -123,13 +146,13 @@ def matcher(query: str) -> Callable[[str], bool]:
     def matches(title: str) -> bool:
         words = _entry_words(title)
         return all(
-            any(_word_matches(word, word_wanted) for word in words) for word_wanted in wanted
+            any(_word_matches(word, word_wanted, exact) for word in words) for word_wanted in wanted
         )
 
     return matches
 
 
-def matches(title: str, query: str) -> bool:
+def matches(title: str, query: str, exact: bool = False) -> bool:
     """One entry against one query — the whole of matcher()'s work, for a
     single call."""
-    return matcher(query)(title)
+    return matcher(query, exact)(title)

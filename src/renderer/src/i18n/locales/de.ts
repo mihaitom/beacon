@@ -779,6 +779,7 @@ export default {
     artists: 'Artists',
     albums: 'Alben',
     songs: 'Songs',
+    exactMatch: 'Exakte Schreibweise',
     noResults: 'Keine Treffer für „{query}“.',
   },
   releaseNotes: {

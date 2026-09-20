@@ -1419,6 +1419,7 @@ async def get_radio_title_history(
     before: float | None = Query(default=None),
     limit: int = Query(default=_HISTORY_MAX_PAGE),
     q: str | None = Query(default=None),
+    exact: bool = Query(default=False),
     session: SessionState = Depends(require_authenticated_session),
 ) -> dict:
     """One page of the current station's log older than `before` (the `at`
@@ -1430,8 +1431,9 @@ async def get_radio_title_history(
     and lenient rather than a substring — case, accents and punctuation are
     ignored, artist and track are searched together in any order, a
     half-typed word matches by prefix and a misspelling by similarity (see
-    core/title_match.py). Answered in one go rather than paged — the log is
-    capped at 1000 entries per station and a search over it returns a
+    core/title_match.py). `exact` drops the misspelling match, the same mode
+    the app's filter fields have. Answered in one go rather than paged — the
+    log is capped at 1000 entries per station and a search over it returns a
     handful, so a second page is a cursor to maintain for a case that needs
     it about as often as a station plays one title a thousand times.
 
@@ -1450,6 +1452,6 @@ async def get_radio_title_history(
     return {
         "url": session.current_radio_station_url,
         "history": session.radio_title_log(
-            before=before, limit=max(1, min(limit, _HISTORY_MAX_PAGE)), query=q
+            before=before, limit=max(1, min(limit, _HISTORY_MAX_PAGE)), query=q, exact=exact
         ),
     }

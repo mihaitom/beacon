@@ -34,15 +34,18 @@
     </detail-header>
 
     <sticky-filter>
-      <v-text-field
-        v-model="filterQuery"
-        :label="$t('search.label')"
-        prepend-inner-icon="mdi-magnify"
-        variant="solo-filled"
-        density="compact"
-        clearable
-        class="library-search"
-      />
+      <div class="library-filter">
+        <v-text-field
+          v-model="filterQuery"
+          :label="$t('search.label')"
+          prepend-inner-icon="mdi-magnify"
+          variant="solo-filled"
+          density="compact"
+          clearable
+          class="library-search"
+        />
+        <exact-match-switch />
+      </div>
     </sticky-filter>
     <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
       {{ libraryStore.error }}
@@ -119,6 +122,7 @@ import ArtistCard from '@/components/library/ArtistCard.vue'
 import AlphabetIndexBar from '@/components/library/AlphabetIndexBar.vue'
 import InfiniteScrollTrigger from '@/components/InfiniteScrollTrigger.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
+import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
 import type { Artist } from '@/types/library'
 
 const PAGE_SIZE = 60
@@ -141,7 +145,14 @@ let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'ArtistsView',
-  components: { DetailHeader, ArtistCard, AlphabetIndexBar, InfiniteScrollTrigger, StickyFilter },
+  components: {
+    DetailHeader,
+    ArtistCard,
+    AlphabetIndexBar,
+    InfiniteScrollTrigger,
+    StickyFilter,
+    ExactMatchSwitch,
+  },
   // Composition API escape hatch just for gridWidth — see
   // AlbumsView.vue's identical setup() and useElementWidth's own comment.
   setup() {
@@ -187,7 +198,7 @@ export default {
       const query = this.debouncedQuery
       if (!query.trim()) return this.libraryStore.artists
       return this.libraryStore.artists.filter((artist: Artist) =>
-        matchesAllTerms(query, artist.name),
+        matchesAllTerms(query, [artist.name], { exact: this.libraryStore.searchExact }),
       )
     },
     visibleArtists(): Artist[] {

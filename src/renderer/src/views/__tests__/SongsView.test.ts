@@ -92,4 +92,23 @@ describe('SongsView filter', () => {
     const songs = wrapper.getComponent({ name: 'SongTable' }).props('songs') as { id: string }[]
     expect(songs).toHaveLength(3)
   })
+
+  it('orders the matches by how well they answer the query', async () => {
+    const wrapper = mountView()
+    useLibraryStore().allSongs = [
+      makeSong('a', { title: 'Bad Romance', artist: 'Lady Gaga', album: 'The Fame' }),
+      makeSong('b', { title: 'Bad', artist: 'Michael Jackson', album: 'Bad' }),
+      makeSong('c', { title: 'Other', artist: 'Bad Company', album: 'X' }),
+    ]
+
+    await withQuery(wrapper, 'bad')
+
+    const table = wrapper.getComponent({ name: 'SongTable' })
+    const songs = table.props('songs') as { id: string }[]
+    // Exact title first, then the title containing the word, then the artist
+    // match - the alphabetical title sort would have buried the exact one.
+    expect(songs.map((s) => s.id)).toEqual(['b', 'a', 'c'])
+    // And the table must not re-sort the ranked list by title.
+    expect(table.props('defaultSortKey')).toBeNull()
+  })
 })

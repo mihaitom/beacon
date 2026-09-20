@@ -217,6 +217,29 @@ body {
   margin-bottom: 16px;
 }
 
+/* The row a library page's filter field and its exact-match switch share: the
+ * field keeps its 320px, the switch sits just after it, and the gap that was
+ * the field's own margin moves out here so the two line up. */
+.library-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.library-filter .library-search {
+  margin-bottom: 0;
+}
+
+/* Top-aligned, not centred: a Vuetify text field carries an empty 22px
+ * details row under its box even when nothing is shown, so the field element
+ * is taller than its box, and centring the switch would drop it below the
+ * box's middle. The box is at the top, so the switch is too. */
+.library-filter .exact-match-switch {
+  align-self: flex-start;
+}
+
 /* The line a library page shows in place of its grid while something is
  * loading or has gone wrong - the error banner and the spinner both sit
  * here, above the content, with the same gap under them. */

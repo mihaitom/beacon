@@ -4,6 +4,7 @@ import {
   fetchRadioMetadata,
   fetchRadioTitleHistory,
   RADIO_TITLE_PAGE_SIZE,
+  searchRadioTitleHistory,
   startRadioMetadataWatch,
   stopRadioMetadataWatch,
 } from '../radioMetadata'
@@ -178,6 +179,28 @@ describe('radioMetadata', () => {
         url: null,
         history: [],
       })
+    })
+  })
+
+  describe('searchRadioTitleHistory', () => {
+    it('asks the whole log for the query, without the exact flag by default', async () => {
+      vi.mocked(fetchConnect).mockResolvedValue({ url: 'http://station', history: [] })
+
+      await searchRadioTitleHistory('kate bush')
+
+      expect(fetchConnect).toHaveBeenCalledWith(
+        `/radio-metadata/history?q=kate%20bush&limit=${RADIO_TITLE_PAGE_SIZE}`,
+      )
+    })
+
+    it('adds the exact flag when exact matching is on', async () => {
+      vi.mocked(fetchConnect).mockResolvedValue({ url: 'http://station', history: [] })
+
+      await searchRadioTitleHistory('players', true)
+
+      expect(fetchConnect).toHaveBeenCalledWith(
+        `/radio-metadata/history?q=players&limit=${RADIO_TITLE_PAGE_SIZE}&exact=true`,
+      )
     })
   })
 })

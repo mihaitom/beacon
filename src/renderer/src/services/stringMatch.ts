@@ -64,3 +64,54 @@ export function bigramSimilarity(left: string, right: string): number {
 export function similarity(a: string, b: string): number {
   return bigramSimilarity(normalize(a), normalize(b))
 }
+
+/** Jaro-Winkler similarity of two *already-normalised* strings, 0..1.
+ *
+ * The metric the token-level typo match uses (services/textSearch.ts),
+ * chosen over the bigram coefficient above because a single missing or extra
+ * letter leaves every bigram shifted and scores badly there - "earth" against
+ * "erth" is 0.57 - while Jaro-Winkler, which counts matching characters in a
+ * window and rewards a shared prefix, stays at 0.94. The prefix bonus is also
+ * what keeps a different word sharing a tail ("oasis" against "basis", 0.87)
+ * below the match threshold. */
+export function jaroWinkler(left: string, right: string): number {
+  if (!left || !right) return 0
+  if (left === right) return 1
+
+  const window = Math.max(0, Math.floor(Math.max(left.length, right.length) / 2) - 1)
+  const leftMatched = Array.from({ length: left.length }, () => false)
+  const rightMatched = Array.from({ length: right.length }, () => false)
+
+  let matches = 0
+  for (let i = 0; i < left.length; i++) {
+    const start = Math.max(0, i - window)
+    const end = Math.min(i + window + 1, right.length)
+    for (let j = start; j < end; j++) {
+      if (rightMatched[j] || left[i] !== right[j]) continue
+      leftMatched[i] = true
+      rightMatched[j] = true
+      matches++
+      break
+    }
+  }
+  if (matches === 0) return 0
+
+  let transpositions = 0
+  let j = 0
+  for (let i = 0; i < left.length; i++) {
+    if (!leftMatched[i]) continue
+    while (!rightMatched[j]) j++
+    if (left[i] !== right[j]) transpositions++
+    j++
+  }
+  transpositions = Math.floor(transpositions / 2)
+
+  const jaro =
+    (matches / left.length + matches / right.length + (matches - transpositions) / matches) / 3
+
+  let prefix = 0
+  const maxPrefix = Math.min(4, left.length, right.length)
+  while (prefix < maxPrefix && left[prefix] === right[prefix]) prefix++
+
+  return jaro + prefix * 0.1 * (1 - jaro)
+}
