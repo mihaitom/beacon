@@ -146,6 +146,30 @@ def _save_cache(cache: dict) -> None:
         logger.error(f"[recommendations] Cache save failed: {e}")
 
 
+# What joins several performers into one credit. Kept in step with the
+# frontend's services/artistCredits.ts, so both halves of the app agree on
+# what "one artist" means. Deliberately not exhaustive: "x" and "with" are
+# left out ("x" matches inside far too much, and an artist named "With..." is
+# likelier than a page missing one collaboration).
+_ARTIST_SEPARATOR = re.compile(
+    r"\s*(?:&|;|/|\+|,|\b(?:featuring|feat|ft|vs)\.?(?=\s))\s*", re.IGNORECASE
+)
+
+
+def first_artist(name: str) -> str | None:
+    """The first performer named in a credit, or None when the credit is a
+    single name. "Cardi B & Bruno Mars" -> "Cardi B".
+
+    A band whose own name contains a separator ("Simon & Garfunkel") splits
+    too, which is why callers try the whole name first and only fall back to
+    this - the whole resolves for the band, and only a genuine collaboration
+    (which has no MusicBrainz artist of its own) needs the first name."""
+    parts = [part.strip() for part in _ARTIST_SEPARATOR.split(name) if part.strip()]
+    if len(parts) <= 1:
+        return None
+    return parts[0]
+
+
 async def resolve_mbid(name: str) -> str | None:
     """Artist name -> MusicBrainz ID, cache-first (see this module's own
     docstring). Only a *positive* result is cached. A response with no

@@ -58,6 +58,30 @@ async def test_no_mbid_means_nothing_to_show(key):
         assert await fanart.get_artist_art("Nobody") is None
 
 
+async def test_a_collaboration_credit_falls_back_to_its_first_artist(key):
+    """A credit like "Cardi B & Bruno Mars" has no MusicBrainz artist of its
+    own, so nothing resolves and the track would go undressed; the first
+    performer is who it gets dressed with."""
+    payload = {"artistbackground": [{"url": "bg", "likes": "1"}]}
+    resolve = AsyncMock(side_effect=lambda name: {"cardi b": "mbid-cardi"}.get(name.lower()))
+    with patch.object(fanart, "resolve_mbid", resolve), _with_get(_response(200, payload)):
+        art = await fanart.get_artist_art("Cardi B & Bruno Mars")
+
+    assert art == {"banner": None, "background": "bg", "logo": None}
+    assert [call.args[0] for call in resolve.await_args_list] == ["Cardi B & Bruno Mars", "Cardi B"]
+
+
+async def test_a_band_with_a_separator_in_its_name_stays_whole(key):
+    """The whole credit is tried first: "Simon & Garfunkel" is one artist, so
+    it must not fall back to "Simon"."""
+    payload = {"artistbackground": [{"url": "bg", "likes": "1"}]}
+    resolve = AsyncMock(return_value="mbid-duo")
+    with patch.object(fanart, "resolve_mbid", resolve), _with_get(_response(200, payload)):
+        await fanart.get_artist_art("Simon & Garfunkel")
+
+    resolve.assert_awaited_once_with("Simon & Garfunkel")
+
+
 async def test_returns_one_image_of_each_kind(key):
     payload = {
         "artistbanner": [

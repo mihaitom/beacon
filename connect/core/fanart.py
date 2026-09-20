@@ -2,9 +2,11 @@
 
 Fanart.tv is keyed on MusicBrainz artist ids, which Beacon already resolves
 by name (core/recommendations.py's resolve_mbid()), so a lookup is that
-search plus one request. Its images fill the gap the Deezer artist photo
-leaves: a wide banner and a background, each carrying a `likes` count used
-to pick the best one.
+search plus one request. A collaboration credit ("Cardi B & Bruno Mars") has
+no MusicBrainz artist of its own, so it falls back to its first performer -
+who is who the track gets dressed with. Its images fill the gap the Deezer
+artist photo leaves: a wide banner and a background, each carrying a `likes`
+count used to pick the best one.
 
 Two keys, as Fanart.tv's terms require of a publicly available program: a
 project ("client") key that identifies Beacon, set once for the project (see
@@ -36,7 +38,7 @@ import time
 import httpx
 
 from core import api_keys
-from core.recommendations import resolve_mbid
+from core.recommendations import first_artist, resolve_mbid
 from lyrics.shared import USER_AGENT
 
 logger = logging.getLogger("connect.fanart")
@@ -159,6 +161,15 @@ async def get_artist_art(name: str) -> dict | None:
     artwork - and keeps the requests off the shared project key's rate
     limit."""
     mbid = await resolve_mbid(name)
+    if not mbid:
+        # A collaboration credit ("Cardi B & Bruno Mars") has no MusicBrainz
+        # artist of its own, so nothing resolves and the track would go
+        # undressed. The first performer named is who it gets dressed with;
+        # the whole name is tried first, so a band called "Simon & Garfunkel"
+        # stays itself.
+        main = first_artist(name)
+        if main:
+            mbid = await resolve_mbid(main)
     if not mbid:
         return None
 

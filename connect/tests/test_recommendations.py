@@ -72,6 +72,28 @@ def test_save_cache_logs_but_does_not_raise_when_the_directory_is_unwritable(cap
     assert "Cache save failed" in caplog.text
 
 
+# ── first_artist ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("credit", "expected"),
+    [
+        ("Cardi B & Bruno Mars", "Cardi B"),
+        ("Post Malone feat. Morgan Wallen", "Post Malone"),
+        ("David Guetta ft. Bebe Rexha", "David Guetta"),
+        ("Earth, Wind & Fire", "Earth"),
+        # A band whose own name contains a separator splits too - callers try
+        # the whole name first (see fanart.get_artist_art).
+        ("AC/DC", "AC"),
+        # One name, nothing to fall back to.
+        ("Cher", None),
+        ("", None),
+    ],
+)
+def test_first_artist(credit, expected):
+    assert recommendations.first_artist(credit) == expected
+
+
 # ── resolve_mbid ──────────────────────────────────────────────────────────
 
 
