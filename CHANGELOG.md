@@ -9,10 +9,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - Playlists can now be filled from Last.fm: the charts of a country or the whole world, a genre's or an artist's top tracks, or your own most played. Beacon looks each one up in your library and shows you both sides next to each other, numbered by chart position, before anything is saved. Naming it after a playlist you already have offers to add only the tracks missing from it, or to replace its contents outright. Needs a Last.fm key, which is entered once in Settings under "Advanced" and then applies to everyone using this Beacon; without one the button is not shown at all
+- Playlists can also be filled from ListenBrainz: a genre's top recordings, its charts, an artist's top recordings, your own most listened, or a set of tracks recommended from your listening history. Unlike Last.fm this needs no key or setup - a public ListenBrainz name is enough, entered in Settings or the builder itself
+- Home gains a "Recommended for you" shelf: the artists behind the tracks ListenBrainz recommends from your own listening history, shown only where your library does not already have them. Your public ListenBrainz name is entered under Library, where it also prefills the playlist builder, and the shelf is off with the personalized-recommendations switch
 - Settings has a new "Show advanced features" switch, off by default. It uncovers the things that have to be set up before they work, starting with the Last.fm key above, so that whoever runs the server can set them up without everyone else in the household having to look at them. What gets set up there stays available to everyone
 - The lyrics source under the lyrics is now a link to that sheet on lrclib.net, NetEase or SimpMusic, so badly timed lyrics can be checked where they came from
 - A new "Rediscover" shelf on Home brings back songs you played a lot but haven't heard in at least three months, with a button to shuffle in a different set
 - An artist's page now shows the opening paragraph of their Wikipedia article under the name, in the app's language where Wikipedia has one and in English otherwise, with a link to the full article
+
+### Fixed
+
+- An artist lookup that failed during a brief MusicBrainz outage could be remembered as "not found" for good, leaving that artist without a photo, links or Wikipedia paragraph on their page and out of Discover. Those misses are retried now
 
 ## [1.3.2] - 2026-09-19
 

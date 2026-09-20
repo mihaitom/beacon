@@ -19,6 +19,9 @@ export interface AccountSettingsPayload {
   // The Last.fm name the playlist builder reads a listening history
   // for - see stores/lastfm.ts. A public profile name, not a credential.
   lastfmUsername?: string
+  // The ListenBrainz name the builder and Home's personalized shelf read
+  // from - see stores/listenbrainz.ts. Also a public profile name.
+  listenbrainzUsername?: string
   // Which optional columns the song tables show - see
   // stores/songColumns.ts. An empty array is a real selection (every
   // optional column off), not "never set".

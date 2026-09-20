@@ -32,6 +32,7 @@ import { reloadLyricsCacheForAccount } from '@/stores/lyrics'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import { useRadioSettingsStore } from '@/stores/radioSettings'
 import { useLastfmStore } from '@/stores/lastfm'
+import { useListenbrainzStore } from '@/stores/listenbrainz'
 import { useAdvancedModeStore } from '@/stores/advancedMode'
 import { useDrawersStore } from '@/stores/drawers'
 import {
@@ -95,6 +96,10 @@ async function pullAccountSettings(): Promise<void> {
       useLastfmStore().setUsername(remote.lastfmUsername)
     }
 
+    if (typeof remote.listenbrainzUsername === 'string') {
+      useListenbrainzStore().setUsername(remote.listenbrainzUsername)
+    }
+
     if (Array.isArray(remote.songColumns)) {
       const known = new Set<string>(OPTIONAL_SONG_COLUMNS.map((column) => column.key))
       const valid = remote.songColumns.filter((key): key is SongColumnKey => known.has(key))
@@ -131,6 +136,7 @@ export function initAccountScopedStores(): void {
     useDrawersStore().reloadForAccount()
     useSongColumnsStore().reloadForAccount()
     useLastfmStore().reloadForAccount()
+    useListenbrainzStore().reloadForAccount()
     useAdvancedModeStore().reloadForAccount()
     void pullAccountSettings()
   })

@@ -99,6 +99,25 @@
         />
         <p class="setting__hint">{{ $t('settings.recommendationsHint') }}</p>
       </div>
+
+      <!-- The name behind the personalized "Recommended for you" shelf on
+         - Home, and the default the playlist builder starts from. A public
+         - name, not a credential. Not gated on the toggle above: the
+         - builder's own history and recommendation sources need it whether
+         - or not the shelf is on. -->
+      <div class="setting">
+        <p class="setting__description">{{ $t('settings.listenbrainzHint') }}</p>
+        <v-text-field
+          v-model="listenbrainzUsername"
+          :label="$t('settings.listenbrainzUsername')"
+          variant="solo-filled"
+          autocomplete="off"
+          spellcheck="false"
+          hide-details
+          @change="saveListenbrainzUsername"
+          @keyup.enter="saveListenbrainzUsername"
+        />
+      </div>
     </div>
   </section>
 </template>
@@ -107,6 +126,7 @@
 import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import { useRecommendationsStore } from '@/stores/recommendations'
+import { useListenbrainzStore } from '@/stores/listenbrainz'
 
 /**
  * The library itself: forcing the server (or, on Jellyfin, Beacon's own
@@ -119,11 +139,19 @@ import { useRecommendationsStore } from '@/stores/recommendations'
  */
 export default {
   name: 'LibrarySection',
+  data() {
+    return {
+      // Draft of the store's value, saved on blur/enter rather than on
+      // every keystroke — the store syncs to the account on each set.
+      listenbrainzUsername: '',
+    }
+  },
   created() {
     // A scan may already be running — one this app started before a
     // restart, or one somebody kicked off on the server itself. Asked
     // once, and only where the control that shows it exists.
     if (this.authStore.capabilities.libraryScan) void this.libraryStore.resumeScanIfRunning()
+    this.listenbrainzUsername = this.listenbrainzStore.username
   },
   computed: {
     authStore() {
@@ -134,6 +162,9 @@ export default {
     },
     recommendationsStore() {
       return useRecommendationsStore()
+    },
+    listenbrainzStore() {
+      return useListenbrainzStore()
     },
     /** What to call the media server in the text next to the scan button.
      * All three server types show that button (it is gated on being an
@@ -181,6 +212,12 @@ export default {
     },
   },
   methods: {
+    /** Stores the name for the whole account (stores/listenbrainz.ts syncs
+     * it to the account). An empty value clears it, which simply hides the
+     * shelf again. */
+    saveListenbrainzUsername(): void {
+      this.listenbrainzStore.setUsername(this.listenbrainzUsername ?? '')
+    },
     /** Hands the whole scan to the library store — see its startScan() for
      * why it lives there and not here. Only the "could not even start"
      * case is this section's to report; everything after that is announced

@@ -82,6 +82,7 @@ export default {
     internetRadio: 'Internet radio',
     nothingToShow: 'Nothing to show.',
     newArtistsTitle: 'New artists to explore',
+    recommendedArtists: 'Recommended for you',
   },
   library: {
     showAsGrid: 'Show as grid',
@@ -429,6 +430,9 @@ export default {
     recommendations: 'Personalized recommendations',
     recommendationsHint:
       "Discover on Home uses artists similar to what you actually listen to, looked up at MusicBrainz, ListenBrainz and Deezer - this shares a library artist name or two with them. Off falls back to random albums; opening an artist's own page still looks up that one artist either way.",
+    listenbrainzUsername: 'ListenBrainz username',
+    listenbrainzHint:
+      'Your public ListenBrainz name. It fills the "Recommended for you" shelf on Home and is offered as the default in the playlist builder. No password needed.',
     lyricsProvidersTitle: 'Lyrics providers',
     lyricsProvidersHint:
       "Lyrics stored with the song file itself are always tried first and never leave your server. Every provider below is enabled by default - deselect any you'd rather Beacon not send a song's title and artist to.",
@@ -534,6 +538,32 @@ export default {
     nameArtist: 'Last.fm {artist}',
     nameMyTop: 'My most played ({period})',
   },
+  listenbrainz: {
+    title: 'ListenBrainz playlist',
+    sourceCharts: 'Charts',
+    sourceGenre: 'Top recordings of a genre',
+    sourceArtist: 'Top recordings of an artist',
+    sourceMyTop: 'My most listened',
+    sourceRecommended: 'Recommended for me',
+    username: 'ListenBrainz username',
+    usernameHint: 'Your public ListenBrainz name. No password needed.',
+    period: 'Period',
+    periodWeek: 'Last week',
+    periodMonth: 'Last month',
+    periodQuarter: 'Last 3 months',
+    periodHalfYearly: 'Last 6 months',
+    periodYear: 'Last year',
+    periodAllTime: 'All time',
+    columnListenbrainz: 'ListenBrainz',
+    noTracks: 'ListenBrainz returned nothing for that.',
+    failed: 'Could not reach ListenBrainz.',
+    fetching: 'Asking ListenBrainz…',
+    nameCharts: 'ListenBrainz charts',
+    nameGenre: 'ListenBrainz {tag}',
+    nameArtist: 'ListenBrainz {artist}',
+    nameMyTop: 'My most listened ({period})',
+    nameRecommended: 'Recommended for me',
+  },
   playlists: {
     reorderFailed: 'Could not save the new order',
     removedOne: 'Removed “{title}”',
@@ -634,9 +664,16 @@ export default {
       },
       listenbrainz: {
         name: 'ListenBrainz',
-        purpose: 'Suggesting similar artists for "New artists to explore".',
+        purpose:
+          'Suggesting similar artists for "New artists to explore", and filling a playlist from ListenBrainz charts, an artist\'s top recordings or your own listening history.',
         sends:
-          'The MusicBrainz ids of the artists being started from - no names, and nothing about what you have played.',
+          'For similar artists, the MusicBrainz ids of the artists being started from. For the playlist builder, what you asked for - an artist name, or the public ListenBrainz name you entered. Nothing about your library is sent; the matching happens on your own device.',
+      },
+      coverartarchive: {
+        name: 'Cover Art Archive',
+        purpose: 'Showing the cover of a recording recommended on Home.',
+        sends:
+          'Nothing about you. It reads the cover image for a release id that ListenBrainz returned.',
       },
       lastfm: {
         name: 'Last.fm',

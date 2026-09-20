@@ -116,6 +116,15 @@
       </template>
     </album-shelf>
 
+    <!-- The listener's own recommendations, distinct from the community
+       - "New artists to explore" below: these come from their ListenBrainz
+       - history rather than from what the library's own artists resemble. -->
+    <similar-artists-shelf
+      :title="$t('home.recommendedArtists')"
+      :artists="personalArtists"
+      :loading="loadingPersonal"
+    />
+
     <similar-artists-shelf
       :title="$t('home.newArtistsTitle')"
       :artists="newArtistDiscoveries"
@@ -140,12 +149,14 @@ import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
 import { useRecommendationsStore } from '@/stores/recommendations'
+import { useListenbrainzStore } from '@/stores/listenbrainz'
 import {
   getSimilarArtists,
   getArtistImages,
   getArtistLinksByMbid,
   type SimilarArtist,
 } from '@/services/connect/recommendations'
+import { getListenbrainzArtists } from '@/services/connect/listenbrainz'
 import { type ExternalLinkKey } from '@/components/library/externalArtistLinks'
 import type { SimilarArtistDisplay } from '@/components/library/SimilarArtistsShelf.vue'
 import HeroBand from '@/components/home/HeroBand.vue'
@@ -231,6 +242,11 @@ export default {
       // weren't enough seed artists, or the lookup itself failed; the
       // SimilarArtistsShelf component hides itself in all of those cases.
       newArtistDiscoveries: [] as SimilarArtistDisplay[],
+      // The listener's own recommendations (ListenBrainz CF), enriched the
+      // same way. Empty without a ListenBrainz name or with the
+      // recommendations toggle off — see loadPersonalArtists().
+      personalArtists: [] as SimilarArtistDisplay[],
+      loadingPersonal: false,
       topSongs: [] as Song[],
       rediscoverSongs: [] as Song[],
       loadingRediscover: false,
@@ -279,6 +295,9 @@ export default {
     },
     recommendationsStore() {
       return useRecommendationsStore()
+    },
+    listenbrainzStore() {
+      return useListenbrainzStore()
     },
     heroCoverId() {
       if (this.playbackStore.currentSong) return this.playbackStore.currentSong.coverArtId
@@ -435,6 +454,12 @@ export default {
       .fetchTopSongs(10)
       .then((songs) => (this.topSongs = songs))
       .finally(() => (this.loadingTopSongs = false))
+
+    // A no-op without a ListenBrainz name, which loadPersonalArtists()
+    // itself checks — the toggle only saves the (empty) attempt.
+    if (this.recommendationsStore.enabled) {
+      void this.loadPersonalArtists()
+    }
   },
   methods: {
     // A random MAX_SEED_ARTISTS-sized sample of the distinct artist names
@@ -614,46 +639,12 @@ export default {
       }
 
       const notOwnedCapped = notOwned.slice(0, DISCOVER_SHELF_SIZE)
-      // Deezer photo + link, and MusicBrainz's own page plus whichever of
-      // Spotify/Apple Music/TIDAL/YouTube/Discogs it has on file (the same
-      // set ArtistDetailView.vue shows for an owned artist) — two
-      // independent lookups, Promise.allSettled so one failing doesn't
-      // blank out what the other found. getArtistLinksByMbid(), not
-      // getArtistLinks(): these artists already carry a trusted MBID
-      // straight from ListenBrainz Labs (getSimilarArtists() above), so a
-      // name-based lookup would just make the backend redundantly re-derive
-      // one it doesn't need to.
-      const [owned, [images, linksByMbid]] = await Promise.all([
+      // Deezer photo and external links, and one album per owned match —
+      // two independent halves, run together.
+      const [owned, discoveries] = await Promise.all([
         this.albumsForOwnedArtists(ownedMatches),
-        Promise.allSettled([
-          getArtistImages(notOwnedCapped.map((a) => a.name)),
-          getArtistLinksByMbid(notOwnedCapped.map((a) => a.mbid)),
-        ]),
+        this.enrichArtistDiscoveries(notOwnedCapped),
       ])
-      if (images.status === 'rejected') {
-        console.error('[home] Artist image lookup failed:', images.reason)
-      }
-      if (linksByMbid.status === 'rejected') {
-        console.error('[home] Artist links lookup failed:', linksByMbid.reason)
-      }
-      const discoveries = notOwnedCapped.map((artist) => {
-        const enrichment = images.status === 'fulfilled' ? images.value[artist.name] : undefined
-        const links: Partial<Record<ExternalLinkKey, string>> =
-          linksByMbid.status === 'fulfilled' ? { ...linksByMbid.value[artist.mbid] } : {}
-        if (enrichment?.link) links.deezer = enrichment.link
-        // Same last-resort fallback as before this existed — a plain
-        // MusicBrainz page link even when the by-mbid lookup above came
-        // back empty (a transient failure, or genuinely nothing on file),
-        // so there's always at least one way to reach the artist rather
-        // than a discovery card with zero working links.
-        if (!links.musicbrainz) links.musicbrainz = `https://musicbrainz.org/artist/${artist.mbid}`
-        return {
-          ...artist,
-          imageUrl: enrichment?.image ?? null,
-          largeImageUrl: enrichment?.imageLarge ?? null,
-          links,
-        }
-      })
       const capped = owned.slice(0, DISCOVER_SHELF_SIZE)
       const albums =
         capped.length >= MIN_OWNED_MATCHES
@@ -672,6 +663,80 @@ export default {
       else this.heldOverArtists = discoveries
       if (only !== 'artists') this.randomAlbums = albums
       else this.heldOverAlbums = albums
+    },
+    /** Deezer photo plus MusicBrainz's own page and whichever of
+     * Spotify/Apple Music/TIDAL/YouTube/Discogs it has on file (the same
+     * set ArtistDetailView.vue shows for an owned artist) for each artist
+     * in `artists` — two independent lookups, Promise.allSettled so one
+     * failing doesn't blank out what the other found. getArtistLinksByMbid(),
+     * not getArtistLinks(): these artists already carry a trusted MBID
+     * (ListenBrainz Labs for Discover, ListenBrainz's metadata for the
+     * personalized shelf), so a name-based lookup would just make the
+     * backend redundantly re-derive one it doesn't need to.
+     *
+     * Shared by both artist shelves, which differ only in where the artist
+     * list came from. */
+    async enrichArtistDiscoveries(artists: SimilarArtist[]): Promise<SimilarArtistDisplay[]> {
+      const [images, linksByMbid] = await Promise.allSettled([
+        getArtistImages(artists.map((a) => a.name)),
+        getArtistLinksByMbid(artists.map((a) => a.mbid)),
+      ])
+      if (images.status === 'rejected') {
+        console.error('[home] Artist image lookup failed:', images.reason)
+      }
+      if (linksByMbid.status === 'rejected') {
+        console.error('[home] Artist links lookup failed:', linksByMbid.reason)
+      }
+      return artists.map((artist) => {
+        const enrichment = images.status === 'fulfilled' ? images.value[artist.name] : undefined
+        const links: Partial<Record<ExternalLinkKey, string>> =
+          linksByMbid.status === 'fulfilled' ? { ...linksByMbid.value[artist.mbid] } : {}
+        if (enrichment?.link) links.deezer = enrichment.link
+        // Same last-resort fallback as before this existed — a plain
+        // MusicBrainz page link even when the by-mbid lookup above came
+        // back empty (a transient failure, or genuinely nothing on file),
+        // so there's always at least one way to reach the artist rather
+        // than a discovery card with zero working links.
+        if (!links.musicbrainz) links.musicbrainz = `https://musicbrainz.org/artist/${artist.mbid}`
+        return {
+          ...artist,
+          imageUrl: enrichment?.image ?? null,
+          largeImageUrl: enrichment?.imageLarge ?? null,
+          links,
+        }
+      })
+    },
+    /** Home's personalized artist shelf: the artists behind the listener's
+     * own ListenBrainz recommendations, enriched the same way the community
+     * "New artists to explore" shelf is. Only asked with a ListenBrainz
+     * name set and recommendations on — without a name there is nothing
+     * personal to ask for, and the shelf simply stays hidden. A failure
+     * leaves it hidden rather than taking Home down (connect being
+     * unreachable is not a reason for the rest of the page to fail). */
+    async loadPersonalArtists(): Promise<void> {
+      const username = this.listenbrainzStore.username.trim()
+      if (!username) return
+      this.loadingPersonal = true
+      try {
+        // The owned check below reads this list, so it has to be there
+        // first. Cached, and created() already started it, so this is
+        // usually free.
+        await this.libraryStore.fetchArtists()
+        const artists = await getListenbrainzArtists(username, 30)
+        // An owned artist is what the library's own shelves are for; this
+        // shelf is discovery, so they are dropped before enrichment.
+        const notOwned = artists.filter(
+          (artist) =>
+            !this.libraryStore.artists.some(
+              (owned) => owned.name.toLowerCase() === artist.name.toLowerCase(),
+            ),
+        )
+        this.personalArtists = await this.enrichArtistDiscoveries(notOwned)
+      } catch (error) {
+        console.error('[home] Personalized recommendations failed:', error)
+      } finally {
+        this.loadingPersonal = false
+      }
     },
     // Mirrors SongTable.vue's own startSongRadio() — same store action,
     // same toast on failure. The spinner lives on the button because the

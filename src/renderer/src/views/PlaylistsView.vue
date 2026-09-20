@@ -19,6 +19,15 @@
             @click="openLastfmDialog"
             >{{ $t('lastfm.title') }}</v-btn
           >
+          <!-- No key and no setup: ListenBrainz's endpoints are public, so
+           - unlike the Last.fm button this is always offered. -->
+          <v-btn
+            prepend-icon="mdi-headphones"
+            color="primary"
+            rounded="pill"
+            @click="openListenbrainzDialog"
+            >{{ $t('listenbrainz.title') }}</v-btn
+          >
           <v-btn
             prepend-icon="mdi-plus"
             color="primary"
@@ -215,7 +224,12 @@ export default {
   },
   methods: {
     openLastfmDialog(): void {
-      ;(this.$refs.lastfmDialog as { open: () => void } | undefined)?.open()
+      ;(this.$refs.lastfmDialog as { open: (source?: string) => void } | undefined)?.open('lastfm')
+    },
+    openListenbrainzDialog(): void {
+      ;(this.$refs.lastfmDialog as { open: (source?: string) => void } | undefined)?.open(
+        'listenbrainz',
+      )
     },
     async playPlaylist(playlist: Playlist) {
       // getPlaylists.view (the list this view renders) doesn't include each

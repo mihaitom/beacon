@@ -4,7 +4,7 @@
       <v-card-title class="dialog-head">
         <div class="dialog-head__text">
           <span class="eyebrow-label">{{ $t('lastfm.eyebrow') }}</span>
-          <h2 class="display-title dialog-head__title">{{ $t('lastfm.title') }}</h2>
+          <h2 class="display-title dialog-head__title">{{ dialogTitle }}</h2>
         </div>
         <v-btn
           icon="mdi-close"
@@ -28,36 +28,48 @@
           />
 
           <template v-if="op === 'charts'">
+            <template v-if="source === 'lastfm'">
+              <v-select
+                v-model="chartScope"
+                :items="chartScopeOptions"
+                :label="$t('lastfm.chartScope')"
+                variant="solo-filled"
+                hide-details
+              />
+              <!-- The same picker the radio station directory uses, and
+               - the same list behind it: Radio Browser's /json/countries
+               - hands over ISO 3166-1 names, which is exactly what
+               - geo.getTopTracks asks for. v-autocomplete rather than a
+               - select because the list runs to roughly 250 entries. -->
+              <v-autocomplete
+                v-if="chartScope === 'country'"
+                v-model="countryValue"
+                :items="countryItems"
+                item-title="name"
+                item-value="name"
+                :label="$t('lastfm.country')"
+                :placeholder="$t('lastfm.countryPlaceholder')"
+                :loading="countriesLoading"
+                variant="solo-filled"
+                hide-details
+                clearable
+              />
+            </template>
+            <!-- ListenBrainz has sitewide charts but no per-country ones,
+             - so a range is the only thing to pick. -->
             <v-select
-              v-model="chartScope"
-              :items="chartScopeOptions"
-              :label="$t('lastfm.chartScope')"
+              v-else
+              v-model="periodValue"
+              :items="periodOptions"
+              :label="periodLabel"
               variant="solo-filled"
               hide-details
-            />
-            <!-- The same picker the radio station directory uses, and
-             - the same list behind it: Radio Browser's /json/countries
-             - hands over ISO 3166-1 names, which is exactly what
-             - geo.getTopTracks asks for. v-autocomplete rather than a
-             - select because the list runs to roughly 250 entries. -->
-            <v-autocomplete
-              v-if="chartScope === 'country'"
-              v-model="countryValue"
-              :items="countryItems"
-              item-title="name"
-              item-value="name"
-              :label="$t('lastfm.country')"
-              :placeholder="$t('lastfm.countryPlaceholder')"
-              :loading="countriesLoading"
-              variant="solo-filled"
-              hide-details
-              clearable
             />
           </template>
 
           <!-- A combobox, not a select: these are only the common tags,
-           - and Last.fm has a tag for nearly anything. Typing something
-           - that isn't in the list is a normal way to use this. -->
+           - and both services have a tag for nearly anything. Typing
+           - something that isn't in the list is a normal way to use this. -->
           <v-combobox
             v-if="op === 'genre'"
             v-model="genreTag"
@@ -76,18 +88,21 @@
             hide-details
           />
 
-          <template v-if="op === 'mytop'">
+          <template v-if="op === 'mytop' || op === 'recommended'">
             <v-text-field
               v-model="username"
-              :label="$t('lastfm.username')"
-              :hint="$t('lastfm.usernameHint')"
+              :label="usernameLabel"
+              :hint="usernameHint"
               persistent-hint
               variant="solo-filled"
             />
+            <!-- The collaborative-filtering feed takes no range, so a
+             - recommended list has nothing to pick here. -->
             <v-select
-              v-model="period"
+              v-if="op === 'mytop'"
+              v-model="periodValue"
               :items="periodOptions"
-              :label="$t('lastfm.period')"
+              :label="periodLabel"
               variant="solo-filled"
               hide-details
             />
@@ -175,7 +190,7 @@
                - phone, where the pair stacks and the arrow says it. -->
               <div class="tracks-head">
                 <span />
-                <span class="column-label">{{ $t('lastfm.columnLastfm') }}</span>
+                <span class="column-label">{{ sourceColumnLabel }}</span>
                 <span class="tracks-head__gap" />
                 <span class="column-label">{{ $t('lastfm.columnLibrary') }}</span>
               </div>
@@ -279,7 +294,13 @@ import { useLibraryStore } from '@/stores/library'
 import CoverArt from './CoverArt.vue'
 import { ConnectApiError } from '@/services/connect/http'
 import { useLastfmStore } from '@/stores/lastfm'
+import { useListenbrainzStore } from '@/stores/listenbrainz'
 import { getLastfmTracks, type LastfmOp, type LastfmPeriod } from '@/services/connect/lastfm'
+import {
+  getListenbrainzTracks,
+  type ListenbrainzOp,
+  type ListenbrainzPeriod,
+} from '@/services/connect/listenbrainz'
 import {
   playlistSongIds,
   resolveTracks,
@@ -297,6 +318,11 @@ import {
   withRecentCountry,
   type CountryDividerItem,
 } from '@/services/recentCountries'
+
+/** Which service the builder reads from. Last.fm is the original and the
+ * default; ListenBrainz shares the whole matcher/result/creation half and
+ * differs only in which backend query it sends (see search()). */
+type BuilderSource = 'lastfm' | 'listenbrainz'
 
 // Common Last.fm tags, offered as suggestions rather than as the only
 // choices - the field is a combobox, and anything typed into it is sent
@@ -365,13 +391,15 @@ export default {
       creating: false,
       error: '',
 
-      op: 'charts' as LastfmOp,
+      source: 'lastfm' as BuilderSource,
+      op: 'charts' as LastfmOp | ListenbrainzOp,
       chartScope: 'country' as 'country' | 'global',
       country: '',
       tag: '',
       artist: '',
       username: '',
       period: '1month' as LastfmPeriod,
+      lbPeriod: 'month' as ListenbrainzPeriod,
       limit: 50,
       countryOptions: [] as RadioBrowserFilterOption[],
       countriesLoading: false,
@@ -420,7 +448,44 @@ export default {
     lastfmStore() {
       return useLastfmStore()
     },
-    sourceOptions(): { title: string; value: LastfmOp }[] {
+    listenbrainzStore() {
+      return useListenbrainzStore()
+    },
+    dialogTitle(): string {
+      return this.source === 'listenbrainz'
+        ? this.$t('listenbrainz.title')
+        : this.$t('lastfm.title')
+    },
+    sourceColumnLabel(): string {
+      return this.source === 'listenbrainz'
+        ? this.$t('listenbrainz.columnListenbrainz')
+        : this.$t('lastfm.columnLastfm')
+    },
+    usernameLabel(): string {
+      return this.source === 'listenbrainz'
+        ? this.$t('listenbrainz.username')
+        : this.$t('lastfm.username')
+    },
+    usernameHint(): string {
+      return this.source === 'listenbrainz'
+        ? this.$t('listenbrainz.usernameHint')
+        : this.$t('lastfm.usernameHint')
+    },
+    periodLabel(): string {
+      return this.source === 'listenbrainz'
+        ? this.$t('listenbrainz.period')
+        : this.$t('lastfm.period')
+    },
+    sourceOptions(): { title: string; value: LastfmOp | ListenbrainzOp }[] {
+      if (this.source === 'listenbrainz') {
+        return [
+          { title: this.$t('listenbrainz.sourceCharts'), value: 'charts' },
+          { title: this.$t('listenbrainz.sourceGenre'), value: 'genre' },
+          { title: this.$t('listenbrainz.sourceArtist'), value: 'artist' },
+          { title: this.$t('listenbrainz.sourceMyTop'), value: 'mytop' },
+          { title: this.$t('listenbrainz.sourceRecommended'), value: 'recommended' },
+        ]
+      }
       return [
         { title: this.$t('lastfm.sourceCharts'), value: 'charts' },
         { title: this.$t('lastfm.sourceGenre'), value: 'genre' },
@@ -434,7 +499,17 @@ export default {
         { title: this.$t('lastfm.chartGlobal'), value: 'global' },
       ]
     },
-    periodOptions(): { title: string; value: LastfmPeriod }[] {
+    periodOptions(): { title: string; value: LastfmPeriod | ListenbrainzPeriod }[] {
+      if (this.source === 'listenbrainz') {
+        return [
+          { title: this.$t('listenbrainz.periodWeek'), value: 'week' },
+          { title: this.$t('listenbrainz.periodMonth'), value: 'month' },
+          { title: this.$t('listenbrainz.periodQuarter'), value: 'quarter' },
+          { title: this.$t('listenbrainz.periodHalfYearly'), value: 'half_yearly' },
+          { title: this.$t('listenbrainz.periodYear'), value: 'year' },
+          { title: this.$t('listenbrainz.periodAllTime'), value: 'all_time' },
+        ]
+      }
       return [
         { title: this.$t('lastfm.period7day'), value: '7day' },
         { title: this.$t('lastfm.period1month'), value: '1month' },
@@ -444,12 +519,26 @@ export default {
         { title: this.$t('lastfm.periodOverall'), value: 'overall' },
       ]
     },
+    /** One v-model for the range picker, whichever service is active — the
+     * template shows a single select and should not have to know which
+     * field it writes to. */
+    periodValue: {
+      get(): LastfmPeriod | ListenbrainzPeriod {
+        return this.source === 'listenbrainz' ? this.lbPeriod : this.period
+      },
+      set(value: LastfmPeriod | ListenbrainzPeriod) {
+        if (this.source === 'listenbrainz') this.lbPeriod = value as ListenbrainzPeriod
+        else this.period = value as LastfmPeriod
+      },
+    },
     canSearch(): boolean {
       if (this.busy) return false
       if (this.op === 'genre') return !!this.tag.trim()
       if (this.op === 'artist') return !!this.artist.trim()
-      if (this.op === 'mytop') return !!this.username.trim()
-      if (this.op === 'charts' && this.chartScope === 'country') return !!this.country.trim()
+      if (this.op === 'mytop' || this.op === 'recommended') return !!this.username.trim()
+      if (this.op === 'charts' && this.source === 'lastfm' && this.chartScope === 'country') {
+        return !!this.country.trim()
+      }
       return true
     },
     foundCount(): number {
@@ -501,7 +590,11 @@ export default {
       return (this.progressDone / this.progressTotal) * 100
     },
     progressLabel(): string {
-      if (!this.progressTotal) return this.$t('lastfm.fetching')
+      if (!this.progressTotal) {
+        return this.source === 'listenbrainz'
+          ? this.$t('listenbrainz.fetching')
+          : this.$t('lastfm.fetching')
+      }
       return this.$t('lastfm.matching', {
         done: this.progressDone,
         total: this.progressTotal,
@@ -518,18 +611,23 @@ export default {
     },
   },
   methods: {
-    open(): void {
+    open(source: BuilderSource = 'lastfm'): void {
+      this.source = source
       this.step = 'form'
+      this.op = 'charts'
       this.error = ''
       this.resolved = []
       this.updateMode = 'append'
-      this.username = this.lastfmStore.username
+      this.username =
+        source === 'listenbrainz' ? this.listenbrainzStore.username : this.lastfmStore.username
       this.visible = true
       // The name field matches against these, so they have to be loaded
       // even when the dialog was opened somewhere other than the playlist
       // list. Cached, so this is usually free.
       void this.libraryStore.fetchPlaylists()
-      void this.loadCountries()
+      // Only Last.fm's country chart needs the picker; ListenBrainz has no
+      // per-country charts at all.
+      if (source === 'lastfm') void this.loadCountries()
     },
 
     /** Stores the country just searched with, so it sits at the top of
@@ -537,7 +635,7 @@ export default {
      * Recorded on use rather than on selection: a country clicked through
      * while browsing the list is not one that was meant. */
     rememberCountry(): void {
-      if (this.op !== 'charts' || this.chartScope !== 'country') return
+      if (this.source !== 'lastfm' || this.op !== 'charts' || this.chartScope !== 'country') return
       const picked = this.countryOptions.find((option) => option.name === this.country)
       if (!picked) return
       this.recentCountryCodes = withRecentCountry(this.recentCountryCodes, picked.code)
@@ -565,6 +663,20 @@ export default {
      * enough that three imports don't sit in the list as "Last.fm",
      * "Last.fm (1)" and "Last.fm (2)". */
     defaultName(): string {
+      if (this.source === 'listenbrainz') {
+        if (this.op === 'genre') {
+          return this.$t('listenbrainz.nameGenre', { tag: this.tag.trim() })
+        }
+        if (this.op === 'artist') {
+          return this.$t('listenbrainz.nameArtist', { artist: this.artist.trim() })
+        }
+        if (this.op === 'mytop') {
+          const period = this.periodOptions.find((entry) => entry.value === this.lbPeriod)
+          return this.$t('listenbrainz.nameMyTop', { period: period?.title ?? '' })
+        }
+        if (this.op === 'recommended') return this.$t('listenbrainz.nameRecommended')
+        return this.$t('listenbrainz.nameCharts')
+      }
       if (this.op === 'genre') return this.$t('lastfm.nameGenre', { tag: this.tag.trim() })
       if (this.op === 'artist') return this.$t('lastfm.nameArtist', { artist: this.artist.trim() })
       if (this.op === 'mytop') {
@@ -596,22 +708,42 @@ export default {
       this.progressTotal = 0
 
       try {
-        const tracks = await getLastfmTracks({
-          op: this.op,
-          limit: this.limit,
-          country: this.op === 'charts' && this.chartScope === 'country' ? this.country.trim() : '',
-          tag: this.tag.trim(),
-          artist: this.artist.trim(),
-          username: this.username.trim(),
-          period: this.period,
-        })
+        const tracks =
+          this.source === 'listenbrainz'
+            ? await getListenbrainzTracks({
+                op: this.op as ListenbrainzOp,
+                limit: this.limit,
+                tag: this.tag.trim(),
+                artist: this.artist.trim(),
+                username: this.username.trim(),
+                period: this.lbPeriod,
+              })
+            : await getLastfmTracks({
+                op: this.op as LastfmOp,
+                limit: this.limit,
+                country:
+                  this.op === 'charts' && this.chartScope === 'country' ? this.country.trim() : '',
+                tag: this.tag.trim(),
+                artist: this.artist.trim(),
+                username: this.username.trim(),
+                period: this.period,
+              })
 
-        if (this.op === 'mytop') this.lastfmStore.setUsername(this.username)
-        this.rememberCountry()
+        if (this.source === 'listenbrainz') {
+          if (this.op === 'mytop' || this.op === 'recommended') {
+            this.listenbrainzStore.setUsername(this.username)
+          }
+        } else {
+          if (this.op === 'mytop') this.lastfmStore.setUsername(this.username)
+          this.rememberCountry()
+        }
         if (this.abortSignal.aborted) return
 
         if (tracks.length === 0) {
-          this.error = this.$t('lastfm.noTracks')
+          this.error =
+            this.source === 'listenbrainz'
+              ? this.$t('listenbrainz.noTracks')
+              : this.$t('lastfm.noTracks')
           this.step = 'form'
           return
         }
@@ -628,7 +760,12 @@ export default {
         )
         this.playlistName = this.defaultName()
       } catch (error) {
-        this.error = this.messageFor(error, this.$t('lastfm.failed'))
+        this.error = this.messageFor(
+          error,
+          this.source === 'listenbrainz'
+            ? this.$t('listenbrainz.failed')
+            : this.$t('lastfm.failed'),
+        )
         this.step = 'form'
       } finally {
         this.busy = false

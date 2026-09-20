@@ -15,6 +15,7 @@ import { makeSong } from '@/stores/__tests__/fixtures'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import LastfmPlaylistDialog from '../LastfmPlaylistDialog.vue'
 import * as lastfmApi from '@/services/connect/lastfm'
+import * as listenbrainzApi from '@/services/connect/listenbrainz'
 import { listRadioBrowserCountries } from '@/services/connect/radioBrowser'
 
 vi.mock('@/services/connect/radioBrowser', () => ({
@@ -541,5 +542,98 @@ describe('LastfmPlaylistDialog', () => {
     await flushPromises()
 
     expect(search3.mock.calls.length).toBeLessThan(30)
+  })
+
+  // The ListenBrainz half shares the matcher, the result step and the
+  // playlist creation with Last.fm — these only pin what is genuinely
+  // different: which backend is asked, and which sources are offered.
+  describe('opened for ListenBrainz', () => {
+    async function openWith(source: 'lastfm' | 'listenbrainz') {
+      const wrapper = mount(LastfmPlaylistDialog, { global: globalOptions })
+      const vm = wrapper.vm as unknown as Record<string, unknown> & {
+        open: (s?: string) => void
+      }
+      vm.open(source)
+      await flushPromises()
+      return { wrapper, vm }
+    }
+
+    function lbTrack(title: string, artist: string) {
+      return { title, artist, mbid: '', album: '', coverArtUrl: '', duration: 0 }
+    }
+
+    it('offers the ListenBrainz sources, not the Last.fm ones', async () => {
+      stubSearch([])
+      const { vm } = await openWith('listenbrainz')
+
+      const values = (vm.sourceOptions as { value: string }[]).map((option) => option.value)
+      expect(values).toEqual(['charts', 'genre', 'artist', 'mytop', 'recommended'])
+    })
+
+    it('asks ListenBrainz for the chart and labels the column with it', async () => {
+      const getTracks = vi
+        .spyOn(listenbrainzApi, 'getListenbrainzTracks')
+        .mockResolvedValue([lbTrack('Believe', 'Cher')])
+      stubSearch([makeSong('s1', { title: 'Believe', artist: 'Cher' })])
+
+      const { wrapper, vm } = await openWith('listenbrainz')
+      await (vm as unknown as { search: () => Promise<void> }).search()
+      await flushPromises()
+
+      expect(getTracks).toHaveBeenCalledWith(
+        expect.objectContaining({ op: 'charts', period: 'month' }),
+      )
+      const head = document.querySelector('.tracks-head')?.textContent ?? ''
+      expect(head).toContain(wrapper.vm.$t('listenbrainz.columnListenbrainz'))
+    })
+
+    it('has no country picker — ListenBrainz has no per-country charts', async () => {
+      stubSearch([])
+      const { wrapper } = await openWith('listenbrainz')
+      expect(wrapper.findComponent({ name: 'VAutocomplete' }).exists()).toBe(false)
+    })
+
+    it('sends the username and range for a listening history', async () => {
+      const getTracks = vi.spyOn(listenbrainzApi, 'getListenbrainzTracks').mockResolvedValue([])
+      stubSearch([])
+
+      const { vm } = await openWith('listenbrainz')
+      vm.op = 'mytop'
+      vm.username = 'listener'
+      vm.lbPeriod = 'year'
+      await (vm as unknown as { search: () => Promise<void> }).search()
+
+      expect(getTracks).toHaveBeenCalledWith(
+        expect.objectContaining({ op: 'mytop', username: 'listener', period: 'year' }),
+      )
+    })
+
+    it('sends the recommended op for the personalized feed', async () => {
+      const getTracks = vi.spyOn(listenbrainzApi, 'getListenbrainzTracks').mockResolvedValue([])
+      stubSearch([])
+
+      const { vm } = await openWith('listenbrainz')
+      vm.op = 'recommended'
+      vm.username = 'listener'
+      await (vm as unknown as { search: () => Promise<void> }).search()
+
+      expect(getTracks).toHaveBeenCalledWith(
+        expect.objectContaining({ op: 'recommended', username: 'listener' }),
+      )
+    })
+
+    it('sends the tag for a ListenBrainz genre', async () => {
+      const getTracks = vi.spyOn(listenbrainzApi, 'getListenbrainzTracks').mockResolvedValue([])
+      stubSearch([])
+
+      const { vm } = await openWith('listenbrainz')
+      vm.op = 'genre'
+      vm.genreTag = 'vaporwave'
+      await (vm as unknown as { search: () => Promise<void> }).search()
+
+      expect(getTracks).toHaveBeenCalledWith(
+        expect.objectContaining({ op: 'genre', tag: 'vaporwave' }),
+      )
+    })
   })
 })

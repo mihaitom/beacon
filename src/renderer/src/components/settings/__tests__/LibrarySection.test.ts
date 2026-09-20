@@ -12,7 +12,12 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
+import { useListenbrainzStore } from '@/stores/listenbrainz'
 import LibrarySection from '../LibrarySection.vue'
+
+vi.mock('@/services/connect/accountSettings', () => ({
+  pushAccountSettings: vi.fn().mockResolvedValue({}),
+}))
 
 const vuetify = createVuetify({ components, directives })
 
@@ -153,5 +158,50 @@ describe('LibrarySection scan button', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).not.toContain(i18n.global.t('settings.scanningPlain'))
+  })
+})
+
+/** The ListenBrainz name entered here is what Home's personalized shelf
+ * reads and what the playlist builder starts from, so it has to reach the
+ * store — see stores/listenbrainz.ts. */
+describe('LibrarySection ListenBrainz name', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+  })
+
+  function nameField(wrapper: ReturnType<typeof mountSection>) {
+    return wrapper.vm as unknown as {
+      listenbrainzUsername: string
+      saveListenbrainzUsername: () => void
+    }
+  }
+
+  it('starts from what the store already holds', () => {
+    useListenbrainzStore().setUsername('listener')
+    const wrapper = mountSection()
+
+    expect(nameField(wrapper).listenbrainzUsername).toBe('listener')
+  })
+
+  it('saves the name to the store', () => {
+    const wrapper = mountSection()
+    const field = nameField(wrapper)
+
+    field.listenbrainzUsername = 'listener'
+    field.saveListenbrainzUsername()
+
+    expect(useListenbrainzStore().username).toBe('listener')
+  })
+
+  it('clears the name when the field is emptied', () => {
+    useListenbrainzStore().setUsername('listener')
+    const wrapper = mountSection()
+    const field = nameField(wrapper)
+
+    field.listenbrainzUsername = ''
+    field.saveListenbrainzUsername()
+
+    expect(useListenbrainzStore().username).toBe('')
   })
 })

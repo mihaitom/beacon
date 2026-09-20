@@ -148,21 +148,23 @@ def _save_cache(cache: dict) -> None:
 
 async def resolve_mbid(name: str) -> str | None:
     """Artist name -> MusicBrainz ID, cache-first (see this module's own
-    docstring). Caches a negative (None) result too — a mistagged/obscure
-    local artist name that doesn't resolve shouldn't cost a fresh,
-    rate-limited MusicBrainz call on every single Home refresh. That's a
-    *genuine* negative only — a real search response with zero matches —
-    not a network/HTTP failure: those return None too but are deliberately
-    never written to the cache (see the early return below), so a
-    transient MusicBrainz outage isn't indistinguishable from "this name
-    really has no MBID" forever after. Confirmed live as a real, not just
-    theoretical, bug: a burst of MusicBrainz 503s permanently poisoned
-    several artists' entries this way before this guard existed."""
+    docstring). Only a *positive* result is cached. A response with no
+    artists is deliberately not remembered: a MusicBrainz hiccup returning
+    HTTP 200 with an empty list looks exactly like a name that genuinely has
+    no MBID, and caching one poisoned real artists ("Dua Lipa", "The
+    Notorious B.I.G.") permanently. Resolution is user-triggered rather than
+    a background pass, so a miss is simply looked up again on the next call
+    instead of being kept for a fixed period. A network/HTTP failure writes
+    nothing either (see the early return below). A legacy bare `null` in an
+    existing cache is ignored and re-resolved, so those self-heal."""
     cache = _load_cache()
     mbid_by_name = cache.setdefault("mbid_by_name", {})
     key = name.strip().lower()
-    if key in mbid_by_name:
-        return mbid_by_name[key]
+    # Only a string is a hit; a legacy `null` (or any other shape) is treated
+    # as absent and re-resolved — see the docstring.
+    cached = mbid_by_name.get(key)
+    if isinstance(cached, str):
+        return cached
 
     global _mb_last_call
     async with _mb_lock:
@@ -184,8 +186,12 @@ async def resolve_mbid(name: str) -> str | None:
     artists = data.get("artists") or []
     mbid = artists[0].get("id") if artists else None
 
-    mbid_by_name[key] = mbid
-    _save_cache(cache)
+    # Only a positive is written — see the docstring. A miss costs one
+    # rate-limited call next time, which is the honest price of not
+    # remembering a hiccup as "this artist does not exist".
+    if mbid:
+        mbid_by_name[key] = mbid
+        _save_cache(cache)
     return mbid
 
 

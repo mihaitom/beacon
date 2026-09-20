@@ -89,18 +89,24 @@ async def test_resolve_mbid_cache_hit_skips_network():
     client.get.assert_not_called()
 
 
-async def test_resolve_mbid_negative_cache_skips_network():
+async def test_resolve_mbid_ignores_a_cached_negative_and_retries():
+    """Only a positive MBID is a cache hit. A `null` left behind by an older
+    build — a MusicBrainz hiccup once wrote one for real artists like "Dua
+    Lipa" — is re-resolved rather than trusted."""
     with tempfile.TemporaryDirectory() as d:
         path = _tmp_path(d)
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({"mbid_by_name": {"some obscure act": None}}, f)
+            json.dump({"mbid_by_name": {"dua lipa": None}}, f)
         with (
             patch.object(recommendations, "_PATH", path),
             patch.object(recommendations, "_client") as client,
         ):
-            result = await recommendations.resolve_mbid("Some Obscure Act")
-    assert result is None
-    client.get.assert_not_called()
+            client.get = AsyncMock(
+                side_effect=lambda url, params=None: _mb_response(url, "real-mbid")
+            )
+            result = await recommendations.resolve_mbid("Dua Lipa")
+
+    assert result == "real-mbid"
 
 
 async def test_resolve_mbid_fetches_and_caches_on_miss():
@@ -121,7 +127,9 @@ async def test_resolve_mbid_fetches_and_caches_on_miss():
         assert cache["mbid_by_name"]["boards of canada"] == "new-mbid-1"
 
 
-async def test_resolve_mbid_caches_negative_result_when_not_found():
+async def test_resolve_mbid_does_not_cache_a_negative():
+    """A response with no artists is indistinguishable from a MusicBrainz
+    hiccup, so it is not remembered at all — the next lookup retries."""
     with tempfile.TemporaryDirectory() as d:
         path = _tmp_path(d)
         with (
@@ -132,9 +140,9 @@ async def test_resolve_mbid_caches_negative_result_when_not_found():
             result = await recommendations.resolve_mbid("Definitely Not A Real Artist")
 
         assert result is None
-        with open(path, encoding="utf-8") as f:
-            cache = json.load(f)
-        assert cache["mbid_by_name"]["definitely not a real artist"] is None
+        assert "definitely not a real artist" not in recommendations._load_cache().get(
+            "mbid_by_name", {}
+        )
 
 
 async def test_resolve_mbid_does_not_cache_transient_http_failure():
@@ -596,16 +604,16 @@ async def test_get_artist_links_cache_hit_skips_network():
 async def test_get_artist_links_no_mbid_skips_url_rels_call():
     with tempfile.TemporaryDirectory() as d:
         path = _tmp_path(d)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({"mbid_by_name": {"obscure act": None}}, f)
         with (
             patch.object(recommendations, "_PATH", path),
             patch.object(recommendations, "_client") as client,
         ):
+            client.get = AsyncMock(side_effect=lambda url, params=None: _mb_response(url, None))
             result = await recommendations.get_artist_links(["Obscure Act"])
 
     assert result == {"Obscure Act": {}}
-    client.get.assert_not_called()
+    # Only the name search; no url-rels lookup follows a name with no MBID.
+    assert client.get.await_count == 1
 
 
 async def test_get_artist_links_distinguishes_hosts_sharing_a_musicbrainz_type():
@@ -1169,16 +1177,16 @@ async def test_get_artist_bio_skips_a_disambiguation_page():
 async def test_get_artist_bio_is_none_without_an_mbid_and_asks_nobody():
     with tempfile.TemporaryDirectory() as d:
         path = _tmp_path(d)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({"mbid_by_name": {"obscure act": None}}, f)
         with (
             patch.object(recommendations, "_PATH", path),
             patch.object(recommendations, "_client") as client,
         ):
+            client.get = AsyncMock(side_effect=lambda url, params=None: _mb_response(url, None))
             bio = await recommendations.get_artist_bio("Obscure Act", "en")
 
     assert bio is None
-    client.get.assert_not_called()
+    # Only the name search; no Wikidata/Wikipedia lookup follows.
+    assert client.get.await_count == 1
 
 
 async def test_get_artist_bio_serves_a_fresh_cache_entry_without_the_network():

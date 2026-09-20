@@ -82,6 +82,7 @@ export default {
     internetRadio: 'Radio via internet',
     nothingToShow: 'Niente da mostrare.',
     newArtistsTitle: 'Nuovi artisti da scoprire',
+    recommendedArtists: 'Consigliati per te',
   },
   library: {
     showAsGrid: 'Mostra a griglia',
@@ -432,6 +433,9 @@ export default {
     recommendations: 'Consigli personalizzati',
     recommendationsHint:
       'Scopri nella Home usa artisti simili a ciò che ascolti davvero, cercati su MusicBrainz, ListenBrainz e Deezer - questo condivide con loro uno o due nomi di artisti della tua libreria. Disattivato mostra album casuali; aprire la pagina di un artista continua comunque a cercare quel singolo artista.',
+    listenbrainzUsername: 'Nome utente ListenBrainz',
+    listenbrainzHint:
+      'Il tuo nome pubblico su ListenBrainz. Riempie la sezione «Consigliati per te» nella Home e viene proposto come predefinito nel generatore di playlist. Nessuna password richiesta.',
     lyricsProvidersTitle: 'Provider di testi',
     lyricsProvidersHint:
       'I testi salvati nel file stesso vengono sempre provati per primi e non lasciano mai il tuo server. Tutti i fornitori qui sotto sono attivi per impostazione predefinita - deseleziona quelli a cui preferisci che Beacon non invii titolo e artista di un brano.',
@@ -539,6 +543,32 @@ export default {
     nameArtist: 'Last.fm {artist}',
     nameMyTop: 'I miei più ascoltati ({period})',
   },
+  listenbrainz: {
+    title: 'Playlist ListenBrainz',
+    sourceCharts: 'Classifiche',
+    sourceGenre: 'Top brani di un genere',
+    sourceArtist: 'Top brani di un artista',
+    sourceMyTop: 'I miei più ascoltati',
+    sourceRecommended: 'Consigliati per me',
+    username: 'Nome utente ListenBrainz',
+    usernameHint: 'Il tuo nome pubblico su ListenBrainz. Nessuna password richiesta.',
+    period: 'Periodo',
+    periodWeek: 'Ultima settimana',
+    periodMonth: 'Ultimo mese',
+    periodQuarter: 'Ultimi 3 mesi',
+    periodHalfYearly: 'Ultimi 6 mesi',
+    periodYear: 'Ultimo anno',
+    periodAllTime: 'Sempre',
+    columnListenbrainz: 'ListenBrainz',
+    noTracks: 'ListenBrainz non ha restituito nulla.',
+    failed: 'Impossibile raggiungere ListenBrainz.',
+    fetching: 'Interrogazione di ListenBrainz…',
+    nameCharts: 'ListenBrainz classifica',
+    nameGenre: 'ListenBrainz {tag}',
+    nameArtist: 'ListenBrainz {artist}',
+    nameMyTop: 'I miei più ascoltati ({period})',
+    nameRecommended: 'Consigliati per me',
+  },
   playlists: {
     reorderFailed: 'Impossibile salvare il nuovo ordine',
     removedOne: '“{title}” rimosso',
@@ -640,9 +670,16 @@ export default {
       },
       listenbrainz: {
         name: 'ListenBrainz',
-        purpose: 'Proporre artisti simili per "Nuovi artisti da scoprire".',
+        purpose:
+          'Proporre artisti simili per "Nuovi artisti da scoprire" e riempire una playlist dalle classifiche di ListenBrainz, dai brani più ascoltati di un artista o dalla tua cronologia di ascolto.',
         sends:
-          'Gli identificatori MusicBrainz degli artisti di partenza: nessun nome e nulla su ciò che hai ascoltato.',
+          'Per gli artisti simili, gli identificatori MusicBrainz degli artisti di partenza. Per il generatore di playlist, ciò che hai chiesto - un nome di artista o il nome pubblico ListenBrainz che hai inserito. Nulla della tua libreria viene inviato; la corrispondenza avviene sul tuo dispositivo.',
+      },
+      coverartarchive: {
+        name: 'Cover Art Archive',
+        purpose: 'Mostrare la copertina di un brano consigliato nella Home.',
+        sends:
+          "Nulla su di te. Legge l'immagine di copertina di un identificatore di edizione restituito da ListenBrainz.",
       },
       lastfm: {
         name: 'Last.fm',

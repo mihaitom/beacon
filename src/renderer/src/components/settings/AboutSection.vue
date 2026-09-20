@@ -30,9 +30,7 @@
             {{ $t('shortcuts.title') }}
           </v-btn>
         </div>
-      </div>
 
-      <div class="setting">
         <div class="status-row">
           <span class="status-dot" :class="ffmpegFound ? 'status-dot--ok' : 'status-dot--warn'" />
           <span class="setting__hint setting__hint--inline">
@@ -118,6 +116,12 @@ export default {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+/* The buttons are this section's actions and the lines under them what
+ * this copy is; they are one block, so they get a gap rather than the
+ * divider a second .setting would have drawn between them. */
+.about-actions + .status-row {
+  margin-top: 18px;
 }
 .update-link {
   margin-left: 0.4em;

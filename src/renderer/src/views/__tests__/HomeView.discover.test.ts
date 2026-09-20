@@ -67,6 +67,16 @@ async function mountHome(prepare?: (library: ReturnType<typeof useLibraryStore>)
   return wrapper
 }
 
+/** The community "New artists to explore" shelf, not the personalized one
+ * above it — Home renders two SimilarArtistsShelf instances, and these
+ * tests are about the community lookup. Found by its title so the two are
+ * never confused by render order. */
+function communityShelf(wrapper: Awaited<ReturnType<typeof mountHome>>) {
+  return wrapper
+    .findAllComponents(SimilarArtistsShelf)
+    .find((shelf) => shelf.props('title') === wrapper.vm.$t('home.newArtistsTitle'))
+}
+
 describe('HomeView "New artists to explore"', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -83,9 +93,9 @@ describe('HomeView "New artists to explore"', () => {
     const wrapper = await mountHome()
     await withDiscoveries(wrapper)
 
-    const shelf = wrapper.findComponent(SimilarArtistsShelf)
-    expect(shelf.exists()).toBe(true)
-    expect(shelf.find('button').exists()).toBe(true)
+    const shelf = communityShelf(wrapper)
+    expect(shelf?.exists()).toBe(true)
+    expect(shelf?.find('button').exists()).toBe(true)
   })
 
   it('picks new seeds when it is pressed, rather than repeating the last set', async () => {
@@ -96,7 +106,7 @@ describe('HomeView "New artists to explore"', () => {
     }
     const reroll = vi.spyOn(vm, 'rerollDiscover').mockResolvedValue()
 
-    await wrapper.findComponent(SimilarArtistsShelf).find('button').trigger('click')
+    await communityShelf(wrapper)!.find('button').trigger('click')
 
     // force: true — without it the same cached seeds come back and the
     // shelves show what they already showed. 'artists' — the shelf that
@@ -108,7 +118,7 @@ describe('HomeView "New artists to explore"', () => {
     // The shelf renders nothing at all when empty, button included.
     const wrapper = await mountHome()
 
-    expect(wrapper.findComponent(SimilarArtistsShelf).find('button').exists()).toBe(false)
+    expect(communityShelf(wrapper)?.find('button').exists()).toBe(false)
   })
 
   it('leaves the albums shelf alone when the artists shelf is rerolled', async () => {
@@ -143,7 +153,7 @@ describe('HomeView "New artists to explore"', () => {
     ;(wrapper.vm as unknown as { loadingDiscover: string | null }).loadingDiscover = 'artists'
     await wrapper.vm.$nextTick()
 
-    const shelf = wrapper.findComponent(SimilarArtistsShelf)
+    const shelf = communityShelf(wrapper)!
     expect(shelf.exists()).toBe(true)
     expect(shelf.findAll('.v-skeleton-loader').length).toBeGreaterThan(0)
   })
@@ -155,7 +165,7 @@ describe('HomeView "New artists to explore"', () => {
     ;(wrapper.vm as unknown as { loadingDiscover: string | null }).loadingDiscover = 'albums'
     await wrapper.vm.$nextTick()
 
-    const shelf = wrapper.findComponent(SimilarArtistsShelf)
+    const shelf = communityShelf(wrapper)!
     expect(shelf.findAll('.v-skeleton-loader').length).toBe(0)
     expect(shelf.text()).toContain('Some Band')
   })
@@ -264,7 +274,7 @@ describe('HomeView Discover loading', () => {
     })
     await flushPromises()
 
-    const shelf = wrapper.findComponent(SimilarArtistsShelf)
+    const shelf = communityShelf(wrapper)!
     expect(shelf.exists()).toBe(true)
     expect(shelf.findAllComponents({ name: 'VSkeletonLoader' }).length).toBeGreaterThan(0)
   })

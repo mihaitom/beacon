@@ -131,6 +131,11 @@ const SERVICES = {
       url: 'https://listenbrainz.org/',
       optOut: 'recommendations',
     },
+    {
+      key: 'coverartarchive',
+      host: 'coverartarchive.org',
+      url: 'https://coverartarchive.org/',
+    },
     // No opt-out chip: nothing here happens in the background. It is
     // only ever contacted by the Last.fm playlist builder, which is a
     // thing you open and fill in - not asking for it is the opt-out.
