@@ -1354,6 +1354,10 @@ export default {
   max-width: none;
   align-items: flex-end;
   justify-content: space-between;
+  /* More than the base 32px: .now-playing__stage clips (overflow: hidden)
+   * and the mini cover's shadow (.cover-shadow: 12px offset + 32px blur)
+   * otherwise runs off the bottom edge and is cut. */
+  padding-bottom: 56px;
 }
 
 .now-playing--artwork-hidden:not(.now-playing--compact) .now-playing__primary {
