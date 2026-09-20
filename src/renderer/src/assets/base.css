@@ -273,6 +273,162 @@ body {
   background: var(--beacon-hairline);
 }
 
+/* ── Settings rows ───────────────────────────────────────────────────────
+ *
+ * Shared because the Settings page is one component per section
+ * (components/settings/*Section.vue) and every one of them is built from
+ * these: eight scoped copies would drift apart within a release. Same
+ * reason .beacon-panel and .panel-title above live here. The sections'
+ * own layout - a quality row, an account strip - stays scoped to whichever
+ * one it belongs to.
+ */
+
+.settings-section {
+  margin-bottom: 28px;
+}
+
+.settings-section .section-title {
+  margin-bottom: 10px;
+}
+
+/* The vertical rhythm of the whole page, in one rule. Every setting is
+ * this block, and the separator only exists between siblings - so a
+ * section whose first control is conditionally absent (the library scan on
+ * a non-admin account) closes up on its own, with no margin class needing
+ * to know whether anything above it rendered.
+ *
+ * The account strip is not a .setting, so without naming it here the
+ * separator that every other block in a panel gets simply skipped the one
+ * place two different kinds of block meet - account above, language below.
+ * Naming it in *this* rule rather than giving the strip a border of its
+ * own is the point: a line needs the 18px above and below it that this
+ * rule provides. Drawn on the strip alone it lands flush against the
+ * filled select underneath and is invisible for it. */
+.setting + .setting,
+.account-strip + .setting {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--beacon-hairline);
+}
+
+/* A control and whatever it has to say about itself, side by side, and
+ * wrapping under each other where there is no room. */
+.setting__control-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* Tabular figures, because this counts upwards: proportional digits make
+ * the whole line twitch on every poll. */
+.setting__status {
+  font-variant-numeric: tabular-nums;
+}
+
+.setting__label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+/* A label that shares its line with the info button next to it, so the
+ * button sits on the text's baseline row rather than below the gap the
+ * label reserves for the control under it. */
+.setting__label-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.setting__label--inline {
+  margin-bottom: 0;
+}
+
+/* Reads before the control it introduces; the hint below reads after one.
+ * Two names rather than one class plus a modifier, because which side of
+ * the control a line belongs on is the whole difference between them. */
+.setting__description {
+  margin-bottom: 12px;
+}
+
+/* The quieter line under a control, so a setting reads as
+ * label-then-explanation rather than as two equal lines. Values match
+ * Vuetify's own body-small / medium-emphasis deliberately: the rest of the
+ * app uses those, and a hint sitting a hair off would read as a mistake
+ * rather than a choice. */
+.setting__description,
+.setting__hint,
+.setting__status {
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.3333333333;
+  letter-spacing: 0.0333333333em;
+  color: color-mix(
+    in srgb,
+    rgb(var(--v-theme-on-background)) calc(var(--v-medium-emphasis-opacity) * 100%),
+    transparent
+  );
+}
+
+.setting__hint {
+  margin-top: 8px;
+}
+
+/* Already sitting next to the status dot on its own row, so the stacking
+ * margin would only push it off that line. */
+.setting__hint--inline {
+  margin-top: 0;
+}
+
+/* A progress bar or notice that appears under the control it belongs to.
+ * Shared like the rest of these: it is used from a section component and
+ * from the update alert in AboutSection, and a scoped rule in one would
+ * not reach the other. */
+.settings-progress {
+  margin-top: 12px;
+}
+
+/* A one-glance yes/no next to a line of text: ffmpeg found, a service
+ * connected. */
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot--ok {
+  background: rgb(var(--v-theme-success));
+}
+
+.status-dot--warn {
+  background: rgb(var(--v-theme-warning));
+}
+
+/* A phone has no room to spend on panel padding. Written against the
+ * Settings page's own container rather than as a scoped rule, because the
+ * page is now one component per section and scoped CSS does not reach into
+ * a child; keyed on .settings-view so a dialog's panels, which have their
+ * own answer to a narrow window, are left alone. */
+@media (max-width: 600px) {
+  .settings-view .beacon-panel {
+    padding: 14px;
+    border-radius: 12px;
+  }
+
+  .settings-view .settings-section {
+    margin-bottom: 22px;
+  }
+}
+
 .cover-shadow {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
 }

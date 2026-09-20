@@ -1,4 +1,4 @@
-// Settings' "clear cache" button. What is worth pinning down here is not
+// The "clear cache" button in Settings' Storage section. What is worth pinning down here is not
 // that it runs, but *what it reaches*: Beacon gained two more client-side
 // caches during the artwork/lyrics rework (cover art, which is by far the
 // largest, and radio station logos) and this button was never extended to
@@ -17,21 +17,20 @@ import { useLibraryStore } from '@/stores/library'
 import * as lyricsStore from '@/stores/lyrics'
 import * as coverArtBatch from '@/services/connect/coverArtBatch'
 import * as radioFaviconBatch from '@/services/connect/radioFaviconBatch'
-import SettingsView from '../SettingsView.vue'
+import StorageSection from '../StorageSection.vue'
 
 const vuetify = createVuetify({ components, directives })
 
 function mountSettings(emit = vi.fn()) {
-  return mount(SettingsView, {
+  return mount(StorageSection, {
     global: {
       plugins: [vuetify, i18n],
       mocks: { $emitter: { emit, on: vi.fn(), off: vi.fn() } },
-      stubs: { ConnectButton: true, RemoteControlButton: true },
     },
   })
 }
 
-describe('SettingsView clear cache', () => {
+describe('StorageSection clear cache', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
   })
