@@ -1,130 +1,139 @@
 <template>
-  <v-container v-if="artist" fluid>
-    <detail-header
-      :cover-art-id="artist.coverArtId"
-      :image-url="artist.imageUrl"
-      :size="160"
-      :eyebrow="$t('library.artist')"
-      :title="artist.name"
-      :starred="authStore.capabilities.favorites ? artist.starred : null"
-      :rating="authStore.capabilities.personalRating ? artist.rating : null"
-      @toggle-star="toggleStar"
-      @set-rating="setRating"
-    >
-      <template #meta>
-        {{ artist.albumCount }}
-        {{ artist.albumCount === 1 ? $t('library.album1') : $t('library.albumsN') }} ·
-        {{ totalSongCount }}
-        {{ totalSongCount === 1 ? $t('library.song1') : $t('library.songsN') }}
-      </template>
-      <template v-if="bio" #description>
-        <artist-bio :text="bio.text" :url="bio.url" :lang="bio.lang" />
-      </template>
-      <!-- v-if on the template tag itself, not just the content inside —
-       - DetailHeader.vue only renders its own #actions wrapper (reserving
-       - margin-top, see that component's own comment on $slots.actions)
-       - when this slot is provided at all, regardless of what's actually
-       - inside it. Guarding here means neither Artist Radio nor the
-       - external-link icons existing yet (capability off, still loading,
-       - nothing found) doesn't reserve a gap for nothing. Icons moved here
-       - from their old #top-right spot (see TODO.md) — up to 7 of them
-       - crammed into that absolute-positioned corner alongside the rating/
-       - heart row was cramped; this is normal reading-flow layout with
-       - room to wrap instead. -->
-      <template v-if="authStore.capabilities.songRadio || externalLinks.length" #actions>
-        <div class="detail-header__actions-row">
-          <v-btn
-            v-if="authStore.capabilities.songRadio"
-            color="primary"
-            rounded="pill"
-            prepend-icon="mdi-radio-tower"
-            @click="startArtistRadio"
-          >
-            {{ $t('library.artistRadio') }}
-          </v-btn>
-          <v-btn
-            v-for="link in externalLinks"
-            :key="link.key"
-            icon
-            size="small"
-            variant="text"
-            :href="link.url"
-            target="_blank"
-            rel="noopener"
-            :title="$t('library.viewOnService', { service: link.name })"
-          >
-            <img
-              :src="link.icon"
-              :alt="link.name"
-              class="external-link-icon"
-              :class="{ 'external-link-icon--invert': link.invert }"
-            />
-          </v-btn>
-        </div>
-      </template>
-    </detail-header>
+  <div class="artist-page">
+    <!-- The artist's own Fanart.tv background, full-bleed across the top of
+     - the page and masked out towards the bottom so the albums and songs
+     - below sit on the plain surface. Without one it falls back to the
+     - blurred cover wash, so the page never looks bare. -->
+    <div
+      v-if="artist"
+      class="artist-page__backdrop"
+      :class="{ 'artist-page__backdrop--photo': backdropIsPhoto }"
+      :style="backdropUrl ? { backgroundImage: `url(${backdropUrl})` } : {}"
+    />
+    <div v-if="artist" class="artist-page__scrim" />
 
-    <!-- A grid toggle like the favorites page's and the search results',
+    <v-container v-if="artist" fluid class="artist-page__content">
+      <artist-hero
+        :name="artist.name"
+        :eyebrow="$t('library.artist')"
+        :cover-art-id="artist.coverArtId"
+        :image-url="artist.imageUrl"
+        :logo-url="artistLogo"
+        :starred="authStore.capabilities.favorites ? artist.starred : null"
+        :rating="authStore.capabilities.personalRating ? artist.rating : null"
+        @toggle-star="toggleStar"
+        @set-rating="setRating"
+      >
+        <template #meta>
+          {{ artist.albumCount }}
+          {{ artist.albumCount === 1 ? $t('library.album1') : $t('library.albumsN') }} ·
+          {{ totalSongCount }}
+          {{ totalSongCount === 1 ? $t('library.song1') : $t('library.songsN') }}
+        </template>
+        <template v-if="bio" #description>
+          <artist-bio :text="bio.text" :url="bio.url" :lang="bio.lang" />
+        </template>
+        <!-- v-if on the template tag itself, not just the content inside —
+         - ArtistHero.vue only renders its own #actions wrapper when this
+         - slot is provided at all, regardless of what's actually inside it.
+         - Guarding here means neither Artist Radio nor the external-link
+         - icons existing yet (capability off, still loading, nothing found)
+         - doesn't reserve a gap for nothing. -->
+        <template v-if="authStore.capabilities.songRadio || externalLinks.length" #actions>
+          <div class="artist-hero__actions-row">
+            <v-btn
+              v-if="authStore.capabilities.songRadio"
+              color="primary"
+              rounded="pill"
+              prepend-icon="mdi-radio-tower"
+              @click="startArtistRadio"
+            >
+              {{ $t('library.artistRadio') }}
+            </v-btn>
+            <v-btn
+              v-for="link in externalLinks"
+              :key="link.key"
+              icon
+              size="small"
+              variant="text"
+              :href="link.url"
+              target="_blank"
+              rel="noopener"
+              :title="$t('library.viewOnService', { service: link.name })"
+            >
+              <img
+                :src="link.icon"
+                :alt="link.name"
+                class="external-link-icon"
+                :class="{ 'external-link-icon--invert': link.invert }"
+              />
+            </v-btn>
+          </div>
+        </template>
+      </artist-hero>
+
+      <!-- A grid toggle like the favorites page's and the search results',
      - remembered per visit: an artist with three albums and one with sixty
      - want different layouts, and the answer belongs to the page rather
      - than to the artist currently on it. -->
-    <album-shelf
-      :title="$t('library.albums')"
-      :albums="sortedAlbums"
-      :show-play-all="false"
-      :wrap="albumGridView"
-      wrap-toggle
-      @update:wrap="setAlbumGridView"
-    >
-      <template #action>
-        <v-btn
-          :icon="
-            albumSortAscending ? 'mdi-sort-calendar-descending' : 'mdi-sort-calendar-ascending'
-          "
-          variant="text"
-          size="small"
-          density="comfortable"
-          :title="albumSortAscending ? $t('library.newestFirst') : $t('library.oldestFirst')"
-          @click="albumSortAscending = !albumSortAscending"
-        />
-      </template>
-    </album-shelf>
+      <album-shelf
+        :title="$t('library.albums')"
+        :albums="sortedAlbums"
+        :show-play-all="false"
+        :wrap="albumGridView"
+        wrap-toggle
+        @update:wrap="setAlbumGridView"
+      >
+        <template #action>
+          <v-btn
+            :icon="
+              albumSortAscending ? 'mdi-sort-calendar-descending' : 'mdi-sort-calendar-ascending'
+            "
+            variant="text"
+            size="small"
+            density="comfortable"
+            :title="albumSortAscending ? $t('library.newestFirst') : $t('library.oldestFirst')"
+            @click="albumSortAscending = !albumSortAscending"
+          />
+        </template>
+      </album-shelf>
 
-    <template v-if="topSongs.length || loadingTopSongs">
-      <div class="section-header">
-        <h2 class="section-title">
-          {{ allSongsShown ? $t('library.allSongs') : $t('library.mostPlayed') }}
-        </h2>
-        <!-- Only once the artist actually has more songs than
+      <template v-if="topSongs.length || loadingTopSongs">
+        <div class="section-header">
+          <h2 class="section-title">
+            {{ allSongsShown ? $t('library.allSongs') : $t('library.mostPlayed') }}
+          </h2>
+          <!-- Only once the artist actually has more songs than
          - TOP_SONGS_LIMIT (totalSongCount is every song across every
          - album) — otherwise there'd be nothing for the toggle to do.
          - Stays visible in both states, swapping label/target so it can
          - toggle back and forth instead of only ever expanding once. -->
-        <v-btn
-          v-if="canToggleAllSongs"
-          variant="text"
-          size="small"
-          :loading="loadingAllSongs"
-          :disabled="loadingAllSongs"
-          @click="toggleAllTopSongs"
-        >
-          {{ allSongsShown ? $t('library.showLess') : $t('library.showAllSongs') }}
-        </v-btn>
-      </div>
-      <song-table
-        :songs="displayedTopSongs"
-        :loading="loadingTopSongs"
-        default-sort-key="playCount"
-        default-sort-direction="desc"
-      />
-    </template>
-  </v-container>
-  <v-container v-else>
-    <page-loader v-if="libraryStore.loading" />
-    <v-alert v-else-if="libraryStore.error" type="error" variant="tonal">
-      {{ libraryStore.error }}
-    </v-alert>
-  </v-container>
+          <v-btn
+            v-if="canToggleAllSongs"
+            variant="text"
+            size="small"
+            :loading="loadingAllSongs"
+            :disabled="loadingAllSongs"
+            @click="toggleAllTopSongs"
+          >
+            {{ allSongsShown ? $t('library.showLess') : $t('library.showAllSongs') }}
+          </v-btn>
+        </div>
+        <song-table
+          :songs="displayedTopSongs"
+          :loading="loadingTopSongs"
+          default-sort-key="playCount"
+          default-sort-direction="desc"
+        />
+      </template>
+    </v-container>
+    <v-container v-else>
+      <page-loader v-if="libraryStore.loading" />
+      <v-alert v-else-if="libraryStore.error" type="error" variant="tonal">
+        {{ libraryStore.error }}
+      </v-alert>
+    </v-container>
+  </div>
 </template>
 
 <script lang="ts">
@@ -132,7 +141,7 @@ import { useLibraryStore, TOP_SONGS_LIMIT } from '@/stores/library'
 import { artistNameKey } from '@/services/artistCredits'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
-import DetailHeader from '@/components/library/DetailHeader.vue'
+import ArtistHero from '@/components/library/ArtistHero.vue'
 import AlbumShelf from '@/components/library/AlbumShelf.vue'
 import { readCardGridView, writeCardGridView } from '@/services/cardGridView'
 import SongTable from '@/components/library/SongTable.vue'
@@ -144,6 +153,9 @@ import {
   type ArtistBio as ArtistBioData,
 } from '@/services/connect/recommendations'
 import ArtistBio from '@/components/library/ArtistBio.vue'
+import { getArtistArt, type ArtistArt } from '@/services/connect/fanart'
+import { preloadImage } from '@/services/preloadImage'
+import { useFanartStore } from '@/stores/fanart'
 import { toExternalLinkList, type ExternalLinkKey } from '@/components/library/externalArtistLinks'
 import type { Song } from '@/types/library'
 
@@ -158,7 +170,7 @@ const ALBUM_GRID_VIEW_KEY = 'beacon.artistGridView.albums'
 
 export default {
   name: 'ArtistDetailView',
-  components: { DetailHeader, AlbumShelf, SongTable, PageLoader, ArtistBio },
+  components: { ArtistHero, AlbumShelf, SongTable, PageLoader, ArtistBio },
   data() {
     return {
       artist: null as ArtistDetail | null,
@@ -189,6 +201,10 @@ export default {
       // endpoint it came from.
       externalLinkUrls: {} as Partial<Record<ExternalLinkKey, string>>,
       bio: null as ArtistBioData | null,
+      // The artist's Fanart.tv images (background, clear logo), when the
+      // installation has a key and the artist has them. Null falls back to
+      // the blurred cover backdrop and the plain-text name.
+      artistArt: null as ArtistArt | null,
     }
   },
   computed: {
@@ -229,6 +245,26 @@ export default {
     externalLinks() {
       return toExternalLinkList(this.externalLinkUrls)
     },
+    /** The artist's Fanart.tv clear logo, or null for the plain-text name. */
+    artistLogo(): string | null {
+      return this.artistArt?.logo ?? null
+    },
+    /** The page backdrop: the Fanart.tv background when there is one, else
+     * the blurred cover wash (see the template). */
+    backdropUrl(): string | null {
+      if (this.artistArt?.background) return this.artistArt.background
+      if (!this.artist) return null
+      if (this.artist.coverArtId) {
+        return useLibraryStore().client().coverArtUrl(this.artist.coverArtId, 300)
+      }
+      return this.artist.imageUrl
+    },
+    backdropIsPhoto(): boolean {
+      return Boolean(this.artistArt?.background)
+    },
+    fanartEnabled(): boolean {
+      return useFanartStore().enabled
+    },
     // Undated albums (year === null) sort last regardless of direction —
     // there's no sensible position for "unknown" between two known years,
     // and burying them at the end keeps the shelf's front consistently
@@ -252,6 +288,13 @@ export default {
     '$i18n.locale'() {
       if (this.artist) void this.loadBio(this.artist.name, this.artist.id)
     },
+    // Turning Fanart.tv off clears the images immediately; turning it back
+    // on fetches them again - no reload needed.
+    fanartEnabled(enabled: boolean) {
+      if (!this.artist) return
+      if (enabled) void this.loadArt(this.artist.name, this.artist.id)
+      else this.artistArt = null
+    },
   },
   methods: {
     setAlbumGridView(value: boolean) {
@@ -265,6 +308,7 @@ export default {
       this.allSongsShown = false
       this.externalLinkUrls = {}
       this.bio = null
+      this.artistArt = null
       this.albumSortAscending = false
       // A newer navigation may resolve before this one, or move the route
       // on while a fetch is still in flight — the `$route.params.id === id`
@@ -282,6 +326,7 @@ export default {
       this.artist = artist
       void this.loadExternalLinks(artist.name, id)
       void this.loadBio(artist.name, id)
+      void this.loadArt(artist.name, id)
 
       this.loadingTopSongs = true
       try {
@@ -368,6 +413,29 @@ export default {
       if (this.$route.params.id !== id || this.$i18n.locale !== locale) return
       this.bio = bio
     },
+    // Same terms as loadBio() above: fired and forgotten, and a failure (or
+    // no Fanart.tv key, or no images) simply leaves the page on its blurred
+    // cover backdrop and its plain-text name.
+    async loadArt(name: string, id: string) {
+      if (!useFanartStore().enabled) {
+        this.artistArt = null
+        return
+      }
+      let art: ArtistArt | null = null
+      try {
+        art = await getArtistArt(name)
+      } catch (error) {
+        console.error('[artist-detail] Fanart.tv lookup failed:', error)
+      }
+      if (this.$route.params.id !== id) return
+      // Preload before setting them: the backdrop crossfades to the
+      // background and the logo swaps in, and both only read as a fade if
+      // the images are already paintable when the change happens.
+      if (art?.background) await preloadImage(art.background)
+      if (art?.logo) await preloadImage(art.logo)
+      if (this.$route.params.id !== id) return
+      this.artistArt = art
+    },
     async toggleStar() {
       if (!this.artist) return
       await this.libraryStore.toggleStar({ artistId: this.artist.id, starred: this.artist.starred })
@@ -402,6 +470,54 @@ export default {
 </script>
 
 <style scoped>
+/* The full-bleed artist backdrop: a band across the top of the page, masked
+ * out towards the bottom so the albums and songs below sit on the plain
+ * surface. */
+.artist-page {
+  position: relative;
+}
+
+.artist-page__backdrop,
+.artist-page__scrim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: min(78vh, 680px);
+  pointer-events: none;
+}
+
+.artist-page__backdrop {
+  background-size: cover;
+  background-position: center 22%;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 42%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 42%, transparent 100%);
+}
+
+/* Without a Fanart.tv background the fallback is the blurred cover wash -
+ * the app's one backdrop recipe (see docs/styleguide.md). */
+.artist-page__backdrop:not(.artist-page__backdrop--photo) {
+  filter: blur(38px) saturate(1.4) brightness(0.55);
+  transform: scale(1.1);
+  transform-origin: top center;
+}
+
+/* Keeps the header text readable over a bright background photo, and eases
+ * the top edge into the chrome. */
+.artist-page__scrim {
+  background: linear-gradient(
+    to bottom,
+    rgba(18, 20, 28, 0.72) 0%,
+    rgba(18, 20, 28, 0.3) 38%,
+    rgba(18, 20, 28, 0) 100%
+  );
+}
+
+.artist-page__content {
+  position: relative;
+  z-index: 1;
+}
+
 .section-header {
   display: flex;
   align-items: center;
@@ -410,9 +526,8 @@ export default {
 }
 
 /* Artist Radio + the external-link icons share one row, wrapping onto a
- * second line rather than overflowing/squeezing on a narrow window - see
- * this file's own #actions template comment for why they live here now. */
-.detail-header__actions-row {
+ * second line rather than overflowing/squeezing on a narrow window. */
+.artist-hero__actions-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;

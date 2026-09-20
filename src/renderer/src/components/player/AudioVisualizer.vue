@@ -57,6 +57,14 @@ export default {
       type: Boolean,
       default: true,
     },
+    /** The scene's dominant colour as an "r, g, b" triplet — the same one
+     * NowPlayingView's ambient wash and glow use, so the bars read as part
+     * of the backdrop rather than as a fixed amber element on top of it.
+     * Falls back to the app's amber when nothing could be extracted. */
+    color: {
+      type: String,
+      default: '245, 169, 78',
+    },
   },
   // 'debug-frame': this run's latest debug payload (or null, once 'cast'
   // mode ends) — see VisualizerFrame's own comment for what it carries.
@@ -262,8 +270,13 @@ export default {
       const gap = Math.max(1, width * 0.004)
       const barWidth = (width - gap * (BAR_COUNT - 1)) / BAR_COUNT
       const gradient = ctx.createLinearGradient(0, height, 0, 0)
-      gradient.addColorStop(0, 'rgba(245, 169, 78, 0.85)')
-      gradient.addColorStop(1, 'rgba(245, 169, 78, 0.25)')
+      gradient.addColorStop(0, `rgba(${this.color}, 1)`)
+      gradient.addColorStop(1, `rgba(${this.color}, 0.8)`)
+      // A soft dark shadow under the bars, so they stay legible over a
+      // bright artist background rather than washing out into it.
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.45)'
+      ctx.shadowBlur = 8
+      ctx.shadowOffsetY = 1
       ctx.fillStyle = gradient
 
       ctx.beginPath()

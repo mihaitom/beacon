@@ -232,6 +232,7 @@ export default {
   nowPlaying: {
     nothingPlaying: "Rien n'est en cours de lecture actuellement.",
     toggleVisualizer: 'Afficher/masquer le visualiseur',
+    toggleArtwork: 'Afficher/masquer la pochette',
     toggleFullscreen: 'Basculer le plein écran',
     reducedMotionToastTitle: 'Visualiseur',
     reducedMotionToastMessage: 'Non affiché car votre système a activé « Réduire les animations ».',
@@ -410,17 +411,24 @@ export default {
       "Laissez « Callback URL » vide : ce champ ne sert qu'aux applications qui connectent des utilisateurs via Last.fm, ce que Beacon ne fait pas. Si le formulaire l'exige, n'importe quelle adresse convient ; elle n'est jamais appelée.",
     lastfmStep4:
       "Copiez la « API key » affichée et collez-la ici. Le shared secret n'est pas nécessaire.",
-    lastfmKeyGet: 'Obtenir une clé',
-    lastfmKey: 'Clé API Last.fm',
-    lastfmKeyPlaceholder: 'Collez la clé ici',
-    lastfmKeySet: 'Une clé est déjà enregistrée',
-    lastfmKeyMissing: 'Aucune clé : le générateur de playlists Last.fm est masqué.',
-    lastfmKeyStored: 'Une clé est enregistrée. Saisissez-en une nouvelle pour la remplacer.',
-    lastfmKeyFromEnvironment: 'La clé provient de la configuration de cette installation.',
-    lastfmKeyClear: 'Supprimer la clé',
-    lastfmKeySaved: 'Clé enregistrée',
-    lastfmKeyCleared: 'Clé supprimée',
-    lastfmKeyFailed: "Impossible d'enregistrer la clé",
+    fanartTitle: 'Fanart.tv',
+    fanartWhat:
+      "Ajoute une bannière aux pages d'artiste, issue de Fanart.tv. Beacon s'identifie avec sa propre clé de projet, vous n'avez donc besoin que d'une clé personnelle gratuite. Facultatif : la page fonctionne sans.",
+    fanartStep1: 'Créez un compte gratuit sur fanart.tv.',
+    fanartStep2:
+      'Ouvrez les clés API de votre profil et copiez votre clé personnelle, celle liée à votre compte, pas une clé de projet.',
+    apiKeysTitle: 'Clés API',
+    apiKeyLabel: 'Clé API {service}',
+    apiKeyGet: 'Obtenir une clé',
+    apiKeyPlaceholder: 'Collez la clé ici',
+    apiKeySet: 'Une clé est déjà enregistrée',
+    apiKeyMissing: 'Aucune clé.',
+    apiKeyStored: 'Une clé est enregistrée. Saisissez-en une nouvelle pour la remplacer.',
+    apiKeyFromEnvironment: 'La clé provient de la configuration de cette installation.',
+    apiKeyClear: 'Supprimer la clé',
+    apiKeySaved: 'Clé enregistrée',
+    apiKeyCleared: 'Clé supprimée',
+    apiKeyFailed: "Impossible d'enregistrer la clé",
     advancedTitle: 'Avancé',
     logLevel: 'Niveau de journalisation',
     logLevelHint:
@@ -435,6 +443,9 @@ export default {
     recommendations: 'Recommandations personnalisées',
     recommendationsHint:
       "Découvrir sur l'accueil s'appuie sur des artistes proches de ce que vous écoutez vraiment, recherchés auprès de MusicBrainz, ListenBrainz et Deezer - cela leur transmet un ou deux noms d'artistes de votre bibliothèque. Désactivé, des albums au hasard sont proposés ; ouvrir la page d'un artiste consulte toujours cet artiste, dans un cas comme dans l'autre.",
+    fanartEnabled: 'Visuels d’artiste de Fanart.tv',
+    fanartEnabledHint:
+      "Affiche les bannières et fonds d'artiste de Fanart.tv sur les pages d'artiste et dans « Lecture en cours ». La clé se règle dans « Avancé » ; désactiver cette option ne la supprime pas.",
     listenbrainzUsername: 'Nom d’utilisateur ListenBrainz',
     listenbrainzHint:
       "Votre nom public ListenBrainz. Il remplit la rangée « Recommandé pour vous » sur l'accueil et sert de valeur par défaut dans le générateur de playlists. Aucun mot de passe requis. Pour créer une playlist, en revanche, Last.fm reste le meilleur choix : ses classements sont plus variés.",
@@ -689,6 +700,13 @@ export default {
           "Récupérer des classements, le top d'un genre ou d'un artiste, ou votre propre historique d'écoute, pour le générateur de playlists de la page Playlists.",
         sends:
           "Ce que vous avez demandé - un pays, un genre, un nom d'artiste - et, pour vos plus écoutés, le nom d'utilisateur Last.fm saisi. Rien de votre bibliothèque n'est envoyé : la correspondance se fait sur votre appareil.",
+      },
+      fanart: {
+        name: 'Fanart.tv',
+        purpose:
+          "Recherche une bannière pour la page d'artiste que vous avez ouverte, si une clé Fanart.tv est configurée.",
+        sends:
+          "Le nom de l'artiste dont vous avez la page ouverte, pour en trouver d'abord l'identifiant MusicBrainz. Rien sur votre bibliothèque.",
       },
       deezer: {
         name: 'Deezer',

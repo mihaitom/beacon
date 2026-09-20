@@ -30,6 +30,9 @@ import NowPlayingView from '../NowPlayingView.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
 
+// A network lookup the layout under test does not care about.
+vi.mock('@/services/connect/fanart', () => ({ getArtistArt: vi.fn().mockResolvedValue(null) }))
+
 const vuetify = createVuetify({ components, directives })
 
 function makeRouter() {

@@ -79,7 +79,7 @@ async def test_resolve_mbid_cache_hit_skips_network():
     with tempfile.TemporaryDirectory() as d:
         path = _tmp_path(d)
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({"mbid_by_name": {"radiohead": "abc-123"}}, f)
+            json.dump({"mbid_by_name_v2": {"radiohead": "abc-123"}}, f)
         with (
             patch.object(recommendations, "_PATH", path),
             patch.object(recommendations, "_client") as client,
@@ -96,7 +96,7 @@ async def test_resolve_mbid_ignores_a_cached_negative_and_retries():
     with tempfile.TemporaryDirectory() as d:
         path = _tmp_path(d)
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({"mbid_by_name": {"dua lipa": None}}, f)
+            json.dump({"mbid_by_name_v2": {"dua lipa": None}}, f)
         with (
             patch.object(recommendations, "_PATH", path),
             patch.object(recommendations, "_client") as client,
@@ -124,7 +124,35 @@ async def test_resolve_mbid_fetches_and_caches_on_miss():
         assert result == "new-mbid-1"
         with open(path, encoding="utf-8") as f:
             cache = json.load(f)
-        assert cache["mbid_by_name"]["boards of canada"] == "new-mbid-1"
+        assert cache["mbid_by_name_v2"]["boards of canada"] == "new-mbid-1"
+
+
+async def test_resolve_mbid_prefers_an_exact_name_over_the_top_hit():
+    """MusicBrainz's Lucene query matches the name as a word anywhere in an
+    artist's name, so "Bush"'s top hit is "Kate Bush" (score 100) with the
+    band actually called "Bush" second (95) — taking the top hit handed out
+    the wrong artist's Fanart.tv image."""
+    with tempfile.TemporaryDirectory() as d:
+        path = _tmp_path(d)
+        with (
+            patch.object(recommendations, "_PATH", path),
+            patch.object(recommendations, "_client") as client,
+        ):
+            client.get = AsyncMock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "artists": [
+                            {"id": "kate-bush", "name": "Kate Bush", "score": 100},
+                            {"id": "bush-band", "name": "Bush", "score": 95},
+                        ]
+                    },
+                    request=httpx.Request("GET", recommendations._MB_SEARCH_URL),
+                )
+            )
+            result = await recommendations.resolve_mbid("Bush")
+
+    assert result == "bush-band"
 
 
 async def test_resolve_mbid_does_not_cache_a_negative():
@@ -141,7 +169,7 @@ async def test_resolve_mbid_does_not_cache_a_negative():
 
         assert result is None
         assert "definitely not a real artist" not in recommendations._load_cache().get(
-            "mbid_by_name", {}
+            "mbid_by_name_v2", {}
         )
 
 
@@ -168,7 +196,7 @@ async def test_resolve_mbid_does_not_cache_transient_http_failure():
             # _load_cache(), not raw open() — nothing was ever written on a
             # failed call, so the cache file may not even exist yet, which
             # _load_cache() already treats the same as "empty".
-            assert "radiohead" not in recommendations._load_cache().get("mbid_by_name", {})
+            assert "radiohead" not in recommendations._load_cache().get("mbid_by_name_v2", {})
 
             # Recovers on the very next call — not cached, so no stale
             # negative to override.
@@ -186,7 +214,7 @@ async def test_get_similar_artists_uses_cached_similar_when_fresh():
         with open(path, "w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "mbid_by_name": {"radiohead": "rh-mbid"},
+                    "mbid_by_name_v2": {"radiohead": "rh-mbid"},
                     "similar_by_mbid": {
                         "rh-mbid": {
                             "fetched_at": time.time(),
@@ -215,7 +243,7 @@ async def test_get_similar_artists_refetches_when_stale():
         with open(path, "w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "mbid_by_name": {"radiohead": "rh-mbid"},
+                    "mbid_by_name_v2": {"radiohead": "rh-mbid"},
                     "similar_by_mbid": {
                         "rh-mbid": {
                             "fetched_at": stale_ts,
@@ -253,7 +281,7 @@ async def test_get_similar_artists_excludes_seed_names():
         with open(path, "w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "mbid_by_name": {"radiohead": "rh-mbid"},
+                    "mbid_by_name_v2": {"radiohead": "rh-mbid"},
                     "similar_by_mbid": {
                         "rh-mbid": {
                             "fetched_at": time.time(),
@@ -280,7 +308,7 @@ async def test_get_similar_artists_dedupes_keeping_higher_score():
         with open(path, "w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "mbid_by_name": {"a": "a-mbid", "b": "b-mbid"},
+                    "mbid_by_name_v2": {"a": "a-mbid", "b": "b-mbid"},
                     "similar_by_mbid": {
                         "a-mbid": {
                             "fetched_at": time.time(),
@@ -312,7 +340,7 @@ async def test_get_similar_artists_respects_limit():
         with open(path, "w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "mbid_by_name": {"seed": "s-mbid"},
+                    "mbid_by_name_v2": {"seed": "s-mbid"},
                     "similar_by_mbid": {"s-mbid": {"fetched_at": time.time(), "similar": similar}},
                 },
                 f,
@@ -586,7 +614,7 @@ async def test_get_artist_links_cache_hit_skips_network():
         with open(path, "w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "mbid_by_name": {"radiohead": "mbid-1"},
+                    "mbid_by_name_v2": {"radiohead": "mbid-1"},
                     "links_by_mbid": {"mbid-1": {"spotify": "https://open.spotify.com/artist/x"}},
                 },
                 f,
@@ -1196,7 +1224,7 @@ async def test_get_artist_bio_serves_a_fresh_cache_entry_without_the_network():
         with open(path, "w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "mbid_by_name": {"x": "mbid-1"},
+                    "mbid_by_name_v2": {"x": "mbid-1"},
                     "bio_by_mbid": {"mbid-1": {"en": {"fetched_at": time.time(), "bio": cached}}},
                 },
                 f,
@@ -1218,7 +1246,7 @@ async def test_get_artist_bio_rereads_a_stale_cache_entry():
         with open(path, "w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "mbid_by_name": {"radiohead": "mbid-1"},
+                    "mbid_by_name_v2": {"radiohead": "mbid-1"},
                     "wiki_by_mbid": {"mbid-1": {"wikidata": "Q44190", "wikipedia": None}},
                     "bio_by_mbid": {"mbid-1": {"en": {"fetched_at": stale, "bio": None}}},
                 },
@@ -1305,7 +1333,7 @@ async def test_get_artist_bio_looks_up_the_wikidata_item_for_links_cached_before
         with open(path, "w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "mbid_by_name": {"radiohead": "mbid-1"},
+                    "mbid_by_name_v2": {"radiohead": "mbid-1"},
                     "links_by_mbid": {"mbid-1": {"musicbrainz": "https://musicbrainz.org/x"}},
                 },
                 f,

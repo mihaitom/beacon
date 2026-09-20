@@ -15,6 +15,9 @@ import { useAutoplayStore } from '@/stores/autoplay'
 import NowPlayingView from '../NowPlayingView.vue'
 import { getAudioEngine } from '@/services/audioEngine'
 import { getLogLevel, type LogLevel } from '@/services/connect/logLevel'
+import { getArtistArt } from '@/services/connect/fanart'
+import { extractDominantColor } from '@/services/colorExtractor'
+import { useFanartStore } from '@/stores/fanart'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
 
@@ -27,6 +30,18 @@ vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
 // Mocked rather than left to a failing fetch so each test can say which
 // answer it is testing against.
 vi.mock('@/services/connect/logLevel', () => ({ getLogLevel: vi.fn() }))
+
+// The artist background is a per-song network lookup; a real one would fail
+// (or hit the network) in every test that isn't about it.
+vi.mock('@/services/connect/fanart', () => ({ getArtistArt: vi.fn().mockResolvedValue(null) }))
+
+// jsdom never fires an image's load event, so the real one would leave the
+// background waiting forever.
+vi.mock('@/services/preloadImage', () => ({ preloadImage: vi.fn().mockResolvedValue(undefined) }))
+
+// The real sampler needs a canvas jsdom does not implement; mocked so a
+// background's colour is deterministic.
+vi.mock('@/services/colorExtractor', () => ({ extractDominantColor: vi.fn() }))
 
 /** Stands in for a build where the graph came up (desktop, desktop
  * browser); `false` is a phone, where it deliberately never does. */
@@ -88,6 +103,7 @@ describe('NowPlayingView', () => {
     // What a normal install answers, so the debug button below stays away
     // in every test that isn't about it.
     vi.mocked(getLogLevel).mockResolvedValue({ level: 'INFO', levels: [] })
+    vi.mocked(getArtistArt).mockReset().mockResolvedValue(null)
     // extractDominantColor()/hasTransparency() only ever run when a song
     // has coverArtId or a radio station has a homePageUrl — every fixture
     // below leaves both unset, so neither the canvas-based color sampler
@@ -751,5 +767,160 @@ describe('NowPlayingView radio debug button', () => {
     await flushPromises()
 
     expect(wrapper.findAll('.title-log__item')).toHaveLength(1)
+  })
+})
+
+describe('NowPlayingView artist background', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    withAnalyser(true)
+    vi.mocked(getArtistArt).mockReset().mockResolvedValue(null)
+    vi.mocked(extractDominantColor).mockReset().mockResolvedValue(null)
+  })
+
+  function backgroundOf(wrapper: VueWrapper): string | null {
+    return (wrapper.vm as unknown as { artistBackground: string | null }).artistBackground
+  }
+
+  function artworkToggle(wrapper: VueWrapper) {
+    return wrapper
+      .findAllComponents({ name: 'VBtn' })
+      .find((button) => button.props('icon') === 'mdi-image-off-outline')
+  }
+
+  async function mountWithBackground() {
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background: 'https://assets.fanart.tv/bg.jpg',
+      logo: null,
+    })
+    const mounted = await mountView()
+    usePlaybackStore().setQueue([makeSong('a', { artist: 'Artist A' })], 0)
+    await flushPromises()
+    return mounted
+  }
+
+  it('shows the artist background when Fanart.tv has one', async () => {
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background: 'https://assets.fanart.tv/bg.jpg',
+      logo: null,
+    })
+    const { wrapper } = await mountView()
+    usePlaybackStore().setQueue([makeSong('a', { artist: 'Artist A' })], 0)
+    await flushPromises()
+
+    expect(getArtistArt).toHaveBeenCalledWith('Artist A')
+    expect(backgroundOf(wrapper)).toBe('https://assets.fanart.tv/bg.jpg')
+  })
+
+  it('falls back to the blurred cover when there is no background', async () => {
+    const { wrapper } = await mountView()
+    usePlaybackStore().setQueue([makeSong('a', { artist: 'Artist A' })], 0)
+    await flushPromises()
+
+    expect(backgroundOf(wrapper)).toBeNull()
+  })
+
+  it('drops the previous artist image rather than showing it behind the next song', async () => {
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background: 'https://assets.fanart.tv/one.jpg',
+      logo: null,
+    })
+    const { wrapper } = await mountView()
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a', { artist: 'Artist A' })], 0)
+    await flushPromises()
+    expect(backgroundOf(wrapper)).toBe('https://assets.fanart.tv/one.jpg')
+
+    // The next artist's lookup never resolves, so the old image must not
+    // stay behind the new song.
+    vi.mocked(getArtistArt).mockReturnValue(new Promise(() => {}))
+    playback.setQueue([makeSong('b', { artist: 'Artist B' })], 0)
+    await flushPromises()
+
+    expect(backgroundOf(wrapper)).toBeNull()
+  })
+
+  it('offers to hide the artwork only once there is a background', async () => {
+    const without = await mountView()
+    usePlaybackStore().setQueue([makeSong('a', { artist: 'Artist A' })], 0)
+    await flushPromises()
+    expect(artworkToggle(without.wrapper)).toBeUndefined()
+
+    const { wrapper } = await mountWithBackground()
+    expect(artworkToggle(wrapper)).toBeDefined()
+  })
+
+  it('hides the artwork by default once a background is loaded, and shows it when asked', async () => {
+    const { wrapper } = await mountWithBackground()
+
+    const vm = wrapper.vm as unknown as {
+      artworkHidden: boolean
+      ambientStyle: { background: string }
+    }
+    // Default: hidden, so the artist background is what the screen is about.
+    expect(vm.artworkHidden).toBe(true)
+    expect(vm.ambientStyle.background).toBe('none')
+    expect(wrapper.find('.now-playing__art-wrap').exists()).toBe(false)
+    // The root class the corner-text and readable-lyrics CSS hang off.
+    expect(wrapper.classes()).toContain('now-playing--artwork-hidden')
+
+    await artworkToggle(wrapper)!.trigger('click')
+
+    expect(vm.artworkHidden).toBe(false)
+    expect(wrapper.find('.now-playing__art-wrap').exists()).toBe(true)
+  })
+
+  it('does not hide the artwork when there is no background to reveal', async () => {
+    // A preference left on from an artist Fanart.tv had a background for
+    // must not blank the artwork for one it does not.
+    localStorage.setItem('beacon.nowPlayingHideArtwork', 'true')
+    const { wrapper } = await mountView()
+    usePlaybackStore().setQueue([makeSong('a', { artist: 'Artist A' })], 0)
+    await flushPromises()
+
+    expect(artworkToggle(wrapper)).toBeUndefined()
+    expect((wrapper.vm as unknown as { artworkHidden: boolean }).artworkHidden).toBe(false)
+    expect(wrapper.find('.now-playing__art-wrap').exists()).toBe(true)
+  })
+
+  it('colours the visualizer bars with the background colour once it is loaded', async () => {
+    vi.mocked(extractDominantColor).mockResolvedValue([200, 60, 60] as [number, number, number])
+    const { wrapper } = await mountWithBackground()
+
+    const color = (wrapper.vm as unknown as { visualizerColor: string }).visualizerColor
+    const [r, g, b] = color.split(',').map((part) => Number(part.trim()))
+    // Red-dominant and bright (visualizerBarColor lifts it), not the amber.
+    expect(r).toBeGreaterThan(g!)
+    expect(r).toBeGreaterThan(b!)
+    expect(color).not.toBe('245, 169, 78')
+  })
+
+  it('leaves the bars on the app amber without a Fanart.tv background', async () => {
+    const { wrapper } = await mountView()
+    usePlaybackStore().setQueue([makeSong('a', { artist: 'Artist A' })], 0)
+    await flushPromises()
+
+    expect((wrapper.vm as unknown as { visualizerColor: string }).visualizerColor).toBe(
+      '245, 169, 78',
+    )
+  })
+
+  it('does not look anything up when Fanart.tv is switched off', async () => {
+    useFanartStore().enabled = false
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background: 'https://assets.fanart.tv/bg.jpg',
+      logo: null,
+    })
+    const { wrapper } = await mountView()
+    usePlaybackStore().setQueue([makeSong('a', { artist: 'Artist A' })], 0)
+    await flushPromises()
+
+    expect(getArtistArt).not.toHaveBeenCalled()
+    expect(backgroundOf(wrapper)).toBeNull()
   })
 })

@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A new "Rediscover" shelf on Home brings back songs you played a lot but haven't heard in at least three months, with a button to shuffle in a different set
 - An artist's page now shows the opening paragraph of their Wikipedia article under the name, in the app's language where Wikipedia has one and in English otherwise, with a link to the full article
 - A track the playlist builder could not find in your library can now be copied with one click as "Artist - Title", ready to paste into a search or a download program
+- Fanart.tv images now dress the artist surfaces: the artist's background photo across the top of their page, fading out towards the albums below, and behind Now Playing, plus the artist's clear logo in place of the plain name where Fanart.tv has one. Now Playing can hide the album artwork to show that background, moving the track text into the corner, and its lyrics now sit on their own translucent panel so they stay readable over any backdrop. Both are optional and need a Fanart.tv key; without one those surfaces keep their usual look, and a switch beside the key turns the images off without removing it. The images are kept on the server, so they come back instantly instead of being fetched from Fanart.tv again, and where an artist has several, one of the five most-liked is shown at random
+- The installation-wide keys in Settings now sit together in one "API keys" section, the Last.fm key and the new Fanart.tv one
 
 ### Changed
 
@@ -23,10 +25,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Searching a radio station's played titles is more forgiving now: accents and punctuation no longer have to match, the artist and the track can be typed in either order, and a half-typed or slightly misspelled word still finds the entry
 - The filter fields on the Songs, Albums, Artists, Genres, Playlists and Radio screens - and the phone remote's search - are forgiving the same way: punctuation and apostrophes no longer have to match, and a slightly misspelled word still finds the entry
 - Clicking a title in a radio station's played list now looks the song up in your library first and opens the search on that song's artist and title, so the exact track shows up instead of a page of near-misses
+- Now Playing's visualizer bars take their colour from the artist background where Fanart.tv has one, brightened so a dark or black-and-white photo does not swallow them (a grey or near-black one falls back to the app's amber), and carry a soft shadow so they stay legible over a bright photo; without a background they keep the amber
 
 ### Fixed
 
 - An artist lookup that failed during a brief MusicBrainz outage could be remembered as "not found" for good, leaving that artist without a photo, links or Wikipedia paragraph on their page and out of Discover. Those misses are retried now
+- An artist whose name is only part of another artist's name could be looked up as that other artist - "Bush" resolved to "Kate Bush" - handing back the wrong Wikipedia paragraph, links and artist image, because the MusicBrainz lookup took its first hit unchecked. It now prefers a result whose name is exactly the one asked for
 
 ## [1.3.2] - 2026-09-19
 

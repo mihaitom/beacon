@@ -9,7 +9,7 @@
 // same number. One cautious fraction there made all three small at once,
 // which is how a 234px cover ended up sitting in 358px of room on a 390px
 // phone, with a third of the width and half the height of the stage unused.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -29,6 +29,9 @@ import MobileNowPlayingView from '../mobile/MobileNowPlayingView.vue'
 import NowPlayingView from '../NowPlayingView.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
+
+// A network lookup the layout under test does not care about.
+vi.mock('@/services/connect/fanart', () => ({ getArtistArt: vi.fn().mockResolvedValue(null) }))
 
 const vuetify = createVuetify({ components, directives })
 const wrappers: VueWrapper[] = []

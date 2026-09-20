@@ -231,6 +231,7 @@ export default {
   nowPlaying: {
     nothingPlaying: 'Nothing is playing right now.',
     toggleVisualizer: 'Show/hide visualizer',
+    toggleArtwork: 'Show/hide album artwork',
     toggleFullscreen: 'Toggle fullscreen',
     reducedMotionToastTitle: 'Visualizer',
     reducedMotionToastMessage: 'Not shown because your system has "Reduce Motion" turned on.',
@@ -405,17 +406,24 @@ export default {
     lastfmStep3:
       "Leave 'Callback URL' empty - it is only for apps that log people in through Last.fm, which Beacon does not. If the form insists on one, any address will do; it is never called.",
     lastfmStep4: 'Copy the "API key" it shows you and paste it here. Ignore the shared secret.',
-    lastfmKeyGet: 'Get a key',
-    lastfmKey: 'Last.fm API key',
-    lastfmKeyPlaceholder: 'Paste the key here',
-    lastfmKeySet: 'A key is already set',
-    lastfmKeyMissing: 'No key set - the Last.fm playlist builder is hidden.',
-    lastfmKeyStored: 'A key is set. Enter a new one to replace it.',
-    lastfmKeyFromEnvironment: "Using the key from this deployment's configuration.",
-    lastfmKeyClear: 'Remove key',
-    lastfmKeySaved: 'Key saved',
-    lastfmKeyCleared: 'Key removed',
-    lastfmKeyFailed: 'Could not save the key',
+    fanartTitle: 'Fanart.tv',
+    fanartWhat:
+      'Adds a banner to artist pages, from Fanart.tv. Beacon identifies itself with its own project key, so you only need a free personal key of your own. Optional - the page works without it.',
+    fanartStep1: 'Create a free account at fanart.tv.',
+    fanartStep2:
+      "Open your profile's API keys and copy your personal API key - the one tied to your account, not a project key.",
+    apiKeysTitle: 'API keys',
+    apiKeyLabel: '{service} API key',
+    apiKeyGet: 'Get a key',
+    apiKeyPlaceholder: 'Paste the key here',
+    apiKeySet: 'A key is already set',
+    apiKeyMissing: 'No key set.',
+    apiKeyStored: 'A key is set. Enter a new one to replace it.',
+    apiKeyFromEnvironment: "Using the key from this deployment's configuration.",
+    apiKeyClear: 'Remove key',
+    apiKeySaved: 'Key saved',
+    apiKeyCleared: 'Key removed',
+    apiKeyFailed: 'Could not save the key',
     advancedTitle: 'Advanced',
     logLevel: 'Log level',
     logLevelHint:
@@ -430,6 +438,9 @@ export default {
     recommendations: 'Personalized recommendations',
     recommendationsHint:
       "Discover on Home uses artists similar to what you actually listen to, looked up at MusicBrainz, ListenBrainz and Deezer - this shares a library artist name or two with them. Off falls back to random albums; opening an artist's own page still looks up that one artist either way.",
+    fanartEnabled: 'Artist artwork from Fanart.tv',
+    fanartEnabledHint:
+      "Shows Fanart.tv's banners and artist backgrounds on artist pages and in Now Playing. The key itself is set up under Advanced; turning this off leaves it in place.",
     listenbrainzUsername: 'ListenBrainz username',
     listenbrainzHint:
       'Your public ListenBrainz name. It fills the "Recommended for you" shelf on Home and is offered as the default in the playlist builder. No password needed. Last.fm is the better playlist builder, though - its charts come out more varied.',
@@ -681,6 +692,13 @@ export default {
           "Fetching charts, a genre's or artist's top tracks, or your own listening history, for the playlist builder on the Playlists page.",
         sends:
           'What you asked for - a country, a genre, an artist name - and, for your own most played, the Last.fm username you entered. Nothing about your library is sent; the matching happens on your own device.',
+      },
+      fanart: {
+        name: 'Fanart.tv',
+        purpose:
+          'Finding a banner for the artist page you have open, when a Fanart.tv key is configured.',
+        sends:
+          'The name of the artist whose page you have open, to look up its MusicBrainz id first. Nothing about your library.',
       },
       deezer: {
         name: 'Deezer',

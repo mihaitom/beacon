@@ -281,6 +281,26 @@ it is about to be blurred, and every other backdrop in the app asks for that
 size, so it stays one cached image rather than a private resolution per
 caller.
 
+One surface deliberately breaks the blur, for a Fanart.tv image that is
+already a large, wide photo: the artist page's full-bleed backdrop
+(`ArtistDetailView`'s `.artist-page__backdrop--photo`), shown sharp with a
+scrim over its top and masked out towards the bottom so the albums and songs
+below sit on the plain surface. Blurring a photo that size would only turn it
+into a wash of itself. Without one, the same layer falls back to the blurred
+cover wash, so the page never looks bare. Now Playing does the same for the
+current song's artist background (`.now-playing__backdrop--artist`).
+
+Both are preloaded (`services/preloadImage.ts`) before the layer swaps: a
+background-image set and activated in the same tick is blank until the bytes
+land, so the crossfade would end on a pop instead of an image.
+
+The artist page's header is its own component, `ArtistHero.vue`, rather than
+`DetailHeader.vue`: an artist is the one subject with a Wikipedia paragraph,
+a Fanart.tv clear logo (which stands in for the plain-text name, kept for
+screen readers) and that page-wide backdrop. Its bio slot reserves its
+height whether or not a paragraph arrives, so the page never shifts under the
+reader when Wikipedia answers.
+
 Where the backdrop can _change_ while the surface stays (navigating from one
 album to the next, the next track starting), it needs two stacked layers and
 `services/crossfadeBackdrop.ts` - `background-image` cannot transition. A

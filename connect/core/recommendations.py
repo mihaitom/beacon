@@ -158,7 +158,11 @@ async def resolve_mbid(name: str) -> str | None:
     nothing either (see the early return below). A legacy bare `null` in an
     existing cache is ignored and re-resolved, so those self-heal."""
     cache = _load_cache()
-    mbid_by_name = cache.setdefault("mbid_by_name", {})
+    # The "_v2" bucket is deliberate: the first version took MusicBrainz's
+    # top hit unchecked, which resolved "Bush" to Kate Bush (her name
+    # contains the word) and cached it. A fresh key drops those wrong
+    # resolutions without a migration.
+    mbid_by_name = cache.setdefault("mbid_by_name_v2", {})
     key = name.strip().lower()
     # Only a string is a hit; a legacy `null` (or any other shape) is treated
     # as absent and re-resolved — see the docstring.
@@ -173,7 +177,7 @@ async def resolve_mbid(name: str) -> str | None:
             await asyncio.sleep(wait)
         try:
             r = await _client.get(
-                _MB_SEARCH_URL, params={"query": f'artist:"{name}"', "fmt": "json", "limit": "1"}
+                _MB_SEARCH_URL, params={"query": f'artist:"{name}"', "fmt": "json", "limit": "5"}
             )
             r.raise_for_status()
             data = r.json()
@@ -184,7 +188,19 @@ async def resolve_mbid(name: str) -> str | None:
             _mb_last_call = time.monotonic()
 
     artists = data.get("artists") or []
-    mbid = artists[0].get("id") if artists else None
+    # MusicBrainz's Lucene query matches the name as a word anywhere in an
+    # artist's name, so the top hit for "Bush" is "Kate Bush" (score 100)
+    # while the band actually called "Bush" sits second. Prefer a result
+    # whose name is exactly what was asked for; fall back to the top hit only
+    # when nothing matches exactly, which covers a differently spelled name
+    # ("Beatles" for "The Beatles").
+    wanted = name.strip().casefold()
+    exact = next(
+        (a for a in artists if (a.get("name") or "").strip().casefold() == wanted),
+        None,
+    )
+    chosen = exact or (artists[0] if artists else None)
+    mbid = chosen.get("id") if chosen else None
 
     # Only a positive is written — see the docstring. A miss costs one
     # rate-limited call next time, which is the honest price of not

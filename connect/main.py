@@ -40,11 +40,13 @@ from core.state import PORT, get_local_ip
 from core.upnp_events import renew_due_subscriptions
 from media import jellyfin_bridge, plex_bridge
 from routes.account_settings import router as account_settings_router
+from routes.api_keys import router as api_keys_router
 from routes.coverart import router as coverart_router
 from routes.debug import router as debug_router
 from routes.devices import router as devices_router
 from routes.discovery import discover_all
 from routes.discovery import router as discovery_router
+from routes.fanart import router as fanart_router
 from routes.jellyfin_auth import router as jellyfin_auth_router
 from routes.join import router as join_router
 from routes.lastfm import router as lastfm_router
@@ -446,11 +448,13 @@ app.include_router(volume_router)
 app.include_router(join_router)
 app.include_router(log_level_router)
 app.include_router(account_settings_router)
+app.include_router(api_keys_router)
 app.include_router(pairing_router)
 app.include_router(lyrics_router)
 app.include_router(waveform_router)
 app.include_router(radio_router)
 app.include_router(recommendations_router)
+app.include_router(fanart_router)
 app.include_router(lastfm_router)
 app.include_router(listenbrainz_router)
 app.include_router(coverart_router)

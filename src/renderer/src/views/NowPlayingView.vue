@@ -1,5 +1,9 @@
 <template>
-  <div ref="root" class="now-playing" :class="{ 'now-playing--compact': compact }">
+  <div
+    ref="root"
+    class="now-playing"
+    :class="{ 'now-playing--compact': compact, 'now-playing--artwork-hidden': artworkHidden }"
+  >
     <!-- Full-bleed blurred artwork behind everything — same backdrop
      - language as DetailHeader.vue's hero cards (blur + scrim over the
      - item's own art). Two stacked layers so a song change crossfades
@@ -8,7 +12,10 @@
       v-for="(url, i) in backdrop.urls"
       :key="i"
       class="now-playing__backdrop"
-      :class="{ 'now-playing__backdrop--active': i === backdrop.active }"
+      :class="{
+        'now-playing__backdrop--active': i === backdrop.active,
+        'now-playing__backdrop--artist': backdropIsArtist,
+      }"
       :style="url ? { backgroundImage: `url(${url})` } : {}"
     />
     <div class="now-playing__scrim" :style="ambientStyle" />
@@ -106,6 +113,19 @@
           :title="$t('nowPlaying.toggleVisualizer')"
           @click="showVisualizer = !showVisualizer"
         />
+        <!-- Only once there is a Fanart.tv artist background loaded and
+         - ready: hiding the artwork with nothing behind it would just leave
+         - a blank stage. Hiding it drops the darkening too, so the
+         - background is actually visible (see ambientStyle). -->
+        <v-btn
+          v-if="artistBackground"
+          icon="mdi-image-off-outline"
+          :color="artworkHidden ? 'primary' : undefined"
+          variant="text"
+          density="comfortable"
+          :title="$t('nowPlaying.toggleArtwork')"
+          @click="hideArtwork = !hideArtwork"
+        />
         <!-- Not a mobile feature — MobileTransportControls.vue/the tab bar
        - already own the phone's actual full screen; hiding *that* app
        - chrome behind the Fullscreen API here wouldn't gain anything and
@@ -174,7 +194,7 @@
            - fallback there. -->
           <div ref="flipCard" class="now-playing__flip-card">
             <div ref="primary" class="now-playing__primary">
-              <div class="now-playing__art-wrap">
+              <div v-if="!artworkHidden" class="now-playing__art-wrap">
                 <div class="now-playing__art-glow" :style="{ background: glowColor }" />
                 <cover-art
                   v-if="currentSong"
@@ -199,7 +219,17 @@
                 />
               </div>
 
-              <div class="now-playing__info">
+              <!-- With the artwork hidden, a small cover next to the text -
+               - the corner would otherwise say nothing about what is
+               - playing. Only a song has one; a station shows nothing. -->
+              <cover-art
+                v-if="artworkHidden && currentSong"
+                :cover-art-id="currentSong.coverArtId"
+                :size="miniArtSize || 72"
+                class="cover-shadow now-playing__mini-art"
+              />
+
+              <div ref="info" class="now-playing__info">
                 <div class="eyebrow-label">{{ eyebrow }}</div>
                 <h1 class="detail-title now-playing__title">
                   {{
@@ -306,6 +336,7 @@
       <audio-visualizer
         v-if="visualizerMounted"
         :active="visualizerActive"
+        :color="visualizerColor"
         @debug-frame="visualizerDebug = $event"
       />
     </div>
@@ -338,12 +369,16 @@ import CoverArt from '@/components/library/CoverArt.vue'
 import LyricsPanel from '@/components/lyrics/LyricsPanel.vue'
 import RadioTitleLog from '@/components/radio/RadioTitleLog.vue'
 import { getLogLevel } from '@/services/connect/logLevel'
+import { getArtistArt } from '@/services/connect/fanart'
+import { preloadImage } from '@/services/preloadImage'
+import { useFanartStore } from '@/stores/fanart'
 import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
 import AudioVisualizer from '@/components/player/AudioVisualizer.vue'
 import VisualizerDebugOverlay from '@/components/player/VisualizerDebugOverlay.vue'
 import type { VisualizerFrame } from '@/services/connect/types'
 import { getAudioEngine } from '@/services/audioEngine'
 import { extractDominantColor } from '@/services/colorExtractor'
+import { visualizerBarColor } from '@/services/visualizerColor'
 import { accountScopedKey } from '@/services/accountKey'
 import type { Song } from '@/types/library'
 
@@ -360,6 +395,24 @@ function readShowVisualizer(): boolean {
   try {
     // Absent (never toggled before) defaults to shown.
     return localStorage.getItem(accountScopedKey(SHOW_VISUALIZER_KEY)) !== 'false'
+  } catch {
+    return true
+  }
+}
+
+// Whether the album artwork is hidden so the artist background shows
+// through. Only ever takes effect when there is a background to show - see
+// artworkHidden - so a preference left on does not hide the artwork for an
+// artist Fanart.tv has nothing for.
+const HIDE_ARTWORK_KEY = 'beacon.nowPlayingHideArtwork'
+
+function readHideArtwork(): boolean {
+  try {
+    // Absent (never toggled before) defaults to hidden: with a Fanart.tv
+    // background there is something better to look at than the album cover,
+    // and without one artworkHidden stays false anyway, so the cover still
+    // shows. Toggling it stores the choice either way.
+    return localStorage.getItem(accountScopedKey(HIDE_ARTWORK_KEY)) !== 'false'
   } catch {
     return true
   }
@@ -415,6 +468,11 @@ export default {
       wasFlipped: null as boolean | null,
       splitOffset: 0,
       endSlide: null as (() => void) | null,
+      // The hidden-artwork corner shows a small cover whose height matches
+      // the track text beside it — measured, since that block grows and
+      // shrinks with the title. See observeInfo()/measureInfo().
+      infoObserver: null as ResizeObserver | null,
+      miniArtSize: 0,
       // Both belong to the debug button in the toolbar — see its own
       // comment. Off, and empty, for everyone who is not chasing something.
       debugEnabled: false,
@@ -436,7 +494,18 @@ export default {
       // crossfades between cover arts instead of popping — see
       // services/crossfadeBackdrop.ts for why one element can't do this.
       backdrop: createBackdropLayers(),
+      // The current song's artist background from Fanart.tv, when the
+      // installation has a key and the artist has one. Shown crisp behind
+      // everything (see .now-playing__backdrop--artist); null falls back to
+      // the blurred cover art.
+      artistBackground: null as string | null,
+      // The artist background's own dominant colour, extracted for the
+      // visualizer bars only - see visualizerColor.
+      artistColor: null as string | null,
       showVisualizer: readShowVisualizer(),
+      // The user's wish to hide the artwork; only honored while there is a
+      // Fanart.tv background to reveal (see artworkHidden).
+      hideArtwork: readHideArtwork(),
       // Whether <audio-visualizer> is actually in the DOM — trails
       // visualizerActive by visualizerHideDelayMs on the way down so its
       // fall-to-0 animation (see its `active` prop) has time to play
@@ -468,6 +537,12 @@ export default {
     },
     currentSong() {
       return this.playbackStore.currentSong
+    },
+    currentArtist(): string {
+      return this.currentSong?.artist ?? ''
+    },
+    fanartEnabled(): boolean {
+      return useFanartStore().enabled
     },
     hasPlayable() {
       return this.currentSong != null || this.playbackStore.radioStation != null
@@ -613,6 +688,14 @@ export default {
       const id = this.currentSong?.coverArtId
       return id ? useLibraryStore().client().coverArtUrl(id, 300) : null
     },
+    /** What the full-bleed backdrop actually shows: the artist's Fanart.tv
+     * background when there is one, else the blurred cover art. */
+    backdropSource(): string | null {
+      return this.artistBackground ?? this.coverArtUrl
+    },
+    backdropIsArtist(): boolean {
+      return Boolean(this.artistBackground)
+    },
     // The biggest single spot in the whole app for one of these — 512 asks
     // for whatever's largest a station's homepage actually declares (see
     // routes/radio.py's _select()), same reasoning as PlayerBar's own
@@ -627,6 +710,22 @@ export default {
     colorTriplet(): string {
       return this.extractedColor ?? FALLBACK_COLOR
     },
+    /** The visualizer bars' colour: the artist background's own dominant
+     * colour, but only once a Fanart.tv background is actually loaded and
+     * its colour extracted - the fixed amber otherwise. Lifted for
+     * visibility by visualizerBarColor(), which also falls back to amber for
+     * a grey or dark background the bars would vanish into. Deliberately not
+     * colorTriplet, which follows the cover and drives the ambient wash and
+     * glow. */
+    visualizerColor(): string {
+      return visualizerBarColor(this.artistBackground ? this.artistColor : null)
+    },
+    /** Whether the artwork is actually hidden right now: the wish, and a
+     * Fanart.tv artist background that is loaded and ready to show instead.
+     * Without one the artwork stays - hiding it would leave nothing. */
+    artworkHidden(): boolean {
+      return this.hideArtwork && Boolean(this.artistBackground)
+    },
     // A soft, wide wash filling the whole screen — the "room" the artwork
     // sits in reacts to whatever's playing, the same idea as the lighthouse
     // in the app's own name: the light changes color with what it's
@@ -634,6 +733,9 @@ export default {
     // transparent tint (matching DetailHeader's own 0.55 scrim opacity),
     // not an opaque fill — the blurred artwork needs to still show through.
     ambientStyle() {
+      // Hiding the artwork is a wish to look at the artist background, so
+      // the darkening goes with it.
+      if (this.artworkHidden) return { background: 'none' }
       return {
         background: `radial-gradient(ellipse 65% 55% at 50% 32%, rgba(${this.colorTriplet}, 0.35), rgba(18, 20, 28, 0) 70%), rgba(18, 20, 28, 0.55)`,
       }
@@ -650,7 +752,35 @@ export default {
       handler(url: string | null) {
         this.extractedColor = null
         if (url) this.loadColor(url)
+      },
+    },
+    // The backdrop follows the artist background when there is one, so it
+    // watches backdropSource rather than coverArtUrl directly. A song change
+    // may fade twice (cover first, then the artist image once it arrives);
+    // that reads as the artist image easing in, not as a flicker.
+    backdropSource: {
+      immediate: true,
+      handler(url: string | null) {
         showBackdrop(this.backdrop, url)
+      },
+    },
+    currentArtist: {
+      immediate: true,
+      handler(artist: string) {
+        void this.loadArtistBackground(artist)
+      },
+    },
+    // Turning Fanart.tv off drops the background (and the artwork it may be
+    // revealed by) immediately; turning it back on fetches it again.
+    fanartEnabled() {
+      void this.loadArtistBackground(this.currentArtist)
+    },
+    // The hidden-artwork corner's mini cover matches the track text's height
+    // (see miniArtSize), so the text block is observed while it is on screen.
+    hasPlayable: {
+      immediate: true,
+      handler() {
+        void this.$nextTick(() => this.observeInfo())
       },
     },
     // A different station's logo is a different shape — drop the previous
@@ -714,6 +844,14 @@ export default {
         // next launch.
       }
     },
+    hideArtwork(value: boolean) {
+      try {
+        localStorage.setItem(accountScopedKey(HIDE_ARTWORK_KEY), String(value))
+      } catch {
+        // Non-critical — worst case the preference doesn't survive to the
+        // next launch.
+      }
+    },
     // Mount instantly on the way up; on the way down, keep it mounted
     // (with active=false) for VISUALIZER_HIDE_DELAY_MS so AudioVisualizer's
     // own smoothing can settle every bar to 0 first — see its `active`
@@ -766,6 +904,7 @@ export default {
   beforeUnmount() {
     if (this.visualizerHideTimer) clearTimeout(this.visualizerHideTimer)
     this.stageObserver?.disconnect()
+    this.infoObserver?.disconnect()
     this.endSlide?.()
     document.removeEventListener('fullscreenchange', this.onFullscreenChange)
     // Leaving the view (route change, logout, ...) shouldn't strand the
@@ -817,6 +956,26 @@ export default {
       // the transform was cleared a frame after it went on.
       this.endSlide?.()
       this.slidePrimaryFrom(primary, ((flipped ? -1 : 1) * this.splitOffset) / 2, flipped)
+    },
+    /** (Re)points the info observer at the track-text block, which only
+     * exists while something is playable. */
+    observeInfo(): void {
+      if (!this.infoObserver) {
+        this.infoObserver = new ResizeObserver(() => this.measureInfo())
+      }
+      this.infoObserver.disconnect()
+      const info = this.$refs.info as HTMLElement | undefined
+      if (info) {
+        this.infoObserver.observe(info)
+        this.measureInfo()
+      }
+    },
+    /** The hidden-artwork corner's mini cover is square at the track text's
+     * own height, so it lines up with the labels instead of sitting at a
+     * size of its own. */
+    measureInfo(): void {
+      const info = this.$refs.info as HTMLElement | undefined
+      if (info) this.miniArtSize = Math.round(info.getBoundingClientRect().height)
     },
     /** How much room the lyrics panel takes out of the centred row: its own
      * width plus the gap before it. Half of that is how far the artwork
@@ -903,6 +1062,36 @@ export default {
       // don't let a stale extraction overwrite whatever's current now.
       if (url !== this.coverArtUrl) return
       this.extractedColor = color ? color.join(', ') : null
+    },
+    /** The current song's artist background, fetched per artist. Cleared
+     * first, so the previous artist's image never sits behind a new song
+     * while this one is still in flight. Same stale-response guard as
+     * loadColor() above, keyed on the artist. */
+    async loadArtistBackground(artist: string) {
+      this.artistBackground = null
+      this.artistColor = null
+      if (!useFanartStore().enabled || !artist) return
+      let art: Awaited<ReturnType<typeof getArtistArt>> = null
+      try {
+        art = await getArtistArt(artist)
+      } catch (error) {
+        console.error('[now-playing] Fanart.tv lookup failed:', error)
+      }
+      if (this.currentArtist !== artist) return
+      // Preload before setting it: the backdrop crossfades to the artist
+      // image, and that only reads as a fade if the image is already
+      // paintable when the swap happens.
+      if (art?.background) await preloadImage(art.background)
+      if (this.currentArtist !== artist) return
+      this.artistBackground = art?.background ?? null
+      // The bars take this image's colour (see visualizerColor); extracted
+      // here rather than from the cover, which is what the ambient wash and
+      // glow stay on.
+      if (this.artistBackground) {
+        const color = await extractDominantColor(this.artistBackground)
+        if (this.currentArtist !== artist) return
+        this.artistColor = color ? color.join(', ') : null
+      }
     },
   },
 }
@@ -993,6 +1182,16 @@ export default {
   opacity: 1;
 }
 
+/* A Fanart.tv artist background is a full-size photo, so it is shown sharp
+ * instead of as a blurred wash of a small cover — the one deliberate
+ * exception to the backdrop recipe in docs/styleguide.md's "The artwork
+ * backdrop". The ambient scrim above still tints it for legibility. */
+.now-playing__backdrop--artist {
+  inset: 0;
+  filter: none;
+  transform: none;
+}
+
 .now-playing__scrim {
   position: absolute;
   inset: 0;
@@ -1009,6 +1208,12 @@ export default {
   z-index: 2;
   display: flex;
   gap: 4px;
+  /* A translucent panel under the icons: with the artwork hidden they sit
+   * directly on the artist photo, where a plain white icon can vanish. */
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(18, 20, 28, 0.55);
+  backdrop-filter: blur(8px);
 }
 
 /* Teleported into the app bar (see the template): it is a row of buttons in
@@ -1020,6 +1225,10 @@ export default {
   z-index: auto;
   flex-direction: row;
   gap: 0;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  backdrop-filter: none;
 }
 
 /* Mirrors .now-playing__toolbar's own corner placement (opposite side, so
@@ -1033,7 +1242,7 @@ export default {
  * worry about eating clicks the rest of the time. */
 .now-playing__visualizer-debug {
   position: absolute;
-  bottom: 180px;
+  bottom: 350px;
   left: 24px;
   z-index: 2;
 }
@@ -1119,6 +1328,44 @@ export default {
   align-items: center;
   text-align: center;
   flex-shrink: 0;
+}
+
+/* With the artwork hidden the track text leaves the centre for the
+ * bottom-left corner, so the artist background is what the screen is about.
+ * space-between, not flex-start: with the lyrics panel open it belongs on
+ * the right, where it sits with the artwork shown, rather than being dragged
+ * over next to the text. Not on the phone: the flip-card layout there has no
+ * room for a corner. */
+.now-playing--artwork-hidden:not(.now-playing--compact) .now-playing__content {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.now-playing--artwork-hidden:not(.now-playing--compact) .now-playing__primary {
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 16px;
+  text-align: left;
+}
+
+/* The small cover the hidden-artwork corner shows beside the text - see the
+ * template. Rounded like the artwork on the cover cards. */
+.now-playing__mini-art {
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+
+/* The lyrics get their own ground to sit on - the amber glow the active
+ * line carries is not enough over a bright backdrop, and over a sharp artist
+ * photo it is not enough at all. A translucent, blurred panel, the same idea
+ * as the app's other scrims. */
+.now-playing__lyrics {
+  background: rgba(18, 20, 28, 0.62);
+  backdrop-filter: blur(10px);
+  border-radius: 18px;
 }
 
 /* Tall, bounded reading area — LyricsPanel scrolls within whatever height
@@ -1516,6 +1763,13 @@ export default {
    * can't read a component's computed prop) gives long text something
    * concrete to actually wrap against. */
   max-width: min(clamp(180px, min(70cqh, 50cqw), 900px), 58cqw);
+  /* A soft dark shadow under the track text, so it stays readable when the
+   * artwork is hidden and it sits directly on the artist background. A
+   * drop-shadow on this block, not a text-shadow on each line: the title
+   * and the artist/album links clip their own overflow (line-clamp and
+   * ellipsis), which cuts a text-shadow off flat at their left and right
+   * edges. This block does not clip, so the shadow follows the glyphs. */
+  filter: drop-shadow(0 1px 5px rgba(0, 0, 0, 0.7));
 }
 
 /* Scoped to .now-playing__info, not the bare global class — .eyebrow-label
@@ -1694,5 +1948,41 @@ export default {
  * live here as one rule rather than as a margin on each line. */
 .now-playing__info > * {
   margin-bottom: 8px;
+}
+
+/* With the artwork hidden there is nothing for the flip card to turn to -
+ * the flip exists to give the lyrics the artwork's own box, and there is no
+ * artwork - so the lyrics simply show beside the text, as in the wide
+ * layout, however narrow the stage is. Desktop only: the phone's flip card
+ * is the only way its narrow stage ever shows lyrics at all. */
+.now-playing--artwork-hidden:not(.now-playing--compact) .now-playing__flip-card {
+  display: contents;
+  transform: none;
+  transition: none;
+}
+
+.now-playing--artwork-hidden:not(.now-playing--compact) .now-playing__content--split {
+  width: 100%;
+  max-width: none;
+  gap: clamp(24px, 4cqw, 80px);
+  perspective: none;
+}
+
+.now-playing--artwork-hidden:not(.now-playing--compact) .now-playing__primary {
+  height: auto;
+  justify-content: normal;
+  transform: none;
+  backface-visibility: visible;
+  -webkit-backface-visibility: visible;
+}
+
+.now-playing--artwork-hidden:not(.now-playing--compact) .now-playing__lyrics {
+  position: static;
+  inset: auto;
+  width: min(38cqw, 560px);
+  height: 85cqh;
+  transform: none;
+  backface-visibility: visible;
+  -webkit-backface-visibility: visible;
 }
 </style>

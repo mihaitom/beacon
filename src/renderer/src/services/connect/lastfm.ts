@@ -33,27 +33,6 @@ export interface LastfmQuery {
   period?: LastfmPeriod
 }
 
-export interface LastfmStatus {
-  /** Whether this installation has an application key at all. The builder
-   * isn't offered without one, so the dialog asks before showing itself
-   * rather than failing once opened. */
-  configured: boolean
-  /** The key came from LASTFM_API_KEY rather than from Settings, so the
-   * field is empty although a key is in effect - Settings says so instead
-   * of looking unconfigured. The key itself never leaves the backend. */
-  fromEnvironment: boolean
-}
-
-export function getLastfmStatus(): Promise<LastfmStatus> {
-  return fetchConnect<LastfmStatus>('/lastfm/status')
-}
-
-/** Stores an application key for the whole installation, or clears it with
- * `''` - which falls back to LASTFM_API_KEY where one is set. */
-export function setLastfmApiKey(key: string): Promise<LastfmStatus> {
-  return fetchConnect<LastfmStatus>('/lastfm/api-key', { method: 'POST', body: { key } })
-}
-
 export async function getLastfmTracks(query: LastfmQuery): Promise<LastfmTrack[]> {
   const params = new URLSearchParams({ op: query.op, limit: String(query.limit) })
   if (query.country) params.set('country', query.country)

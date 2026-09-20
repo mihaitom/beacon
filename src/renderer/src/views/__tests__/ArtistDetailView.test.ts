@@ -10,6 +10,8 @@ import { useLibraryStore, TOP_SONGS_LIMIT } from '@/stores/library'
 import type { Album, Song } from '@/types/library'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import { getArtistBio, type ArtistBio } from '@/services/connect/recommendations'
+import { getArtistArt } from '@/services/connect/fanart'
+import { useFanartStore } from '@/stores/fanart'
 import ArtistDetailView from '../ArtistDetailView.vue'
 
 // Fired and forgotten by loadArtist(); a real one would hit the network.
@@ -18,6 +20,14 @@ vi.mock('@/services/connect/recommendations', () => ({
   getArtistLinks: vi.fn().mockResolvedValue({}),
   getArtistBio: vi.fn().mockResolvedValue(null),
 }))
+
+vi.mock('@/services/connect/fanart', () => ({
+  getArtistArt: vi.fn().mockResolvedValue(null),
+}))
+
+// jsdom never fires an image's load event, so the real one would leave the
+// banner waiting forever.
+vi.mock('@/services/preloadImage', () => ({ preloadImage: vi.fn().mockResolvedValue(undefined) }))
 
 const vuetify = createVuetify({ components, directives })
 
@@ -30,6 +40,9 @@ interface ArtistVm {
   allTopSongs: Song[] | null
   allSongsShown: boolean
   bio: ArtistBio | null
+  artistArt: { background: string | null; logo: string | null; banner: string | null } | null
+  readonly artistLogo: string | null
+  readonly backdropIsPhoto: boolean
   loadingAllSongs: boolean
   readonly totalSongCount: number
   readonly canToggleAllSongs: boolean
@@ -81,7 +94,7 @@ async function mountArtist(artist: ArtistDetail | null, topSongs: Song[] = []) {
   const wrapper = mount(ArtistDetailView, {
     global: {
       plugins: [vuetify, i18n, router],
-      stubs: { DetailHeader: true, AlbumShelf: true, SongTable: true, PageLoader: true },
+      stubs: { ArtistHero: true, AlbumShelf: true, SongTable: true, PageLoader: true },
     },
   })
   await flushPromises()
@@ -90,6 +103,7 @@ async function mountArtist(artist: ArtistDetail | null, topSongs: Song[] = []) {
 
 beforeEach(() => {
   setActivePinia(createPinia())
+  localStorage.clear()
   vi.clearAllMocks()
   ;(i18n.global.locale as unknown as string) = 'en'
 })
@@ -165,7 +179,7 @@ describe('ArtistDetailView song count and toggle availability', () => {
     const wrapper = mount(ArtistDetailView, {
       global: {
         plugins: [vuetify, i18n, router],
-        stubs: { DetailHeader: true, AlbumShelf: true, SongTable: true, PageLoader: true },
+        stubs: { ArtistHero: true, AlbumShelf: true, SongTable: true, PageLoader: true },
       },
     })
     await flushPromises()
@@ -409,5 +423,59 @@ describe('ArtistDetailView Wikipedia paragraph', () => {
 
     expect(vm.bio).toBeNull()
     expect(vm.artist).not.toBeNull()
+  })
+})
+
+describe('ArtistDetailView Fanart.tv images', () => {
+  // clearAllMocks() leaves a resolved value set by an earlier test in place.
+  beforeEach(() => {
+    vi.mocked(getArtistArt).mockReset().mockResolvedValue(null)
+  })
+
+  it('uses the artist background and clear logo when Fanart.tv has them', async () => {
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background: 'https://assets.fanart.tv/bg.jpg',
+      logo: 'https://assets.fanart.tv/logo.png',
+    })
+
+    const { vm } = await mountArtist(makeArtist([album('x', 2000)]))
+
+    expect(getArtistArt).toHaveBeenCalledWith('Artist One')
+    expect(vm.artistArt?.background).toBe('https://assets.fanart.tv/bg.jpg')
+    expect(vm.artistLogo).toBe('https://assets.fanart.tv/logo.png')
+    expect(vm.backdropIsPhoto).toBe(true)
+  })
+
+  it('falls back to the blurred cover when Fanart.tv has nothing', async () => {
+    const { vm } = await mountArtist(makeArtist([album('x', 2000)]))
+
+    expect(vm.artistArt).toBeNull()
+    expect(vm.artistLogo).toBeNull()
+    expect(vm.backdropIsPhoto).toBe(false)
+  })
+
+  it('falls back to the blurred cover when the lookup fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(getArtistArt).mockRejectedValue(new Error('offline'))
+
+    const { vm } = await mountArtist(makeArtist([album('x', 2000)]))
+
+    expect(vm.artistArt).toBeNull()
+    expect(vm.artist).not.toBeNull()
+  })
+
+  it('does not look anything up when Fanart.tv is switched off', async () => {
+    useFanartStore().enabled = false
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background: 'https://assets.fanart.tv/bg.jpg',
+      logo: 'https://assets.fanart.tv/logo.png',
+    })
+
+    const { vm } = await mountArtist(makeArtist([album('x', 2000)]))
+
+    expect(getArtistArt).not.toHaveBeenCalled()
+    expect(vm.artistArt).toBeNull()
   })
 })

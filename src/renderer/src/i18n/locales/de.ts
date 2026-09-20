@@ -229,6 +229,7 @@ export default {
   nowPlaying: {
     nothingPlaying: 'Nichts spielt gerade.',
     toggleVisualizer: 'Visualisierung ein-/ausblenden',
+    toggleArtwork: 'Album-Cover ein-/ausblenden',
     toggleFullscreen: 'Vollbild umschalten',
     reducedMotionToastTitle: 'Visualizer',
     reducedMotionToastMessage:
@@ -406,19 +407,25 @@ export default {
       'Das Feld „Callback URL“ leer lassen - es ist nur für Apps, die Nutzer über Last.fm anmelden, und das tut Beacon nicht. Besteht das Formular darauf, tut eine beliebige Adresse es; sie wird nie aufgerufen.',
     lastfmStep4:
       'Den angezeigten „API key“ kopieren und hier einfügen. Das Shared Secret wird nicht gebraucht.',
-    lastfmKeyGet: 'Schlüssel anfordern',
-    lastfmKey: 'Last.fm-API-Schlüssel',
-    lastfmKeyPlaceholder: 'Schlüssel hier einfügen',
-    lastfmKeySet: 'Ein Schlüssel ist hinterlegt',
-    lastfmKeyMissing:
-      'Kein Schlüssel hinterlegt - der Last.fm-Playlist-Baukasten ist ausgeblendet.',
-    lastfmKeyStored: 'Ein Schlüssel ist hinterlegt. Zum Ersetzen einen neuen eingeben.',
-    lastfmKeyFromEnvironment:
+    fanartTitle: 'Fanart.tv',
+    fanartWhat:
+      'Ergänzt Artist-Seiten um ein Banner von Fanart.tv. Beacon weist sich mit seinem eigenen Projekt-Schlüssel aus, du brauchst also nur einen kostenlosen persönlichen Schlüssel. Optional - die Seite funktioniert auch ohne.',
+    fanartStep1: 'Auf fanart.tv ein kostenloses Konto anlegen.',
+    fanartStep2:
+      'In den API-Schlüsseln des Profils den persönlichen Schlüssel kopieren - den an dein Konto gebundenen, keinen Projekt-Schlüssel.',
+    apiKeysTitle: 'API-Schlüssel',
+    apiKeyLabel: '{service}-API-Schlüssel',
+    apiKeyGet: 'Schlüssel anfordern',
+    apiKeyPlaceholder: 'Schlüssel hier einfügen',
+    apiKeySet: 'Ein Schlüssel ist hinterlegt',
+    apiKeyMissing: 'Kein Schlüssel hinterlegt.',
+    apiKeyStored: 'Ein Schlüssel ist hinterlegt. Zum Ersetzen einen neuen eingeben.',
+    apiKeyFromEnvironment:
       'Es wird der Schlüssel aus der Konfiguration dieser Installation verwendet.',
-    lastfmKeyClear: 'Schlüssel entfernen',
-    lastfmKeySaved: 'Schlüssel gespeichert',
-    lastfmKeyCleared: 'Schlüssel entfernt',
-    lastfmKeyFailed: 'Schlüssel konnte nicht gespeichert werden',
+    apiKeyClear: 'Schlüssel entfernen',
+    apiKeySaved: 'Schlüssel gespeichert',
+    apiKeyCleared: 'Schlüssel entfernt',
+    apiKeyFailed: 'Schlüssel konnte nicht gespeichert werden',
     advancedTitle: 'Erweitert',
     logLevel: 'Log-Level',
     logLevelHint:
@@ -433,6 +440,9 @@ export default {
     recommendations: 'Personalisierte Empfehlungen',
     recommendationsHint:
       'Entdecken auf der Startseite nutzt Künstler, die dem ähneln, was du tatsächlich hörst, nachgeschlagen bei MusicBrainz, ListenBrainz und Deezer - dabei werden ein bis zwei Künstlernamen aus deiner Bibliothek an diese Dienste übermittelt. Aus zeigt stattdessen zufällige Alben; die Seite eines Künstlers schlägt diesen einen Künstler weiterhin nach, so oder so.',
+    fanartEnabled: 'Künstlerbilder von Fanart.tv',
+    fanartEnabledHint:
+      'Zeigt Banner und Künstlerhintergründe von Fanart.tv auf Künstlerseiten und in „Läuft gerade“. Der Schlüssel selbst wird unter „Erweitert“ hinterlegt; Ausschalten lässt ihn bestehen.',
     listenbrainzUsername: 'ListenBrainz-Benutzername',
     listenbrainzHint:
       'Dein öffentlicher ListenBrainz-Name. Er füllt den Shelf „Für dich empfohlen“ auf Home und steht im Playlist-Baukasten als Vorauswahl. Kein Passwort nötig. Zum Bauen einer Playlist ist Last.fm allerdings die bessere Wahl - seine Charts sind abwechslungsreicher.',
@@ -686,6 +696,13 @@ export default {
           'Charts, Top-Titel eines Genres oder Interpreten oder deine eigene Hörhistorie abrufen - für den Playlist-Baukasten auf der Playlists-Seite.',
         sends:
           'Wonach du gefragt hast - ein Land, ein Genre, ein Interpretenname - und bei den eigenen meistgehörten Titeln den eingegebenen Last.fm-Benutzernamen. Nichts über deine Bibliothek: der Abgleich passiert auf deinem Gerät.',
+      },
+      fanart: {
+        name: 'Fanart.tv',
+        purpose:
+          'Sucht ein Banner für die Künstlerseite, die du geöffnet hast, wenn ein Fanart.tv-Schlüssel hinterlegt ist.',
+        sends:
+          'Den Namen des Künstlers, dessen Seite du geöffnet hast - erst um dessen MusicBrainz-ID zu finden. Nichts über deine Bibliothek.',
       },
       deezer: {
         name: 'Deezer',

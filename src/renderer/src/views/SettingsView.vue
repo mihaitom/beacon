@@ -27,7 +27,7 @@
     <!-- Shown only once advanced features are on: connecting an
      - outside service is setup work, and the switch above is what asks
      - for it (stores/advancedMode.ts). -->
-    <lastfm-section v-if="advancedModeStore.enabled" />
+    <api-keys-section v-if="advancedModeStore.enabled" />
 
     <about-section />
   </v-container>
@@ -42,7 +42,7 @@ import AccountSection from '@/components/settings/AccountSection.vue'
 import LibrarySection from '@/components/settings/LibrarySection.vue'
 import StorageSection from '@/components/settings/StorageSection.vue'
 import LyricsProvidersSection from '@/components/settings/LyricsProvidersSection.vue'
-import LastfmSection from '@/components/settings/LastfmSection.vue'
+import ApiKeysSection from '@/components/settings/ApiKeysSection.vue'
 
 export default {
   name: 'SettingsView',
@@ -54,7 +54,7 @@ export default {
     LibrarySection,
     StorageSection,
     LyricsProvidersSection,
-    LastfmSection,
+    ApiKeysSection,
   },
   computed: {
     advancedModeStore() {

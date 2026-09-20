@@ -231,6 +231,7 @@ export default {
   nowPlaying: {
     nothingPlaying: "Al momento non c'è nulla in riproduzione.",
     toggleVisualizer: 'Mostra/nascondi visualizzatore',
+    toggleArtwork: 'Mostra/nascondi la copertina',
     toggleFullscreen: 'Attiva/disattiva schermo intero',
     reducedMotionToastTitle: 'Visualizzatore',
     reducedMotionToastMessage:
@@ -408,17 +409,24 @@ export default {
     lastfmStep3:
       'Lascia vuoto il campo «Callback URL»: serve solo alle app che fanno accedere gli utenti tramite Last.fm, cosa che Beacon non fa. Se il modulo lo richiede, va bene un indirizzo qualsiasi; non viene mai chiamato.',
     lastfmStep4: 'Copia la «API key» che compare e incollala qui. Lo shared secret non serve.',
-    lastfmKeyGet: 'Richiedi una chiave',
-    lastfmKey: 'Chiave API Last.fm',
-    lastfmKeyPlaceholder: 'Incolla qui la chiave',
-    lastfmKeySet: 'Una chiave è già impostata',
-    lastfmKeyMissing: 'Nessuna chiave: il generatore di playlist Last.fm è nascosto.',
-    lastfmKeyStored: 'Una chiave è impostata. Inseriscine una nuova per sostituirla.',
-    lastfmKeyFromEnvironment: 'Viene usata la chiave dalla configurazione di questa installazione.',
-    lastfmKeyClear: 'Rimuovi chiave',
-    lastfmKeySaved: 'Chiave salvata',
-    lastfmKeyCleared: 'Chiave rimossa',
-    lastfmKeyFailed: 'Impossibile salvare la chiave',
+    fanartTitle: 'Fanart.tv',
+    fanartWhat:
+      'Aggiunge un banner alle pagine artista, da Fanart.tv. Beacon si identifica con la propria chiave di progetto, quindi ti serve solo una chiave personale gratuita. Opzionale: la pagina funziona anche senza.',
+    fanartStep1: 'Crea un account gratuito su fanart.tv.',
+    fanartStep2:
+      'Apri le chiavi API del tuo profilo e copia la tua chiave personale, quella legata al tuo account, non una chiave di progetto.',
+    apiKeysTitle: 'Chiavi API',
+    apiKeyLabel: 'Chiave API {service}',
+    apiKeyGet: 'Richiedi una chiave',
+    apiKeyPlaceholder: 'Incolla qui la chiave',
+    apiKeySet: 'Una chiave è già impostata',
+    apiKeyMissing: 'Nessuna chiave.',
+    apiKeyStored: 'Una chiave è impostata. Inseriscine una nuova per sostituirla.',
+    apiKeyFromEnvironment: 'Viene usata la chiave dalla configurazione di questa installazione.',
+    apiKeyClear: 'Rimuovi chiave',
+    apiKeySaved: 'Chiave salvata',
+    apiKeyCleared: 'Chiave rimossa',
+    apiKeyFailed: 'Impossibile salvare la chiave',
     advancedTitle: 'Avanzate',
     logLevel: 'Livello di log',
     logLevelHint:
@@ -433,6 +441,9 @@ export default {
     recommendations: 'Consigli personalizzati',
     recommendationsHint:
       'Scopri nella Home usa artisti simili a ciò che ascolti davvero, cercati su MusicBrainz, ListenBrainz e Deezer - questo condivide con loro uno o due nomi di artisti della tua libreria. Disattivato mostra album casuali; aprire la pagina di un artista continua comunque a cercare quel singolo artista.',
+    fanartEnabled: 'Immagini artista da Fanart.tv',
+    fanartEnabledHint:
+      'Mostra banner e sfondi artista di Fanart.tv nelle pagine artista e in «In riproduzione». La chiave si imposta in «Avanzate»; disattivare non la elimina.',
     listenbrainzUsername: 'Nome utente ListenBrainz',
     listenbrainzHint:
       'Il tuo nome pubblico su ListenBrainz. Riempie la sezione «Consigliati per te» nella Home e viene proposto come predefinito nel generatore di playlist. Nessuna password richiesta. Per creare una playlist, però, Last.fm è la scelta migliore: le sue classifiche sono più varie.',
@@ -687,6 +698,13 @@ export default {
           'Recuperare classifiche, i top brani di un genere o di un artista, o la tua cronologia di ascolto, per il generatore di playlist nella pagina Playlist.',
         sends:
           'Quello che hai chiesto - un paese, un genere, il nome di un artista - e, per i tuoi più ascoltati, il nome utente Last.fm inserito. Nulla della tua libreria viene inviato: il confronto avviene sul tuo dispositivo.',
+      },
+      fanart: {
+        name: 'Fanart.tv',
+        purpose:
+          'Cerca un banner per la pagina artista che hai aperto, se è configurata una chiave Fanart.tv.',
+        sends:
+          'Il nome dell’artista di cui hai aperto la pagina, per trovarne prima l’id MusicBrainz. Niente sulla tua libreria.',
       },
       deezer: {
         name: 'Deezer',

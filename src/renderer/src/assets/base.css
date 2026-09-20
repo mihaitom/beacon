@@ -83,6 +83,21 @@ body {
   letter-spacing: 0.01em;
 }
 
+/* Keeps a heading in the document (screen readers, outline) while an image
+ * carries it visually — the artist hero shows Fanart.tv's clear logo in
+ * place of the name. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* The small lit mark before every section title is the same beacon-glow
  * language as the nav rail's active indicator and the app-bar's lighthouse
  * icon — a quiet, repeated signature rather than a bare Material h2. */

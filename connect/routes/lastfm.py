@@ -1,17 +1,20 @@
-"""routes/lastfm.py — GET /lastfm/status, POST /lastfm/api-key, GET /lastfm/tracks
+"""routes/lastfm.py — GET /lastfm/tracks
 
 Machine-to-machine (CONNECT_TOKEN), not session-scoped: like
 routes/recommendations.py, nothing here touches session.media. The answer
 is a list of title/artist names straight from Last.fm — finding the ones
 that exist in the library is the renderer's job (see core/lastfm.py's
 docstring for why).
+
+The key this needs is read from core/api_keys.py; managing it (status,
+storing, clearing) lives in routes/api_keys.py for every keyed service at
+once, not here.
 """
 
 import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
 
 from core import lastfm
 from core.auth import require_token
@@ -23,40 +26,6 @@ router = APIRouter(prefix="/lastfm", dependencies=[Depends(require_token)])
 # passed through so a typo comes back as a 422 naming the alternatives,
 # instead of Last.fm's generic "invalid parameters" error 6.
 Period = Literal["overall", "7day", "1month", "3month", "6month", "12month"]
-
-
-class ApiKeyRequest(BaseModel):
-    key: str
-
-
-@router.get("/status")
-def status() -> dict:
-    """Whether this installation has an application key at all. The
-    frontend asks before offering the builder, so an installation without
-    one shows nothing rather than a dialog that always fails.
-
-    `fromEnvironment` tells Settings that clearing the field will fall back
-    to LASTFM_API_KEY rather than switch the builder off - without it, a
-    Docker deployment's empty field looks like nothing is configured while
-    the builder plainly works. The key itself is never sent back: Settings
-    only ever needs to know whether one is set, and an installation-wide
-    credential has no business being readable by every logged-in account.
-    """
-    return {
-        "configured": lastfm.is_configured(),
-        "fromEnvironment": lastfm.is_configured() and not lastfm.stored_key(),
-    }
-
-
-# Sync `def`, like routes/account_settings.py's handlers and for the same
-# reason: this writes a file, which would otherwise block the event loop.
-@router.post("/api-key")
-def set_api_key(req: ApiKeyRequest) -> dict:
-    lastfm.set_api_key(req.key)
-    return {
-        "configured": lastfm.is_configured(),
-        "fromEnvironment": lastfm.is_configured() and not lastfm.stored_key(),
-    }
 
 
 @router.get("/tracks")

@@ -140,6 +140,9 @@ const SERVICES = {
     // only ever contacted by the Last.fm playlist builder, which is a
     // thing you open and fill in - not asking for it is the opt-out.
     { key: 'lastfm', host: 'ws.audioscrobbler.com', url: 'https://www.last.fm/' },
+    // Same terms as the Last.fm entry above: only for the artist page that
+    // is open, and only when a Fanart.tv key is configured.
+    { key: 'fanart', host: 'webservice.fanart.tv', url: 'https://fanart.tv/' },
     {
       key: 'deezer',
       host: 'api.deezer.com',

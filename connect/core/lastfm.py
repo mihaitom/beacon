@@ -18,49 +18,25 @@ signed auth flow would only come in for writing (scrobbling, loving a
 track), which this does not do. The key is deliberately server-side: the
 web build's bundle is public, and an application key does not belong in it.
 
-It is entered in Settings and persisted here rather than only read from
-LASTFM_API_KEY, because a desktop install has no way to set that variable -
-see api_key() below. Stored in plain text, with the file mode restricted to
-the owner: connect has to read the key back unattended on every start, so
-any key it could decrypt with would have to sit next to it and be readable
-by the same process - which protects against nobody who can read the file
-in the first place. What the file mode does buy is the other accounts on a
-shared machine. The value itself is an *application* key for reading public
-charts, not a login: it grants no access to anyone's Last.fm account and
-cannot write anything (that needs the shared secret and a signed session,
-neither of which Beacon holds).
+It is entered in Settings and stored by core/api_keys.py alongside the other
+installation-wide keys, rather than read only from LASTFM_API_KEY, because a
+desktop install has no way to set that variable. The value itself is an
+*application* key for reading public charts, not a login: it grants no access
+to anyone's Last.fm account and cannot write anything (that needs the shared
+secret and a signed session, neither of which Beacon holds).
 """
 
 import logging
-import os
-import threading
 
 import httpx
 
+from core import api_keys
 from lyrics.shared import USER_AGENT
 
 logger = logging.getLogger("connect.lastfm")
 
 _BASE_URL = "https://ws.audioscrobbler.com/2.0/"
 _TIMEOUT = 15.0
-
-# Persisted the same way as the log level (see core/log_level.py):
-# CONNECT_DATA_DIR survives an Electron app update, whose packaged resources
-# folder is replaced wholesale, and a Docker container recreation. Which
-# matters more here than it does for a log level - a desktop install has
-# nowhere else to put this. The bundled backend inherits Electron's own
-# environment (src/main/index.ts's startConnectServer), and nobody who opens
-# an app by double-clicking it has LASTFM_API_KEY in there.
-_DATA_DIR = os.environ.get("CONNECT_DATA_DIR") or os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
-_PATH = os.path.join(_DATA_DIR, "lastfm_api_key.txt")
-
-# Never read at import time, unlike the rest of connect's config: Settings
-# can change this key while the process runs, and an import-time constant
-# would keep serving the old one until a restart.
-_cached_key: str | None = None
-_key_lock = threading.Lock()
 
 # Last.fm caps a single page at 1000; the builder's own ceiling is far
 # lower, this only stops a hand-crafted request from asking for a page the
@@ -87,72 +63,25 @@ class LastfmError(Exception):
         self.not_found = not_found
 
 
-def _load_persisted() -> str:
-    try:
-        with open(_PATH, encoding="utf-8") as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        return ""
-    except Exception as e:
-        logger.warning(f"[lastfm] Could not read the stored API key: {e}")
-        return ""
-
-
 def api_key() -> str:
-    """The key in effect: whatever Settings stored, else LASTFM_API_KEY.
-
-    Same precedence as core/log_level.py's initial_level() - a value
-    entered in the app wins over the environment, so a Docker deployment
-    that sets the variable still gets a sensible starting point while
-    anyone can change it later without touching the container."""
-    global _cached_key
-    with _key_lock:
-        if _cached_key is None:
-            _cached_key = _load_persisted() or os.getenv("LASTFM_API_KEY", "").strip()
-        return _cached_key
+    """The key in effect: whatever Settings stored, else LASTFM_API_KEY
+    (see core/api_keys.py for the storage and precedence)."""
+    return api_keys.get("lastfm")
 
 
 def set_api_key(key: str) -> None:
-    """Stores a key entered in Settings, or clears it when given ''. An
-    empty value falls back to LASTFM_API_KEY rather than to nothing, which
-    is what makes clearing the field in a Docker deployment return to the
-    environment's key instead of switching the builder off."""
-    global _cached_key
-    cleaned = key.strip()
-    with _key_lock:
-        try:
-            os.makedirs(os.path.dirname(_PATH), exist_ok=True)
-            if cleaned:
-                # 0600 before anything is written: the default umask leaves
-                # this world-readable, and on a NAS or a shared box that is
-                # every other account on the machine. Not encryption - a key
-                # this process has to be able to read back unattended has
-                # nowhere to hide from someone who can already read its
-                # files (see the module docstring).
-                fd = os.open(_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    f.write(cleaned)
-            else:
-                try:
-                    os.unlink(_PATH)
-                except FileNotFoundError:
-                    pass
-        except Exception as e:
-            logger.error(f"[lastfm] Could not store the API key: {e}")
-        # Re-resolved on the next api_key() call rather than set straight
-        # to `cleaned`, so clearing it picks the environment's key back up.
-        _cached_key = None
-    logger.info(f"[lastfm] API key {'stored' if cleaned else 'cleared'}")
+    """Stores a key entered in Settings, or clears it when given ''."""
+    api_keys.set("lastfm", key)
 
 
 def stored_key() -> str:
     """Only what Settings persisted, ignoring the environment - what the
-    route needs to tell the two sources apart."""
-    return _load_persisted()
+    status needs to tell the two sources apart."""
+    return api_keys.stored("lastfm")
 
 
 def is_configured() -> bool:
-    return bool(api_key())
+    return api_keys.is_configured("lastfm")
 
 
 async def _get(method: str, **params) -> dict:

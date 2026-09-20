@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { accountScopedKey } from '@/services/accountKey'
-import { getLastfmStatus } from '@/services/connect/lastfm'
+import { getApiKeyStatuses } from '@/services/connect/apiKeys'
 
 const USERNAME_KEY = 'beacon.lastfm-username'
 
@@ -48,7 +48,7 @@ export const useLastfmStore = defineStore('lastfm', {
     async checkConfigured(): Promise<boolean> {
       if (this.configured !== null) return this.configured
       try {
-        this.configured = (await getLastfmStatus()).configured
+        this.configured = (await getApiKeyStatuses()).lastfm.configured
       } catch {
         this.configured = false
       }

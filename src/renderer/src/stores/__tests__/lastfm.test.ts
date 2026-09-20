@@ -2,22 +2,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useLastfmStore } from '../lastfm'
 import { pushAccountSettings } from '@/services/connect/accountSettings'
-import { getLastfmStatus } from '@/services/connect/lastfm'
+import { getApiKeyStatuses } from '@/services/connect/apiKeys'
 
 vi.mock('@/services/connect/accountSettings', () => ({
   pushAccountSettings: vi.fn().mockResolvedValue({}),
 }))
 
-vi.mock('@/services/connect/lastfm', () => ({
-  getLastfmStatus: vi.fn(),
+vi.mock('@/services/connect/apiKeys', () => ({
+  getApiKeyStatuses: vi.fn(),
 }))
+
+function statuses(lastfm: { configured: boolean; fromEnvironment: boolean }) {
+  return { lastfm, fanart: { configured: false, fromEnvironment: false } }
+}
 
 describe('lastfm store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
     vi.mocked(pushAccountSettings).mockClear()
-    vi.mocked(getLastfmStatus).mockReset()
+    vi.mocked(getApiKeyStatuses).mockReset()
   })
 
   it('starts with no username for an account that never entered one', () => {
@@ -53,18 +57,20 @@ describe('lastfm store', () => {
   })
 
   it('checkConfigured asks once and reuses the answer', async () => {
-    vi.mocked(getLastfmStatus).mockResolvedValue({ configured: true, fromEnvironment: false })
+    vi.mocked(getApiKeyStatuses).mockResolvedValue(
+      statuses({ configured: true, fromEnvironment: false }),
+    )
     const store = useLastfmStore()
 
     expect(await store.checkConfigured()).toBe(true)
     expect(await store.checkConfigured()).toBe(true)
-    expect(getLastfmStatus).toHaveBeenCalledTimes(1)
+    expect(getApiKeyStatuses).toHaveBeenCalledTimes(1)
   })
 
   it('treats an unreachable backend as not configured', async () => {
     // The builder is only offered on a definite yes - a failed check must
     // not leave a button that could only ever fail.
-    vi.mocked(getLastfmStatus).mockRejectedValue(new Error('offline'))
+    vi.mocked(getApiKeyStatuses).mockRejectedValue(new Error('offline'))
     const store = useLastfmStore()
 
     expect(await store.checkConfigured()).toBe(false)

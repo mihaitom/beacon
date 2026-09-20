@@ -3,13 +3,12 @@ Last.fm's HTTP-200-with-an-error-body convention, and the route's mapping
 of those onto status codes."""
 
 import logging
-import os
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
-from core import lastfm
+from core import api_keys, lastfm
 
 
 def _response(payload: dict) -> httpx.Response:
@@ -21,19 +20,19 @@ def _configured_key(tmp_path, monkeypatch):
     """A key, an isolated store for it, and a clean cache. Every test here
     assumes an installation that has one; the ones about a missing key use
     `no_key` below."""
-    monkeypatch.setattr(lastfm, "_PATH", str(tmp_path / "lastfm_api_key.txt"))
-    monkeypatch.setattr(lastfm, "_cached_key", None)
+    monkeypatch.setattr(api_keys, "_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("LASTFM_API_KEY", "test-key")
+    api_keys._cache.clear()
     yield
-    lastfm._cached_key = None
+    api_keys._cache.clear()
 
 
 @pytest.fixture
 def no_key(monkeypatch):
     monkeypatch.delenv("LASTFM_API_KEY", raising=False)
-    monkeypatch.setattr(lastfm, "_cached_key", None)
+    api_keys._cache.clear()
     yield
-    lastfm._cached_key = None
+    api_keys._cache.clear()
 
 
 def _patch_get(payload: dict):
@@ -186,12 +185,6 @@ async def test_a_transport_error_becomes_a_lastfm_error():
 # ── routes/lastfm.py ─────────────────────────────────────────────────────────
 
 
-def test_status_reports_whether_a_key_is_configured(client, no_key):
-    assert client.get("/lastfm/status").json()["configured"] is False
-    lastfm.set_api_key("from-settings")
-    assert client.get("/lastfm/status").json()["configured"] is True
-
-
 def test_tracks_without_a_key_is_a_503(client, no_key):
     resp = client.get("/lastfm/tracks", params={"op": "charts"})
     assert resp.status_code == 503
@@ -247,142 +240,3 @@ def test_a_successful_query_returns_the_track_list(client):
 
     assert resp.status_code == 200
     assert resp.json() == {"tracks": [{"title": "Believe", "artist": "Cher", "mbid": ""}]}
-
-
-# ── the API key store ────────────────────────────────────────────────────────
-
-
-def test_a_stored_key_wins_over_the_environment():
-    """Settings has to be able to override a Docker deployment's variable,
-    otherwise the field appears to do nothing there."""
-    assert lastfm.api_key() == "test-key"
-    lastfm.set_api_key("from-settings")
-    assert lastfm.api_key() == "from-settings"
-
-
-def test_clearing_a_stored_key_falls_back_to_the_environment():
-    """Not to "no key at all" — clearing the field in a Docker deployment
-    should return to the variable it was started with, not switch the
-    builder off in a way nothing in the UI could explain."""
-    lastfm.set_api_key("from-settings")
-    lastfm.set_api_key("")
-    assert lastfm.api_key() == "test-key"
-    assert lastfm.is_configured() is True
-
-
-def test_clearing_a_stored_key_with_no_environment_leaves_nothing(no_key):
-    lastfm.set_api_key("from-settings")
-    lastfm.set_api_key("")
-    assert lastfm.is_configured() is False
-
-
-def test_a_new_key_takes_effect_without_a_restart():
-    """The whole reason the key isn't read at import time: Settings can
-    change it while the process runs."""
-    lastfm.set_api_key("first")
-    assert lastfm.api_key() == "first"
-    lastfm.set_api_key("second")
-    assert lastfm.api_key() == "second"
-
-
-def test_a_stored_key_survives_a_fresh_process():
-    lastfm.set_api_key("from-settings")
-    # What a restart looks like from this module's point of view: the cache
-    # is gone, the file is not.
-    lastfm._cached_key = None
-    assert lastfm.api_key() == "from-settings"
-
-
-def test_surrounding_whitespace_is_not_part_of_the_key():
-    # Pasting a key out of a browser routinely brings a newline with it,
-    # and Last.fm rejects the whole request for it.
-    lastfm.set_api_key("  padded-key\n")
-    assert lastfm.api_key() == "padded-key"
-
-
-def test_stored_key_ignores_the_environment():
-    assert lastfm.stored_key() == ""
-    lastfm.set_api_key("from-settings")
-    assert lastfm.stored_key() == "from-settings"
-
-
-def test_an_unreadable_store_does_not_take_the_environment_down(tmp_path, caplog):
-    """A directory where the file should be — is_configured() still has to
-    answer, so the builder keeps working off the environment's key."""
-    with (
-        patch.object(lastfm, "_PATH", str(tmp_path)),
-        caplog.at_level(logging.WARNING, logger="connect.lastfm"),
-    ):
-        lastfm._cached_key = None
-        assert lastfm.api_key() == "test-key"
-
-
-def test_posting_a_key_configures_the_installation(client, no_key):
-    assert client.get("/lastfm/status").json()["configured"] is False
-
-    resp = client.post("/lastfm/api-key", json={"key": "from-settings"})
-
-    assert resp.status_code == 200
-    assert resp.json() == {"configured": True, "fromEnvironment": False}
-    assert lastfm.api_key() == "from-settings"
-
-
-def test_posting_an_empty_key_clears_it(client, no_key):
-    client.post("/lastfm/api-key", json={"key": "from-settings"})
-    resp = client.post("/lastfm/api-key", json={"key": ""})
-    assert resp.json()["configured"] is False
-
-
-def test_status_says_when_the_key_came_from_the_environment(client):
-    """Settings shows an empty field either way; this is what keeps a
-    Docker deployment from reading as unconfigured."""
-    assert client.get("/lastfm/status").json() == {
-        "configured": True,
-        "fromEnvironment": True,
-    }
-    client.post("/lastfm/api-key", json={"key": "from-settings"})
-    assert client.get("/lastfm/status").json()["fromEnvironment"] is False
-
-
-def test_the_key_itself_is_never_sent_back(client):
-    lastfm.set_api_key("secret-key")
-    body = client.get("/lastfm/status").text
-    assert "secret-key" not in body
-
-
-def test_a_hand_written_key_file_may_end_in_a_newline():
-    """`echo key > lastfm_api_key.txt` is a plausible way to set this on a
-    server, and the trailing newline would otherwise go into the request
-    and have Last.fm reject every call."""
-    with open(lastfm._PATH, "w", encoding="utf-8") as f:
-        f.write("hand-written-key\n")
-    lastfm._cached_key = None
-
-    assert lastfm.api_key() == "hand-written-key"
-
-
-def test_the_key_file_is_not_readable_by_other_accounts():
-    """A shared NAS or a multi-user box would otherwise hand the key to
-    every other account on it - the default umask leaves a new file
-    world-readable."""
-    import stat
-
-    lastfm.set_api_key("from-settings")
-    mode = stat.S_IMODE(os.stat(lastfm._PATH).st_mode)
-
-    assert mode & (stat.S_IRGRP | stat.S_IROTH | stat.S_IWGRP | stat.S_IWOTH) == 0
-    assert mode & stat.S_IRUSR
-
-
-def test_replacing_a_key_keeps_the_restricted_mode():
-    """O_TRUNC on an existing file keeps its old mode, so a file created
-    before this rule existed has to be reported honestly - it is not
-    silently fixed."""
-    import stat
-
-    lastfm.set_api_key("first")
-    lastfm.set_api_key("second")
-    mode = stat.S_IMODE(os.stat(lastfm._PATH).st_mode)
-
-    assert mode & (stat.S_IRGRP | stat.S_IROTH) == 0
-    assert lastfm.api_key() == "second"

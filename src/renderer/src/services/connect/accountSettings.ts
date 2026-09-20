@@ -26,6 +26,10 @@ export interface AccountSettingsPayload {
   // stores/songColumns.ts. An empty array is a real selection (every
   // optional column off), not "never set".
   songColumns?: string[]
+  // Whether artist artwork from Fanart.tv is shown at all - see
+  // stores/fanart.ts. The API key is installation-wide and stays stored;
+  // this only decides whether the images are asked for.
+  fanartEnabled?: boolean
 }
 
 function identity(): { server_type: string; server_url: string; username: string } {
