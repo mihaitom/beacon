@@ -16,9 +16,11 @@ import NowPlayingView from '../NowPlayingView.vue'
 import { getAudioEngine } from '@/services/audioEngine'
 import { getLogLevel, type LogLevel } from '@/services/connect/logLevel'
 import { getArtistArt } from '@/services/connect/fanart'
+import { preloadImage } from '@/services/preloadImage'
 import { extractDominantColor } from '@/services/colorExtractor'
 import { useFanartStore } from '@/stores/fanart'
 import { makeSong } from '@/stores/__tests__/fixtures'
+import type { Song } from '@/types/library'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
 
 // The view asks the engine whether a local analyser exists at all — jsdom
@@ -944,5 +946,140 @@ describe('NowPlayingView artist background', () => {
 
     // Not dropped to the cover while the new pick is in flight.
     expect(backgroundOf(wrapper)).toBe('https://assets.fanart.tv/bg.jpg')
+  })
+})
+
+describe('NowPlayingView next up', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    withAnalyser(true)
+    vi.mocked(getArtistArt).mockReset().mockResolvedValue(null)
+    vi.mocked(extractDominantColor).mockReset().mockResolvedValue(null)
+  })
+
+  const first = () =>
+    makeSong('a', { artist: 'Artist A', title: 'First Song', album: 'First Album' })
+  const second = () =>
+    makeSong('b', { artist: 'Artist B', title: 'Second Song', album: 'Second Album' })
+
+  /** Mounts with a Fanart.tv background (so the artwork hides and the corner
+   * exists) and a queue, already playing. */
+  async function mountWithQueue(songs: Song[], compact = false) {
+    vi.mocked(getArtistArt).mockImplementation(async (name: string) => ({
+      banner: null,
+      background: `https://assets.fanart.tv/${name}.jpg`,
+      logo: null,
+    }))
+    const mounted = await mountView({ compact })
+    const playback = usePlaybackStore()
+    playback.setQueue(songs, 0)
+    playback.isPlaying = true
+    await flushPromises()
+    return { ...mounted, playback }
+  }
+
+  /** The stack's panel keys, left to right - `['a', 'chevrons', 'b']` when
+   * the next track is announced, `['a']` otherwise. */
+  function panelKeys(wrapper: VueWrapper): string[] {
+    return (wrapper.vm as unknown as { cornerPanels: { key: string }[] }).cornerPanels.map(
+      (panel) => panel.key,
+    )
+  }
+
+  it('announces the next track in the corner near the end of the current one', async () => {
+    const { wrapper, playback } = await mountWithQueue([first(), second()])
+    playback.duration = 100
+
+    playback.localPosition = 50
+    await flushPromises()
+    expect(panelKeys(wrapper)).toEqual(['a'])
+
+    playback.localPosition = 92
+    await flushPromises()
+    // Current, the chevrons between, then the next track.
+    expect(panelKeys(wrapper)).toEqual(['a', 'chevrons', 'b'])
+    // The next panel's labels render (the current's are the first).
+    expect(wrapper.findAll('.now-playing__title')[1]!.text()).toContain('Second Song')
+  })
+
+  it('keeps the current track when it is the last one', async () => {
+    const { wrapper, playback } = await mountWithQueue([first()])
+    playback.duration = 100
+    playback.localPosition = 95
+    await flushPromises()
+
+    expect(panelKeys(wrapper)).toEqual(['a'])
+  })
+
+  it('announces nothing for radio, which has no next track', async () => {
+    const { wrapper, playback } = await mountWithQueue([first(), second()])
+    playback.radioStation = {
+      id: 'r1',
+      name: 'Chill FM',
+      streamUrl: 'https://x/chill',
+      homePageUrl: null,
+    }
+    playback.duration = 100
+    playback.localPosition = 95
+    await flushPromises()
+
+    expect((wrapper.vm as unknown as { nextSong: Song | null }).nextSong).toBeNull()
+    expect(panelKeys(wrapper)).toEqual(['radio'])
+  })
+
+  it('does not announce while paused', async () => {
+    const { wrapper, playback } = await mountWithQueue([first(), second()])
+    playback.isPlaying = false
+    playback.duration = 100
+    playback.localPosition = 95
+    await flushPromises()
+
+    expect(panelKeys(wrapper)).toEqual(['a'])
+  })
+
+  it('shows no next-up card on a phone, where there is no room', async () => {
+    const { wrapper, playback } = await mountWithQueue([first(), second()], true)
+    playback.duration = 100
+    playback.localPosition = 92
+    await flushPromises()
+
+    expect(panelKeys(wrapper)).toEqual(['a'])
+    // The preload still runs there - that is the part that matters on a phone.
+    expect(getArtistArt).toHaveBeenCalledWith('Artist B')
+  })
+
+  it("preloads the next track's Fanart.tv background", async () => {
+    await mountWithQueue([first(), second()])
+
+    expect(getArtistArt).toHaveBeenCalledWith('Artist B')
+    expect(preloadImage).toHaveBeenCalledWith('https://assets.fanart.tv/Artist B.jpg')
+  })
+
+  it('colours the chevrons like the visualizer', async () => {
+    const { wrapper, playback } = await mountWithQueue([first(), second()])
+    playback.duration = 100
+    playback.localPosition = 92
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as { visualizerColor: string }
+    const chevrons = wrapper.find('.now-playing__panel--chevrons')
+    expect(chevrons.attributes('style')).toContain(`rgb(${vm.visualizerColor})`)
+  })
+
+  it('uses the preloaded answer on the change instead of looking it up again', async () => {
+    const { wrapper, playback } = await mountWithQueue([first(), second()])
+    expect(getArtistArt).toHaveBeenCalledWith('Artist B')
+    vi.mocked(getArtistArt).mockClear()
+
+    // The change to the next track: its artist was already preloaded, so
+    // there is no second lookup and the backdrop is set straight away.
+    playback.setQueue([first(), second()], 1)
+    await flushPromises()
+
+    expect(getArtistArt).not.toHaveBeenCalled()
+    expect((wrapper.vm as unknown as { artistBackground: string | null }).artistBackground).toBe(
+      'https://assets.fanart.tv/Artist B.jpg',
+    )
   })
 })

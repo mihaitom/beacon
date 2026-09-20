@@ -79,6 +79,7 @@ export default {
     paused: 'Pause',
     keepListening: 'Keep listening',
     radioEyebrow: 'Radio',
+    nextUp: 'Next up',
     internetRadio: 'Internet radio',
     nothingToShow: 'Nothing to show.',
     newArtistsTitle: 'New artists to explore',

@@ -80,6 +80,7 @@ export default {
     paused: 'Pausa',
     keepListening: 'Sigue escuchando',
     radioEyebrow: 'Radio',
+    nextUp: 'A continuación',
     internetRadio: 'Radio por internet',
     nothingToShow: 'Nada que mostrar.',
     newArtistsTitle: 'Nuevos artistas por descubrir',

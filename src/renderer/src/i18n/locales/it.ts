@@ -79,6 +79,7 @@ export default {
     paused: 'Pausa',
     keepListening: 'Continua ad ascoltare',
     radioEyebrow: 'Radio',
+    nextUp: 'In arrivo',
     internetRadio: 'Radio via internet',
     nothingToShow: 'Niente da mostrare.',
     newArtistsTitle: 'Nuovi artisti da scoprire',

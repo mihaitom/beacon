@@ -219,68 +219,106 @@
                 />
               </div>
 
-              <!-- With the artwork hidden, a small cover next to the text -
-               - the corner would otherwise say nothing about what is
-               - playing. Only a song has one; a station shows nothing. -->
-              <cover-art
-                v-if="artworkHidden && currentSong"
-                :cover-art-id="currentSong.coverArtId"
-                :size="miniArtSize || 72"
-                class="cover-shadow now-playing__mini-art"
-              />
-
-              <div ref="info" class="now-playing__info">
-                <div class="eyebrow-label">{{ eyebrow }}</div>
-                <h1 class="detail-title now-playing__title">
-                  {{
-                    currentSong?.title ?? radioMeta.nowPlaying ?? playbackStore.radioStation?.name
-                  }}
-                </h1>
-                <!-- A link only where there is an artist page to land on.
-                 - The mobile shell has none (its library tab plays an album
-                 - rather than opening one), and the desktop view rendered
-                 - inside it is a table with no phone layout and nothing to
-                 - get back with. -->
-                <router-link
-                  v-if="currentSong && !compact"
-                  :to="`/artists/${currentSong.artistId}`"
-                  class="text-title-large text-medium-emphasis now-playing__artist-link"
-                >
-                  {{ currentSong.artist }}
-                </router-link>
+              <!-- The track panel(s). Normally just the current song; near
+               - the end of a track animated chevrons and the next one are
+               - added to the right (see cornerPanels), the next glass card
+               - sliding left into the current's place on the change. With
+               - the artwork hidden each panel is the small cover + labels;
+               - with the artwork shown the single panel is just the labels
+               - under it. -->
+              <transition-group
+                name="next-up"
+                tag="div"
+                class="now-playing__panels"
+                @before-leave="lockLeaveWidth"
+              >
                 <div
-                  v-else-if="currentSong"
-                  class="text-title-large text-medium-emphasis now-playing__artist-label"
-                >
-                  {{ currentSong.artist }}
-                </div>
-                <!-- Station name, not the ICY tag — swapped with the title
-                 - above so the tag (what's actually playing right now) is
-                 - the prominent label and the station is the secondary one,
-                 - same as SongInfo.vue's own player-bar label for
-                 - consistency. Only shown once there's a tag to go with it
-                 - (mirrors the title's own fallback chain above) — with no
-                 - tag the station name already sits up top, so repeating it
-                 - here would just be noise. -->
-                <div
-                  v-else-if="radioMeta.nowPlaying"
-                  class="text-title-large text-medium-emphasis now-playing__radio-tag"
-                >
-                  {{ playbackStore.radioStation?.name }}
-                </div>
-                <div v-else class="text-title-large text-medium-emphasis" />
-                <!-- Each shell to its own album page - see
-                 - views/mobile/MobileAlbumDetailView.vue. -->
-                <router-link
-                  v-if="currentSong"
-                  :to="
-                    compact ? `/m/albums/${currentSong.albumId}` : `/albums/${currentSong.albumId}`
+                  v-for="panel in cornerPanels"
+                  :key="panel.key"
+                  class="now-playing__panel"
+                  :class="{ 'now-playing__panel--chevrons': panel.kind === 'chevrons' }"
+                  :style="
+                    panel.kind === 'chevrons' ? { color: `rgb(${visualizerColor})` } : undefined
                   "
-                  class="text-body-medium text-medium-emphasis now-playing__album-link"
                 >
-                  {{ currentSong.album }}
-                </router-link>
-              </div>
+                  <template v-if="panel.kind === 'chevrons'">
+                    <v-icon
+                      icon="mdi-chevron-right"
+                      :size="compact ? 30 : 44"
+                      class="now-playing__next-up-chevron"
+                    />
+                    <v-icon
+                      icon="mdi-chevron-right"
+                      :size="compact ? 30 : 44"
+                      class="now-playing__next-up-chevron now-playing__next-up-chevron--second"
+                    />
+                  </template>
+                  <template v-else>
+                    <cover-art
+                      v-if="artworkHidden && panel.song"
+                      :cover-art-id="panel.song.coverArtId"
+                      :size="miniArtSize || 72"
+                      class="cover-shadow now-playing__mini-art"
+                    />
+                    <div ref="info" class="now-playing__info">
+                      <div class="eyebrow-label">{{ panel.eyebrow }}</div>
+                      <h1 class="detail-title now-playing__title">
+                        {{
+                          panel.song?.title ??
+                          radioMeta.nowPlaying ??
+                          playbackStore.radioStation?.name
+                        }}
+                      </h1>
+                      <!-- A link only where there is an artist page to land on.
+                     - The mobile shell has none (its library tab plays an album
+                     - rather than opening one), and the desktop view rendered
+                     - inside it is a table with no phone layout and nothing to
+                     - get back with. -->
+                      <router-link
+                        v-if="panel.song && !compact"
+                        :to="`/artists/${panel.song.artistId}`"
+                        class="text-title-large text-medium-emphasis now-playing__artist-link"
+                      >
+                        {{ panel.song.artist }}
+                      </router-link>
+                      <div
+                        v-else-if="panel.song"
+                        class="text-title-large text-medium-emphasis now-playing__artist-label"
+                      >
+                        {{ panel.song.artist }}
+                      </div>
+                      <!-- Station name, not the ICY tag — swapped with the title
+                     - above so the tag (what's actually playing right now) is
+                     - the prominent label and the station is the secondary one,
+                     - same as SongInfo.vue's own player-bar label for
+                     - consistency. Only shown once there's a tag to go with it
+                     - (mirrors the title's own fallback chain above) — with no
+                     - tag the station name already sits up top, so repeating it
+                     - here would just be noise. -->
+                      <div
+                        v-else-if="radioMeta.nowPlaying"
+                        class="text-title-large text-medium-emphasis now-playing__radio-tag"
+                      >
+                        {{ playbackStore.radioStation?.name }}
+                      </div>
+                      <div v-else class="text-title-large text-medium-emphasis" />
+                      <!-- Each shell to its own album page - see
+                     - views/mobile/MobileAlbumDetailView.vue. -->
+                      <router-link
+                        v-if="panel.song"
+                        :to="
+                          compact
+                            ? `/m/albums/${panel.song.albumId}`
+                            : `/albums/${panel.song.albumId}`
+                        "
+                        class="text-body-medium text-medium-emphasis now-playing__album-link"
+                      >
+                        {{ panel.song.album }}
+                      </router-link>
+                    </div>
+                  </template>
+                </div>
+              </transition-group>
             </div>
 
             <transition name="now-playing-lyrics">
@@ -423,6 +461,11 @@ function readHideArtwork(): boolean {
 // visibly settle every bar to 0 before it's actually removed.
 const VISUALIZER_HIDE_DELAY_MS = 400
 
+// How long before a track ends the corner starts announcing the next one
+// (see nextUpActive) - long enough to read, short enough to still feel like
+// "about to change".
+const NEXT_UP_SECONDS = 15
+
 /** Fake artist/track pairs for the toolbar's debug button. Shaped like a
  * song on purpose, so a press exercises the row the log spends its time
  * drawing - split into artist and track, with the search button that comes
@@ -506,6 +549,13 @@ export default {
       // the same artist can swap the picture without first dropping to the
       // cover (see loadArtistBackground).
       backgroundArtist: '',
+      // The next track's Fanart.tv answer, fetched and preloaded ahead of the
+      // change (see preloadNext) and consumed by loadArtistBackground on the
+      // change itself, so the new backdrop is there on the first frame
+      // instead of the blurred cover showing while a lookup runs. Keyed by
+      // artist; a missing key (undefined) is "not preloaded", a null value is
+      // "preloaded, this artist has no art".
+      preloadedArt: {} as Record<string, Awaited<ReturnType<typeof getArtistArt>> | null>,
       showVisualizer: readShowVisualizer(),
       // The user's wish to hide the artwork; only honored while there is a
       // Fanart.tv background to reveal (see artworkHidden).
@@ -550,6 +600,67 @@ export default {
     },
     hasPlayable() {
       return this.currentSong != null || this.playbackStore.radioStation != null
+    },
+    /** The song the queue would play after the current one, or null when
+     * there is none (radio, repeat-one, or the end of a non-looping queue).
+     * The store's own nextIndex() is the one place that knows about repeat
+     * and wrapping - this only turns its answer into a song. */
+    nextSong(): Song | null {
+      const playback = this.playbackStore
+      if (playback.radioStation || playback.repeatMode === 'one') return null
+      const index = playback.nextIndex(1)
+      return index === null ? null : (playback.queue[index] ?? null)
+    },
+    /** Whether the corner should announce that next song: a wide screen (a
+     * phone has no room for a second card - only the preload matters there),
+     * the artwork hidden (that is where the small cover + labels live), a
+     * next one, and the current track within NEXT_UP_SECONDS of its end. */
+    nextUpActive(): boolean {
+      if (this.compact || !this.artworkHidden || !this.nextSong || !this.playbackStore.isPlaying) {
+        return false
+      }
+      const duration = this.playbackStore.duration
+      const position = this.playbackStore.localPosition
+      return duration > 0 && duration - position <= NEXT_UP_SECONDS
+    },
+    /** The panels the corner stack renders, left to right: the one playing,
+     * then - near the end of a track - animated chevrons and the next track
+     * (see nextUpActive). On the change the next panel slides left into the
+     * current's place (see the next-up transition in <style>). With the
+     * artwork shown there is a single panel - the labels under the artwork -
+     * and no chevrons. */
+    cornerPanels(): {
+      key: string
+      kind: 'song' | 'chevrons'
+      song: Song | null
+      eyebrow: string
+    }[] {
+      const panels: {
+        key: string
+        kind: 'song' | 'chevrons'
+        song: Song | null
+        eyebrow: string
+      }[] = []
+      if (this.currentSong) {
+        panels.push({
+          key: this.currentSong.id,
+          kind: 'song',
+          song: this.currentSong,
+          eyebrow: this.eyebrow,
+        })
+      } else if (this.playbackStore.radioStation) {
+        panels.push({ key: 'radio', kind: 'song', song: null, eyebrow: this.eyebrow })
+      }
+      if (this.nextUpActive && this.nextSong) {
+        panels.push({ key: 'chevrons', kind: 'chevrons', song: null, eyebrow: '' })
+        panels.push({
+          key: this.nextSong.id,
+          kind: 'song',
+          song: this.nextSong,
+          eyebrow: this.$t('home.nextUp'),
+        })
+      }
+      return panels
     },
     // cqh/cqw (container query units), not vh/vw — .now-playing__stage is a
     // `container-type: size` host (see <style>) sized by .now-playing's own
@@ -829,6 +940,23 @@ export default {
         useLyricsStore().ensureLoaded(song)
       },
     },
+    // Warms the next track's Fanart.tv background as soon as the queue says
+    // what it is, so the change itself has nothing left to load - see
+    // preloadNext().
+    nextSong: {
+      immediate: true,
+      handler(song: Song | null) {
+        void this.preloadNext(song)
+      },
+    },
+    // The current panel's info element is replaced on every track change (the
+    // panels are keyed by song), so the ResizeObserver behind miniArtSize has
+    // to be re-pointed at the new one.
+    cornerPanels: {
+      handler() {
+        void this.$nextTick(() => this.observeInfo())
+      },
+    },
     // Not expected in practice (the web/Docker build is the only place
     // `compact` can even change live, by resizing the window across
     // MobileLayout's breakpoint — Electron never shows the mobile layout at
@@ -967,18 +1095,32 @@ export default {
         this.infoObserver = new ResizeObserver(() => this.measureInfo())
       }
       this.infoObserver.disconnect()
-      const info = this.$refs.info as HTMLElement | undefined
+      const info = this.currentInfoEl()
       if (info) {
         this.infoObserver.observe(info)
         this.measureInfo()
       }
     },
+    /** The current panel's info block. `ref="info"` sits inside the panels
+     * v-for, so `$refs.info` is an array in DOM order; the current panel is
+     * the first song panel (see cornerPanels). */
+    currentInfoEl(): HTMLElement | undefined {
+      const refs = this.$refs.info as HTMLElement | HTMLElement[] | undefined
+      const list = Array.isArray(refs) ? refs : refs ? [refs] : []
+      return list[0]
+    },
     /** The hidden-artwork corner's mini cover is square at the track text's
      * own height, so it lines up with the labels instead of sitting at a
      * size of its own. */
     measureInfo(): void {
-      const info = this.$refs.info as HTMLElement | undefined
+      const info = this.currentInfoEl()
       if (info) this.miniArtSize = Math.round(info.getBoundingClientRect().height)
+    },
+    /** Locks a leaving panel's width before it is taken out of the flow (see
+     * the next-up leave class), so it fades at the size it had rather than
+     * collapsing to its content. */
+    lockLeaveWidth(el: Element): void {
+      ;(el as HTMLElement).style.width = `${el.getBoundingClientRect().width}px`
     },
     /** How much room the lyrics panel takes out of the centred row: its own
      * width plus the gap before it. Half of that is how far the artwork
@@ -1071,6 +1213,23 @@ export default {
      * while this one is still in flight. Same stale-response guard as
      * loadColor() above, keyed on the artist. */
     async loadArtistBackground(artist: string) {
+      // A preloaded answer (see preloadNext) is used before any await, so the
+      // new backdrop - and with it the hidden artwork - is there on the first
+      // frame of the new track instead of dropping to the blurred cover while
+      // a lookup runs.
+      const preloaded = this.preloadedArt[artist]
+      if (preloaded !== undefined) {
+        delete this.preloadedArt[artist]
+        this.artistBackground = preloaded?.background ?? null
+        this.backgroundArtist = artist
+        this.artistColor = null
+        if (this.artistBackground) {
+          const color = await extractDominantColor(this.artistBackground)
+          if (this.currentArtist !== artist) return
+          this.artistColor = color ? color.join(', ') : null
+        }
+        return
+      }
       // A different artist's picture must not stay behind the new one while
       // this loads. A new *track* by the same artist keeps the current
       // picture instead, so the swap is one crossfade rather than fading to
@@ -1103,6 +1262,22 @@ export default {
         const color = await extractDominantColor(this.artistBackground)
         if (this.currentArtist !== artist) return
         this.artistColor = color ? color.join(', ') : null
+      }
+    },
+    /** Fetches and preloads the *next* track's Fanart.tv background, so the
+     * change itself has nothing left to load. The answer is kept for
+     * loadArtistBackground to use straight away (see preloadedArt). One
+     * entry only - the next track is the only one this is ever for.
+     * Best-effort: with nothing next, no key, or a failed lookup it does
+     * nothing, and the next track loads its own images as usual. */
+    async preloadNext(song: Song | null) {
+      if (!song || !useFanartStore().enabled) return
+      try {
+        const art = await getArtistArt(song.artist)
+        this.preloadedArt = { [song.artist]: art }
+        if (art?.background) await preloadImage(art.background)
+      } catch (error) {
+        console.error('[now-playing] Next-track Fanart.tv preload failed:', error)
       }
     },
   },
@@ -1360,35 +1535,112 @@ export default {
   padding-bottom: 56px;
 }
 
-.now-playing--artwork-hidden:not(.now-playing--compact) .now-playing__primary {
+/* The track panels row: the current one, then - near the end of a track -
+ * the chevrons and the next one (see cornerPanels). A transition-group so
+ * that on the change the next panel moves left into the current's place (the
+ * FLIP `move`) while the old one fades out - see the next-up classes below.
+ * position: relative is the containing block the leaving panel is taken out
+ * into. */
+.now-playing__panels {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.now-playing__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* With the artwork hidden each panel is a bottom-left glass corner: the
+ * small cover beside the track text. The current one, then - near the end
+ * of a track - animated chevrons and the next one to its right. */
+.now-playing--artwork-hidden .now-playing__panels {
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.now-playing--artwork-hidden .now-playing__panel {
   flex-direction: row;
   align-items: flex-end;
   gap: 16px;
   text-align: left;
-}
-
-/* The same corner on a phone: the mini cover and the track text together
- * anchor to the bottom-left of the (now full-width) card, over the artist
- * background. */
-.now-playing--compact.now-playing--artwork-hidden .now-playing__primary {
-  flex-direction: row;
-  align-items: flex-end;
-  justify-content: flex-start;
-  gap: 12px;
-  text-align: left;
-}
-
-/* A glassy panel behind the corner's mini cover and track text, so both
- * stay readable where they sit directly on the artist background. Same
- * recipe as the lyrics panel (rgba + backdrop blur + radius). The desktop
- * primary is already sized to its contents; the compact one is made so
- * below. */
-.now-playing--artwork-hidden .now-playing__primary {
+  /* A glassy panel behind the mini cover and track text, so both stay
+   * readable where they sit directly on the artist background. Same recipe
+   * as the lyrics panel (rgba + backdrop blur + radius). */
   background: rgba(18, 20, 28, 0.5);
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
   border-radius: 18px;
   padding: 16px 20px;
+}
+
+.now-playing--compact.now-playing--artwork-hidden .now-playing__panel {
+  gap: 12px;
+}
+
+/* The "next" marker between the two panels: two chevrons nudging right in a
+ * loop, so the second card reads as what follows the first. No glass of its
+ * own - the panel modifier has to outrank the corner panel's own glass rule
+ * above. The colour comes inline from the visualizer's own (see the
+ * template), so the marker and the bars read as one. */
+.now-playing--artwork-hidden .now-playing__panel--chevrons {
+  gap: 0;
+  padding: 0;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-radius: 0;
+  align-self: center;
+}
+
+.now-playing__next-up-chevron {
+  animation: next-up-chevron 1.4s ease-in-out infinite;
+}
+
+.now-playing__next-up-chevron--second {
+  animation-delay: 0.2s;
+}
+
+@keyframes next-up-chevron {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateX(-3px);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* The next panel appears to the right near the end of a track; on the change
+ * the old current fades out while the next moves left into its place. The
+ * move is the FLIP a transition-group gives the keyed panel whose position
+ * changed; the leaving panel is taken out of the flow (its width locked by
+ * lockLeaveWidth) so the next can actually move into the gap it leaves. */
+.next-up-enter-active,
+.next-up-leave-active {
+  transition:
+    opacity 0.5s ease,
+    transform 0.5s ease;
+}
+
+.next-up-move {
+  transition: transform 0.5s ease;
+}
+
+.next-up-enter-from,
+.next-up-leave-to {
+  opacity: 0;
+  transform: translateX(24px);
+}
+
+.next-up-leave-active {
+  position: absolute;
 }
 
 /* The compact primary is a full-size box (it centres the artwork when the
@@ -1410,6 +1662,14 @@ export default {
   max-width: 100%;
   min-width: 0;
   flex-shrink: 1;
+}
+
+/* The panel is the flex row now, so it (and the group it sits in) is what
+ * has to be allowed to shrink for a long label to ellipsise inside it. */
+.now-playing--compact.now-playing--artwork-hidden .now-playing__panels,
+.now-playing--compact.now-playing--artwork-hidden .now-playing__panel {
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* On a phone the corner is a tight row: each label is one ellipsised line

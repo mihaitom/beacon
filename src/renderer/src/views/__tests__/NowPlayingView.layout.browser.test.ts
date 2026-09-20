@@ -504,14 +504,52 @@ describe('NowPlayingView layout', () => {
     // The artwork hides by default once a background loads, so the mini
     // cover and track text are the corner content now.
     expect(wrapper.classes()).toContain('now-playing--artwork-hidden')
-    const primary = wrapper.get('.now-playing__primary').element
+    const panel = wrapper.get('.now-playing__panel').element
     const content = wrapper.get('.now-playing__content').element
 
     // Content-sized and anchored left, so the panel wraps the corner rather
     // than spanning the row.
-    expect(rect(primary).width).toBeLessThan(rect(content).width)
-    expect(rect(primary).left).toBeLessThan(rect(content).left + rect(content).width / 2)
+    expect(rect(panel).width).toBeLessThan(rect(content).width)
+    expect(rect(panel).left).toBeLessThan(rect(content).left + rect(content).width / 2)
     // And it is the app's translucent glass, not a flat fill.
-    expect(getComputedStyle(primary).backdropFilter).toContain('blur')
+    expect(getComputedStyle(panel).backdropFilter).toContain('blur')
+  })
+
+  it('puts the next track and chevrons to the right of the current one near the end', async () => {
+    await page.viewport(1280, 900)
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      logo: null,
+    })
+    const { wrapper } = await mountView()
+    const playback = usePlaybackStore()
+    playback.setQueue(
+      [
+        makeSong('a', { title: 'First', artist: 'A' }),
+        makeSong('b', { title: 'Second', artist: 'B' }),
+      ],
+      0,
+    )
+    playback.isPlaying = true
+    playback.duration = 100
+    playback.localPosition = 92
+    await new Promise((resolve) => setTimeout(resolve, 120))
+
+    const panels = wrapper.findAll('.now-playing__panel')
+    expect(panels).toHaveLength(3)
+    const current = panels[0]!.element.getBoundingClientRect()
+    const chevrons = panels[1]!.element.getBoundingClientRect()
+    const next = panels[2]!.element.getBoundingClientRect()
+    // Left to right: current, chevrons, next - the next in the same row
+    // (bottoms aligned), to the right of the current.
+    expect(chevrons.left).toBeGreaterThanOrEqual(current.right - 1)
+    expect(next.left).toBeGreaterThanOrEqual(chevrons.right - 1)
+    expect(Math.abs(next.bottom - current.bottom)).toBeLessThan(2)
+    // The chevrons are a bare marker, not another glass card.
+    expect(getComputedStyle(panels[1]!.element).backdropFilter).toBe('none')
+    // The right-hand panel is the next track's.
+    expect(wrapper.findAll('.now-playing__title')[1]!.text()).toContain('Second')
   })
 })
