@@ -635,8 +635,7 @@ export default {
       },
       radioBrowser: {
         name: 'Radio Browser',
-        purpose:
-          "L'annuaire de stations derrière « Découvrir des stations ». Sa liste de pays alimente aussi le sélecteur de pays du générateur de playlists Last.fm.",
+        purpose: "L'annuaire de stations derrière « Découvrir des stations ».",
         sends:
           "Votre terme de recherche et le pays choisi. Lorsqu'une station trouvée ici est lue, Beacon renvoie son identifiant sous forme de clic ; les règles du répertoire le demandent, afin que les stations populaires restent identifiables. Une station que vous avez ajoutée en saisissant son adresse n'est jamais signalée. Voter pour une station envoie également son identifiant, uniquement lorsque vous appuyez vous-même sur ce bouton.",
       },

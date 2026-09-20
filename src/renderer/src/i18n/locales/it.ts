@@ -633,8 +633,7 @@ export default {
       },
       radioBrowser: {
         name: 'Radio Browser',
-        purpose:
-          'La directory di emittenti dietro «Scopri emittenti». Il suo elenco di paesi riempie anche il selettore di paese nel generatore di playlist Last.fm.',
+        purpose: 'La directory di emittenti dietro «Scopri emittenti».',
         sends:
           "Il tuo termine di ricerca e il paese scelto. Quando riproduci una stazione trovata qui, Beacon riporta il suo identificativo come clic; lo richiedono le regole del direttorio, perché le stazioni popolari restino riconoscibili. Una stazione aggiunta da te digitandone l'indirizzo non viene mai segnalata. Anche votando una stazione viene inviato il suo identificativo, solo quando premi tu quel pulsante.",
       },

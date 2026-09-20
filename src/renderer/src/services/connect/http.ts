@@ -20,12 +20,24 @@ export class ConnectUnauthorizedError extends ConnectApiError {}
  * rejected the supplied credential") instead of a generic fallback that's
  * the same for every possible cause. Returns null for a non-JSON or
  * differently-shaped body, so callers can fall back to their own default. */
-function extractDetail(text: string): string | null {
+function extractDetail(body: unknown): string | null {
+  if (body !== null && typeof body === 'object' && 'detail' in body) {
+    const detail = (body as { detail?: unknown }).detail
+    return typeof detail === 'string' ? detail : null
+  }
+  return null
+}
+
+/** The body of an error response, parsed when it is JSON. Kept whole
+ * rather than reduced to the `detail` string: callers also read structured
+ * error bodies (isDeliveryFailedError/isDeviceInUseError in types.ts), and
+ * a raw-text body is still the best thing to hand back when parsing
+ * fails. */
+function parseBody(text: string): unknown {
   try {
-    const parsed = JSON.parse(text)
-    return typeof parsed?.detail === 'string' ? parsed.detail : null
+    return JSON.parse(text)
   } catch {
-    return null
+    return text
   }
 }
 
@@ -87,14 +99,16 @@ export async function fetchConnect<T>(
     }
     auth.authenticated = false
     const text = await response.text()
+    const body = parseBody(text)
     throw new ConnectUnauthorizedError(
-      extractDetail(text) ?? 'Connect session not authenticated',
-      text,
+      extractDetail(body) ?? 'Connect session not authenticated',
+      body,
     )
   }
   if (!response.ok) {
     const text = await response.text()
-    const detail = extractDetail(text)
+    const body = parseBody(text)
+    const detail = extractDetail(body)
     // A 403 with no `detail` is something in front of this backend refusing
     // us, not the backend itself — see pollGate.ts, which stands the app's
     // background polling down until the refusal stops rather than letting
@@ -111,7 +125,7 @@ export async function fetchConnect<T>(
       detail
         ? `Connect request failed: ${detail}`
         : `Connect request failed: ${response.status} ${text || '(empty response)'} — ${auth.apiUrl}${path}`,
-      text,
+      body,
     )
   }
 

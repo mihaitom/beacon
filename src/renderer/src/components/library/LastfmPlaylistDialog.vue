@@ -36,20 +36,19 @@
                 variant="solo-filled"
                 hide-details
               />
-              <!-- The same picker the radio station directory uses, and
-               - the same list behind it: Radio Browser's /json/countries
-               - hands over ISO 3166-1 names, which is exactly what
-               - geo.getTopTracks asks for. v-autocomplete rather than a
-               - select because the list runs to roughly 250 entries. -->
+              <!-- Its own country list, not the station directory's - the
+               - two disagree on names, and Last.fm rejects most of the
+               - directory's. See services/lastfmCountries.ts.
+               - v-autocomplete rather than a select because the list runs
+               - to roughly 250 entries. -->
               <v-autocomplete
                 v-if="chartScope === 'country'"
                 v-model="countryValue"
                 :items="countryItems"
                 item-title="name"
-                item-value="name"
+                item-value="value"
                 :label="$t('lastfm.country')"
                 :placeholder="$t('lastfm.countryPlaceholder')"
-                :loading="countriesLoading"
                 variant="solo-filled"
                 hide-details
                 clearable
@@ -307,10 +306,7 @@ import {
   type ResolvedTrack,
 } from '@/services/library/lastfmMatcher'
 import type { Playlist } from '@/types/library'
-import {
-  listRadioBrowserCountries,
-  type RadioBrowserFilterOption,
-} from '@/services/connect/radioBrowser'
+import { LASTFM_COUNTRIES, type LastfmCountry } from '@/services/lastfmCountries'
 import {
   loadRecentCountries,
   pinRecentCountries,
@@ -401,10 +397,9 @@ export default {
       period: '1month' as LastfmPeriod,
       lbPeriod: 'month' as ListenbrainzPeriod,
       limit: 50,
-      countryOptions: [] as RadioBrowserFilterOption[],
-      countriesLoading: false,
       // Shared with the radio station directory (services/recentCountries)
-      // - a country picked there is offered here too.
+      // - a country picked there is offered here too. Keyed by ISO code,
+      // which is the one thing the two country lists agree on.
       recentCountryCodes: loadRecentCountries(),
 
       resolved: [] as ResolvedTrack[],
@@ -544,12 +539,23 @@ export default {
     foundCount(): number {
       return this.resolved.filter((entry) => entry.match).length
     },
+    countryOptions(): LastfmCountry[] {
+      return LASTFM_COUNTRIES
+    },
     /** The recently picked countries first, then the rest alphabetically.
      * The shared list holds ISO codes, while this picker's value is the
-     * country *name* Last.fm wants - the mapping happens through the
-     * options, which carry both. */
-    countryItems(): (RadioBrowserFilterOption | CountryDividerItem)[] {
+     * name Last.fm wants - the mapping happens through the options, which
+     * carry both. */
+    countryItems(): (LastfmCountry | CountryDividerItem)[] {
       return pinRecentCountries(this.countryOptions, this.recentCountryCodes)
+    },
+    /** The picked country as it should read in a playlist name: the
+     * friendly label, not the API's own spelling ("Libya", not "Libyan
+     * Arab Jamahiriya"). */
+    countryName(): string {
+      return (
+        this.countryOptions.find((option) => option.value === this.country)?.name ?? this.country
+      )
     },
     playlistNames(): string[] {
       return this.libraryStore.playlists.map((playlist) => playlist.name)
@@ -627,9 +633,6 @@ export default {
       // only costs the name suggestions, and the store has already recorded
       // it - without the catch this would surface as an unhandled rejection.
       void this.libraryStore.fetchPlaylists().catch(() => {})
-      // Only Last.fm's country chart needs the picker; ListenBrainz has no
-      // per-country charts at all.
-      if (source === 'lastfm') void this.loadCountries()
     },
 
     /** Stores the country just searched with, so it sits at the top of
@@ -638,27 +641,10 @@ export default {
      * while browsing the list is not one that was meant. */
     rememberCountry(): void {
       if (this.source !== 'lastfm' || this.op !== 'charts' || this.chartScope !== 'country') return
-      const picked = this.countryOptions.find((option) => option.name === this.country)
+      const picked = this.countryOptions.find((option) => option.value === this.country)
       if (!picked) return
       this.recentCountryCodes = withRecentCountry(this.recentCountryCodes, picked.code)
       saveRecentCountries(this.recentCountryCodes)
-    },
-
-    /** Asked once per dialog instance - which countries exist does not
-     * change while somebody has this open, and the backend caches the
-     * answer on top of that (core/radio_browser.py's list_countries). */
-    async loadCountries(): Promise<void> {
-      if (this.countryOptions.length || this.countriesLoading) return
-      this.countriesLoading = true
-      try {
-        this.countryOptions = await listRadioBrowserCountries()
-      } catch (error) {
-        // Not fatal: the worldwide chart and every other source still
-        // work, and this only costs the country list.
-        console.error('[lastfm] Failed to load the country list:', error)
-      } finally {
-        this.countriesLoading = false
-      }
     },
 
     /** The name a playlist gets before anyone edits it — descriptive
@@ -687,7 +673,7 @@ export default {
       }
       return this.chartScope === 'global'
         ? this.$t('lastfm.nameGlobalCharts')
-        : this.$t('lastfm.nameCountryCharts', { country: this.country.trim() })
+        : this.$t('lastfm.nameCountryCharts', { country: this.countryName.trim() })
     },
 
     /** The backend's own reason when it sent one (an unknown Last.fm

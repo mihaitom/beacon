@@ -632,8 +632,7 @@ export default {
       },
       radioBrowser: {
         name: 'Radio Browser',
-        purpose:
-          'El directorio de emisoras detrás de «Descubrir emisoras». Su lista de países también rellena el selector de país del generador de listas de Last.fm.',
+        purpose: 'El directorio de emisoras detrás de «Descubrir emisoras».',
         sends:
           'Tu término de búsqueda y el país elegido. Al reproducir una emisora encontrada aquí, Beacon informa de su identificador como clic; lo piden las propias reglas del directorio, para que las emisoras populares sigan siendo reconocibles. Una emisora que hayas añadido escribiendo su dirección nunca se informa. Al votar por una emisora también se envía su identificador, solo cuando pulsas tú ese botón.',
       },

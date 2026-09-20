@@ -63,6 +63,18 @@ describe('fetchConnect', () => {
     })
   })
 
+  it('keeps the parsed error body so callers can read `detail` themselves', async () => {
+    // The body used to be the raw response text, which left callers that
+    // read a structured reason (LastfmPlaylistDialog's messageFor) with
+    // nothing and made them show a generic "unreachable" instead.
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(404, { detail: 'country param invalid' }))
+
+    const error: unknown = await fetchConnect('/lastfm/tracks').catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ConnectApiError)
+    expect((error as ConnectApiError).body).toEqual({ detail: 'country param invalid' })
+  })
+
   it('falls back to status/URL when a non-ok response has no `detail`', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response('', { status: 404 }))
 

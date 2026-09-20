@@ -16,14 +16,6 @@ import type { SubsonicClient } from '@/services/subsonic/client'
 import LastfmPlaylistDialog from '../LastfmPlaylistDialog.vue'
 import * as lastfmApi from '@/services/connect/lastfm'
 import * as listenbrainzApi from '@/services/connect/listenbrainz'
-import { listRadioBrowserCountries } from '@/services/connect/radioBrowser'
-
-vi.mock('@/services/connect/radioBrowser', () => ({
-  listRadioBrowserCountries: vi.fn(async () => [
-    { name: 'Germany', code: 'DE' },
-    { name: 'Spain', code: 'ES' },
-  ]),
-}))
 
 const vuetify = createVuetify({ components, directives })
 
@@ -107,21 +99,21 @@ describe('LastfmPlaylistDialog', () => {
     )
   })
 
-  it('offers the country names from the station directory', async () => {
-    // geo.getTopTracks wants an ISO 3166-1 country *name*, which is
-    // exactly what Radio Browser's country list hands over - so the two
-    // share one list rather than this keeping a second copy of it.
+  it('offers the bundled Last.fm country names, not the directory spelling', async () => {
+    // geo.getTopTracks takes a country name, but its accepted spellings are
+    // its own: the station directory calls the same country "The United
+    // States Of America" and Last.fm rejects that. The picker sends the
+    // bundled `value`, never the ISO code or the directory's name.
     stubSearch([])
     const { wrapper } = await openDialog()
 
-    expect(listRadioBrowserCountries).toHaveBeenCalled()
     const picker = wrapper.findComponent({ name: 'VAutocomplete' })
-    expect(picker.props('items')).toEqual([
-      { name: 'Germany', code: 'DE' },
-      { name: 'Spain', code: 'ES' },
-    ])
-    // The name, not the code: Last.fm rejects "DE".
-    expect(picker.props('itemValue')).toBe('name')
+    const items = picker.props('items') as { name: string; value: string; code: string }[]
+    expect(items.find((item) => item.code === 'US')).toMatchObject({
+      name: 'United States',
+      value: 'United States',
+    })
+    expect(picker.props('itemValue')).toBe('value')
   })
 
   it('pins countries picked before above the rest', async () => {
@@ -137,7 +129,10 @@ describe('LastfmPlaylistDialog', () => {
     }[]
     expect(items[0]?.name).toBe('Spain')
     expect(items[1]?.type).toBe('divider')
-    expect(items[2]?.name).toBe('Germany')
+    // The rest stays alphabetical, and the pinned country is *moved*
+    // rather than copied - so it never turns up twice.
+    expect(items.filter((item) => item.name === 'Spain')).toHaveLength(1)
+    expect(items.findIndex((item) => item.name === 'Germany')).toBeGreaterThan(1)
   })
 
   it('remembers the country it actually searched with', async () => {
@@ -176,27 +171,6 @@ describe('LastfmPlaylistDialog', () => {
 
     expect(vm.country).toBe('')
     expect(vm.canSearch).toBe(false)
-  })
-
-  it('still works when the country list cannot be loaded', async () => {
-    // The worldwide chart and every other source are unaffected; only the
-    // picker stays empty.
-    vi.mocked(listRadioBrowserCountries).mockRejectedValue(new Error('offline'))
-    const getTracks = vi.spyOn(lastfmApi, 'getLastfmTracks').mockResolvedValue([])
-    stubSearch([])
-
-    const { vm } = await openDialog()
-    // The failure is swallowed rather than left as an unhandled rejection
-    // (open() calls this with `void`), and the picker simply stays empty.
-    await expect(
-      (vm as unknown as { loadCountries: () => Promise<void> }).loadCountries(),
-    ).resolves.toBeUndefined()
-    expect(vm.countryOptions).toEqual([])
-    expect(vm.countriesLoading).toBe(false)
-
-    vm.chartScope = 'global'
-    await (vm as unknown as { search: () => Promise<void> }).search()
-    expect(getTracks).toHaveBeenCalled()
   })
 
   it('reports how much of the list the library has', async () => {

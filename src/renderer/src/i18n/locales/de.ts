@@ -633,8 +633,7 @@ export default {
       },
       radioBrowser: {
         name: 'Radio Browser',
-        purpose:
-          'Das Senderverzeichnis hinter „Sender entdecken“. Seine Länderliste füllt außerdem die Länderauswahl im Last.fm-Playlist-Baukasten.',
+        purpose: 'Das Senderverzeichnis hinter „Sender entdecken“.',
         sends:
           'Deinen Suchbegriff und das gewählte Land. Wird ein hier gefundener Sender abgespielt, meldet Beacon dessen Kennung als Klick zurück; das verlangen die Nutzungsregeln des Verzeichnisses, damit beliebte Sender erkennbar bleiben. Ein von dir selbst per Adresse eingetragener Sender wird nie gemeldet. Stimmst du für einen Sender ab, geht dessen Kennung ebenfalls raus - nur dann, wenn du den Knopf selbst drückst.',
       },
