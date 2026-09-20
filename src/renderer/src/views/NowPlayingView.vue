@@ -1254,8 +1254,8 @@ export default {
  * worry about eating clicks the rest of the time. */
 .now-playing__visualizer-debug {
   position: absolute;
-  bottom: 350px;
-  left: 24px;
+  bottom: 370px;
+  left: 32px;
   z-index: 2;
 }
 
@@ -1365,6 +1365,92 @@ export default {
   align-items: flex-end;
   gap: 16px;
   text-align: left;
+}
+
+/* The same corner on a phone: the mini cover and the track text together
+ * anchor to the bottom-left of the (now full-width) card, over the artist
+ * background. */
+.now-playing--compact.now-playing--artwork-hidden .now-playing__primary {
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 12px;
+  text-align: left;
+}
+
+/* A glassy panel behind the corner's mini cover and track text, so both
+ * stay readable where they sit directly on the artist background. Same
+ * recipe as the lyrics panel (rgba + backdrop blur + radius). The desktop
+ * primary is already sized to its contents; the compact one is made so
+ * below. */
+.now-playing--artwork-hidden .now-playing__primary {
+  background: rgba(18, 20, 28, 0.5);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border-radius: 18px;
+  padding: 16px 20px;
+}
+
+/* The compact primary is a full-size box (it centres the artwork when the
+ * artwork is shown). In the corner it has to shrink to its contents, or
+ * the glass panel above would cover the whole screen instead of wrapping
+ * the cover and text. */
+.now-playing--compact.now-playing--artwork-hidden .now-playing__flip-card {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+}
+
+.now-playing--compact.now-playing--artwork-hidden .now-playing__primary {
+  height: auto;
+  width: auto;
+  /* Shrinkable and capped to the stage: a long label must ellipsise inside
+   * the panel, not run off the right of the screen (the cover keeps its
+   * size via its own flex-shrink: 0). */
+  max-width: 100%;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+/* On a phone the corner is a tight row: each label is one ellipsised line
+ * (no wrapping - a wrapped line would push the block taller than the cover,
+ * and long text would run off the screen), and the type is a step down so
+ * the whole block stays small. */
+.now-playing--compact.now-playing--artwork-hidden .now-playing__info {
+  min-width: 0;
+}
+
+.now-playing--compact.now-playing--artwork-hidden .now-playing__info > * {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The title is a multi-line clamp by default (see its own rule); in the
+ * corner it is a single ellipsised line like the rest. */
+.now-playing--compact.now-playing--artwork-hidden .now-playing__title {
+  display: block;
+  font-size: clamp(1rem, min(2.1cqw, 7cqh), 1.6rem);
+}
+
+.now-playing--compact.now-playing--artwork-hidden .now-playing__info .eyebrow-label {
+  font-size: clamp(0.55rem, min(1.4cqw, 1.8cqh), 0.75rem);
+}
+
+.now-playing--compact.now-playing--artwork-hidden .now-playing__info .now-playing__artist-link,
+.now-playing--compact.now-playing--artwork-hidden .now-playing__info .now-playing__artist-label {
+  font-size: clamp(0.68rem, min(2cqw, 2.8cqh), 1.05rem);
+}
+
+.now-playing--compact.now-playing--artwork-hidden .now-playing__info .now-playing__album-link {
+  font-size: clamp(0.58rem, min(1.5cqw, 2cqh), 0.85rem);
+}
+
+/* The mini cover carries no shadow: the glass panel behind it already
+ * separates it from the artist background, and a shadow there would spill
+ * out of the panel (and get clipped by the stage). */
+.now-playing--compact.now-playing--artwork-hidden .now-playing__mini-art {
+  box-shadow: none;
 }
 
 /* The small cover the hidden-artwork corner shows beside the text - see the
@@ -1618,9 +1704,10 @@ export default {
  * verbatim under a plain class selector rather than depend on that query
  * also happening to match. */
 .now-playing--compact .now-playing__content--split {
-  /* No max-width, same reason as the @container block above — and
-   * `compact` changes live too (see its watcher). */
-  width: auto;
+  /* No width of its own: it inherits the full-width .now-playing--compact
+   * .now-playing__content below, unlike the desktop flip whose card stays
+   * sized to the artwork. A phone has no room to spend on the artwork's
+   * own narrow box, so the lyrics get the whole screen. */
   gap: 0;
   perspective: 2000px;
 }
@@ -1646,10 +1733,16 @@ export default {
  * under it sit where they did. */
 .now-playing--compact .now-playing__content {
   height: 100%;
+  /* Full width so the flip-card (and the lyrics panel covering it) spans
+   * the screen, and so the artwork-hidden corner anchors to the screen's
+   * own bottom-left rather than a centred box. The front face's own
+   * artwork stays centred either way. */
+  width: 100%;
 }
 
 .now-playing--compact .now-playing__flip-card {
   height: 100%;
+  width: 100%;
 }
 
 .now-playing--compact .now-playing__primary {
@@ -1676,6 +1769,19 @@ export default {
   container-type: size;
   --lyrics-flip-font-size: clamp(0.95rem, min(6cqw, 8cqh), 1.9rem);
   --lyrics-flip-line-padding: 10px 20px;
+  /* The panel fills the whole phone screen here, so a flat slab of the
+   * base 0.62 would bury the artist background the view exists to show.
+   * Dark enough in the middle - where the active line sits - to stay
+   * readable, fading out top and bottom so the photo shows through. No
+   * radius: a full-bleed panel has no corner to round. */
+  background: linear-gradient(
+    to bottom,
+    rgba(18, 20, 28, 0.15) 0%,
+    rgba(18, 20, 28, 0.6) 26%,
+    rgba(18, 20, 28, 0.6) 74%,
+    rgba(18, 20, 28, 0.15) 100%
+  );
+  border-radius: 0;
 }
 
 .now-playing--compact .now-playing-lyrics-enter-active,
@@ -1964,6 +2070,19 @@ export default {
  * live here as one rule rather than as a margin on each line. */
 .now-playing__info > * {
   margin-bottom: 8px;
+}
+
+/* Tighter in the corner: the compact fonts are roughly half the desktop's,
+ * so the same 8px reads as twice the gap. Scoped to the artwork-hidden
+ * corner, where artSize (which counts on the 8px above) is not in play. No
+ * gap after the last line, so the block (and the cover sized to it) hugs
+ * its content. */
+.now-playing--compact.now-playing--artwork-hidden .now-playing__info > * {
+  margin-bottom: 4px;
+}
+
+.now-playing--compact.now-playing--artwork-hidden .now-playing__info > *:last-child {
+  margin-bottom: 0;
 }
 
 /* With the artwork hidden there is nothing for the flip card to turn to -

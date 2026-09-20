@@ -25,6 +25,16 @@
   }
 }
 
+/* iOS Safari's text autosizing (the default `auto`) inflates text in wide
+ * or landscape containers - it left Now Playing's labels noticeably larger
+ * on a real phone than the same CSS rendered in Chromium. 100% pins every
+ * size to what the CSS actually asks for, while still honouring the user's
+ * own browser zoom. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 /* Scrolling stays functional everywhere — only the visual scrollbar chrome
  * is hidden, app-wide. Electron is Chromium-only so ::-webkit-scrollbar is
  * what actually matters here; scrollbar-width/-ms-overflow-style are just

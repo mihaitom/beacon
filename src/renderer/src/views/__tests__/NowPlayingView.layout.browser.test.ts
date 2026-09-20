@@ -29,6 +29,7 @@ import { useLyricsStore } from '@/stores/lyrics'
 import NowPlayingView from '../NowPlayingView.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
+import { getArtistArt } from '@/services/connect/fanart'
 
 // A network lookup the layout under test does not care about.
 vi.mock('@/services/connect/fanart', () => ({ getArtistArt: vi.fn().mockResolvedValue(null) }))
@@ -485,5 +486,32 @@ describe('NowPlayingView layout', () => {
     // for where it ends up instead.
 
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(391)
+  })
+
+  it('puts the hidden-artwork corner on a glass panel over the background', async () => {
+    await page.viewport(1280, 900)
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      // A real (tiny) image, so preloadImage/colour extraction resolve.
+      background:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      logo: null,
+    })
+    const { wrapper } = await mountView()
+    usePlaybackStore().setQueue([makeSong('a', { title: 'Harbor Lights', artist: 'The Tide' })], 0)
+    await new Promise((resolve) => setTimeout(resolve, 120))
+
+    // The artwork hides by default once a background loads, so the mini
+    // cover and track text are the corner content now.
+    expect(wrapper.classes()).toContain('now-playing--artwork-hidden')
+    const primary = wrapper.get('.now-playing__primary').element
+    const content = wrapper.get('.now-playing__content').element
+
+    // Content-sized and anchored left, so the panel wraps the corner rather
+    // than spanning the row.
+    expect(rect(primary).width).toBeLessThan(rect(content).width)
+    expect(rect(primary).left).toBeLessThan(rect(content).left + rect(content).width / 2)
+    // And it is the app's translucent glass, not a flat fill.
+    expect(getComputedStyle(primary).backdropFilter).toContain('blur')
   })
 })

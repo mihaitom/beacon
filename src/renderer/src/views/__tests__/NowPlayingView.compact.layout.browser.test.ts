@@ -3,12 +3,13 @@
 // sizes come from container-query units measured against a stage whose own
 // height is `100dvh` minus Vuetify's live layout offsets.
 //
-// What it pins down: the artwork is sized by artSize(), and in the compact
-// layout the flip card is exactly the artwork plus the info block — so the
-// lyrics panel and the radio title log on its back face are sized by the
-// same number. One cautious fraction there made all three small at once,
-// which is how a 234px cover ended up sitting in 358px of room on a 390px
-// phone, with a third of the width and half the height of the stage unused.
+// What it pins down: the artwork is sized by artSize() and centred on the
+// front face, while the flip card - and so the lyrics panel / radio title
+// log on its back face - spans the phone's full width and the stage's full
+// height. The card used to be sized to its own contents, which left the
+// lyrics only as wide as the cover: a 234px cover in 358px of room on a
+// 390px phone, with a third of the width and half the height of the stage
+// unused.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -29,6 +30,8 @@ import MobileNowPlayingView from '../mobile/MobileNowPlayingView.vue'
 import NowPlayingView from '../NowPlayingView.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
+import { useLyricsStore } from '@/stores/lyrics'
+import { getArtistArt } from '@/services/connect/fanart'
 
 // A network lookup the layout under test does not care about.
 vi.mock('@/services/connect/fanart', () => ({ getArtistArt: vi.fn().mockResolvedValue(null) }))
@@ -46,25 +49,7 @@ const PORTRAIT: [number, number][] = [
 ]
 const ALL: [number, number][] = [...PORTRAIT, [844, 390], [768, 1024]]
 
-async function mountAt(w: number, h: number, radio = false) {
-  await page.viewport(w, h)
-  const playback = usePlaybackStore()
-  if (radio) {
-    playback.radioStation = {
-      id: 'r1',
-      name: 'Chill FM',
-      streamUrl: 'https://stream.example/chill',
-      homePageUrl: null,
-    }
-    useRadioMetadataStore().titleLog = Array.from({ length: 50 }, (_, i) => ({
-      title: `Artist ${i} - Track ${i}`,
-      at: 1_757_000_000 + i * 200,
-    }))
-    useDrawersStore().lyricsPanelOpen = true
-  } else {
-    playback.queue = [makeSong('s1')]
-    playback.currentIndex = 0
-  }
+async function mountShell() {
   document.body.setAttribute('style', 'margin:0')
   // What MobileLayout.vue's app bar provides — the view is mounted on its
   // own here, so the target it teleports its buttons into has to be too.
@@ -92,6 +77,62 @@ async function mountAt(w: number, h: number, radio = false) {
   return wrapper
 }
 
+async function mountAt(w: number, h: number, radio = false) {
+  await page.viewport(w, h)
+  const playback = usePlaybackStore()
+  if (radio) {
+    playback.radioStation = {
+      id: 'r1',
+      name: 'Chill FM',
+      streamUrl: 'https://stream.example/chill',
+      homePageUrl: null,
+    }
+    useRadioMetadataStore().titleLog = Array.from({ length: 50 }, (_, i) => ({
+      title: `Artist ${i} - Track ${i}`,
+      at: 1_757_000_000 + i * 200,
+    }))
+    useDrawersStore().lyricsPanelOpen = true
+  } else {
+    playback.queue = [makeSong('s1')]
+    playback.currentIndex = 0
+  }
+  return mountShell()
+}
+
+/** A song with a deliberately short title and a Fanart.tv background: the
+ * artwork hides by default once one loads, which is the state both the
+ * corner placement and the lyrics width below are about. `withLyrics`
+ * additionally flips the card open; `title` overrides the short default
+ * for the overflow case. */
+async function mountSongWithBackground(
+  w: number,
+  h: number,
+  withLyrics = false,
+  title = 'Imma Be',
+) {
+  await page.viewport(w, h)
+  vi.mocked(getArtistArt).mockResolvedValue({
+    banner: null,
+    // A real (tiny) image, so preloadImage/colour extraction actually resolve.
+    background:
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    logo: null,
+  })
+  const playback = usePlaybackStore()
+  playback.setQueue([makeSong('s1', { title, artist: 'Black Eyed Peas', album: 'The E.N.D.' })], 0)
+  if (withLyrics) {
+    const lyrics = useLyricsStore()
+    vi.spyOn(lyrics, 'ensureLoaded').mockResolvedValue()
+    lyrics.synced = true
+    lyrics.lines = [
+      { time: 0, text: 'Imma be up in the club' },
+      { time: 4, text: 'Imma be rocking the beat' },
+    ]
+    useDrawersStore().lyricsPanelOpen = true
+  }
+  return mountShell()
+}
+
 function box(selector: string): DOMRect {
   return document.querySelector(selector)!.getBoundingClientRect()
 }
@@ -112,7 +153,10 @@ function roomForArtwork(): number {
 }
 
 describe('Now Playing on the phone', () => {
-  beforeEach(() => setActivePinia(createPinia()))
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.mocked(getArtistArt).mockResolvedValue(null)
+  })
 
   afterEach(async () => {
     while (wrappers.length) wrappers.pop()?.unmount()
@@ -238,9 +282,9 @@ describe('Now Playing on the phone', () => {
   })
 
   it('gives the radio title log the whole card, not a corner of it', async () => {
-    // The log is the back face of the flip card, so it is only as big as
-    // the front — which is why the artwork's size decides how much of a
-    // thousand-entry log is readable at once.
+    // The log is the back face of the flip card, and on a phone the card
+    // is the full width and height of the stage - so the log gets the
+    // whole screen, not just the box the artwork occupied.
     await mountAt(390, 844, true)
     const card = box('.now-playing__flip-card')
     const log = box('.title-log')
@@ -248,5 +292,64 @@ describe('Now Playing on the phone', () => {
     expect(log.width).toBeCloseTo(card.width, 0)
     expect(log.height).toBeCloseTo(card.height, 0)
     expect(log.height).toBeGreaterThan(300)
+  })
+
+  it('gives the lyrics the whole stage width, not just the artwork box', async () => {
+    // With the artwork hidden the card used to be sized to the front face's
+    // own contents - a short title and no cover - which left the lyrics
+    // well under half a phone screen.
+    await mountSongWithBackground(390, 844, true)
+    const stage = box('.now-playing__stage')
+    const card = box('.now-playing__flip-card')
+    const content = getComputedStyle(document.querySelector('.now-playing__content')!)
+    const padX = parseFloat(content.paddingLeft) + parseFloat(content.paddingRight)
+
+    expect(card.width).toBeCloseTo(stage.width - padX, -1)
+  })
+
+  it('anchors the mini cover to the bottom-left over the artist background', async () => {
+    await mountSongWithBackground(390, 844)
+    const stage = box('.now-playing__stage')
+    const content = box('.now-playing__content')
+    const contentStyle = getComputedStyle(document.querySelector('.now-playing__content')!)
+    // The glass panel wraps the cover and the text; it is the thing that
+    // has to sit in the corner.
+    const panel = box('.now-playing__primary')
+    const mini = box('.now-playing__mini-art')
+    const info = box('.now-playing__info')
+
+    // Against the content's own left padding, and starting left of the
+    // screen's middle - the corner, not a centred column. (The panel may
+    // run past the middle; it is the anchor that makes it a corner.)
+    const padLeft = parseFloat(contentStyle.paddingLeft)
+    expect(panel.left).toBeCloseTo(content.left + padLeft, -1)
+    expect(panel.left).toBeLessThan(stage.left + stage.width / 2)
+    expect(mini.left + mini.width).toBeLessThan(stage.left + stage.width / 2)
+    // Bottom-aligned with the track text, both at the panel's bottom.
+    expect(Math.abs(mini.bottom - info.bottom)).toBeLessThan(4)
+    // No drop shadow on the cover: the glass panel is the separation, and a
+    // shadow would spill out of it and get clipped by the stage.
+    expect(getComputedStyle(document.querySelector('.now-playing__mini-art')!).boxShadow).toBe(
+      'none',
+    )
+  })
+
+  it('ellipsises a long title instead of running off the screen', async () => {
+    await mountSongWithBackground(
+      390,
+      844,
+      false,
+      'A Very Long Song Title That Could Never Fit In The Corner Panel At All',
+    )
+    const stage = box('.now-playing__stage')
+    const panel = box('.now-playing__primary')
+    const title = document.querySelector('.now-playing__title') as HTMLElement
+
+    // One line, clipped with an ellipsis - not wrapped, which would push the
+    // block taller than the cover.
+    expect(getComputedStyle(title).whiteSpace).toBe('nowrap')
+    expect(title.scrollWidth).toBeGreaterThan(title.clientWidth)
+    // And the panel stays inside the stage rather than running off it.
+    expect(panel.right).toBeLessThanOrEqual(stage.right + 1)
   })
 })
