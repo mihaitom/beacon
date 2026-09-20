@@ -395,9 +395,17 @@ export default {
     advancedMode: 'Show advanced features',
     advancedModeHint:
       'Adds the things that need setting up first, such as connecting Beacon to an outside service. What you set up here stays available to everyone using this Beacon, whether they have this switched on or not.',
+    lastfmTitle: 'Last.fm',
+    lastfmWhat:
+      'Lets anyone using this Beacon build playlists from Last.fm charts, a genre, an artist, or their own listening history.',
+    lastfmStep1: 'Open last.fm/api/account/create and sign in.',
+    lastfmStep2:
+      'Fill in an application name and a description - anything sensible will do, nobody reviews it.',
+    lastfmStep3:
+      "Leave 'Callback URL' empty - it is only for apps that log people in through Last.fm, which Beacon does not. If the form insists on one, any address will do; it is never called.",
+    lastfmStep4: 'Copy the "API key" it shows you and paste it here. Ignore the shared secret.',
+    lastfmKeyGet: 'Get a key',
     lastfmKey: 'Last.fm API key',
-    lastfmKeyHint:
-      'Lets you build playlists from Last.fm charts, a genre or artist, or your own listening history. Create a key at last.fm/api/account/create - the form asks for an application name and a description, anything sensible will do. One key covers this whole Beacon, so everyone using it can build playlists once it is set.',
     lastfmKeyPlaceholder: 'Paste the key here',
     lastfmKeySet: 'A key is already set',
     lastfmKeyMissing: 'No key set - the Last.fm playlist builder is hidden.',

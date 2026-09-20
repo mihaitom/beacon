@@ -57,14 +57,30 @@ describe('SettingsView advanced features', () => {
     vi.mocked(setLastfmApiKey).mockResolvedValue({ configured: true, fromEnvironment: false })
   })
 
-  it('hides the Last.fm key field until advanced features are switched on', async () => {
+  it('hides the whole Last.fm section until advanced features are switched on', async () => {
+    // The section, not just the control inside it: a heading with nothing
+    // under it is what gating one field at a time leaves behind.
     const wrapper = await mountSettings()
+    const headings = () => wrapper.findAll('.section-title').map((h) => h.text())
+
     expect(keyField(wrapper)).toBeUndefined()
+    expect(headings()).not.toContain(wrapper.vm.$t('settings.lastfmTitle'))
 
     await advancedToggle(wrapper).vm.$emit('update:modelValue', true)
     await flushPromises()
 
     expect(keyField(wrapper)).toBeDefined()
+    expect(headings()).toContain(wrapper.vm.$t('settings.lastfmTitle'))
+  })
+
+  it('keeps the switch itself in the Advanced section, where it can be found', async () => {
+    // The switch must not hide with what it reveals, or nothing could
+    // ever turn it back on.
+    const wrapper = await mountSettings()
+    const headings = wrapper.findAll('.section-title').map((h) => h.text())
+
+    expect(headings).toContain(wrapper.vm.$t('settings.advancedTitle'))
+    expect(advancedToggle(wrapper).exists()).toBe(true)
   })
 
   it('offers the switch itself to everyone, so it can be found', async () => {
@@ -146,6 +162,61 @@ describe('SettingsView advanced features', () => {
     await flushPromises()
 
     expect(wrapper.text()).not.toContain(wrapper.vm.$t('settings.lastfmKeyClear'))
+  })
+
+  it('puts the how-to-get-a-key steps behind the info button, not under the field', async () => {
+    // Five lines of instructions that stop being interesting the moment
+    // somebody has a key - a permanent paragraph pushes the rest of the
+    // page down for everyone who already does.
+    const wrapper = await mountSettings()
+    useAdvancedModeStore().setEnabled(true)
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain(wrapper.vm.$t('settings.lastfmStep2'))
+    const tips = wrapper
+      .findAllComponents({ name: 'QualityTips' })
+      .find((c) => (c.props('lines') as string[]).includes(wrapper.vm.$t('settings.lastfmStep2')))
+    expect(tips).toBeDefined()
+    // All four, in the order the registration form asks for them - the
+    // callback note included, since that is the field nobody knows what
+    // to do with.
+    expect(tips!.props('lines')).toEqual([
+      wrapper.vm.$t('settings.lastfmStep1'),
+      wrapper.vm.$t('settings.lastfmStep2'),
+      wrapper.vm.$t('settings.lastfmStep3'),
+      wrapper.vm.$t('settings.lastfmStep4'),
+    ])
+  })
+
+  it('links straight to where a key is requested', async () => {
+    const wrapper = await mountSettings()
+    useAdvancedModeStore().setEnabled(true)
+    await flushPromises()
+
+    const link = wrapper
+      .findAll('a')
+      .find((a) => a.text().includes(wrapper.vm.$t('settings.lastfmKeyGet')))
+    expect(link?.attributes('href')).toBe('https://www.last.fm/api/account/create')
+    // Opening an external page must not be able to reach back into the app.
+    expect(link?.attributes('rel')).toContain('noopener')
+  })
+
+  it('shows at a glance whether a key is set', async () => {
+    vi.mocked(getLastfmStatus).mockResolvedValue({ configured: true, fromEnvironment: false })
+    const wrapper = await mountSettings()
+    useAdvancedModeStore().setEnabled(true)
+    await flushPromises()
+
+    expect(wrapper.find('.status-dot--ok').exists()).toBe(true)
+    expect(wrapper.find('.status-dot--warn').exists()).toBe(false)
+  })
+
+  it('marks an installation without a key as needing attention', async () => {
+    const wrapper = await mountSettings()
+    useAdvancedModeStore().setEnabled(true)
+    await flushPromises()
+
+    expect(wrapper.find('.status-dot--warn').exists()).toBe(true)
   })
 
   it('keeps working when the status check fails', async () => {

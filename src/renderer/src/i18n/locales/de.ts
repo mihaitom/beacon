@@ -395,9 +395,18 @@ export default {
     advancedMode: 'Erweiterte Funktionen anzeigen',
     advancedModeHint:
       'Zeigt die Dinge, die erst eingerichtet werden müssen, etwa die Verbindung zu einem externen Dienst. Was du hier einrichtest, steht danach allen zur Verfügung, die dieses Beacon nutzen - unabhängig davon, ob sie den Schalter an haben.',
+    lastfmTitle: 'Last.fm',
+    lastfmWhat:
+      'Erlaubt allen, die dieses Beacon nutzen, Playlists aus Last.fm-Charts, einem Genre, einem Interpreten oder der eigenen Hörhistorie zu bauen.',
+    lastfmStep1: 'last.fm/api/account/create öffnen und anmelden.',
+    lastfmStep2:
+      'Anwendungsnamen und Beschreibung eintragen - irgendetwas Sinnvolles genügt, das prüft niemand.',
+    lastfmStep3:
+      'Das Feld „Callback URL“ leer lassen - es ist nur für Apps, die Nutzer über Last.fm anmelden, und das tut Beacon nicht. Besteht das Formular darauf, tut eine beliebige Adresse es; sie wird nie aufgerufen.',
+    lastfmStep4:
+      'Den angezeigten „API key“ kopieren und hier einfügen. Das Shared Secret wird nicht gebraucht.',
+    lastfmKeyGet: 'Schlüssel anfordern',
     lastfmKey: 'Last.fm-API-Schlüssel',
-    lastfmKeyHint:
-      'Damit kannst du Playlists aus Last.fm-Charts, einem Genre, einem Interpreten oder deiner Hörhistorie bauen. Schlüssel anlegen unter last.fm/api/account/create - das Formular fragt nach einem Anwendungsnamen und einer Beschreibung, irgendetwas Sinnvolles genügt. Ein Schlüssel gilt für dieses ganze Beacon, danach können alle Nutzer Playlists bauen.',
     lastfmKeyPlaceholder: 'Schlüssel hier einfügen',
     lastfmKeySet: 'Ein Schlüssel ist hinterlegt',
     lastfmKeyMissing:

@@ -3,6 +3,7 @@ Last.fm's HTTP-200-with-an-error-body convention, and the route's mapping
 of those onto status codes."""
 
 import logging
+import os
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -358,3 +359,30 @@ def test_a_hand_written_key_file_may_end_in_a_newline():
     lastfm._cached_key = None
 
     assert lastfm.api_key() == "hand-written-key"
+
+
+def test_the_key_file_is_not_readable_by_other_accounts():
+    """A shared NAS or a multi-user box would otherwise hand the key to
+    every other account on it - the default umask leaves a new file
+    world-readable."""
+    import stat
+
+    lastfm.set_api_key("from-settings")
+    mode = stat.S_IMODE(os.stat(lastfm._PATH).st_mode)
+
+    assert mode & (stat.S_IRGRP | stat.S_IROTH | stat.S_IWGRP | stat.S_IWOTH) == 0
+    assert mode & stat.S_IRUSR
+
+
+def test_replacing_a_key_keeps_the_restricted_mode():
+    """O_TRUNC on an existing file keeps its old mode, so a file created
+    before this rule existed has to be reported honestly - it is not
+    silently fixed."""
+    import stat
+
+    lastfm.set_api_key("first")
+    lastfm.set_api_key("second")
+    mode = stat.S_IMODE(os.stat(lastfm._PATH).st_mode)
+
+    assert mode & (stat.S_IRGRP | stat.S_IROTH) == 0
+    assert lastfm.api_key() == "second"

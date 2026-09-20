@@ -341,29 +341,58 @@
             @update:model-value="onLogLevelChange"
           />
         </div>
+      </div>
+    </section>
 
-        <div v-if="advancedModeStore.enabled" class="setting">
-          <p class="setting__description">{{ $t('settings.lastfmKeyHint') }}</p>
-          <v-text-field
-            v-model="lastfmKey"
-            :label="$t('settings.lastfmKey')"
-            :placeholder="lastfmKeyPlaceholder"
-            :loading="lastfmKeyBusy"
-            :disabled="lastfmKeyBusy"
-            variant="solo-filled"
-            autocomplete="off"
-            spellcheck="false"
-            hide-details
-            @keyup.enter="saveLastfmKey"
-          />
-          <p class="setting__hint">{{ lastfmKeyStatus }}</p>
+    <!-- A section of its own rather than a group inside "Advanced": this
+     - is a service being connected, with its own status and its own way
+     - in, and whatever is connected next wants the same shape. Shown only
+     - once advanced features are on (stores/advancedMode.ts). -->
+    <section v-if="advancedModeStore.enabled" class="settings-section">
+      <h2 class="section-title">{{ $t('settings.lastfmTitle') }}</h2>
+      <div class="beacon-panel">
+        <div class="setting">
+          <p class="setting__description">{{ $t('settings.lastfmWhat') }}</p>
+
+          <div class="status-row">
+            <span
+              class="status-dot"
+              :class="lastfmStore.configured ? 'status-dot--ok' : 'status-dot--warn'"
+            />
+            <span class="setting__hint setting__hint--inline">{{ lastfmKeyStatus }}</span>
+          </div>
+
+          <div class="lastfm-key-row">
+            <v-text-field
+              v-model="lastfmKey"
+              :label="$t('settings.lastfmKey')"
+              :placeholder="lastfmKeyPlaceholder"
+              :loading="lastfmKeyBusy"
+              :disabled="lastfmKeyBusy"
+              variant="solo-filled"
+              autocomplete="off"
+              spellcheck="false"
+              hide-details
+              class="lastfm-key-row__field"
+              @keyup.enter="saveLastfmKey"
+            />
+            <!-- The how-to-get-one steps behind an info button rather than
+             - as a paragraph under the field: five lines that stop being
+             - interesting the moment somebody has a key, and a permanent
+             - block of them pushes the rest of the page down for everyone
+             - who already does. See the styleguide, "Advice on a setting". -->
+            <quality-tips :lines="lastfmKeySteps" />
+          </div>
+
           <div class="lastfm-key-actions">
             <v-btn
-              variant="tonal"
-              :disabled="lastfmKeyBusy || !lastfmKey.trim()"
-              @click="saveLastfmKey"
+              variant="text"
+              :href="LASTFM_API_ACCOUNT_URL"
+              target="_blank"
+              rel="noopener noreferrer"
+              append-icon="mdi-open-in-new"
             >
-              {{ $t('common.save') }}
+              {{ $t('settings.lastfmKeyGet') }}
             </v-btn>
             <v-btn
               v-if="lastfmStore.configured && !lastfmFromEnvironment"
@@ -372,6 +401,14 @@
               @click="clearLastfmKey"
             >
               {{ $t('settings.lastfmKeyClear') }}
+            </v-btn>
+            <v-spacer />
+            <v-btn
+              variant="tonal"
+              :disabled="lastfmKeyBusy || !lastfmKey.trim()"
+              @click="saveLastfmKey"
+            >
+              {{ $t('common.save') }}
             </v-btn>
           </div>
         </div>
@@ -464,6 +501,10 @@ import { useRadioSettingsStore } from '@/stores/radioSettings'
 import { useAdvancedModeStore } from '@/stores/advancedMode'
 import { useLastfmStore } from '@/stores/lastfm'
 import { getLastfmStatus, setLastfmApiKey } from '@/services/connect/lastfm'
+
+// Where a key is requested. Opened from the button next to the field, so
+// nobody has to copy it out of a tooltip by hand.
+const LASTFM_API_ACCOUNT_URL = 'https://www.last.fm/api/account/create'
 import { LYRIC_PROVIDERS, useLyricsProvidersStore } from '@/stores/lyricsProviders'
 import { useUpdateStore } from '@/stores/update'
 import type { ReplayGainMode } from '@/services/replayGain'
@@ -519,6 +560,7 @@ export default {
       // Write-only: the backend never hands the stored key back (see
       // routes/lastfm.py's status()), so the field starts empty even
       // when one is set, and lastfmKeyStatus below says which it is.
+      LASTFM_API_ACCOUNT_URL,
       lastfmKey: '',
       lastfmKeyBusy: false,
       lastfmFromEnvironment: false,
@@ -584,6 +626,14 @@ export default {
     },
     lastfmStore() {
       return useLastfmStore()
+    },
+    lastfmKeySteps(): string[] {
+      return [
+        this.$t('settings.lastfmStep1'),
+        this.$t('settings.lastfmStep2'),
+        this.$t('settings.lastfmStep3'),
+        this.$t('settings.lastfmStep4'),
+      ]
     },
     lastfmKeyPlaceholder(): string {
       return this.lastfmStore.configured
@@ -1032,8 +1082,21 @@ export default {
   margin-top: 0;
 }
 
+.lastfm-key-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.lastfm-key-row__field {
+  flex: 1;
+  min-width: 0;
+}
+
 .lastfm-key-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-top: 12px;
 }

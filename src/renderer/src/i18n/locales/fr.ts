@@ -399,9 +399,18 @@ export default {
     advancedMode: 'Afficher les fonctions avancées',
     advancedModeHint:
       'Ajoute ce qui demande une configuration préalable, comme relier Beacon à un service externe. Ce que vous configurez ici reste accessible à tous ceux qui utilisent ce Beacon, que cette option soit activée chez eux ou non.',
+    lastfmTitle: 'Last.fm',
+    lastfmWhat:
+      "Permet à toute personne utilisant ce Beacon de créer des playlists à partir des classements Last.fm, d'un genre, d'un artiste ou de son propre historique.",
+    lastfmStep1: 'Ouvrez last.fm/api/account/create et connectez-vous.',
+    lastfmStep2:
+      "Renseignez un nom d'application et une description : n'importe quoi de sensé convient, personne ne les vérifie.",
+    lastfmStep3:
+      "Laissez « Callback URL » vide : ce champ ne sert qu'aux applications qui connectent des utilisateurs via Last.fm, ce que Beacon ne fait pas. Si le formulaire l'exige, n'importe quelle adresse convient ; elle n'est jamais appelée.",
+    lastfmStep4:
+      "Copiez la « API key » affichée et collez-la ici. Le shared secret n'est pas nécessaire.",
+    lastfmKeyGet: 'Obtenir une clé',
     lastfmKey: 'Clé API Last.fm',
-    lastfmKeyHint:
-      "Permet de créer des playlists à partir des classements Last.fm, d'un genre ou d'un artiste, ou de votre historique d'écoute. Créez une clé sur last.fm/api/account/create : le formulaire demande un nom d'application et une description, n'importe quoi de sensé convient. Une seule clé vaut pour tout ce Beacon.",
     lastfmKeyPlaceholder: 'Collez la clé ici',
     lastfmKeySet: 'Une clé est déjà enregistrée',
     lastfmKeyMissing: 'Aucune clé : le générateur de playlists Last.fm est masqué.',

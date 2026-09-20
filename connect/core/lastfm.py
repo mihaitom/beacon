@@ -20,7 +20,15 @@ web build's bundle is public, and an application key does not belong in it.
 
 It is entered in Settings and persisted here rather than only read from
 LASTFM_API_KEY, because a desktop install has no way to set that variable -
-see api_key() below.
+see api_key() below. Stored in plain text, with the file mode restricted to
+the owner: connect has to read the key back unattended on every start, so
+any key it could decrypt with would have to sit next to it and be readable
+by the same process - which protects against nobody who can read the file
+in the first place. What the file mode does buy is the other accounts on a
+shared machine. The value itself is an *application* key for reading public
+charts, not a login: it grants no access to anyone's Last.fm account and
+cannot write anything (that needs the shared secret and a signed session,
+neither of which Beacon holds).
 """
 
 import logging
@@ -115,7 +123,14 @@ def set_api_key(key: str) -> None:
         try:
             os.makedirs(os.path.dirname(_PATH), exist_ok=True)
             if cleaned:
-                with open(_PATH, "w", encoding="utf-8") as f:
+                # 0600 before anything is written: the default umask leaves
+                # this world-readable, and on a NAS or a shared box that is
+                # every other account on the machine. Not encryption - a key
+                # this process has to be able to read back unattended has
+                # nowhere to hide from someone who can already read its
+                # files (see the module docstring).
+                fd = os.open(_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(cleaned)
             else:
                 try:
