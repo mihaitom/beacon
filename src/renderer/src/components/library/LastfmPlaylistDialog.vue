@@ -759,11 +759,12 @@ export default {
                 period: this.period,
               })
 
-        if (this.source === 'listenbrainz') {
-          if (this.op === 'mytop' || this.op === 'recommended') {
-            this.listenbrainzStore.setUsername(this.username)
-          }
-        } else {
+        // ListenBrainz deliberately does not write the name back: its
+        // settings value also drives Home's "Recommended for you" shelf,
+        // and typing a name here to look at someone else's charts must not
+        // silently repoint that shelf. Last.fm has no such second reader,
+        // so it keeps remembering what was typed.
+        if (this.source !== 'listenbrainz') {
           if (this.op === 'mytop') this.lastfmStore.setUsername(this.username)
           this.rememberCountry()
         }

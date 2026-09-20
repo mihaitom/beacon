@@ -12,6 +12,7 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { emitter } from '@/emitter'
 import { useLibraryStore } from '@/stores/library'
+import { useListenbrainzStore } from '@/stores/listenbrainz'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import LastfmPlaylistDialog from '../LastfmPlaylistDialog.vue'
@@ -232,6 +233,26 @@ describe('LastfmPlaylistDialog', () => {
     expect(writeText).toHaveBeenCalledWith('Nobody - Missing One')
     // The row's button flips to a checkmark, which is the only feedback.
     expect(vm.copiedIndex).toBe(1)
+  })
+
+  it('does not write a ListenBrainz name typed in the builder back to settings', async () => {
+    // The settings value also fills Home's "Recommended for you" shelf, so
+    // looking at someone else's charts from here must not repoint it.
+    const store = useListenbrainzStore()
+    store.setUsername('settings-name')
+    vi.spyOn(listenbrainzApi, 'getListenbrainzTracks').mockResolvedValue([
+      { title: 'Anything', artist: 'Anyone', mbid: '', album: '', coverArtUrl: '', duration: 0 },
+    ])
+    stubSearch([])
+
+    const { vm } = await openDialog()
+    ;(vm as unknown as { open: (source: string) => void }).open('listenbrainz')
+    vm.op = 'mytop'
+    vm.username = 'someone-else'
+    await (vm as unknown as { search: () => Promise<void> }).search()
+    await flushPromises()
+
+    expect(store.username).toBe('settings-name')
   })
 
   it('numbers every entry by chart position, gaps included', async () => {
