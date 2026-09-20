@@ -131,6 +131,10 @@ const SERVICES = {
       url: 'https://listenbrainz.org/',
       optOut: 'recommendations',
     },
+    // No opt-out chip: nothing here happens in the background. It is
+    // only ever contacted by the Last.fm playlist builder, which is a
+    // thing you open and fill in - not asking for it is the opt-out.
+    { key: 'lastfm', host: 'ws.audioscrobbler.com', url: 'https://www.last.fm/' },
     {
       key: 'deezer',
       host: 'api.deezer.com',

@@ -291,6 +291,13 @@ import {
 } from '@/services/connect/radioBrowser'
 import { recentRadioBrowserVotes, rememberRadioBrowserVote } from '@/services/radioBrowserVotes'
 import { accountScopedKey } from '@/services/accountKey'
+import {
+  loadRecentCountries,
+  pinRecentCountries,
+  saveRecentCountries,
+  withRecentCountry,
+  type CountryDividerItem,
+} from '@/services/recentCountries'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import CoverArt from '@/components/library/CoverArt.vue'
 import SegmentedControl from '@/components/SegmentedControl.vue'
@@ -310,56 +317,6 @@ function loadSavedBrowseCountry(): string {
     // Unreadable/corrupt storage - starting from "no filter" is never wrong,
     // just possibly not what was picked last time.
     return ''
-  }
-}
-
-// The countries picked before this one, most recent first, pinned above
-// the alphabetical list. Five, not more: the point is that the two or
-// three countries somebody actually listens to are one glance away, and a
-// longer block would push the alphabetical list off the first screen of
-// the menu - at which point every pick needs scrolling again.
-const RECENT_COUNTRY_LIMIT = 5
-const RECENT_COUNTRIES_STORAGE_KEY = 'beacon.radioDiscoverRecentCountries'
-
-function loadRecentCountries(): string[] {
-  try {
-    const raw = localStorage.getItem(accountScopedKey(RECENT_COUNTRIES_STORAGE_KEY))
-    const parsed: unknown = raw ? JSON.parse(raw) : []
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .filter((code): code is string => typeof code === 'string' && code !== '')
-      .slice(0, RECENT_COUNTRY_LIMIT)
-  } catch {
-    // Same as loadSavedBrowseCountry() below - an unreadable list costs
-    // the shortcut, nothing else.
-    return []
-  }
-}
-
-/** The list with `code` moved to the front, capped at RECENT_COUNTRY_LIMIT.
- * Pure so that both the initial read in data() and every later selection go
- * through the same rule; an empty code (the picker's clear button) leaves
- * the list alone rather than emptying it - "no country filter" is not a
- * country somebody picked. */
-function withRecentCountry(codes: string[], code: string | null): string[] {
-  if (!code) return codes
-  return [code, ...codes.filter((existing) => existing !== code)].slice(0, RECENT_COUNTRY_LIMIT)
-}
-
-/** The break between the pinned block and the alphabetical list.
- * `type: 'divider'` is Vuetify's own item shape for this; name/code are
- * empty only so that the title/value it derives from every item stay out
- * of the rendered element's attributes. Vuetify drops the divider by
- * itself while typing filters the list down to one side of it. */
-type CountryDividerItem = { type: 'divider'; name: ''; code: '' }
-const COUNTRY_DIVIDER: CountryDividerItem = { type: 'divider', name: '', code: '' }
-
-function saveRecentCountries(codes: string[]): void {
-  try {
-    localStorage.setItem(accountScopedKey(RECENT_COUNTRIES_STORAGE_KEY), JSON.stringify(codes))
-  } catch {
-    // Storage full/unavailable - the pinned block still works for this
-    // session, it just starts empty next time.
   }
 }
 
@@ -499,16 +456,7 @@ export default {
      * of the directory, or a list written before the options loaded) fall
      * out silently. */
     countryItems(): (RadioBrowserFilterOption | CountryDividerItem)[] {
-      const recent = this.recentCountryCodes
-        .map((code) => this.countryOptions.find((option) => option.code === code))
-        .filter((option): option is RadioBrowserFilterOption => option !== undefined)
-      if (recent.length === 0) return this.countryOptions
-      const pinned = new Set(recent.map((option) => option.code))
-      return [
-        ...recent,
-        COUNTRY_DIVIDER,
-        ...this.countryOptions.filter((option) => !pinned.has(option.code)),
-      ]
+      return pinRecentCountries(this.countryOptions, this.recentCountryCodes)
     },
   },
   watch: {

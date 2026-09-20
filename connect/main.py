@@ -47,6 +47,7 @@ from routes.discovery import discover_all
 from routes.discovery import router as discovery_router
 from routes.jellyfin_auth import router as jellyfin_auth_router
 from routes.join import router as join_router
+from routes.lastfm import router as lastfm_router
 from routes.local_stream import reset_hls_encodes
 from routes.local_stream import router as local_stream_router
 from routes.log_level import router as log_level_router
@@ -449,6 +450,7 @@ app.include_router(lyrics_router)
 app.include_router(waveform_router)
 app.include_router(radio_router)
 app.include_router(recommendations_router)
+app.include_router(lastfm_router)
 app.include_router(coverart_router)
 app.include_router(upnp_router)
 # Diagnostic-only (routes/debug.py) — registered at Debug log level or

@@ -16,6 +16,9 @@ export interface AccountSettingsPayload {
   // through Beacon's own relay (core/radio_relay.py) — see
   // stores/radioSettings.ts. Absent/false is the default (relayed).
   castRadioDirectly?: boolean
+  // The Last.fm name the playlist builder reads a listening history
+  // for - see stores/lastfm.ts. A public profile name, not a credential.
+  lastfmUsername?: string
   // Which optional columns the song tables show - see
   // stores/songColumns.ts. An empty array is a real selection (every
   // optional column off), not "never set".

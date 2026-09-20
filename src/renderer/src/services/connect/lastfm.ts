@@ -1,0 +1,66 @@
+import { fetchConnect } from './http'
+
+/** One track as Last.fm names it — plain text, not yet anything this
+ * library owns. Turning these into songs is lastfmMatcher.ts's job. */
+export interface LastfmTrack {
+  title: string
+  artist: string
+  /** Last.fm's recording MBID where it has one. Often absent, and not
+   * reliable enough to identify a track by on its own - see
+   * core/lastfm.py's _to_tracks(). */
+  mbid: string
+}
+
+export type LastfmOp = 'charts' | 'genre' | 'artist' | 'mytop'
+
+/** The periods user.getTopTracks accepts, validated by the backend too
+ * (routes/lastfm.py's Period). */
+export type LastfmPeriod = 'overall' | '7day' | '1month' | '3month' | '6month' | '12month'
+
+export interface LastfmQuery {
+  op: LastfmOp
+  limit: number
+  /** charts only - empty means the global chart rather than a country's. */
+  country?: string
+  /** genre only. */
+  tag?: string
+  /** artist only. */
+  artist?: string
+  /** mytop only - a public Last.fm username. No login: user.getTopTracks
+   * takes the name as a plain parameter. */
+  username?: string
+  /** mytop only. */
+  period?: LastfmPeriod
+}
+
+export interface LastfmStatus {
+  /** Whether this installation has an application key at all. The builder
+   * isn't offered without one, so the dialog asks before showing itself
+   * rather than failing once opened. */
+  configured: boolean
+  /** The key came from LASTFM_API_KEY rather than from Settings, so the
+   * field is empty although a key is in effect - Settings says so instead
+   * of looking unconfigured. The key itself never leaves the backend. */
+  fromEnvironment: boolean
+}
+
+export function getLastfmStatus(): Promise<LastfmStatus> {
+  return fetchConnect<LastfmStatus>('/lastfm/status')
+}
+
+/** Stores an application key for the whole installation, or clears it with
+ * `''` - which falls back to LASTFM_API_KEY where one is set. */
+export function setLastfmApiKey(key: string): Promise<LastfmStatus> {
+  return fetchConnect<LastfmStatus>('/lastfm/api-key', { method: 'POST', body: { key } })
+}
+
+export async function getLastfmTracks(query: LastfmQuery): Promise<LastfmTrack[]> {
+  const params = new URLSearchParams({ op: query.op, limit: String(query.limit) })
+  if (query.country) params.set('country', query.country)
+  if (query.tag) params.set('tag', query.tag)
+  if (query.artist) params.set('artist', query.artist)
+  if (query.username) params.set('username', query.username)
+  if (query.period) params.set('period', query.period)
+  const data = await fetchConnect<{ tracks: LastfmTrack[] }>(`/lastfm/tracks?${params.toString()}`)
+  return data.tracks
+}

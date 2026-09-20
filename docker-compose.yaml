@@ -16,6 +16,7 @@ services:
             # - PORT=7071
             # - LOG_LEVEL=debug
             # - COVER_CACHE_MB=128
+            # - LASTFM_API_KEY=
         # Keeps AirPlay 2 pairings and (Jellyfin/Plex only) internet radio
         # stations across container recreations/updates.
         volumes:

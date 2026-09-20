@@ -306,14 +306,29 @@
       </div>
     </section>
 
-    <!-- Unlike the library section above, this one has nothing else in it —
-     - the whole section (title included) is gated, not just the control,
-     - or a non-admin would see an empty "Advanced" heading with nothing
-     - under it. See services/capabilities.ts's logLevelControl. -->
-    <section v-if="authStore.capabilities.logLevelControl" class="settings-section">
+    <section class="settings-section">
       <h2 class="section-title">{{ $t('settings.advancedTitle') }}</h2>
       <div class="beacon-panel">
+        <!-- The switch is always here, and off by default. Whoever set the
+         - music server up goes looking for this; everyone else in the
+         - household never has to meet what it uncovers. See
+         - stores/advancedMode.ts. -->
         <div class="setting">
+          <v-switch
+            :model-value="advancedModeStore.enabled"
+            color="primary"
+            density="compact"
+            hide-details
+            :label="$t('settings.advancedMode')"
+            @update:model-value="advancedModeStore.setEnabled(!!$event)"
+          />
+          <p class="setting__hint">{{ $t('settings.advancedModeHint') }}</p>
+        </div>
+
+        <!-- Not behind the switch: it was here before it existed, and it
+         - already answers to the media server's own admin flag. See
+         - services/capabilities.ts's logLevelControl. -->
+        <div v-if="authStore.capabilities.logLevelControl" class="setting">
           <p class="setting__description">{{ $t('settings.logLevelHint') }}</p>
           <v-select
             v-model="logLevel"
@@ -325,6 +340,40 @@
             hide-details
             @update:model-value="onLogLevelChange"
           />
+        </div>
+
+        <div v-if="advancedModeStore.enabled" class="setting">
+          <p class="setting__description">{{ $t('settings.lastfmKeyHint') }}</p>
+          <v-text-field
+            v-model="lastfmKey"
+            :label="$t('settings.lastfmKey')"
+            :placeholder="lastfmKeyPlaceholder"
+            :loading="lastfmKeyBusy"
+            :disabled="lastfmKeyBusy"
+            variant="solo-filled"
+            autocomplete="off"
+            spellcheck="false"
+            hide-details
+            @keyup.enter="saveLastfmKey"
+          />
+          <p class="setting__hint">{{ lastfmKeyStatus }}</p>
+          <div class="lastfm-key-actions">
+            <v-btn
+              variant="tonal"
+              :disabled="lastfmKeyBusy || !lastfmKey.trim()"
+              @click="saveLastfmKey"
+            >
+              {{ $t('common.save') }}
+            </v-btn>
+            <v-btn
+              v-if="lastfmStore.configured && !lastfmFromEnvironment"
+              variant="text"
+              :disabled="lastfmKeyBusy"
+              @click="clearLastfmKey"
+            >
+              {{ $t('settings.lastfmKeyClear') }}
+            </v-btn>
+          </div>
         </div>
       </div>
     </section>
@@ -412,6 +461,9 @@ import { setLocale } from '@/services/localeSetting'
 import { getLogLevel, setLogLevel, type LogLevel } from '@/services/connect/logLevel'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import { useRadioSettingsStore } from '@/stores/radioSettings'
+import { useAdvancedModeStore } from '@/stores/advancedMode'
+import { useLastfmStore } from '@/stores/lastfm'
+import { getLastfmStatus, setLastfmApiKey } from '@/services/connect/lastfm'
 import { LYRIC_PROVIDERS, useLyricsProvidersStore } from '@/stores/lyricsProviders'
 import { useUpdateStore } from '@/stores/update'
 import type { ReplayGainMode } from '@/services/replayGain'
@@ -464,6 +516,12 @@ export default {
       // default that might not match what's actually configured backend-side.
       logLevel: null as LogLevel | null,
       logLevelBusy: false,
+      // Write-only: the backend never hands the stored key back (see
+      // routes/lastfm.py's status()), so the field starts empty even
+      // when one is set, and lastfmKeyStatus below says which it is.
+      lastfmKey: '',
+      lastfmKeyBusy: false,
+      lastfmFromEnvironment: false,
     }
   },
   computed: {
@@ -520,6 +578,23 @@ export default {
     },
     radioSettingsStore() {
       return useRadioSettingsStore()
+    },
+    advancedModeStore() {
+      return useAdvancedModeStore()
+    },
+    lastfmStore() {
+      return useLastfmStore()
+    },
+    lastfmKeyPlaceholder(): string {
+      return this.lastfmStore.configured
+        ? this.$t('settings.lastfmKeySet')
+        : this.$t('settings.lastfmKeyPlaceholder')
+    },
+    lastfmKeyStatus(): string {
+      if (!this.lastfmStore.configured) return this.$t('settings.lastfmKeyMissing')
+      return this.lastfmFromEnvironment
+        ? this.$t('settings.lastfmKeyFromEnvironment')
+        : this.$t('settings.lastfmKeyStored')
     },
     lyricsProvidersStore() {
       return useLyricsProvidersStore()
@@ -648,6 +723,7 @@ export default {
     // restart, or one somebody kicked off on the server itself. Asked
     // once, and only where the control that shows it exists.
     if (this.authStore.capabilities.libraryScan) void this.libraryStore.resumeScanIfRunning()
+    void this.loadLastfmStatus()
   },
   methods: {
     formatLabel(format: StreamFormat): string {
@@ -666,6 +742,46 @@ export default {
     // own last choice, or the DEBUG env var fallback on a deployment that's
     // never touched this before — see core/log_level.py) rather than
     // guessing a default that could silently disagree with it.
+    async loadLastfmStatus() {
+      try {
+        const status = await getLastfmStatus()
+        this.lastfmStore.configured = status.configured
+        this.lastfmFromEnvironment = status.fromEnvironment
+      } catch (error) {
+        console.error('[settings] Failed to load Last.fm status:', error)
+      }
+    },
+    async saveLastfmKey() {
+      const key = this.lastfmKey.trim()
+      if (!key) return
+      await this.applyLastfmKey(key, this.$t('settings.lastfmKeySaved'))
+    },
+    async clearLastfmKey() {
+      await this.applyLastfmKey('', this.$t('settings.lastfmKeyCleared'))
+    },
+    async applyLastfmKey(key: string, successMessage: string) {
+      this.lastfmKeyBusy = true
+      try {
+        const status = await setLastfmApiKey(key)
+        this.lastfmStore.configured = status.configured
+        this.lastfmFromEnvironment = status.fromEnvironment
+        this.lastfmKey = ''
+        this.$emitter.emit('toast', {
+          level: 'success',
+          title: this.$t('settings.lastfmKey'),
+          message: successMessage,
+        })
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('settings.lastfmKey'),
+          message: this.$t('settings.lastfmKeyFailed'),
+        })
+        console.error('[settings] Failed to store the Last.fm key:', error)
+      } finally {
+        this.lastfmKeyBusy = false
+      }
+    },
     async loadLogLevel() {
       try {
         const { level } = await getLogLevel()
@@ -914,6 +1030,12 @@ export default {
  * margin would only push it off that line. */
 .setting__hint--inline {
   margin-top: 0;
+}
+
+.lastfm-key-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 /* Format and bitrate side by side, with the format wider — it carries the

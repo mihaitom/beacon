@@ -8,13 +8,25 @@
         }}
       </template>
       <template v-if="authStore.capabilities.emptyPlaylistCreation" #actions>
-        <v-btn
-          prepend-icon="mdi-plus"
-          color="primary"
-          rounded="pill"
-          @click="createDialog = true"
-          >{{ $t('playlists.newPlaylist') }}</v-btn
-        >
+        <!-- Only once connect has confirmed a LASTFM_API_KEY: without one
+         - the dialog could only ever fail, so it isn't offered at all. -->
+        <div class="detail-header__actions-row">
+          <v-btn
+            v-if="lastfmStore.configured"
+            prepend-icon="mdi-trending-up"
+            color="primary"
+            rounded="pill"
+            @click="openLastfmDialog"
+            >{{ $t('lastfm.title') }}</v-btn
+          >
+          <v-btn
+            prepend-icon="mdi-plus"
+            color="primary"
+            rounded="pill"
+            @click="createDialog = true"
+            >{{ $t('playlists.newPlaylist') }}</v-btn
+          >
+        </div>
       </template>
     </detail-header>
 
@@ -86,6 +98,7 @@
       }}
     </v-alert>
 
+    <lastfm-playlist-dialog ref="lastfmDialog" />
     <playlist-edit-dialog ref="editDialog" />
     <playlist-delete-dialog ref="deleteDialog" />
 
@@ -114,12 +127,14 @@
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
+import { useLastfmStore } from '@/stores/lastfm'
 import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import PlaylistTile from '@/components/library/PlaylistTile.vue'
 import TileSkeleton from '@/components/library/TileSkeleton.vue'
 import PlaylistEditDialog from '@/components/library/PlaylistEditDialog.vue'
+import LastfmPlaylistDialog from '@/components/library/LastfmPlaylistDialog.vue'
 import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
 import type { Playlist } from '@/types/library'
@@ -139,6 +154,7 @@ export default {
     PlaylistTile,
     TileSkeleton,
     PlaylistEditDialog,
+    LastfmPlaylistDialog,
     PlaylistDeleteDialog,
     StickyFilter,
   },
@@ -160,6 +176,9 @@ export default {
     },
     authStore() {
       return useAuthStore()
+    },
+    lastfmStore() {
+      return useLastfmStore()
     },
     showSkeletons(): boolean {
       return this.libraryStore.loading && this.libraryStore.playlists.length === 0
@@ -190,8 +209,14 @@ export default {
   },
   created() {
     this.libraryStore.fetchPlaylists()
+    // Answered once per session and cached in the store - this only ever
+    // decides whether the button is there.
+    void this.lastfmStore.checkConfigured()
   },
   methods: {
+    openLastfmDialog(): void {
+      ;(this.$refs.lastfmDialog as { open: () => void } | undefined)?.open()
+    },
     async playPlaylist(playlist: Playlist) {
       // getPlaylists.view (the list this view renders) doesn't include each
       // playlist's songs — only getPlaylist.view for a single id does —
@@ -256,5 +281,12 @@ export default {
 
 .playlists-view__grid {
   margin-bottom: 24px;
+}
+
+.detail-header__actions-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 </style>

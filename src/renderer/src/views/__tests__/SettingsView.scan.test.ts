@@ -222,7 +222,7 @@ describe('SettingsView recommendations toggle placement', () => {
  * non-admin account (capabilities.logLevelControl) it has to disappear
  * entirely, not just lose its control, or they'd see an empty "Advanced"
  * heading. */
-describe('SettingsView advanced section gating', () => {
+describe('SettingsView log level gating', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
   })
@@ -240,15 +240,20 @@ describe('SettingsView advanced section gating', () => {
     })
   }
 
-  it('shows the advanced section to an admin', () => {
+  it('shows the log level control to an admin', () => {
     const wrapper = mountWith(true)
 
-    expect(wrapper.text()).toContain(i18n.global.t('settings.advancedTitle'))
+    expect(wrapper.text()).toContain(i18n.global.t('settings.logLevel'))
   })
 
-  it('hides the advanced section entirely from a non-admin', () => {
+  it('hides the log level control from a non-admin', () => {
+    // Only the control, not the section around it: the section also holds
+    // the advanced-features switch, which everyone has to be able to find
+    // (see stores/advancedMode.ts). It used to be gated as a whole,
+    // because the log level was the only thing in it.
     const wrapper = mountWith(false)
 
-    expect(wrapper.text()).not.toContain(i18n.global.t('settings.advancedTitle'))
+    expect(wrapper.text()).not.toContain(i18n.global.t('settings.logLevel'))
+    expect(wrapper.text()).toContain(i18n.global.t('settings.advancedTitle'))
   })
 })
