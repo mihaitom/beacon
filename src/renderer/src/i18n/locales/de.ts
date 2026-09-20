@@ -409,7 +409,7 @@ export default {
       'Den angezeigten „API key“ kopieren und hier einfügen. Das Shared Secret wird nicht gebraucht.',
     fanartTitle: 'Fanart.tv',
     fanartWhat:
-      'Ergänzt Artist-Seiten um ein Banner von Fanart.tv. Beacon weist sich mit seinem eigenen Projekt-Schlüssel aus, du brauchst also nur einen kostenlosen persönlichen Schlüssel. Optional - die Seite funktioniert auch ohne.',
+      'Ergänzt Künstlerseiten und „Läuft gerade“ um Künstlerhintergründe und -logos von Fanart.tv. Es funktioniert auch ohne Einrichtung - Beacon weist sich mit seinem eigenen Projekt-Schlüssel aus -, ein kostenloser persönlicher Schlüssel wird aber empfohlen: er hält die Bilder frischer und die Anfragen auf deinem eigenen Limit.',
     fanartStep1: 'Auf fanart.tv ein kostenloses Konto anlegen.',
     fanartStep2:
       'In den API-Schlüsseln des Profils den persönlichen Schlüssel kopieren - den an dein Konto gebundenen, keinen Projekt-Schlüssel.',
@@ -442,7 +442,7 @@ export default {
       'Entdecken auf der Startseite nutzt Künstler, die dem ähneln, was du tatsächlich hörst, nachgeschlagen bei MusicBrainz, ListenBrainz und Deezer - dabei werden ein bis zwei Künstlernamen aus deiner Bibliothek an diese Dienste übermittelt. Aus zeigt stattdessen zufällige Alben; die Seite eines Künstlers schlägt diesen einen Künstler weiterhin nach, so oder so.',
     fanartEnabled: 'Künstlerbilder von Fanart.tv',
     fanartEnabledHint:
-      'Zeigt Banner und Künstlerhintergründe von Fanart.tv auf Künstlerseiten und in „Läuft gerade“. Der Schlüssel selbst wird unter „Erweitert“ hinterlegt; Ausschalten lässt ihn bestehen.',
+      'Zeigt Künstlerhintergründe und -logos von Fanart.tv auf Künstlerseiten und in „Läuft gerade“. Beacon weist sich mit seinem eigenen Projekt-Schlüssel aus, es funktioniert also ohne Einrichtung; ein persönlicher Schlüssel hält die Anfragen auf deinem eigenen Limit.',
     listenbrainzUsername: 'ListenBrainz-Benutzername',
     listenbrainzHint:
       'Dein öffentlicher ListenBrainz-Name. Er füllt den Shelf „Für dich empfohlen“ auf Home und steht im Playlist-Baukasten als Vorauswahl. Kein Passwort nötig. Zum Bauen einer Playlist ist Last.fm allerdings die bessere Wahl - seine Charts sind abwechslungsreicher.',

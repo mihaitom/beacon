@@ -13,6 +13,7 @@ import { i18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
+import { useFanartStore } from '@/stores/fanart'
 import LibrarySection from '../LibrarySection.vue'
 
 vi.mock('@/services/connect/accountSettings', () => ({
@@ -203,5 +204,25 @@ describe('LibrarySection ListenBrainz name', () => {
     field.saveListenbrainzUsername()
 
     expect(useListenbrainzStore().username).toBe('')
+  })
+})
+
+describe('LibrarySection artist images toggle', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+  })
+
+  it('turns Fanart.tv artist images off and on', async () => {
+    const wrapper = mountSection()
+    const label = wrapper.vm.$t('settings.fanartEnabled')
+    const toggle = wrapper
+      .findAllComponents({ name: 'VSwitch' })
+      .find((c) => c.props('label') === label)
+    expect(toggle).toBeDefined()
+
+    await toggle!.vm.$emit('update:modelValue', false)
+
+    expect(useFanartStore().enabled).toBe(false)
   })
 })

@@ -84,6 +84,21 @@
         </p>
       </div>
 
+      <!-- Artist images from Fanart.tv, an everyday display preference like
+       - the shelf toggle above. Beacon already identifies itself with its
+       - own project key, so this works without any setup; the personal key
+       - under "Advanced" only makes the artwork fresher. -->
+      <div class="setting">
+        <v-switch
+          :model-value="fanartStore.enabled"
+          color="primary"
+          density="compact"
+          hide-details
+          :label="$t('settings.fanartEnabled')"
+          @update:model-value="fanartStore.setEnabled(!!$event)"
+        />
+        <p class="setting__hint">{{ $t('settings.fanartEnabledHint') }}</p>
+      </div>
       <!-- Discover's seed artists come out of the library itself, which is
        - what puts this here rather than under "advanced" — it is an
        - everyday setting with a visible effect on Home (see
@@ -127,6 +142,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
+import { useFanartStore } from '@/stores/fanart'
 
 /**
  * The library itself: forcing the server (or, on Jellyfin, Beacon's own
@@ -165,6 +181,9 @@ export default {
     },
     listenbrainzStore() {
       return useListenbrainzStore()
+    },
+    fanartStore() {
+      return useFanartStore()
     },
     /** What to call the media server in the text next to the scan button.
      * All three server types show that button (it is gated on being an

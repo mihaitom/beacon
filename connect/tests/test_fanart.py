@@ -40,10 +40,17 @@ def _with_get(response: httpx.Response) -> AsyncMock:
     return patch.object(fanart._client, "get", AsyncMock(return_value=response))
 
 
-async def test_no_key_means_no_lookup():
-    with _with_mbid() as resolve:
-        assert await fanart.get_artist_art("Cher") is None
-    resolve.assert_not_awaited()
+async def test_works_without_a_personal_key_using_beacons_project_key(monkeypatch):
+    """The personal key is optional - Beacon's own project key fetches the
+    images on its own, as Jellyfin's Fanart plugin does."""
+    monkeypatch.setattr(fanart, "_PROJECT_KEY", "beacon-project")
+    payload = {"artistbanner": [{"url": "banner", "likes": "1"}]}
+    with _with_mbid(), _with_get(_response(200, payload)) as get:
+        art = await fanart.get_artist_art("Cher")
+
+    assert art == {"banner": "banner", "background": None, "logo": None}
+    # The project key is the API key, and there is no client_key to send.
+    assert get.await_args.kwargs["params"] == {"api_key": "beacon-project"}
 
 
 async def test_no_mbid_means_nothing_to_show(key):

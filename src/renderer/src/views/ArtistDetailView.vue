@@ -7,7 +7,10 @@
     <div
       v-if="artist"
       class="artist-page__backdrop"
-      :class="{ 'artist-page__backdrop--photo': backdropIsPhoto }"
+      :class="{
+        'artist-page__backdrop--photo': backdropIsPhoto,
+        'artist-page__backdrop--shown': Boolean(backdropUrl),
+      }"
       :style="backdropUrl ? { backgroundImage: `url(${backdropUrl})` } : {}"
     />
     <div v-if="artist" class="artist-page__scrim" />
@@ -205,6 +208,10 @@ export default {
       // installation has a key and the artist has them. Null falls back to
       // the blurred cover backdrop and the plain-text name.
       artistArt: null as ArtistArt | null,
+      // Whether the Fanart.tv lookup has finished (either way). The backdrop
+      // is held back until it has, so it appears once - the answer or the
+      // cover - instead of showing the cover and then swapping.
+      artResolved: false,
     }
   },
   computed: {
@@ -250,8 +257,10 @@ export default {
       return this.artistArt?.logo ?? null
     },
     /** The page backdrop: the Fanart.tv background when there is one, else
-     * the blurred cover wash (see the template). */
+     * the blurred cover wash (see the template). Held back until the Fanart
+     * lookup has answered, so it appears once rather than swapping. */
     backdropUrl(): string | null {
+      if (!this.artResolved) return null
       if (this.artistArt?.background) return this.artistArt.background
       if (!this.artist) return null
       if (this.artist.coverArtId) {
@@ -289,11 +298,11 @@ export default {
       if (this.artist) void this.loadBio(this.artist.name, this.artist.id)
     },
     // Turning Fanart.tv off clears the images immediately; turning it back
-    // on fetches them again - no reload needed.
-    fanartEnabled(enabled: boolean) {
+    // on fetches them again - no reload needed. Both go through loadArt() so
+    // the backdrop is held back the same way on either change.
+    fanartEnabled() {
       if (!this.artist) return
-      if (enabled) void this.loadArt(this.artist.name, this.artist.id)
-      else this.artistArt = null
+      void this.loadArt(this.artist.name, this.artist.id)
     },
   },
   methods: {
@@ -309,6 +318,7 @@ export default {
       this.externalLinkUrls = {}
       this.bio = null
       this.artistArt = null
+      this.artResolved = false
       this.albumSortAscending = false
       // A newer navigation may resolve before this one, or move the route
       // on while a fetch is still in flight — the `$route.params.id === id`
@@ -417,8 +427,13 @@ export default {
     // no Fanart.tv key, or no images) simply leaves the page on its blurred
     // cover backdrop and its plain-text name.
     async loadArt(name: string, id: string) {
+      // Held back (see artResolved): the backdrop stays empty until the
+      // lookup answers, then fades in once - the answer or the cover - rather
+      // than showing the cover and swapping it out.
+      this.artResolved = false
       if (!useFanartStore().enabled) {
         this.artistArt = null
+        this.artResolved = true
         return
       }
       let art: ArtistArt | null = null
@@ -428,13 +443,14 @@ export default {
         console.error('[artist-detail] Fanart.tv lookup failed:', error)
       }
       if (this.$route.params.id !== id) return
-      // Preload before setting them: the backdrop crossfades to the
-      // background and the logo swaps in, and both only read as a fade if
-      // the images are already paintable when the change happens.
+      // Preload before setting them: the backdrop fades in and the logo
+      // swaps in, and both only read as a fade if the images are already
+      // paintable when they are shown.
       if (art?.background) await preloadImage(art.background)
       if (art?.logo) await preloadImage(art.logo)
       if (this.$route.params.id !== id) return
       this.artistArt = art
+      this.artResolved = true
     },
     async toggleStar() {
       if (!this.artist) return
@@ -492,6 +508,14 @@ export default {
   background-position: center 22%;
   -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 42%, transparent 100%);
   mask-image: linear-gradient(to bottom, #000 0%, #000 42%, transparent 100%);
+  /* Held back until the Fanart lookup answers (see backdropUrl), then faded
+   * in - so it never shows the cover and swaps to the background. */
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.artist-page__backdrop--shown {
+  opacity: 1;
 }
 
 /* Without a Fanart.tv background the fallback is the blurred cover wash -

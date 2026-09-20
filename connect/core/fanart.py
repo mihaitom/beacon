@@ -149,10 +149,15 @@ def _choose(art: dict | None) -> dict | None:
 
 async def get_artist_art(name: str) -> dict | None:
     """{banner, background, logo} for an artist, or None when there is
-    nothing to show (no key, no MBID, no art) or Fanart.tv could not be
-    reached. Cache-first, memory then disk."""
-    if not api_keys.is_configured("fanart"):
-        return None
+    nothing to show (no MBID, no art) or Fanart.tv could not be reached.
+    Cache-first, memory then disk.
+
+    A personal key is not required: Beacon's own project key fetches the
+    images on its own, just with Fanart.tv's slower project-level cache. An
+    installation's personal key (core/api_keys.py's "fanart" entry) is sent
+    instead when one is set, which identifies the listener and gets fresher
+    artwork - and keeps the requests off the shared project key's rate
+    limit."""
     mbid = await resolve_mbid(name)
     if not mbid:
         return None
@@ -169,9 +174,13 @@ async def get_artist_art(name: str) -> dict | None:
         _cache[mbid] = (entry["expires"], art)
         return _choose(art)
 
+    personal = api_keys.get("fanart")
     try:
-        params = {"api_key": api_keys.get("fanart")}
-        if _PROJECT_KEY:
+        # The personal key is the API key when there is one (Fanart.tv's own
+        # documented arrangement, and what gets the fresher cache); without
+        # one the project key is, and it needs no client_key.
+        params = {"api_key": personal or _PROJECT_KEY}
+        if personal and _PROJECT_KEY:
             params["client_key"] = _PROJECT_KEY
         r = await _client.get(_BASE_URL.format(mbid=mbid), params=params)
         if r.status_code == 404:

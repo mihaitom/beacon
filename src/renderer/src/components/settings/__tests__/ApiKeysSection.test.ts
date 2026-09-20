@@ -10,7 +10,6 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useLastfmStore } from '@/stores/lastfm'
-import { useFanartStore } from '@/stores/fanart'
 import { getApiKeyStatuses, setApiKey, type ApiKeyStatuses } from '@/services/connect/apiKeys'
 import ApiKeysSection from '../ApiKeysSection.vue'
 
@@ -184,20 +183,5 @@ describe('ApiKeysSection', () => {
 
     expect(keyField(wrapper)).toBeDefined()
     expect(wrapper.find('.status-dot--warn').exists()).toBe(true)
-  })
-
-  it('switches Fanart.tv off without touching its key', async () => {
-    const wrapper = await mountSection()
-    const label = wrapper.vm.$t('settings.fanartEnabled')
-    const toggle = wrapper
-      .findAllComponents({ name: 'VSwitch' })
-      .find((c) => c.props('label') === label)
-    expect(toggle).toBeDefined()
-
-    await toggle!.vm.$emit('update:modelValue', false)
-
-    expect(useFanartStore().enabled).toBe(false)
-    // The whole point: the key stays put, only the images stop.
-    expect(setApiKey).not.toHaveBeenCalled()
   })
 })

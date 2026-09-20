@@ -43,6 +43,7 @@ interface ArtistVm {
   artistArt: { background: string | null; logo: string | null; banner: string | null } | null
   readonly artistLogo: string | null
   readonly backdropIsPhoto: boolean
+  readonly backdropUrl: string | null
   loadingAllSongs: boolean
   readonly totalSongCount: number
   readonly canToggleAllSongs: boolean
@@ -477,5 +478,15 @@ describe('ArtistDetailView Fanart.tv images', () => {
 
     expect(getArtistArt).not.toHaveBeenCalled()
     expect(vm.artistArt).toBeNull()
+  })
+
+  it('holds the backdrop back until the Fanart lookup answers', async () => {
+    // The point: no cover-then-background swap. The page shows no backdrop
+    // until the answer is in, then fades the right one in.
+    vi.mocked(getArtistArt).mockReturnValue(new Promise(() => {}))
+
+    const { vm } = await mountArtist(makeArtist([album('x', 2000)]))
+
+    expect(vm.backdropUrl).toBeNull()
   })
 })

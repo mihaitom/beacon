@@ -408,7 +408,7 @@ export default {
     lastfmStep4: 'Copy the "API key" it shows you and paste it here. Ignore the shared secret.',
     fanartTitle: 'Fanart.tv',
     fanartWhat:
-      'Adds a banner to artist pages, from Fanart.tv. Beacon identifies itself with its own project key, so you only need a free personal key of your own. Optional - the page works without it.',
+      'Adds artist backgrounds and logos to artist pages and Now Playing, from Fanart.tv. It works with no setup at all - Beacon identifies itself with its own project key - but a free personal key of your own is recommended: it keeps the artwork fresher and the requests on your own limit.',
     fanartStep1: 'Create a free account at fanart.tv.',
     fanartStep2:
       "Open your profile's API keys and copy your personal API key - the one tied to your account, not a project key.",
@@ -440,7 +440,7 @@ export default {
       "Discover on Home uses artists similar to what you actually listen to, looked up at MusicBrainz, ListenBrainz and Deezer - this shares a library artist name or two with them. Off falls back to random albums; opening an artist's own page still looks up that one artist either way.",
     fanartEnabled: 'Artist artwork from Fanart.tv',
     fanartEnabledHint:
-      "Shows Fanart.tv's banners and artist backgrounds on artist pages and in Now Playing. The key itself is set up under Advanced; turning this off leaves it in place.",
+      "Shows Fanart.tv's artist backgrounds and logos on artist pages and in Now Playing. Beacon identifies itself with its own project key, so this works with no setup; a personal key keeps the requests on your own limit.",
     listenbrainzUsername: 'ListenBrainz username',
     listenbrainzHint:
       'Your public ListenBrainz name. It fills the "Recommended for you" shelf on Home and is offered as the default in the playlist builder. No password needed. Last.fm is the better playlist builder, though - its charts come out more varied.',

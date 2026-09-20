@@ -411,7 +411,7 @@ export default {
     lastfmStep4: 'Copia la «API key» que te muestra y pégala aquí. El shared secret no hace falta.',
     fanartTitle: 'Fanart.tv',
     fanartWhat:
-      'Añade un banner a las páginas de artista, de Fanart.tv. Beacon se identifica con su propia clave de proyecto, así que solo necesitas una clave personal gratuita. Opcional: la página funciona sin ella.',
+      'Añade fondos y logos de artista a las páginas de artista y a «Sonando ahora», de Fanart.tv. Funciona sin configurar nada — Beacon se identifica con su propia clave de proyecto —, pero se recomienda una clave personal gratuita: mantiene las imágenes más frescas y las peticiones en tu propio límite.',
     fanartStep1: 'Crea una cuenta gratuita en fanart.tv.',
     fanartStep2:
       'Abre las claves de API de tu perfil y copia tu clave personal, la vinculada a tu cuenta, no una clave de proyecto.',
@@ -443,7 +443,7 @@ export default {
       'Descubrir en Inicio usa artistas parecidos a lo que escuchas realmente, consultados en MusicBrainz, ListenBrainz y Deezer - esto comparte con ellos uno o dos nombres de artista de tu biblioteca. Desactivado muestra álbumes al azar; abrir la página de un artista sigue consultando a ese artista en cualquier caso.',
     fanartEnabled: 'Imágenes de artistas de Fanart.tv',
     fanartEnabledHint:
-      'Muestra los banners y fondos de artista de Fanart.tv en las páginas de artista y en «Sonando ahora». La clave se configura en «Avanzado»; desactivarlo no la elimina.',
+      'Muestra los fondos y logos de artista de Fanart.tv en las páginas de artista y en «Sonando ahora». Beacon se identifica con su propia clave de proyecto, así que funciona sin configurar nada; una clave personal mantiene las peticiones en tu propio límite.',
     listenbrainzUsername: 'Usuario de ListenBrainz',
     listenbrainzHint:
       'Tu nombre público de ListenBrainz. Rellena la estantería «Recomendado para ti» en Inicio y se ofrece como valor predeterminado en el generador de listas. No hace falta contraseña. Para crear una lista, eso sí, Last.fm es la mejor opción: sus listas son más variadas.',

@@ -411,7 +411,7 @@ export default {
     lastfmStep4: 'Copia la «API key» che compare e incollala qui. Lo shared secret non serve.',
     fanartTitle: 'Fanart.tv',
     fanartWhat:
-      'Aggiunge un banner alle pagine artista, da Fanart.tv. Beacon si identifica con la propria chiave di progetto, quindi ti serve solo una chiave personale gratuita. Opzionale: la pagina funziona anche senza.',
+      'Aggiunge sfondi e loghi artista alle pagine artista e a «In riproduzione», da Fanart.tv. Funziona senza configurare nulla — Beacon si identifica con la propria chiave di progetto —, ma è consigliata una chiave personale gratuita: mantiene le immagini più fresche e le richieste sul tuo limite.',
     fanartStep1: 'Crea un account gratuito su fanart.tv.',
     fanartStep2:
       'Apri le chiavi API del tuo profilo e copia la tua chiave personale, quella legata al tuo account, non una chiave di progetto.',
@@ -443,7 +443,7 @@ export default {
       'Scopri nella Home usa artisti simili a ciò che ascolti davvero, cercati su MusicBrainz, ListenBrainz e Deezer - questo condivide con loro uno o due nomi di artisti della tua libreria. Disattivato mostra album casuali; aprire la pagina di un artista continua comunque a cercare quel singolo artista.',
     fanartEnabled: 'Immagini artista da Fanart.tv',
     fanartEnabledHint:
-      'Mostra banner e sfondi artista di Fanart.tv nelle pagine artista e in «In riproduzione». La chiave si imposta in «Avanzate»; disattivare non la elimina.',
+      'Mostra sfondi e loghi artista di Fanart.tv nelle pagine artista e in «In riproduzione». Beacon si identifica con la propria chiave di progetto, quindi funziona senza configurare nulla; una chiave personale tiene le richieste sul tuo limite.',
     listenbrainzUsername: 'Nome utente ListenBrainz',
     listenbrainzHint:
       'Il tuo nome pubblico su ListenBrainz. Riempie la sezione «Consigliati per te» nella Home e viene proposto come predefinito nel generatore di playlist. Nessuna password richiesta. Per creare una playlist, però, Last.fm è la scelta migliore: le sue classifiche sono più varie.',

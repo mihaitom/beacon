@@ -69,20 +69,6 @@
             {{ $t('common.save') }}
           </v-btn>
         </div>
-
-        <!-- Fanart.tv is a display feature, not just a credential: the key
-         - can stay in place while the images are switched off. -->
-        <div v-if="service.id === 'fanart'" class="api-key-toggle">
-          <v-switch
-            :model-value="fanartStore.enabled"
-            color="primary"
-            density="compact"
-            hide-details
-            :label="$t('settings.fanartEnabled')"
-            @update:model-value="fanartStore.setEnabled(!!$event)"
-          />
-          <p class="setting__hint">{{ $t('settings.fanartEnabledHint') }}</p>
-        </div>
       </div>
     </div>
   </section>
@@ -90,7 +76,6 @@
 
 <script lang="ts">
 import { useLastfmStore } from '@/stores/lastfm'
-import { useFanartStore } from '@/stores/fanart'
 import {
   getApiKeyStatuses,
   setApiKey,
@@ -144,9 +129,6 @@ export default {
   computed: {
     lastfmStore() {
       return useLastfmStore()
-    },
-    fanartStore() {
-      return useFanartStore()
     },
     services(): ApiKeyServiceEntry[] {
       return [
@@ -254,9 +236,5 @@ export default {
   align-items: center;
   gap: 8px;
   margin-top: 12px;
-}
-
-.api-key-toggle {
-  margin-top: 16px;
 }
 </style>

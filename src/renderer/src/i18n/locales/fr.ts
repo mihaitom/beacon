@@ -413,7 +413,7 @@ export default {
       "Copiez la « API key » affichée et collez-la ici. Le shared secret n'est pas nécessaire.",
     fanartTitle: 'Fanart.tv',
     fanartWhat:
-      "Ajoute une bannière aux pages d'artiste, issue de Fanart.tv. Beacon s'identifie avec sa propre clé de projet, vous n'avez donc besoin que d'une clé personnelle gratuite. Facultatif : la page fonctionne sans.",
+      "Ajoute des fonds et logos d'artiste aux pages d'artiste et à « Lecture en cours », depuis Fanart.tv. Cela fonctionne sans rien configurer — Beacon s'identifie avec sa propre clé de projet —, mais une clé personnelle gratuite est recommandée : elle garde les visuels plus frais et les requêtes sur votre propre limite.",
     fanartStep1: 'Créez un compte gratuit sur fanart.tv.',
     fanartStep2:
       'Ouvrez les clés API de votre profil et copiez votre clé personnelle, celle liée à votre compte, pas une clé de projet.',
@@ -445,7 +445,7 @@ export default {
       "Découvrir sur l'accueil s'appuie sur des artistes proches de ce que vous écoutez vraiment, recherchés auprès de MusicBrainz, ListenBrainz et Deezer - cela leur transmet un ou deux noms d'artistes de votre bibliothèque. Désactivé, des albums au hasard sont proposés ; ouvrir la page d'un artiste consulte toujours cet artiste, dans un cas comme dans l'autre.",
     fanartEnabled: 'Visuels d’artiste de Fanart.tv',
     fanartEnabledHint:
-      "Affiche les bannières et fonds d'artiste de Fanart.tv sur les pages d'artiste et dans « Lecture en cours ». La clé se règle dans « Avancé » ; désactiver cette option ne la supprime pas.",
+      "Affiche les fonds et logos d'artiste de Fanart.tv sur les pages d'artiste et dans « Lecture en cours ». Beacon s'identifie avec sa propre clé de projet, donc cela fonctionne sans rien configurer ; une clé personnelle garde les requêtes sur votre propre limite.",
     listenbrainzUsername: 'Nom d’utilisateur ListenBrainz',
     listenbrainzHint:
       "Votre nom public ListenBrainz. Il remplit la rangée « Recommandé pour vous » sur l'accueil et sert de valeur par défaut dans le générateur de playlists. Aucun mot de passe requis. Pour créer une playlist, en revanche, Last.fm reste le meilleur choix : ses classements sont plus variés.",
