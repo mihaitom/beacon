@@ -58,7 +58,6 @@
           clearable
           class="library-search"
         />
-        <exact-match-switch />
       </div>
     </sticky-filter>
 
@@ -183,7 +182,6 @@ import RadioDiscoverDialog from '@/components/radio/RadioDiscoverDialog.vue'
 import RadioStationCard from '@/components/library/RadioStationCard.vue'
 import TileSkeleton from '@/components/library/TileSkeleton.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
-import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
 import { matchesAllTerms } from '@/services/textSearch'
 import type { RadioStation } from '@/types/library'
 
@@ -204,7 +202,6 @@ export default {
     RadioStationCard,
     TileSkeleton,
     StickyFilter,
-    ExactMatchSwitch,
   },
   data() {
     return {
@@ -241,8 +238,11 @@ export default {
     filteredStations(): RadioStation[] {
       const query = this.debouncedQuery
       if (!query.trim()) return this.libraryStore.radioStations
+      // Always exact: a station is found by its name, and the list is short
+      // enough that a misspelling is worth correcting rather than guessing
+      // around.
       return this.libraryStore.radioStations.filter((station: RadioStation) =>
-        matchesAllTerms(query, [station.name], { exact: this.libraryStore.searchExact }),
+        matchesAllTerms(query, [station.name], { exact: true }),
       )
     },
   },

@@ -50,7 +50,6 @@
           clearable
           class="library-search"
         />
-        <exact-match-switch />
       </div>
     </sticky-filter>
     <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
@@ -149,7 +148,6 @@ import PlaylistEditDialog from '@/components/library/PlaylistEditDialog.vue'
 import LastfmPlaylistDialog from '@/components/library/LastfmPlaylistDialog.vue'
 import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
-import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
 import type { Playlist } from '@/types/library'
 
 // Enough placeholder tiles to read as a grid rather than as one stray box.
@@ -170,7 +168,6 @@ export default {
     LastfmPlaylistDialog,
     PlaylistDeleteDialog,
     StickyFilter,
-    ExactMatchSwitch,
   },
   data() {
     return {
@@ -200,8 +197,11 @@ export default {
     filteredPlaylists(): Playlist[] {
       const query = this.debouncedQuery
       if (!query.trim()) return this.libraryStore.playlists
+      // Always exact: a playlist is found by its name, and the list is
+      // short enough that a misspelling is worth correcting rather than
+      // guessing around.
       return this.libraryStore.playlists.filter((playlist: Playlist) =>
-        matchesAllTerms(query, [playlist.name], { exact: this.libraryStore.searchExact }),
+        matchesAllTerms(query, [playlist.name], { exact: true }),
       )
     },
     // Own playlists first, everything else (public playlists shared by

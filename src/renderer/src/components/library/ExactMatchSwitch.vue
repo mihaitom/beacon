@@ -15,7 +15,8 @@ import { useLibraryStore } from '@/stores/library'
 
 /** The exact-search switch shown beside a library filter field. Bound to the
  * one app-wide preference (stores/library.ts's searchExact), so every field
- * follows whichever copy is toggled and the choice is remembered. */
+ * that offers the switch follows whichever copy is toggled and the choice is
+ * remembered. Playlists and Radio never show it - both are always exact. */
 export default {
   name: 'ExactMatchSwitch',
   emits: ['change'],

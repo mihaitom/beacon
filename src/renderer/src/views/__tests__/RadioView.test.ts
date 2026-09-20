@@ -102,6 +102,19 @@ describe('RadioView', () => {
       expect(cards[0]!.props('station').name).toBe('Station 3')
     })
 
+    it('does not guess around a misspelling, whatever the app-wide mode is', async () => {
+      // Radio (like Playlists) is always exact: a station is found by its
+      // name, and the short list makes correcting a typo the better answer.
+      // The app-wide fuzzy mode must not reach in here.
+      useLibraryStore().radioStations = makeStations(9)
+      useLibraryStore().setSearchExact(false)
+      const wrapper = mountRadioView()
+
+      await withFilterQuery(wrapper, 'Statoin 3')
+
+      expect(wrapper.findAllComponents({ name: 'RadioStationCard' })).toHaveLength(0)
+    })
+
     it('tells "nothing saved yet" apart from "nothing matches this search"', async () => {
       const noneYet = mountRadioView()
       expect(noneYet.text()).toContain('No radio stations saved yet')

@@ -25,9 +25,10 @@
  * The exact mode (no misspellings, but a prefix or a substring still counts)
  * is a single app-wide preference rather than a per-field argument: it is a
  * way of searching, not a property of one screen, so matchesAllTerms() reads
- * it here and every filter field follows without threading it through each
- * view. The search page's switch is the one place it is set
- * (stores/library.ts).
+ * it here and every field that offers the switch follows without threading it
+ * through each view. The search page's switch is the one place it is set
+ * (stores/library.ts). Playlists and Radio are the exception: both are short
+ * name-only lists, so they pass exact: true outright and offer no switch.
  */
 
 import { readBooleanPreference, writeBooleanPreference } from './booleanPreference'
