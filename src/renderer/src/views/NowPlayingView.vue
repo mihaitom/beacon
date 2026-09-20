@@ -502,6 +502,10 @@ export default {
       // The artist background's own dominant colour, extracted for the
       // visualizer bars only - see visualizerColor.
       artistColor: null as string | null,
+      // Which artist the current background belongs to, so a new track by
+      // the same artist can swap the picture without first dropping to the
+      // cover (see loadArtistBackground).
+      backgroundArtist: '',
       showVisualizer: readShowVisualizer(),
       // The user's wish to hide the artwork; only honored while there is a
       // Fanart.tv background to reveal (see artworkHidden).
@@ -764,12 +768,6 @@ export default {
         showBackdrop(this.backdrop, url)
       },
     },
-    currentArtist: {
-      immediate: true,
-      handler(artist: string) {
-        void this.loadArtistBackground(artist)
-      },
-    },
     // Turning Fanart.tv off drops the background (and the artwork it may be
     // revealed by) immediately; turning it back on fetches it again.
     fanartEnabled() {
@@ -812,6 +810,11 @@ export default {
     currentSong: {
       immediate: true,
       handler(song: Song | null) {
+        // A new track gets a fresh pick from the artist's images, even when
+        // the artist is unchanged: the backend hands back one of the five
+        // most-liked at random (see core/fanart.py's _choose), so this is
+        // what keeps the background from being the same picture all album.
+        void this.loadArtistBackground(this.currentArtist)
         // Radio has no lyrics, but it does have a title log to put in the
         // same panel (see the template) — so only *nothing playing at all*
         // still falls back to the plain artwork view. Reading
@@ -1068,8 +1071,16 @@ export default {
      * while this one is still in flight. Same stale-response guard as
      * loadColor() above, keyed on the artist. */
     async loadArtistBackground(artist: string) {
-      this.artistBackground = null
-      this.artistColor = null
+      // A different artist's picture must not stay behind the new one while
+      // this loads. A new *track* by the same artist keeps the current
+      // picture instead, so the swap is one crossfade rather than fading to
+      // the cover and back.
+      const sameArtist = this.backgroundArtist === artist
+      if (!sameArtist) {
+        this.artistBackground = null
+        this.artistColor = null
+        this.backgroundArtist = ''
+      }
       if (!useFanartStore().enabled || !artist) return
       let art: Awaited<ReturnType<typeof getArtistArt>> = null
       try {
@@ -1084,6 +1095,7 @@ export default {
       if (art?.background) await preloadImage(art.background)
       if (this.currentArtist !== artist) return
       this.artistBackground = art?.background ?? null
+      this.backgroundArtist = artist
       // The bars take this image's colour (see visualizerColor); extracted
       // here rather than from the cover, which is what the ambient wash and
       // glow stay on.

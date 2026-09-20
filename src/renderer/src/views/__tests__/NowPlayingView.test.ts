@@ -923,4 +923,26 @@ describe('NowPlayingView artist background', () => {
     expect(getArtistArt).not.toHaveBeenCalled()
     expect(backgroundOf(wrapper)).toBeNull()
   })
+
+  it('picks a fresh background on a new track by the same artist', async () => {
+    const { wrapper } = await mountWithBackground()
+    vi.mocked(getArtistArt).mockClear()
+
+    usePlaybackStore().setQueue([makeSong('b', { artist: 'Artist A' })], 0)
+    await flushPromises()
+
+    expect(getArtistArt).toHaveBeenCalledWith('Artist A')
+    expect(backgroundOf(wrapper)).toBe('https://assets.fanart.tv/bg.jpg')
+  })
+
+  it('keeps the current background while a same-artist change reloads', async () => {
+    const { wrapper } = await mountWithBackground()
+    vi.mocked(getArtistArt).mockReturnValue(new Promise(() => {}))
+
+    usePlaybackStore().setQueue([makeSong('b', { artist: 'Artist A' })], 0)
+    await flushPromises()
+
+    // Not dropped to the cover while the new pick is in flight.
+    expect(backgroundOf(wrapper)).toBe('https://assets.fanart.tv/bg.jpg')
+  })
 })

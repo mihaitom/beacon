@@ -104,7 +104,7 @@
       play-on-click
       @play-all="playAllAlbums(randomAlbums, 'random')"
     >
-      <template #action>
+      <template v-if="!usingPersonalRecommendations" #action>
         <v-btn
           icon="mdi-shuffle-variant"
           variant="text"
@@ -116,21 +116,12 @@
       </template>
     </album-shelf>
 
-    <!-- The listener's own recommendations, distinct from the community
-       - "New artists to explore" below: these come from their ListenBrainz
-       - history rather than from what the library's own artists resemble. -->
-    <similar-artists-shelf
-      :title="$t('home.recommendedArtists')"
-      :artists="personalArtists"
-      :loading="loadingPersonal"
-    />
-
     <similar-artists-shelf
       :title="$t('home.newArtistsTitle')"
       :artists="newArtistDiscoveries"
       :loading="discoverArtistsLoading"
     >
-      <template #action>
+      <template v-if="!usingPersonalRecommendations" #action>
         <v-btn
           icon="mdi-shuffle-variant"
           variant="text"
@@ -237,16 +228,19 @@ export default {
       newestAlbums: [] as Album[],
       recentAlbums: [] as Album[],
       randomAlbums: [] as Album[],
-      // Similar artists ListenBrainz suggested that aren't in the library
-      // — see rerollDiscover(). Empty whenever the toggle's off, there
-      // weren't enough seed artists, or the lookup itself failed; the
-      // SimilarArtistsShelf component hides itself in all of those cases.
+      // Suggested artists that aren't in the library: the community
+      // similar-artist lookup by default (see rerollDiscover()), or the
+      // listener's own ListenBrainz recommendations when a name is set
+      // (see loadPersonalShelves()). Empty whenever the toggle's off, the
+      // lookup failed, or nothing new came back; the SimilarArtistsShelf
+      // component hides itself in all of those cases.
       newArtistDiscoveries: [] as SimilarArtistDisplay[],
-      // The listener's own recommendations (ListenBrainz CF), enriched the
-      // same way. Empty without a ListenBrainz name or with the
-      // recommendations toggle off — see loadPersonalArtists().
-      personalArtists: [] as SimilarArtistDisplay[],
-      loadingPersonal: false,
+      // True only once the personal recommendations actually filled the
+      // shelves — false both without a ListenBrainz name and when the feed
+      // came back empty (see loadPersonalShelves()'s fallback). Drives the
+      // Reroll buttons, which are pointless over a fixed personal set but
+      // still useful over the community one.
+      usingPersonalRecommendations: false,
       topSongs: [] as Song[],
       rediscoverSongs: [] as Song[],
       loadingRediscover: false,
@@ -406,6 +400,15 @@ export default {
     discoverArtistsLoading() {
       return this.loadingDiscover === 'artists' || this.loadingDiscover === 'both'
     },
+    // Both Discover shelves come from the listener's own ListenBrainz
+    // recommendations instead of the community similar-artist lookup
+    // whenever there's a name to ask for and recommendations are on. Only
+    // says whether to *try* the personal path — whether it actually filled
+    // the shelves (and so whether the Reroll buttons are pointless) is
+    // usingPersonalRecommendations, since an empty feed falls back.
+    personalized() {
+      return this.recommendationsStore.enabled && !!this.listenbrainzStore.username.trim()
+    },
     // Nothing to show yet either way — only true during the initial
     // recentAlbums fetch, and only when there isn't already something
     // playing (which the hero can show immediately, no fetch needed).
@@ -434,15 +437,26 @@ export default {
       .then((albums) => (this.recentAlbums = albums))
       .finally(() => (this.loadingRecent = false))
 
-    // fetchArtists() only to check which similar-artist suggestions are
-    // already owned (see rerollDiscover()) — own cached request, a no-op
-    // if some earlier view already populated it (matches StatsView.vue's
-    // identical reasoning for its own topArtists artwork).
+    // fetchArtists() only to check which suggestions are already owned
+    // (see rerollDiscover()/loadPersonalShelves()) — own cached request, a
+    // no-op if some earlier view already populated it (matches
+    // StatsView.vue's identical reasoning for its own topArtists artwork).
     this.libraryStore.fetchArtists()
-    // Reuses frequentPromise's own result to seed rerollDiscover() instead
-    // of each firing its own fetchFrequentAlbums() call — see that
-    // method's own `seedAlbums` param.
-    frequentPromise.then((albums) => this.rerollDiscover(albums))
+    // A ListenBrainz name with recommendations on switches both Discover
+    // shelves over to the listener's own recommendations, which are fixed
+    // per listener — nothing to seed from the library's play history, and
+    // nothing for the Reroll buttons to reroll (see `personalized`).
+    if (this.personalized) {
+      // Passed through so an empty personal set (a brand-new ListenBrainz
+      // account has no recommendations yet) can fall back to the same seed
+      // albums the community path would have used.
+      void this.loadPersonalShelves(frequentPromise)
+    } else {
+      // Reuses frequentPromise's own result to seed rerollDiscover()
+      // instead of each firing its own fetchFrequentAlbums() call — see
+      // that method's own `seedAlbums` param.
+      frequentPromise.then((albums) => this.rerollDiscover(albums))
+    }
 
     if (this.authStore.capabilities.playHistoryStats) {
       this.loadingRediscover = true
@@ -454,12 +468,6 @@ export default {
       .fetchTopSongs(10)
       .then((songs) => (this.topSongs = songs))
       .finally(() => (this.loadingTopSongs = false))
-
-    // A no-op without a ListenBrainz name, which loadPersonalArtists()
-    // itself checks — the toggle only saves the (empty) attempt.
-    if (this.recommendationsStore.enabled) {
-      void this.loadPersonalArtists()
-    }
   },
   methods: {
     // A random MAX_SEED_ARTISTS-sized sample of the distinct artist names
@@ -596,24 +604,51 @@ export default {
       }
       return picked
     },
-    /** The actual ListenBrainz-backed half of rerollDiscover() — split out
-     * so that method's own try/catch has one call to wrap, instead of this
-     * whole multi-step pipeline living inline inside it. Partitions the
-     * result into albums to actually show (an owned artist's own album,
-     * fetched via fetchArtist() since the list-level Artist entries
-     * fetchArtists() already loaded never carry a full album list — same
-     * "list vs. detail" split as fetchAlbum()'s own comment) and
-     * newArtistDiscoveries (everything not in the library at all). */
+    /** Partitions `artists` against the library and resolves both Discover
+     * halves: one album per owned artist (albumsForOwnedArtists — an owned
+     * artist's own album, fetched via fetchArtist() since the list-level
+     * Artist entries fetchArtists() already loaded never carry a full album
+     * list, same "list vs. detail" split as fetchAlbum()'s own comment) and
+     * the not-owned ones enriched for the artists shelf. Shared by the
+     * community lookup and the listener's own recommendations, which differ
+     * only in where `artists` came from.
+     *
+     * Partitioning is pure bookkeeping against the list already in memory —
+     * the requests it implies come after, so that both halves can be
+     * fetched at once. */
+    async discoverHalves(artists: SimilarArtist[]): Promise<{
+      albums: Album[]
+      discoveries: SimilarArtistDisplay[]
+    }> {
+      const ownedMatches: Artist[] = []
+      const notOwned: SimilarArtist[] = []
+      for (const artist of artists) {
+        const match = this.libraryStore.artists.find(
+          (a) => a.name.toLowerCase() === artist.name.toLowerCase(),
+        )
+        if (match) ownedMatches.push(match)
+        else notOwned.push(artist)
+      }
+
+      const [albums, discoveries] = await Promise.all([
+        this.albumsForOwnedArtists(ownedMatches),
+        this.enrichArtistDiscoveries(notOwned.slice(0, DISCOVER_SHELF_SIZE)),
+      ])
+      return { albums, discoveries }
+    },
+    /** The community Discover half of rerollDiscover() — split out so that
+     * method's own try/catch has one call to wrap, instead of this whole
+     * multi-step pipeline living inline inside it. */
     async discoverFromSimilarArtists(
       seedNames: string[],
       only: 'albums' | 'artists' | null = null,
     ): Promise<void> {
       // Side by side rather than one after the other: the artist list feeds
-      // the partition below and the lookup is the long pole (a
-      // MusicBrainz/ListenBrainz round trip whenever the backend's 24h
-      // cache misses), and neither needs anything from the other. Waiting
-      // out a cold artist cache first added its whole duration to how long
-      // the shelves sat empty.
+      // the partition and the lookup is the long pole (a MusicBrainz/
+      // ListenBrainz round trip whenever the backend's 24h cache misses),
+      // and neither needs anything from the other. Waiting out a cold
+      // artist cache first added its whole duration to how long the shelves
+      // sat empty.
       //
       // No explicit limit on the lookup — relies on getSimilarArtists()'s
       // own default (100, matching the backend's), not a smaller number
@@ -625,26 +660,7 @@ export default {
         getSimilarArtists(seedNames),
       ])
 
-      // Partitioning is pure bookkeeping against the list already in
-      // memory — the requests it implies come after, so that both halves
-      // can be fetched at once.
-      const ownedMatches: Artist[] = []
-      const notOwned: SimilarArtist[] = []
-      for (const artist of similar) {
-        const match = this.libraryStore.artists.find(
-          (a) => a.name.toLowerCase() === artist.name.toLowerCase(),
-        )
-        if (match) ownedMatches.push(match)
-        else notOwned.push(artist)
-      }
-
-      const notOwnedCapped = notOwned.slice(0, DISCOVER_SHELF_SIZE)
-      // Deezer photo and external links, and one album per owned match —
-      // two independent halves, run together.
-      const [owned, discoveries] = await Promise.all([
-        this.albumsForOwnedArtists(ownedMatches),
-        this.enrichArtistDiscoveries(notOwnedCapped),
-      ])
+      const { albums: owned, discoveries } = await this.discoverHalves(similar)
       const capped = owned.slice(0, DISCOVER_SHELF_SIZE)
       const albums =
         capped.length >= MIN_OWNED_MATCHES
@@ -670,12 +686,10 @@ export default {
      * in `artists` — two independent lookups, Promise.allSettled so one
      * failing doesn't blank out what the other found. getArtistLinksByMbid(),
      * not getArtistLinks(): these artists already carry a trusted MBID
-     * (ListenBrainz Labs for Discover, ListenBrainz's metadata for the
-     * personalized shelf), so a name-based lookup would just make the
-     * backend redundantly re-derive one it doesn't need to.
-     *
-     * Shared by both artist shelves, which differ only in where the artist
-     * list came from. */
+     * (ListenBrainz Labs for the community lookup, ListenBrainz's
+     * recommendation feed for the personalized one), so a name-based lookup
+     * would just make the backend redundantly re-derive one it doesn't need
+     * to. */
     async enrichArtistDiscoveries(artists: SimilarArtist[]): Promise<SimilarArtistDisplay[]> {
       const [images, linksByMbid] = await Promise.allSettled([
         getArtistImages(artists.map((a) => a.name)),
@@ -706,36 +720,41 @@ export default {
         }
       })
     },
-    /** Home's personalized artist shelf: the artists behind the listener's
-     * own ListenBrainz recommendations, enriched the same way the community
-     * "New artists to explore" shelf is. Only asked with a ListenBrainz
-     * name set and recommendations on — without a name there is nothing
-     * personal to ask for, and the shelf simply stays hidden. A failure
-     * leaves it hidden rather than taking Home down (connect being
-     * unreachable is not a reason for the rest of the page to fail). */
-    async loadPersonalArtists(): Promise<void> {
+    /** Both Discover shelves, from the listener's own ListenBrainz
+     * recommendations instead of the community lookup: recommended artists
+     * already in the library contribute one of their albums, the rest fill
+     * "New artists to explore" — same partition as the community flow (see
+     * discoverHalves), just a different source list. Only called with a
+     * ListenBrainz name set and recommendations on (see `personalized`).
+     *
+     * An empty feed — a brand-new ListenBrainz account has no
+     * recommendations yet — falls back to the community lookup, seeded from
+     * `seedAlbums` (created()'s own frequent-albums fetch), so Home still
+     * shows something useful. A failure leaves both shelves empty rather
+     * than taking Home down (connect being unreachable is not a reason for
+     * the rest of the page to fail). */
+    async loadPersonalShelves(seedAlbums: Promise<Album[]>): Promise<void> {
       const username = this.listenbrainzStore.username.trim()
       if (!username) return
-      this.loadingPersonal = true
+      this.loadingDiscover = 'both'
       try {
         // The owned check below reads this list, so it has to be there
         // first. Cached, and created() already started it, so this is
         // usually free.
         await this.libraryStore.fetchArtists()
-        const artists = await getListenbrainzArtists(username, 30)
-        // An owned artist is what the library's own shelves are for; this
-        // shelf is discovery, so they are dropped before enrichment.
-        const notOwned = artists.filter(
-          (artist) =>
-            !this.libraryStore.artists.some(
-              (owned) => owned.name.toLowerCase() === artist.name.toLowerCase(),
-            ),
-        )
-        this.personalArtists = await this.enrichArtistDiscoveries(notOwned)
+        const artists = await getListenbrainzArtists(username, DISCOVER_SHELF_SIZE)
+        if (!artists.length) {
+          await this.rerollDiscover(await seedAlbums)
+          return
+        }
+        const { albums, discoveries } = await this.discoverHalves(artists)
+        this.randomAlbums = albums
+        this.newArtistDiscoveries = discoveries
+        this.usingPersonalRecommendations = true
       } catch (error) {
         console.error('[home] Personalized recommendations failed:', error)
       } finally {
-        this.loadingPersonal = false
+        this.loadingDiscover = null
       }
     },
     // Mirrors SongTable.vue's own startSongRadio() — same store action,

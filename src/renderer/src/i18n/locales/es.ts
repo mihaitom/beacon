@@ -83,7 +83,6 @@ export default {
     internetRadio: 'Radio por internet',
     nothingToShow: 'Nada que mostrar.',
     newArtistsTitle: 'Nuevos artistas por descubrir',
-    recommendedArtists: 'Recomendado para ti',
   },
   library: {
     showAsGrid: 'Ver en cuadrícula',

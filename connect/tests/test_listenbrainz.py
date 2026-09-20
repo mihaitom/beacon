@@ -341,9 +341,24 @@ async def test_recommended_artists_rank_by_how_many_recordings_they_account_for(
         }
     }
     metadata = {
-        "a": {"artist": {"name": "Portishead", "artists": [{"artist_mbid": "p"}]}},
-        "b": {"artist": {"name": "Portishead", "artists": [{"artist_mbid": "p"}]}},
-        "c": {"artist": {"name": "Massive Attack", "artists": [{"artist_mbid": "m"}]}},
+        "a": {
+            "artist": {
+                "name": "Portishead",
+                "artists": [{"name": "Portishead", "artist_mbid": "p"}],
+            }
+        },
+        "b": {
+            "artist": {
+                "name": "Portishead",
+                "artists": [{"name": "Portishead", "artist_mbid": "p"}],
+            }
+        },
+        "c": {
+            "artist": {
+                "name": "Massive Attack",
+                "artists": [{"name": "Massive Attack", "artist_mbid": "m"}],
+            }
+        },
     }
 
     async def fake_request(method, path, **kwargs):
@@ -362,8 +377,13 @@ async def test_recommended_artists_rank_by_how_many_recordings_they_account_for(
 async def test_recommended_artists_dedupe_by_mbid_not_by_spelling():
     feed = {"payload": {"mbids": [{"recording_mbid": "a"}, {"recording_mbid": "b"}]}}
     metadata = {
-        "a": {"artist": {"name": "A Band", "artists": [{"artist_mbid": "x"}]}},
-        "b": {"artist": {"name": "A Band (2)", "artists": [{"artist_mbid": "x"}]}},
+        "a": {"artist": {"name": "A Band", "artists": [{"name": "A Band", "artist_mbid": "x"}]}},
+        "b": {
+            "artist": {
+                "name": "A Band (2)",
+                "artists": [{"name": "A Band (2)", "artist_mbid": "x"}],
+            }
+        },
     }
 
     async def fake_request(method, path, **kwargs):
@@ -390,6 +410,37 @@ async def test_recommended_artists_fall_back_to_the_name_without_an_mbid():
         artists = await listenbrainz.get_recommended_artists("someone", 10)
 
     assert artists == [{"name": "No MBID", "mbid": "", "score": 2}]
+
+
+@pytest.mark.asyncio
+async def test_recommended_artists_split_a_collaboration_credit():
+    """ListenBrainz credits "David Guetta & Bebe Rexha" as one string plus
+    the artists on it. The individuals are what the shelf can actually use -
+    each has a photo and matches a library artist by name - so they are
+    counted separately, not as one unrecognisable string."""
+    feed = {"payload": {"mbids": [{"recording_mbid": "a"}]}}
+    metadata = {
+        "a": {
+            "artist": {
+                "name": "David Guetta & Bebe Rexha",
+                "artists": [
+                    {"name": "David Guetta", "artist_mbid": "d"},
+                    {"name": "Bebe Rexha", "artist_mbid": "b"},
+                ],
+            }
+        }
+    }
+
+    async def fake_request(method, path, **kwargs):
+        return _response(200, feed if "cf/recommendation" in path else metadata)
+
+    with patch.object(listenbrainz._client, "request", AsyncMock(side_effect=fake_request)):
+        artists = await listenbrainz.get_recommended_artists("someone", 10)
+
+    assert artists == [
+        {"name": "David Guetta", "mbid": "d", "score": 1},
+        {"name": "Bebe Rexha", "mbid": "b", "score": 1},
+    ]
 
 
 # ── error handling ───────────────────────────────────────────────────────────
@@ -531,8 +582,18 @@ def test_recommended_returns_resolved_tracks(client):
 def test_artists_route_returns_the_ranking(client):
     feed = {"payload": {"mbids": [{"recording_mbid": "a"}, {"recording_mbid": "b"}]}}
     metadata = {
-        "a": {"artist": {"name": "Portishead", "artists": [{"artist_mbid": "p"}]}},
-        "b": {"artist": {"name": "Massive Attack", "artists": [{"artist_mbid": "m"}]}},
+        "a": {
+            "artist": {
+                "name": "Portishead",
+                "artists": [{"name": "Portishead", "artist_mbid": "p"}],
+            }
+        },
+        "b": {
+            "artist": {
+                "name": "Massive Attack",
+                "artists": [{"name": "Massive Attack", "artist_mbid": "m"}],
+            }
+        },
     }
 
     async def fake_request(method, path, **kwargs):

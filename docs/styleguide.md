@@ -282,24 +282,28 @@ size, so it stays one cached image rather than a private resolution per
 caller.
 
 One surface deliberately breaks the blur, for a Fanart.tv image that is
-already a large, wide photo: the artist page's full-bleed backdrop
-(`ArtistDetailView`'s `.artist-page__backdrop--photo`), shown sharp with a
-scrim over its top and masked out towards the bottom so the albums and songs
-below sit on the plain surface. Blurring a photo that size would only turn it
-into a wash of itself. Without one, the same layer falls back to the blurred
-cover wash, so the page never looks bare. Now Playing does the same for the
-current song's artist background (`.now-playing__backdrop--artist`).
+already a large, wide photo: a detail page's full-bleed backdrop
+(`DetailPageBackdrop.vue`'s `.detail-page__backdrop--photo`), shown sharp
+with a scrim over its top and masked out towards the bottom so the content
+below sits on the plain surface. Both the artist page and the album page
+(the album artist's background) use it. Blurring a photo that size would
+only turn it into a wash of itself. Without one, the same layer falls back
+to the blurred cover wash, so the page never looks bare. Now Playing does
+the same for the current song's artist background
+(`.now-playing__backdrop--artist`).
 
 Both are preloaded (`services/preloadImage.ts`) before the layer swaps: a
 background-image set and activated in the same tick is blank until the bytes
 land, so the crossfade would end on a pop instead of an image.
 
-The artist page's header is its own component, `ArtistHero.vue`, rather than
-`DetailHeader.vue`: an artist is the one subject with a Wikipedia paragraph,
-a Fanart.tv clear logo (which stands in for the plain-text name, kept for
-screen readers) and that page-wide backdrop. Its bio slot reserves its
-height whether or not a paragraph arrives, so the page never shifts under the
-reader when Wikipedia answers.
+The artist page's header is `DetailHero.vue`, shared with the album page,
+rather than `DetailHeader.vue`: an artist is the one subject with a
+Wikipedia paragraph and a Fanart.tv clear logo (which stands in for the
+plain-text name, kept for screen readers), both of which it renders through
+its `#description`/`logoUrl` when a page supplies them. Its bio slot
+reserves its height whenever a page passes it, so the artist page never
+shifts under the reader when Wikipedia answers; the album page passes no
+bio slot and gets no reserved gap.
 
 Where the backdrop can _change_ while the surface stays (navigating from one
 album to the next, the next track starting), it needs two stacked layers and

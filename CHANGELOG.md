@@ -6,17 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Highlights
+
+- Artist and album pages, and Now Playing, are dressed with Fanart.tv images
+- Playlists can fill themselves from Last.fm and ListenBrainz
+- Home's Discover shelves can come from your own listening history, not just your library
+- Search forgives accents and misspellings across the app
+
 ### Added
 
 - Playlists can now be filled from Last.fm: the charts of a country or the whole world, a genre's or an artist's top tracks, or your own most played. Beacon looks each one up in your library and shows you both sides next to each other, numbered by chart position, before anything is saved. Naming it after a playlist you already have offers to add only the tracks missing from it, or to replace its contents outright. Needs a Last.fm key, which is entered once in Settings under "Advanced" and then applies to everyone using this Beacon; without one the button is not shown at all
 - Playlists can also be filled from ListenBrainz: a genre's top recordings, its charts, an artist's top recordings, your own most listened, or a set of tracks recommended from your listening history. Unlike Last.fm this needs no key or setup - a public ListenBrainz name is enough, entered in Settings or the builder itself. Settings notes that Last.fm is the better playlist builder, its charts coming out more varied
-- Home gains a "Recommended for you" shelf: the artists behind the tracks ListenBrainz recommends from your own listening history, shown only where your library does not already have them. Your public ListenBrainz name is entered under Library, where it also prefills the playlist builder, and the shelf is off with the personalized-recommendations switch
+- Home's two Discover shelves can now come from your own listening history instead of from a couple of your library's artists: with a public ListenBrainz name (entered under Library, where it also prefills the playlist builder), the artists ListenBrainz recommends for you fill them, the ones already in your library through their albums and the rest as new artists to explore. There is nothing to shuffle in a fixed personal set, so the shuffle buttons are hidden while it is shown. Without a name, or while a new account has no recommendations yet, both shelves keep coming from what the library's own artists resemble, and the personalized-recommendations switch turns them back to it
 - Settings has a new "Show advanced features" switch, off by default. It uncovers the things that have to be set up before they work, starting with the Last.fm key above, so that whoever runs the server can set them up without everyone else in the household having to look at them. What gets set up there stays available to everyone
 - The lyrics source under the lyrics is now a link to that sheet on lrclib.net, NetEase or SimpMusic, so badly timed lyrics can be checked where they came from
 - A new "Rediscover" shelf on Home brings back songs you played a lot but haven't heard in at least three months, with a button to shuffle in a different set
 - An artist's page now shows the opening paragraph of their Wikipedia article under the name, in the app's language where Wikipedia has one and in English otherwise, with a link to the full article
 - A track the playlist builder could not find in your library can now be copied with one click as "Artist - Title", ready to paste into a search or a download program
-- Fanart.tv images now dress the artist surfaces: the artist's background photo across the top of their page, fading out towards the albums below, and behind Now Playing, plus the artist's clear logo in place of the plain name where Fanart.tv has one. Now Playing can hide the album artwork to show that background, moving the track text into the corner, and its lyrics now sit on their own translucent panel so they stay readable over any backdrop. Both are optional and need a Fanart.tv key; without one those surfaces keep their usual look, and a switch beside the key turns the images off without removing it. The images are kept on the server, so they come back instantly instead of being fetched from Fanart.tv again, and where an artist has several, one of the five most-liked is shown at random
+- Fanart.tv images now dress the artist surfaces: the artist's background photo across the top of their page and of their albums' pages, fading out towards the content below, and behind Now Playing, plus the artist's clear logo in place of the plain name where Fanart.tv has one. Now Playing can hide the album artwork to show that background, moving the track text into the corner, and its lyrics now sit on their own translucent panel so they stay readable over any backdrop. Beacon identifies itself to Fanart.tv with its own project key, so this works with no setup, and a switch under Library turns it off; a personal Fanart.tv key is optional and only keeps the images fresher. The images are kept on the server, so they come back instantly instead of being fetched from Fanart.tv again, and where an artist has several, one of the five most-liked is shown at random
 - The installation-wide keys in Settings now sit together in one "API keys" section, the Last.fm key and the new Fanart.tv one
 
 ### Changed

@@ -67,10 +67,7 @@ async function mountHome(prepare?: (library: ReturnType<typeof useLibraryStore>)
   return wrapper
 }
 
-/** The community "New artists to explore" shelf, not the personalized one
- * above it — Home renders two SimilarArtistsShelf instances, and these
- * tests are about the community lookup. Found by its title so the two are
- * never confused by render order. */
+/** The "New artists to explore" shelf, found by its title. */
 function communityShelf(wrapper: Awaited<ReturnType<typeof mountHome>>) {
   return wrapper
     .findAllComponents(SimilarArtistsShelf)

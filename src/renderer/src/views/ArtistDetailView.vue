@@ -1,22 +1,11 @@
 <template>
-  <div class="artist-page">
-    <!-- The artist's own Fanart.tv background, full-bleed across the top of
-     - the page and masked out towards the bottom so the albums and songs
-     - below sit on the plain surface. Without one it falls back to the
-     - blurred cover wash, so the page never looks bare. -->
-    <div
-      v-if="artist"
-      class="artist-page__backdrop"
-      :class="{
-        'artist-page__backdrop--photo': backdropIsPhoto,
-        'artist-page__backdrop--shown': Boolean(backdropUrl),
-      }"
-      :style="backdropUrl ? { backgroundImage: `url(${backdropUrl})` } : {}"
-    />
-    <div v-if="artist" class="artist-page__scrim" />
-
-    <v-container v-if="artist" fluid class="artist-page__content">
-      <artist-hero
+  <!-- The artist's own Fanart.tv background, full-bleed across the top of
+   - the page and masked out towards the bottom so the albums and songs
+   - below sit on the plain surface. Without one it falls back to the
+   - blurred cover wash, so the page never looks bare. -->
+  <detail-page-backdrop :url="backdropUrl" :is-photo="backdropIsPhoto" :show="Boolean(artist)">
+    <v-container v-if="artist" fluid>
+      <detail-hero
         :name="artist.name"
         :eyebrow="$t('library.artist')"
         :cover-art-id="artist.coverArtId"
@@ -33,17 +22,21 @@
           {{ totalSongCount }}
           {{ totalSongCount === 1 ? $t('library.song1') : $t('library.songsN') }}
         </template>
-        <template v-if="bio" #description>
-          <artist-bio :text="bio.text" :url="bio.url" :lang="bio.lang" />
+        <!-- Always provided, so DetailHero.vue's bio wrapper (and its
+         - reserved height) is always there - the paragraph then arrives
+         - into a space that was already waiting for it, rather than
+         - shifting everything below it down. -->
+        <template #description>
+          <artist-bio v-if="bio" :text="bio.text" :url="bio.url" :lang="bio.lang" />
         </template>
         <!-- v-if on the template tag itself, not just the content inside —
-         - ArtistHero.vue only renders its own #actions wrapper when this
+         - DetailHero.vue only renders its own #actions wrapper when this
          - slot is provided at all, regardless of what's actually inside it.
          - Guarding here means neither Artist Radio nor the external-link
          - icons existing yet (capability off, still loading, nothing found)
          - doesn't reserve a gap for nothing. -->
         <template v-if="authStore.capabilities.songRadio || externalLinks.length" #actions>
-          <div class="artist-hero__actions-row">
+          <div class="detail-hero__actions-row">
             <v-btn
               v-if="authStore.capabilities.songRadio"
               color="primary"
@@ -73,7 +66,7 @@
             </v-btn>
           </div>
         </template>
-      </artist-hero>
+      </detail-hero>
 
       <!-- A grid toggle like the favorites page's and the search results',
      - remembered per visit: an artist with three albums and one with sixty
@@ -136,7 +129,7 @@
         {{ libraryStore.error }}
       </v-alert>
     </v-container>
-  </div>
+  </detail-page-backdrop>
 </template>
 
 <script lang="ts">
@@ -144,7 +137,8 @@ import { useLibraryStore, TOP_SONGS_LIMIT } from '@/stores/library'
 import { artistNameKey } from '@/services/artistCredits'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
-import ArtistHero from '@/components/library/ArtistHero.vue'
+import DetailHero from '@/components/library/DetailHero.vue'
+import DetailPageBackdrop from '@/components/library/DetailPageBackdrop.vue'
 import AlbumShelf from '@/components/library/AlbumShelf.vue'
 import { readCardGridView, writeCardGridView } from '@/services/cardGridView'
 import SongTable from '@/components/library/SongTable.vue'
@@ -173,7 +167,7 @@ const ALBUM_GRID_VIEW_KEY = 'beacon.artistGridView.albums'
 
 export default {
   name: 'ArtistDetailView',
-  components: { ArtistHero, AlbumShelf, SongTable, PageLoader, ArtistBio },
+  components: { DetailHero, DetailPageBackdrop, AlbumShelf, SongTable, PageLoader, ArtistBio },
   data() {
     return {
       artist: null as ArtistDetail | null,
@@ -486,62 +480,6 @@ export default {
 </script>
 
 <style scoped>
-/* The full-bleed artist backdrop: a band across the top of the page, masked
- * out towards the bottom so the albums and songs below sit on the plain
- * surface. */
-.artist-page {
-  position: relative;
-}
-
-.artist-page__backdrop,
-.artist-page__scrim {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: min(78vh, 680px);
-  pointer-events: none;
-}
-
-.artist-page__backdrop {
-  background-size: cover;
-  background-position: center 22%;
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 42%, transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 0%, #000 42%, transparent 100%);
-  /* Held back until the Fanart lookup answers (see backdropUrl), then faded
-   * in - so it never shows the cover and swaps to the background. */
-  opacity: 0;
-  transition: opacity 0.6s ease;
-}
-
-.artist-page__backdrop--shown {
-  opacity: 1;
-}
-
-/* Without a Fanart.tv background the fallback is the blurred cover wash -
- * the app's one backdrop recipe (see docs/styleguide.md). */
-.artist-page__backdrop:not(.artist-page__backdrop--photo) {
-  filter: blur(38px) saturate(1.4) brightness(0.55);
-  transform: scale(1.1);
-  transform-origin: top center;
-}
-
-/* Keeps the header text readable over a bright background photo, and eases
- * the top edge into the chrome. */
-.artist-page__scrim {
-  background: linear-gradient(
-    to bottom,
-    rgba(18, 20, 28, 0.72) 0%,
-    rgba(18, 20, 28, 0.3) 38%,
-    rgba(18, 20, 28, 0) 100%
-  );
-}
-
-.artist-page__content {
-  position: relative;
-  z-index: 1;
-}
-
 .section-header {
   display: flex;
   align-items: center;
@@ -551,7 +489,7 @@ export default {
 
 /* Artist Radio + the external-link icons share one row, wrapping onto a
  * second line rather than overflowing/squeezing on a narrow window. */
-.artist-hero__actions-row {
+.detail-hero__actions-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;

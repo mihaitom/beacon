@@ -95,7 +95,7 @@ async function mountArtist(artist: ArtistDetail | null, topSongs: Song[] = []) {
   const wrapper = mount(ArtistDetailView, {
     global: {
       plugins: [vuetify, i18n, router],
-      stubs: { ArtistHero: true, AlbumShelf: true, SongTable: true, PageLoader: true },
+      stubs: { DetailHero: true, AlbumShelf: true, SongTable: true, PageLoader: true },
     },
   })
   await flushPromises()
@@ -180,7 +180,7 @@ describe('ArtistDetailView song count and toggle availability', () => {
     const wrapper = mount(ArtistDetailView, {
       global: {
         plugins: [vuetify, i18n, router],
-        stubs: { ArtistHero: true, AlbumShelf: true, SongTable: true, PageLoader: true },
+        stubs: { DetailHero: true, AlbumShelf: true, SongTable: true, PageLoader: true },
       },
     })
     await flushPromises()

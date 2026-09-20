@@ -1,6 +1,6 @@
 <template>
-  <section class="artist-hero">
-    <div v-if="rating !== null || starred !== null" class="artist-hero__controls">
+  <section class="detail-hero">
+    <div v-if="rating !== null || starred !== null" class="detail-hero__controls">
       <v-rating
         v-if="rating !== null"
         :model-value="rating"
@@ -22,7 +22,7 @@
       />
     </div>
 
-    <div class="artist-hero__main">
+    <div class="detail-hero__main">
       <!-- Clickable only when there is a real picture behind it: opening a
        - full-screen view of the fallback icon would be a promise the hero
        - can't keep. -->
@@ -31,32 +31,36 @@
         :image-url="imageUrl"
         :size="180"
         :fallback-icon="fallbackIcon"
-        class="artist-hero__cover cover-shadow"
-        :class="{ 'artist-hero__cover--zoomable': hasArtwork }"
+        class="detail-hero__cover cover-shadow"
+        :class="{ 'detail-hero__cover--zoomable': hasArtwork }"
         :title="hasArtwork ? $t('library.showArtwork') : undefined"
         @click="showArtwork"
       />
-      <div class="artist-hero__info">
+      <div class="detail-hero__info">
         <div v-if="eyebrow" class="eyebrow-label">{{ eyebrow }}</div>
         <!-- Fanart.tv's clear logo when there is one: it *is* the artist's
          - name, drawn, so the plain-text heading steps aside for it (kept
          - for screen readers and the outline via .visually-hidden). -->
-        <img v-if="logoUrl" :src="logoUrl" :alt="name" class="artist-hero__logo" />
-        <h1 :class="logoUrl ? 'visually-hidden' : 'detail-title artist-hero__name'">
+        <img v-if="logoUrl" :src="logoUrl" :alt="name" class="detail-hero__logo" />
+        <h1 :class="logoUrl ? 'visually-hidden' : 'detail-title detail-hero__name'">
           {{ name }}
         </h1>
-        <div v-if="$slots.meta" class="artist-hero__meta">
+        <div v-if="$slots.subtitle" class="detail-hero__subtitle">
+          <slot name="subtitle" />
+        </div>
+        <div v-if="$slots.meta" class="detail-hero__meta">
           <slot name="meta" />
         </div>
-        <div v-if="$slots.actions" class="artist-hero__actions">
+        <div v-if="$slots.actions" class="detail-hero__actions">
           <slot name="actions" />
         </div>
       </div>
     </div>
 
-    <!-- Reserved whether or not a bio arrives, so the hero - and everything
-     - below it - never shifts when the Wikipedia paragraph loads. -->
-    <div class="artist-hero__bio">
+    <!-- Only when the page actually passes one (the artist page's Wikipedia
+     - paragraph). Rendering an empty wrapper for a page with no such slot
+     - (an album) would reserve a paragraph's height for nothing. -->
+    <div v-if="$slots.description" class="detail-hero__bio">
       <slot name="description" />
     </div>
   </section>
@@ -68,15 +72,14 @@ import CoverArt from './CoverArt.vue'
 import { emitter } from '@/emitter'
 
 /**
- * The artist page's own header, deliberately not DetailHeader.vue: an
- * artist is the one subject with a Wikipedia paragraph, a Fanart.tv clear
- * logo and a per-artist page backdrop, and those pull the layout in a
- * direction the album/playlist headers do not share. The page supplies the
- * backdrop (ArtistDetailView.vue); this is only the arrangement on top of
- * it.
+ * The shared header for a detail page (artist, album) — the arrangement of
+ * cover, name, meta and actions that sits on top of the page's own
+ * full-bleed backdrop (DetailPageBackdrop.vue). An artist is the one subject
+ * with a Wikipedia paragraph and a Fanart.tv clear logo, both of which this
+ * renders through its #description/#logoUrl when a page supplies them.
  */
 export default {
-  name: 'ArtistHero',
+  name: 'DetailHero',
   components: { CoverArt },
   props: {
     name: { type: String, required: true },
@@ -114,12 +117,12 @@ export default {
 </script>
 
 <style scoped>
-.artist-hero {
+.detail-hero {
   position: relative;
   margin-bottom: 28px;
 }
 
-.artist-hero__controls {
+.detail-hero__controls {
   position: absolute;
   top: 0;
   right: 0;
@@ -129,28 +132,28 @@ export default {
   gap: 4px;
 }
 
-.artist-hero__main {
+.detail-hero__main {
   display: flex;
   align-items: flex-end;
   gap: 28px;
 }
 
-.artist-hero__cover {
+.detail-hero__cover {
   flex-shrink: 0;
 }
 
-.artist-hero__cover--zoomable {
+.detail-hero__cover--zoomable {
   cursor: zoom-in;
 }
 
-.artist-hero__info {
+.detail-hero__info {
   min-width: 0;
   padding-bottom: 4px;
 }
 
 /* Constrained by height rather than width: clear logos vary wildly in
  * aspect, and what has to stay put is how much of the hero they take. */
-.artist-hero__logo {
+.detail-hero__logo {
   display: block;
   max-height: 84px;
   max-width: min(100%, 560px);
@@ -159,33 +162,39 @@ export default {
   margin: 2px 0 8px;
 }
 
-.artist-hero__name {
+.detail-hero__name {
   margin-bottom: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.artist-hero__meta {
+/* The album page's link to the artist - styled by the page, like
+ * DetailHeader's own subtitle slot. */
+.detail-hero__subtitle {
+  margin-bottom: 4px;
+}
+
+.detail-hero__meta {
   color: rgba(255, 255, 255, 0.6);
   font-size: 0.8125rem;
 }
 
-.artist-hero__actions {
+.detail-hero__actions {
   margin-top: 16px;
 }
 
 /* Roughly the clamped bio (three lines) plus its footer links - see
- * ArtistBio.vue. Empty for an artist with no article, which is the price of
- * a hero that never moves. */
-.artist-hero__bio {
+ * ArtistBio.vue. A page that passes the slot reserves the height, so the
+ * hero never shifts when the paragraph loads. */
+.detail-hero__bio {
   min-height: 6.5rem;
   margin-top: 16px;
 }
 
 /* A phone has no room for cover and text side by side. */
 @media (max-width: 599px) {
-  .artist-hero__main {
+  .detail-hero__main {
     flex-direction: column;
     align-items: flex-start;
     gap: 16px;

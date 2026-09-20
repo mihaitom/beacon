@@ -82,7 +82,6 @@ export default {
     internetRadio: 'Internet radio',
     nothingToShow: 'Nothing to show.',
     newArtistsTitle: 'New artists to explore',
-    recommendedArtists: 'Recommended for you',
   },
   library: {
     showAsGrid: 'Show as grid',

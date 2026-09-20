@@ -437,19 +437,25 @@ async def get_recommended_artists(username: str, limit: int) -> list[dict]:
         if not isinstance(entry, dict):
             continue
         artist = entry.get("artist") or {}
-        name = (artist.get("name") or "").strip()
-        if not name:
-            continue
-        artist_mbid = ""
+        # ListenBrainz credits a collaboration as one string ("David Guetta &
+        # Bebe Rexha", "Post Malone feat. Morgan Wallen") *and* lists the
+        # artists actually on it. The individuals are what everything
+        # downstream wants - each has its own photo, its own MusicBrainz
+        # page, and matches a library artist by the name it is filed under -
+        # where the combined string has none of that. So they are counted,
+        # not the string; a recording with no artist list falls back to it.
         credited = artist.get("artists")
-        if isinstance(credited, list):
-            for credit in credited:
-                if isinstance(credit, dict) and credit.get("artist_mbid"):
-                    artist_mbid = credit["artist_mbid"]
-                    break
-        key = artist_mbid or name.lower()
-        item = counts.setdefault(key, {"name": name, "mbid": artist_mbid, "score": 0})
-        item["score"] += 1
+        credits = credited if isinstance(credited, list) and credited else [artist]
+        for credit in credits:
+            if not isinstance(credit, dict):
+                continue
+            name = (credit.get("name") or "").strip()
+            if not name:
+                continue
+            artist_mbid = credit.get("artist_mbid") or ""
+            key = artist_mbid or name.lower()
+            item = counts.setdefault(key, {"name": name, "mbid": artist_mbid, "score": 0})
+            item["score"] += 1
 
     ranked = sorted(counts.values(), key=lambda artist: artist["score"], reverse=True)
     return ranked[: max(1, int(limit))]
