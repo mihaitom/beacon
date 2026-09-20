@@ -134,10 +134,16 @@ export async function fetchRadioTitleHistory(before: number): Promise<RadioTitle
   return { url: response.url ?? null, history: response.history ?? [] }
 }
 
-/** The station's log searched by substring, newest match first — the whole
- * log the backend holds, not the pages this client happens to have pulled.
- * That is the point of it: what a reader can already see is what scrolling
- * would have found anyway.
+/** The station's log searched for a typed query, newest match first — the
+ * whole log the backend holds, not the pages this client happens to have
+ * pulled. That is the point of it: what a reader can already see is what
+ * scrolling would have found anyway.
+ *
+ * The backend matches words rather than a substring: case, accents and
+ * punctuation are ignored, artist and track are searched together in any
+ * order, and a half-typed or slightly misspelled word still matches (see
+ * connect/core/title_match.py). So "kate bush hill" finds "Kate Bush -
+ * Running Up That Hill", which a substring search would not.
  *
  * No cursor, unlike the paging call above. The backend caps a station's log
  * at 1000 entries and answers a search from all of it in one go (see

@@ -623,8 +623,10 @@ export default {
       this.visible = true
       // The name field matches against these, so they have to be loaded
       // even when the dialog was opened somewhere other than the playlist
-      // list. Cached, so this is usually free.
-      void this.libraryStore.fetchPlaylists()
+      // list. Cached, so this is usually free. Fire-and-forget: a failure
+      // only costs the name suggestions, and the store has already recorded
+      // it - without the catch this would surface as an unhandled rejection.
+      void this.libraryStore.fetchPlaylists().catch(() => {})
       // Only Last.fm's country chart needs the picker; ListenBrainz has no
       // per-country charts at all.
       if (source === 'lastfm') void this.loadCountries()

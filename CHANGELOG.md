@@ -16,6 +16,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A new "Rediscover" shelf on Home brings back songs you played a lot but haven't heard in at least three months, with a button to shuffle in a different set
 - An artist's page now shows the opening paragraph of their Wikipedia article under the name, in the app's language where Wikipedia has one and in English otherwise, with a link to the full article
 
+### Changed
+
+- Searching a radio station's played titles is more forgiving now: accents and punctuation no longer have to match, the artist and the track can be typed in either order, and a half-typed or slightly misspelled word still finds the entry
+- The filter fields on the Songs, Albums, Artists, Genres, Playlists and Radio screens - and the phone remote's search - are forgiving the same way: punctuation and apostrophes no longer have to match, and a slightly misspelled word still finds the entry
+- Clicking a title in a radio station's played list now looks the song up in your library first and opens the search on that song's artist and title, so the exact track shows up instead of a page of near-misses
+
 ### Fixed
 
 - An artist lookup that failed during a brief MusicBrainz outage could be remembered as "not found" for good, leaving that artist without a photo, links or Wikipedia paragraph on their page and out of Discover. Those misses are retried now

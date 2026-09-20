@@ -57,15 +57,17 @@ function stubSearch(songs: ReturnType<typeof makeSong>[]) {
     search3,
     createPlaylist,
   } as unknown as SubsonicClient)
-  // createPlaylist on the store refetches the list afterwards; nothing
-  // here is about that.
-  vi.spyOn(useLibraryStore(), 'fetchPlaylists').mockResolvedValue(undefined)
   return { search3, createPlaylist }
 }
 
 describe('LastfmPlaylistDialog', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    // open() loads the playlist names in the background. Stubbed for every
+    // test: without it the ones that stub a client with only search3 would
+    // reject on the missing getPlaylists(), and the ones that stub no
+    // client at all would reach the real one and its localhost URL.
+    vi.spyOn(useLibraryStore(), 'fetchPlaylists').mockResolvedValue(undefined)
     // The recent-countries list lives here and would otherwise leak from
     // one test into the next.
     localStorage.clear()
@@ -322,7 +324,6 @@ describe('LastfmPlaylistDialog', () => {
       search3,
       createPlaylist,
     } as unknown as SubsonicClient)
-    vi.spyOn(useLibraryStore(), 'fetchPlaylists').mockResolvedValue(undefined)
 
     const { vm } = await openDialog()
     vm.chartScope = 'global'
@@ -378,7 +379,6 @@ describe('LastfmPlaylistDialog', () => {
       )
       const store = useLibraryStore()
       vi.spyOn(store, 'client').mockReturnValue({ search3 } as unknown as SubsonicClient)
-      vi.spyOn(store, 'fetchPlaylists').mockResolvedValue(undefined)
       store.playlists = playlists as never
 
       const { wrapper, vm } = await openDialog()

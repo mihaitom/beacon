@@ -5,6 +5,7 @@ import { emitter } from '@/emitter'
 import type Toast from '@/types/toast'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import type { Playlist } from '@/types/library'
+import { makeSong } from './fixtures'
 
 // The cache lives in IndexedDB now (services/library/libraryCacheStore.ts),
 // which jsdom has none of — stood in for by a plain map, same as
@@ -352,5 +353,32 @@ describe('library mutations', () => {
     expect(songCount).toBeGreaterThanOrEqual(100)
     expect(albumCount).toBeGreaterThan(25)
     expect(artistCount).toBeGreaterThan(25)
+  })
+
+  describe('findLibrarySong', () => {
+    it('returns the library song the matcher picks for a radio entry', async () => {
+      const library = useLibraryStore()
+      const song = makeSong('s1', { title: 'Show Me Love', artist: 'WizTheMc' })
+      stubClient({
+        search3: vi.fn().mockResolvedValue({ artists: [], albums: [], songs: [song] }),
+      })
+
+      await expect(library.findLibrarySong('WizTheMc, bees & honey', 'Show Me Love')).resolves.toBe(
+        song,
+      )
+    })
+
+    it('returns null when nothing in the library is close enough', async () => {
+      const library = useLibraryStore()
+      stubClient({
+        search3: vi.fn().mockResolvedValue({
+          artists: [],
+          albums: [],
+          songs: [makeSong('x', { title: 'Unrelated', artist: 'Nobody' })],
+        }),
+      })
+
+      await expect(library.findLibrarySong('WizTheMc', 'Show Me Love')).resolves.toBeNull()
+    })
   })
 })

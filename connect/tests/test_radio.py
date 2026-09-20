@@ -1775,6 +1775,47 @@ def test_radio_history_search_ignores_case_and_accents_the_station_chose(client,
     assert [e["title"] for e in r.json()["history"]] == ["Auf der Straße - Band"]
 
 
+def test_radio_history_search_finds_artist_and_track_in_any_order(client, default_session):
+    """Artist and track are searched together rather than as one string, so a
+    listener who remembers the pieces in a different order than the station
+    broadcast them still finds the entry."""
+    entries = _fill_history(default_session, "http://station", 3)
+    entries[1]["title"] = "Kate Bush - Running Up That Hill"
+
+    r = client.get("/radio-metadata/history", params={"q": "hill kate bush"})
+
+    assert [e["title"] for e in r.json()["history"]] == ["Kate Bush - Running Up That Hill"]
+
+
+def test_radio_history_search_folds_accents_the_listener_did_not_type(client, default_session):
+    entries = _fill_history(default_session, "http://station", 3)
+    entries[1]["title"] = "Bohème - Queen"
+
+    r = client.get("/radio-metadata/history", params={"q": "boheme"})
+
+    assert [e["title"] for e in r.json()["history"]] == ["Bohème - Queen"]
+
+
+def test_radio_history_search_tolerates_a_misspelling(client, default_session):
+    entries = _fill_history(default_session, "http://station", 3)
+    entries[1]["title"] = "The Beatles - Hey Jude"
+
+    r = client.get("/radio-metadata/history", params={"q": "beattles"})
+
+    assert [e["title"] for e in r.json()["history"]] == ["The Beatles - Hey Jude"]
+
+
+def test_radio_history_search_requires_every_typed_word(client, default_session):
+    """A word the entry does not have is a miss, not a wider net: the words
+    that did land must not drag the entry back in on their own."""
+    entries = _fill_history(default_session, "http://station", 3)
+    entries[1]["title"] = "Wonderwall - Oasis"
+
+    r = client.get("/radio-metadata/history", params={"q": "wonderwall blur"})
+
+    assert r.json()["history"] == []
+
+
 def test_radio_history_search_answers_newest_first_within_the_page_limit(client, default_session):
     """Ordered like the log itself, and bounded by the same page cap: a
     search that matches everything must not hand out the whole log."""

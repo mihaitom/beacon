@@ -19,7 +19,7 @@ from fastapi import Header, HTTPException, Query
 from delivery import BaseDelivery, DeliveryManager
 from media import MediaClient, SubsonicClient
 
-from . import icy_metadata, radio_ads, radio_history
+from . import icy_metadata, radio_ads, radio_history, title_match
 from .claims import claims
 from .device_volume import pushes_volume
 from .loop_health import peak_lag
@@ -340,11 +340,14 @@ class SessionState:
         page shorter than the limit it asked for is the end of the log,
         which is what saves a separate "is there more" flag.
 
-        `query` filters by substring, case-insensitively, over the whole log
-        rather than over a page of it — the point of searching here is to
-        reach what the reader has not scrolled to yet. It combines with
-        `limit` (the newest matches), and the caller pages by *not* paging:
-        see routes/radio.py's own note on why a search answers in one go.
+        `query` filters over the whole log rather than over a page of it —
+        the point of searching here is to reach what the reader has not
+        scrolled to yet. The match is word-based and lenient (case, accents
+        and punctuation ignored, artist and track searched together in any
+        order, a half-typed word matched by prefix, a misspelling by
+        similarity) — see core/title_match.py. It combines with `limit` (the
+        newest matches), and the caller pages by *not* paging: see
+        routes/radio.py's own note on why a search answers in one go.
 
         The timestamps used as cursors are `time.time()` floats recorded
         per title (see _record_radio_title()), so two entries sharing one
@@ -353,7 +356,7 @@ class SessionState:
         if not url:
             return []
 
-        needle = query.strip().casefold() if query else None
+        matches_title = title_match.matcher(query) if query else None
 
         out: list[dict] = []
         # reversed() over the deque, so this walks newest first and can
@@ -365,10 +368,7 @@ class SessionState:
                 break
             if before is not None and at >= before:
                 continue
-            # casefold(), not lower(): this matches titles in whatever
-            # language the station broadcasts in, and lower() leaves the
-            # German sharp s alone, so "STRASSE" would not find "Straße".
-            if needle and needle not in entry["title"].casefold():
+            if matches_title is not None and not matches_title(entry["title"]):
                 continue
             out.append(entry)
             if limit is not None and len(out) >= limit:

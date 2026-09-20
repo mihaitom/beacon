@@ -4,7 +4,6 @@ import {
   coreTitle,
   playlistSongIds,
   resolveTracks,
-  similarity,
   type ResolvedTrack,
 } from '../lastfmMatcher'
 import type { LastfmTrack } from '@/services/connect/lastfm'
@@ -53,25 +52,6 @@ describe('coreTitle', () => {
     // stripping every "- x" would cut real titles in half.
     expect(coreTitle('Ob-La-Di, Ob-La-Da')).toBe('Ob-La-Di, Ob-La-Da')
     expect(coreTitle('Sgt. Pepper - Reprise')).toBe('Sgt. Pepper - Reprise')
-  })
-})
-
-describe('similarity', () => {
-  it('is 1 for strings differing only in case, accents or punctuation', () => {
-    expect(similarity('La Bohème', 'la boheme')).toBe(1)
-    expect(similarity("Don't Stop", 'dont stop')).toBe(1)
-  })
-
-  it('is 0 when either side is empty', () => {
-    expect(similarity('', 'Something')).toBe(0)
-    expect(similarity('Something', '   ')).toBe(0)
-  })
-
-  it('scores a different song well below a spelling variant', () => {
-    const variant = similarity('Smells Like Teen Spirit', 'Smells Like Teen Spirit!')
-    const different = similarity('Smells Like Teen Spirit', 'Come As You Are')
-    expect(variant).toBeGreaterThan(0.9)
-    expect(different).toBeLessThan(0.3)
   })
 })
 

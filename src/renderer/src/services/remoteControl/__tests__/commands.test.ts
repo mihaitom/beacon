@@ -469,6 +469,18 @@ describe('resolveRemoteQuery', () => {
       expect(result.total).toBe(1)
     })
 
+    it("tolerates a misspelling, matching the app's own filters", async () => {
+      const library = useLibraryStore()
+      library.allSongs = [makeSong('a', { title: 'Hey Jude', artist: 'The Beatles' })]
+      library.allSongsLoaded = true
+
+      const result = (await resolveRemoteQuery('songs-request', { search: 'beattles' })) as {
+        items: { id: string }[]
+      }
+
+      expect(result.items.map((s) => s.id)).toEqual(['a'])
+    })
+
     it('does not re-fetch once the library is already loaded', async () => {
       const library = useLibraryStore()
       library.allSongs = [makeSong('a')]

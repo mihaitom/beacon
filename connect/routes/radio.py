@@ -1426,11 +1426,14 @@ async def get_radio_title_history(
 
     With `q`, the newest matches from the *whole* log instead, and `before`
     is left off: a reader searching wants what they have not scrolled to,
-    which is the half a page cursor cannot reach. Answered in one go rather
-    than paged — the log is capped at 1000 entries per station and a search
-    over it returns a handful, so a second page is a cursor to maintain for
-    a case that needs it about as often as a station plays one title a
-    thousand times.
+    which is the half a page cursor cannot reach. The match is word-based
+    and lenient rather than a substring — case, accents and punctuation are
+    ignored, artist and track are searched together in any order, a
+    half-typed word matches by prefix and a misspelling by similarity (see
+    core/title_match.py). Answered in one go rather than paged — the log is
+    capped at 1000 entries per station and a search over it returns a
+    handful, so a second page is a cursor to maintain for a case that needs
+    it about as often as a station plays one title a thousand times.
 
     Asked for by the title log as the reader scrolls towards the end of
     what it has rather than by a button: arriving at the bottom is already

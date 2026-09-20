@@ -160,7 +160,7 @@
                 }"
                 :type="split(row.entry!.title) ? 'button' : undefined"
                 :title="split(row.entry!.title) ? $t('radio.titleLogSearch') : undefined"
-                @click="split(row.entry!.title) && search(split(row.entry!.title)!.track)"
+                @click="split(row.entry!.title) && search(split(row.entry!.title)!)"
               >
                 <span class="title-log__time">{{ formatTime(row.entry!.at) }}</span>
                 <span v-if="split(row.entry!.title)" class="title-log__text">
@@ -186,6 +186,7 @@
 import type { PropType } from 'vue'
 import { isMobileWebNow } from '@/composables/useIsMobileWeb'
 import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
+import { useLibraryStore } from '@/stores/library'
 
 /** Splits an "Artist - Track" title on the first " - ", the separator ICY
  * titles conventionally use. Spaces around the dash are required: plenty
@@ -486,24 +487,26 @@ export default {
       const track = title.slice(at + SEPARATOR.length).trim()
       return artist && track ? { artist, track } : null
     },
-    /** Looks the track up in the user's own library — on each layout, the
-     * screen that layout actually uses for that. The desktop search page
-     * does render inside the mobile shell, which is how a tap on the phone
-     * used to land on a view built for a window; the phone has its own
-     * library screen (MobileLibraryView.vue) and that is where a search
-     * belongs there.
+    /** Looks the entry up in the user's own library and opens the search page
+     * for it — on each layout, the screen that layout actually uses for that.
+     * The desktop search page does render inside the mobile shell, which is
+     * how a tap on the phone used to land on a view built for a window; the
+     * phone has its own library screen (MobileLibraryView.vue) and that is
+     * where a search belongs there.
      *
-     * The track title alone, deliberately, not "artist track": an ICY
-     * artist field routinely carries things a library never matches on
-     * ("WizTheMc, bees & honey", "X feat. Y"), and a combined query that
-     * misses returns an empty page, which reads as "you don't have it".
-     * The looser query returns the song plus some neighbours, which is the
-     * far better way to be wrong — and the artist is right there in the
-     * row to pick by. */
-    search(track: string): void {
+     * The entry's own spelling is not the file's, so the library matcher
+     * resolves it first (see stores/library.ts's findLibrarySong). When the
+     * library has the song, the search opens on the library's own artist and
+     * title, which is what makes the exact row show up; when it does not, the
+     * track title alone is used, which returns the song plus its neighbours
+     * rather than an empty page. Either way what opens is the search page —
+     * this is not a shortcut to playing anything. */
+    async search(parts: { artist: string; track: string }): Promise<void> {
+      const song = await useLibraryStore().findLibrarySong(parts.artist, parts.track)
+      const query = song ? `${song.artist} ${song.title}` : parts.track
       this.$router.push({
         name: isMobileWebNow() ? 'm-library' : 'search',
-        query: { q: track },
+        query: { q: query },
       })
     },
     formatTime(at: number): string {

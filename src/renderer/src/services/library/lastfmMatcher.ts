@@ -24,6 +24,7 @@
 
 import { creditedNames } from '@/services/artistCredits'
 import type { LastfmTrack } from '@/services/connect/lastfm'
+import { normalize, similarity } from '@/services/stringMatch'
 import type { Song } from '@/types/library'
 
 /** How a song came to be chosen, kept so the dialog can show the user
@@ -41,27 +42,6 @@ export interface TrackMatch {
 const VERSION_SUFFIX =
   /\s*-\s*(?:radio edit|extended|remix|mix|version|edit|remaster(?:ed)?|live|acoustic|instrumental|mono|stereo)\b.*$/i
 
-/** Accent folding, same NFD decomposition textSearch.ts uses for the
- * in-app filter fields - "Bohème" and "Boheme" are the same title. */
-function foldDiacritics(value: string): string {
-  return value.normalize('NFD').replace(/[̀-ͯ]/g, '')
-}
-
-/** Case, accents and punctuation are never the difference between two
- * spellings of one title.
- *
- * Apostrophes are dropped rather than turned into a space, unlike every
- * other punctuation mark: "Don't" and "Dont" are the same word, and
- * spacing it out makes "don t stop" - two words where the other side has
- * one, which costs real similarity. Everything else becomes a space, so
- * that removing it cannot fuse two words into one. */
-function normalize(value: string): string {
-  return foldDiacritics(value.toLowerCase())
-    .replace(/['’`´]/g, '')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim()
-}
-
 /** A title without bracketed additions or a trailing version marker.
  * Deliberately not used *instead* of the full title - "Song (Remix)" and
  * "Song" reduce to the same core, so a library holding only the remix
@@ -74,39 +54,6 @@ export function coreTitle(title: string): string {
     .replace(/\[[^\]]*\]/g, ' ')
     .replace(VERSION_SUFFIX, ' ')
     .trim()
-}
-
-/** Dice coefficient over character bigrams: the share of adjacent letter
- * pairs two strings have in common. Chosen over an edit distance because
- * it barely punishes an extra word at the end ("Song" vs "Song Pt. 2"
- * still scores well) while a reordering or a different word drops the
- * score sharply - which is the shape of the difference between a
- * spelling variant and a different song. Returns 0..1. */
-export function similarity(a: string, b: string): number {
-  const left = normalize(a)
-  const right = normalize(b)
-  if (!left || !right) return 0
-  if (left === right) return 1
-  // A single-character string has no bigrams at all, so the general path
-  // below would score it 0 against everything including itself.
-  if (left.length < 2 || right.length < 2) return left === right ? 1 : 0
-
-  const bigrams = new Map<string, number>()
-  for (let i = 0; i < left.length - 1; i++) {
-    const pair = left.slice(i, i + 2)
-    bigrams.set(pair, (bigrams.get(pair) ?? 0) + 1)
-  }
-
-  let shared = 0
-  for (let i = 0; i < right.length - 1; i++) {
-    const pair = right.slice(i, i + 2)
-    const remaining = bigrams.get(pair) ?? 0
-    if (remaining > 0) {
-      bigrams.set(pair, remaining - 1)
-      shared++
-    }
-  }
-  return (2 * shared) / (left.length - 1 + (right.length - 1))
 }
 
 /** Whether a song's credit names this artist, using the same rules as an

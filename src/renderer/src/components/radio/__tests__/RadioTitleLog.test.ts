@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
@@ -7,6 +7,14 @@ import { isMobileWebNow } from '@/composables/useIsMobileWeb'
 import RadioTitleLog from '../RadioTitleLog.vue'
 
 vi.mock('@/composables/useIsMobileWeb', () => ({ isMobileWebNow: vi.fn(() => false) }))
+
+// The click resolves the entry against the library before it navigates (see
+// stores/library.ts's findLibrarySong); the store is mocked so this suite
+// tests the component's half — which query it opens on, not the matching.
+const findLibrarySong = vi.fn()
+vi.mock('@/stores/library', () => ({
+  useLibraryStore: () => ({ findLibrarySong }),
+}))
 
 const push = vi.fn()
 
@@ -31,6 +39,8 @@ const realTransitions = { stubs: { transition: false, 'transition-group': false 
 
 beforeEach(() => {
   push.mockClear()
+  findLibrarySong.mockReset()
+  findLibrarySong.mockResolvedValue(null)
   vi.mocked(isMobileWebNow).mockReturnValue(false)
   // Every entry below carries a real date (see at()), and what "today" is
   // decides whether a date heading is written above it - which pushes each
@@ -119,26 +129,43 @@ describe('RadioTitleLog', () => {
     ])
   })
 
-  it('searches the library for a song row, by its track title', () => {
+  it('searches the library for a song row, on the track title when it has no match', async () => {
     const wrapper = mountLog(['WizTheMc, bees & honey - Show Me Love'])
 
     // The whole card, not the title on it - see the component's template
     // for why a row-sized target beats a text-sized one.
-    wrapper.find('.title-log__item--searchable').trigger('click')
+    await wrapper.find('.title-log__item--searchable').trigger('click')
+    await flushPromises()
 
-    // The track alone, not "artist track": an ICY artist field routinely
+    expect(findLibrarySong).toHaveBeenCalledWith('WizTheMc, bees & honey', 'Show Me Love')
+    // The track alone when nothing matched: an ICY artist field routinely
     // carries what a library never matches on, and a combined query that
     // misses reads as "you don't have this song".
     expect(push).toHaveBeenCalledWith({ name: 'search', query: { q: 'Show Me Love' } })
   })
 
-  it('goes to the phone library rather than the desktop search page on mobile', () => {
+  it("opens on the library's own artist and title when the matcher finds the song", async () => {
+    findLibrarySong.mockResolvedValue({ artist: 'WizTheMc', title: 'Show Me Love' })
+    const wrapper = mountLog(['WizTheMc, bees & honey - Show Me Love'])
+
+    await wrapper.find('.title-log__item--searchable').trigger('click')
+    await flushPromises()
+
+    // The library's spelling, not the station's, so the exact row shows up.
+    expect(push).toHaveBeenCalledWith({
+      name: 'search',
+      query: { q: 'WizTheMc Show Me Love' },
+    })
+  })
+
+  it('goes to the phone library rather than the desktop search page on mobile', async () => {
     // The desktop search page does render inside the mobile shell, which
     // is how a tap on the phone landed on a view built for a window.
     vi.mocked(isMobileWebNow).mockReturnValue(true)
     const wrapper = mountLog(['WizTheMc, bees & honey - Show Me Love'])
 
-    wrapper.find('.title-log__item--searchable').trigger('click')
+    await wrapper.find('.title-log__item--searchable').trigger('click')
+    await flushPromises()
 
     expect(push).toHaveBeenCalledWith({ name: 'm-library', query: { q: 'Show Me Love' } })
   })

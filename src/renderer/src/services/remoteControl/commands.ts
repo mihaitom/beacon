@@ -12,6 +12,7 @@ import { useAutoplayStore } from '@/stores/autoplay'
 import type { Song } from '@/types/library'
 import type { DeviceType, DiscoveredDevice } from '@/services/connect/types'
 import { faviconSizeStep, RADIO_FAVICON_CACHE_VERSION } from '@/services/connect/radio'
+import { matchesAllTerms } from '@/services/textSearch'
 
 export interface RemoteSong {
   id: string
@@ -314,14 +315,9 @@ export async function resolveRemoteQuery(
   switch (type) {
     case 'songs-request': {
       if (!library.allSongsLoaded) await library.fetchAllSongs()
-      const search = String(payload.search ?? '')
-        .trim()
-        .toLowerCase()
+      const search = String(payload.search ?? '').trim()
       const filtered = search
-        ? library.allSongs.filter(
-            (t) =>
-              t.title.toLowerCase().includes(search) || t.artist.toLowerCase().includes(search),
-          )
+        ? library.allSongs.filter((t) => matchesAllTerms(search, t.title, t.artist))
         : library.allSongs
       const offset = Number(payload.offset ?? 0)
       const limit = Number(payload.limit ?? 50)
@@ -332,13 +328,9 @@ export async function resolveRemoteQuery(
     }
     case 'albums-request': {
       if (!library.albums.length) await library.fetchAlbums()
-      const search = String(payload.search ?? '')
-        .trim()
-        .toLowerCase()
+      const search = String(payload.search ?? '').trim()
       const filtered = search
-        ? library.albums.filter(
-            (a) => a.name.toLowerCase().includes(search) || a.artist.toLowerCase().includes(search),
-          )
+        ? library.albums.filter((a) => matchesAllTerms(search, a.name, a.artist))
         : library.albums
       const offset = Number(payload.offset ?? 0)
       const limit = Number(payload.limit ?? 50)

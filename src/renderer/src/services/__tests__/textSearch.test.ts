@@ -58,4 +58,29 @@ describe('matchesAllTerms', () => {
       expect(matchesAllTerms('naive', 'Naïve')).toBe(true)
     })
   })
+
+  describe('fuzzy tolerance', () => {
+    it('still matches a substring in the middle of a word', () => {
+      // The behaviour the filter always had, kept: a prefix test alone would
+      // lose it.
+      expect(matchesAllTerms('onder', 'Wonderwall')).toBe(true)
+    })
+
+    it('folds punctuation and apostrophes, not only accents', () => {
+      expect(matchesAllTerms('dont stop', "Don't Stop")).toBe(true)
+      expect(matchesAllTerms('ac dc', 'AC/DC')).toBe(true)
+    })
+
+    it('accepts a misspelled word when it is close enough', () => {
+      expect(matchesAllTerms('beattles', 'The Beatles', 'Hey Jude')).toBe(true)
+      expect(matchesAllTerms('metalica', 'Metallica', 'Nothing Else Matters')).toBe(true)
+    })
+
+    it('rejects a short word that merely looks similar', () => {
+      // "oasis" against "basis" scores 0.75, under the floor, and a word this
+      // short is left to the substring test.
+      expect(matchesAllTerms('oasis', 'Basis')).toBe(false)
+      expect(matchesAllTerms('bush', 'Push')).toBe(false)
+    })
+  })
 })

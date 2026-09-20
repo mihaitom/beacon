@@ -14,6 +14,7 @@ import {
 } from '@/services/library/libraryCacheStore'
 import type { Album, Artist, Genre, Playlist, RadioStation, Song } from '@/types/library'
 import { creditedNames, creditsArtist } from '@/services/artistCredits'
+import { resolveTracks } from '@/services/library/lastfmMatcher'
 import { pickRediscoverSongs } from '@/services/library/rediscover'
 
 // Default cap for fetchTopSongsForArtist() below — exported so
@@ -1113,6 +1114,20 @@ export const useLibraryStore = defineStore('library', {
         )
         this.searchResults = result
       })
+    },
+
+    /** The library's own song for a radio entry's artist and title, or null
+     * when it has none close enough to be worth offering. Used by the radio
+     * title log's click: the station's ICY spelling is not the file's, and a
+     * plain text search on it either misses or buries the song, so the same
+     * matcher the playlist builder uses picks it out first. */
+    async findLibrarySong(artist: string, title: string): Promise<Song | null> {
+      const client = this.client()
+      const [resolved] = await resolveTracks(
+        [{ title, artist, mbid: '' }],
+        async (query, limit) => (await client.search3(query, limit, 0, 0)).songs,
+      )
+      return resolved?.match?.song ?? null
     },
 
     async fetchStarred(): Promise<void> {
