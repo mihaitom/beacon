@@ -10,6 +10,7 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
+import { emitter } from '@/emitter'
 import { useLibraryStore } from '@/stores/library'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { SubsonicClient } from '@/services/subsonic/client'
@@ -19,7 +20,11 @@ import * as listenbrainzApi from '@/services/connect/listenbrainz'
 
 const vuetify = createVuetify({ components, directives })
 
-const globalOptions = { plugins: [vuetify, i18n], stubs: { CoverArt: true } }
+const globalOptions = {
+  plugins: [vuetify, i18n],
+  stubs: { CoverArt: true },
+  mocks: { $emitter: emitter },
+}
 
 function dialogText(): string {
   return document.body.textContent ?? ''
@@ -194,6 +199,39 @@ describe('LastfmPlaylistDialog', () => {
 
     expect(vm.foundCount).toBe(1)
     expect(dialogText()).toContain('not in library')
+  })
+
+  it('copies one missing track as an "Artist - Title" line', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    })
+    vi.spyOn(lastfmApi, 'getLastfmTracks').mockResolvedValue([
+      { title: 'Believe', artist: 'Cher', mbid: '' },
+      { title: 'Missing One', artist: 'Nobody', mbid: '' },
+    ])
+    const search3 = vi.fn(async (query: string) =>
+      query.startsWith('Cher')
+        ? { songs: [makeSong('s1', { title: 'Believe', artist: 'Cher' })] }
+        : { songs: [] },
+    )
+    vi.spyOn(useLibraryStore(), 'client').mockReturnValue({
+      search3,
+    } as unknown as SubsonicClient)
+
+    const { vm } = await openDialog()
+    await (vm as unknown as { search: () => Promise<void> }).search()
+    await flushPromises()
+
+    const resolved = vm.resolved as { track: { artist: string; title: string } }[]
+    await (
+      vm as unknown as { copyTrack: (entry: unknown, index: number) => Promise<void> }
+    ).copyTrack(resolved[1], 1)
+
+    expect(writeText).toHaveBeenCalledWith('Nobody - Missing One')
+    // The row's button flips to a checkmark, which is the only feedback.
+    expect(vm.copiedIndex).toBe(1)
   })
 
   it('numbers every entry by chart position, gaps included', async () => {

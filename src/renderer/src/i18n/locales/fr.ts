@@ -536,6 +536,7 @@ export default {
     columnLibrary: 'Votre bibliothèque',
     closeMatch: 'correspondance approchante',
     missing: 'absent de la bibliothèque',
+    copyTrack: 'Copier le titre',
     noTracks: 'Last.fm n’a rien renvoyé.',
     failed: 'Impossible de joindre Last.fm.',
     createFailed: 'Impossible de créer la playlist.',

@@ -534,6 +534,7 @@ export default {
     columnLibrary: 'Deine Bibliothek',
     closeMatch: 'ähnlicher Treffer',
     missing: 'nicht vorhanden',
+    copyTrack: 'Titel kopieren',
     noTracks: 'Last.fm hat dazu nichts geliefert.',
     failed: 'Last.fm ist nicht erreichbar.',
     createFailed: 'Playlist konnte nicht erstellt werden.',

@@ -207,11 +207,27 @@
                  - gaps would claim a ranking Last.fm never gave. -->
                   <span class="track__rank">{{ index + 1 }}</span>
 
-                  <div class="track__side">
-                    <span class="track__title">{{ entry.track.title }}</span>
-                    <span class="track__artist text-body-small text-medium-emphasis">{{
-                      entry.track.artist
-                    }}</span>
+                  <div class="track__side track__side--source">
+                    <div class="track__names">
+                      <span class="track__title">{{ entry.track.title }}</span>
+                      <span class="track__artist text-body-small text-medium-emphasis">{{
+                        entry.track.artist
+                      }}</span>
+                    </div>
+                    <!-- One at a time: a missing track is looked up or
+                     - fetched on its own, not as a batch. Only offered
+                     - where the library has nothing - that is the track
+                     - worth taking elsewhere. -->
+                    <v-btn
+                      v-if="!entry.match"
+                      :icon="copiedIndex === index ? 'mdi-check' : 'mdi-content-copy'"
+                      :color="copiedIndex === index ? 'success' : undefined"
+                      variant="text"
+                      size="small"
+                      density="comfortable"
+                      :aria-label="$t('lastfm.copyTrack')"
+                      @click="copyTrack(entry, index)"
+                    />
                   </div>
 
                   <v-icon
@@ -410,6 +426,10 @@ export default {
       updateMode: 'append' as 'append' | 'replace',
       progressDone: 0,
       progressTotal: 0,
+      /** Which missing row's copy button just flipped to a checkmark, and
+       * the timer that flips it back. */
+      copiedIndex: -1,
+      copyResetTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       // Flipped when the dialog closes mid-search, so the worker loop in
       // resolveTracks() stops issuing lookups for a dialog nobody is
       // looking at any more.
@@ -616,6 +636,9 @@ export default {
       }
     },
   },
+  beforeUnmount() {
+    clearTimeout(this.copyResetTimer)
+  },
   methods: {
     open(source: BuilderSource = 'lastfm'): void {
       this.source = source
@@ -645,6 +668,25 @@ export default {
       if (!picked) return
       this.recentCountryCodes = withRecentCountry(this.recentCountryCodes, picked.code)
       saveRecentCountries(this.recentCountryCodes)
+    },
+
+    /** Puts one track on the clipboard as "Artist - Title", the shape a
+     * search box or a download program expects. Per track rather than in
+     * bulk: a missing track is looked up on its own. The button flips to a
+     * checkmark for a moment - a failure only logs, the same as the other
+     * copy buttons in the app, and the checkmark simply not appearing says
+     * enough. */
+    async copyTrack(entry: ResolvedTrack, index: number): Promise<void> {
+      try {
+        await navigator.clipboard.writeText(`${entry.track.artist} - ${entry.track.title}`)
+        clearTimeout(this.copyResetTimer)
+        this.copiedIndex = index
+        this.copyResetTimer = setTimeout(() => {
+          this.copiedIndex = -1
+        }, 2000)
+      } catch (error) {
+        console.error('[lastfm] Failed to copy the track:', error)
+      }
     },
 
     /** The name a playlist gets before anyone edits it — descriptive
@@ -967,6 +1009,12 @@ export default {
   opacity: 0.62;
 }
 
+/* ... but its copy button has to be readable to be found, so hovering the
+ * row brings the whole thing back to full strength. */
+.track--missing:hover {
+  opacity: 1;
+}
+
 .track__rank {
   font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
@@ -982,6 +1030,14 @@ export default {
 }
 
 .track__side--found {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* The source side carries the copy button beside the name for a track the
+ * library does not have. */
+.track__side--source {
   flex-direction: row;
   align-items: center;
   gap: 0.5rem;

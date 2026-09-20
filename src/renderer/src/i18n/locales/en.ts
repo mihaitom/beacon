@@ -529,6 +529,7 @@ export default {
     columnLibrary: 'Your library',
     closeMatch: 'close match',
     missing: 'not in library',
+    copyTrack: 'Copy track',
     noTracks: 'Last.fm returned nothing for that.',
     failed: 'Could not reach Last.fm.',
     createFailed: 'Could not create the playlist.',

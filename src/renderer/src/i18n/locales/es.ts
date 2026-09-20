@@ -533,6 +533,7 @@ export default {
     columnLibrary: 'Tu biblioteca',
     closeMatch: 'coincidencia aproximada',
     missing: 'no está en la biblioteca',
+    copyTrack: 'Copiar pista',
     noTracks: 'Last.fm no ha devuelto nada.',
     failed: 'No se ha podido conectar con Last.fm.',
     createFailed: 'No se ha podido crear la lista.',
