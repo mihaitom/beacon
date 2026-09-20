@@ -624,6 +624,7 @@ export default {
       lyrics: 'Can be switched off under Lyrics',
       recommendations: 'Can be switched off under Recommendations',
       recommendationsPartial: 'Partly switchable under Recommendations',
+      fanart: 'Can be switched off in Settings',
     },
     services: {
       updateCheck: {
@@ -696,7 +697,7 @@ export default {
       fanart: {
         name: 'Fanart.tv',
         purpose:
-          'Finding a banner for the artist page you have open, when a Fanart.tv key is configured.',
+          'Finding the background image and logo for the artist page you have open, and the background behind Now Playing.',
         sends:
           'The name of the artist whose page you have open, to look up its MusicBrainz id first. Nothing about your library.',
       },

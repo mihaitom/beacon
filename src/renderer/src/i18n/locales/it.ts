@@ -629,6 +629,7 @@ export default {
       lyrics: 'Disattivabile in Testi',
       recommendations: 'Disattivabile in Consigli',
       recommendationsPartial: 'Parzialmente disattivabile in Consigli',
+      fanart: 'Disattivabile nelle impostazioni',
     },
     services: {
       updateCheck: {
@@ -702,7 +703,7 @@ export default {
       fanart: {
         name: 'Fanart.tv',
         purpose:
-          'Cerca un banner per la pagina artista che hai aperto, se è configurata una chiave Fanart.tv.',
+          'Cerca l’immagine di sfondo e il logo per la pagina artista che hai aperto, e lo sfondo dietro «In riproduzione».',
         sends:
           'Il nome dell’artista di cui hai aperto la pagina, per trovarne prima l’id MusicBrainz. Niente sulla tua libreria.',
       },

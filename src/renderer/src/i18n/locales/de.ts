@@ -628,6 +628,7 @@ export default {
       lyrics: 'Abschaltbar unter Songtexte',
       recommendations: 'Abschaltbar unter Empfehlungen',
       recommendationsPartial: 'Teilweise abschaltbar unter Empfehlungen',
+      fanart: 'Abschaltbar über Einstellungen',
     },
     services: {
       updateCheck: {
@@ -700,7 +701,7 @@ export default {
       fanart: {
         name: 'Fanart.tv',
         purpose:
-          'Sucht ein Banner für die Künstlerseite, die du geöffnet hast, wenn ein Fanart.tv-Schlüssel hinterlegt ist.',
+          'Sucht Hintergrundbild und Logo für die Künstlerseite, die du geöffnet hast, sowie den Hintergrund hinter „Läuft gerade“.',
         sends:
           'Den Namen des Künstlers, dessen Seite du geöffnet hast - erst um dessen MusicBrainz-ID zu finden. Nichts über deine Bibliothek.',
       },

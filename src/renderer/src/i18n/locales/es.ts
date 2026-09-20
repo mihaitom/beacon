@@ -628,6 +628,7 @@ export default {
       lyrics: 'Se puede desactivar en Letras',
       recommendations: 'Se puede desactivar en Recomendaciones',
       recommendationsPartial: 'Parcialmente desactivable en Recomendaciones',
+      fanart: 'Se puede desactivar en Ajustes',
     },
     services: {
       updateCheck: {
@@ -701,7 +702,7 @@ export default {
       fanart: {
         name: 'Fanart.tv',
         purpose:
-          'Busca un banner para la página de artista que tienes abierta, si hay una clave de Fanart.tv configurada.',
+          'Busca la imagen de fondo y el logo para la página de artista que tienes abierta, y el fondo tras «Sonando ahora».',
         sends:
           'El nombre del artista cuya página tienes abierta, para buscar antes su id de MusicBrainz. Nada sobre tu biblioteca.',
       },

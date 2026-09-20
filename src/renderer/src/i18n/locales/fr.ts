@@ -631,6 +631,7 @@ export default {
       lyrics: 'Désactivable dans Paroles',
       recommendations: 'Désactivable dans Recommandations',
       recommendationsPartial: 'Partiellement désactivable sous Recommandations',
+      fanart: 'Désactivable dans les réglages',
     },
     services: {
       updateCheck: {
@@ -704,7 +705,7 @@ export default {
       fanart: {
         name: 'Fanart.tv',
         purpose:
-          "Recherche une bannière pour la page d'artiste que vous avez ouverte, si une clé Fanart.tv est configurée.",
+          "Recherche l'image de fond et le logo pour la page d'artiste que vous avez ouverte, ainsi que le fond derrière « Lecture en cours ».",
         sends:
           "Le nom de l'artiste dont vous avez la page ouverte, pour en trouver d'abord l'identifiant MusicBrainz. Rien sur votre bibliothèque.",
       },
