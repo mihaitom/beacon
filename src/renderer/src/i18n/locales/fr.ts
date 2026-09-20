@@ -437,7 +437,7 @@ export default {
       "Découvrir sur l'accueil s'appuie sur des artistes proches de ce que vous écoutez vraiment, recherchés auprès de MusicBrainz, ListenBrainz et Deezer - cela leur transmet un ou deux noms d'artistes de votre bibliothèque. Désactivé, des albums au hasard sont proposés ; ouvrir la page d'un artiste consulte toujours cet artiste, dans un cas comme dans l'autre.",
     listenbrainzUsername: 'Nom d’utilisateur ListenBrainz',
     listenbrainzHint:
-      "Votre nom public ListenBrainz. Il remplit la rangée « Recommandé pour vous » sur l'accueil et sert de valeur par défaut dans le générateur de playlists. Aucun mot de passe requis.",
+      "Votre nom public ListenBrainz. Il remplit la rangée « Recommandé pour vous » sur l'accueil et sert de valeur par défaut dans le générateur de playlists. Aucun mot de passe requis. Pour créer une playlist, en revanche, Last.fm reste le meilleur choix : ses classements sont plus variés.",
     lyricsProvidersTitle: 'Fournisseurs de paroles',
     lyricsProvidersHint:
       "Les paroles enregistrées dans le fichier lui-même sont toujours essayées en premier et ne quittent jamais votre serveur. Tous les fournisseurs ci-dessous sont activés par défaut - décochez ceux auxquels vous préférez que Beacon n'envoie pas le titre et l'artiste d'un morceau.",

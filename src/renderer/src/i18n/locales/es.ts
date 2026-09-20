@@ -435,7 +435,7 @@ export default {
       'Descubrir en Inicio usa artistas parecidos a lo que escuchas realmente, consultados en MusicBrainz, ListenBrainz y Deezer - esto comparte con ellos uno o dos nombres de artista de tu biblioteca. Desactivado muestra álbumes al azar; abrir la página de un artista sigue consultando a ese artista en cualquier caso.',
     listenbrainzUsername: 'Usuario de ListenBrainz',
     listenbrainzHint:
-      'Tu nombre público de ListenBrainz. Rellena la estantería «Recomendado para ti» en Inicio y se ofrece como valor predeterminado en el generador de listas. No hace falta contraseña.',
+      'Tu nombre público de ListenBrainz. Rellena la estantería «Recomendado para ti» en Inicio y se ofrece como valor predeterminado en el generador de listas. No hace falta contraseña. Para crear una lista, eso sí, Last.fm es la mejor opción: sus listas son más variadas.',
     lyricsProvidersTitle: 'Proveedores de letras',
     lyricsProvidersHint:
       'Las letras guardadas en el propio archivo se intentan siempre primero y nunca salen de tu servidor. Todos los proveedores de abajo están activados por defecto - desmarca aquellos a los que prefieras que Beacon no envíe el título y el artista de una canción.',

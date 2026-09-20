@@ -432,7 +432,7 @@ export default {
       "Discover on Home uses artists similar to what you actually listen to, looked up at MusicBrainz, ListenBrainz and Deezer - this shares a library artist name or two with them. Off falls back to random albums; opening an artist's own page still looks up that one artist either way.",
     listenbrainzUsername: 'ListenBrainz username',
     listenbrainzHint:
-      'Your public ListenBrainz name. It fills the "Recommended for you" shelf on Home and is offered as the default in the playlist builder. No password needed.',
+      'Your public ListenBrainz name. It fills the "Recommended for you" shelf on Home and is offered as the default in the playlist builder. No password needed. Last.fm is the better playlist builder, though - its charts come out more varied.',
     lyricsProvidersTitle: 'Lyrics providers',
     lyricsProvidersHint:
       "Lyrics stored with the song file itself are always tried first and never leave your server. Every provider below is enabled by default - deselect any you'd rather Beacon not send a song's title and artist to.",

@@ -435,7 +435,7 @@ export default {
       'Scopri nella Home usa artisti simili a ciò che ascolti davvero, cercati su MusicBrainz, ListenBrainz e Deezer - questo condivide con loro uno o due nomi di artisti della tua libreria. Disattivato mostra album casuali; aprire la pagina di un artista continua comunque a cercare quel singolo artista.',
     listenbrainzUsername: 'Nome utente ListenBrainz',
     listenbrainzHint:
-      'Il tuo nome pubblico su ListenBrainz. Riempie la sezione «Consigliati per te» nella Home e viene proposto come predefinito nel generatore di playlist. Nessuna password richiesta.',
+      'Il tuo nome pubblico su ListenBrainz. Riempie la sezione «Consigliati per te» nella Home e viene proposto come predefinito nel generatore di playlist. Nessuna password richiesta. Per creare una playlist, però, Last.fm è la scelta migliore: le sue classifiche sono più varie.',
     lyricsProvidersTitle: 'Provider di testi',
     lyricsProvidersHint:
       'I testi salvati nel file stesso vengono sempre provati per primi e non lasciano mai il tuo server. Tutti i fornitori qui sotto sono attivi per impostazione predefinita - deseleziona quelli a cui preferisci che Beacon non invii titolo e artista di un brano.',

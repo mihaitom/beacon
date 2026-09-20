@@ -435,7 +435,7 @@ export default {
       'Entdecken auf der Startseite nutzt Künstler, die dem ähneln, was du tatsächlich hörst, nachgeschlagen bei MusicBrainz, ListenBrainz und Deezer - dabei werden ein bis zwei Künstlernamen aus deiner Bibliothek an diese Dienste übermittelt. Aus zeigt stattdessen zufällige Alben; die Seite eines Künstlers schlägt diesen einen Künstler weiterhin nach, so oder so.',
     listenbrainzUsername: 'ListenBrainz-Benutzername',
     listenbrainzHint:
-      'Dein öffentlicher ListenBrainz-Name. Er füllt den Shelf „Für dich empfohlen“ auf Home und steht im Playlist-Baukasten als Vorauswahl. Kein Passwort nötig.',
+      'Dein öffentlicher ListenBrainz-Name. Er füllt den Shelf „Für dich empfohlen“ auf Home und steht im Playlist-Baukasten als Vorauswahl. Kein Passwort nötig. Zum Bauen einer Playlist ist Last.fm allerdings die bessere Wahl - seine Charts sind abwechslungsreicher.',
     lyricsProvidersTitle: 'Songtext-Anbieter',
     lyricsProvidersHint:
       'Songtexte, die in der Datei selbst stecken, werden immer zuerst versucht und verlassen deinen Server nie. Alle Anbieter unten sind standardmäßig aktiv - wähle die ab, an die Beacon Titel und Künstler eines Songs nicht senden soll.',
