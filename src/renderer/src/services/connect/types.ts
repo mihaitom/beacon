@@ -95,7 +95,17 @@ export interface GenericError {
   error: string
 }
 
-export type ConnectError = DeviceInUseError | DeliveryFailedError | GenericError
+/** A cast refused because the account is not on the server's household
+ * allow-list (see connect/core/cast_permissions.py and
+ * docs/cast-permissions.md). `account` is the verified media-server
+ * username, or an empty string when it could not be resolved. */
+export interface CastForbiddenError {
+  error: 'cast_forbidden'
+  account: string
+}
+
+export type ConnectError =
+  DeviceInUseError | DeliveryFailedError | CastForbiddenError | GenericError
 
 export function isConnectError(value: unknown): value is ConnectError {
   return typeof value === 'object' && value !== null && 'error' in value
@@ -107,6 +117,10 @@ export function isDeviceInUseError(value: unknown): value is DeviceInUseError {
 
 export function isDeliveryFailedError(value: unknown): value is DeliveryFailedError {
   return isConnectError(value) && (value as DeliveryFailedError).error === 'delivery_failed'
+}
+
+export function isCastForbiddenError(value: unknown): value is CastForbiddenError {
+  return isConnectError(value) && (value as CastForbiddenError).error === 'cast_forbidden'
 }
 
 export interface HealthResponse {

@@ -97,14 +97,28 @@ describe('SettingsView log level gating', () => {
     expect(wrapper.text()).toContain(i18n.global.t('settings.logLevel'))
   })
 
-  it('hides the log level control from a non-admin', () => {
-    // Only the control, not the section around it: the section also holds
-    // the advanced-features switch, which everyone has to be able to find
-    // (see stores/advancedMode.ts). It used to be gated as a whole,
-    // because the log level was the only thing in it.
+  it('hides the whole Advanced tab from a non-admin in the web build', () => {
+    // The tab is the installation-wide settings — log level, AirPlay
+    // pairings, API keys, cache clearing — so on a shared web/Docker
+    // deployment it is admin-only, not just the log-level control inside
+    // it.
     const wrapper = mountWith(false)
 
     expect(wrapper.text()).not.toContain(i18n.global.t('settings.logLevel'))
-    expect(wrapper.text()).toContain(i18n.global.t('settings.advancedTitle'))
+    expect(wrapper.text()).not.toContain(i18n.global.t('settings.advancedTitle'))
+  })
+
+  it('shows the Advanced tab in the desktop app whatever the admin flag says', () => {
+    // The desktop build runs its own single-user backend — there is nobody
+    // to keep these settings from, so the media account's own admin flag
+    // must not hide them.
+    window.api = {} as typeof window.api
+    try {
+      const wrapper = mountWith(false)
+
+      expect(wrapper.text()).toContain(i18n.global.t('settings.advancedTitle'))
+    } finally {
+      window.api = undefined as unknown as typeof window.api
+    }
   })
 })

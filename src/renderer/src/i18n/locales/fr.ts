@@ -288,6 +288,7 @@ export default {
     unknownError: 'Erreur inconnue.',
     // Keyed by connect/delivery/errors.py's REASON_* constants - a
     // dispatch that reached the device and didn't start playing.
+    castForbidden: 'Ce compte ne peut pas diffuser sur les enceintes de ce serveur.',
     deliveryFailed: {
       rejected:
         "« {device} » a refusé ce flux. L'appareil ne peut pas lire ce format ou cette adresse.",
@@ -388,9 +389,28 @@ export default {
     refreshingLibraryWithTotal: 'Actualisation … ({loaded} / {total})',
     libraryRefreshed: 'Bibliothèque actualisée - {count} titres chargés.',
     refreshLibraryFailed: "Impossible d'actualiser la bibliothèque.",
+    castPermissionsTitle: 'Diffusion',
+    castPermissionsHint:
+      'Choisis qui peut diffuser sur les enceintes de ce serveur. Tout le monde peut toujours écouter en local.',
+    castPermissionsPolicy: 'Qui peut diffuser ?',
+    castPermissionsPolicyEveryone: 'Tout le monde',
+    castPermissionsPolicyAllowlist: 'Seuls les comptes listés',
+    castPermissionsPolicyBlocklist: 'Tout le monde sauf les comptes listés',
+    castPermissionsPolicyNobody: 'Personne sauf les administrateurs',
+    castPermissionsEffectEveryone: 'Tout le monde peut diffuser.',
+    castPermissionsEffectOnlyListed: 'Seuls les comptes listés peuvent diffuser.',
+    castPermissionsEffectAllExceptListed: 'Tout le monde sauf les comptes listés peut diffuser.',
+    castPermissionsEffectNobody: 'Personne sauf les administrateurs ne peut diffuser.',
+    castPermissionsAccountAllow: 'Comptes autorisés à diffuser',
+    castPermissionsAccountBlock: 'Comptes bloqués pour la diffusion',
+    castPermissionsNoUsers: 'Seuls les comptes qui se sont déjà connectés à ce Beacon sont listés.',
+    castPermissionsSave: 'Enregistrer',
+    castPermissionsSaved: 'Autorisations de diffusion enregistrées.',
+    castPermissionsSaveFailed: "Impossible d'enregistrer les autorisations de diffusion.",
+    castPermissionsLoadFailed: 'Impossible de charger les autorisations de diffusion.',
     storageTitle: 'Stockage',
     clearCacheHint:
-      "Supprime les données de bibliothèque, les pochettes, les photos d'artistes, les logos de stations et les paroles mis en cache localement - tout est rechargé la prochaine fois que c'est nécessaire. Ne déclenche pas d'analyse de la bibliothèque.",
+      "Efface ce que ce navigateur garde en local - données de bibliothèque, pochettes, photos d'artistes, logos de stations et paroles. Tout se recharge à la prochaine utilisation. Seul cet appareil est concerné : le backend Connect garde son propre cache, les autres appareils et comptes ne sont pas touchés. Ne déclenche pas d'analyse de la bibliothèque.",
     clearCache: 'Vider le cache',
     cacheCleared: 'Cache vidé.',
     resetAirplayHint:
@@ -398,9 +418,6 @@ export default {
     resetAirplay: 'Réinitialiser les associations AirPlay',
     airplayReset: 'Associations AirPlay réinitialisées.',
     airplayResetFailed: 'Impossible de réinitialiser les associations AirPlay.',
-    advancedMode: 'Afficher les fonctions avancées',
-    advancedModeHint:
-      'Ajoute ce qui demande une configuration préalable, comme relier Beacon à un service externe. Ce que vous configurez ici reste accessible à tous ceux qui utilisent ce Beacon, que cette option soit activée chez eux ou non.',
     lastfmTitle: 'Last.fm',
     lastfmWhat:
       "Permet à toute personne utilisant ce Beacon de créer des playlists à partir des classements Last.fm, d'un genre, d'un artiste ou de son propre historique.",

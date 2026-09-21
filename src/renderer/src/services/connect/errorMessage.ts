@@ -1,6 +1,6 @@
 import { i18n } from '@/i18n'
 import { ConnectApiError } from './http'
-import { isDeliveryFailedError } from './types'
+import { isCastForbiddenError, isDeliveryFailedError } from './types'
 
 /** What a failed cast should actually say to the person who tried it, and
  * the technical line that belongs under it.
@@ -24,6 +24,9 @@ export function connectErrorMessage(error: unknown): { message: string; detail: 
       message: i18n.global.t(`connect.deliveryFailed.${reason}`, { device }),
       detail,
     }
+  }
+  if (error instanceof ConnectApiError && isCastForbiddenError(error.body)) {
+    return { message: i18n.global.t('connect.castForbidden'), detail: null }
   }
   return {
     message: error instanceof Error ? error.message : String(error),

@@ -12,6 +12,7 @@ import os
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from core import cast_permissions
 from core.auth import require_token
 from core.claims import claims
 from core.ffmpeg import ffmpeg_available
@@ -33,7 +34,7 @@ from delivery import (
     SonosDelivery,
 )
 from delivery.sonos import halt_if_possible
-from media import JellyfinClient, PlexClient, SubsonicClient, server_type_name
+from media import JellyfinClient, PlexClient, SubsonicClient, resolve_account, server_type_name
 from routes.playback import _resync_position_periodically
 
 logger = logging.getLogger("connect.devices")
@@ -153,6 +154,18 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
         )
         raise HTTPException(status_code=401, detail="Media server rejected the supplied credential")
 
+    # Ask the server who this credential actually belongs to, rather than
+    # trusting the request body's `username` (see
+    # docs/cast-permissions.md). A failure here is not fatal to the login:
+    # browsing and local playback don't need it, and cast permission
+    # enforcement treats an unresolved account as "not listed" rather than
+    # as an open door (core/cast_permissions.py's is_allowed()).
+    try:
+        account = await resolve_account(media, req.username)
+    except Exception as e:
+        logger.warning(f"[config] Could not resolve the account for {req.url}: {e}")
+        account = None
+
     if session.config_seq != seq:
         logger.info(
             f"[config] Superseded by a newer /config call for this session — "
@@ -162,7 +175,27 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
 
     session.media = media
     session.authenticated = True
-    session.display_name = req.username or session.session_id
+    session.account_server_type = server_type_name(media)
+    session.account_server_url = req.url
+    session.account_username = account.username if account else ""
+    session.account_is_admin = bool(account and account.is_admin)
+    # The verified name when there is one, so "in use by" shows the real
+    # account; the request body's value stays the fallback for a server
+    # that could not answer (and for Plex, which cannot).
+    session.display_name = (
+        account.username if account and account.username else req.username
+    ) or session.session_id
+    # Remember the verified account for the cast-permissions picker: it is
+    # the one account list that works across every server type (see
+    # core/cast_permissions.py's known_accounts). Off the event loop — it
+    # reads and rewrites a JSON file.
+    if account and account.username:
+        await asyncio.to_thread(
+            cast_permissions.record_account,
+            session.account_server_type,
+            session.account_server_url,
+            account.username,
+        )
 
     if server_type == "jellyfin":
         logger.info(

@@ -40,6 +40,7 @@ connect/lastfm_api_key.txt
 connect/fanart_api_key.txt
 connect/fanart_cache.json
 connect/fanart_images/
+connect/cast_permissions.json
 
 # Built by scripts/build-ffmpeg.sh, packaged into the desktop app
 build/ffmpeg/ffmpeg

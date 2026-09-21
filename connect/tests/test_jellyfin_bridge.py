@@ -1384,6 +1384,29 @@ def test_get_user_reports_an_ordinary_listener_as_such(client, jellyfin_session,
     assert r.json()["subsonic-response"]["user"]["adminRole"] is False
 
 
+def test_get_users_lists_the_servers_accounts(client, jellyfin_session, monkeypatch):
+    """getUsers.view backs the cast-permissions admin UI's account picker
+    (see docs/cast-permissions.md). /Users is admin-only, so a non-admin
+    would get Jellyfin's own refusal through instead."""
+    fake_client, calls = _fake_jf_client(
+        {
+            "/Users": [
+                {"Name": "thomas", "Policy": {"IsAdministrator": True}},
+                {"Name": "rita", "Policy": {}},
+            ]
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getUsers.view")
+
+    assert r.json()["subsonic-response"]["users"]["user"] == [
+        {"username": "thomas", "adminRole": True},
+        {"username": "rita", "adminRole": False},
+    ]
+    assert calls[0][1].endswith("/Users")
+
+
 def test_map_song_detail_carries_what_the_track_info_sheet_needs():
     """The single-track lookup answers with everything Jellyfin holds, in
     OpenSubsonic's own field names — see _map_song_detail()."""

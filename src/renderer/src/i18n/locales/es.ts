@@ -288,6 +288,7 @@ export default {
     unknownError: 'Error desconocido.',
     // Keyed by connect/delivery/errors.py's REASON_* constants - a
     // dispatch that reached the device and didn't start playing.
+    castForbidden: 'Esta cuenta no puede emitir a los altavoces de este servidor.',
     deliveryFailed: {
       rejected:
         '«{device}» rechazó esta transmisión. El dispositivo no puede reproducir ese formato o esa dirección.',
@@ -387,9 +388,28 @@ export default {
     refreshingLibraryWithTotal: 'Actualizando … ({loaded} / {total})',
     libraryRefreshed: 'Biblioteca actualizada - {count} canciones cargadas.',
     refreshLibraryFailed: 'No se pudo actualizar la biblioteca.',
+    castPermissionsTitle: 'Emisión',
+    castPermissionsHint:
+      'Decide quién puede emitir a los altavoces de este servidor. Todos pueden seguir escuchando en local.',
+    castPermissionsPolicy: '¿Quién puede emitir?',
+    castPermissionsPolicyEveryone: 'Todos',
+    castPermissionsPolicyAllowlist: 'Solo las cuentas listadas',
+    castPermissionsPolicyBlocklist: 'Todos excepto las cuentas listadas',
+    castPermissionsPolicyNobody: 'Nadie excepto los administradores',
+    castPermissionsEffectEveryone: 'Todos pueden emitir.',
+    castPermissionsEffectOnlyListed: 'Solo las cuentas listadas pueden emitir.',
+    castPermissionsEffectAllExceptListed: 'Todos excepto las cuentas listadas pueden emitir.',
+    castPermissionsEffectNobody: 'Nadie excepto los administradores puede emitir.',
+    castPermissionsAccountAllow: 'Cuentas que pueden emitir',
+    castPermissionsAccountBlock: 'Cuentas que no pueden emitir',
+    castPermissionsNoUsers: 'Solo se listan las cuentas que ya han iniciado sesión en este Beacon.',
+    castPermissionsSave: 'Guardar',
+    castPermissionsSaved: 'Permisos de emisión guardados.',
+    castPermissionsSaveFailed: 'No se pudieron guardar los permisos de emisión.',
+    castPermissionsLoadFailed: 'No se pudieron cargar los permisos de emisión.',
     storageTitle: 'Almacenamiento',
     clearCacheHint:
-      'Descarta los datos de biblioteca, carátulas, fotos de artistas, logotipos de emisoras y letras almacenados localmente en caché - todo se vuelve a cargar la próxima vez que se necesite. No provoca un escaneo de biblioteca.',
+      'Descarta lo que este navegador guarda en local: datos de biblioteca, carátulas, fotos de artistas, logotipos de emisoras y letras. Todo se vuelve a cargar la próxima vez que se necesite. Solo afecta a este dispositivo: el backend de Connect conserva su propia caché, así que otros dispositivos y cuentas no se tocan. No provoca un escaneo de biblioteca.',
     clearCache: 'Borrar caché',
     cacheCleared: 'Caché borrada.',
     resetAirplayHint:
@@ -397,9 +417,6 @@ export default {
     resetAirplay: 'Restablecer emparejamientos de AirPlay',
     airplayReset: 'Emparejamientos de AirPlay restablecidos.',
     airplayResetFailed: 'No se pudieron restablecer los emparejamientos de AirPlay.',
-    advancedMode: 'Mostrar funciones avanzadas',
-    advancedModeHint:
-      'Añade las cosas que primero hay que configurar, como conectar Beacon con un servicio externo. Lo que configures aquí queda disponible para todos los que usen este Beacon, tengan o no este interruptor activado.',
     lastfmTitle: 'Last.fm',
     lastfmWhat:
       'Permite a cualquiera que use este Beacon crear listas a partir de las listas de éxitos de Last.fm, de un género, un artista o su propio historial.',

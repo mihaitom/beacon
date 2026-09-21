@@ -114,6 +114,7 @@ import {
   type StreamFormat,
   type TranscodeFormat,
 } from '@/services/streamQuality'
+import SegmentedControl from '@/components/SegmentedControl.vue'
 import QualityTips from './QualityTips.vue'
 
 /**
@@ -123,7 +124,7 @@ import QualityTips from './QualityTips.vue'
  */
 export default {
   name: 'PlaybackSection',
-  components: { QualityTips },
+  components: { QualityTips, SegmentedControl },
   computed: {
     playbackStore() {
       return usePlaybackStore()

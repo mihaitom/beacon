@@ -6,6 +6,7 @@ import logging
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from core import cast_permissions
 from core.auth import require_token
 from core.session import (
     SessionState,
@@ -166,6 +167,13 @@ async def join_stream(
     # keeps physically playing, but becomes invisible to /status and
     # unreachable by /stop/pause).
     async with session.play_lock:
+        # Same check as /play, before the claim: a refused join must not
+        # leave the device locked to this session. See
+        # docs/cast-permissions.md.
+        forbidden = await cast_permissions.authorize_async(session)
+        if forbidden:
+            logger.info(f"[join] Refused: {forbidden}")
+            return forbidden
         error, displaced = await check_claims(new_d, session, force=req.force)
         if error:
             return error
@@ -345,6 +353,11 @@ async def claim_device(
     # Same play_lock reasoning as /join above — this write to
     # active_delivery must be serialized against /play, /pause, /seek etc.
     async with session.play_lock:
+        # Same check as /play, before the claim — see docs/cast-permissions.md.
+        forbidden = await cast_permissions.authorize_async(session)
+        if forbidden:
+            logger.info(f"[claim] Refused: {forbidden}")
+            return forbidden
         error, displaced = await check_claims(target, session, force=req.force)
         if error:
             return error

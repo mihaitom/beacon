@@ -75,6 +75,15 @@ function rects(selector: string): DOMRect[] {
   )
 }
 
+/** Bring a tab to the front. Every panel is mounted (`eager`), but only the
+ * active one is laid out — an inactive tab's controls measure 0x0, so a
+ * layout assertion has to select its tab first. */
+async function showTab(name: string): Promise<void> {
+  const vm = currentWrapper!.findComponent(SettingsView).vm as unknown as { tab: string }
+  vm.tab = name
+  await currentWrapper!.vm.$nextTick()
+}
+
 describe('SettingsView layout', () => {
   afterEach(() => {
     currentWrapper?.unmount()
@@ -84,8 +93,12 @@ describe('SettingsView layout', () => {
   it('renders every section as its own panel', async () => {
     await mountSettings(1200)
 
-    // Account, Playback, Library, Lyrics, Storage, Advanced, About.
-    expect(rects('.beacon-panel').length).toBe(7)
+    // Account, About, Playback, Lyrics, Library, Casting, Advanced, Storage,
+    // and one panel per API key service (Last.fm, Fanart.tv). Every panel is
+    // mounted even while its tab is in the background, which is the point of
+    // `eager` — a section that vanished on a tab switch would re-run its own
+    // loading when it came back.
+    expect(rects('.beacon-panel').length).toBe(10)
   })
 
   it('fits a phone viewport without anything spilling sideways', async () => {
@@ -116,6 +129,7 @@ describe('SettingsView layout', () => {
     // default is "original", which is a single-control row with nothing to
     // lay out against.
     await mountSettings(1200)
+    await showTab('playback')
     usePlaybackStore().setLocalQuality('mp3')
     await currentWrapper!.vm.$nextTick()
     const wide = rects('.quality-row')[0]!
@@ -129,6 +143,7 @@ describe('SettingsView layout', () => {
     expect(wide.width).toBeGreaterThan(0)
 
     await mountSettings(360, 800)
+    await showTab('playback')
     usePlaybackStore().setLocalQuality('mp3')
     await currentWrapper!.vm.$nextTick()
     const narrowRow = [...document.querySelectorAll('.quality-row')][0]!.children

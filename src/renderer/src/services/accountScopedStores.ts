@@ -34,7 +34,6 @@ import { useRadioSettingsStore } from '@/stores/radioSettings'
 import { useLastfmStore } from '@/stores/lastfm'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
 import { useFanartStore } from '@/stores/fanart'
-import { useAdvancedModeStore } from '@/stores/advancedMode'
 import { useDrawersStore } from '@/stores/drawers'
 import {
   useLyricsProvidersStore,
@@ -143,7 +142,6 @@ export function initAccountScopedStores(): void {
     useLastfmStore().reloadForAccount()
     useListenbrainzStore().reloadForAccount()
     useFanartStore().reloadForAccount()
-    useAdvancedModeStore().reloadForAccount()
     void pullAccountSettings()
   })
 }

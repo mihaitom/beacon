@@ -7,6 +7,7 @@ connect/.venv
 connect/.env
 connect/.connect-token
 connect/airplay_credentials.json
+connect/cast_permissions.json
 connect/tone.wav
 connect/dist
 connect/build
@@ -15,6 +16,11 @@ connect/tests
 connect/**/__pycache__
 connect/.pytest_cache
 connect/.ruff_cache
+connect/lastfm_api_key.txt
+connect/fanart_api_key.txt
+connect/fanart_cache.json
+connect/fanart_images/
+connect/cast_permissions.json
 
 # Local build/packaging output — never needed to build the Docker image
 # itself. build/ffmpeg is the exception: its recipe is copied in and built

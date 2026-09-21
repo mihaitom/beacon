@@ -799,6 +799,26 @@ async def get_user(params: dict, media: JellyfinClient) -> dict:
     }
 
 
+async def get_users(_params: dict, media: JellyfinClient) -> dict:
+    """Subsonic's getUsers.view, bridged so the admin UI can offer the
+    server's real accounts instead of free-typed names (see
+    docs/cast-permissions.md). /Users is admin-only (RequiresElevation), so
+    a non-admin gets Jellyfin's own refusal — which is the correct answer
+    for a list only an admin may see."""
+    users = await _jf_request("GET", media, "/Users")
+    return {
+        "users": {
+            "user": [
+                {
+                    "username": user.get("Name", ""),
+                    "adminRole": bool((user.get("Policy") or {}).get("IsAdministrator")),
+                }
+                for user in users
+            ]
+        }
+    }
+
+
 async def _music_libraries(media: JellyfinClient) -> list[dict]:
     """The server's music libraries, as Jellyfin's own library list reports
     them. A server almost always holds films and series as well, and
@@ -1010,6 +1030,7 @@ _HANDLERS: dict[str, Callable[[dict, JellyfinClient], Awaitable[dict]]] = {
     "getPlaylist.view": get_playlist,
     "getLyricsBySongId.view": get_lyrics_by_song_id,
     "getUser.view": get_user,
+    "getUsers.view": get_users,
     "startScan.view": start_scan,
     "getScanStatus.view": get_scan_status,
     "createPlaylist.view": create_playlist,

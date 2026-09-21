@@ -1,27 +1,12 @@
 <template>
-  <section class="settings-section">
+  <!-- Shown only to an account the server lets change it
+     - (capabilities.logLevelControl). With the old advanced-features switch
+     - gone, this section is the log level alone, so for anyone else there
+     - is nothing to show and no empty panel to show it in. -->
+  <section v-if="authStore.capabilities.logLevelControl" class="settings-section">
     <h2 class="section-title">{{ $t('settings.advancedTitle') }}</h2>
     <div class="beacon-panel">
-      <!-- The switch is always here, and off by default. Whoever set the
-       - music server up goes looking for this; everyone else in the
-       - household never has to meet what it uncovers. See
-       - stores/advancedMode.ts. -->
       <div class="setting">
-        <v-switch
-          :model-value="advancedModeStore.enabled"
-          color="primary"
-          density="compact"
-          hide-details
-          :label="$t('settings.advancedMode')"
-          @update:model-value="advancedModeStore.setEnabled(!!$event)"
-        />
-        <p class="setting__hint">{{ $t('settings.advancedModeHint') }}</p>
-      </div>
-
-      <!-- Not behind the switch: it was here before it existed, and it
-       - already answers to the media server's own admin flag. See
-       - services/capabilities.ts's logLevelControl. -->
-      <div v-if="authStore.capabilities.logLevelControl" class="setting">
         <p class="setting__description">{{ $t('settings.logLevelHint') }}</p>
         <v-select
           v-model="logLevel"
@@ -34,23 +19,40 @@
           @update:model-value="onLogLevelChange"
         />
       </div>
+
+      <!-- Installation-wide, like the log level above and the API keys
+         - below: the pairings live in connect, not in this browser, so
+         - resetting them affects everyone using this Beacon. -->
+      <div class="setting">
+        <p class="setting__description">{{ $t('settings.resetAirplayHint') }}</p>
+        <v-btn
+          variant="tonal"
+          prepend-icon="mdi-cast-off"
+          :loading="resettingAirplay"
+          @click="resetAirplayPairings"
+        >
+          {{ $t('settings.resetAirplay') }}
+        </v-btn>
+      </div>
     </div>
   </section>
 </template>
 
 <script lang="ts">
 import { useAuthStore } from '@/stores/auth'
-import { useAdvancedModeStore } from '@/stores/advancedMode'
+import { useConnectStore } from '@/stores/connect'
 import { getLogLevel, setLogLevel, type LogLevel } from '@/services/connect/logLevel'
 
 /**
- * The switch that uncovers the things which have to be set up before they
- * work, and the backend's log verbosity.
+ * The backend's log verbosity and the AirPlay pairings, both
+ * installation-wide.
  *
- * The switch is always here and off by default: whoever runs the music
- * server comes looking for it, and everyone else in the household never
- * meets what it reveals. The log level is not behind it - it predates the
- * switch and already answers to the media server's own admin flag.
+ * Settings used to hide the things that take setting up behind a "Show
+ * advanced features" switch here; the Advanced tab is that hiding place
+ * now, and it is shown only to a server administrator, so the switch is
+ * gone. The log level answers to the media server's own admin flag
+ * (capabilities.logLevelControl); the pairings are shared by everyone using
+ * this Beacon, which is why resetting them belongs here too.
  */
 export default {
   name: 'AdvancedSection',
@@ -58,6 +60,7 @@ export default {
     return {
       logLevel: null as LogLevel | null,
       logLevelBusy: false,
+      resettingAirplay: false,
     }
   },
   created() {
@@ -70,8 +73,8 @@ export default {
     authStore() {
       return useAuthStore()
     },
-    advancedModeStore() {
-      return useAdvancedModeStore()
+    connectStore() {
+      return useConnectStore()
     },
     logLevelOptions() {
       return [
@@ -111,6 +114,26 @@ export default {
         void this.loadLogLevel() // re-sync the dropdown with what's actually active
       } finally {
         this.logLevelBusy = false
+      }
+    },
+    async resetAirplayPairings() {
+      this.resettingAirplay = true
+      try {
+        await this.connectStore.unpairAll()
+        this.$emitter.emit('toast', {
+          level: 'success',
+          title: this.$t('settings.resetAirplay'),
+          message: this.$t('settings.airplayReset'),
+        })
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('settings.resetAirplay'),
+          message: this.$t('settings.airplayResetFailed'),
+        })
+        console.error('[settings] Failed to reset AirPlay pairings:', error)
+      } finally {
+        this.resettingAirplay = false
       }
     },
   },

@@ -11,6 +11,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from core import cast_permissions
 from core.auth import require_token
 from core.claims import claims
 from core.playback_clock import MAX_PLAUSIBLE_POSITION_LEAD, POSITION_RESYNC_THRESHOLD
@@ -912,6 +913,12 @@ async def play_tracks(
         url = stream_url(session.session_id, output_format.content_type)
 
         if target:
+            # Before claiming: a refused dispatch must not leave a device
+            # locked to this session. See docs/cast-permissions.md.
+            forbidden = await cast_permissions.authorize_async(session)
+            if forbidden:
+                logger.info(f"[play] Refused: {forbidden}")
+                return forbidden
             conflict = await _claim_or_takeover(target, session, req.force)
             if conflict:
                 return conflict
@@ -1127,6 +1134,12 @@ async def play_url(
         # that gets refused with device_in_use still shows up, instead of only
         # logging on success.
         logger.info(f"[play-url] Radio '{req.title}' → {req.url[:80]}, target={target}")
+
+        # Same as /play's check, and before the claim for the same reason.
+        forbidden = await cast_permissions.authorize_async(session)
+        if forbidden:
+            logger.info(f"[play-url] Refused: {forbidden}")
+            return forbidden
 
         conflict = await _claim_or_takeover(target, session, req.force)
         if conflict:

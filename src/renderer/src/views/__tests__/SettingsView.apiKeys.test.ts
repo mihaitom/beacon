@@ -1,7 +1,8 @@
-// The advanced-features switch and the API key section behind it. The switch
-// exists so the person who did not set the music server up never meets the
-// setup controls; the key section is the first thing it covers, and the
-// Last.fm key in it is what makes the playlist builder appear at all.
+// The installation-wide API keys (Last.fm, Fanart.tv) are part of the
+// Advanced tab now. The tab itself is what keeps setup out of everyone
+// else's way, so there is no separate "show advanced features" switch to
+// find first — this holds down that the section is still wired into the
+// page, not the switch that used to reveal it.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -9,6 +10,7 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
+import { useAuthStore } from '@/stores/auth'
 import { getApiKeyStatuses, setApiKey } from '@/services/connect/apiKeys'
 import SettingsView from '../SettingsView.vue'
 
@@ -25,6 +27,8 @@ const NONE_SET = {
 const vuetify = createVuetify({ components, directives })
 
 async function mountSettings() {
+  // The API keys live in the admin-only Advanced tab now.
+  useAuthStore().isAdmin = true
   const wrapper = mount(SettingsView, {
     global: {
       plugins: [vuetify, i18n],
@@ -36,23 +40,7 @@ async function mountSettings() {
   return wrapper
 }
 
-function advancedToggle(wrapper: Awaited<ReturnType<typeof mountSettings>>) {
-  const label = wrapper.vm.$t('settings.advancedMode')
-  const toggle = wrapper
-    .findAllComponents({ name: 'VSwitch' })
-    .find((c) => c.text().includes(label))
-  if (!toggle) throw new Error('advanced-mode toggle not found')
-  return toggle
-}
-
-function keyField(wrapper: Awaited<ReturnType<typeof mountSettings>>) {
-  const label = wrapper.vm.$t('settings.apiKeyLabel', {
-    service: wrapper.vm.$t('settings.lastfmTitle'),
-  })
-  return wrapper.findAllComponents({ name: 'VTextField' }).find((c) => c.props('label') === label)
-}
-
-describe('SettingsView advanced features', () => {
+describe('SettingsView API keys', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
@@ -60,34 +48,19 @@ describe('SettingsView advanced features', () => {
     vi.mocked(setApiKey).mockReset().mockResolvedValue(NONE_SET)
   })
 
-  it('hides the whole API key section until advanced features are switched on', async () => {
-    // The section, not just the control inside it: a heading with nothing
-    // under it is what gating one field at a time leaves behind.
+  it('offers the API key section without a switch to find first', async () => {
     const wrapper = await mountSettings()
-    const headings = () => wrapper.findAll('.section-title').map((h) => h.text())
+    const label = wrapper.vm.$t('settings.apiKeyLabel', {
+      service: wrapper.vm.$t('settings.lastfmTitle'),
+    })
 
-    expect(keyField(wrapper)).toBeUndefined()
-    expect(headings()).not.toContain(wrapper.vm.$t('settings.apiKeysTitle'))
+    const field = wrapper
+      .findAllComponents({ name: 'VTextField' })
+      .find((c) => c.props('label') === label)
 
-    await advancedToggle(wrapper).vm.$emit('update:modelValue', true)
-    await flushPromises()
-
-    expect(keyField(wrapper)).toBeDefined()
-    expect(headings()).toContain(wrapper.vm.$t('settings.apiKeysTitle'))
-  })
-
-  it('keeps the switch itself in the Advanced section, where it can be found', async () => {
-    // The switch must not hide with what it reveals, or nothing could
-    // ever turn it back on.
-    const wrapper = await mountSettings()
-    const headings = wrapper.findAll('.section-title').map((h) => h.text())
-
-    expect(headings).toContain(wrapper.vm.$t('settings.advancedTitle'))
-    expect(advancedToggle(wrapper).exists()).toBe(true)
-  })
-
-  it('offers the switch itself to everyone, so it can be found', async () => {
-    const wrapper = await mountSettings()
-    expect(advancedToggle(wrapper).props('modelValue')).toBe(false)
+    expect(field).toBeDefined()
+    expect(wrapper.findAll('.section-title').map((h) => h.text())).toContain(
+      wrapper.vm.$t('settings.apiKeysTitle'),
+    )
   })
 })

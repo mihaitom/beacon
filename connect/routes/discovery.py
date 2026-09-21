@@ -7,6 +7,7 @@ import time
 from fastapi import APIRouter, Depends
 
 from core.auth import require_token
+from core.cast_permissions import may_cast
 from core.claims import claims
 from core.session import (
     SessionState,
@@ -152,13 +153,19 @@ async def discover_all(verbose: bool = False) -> dict:
     return await task
 
 
-def _annotate_claims(discovered: dict) -> dict:
+def _annotate_claims(discovered: dict, session: SessionState, permitted: bool) -> dict:
     """Attach in_use_by_session_id/in_use_by_name/in_use_by_song to each
     device in a fresh /discover response — computed per-request (not cached,
     unlike the device list itself) since claims change far more often than
     the device list. Reports the raw owner regardless of who's asking; the
     frontend decides "claimed by me" vs. "claimed by someone else" by
-    comparing against its own session id."""
+    comparing against its own session id.
+
+    `permitted` (core/cast_permissions.py's may_cast, read off the event
+    loop by the caller) drops every device an account that may not cast at
+    all would otherwise be offered — except one this session already holds,
+    so a rule change cannot hide a device that is still playing for it.
+    This is presentation only; the cast routes are what actually refuse."""
     annotated: dict = {}
     # discover_airplay() sets needs_pairing purely from the device's
     # advertised AirPlay protocol — it has no idea whether we've already
@@ -172,6 +179,8 @@ def _annotate_claims(discovered: dict) -> dict:
         annotated[group_type] = []
         for device in devices:
             owner = claims.owner_of(group_type, device["name"])
+            if not permitted and owner != session.session_id:
+                continue
             owner_session = registry.get(owner) if owner else None
             entry = {
                 **device,
@@ -203,6 +212,10 @@ async def discover(
     # background-rescan path.
     has_cache = _last_scan_completed > 0.0
 
+    # Off the event loop: the rules are a JSON file read under a lock (see
+    # core/cast_permissions.py's authorize_async).
+    permitted = await asyncio.to_thread(may_cast, session)
+
     # fresh=true (explicit "Scan again") awaits a full rescan so the client can
     # show real progress. Otherwise serve cache instantly and rescan in the
     # background for snappy popover opens — but only if the cache is actually
@@ -212,6 +225,6 @@ async def discover(
     if has_cache and not fresh:
         if time.monotonic() - _last_scan_completed > _BACKGROUND_RESCAN_MIN_INTERVAL:
             asyncio.create_task(_background_rescan())
-        return _annotate_claims(cached)
+        return _annotate_claims(cached, session, permitted)
 
-    return _annotate_claims(await discover_all(verbose=True))
+    return _annotate_claims(await discover_all(verbose=True), session, permitted)

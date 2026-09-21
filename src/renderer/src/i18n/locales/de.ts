@@ -285,6 +285,7 @@ export default {
     unknownError: 'Unbekannter Fehler.',
     // Keyed by connect/delivery/errors.py's REASON_* constants - a
     // dispatch that reached the device and didn't start playing.
+    castForbidden: 'Dieses Konto darf auf diesem Server nicht auf Lautsprecher casten.',
     deliveryFailed: {
       rejected:
         '„{device}“ hat diesen Stream abgelehnt. Das Gerät kann das Format oder die Adresse nicht wiedergeben.',
@@ -384,9 +385,29 @@ export default {
     refreshingLibraryWithTotal: 'Wird aktualisiert … ({loaded} / {total})',
     libraryRefreshed: 'Bibliothek aktualisiert - {count} Titel geladen.',
     refreshLibraryFailed: 'Bibliothek konnte nicht aktualisiert werden.',
+    castPermissionsTitle: 'Casting',
+    castPermissionsHint:
+      'Lege fest, wer auf diesem Server auf Lautsprecher casten darf. Lokal hören können weiterhin alle.',
+    castPermissionsPolicy: 'Wer darf casten?',
+    castPermissionsPolicyEveryone: 'Alle',
+    castPermissionsPolicyAllowlist: 'Nur die gelisteten Konten',
+    castPermissionsPolicyBlocklist: 'Alle außer den gelisteten Konten',
+    castPermissionsPolicyNobody: 'Niemand außer Administratoren',
+    castPermissionsEffectEveryone: 'Alle dürfen casten.',
+    castPermissionsEffectOnlyListed: 'Nur die gelisteten Konten dürfen casten.',
+    castPermissionsEffectAllExceptListed: 'Alle außer den gelisteten Konten dürfen casten.',
+    castPermissionsEffectNobody: 'Niemand außer Administratoren darf casten.',
+    castPermissionsAccountAllow: 'Konten, die casten dürfen',
+    castPermissionsAccountBlock: 'Konten, die nicht casten dürfen',
+    castPermissionsNoUsers:
+      'Aufgelistet sind nur Konten, die sich an diesem Beacon schon einmal angemeldet haben.',
+    castPermissionsSave: 'Speichern',
+    castPermissionsSaved: 'Casting-Berechtigungen gespeichert.',
+    castPermissionsSaveFailed: 'Casting-Berechtigungen konnten nicht gespeichert werden.',
+    castPermissionsLoadFailed: 'Casting-Berechtigungen konnten nicht geladen werden.',
     storageTitle: 'Speicher',
     clearCacheHint:
-      'Lokal zwischengespeicherte Bibliotheksdaten, Cover, Künstlerfotos, Sender-Logos und Songtexte verwerfen - bei Bedarf wird alles beim nächsten Aufruf neu geladen. Löst keinen Bibliotheks-Scan aus.',
+      'Verwirft, was dieser Browser lokal gespeichert hat - Bibliotheksdaten, Cover, Künstlerfotos, Sender-Logos und Songtexte. Bei Bedarf wird alles beim nächsten Aufruf neu geladen. Betroffen ist nur dieses Gerät: Das Connect-Backend behält seinen eigenen Cache, andere Geräte und Konten bleiben unberührt. Löst keinen Bibliotheks-Scan aus.',
     clearCache: 'Zwischenspeicher leeren',
     cacheCleared: 'Zwischenspeicher geleert.',
     resetAirplayHint:
@@ -394,9 +415,6 @@ export default {
     resetAirplay: 'AirPlay-Kopplungen zurücksetzen',
     airplayReset: 'AirPlay-Kopplungen zurückgesetzt.',
     airplayResetFailed: 'AirPlay-Kopplungen konnten nicht zurückgesetzt werden.',
-    advancedMode: 'Erweiterte Funktionen anzeigen',
-    advancedModeHint:
-      'Zeigt die Dinge, die erst eingerichtet werden müssen, etwa die Verbindung zu einem externen Dienst. Was du hier einrichtest, steht danach allen zur Verfügung, die dieses Beacon nutzen - unabhängig davon, ob sie den Schalter an haben.',
     lastfmTitle: 'Last.fm',
     lastfmWhat:
       'Erlaubt allen, die dieses Beacon nutzen, Playlists aus Last.fm-Charts, einem Genre, einem Interpreten oder der eigenen Hörhistorie zu bauen.',

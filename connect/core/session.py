@@ -76,6 +76,18 @@ class SessionState:
         # Set by /config's `username` field — shown to other sessions as
         # "in use by {display_name}" for claimed devices.
         self.display_name: str = ""
+        # The account /config resolved from the credential, as opposed to
+        # the `username` the request body claimed. Used only by
+        # core/cast_permissions.py to decide whether this session may cast
+        # (see docs/cast-permissions.md) — deliberately not what
+        # display_name/claims key on, which stay display-only. Empty until
+        # /config has verified a credential, and left empty when the
+        # getUser lookup itself failed (an unverified account is treated as
+        # not listed whenever a server has a restriction).
+        self.account_server_type: str = ""
+        self.account_server_url: str = ""
+        self.account_username: str = ""
+        self.account_is_admin: bool = False
         self.state = AppState()
         # Serializes /play, /play-url, /pause, /resume, /seek, /stop for this
         # session — without it, two concurrent dispatches (e.g. rapid

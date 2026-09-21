@@ -127,7 +127,7 @@ see `SongTableHeader.vue` and its layout test.
 
 Which columns there are is the reader's own choice, not the page's: the
 headings carry a picker (right-click, or the button at the row's right edge)
-writing to one app-wide selection, and a page only ever *vetoes* a column
+writing to one app-wide selection, and a page only ever _vetoes_ a column
 that would say nothing on it - an album's tracklist has no "Album" column.
 Every column is one entry in `services/library/songColumns.ts`: its label,
 its width, the floor under that width, its alignment, what its cell says and
@@ -176,6 +176,31 @@ with a hairline carrying it to the far edge.
 Giving every group of four fields a lit mark is what would drain the mark of
 meaning, which is why the dialog level is a different, quieter thing rather
 than the same heading at a smaller size.
+
+### Settings tabs
+
+The Settings page groups its sections into tabs (`views/SettingsView.vue`):
+Account (with About), Playback (with Lyrics providers), Library, Casting and
+Advanced. Casting and Advanced are the conditional tabs - Casting is the
+web/Docker admin's alone, and Advanced holds the installation-wide settings
+and housekeeping (log level, API keys, AirPlay pairings, clearing this
+device's cache), so on the shared web/Docker build it is a server
+administrator's. The desktop app runs a single-user backend of its own and
+always shows it, whatever the media account's admin flag says. Every panel
+stays mounted (`eager` on the `v-tabs-window-item`), because each section
+loads its own state when created and unmounting it on a switch would
+re-fetch that on every visit and lose a half-filled form.
+
+The Advanced tab is what keeps setup out of everyone else's way; there is no
+separate "show advanced features" switch. A section with nothing to show for
+this account hides itself (the log level does, for a non-admin) rather than
+rendering an empty panel.
+
+The bar is Vuetify's `v-tabs` with `color="primary"`, so the active
+indicator is the app's amber. Its labels are reset to the app's own body
+weight and case (`text-transform: none`, no letter-spacing) because the
+default wide-tracked, capitalised treatment reads as stock Material next to
+the app's headings.
 
 ## Surfaces
 

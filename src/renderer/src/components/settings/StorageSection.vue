@@ -14,48 +14,35 @@
           {{ $t('settings.clearCache') }}
         </v-btn>
       </div>
-
-      <div class="setting">
-        <p class="setting__description">{{ $t('settings.resetAirplayHint') }}</p>
-        <v-btn
-          variant="tonal"
-          prepend-icon="mdi-cast-off"
-          :loading="resettingAirplay"
-          @click="resetAirplayPairings"
-        >
-          {{ $t('settings.resetAirplay') }}
-        </v-btn>
-      </div>
     </div>
   </section>
 </template>
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
-import { useConnectStore } from '@/stores/connect'
 import { clearLyricsCache } from '@/stores/lyrics'
 import { clearCoverArtCache } from '@/services/connect/coverArtBatch'
 import { clearRadioFaviconCache } from '@/services/connect/radioFaviconBatch'
 
 /**
- * Throwing away what Beacon keeps locally: the library/artwork caches,
- * and the AirPlay pairings held by the backend. Both are recoverable by
- * doing the thing again, which is why neither asks for confirmation.
+ * Throwing away what Beacon keeps locally: the library, lyrics, artwork
+ * and station-logo caches, all on this device alone. It sits in the
+ * admin-only Advanced tab as housekeeping, but it never reaches the
+ * backend — the Connect cache and every other device are untouched, so
+ * nothing but this browser is affected (a second account sharing it loses
+ * its local copy too, which only costs a refetch). Recoverable by doing the
+ * thing again, which is why it asks for no confirmation.
  */
 export default {
   name: 'StorageSection',
   data() {
     return {
       clearingCache: false,
-      resettingAirplay: false,
     }
   },
   computed: {
     libraryStore() {
       return useLibraryStore()
-    },
-    connectStore() {
-      return useConnectStore()
     },
   },
   methods: {
@@ -76,26 +63,6 @@ export default {
         title: this.$t('settings.clearCache'),
         message: this.$t('settings.cacheCleared'),
       })
-    },
-    async resetAirplayPairings() {
-      this.resettingAirplay = true
-      try {
-        await this.connectStore.unpairAll()
-        this.$emitter.emit('toast', {
-          level: 'success',
-          title: this.$t('settings.resetAirplay'),
-          message: this.$t('settings.airplayReset'),
-        })
-      } catch (error) {
-        this.$emitter.emit('toast', {
-          level: 'error',
-          title: this.$t('settings.resetAirplay'),
-          message: this.$t('settings.airplayResetFailed'),
-        })
-        console.error('[settings] Failed to reset AirPlay pairings:', error)
-      } finally {
-        this.resettingAirplay = false
-      }
     },
   },
 }

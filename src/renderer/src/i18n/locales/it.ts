@@ -288,6 +288,7 @@ export default {
     unknownError: 'Errore sconosciuto.',
     // Keyed by connect/delivery/errors.py's REASON_* constants - a
     // dispatch that reached the device and didn't start playing.
+    castForbidden: 'Questo account non può trasmettere agli altoparlanti di questo server.',
     deliveryFailed: {
       rejected:
         "«{device}» ha rifiutato questo flusso. Il dispositivo non è in grado di riprodurre quel formato o quell'indirizzo.",
@@ -387,9 +388,29 @@ export default {
     refreshingLibraryWithTotal: 'Aggiornamento in corso … ({loaded} / {total})',
     libraryRefreshed: 'Libreria aggiornata: {count} brani caricati.',
     refreshLibraryFailed: 'Impossibile aggiornare la libreria.',
+    castPermissionsTitle: 'Trasmissione',
+    castPermissionsHint:
+      'Decidi chi può trasmettere agli altoparlanti di questo server. Tutti possono comunque ascoltare in locale.',
+    castPermissionsPolicy: 'Chi può trasmettere?',
+    castPermissionsPolicyEveryone: 'Tutti',
+    castPermissionsPolicyAllowlist: 'Solo gli account elencati',
+    castPermissionsPolicyBlocklist: 'Tutti tranne gli account elencati',
+    castPermissionsPolicyNobody: 'Nessuno tranne gli amministratori',
+    castPermissionsEffectEveryone: 'Tutti possono trasmettere.',
+    castPermissionsEffectOnlyListed: 'Solo gli account elencati possono trasmettere.',
+    castPermissionsEffectAllExceptListed: 'Tutti tranne gli account elencati possono trasmettere.',
+    castPermissionsEffectNobody: 'Nessuno tranne gli amministratori può trasmettere.',
+    castPermissionsAccountAllow: 'Account autorizzati a trasmettere',
+    castPermissionsAccountBlock: 'Account bloccati dalla trasmissione',
+    castPermissionsNoUsers:
+      'Sono elencati solo gli account che hanno già effettuato l\u2019accesso a questo Beacon.',
+    castPermissionsSave: 'Salva',
+    castPermissionsSaved: 'Autorizzazioni di trasmissione salvate.',
+    castPermissionsSaveFailed: 'Impossibile salvare le autorizzazioni di trasmissione.',
+    castPermissionsLoadFailed: 'Impossibile caricare le autorizzazioni di trasmissione.',
     storageTitle: 'Archiviazione',
     clearCacheHint:
-      'Elimina i dati della libreria, le copertine, le foto degli artisti, i loghi delle stazioni e i testi memorizzati nella cache locale: tutto verrà ricaricato la prossima volta che sarà necessario. Non avvia una scansione della libreria.',
+      'Elimina ciò che questo browser tiene in locale: dati della libreria, copertine, foto degli artisti, loghi delle stazioni e testi. Tutto verrà ricaricato la prossima volta che serve. Riguarda solo questo dispositivo: il backend Connect mantiene la propria cache, quindi altri dispositivi e account non vengono toccati. Non avvia una scansione della libreria.',
     clearCache: 'Svuota cache',
     cacheCleared: 'Cache svuotata.',
     resetAirplayHint:
@@ -397,9 +418,6 @@ export default {
     resetAirplay: 'Reimposta associazioni AirPlay',
     airplayReset: 'Associazioni AirPlay reimpostate.',
     airplayResetFailed: 'Impossibile reimpostare le associazioni AirPlay.',
-    advancedMode: 'Mostra funzioni avanzate',
-    advancedModeHint:
-      'Aggiunge le cose che vanno prima configurate, come collegare Beacon a un servizio esterno. Quello che configuri qui resta a disposizione di tutti quelli che usano questo Beacon, indipendentemente da questo interruttore.',
     lastfmTitle: 'Last.fm',
     lastfmWhat:
       'Permette a chiunque usi questo Beacon di creare playlist dalle classifiche di Last.fm, da un genere, un artista o dalla propria cronologia.',

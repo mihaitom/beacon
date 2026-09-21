@@ -142,3 +142,32 @@ class SubsonicClient:
             # than being silently swallowed.
             logger.warning(f"[ping] {self.internal_url}/rest/ping.view failed: {e}")
             return False
+
+    def get_user(self, username: str) -> dict:
+        """The server's own record for `username`, authenticated with this
+        client's credential. Used by /config to learn the canonical
+        username and admin flag from the server rather than from the
+        request body (see media/__init__.py's resolve_account()).
+
+        Subsonic's getUser.view requires a username parameter, and servers
+        only answer about the caller's own account, so a mismatched or
+        missing value fails rather than reporting someone else — which is
+        exactly what makes the returned name trustworthy."""
+        return self._get("getUser.view", username=username).get("user", {})
+
+    def get_users(self) -> list[dict]:
+        """Every account this server is willing to report (admin-only per
+        the OpenSubsonic spec). Used by the cast-permissions admin UI for
+        its account picker.
+
+        Not every server honours the spec here: Navidrome (verified v0.50
+        through master) answers `getUsers.view` with the *calling* user
+        alone, never the other accounts, so a caller cannot tell a genuine
+        one-account server from Navidrome's truncated answer. The route
+        treats a single result as "no usable list" for exactly that reason
+        (see routes/cast_permissions.py)."""
+        users = self._get("getUsers.view").get("users", {}).get("user", [])
+        # Some servers collapse a one-element list into a bare object.
+        if isinstance(users, dict):
+            users = [users]
+        return users if isinstance(users, list) else []

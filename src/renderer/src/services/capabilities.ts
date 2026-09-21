@@ -58,6 +58,15 @@ export interface ServerCapabilities {
    * about the account, not the server type, so it can't live in the
    * tables below — see capabilitiesFor()'s `isAdmin` argument. */
   libraryScan: boolean
+  /** Settings' "Casting" section, where a server admin keeps the household
+   * allow-list of accounts that may cast (see docs/cast-permissions.md).
+   * Two conditions: the server has to be able to list its own users
+   * (Subsonic/Navidrome's getUsers.view, Jellyfin's /Users — Plex has no
+   * server-side user list and cannot even resolve the casting account's
+   * name, so it stays out), and the account has to be an admin. The web/
+   * Docker build is a third, checked in the component itself: the desktop
+   * build spawns a one-user connect and must never show this. */
+  castPermissions: boolean
   /** Song/Artist Radio — Navidrome's getSimilarSongs2.view is bridged to
    * Jellyfin's InstantMix (see jellyfin_bridge.py's get_similar_songs2),
    * true for both server types. */
@@ -99,6 +108,7 @@ const SUBSONIC_CAPABILITIES: ServerCapabilities = {
   internetRadio: true,
   internetRadioManagement: true,
   libraryScan: true,
+  castPermissions: true,
   songRadio: true,
   fileLyrics: true,
   playHistoryStats: true,
@@ -115,6 +125,7 @@ const JELLYFIN_CAPABILITIES: ServerCapabilities = {
   // jellyfin_bridge.py's start_scan) — server-admin only, which
   // capabilitiesFor()'s isAdmin argument takes care of.
   libraryScan: true,
+  castPermissions: true,
   songRadio: true,
   // Jellyfin's own /Audio/{id}/Lyrics, which reads what is tagged in the
   // file or sitting next to it as an .lrc — ordinary user permission, no
@@ -162,6 +173,10 @@ const PLEX_CAPABILITIES: ServerCapabilities = {
   // start_scan) — owner-only, which capabilitiesFor()'s isAdmin argument
   // takes care of.
   libraryScan: true,
+  // Plex has no server-side user list, and the bridge cannot resolve the
+  // casting account's name from the server token (see
+  // docs/cast-permissions.md) — the section stays hidden.
+  castPermissions: false,
   songRadio: true,
   // Bridged, with one caveat worth knowing: Plex builds a track's lyric
   // stream from a .lrc file next to the audio and ignores lyrics embedded
@@ -184,6 +199,13 @@ const PLEX_CAPABILITIES: ServerCapabilities = {
  * hiding a working button on a guess is worse than showing one that turns
  * out to be refused. A definite false is the one case that takes something
  * away.
+ *
+ * `castPermissions` is the exception, and deliberately so: it is the one
+ * capability that needs a *definite* admin rather than merely "not a
+ * non-admin". Its settings section writes an authorization file server-side
+ * (routes/cast_permissions.py) and is refused with a 403 for anyone whose
+ * admin flag was not resolved, so showing it on a null would offer a
+ * section that cannot work. A definite true is required.
  */
 export function capabilitiesFor(
   serverType: string,
@@ -195,9 +217,13 @@ export function capabilitiesFor(
       : serverType === 'plex'
         ? PLEX_CAPABILITIES
         : SUBSONIC_CAPABILITIES
+  const capabilities: ServerCapabilities = {
+    ...base,
+    castPermissions: base.castPermissions && isAdmin === true,
+  }
   if (isAdmin === false) {
     return {
-      ...base,
+      ...capabilities,
       libraryScan: false,
       logLevelControl: false,
       // Navidrome's own rule, not one of Beacon's: only a Subsonic session
@@ -206,5 +232,5 @@ export function capabilitiesFor(
       internetRadioManagement: base !== SUBSONIC_CAPABILITIES,
     }
   }
-  return base
+  return capabilities
 }

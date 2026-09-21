@@ -255,3 +255,34 @@ def test_ping_returns_false_and_logs_on_failure(monkeypatch, caplog):
 
     assert result is False
     assert "Wrong username or password" in caplog.text
+
+
+# ── get_users (getUsers.view) ────────────────────────────────────────────────
+
+
+def test_get_users_parses_the_subsonic_envelope(monkeypatch):
+    c = _client()
+    monkeypatch.setattr(
+        c,
+        "_get",
+        lambda endpoint, **params: {"users": {"user": [{"username": "a"}, {"username": "b"}]}},
+    )
+
+    assert c.get_users() == [{"username": "a"}, {"username": "b"}]
+
+
+def test_get_users_tolerates_a_single_user_object(monkeypatch):
+    """Some servers collapse a one-element list into a bare object."""
+    c = _client()
+    monkeypatch.setattr(
+        c, "_get", lambda endpoint, **params: {"users": {"user": {"username": "only"}}}
+    )
+
+    assert c.get_users() == [{"username": "only"}]
+
+
+def test_get_users_returns_empty_when_the_server_sends_nothing(monkeypatch):
+    c = _client()
+    monkeypatch.setattr(c, "_get", lambda endpoint, **params: {})
+
+    assert c.get_users() == []

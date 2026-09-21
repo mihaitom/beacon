@@ -286,6 +286,7 @@ export default {
     unknownError: 'Unknown error.',
     // Keyed by connect/delivery/errors.py's REASON_* constants - a
     // dispatch that reached the device and didn't start playing.
+    castForbidden: 'This account may not cast to speakers on this server.',
     deliveryFailed: {
       rejected: "“{device}” refused this stream. The device can't play that format or address.",
       busy: '“{device}” is busy with something else and refused to start playing.',
@@ -384,9 +385,28 @@ export default {
     refreshingLibraryWithTotal: 'Refreshing … ({loaded} / {total})',
     libraryRefreshed: 'Library refreshed - {count} songs loaded.',
     refreshLibraryFailed: "Couldn't refresh the library.",
+    castPermissionsTitle: 'Casting',
+    castPermissionsHint:
+      'Decide who may cast to speakers on this server. Everyone can still listen locally.',
+    castPermissionsPolicy: 'Who may cast?',
+    castPermissionsPolicyEveryone: 'Everyone',
+    castPermissionsPolicyAllowlist: 'Only the listed accounts',
+    castPermissionsPolicyBlocklist: 'Everyone except the listed accounts',
+    castPermissionsPolicyNobody: 'Nobody except administrators',
+    castPermissionsEffectEveryone: 'Everyone may cast.',
+    castPermissionsEffectOnlyListed: 'Only the listed accounts may cast.',
+    castPermissionsEffectAllExceptListed: 'Everyone except the listed accounts may cast.',
+    castPermissionsEffectNobody: 'Nobody except administrators may cast.',
+    castPermissionsAccountAllow: 'Accounts allowed to cast',
+    castPermissionsAccountBlock: 'Accounts blocked from casting',
+    castPermissionsNoUsers: 'Only accounts that have signed in to this Beacon are listed.',
+    castPermissionsSave: 'Save',
+    castPermissionsSaved: 'Casting permissions saved.',
+    castPermissionsSaveFailed: "Couldn't save casting permissions.",
+    castPermissionsLoadFailed: "Couldn't load casting permissions.",
     storageTitle: 'Storage',
     clearCacheHint:
-      "Discard locally cached library data, cover art, artist photos, station logos and lyrics - everything reloads fresh the next time it's needed. Doesn't trigger a library scan.",
+      "Discard what this browser has stored locally - library data, cover art, artist photos, station logos and lyrics. Everything reloads fresh the next time it's needed. Only this device is affected: the Connect backend keeps its own cache, so other devices and accounts are left alone. Doesn't trigger a library scan.",
     clearCache: 'Clear cache',
     cacheCleared: 'Cache cleared.',
     resetAirplayHint:
@@ -394,9 +414,6 @@ export default {
     resetAirplay: 'Reset AirPlay pairings',
     airplayReset: 'AirPlay pairings reset.',
     airplayResetFailed: "Couldn't reset AirPlay pairings.",
-    advancedMode: 'Show advanced features',
-    advancedModeHint:
-      'Adds the things that need setting up first, such as connecting Beacon to an outside service. What you set up here stays available to everyone using this Beacon, whether they have this switched on or not.',
     lastfmTitle: 'Last.fm',
     lastfmWhat:
       'Lets anyone using this Beacon build playlists from Last.fm charts, a genre, an artist, or their own listening history.',

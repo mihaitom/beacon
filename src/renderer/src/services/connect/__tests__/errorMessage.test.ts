@@ -51,6 +51,19 @@ describe('connectErrorMessage', () => {
     expect(connectErrorMessage(error).message).toBe('device_in_use')
   })
 
+  it('explains a cast forbidden by the server’s allow-list', () => {
+    const error = new ConnectApiError('cast_forbidden', {
+      error: 'cast_forbidden',
+      account: 'guest',
+    })
+
+    const { message, detail } = connectErrorMessage(error)
+
+    expect(message).not.toContain('cast_forbidden')
+    expect(message).not.toContain('connect.castForbidden')
+    expect(detail).toBeNull()
+  })
+
   it('survives something that isn’t an Error at all', () => {
     expect(connectErrorMessage('plain string').message).toBe('plain string')
   })
