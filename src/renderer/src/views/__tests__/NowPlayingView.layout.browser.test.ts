@@ -515,6 +515,90 @@ describe('NowPlayingView layout', () => {
     expect(getComputedStyle(panel).backdropFilter).toContain('blur')
   })
 
+  it('ellipsises the corner labels to one line each on the desktop', async () => {
+    await page.viewport(1280, 900)
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      logo: null,
+    })
+    const { wrapper } = await mountView()
+    usePlaybackStore().setQueue(
+      [
+        makeSong('a', {
+          title: 'A Very Long Song Title That Could Never Fit In The Corner Panel At All',
+          artist: 'A Very Long Artist Name That Also Would Not Fit In The Corner',
+          album: 'An Album With An Equally Unreasonable Name For A Corner Panel',
+        }),
+      ],
+      0,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 120))
+
+    expect(wrapper.classes()).toContain('now-playing--artwork-hidden')
+    const title = wrapper.get('.now-playing__title').element as HTMLElement
+    const lineHeight = parseFloat(getComputedStyle(title).lineHeight)
+
+    // One line, clipped with an ellipsis — not the three-line clamp the
+    // centred layout uses.
+    expect(getComputedStyle(title).whiteSpace).toBe('nowrap')
+    expect(rect(title).height).toBeLessThanOrEqual(lineHeight + 1)
+    expect(title.scrollWidth).toBeGreaterThan(title.clientWidth)
+
+    // Every label, not just the title: the album link in particular is an
+    // inline anchor by default, where text-overflow would do nothing.
+    for (const selector of ['.now-playing__artist-link', '.now-playing__album-link']) {
+      const el = wrapper.get(selector).element as HTMLElement
+      expect(getComputedStyle(el).whiteSpace).toBe('nowrap')
+      expect(getComputedStyle(el).display).toBe('block')
+    }
+  })
+
+  it('caps the corner so the next-up card never reaches the lyrics', async () => {
+    await page.viewport(1280, 900)
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      logo: null,
+    })
+    const { wrapper } = await mountWithSongAndLyrics()
+    const playback = usePlaybackStore()
+    playback.setQueue(
+      [
+        makeSong('a', {
+          title: 'A Very Long Current Song Title That Keeps Going',
+          artist: 'Artist One With A Long Name',
+        }),
+        makeSong('b', {
+          title: 'A Very Long Next Song Title That Also Keeps Going',
+          artist: 'Artist Two With A Long Name',
+        }),
+      ],
+      0,
+    )
+    playback.isPlaying = true
+    playback.duration = 100
+    playback.localPosition = 92
+    await new Promise((resolve) => setTimeout(resolve, 120))
+
+    expect(wrapper.classes()).toContain('now-playing--artwork-hidden')
+    expect(wrapper.findAll('.now-playing__panel')).toHaveLength(3)
+    const stage = rect(wrapper.get('.now-playing__stage').element)
+    const primary = rect(wrapper.get('.now-playing__primary').element)
+    const lyrics = rect(wrapper.get('.now-playing__lyrics').element)
+
+    // The corner is capped at 65cqw rather than growing with its doubled
+    // content.
+    expect(primary.width).toBeLessThanOrEqual(stage.width * 0.65 + 1)
+    // Which is what leaves the lyrics room for their min(38cqw, 560px)
+    // instead of being squeezed away by the corner.
+    expect(lyrics.width).toBeGreaterThan(400)
+    // Side by side, not overlapping.
+    expect(primary.right).toBeLessThanOrEqual(lyrics.left + 1)
+  })
+
   it('puts the next track and chevrons to the right of the current one near the end', async () => {
     await page.viewport(1280, 900)
     vi.mocked(getArtistArt).mockResolvedValue({

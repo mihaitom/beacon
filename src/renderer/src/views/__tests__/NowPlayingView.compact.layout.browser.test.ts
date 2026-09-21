@@ -307,24 +307,22 @@ describe('Now Playing on the phone', () => {
     expect(card.width).toBeCloseTo(stage.width - padX, -1)
   })
 
-  it('anchors the mini cover to the bottom-left over the artist background', async () => {
+  it('centres the mini cover at the bottom over the artist background', async () => {
     await mountSongWithBackground(390, 844)
     const stage = box('.now-playing__stage')
     const content = box('.now-playing__content')
     const contentStyle = getComputedStyle(document.querySelector('.now-playing__content')!)
     // The glass panel wraps the cover and the text; it is the thing that
-    // has to sit in the corner.
+    // has to sit along the bottom.
     const panel = box('.now-playing__primary')
     const mini = box('.now-playing__mini-art')
     const info = box('.now-playing__info')
 
-    // Against the content's own left padding, and starting left of the
-    // screen's middle - the corner, not a centred column. (The panel may
-    // run past the middle; it is the anchor that makes it a corner.)
-    const padLeft = parseFloat(contentStyle.paddingLeft)
-    expect(panel.left).toBeCloseTo(content.left + padLeft, -1)
-    expect(panel.left).toBeLessThan(stage.left + stage.width / 2)
-    expect(mini.left + mini.width).toBeLessThan(stage.left + stage.width / 2)
+    // Centred horizontally on the screen...
+    expect(Math.abs(panel.left + panel.width / 2 - (stage.left + stage.width / 2))).toBeLessThan(2)
+    // ...and resting on the content's own bottom padding, not floating.
+    const padBottom = parseFloat(contentStyle.paddingBottom)
+    expect(Math.abs(panel.bottom - (content.bottom - padBottom))).toBeLessThan(2)
     // Bottom-aligned with the track text, both at the panel's bottom.
     expect(Math.abs(mini.bottom - info.bottom)).toBeLessThan(4)
     // No drop shadow on the cover: the glass panel is the separation, and a

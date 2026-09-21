@@ -4,170 +4,31 @@
     class="now-playing"
     :class="{ 'now-playing--compact': compact, 'now-playing--artwork-hidden': artworkHidden }"
   >
-    <!-- Full-bleed blurred artwork behind everything — same backdrop
-     - language as DetailHeader.vue's hero cards (blur + scrim over the
-     - item's own art). Two stacked layers so a song change crossfades
-     - between cover arts — see backdropLayers' comment. -->
-    <div
-      v-for="(url, i) in backdrop.urls"
-      :key="i"
-      class="now-playing__backdrop"
-      :class="{
-        'now-playing__backdrop--active': i === backdrop.active,
-        'now-playing__backdrop--artist': backdropIsArtist,
-      }"
-      :style="url ? { backgroundImage: `url(${url})` } : {}"
+    <now-playing-backdrop
+      :source="backdropSource"
+      :is-artist="backdropIsArtist"
+      :scrim-style="ambientStyle"
     />
-    <div class="now-playing__scrim" :style="ambientStyle" />
 
-    <!-- density="comfortable" on every button below — matches PlayerBar.vue's
-     - own toolbar icons app-wide; left implicit (Vuetify's larger default
-     - density) before, these rendered visibly bigger than every other icon
-     - button in the app.
-     -
-     - Amber (color="primary") means "this is on", for every toggle here and
-     - everywhere else in the app: PlayerToolbar.vue's lyrics/queue/autoplay/
-     - cast buttons, CenterControls.vue's shuffle/repeat,
-     - MobileTransportControls.vue's own copies, and the phone remote's
-     - .active rule (connect/static/remote/app.css). These four used to each
-     - say it differently — one colored, two swapping between an outline and
-     - a filled icon, one saying nothing at all — so "is the visualizer on?"
-     - read differently here than the identical question does two elements
-     - away in the player bar. An icon still swaps where it describes what
-     - the *click* does (fullscreen vs. exit fullscreen), never where it's
-     - only restating the on/off state the color already carries. -->
-    <!-- On the phone these move into the app bar rather than floating over
-       - the artwork. They were in its top-right corner, which only worked
-       - while the artwork left a corner free — now that it uses the width
-       - it has, they sat on top of it. Teleported rather than duplicated in
-       - MobileLayout.vue: which buttons apply, and what each of them does,
-       - is this view's business, and none of it belongs in the shell.
-       -
-       - `disabled` on desktop, where the toolbar stays exactly where it
-       - was: there is no such target in DefaultLayout, and in fullscreen
-       - only this element's own subtree is shown, so anything hung outside
-       - it would vanish at the moment it is most needed. Also disabled
-       - wherever the target simply is not there — this view is mounted on
-       - its own in tests, and a Teleport pointed at nothing does not
-       - degrade, it throws on unmount. -->
-    <Teleport to="#mobile-app-bar-actions" :disabled="!compact || !canDock">
-      <div
-        v-if="hasPlayable"
-        class="now-playing__toolbar"
-        :class="{ 'now-playing__toolbar--docked': compact }"
-      >
-        <!-- The only lyrics button in the app, on every layout. It used to
-       - be shown here just in fullscreen (which shows nothing but this
-       - element's own subtree, see toggleFullscreen()) and on the phone
-       - (MobileTransportControls.vue has no equivalent), standing in for
-       - PlayerBar.vue's own copy the rest of the time — but the lyrics,
-       - and a station's title log in their place, now only ever appear on
-       - this screen, so the switch for them belongs on it rather than in
-       - the chrome of every other page. PlayerBar's copy went with the
-       - drawer it used to open (2026-09-06). -->
-        <v-btn
-          v-if="hasPlayable"
-          :icon="
-            playbackStore.radioStation && !currentSong ? 'mdi-history' : 'mdi-script-text-outline'
-          "
-          :color="showLyrics ? 'primary' : undefined"
-          variant="text"
-          density="comfortable"
-          :title="
-            playbackStore.radioStation && !currentSong ? $t('radio.titleLog') : $t('lyrics.title')
-          "
-          @click="showLyrics = !showLyrics"
-        />
-        <!-- Same reasoning as the lyrics button just above — PlayerBar.vue's
-       - own Autoplay button (next to Queue) is outside .now-playing
-       - entirely, so it's unreachable in fullscreen, making this the only
-       - way to reach it there. Not shown outside fullscreen, where
-       - PlayerBar's own button already covers it, and not on the phone
-       - either: that one has its own copy in the transport row
-       - (MobileTransportControls.vue), next to shuffle.
-       -
-       - Disabled during radio for the reason PlayerBar's copy gives: there
-       - is no queue for autoplay to top up while a live stream plays. -->
-        <v-btn
-          v-if="isFullscreen && authStore.capabilities.songRadio"
-          icon="mdi-infinity"
-          :color="!playbackStore.radioStation && autoplayStore.enabled ? 'primary' : undefined"
-          variant="text"
-          density="comfortable"
-          :disabled="!!playbackStore.radioStation"
-          :title="$t('player.autoplay')"
-          @click="playbackStore.setAutoplayEnabled(!autoplayStore.enabled)"
-        />
-        <!-- Hidden rather than disabled where there is nothing to visualize:
-       - a phone plays without a Web Audio graph so that it keeps going
-       - while the screen is locked (see services/audioEngine.ts), and a
-       - control that could only ever produce empty bars is worse than no
-       - control. Still there while casting, whose data comes from the
-       - backend instead. -->
-        <v-btn
-          v-if="visualizerAvailable"
-          icon="mdi-equalizer"
-          :color="showVisualizer ? 'primary' : undefined"
-          variant="text"
-          density="comfortable"
-          :title="$t('nowPlaying.toggleVisualizer')"
-          @click="showVisualizer = !showVisualizer"
-        />
-        <!-- Only once there is a Fanart.tv artist background loaded and
-         - ready: hiding the artwork with nothing behind it would just leave
-         - a blank stage. Hiding it drops the darkening too, so the
-         - background is actually visible (see ambientStyle). -->
-        <v-btn
-          v-if="artistBackground"
-          icon="mdi-image-off-outline"
-          :color="artworkHidden ? 'primary' : undefined"
-          variant="text"
-          density="comfortable"
-          :title="$t('nowPlaying.toggleArtwork')"
-          @click="hideArtwork = !hideArtwork"
-        />
-        <!-- Not a mobile feature — MobileTransportControls.vue/the tab bar
-       - already own the phone's actual full screen; hiding *that* app
-       - chrome behind the Fullscreen API here wouldn't gain anything and
-       - isn't what "fullscreen" reads as on a phone anyway. -->
-        <v-btn
-          v-if="!compact"
-          :icon="isFullscreen ? 'mdi-fullscreen-exit' : 'mdi-fullscreen'"
-          :color="isFullscreen ? 'primary' : undefined"
-          variant="text"
-          density="comfortable"
-          :title="$t('nowPlaying.toggleFullscreen')"
-          @click="toggleFullscreen"
-        />
-        <!-- A test bench for the title log's entrance animation: a station
-       - changes title every few minutes, which is a long wait to watch a
-       - three-tenths-of-a-second transition. Each press hands the log one
-       - made-up title at the top, through the same prop a real one arrives
-       - on, so what is being watched is the real path and not a rehearsal
-       - of it.
-       -
-       - Renderer-only: the entry is never sent anywhere, never reaches the
-       - station's stored log (connect/core/session.py keeps that one) and
-       - is gone on the next reload or station change. And only ever while
-       - the backend's log level is DEBUG or TRACE, the same switch
-       - VisualizerDebugOverlay.vue hides behind — nobody who is not
-       - already chasing something ever sees it. -->
-        <v-btn
-          v-if="debugEnabled && playbackStore.radioStation"
-          icon="mdi-playlist-plus"
-          variant="text"
-          density="comfortable"
-          title="Debug: add a made-up title"
-          @click="addDebugTitle"
-        />
-      </div>
-    </Teleport>
+    <now-playing-toolbar
+      :compact="compact"
+      :is-fullscreen="isFullscreen"
+      :show-visualizer="showVisualizer"
+      :visualizer-available="visualizerAvailable"
+      :artist-background="artistBackground"
+      :artwork-hidden="artworkHidden"
+      :debug-enabled="debugEnabled"
+      @toggle-visualizer="showVisualizer = !showVisualizer"
+      @toggle-artwork="hideArtwork = !hideArtwork"
+      @toggle-fullscreen="toggleFullscreen"
+      @add-debug-title="addDebugTitle"
+    />
 
-    <!-- The container-query host — see artSize's own comment. .now-playing's
-     - own grid (see <style>, grid-template-rows: minmax(0, 1fr) auto) is
-     - what makes this take up exactly whatever's left after the visualizer
-     - row, and container-type: size is what lets artSize/.now-playing__content--split
-     - etc. measure *that* real, already-chrome-aware space (cqh/cqw)
+    <!-- The container-query host — see the stage components' own artSize
+     - comments. .now-playing's own grid (see <style>, grid-template-rows:
+     - minmax(0, 1fr) auto) is what makes this take up exactly whatever's left
+     - after the visualizer row, and container-type: size is what lets
+     - artSize/.now-playing__content--split etc. measure *that* real,
      - instead of the raw viewport (vh/vw), which had no idea how much of
      - itself the app-bar/PlayerBar/visualizer row had already taken.
      - A separate element from .now-playing__content on purpose — an
@@ -176,208 +37,45 @@
      - sizing, and .now-playing__content (and everything inside it)
      - measures against this ancestor instead. -->
     <div ref="stage" class="now-playing__stage">
-      <div
-        ref="content"
-        class="now-playing__content"
-        :class="{ 'now-playing__content--split': hasPlayable && showLyrics }"
-      >
-        <template v-if="hasPlayable">
-          <!-- display: contents outside the portrait container query (see
-           - .now-playing__flip-card in <style>) — .now-playing__primary and
-           - the lyrics panel behave as direct flex children of
-           - .now-playing__content--split there, identical to before this
-           - wrapper existed. Only on a portrait/narrow-aspect stage does it
-           - become a real, positioned box: the "card" a 3D flip rotates,
-           - with the artwork+info as its front face and lyrics absolutely
-           - positioned as the back one — see that rule's own comment for
-           - why a flip instead of the side-by-side split's flex-wrap
-           - fallback there. -->
-          <div ref="flipCard" class="now-playing__flip-card">
-            <div ref="primary" class="now-playing__primary">
-              <div v-if="!artworkHidden" class="now-playing__art-wrap">
-                <div class="now-playing__art-glow" :style="{ background: glowColor }" />
-                <cover-art
-                  v-if="currentSong"
-                  :cover-art-id="currentSong.coverArtId"
-                  :size="artSize"
-                  class="cover-shadow"
-                />
-                <!-- No cover-shadow/card background for a transparent icon
-                 - (see radioIconIsTransparent) — a real card treatment
-                 - around a logo that's just floating on transparency looks
-                 - like a broken image (this app's own dark background
-                 - showing through the "card" as a faint muddy tint) rather
-                 - than a clean logo. -->
-                <cover-art
-                  v-else
-                  contain
-                  :radio-favicon="radioFavicon"
-                  :size="artSize"
-                  fallback-icon="mdi-radio"
-                  :class="radioIconIsTransparent ? 'radio-cover-art--transparent' : 'cover-shadow'"
-                  @transparency="radioIconIsTransparent = $event"
-                />
-              </div>
-
-              <!-- The track panel(s). Normally just the current song; near
-               - the end of a track animated chevrons and the next one are
-               - added to the right (see cornerPanels), the next glass card
-               - sliding left into the current's place on the change. With
-               - the artwork hidden each panel is the small cover + labels;
-               - with the artwork shown the single panel is just the labels
-               - under it. -->
-              <transition-group
-                name="next-up"
-                tag="div"
-                class="now-playing__panels"
-                @before-leave="lockLeaveWidth"
-              >
-                <div
-                  v-for="panel in cornerPanels"
-                  :key="panel.key"
-                  class="now-playing__panel"
-                  :class="{ 'now-playing__panel--chevrons': panel.kind === 'chevrons' }"
-                  :style="
-                    panel.kind === 'chevrons' ? { color: `rgb(${visualizerColor})` } : undefined
-                  "
-                >
-                  <template v-if="panel.kind === 'chevrons'">
-                    <v-icon
-                      icon="mdi-chevron-right"
-                      :size="compact ? 30 : 44"
-                      class="now-playing__next-up-chevron"
-                    />
-                    <v-icon
-                      icon="mdi-chevron-right"
-                      :size="compact ? 30 : 44"
-                      class="now-playing__next-up-chevron now-playing__next-up-chevron--second"
-                    />
-                  </template>
-                  <template v-else>
-                    <cover-art
-                      v-if="artworkHidden && panel.song"
-                      :cover-art-id="panel.song.coverArtId"
-                      :size="miniArtSize || 72"
-                      class="cover-shadow now-playing__mini-art"
-                    />
-                    <div ref="info" class="now-playing__info">
-                      <div class="eyebrow-label">{{ panel.eyebrow }}</div>
-                      <h1 class="detail-title now-playing__title">
-                        {{
-                          panel.song?.title ??
-                          radioMeta.nowPlaying ??
-                          playbackStore.radioStation?.name
-                        }}
-                      </h1>
-                      <!-- A link only where there is an artist page to land on.
-                     - The mobile shell has none (its library tab plays an album
-                     - rather than opening one), and the desktop view rendered
-                     - inside it is a table with no phone layout and nothing to
-                     - get back with. -->
-                      <router-link
-                        v-if="panel.song && !compact"
-                        :to="`/artists/${panel.song.artistId}`"
-                        class="text-title-large text-medium-emphasis now-playing__artist-link"
-                      >
-                        {{ panel.song.artist }}
-                      </router-link>
-                      <div
-                        v-else-if="panel.song"
-                        class="text-title-large text-medium-emphasis now-playing__artist-label"
-                      >
-                        {{ panel.song.artist }}
-                      </div>
-                      <!-- Station name, not the ICY tag — swapped with the title
-                     - above so the tag (what's actually playing right now) is
-                     - the prominent label and the station is the secondary one,
-                     - same as SongInfo.vue's own player-bar label for
-                     - consistency. Only shown once there's a tag to go with it
-                     - (mirrors the title's own fallback chain above) — with no
-                     - tag the station name already sits up top, so repeating it
-                     - here would just be noise. -->
-                      <div
-                        v-else-if="radioMeta.nowPlaying"
-                        class="text-title-large text-medium-emphasis now-playing__radio-tag"
-                      >
-                        {{ playbackStore.radioStation?.name }}
-                      </div>
-                      <div v-else class="text-title-large text-medium-emphasis" />
-                      <!-- Each shell to its own album page - see
-                     - views/mobile/MobileAlbumDetailView.vue. -->
-                      <router-link
-                        v-if="panel.song"
-                        :to="
-                          compact
-                            ? `/m/albums/${panel.song.albumId}`
-                            : `/albums/${panel.song.albumId}`
-                        "
-                        class="text-body-medium text-medium-emphasis now-playing__album-link"
-                      >
-                        {{ panel.song.album }}
-                      </router-link>
-                    </div>
-                  </template>
-                </div>
-              </transition-group>
-            </div>
-
-            <transition name="now-playing-lyrics">
-              <lyrics-panel
-                v-if="showLyrics && currentSong"
-                variant="immersive"
-                :mobile="compact"
-                class="now-playing__lyrics"
-              />
-              <!-- Radio takes the same half of the split (and the same
-                 - back face of the portrait flip card): no lyrics to show,
-                 - but the station's own title log to read instead. -->
-              <radio-title-log
-                v-else-if="showLyrics && playbackStore.radioStation"
-                variant="immersive"
-                :entries="titleLogEntries"
-                :has-more="!radioMeta.hasActiveSearch && !radioMeta.titleLogComplete"
-                :query="radioMeta.searchQuery"
-                :current-at="radioMeta.titleLog[0]?.at ?? null"
-                :pending="radioMeta.searchPending"
-                class="now-playing__lyrics"
-                @load-more="radioMeta.loadOlder()"
-                @update:query="searchTitleLog"
-              />
-            </transition>
-          </div>
-        </template>
-
-        <span v-else class="text-medium-emphasis">{{ $t('nowPlaying.nothingPlaying') }}</span>
-      </div>
+      <!-- Each mode's stage is its own component (see
+       - NowPlayingStageMobile.vue / NowPlayingStageDesktop.vue): their
+       - layouts share almost nothing. `compact` is fixed per route (the
+       - mobile shell hardcodes it), so this never swaps on a mounted view —
+       - no live remount. -->
+      <now-playing-stage-mobile
+        v-if="compact"
+        :artwork-hidden="artworkHidden"
+        :glow-color="glowColor"
+        :visualizer-color="visualizerColor"
+        :radio-favicon="radioFavicon"
+        :panels="cornerPanels"
+        :title-log-entries="titleLogEntries"
+        @search="searchTitleLog"
+      />
+      <now-playing-stage-desktop
+        v-else
+        :artwork-hidden="artworkHidden"
+        :glow-color="glowColor"
+        :visualizer-color="visualizerColor"
+        :radio-favicon="radioFavicon"
+        :panels="cornerPanels"
+        :title-log-entries="titleLogEntries"
+        @search="searchTitleLog"
+      />
     </div>
 
     <!-- Real audio-reactive either way: a local Web Audio analyser during
      - local playback, or the backend's own real-time analysis (see
      - connect/core/audio_analysis.py) while casting to a target it can
-     - actually run against — see visualizerAvailable for which can't.
-     - Always in the DOM (unlike <audio-visualizer> itself, still v-if'd
-     - below) so its height can *transition* between 0 and its real height
-     - instead of the row just appearing/disappearing — .now-playing__stage
-     - above is a grid `auto` sibling, so animating this row's height is
-     - what makes the artwork's cqh-driven size (see artSize) resize
-     - smoothly along with it instead of snapping the instant this mounts/
-     - unmounts, which is what a bare v-if here used to do. <audio-visualizer>
-     - itself stays mounted a moment past visualizerActive going false so its
-     - `active` prop can let the bars settle to 0 first instead of just
-     - vanishing — see the visualizerActive watcher; that settle plays out
-     - over the same VISUALIZER_HIDE_DELAY_MS this row's own height
-     - transition takes, so both finish together. -->
-    <div
-      class="now-playing__visualizer-row"
-      :class="{ 'now-playing__visualizer-row--visible': visualizerMounted }"
-    >
-      <audio-visualizer
-        v-if="visualizerMounted"
-        :active="visualizerActive"
-        :color="visualizerColor"
-        @debug-frame="visualizerDebug = $event"
-      />
-    </div>
+     - actually run against — see visualizerAvailable for which can't. The
+     - row itself lives in NowPlayingVisualizer.vue (its own height
+     - transition, mount/hide delay and compact height). -->
+    <now-playing-visualizer
+      :active="visualizerActive"
+      :color="visualizerColor"
+      :compact="compact"
+      @debug-frame="visualizerDebug = $event"
+    />
 
     <!-- Positioned in .now-playing's own layout (which is already
      - `position: relative`, see its own CSS), not inside <audio-visualizer>
@@ -398,20 +96,19 @@ import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import { useConnectStore } from '@/stores/connect'
 import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
-import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
 import { useLyricsStore } from '@/stores/lyrics'
-import { useAuthStore } from '@/stores/auth'
-import { useAutoplayStore } from '@/stores/autoplay'
+import NowPlayingStageMobile from '@/components/now-playing/NowPlayingStageMobile.vue'
+import NowPlayingStageDesktop from '@/components/now-playing/NowPlayingStageDesktop.vue'
+import NowPlayingBackdrop from '@/components/now-playing/NowPlayingBackdrop.vue'
+import NowPlayingVisualizer from '@/components/now-playing/NowPlayingVisualizer.vue'
+import NowPlayingToolbar from '@/components/now-playing/NowPlayingToolbar.vue'
+import type { NowPlayingPanel } from '@/components/now-playing/types'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
-import CoverArt from '@/components/library/CoverArt.vue'
-import LyricsPanel from '@/components/lyrics/LyricsPanel.vue'
-import RadioTitleLog from '@/components/radio/RadioTitleLog.vue'
 import { getLogLevel } from '@/services/connect/logLevel'
 import { getArtistArt } from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
 import { useFanartStore } from '@/stores/fanart'
 import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
-import AudioVisualizer from '@/components/player/AudioVisualizer.vue'
 import VisualizerDebugOverlay from '@/components/player/VisualizerDebugOverlay.vue'
 import type { VisualizerFrame } from '@/services/connect/types'
 import { getAudioEngine } from '@/services/audioEngine'
@@ -456,11 +153,6 @@ function readHideArtwork(): boolean {
   }
 }
 
-// How long <audio-visualizer> stays mounted (with active=false) after
-// visualizerActive goes false — long enough for its own smoothing to
-// visibly settle every bar to 0 before it's actually removed.
-const VISUALIZER_HIDE_DELAY_MS = 400
-
 // How long before a track ends the corner starts announcing the next one
 // (see nextUpActive) - long enough to read, short enough to still feel like
 // "about to change".
@@ -485,15 +177,22 @@ let titleLogSearchTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'NowPlayingView',
-  components: { CoverArt, LyricsPanel, AudioVisualizer, VisualizerDebugOverlay, RadioTitleLog },
+  components: {
+    VisualizerDebugOverlay,
+    NowPlayingStageMobile,
+    NowPlayingStageDesktop,
+    NowPlayingBackdrop,
+    NowPlayingVisualizer,
+    NowPlayingToolbar,
+  },
   props: {
-    // Set by MobileNowPlayingView.vue — this view's own sizing (artSize
-    // below, plus the .now-playing--compact overrides in <style>) assumes
-    // the near-full-viewport height it gets on desktop (between the app-bar
-    // and PlayerBar.vue); squeezed under a mobile transport-controls block
-    // and tab bar instead, that same sizing overflowed badly. Everything
-    // else about this view (backdrop, glow, lyrics-split, visualizer) stays
-    // shared — only sizing changes.
+    // Set by MobileNowPlayingView.vue — which of the two stage components
+    // renders, the view's own height, and the toolbar's compact layout all
+    // key off it. The phone's stage is squeezed under a mobile
+    // transport-controls block and tab bar instead of the near-full-viewport
+    // height the desktop one gets between the app-bar and PlayerBar.vue, so
+    // its sizing differs; everything else (backdrop, toolbar, visualizer,
+    // flip mechanics) is shared.
     compact: {
       type: Boolean,
       default: false,
@@ -501,21 +200,12 @@ export default {
   },
   data() {
     return {
-      /** Whether MobileLayout.vue's app bar is on the page to hang the
-       * toolbar in — see the Teleport in the template. Checked rather than
-       * assumed: this view is also mounted on its own, outside any shell. */
-      canDock: false,
       // The flip-boundary slide — see onStageResized(). Unread by the
       // template, so writing them costs no re-render.
       stageObserver: null as ResizeObserver | null,
       wasFlipped: null as boolean | null,
       splitOffset: 0,
       endSlide: null as (() => void) | null,
-      // The hidden-artwork corner shows a small cover whose height matches
-      // the track text beside it — measured, since that block grows and
-      // shrinks with the title. See observeInfo()/measureInfo().
-      infoObserver: null as ResizeObserver | null,
-      miniArtSize: 0,
       // Both belong to the debug button in the toolbar — see its own
       // comment. Off, and empty, for everyone who is not chasing something.
       debugEnabled: false,
@@ -523,20 +213,11 @@ export default {
       // "r, g, b" — kept as a CSS-ready string so the two computed styles
       // below don't each redo the same join().
       extractedColor: null as string | null,
-      // Reported by <cover-art> once the logo has actually arrived and the
-      // backend's own reading of it came with it — false (normal card
-      // treatment) until then, so there's no flash of the transparent-icon
-      // styling before the icon itself has even loaded.
-      radioIconIsTransparent: false,
       // <audio-visualizer>'s own 'debug-frame' event, forwarded straight
       // through to <visualizer-debug-overlay> — see that component's own
       // comment for why it's rendered here instead of inside
       // <audio-visualizer> itself.
       visualizerDebug: null as VisualizerFrame['debug'] | null,
-      // Two stacked layers, only one shown at a time, so a song change
-      // crossfades between cover arts instead of popping — see
-      // services/crossfadeBackdrop.ts for why one element can't do this.
-      backdrop: createBackdropLayers(),
       // The current song's artist background from Fanart.tv, when the
       // installation has a key and the artist has one. Shown crisp behind
       // everything (see .now-playing__backdrop--artist); null falls back to
@@ -560,12 +241,6 @@ export default {
       // The user's wish to hide the artwork; only honored while there is a
       // Fanart.tv background to reveal (see artworkHidden).
       hideArtwork: readHideArtwork(),
-      // Whether <audio-visualizer> is actually in the DOM — trails
-      // visualizerActive by visualizerHideDelayMs on the way down so its
-      // fall-to-0 animation (see its `active` prop) has time to play
-      // before it's removed; see the visualizerActive watcher below.
-      visualizerMounted: false,
-      visualizerHideTimer: null as ReturnType<typeof setTimeout> | null,
       // Tracks the real DOM state (via the fullscreenchange listener below),
       // not just "did we ask for it" — the browser/OS can exit fullscreen
       // on its own (Esc key, an OS-level shortcut), and the button's
@@ -582,12 +257,6 @@ export default {
     },
     drawersStore() {
       return useDrawersStore()
-    },
-    authStore() {
-      return useAuthStore()
-    },
-    autoplayStore() {
-      return useAutoplayStore()
     },
     currentSong() {
       return this.playbackStore.currentSong
@@ -629,93 +298,52 @@ export default {
      * current's place (see the next-up transition in <style>). With the
      * artwork shown there is a single panel - the labels under the artwork -
      * and no chevrons. */
-    cornerPanels(): {
-      key: string
-      kind: 'song' | 'chevrons'
-      song: Song | null
-      eyebrow: string
-    }[] {
-      const panels: {
-        key: string
-        kind: 'song' | 'chevrons'
-        song: Song | null
-        eyebrow: string
-      }[] = []
+    cornerPanels(): NowPlayingPanel[] {
+      const panels: NowPlayingPanel[] = []
       if (this.currentSong) {
         panels.push({
           key: this.currentSong.id,
           kind: 'song',
           song: this.currentSong,
           eyebrow: this.eyebrow,
+          title: this.currentSong.title,
+          radioTag: null,
         })
       } else if (this.playbackStore.radioStation) {
-        panels.push({ key: 'radio', kind: 'song', song: null, eyebrow: this.eyebrow })
+        // The ICY tag (what's playing right now) is the prominent title and
+        // the station is the secondary line — same as SongInfo.vue's own
+        // player-bar label. Without a tag the station name is all there is,
+        // so it sits up top and no second line repeats it.
+        const stationName = this.playbackStore.radioStation.name
+        const nowPlaying = this.radioMeta.nowPlaying
+        panels.push({
+          key: 'radio',
+          kind: 'song',
+          song: null,
+          eyebrow: this.eyebrow,
+          title: nowPlaying ?? stationName,
+          radioTag: nowPlaying ? stationName : null,
+        })
       }
       if (this.nextUpActive && this.nextSong) {
-        panels.push({ key: 'chevrons', kind: 'chevrons', song: null, eyebrow: '' })
+        panels.push({
+          key: 'chevrons',
+          kind: 'chevrons',
+          song: null,
+          eyebrow: '',
+          title: '',
+          radioTag: null,
+        })
         panels.push({
           key: this.nextSong.id,
           kind: 'song',
           song: this.nextSong,
           eyebrow: this.$t('home.nextUp'),
+          title: this.nextSong.title,
+          radioTag: null,
         })
       }
       return panels
-    },
-    // cqh/cqw (container query units), not vh/vw — .now-playing__stage is a
-    // `container-type: size` host (see <style>) sized by .now-playing's own
-    // grid (minmax(0, 1fr), after the app-bar/PlayerBar outside this
-    // component and the visualizer row below it have already taken their
-    // share), so cqh/cqw here measure the space actually left for the
-    // artwork specifically. vh/vw measure the *raw* viewport instead, with
-    // no idea how much of it any of that chrome eats — on a short window
-    // that read as "too big, has to scroll to see the visualizer"; on a
-    // 4K one, capped at a fixed 700px ceiling that never grew with all the
-    // extra room actually available, it read as "lost". Both are just this
-    // same wrong-measurement bug at opposite ends.
-    //
-    // Still clamped (a floor so it doesn't shrink to nothing on a tiny
-    // container, a ceiling — now much higher — so it doesn't blow up
-    // absurdly large on a huge one) and still min()'d against both a
-    // height and a width fraction, same reasoning as before: a *short*
-    // container and a *narrow* one are both real ways to run out of room,
-    // independently.
-    //
-    // The compact fractions come from measuring what the stage actually
-    // leaves rather than from picking cautious-looking numbers, which is
-    // what the previous 55cqh/60cqw were. Measured across six phone and
-    // tablet viewports (see NowPlayingView.compact.layout.browser.test.ts):
-    // once .now-playing__content's 16px side padding is off, the width
-    // available is ~91cqw everywhere, so 60cqw was leaving a third of it
-    // unused — on a 390px phone a 234px cover in 358px of room, and with
-    // it a flip card, and so a lyrics and title-log panel, all sized to
-    // the same 234px.
-    //
-    // The height fraction cannot be as generous, and that is the whole
-    // reason the two differ: the info block and the padding under the
-    // artwork cost a fixed ~78px, which is 12% of a tall portrait stage
-    // but 38% of a 205px landscape one. 58cqh is what still fits there;
-    // in portrait the width binds first anyway, so nothing is lost by
-    // being careful about it.
-    //
-    // 90cqw rather than the ~98 the box would actually tolerate: the last
-    // few percent are margin, not waste. Pushed right to the edge the
-    // cover ends up with four pixels of air either side, which reads as a
-    // layout mistake rather than as a big cover.
-    artSize(): string {
-      // The third term is what the *rest* of the compact column needs out of
-      // the same height: .now-playing__content's 12px top and bottom, the
-      // 16px under the artwork, and the eyebrow/title/artist block, which
-      // measures a little over 50px. 58cqh alone describes a tall stage
-      // correctly and a short one not at all — a phone on its side leaves
-      // roughly 190px here, where 58% is 112px and everything else still
-      // wants its 94px, so the artwork was sized past what was left and
-      // the stage's `overflow: hidden` clipped through the title. The floor
-      // comes down with it: a 120px minimum is itself taller than such a
-      // stage can spare.
-      return this.compact
-        ? 'clamp(88px, min(58cqh, 90cqw, calc(100cqh - 100px)), 480px)'
-        : 'clamp(180px, min(70cqh, 50cqw), 900px)'
     },
     // Kept in the store rather than in this view's own data, because this
     // view is unmounted every time the user goes anywhere else and the
@@ -869,34 +497,10 @@ export default {
         if (url) this.loadColor(url)
       },
     },
-    // The backdrop follows the artist background when there is one, so it
-    // watches backdropSource rather than coverArtUrl directly. A song change
-    // may fade twice (cover first, then the artist image once it arrives);
-    // that reads as the artist image easing in, not as a flicker.
-    backdropSource: {
-      immediate: true,
-      handler(url: string | null) {
-        showBackdrop(this.backdrop, url)
-      },
-    },
     // Turning Fanart.tv off drops the background (and the artwork it may be
     // revealed by) immediately; turning it back on fetches it again.
     fanartEnabled() {
       void this.loadArtistBackground(this.currentArtist)
-    },
-    // The hidden-artwork corner's mini cover matches the track text's height
-    // (see miniArtSize), so the text block is observed while it is on screen.
-    hasPlayable: {
-      immediate: true,
-      handler() {
-        void this.$nextTick(() => this.observeInfo())
-      },
-    },
-    // A different station's logo is a different shape — drop the previous
-    // one's treatment the moment the station changes, rather than carrying
-    // it until the new logo arrives and <cover-art> reports its own.
-    radioFavicon() {
-      this.radioIconIsTransparent = false
     },
     /** Made-up titles belong to the station they were invented for - see
      * the toolbar's debug button. Left behind, they would sit at the top
@@ -949,14 +553,6 @@ export default {
         void this.preloadNext(song)
       },
     },
-    // The current panel's info element is replaced on every track change (the
-    // panels are keyed by song), so the ResizeObserver behind miniArtSize has
-    // to be re-pointed at the new one.
-    cornerPanels: {
-      handler() {
-        void this.$nextTick(() => this.observeInfo())
-      },
-    },
     // Not expected in practice (the web/Docker build is the only place
     // `compact` can even change live, by resizing the window across
     // MobileLayout's breakpoint — Electron never shows the mobile layout at
@@ -983,34 +579,6 @@ export default {
         // next launch.
       }
     },
-    // Mount instantly on the way up; on the way down, keep it mounted
-    // (with active=false) for VISUALIZER_HIDE_DELAY_MS so AudioVisualizer's
-    // own smoothing can settle every bar to 0 first — see its `active`
-    // prop. Without this the whole element (and whatever it was mid-way
-    // through animating) would just vanish instantly instead.
-    visualizerActive: {
-      immediate: true,
-      handler(active: boolean) {
-        if (this.visualizerHideTimer) {
-          clearTimeout(this.visualizerHideTimer)
-          this.visualizerHideTimer = null
-        }
-        if (active) {
-          this.visualizerMounted = true
-        } else if (this.visualizerMounted) {
-          this.visualizerHideTimer = setTimeout(() => {
-            this.visualizerMounted = false
-          }, VISUALIZER_HIDE_DELAY_MS)
-        }
-      },
-    },
-  },
-  created() {
-    // Already there in the real shell: MobileLayout renders its app bar
-    // before <router-view>, so the target is in the document by the time
-    // this gets here — checking now rather than in mounted() keeps the
-    // toolbar from rendering over the artwork for a frame first.
-    this.canDock = document.getElementById('mobile-app-bar-actions') !== null
   },
   mounted() {
     document.addEventListener('fullscreenchange', this.onFullscreenChange)
@@ -1033,9 +601,7 @@ export default {
       .catch(() => {})
   },
   beforeUnmount() {
-    if (this.visualizerHideTimer) clearTimeout(this.visualizerHideTimer)
     this.stageObserver?.disconnect()
-    this.infoObserver?.disconnect()
     this.endSlide?.()
     document.removeEventListener('fullscreenchange', this.onFullscreenChange)
     // Leaving the view (route change, logout, ...) shouldn't strand the
@@ -1070,8 +636,12 @@ export default {
      * container query in <style> stays the only place the boundary is
      * defined. */
     onStageResized(): void {
-      const card = this.$refs.flipCard as HTMLElement | undefined
-      const primary = this.$refs.primary as HTMLElement | undefined
+      // The card lives in whichever stage component is rendered, so it is
+      // reached through the stage box rather than a template ref — see
+      // .now-playing__stage below.
+      const stage = this.$refs.stage as HTMLElement | undefined
+      const card = stage?.querySelector<HTMLElement>('.now-playing__flip-card')
+      const primary = stage?.querySelector<HTMLElement>('.now-playing__primary')
       if (!card || !primary) {
         this.wasFlipped = null
         this.splitOffset = 0
@@ -1087,40 +657,6 @@ export default {
       // the transform was cleared a frame after it went on.
       this.endSlide?.()
       this.slidePrimaryFrom(primary, ((flipped ? -1 : 1) * this.splitOffset) / 2, flipped)
-    },
-    /** (Re)points the info observer at the track-text block, which only
-     * exists while something is playable. */
-    observeInfo(): void {
-      if (!this.infoObserver) {
-        this.infoObserver = new ResizeObserver(() => this.measureInfo())
-      }
-      this.infoObserver.disconnect()
-      const info = this.currentInfoEl()
-      if (info) {
-        this.infoObserver.observe(info)
-        this.measureInfo()
-      }
-    },
-    /** The current panel's info block. `ref="info"` sits inside the panels
-     * v-for, so `$refs.info` is an array in DOM order; the current panel is
-     * the first song panel (see cornerPanels). */
-    currentInfoEl(): HTMLElement | undefined {
-      const refs = this.$refs.info as HTMLElement | HTMLElement[] | undefined
-      const list = Array.isArray(refs) ? refs : refs ? [refs] : []
-      return list[0]
-    },
-    /** The hidden-artwork corner's mini cover is square at the track text's
-     * own height, so it lines up with the labels instead of sitting at a
-     * size of its own. */
-    measureInfo(): void {
-      const info = this.currentInfoEl()
-      if (info) this.miniArtSize = Math.round(info.getBoundingClientRect().height)
-    },
-    /** Locks a leaving panel's width before it is taken out of the flow (see
-     * the next-up leave class), so it fades at the size it had rather than
-     * collapsing to its content. */
-    lockLeaveWidth(el: Element): void {
-      ;(el as HTMLElement).style.width = `${el.getBoundingClientRect().width}px`
     },
     /** How much room the lyrics panel takes out of the centred row: its own
      * width plus the gap before it. Half of that is how far the artwork
@@ -1339,86 +875,11 @@ export default {
   justify-items: center;
   overflow: hidden;
   /* Opaque fallback behind the two layers below — matters for radio, where
-   * .now-playing__backdrop has no image to show. */
+   * the backdrop has no image to show. */
   background: #12141c;
 }
 
-/* Full-bleed blurred artwork — the app's one backdrop recipe, shared with
- * DetailHeader.vue, HeroBand.vue and SongInfoDialog.vue (see
- * docs/styleguide.md). Oversized and scaled so the blur radius never
- * reveals a hard edge at the bounds; at this blur the scale alone already
- * covers far more than the radius needs on a full-bleed surface, which is
- * why the inset is the same modest -20px as everywhere else. */
-.now-playing__backdrop {
-  position: absolute;
-  inset: -20px;
-  background-size: cover;
-  background-position: center;
-  filter: blur(38px) saturate(1.4) brightness(0.55);
-  transform: scale(1.15);
-  /* Two stacked instances of this, only one of which is --active
-   * (opacity: 1) at a time — this opacity transition is what actually
-   * crossfades between them on a song change (see
-   * services/crossfadeBackdrop.ts). Same 0.6s as DetailHeader.vue and
-   * HeroBand.vue, so every backdrop in the app fades at one speed. */
-  opacity: 0;
-  transition: opacity 0.6s ease;
-}
-
-.now-playing__backdrop--active {
-  opacity: 1;
-}
-
-/* A Fanart.tv artist background is a full-size photo, so it is shown sharp
- * instead of as a blurred wash of a small cover — the one deliberate
- * exception to the backdrop recipe in docs/styleguide.md's "The artwork
- * backdrop". The ambient scrim above still tints it for legibility. */
-.now-playing__backdrop--artist {
-  inset: 0;
-  filter: none;
-  transform: none;
-}
-
-.now-playing__scrim {
-  position: absolute;
-  inset: 0;
-  /* Ambient color is set inline (:style) since it depends on the song;
-   * the transition is what makes it change *into* the new color smoothly
-   * on a song change instead of snapping. */
-  transition: background 1.2s ease;
-}
-
-.now-playing__toolbar {
-  position: absolute;
-  top: 24px;
-  right: 24px;
-  z-index: 2;
-  display: flex;
-  gap: 4px;
-  /* A translucent panel under the icons: with the artwork hidden they sit
-   * directly on the artist photo, where a plain white icon can vanish. */
-  padding: 4px;
-  border-radius: 999px;
-  background: rgba(18, 20, 28, 0.55);
-  backdrop-filter: blur(8px);
-}
-
-/* Teleported into the app bar (see the template): it is a row of buttons in
- * a bar now, not an overlay on artwork, so everything that made it float
- * comes back off. The `.now-playing--compact` rules below cannot do this —
- * once teleported it is no longer inside .now-playing at all. */
-.now-playing__toolbar--docked {
-  position: static;
-  z-index: auto;
-  flex-direction: row;
-  gap: 0;
-  padding: 0;
-  border-radius: 0;
-  background: none;
-  backdrop-filter: none;
-}
-
-/* Mirrors .now-playing__toolbar's own corner placement (opposite side, so
+/* Mirrors the toolbar's own corner placement (opposite side, so
  * the two never collide) — see VisualizerDebugOverlay's own comment for
  * why this lives here rather than inside <audio-visualizer>/the visualizer
  * row: this way it takes no layout space from the bars at all, in a corner
@@ -1438,9 +899,9 @@ export default {
  * exactly "whatever's left" after the visualizer row has taken its share,
  * shrinkable below its own content's natural size like any minmax(0, ...)
  * grid song. width/height: 100% is what turns this into the measurement
- * basis for artSize's cqh/cqw units below via container-type: size — a
- * *real* available-space measurement, unlike vh/vw which had no idea how
- * much of the raw viewport the app-bar/PlayerBar/visualizer row had
+ * basis for the stage components' artSize cqh/cqw units via container-type:
+ * size — a *real* available-space measurement, unlike vh/vw which had no
+ * idea how much of the raw viewport the app-bar/PlayerBar/visualizer row had
  * already taken. */
 .now-playing__stage {
   position: relative;
@@ -1454,786 +915,6 @@ export default {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-}
-
-/* Always a row (even with just one child, .now-playing__primary, when
- * lyrics are hidden) so toggling lyrics never flips flex-direction itself
- * — that can't be transitioned. Instead .now-playing__lyrics animates its
- * own width from 0 up, and since this row stays centered throughout, the
- * artwork column drifts to the side on its own as the row grows to fit
- * both — see .now-playing__content--split's much wider cap below, which is
- * what actually gives it room to do that instead of also having to shrink
- * the artwork itself (see the cover-art size prop above, now fixed
- * regardless of showLyrics). */
-.now-playing__content {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 32px;
-  /* Raised alongside artSize/.now-playing__info's own widescreen bump above
-   * — .now-playing__primary is flex-shrink: 0, so on a screen where the
-   * artwork now actually reaches close to artSize's 900px ceiling, the old
-   * flat 640px here undersold what this box needed to comfortably contain
-   * before overflowing it. */
-  max-width: 1000px;
-  gap: 0;
-  transition:
-    gap 0.45s ease,
-    max-width 0.45s ease;
-}
-
-.now-playing__content--split {
-  max-width: 1800px;
-  width: 96cqw;
-  /* Flat 40px read as cramped once the artwork itself started scaling up
-   * more on wide monitors (see artSize's own widescreen bump) — grows with
-   * the stage's own width instead, same cqw-driven approach as everything
-   * else here, floor unchanged from the original fixed value so narrow
-   * containers (already handled by the flex-wrap safety net below) don't
-   * shift at all. */
-  gap: clamp(40px, 6cqw, 120px);
-  /* Never wrap. A row that wraps puts the lyrics *under* the artwork, and
-   * that reads as the layout breaking rather than as a tight fit - it was
-   * the safety net here until 2026-09-07, when it turned out to be the
-   * more visible failure of the two. The panel gives way instead (see
-   * .now-playing__lyrics' flex-shrink), which costs reading width and
-   * nothing else. */
-  flex-wrap: nowrap;
-}
-
-/* Transparent to layout by default — see the template's own comment on
- * this element for what it becomes under the portrait container query
- * below. */
-.now-playing__flip-card {
-  display: contents;
-}
-
-.now-playing__primary {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-/* With the artwork hidden the track text leaves the centre for the
- * bottom-left corner, so the artist background is what the screen is about.
- * space-between, not flex-start: with the lyrics panel open it belongs on
- * the right, where it sits with the artwork shown, rather than being dragged
- * over next to the text. Not on the phone: the flip-card layout there has no
- * room for a corner. */
-.now-playing--artwork-hidden:not(.now-playing--compact) .now-playing__content {
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  align-items: flex-end;
-  justify-content: space-between;
-  /* More than the base 32px: .now-playing__stage clips (overflow: hidden)
-   * and the mini cover's shadow (.cover-shadow: 12px offset + 32px blur)
-   * otherwise runs off the bottom edge and is cut. */
-  padding-bottom: 56px;
-}
-
-/* The track panels row: the current one, then - near the end of a track -
- * the chevrons and the next one (see cornerPanels). A transition-group so
- * that on the change the next panel moves left into the current's place (the
- * FLIP `move`) while the old one fades out - see the next-up classes below.
- * position: relative is the containing block the leaving panel is taken out
- * into. */
-.now-playing__panels {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  position: relative;
-}
-
-.now-playing__panel {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-/* With the artwork hidden each panel is a bottom-left glass corner: the
- * small cover beside the track text. The current one, then - near the end
- * of a track - animated chevrons and the next one to its right. */
-.now-playing--artwork-hidden .now-playing__panels {
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 12px;
-}
-
-.now-playing--artwork-hidden .now-playing__panel {
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 16px;
-  text-align: left;
-  /* A glassy panel behind the mini cover and track text, so both stay
-   * readable where they sit directly on the artist background. Same recipe
-   * as the lyrics panel (rgba + backdrop blur + radius). */
-  background: rgba(18, 20, 28, 0.5);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-  border-radius: 18px;
-  padding: 16px 20px;
-}
-
-.now-playing--compact.now-playing--artwork-hidden .now-playing__panel {
-  gap: 12px;
-}
-
-/* The "next" marker between the two panels: two chevrons nudging right in a
- * loop, so the second card reads as what follows the first. No glass of its
- * own - the panel modifier has to outrank the corner panel's own glass rule
- * above. The colour comes inline from the visualizer's own (see the
- * template), so the marker and the bars read as one. */
-.now-playing--artwork-hidden .now-playing__panel--chevrons {
-  gap: 0;
-  padding: 0;
-  background: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  border-radius: 0;
-  align-self: center;
-}
-
-.now-playing__next-up-chevron {
-  animation: next-up-chevron 1.4s ease-in-out infinite;
-}
-
-.now-playing__next-up-chevron--second {
-  animation-delay: 0.2s;
-}
-
-@keyframes next-up-chevron {
-  0%,
-  100% {
-    opacity: 0.35;
-    transform: translateX(-3px);
-  }
-  50% {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-/* The next panel appears to the right near the end of a track; on the change
- * the old current fades out while the next moves left into its place. The
- * move is the FLIP a transition-group gives the keyed panel whose position
- * changed; the leaving panel is taken out of the flow (its width locked by
- * lockLeaveWidth) so the next can actually move into the gap it leaves. */
-.next-up-enter-active,
-.next-up-leave-active {
-  transition:
-    opacity 0.5s ease,
-    transform 0.5s ease;
-}
-
-.next-up-move {
-  transition: transform 0.5s ease;
-}
-
-.next-up-enter-from,
-.next-up-leave-to {
-  opacity: 0;
-  transform: translateX(24px);
-}
-
-.next-up-leave-active {
-  position: absolute;
-}
-
-/* The compact primary is a full-size box (it centres the artwork when the
- * artwork is shown). In the corner it has to shrink to its contents, or
- * the glass panel above would cover the whole screen instead of wrapping
- * the cover and text. */
-.now-playing--compact.now-playing--artwork-hidden .now-playing__flip-card {
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-start;
-}
-
-.now-playing--compact.now-playing--artwork-hidden .now-playing__primary {
-  height: auto;
-  width: auto;
-  /* Shrinkable and capped to the stage: a long label must ellipsise inside
-   * the panel, not run off the right of the screen (the cover keeps its
-   * size via its own flex-shrink: 0). */
-  max-width: 100%;
-  min-width: 0;
-  flex-shrink: 1;
-}
-
-/* The panel is the flex row now, so it (and the group it sits in) is what
- * has to be allowed to shrink for a long label to ellipsise inside it. */
-.now-playing--compact.now-playing--artwork-hidden .now-playing__panels,
-.now-playing--compact.now-playing--artwork-hidden .now-playing__panel {
-  min-width: 0;
-  max-width: 100%;
-}
-
-/* On a phone the corner is a tight row: each label is one ellipsised line
- * (no wrapping - a wrapped line would push the block taller than the cover,
- * and long text would run off the screen), and the type is a step down so
- * the whole block stays small. */
-.now-playing--compact.now-playing--artwork-hidden .now-playing__info {
-  min-width: 0;
-}
-
-.now-playing--compact.now-playing--artwork-hidden .now-playing__info > * {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* The title is a multi-line clamp by default (see its own rule); in the
- * corner it is a single ellipsised line like the rest. */
-.now-playing--compact.now-playing--artwork-hidden .now-playing__title {
-  display: block;
-  font-size: clamp(1rem, min(2.1cqw, 7cqh), 1.6rem);
-}
-
-.now-playing--compact.now-playing--artwork-hidden .now-playing__info .eyebrow-label {
-  font-size: clamp(0.55rem, min(1.4cqw, 1.8cqh), 0.75rem);
-}
-
-.now-playing--compact.now-playing--artwork-hidden .now-playing__info .now-playing__artist-link,
-.now-playing--compact.now-playing--artwork-hidden .now-playing__info .now-playing__artist-label {
-  font-size: clamp(0.68rem, min(2cqw, 2.8cqh), 1.05rem);
-}
-
-.now-playing--compact.now-playing--artwork-hidden .now-playing__info .now-playing__album-link {
-  font-size: clamp(0.58rem, min(1.5cqw, 2cqh), 0.85rem);
-}
-
-/* The mini cover carries no shadow: the glass panel behind it already
- * separates it from the artist background, and a shadow there would spill
- * out of the panel (and get clipped by the stage). */
-.now-playing--compact.now-playing--artwork-hidden .now-playing__mini-art {
-  box-shadow: none;
-}
-
-/* The small cover the hidden-artwork corner shows beside the text - see the
- * template. Rounded like the artwork on the cover cards. */
-.now-playing__mini-art {
-  flex-shrink: 0;
-  border-radius: 8px;
-}
-
-/* The lyrics get their own ground to sit on - the amber glow the active
- * line carries is not enough over a bright backdrop, and over a sharp artist
- * photo it is not enough at all. A translucent, blurred panel, the same idea
- * as the app's other scrims. */
-.now-playing__lyrics {
-  background: rgba(18, 20, 28, 0.62);
-  backdrop-filter: blur(10px);
-  border-radius: 18px;
-}
-
-/* Tall, bounded reading area — LyricsPanel scrolls within whatever height
- * it's given. A fixed target width (not flex: 1) so the enter/leave
- * transition below has a concrete value to animate from/to; overflow
- * hidden clips its contents while that width is mid-animation. cqw/cqh
- * (not vw/vh) for the same reason as artSize above — measured against the
- * real available stage, not the raw viewport. */
-.now-playing__lyrics {
-  /* Shrinkable, unlike .now-playing__primary: this is a column of text
-   * that scrolls, so a narrower box costs reading width, while the artwork
-   * has a size of its own to keep. min-width: 0 because a flex item does
-   * not shrink below its content otherwise. The width below stays the
-   * target the enter/leave transition animates to. */
-  flex-shrink: 1;
-  min-width: 0;
-  width: min(38cqw, 560px);
-  height: 85cqh;
-  overflow: hidden;
-}
-
-.now-playing-lyrics-enter-active,
-.now-playing-lyrics-leave-active {
-  transition:
-    width 0.45s ease,
-    opacity 0.35s ease;
-}
-
-.now-playing-lyrics-enter-from,
-.now-playing-lyrics-leave-to {
-  width: 0;
-  opacity: 0;
-}
-
-/* Not enough width for artwork and lyrics to sit side by side the way
- * .now-playing__content--split's flex-wrap fallback above otherwise
- * handles it (stacking them into two rows, still both visible/competing
- * for the same limited width). Past this point, flip the artwork+info card
- * over like turning it to its back instead — lyrics take over the exact
- * box the artwork just occupied, rather than fighting it for space.
- *
- * Two conditions, because "does it still fit" genuinely depends on both
- * the container's shape *and* its width — the artwork is
- * min(70cqh, 50cqw) (see artSize), so a tall container sizes it off the
- * width and a flat one off the height, and those two regimes run out of
- * room at completely different places:
- *
- *  - max-aspect-ratio: 4/5 — portrait, including every phone. The original
- *    (and only) condition this block had.
- *  - max-width: 1560px and not flatter than 3/2 — where the artwork is
- *    width-driven, side by side only actually fits from ~1560px up:
- *    artwork (50cqw) + gap (6cqw) + lyrics (38cqw) is 94% of a row that
- *    only ever gets 96cqw minus 64px of padding, so the three grow almost
- *    exactly as fast as the room for them. Measured, not derived on paper
- *    — see NowPlayingView.layout.browser.test.ts, which pins both sides of
- *    this boundary. A flatter container (a short, wide window) caps the
- *    artwork at 70cqh well before that and keeps fitting comfortably,
- *    which is what the aspect-ratio half of the condition preserves;
- *    without it, a 1500x900 window would flip despite having room to
- *    spare.
- *
- * Before this, aspect ratio alone decided it: a 1400x1080 window (ratio
- * 1.3, nowhere near 4/5) wrapped into two cramped rows instead of
- * flipping, which is the state this replaces.
- *
- * Standard CSS "flip card" construction:
- * .now-playing__flip-card is the rotating element, .now-playing__primary
- * (front) sizes it via normal flow, .now-playing__lyrics (back) is
- * absolutely positioned to exactly cover that same box, and both faces
- * hide their own backface so only whichever one is currently "facing
- * forward" after the rotation is actually visible.
- *
- * Applies in compact mode too — a phone screen is portrait too, and this
- * is actually the *only* way compact mode ever gets to show lyrics at all
- * (MobileTransportControls.vue's own toolbar has no room for a side-by-side
- * split — see the toolbar's lyrics button in the template above, shown on
- * mobile specifically because this flip is how it gets used there). */
-@container now-playing-stage (
-  (max-aspect-ratio: 4/5) or ((max-width: 1560px) and (max-aspect-ratio: 3/2))
-) {
-  .now-playing__content--split {
-    /* A single card now, sized by its own content — no max-width of its
-     * own on purpose: max-width is transitioned (see
-     * .now-playing__content), and a container query ceasing to match
-     * animates it like any other change. Narrowing it here left the row
-     * growing back to 1800px for 0.45s while both panels were already in
-     * flow needing more than that, so they wrapped into two rows on the
-     * way out. */
-    width: auto;
-    gap: 0;
-    perspective: 2000px;
-  }
-
-  /* As tall as the stage, not as tall as its own contents - see the
-   * .now-playing--compact rules below, where the same thing was measured:
-   * only the artwork is sized by artSize(), and the back face (lyrics, or
-   * a station's title log) is sized to this box. A 1200x1000 window left
-   * 292px of it unused. */
-  .now-playing__content {
-    height: 100%;
-  }
-
-  .now-playing__flip-card {
-    display: block;
-    position: relative;
-    height: 100%;
-    transform-style: preserve-3d;
-    transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
-    /* NOT container-type: size on this element itself — it has no explicit
-     * width, only ever getting one from .now-playing__primary's own content
-     * (the artwork + title/artist/album stack) via normal flow, which is
-     * exactly what size containment can't coexist with: a container query
-     * container's own size, on whichever axis is being queried, has to come
-     * from something other than its content, on pain of the browser having
-     * nothing to lay it out from and collapsing that axis to ~0. That's not
-     * a hypothetical — it's what actually happened here: card width
-     * collapsed to near nothing (still holding a real, cross-axis-stretched
-     * height from the flex row around it, since only *size* containment,
-     * not layout, was ever the problem), and every cqw-based measurement
-     * inside it — the lyrics font-size clamp, but *also* artSize/the title
-     * clamp, which no longer resolved against .now-playing__stage as their
-     * own comments assume once this became their nearest container-type
-     * ancestor — inherited that collapse. Text wrapping to one letter per
-     * line (not just one word) was the visible result. See
-     * .now-playing__lyrics below for where the containment actually
-     * belongs instead. */
-  }
-
-  .now-playing__content--split .now-playing__flip-card {
-    transform: rotateY(180deg);
-  }
-
-  .now-playing__primary {
-    /* Fills the taller card, with its own contents still centred in it, so
-     * the artwork and the title under it stay where they were. */
-    height: 100%;
-    justify-content: center;
-    /* An explicit identity rotation, not just the absence of one — Chromium
-     * only reliably factors an ancestor's preserve-3d rotation into *this*
-     * element's own backface-visibility check once it has a 3D transform of
-     * its own to compose with that ancestor's transform in the same 3D
-     * space. Without it, the artwork face stayed visibly rendered through
-     * the "back" of the card instead of hiding, no matter what
-     * backface-visibility said. */
-    transform: rotateY(0deg);
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-  }
-
-  .now-playing__lyrics {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-    transform: rotateY(180deg);
-    /* Unlike the card itself (see its own comment), this is safe: width/
-     * height are already explicit (100% of .now-playing__flip-card, a
-     * *positioned* ancestor with a real, content-derived size of its own —
-     * a plain percentage-of-a-definite-size resolution, nothing content-
-     * dependent about it) *before* containment is applied, so there's
-     * nothing for it to collapse. Re-anchors every cqw/cqh unit inside this
-     * element (including LyricsPanel.vue's own — plain units, not scoped to
-     * a specific named container, so they always resolve against the
-     * *nearest* container-type ancestor) to the same box the artwork
-     * actually occupies, instead of the outer .now-playing__stage the
-     * lyrics font-size clamp's own comment assumes — which is what made
-     * lines wrap far narrower than intended before this existed at all. */
-    container-type: size;
-    /* Consumed by LyricsPanel.vue's own .lyrics-panel--immersive
-     * .lyrics-panel__line rule (see its own comment) — a custom property,
-     * not a value overridden from out here via a selector, since this
-     * element's font-size/padding live inside a separate scoped component
-     * and a plain override rule from this file would be fighting that
-     * rule's own scoped specificity instead of just... telling it the
-     * right number directly. Tuned against *this* box (matching the
-     * artwork, not the full stage) — floor high enough to stay readable in
-     * a small flip-card (mobile), ceiling capped so it doesn't blow up
-     * absurdly large on a big one (a wide desktop window narrow enough to
-     * still trigger flip mode). */
-    --lyrics-flip-font-size: clamp(0.95rem, min(6cqw, 8cqh), 1.9rem);
-    --lyrics-flip-line-padding: 10px 20px;
-  }
-
-  /* No width animation here — the flip itself carries that. But this can't
-   * drop to `transition: none` outright: Vue's <transition> figures out how
-   * long to keep a leaving element in the DOM by listening for *this*
-   * element's own transitionend, and the flip's actual rotation lives on
-   * .now-playing__flip-card (an ancestor), not here — with nothing to
-   * listen for, Vue removed the lyrics panel from the DOM almost
-   * immediately instead of waiting out the flip, so flipping the card back
-   * visibly lost its content well before the rotation finished. Matching
-   * the flip's own 0.7s duration with an opacity fade keeps a real
-   * transition on the element Vue is actually watching (and reads as a
-   * deliberate cross-fade layered on the flip, not just a timing workaround
-   * — backface-visibility already hides each face while it's turned away,
-   * so this only affects the brief moment either face is turning to/from
-   * facing the viewer). */
-  .now-playing-lyrics-enter-active,
-  .now-playing-lyrics-leave-active {
-    transition: opacity 0.7s ease;
-    width: 100%;
-  }
-
-  .now-playing-lyrics-enter-from,
-  .now-playing-lyrics-leave-to {
-    /* width explicit here too (not just on -active above) — this and
-     * -active both apply to the element at once during the transition, and
-     * leaving it implicit invited relying on specificity order between two
-     * differently-named selectors to resolve the conflict with the base
-     * (non-flip) -enter-from/-leave-to rule's own `width: 0` instead of
-     * just... not conflicting with it in the first place. */
-    width: 100%;
-    opacity: 0;
-  }
-}
-
-/* Compact (mobile) always flips, regardless of what .now-playing__stage's
- * own measured aspect ratio comes out to. Unlike a desktop window, which
- * can genuinely be any shape, compact's "stage" height is already squeezed
- * by MobileTransportControls.vue/the tab bar below it — once that, the
- * toolbar, and the title/artist/album text are subtracted from a phone's
- * available height, the remaining box can measure out right at (or just
- * past) the max-aspect-ratio: 4/5 cutoff above, so relying on the container
- * query alone here flapped between flip and the side-by-side fallback
- * depending on device size and how long the current song's text happened
- * to be — the fallback's own lyrics column is still only 38cqw wide (see
- * .now-playing__lyrics' base rule), which is what actually produced the
- * one-word-per-line wrapping reported on a phone where the flip silently
- * never engaged. There's no side-by-side alternative on mobile ever (see
- * the toolbar lyrics button's own comment above) — flip is simply always
- * the answer here, so this repeats the container-query block above
- * verbatim under a plain class selector rather than depend on that query
- * also happening to match. */
-.now-playing--compact .now-playing__content--split {
-  /* No width of its own: it inherits the full-width .now-playing--compact
-   * .now-playing__content below, unlike the desktop flip whose card stays
-   * sized to the artwork. A phone has no room to spend on the artwork's
-   * own narrow box, so the lyrics get the whole screen. */
-  gap: 0;
-  perspective: 2000px;
-}
-
-.now-playing--compact .now-playing__flip-card {
-  display: block;
-  position: relative;
-  transform-style: preserve-3d;
-  transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.now-playing--compact .now-playing__content--split .now-playing__flip-card {
-  transform: rotateY(180deg);
-}
-
-/* The card is as tall as the stage on a phone, not as tall as its own
- * contents. Only the artwork is sized by artSize(); the rest of the height
- * was going unused, and the back face - a station's title log, which is a
- * list that can always show more - is sized to exactly this box. Measured
- * on a 390x844 phone: a 421px card in a 647px stage.
- *
- * The front face keeps its contents centred, so the artwork and the title
- * under it sit where they did. */
-.now-playing--compact .now-playing__content {
-  height: 100%;
-  /* Full width so the flip-card (and the lyrics panel covering it) spans
-   * the screen, and so the artwork-hidden corner anchors to the screen's
-   * own bottom-left rather than a centred box. The front face's own
-   * artwork stays centred either way. */
-  width: 100%;
-}
-
-.now-playing--compact .now-playing__flip-card {
-  height: 100%;
-  width: 100%;
-}
-
-.now-playing--compact .now-playing__primary {
-  height: 100%;
-  justify-content: center;
-  /* See the @container block above's matching rule for why this needs an
-   * explicit identity transform, not just the absence of one. */
-  transform: rotateY(0deg);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-
-.now-playing--compact .now-playing__lyrics {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  transform: rotateY(180deg);
-  /* See the @container block above's matching rule for why containment
-   * belongs here and not on .now-playing__flip-card itself, and for what
-   * the custom properties below are for. */
-  container-type: size;
-  --lyrics-flip-font-size: clamp(0.95rem, min(6cqw, 8cqh), 1.9rem);
-  --lyrics-flip-line-padding: 10px 20px;
-  /* The panel fills the whole phone screen here, so a flat slab of the
-   * base 0.62 would bury the artist background the view exists to show.
-   * Dark enough in the middle - where the active line sits - to stay
-   * readable, fading out top and bottom so the photo shows through. No
-   * radius: a full-bleed panel has no corner to round. */
-  background: linear-gradient(
-    to bottom,
-    rgba(18, 20, 28, 0.15) 0%,
-    rgba(18, 20, 28, 0.6) 26%,
-    rgba(18, 20, 28, 0.6) 74%,
-    rgba(18, 20, 28, 0.15) 100%
-  );
-  border-radius: 0;
-}
-
-.now-playing--compact .now-playing-lyrics-enter-active,
-.now-playing--compact .now-playing-lyrics-leave-active {
-  transition: opacity 0.7s ease;
-  width: 100%;
-}
-
-.now-playing--compact .now-playing-lyrics-enter-from,
-.now-playing--compact .now-playing-lyrics-leave-to {
-  width: 100%;
-  opacity: 0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .now-playing__content,
-  .now-playing-lyrics-enter-active,
-  .now-playing-lyrics-leave-active,
-  .now-playing__visualizer-row,
-  .now-playing__flip-card {
-    transition: none;
-  }
-}
-
-/* Padding lives here, not on the canvas — a canvas's own CSS padding
- * would desync from its drawing buffer (sized off getBoundingClientRect,
- * which includes padding), pushing the bars off-center from where the
- * bitmap actually paints. A real flex row (fixed height, see .now-playing's
- * own flex-direction: column) rather than the absolutely-positioned overlay
- * this used to be — .now-playing__stage shrinks to make room for it through
- * normal flex arithmetic, so nothing here needs a guessed padding-bottom on
- * the content above it to avoid overlapping. */
-.now-playing__visualizer-row {
-  position: relative;
-  z-index: 1;
-  /* Row 2 of .now-playing's grid is `auto` (see above) — sizes to this
-   * element's own actual height, which is what makes the transition below
-   * animate .now-playing__stage's own share of the grid smoothly instead of
-   * snapping. 0 at rest; .now-playing__visualizer-row--visible (toggled
-   * alongside visualizerMounted, see the template) sets the real height. */
-  height: 0;
-  width: 100%;
-  padding: 0 5px;
-  margin-bottom: -1px;
-  pointer-events: none;
-  overflow: hidden;
-  transition: height 0.4s ease;
-}
-
-.now-playing__visualizer-row--visible {
-  height: 128px;
-}
-
-.now-playing__art-wrap {
-  position: relative;
-  margin-bottom: 40px;
-}
-
-.now-playing__art-glow {
-  position: absolute;
-  inset: -70px;
-  border-radius: 50%;
-  filter: blur(60px);
-  transition: background 1.2s ease;
-  z-index: 0;
-}
-
-.now-playing__art-wrap :deep(.cover-art) {
-  position: relative;
-  z-index: 1;
-}
-
-/* Applied instead of cover-shadow once the loaded favicon has arrived and
- * <cover-art> reported it meaningfully transparent (the backend measures
- * it, see routes/radio.py's _has_transparency) — drops CoverArt.vue's own
- * default
- * card background (a faint white tint meant for genuinely art-less
- * placeholders) too, so a logo that's just floating on transparency shows
- * as exactly that instead of getting boxed in a card whose background
- * shows through the transparent parts as a muddy tint, with a drop shadow
- * around an edge that was never actually there.
- *
- * .radio-cover-art--transparent.cover-art (compound, not just the one
- * class) is deliberate — CoverArt.vue's own scoped background rule targets
- * .cover-art alone, so at equal specificity the one that happens to be
- * later in the built CSS wins, not necessarily this one. Matching both
- * classes outranks it regardless of build order. */
-.radio-cover-art--transparent.cover-art {
-  background: transparent;
-}
-
-.now-playing__info {
-  /* .now-playing__primary is flex-shrink: 0 (deliberately — it keeps its
-   * own natural size while the lyrics panel grows/shrinks next to it, see
-   * .now-playing__content--split), which also means it never shrinks *its
-   * own* content down to fit either — an unbroken long title/artist name
-   * would otherwise just keep the whole row growing past
-   * .now-playing__content's max-width instead of wrapping. Capping this to
-   * the artwork's own width (see the artSize computed the cover-art's own
-   * :size is bound to — kept in sync with it here since a plain CSS value
-   * can't read a component's computed prop) gives long text something
-   * concrete to actually wrap against. */
-  max-width: min(clamp(180px, min(70cqh, 50cqw), 900px), 58cqw);
-  /* A soft dark shadow under the track text, so it stays readable when the
-   * artwork is hidden and it sits directly on the artist background. A
-   * drop-shadow on this block, not a text-shadow on each line: the title
-   * and the artist/album links clip their own overflow (line-clamp and
-   * ellipsis), which cuts a text-shadow off flat at their left and right
-   * edges. This block does not clip, so the shadow follows the glyphs. */
-  filter: drop-shadow(0 1px 5px rgba(0, 0, 0, 0.7));
-}
-
-/* Scoped to .now-playing__info, not the bare global class — .eyebrow-label
- * is used all over the app (DetailHeader.vue, HomeView.vue's hero, ...)
- * with its own fixed size; this only overrides it here, and only for
- * responsive sizing (letter-spacing/weight/color stay whatever the global
- * class already sets). */
-.now-playing__info .eyebrow-label {
-  font-size: clamp(0.65rem, min(1.6cqw, 2cqh), 0.85rem);
-}
-
-/* cqw/cqh (see artSize's own comment for the underlying mechanism) — a
- * fixed 2.5rem used to look proportionally huge next to a small, correctly-
- * shrunk container (wrapping to 3-4 lines, see the screenshots this was
- * reported against) and proportionally tiny on a large one, since it never
- * scaled with the same container the artwork already does. min() against
- * both a width and a height fraction so a *short* container shrinks text
- * just as much as a *narrow* one does. */
-.now-playing__title {
-  font-size: clamp(1.1rem, min(2.3cqw, 9cqh), 2.75rem);
-  line-height: 1.15;
-  overflow-wrap: break-word;
-  /* Cut off after three lines rather than growing without limit. This line
-   * is not always a song title: a radio station's ICY tag lands here too,
-   * and some stations send their playout system's whole record in it (see
-   * connect/core/icy_metadata.py's clean_stream_title — what survives that
-   * can still be long). Reported live at five lines, which pushed the
-   * artwork half out of view, since .now-playing__primary does not shrink
-   * (see .now-playing__info above) and this block's height is what artSize
-   * subtracts the artwork's own room from. Nothing is lost: the station's
-   * full tag is one line down in the title log.
-   *
-   * Both spellings: the unprefixed property is the standard one, the
-   * -webkit- pair is what actually does the work in Chromium today, and
-   * -webkit-box display is required for either to apply at all. */
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  line-clamp: 3;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-}
-
-/* .now-playing__info .now-playing__artist-link (compound), not the class
- * alone. Under Vuetify 3 this was load-bearing: .text-title-large (then
- * .text-h6, also on this element — see the template) was a single class
- * at the same specificity, so without a compound selector to outrank it,
- * whichever of the two landed later in the built stylesheet won. Vuetify
- * 4 puts its utilities in a cascade layer, and this scoped rule is
- * unlayered, so it now wins on that alone regardless of specificity —
- * the compound selector is belt-and-braces rather than required. Kept
- * because it costs nothing and stops the question being reopened. */
-.now-playing__info .now-playing__artist-link,
-/* The same line where it is not a link (see the template's compact
- * branch) - only the sizing matters, and it has to be the identical
- * number: artSize below measures this block's height. */
-.now-playing__info .now-playing__artist-label {
-  font-size: clamp(0.9rem, min(3.4cqw, 4.5cqh), 1.5rem);
-  /* Block, not the anchor's default inline — inline elements ignore
-   * vertical margin (mb-2 here would otherwise silently do nothing) and
-   * this also keeps the centered text-align behaving exactly like the
-   * plain <div> this replaced. */
-  display: block;
-  text-decoration: none;
-  overflow-wrap: break-word;
-}
-
-.now-playing__info .now-playing__album-link {
-  font-size: clamp(0.75rem, min(2.5cqw, 3.4cqh), 1rem);
-  text-decoration: none;
-  overflow-wrap: break-word;
-}
-
-/* Radio's own equivalent of the artist link above (a station has no
- * artist/album) — same sizing, just never a link. */
-.now-playing__radio-tag {
-  font-size: clamp(0.9rem, min(3.4cqw, 4.5cqh), 1.5rem);
-  overflow-wrap: break-word;
-}
-
-.now-playing__artist-link:hover,
-.now-playing__album-link:hover {
-  color: rgb(var(--v-theme-primary));
 }
 
 /* Mobile (see the `compact` prop) — same view, much less room to work with:
@@ -2261,29 +942,6 @@ export default {
   height: 100%;
 }
 
-.now-playing--compact .now-playing__content {
-  padding: 12px 16px;
-  max-width: 100%;
-}
-
-.now-playing--compact .now-playing__art-wrap {
-  margin-bottom: 16px;
-}
-
-.now-playing--compact .now-playing__info {
-  max-width: 88cqw;
-}
-
-.now-playing--compact .now-playing__toolbar {
-  top: 8px;
-  right: 8px;
-  /* Stacked, not a row — a phone screen is narrow enough that even two
-   * icon buttons side by side (now that lyrics can show here too, see the
-   * flip-card container query below) reached noticeably into the artwork
-   * underneath instead of staying clear of it in the corner. */
-  flex-direction: column;
-}
-
 .now-playing--compact .now-playing__visualizer-debug {
   /* bottom: auto is load-bearing, not tidying: the desktop rule above sets
    * bottom: 180px, and an absolutely positioned box with height: auto and
@@ -2293,91 +951,5 @@ export default {
   top: 8px;
   bottom: auto;
   left: 8px;
-}
-
-.now-playing--compact .now-playing__visualizer-row--visible {
-  height: 64px;
-}
-
-/* Title/artist/album otherwise inherit the desktop clamp()s above verbatim
- * — reasonable there, but on the compact container's much narrower/shorter
- * cqw/cqh this landed with artist/album reading oversized next to a title
- * that, by comparison, could afford to be a touch bigger itself. Same
- * compound-selector-over-Vuetify-utility reasoning as the base rules above. */
-.now-playing--compact .now-playing__title {
-  font-size: clamp(1.2rem, min(2.4cqw, 9cqh), 2.75rem);
-  /* Two, not three: the phone shell has the artwork and the controls in
-   * the same column, so a third line costs proportionally far more here. */
-  line-clamp: 2;
-  -webkit-line-clamp: 2;
-}
-
-.now-playing--compact .now-playing__info .now-playing__artist-link,
-.now-playing--compact .now-playing__info .now-playing__artist-label {
-  font-size: clamp(0.8rem, min(2.4cqw, 3.2cqh), 1.5rem);
-}
-
-.now-playing--compact .now-playing__radio-tag {
-  font-size: clamp(0.8rem, min(2.4cqw, 3.2cqh), 1.5rem);
-}
-
-.now-playing--compact .now-playing__info .now-playing__album-link {
-  font-size: clamp(0.68rem, min(1.8cqw, 2.4cqh), 1rem);
-}
-
-/* The eyebrow, the title and the artist line, evenly spaced. artSize's own
- * third term counts on this block's height (see its comment), so the gaps
- * live here as one rule rather than as a margin on each line. */
-.now-playing__info > * {
-  margin-bottom: 8px;
-}
-
-/* Tighter in the corner: the compact fonts are roughly half the desktop's,
- * so the same 8px reads as twice the gap. Scoped to the artwork-hidden
- * corner, where artSize (which counts on the 8px above) is not in play. No
- * gap after the last line, so the block (and the cover sized to it) hugs
- * its content. */
-.now-playing--compact.now-playing--artwork-hidden .now-playing__info > * {
-  margin-bottom: 4px;
-}
-
-.now-playing--compact.now-playing--artwork-hidden .now-playing__info > *:last-child {
-  margin-bottom: 0;
-}
-
-/* With the artwork hidden there is nothing for the flip card to turn to -
- * the flip exists to give the lyrics the artwork's own box, and there is no
- * artwork - so the lyrics simply show beside the text, as in the wide
- * layout, however narrow the stage is. Desktop only: the phone's flip card
- * is the only way its narrow stage ever shows lyrics at all. */
-.now-playing--artwork-hidden:not(.now-playing--compact) .now-playing__flip-card {
-  display: contents;
-  transform: none;
-  transition: none;
-}
-
-.now-playing--artwork-hidden:not(.now-playing--compact) .now-playing__content--split {
-  width: 100%;
-  max-width: none;
-  gap: clamp(24px, 4cqw, 80px);
-  perspective: none;
-}
-
-.now-playing--artwork-hidden:not(.now-playing--compact) .now-playing__primary {
-  height: auto;
-  justify-content: normal;
-  transform: none;
-  backface-visibility: visible;
-  -webkit-backface-visibility: visible;
-}
-
-.now-playing--artwork-hidden:not(.now-playing--compact) .now-playing__lyrics {
-  position: static;
-  inset: auto;
-  width: min(38cqw, 560px);
-  height: 85cqh;
-  transform: none;
-  backface-visibility: visible;
-  -webkit-backface-visibility: visible;
 }
 </style>
