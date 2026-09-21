@@ -34,11 +34,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The filter fields on the Songs, Albums, Artists, Genres, Playlists and Radio screens - and the phone remote's search - are forgiving the same way: punctuation and apostrophes no longer have to match, and a slightly misspelled word still finds the entry
 - Clicking a title in a radio station's played list now looks the song up in your library first and opens the search on that song's artist and title, so the exact track shows up instead of a page of near-misses
 - Now Playing's visualizer bars take their colour from the artist background where Fanart.tv has one, brightened so a dark or black-and-white photo does not swallow them (a grey or near-black one falls back to the app's amber), and carry a soft shadow so they stay legible over a bright photo; without a background they keep the amber
+- Picking a lyrics match, or letting the automatic lookup run, no longer asks the lyrics service a second time for a sheet its search had already handed over: the chosen match comes up without the extra round trip, and trying several matches sends fewer requests to those services
 
 ### Fixed
 
 - An artist lookup that failed during a brief MusicBrainz outage could be remembered as "not found" for good, leaving that artist without a photo, links or Wikipedia paragraph on their page and out of Discover. Those misses are retried now
 - An artist whose name is only part of another artist's name could be looked up as that other artist - "Bush" resolved to "Kate Bush" - handing back the wrong Wikipedia paragraph, links and artist image, because the MusicBrainz lookup took its first hit unchecked. It now prefers a result whose name is exactly the one asked for
+- Lyrics matches from NetEase and SimpMusic now show whether a sheet is timed once one has been opened; before, that stayed marked unknown even for a sheet already loaded. SimpMusic's went further and read the missing signal as a no, labelling every match as having no timing at all
 
 ## [1.3.2] - 2026-09-19
 

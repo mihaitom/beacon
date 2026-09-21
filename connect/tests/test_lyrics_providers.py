@@ -115,7 +115,38 @@ async def test_lrclib_get_search_results_maps_and_ranks_songs():
         "source": "lrclib.net",
         "duration": 180,
         "score": 0.0,
+        "_lyrics": "[00:01.00] x",
     }
+
+
+async def test_lrclib_get_search_results_carries_the_plain_sheet_when_unsynced():
+    songs = [
+        {
+            "artistName": "The Artist",
+            "id": 42,
+            "name": "Song",
+            "syncedLyrics": None,
+            "plainLyrics": "la la",
+            "duration": 180,
+        }
+    ]
+    with patch.object(lrclib, "_client") as client:
+        client.get = AsyncMock(return_value=_response(lrclib.SEARCH_URL, songs))
+        result = await lrclib.get_search_results({"name": "Song"})
+
+    # What the route seeds is the sheet a by-id fetch would return — synced
+    # preferred, plain as the fallback.
+    assert result[0]["_lyrics"] == "la la"
+    assert result[0]["isSync"] is False
+
+
+async def test_lrclib_get_search_results_carries_no_sheet_when_there_is_none():
+    songs = [{"artistName": "A", "id": 1, "name": "Song", "duration": 180}]
+    with patch.object(lrclib, "_client") as client:
+        client.get = AsyncMock(return_value=_response(lrclib.SEARCH_URL, songs))
+        result = await lrclib.get_search_results({"name": "Song"})
+
+    assert result[0]["_lyrics"] is None
 
 
 async def test_lrclib_get_search_results_returns_none_when_response_is_not_a_list():
@@ -257,13 +288,14 @@ async def test_simpmusic_get_search_results_returns_none_without_name():
 
 
 async def test_simpmusic_get_search_results_maps_songs():
+    # The real search response (verified 2026-09-21) carries only these
+    # fields — no lyrics, and so no synced/plain signal at all.
     body = {
         "data": [
             {
                 "artistName": "The Artist",
                 "videoId": "vid1",
                 "songTitle": "Song",
-                "syncedLyrics": True,
                 "durationSeconds": 210,
             }
         ]
@@ -274,7 +306,8 @@ async def test_simpmusic_get_search_results_maps_songs():
     assert result[0] == {
         "artist": "The Artist",
         "id": "vid1",
-        "isSync": True,
+        # Unknown, not "untimed" — the by-id fetch is what settles it.
+        "isSync": None,
         "name": "Song",
         "source": "SimpMusic",
         "duration": 210,

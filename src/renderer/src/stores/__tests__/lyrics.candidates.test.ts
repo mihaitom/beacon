@@ -115,4 +115,32 @@ describe('lyrics store — held candidates', () => {
     expect(lyrics.candidates).toEqual({ lrclib: [result('1')] })
     expect(lyrics.remoteId).toBe('1')
   })
+
+  it('fills in a candidate’s timed state once its sheet has been fetched', async () => {
+    // NetEase's and SimpMusic's search APIs carry no synced/plain signal, so
+    // their candidates start as unknown; the fetched sheet settles it.
+    const lyrics = useLyricsStore()
+    lyrics.songId = 'a'
+    const unknown = { ...result('1'), source: 'SimpMusic', isSync: null }
+    vi.mocked(connectLyrics.searchLyrics).mockResolvedValue({ SimpMusic: [unknown] })
+    vi.mocked(connectLyrics.getLyricsByRemoteId).mockResolvedValue('[00:01.00] a line')
+
+    await lyrics.loadCandidates(makeSong('a'))
+    await lyrics.selectCandidate(makeSong('a'), 'SimpMusic', '1')
+
+    expect(lyrics.candidates?.SimpMusic?.[0]?.isSync).toBe(true)
+  })
+
+  it('marks a fetched plain sheet as untimed too', async () => {
+    const lyrics = useLyricsStore()
+    lyrics.songId = 'a'
+    const unknown = { ...result('1'), source: 'SimpMusic', isSync: null }
+    vi.mocked(connectLyrics.searchLyrics).mockResolvedValue({ SimpMusic: [unknown] })
+    vi.mocked(connectLyrics.getLyricsByRemoteId).mockResolvedValue('just plain words')
+
+    await lyrics.loadCandidates(makeSong('a'))
+    await lyrics.selectCandidate(makeSong('a'), 'SimpMusic', '1')
+
+    expect(lyrics.candidates?.SimpMusic?.[0]?.isSync).toBe(false)
+  })
 })

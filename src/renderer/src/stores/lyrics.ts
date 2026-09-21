@@ -514,6 +514,15 @@ export const useLyricsStore = defineStore('lyrics', {
       this.candidatesSongId = null
     },
 
+    /** Settles a held candidate's timed/untimed state from its fetched
+     * sheet, so the picker stops showing it as unknown. Only for the song
+     * the held list belongs to — a stale one must not be edited. */
+    markCandidateSync(song: Song, source: string, id: string, synced: boolean): void {
+      if (this.candidatesSongId !== song.id) return
+      const candidate = this.candidates?.[source]?.find((c) => c.id === id)
+      if (candidate) candidate.isSync = synced
+    },
+
     /** Applies one specific candidate from loadCandidates() as `song`'s
      * lyrics, overwriting whatever was cached/shown before — the explicit
      * override for when the automatic best match was wrong. */
@@ -524,6 +533,10 @@ export const useLyricsStore = defineStore('lyrics', {
       try {
         const raw = await getLyricsByRemoteId(source, id)
         const parsed = raw ? parseLyrics(raw) : null
+        // The search cannot tell whether this sheet is timed for every
+        // source (NetEase and SimpMusic give no signal, so those candidates
+        // start as "unknown"). The sheet is here now, so settle it.
+        if (parsed) this.markCandidateSync(song, source, id, parsed.synced)
         const positive: CachedPositive | null = parsed
           ? {
               synced: parsed.synced,

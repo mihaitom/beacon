@@ -270,6 +270,80 @@ def test_search_still_answers_with_what_the_reachable_providers_found(client):
     assert r.json()["NetEase"] == []
 
 
+def test_search_strips_the_sheet_from_its_answer_and_seeds_it_for_a_tap(client):
+    # lrclib's search response carries the full sheet, but the app's
+    # candidate list is deliberately metadata only — the sheet goes into the
+    # by-remote-id cache instead, so the tap that picks this candidate is
+    # answered without a second request.
+    found = AsyncMock(
+        return_value=[
+            {
+                "artist": "Artist",
+                "id": "1",
+                "isSync": True,
+                "name": "Song",
+                "source": "lrclib.net",
+                "duration": 200,
+                "_lyrics": "[00:01.00] a line",
+            }
+        ]
+    )
+    fetch = AsyncMock(return_value="should not be asked for")
+
+    with (
+        patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: found}),
+        patch.dict(GET_FETCHERS, {LyricSource.LRCLIB: fetch}),
+    ):
+        r = client.get("/lyrics/search", params={"name": "Song", "sources": "lrclib.net"})
+        assert "_lyrics" not in r.json()["lrclib.net"][0]
+
+        picked = client.get("/lyrics/by-remote-id", params={"source": "lrclib.net", "id": "1"})
+
+    assert picked.json() == "[00:01.00] a line"
+    fetch.assert_not_awaited()
+
+
+def test_a_prefilled_sheet_is_forgotten_with_the_track(client):
+    # The prefill is for the picker session on one track, not a fact to keep
+    # for a month: once the track is over, the frontend has dropped its
+    # candidate list and a tap runs a fresh lookup.
+    found = AsyncMock(
+        return_value=[
+            {
+                "artist": "Artist",
+                "id": "1",
+                "isSync": True,
+                "name": "Song",
+                "source": "lrclib.net",
+                "duration": 200,
+                "_lyrics": "[00:01.00] a line",
+            }
+        ]
+    )
+    fetch = AsyncMock(return_value="[00:01.00] fetched")
+
+    with (
+        patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: found}),
+        patch.dict(GET_FETCHERS, {LyricSource.LRCLIB: fetch}),
+    ):
+        client.get("/lyrics/search", params={"name": "Song", "sources": "lrclib.net"})
+        # While the track is playing, the tap is answered from the prefill.
+        during = client.get("/lyrics/by-remote-id", params={"source": "lrclib.net", "id": "1"})
+        assert during.json() == "[00:01.00] a line"
+        fetch.assert_not_awaited()
+
+        # Wind the entry past its expiry, the way the clock would after the
+        # track has run its length.
+        for key, (_expires, value) in list(lyrics_routes._cache.items()):
+            if key[0] == "by-remote-id":
+                lyrics_routes._cache[key] = (time.monotonic() - 1, value)
+
+        after = client.get("/lyrics/by-remote-id", params={"source": "lrclib.net", "id": "1"})
+
+    assert after.json() == "[00:01.00] fetched"
+    fetch.assert_awaited_once_with("1")
+
+
 # ── /lyrics/auto ──────────────────────────────────────────────────────────
 
 
@@ -300,6 +374,36 @@ def test_auto_returns_best_match_lyrics(client):
     assert body["lyrics"] == "[00:01.00]La la la"
     assert body["source"] == "lrclib.net"
     get_fn.assert_awaited_once_with("42")
+
+
+def test_auto_uses_the_sheet_from_search_without_fetching_it(client):
+    # The search already handed over the very sheet the by-id fetch would
+    # return, so /auto must not ask for it a second time.
+    search_result = [
+        {
+            "artist": "Artist",
+            "id": "42",
+            "isSync": True,
+            "name": "Song",
+            "source": "lrclib.net",
+            "_lyrics": "[00:01.00]La la la",
+        }
+    ]
+    search_fn = AsyncMock(return_value=search_result)
+    get_fn = AsyncMock(return_value="[00:09.00] fetched instead")
+
+    with (
+        patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: search_fn}),
+        patch.dict(GET_FETCHERS, {LyricSource.LRCLIB: get_fn}),
+    ):
+        r = client.get(
+            "/lyrics/auto",
+            params={"name": "Song", "artist": "Artist", "sources": "lrclib.net"},
+        )
+
+    assert r.status_code == 200
+    assert r.json()["lyrics"] == "[00:01.00]La la la"
+    get_fn.assert_not_awaited()
 
 
 def test_auto_returns_none_when_no_results(client):

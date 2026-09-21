@@ -57,7 +57,12 @@ async def get_search_results(params: dict[str, Any]) -> list[dict[str, Any]] | N
         {
             "artist": song["artistName"],
             "id": song["videoId"],
-            "isSync": bool(song.get("syncedLyrics")),
+            # The search response carries no lyrics at all, so there is
+            # nothing here to tell synced from plain - the sheet is only
+            # known once fetched by id. None is "unknown", shown as such in
+            # the picker; a bool() of the missing field would instead claim
+            # every SimpMusic match is untimed.
+            "isSync": None,
             "name": song["songTitle"],
             "source": "SimpMusic",
             "duration": song.get("durationSeconds"),

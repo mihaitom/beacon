@@ -76,8 +76,14 @@ _NEGATIVE_CACHE_TTL = 86400.0
 
 # Lyrics are text — a few kilobytes each, where a cover is tens. This holds
 # a very large listening history and still costs less memory than a single
-# screenful of artwork.
+# screenful of artwork. A search briefly adds a whole result list's worth of
+# sheets (see _seed_sheets), but those expire with the track they were
+# searched for, so they don't accumulate.
 _CACHE_MAX_BYTES = 8 * 1024 * 1024
+
+# How long a sheet that came along with a search stays reachable by its id,
+# when the track has no known length to go by. See _prefill_ttl().
+_PREFILL_FALLBACK_TTL = 10 * 60.0
 
 _CacheKey = tuple
 _cache: OrderedDict[_CacheKey, tuple[float, Any]] = OrderedDict()
@@ -120,10 +126,11 @@ def _cache_get(key: _CacheKey) -> tuple[bool, Any]:
     return True, value
 
 
-def _cache_put(key: _CacheKey, value: Any) -> None:
+def _cache_put(key: _CacheKey, value: Any, ttl: float | None = None) -> None:
     global _cache_bytes
     _cache_drop(key)
-    ttl = _NEGATIVE_CACHE_TTL if _is_empty(value) else _CACHE_TTL
+    if ttl is None:
+        ttl = _NEGATIVE_CACHE_TTL if _is_empty(value) else _CACHE_TTL
     _cache[key] = (time.monotonic() + ttl, value)
     _cache_bytes += _sizeof(key, value)
     while _cache_bytes > _CACHE_MAX_BYTES and len(_cache) > 1:
@@ -243,6 +250,43 @@ def _fmt_sources(sources: list[LyricSource]) -> str:
     return ",".join(s.value for s in sources)
 
 
+def _prefill_ttl(duration: float | None) -> float:
+    """How long a sheet that came along with a search stays reachable by its
+    id: roughly the track's own length.
+
+    The picker is a per-track thing — the frontend drops its candidate list
+    when the song changes, and a tap after that runs a fresh lookup anyway —
+    so there is no point keeping a whole search's worth of sheets for the
+    long _CACHE_TTL. That would only make the LRU evict answers playback
+    still needs. A track with no known length falls back to a short bound."""
+    if duration and duration > 0:
+        return float(duration)
+    return _PREFILL_FALLBACK_TTL
+
+
+def _seed_sheets(
+    source: LyricSource, found: list[dict[str, Any]] | None, ttl: float
+) -> list[dict[str, Any]] | None:
+    """Moves any sheets the provider's search already returned into the
+    by-remote-id cache, and hands the results back without them.
+
+    The picker exists to try candidates until one fits, so a tap is exactly
+    the moment a second request would otherwise be made for a sheet that was
+    already in hand. Only lrclib's search response carries one (see
+    lyrics/lrclib.py); for the others this is a no-op. The sheets must not
+    travel on to the app, whose candidate list is deliberately metadata only.
+    """
+    if not found:
+        return found
+    cleaned = []
+    for item in found:
+        sheet = item.get("_lyrics")
+        if sheet:
+            _cache_put(("by-remote-id", source.value, item["id"]), sheet, ttl)
+        cleaned.append({k: v for k, v in item.items() if k != "_lyrics"})
+    return cleaned
+
+
 @router.get("/search")
 async def search(
     name: str | None = None,
@@ -266,6 +310,7 @@ async def _do_search(
 
     results: dict[str, list[dict[str, Any]]] = {}
     reachable = True
+    prefill_ttl = _prefill_ttl(params.get("duration"))
     for source in wanted:
         try:
             found = await SEARCH_FETCHERS[source](params)
@@ -273,7 +318,7 @@ async def _do_search(
             logger.warning(f"[search] {source}: {e}")
             found = None
             reachable = False
-        results[source.value] = found or []
+        results[source.value] = _seed_sheets(source, found, prefill_ttl) or []
 
     total = sum(len(v) for v in results.values())
     logger.info(f"[search] name={name!r} artist={artist!r} -> {total} result(s)")
@@ -357,12 +402,16 @@ async def _do_auto(params: dict, wanted: list[LyricSource]) -> tuple[dict[str, A
             )
             continue
         source = LyricSource(candidate["source"])
-        try:
-            lyrics = await GET_FETCHERS[source](candidate["id"])
-        except Exception as e:
-            logger.warning(f"[auto] fetch {source}: {e}")
-            reachable = False
-            continue
+        # A sheet the search already carried is the same one the by-id fetch
+        # would return, so it is used as-is rather than asked for twice.
+        lyrics = candidate.get("_lyrics")
+        if not lyrics:
+            try:
+                lyrics = await GET_FETCHERS[source](candidate["id"])
+            except Exception as e:
+                logger.warning(f"[auto] fetch {source}: {e}")
+                reachable = False
+                continue
 
         if not lyrics:
             logger.info(f"[auto] {candidate['name']!r} from {source}: no lyrics body, next")

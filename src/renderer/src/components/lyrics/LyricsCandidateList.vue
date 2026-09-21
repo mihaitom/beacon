@@ -127,9 +127,10 @@ export default {
       if (candidate.duration == null || songDuration == null) return false
       return Math.abs(candidate.duration - songDuration) > DURATION_MISMATCH_THRESHOLD_S
     },
-    // isSync is a real tri-state, not a boolean — NetEase's search API
-    // gives no signal either way (see connect/lyrics/netease.py), which is
-    // a different thing to tell the user than "confirmed plain text".
+    // isSync is a real tri-state, not a boolean — NetEase's and SimpMusic's
+    // search APIs give no signal either way (see connect/lyrics/netease.py
+    // and simpmusic.py), which is a different thing to tell the user than
+    // "confirmed plain text".
     syncIcon(candidate: LyricSearchResult): string {
       if (candidate.isSync == null) return 'mdi-help-circle-outline'
       return candidate.isSync ? 'mdi-timer-sync-outline' : 'mdi-text-long'

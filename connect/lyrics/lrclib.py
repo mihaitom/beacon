@@ -79,6 +79,12 @@ async def get_search_results(params: dict[str, Any]) -> list[dict[str, Any]] | N
             "name": song["name"],
             "source": "lrclib.net",
             "duration": song.get("duration"),
+            # lrclib's search response already carries the full sheet, which
+            # is exactly what a tap on this candidate would otherwise fetch
+            # by id. Handed to the route under a leading underscore so it can
+            # seed the by-remote-id cache with it; stripped before the answer
+            # reaches the app. See routes/lyrics.py's _seed_sheets().
+            "_lyrics": song.get("syncedLyrics") or song.get("plainLyrics") or None,
         }
         for song in songs
     ]
