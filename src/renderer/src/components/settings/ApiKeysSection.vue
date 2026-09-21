@@ -62,7 +62,7 @@
           </v-btn>
           <v-spacer />
           <v-btn
-            variant="tonal"
+            color="primary"
             :disabled="busy[service.id] || !keyInput[service.id].trim()"
             @click="saveKey(service.id)"
           >
