@@ -7,7 +7,10 @@
       ref="text"
       :lang="lang"
       class="artist-bio__text text-body-medium"
-      :class="{ 'artist-bio__text--clamped': !expanded }"
+      :class="{
+        'artist-bio__text--clamped': !expanded,
+        'artist-bio__text--collapsed': !expanded && overflowing,
+      }"
     >
       {{ text }}
     </p>
@@ -48,8 +51,8 @@ export default {
   data() {
     return {
       expanded: false,
-      // Whether the clamp actually cut anything off - a two-line paragraph
-      // has nothing for "Show more" to reveal.
+      // Whether the paragraph runs past the five-line limit - only then is
+      // there anything for "Show more" to reveal.
       overflowing: false,
       resizeObserver: null as ResizeObserver | null,
     }
@@ -74,7 +77,12 @@ export default {
     measure() {
       const el = this.$refs.text as HTMLElement | undefined
       if (!el || this.expanded) return
-      this.overflowing = el.scrollHeight > el.clientHeight + 1
+      const lineHeight = parseFloat(getComputedStyle(el).lineHeight)
+      if (!lineHeight) return
+      // scrollHeight stays the whole paragraph whatever the clamp shows, so
+      // the five-line limit can be compared against directly instead of
+      // against the height the current clamp happens to leave visible.
+      this.overflowing = Math.round(el.scrollHeight / lineHeight) > 5
     },
   },
 }
@@ -86,6 +94,12 @@ export default {
   /* A comfortable reading measure; the header itself runs the full width
    * of the window. */
   max-width: 72ch;
+  /* The paragraph sits directly on the artist's Fanart photo, past where
+   * the page scrim has faded out, so a soft shadow under the glyphs keeps
+   * it readable over a bright or busy one. On this wrapper, not on the
+   * paragraph: the paragraph clips its own overflow for the line clamp,
+   * which would cut a shadow off flat at its edges. */
+  filter: drop-shadow(0 1px 5px rgba(0, 0, 0, 0.7));
 }
 
 .artist-bio__text {
@@ -93,12 +107,24 @@ export default {
   line-height: 1.5;
 }
 
+/* Five lines is the most shown without asking: up to that, nothing is cut,
+ * so the "Show more" link only appears from the sixth line on. The clamp
+ * stays on even when nothing is cut, so the measurement above always has a
+ * limit to compare against. */
 .artist-bio__text--clamped {
   display: -webkit-box;
   -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
+  overflow: hidden;
+}
+
+/* Past five lines the paragraph collapses to three instead, so the "Show
+ * more" link actually reveals something. Set together with --clamped, so
+ * this has to come after it. */
+.artist-bio__text--collapsed {
   -webkit-line-clamp: 3;
   line-clamp: 3;
-  overflow: hidden;
 }
 
 .artist-bio__footer {

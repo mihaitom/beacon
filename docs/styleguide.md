@@ -334,7 +334,9 @@ plain-text name, kept for screen readers), both of which it renders through
 its `#description`/`logoUrl` when a page supplies them. Its bio slot
 reserves its height whenever a page passes it, so the artist page never
 shifts under the reader when Wikipedia answers; the album page passes no
-bio slot and gets no reserved gap.
+bio slot and gets no reserved gap. The paragraph sits directly on the sharp
+photo, past where the scrim has faded out, so it carries a soft drop-shadow
+to stay readable there (`ArtistBio.vue`).
 
 Where the backdrop can _change_ while the surface stays (navigating from one
 album to the next, the next track starting), it needs two stacked layers and

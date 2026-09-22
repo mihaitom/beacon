@@ -184,11 +184,11 @@ export default {
   margin-top: 16px;
 }
 
-/* Roughly the clamped bio (three lines) plus its footer links - see
- * ArtistBio.vue. A page that passes the slot reserves the height, so the
- * hero never shifts when the paragraph loads. */
+/* Roughly the longest bio shown without collapsing (five lines) plus its
+ * footer links - see ArtistBio.vue. A page that passes the slot reserves
+ * the height, so the hero never shifts when the paragraph loads. */
 .detail-hero__bio {
-  min-height: 6.5rem;
+  min-height: 9rem;
   margin-top: 16px;
 }
 

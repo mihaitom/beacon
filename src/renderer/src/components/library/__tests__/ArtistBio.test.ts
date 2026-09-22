@@ -3,11 +3,14 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { i18n } from '@/i18n'
 import ArtistBio from '../ArtistBio.vue'
 
-// jsdom lays nothing out, so both heights are 0 unless a test says what the
-// clamp would have done.
-function fakeClamp(scrollHeight: number, clientHeight: number) {
-  vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(scrollHeight)
-  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(clientHeight)
+// jsdom lays nothing out and resolves no stylesheet, so both the paragraph's
+// height and its line-height have to be told to the component: how many lines
+// the text would take, at a fixed 20px per line.
+function fakeLines(lines: number) {
+  vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(lines * 20)
+  vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+    lineHeight: '20px',
+  } as unknown as CSSStyleDeclaration)
 }
 
 // The clamp is measured on mount, so its answer lands one render later.
@@ -27,25 +30,36 @@ afterEach(() => {
 })
 
 describe('ArtistBio', () => {
-  it('offers no "show more" when the paragraph fits', async () => {
-    fakeClamp(60, 60)
+  it('shows a paragraph of up to five lines in full', async () => {
+    fakeLines(5)
+    const wrapper = await mountBio()
 
-    expect(toggle(await mountBio()).exists()).toBe(false)
+    expect(toggle(wrapper).exists()).toBe(false)
+    expect(wrapper.find('p').classes()).not.toContain('artist-bio__text--collapsed')
+  })
+
+  it('collapses a paragraph past five lines', async () => {
+    fakeLines(6)
+    const wrapper = await mountBio()
+
+    expect(toggle(wrapper).exists()).toBe(true)
+    expect(wrapper.find('p').classes()).toContain('artist-bio__text--collapsed')
   })
 
   it('expands a clamped paragraph and collapses it again', async () => {
-    fakeClamp(120, 60)
+    fakeLines(8)
     const wrapper = await mountBio()
 
     await toggle(wrapper).trigger('click')
     expect(toggle(wrapper).attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('p').classes()).not.toContain('artist-bio__text--collapsed')
 
     await toggle(wrapper).trigger('click')
     expect(toggle(wrapper).attributes('aria-expanded')).toBe('false')
   })
 
   it('starts collapsed again for a different text', async () => {
-    fakeClamp(120, 60)
+    fakeLines(8)
     const wrapper = await mountBio()
     await toggle(wrapper).trigger('click')
 
@@ -55,16 +69,19 @@ describe('ArtistBio', () => {
   })
 
   it('links the article it came from', async () => {
+    fakeLines(3)
     const link = (await mountBio()).find('a')
 
     expect(link.attributes('href')).toBe('https://en.wikipedia.org/wiki/X')
   })
 
   it('shows no link without an article URL', async () => {
+    fakeLines(3)
     expect((await mountBio({ url: null })).find('a').exists()).toBe(false)
   })
 
   it('marks the paragraph with the language it is actually in', async () => {
+    fakeLines(3)
     expect((await mountBio({ lang: 'de' })).find('p').attributes('lang')).toBe('de')
   })
 })
