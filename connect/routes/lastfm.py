@@ -34,11 +34,12 @@ Period = Literal["overall", "7day", "1month", "3month", "6month", "12month"]
 # track list either way.
 @router.get("/songs")
 async def tracks(
-    op: Literal["charts", "genre", "artist", "mytop"],
+    op: Literal["charts", "genre", "artist", "similar", "mytop"],
     limit: int = Query(default=50, ge=1, le=500),
     country: str = "",
     tag: str = "",
     artist: str = "",
+    track: str = "",
     username: str = "",
     period: Period = "1month",
 ) -> dict:
@@ -64,6 +65,12 @@ async def tracks(
             if not artist:
                 raise HTTPException(status_code=422, detail="artist needs an artist name")
             result = await lastfm.get_artist_top_tracks(artist, limit)
+        elif op == "similar":
+            if not artist or not track:
+                raise HTTPException(
+                    status_code=422, detail="similar needs an artist and a track title"
+                )
+            result = await lastfm.get_similar_tracks(artist, track, limit)
         else:
             if not username:
                 raise HTTPException(status_code=422, detail="mytop needs a Last.fm username")

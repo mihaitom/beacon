@@ -234,20 +234,25 @@ export async function resolveTracks(
   return results.filter(Boolean)
 }
 
-/** The song ids to put in the playlist: found tracks only, in chart order,
- * each song at most once. Last.fm lists the same recording twice often
- * enough (a single and its album version both charting), and two
- * near-identical names can land on one file - a playlist with the same
- * track twice looks like a bug. */
-export function playlistSongIds(resolved: ResolvedTrack[]): string[] {
+/** The songs a result amounts to: found tracks only, in chart order, each
+ * song at most once. Last.fm lists the same recording twice often enough
+ * (a single and its album version both charting), and two near-identical
+ * names can land on one file - the same track twice looks like a bug,
+ * whether it ends up in a playlist or in the queue. */
+export function matchedSongs(resolved: ResolvedTrack[]): Song[] {
   const seen = new Set<string>()
-  const ids: string[] = []
+  const songs: Song[] = []
   for (const entry of resolved) {
     if (!entry.match) continue
-    const id = entry.match.song.id
-    if (seen.has(id)) continue
-    seen.add(id)
-    ids.push(id)
+    const song = entry.match.song
+    if (seen.has(song.id)) continue
+    seen.add(song.id)
+    songs.push(song)
   }
-  return ids
+  return songs
+}
+
+/** The song ids to put in the playlist - see matchedSongs() above. */
+export function playlistSongIds(resolved: ResolvedTrack[]): string[] {
+  return matchedSongs(resolved).map((song) => song.id)
 }

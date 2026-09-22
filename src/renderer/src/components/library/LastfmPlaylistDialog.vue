@@ -87,6 +87,52 @@
             hide-details
           />
 
+          <!-- Similar to a track of your own. The seed is picked from the
+           - library rather than typed as free text, so what Last.fm is
+           - asked about is always a track this server actually holds. -->
+          <v-autocomplete
+            v-if="op === 'similar'"
+            v-model="seedSong"
+            :search="seedQuery"
+            :items="seedOptions"
+            :item-title="songLabel"
+            :loading="seedSearching"
+            :label="$t('lastfm.seedTrack')"
+            :placeholder="$t('lastfm.seedTrackPlaceholder')"
+            variant="solo-filled"
+            hide-details
+            no-filter
+            return-object
+            clearable
+            @update:search="onSeedSearch"
+          >
+            <!-- Vuetify's own "No data available" reads as a fault; before
+             - anything is typed this is simply an empty search box. -->
+            <template #no-data>
+              <v-list-item>
+                <v-list-item-title class="text-medium-emphasis">
+                  {{
+                    seedSearching
+                      ? $t('common.loading')
+                      : seedQuery.trim().length < 2
+                        ? $t('lastfm.seedHint')
+                        : $t('lastfm.seedNoResults')
+                  }}
+                </v-list-item-title>
+              </v-list-item>
+            </template>
+            <!-- Title, then artist, then the cover: the same three things a
+             - song row shows, so a hit is recognisable without reading the
+             - artist off a single combined line. -->
+            <template #item="{ props: optionProps, item }">
+              <v-list-item v-bind="optionProps" :title="item.title" :subtitle="item.artist">
+                <template #prepend>
+                  <cover-art :cover-art-id="item.coverArtId" :size="36" class="seed-option__art" />
+                </template>
+              </v-list-item>
+            </template>
+          </v-autocomplete>
+
           <template v-if="op === 'mytop' || op === 'recommended'">
             <v-text-field
               v-model="username"
@@ -281,6 +327,35 @@
         </v-btn>
         <v-spacer />
         <v-btn variant="text" @click="visible = false">{{ $t('common.cancel') }}</v-btn>
+        <!-- The result needs no playlist to be listened to: this puts it
+         - into the queue instead, either replacing what is there or
+         - appending to it. The drawer opens either way, so the change is
+         - visible. Saving it as a playlist is the button on the right, by
+         - name. -->
+        <v-menu v-if="step === 'result' && !busy" location="top">
+          <template #activator="{ props: menuProps }">
+            <v-btn
+              v-bind="menuProps"
+              variant="text"
+              prepend-icon="mdi-playlist-play"
+              append-icon="mdi-menu-up"
+              :disabled="foundCount === 0"
+              :loading="queueing"
+            >
+              {{ $t('lastfm.queueMenu') }}
+            </v-btn>
+          </template>
+          <v-list density="compact">
+            <v-list-item @click="play">
+              <template #prepend><v-icon icon="mdi-play" size="small" /></template>
+              <v-list-item-title>{{ $t('lastfm.newQueue') }}</v-list-item-title>
+            </v-list-item>
+            <v-list-item @click="appendQueue">
+              <template #prepend><v-icon icon="mdi-playlist-plus" size="small" /></template>
+              <v-list-item-title>{{ $t('lastfm.appendQueue') }}</v-list-item-title>
+            </v-list-item>
+          </v-list>
+        </v-menu>
         <v-btn
           v-if="step === 'form'"
           color="primary"
@@ -317,11 +392,13 @@ import {
   type ListenbrainzPeriod,
 } from '@/services/connect/listenbrainz'
 import {
+  matchedSongs,
   playlistSongIds,
   resolveTracks,
   type ResolvedTrack,
 } from '@/services/library/lastfmMatcher'
-import type { Playlist } from '@/types/library'
+import { usePlaybackStore } from '@/stores/playback'
+import type { Playlist, Song } from '@/types/library'
 import { LASTFM_COUNTRIES, type LastfmCountry } from '@/services/lastfmCountries'
 import {
   loadRecentCountries,
@@ -401,6 +478,7 @@ export default {
       step: 'form' as 'form' | 'result',
       busy: false,
       creating: false,
+      queueing: false,
       error: '',
 
       source: 'lastfm' as BuilderSource,
@@ -409,6 +487,14 @@ export default {
       country: '',
       tag: '',
       artist: '',
+      // The seed of a "similar tracks" run: a song picked out of the
+      // library, with the search text and hits the picker needs to find it.
+      seedSong: null as Song | null,
+      seedQuery: '',
+      seedOptions: [] as Song[],
+      seedSearching: false,
+      seedSeq: 0,
+      seedSearchTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       username: '',
       period: '1month' as LastfmPeriod,
       lbPeriod: 'month' as ListenbrainzPeriod,
@@ -505,6 +591,7 @@ export default {
         { title: this.$t('lastfm.sourceCharts'), value: 'charts' },
         { title: this.$t('lastfm.sourceGenre'), value: 'genre' },
         { title: this.$t('lastfm.sourceArtist'), value: 'artist' },
+        { title: this.$t('lastfm.sourceSimilar'), value: 'similar' },
         { title: this.$t('lastfm.sourceMyTop'), value: 'mytop' },
       ]
     },
@@ -550,6 +637,7 @@ export default {
       if (this.busy) return false
       if (this.op === 'genre') return !!this.tag.trim()
       if (this.op === 'artist') return !!this.artist.trim()
+      if (this.op === 'similar') return !!this.seedSong
       if (this.op === 'mytop' || this.op === 'recommended') return !!this.username.trim()
       if (this.op === 'charts' && this.source === 'lastfm' && this.chartScope === 'country') {
         return !!this.country.trim()
@@ -638,6 +726,7 @@ export default {
   },
   beforeUnmount() {
     clearTimeout(this.copyResetTimer)
+    clearTimeout(this.seedSearchTimer)
   },
   methods: {
     open(source: BuilderSource = 'lastfm'): void {
@@ -646,6 +735,9 @@ export default {
       this.op = 'charts'
       this.error = ''
       this.resolved = []
+      this.seedSong = null
+      this.seedQuery = ''
+      this.seedOptions = []
       this.updateMode = 'append'
       this.username =
         source === 'listenbrainz' ? this.listenbrainzStore.username : this.lastfmStore.username
@@ -656,6 +748,46 @@ export default {
       // only costs the name suggestions, and the store has already recorded
       // it - without the catch this would surface as an unhandled rejection.
       void this.libraryStore.fetchPlaylists().catch(() => {})
+    },
+
+    /** The seed picker's display name - "Artist · Title", the pair a track
+     * is identified by everywhere else in the app. */
+    songLabel(song: Song): string {
+      return `${song.artist} · ${song.title}`
+    },
+
+    /** Keeps the search text and the chosen seed in step: typing over a
+     * picked track clears it (otherwise the seed would stay on the old song
+     * while the field shows a new query), and a fresh query is looked up
+     * after a pause rather than on every keystroke. */
+    onSeedSearch(value: string): void {
+      const label = this.seedSong ? this.songLabel(this.seedSong) : ''
+      this.seedQuery = value
+      if (value === label) return
+      this.seedSong = null
+      clearTimeout(this.seedSearchTimer)
+      this.seedSearchTimer = setTimeout(() => void this.searchSeedTracks(), 300)
+    },
+
+    /** The library search behind the seed picker. A response a newer query
+     * already superseded is dropped rather than shown under the new text. */
+    async searchSeedTracks(): Promise<void> {
+      const query = this.seedQuery.trim()
+      if (query.length < 2) {
+        this.seedOptions = []
+        return
+      }
+      const seq = ++this.seedSeq
+      this.seedSearching = true
+      try {
+        const songs = (await this.libraryStore.client().search3(query, 15, 0, 0)).songs
+        if (seq === this.seedSeq) this.seedOptions = songs
+      } catch (error) {
+        console.error('[lastfm] Seed track search failed:', error)
+        if (seq === this.seedSeq) this.seedOptions = []
+      } finally {
+        if (seq === this.seedSeq) this.seedSearching = false
+      }
     },
 
     /** Stores the country just searched with, so it sits at the top of
@@ -709,6 +841,9 @@ export default {
       }
       if (this.op === 'genre') return this.$t('lastfm.nameGenre', { tag: this.tag.trim() })
       if (this.op === 'artist') return this.$t('lastfm.nameArtist', { artist: this.artist.trim() })
+      if (this.op === 'similar') {
+        return this.$t('lastfm.nameSimilar', { title: this.seedSong?.title ?? '' })
+      }
       if (this.op === 'mytop') {
         const period = this.periodOptions.find((entry) => entry.value === this.period)
         return this.$t('lastfm.nameMyTop', { period: period?.title ?? '' })
@@ -738,6 +873,9 @@ export default {
       this.progressTotal = 0
 
       try {
+        // "similar" sends the picked seed song, not the artist text field -
+        // that field belongs to the "top tracks of an artist" source.
+        const seed = this.op === 'similar' ? this.seedSong : null
         const tracks =
           this.source === 'listenbrainz'
             ? await getListenbrainzTracks({
@@ -754,7 +892,8 @@ export default {
                 country:
                   this.op === 'charts' && this.chartScope === 'country' ? this.country.trim() : '',
                 tag: this.tag.trim(),
-                artist: this.artist.trim(),
+                artist: seed ? seed.artist : this.artist.trim(),
+                track: seed ? seed.title : '',
                 username: this.username.trim(),
                 period: this.period,
               })
@@ -824,6 +963,34 @@ export default {
       } finally {
         this.creating = false
       }
+    },
+
+    /** Replaces the queue with the tracks the library has, without saving
+     * a playlist - the result is worth hearing before it is worth keeping.
+     * The queue drawer opens so the replacement is visible instead of
+     * happening behind the dialog. */
+    async play(): Promise<void> {
+      const songs = matchedSongs(this.resolved)
+      if (!songs.length) return
+      this.queueing = true
+      this.error = ''
+      try {
+        await usePlaybackStore().playSongList(songs, 0, false, songs.length > 1)
+        this.visible = false
+      } catch (error) {
+        this.error = this.messageFor(error, this.$t('lastfm.playFailed'))
+      } finally {
+        this.queueing = false
+      }
+    },
+
+    /** Adds the found tracks to the end of the queue without replacing what
+     * is already there. addToQueue() opens the queue drawer itself. */
+    appendQueue(): void {
+      const songs = matchedSongs(this.resolved)
+      if (!songs.length) return
+      usePlaybackStore().addToQueue(songs)
+      this.visible = false
     },
 
     /** Adds only what the playlist does not already hold. The list this
@@ -1054,6 +1221,13 @@ export default {
 .track__art {
   border-radius: 4px;
   flex-shrink: 0;
+}
+
+/* Vuetify's prepend slot leaves too little gap here, so the title sits
+ * against the cover. */
+.seed-option__art {
+  border-radius: 4px;
+  margin-right: 12px;
 }
 
 .track__title,

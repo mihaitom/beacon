@@ -9,6 +9,9 @@ export interface ArtistArt {
   banner: string | null
   /** A full-width background image for the artist page. */
   background: string | null
+  /** Every background candidate, best first, the shown `background` among
+   * them — so a caller can offer another one without a second lookup. */
+  backgrounds: string[]
   /** The artist's logo, transparent where Fanart.tv has one. */
   logo: string | null
 }
@@ -27,6 +30,7 @@ function proxied(art: ArtistArt): ArtistArt {
   return {
     banner: art.banner ? fanartImageUrl(art.banner) : null,
     background: art.background ? fanartImageUrl(art.background) : null,
+    backgrounds: (art.backgrounds ?? []).map((url) => fanartImageUrl(url)),
     logo: art.logo ? fanartImageUrl(art.logo) : null,
   }
 }

@@ -788,13 +788,20 @@ describe('NowPlayingView artist background', () => {
   function artworkToggle(wrapper: VueWrapper) {
     return wrapper
       .findAllComponents({ name: 'VBtn' })
-      .find((button) => button.props('icon') === 'mdi-image-off-outline')
+      .find((button) => button.props('icon') === 'mdi-album')
+  }
+
+  function backgroundCycle(wrapper: VueWrapper) {
+    return wrapper
+      .findAllComponents({ name: 'VBtn' })
+      .find((button) => button.props('icon') === 'mdi-wallpaper')
   }
 
   async function mountWithBackground() {
     vi.mocked(getArtistArt).mockResolvedValue({
       banner: null,
       background: 'https://assets.fanart.tv/bg.jpg',
+      backgrounds: ['https://assets.fanart.tv/bg.jpg', 'https://assets.fanart.tv/bg2.jpg'],
       logo: null,
     })
     const mounted = await mountView()
@@ -807,6 +814,7 @@ describe('NowPlayingView artist background', () => {
     vi.mocked(getArtistArt).mockResolvedValue({
       banner: null,
       background: 'https://assets.fanart.tv/bg.jpg',
+      backgrounds: ['https://assets.fanart.tv/bg.jpg', 'https://assets.fanart.tv/bg2.jpg'],
       logo: null,
     })
     const { wrapper } = await mountView()
@@ -829,6 +837,7 @@ describe('NowPlayingView artist background', () => {
     vi.mocked(getArtistArt).mockResolvedValue({
       banner: null,
       background: 'https://assets.fanart.tv/one.jpg',
+      backgrounds: ['https://assets.fanart.tv/one.jpg'],
       logo: null,
     })
     const { wrapper } = await mountView()
@@ -856,6 +865,36 @@ describe('NowPlayingView artist background', () => {
     expect(artworkToggle(wrapper)).toBeDefined()
   })
 
+  it('offers to cycle backgrounds only when the artist has more than one', async () => {
+    const { wrapper } = await mountWithBackground()
+    expect(backgroundCycle(wrapper)).toBeDefined()
+
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background: 'https://assets.fanart.tv/solo.jpg',
+      backgrounds: ['https://assets.fanart.tv/solo.jpg'],
+      logo: null,
+    })
+    const single = await mountView()
+    usePlaybackStore().setQueue([makeSong('a', { artist: 'Artist A' })], 0)
+    await flushPromises()
+
+    expect(backgroundCycle(single.wrapper)).toBeUndefined()
+  })
+
+  it('steps to the next background and wraps back around', async () => {
+    const { wrapper } = await mountWithBackground()
+    expect(backgroundOf(wrapper)).toBe('https://assets.fanart.tv/bg.jpg')
+
+    await backgroundCycle(wrapper)!.trigger('click')
+    await flushPromises()
+    expect(backgroundOf(wrapper)).toBe('https://assets.fanart.tv/bg2.jpg')
+
+    await backgroundCycle(wrapper)!.trigger('click')
+    await flushPromises()
+    expect(backgroundOf(wrapper)).toBe('https://assets.fanart.tv/bg.jpg')
+  })
+
   it('hides the artwork by default once a background is loaded, and shows it when asked', async () => {
     const { wrapper } = await mountWithBackground()
 
@@ -869,11 +908,15 @@ describe('NowPlayingView artist background', () => {
     expect(wrapper.find('.now-playing__art-wrap').exists()).toBe(false)
     // The root class the corner-text and readable-lyrics CSS hang off.
     expect(wrapper.classes()).toContain('now-playing--artwork-hidden')
+    // The button reads as "show the artwork", so it starts unlit and only
+    // lights up once the artwork is actually what is on screen.
+    expect(artworkToggle(wrapper)!.props('color')).toBeUndefined()
 
     await artworkToggle(wrapper)!.trigger('click')
 
     expect(vm.artworkHidden).toBe(false)
     expect(wrapper.find('.now-playing__art-wrap').exists()).toBe(true)
+    expect(artworkToggle(wrapper)!.props('color')).toBe('primary')
   })
 
   it('does not hide the artwork when there is no background to reveal', async () => {
@@ -916,6 +959,7 @@ describe('NowPlayingView artist background', () => {
     vi.mocked(getArtistArt).mockResolvedValue({
       banner: null,
       background: 'https://assets.fanart.tv/bg.jpg',
+      backgrounds: ['https://assets.fanart.tv/bg.jpg', 'https://assets.fanart.tv/bg2.jpg'],
       logo: null,
     })
     const { wrapper } = await mountView()
@@ -969,6 +1013,7 @@ describe('NowPlayingView next up', () => {
     vi.mocked(getArtistArt).mockImplementation(async (name: string) => ({
       banner: null,
       background: `https://assets.fanart.tv/${name}.jpg`,
+      backgrounds: [`https://assets.fanart.tv/${name}.jpg`],
       logo: null,
     }))
     const mounted = await mountView({ compact })

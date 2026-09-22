@@ -13,6 +13,7 @@ import { i18n } from '@/i18n'
 import { emitter } from '@/emitter'
 import { useLibraryStore } from '@/stores/library'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
+import { usePlaybackStore } from '@/stores/playback'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import LastfmPlaylistDialog from '../LastfmPlaylistDialog.vue'
@@ -367,6 +368,66 @@ describe('LastfmPlaylistDialog', () => {
     expect(createPlaylist).toHaveBeenCalledWith(expect.any(String), ['s1'])
   })
 
+  it('sends the found tracks to the queue instead of saving a playlist', async () => {
+    vi.spyOn(lastfmApi, 'getLastfmTracks').mockResolvedValue([
+      { title: 'Believe', artist: 'Cher', mbid: '' },
+      { title: 'Nothing Here', artist: 'Nobody', mbid: '' },
+    ])
+    const search3 = vi.fn(async (query: string) =>
+      query.startsWith('Cher')
+        ? { songs: [makeSong('s1', { title: 'Believe', artist: 'Cher' })] }
+        : { songs: [] },
+    )
+    const createPlaylist = vi.fn().mockResolvedValue(undefined)
+    vi.spyOn(useLibraryStore(), 'client').mockReturnValue({
+      search3,
+      createPlaylist,
+    } as unknown as SubsonicClient)
+    const playSongList = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue(undefined)
+
+    const { vm } = await openDialog()
+    vm.chartScope = 'global'
+    await (vm as unknown as { search: () => Promise<void> }).search()
+    await flushPromises()
+    await (vm as unknown as { play: () => Promise<void> }).play()
+
+    // Only the one the library has, and nothing was written as a playlist.
+    expect(playSongList).toHaveBeenCalledWith(
+      [expect.objectContaining({ id: 's1' })],
+      0,
+      false,
+      false,
+    )
+    expect(createPlaylist).not.toHaveBeenCalled()
+    expect(vm.visible).toBe(false)
+  })
+
+  it('appends the found tracks to the queue without replacing it', async () => {
+    vi.spyOn(lastfmApi, 'getLastfmTracks').mockResolvedValue([
+      { title: 'Believe', artist: 'Cher', mbid: '' },
+      { title: 'Nothing Here', artist: 'Nobody', mbid: '' },
+    ])
+    const search3 = vi.fn(async (query: string) =>
+      query.startsWith('Cher')
+        ? { songs: [makeSong('s1', { title: 'Believe', artist: 'Cher' })] }
+        : { songs: [] },
+    )
+    vi.spyOn(useLibraryStore(), 'client').mockReturnValue({
+      search3,
+    } as unknown as SubsonicClient)
+    const addToQueue = vi.spyOn(usePlaybackStore(), 'addToQueue').mockImplementation(() => {})
+
+    const { vm } = await openDialog()
+    await (vm as unknown as { search: () => Promise<void> }).search()
+    await flushPromises()
+    ;(vm as unknown as { appendQueue: () => void }).appendQueue()
+
+    // Only the one the library has, and the queue is appended to rather
+    // than replaced.
+    expect(addToQueue).toHaveBeenCalledWith([expect.objectContaining({ id: 's1' })])
+    expect(vm.visible).toBe(false)
+  })
+
   it('offers genre suggestions but takes a tag that is not among them', async () => {
     const getTracks = vi.spyOn(lastfmApi, 'getLastfmTracks').mockResolvedValue([])
     stubSearch([])
@@ -395,6 +456,62 @@ describe('LastfmPlaylistDialog', () => {
 
     expect(vm.tag).toBe('')
     expect(vm.canSearch).toBe(false)
+  })
+
+  it('sends the picked library song as the seed for a similar-tracks list', async () => {
+    const getTracks = vi.spyOn(lastfmApi, 'getLastfmTracks').mockResolvedValue([])
+    stubSearch([])
+
+    const { vm } = await openDialog()
+    vm.op = 'similar'
+    vm.seedSong = makeSong('s1', { title: 'Roads', artist: 'Portishead' })
+    await (vm as unknown as { search: () => Promise<void> }).search()
+
+    expect(getTracks).toHaveBeenCalledWith(
+      expect.objectContaining({ op: 'similar', artist: 'Portishead', track: 'Roads' }),
+    )
+  })
+
+  it('cannot search for similar tracks until a seed song is picked', async () => {
+    stubSearch([])
+    const { vm } = await openDialog()
+    vm.op = 'similar'
+
+    expect(vm.canSearch).toBe(false)
+    vm.seedSong = makeSong('s1', { title: 'Roads', artist: 'Portishead' })
+    expect(vm.canSearch).toBe(true)
+  })
+
+  it('looks the seed up in the library and drops it when the query changes', async () => {
+    const songs = [makeSong('s1', { title: 'Roads', artist: 'Portishead' })]
+    const search3 = vi.fn().mockResolvedValue({ songs })
+    vi.spyOn(useLibraryStore(), 'client').mockReturnValue({
+      search3,
+    } as unknown as SubsonicClient)
+
+    const { vm } = await openDialog()
+    vm.op = 'similar'
+    // Let the picker mount first: mounting it emits its own (empty)
+    // search, which would otherwise supersede the query armed below.
+    await flushPromises()
+    const call = vm as unknown as { onSeedSearch: (value: string) => void }
+    call.onSeedSearch('roads')
+    // Debounced: a keystroke does not search on its own.
+    expect(search3).not.toHaveBeenCalled()
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    expect(search3).toHaveBeenCalledWith('roads', 15, 0, 0)
+    expect(vm.seedOptions).toEqual(songs)
+
+    // Typing over the picked track clears it; the label it would show does
+    // not.
+    vm.seedSong = songs[0]
+    const label = (vm as unknown as { songLabel: (song: unknown) => string }).songLabel(songs[0])
+    call.onSeedSearch(label)
+    expect(vm.seedSong).toEqual(songs[0])
+    call.onSeedSearch('something else')
+    expect(vm.seedSong).toBeNull()
+    // Let the trailing debounce fire while the mock is still in place.
+    await new Promise((resolve) => setTimeout(resolve, 350))
   })
 
   describe('an existing playlist of the same name', () => {

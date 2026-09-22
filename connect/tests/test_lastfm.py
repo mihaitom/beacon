@@ -1,4 +1,4 @@
-"""Tests for core/lastfm.py and routes/lastfm.py — the five track queries,
+"""Tests for core/lastfm.py and routes/lastfm.py — the six track queries,
 Last.fm's HTTP-200-with-an-error-body convention, and the route's mapping
 of those onto status codes."""
 
@@ -88,7 +88,7 @@ def test_to_tracks_keeps_the_mbid_when_there_is_one():
     assert lastfm._to_tracks(raw)[0]["mbid"] == "abc-123"
 
 
-# ── the five queries ─────────────────────────────────────────────────────────
+# ── the six queries ──────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -114,6 +114,114 @@ async def test_artist_and_user_queries_read_the_toptracks_container():
 
     assert by_artist == [{"title": "Zombie", "artist": "The Cranberries", "mbid": ""}]
     assert by_user == by_artist
+
+
+@pytest.mark.asyncio
+async def test_similar_tracks_read_the_similartracks_container_and_autocorrect():
+    """track.getSimilar nests under `similartracks`, and the seed is a
+    file's own spelling rather than Last.fm's canonical one — autocorrect
+    is what bridges the two."""
+    payload = {
+        "similartracks": {"track": [{"name": "Teardrop", "artist": {"name": "Massive Attack"}}]}
+    }
+    with _patch_get(payload) as get:
+        result = await lastfm.get_similar_tracks("Portishead", "Roads", 10)
+
+    assert result == [{"title": "Teardrop", "artist": "Massive Attack", "mbid": ""}]
+    params = get.await_args.kwargs["params"]
+    assert params["method"] == "track.getSimilar"
+    assert params["artist"] == "Portishead"
+    assert params["track"] == "Roads"
+    assert params["autocorrect"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_seed_without_similar_data_falls_back_to_its_most_listened_match():
+    """A track can be known to Last.fm and still have no similar-tracks data
+    (too few scrobbles on that exact spelling). The widely-scrobbled version
+    of the same song usually does, so it is tried before giving up."""
+    empty = {"similartracks": {"track": []}}
+    search = {
+        "results": {
+            "trackmatches": {
+                "track": [
+                    {"name": "Bamba", "artist": "Luciano", "listeners": "2169"},
+                    {
+                        "name": "Bamba (feat. Aitch & BIA)",
+                        "artist": "Luciano",
+                        "listeners": "90672",
+                    },
+                ]
+            }
+        }
+    }
+    found = {"similartracks": {"track": [{"name": "Butcher", "artist": {"name": "Sosa La M"}}]}}
+    responses = [_response(empty), _response(search), _response(found)]
+    with patch.object(lastfm._client, "get", AsyncMock(side_effect=responses)) as get:
+        result = await lastfm.get_similar_tracks("Luciano", "Bamba", 10)
+
+    assert result == [{"title": "Butcher", "artist": "Sosa La M", "mbid": ""}]
+    methods = [call.kwargs["params"]["method"] for call in get.await_args_list]
+    assert methods == ["track.getSimilar", "track.search", "track.getSimilar"]
+    assert get.await_args_list[2].kwargs["params"]["track"] == "Bamba (feat. Aitch & BIA)"
+
+
+@pytest.mark.asyncio
+async def test_the_fallback_version_is_not_listed_as_similar_to_itself():
+    empty = {"similartracks": {"track": []}}
+    search = {
+        "results": {
+            "trackmatches": {
+                "track": [
+                    {"name": "Bamba (feat. Aitch & BIA)", "artist": "Luciano", "listeners": "90672"}
+                ]
+            }
+        }
+    }
+    found = {
+        "similartracks": {
+            "track": [
+                {"name": "Bamba (feat. Aitch & BIA)", "artist": {"name": "Luciano"}},
+                {"name": "Butcher", "artist": {"name": "Sosa La M"}},
+            ]
+        }
+    }
+    responses = [_response(empty), _response(search), _response(found)]
+    with patch.object(lastfm._client, "get", AsyncMock(side_effect=responses)):
+        result = await lastfm.get_similar_tracks("Luciano", "Bamba", 10)
+
+    assert [entry["title"] for entry in result] == ["Butcher"]
+
+
+@pytest.mark.asyncio
+async def test_the_seed_itself_is_not_used_as_its_own_fallback():
+    """The seed is the one version known to have no similar data, so finding
+    it in the search results is not a reason to ask again."""
+    empty = {"similartracks": {"track": []}}
+    search = {
+        "results": {
+            "trackmatches": {"track": [{"name": "Bamba", "artist": "Luciano", "listeners": "2169"}]}
+        }
+    }
+    responses = [_response(empty), _response(search)]
+    with patch.object(lastfm._client, "get", AsyncMock(side_effect=responses)) as get:
+        result = await lastfm.get_similar_tracks("Luciano", "Bamba", 10)
+
+    assert result == []
+    assert len(get.await_args_list) == 2
+
+
+@pytest.mark.asyncio
+async def test_no_fallback_match_still_answers_empty():
+    empty = {"similartracks": {"track": []}}
+    search = {"results": {"trackmatches": {"track": []}}}
+    responses = [_response(empty), _response(search)]
+    with patch.object(lastfm._client, "get", AsyncMock(side_effect=responses)) as get:
+        result = await lastfm.get_similar_tracks("Nobody", "Nothing", 10)
+
+    assert result == []
+    methods = [call.kwargs["params"]["method"] for call in get.await_args_list]
+    assert methods == ["track.getSimilar", "track.search"]
 
 
 @pytest.mark.asyncio
@@ -207,11 +315,31 @@ def test_charts_without_a_country_asks_for_the_global_chart(client):
     [
         {"op": "genre"},
         {"op": "artist"},
+        {"op": "similar"},
+        {"op": "similar", "artist": "Portishead"},
         {"op": "mytop"},
     ],
 )
 def test_ops_that_need_an_argument_reject_an_empty_one(client, params):
     assert client.get("/lastfm/songs", params=params).status_code == 422
+
+
+def test_similar_asks_for_the_seed_track(client):
+    payload = {
+        "similartracks": {"track": [{"name": "Teardrop", "artist": {"name": "Massive Attack"}}]}
+    }
+    with _patch_get(payload) as get:
+        resp = client.get(
+            "/lastfm/songs",
+            params={"op": "similar", "artist": "Portishead", "track": "Roads"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "tracks": [{"title": "Teardrop", "artist": "Massive Attack", "mbid": ""}]
+    }
+    assert get.await_args.kwargs["params"]["method"] == "track.getSimilar"
+    assert get.await_args.kwargs["params"]["track"] == "Roads"
 
 
 def test_an_unknown_period_is_rejected_before_reaching_lastfm(client):

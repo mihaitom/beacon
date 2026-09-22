@@ -70,18 +70,29 @@
         :title="$t('nowPlaying.toggleVisualizer')"
         @click="$emit('toggle-visualizer')"
       />
-      <!-- Only once there is a Fanart.tv artist background loaded and ready:
-       - hiding the artwork with nothing behind it would just leave a blank
-       - stage. Hiding it drops the darkening too, so the background is
-       - actually visible. -->
+      <!-- Brings the album artwork back, large, over the artist background.
+       - Only once there is a background loaded: without one the artwork is
+       - already what the stage shows, so there is nothing to toggle. Lit
+       - while the artwork is the thing on screen, like the other toggles. -->
       <v-btn
         v-if="artistBackground"
-        icon="mdi-image-off-outline"
-        :color="artworkHidden ? 'primary' : undefined"
+        icon="mdi-album"
+        :color="!artworkHidden ? 'primary' : undefined"
         variant="text"
         density="comfortable"
         :title="$t('nowPlaying.toggleArtwork')"
         @click="$emit('toggle-artwork')"
+      />
+      <!-- Steps to the artist's next Fanart.tv background. Only when there
+       - is more than one to step through - with a single image the button
+       - would do nothing. -->
+      <v-btn
+        v-if="canCycleBackground"
+        icon="mdi-wallpaper"
+        variant="text"
+        density="comfortable"
+        :title="$t('nowPlaying.nextBackground')"
+        @click="$emit('cycle-background')"
       />
       <!-- Not a mobile feature — MobileTransportControls.vue/the tab bar
        - already own the phone's actual full screen; hiding *that* app chrome
@@ -155,12 +166,24 @@ export default {
       type: Boolean,
       default: false,
     },
+    /** Whether there is more than one artist background to step through;
+     * the cycle button is hidden otherwise. */
+    canCycleBackground: {
+      type: Boolean,
+      default: false,
+    },
     debugEnabled: {
       type: Boolean,
       default: false,
     },
   },
-  emits: ['toggle-visualizer', 'toggle-artwork', 'toggle-fullscreen', 'add-debug-title'],
+  emits: [
+    'toggle-visualizer',
+    'toggle-artwork',
+    'cycle-background',
+    'toggle-fullscreen',
+    'add-debug-title',
+  ],
   data() {
     return {
       /** Whether MobileLayout.vue's app bar is on the page to hang the

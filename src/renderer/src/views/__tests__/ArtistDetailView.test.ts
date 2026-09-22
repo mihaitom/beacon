@@ -437,6 +437,7 @@ describe('ArtistDetailView Fanart.tv images', () => {
     vi.mocked(getArtistArt).mockResolvedValue({
       banner: null,
       background: 'https://assets.fanart.tv/bg.jpg',
+      backgrounds: [],
       logo: 'https://assets.fanart.tv/logo.png',
     })
 
@@ -471,6 +472,7 @@ describe('ArtistDetailView Fanart.tv images', () => {
     vi.mocked(getArtistArt).mockResolvedValue({
       banner: null,
       background: 'https://assets.fanart.tv/bg.jpg',
+      backgrounds: [],
       logo: 'https://assets.fanart.tv/logo.png',
     })
 

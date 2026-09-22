@@ -16,10 +16,12 @@
       :show-visualizer="showVisualizer"
       :visualizer-available="visualizerAvailable"
       :artist-background="artistBackground"
+      :can-cycle-background="canCycleBackground"
       :artwork-hidden="artworkHidden"
       :debug-enabled="debugEnabled"
       @toggle-visualizer="showVisualizer = !showVisualizer"
       @toggle-artwork="hideArtwork = !hideArtwork"
+      @cycle-background="cycleArtistBackground"
       @toggle-fullscreen="toggleFullscreen"
       @add-debug-title="addDebugTitle"
     />
@@ -223,6 +225,9 @@ export default {
       // everything (see .now-playing__backdrop--artist); null falls back to
       // the blurred cover art.
       artistBackground: null as string | null,
+      // Every background Fanart.tv has for the current artist, the shown
+      // one among them - what the toolbar's cycle button steps through.
+      artistBackgrounds: [] as string[],
       // The artist background's own dominant colour, extracted for the
       // visualizer bars only - see visualizerColor.
       artistColor: null as string | null,
@@ -438,6 +443,11 @@ export default {
     },
     backdropIsArtist(): boolean {
       return Boolean(this.artistBackground)
+    },
+    /** Whether there is more than one background to step through - with a
+     * single one (or none) the toolbar's cycle button would do nothing. */
+    canCycleBackground(): boolean {
+      return this.artistBackgrounds.length > 1
     },
     // The biggest single spot in the whole app for one of these — 512 asks
     // for whatever's largest a station's homepage actually declares (see
@@ -757,6 +767,7 @@ export default {
       if (preloaded !== undefined) {
         delete this.preloadedArt[artist]
         this.artistBackground = preloaded?.background ?? null
+        this.artistBackgrounds = preloaded?.backgrounds ?? []
         this.backgroundArtist = artist
         this.artistColor = null
         if (this.artistBackground) {
@@ -773,6 +784,7 @@ export default {
       const sameArtist = this.backgroundArtist === artist
       if (!sameArtist) {
         this.artistBackground = null
+        this.artistBackgrounds = []
         this.artistColor = null
         this.backgroundArtist = ''
       }
@@ -790,6 +802,7 @@ export default {
       if (art?.background) await preloadImage(art.background)
       if (this.currentArtist !== artist) return
       this.artistBackground = art?.background ?? null
+      this.artistBackgrounds = art?.backgrounds ?? []
       this.backgroundArtist = artist
       // The bars take this image's colour (see visualizerColor); extracted
       // here rather than from the cover, which is what the ambient wash and
@@ -799,6 +812,26 @@ export default {
         if (this.currentArtist !== artist) return
         this.artistColor = color ? color.join(', ') : null
       }
+    },
+    /** Steps to the next of the artist's Fanart.tv backgrounds - the
+     * toolbar's cycle button. Walks the same candidate list the shown one
+     * was picked from, so every press lands on a different image. */
+    async cycleArtistBackground() {
+      if (this.artistBackgrounds.length < 2) return
+      const current = this.artistBackground
+      const index = current ? this.artistBackgrounds.indexOf(current) : -1
+      const next = this.artistBackgrounds[(index + 1) % this.artistBackgrounds.length]
+      if (!next) return
+      const artist = this.backgroundArtist
+      // Preloaded before the swap for the same reason as loadArtistBackground:
+      // the backdrop only crossfades if the image is already paintable.
+      await preloadImage(next)
+      // The track may have moved on while the image loaded.
+      if (this.backgroundArtist !== artist) return
+      this.artistBackground = next
+      const color = await extractDominantColor(next)
+      if (this.artistBackground !== next) return
+      this.artistColor = color ? color.join(', ') : null
     },
     /** Fetches and preloads the *next* track's Fanart.tv background, so the
      * change itself has nothing left to load. The answer is kept for

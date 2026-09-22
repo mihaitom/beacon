@@ -95,6 +95,7 @@ describe('AlbumDetailView Fanart.tv backdrop', () => {
     vi.mocked(getArtistArt).mockResolvedValue({
       banner: null,
       background: 'https://assets.fanart.tv/bg.jpg',
+      backgrounds: [],
       logo: null,
     })
 
@@ -128,6 +129,7 @@ describe('AlbumDetailView Fanart.tv backdrop', () => {
     vi.mocked(getArtistArt).mockResolvedValue({
       banner: null,
       background: 'https://assets.fanart.tv/bg.jpg',
+      backgrounds: [],
       logo: null,
     })
 
@@ -152,6 +154,7 @@ describe('AlbumDetailView Fanart.tv backdrop', () => {
     vi.mocked(getArtistArt).mockResolvedValue({
       banner: null,
       background: 'https://assets.fanart.tv/bg.jpg',
+      backgrounds: [],
       logo: null,
     })
     const { vm } = await mountAlbum(makeAlbum())
@@ -193,7 +196,12 @@ describe('AlbumDetailView Fanart.tv backdrop', () => {
 
     await router.push('/albums/al2')
     await flushPromises()
-    resolveStale({ banner: null, background: 'https://assets.fanart.tv/stale.jpg', logo: null })
+    resolveStale({
+      banner: null,
+      background: 'https://assets.fanart.tv/stale.jpg',
+      backgrounds: [],
+      logo: null,
+    })
     await flushPromises()
 
     const vm = wrapper.vm as unknown as AlbumVm

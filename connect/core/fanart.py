@@ -137,22 +137,25 @@ def _pick(data: dict) -> dict | None:
 
 def _choose(art: dict | None) -> dict | None:
     """One image of each kind, picked at random from the cached candidates -
-    what actually gets shown. Kept out of the cache on purpose: caching the
-    choice would freeze one image for the whole _TTL, which is the opposite
-    of what the top-five list is for."""
+    what actually gets shown - plus the full background candidate list, so a
+    client can offer another one without asking Fanart.tv again. Kept out of
+    the cache on purpose: caching the choice would freeze one image for the
+    whole _TTL, which is the opposite of what the top-five list is for."""
     if not art:
         return None
+    backgrounds = art.get("background") or []
     return {
         "banner": random.choice(art["banner"]) if art.get("banner") else None,
-        "background": random.choice(art["background"]) if art.get("background") else None,
+        "background": random.choice(backgrounds) if backgrounds else None,
+        "backgrounds": list(backgrounds),
         "logo": random.choice(art["logo"]) if art.get("logo") else None,
     }
 
 
 async def get_artist_art(name: str) -> dict | None:
-    """{banner, background, logo} for an artist, or None when there is
-    nothing to show (no MBID, no art) or Fanart.tv could not be reached.
-    Cache-first, memory then disk.
+    """{banner, background, backgrounds, logo} for an artist, or None when
+    there is nothing to show (no MBID, no art) or Fanart.tv could not be
+    reached. Cache-first, memory then disk.
 
     A personal key is not required: Beacon's own project key fetches the
     images on its own, just with Fanart.tv's slower project-level cache. An

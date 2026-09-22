@@ -11,7 +11,7 @@ export interface LastfmTrack {
   mbid: string
 }
 
-export type LastfmOp = 'charts' | 'genre' | 'artist' | 'mytop'
+export type LastfmOp = 'charts' | 'genre' | 'artist' | 'similar' | 'mytop'
 
 /** The periods user.getTopTracks accepts, validated by the backend too
  * (routes/lastfm.py's Period). */
@@ -26,6 +26,8 @@ export interface LastfmQuery {
   tag?: string
   /** artist only. */
   artist?: string
+  /** similar only - the seed track's title, together with `artist`. */
+  track?: string
   /** mytop only - a public Last.fm username. No login: user.getTopTracks
    * takes the name as a plain parameter. */
   username?: string
@@ -38,6 +40,7 @@ export async function getLastfmTracks(query: LastfmQuery): Promise<LastfmTrack[]
   if (query.country) params.set('country', query.country)
   if (query.tag) params.set('tag', query.tag)
   if (query.artist) params.set('artist', query.artist)
+  if (query.track) params.set('track', query.track)
   if (query.username) params.set('username', query.username)
   if (query.period) params.set('period', query.period)
   const data = await fetchConnect<{ tracks: LastfmTrack[] }>(`/lastfm/songs?${params.toString()}`)

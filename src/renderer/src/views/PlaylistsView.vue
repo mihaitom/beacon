@@ -13,21 +13,23 @@
         <div class="detail-header__actions-row">
           <v-btn
             v-if="lastfmStore.configured"
-            prepend-icon="mdi-trending-up"
             color="primary"
             rounded="pill"
             @click="openLastfmDialog"
-            >{{ $t('lastfm.title') }}</v-btn
           >
+            <template #prepend>
+              <img :src="lastfmIcon" alt="" class="builder-icon" />
+            </template>
+            {{ $t('lastfm.title') }}
+          </v-btn>
           <!-- No key and no setup: ListenBrainz's endpoints are public, so
            - unlike the Last.fm button this is always offered. -->
-          <v-btn
-            prepend-icon="mdi-headphones"
-            color="primary"
-            rounded="pill"
-            @click="openListenbrainzDialog"
-            >{{ $t('listenbrainz.title') }}</v-btn
-          >
+          <v-btn color="primary" rounded="pill" @click="openListenbrainzDialog">
+            <template #prepend>
+              <img :src="listenbrainzIcon" alt="" class="builder-icon" />
+            </template>
+            {{ $t('listenbrainz.title') }}
+          </v-btn>
           <v-btn
             prepend-icon="mdi-plus"
             color="primary"
@@ -156,6 +158,14 @@ import type { Playlist } from '@/types/library'
 // measure how many fit across (see cardRowFit.ts) because theirs scroll.
 const SKELETON_TILES = 8
 
+// The services' own marks, relative rather than absolute for the reason
+// externalArtistLinks.ts spells out: public/ assets are copied next to
+// index.html, and the packaged desktop build loads that over file://,
+// where a leading '/' resolves against the filesystem root. ListenBrainz's
+// is the colour-stripped variant, so it takes the button's own colour.
+const LASTFM_ICON = './lastfm.svg'
+const LISTENBRAINZ_ICON = './listenbrainz-mono.svg'
+
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
@@ -172,6 +182,8 @@ export default {
   data() {
     return {
       SKELETON_TILES,
+      lastfmIcon: LASTFM_ICON,
+      listenbrainzIcon: LISTENBRAINZ_ICON,
       createDialog: false,
       newPlaylistName: '',
       filterQuery: '',
@@ -307,5 +319,12 @@ export default {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* The service's own mark, sized to Vuetify's icon slot rather than the
+ * 800px canvas the Last.fm file was exported at. */
+.builder-icon {
+  width: 18px;
+  height: 18px;
 }
 </style>

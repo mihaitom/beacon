@@ -116,6 +116,9 @@ async function mountSongWithBackground(
     // A real (tiny) image, so preloadImage/colour extraction actually resolve.
     background:
       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    backgrounds: [
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    ],
     logo: null,
   })
   const playback = usePlaybackStore()

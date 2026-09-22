@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   bestMatch,
   coreTitle,
+  matchedSongs,
   playlistSongIds,
   resolveTracks,
   type ResolvedTrack,
@@ -215,10 +216,15 @@ describe('resolveTracks', () => {
   })
 })
 
-describe('playlistSongIds', () => {
+describe('matchedSongs / playlistSongIds', () => {
   const found = (id: string): ResolvedTrack => ({
     track: lastfm('t', 'a'),
     match: { song: song('t', 'a', id), confidence: 'exact' },
+  })
+
+  it('hands back the songs themselves, for the queue rather than a playlist', () => {
+    const resolved: ResolvedTrack[] = [found('1'), found('1'), found('2')]
+    expect(matchedSongs(resolved).map((entry) => entry.id)).toEqual(['1', '2'])
   })
 
   it('keeps found tracks in order and skips the missing ones', () => {
