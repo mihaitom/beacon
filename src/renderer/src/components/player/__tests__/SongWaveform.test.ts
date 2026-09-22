@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import SongWaveform from '../SongWaveform.vue'
+import { DEFAULT_APP_ACCENT, appAccent } from '@/services/appAccent'
 
 const CANVAS_WIDTH = 200
 const CANVAS_HEIGHT = 24
@@ -68,10 +70,33 @@ function mountWaveform(props: {
 describe('SongWaveform', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    appAccent.value = DEFAULT_APP_ACCENT
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  describe('accent', () => {
+    it('draws the played bars and the load fill in the app accent', () => {
+      const calls = stubCanvas()
+      appAccent.value = '10, 20, 30'
+
+      mountWaveform({ modelValue: 60, duration: 240, buffered: 180, disabled: true })
+
+      expect(calls.some((c) => c.style === 'rgba(10, 20, 30, 0.85)')).toBe(true)
+      expect(calls.some((c) => c.style === 'rgba(10, 20, 30, 0.75)')).toBe(true)
+    })
+
+    it('repaints in a borrowed accent instead of waiting for the next tick', async () => {
+      const calls = stubCanvas()
+      mountWaveform({ modelValue: 60, duration: 240, disabled: true })
+
+      appAccent.value = '10, 20, 30'
+      await nextTick()
+
+      expect(calls.some((c) => c.style === 'rgba(10, 20, 30, 0.85)')).toBe(true)
+    })
   })
 
   describe('the no-peaks band (a track whose waveform has not loaded yet)', () => {

@@ -12,10 +12,14 @@
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
 import { getWaveform } from '@/services/connect/waveform'
+import { appAccent } from '@/services/appAccent'
 
-// Amber tone reused from AudioVisualizer.vue for visual consistency between
-// the two player-adjacent visualizations.
-const PLAYED_COLOR = 'rgba(245, 169, 78, 0.85)'
+// The played bars and the load fill follow the app's accent (see
+// appAccent) - the same colour the visualizer bars use - while the unplayed
+// parts and the playhead marker stay white so position always reads against
+// it. Only the alphas differ between the two accent shapes.
+const PLAYED_ALPHA = 0.85
+const LOAD_BAR_ALPHA = 0.75
 const UNPLAYED_COLOR = 'rgba(255, 255, 255, 0.22)'
 const MARKER_COLOR = 'rgba(255, 255, 255, 0.9)'
 // How far the stream is loaded gets its own thin bar below the waveform
@@ -23,7 +27,6 @@ const MARKER_COLOR = 'rgba(255, 255, 255, 0.9)'
 // third shade of the same two colours on 1px-wide bars was a nuance
 // nobody could pick out on a dark screen. As a solid strip with a hard
 // edge at the buffer front it needs no fine gradation at all.
-const LOAD_BAR_COLOR = 'rgba(245, 169, 78, 0.75)'
 const LOAD_TRACK_COLOR = 'rgba(255, 255, 255, 0.1)'
 // CSS px, scaled by the device ratio in paint() — a fraction of the
 // height (the way the bars are sized) would turn this into a slab on a
@@ -76,6 +79,13 @@ export default {
     songId(): string | null {
       return this.playbackStore.radioStation ? null : (this.playbackStore.currentSong?.id ?? null)
     },
+    /** The app's current accent, as "r, g, b" - Now Playing borrows the
+     * theme's primary for the track's artwork colour (see appAccent), so the
+     * waveform tints along with the rest of the app rather than staying
+     * amber. */
+    accentRgb(): string {
+      return appAccent.value
+    },
   },
   watch: {
     songId: {
@@ -83,6 +93,11 @@ export default {
       handler(id: string | null) {
         this.loadPeaks(id)
       },
+    },
+    // A new borrowed accent (a different track's artwork) redraws in it
+    // rather than waiting for the next position tick.
+    accentRgb() {
+      this.paint()
     },
     modelValue() {
       this.paint()
@@ -199,11 +214,12 @@ export default {
       y: number,
       height: number,
       bufferedX: number,
+      fillColor: string,
     ) {
       if (this.buffered <= 0) return
       ctx.fillStyle = LOAD_TRACK_COLOR
       ctx.fillRect(bufferedX, y, width - bufferedX, height)
-      ctx.fillStyle = LOAD_BAR_COLOR
+      ctx.fillStyle = fillColor
       ctx.fillRect(0, y, bufferedX, height)
     },
     paint() {
@@ -213,6 +229,8 @@ export default {
       const { width, height } = canvas
       ctx.clearRect(0, 0, width, height)
       if (width <= 0 || height <= 0) return
+
+      const playedColor = `rgba(${this.accentRgb}, ${PLAYED_ALPHA})`
 
       // Clamped to the canvas width so a position that ever lands past
       // duration (rounding, mostly) reads as fully played instead of
@@ -231,7 +249,14 @@ export default {
       // instead of growing a pixel the moment a local stream takes over
       // from a cast.
       const baseline = loadBarY - Math.max(1, Math.round(LOAD_BAR_GAP * ratio))
-      this.paintLoadBar(ctx, width, loadBarY, loadBarHeight, bufferedX)
+      this.paintLoadBar(
+        ctx,
+        width,
+        loadBarY,
+        loadBarHeight,
+        bufferedX,
+        `rgba(${this.accentRgb}, ${LOAD_BAR_ALPHA})`,
+      )
 
       if (this.peaks.length === 0) {
         // A real track whose own waveform just hasn't loaded yet — radio
@@ -242,7 +267,7 @@ export default {
         ctx.fillStyle = UNPLAYED_COLOR
         ctx.fillRect(0, baseline - 2, width, 2)
         if (playedX > 0) {
-          ctx.fillStyle = PLAYED_COLOR
+          ctx.fillStyle = playedColor
           ctx.fillRect(0, baseline - 2, playedX, 2)
         }
         ctx.fillStyle = MARKER_COLOR
@@ -263,7 +288,7 @@ export default {
         // Only the upper half — bars grow up from a bottom baseline
         // instead of mirroring above/below a center line.
         const barHeight = Math.max(1, this.peaks[i]! * baseline * 0.9)
-        ctx.fillStyle = x < playedX ? PLAYED_COLOR : UNPLAYED_COLOR
+        ctx.fillStyle = x < playedX ? playedColor : UNPLAYED_COLOR
         ctx.fillRect(x, baseline - barHeight, Math.max(0.5, barWidth - gap), barHeight)
       }
 

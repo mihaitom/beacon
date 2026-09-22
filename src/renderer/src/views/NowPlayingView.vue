@@ -116,6 +116,7 @@ import type { VisualizerFrame } from '@/services/connect/types'
 import { getAudioEngine } from '@/services/audioEngine'
 import { extractDominantColor } from '@/services/colorExtractor'
 import { visualizerBarColor } from '@/services/visualizerColor'
+import { appAccent } from '@/services/appAccent'
 import { accountScopedKey } from '@/services/accountKey'
 import type { Song } from '@/types/library'
 
@@ -589,6 +590,17 @@ export default {
         // next launch.
       }
     },
+    // The whole app's accent follows the bars for as long as this view is on
+    // screen: the artist background's own colour (see visualizerColor) takes
+    // over the theme's primary, so buttons, the player bar and everything
+    // else tint along with the picture. Reset on the way out (beforeUnmount) -
+    // the colour belongs to Now Playing, not to the rest of the app.
+    visualizerColor: {
+      immediate: true,
+      handler(color: string) {
+        this.applyPrimary(color)
+      },
+    },
   },
   mounted() {
     document.addEventListener('fullscreenchange', this.onFullscreenChange)
@@ -614,11 +626,26 @@ export default {
     this.stageObserver?.disconnect()
     this.endSlide?.()
     document.removeEventListener('fullscreenchange', this.onFullscreenChange)
+    // The borrowed accent goes back with the view - see the visualizerColor
+    // watcher.
+    this.applyPrimary(FALLBACK_COLOR)
     // Leaving the view (route change, logout, ...) shouldn't strand the
     // whole window in fullscreen with nothing controlling it anymore.
     if (document.fullscreenElement === this.$refs.root) void document.exitFullscreen()
   },
   methods: {
+    /** Puts `color` - an "r, g, b" triplet, as visualizerColor returns it -
+     * into the theme's primary slot, and mirrors it for the canvas
+     * components that cannot read a CSS variable (the waveform). Going
+     * through the theme object rather than the --v-theme-primary variable
+     * directly is what lets Vuetify re-derive `on-primary` for it, so text
+     * on a primary surface keeps its contrast. */
+    applyPrimary(color: string): void {
+      appAccent.value = color
+      const theme = this.$vuetify.theme
+      const colors = theme.themes[theme.name]?.colors
+      if (colors) colors.primary = `rgb(${color})`
+    },
     /** Hands a keystroke to the store, 200ms after the last one — the same
      * delay every other search box in the app waits (SongsView.vue). This
      * one reaches the backend rather than a local array, so the wait is

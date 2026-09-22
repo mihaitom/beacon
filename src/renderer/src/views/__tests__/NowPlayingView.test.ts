@@ -19,6 +19,7 @@ import { getArtistArt } from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
 import { extractDominantColor } from '@/services/colorExtractor'
 import { useFanartStore } from '@/stores/fanart'
+import { DEFAULT_APP_ACCENT, appAccent } from '@/services/appAccent'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { Song } from '@/types/library'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
@@ -102,6 +103,9 @@ describe('NowPlayingView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     withAnalyser(true)
+    // The borrowed accent is module state; a test that leaves the view
+    // mounted must not colour the next one.
+    appAccent.value = DEFAULT_APP_ACCENT
     // What a normal install answers, so the debug button below stays away
     // in every test that isn't about it.
     vi.mocked(getLogLevel).mockResolvedValue({ level: 'INFO', levels: [] })
@@ -777,6 +781,7 @@ describe('NowPlayingView artist background', () => {
     setActivePinia(createPinia())
     localStorage.clear()
     withAnalyser(true)
+    appAccent.value = DEFAULT_APP_ACCENT
     vi.mocked(getArtistArt).mockReset().mockResolvedValue(null)
     vi.mocked(extractDominantColor).mockReset().mockResolvedValue(null)
   })
@@ -954,6 +959,18 @@ describe('NowPlayingView artist background', () => {
     )
   })
 
+  it('borrows the background colour as the app accent, and hands it back on unmount', async () => {
+    vi.mocked(extractDominantColor).mockResolvedValue([200, 60, 60] as [number, number, number])
+    const { wrapper, host } = await mountWithBackground()
+    const borrowed = (wrapper.vm as unknown as { visualizerColor: string }).visualizerColor
+
+    expect(appAccent.value).toBe(borrowed)
+    expect(appAccent.value).not.toBe(DEFAULT_APP_ACCENT)
+
+    host.unmount()
+    expect(appAccent.value).toBe(DEFAULT_APP_ACCENT)
+  })
+
   it('does not look anything up when Fanart.tv is switched off', async () => {
     useFanartStore().enabled = false
     vi.mocked(getArtistArt).mockResolvedValue({
@@ -998,6 +1015,7 @@ describe('NowPlayingView next up', () => {
     setActivePinia(createPinia())
     localStorage.clear()
     withAnalyser(true)
+    appAccent.value = DEFAULT_APP_ACCENT
     vi.mocked(getArtistArt).mockReset().mockResolvedValue(null)
     vi.mocked(extractDominantColor).mockReset().mockResolvedValue(null)
   })
