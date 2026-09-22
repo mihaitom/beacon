@@ -251,6 +251,81 @@ describe('the radio metadata store', () => {
       expect(radioMeta.titleLog.map((e) => e.title)).toEqual(['Artist - Held'])
     })
 
+    it('brings in the stored log while the newest entry is still held', async () => {
+      // The log is the station's own record, not this device's buffer, so
+      // only the held title stays out. Held back whole, a station's stored
+      // history only appeared once its first title had been shown.
+      const { radioMeta } = playChillFm()
+      engine.bufferedAhead = 15
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockResolvedValue({
+        url: 'https://stream.example/chill',
+        title: 'Artist - Newest',
+        history: [
+          { title: 'Artist - Newest', at: 3000 },
+          { title: 'Artist - Older', at: 2000 },
+          { title: 'Artist - Oldest', at: 1000 },
+        ],
+        bitrate: null,
+        codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
+      })
+
+      await poll()
+
+      expect(radioMeta.titleLog.map((e) => e.title)).toEqual(['Artist - Older', 'Artist - Oldest'])
+      expect(radioMeta.nowPlaying).toBeNull()
+
+      await vi.advanceTimersByTimeAsync(15_000)
+
+      expect(radioMeta.titleLog.map((e) => e.title)).toEqual([
+        'Artist - Newest',
+        'Artist - Older',
+        'Artist - Oldest',
+      ])
+    })
+
+    it('keeps catching up until the backend names this station, not just answers', async () => {
+      // A relayed station only becomes current on the backend once this
+      // device's player has opened the stream, so the first answers are
+      // correctly for "no station" (url null). The fast cadence has to keep
+      // going through those, or the log waits out an eight-second tick -
+      // which is what made it look tied to the first title arriving.
+      const { radioMeta } = playChillFm()
+      engine.bufferedAhead = 0
+      let calls = 0
+      const notYet = {
+        url: null,
+        title: null,
+        history: [],
+        bitrate: null,
+        codec: null,
+        relayBitrate: null,
+        relayReason: null,
+        relayContentType: null,
+      }
+      vi.mocked(radioMetadata.fetchRadioMetadata).mockImplementation(async () => {
+        calls += 1
+        if (calls === 1) return notYet
+        return {
+          ...notYet,
+          url: 'https://stream.example/chill',
+          history: [{ title: 'Artist - Stored', at: 500 }],
+        }
+      })
+
+      radioMeta.startCatchup()
+      await flushPromises()
+      expect(radioMeta.titleLog).toEqual([])
+
+      await vi.advanceTimersByTimeAsync(1000)
+      await flushPromises()
+
+      expect(radioMeta.titleLog.map((e) => e.title)).toEqual(['Artist - Stored'])
+      expect(radioMeta.nowPlaying).toBeNull()
+    })
+
     it('never lets the same entry into the log twice', async () => {
       const { radioMeta } = playChillFm()
       engine.bufferedAhead = 0

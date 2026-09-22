@@ -208,9 +208,14 @@ export const useRadioMetadataStore = defineStore('radioMetadata', {
           // there" (nothing to apply anyway) and what a connect too old to
           // send it answers, which must keep working.
           if (metadata.url !== null && metadata.url !== station.streamUrl) return
-          // Whatever the poll was waiting for has arrived, so the faster
-          // cadence a station start turns on has done its job.
-          stopCatchup()
+          // The faster cadence a station start turns on has done its job
+          // only once the backend names *this* station. A null url means it
+          // has not caught up yet — no relay/watch is up there, which for a
+          // relayed station is the ordinary state until the player has
+          // opened the stream — and stopping on the first such answer left
+          // the log to arrive on the next eight-second tick, which is what
+          // made it look tied to the first title rather than to the station.
+          if (metadata.url === station.streamUrl) stopCatchup()
           // Immediately, both of them: they describe the station itself,
           // not a moment in it, so there is nothing to line them up with.
           this.bitrate = metadata.bitrate
@@ -225,12 +230,33 @@ export const useRadioMetadataStore = defineStore('radioMetadata', {
             this.nowPlaying = metadata.title
             this.applyDelta(metadata.history)
           }
-          // Nothing new to line up. The log still moves, unless a title
-          // is being held — then its newest entry is the held one, and
-          // letting it through would put the song on screen in the list
-          // while the line above it still shows the previous one.
+          // The log is the station's own record, not this device's playback
+          // state, so it does not wait on the buffer: everything in a poll
+          // except the one title being held goes in straight away. Held
+          // back whole, a station's stored history sat behind the first
+          // title's hold and only appeared once that title had been shown.
+          // Only the held entry stays out, so the log's top row never runs
+          // ahead of the line above it. `pageLength` is the untouched page,
+          // since the completeness a first page decides must not read one
+          // entry short.
+          const applyLog = (heldTitle: string | null): void => {
+            if (heldTitle === null) {
+              this.applyDelta(metadata.history)
+              return
+            }
+            this.applyDelta(
+              metadata.history.filter(
+                (entry, index) => !(index === 0 && entry.title === heldTitle),
+              ),
+              metadata.history.length,
+            )
+          }
+          // Nothing new to line up. The log still moves — everything but
+          // the held entry, so its top row never runs ahead of the line
+          // above it.
           if (metadata.title === this.nowPlaying || metadata.title === pendingTitle?.title) {
             if (pendingTitleTimer === null) this.applyDelta(metadata.history)
+            else applyLog(metadata.title)
             return
           }
 
@@ -272,6 +298,8 @@ export const useRadioMetadataStore = defineStore('radioMetadata', {
           }
           this.cancelPendingTitle()
           pendingTitle = { title: metadata.title, url: station.streamUrl }
+          // Bring in whatever the hold is not about while the title waits.
+          applyLog(metadata.title)
           pendingTitleTimer = setTimeout(() => {
             pendingTitleTimer = null
             pendingTitle = null
@@ -366,12 +394,16 @@ export const useRadioMetadataStore = defineStore('radioMetadata', {
      *
      * Whether the log is complete is decided here too, and only on that
      * first page: a first page shorter than the backend's own page size is
-     * the entire log, so there is nothing for a scroll to fetch later. */
-    applyDelta(entries: RadioTitleEntry[]): void {
+     * the entire log, so there is nothing for a scroll to fetch later.
+     * `pageLength` is that page's own length, for the one caller that hands
+     * over a page with the held title filtered out of it: completeness is a
+     * property of what the backend sent, not of what was applied.
+     */
+    applyDelta(entries: RadioTitleEntry[], pageLength = entries.length): void {
       const head = this.titleLog[0]
       if (!head) {
         this.titleLog = entries
-        this.titleLogComplete = entries.length < RADIO_TITLE_PAGE_SIZE
+        this.titleLogComplete = pageLength < RADIO_TITLE_PAGE_SIZE
         return
       }
       const fresh = entries.filter((entry) => entry.at > head.at)

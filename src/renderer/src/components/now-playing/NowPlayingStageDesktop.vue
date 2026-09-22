@@ -55,7 +55,7 @@
               :query="radioMeta.searchQuery"
               :current-at="radioMeta.titleLog[0]?.at ?? null"
               :pending="radioMeta.searchPending"
-              class="now-playing__lyrics"
+              class="now-playing__lyrics now-playing__lyrics--title-log"
               @load-more="radioMeta.loadOlder()"
               @update:query="$emit('search', $event)"
             />
@@ -254,6 +254,18 @@ export default {
   width: min(38cqw, 560px);
   height: 85cqh;
   overflow: hidden;
+}
+
+/* A station's title log borrows the lyrics' box - the same width, height
+ * and scrolling - but not its ground. The lyrics are lines of text drawn
+ * straight on the artwork, so they need a panel under them; the log is
+ * already a column of opaque cards and the timeline is mixed to read on a
+ * picture (see RadioTitleLog.vue's immersive rules), so a panel behind it
+ * is a slab of grey for nothing. */
+.now-playing__lyrics--title-log {
+  background: none;
+  backdrop-filter: none;
+  border-radius: 0;
 }
 
 .now-playing-lyrics-enter-active,

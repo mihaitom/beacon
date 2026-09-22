@@ -43,7 +43,7 @@
               :query="radioMeta.searchQuery"
               :current-at="radioMeta.titleLog[0]?.at ?? null"
               :pending="radioMeta.searchPending"
-              class="now-playing__lyrics"
+              class="now-playing__lyrics now-playing__lyrics--title-log"
               @load-more="radioMeta.loadOlder()"
               @update:query="$emit('search', $event)"
             />
@@ -276,6 +276,14 @@ export default {
     rgba(18, 20, 28, 0.15) 100%
   );
   border-radius: 0;
+}
+
+/* The log takes the lyrics' full-screen box but none of their ground: its
+ * entries are opaque cards and its timeline is built to read on the
+ * artwork (see RadioTitleLog.vue's immersive rules), so the fading wash
+ * that keeps lyric lines legible would only dim the photo behind them. */
+.now-playing__lyrics--title-log {
+  background: none;
 }
 
 /* No width animation here — the flip itself carries that. But this can't
