@@ -9,9 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Highlights
 
 - Artist and album pages, and Now Playing, are dressed with Fanart.tv images
-- Playlists can fill themselves from Last.fm and ListenBrainz
+- Playlists can fill themselves from Last.fm or ListenBrainz, drawing on charts, similar tracks and your own top plays; Last.fm is the recommended builder
 - Home's Discover shelves can come from your own listening history, not just your library
-- Search forgives accents and misspellings across the app
+- A server administrator can now decide who may cast, with a whitelist or blacklist
+- A new Rediscover shelf on Home brings back songs you played a lot but have not heard in months
 
 ### Added
 
