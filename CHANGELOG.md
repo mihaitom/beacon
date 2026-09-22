@@ -45,7 +45,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Lyrics matches from NetEase and SimpMusic now show whether a sheet is timed once one has been opened, instead of staying marked unknown
 - The A-Z jump bar in the Albums and Artists views sent some letters to the wrong place when the server files an artist or album under a sorting name rather than the name shown; it now follows the server's own filing
 - A radio station's title history now appears as soon as the station is opened, instead of waiting for its first "now playing" title to arrive
-- The radio title history on Now Playing no longer sits on a dark panel of its own, so the artist background shows through behind its cards
 
 ## [1.3.2] - 2026-09-19
 
