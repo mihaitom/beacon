@@ -188,6 +188,18 @@ def test_map_album_omits_artist_id_year_and_genre_when_absent():
     assert "genre" not in album
 
 
+def test_map_album_carries_the_sort_name():
+    # The key get_album_list2 sorts by, so the A-Z jump bar can file the
+    # album where it actually sits.
+    album = jellyfin_bridge._map_album({"Id": "a3", "Name": "The Wall", "SortName": "wall"})
+    assert album["sortName"] == "wall"
+
+
+def test_map_album_omits_sort_name_when_absent():
+    album = jellyfin_bridge._map_album({"Id": "a4", "Name": "Wall"})
+    assert "sortName" not in album
+
+
 # ── Shared httpx client lifecycle ────────────────────────────────────────────
 
 

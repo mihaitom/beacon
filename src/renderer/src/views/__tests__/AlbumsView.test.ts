@@ -26,8 +26,11 @@ interface AlbumsVm {
   readonly visibleAlbums: Album[]
   readonly virtualizeAlbums: boolean
   readonly columns: number
-  readonly albumRows: Album[][]
+  readonly albumRows: { items: Album[]; startIndex: number }[]
+  readonly availableLetters: Set<string>
   loadMore(): void
+  letterAt(index: number): string
+  startsLetterSection(index: number): boolean
   jumpToLetter(letter: string): void
   playRandomAlbum(): Promise<void>
   playTopAlbum(): Promise<void>
@@ -209,8 +212,28 @@ describe('AlbumsView virtualization', () => {
 
     expect(vm.columns).toBe(3)
     expect(rows).toHaveLength(Math.ceil(505 / 3))
-    expect(rows[rows.length - 1]).toHaveLength(505 % 3)
-    expect(rows.flat()).toHaveLength(505)
+    expect(rows[rows.length - 1]!.items).toHaveLength(505 % 3)
+    expect(rows.flatMap((row) => row.items)).toHaveLength(505)
+  })
+
+  it('never lets one row span two letters', async () => {
+    // A row that mixed letters put the divider in the middle of a row and
+    // left the line below it half empty.
+    const { vm } = await mountAlbums([
+      ...many(500),
+      album('b1', 'Bravo'),
+      album('b2', 'Blue'),
+      album('c1', 'Charlie'),
+    ])
+    vm.gridWidth = 520 // three columns
+
+    const rows = vm.albumRows
+
+    expect(rows.at(-3)!.items.map((a) => a.name)).toEqual(['Album 0498', 'Album 0499'])
+    expect(rows.at(-2)!.items.map((a) => a.name)).toEqual(['Bravo', 'Blue'])
+    expect(rows.at(-1)!.items.map((a) => a.name)).toEqual(['Charlie'])
+    expect(rows.at(-2)!.startIndex).toBe(500)
+    expect(rows.at(-1)!.startIndex).toBe(502)
   })
 })
 
@@ -235,7 +258,8 @@ describe('AlbumsView jump to letter', () => {
 
     vm.jumpToLetter('Z')
 
-    // Item 600 across three columns is row 200.
+    // Item 600 across three columns is row 200. 'start' (the default) keeps
+    // the section in the upper half; see jumpToLetter.
     expect(scrollToIndex).toHaveBeenCalledWith(200)
   })
 
@@ -246,6 +270,34 @@ describe('AlbumsView jump to letter', () => {
     vm.jumpToLetter('Q')
 
     expect(vm.visibleCount).toBe(before)
+  })
+
+  it('files an album under its server sort name, not its display name', async () => {
+    const { vm } = await mountAlbums([{ ...album('a1', 'The Wall'), sortName: 'wall' }])
+
+    // Navidrome puts this album in the W section; deriving the letter from
+    // the display name would offer T and jump to the wrong place.
+    expect(vm.availableLetters.has('W')).toBe(true)
+    expect(vm.availableLetters.has('T')).toBe(false)
+  })
+
+  it('marks exactly the first album of each letter section', async () => {
+    const { vm } = await mountAlbums([
+      { ...album('a1', 'Alpha'), sortName: 'alpha' },
+      { ...album('a2', 'Amber'), sortName: 'amber' },
+      { ...album('b1', 'Bravo'), sortName: 'bravo' },
+      { ...album('c1', 'Charlie'), sortName: 'charlie' },
+      { ...album('c2', 'Cobra'), sortName: 'cobra' },
+    ])
+
+    expect([0, 1, 2, 3, 4].map((index) => vm.startsLetterSection(index))).toEqual([
+      true,
+      false,
+      true,
+      true,
+      false,
+    ])
+    expect([0, 1, 2, 3, 4].map((index) => vm.letterAt(index))).toEqual(['A', 'A', 'B', 'C', 'C'])
   })
 })
 

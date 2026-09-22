@@ -272,6 +272,33 @@ body {
   margin-bottom: 16px;
 }
 
+/* The letter that starts a run of library cards, drawn as a full-width
+ * divider above it. The grid is one wrapping flex row, so an item with
+ * `flex-basis: 100%` here is what forces the next letter onto a new line -
+ * without it a section boundary in the middle of a row was impossible to
+ * spot by eye. The hairline carries the label out to the grid's right edge,
+ * the same shape as .panel-title one level down. */
+.letter-divider {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.letter-divider__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgb(var(--v-theme-primary));
+}
+
+.letter-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--beacon-hairline);
+}
+
 /* ── Panels ───────────────────────────────────────────────────────────────
  * The app's one surface for a group of related things: Settings' sections,
  * the station cards on Radio, the field lists in the track-info dialog.

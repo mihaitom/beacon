@@ -207,6 +207,18 @@ def test_map_album_basic_fields():
     assert album["genre"] == "Jazz"
 
 
+def test_map_album_carries_the_sort_name():
+    # The key get_album_list2 sorts by, so the A-Z jump bar can file the
+    # album where it actually sits.
+    item = {"ratingKey": "2002", "title": "The Wall", "titleSort": "wall"}
+    assert plex_bridge._map_album(item)["sortName"] == "wall"
+
+
+def test_map_album_omits_sort_name_when_absent():
+    item = {"ratingKey": "2003", "title": "Wall"}
+    assert "sortName" not in plex_bridge._map_album(item)
+
+
 def test_map_artist_basic_fields():
     item = {"ratingKey": "3001", "title": "Artist A", "childCount": 4}
     artist = plex_bridge._map_artist(item)

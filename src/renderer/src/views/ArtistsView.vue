@@ -59,12 +59,14 @@
       }"
     >
       <div v-if="!virtualizeArtists" class="artist-grid">
-        <artist-card
-          v-for="(artist, index) in visibleArtists"
-          :key="artist.id"
-          :data-artist-index="index"
-          :artist="artist"
-        />
+        <template v-for="(artist, index) in visibleArtists" :key="artist.id">
+          <!-- A full-width divider before each letter's first card - see
+           - .letter-divider's own comment for why it forces a line break. -->
+          <div v-if="startsLetterSection(index)" class="letter-divider" aria-hidden="true">
+            <span class="letter-divider__label">{{ letterAt(index) }}</span>
+          </div>
+          <artist-card :data-artist-index="index" :artist="artist" />
+        </template>
       </div>
       <!-- See AlbumsView.vue's identical v-virtual-scroll comment for why
        - this exists and how the row-chunking/paddingTop works — same
@@ -78,7 +80,24 @@
       >
         <template #default="{ item: row, index }">
           <div class="artist-grid" :style="{ paddingTop: index === 0 ? '0px' : `${artistGap}px` }">
-            <artist-card v-for="artist in row" :key="artist.id" :artist="artist" />
+            <!-- One row is never allowed to span two letters (see artistRows),
+             - so the divider sits at the top of a row and the cards below it
+             - fill that row completely. data-artist-index is the card's own
+             - position in the whole list, which is what the A-Z highlight
+             - reads (see observeActiveLetter). -->
+            <div
+              v-if="startsLetterSection(row.startIndex)"
+              class="letter-divider"
+              aria-hidden="true"
+            >
+              <span class="letter-divider__label">{{ letterAt(row.startIndex) }}</span>
+            </div>
+            <artist-card
+              v-for="(artist, column) in row.items"
+              :key="artist.id"
+              :data-artist-index="row.startIndex + column"
+              :artist="artist"
+            />
           </div>
         </template>
       </v-virtual-scroll>
@@ -104,6 +123,7 @@
     <alphabet-index-bar
       v-if="!libraryStore.loading && filteredArtists.length > 0"
       :available="availableLetters"
+      :active="activeLetter"
       @select="jumpToLetter"
     />
   </v-container>
@@ -114,7 +134,8 @@ import { ref } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useElementWidth } from '@/composables/useElementWidth'
-import { firstIndexByLetter } from '@/services/alphabetIndex'
+import { firstIndexByLetter, indexLetterFor } from '@/services/alphabetIndex'
+import { observeActiveLetter, type ActiveLetterHandle } from '@/services/activeLetter'
 import { shuffled } from '@/services/shuffle'
 import { matchesAllTerms } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
@@ -140,6 +161,15 @@ const ARTIST_GAP = 20
 // album-count caption line) — see AlbumsView.vue's identical comment on why
 // this doesn't need to be exact.
 const ARTIST_ROW_HEIGHT_GUESS = 210
+
+/** One v-virtual-scroll item: a row of cards that never spans two letters,
+ * so its divider can sit at the top and the cards below fill the row.
+ * `startIndex` is the row's first card's position in the whole list, which
+ * the template needs for data-artist-index and the divider's own label. */
+interface ArtistRow {
+  items: Artist[]
+  startIndex: number
+}
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -182,7 +212,27 @@ export default {
       playingRandomArtist: false,
       // Same, for the "Random from top 20" button below.
       playingTopArtist: false,
+      // Which letter's section is on screen, for AlphabetIndexBar's "you
+      // are here" highlight — see observeActiveLetter.
+      activeLetter: null as string | null,
+      activeLetterObserver: null as ActiveLetterHandle | null,
     }
+  },
+  mounted() {
+    this.activeLetterObserver = observeActiveLetter({
+      itemSelector: '[data-artist-index]',
+      readIndex: (item) => {
+        const value = item.getAttribute('data-artist-index')
+        return value === null ? null : Number(value)
+      },
+      letterFirstIndex: () => this.letterFirstIndex,
+      onChange: (letter) => {
+        this.activeLetter = letter
+      },
+    })
+  },
+  beforeUnmount() {
+    this.activeLetterObserver?.stop()
   },
   computed: {
     libraryStore() {
@@ -214,20 +264,40 @@ export default {
         Math.floor((this.gridWidth + ARTIST_GAP) / (ARTIST_ITEM_WIDTH + ARTIST_GAP)),
       )
     },
-    artistRows(): Artist[][] {
+    artistRows(): ArtistRow[] {
       if (!this.virtualizeArtists) return []
       const cols = this.columns
-      const rows: Artist[][] = []
-      for (let i = 0; i < this.filteredArtists.length; i += cols) {
-        rows.push(this.filteredArtists.slice(i, i + cols))
+      const letters = this.indexLetters
+      const rows: ArtistRow[] = []
+      let start = 0
+      while (start < this.filteredArtists.length) {
+        const letter = letters[start]
+        let end = start + 1
+        // Fill the row, but never past the end of this letter's run: a row
+        // spanning two letters is what left the line half empty and the
+        // divider stuck in the middle of a row.
+        while (end < this.filteredArtists.length && end - start < cols && letters[end] === letter) {
+          end++
+        }
+        rows.push({ items: this.filteredArtists.slice(start, end), startIndex: start })
+        start = end
       }
       return rows
     },
     letterFirstIndex(): Map<string, number> {
-      return firstIndexByLetter(this.filteredArtists, (artist) => artist.name)
+      // indexLetterFor prefers the server's sort name — see its own comment
+      // on why the display name's first letter can be the wrong section.
+      return firstIndexByLetter(this.filteredArtists, indexLetterFor)
     },
     availableLetters(): Set<string> {
       return new Set(this.letterFirstIndex.keys())
+    },
+    // Each card's own letter, position for position with filteredArtists —
+    // what the divider and its label read (see letterAt/startsLetterSection).
+    // The reverse of letterFirstIndex, which only knows where each run
+    // starts, not which run a given card is in.
+    indexLetters(): string[] {
+      return this.filteredArtists.map(indexLetterFor)
     },
   },
   watch: {
@@ -238,6 +308,12 @@ export default {
         this.debouncedQuery = value ?? ''
       }, 200)
     },
+    // The list arriving, or the letters moving under a new filter, changes
+    // what is on screen without any scroll to drive the highlight — after
+    // the re-render, so the DOM it reads is the new one.
+    filteredArtists() {
+      this.$nextTick(() => this.activeLetterObserver?.update())
+    },
   },
   created() {
     this.libraryStore.fetchArtists()
@@ -246,14 +322,30 @@ export default {
     loadMore() {
       this.visibleCount += PAGE_SIZE
     },
+    letterAt(index: number): string {
+      return this.indexLetters[index] ?? ''
+    },
+    startsLetterSection(index: number): boolean {
+      return index === 0 || this.indexLetters[index] !== this.indexLetters[index - 1]
+    },
     jumpToLetter(letter: string) {
       const index = this.letterFirstIndex.get(letter)
       if (index === undefined) return
+      // Immediate feedback while the jump is still animating; the scroll
+      // listener then takes over.
+      this.activeLetter = letter
       if (this.virtualizeArtists) {
-        const row = Math.floor(index / this.columns)
+        const row = this.artistRows.findIndex(
+          (candidate) =>
+            index >= candidate.startIndex && index < candidate.startIndex + candidate.items.length,
+        )
         const virtualScroll = this.$refs.virtualScroll as
           { scrollToIndex: (i: number) => void } | undefined
-        virtualScroll?.scrollToIndex(row)
+        // The row's top is the letter's divider. 'start' is what lands the
+        // section in the upper half, its divider just below the app bar and
+        // filter and its cards under that; centring the row drops the whole
+        // section into the lower half instead.
+        if (row >= 0) virtualScroll?.scrollToIndex(row)
         return
       }
       // Plain-grid path: see AlbumsView.vue's identical jumpToLetter comment.

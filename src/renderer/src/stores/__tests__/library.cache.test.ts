@@ -15,13 +15,15 @@ const HOUR = 60 * 60 * 1000
 // tests stay about *when* the store keeps and refreshes things. The store
 // itself is exercised against a real IndexedDB in
 // services/library/__tests__/libraryCacheStore.browser.test.ts.
-const cache = vi.hoisted(() => new Map<string, { items: unknown[]; fetchedAt: number }>())
+const cache = vi.hoisted(
+  () => new Map<string, { items: unknown[]; fetchedAt: number; schema?: number }>(),
+)
 
 vi.mock('@/services/library/libraryCacheStore', () => ({
   LEGACY_CACHE_KEY: 'beacon.library-cache',
   readLibraryField: vi.fn(async (key: string) => cache.get(key) ?? null),
-  writeLibraryField: vi.fn((key: string, items: unknown[], fetchedAt = Date.now()) => {
-    cache.set(key, { items, fetchedAt })
+  writeLibraryField: vi.fn((key: string, items: unknown[], fetchedAt = Date.now(), schema = 1) => {
+    cache.set(key, { items, fetchedAt, schema })
   }),
   clearLibraryFields: vi.fn((keys: string[]) => {
     for (const key of keys) cache.delete(key)
@@ -61,9 +63,11 @@ function makeAlbum(id: string): Album {
 /** Writes a cache entry as if it had been fetched `ageMs` ago — the TTL is
  * an hour on a Subsonic server, so this is how a test picks the stale or
  * the fresh branch. No account is logged in under test, so the record key
- * is the bare field name (see fieldKey()). */
-function seedCache(field: string, value: unknown[], ageMs: number): void {
-  cache.set(field, { items: value, fetchedAt: Date.now() - ageMs })
+ * is the bare field name (see fieldKey()). Schema defaults to the current
+ * one (2 for the artists/albums that gained a sort name); pass 1 to stand
+ * in for a record written by an older Beacon. */
+function seedCache(field: string, value: unknown[], ageMs: number, schema = 2): void {
+  cache.set(field, { items: value, fetchedAt: Date.now() - ageMs, schema })
 }
 
 /** The pre-IndexedDB cache, as an upgrading install still has it. */
@@ -109,6 +113,20 @@ describe('library caching', () => {
 
     expect(library.artists.map((a) => a.id)).toEqual(['cached'])
     expect(client.getArtists).not.toHaveBeenCalled()
+  })
+
+  it('refetches artists cached before they carried the sort name', async () => {
+    // Schema 1 is a record written before the A-Z jump bar filed artists by
+    // the server's sort name; it cannot be read as current, however fresh.
+    const library = useLibraryStore()
+    seedCache('artists', [makeArtist('cached')], 5 * 60 * 1000, 1)
+    const getArtists = vi.fn().mockResolvedValue([makeArtist('fresh')])
+    stubClient({ getArtists })
+
+    await library.fetchArtists()
+
+    expect(getArtists).toHaveBeenCalled()
+    expect(library.artists.map((a) => a.id)).toEqual(['fresh'])
   })
 
   it('refreshes a cache that has gone stale', async () => {
@@ -291,31 +309,36 @@ describe('library caching', () => {
     // re-fetching the whole library once — minutes of scanning on a
     // Jellyfin server, which is exactly what the cache is for.
     it('reads a library cached by the previous version', async () => {
+      // The song catalog is the field this is really for — a full scan of
+      // it is the minutes-long part. (Artists are refetched once: the old
+      // cache predates the sort name the A-Z bar files them by.)
       const library = useLibraryStore()
-      seedLegacyBlob('artists', [makeArtist('cached')], 0)
-      const getArtists = vi.fn().mockResolvedValue([])
-      stubClient({ getArtists })
+      seedLegacyBlob('songs', [makeSong('cached')], 0)
+      const search3 = vi.fn().mockResolvedValue({ songs: [], totalRecordCount: null })
+      stubClient({ search3 })
 
-      await library.fetchArtists()
+      await library.fetchAllSongs()
 
-      expect(library.artists.map((a) => a.id)).toEqual(['cached'])
+      expect(library.allSongs.map((s) => s.id)).toEqual(['cached'])
       // Still fresh, so nothing was re-fetched behind it either.
-      expect(getArtists).not.toHaveBeenCalled()
+      expect(search3).not.toHaveBeenCalled()
     })
 
     it('keeps each field as old as it really was', async () => {
       // A field that was already stale has to stay stale, or an upgrade
       // would silently skip the refresh it was due.
       const library = useLibraryStore()
-      seedLegacyBlob('artists', [makeArtist('cached')], 2 * HOUR)
-      const getArtists = vi.fn().mockResolvedValue([makeArtist('fresh')])
-      stubClient({ getArtists })
+      seedLegacyBlob('songs', [makeSong('cached')], 2 * HOUR)
+      const search3 = vi
+        .fn()
+        .mockResolvedValue({ songs: [makeSong('fresh')], totalRecordCount: null })
+      stubClient({ search3 })
 
-      await library.fetchArtists()
+      await library.fetchAllSongs()
       await flushPromises()
 
-      expect(getArtists).toHaveBeenCalled()
-      expect(library.artists.map((a) => a.id)).toEqual(['fresh'])
+      expect(search3).toHaveBeenCalled()
+      expect(library.allSongs.map((s) => s.id)).toEqual(['fresh'])
     })
 
     it('takes the old key with it, so this only ever happens once', async () => {

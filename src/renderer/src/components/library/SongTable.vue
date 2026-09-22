@@ -106,6 +106,7 @@
       <template #default="{ item: song, index }">
         <song-row
           :key="`${song.id}-${index}`"
+          :data-song-index="index"
           :song="song"
           :index="index"
           :columns="resolvedColumns"
@@ -174,6 +175,7 @@
     <alphabet-index-bar
       v-if="showAlphabetBar"
       :available="availableLetters"
+      :active="activeLetter"
       @select="jumpToLetter"
     />
 
@@ -191,7 +193,8 @@
 import type { PropType } from 'vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useLibraryStore } from '@/stores/library'
-import { firstIndexByLetter } from '@/services/alphabetIndex'
+import { firstIndexByLetter, letterForName } from '@/services/alphabetIndex'
+import { observeActiveLetter, type ActiveLetterHandle } from '@/services/activeLetter'
 import SongRow from './SongRow.vue'
 import SongTableHeader from './SongTableHeader.vue'
 import CreatePlaylistDialog from './CreatePlaylistDialog.vue'
@@ -351,6 +354,11 @@ export default {
       dragIndex: null as number | null,
       dragOverIndex: null as number | null,
       dragOverHalf: null as 'before' | 'after' | null,
+
+      // Which letter's section is on screen, for AlphabetIndexBar's "you
+      // are here" highlight — see observeActiveLetter.
+      activeLetter: null as string | null,
+      activeLetterObserver: null as ActiveLetterHandle | null,
     }
   },
   computed: {
@@ -451,7 +459,7 @@ export default {
         .map(([discNumber, rows]) => ({ discNumber, rows }))
     },
     letterFirstIndex(): Map<string, number> {
-      return firstIndexByLetter(this.sortedSongs, (song) => song.title)
+      return firstIndexByLetter(this.sortedSongs, (song) => letterForName(song.title))
     },
     availableLetters(): Set<string> {
       return new Set(this.letterFirstIndex.keys())
@@ -475,10 +483,12 @@ export default {
     songs() {
       this.visibleCount = PAGE_SIZE
       this.clearSelection()
+      this.$nextTick(() => this.activeLetterObserver?.update())
     },
     sortKey() {
       this.visibleCount = PAGE_SIZE
       this.clearSelection()
+      this.$nextTick(() => this.activeLetterObserver?.update())
     },
     sortDirection() {
       this.clearSelection()
@@ -500,9 +510,21 @@ export default {
   },
   mounted() {
     window.addEventListener('keydown', this.onKeydown)
+    this.activeLetterObserver = observeActiveLetter({
+      itemSelector: '[data-song-index]',
+      readIndex: (item) => {
+        const value = item.getAttribute('data-song-index')
+        return value === null ? null : Number(value)
+      },
+      letterFirstIndex: () => this.letterFirstIndex,
+      onChange: (letter) => {
+        this.activeLetter = letter
+      },
+    })
   },
   beforeUnmount() {
     window.removeEventListener('keydown', this.onKeydown)
+    this.activeLetterObserver?.stop()
   },
   methods: {
     // The two keys a running multi-selection answers to: Escape drops it
@@ -537,6 +559,9 @@ export default {
     jumpToLetter(letter: string) {
       const index = this.letterFirstIndex.get(letter)
       if (index === undefined) return
+      // Immediate feedback while the jump is still animating; the scroll
+      // listener then takes over.
+      this.activeLetter = letter
       if (this.virtualizeSongs) {
         const virtualScroll = this.$refs.virtualScroll as
           { scrollToIndex: (i: number) => void } | undefined

@@ -11,8 +11,12 @@
       :key="letter"
       type="button"
       class="alphabet-index-letter"
-      :class="{ 'alphabet-index-letter--disabled': !available.has(letter) }"
+      :class="{
+        'alphabet-index-letter--disabled': !available.has(letter),
+        'alphabet-index-letter--active': letter === active,
+      }"
       :disabled="!available.has(letter)"
+      :aria-current="letter === active ? 'true' : undefined"
       :tabindex="available.has(letter) ? 0 : -1"
       @click="$emit('select', letter)"
     >
@@ -40,6 +44,13 @@ export default {
     available: {
       type: Object as PropType<Set<string>>,
       required: true,
+    },
+    // The letter whose section is currently on screen, for the "you are
+    // here" highlight — null while it isn't known (a scroll never happened,
+    // or the caller is a page that doesn't track it).
+    active: {
+      type: String as PropType<string | null>,
+      default: null,
     },
   },
   emits: ['select'],
@@ -120,6 +131,16 @@ export default {
 .alphabet-index-letter:hover:not(.alphabet-index-letter--disabled),
 .alphabet-index-letter:focus-visible:not(.alphabet-index-letter--disabled) {
   color: rgb(var(--v-theme-primary));
+}
+
+/* The section on screen. A filled pill as well as the amber, so it reads as
+ * a position marker rather than as the hover the letter happens to be under
+ * (hover is amber too, see above). */
+.alphabet-index-letter--active:not(.alphabet-index-letter--disabled) {
+  color: rgb(var(--v-theme-primary));
+  font-weight: 700;
+  background: color-mix(in srgb, rgb(var(--v-theme-primary)) 20%, transparent);
+  border-radius: 9999px;
 }
 
 .alphabet-index-letter--disabled {

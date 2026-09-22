@@ -86,6 +86,8 @@ export interface RawSongDetail extends RawSong {
 export interface RawAlbum {
   id: string
   name: string
+  // OpenSubsonic extension — the sort key the album list is ordered by.
+  sortName?: string
   artist?: string
   artistId?: string
   coverArt?: string
@@ -101,6 +103,8 @@ export interface RawAlbum {
 export interface RawArtist {
   id: string
   name: string
+  // OpenSubsonic extension — the sort key the artist list is ordered by.
+  sortName?: string
   albumCount?: number
   coverArt?: string
   // Navidrome/OpenSubsonic extension — a direct, pre-signed artist photo

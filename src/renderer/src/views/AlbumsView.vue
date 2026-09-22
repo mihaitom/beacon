@@ -72,12 +72,14 @@
         </div>
       </div>
       <div v-else-if="!virtualizeAlbums" class="album-grid">
-        <album-card
-          v-for="(album, index) in visibleAlbums"
-          :key="album.id"
-          :data-album-index="index"
-          :album="album"
-        />
+        <template v-for="(album, index) in visibleAlbums" :key="album.id">
+          <!-- A full-width divider before each letter's first card - see
+           - .letter-divider's own comment for why it forces a line break. -->
+          <div v-if="startsLetterSection(index)" class="letter-divider" aria-hidden="true">
+            <span class="letter-divider__label">{{ letterAt(index) }}</span>
+          </div>
+          <album-card :data-album-index="index" :album="album" />
+        </template>
       </div>
       <!-- Past ALBUM_VIRTUALIZE_THRESHOLD, chunk the (already fully-loaded)
        - catalog into fixed-size rows and hand those to v-virtual-scroll
@@ -104,7 +106,24 @@
       >
         <template #default="{ item: row, index }">
           <div class="album-grid" :style="{ paddingTop: index === 0 ? '0px' : `${albumGap}px` }">
-            <album-card v-for="album in row" :key="album.id" :album="album" />
+            <!-- One row is never allowed to span two letters (see albumRows),
+             - so the divider sits at the top of a row and the cards below it
+             - fill that row completely. data-album-index is the card's own
+             - position in the whole list, which is what the A-Z highlight
+             - reads (see observeActiveLetter). -->
+            <div
+              v-if="startsLetterSection(row.startIndex)"
+              class="letter-divider"
+              aria-hidden="true"
+            >
+              <span class="letter-divider__label">{{ letterAt(row.startIndex) }}</span>
+            </div>
+            <album-card
+              v-for="(album, column) in row.items"
+              :key="album.id"
+              :data-album-index="row.startIndex + column"
+              :album="album"
+            />
           </div>
         </template>
       </v-virtual-scroll>
@@ -130,6 +149,7 @@
     <alphabet-index-bar
       v-if="!libraryStore.loading && filteredAlbums.length > 0"
       :available="availableLetters"
+      :active="activeLetter"
       @select="jumpToLetter"
     />
   </v-container>
@@ -140,7 +160,7 @@ import { ref } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useElementWidth } from '@/composables/useElementWidth'
-import { firstIndexByLetter } from '@/services/alphabetIndex'
+import { firstIndexByLetter, indexLetterFor } from '@/services/alphabetIndex'
 import { matchesAllTerms } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
@@ -149,6 +169,7 @@ import InfiniteScrollTrigger from '@/components/InfiniteScrollTrigger.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
 import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
 import { cardsAcross, observeCardsAcross } from '@/components/library/cardRowFit'
+import { observeActiveLetter, type ActiveLetterHandle } from '@/services/activeLetter'
 import type { Album } from '@/types/library'
 
 const PAGE_SIZE = 60
@@ -178,6 +199,15 @@ const ALBUM_GAP = 20
 // VVirtualScroll's own per-item ResizeObserver, which corrects it after
 // first paint the same way SongTable.vue's static "48" does.
 const ALBUM_ROW_HEIGHT_GUESS = 210
+
+/** One v-virtual-scroll item: a row of cards that never spans two letters,
+ * so its divider can sit at the top and the cards below fill the row.
+ * `startIndex` is the row's first card's position in the whole list, which
+ * the template needs for data-album-index and the divider's own label. */
+interface AlbumRow {
+  items: Album[]
+  startIndex: number
+}
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -219,15 +249,31 @@ export default {
       // to date — 6 until then, which is what a narrow window holds.
       cardsPerRow: 6,
       resizeObserver: null as ResizeObserver | null,
+      // Which letter's section is on screen, for AlphabetIndexBar's "you
+      // are here" highlight — see observeActiveLetter.
+      activeLetter: null as string | null,
+      activeLetterObserver: null as ActiveLetterHandle | null,
     }
   },
   mounted() {
     this.resizeObserver = observeCardsAcross(this.$el as Element, (width) => {
       this.cardsPerRow = cardsAcross(width)
     })
+    this.activeLetterObserver = observeActiveLetter({
+      itemSelector: '[data-album-index]',
+      readIndex: (item) => {
+        const value = item.getAttribute('data-album-index')
+        return value === null ? null : Number(value)
+      },
+      letterFirstIndex: () => this.letterFirstIndex,
+      onChange: (letter) => {
+        this.activeLetter = letter
+      },
+    })
   },
   beforeUnmount() {
     this.resizeObserver?.disconnect()
+    this.activeLetterObserver?.stop()
   },
   computed: {
     libraryStore() {
@@ -262,20 +308,40 @@ export default {
       if (this.gridWidth <= 0) return 1
       return Math.max(1, Math.floor((this.gridWidth + ALBUM_GAP) / (ALBUM_ITEM_WIDTH + ALBUM_GAP)))
     },
-    albumRows(): Album[][] {
+    albumRows(): AlbumRow[] {
       if (!this.virtualizeAlbums) return []
       const cols = this.columns
-      const rows: Album[][] = []
-      for (let i = 0; i < this.filteredAlbums.length; i += cols) {
-        rows.push(this.filteredAlbums.slice(i, i + cols))
+      const letters = this.indexLetters
+      const rows: AlbumRow[] = []
+      let start = 0
+      while (start < this.filteredAlbums.length) {
+        const letter = letters[start]
+        let end = start + 1
+        // Fill the row, but never past the end of this letter's run: a row
+        // spanning two letters is what left the line half empty and the
+        // divider stuck in the middle of a row.
+        while (end < this.filteredAlbums.length && end - start < cols && letters[end] === letter) {
+          end++
+        }
+        rows.push({ items: this.filteredAlbums.slice(start, end), startIndex: start })
+        start = end
       }
       return rows
     },
     letterFirstIndex(): Map<string, number> {
-      return firstIndexByLetter(this.filteredAlbums, (album) => album.name)
+      // indexLetterFor prefers the server's sort name — see its own comment
+      // on why the display name's first letter can be the wrong section.
+      return firstIndexByLetter(this.filteredAlbums, indexLetterFor)
     },
     availableLetters(): Set<string> {
       return new Set(this.letterFirstIndex.keys())
+    },
+    // Each card's own letter, position for position with filteredAlbums —
+    // what the divider and its label read (see letterAt/startsLetterSection).
+    // The reverse of letterFirstIndex, which only knows where each run
+    // starts, not which run a given card is in.
+    indexLetters(): string[] {
+      return this.filteredAlbums.map(indexLetterFor)
     },
   },
   watch: {
@@ -286,6 +352,12 @@ export default {
         this.debouncedQuery = value ?? ''
       }, 200)
     },
+    // The list arriving, or the letters moving under a new filter, changes
+    // what is on screen without any scroll to drive the highlight — after
+    // the re-render, so the DOM it reads is the new one.
+    filteredAlbums() {
+      this.$nextTick(() => this.activeLetterObserver?.update())
+    },
   },
   created() {
     this.libraryStore.fetchAlbums()
@@ -294,14 +366,30 @@ export default {
     loadMore() {
       this.visibleCount += PAGE_SIZE
     },
+    letterAt(index: number): string {
+      return this.indexLetters[index] ?? ''
+    },
+    startsLetterSection(index: number): boolean {
+      return index === 0 || this.indexLetters[index] !== this.indexLetters[index - 1]
+    },
     jumpToLetter(letter: string) {
       const index = this.letterFirstIndex.get(letter)
       if (index === undefined) return
+      // Immediate feedback while the jump is still animating; the scroll
+      // listener then takes over.
+      this.activeLetter = letter
       if (this.virtualizeAlbums) {
-        const row = Math.floor(index / this.columns)
+        const row = this.albumRows.findIndex(
+          (candidate) =>
+            index >= candidate.startIndex && index < candidate.startIndex + candidate.items.length,
+        )
         const virtualScroll = this.$refs.virtualScroll as
           { scrollToIndex: (i: number) => void } | undefined
-        virtualScroll?.scrollToIndex(row)
+        // The row's top is the letter's divider. 'start' is what lands the
+        // section in the upper half, its divider just below the app bar and
+        // filter and its cards under that; centring the row drops the whole
+        // section into the lower half instead.
+        if (row >= 0) virtualScroll?.scrollToIndex(row)
         return
       }
       // Plain-grid path: make sure the target card is actually rendered

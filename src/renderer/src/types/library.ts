@@ -66,6 +66,9 @@ export interface Album {
   starred: boolean
   /** User's own 1–5 star rating, 0 when unrated. */
   rating: number
+  /** The server's sort key for the name — see Artist's own comment; the
+   * album list is ordered by this, not by `name`. */
+  sortName?: string | null
   songs: Song[]
 }
 
@@ -81,6 +84,12 @@ export interface Artist {
   /** User's own 1–5 star rating, 0 when unrated. */
   rating: number
   albums: Album[]
+  /** The server's sort key for the name, where it sends one (Navidrome
+   * does, for both getArtists.view and getArtist.view). Differs from `name`
+   * by punctuation, case, or a stripped leading article ("La Bête Blooms"
+   * sorts as "bête blooms"), and it is what the artist list is ordered by.
+   * Absent on servers and bridges that send none. */
+  sortName?: string | null
 }
 
 export interface Genre {

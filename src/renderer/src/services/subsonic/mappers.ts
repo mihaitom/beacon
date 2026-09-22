@@ -59,6 +59,7 @@ export function mapAlbum(raw: RawAlbum): Album {
     genre: raw.genre ?? null,
     starred: raw.starred != null,
     rating: raw.userRating ?? 0,
+    sortName: raw.sortName ?? null,
     songs: (raw.song ?? []).map(mapSong),
   }
 }
@@ -72,6 +73,7 @@ export function mapArtist(raw: RawArtist): Artist {
     imageUrl: raw.artistImageUrl ?? null,
     starred: raw.starred != null,
     rating: raw.userRating ?? 0,
+    sortName: raw.sortName ?? null,
     albums: (raw.album ?? []).map(mapAlbum),
   }
 }

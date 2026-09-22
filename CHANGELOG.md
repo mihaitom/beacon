@@ -35,12 +35,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Clicking a title in a radio station's played list now looks the song up in your library first and opens the search on that song's artist and title, so the exact track shows up instead of a page of near-misses
 - Now Playing's visualizer bars take their colour from the artist background where Fanart.tv has one, brightened so a dark or black-and-white photo does not swallow them (a grey or near-black one falls back to the app's amber), and carry a soft shadow so they stay legible over a bright photo; without a background they keep the amber
 - Picking a lyrics match, or letting the automatic lookup run, no longer asks the lyrics service a second time for a sheet its search had already handed over: the chosen match comes up without the extra round trip, and trying several matches sends fewer requests to those services
+- The A-Z jump bar now highlights the letter you are currently in as you scroll, and the Albums and Artists grids draw a lettered divider before each section, so a letter boundary no longer disappears in the middle of a row
 
 ### Fixed
 
 - An artist lookup that failed during a brief MusicBrainz outage could be remembered as "not found" for good, leaving that artist without a photo, links or Wikipedia paragraph on their page and out of Discover. Those misses are retried now
 - An artist whose name is only part of another artist's name could be looked up as that other artist - "Bush" resolved to "Kate Bush" - handing back the wrong Wikipedia paragraph, links and artist image, because the MusicBrainz lookup took its first hit unchecked. It now prefers a result whose name is exactly the one asked for
 - Lyrics matches from NetEase and SimpMusic now show whether a sheet is timed once one has been opened; before, that stayed marked unknown even for a sheet already loaded. SimpMusic's went further and read the missing signal as a no, labelling every match as having no timing at all
+- The A-Z jump bar in the Albums and Artists views sent some letters to the wrong place. An artist or album the server files under a sorting name rather than the name shown - "La Bête Blooms" under B, "The Wall" under W - made L land in the B section and T near the top. The bar now follows the server's own filing
 
 ## [1.3.2] - 2026-09-19
 

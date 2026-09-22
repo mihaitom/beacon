@@ -99,6 +99,22 @@ const FIELD_TTL_MS: Partial<Record<LibraryCacheField, number>> = {
   playlists: PLAYLISTS_TTL_MS,
 }
 
+/** Bumped when the *shape* of a field's cached items changes, so data
+ * written by an older Beacon is refetched instead of being read by code
+ * expecting a field it does not carry. Only the listed fields are
+ * invalidated, and only once — a record with no schema was written before
+ * this existed. Bump artists/albums together: both gained the sort name the
+ * A-Z jump bar files by. */
+const CACHE_SCHEMA: Partial<Record<LibraryCacheField, number>> = {
+  artists: 2,
+  albums: 2,
+}
+const BASE_CACHE_SCHEMA = 1
+
+function cacheSchema(field: LibraryCacheField): number {
+  return CACHE_SCHEMA[field] ?? BASE_CACHE_SCHEMA
+}
+
 function cacheTtl(field: LibraryCacheField): number {
   const perField = FIELD_TTL_MS[field]
   if (perField !== undefined) return perField
@@ -120,14 +136,19 @@ async function readCacheField<K extends LibraryCacheField>(
   field: K,
 ): Promise<StoredLibraryField<LibraryCacheTypes[K]> | null> {
   await migrateLegacyCache()
-  return readLibraryField<LibraryCacheTypes[K]>(fieldKey(field))
+  const record = await readLibraryField<LibraryCacheTypes[K]>(fieldKey(field))
+  // Written by an older Beacon, before the items carried the fields this
+  // version reads — see CACHE_SCHEMA. Treated as no cache at all, so the
+  // caller refetches it.
+  if (record && (record.schema ?? BASE_CACHE_SCHEMA) < cacheSchema(field)) return null
+  return record
 }
 
 function saveLibraryCacheField<K extends LibraryCacheField>(
   field: K,
   value: LibraryCacheTypes[K][],
 ): Promise<void> {
-  return writeLibraryField(fieldKey(field), value)
+  return writeLibraryField(fieldKey(field), value, Date.now(), cacheSchema(field))
 }
 
 /** Moves an existing localStorage blob into the store, once per account per

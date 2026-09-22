@@ -303,6 +303,9 @@ def _map_album(item: dict) -> dict:
         "songCount": item.get("leafCount") or 0,
         "duration": int((item.get("duration") or 0) / 1000),
     }
+    # The key get_album_list2 sorts by, so the frontend's A-Z jump bar can
+    # file the album where it actually sits (see indexLetterFor).
+    _set(album, "sortName", item.get("titleSort"))
     if item.get("parentRatingKey"):
         album["artistId"] = str(item["parentRatingKey"])
     if item.get("year") is not None:

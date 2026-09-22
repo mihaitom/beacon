@@ -30,9 +30,11 @@ interface ArtistsVm {
   readonly visibleArtists: Artist[]
   readonly virtualizeArtists: boolean
   readonly columns: number
-  readonly artistRows: Artist[][]
+  readonly artistRows: { items: Artist[]; startIndex: number }[]
   readonly availableLetters: Set<string>
   loadMore(): void
+  letterAt(index: number): string
+  startsLetterSection(index: number): boolean
   jumpToLetter(letter: string): void
   playRandomArtist(): Promise<void>
   playTopArtist(): Promise<void>
@@ -186,10 +188,32 @@ describe('ArtistsView virtualization', () => {
 
     expect(vm.columns).toBe(3)
     expect(rows).toHaveLength(Math.ceil(505 / 3))
-    expect(rows[0]).toHaveLength(3)
-    expect(rows[rows.length - 1]).toHaveLength(505 % 3)
+    expect(rows[0]!.items).toHaveLength(3)
+    expect(rows[rows.length - 1]!.items).toHaveLength(505 % 3)
     // Every artist appears exactly once across the rows.
-    expect(rows.flat()).toHaveLength(505)
+    expect(rows.flatMap((row) => row.items)).toHaveLength(505)
+  })
+
+  it('never lets one row span two letters', async () => {
+    // A row that mixed letters put the divider in the middle of a row and
+    // left the line below it half empty.
+    const { vm } = await mountArtists([
+      ...many(500),
+      artist('b1', 'Bravo'),
+      artist('b2', 'Blue'),
+      artist('c1', 'Charlie'),
+    ])
+    vm.gridWidth = 520 // three columns
+
+    const rows = vm.artistRows
+
+    // The 500 "Artist ..." are all A; the last A row is short, then B and C
+    // each get a row of their own instead of sharing one.
+    expect(rows.at(-3)!.items.map((a) => a.name)).toEqual(['Artist 0498', 'Artist 0499'])
+    expect(rows.at(-2)!.items.map((a) => a.name)).toEqual(['Bravo', 'Blue'])
+    expect(rows.at(-1)!.items.map((a) => a.name)).toEqual(['Charlie'])
+    expect(rows.at(-2)!.startIndex).toBe(500)
+    expect(rows.at(-1)!.startIndex).toBe(502)
   })
 })
 
@@ -219,7 +243,8 @@ describe('ArtistsView jump to letter', () => {
     vm.jumpToLetter('Z')
 
     // Index 600 in a three-column grid is row 200 — passing the item index
-    // straight through would land three times too far down.
+    // straight through would land three times too far down. 'start' (the
+    // default) keeps the section in the upper half; see jumpToLetter.
     expect(scrollToIndex).toHaveBeenCalledWith(200)
   })
 
@@ -231,6 +256,36 @@ describe('ArtistsView jump to letter', () => {
 
     expect(vm.visibleCount).toBe(before)
     expect(vm.availableLetters.has('Q')).toBe(false)
+  })
+
+  it('files an artist under its server sort name, not its display name', async () => {
+    const { vm } = await mountArtists([
+      { ...artist('a1', 'La Bête Blooms'), sortName: 'bête blooms' },
+    ])
+
+    // Navidrome puts this artist in the B section; deriving the letter from
+    // the display name would offer L and jump to the wrong place.
+    expect(vm.availableLetters.has('B')).toBe(true)
+    expect(vm.availableLetters.has('L')).toBe(false)
+  })
+
+  it('marks exactly the first artist of each letter section', async () => {
+    const { vm } = await mountArtists([
+      { ...artist('a1', 'Alpha'), sortName: 'alpha' },
+      { ...artist('a2', 'Amber'), sortName: 'amber' },
+      { ...artist('b1', 'Bravo'), sortName: 'bravo' },
+      { ...artist('c1', 'Charlie'), sortName: 'charlie' },
+      { ...artist('c2', 'Cobra'), sortName: 'cobra' },
+    ])
+
+    expect([0, 1, 2, 3, 4].map((index) => vm.startsLetterSection(index))).toEqual([
+      true,
+      false,
+      true,
+      true,
+      false,
+    ])
+    expect([0, 1, 2, 3, 4].map((index) => vm.letterAt(index))).toEqual(['A', 'A', 'B', 'C', 'C'])
   })
 })
 

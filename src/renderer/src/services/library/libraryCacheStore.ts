@@ -41,6 +41,10 @@ export interface StoredLibraryField<T> {
    * decides on a background refresh lives with the caller, which knows what
    * a sensible age is for the server it is talking to. */
   fetchedAt: number
+  /** Shape version of `items`, stamped by the caller (see the store's
+   * CACHE_SCHEMA). A record written before this existed has none, which the
+   * caller reads as version 1. */
+  schema?: number
 }
 
 let database: Promise<IDBDatabase | null> | null = null
@@ -97,7 +101,7 @@ export async function readLibraryField<T>(key: string): Promise<StoredLibraryFie
   const record = (await run(db, 'readonly', (store) => store.get(key))) as
     (StoredLibraryField<T> & { key: string }) | undefined | null
   if (!record) return null
-  return { items: record.items, fetchedAt: record.fetchedAt }
+  return { items: record.items, fetchedAt: record.fetchedAt, schema: record.schema }
 }
 
 /** Stores one field, resolving once it is actually on disk — the same
@@ -120,13 +124,14 @@ export function writeLibraryField<T>(
   key: string,
   items: T[],
   fetchedAt = Date.now(),
+  schema = 1,
 ): Promise<void> {
   return (async () => {
     const db = await open()
     if (!db) return
     // Structured-cloned as-is, with no JSON round trip: what used to make
     // one field's write cost the size of all four is exactly that step.
-    await run(db, 'readwrite', (store) => store.put({ key, items, fetchedAt }))
+    await run(db, 'readwrite', (store) => store.put({ key, items, fetchedAt, schema }))
   })().catch((error) => {
     // Swallowed so an un-awaited caller cannot raise an unhandled
     // rejection, and so an awaiting one is never blocked by a cache that
