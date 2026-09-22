@@ -427,11 +427,11 @@ export default {
   transform: none;
   backface-visibility: visible;
   -webkit-backface-visibility: visible;
-  /* The corner is capped at 65% of the stage. The lyrics panel wants its
-   * ~38cqw on the right, and near the end of a track the next-up card doubles
-   * the panels' width on the left — without this the two meet in the middle.
-   * Shrinkable, so the labels ellipsise instead of pushing the lyrics out. */
-  max-width: 65cqw;
+  /* No width cap of its own: the lyrics beside it are fixed (see below), so
+   * this column shrinks to whatever is left for it however wide the two
+   * cards want to be - they share that width equally among themselves (see
+   * NowPlayingTrackPanels' corner rule). Shrinkable with min-width: 0 so the
+   * labels ellipsise rather than pushing the lyrics out. */
   min-width: 0;
   flex-shrink: 1;
 }
@@ -439,6 +439,10 @@ export default {
 .now-playing__content--corner .now-playing__lyrics {
   position: static;
   inset: auto;
+  /* Fixed, unlike the wide side-by-side layout above: here the corner panels
+   * absorb the give (they shrink and ellipsise), so the reading panel keeps
+   * its full width instead of losing it to a long track title. */
+  flex: none;
   width: min(38cqw, 560px);
   height: 85cqh;
   transform: none;

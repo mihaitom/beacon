@@ -523,7 +523,10 @@ describe('NowPlayingView layout', () => {
         'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
       logo: null,
     })
-    const { wrapper } = await mountView()
+    // Lyrics open on purpose: without them the corner now spans the whole
+    // stage and a long title would simply fit, so there would be nothing to
+    // ellipsise. The lyrics beside it are what bounds the cards.
+    const { wrapper } = await mountWithSongAndLyrics()
     usePlaybackStore().setQueue(
       [
         makeSong('a', {
@@ -555,7 +558,7 @@ describe('NowPlayingView layout', () => {
     }
   })
 
-  it('caps the corner so the next-up card never reaches the lyrics', async () => {
+  it('keeps the next-up card clear of the lyrics beside it', async () => {
     await page.viewport(1280, 900)
     vi.mocked(getArtistArt).mockResolvedValue({
       banner: null,
@@ -585,15 +588,12 @@ describe('NowPlayingView layout', () => {
 
     expect(wrapper.classes()).toContain('now-playing--artwork-hidden')
     expect(wrapper.findAll('.now-playing__panel')).toHaveLength(3)
-    const stage = rect(wrapper.get('.now-playing__stage').element)
     const primary = rect(wrapper.get('.now-playing__primary').element)
     const lyrics = rect(wrapper.get('.now-playing__lyrics').element)
 
-    // The corner is capped at 65cqw rather than growing with its doubled
-    // content.
-    expect(primary.width).toBeLessThanOrEqual(stage.width * 0.65 + 1)
-    // Which is what leaves the lyrics room for their min(38cqw, 560px)
-    // instead of being squeezed away by the corner.
+    // The lyrics keep their full min(38cqw, 560px) rather than being
+    // squeezed away by the corner, which gives way instead (its own cards
+    // shrink and ellipsise).
     expect(lyrics.width).toBeGreaterThan(400)
     // Side by side, not overlapping.
     expect(primary.right).toBeLessThanOrEqual(lyrics.left + 1)
@@ -635,5 +635,53 @@ describe('NowPlayingView layout', () => {
     expect(getComputedStyle(panels[1]!.element).backdropFilter).toBe('none')
     // The right-hand panel is the next track's.
     expect(wrapper.findAll('.now-playing__title')[1]!.text()).toContain('Second')
+  })
+
+  it('keeps the corner cards at their own width, shrinking the wider one first', async () => {
+    await page.viewport(1280, 900)
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      logo: null,
+    })
+    const { wrapper } = await mountView()
+    const playback = usePlaybackStore()
+    vi.spyOn(useLyricsStore(), 'ensureLoaded').mockResolvedValue()
+    playback.setQueue(
+      [
+        makeSong('a', {
+          title: 'A Very Long Current Song Title That Runs On And On',
+          artist: 'Artist One With A Long Name',
+        }),
+        makeSong('b', { title: 'Short', artist: 'B' }),
+      ],
+      0,
+    )
+    playback.isPlaying = true
+    playback.duration = 100
+    playback.localPosition = 92
+    await new Promise((resolve) => setTimeout(resolve, 120))
+
+    const cardWidth = (index: number): number =>
+      wrapper.findAll('.now-playing__panel')[index]!.element.getBoundingClientRect().width
+
+    // With room to spare the two cards are their natural widths, not an
+    // equal share - the long title's card is the wider one.
+    const currentLoose = cardWidth(0)
+    const nextLoose = cardWidth(2)
+    expect(currentLoose).toBeGreaterThan(nextLoose + 40)
+
+    // Open the lyrics: the row now has to give. It is the wider card that
+    // gives first, so the shorter one keeps the width it had.
+    const lyrics = useLyricsStore()
+    lyrics.synced = true
+    lyrics.lines = LYRIC_LINES
+    useDrawersStore().lyricsPanelOpen = true
+    await wrapper.vm.$nextTick()
+    await new Promise((resolve) => setTimeout(resolve, 120))
+
+    expect(cardWidth(0)).toBeLessThan(currentLoose - 20)
+    expect(Math.abs(cardWidth(2) - nextLoose)).toBeLessThan(20)
   })
 })

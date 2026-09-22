@@ -219,6 +219,11 @@ export default {
  * template), so the marker and the bars read as one. */
 .now-playing__panels--corner .now-playing__panel--chevrons {
   gap: 0;
+  /* A fixed marker between the two cards, never grown or shrunk by them. */
+  flex: none;
+  /* Same soft shadow the track text carries, so the marker stays legible
+   * where it sits directly on the artist background. */
+  filter: drop-shadow(0 1px 5px rgba(0, 0, 0, 0.7));
   padding: 0;
   background: none;
   -webkit-backdrop-filter: none;
@@ -498,16 +503,28 @@ export default {
   display: block;
 }
 
-/* Allowed to shrink so the parent's width cap (and the next-up panel) has
- * something to bite into instead of overflowing the row. */
+/* Allowed to shrink so the next-up panel has something to bite into instead
+ * of overflowing the row. */
 .now-playing__panels--corner:not(.now-playing__panels--compact) {
   min-width: 0;
   max-width: 100%;
 }
 
-.now-playing__panels--corner:not(.now-playing__panels--compact) .now-playing__panel,
+/* A card is as wide as its own text wants, not a forced equal share: while
+ * the row has room the two cards keep their natural, possibly different
+ * widths. Only when it runs out do they give, and it is the wider card that
+ * gives first - a flex-basis of 0 grows both into the free space equally,
+ * but max-content caps that growth at what each card actually needs, so the
+ * narrower one stops growing (and later stops shrinking) at its own width
+ * while the wider one takes the rest. min-width: 0 lets a card and its
+ * labels shrink below their content and ellipsise. */
+.now-playing__panels--corner:not(.now-playing__panels--compact) .now-playing__panel {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: max-content;
+}
+
 .now-playing__panels--corner:not(.now-playing__panels--compact) .now-playing__info {
   min-width: 0;
-  max-width: 100%;
 }
 </style>
