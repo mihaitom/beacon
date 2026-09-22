@@ -186,7 +186,7 @@ async def test_a_transport_error_becomes_a_lastfm_error():
 
 
 def test_tracks_without_a_key_is_a_503(client, no_key):
-    resp = client.get("/lastfm/tracks", params={"op": "charts"})
+    resp = client.get("/lastfm/songs", params={"op": "charts"})
     assert resp.status_code == 503
 
 
@@ -194,11 +194,11 @@ def test_charts_without_a_country_asks_for_the_global_chart(client):
     """The frontend sends one op for both; an empty country is what
     distinguishes the global chart from a country's."""
     with _patch_get({"tracks": {"track": []}}) as get:
-        client.get("/lastfm/tracks", params={"op": "charts"})
+        client.get("/lastfm/songs", params={"op": "charts"})
     assert get.await_args.kwargs["params"]["method"] == "chart.getTopTracks"
 
     with _patch_get({"tracks": {"track": []}}) as get:
-        client.get("/lastfm/tracks", params={"op": "charts", "country": "spain"})
+        client.get("/lastfm/songs", params={"op": "charts", "country": "spain"})
     assert get.await_args.kwargs["params"]["method"] == "geo.getTopTracks"
 
 
@@ -211,32 +211,32 @@ def test_charts_without_a_country_asks_for_the_global_chart(client):
     ],
 )
 def test_ops_that_need_an_argument_reject_an_empty_one(client, params):
-    assert client.get("/lastfm/tracks", params=params).status_code == 422
+    assert client.get("/lastfm/songs", params=params).status_code == 422
 
 
 def test_an_unknown_period_is_rejected_before_reaching_lastfm(client):
     resp = client.get(
-        "/lastfm/tracks", params={"op": "mytop", "username": "a", "period": "last-tuesday"}
+        "/lastfm/songs", params={"op": "mytop", "username": "a", "period": "last-tuesday"}
     )
     assert resp.status_code == 422
 
 
 def test_an_unknown_user_becomes_a_404(client):
     with _patch_get({"error": 6, "message": "User not found"}):
-        resp = client.get("/lastfm/tracks", params={"op": "mytop", "username": "nobody"})
+        resp = client.get("/lastfm/songs", params={"op": "mytop", "username": "nobody"})
     assert resp.status_code == 404
 
 
 def test_an_upstream_failure_becomes_a_502(client):
     with _patch_get({"error": 8, "message": "Operation failed"}):
-        resp = client.get("/lastfm/tracks", params={"op": "charts"})
+        resp = client.get("/lastfm/songs", params={"op": "charts"})
     assert resp.status_code == 502
 
 
 def test_a_successful_query_returns_the_track_list(client):
     payload = {"tracks": {"track": [{"name": "Believe", "artist": {"name": "Cher"}}]}}
     with _patch_get(payload):
-        resp = client.get("/lastfm/tracks", params={"op": "genre", "tag": "pop"})
+        resp = client.get("/lastfm/songs", params={"op": "genre", "tag": "pop"})
 
     assert resp.status_code == 200
     assert resp.json() == {"tracks": [{"title": "Believe", "artist": "Cher", "mbid": ""}]}

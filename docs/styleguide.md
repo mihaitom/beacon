@@ -54,6 +54,12 @@ notices, check it against those lists - or sidestep the question by naming
 the thing for what it holds (`.privacy-builds`) rather than for what kind of
 notice it is.
 
+Request paths are read by the same lists. A `/tracks` segment is treated as a
+tracker endpoint and had the playlist builder's calls blocked before they
+reached connect, so those routes are `/lastfm/songs` and
+`/listenbrainz/songs`. A path is named against those lists the way a class
+name is.
+
 ## Palette
 
 The Vuetify theme (`main.ts`, theme name `beacon`) is dark only. There is no

@@ -40,6 +40,6 @@ export async function getLastfmTracks(query: LastfmQuery): Promise<LastfmTrack[]
   if (query.artist) params.set('artist', query.artist)
   if (query.username) params.set('username', query.username)
   if (query.period) params.set('period', query.period)
-  const data = await fetchConnect<{ tracks: LastfmTrack[] }>(`/lastfm/tracks?${params.toString()}`)
+  const data = await fetchConnect<{ tracks: LastfmTrack[] }>(`/lastfm/songs?${params.toString()}`)
   return data.tracks
 }

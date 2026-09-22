@@ -509,7 +509,7 @@ async def test_a_transport_error_becomes_a_listenbrainz_error():
 def test_charts_reads_the_sitewide_stats(client):
     payload = {"payload": {"recordings": [{"track_name": "T", "artist_name": "A"}]}}
     with _patch_request(200, payload) as request:
-        resp = client.get("/listenbrainz/tracks", params={"op": "charts", "period": "year"})
+        resp = client.get("/listenbrainz/songs", params={"op": "charts", "period": "year"})
 
     assert resp.status_code == 200
     assert resp.json()["tracks"][0]["title"] == "T"
@@ -518,28 +518,28 @@ def test_charts_reads_the_sitewide_stats(client):
 
 @pytest.mark.parametrize("params", [{"op": "artist"}, {"op": "mytop"}, {"op": "recommended"}])
 def test_ops_that_need_an_argument_reject_an_empty_one(client, params):
-    assert client.get("/listenbrainz/tracks", params=params).status_code == 422
+    assert client.get("/listenbrainz/songs", params=params).status_code == 422
 
 
 def test_an_unknown_period_is_rejected_before_reaching_listenbrainz(client):
-    resp = client.get("/listenbrainz/tracks", params={"op": "charts", "period": "last-tuesday"})
+    resp = client.get("/listenbrainz/songs", params={"op": "charts", "period": "last-tuesday"})
     assert resp.status_code == 422
 
 
 def test_an_unknown_user_becomes_a_404(client):
     with _patch_request(404):
-        resp = client.get("/listenbrainz/tracks", params={"op": "mytop", "username": "nobody"})
+        resp = client.get("/listenbrainz/songs", params={"op": "mytop", "username": "nobody"})
     assert resp.status_code == 404
 
 
 def test_an_upstream_failure_becomes_a_502(client):
     with _patch_request(500):
-        resp = client.get("/listenbrainz/tracks", params={"op": "charts"})
+        resp = client.get("/listenbrainz/songs", params={"op": "charts"})
     assert resp.status_code == 502
 
 
 def test_genre_without_a_tag_is_a_422(client):
-    assert client.get("/listenbrainz/tracks", params={"op": "genre"}).status_code == 422
+    assert client.get("/listenbrainz/songs", params={"op": "genre"}).status_code == 422
 
 
 def test_genre_returns_the_resolved_tag_recordings(client):
@@ -550,7 +550,7 @@ def test_genre_returns_the_resolved_tag_recordings(client):
         return _response(200, tags if "lb-radio/tags" in path else metadata)
 
     with patch.object(listenbrainz._client, "request", AsyncMock(side_effect=fake_request)):
-        resp = client.get("/listenbrainz/tracks", params={"op": "genre", "tag": "rock"})
+        resp = client.get("/listenbrainz/songs", params={"op": "genre", "tag": "rock"})
 
     assert resp.status_code == 200
     assert resp.json()["tracks"][0]["title"] == "Song"
@@ -565,7 +565,7 @@ def test_recommended_returns_resolved_tracks(client):
 
     with patch.object(listenbrainz._client, "request", AsyncMock(side_effect=fake_request)):
         resp = client.get(
-            "/listenbrainz/tracks", params={"op": "recommended", "username": "someone"}
+            "/listenbrainz/songs", params={"op": "recommended", "username": "someone"}
         )
 
     assert resp.status_code == 200

@@ -50,7 +50,7 @@ export async function getListenbrainzTracks(
   if (query.username) params.set('username', query.username)
   if (query.period) params.set('period', query.period)
   const data = await fetchConnect<{ tracks: ListenbrainzTrack[] }>(
-    `/listenbrainz/tracks?${params.toString()}`,
+    `/listenbrainz/songs?${params.toString()}`,
   )
   return data.tracks
 }

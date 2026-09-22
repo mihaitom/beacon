@@ -1,4 +1,4 @@
-"""routes/lastfm.py — GET /lastfm/tracks
+"""routes/lastfm.py — GET /lastfm/songs
 
 Machine-to-machine (CONNECT_TOKEN), not session-scoped: like
 routes/recommendations.py, nothing here touches session.media. The answer
@@ -28,7 +28,11 @@ router = APIRouter(prefix="/lastfm", dependencies=[Depends(require_token)])
 Period = Literal["overall", "7day", "1month", "3month", "6month", "12month"]
 
 
-@router.get("/tracks")
+# The path says "songs" while everything else here says "tracks": ad-blocker
+# filter lists flag a /tracks segment as a tracker endpoint, which had the
+# web build's requests blocked before they reached connect. The payload is a
+# track list either way.
+@router.get("/songs")
 async def tracks(
     op: Literal["charts", "genre", "artist", "mytop"],
     limit: int = Query(default=50, ge=1, le=500),

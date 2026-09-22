@@ -40,7 +40,7 @@ existing dialog. The expensive half is already written.
 ## A. The playlist builder
 
 Built: `connect/core/listenbrainz.py` (queries and the batched metadata
-resolve), `connect/routes/listenbrainz.py` (`GET /listenbrainz/tracks`),
+resolve), `connect/routes/listenbrainz.py` (`GET /listenbrainz/songs`),
 `src/renderer/src/services/connect/listenbrainz.ts`, and a source switch in
 the existing `LastfmPlaylistDialog.vue`, reached by its own button on the
 Playlists page. The matcher, the result step and playlist creation are

@@ -69,7 +69,7 @@ describe('fetchConnect', () => {
     // nothing and made them show a generic "unreachable" instead.
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(404, { detail: 'country param invalid' }))
 
-    const error: unknown = await fetchConnect('/lastfm/tracks').catch((e: unknown) => e)
+    const error: unknown = await fetchConnect('/lastfm/songs').catch((e: unknown) => e)
 
     expect(error).toBeInstanceOf(ConnectApiError)
     expect((error as ConnectApiError).body).toEqual({ detail: 'country param invalid' })

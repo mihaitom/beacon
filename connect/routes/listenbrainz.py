@@ -1,4 +1,4 @@
-"""routes/listenbrainz.py — GET /listenbrainz/tracks
+"""routes/listenbrainz.py — GET /listenbrainz/songs
 
 Machine-to-machine (CONNECT_TOKEN), not session-scoped: like
 routes/lastfm.py and routes/recommendations.py, nothing here touches
@@ -30,7 +30,9 @@ router = APIRouter(prefix="/listenbrainz", dependencies=[Depends(require_token)]
 Period = Literal["week", "month", "quarter", "half_yearly", "year", "all_time"]
 
 
-@router.get("/tracks")
+# "songs" rather than "tracks" in the path for the reason routes/lastfm.py
+# gives: ad-blocker filter lists block a /tracks segment.
+@router.get("/songs")
 async def tracks(
     op: Literal["charts", "genre", "artist", "mytop", "recommended"],
     limit: int = Query(default=50, ge=1, le=500),
