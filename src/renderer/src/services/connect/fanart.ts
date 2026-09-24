@@ -3,7 +3,7 @@ import { useAuthStore } from '@/stores/auth'
 
 /** The artist images Fanart.tv has, already picked down to one of each kind
  * by the backend (connect/core/fanart.py) — see that module for how the
- * most-liked one is chosen and why a lookup failure comes back as null. */
+ * candidates are chosen and why a lookup failure comes back as null. */
 export interface ArtistArt {
   /** A wide banner (roughly 1000×185) for the artist hero. */
   banner: string | null

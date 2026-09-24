@@ -1,5 +1,7 @@
 """Tests for core/fanart.py — artist banners/backgrounds from Fanart.tv."""
 
+import asyncio
+import json
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -13,9 +15,13 @@ def _clear_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(api_keys, "_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(fanart, "_CACHE_PATH", str(tmp_path / "fanart_cache.json"))
     monkeypatch.setattr(fanart, "_IMAGE_DIR", str(tmp_path / "fanart_images"))
+    monkeypatch.setattr(fanart, "_PREFETCH_GAP", 0)
     api_keys._cache.clear()
     fanart._cache.clear()
     yield
+    for task in fanart._prefetching.values():
+        task.cancel()
+    fanart._prefetching.clear()
     api_keys._cache.clear()
     fanart._cache.clear()
 
@@ -94,10 +100,8 @@ async def test_returns_one_image_of_each_kind(key):
     with _with_mbid(), _with_get(_response(200, payload)):
         art = await fanart.get_artist_art("Cher")
 
-    # The banner is one of the two candidates (picked at random - see
-    # test_pick_keeps_the_five_most_liked for the ordering); the other two
-    # kinds have a single entry each.
-    assert art["banner"] in {"banner-high", "banner-low"}
+    # Nothing on disk yet, so the most liked one.
+    assert art["banner"] == "banner-high"
     assert art["background"] == "bg"
     assert art["logo"] == "logo"
 
@@ -171,24 +175,107 @@ async def test_the_metadata_cache_survives_a_restart(key):
     get.assert_not_awaited()
 
 
-def test_pick_keeps_the_five_most_liked():
-    payload = {"artistbackground": [{"url": f"bg{i}", "likes": str(i)} for i in range(8)]}
-    picked = fanart._pick(payload)
+def _backgrounds(likes_by_id: dict[int, int]) -> dict:
+    return {
+        "artistbackground": [
+            {"id": str(i), "url": f"bg{i}", "likes": str(likes)} for i, likes in likes_by_id.items()
+        ]
+    }
 
-    assert picked["background"] == ["bg7", "bg6", "bg5", "bg4", "bg3"]
+
+def test_likes_are_compared_as_numbers():
+    """Fanart.tv sends likes as strings; as strings, "9" would outrank "15"."""
+    picked = fanart._pick(_backgrounds({1: 9, 2: 15, 3: 12}))
+
+    assert picked["background"] == ["bg2", "bg3", "bg1"]
 
 
-async def test_shows_one_of_the_five_most_liked(key):
-    payload = {"artistbackground": [{"url": f"bg{i}", "likes": str(i)} for i in range(8)]}
-    with _with_mbid(), _with_get(_response(200, payload)):
+def test_pick_keeps_the_seven_most_liked_and_the_three_newest():
+    # Old images with likes (ids 1-9), newer ones without (ids 10-14).
+    likes = {i: 20 - i for i in range(1, 10)} | {i: 0 for i in range(10, 15)}
+    picked = fanart._pick(_backgrounds(likes))
+
+    liked = [f"bg{i}" for i in range(1, 8)]
+    newest = ["bg14", "bg13", "bg12"]
+    assert picked["background"] == liked + newest
+
+
+def test_pick_keeps_everything_when_there_are_ten_or_fewer():
+    picked = fanart._pick(_backgrounds({i: 0 for i in range(1, 11)}))
+
+    assert len(picked["background"]) == 10
+
+
+async def test_shows_the_most_liked_when_nothing_is_on_disk(key):
+    with _with_mbid(), _with_get(_response(200, _backgrounds({1: 2, 2: 5, 3: 1}))):
         art = await fanart.get_artist_art("Cher")
 
-    # A random one of the top five, never the sixth-best and below.
-    assert art["background"] in {"bg7", "bg6", "bg5", "bg4", "bg3"}
-    # The whole top five comes back too, so a client can offer another one
-    # without asking Fanart.tv again; the shown one is part of it.
-    assert art["backgrounds"] == ["bg7", "bg6", "bg5", "bg4", "bg3"]
-    assert art["background"] in art["backgrounds"]
+    assert art["background"] == "bg2"
+    assert art["backgrounds"] == ["bg2", "bg1", "bg3"]
+
+
+async def test_prefers_an_image_already_on_disk(key):
+    """A returning artist is shown straight from disk rather than waiting on
+    a download of the best one."""
+    fanart.store_image("bg3", b"jpeg")
+    with _with_mbid(), _with_get(_response(200, _backgrounds({1: 2, 2: 5, 3: 1}))):
+        art = await fanart.get_artist_art("Cher")
+
+    assert art["background"] == "bg3"
+
+
+async def test_downloads_the_other_backgrounds_in_the_background(key):
+    fetch = AsyncMock(return_value=(b"jpeg", "image/jpeg"))
+    with (
+        _with_mbid(),
+        _with_get(_response(200, _backgrounds({1: 3, 2: 2, 3: 1}))),
+        patch.object(fanart, "fetch_image", fetch),
+    ):
+        art = await fanart.get_artist_art("Cher")
+        await asyncio.gather(*fanart._prefetching.values())
+
+    # The shown one is left to the image route, which the page asks for
+    # anyway - fetching it here too would download it twice.
+    assert art["background"] == "bg1"
+    assert [call.args[0] for call in fetch.await_args_list] == ["bg2", "bg3"]
+    assert fanart.is_image_cached("bg2") and fanart.is_image_cached("bg3")
+
+
+async def test_a_second_visit_does_not_start_a_second_download_run(key):
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_fetch(url):
+        started.set()
+        await release.wait()
+        return b"jpeg", "image/jpeg"
+
+    fetch = AsyncMock(side_effect=slow_fetch)
+    with (
+        _with_mbid(),
+        _with_get(_response(200, _backgrounds({1: 2, 2: 1}))),
+        patch.object(fanart, "fetch_image", fetch),
+    ):
+        await fanart.get_artist_art("Cher")
+        await asyncio.wait_for(started.wait(), timeout=1)
+        await fanart.get_artist_art("Cher")
+        release.set()
+        await asyncio.gather(*fanart._prefetching.values())
+
+    assert fetch.await_count == 1
+
+
+async def test_metadata_cached_by_an_older_version_is_fetched_again(key):
+    """The old top-five lists were picked with a string sort; they must not
+    linger for the rest of the month."""
+    with open(fanart._CACHE_PATH, "w") as f:
+        json.dump({"abc": {"expires": 2**40, "art": {"background": ["stale"]}}}, f)
+
+    with _with_mbid(), _with_get(_response(200, _backgrounds({1: 1}))) as get:
+        art = await fanart.get_artist_art("Cher")
+
+    get.assert_awaited_once()
+    assert art["background"] == "bg1"
 
 
 # ── image bytes ──────────────────────────────────────────────────────────────

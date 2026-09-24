@@ -5,8 +5,8 @@ by name (core/recommendations.py's resolve_mbid()), so a lookup is that
 search plus one request. A collaboration credit ("Cardi B & Bruno Mars") has
 no MusicBrainz artist of its own, so it falls back to its first performer -
 who is who the track gets dressed with. Its images fill the gap the Deezer
-artist photo leaves: a wide banner and a background, each carrying a `likes`
-count used to pick the best one.
+artist photo leaves: a wide banner and a background, up to ten candidates
+of each (see _top_urls() for which).
 
 Two keys, as Fanart.tv's terms require of a publicly available program: a
 project ("client") key that identifies Beacon, set once for the project (see
@@ -21,13 +21,16 @@ so an in-memory cache lost on every restart means re-asking it (and
 MusicBrainz) for the same artists again. The metadata (which images an
 artist has, keyed by MBID) is a small JSON file; the image bytes are files
 under fanart_images/. Both are kept for _TTL and pruned as they are
-rewritten, so neither grows without bound.
+rewritten, so neither grows without bound. Only the shown image is fetched
+before the page gets its answer; the other backgrounds follow slowly in the
+background (_prefetch_backgrounds()), for the cycle button.
 
 A failure here is never surfaced to the caller. This only ever enriches an
 artist page that works without it, so "no art" and "Fanart.tv is down" both
 come back as None rather than an error nobody could act on.
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -70,11 +73,22 @@ _IMAGE_DIR = os.path.join(_DATA_DIR, "fanart_images")
 # artist's images can change, just not on any timescale worth re-asking for.
 _TTL = 30 * 86400.0
 
-# How many of an artist's images to keep per kind. Fanart.tv hands them over
-# in one answer anyway, so keeping the five most-liked costs nothing extra
-# and lets _choose() vary which one is shown (an artist with several good
-# backgrounds does not repeat the same one every visit).
-_TOP_N = 5
+# How many of an artist's images to keep per kind, and how they are chosen.
+# Fanart.tv's `likes` are few (most images have under ten) and accumulate
+# with age, so ranking by likes alone would never surface a newer upload.
+# Most slots go to the most liked, the rest to the newest of what is left -
+# a nudge towards fresh images, not a replacement of the community's pick.
+_KEEP_BY_LIKES = 7
+_KEEP_NEWEST = 3
+
+# Bumped whenever _pick() chooses differently, so metadata cached by an
+# older version is re-fetched instead of lingering for the rest of _TTL.
+_CACHE_VERSION = 2
+
+# The background candidates beyond the one shown are downloaded one at a
+# time with this pause between them: they are only needed once someone
+# cycles, and Fanart.tv's CDN does not need a burst of ten 1 MB images.
+_PREFETCH_GAP = 2.0
 
 # The in-memory half, filled from disk on a miss and written through on a
 # fetch: it saves the file read on every artist page open within a session.
@@ -108,17 +122,28 @@ def _save_cache(cache: dict) -> None:
         logger.error(f"[fanart] Could not write the metadata cache: {e}")
 
 
+def _number(value: object) -> int:
+    """Fanart.tv sends `likes` and `id` as strings ("15"); compared as
+    strings, "9" outranks "15"."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _top_urls(entries: object) -> list[str]:
-    """The most-liked images in one Fanart.tv array, best first. Their own
-    ordering is not by likes, and an entry without a url is nothing to show.
-    Kept as a list rather than the single best one: _choose() picks from it,
-    so an artist with several good images does not show the same one every
-    time (see _TOP_N)."""
+    """The images worth keeping from one Fanart.tv array, best first: the
+    most liked, then the newest of the rest (see _KEEP_BY_LIKES). Fanart.tv's
+    own ordering is neither, and an entry without a url is nothing to show.
+    `id` grows with every upload, so it stands in for the upload date the
+    API does not send."""
     if not isinstance(entries, list):
         return []
     usable = [e for e in entries if isinstance(e, dict) and e.get("url")]
-    usable.sort(key=lambda e: e.get("likes") or 0, reverse=True)
-    return [e["url"] for e in usable[:_TOP_N]]
+    usable.sort(key=lambda e: (_number(e.get("likes")), _number(e.get("id"))), reverse=True)
+    liked = usable[:_KEEP_BY_LIKES]
+    rest = sorted(usable[_KEEP_BY_LIKES:], key=lambda e: _number(e.get("id")), reverse=True)
+    return [e["url"] for e in liked + rest[:_KEEP_NEWEST]]
 
 
 def _pick(data: dict) -> dict | None:
@@ -135,21 +160,64 @@ def _pick(data: dict) -> dict | None:
     return {"banner": banner, "background": background, "logo": logo}
 
 
+def _first(urls: list[str]) -> str | None:
+    """The image to show: a random one of those already on disk, so a
+    returning artist varies without waiting on a download, else the best
+    one - the only download the page then waits for."""
+    if not urls:
+        return None
+    cached = [url for url in urls if is_image_cached(url)]
+    return random.choice(cached) if cached else urls[0]
+
+
 def _choose(art: dict | None) -> dict | None:
-    """One image of each kind, picked at random from the cached candidates -
-    what actually gets shown - plus the full background candidate list, so a
-    client can offer another one without asking Fanart.tv again. Kept out of
-    the cache on purpose: caching the choice would freeze one image for the
-    whole _TTL, which is the opposite of what the top-five list is for."""
+    """One image of each kind - what actually gets shown - plus the full
+    background candidate list, so a client can offer another one without
+    asking Fanart.tv again. Kept out of the cache on purpose: caching the
+    choice would freeze one image for the whole _TTL."""
     if not art:
         return None
     backgrounds = art.get("background") or []
     return {
-        "banner": random.choice(art["banner"]) if art.get("banner") else None,
-        "background": random.choice(backgrounds) if backgrounds else None,
+        "banner": _first(art.get("banner") or []),
+        "background": _first(backgrounds),
         "backgrounds": list(backgrounds),
-        "logo": random.choice(art["logo"]) if art.get("logo") else None,
+        "logo": _first(art.get("logo") or []),
     }
+
+
+# The background downloads under way, by artist: opening the same artist
+# again mid-way does not start a second run, and holding the task here keeps
+# it from being garbage-collected before it finishes.
+_prefetching: dict[str, asyncio.Task] = {}
+
+
+async def _prefetch_backgrounds(mbid: str, urls: list[str]) -> None:
+    """Downloads the background candidates not on disk yet, so the cycle
+    button finds them there. Best-effort: a failed one is simply fetched on
+    demand later."""
+    try:
+        for url in urls:
+            if is_image_cached(url):
+                continue
+            fetched = await fetch_image(url)
+            if fetched:
+                store_image(url, fetched[0])
+            await asyncio.sleep(_PREFETCH_GAP)
+    finally:
+        _prefetching.pop(mbid, None)
+
+
+def _answer(mbid: str, art: dict | None) -> dict | None:
+    """_choose(), plus the background download of the candidates it did not
+    pick. The shown one is left to the image route, which the page requests
+    right away - fetching it here too would download it twice."""
+    chosen = _choose(art)
+    if chosen and mbid not in _prefetching:
+        rest = [url for url in chosen["backgrounds"] if url != chosen["background"]]
+        if rest:
+            _prefetching[mbid] = asyncio.create_task(_prefetch_backgrounds(mbid, rest))
+    return chosen
 
 
 async def get_artist_art(name: str) -> dict | None:
@@ -179,14 +247,18 @@ async def get_artist_art(name: str) -> dict | None:
     now = time.time()
     cached = _cache.get(mbid)
     if cached and now < cached[0]:
-        return _choose(cached[1])
+        return _answer(mbid, cached[1])
 
     cache = _load_cache()
     entry = cache.get(mbid)
-    if isinstance(entry, dict) and now < entry.get("expires", 0):
+    if (
+        isinstance(entry, dict)
+        and entry.get("version") == _CACHE_VERSION
+        and now < entry.get("expires", 0)
+    ):
         art = entry.get("art")
         _cache[mbid] = (entry["expires"], art)
-        return _choose(art)
+        return _answer(mbid, art)
 
     personal = api_keys.get("fanart")
     try:
@@ -204,13 +276,13 @@ async def get_artist_art(name: str) -> dict | None:
             result = _pick(r.json())
     except (httpx.HTTPError, ValueError) as e:
         logger.warning(f"[fanart] Lookup failed for {name!r} ({mbid}): {e}")
-        return _choose(cached[1]) if cached else None
+        return _answer(mbid, cached[1]) if cached else None
 
     expires = now + _TTL
     _cache[mbid] = (expires, result)
-    cache[mbid] = {"expires": expires, "art": result}
+    cache[mbid] = {"expires": expires, "version": _CACHE_VERSION, "art": result}
     _save_cache(cache)
-    return _choose(result)
+    return _answer(mbid, result)
 
 
 # ── image bytes ──────────────────────────────────────────────────────────────
@@ -247,6 +319,14 @@ def content_type_for(url: str) -> str:
     if path.endswith(".webp"):
         return "image/webp"
     return "image/jpeg"
+
+
+def is_image_cached(url: str) -> bool:
+    """Whether `url`'s bytes are on disk and still within _TTL."""
+    try:
+        return time.time() - os.path.getmtime(_image_path(url)) <= _TTL
+    except OSError:
+        return False
 
 
 def get_cached_image(url: str) -> bytes | None:

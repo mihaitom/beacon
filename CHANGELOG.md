@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Artist backgrounds from Fanart.tv now draw on up to ten images per artist, mostly the best liked plus a few of the newest uploads; the first one appears as quickly as before and the rest load quietly in the background, so switching to another one is instant
+
 ### Fixed
+
+- The Fanart.tv images ranked as most liked were the wrong ones for artists with ten or more likes on an image, so their best backgrounds were never shown
 
 - Radio played through Beacon now reconnects on its own when the connection silently dies, for example after a network or VPN change, instead of going quiet and showing the Reconnect button; it keeps trying for up to ten minutes and picks up right away when the network comes back
 
