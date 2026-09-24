@@ -14,8 +14,8 @@ vi.mock('@/services/connect/fanart', () => ({ getArtistArt: vi.fn() }))
 // jsdom never fires an image's load event.
 vi.mock('@/services/preloadImage', () => ({ preloadImage: vi.fn().mockResolvedValue(undefined) }))
 
-function art(background: string): ArtistArt {
-  return { banner: null, background, backgrounds: [background], logo: null }
+function art(background: string, banner: string | null = null): ArtistArt {
+  return { banner, background, backgrounds: [background], logo: null }
 }
 
 const vuetify = createVuetify({ components, directives })
@@ -125,13 +125,28 @@ describe('HeroBand', () => {
   describe('artist photo', () => {
     function active(wrapper: Awaited<ReturnType<typeof mountBand>>) {
       const layer = wrapper.find('.hero-backdrop--active')
-      return {
-        image: layer.attributes('style') ?? '',
-        photo: layer.classes().includes('hero-backdrop--photo'),
-      }
+      const kind = layer.classes().includes('hero-backdrop--banner')
+        ? 'banner'
+        : layer.classes().includes('hero-backdrop--photo')
+          ? 'photo'
+          : 'cover'
+      return { image: layer.attributes('style') ?? '', kind }
     }
 
-    it("shows the artist's Fanart.tv photo sharp instead of the blurred cover", async () => {
+    it("prefers the artist's banner, which is already the band's shape", async () => {
+      vi.mocked(getArtistArt).mockResolvedValue(
+        art('https://fanart/tide.jpg', 'https://fanart/tide-banner.jpg'),
+      )
+      const wrapper = await mountBand({ imageUrl: 'https://art/one.jpg', artistName: 'The Tide' })
+      await flushPromises()
+
+      expect(active(wrapper)).toEqual({
+        image: expect.stringContaining('tide-banner.jpg'),
+        kind: 'banner',
+      })
+    })
+
+    it("shows the artist's background photo when there is no banner", async () => {
       vi.mocked(getArtistArt).mockResolvedValue(art('https://fanart/tide.jpg'))
       const wrapper = await mountBand({ imageUrl: 'https://art/one.jpg', artistName: 'The Tide' })
       await flushPromises()
@@ -139,7 +154,7 @@ describe('HeroBand', () => {
       expect(getArtistArt).toHaveBeenCalledWith('The Tide')
       expect(active(wrapper)).toEqual({
         image: expect.stringContaining('tide.jpg'),
-        photo: true,
+        kind: 'photo',
       })
     })
 
@@ -158,7 +173,7 @@ describe('HeroBand', () => {
       const wrapper = await mountBand({ imageUrl: 'https://art/one.jpg', artistName: 'Nobody' })
       await flushPromises()
 
-      expect(active(wrapper)).toEqual({ image: expect.stringContaining('one.jpg'), photo: false })
+      expect(active(wrapper)).toEqual({ image: expect.stringContaining('one.jpg'), kind: 'cover' })
     })
 
     it('falls back to the cover when the lookup fails', async () => {
@@ -191,7 +206,7 @@ describe('HeroBand', () => {
       answerFirst(art('https://fanart/slow.jpg'))
       await flushPromises()
 
-      expect(active(wrapper)).toEqual({ image: expect.stringContaining('two.jpg'), photo: false })
+      expect(active(wrapper)).toEqual({ image: expect.stringContaining('two.jpg'), kind: 'cover' })
     })
   })
 

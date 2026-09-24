@@ -525,6 +525,13 @@ body {
   /* How tall a dialog full of content is allowed to get. See .beacon-dialog
    * below for what this is and why it isn't Vuetify's own ~90%. */
   --beacon-dialog-max-height: 70vh;
+  /* The fades over a Fanart.tv banner's and background photo's left end,
+   * as images of their own 1000x185 and 16:9 shapes: sized and placed like
+   * the picture itself (DetailHeader.vue, HeroBand.vue), each lands on the
+   * picture's left end wherever the card's width puts it, which a plain
+   * gradient sized to the layer cannot. */
+  --beacon-banner-fade: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1000' height='185'%3E%3ClinearGradient id='g'%3E%3Cstop offset='0' stop-opacity='0'/%3E%3Cstop offset='.3'/%3E%3C/linearGradient%3E%3Crect width='1000' height='185' fill='url(%23g)'/%3E%3C/svg%3E");
+  --beacon-photo-fade: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1920' height='1080'%3E%3ClinearGradient id='g'%3E%3Cstop offset='0' stop-opacity='0'/%3E%3Cstop offset='0.058' stop-opacity='0.06'/%3E%3Cstop offset='0.116' stop-opacity='0.2'/%3E%3Cstop offset='0.182' stop-opacity='0.42'/%3E%3Cstop offset='0.255' stop-opacity='0.68'/%3E%3Cstop offset='0.327' stop-opacity='0.88'/%3E%3Cstop offset='0.4' stop-opacity='1'/%3E%3C/linearGradient%3E%3Crect width='1920' height='1080' fill='url(%23g)'/%3E%3C/svg%3E");
 }
 
 /* ── Dialogs that hold content ────────────────────────────────────────────

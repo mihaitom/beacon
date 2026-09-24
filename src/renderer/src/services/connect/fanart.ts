@@ -81,14 +81,17 @@ export function forgetShownArt(): void {
   shown.clear()
 }
 
-/** Fanart.tv backgrounds connect has already downloaded - for every artist,
- * or only for `artists` (a genre's) - routed through connect like every
- * other Fanart.tv image. Asks nobody but connect: see its
- * core/fanart.py's stored_backgrounds(). */
-export async function getStoredBackgrounds(artists?: string[]): Promise<string[]> {
-  const data = await fetchConnect<{ backgrounds: string[] }>('/fanart/stored-backgrounds', {
+/** Fanart.tv images of one kind connect has already downloaded - for every
+ * artist, or only for `artists` (a genre's) - routed through connect like
+ * every other Fanart.tv image. Asks nobody but connect: see its
+ * core/fanart.py's stored_images(). */
+export async function getStoredImages(
+  kind: 'background' | 'banner',
+  artists?: string[],
+): Promise<string[]> {
+  const data = await fetchConnect<{ images: string[] }>('/fanart/stored-images', {
     method: 'POST',
-    body: { artists: artists ?? null },
+    body: { artists: artists ?? null, kind },
   })
-  return data.backgrounds.map((url) => fanartImageUrl(url))
+  return data.images.map((url) => fanartImageUrl(url))
 }

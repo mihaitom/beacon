@@ -1,11 +1,6 @@
 <template>
   <v-container fluid>
-    <detail-header
-      fallback-icon="mdi-music-note"
-      :eyebrow="$t('library.genre')"
-      :title="genreName"
-      :stored-fanart="genreArtists"
-    >
+    <detail-header :eyebrow="$t('library.genre')" :title="genreName" :stored-fanart="genreArtists">
       <template v-if="songs.length" #meta>
         {{ $t('library.albumsAndSongs', { albums: albumCount, songs: songs.length }) }}
       </template>

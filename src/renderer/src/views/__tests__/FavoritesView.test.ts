@@ -16,7 +16,7 @@ import type { Album, Artist } from '@/types/library'
 // The header's backgrounds - a connect request this view doesn't care about.
 vi.mock('@/services/connect/fanart', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/connect/fanart')>()),
-  getStoredBackgrounds: vi.fn().mockResolvedValue([]),
+  getStoredImages: vi.fn().mockResolvedValue([]),
 }))
 
 const vuetify = createVuetify({ components, directives })

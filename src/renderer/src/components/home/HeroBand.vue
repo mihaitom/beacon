@@ -9,11 +9,15 @@
       class="hero-backdrop"
       :class="{
         'hero-backdrop--active': i === backdrop.active,
-        'hero-backdrop--photo': layerIsPhoto[i],
+        'hero-backdrop--photo': layerKind[i] === 'photo',
+        'hero-backdrop--banner': layerKind[i] === 'banner',
       }"
       :style="url ? { backgroundImage: `url(${url})` } : {}"
     />
-    <div class="hero-scrim" :class="{ 'hero-scrim--photo': layerIsPhoto[backdrop.active] }" />
+    <div
+      class="hero-scrim"
+      :class="{ 'hero-scrim--photo': layerKind[backdrop.active] !== 'cover' }"
+    />
     <div class="hero-content">
       <div v-if="loading" class="hero-body">
         <v-skeleton-loader type="image" width="132" height="132" class="hero-cover rounded" />
@@ -114,11 +118,15 @@ import { getArtistArt } from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
 import { useFanartStore } from '@/stores/fanart'
 
-/** What the backdrop should show; null while the artist's photo is still
+/** A Fanart.tv banner across the whole band, a background photo at its
+ * right edge, or the blurred cover. */
+type BackdropKind = 'banner' | 'photo' | 'cover'
+
+/** What the backdrop should show; null while the artist's art is still
  * being looked up, which keeps whatever is showing now. */
 interface BackdropTarget {
   url: string | null
-  photo: boolean
+  kind: BackdropKind
 }
 
 export default {
@@ -172,9 +180,9 @@ export default {
   data() {
     return {
       backdrop: createBackdropLayers(),
-      // Per layer, since a Fanart.tv photo is shown sharp and a cover blurred.
-      layerIsPhoto: [false, false],
-      artistPhoto: null as string | null,
+      // Per layer, since Fanart.tv art is shown sharp and a cover blurred.
+      layerKind: ['cover', 'cover'] as BackdropKind[],
+      artistArt: null as { url: string; kind: BackdropKind } | null,
       artResolved: true,
       // Whatever <cover-art> ended up showing, reported by it. Null until
       // something has actually loaded.
@@ -194,35 +202,38 @@ export default {
     fanartArtist(): string | null {
       return useFanartStore().enabled && this.hasContent ? this.artistName : null
     },
-    // The artist's photo when Fanart.tv has one - the same one the artist
-    // page and Now Playing show this session - and the blurred cover when
-    // not. Held until the lookup answers, like the album page, so the
-    // band fades once to the right picture instead of cover-then-photo.
+    // The artist's Fanart.tv banner, which is already the band's shape;
+    // else their background photo (the one the artist page and Now Playing
+    // show this session); else the blurred cover. Held until the lookup
+    // answers, like the album page, so the band fades once to the right
+    // picture instead of cover-then-art.
     backdropTarget(): BackdropTarget | null {
       if (!this.artResolved) return null
-      if (this.artistPhoto) return { url: this.artistPhoto, photo: true }
-      return { url: this.coverBackdropUrl, photo: false }
+      if (this.artistArt) return this.artistArt
+      return { url: this.coverBackdropUrl, kind: 'cover' }
     },
   },
   methods: {
     async loadArtistPhoto(name: string | null): Promise<void> {
       if (!name) {
-        this.artistPhoto = null
+        this.artistArt = null
         this.artResolved = true
         return
       }
       this.artResolved = false
-      let photo: string | null = null
+      let found: { url: string; kind: BackdropKind } | null = null
       try {
-        photo = (await getArtistArt(name))?.background ?? null
+        const art = await getArtistArt(name)
+        if (art?.banner) found = { url: art.banner, kind: 'banner' }
+        else if (art?.background) found = { url: art.background, kind: 'photo' }
         // Preloaded, so the crossfade has an image to fade to.
-        if (photo) await preloadImage(photo)
+        if (found) await preloadImage(found.url)
       } catch (error) {
         console.error('[hero-band] Fanart.tv lookup failed:', error)
       }
       // The hero may have moved on to another song meanwhile.
       if (this.fanartArtist !== name) return
-      this.artistPhoto = photo
+      this.artistArt = found
       this.artResolved = true
     },
     onCoverClick() {
@@ -243,9 +254,9 @@ export default {
       immediate: true,
       handler(target: BackdropTarget | null, previous: BackdropTarget | null | undefined) {
         if (!target) return
-        if (previous && target.url === previous.url && target.photo === previous.photo) return
+        if (previous && target.url === previous.url && target.kind === previous.kind) return
         showBackdrop(this.backdrop, target.url)
-        this.layerIsPhoto[this.backdrop.active] = target.photo
+        this.layerKind[this.backdrop.active] = target.kind
       },
     },
   },
@@ -291,36 +302,19 @@ export default {
   opacity: 1;
 }
 
-/* The artist's Fanart.tv photo: sharp, at the right edge, eased out to the
- * left under the title - the same treatment as DetailHeader.vue's, where
- * the numbers are explained. */
+/* The artist's Fanart.tv photo, when they have no banner: like the banner
+ * below - the band's full height, held to its right edge, eased out to the
+ * left - but at its own 16:9, so nothing of it is cropped. */
 .hero-backdrop--photo {
-  inset: 0 0 0 auto;
-  aspect-ratio: 3 / 1;
-  max-width: 62%;
-  background-position: center 25%;
+  inset: 1px;
+  border-radius: 15px;
+  background-size: auto 100%;
+  background-position: right center;
+  background-repeat: no-repeat;
   filter: none;
   transform: none;
-  -webkit-mask-image: linear-gradient(
-    to right,
-    transparent 0%,
-    rgba(0, 0, 0, 0.06) 8%,
-    rgba(0, 0, 0, 0.2) 16%,
-    rgba(0, 0, 0, 0.42) 25%,
-    rgba(0, 0, 0, 0.68) 35%,
-    rgba(0, 0, 0, 0.88) 45%,
-    #000 55%
-  );
-  mask-image: linear-gradient(
-    to right,
-    transparent 0%,
-    rgba(0, 0, 0, 0.06) 8%,
-    rgba(0, 0, 0, 0.2) 16%,
-    rgba(0, 0, 0, 0.42) 25%,
-    rgba(0, 0, 0, 0.68) 35%,
-    rgba(0, 0, 0, 0.88) 45%,
-    #000 55%
-  );
+  -webkit-mask: var(--beacon-photo-fade) right center / auto 100% no-repeat;
+  mask: var(--beacon-photo-fade) right center / auto 100% no-repeat;
 }
 
 .hero-scrim {
@@ -336,7 +330,27 @@ export default {
     linear-gradient(to top, rgba(18, 20, 28, 0.6), transparent 60%);
 }
 
-/* Neutral over a sharp photo, where the amber wash would read as a colour
+/* A Fanart.tv banner: always the card's full height and held to its right
+ * edge, so a wide window never crops its top and bottom off. Where the card
+ * is wider than the banner, it eases out to the left (--beacon-banner-fade
+ * in base.css); where it is narrower, its left end is cut off under the
+ * scrim. Kept 1px off the card's edge, with its own rounding: every layer
+ * is clipped to the card's corners separately, and in the anti-aliased
+ * edge pixels the scrim only partly covers a banner reaching them - a
+ * light rim round the corners. */
+.hero-backdrop--banner {
+  inset: 1px;
+  border-radius: 15px;
+  background-size: auto 100%;
+  background-position: right center;
+  background-repeat: no-repeat;
+  filter: none;
+  transform: none;
+  -webkit-mask: var(--beacon-banner-fade) right center / auto 100% no-repeat;
+  mask: var(--beacon-banner-fade) right center / auto 100% no-repeat;
+}
+
+/* Neutral over sharp Fanart.tv art, where the amber wash would read as a colour
  * cast - see DetailHeader.vue's identical rule. */
 .hero-scrim--photo {
   background:

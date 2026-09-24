@@ -1,5 +1,5 @@
 <template>
-  <section class="detail-header">
+  <section class="detail-header" :class="{ 'detail-header--text-only': !hasArtwork }">
     <!-- Two stacked layers so navigating from one album/artist to the next
      - crossfades the artwork behind the header instead of cutting to it —
      - see services/crossfadeBackdrop.ts for why one element can't do this. -->
@@ -9,13 +9,14 @@
       class="detail-header__backdrop"
       :class="{
         'detail-header__backdrop--active': i === backdrop.active,
-        'detail-header__backdrop--photo': layerIsPhoto[i],
+        'detail-header__backdrop--photo': layerKind[i] === 'photo',
+        'detail-header__backdrop--banner': layerKind[i] === 'banner',
       }"
       :style="url ? { backgroundImage: `url(${url})` } : {}"
     />
     <div
       class="detail-header__scrim"
-      :class="{ 'detail-header__scrim--photo': layerIsPhoto[backdrop.active] }"
+      :class="{ 'detail-header__scrim--photo': layerKind[backdrop.active] !== 'cover' }"
     />
     <div v-if="starred !== null || $slots['top-right']" class="detail-header__top-right">
       <!-- Its own row, separate from the #top-right slot below — rating/
@@ -52,18 +53,19 @@
       </div>
     </div>
     <div class="detail-header__content">
-      <!-- Clickable only when there is a real picture behind it: opening a
-       - full-screen view of the fallback icon would be a promise the header
-       - can't keep. -->
+      <!-- Only when there is a real picture: a list page has none, and a
+       - square holding nothing but a generic icon takes room from the
+       - title without saying anything. The icon remains for a picture that
+       - fails to load. -->
       <cover-art
+        v-if="hasArtwork"
         :cover-art-id="coverArtId"
         :image-url="imageUrl"
         :size="size"
         :fallback-icon="fallbackIcon"
         :rounded="rounded"
-        class="detail-header__cover cover-shadow"
-        :class="{ 'detail-header__cover--zoomable': hasArtwork }"
-        :title="hasArtwork ? $t('library.showArtwork') : undefined"
+        class="detail-header__cover detail-header__cover--zoomable cover-shadow"
+        :title="$t('library.showArtwork')"
         @click="showArtwork"
       />
       <div class="detail-header__info min-width-0">
@@ -90,13 +92,17 @@ import CoverArt from './CoverArt.vue'
 import { useLibraryStore } from '@/stores/library'
 import { emitter } from '@/emitter'
 import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
-import { getStoredBackgrounds } from '@/services/connect/fanart'
+import { getStoredImages } from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
 import { useFanartStore } from '@/stores/fanart'
 
 // How long each stored Fanart.tv background stays before the next one fades
 // in - slow enough to read as a calm backdrop rather than a slideshow.
 const STORED_FANART_INTERVAL_MS = 12_000
+
+/** A stored Fanart.tv banner across the whole card, a stored background
+ * photo at its right edge, or the page's own blurred cover. */
+type BackdropKind = 'banner' | 'photo' | 'cover'
 
 /**
  * Shared "hero" treatment for album/artist/playlist detail pages — a
@@ -128,17 +134,19 @@ export default {
     // 0 meaning "not yet rated" rather than "rated zero stars".
     rating: { type: Number as PropType<number | null>, default: null },
     /** For a list page with no picture of its own: cycle through the Fanart.tv
-     * backgrounds connect has already stored - every artist's (true), or
-     * only these artists' (a genre's). Nothing new is downloaded for it. */
+     * banners (or, until there are some, backgrounds) connect has already
+     * stored - every artist's (true), or only these artists' (a genre's).
+     * Nothing new is downloaded for it. */
     storedFanart: { type: [Boolean, Array] as PropType<boolean | string[]>, default: false },
   },
   emits: ['toggle-star', 'set-rating'],
   data() {
     return {
       backdrop: createBackdropLayers(),
-      // Per layer, since a stored photo is shown sharp and a cover blurred.
-      layerIsPhoto: [false, false],
+      // Per layer, since Fanart.tv art is shown sharp and a cover blurred.
+      layerKind: ['cover', 'cover'] as BackdropKind[],
       photos: [] as string[],
+      photoKind: 'banner' as BackdropKind,
       photoIndex: 0,
       cycleTimer: null as ReturnType<typeof setInterval> | null,
     }
@@ -160,27 +168,36 @@ export default {
     },
   },
   methods: {
-    show(url: string | null, isPhoto: boolean): void {
+    show(url: string | null, kind: BackdropKind): void {
       showBackdrop(this.backdrop, url)
-      this.layerIsPhoto[this.backdrop.active] = isPhoto
+      this.layerKind[this.backdrop.active] = kind
     },
     async loadStoredFanart(request: string[] | null): Promise<void> {
       this.stopCycle()
       this.photos = []
       if (!request) {
-        if (!this.backdropUrl) this.show(null, false)
+        if (!this.backdropUrl) this.show(null, 'cover')
         return
       }
+      // Banners are this card's shape; backgrounds only until connect has
+      // downloaded some banners (it fetches them with every artist lookup).
+      const artists = request.length ? request : undefined
       let photos: string[] = []
+      let kind: BackdropKind = 'banner'
       try {
-        photos = await getStoredBackgrounds(request.length ? request : undefined)
+        photos = await getStoredImages('banner', artists)
+        if (!photos.length) {
+          photos = await getStoredImages('background', artists)
+          kind = 'photo'
+        }
       } catch (error) {
-        console.error('[detail-header] Stored Fanart.tv backgrounds lookup failed:', error)
+        console.error('[detail-header] Stored Fanart.tv images lookup failed:', error)
       }
       // The page may have moved on, or found a picture of its own, meanwhile.
       if (JSON.stringify(this.storedFanartRequest) !== JSON.stringify(request)) return
       if (!photos.length) return
       this.photos = photos
+      this.photoKind = kind
       this.photoIndex = Math.floor(Math.random() * photos.length)
       await this.showPhoto(photos[this.photoIndex]!)
       // One picture and no cycling for anyone who has asked for less motion.
@@ -201,7 +218,7 @@ export default {
       const photos = this.photos
       await preloadImage(url)
       if (this.photos !== photos) return
-      this.show(url, true)
+      this.show(url, this.photoKind)
     },
     stopCycle(): void {
       if (this.cycleTimer) clearInterval(this.cycleTimer)
@@ -212,7 +229,6 @@ export default {
      * different pages, and the same picture is also opened from places that
      * have no header at all (a song row's context menu). */
     showArtwork(): void {
-      if (!this.hasArtwork) return
       emitter.emit('showArtwork', {
         coverArtId: this.coverArtId,
         imageUrl: this.imageUrl,
@@ -230,7 +246,7 @@ export default {
       immediate: true,
       handler(url: string | null) {
         if (!url && this.photos.length) return
-        this.show(url, false)
+        this.show(url, 'cover')
       },
     },
     storedFanartRequest: {
@@ -277,39 +293,41 @@ export default {
   opacity: 1;
 }
 
-/* A stored Fanart.tv background (see storedFanart): sharp, at the right
- * edge, eased out to the left under the title - the album page's header
- * photo (DetailPageBackdrop.vue). As wide as 3:1 on this shallow card: any
- * wider and a close-up is cropped down to a strip of eyes, since at least
- * 60% of a 16:9 photo's height has to stay. The crop there is is held
- * towards the top, where the faces usually are. */
+/* A stored Fanart.tv background (see storedFanart), until connect has
+ * banners: like the banner below - the card's full height, held to its
+ * right edge, eased out to the left - but at its own 16:9, so nothing of
+ * it is cropped; the card is shallow, so it takes a narrow strip at the
+ * right. */
 .detail-header__backdrop--photo {
-  inset: 0 0 0 auto;
-  aspect-ratio: 3 / 1;
-  max-width: 62%;
-  background-position: center 25%;
+  inset: 1px;
+  border-radius: 15px;
+  background-size: auto 100%;
+  background-position: right center;
+  background-repeat: no-repeat;
   filter: none;
   transform: none;
-  -webkit-mask-image: linear-gradient(
-    to right,
-    transparent 0%,
-    rgba(0, 0, 0, 0.06) 8%,
-    rgba(0, 0, 0, 0.2) 16%,
-    rgba(0, 0, 0, 0.42) 25%,
-    rgba(0, 0, 0, 0.68) 35%,
-    rgba(0, 0, 0, 0.88) 45%,
-    #000 55%
-  );
-  mask-image: linear-gradient(
-    to right,
-    transparent 0%,
-    rgba(0, 0, 0, 0.06) 8%,
-    rgba(0, 0, 0, 0.2) 16%,
-    rgba(0, 0, 0, 0.42) 25%,
-    rgba(0, 0, 0, 0.68) 35%,
-    rgba(0, 0, 0, 0.88) 45%,
-    #000 55%
-  );
+  -webkit-mask: var(--beacon-photo-fade) right center / auto 100% no-repeat;
+  mask: var(--beacon-photo-fade) right center / auto 100% no-repeat;
+}
+
+/* A Fanart.tv banner: always the card's full height and held to its right
+ * edge, so a wide window never crops its top and bottom off. Where the card
+ * is wider than the banner, it eases out to the left (--beacon-banner-fade
+ * in base.css); where it is narrower, its left end is cut off under the
+ * scrim. Kept 1px off the card's edge, with its own rounding: every layer
+ * is clipped to the card's corners separately, and in the anti-aliased
+ * edge pixels the scrim only partly covers a banner reaching them - a
+ * light rim round the corners. */
+.detail-header__backdrop--banner {
+  inset: 1px;
+  border-radius: 15px;
+  background-size: auto 100%;
+  background-position: right center;
+  background-repeat: no-repeat;
+  filter: none;
+  transform: none;
+  -webkit-mask: var(--beacon-banner-fade) right center / auto 100% no-repeat;
+  mask: var(--beacon-banner-fade) right center / auto 100% no-repeat;
 }
 
 .detail-header__scrim {
@@ -378,6 +396,21 @@ export default {
 
 .detail-header__title {
   margin-bottom: 6px;
+}
+
+/* No picture beside the text (a list page): the text centres in the card
+ * the way the cover would, and the title grows to carry the card on its
+ * own - up to the album page's name (DetailHero.vue), but always above
+ * the usual 2.25rem, which the window-width part alone only passes on a
+ * wide window. */
+.detail-header--text-only .detail-header__content {
+  min-height: 280px;
+  align-items: center;
+  padding: 32px;
+}
+
+.detail-header--text-only .detail-header__title {
+  font-size: clamp(2.75rem, 3.2vw, 3.5rem);
 }
 
 /* No link-hover styling here (color-shift + underline) — this wraps

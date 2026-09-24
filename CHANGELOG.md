@@ -11,12 +11,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Artist backgrounds from Fanart.tv now draw on up to ten images per artist, mostly the best liked plus a few of the newest uploads; the first one appears as quickly as before and the rest load quietly in the background, so switching to another one is instant
 - On artist and album pages the Fanart.tv photo now sits on the right and fades out behind the header, so text stays readable on bright photos and the photo is shown uncropped; it also fades between pages instead of blinking
 - The album page has a new header: a large cover, the title, running time and Play and Shuffle buttons, with the artist photo beside them; it stays in view while the track list scrolls below it
-- The Artists, Albums, Songs, Playlists and Radio pages and every genre page show the artist backgrounds Beacon has already downloaded in their header, changing every few seconds; a genre shows only its own artists
+- The Artists, Albums, Songs, Playlists, Radio and Favorites pages and every genre page show Fanart.tv artist banners Beacon has already downloaded in their header, changing every few seconds (background photos until the first banners are in); a genre shows only its own artists; the placeholder icon beside the page title is gone, and the title is larger and centred in the header instead
 - The album page shows more about the album: what kind of release it is, its record label, edition and reissue year, all its genres, and the opening of its Wikipedia article
 - An artist keeps the same background across the artist page, album pages and Now Playing for the whole session, and the artist page has a button to switch to another one
 - The Statistics page shows more: how much storage the library takes, how much of it you have ever played, how many songs you heard in the last 30 days, your ratings, and a breakdown into Hi-Res, lossless and lossy audio and the artists with the most songs; the lists now wrap two at a time on narrower windows
-- The Favorites page has a header like the other library pages, showing how many artists, albums and songs you have marked and cycling through backgrounds of your favorite artists
-- The Home page's top card shows the Fanart.tv photo of the artist you are listening to, the same one as on the artist page and in Now Playing
+- The Favorites page has a header like the other library pages, showing how many artists, albums and songs you have marked, with your favorite artists' banners behind it
+- The Home page's top card shows the Fanart.tv banner of the artist you are listening to, or their background photo when there is no banner
 
 ### Fixed
 

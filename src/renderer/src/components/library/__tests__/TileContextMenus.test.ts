@@ -414,18 +414,13 @@ describe('opening the artwork viewer from a detail page header', () => {
     expect(views[0]).toMatchObject({ rounded: true, imageUrl: 'https://cdn.example/a.jpg' })
   })
 
-  it('offers nothing to open when the header is showing a placeholder icon', () => {
+  it('leaves the artwork out, rather than showing a placeholder icon, when there is none', () => {
     const wrapper = mount(DetailHeader, {
       props: { title: 'Nothing here' },
       global: globalOptions,
     })
 
-    const views = shown(() => {
-      void wrapper.find('.detail-header__cover').trigger('click')
-    })
-
-    expect(views).toEqual([])
-    expect(wrapper.find('.detail-header__cover--zoomable').exists()).toBe(false)
+    expect(wrapper.find('.detail-header__cover').exists()).toBe(false)
   })
 })
 

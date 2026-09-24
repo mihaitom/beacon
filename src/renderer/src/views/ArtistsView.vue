@@ -1,6 +1,6 @@
 <template>
   <v-container fluid>
-    <detail-header fallback-icon="mdi-account-music" :title="$t('library.artists')" stored-fanart>
+    <detail-header :title="$t('library.artists')" stored-fanart>
       <template v-if="filteredArtists.length" #meta>
         {{ filteredArtists.length }}
         {{ filteredArtists.length === 1 ? $t('library.artist') : $t('library.artists') }}

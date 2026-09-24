@@ -3,7 +3,6 @@
     <!-- Backgrounds from the favourites' own artists only, the way a genre
      - page shows its genre's - this page is the one that is about taste. -->
     <detail-header
-      fallback-icon="mdi-heart"
       :eyebrow="$t('favorites.eyebrow')"
       :title="$t('favorites.title')"
       :stored-fanart="favoriteArtistNames"

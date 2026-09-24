@@ -8,11 +8,11 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
-import { getStoredBackgrounds } from '@/services/connect/fanart'
+import { getStoredImages } from '@/services/connect/fanart'
 import { useFanartStore } from '@/stores/fanart'
 import DetailHeader from '../DetailHeader.vue'
 
-vi.mock('@/services/connect/fanart', () => ({ getStoredBackgrounds: vi.fn() }))
+vi.mock('@/services/connect/fanart', () => ({ getStoredImages: vi.fn() }))
 // jsdom never fires an image's load event.
 vi.mock('@/services/preloadImage', () => ({ preloadImage: vi.fn().mockResolvedValue(undefined) }))
 
@@ -32,7 +32,11 @@ function shown(wrapper: Awaited<ReturnType<typeof mountHeader>>) {
   return layer.exists()
     ? {
         image: /url\("?([^")]+)"?\)/.exec(layer.attributes('style') ?? '')?.[1] ?? null,
-        photo: layer.classes().includes('detail-header__backdrop--photo'),
+        kind: layer.classes().includes('detail-header__backdrop--banner')
+          ? 'banner'
+          : layer.classes().includes('detail-header__backdrop--photo')
+            ? 'photo'
+            : 'cover',
       }
     : null
 }
@@ -41,9 +45,16 @@ function reducedMotion(reduce: boolean) {
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: reduce && query.includes('reduce') }))
 }
 
+/** What connect has on disk, per kind; anything not named has nothing. */
+function storedImages(byKind: Partial<Record<'banner' | 'background', string[]>>) {
+  vi.mocked(getStoredImages)
+    .mockReset()
+    .mockImplementation(async (kind) => byKind[kind] ?? [])
+}
+
 beforeEach(() => {
   setActivePinia(createPinia())
-  vi.mocked(getStoredBackgrounds).mockReset().mockResolvedValue(['a.jpg', 'b.jpg', 'c.jpg'])
+  storedImages({ banner: ['a.jpg', 'b.jpg', 'c.jpg'] })
   reducedMotion(false)
   vi.useFakeTimers()
 })
@@ -55,17 +66,32 @@ afterEach(() => {
 })
 
 describe('DetailHeader stored Fanart.tv backgrounds', () => {
-  it("shows one of every artist's stored backgrounds, sharp", async () => {
+  it("shows one of every artist's stored banners, sharp", async () => {
     const wrapper = await mountHeader({ storedFanart: true })
 
-    expect(getStoredBackgrounds).toHaveBeenCalledWith(undefined)
-    expect(shown(wrapper)).toEqual({ image: expect.stringMatching(/^[abc]\.jpg$/), photo: true })
+    expect(getStoredImages).toHaveBeenCalledWith('banner', undefined)
+    expect(shown(wrapper)).toEqual({ image: expect.stringMatching(/^[abc]\.jpg$/), kind: 'banner' })
+  })
+
+  it('falls back to background photos until any banners are stored', async () => {
+    storedImages({ background: ['photo.jpg'] })
+    const wrapper = await mountHeader({ storedFanart: true })
+
+    expect(shown(wrapper)).toEqual({ image: 'photo.jpg', kind: 'photo' })
+  })
+
+  it('never mixes the two kinds while there are banners', async () => {
+    storedImages({ banner: ['banner.jpg'], background: ['photo.jpg'] })
+    const wrapper = await mountHeader({ storedFanart: true })
+
+    expect(getStoredImages).not.toHaveBeenCalledWith('background', undefined)
+    expect(shown(wrapper)).toEqual({ image: 'banner.jpg', kind: 'banner' })
   })
 
   it("asks for a genre's artists only", async () => {
     await mountHeader({ storedFanart: ['Artist A', 'Artist B'] })
 
-    expect(getStoredBackgrounds).toHaveBeenCalledWith(['Artist A', 'Artist B'])
+    expect(getStoredImages).toHaveBeenCalledWith('banner', ['Artist A', 'Artist B'])
   })
 
   it('moves on to the next background after a while', async () => {
@@ -103,14 +129,14 @@ describe('DetailHeader stored Fanart.tv backgrounds', () => {
     useFanartStore().enabled = false
     const wrapper = await mountHeader({ storedFanart: true })
 
-    expect(getStoredBackgrounds).not.toHaveBeenCalled()
+    expect(getStoredImages).not.toHaveBeenCalled()
     expect(shown(wrapper)?.image ?? null).toBeNull()
   })
 
   it("keeps a header's own artwork rather than cycling over it", async () => {
     await mountHeader({ storedFanart: true, imageUrl: 'https://art/one.jpg' })
 
-    expect(getStoredBackgrounds).not.toHaveBeenCalled()
+    expect(getStoredImages).not.toHaveBeenCalled()
   })
 
   it('does not start over when a genre re-renders with the same artists', async () => {
@@ -118,7 +144,7 @@ describe('DetailHeader stored Fanart.tv backgrounds', () => {
     await wrapper.setProps({ storedFanart: ['Artist A'] })
     await flushPromises()
 
-    expect(getStoredBackgrounds).toHaveBeenCalledTimes(1)
+    expect(getStoredImages).toHaveBeenCalledTimes(1)
   })
 
   it('stops cycling once it is gone', async () => {
@@ -128,7 +154,7 @@ describe('DetailHeader stored Fanart.tv backgrounds', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('leaves the amber tint off a photo', async () => {
+  it('leaves the amber tint off Fanart.tv art', async () => {
     const wrapper = await mountHeader({ storedFanart: true })
     expect(wrapper.find('.detail-header__scrim').classes()).toContain('detail-header__scrim--photo')
 

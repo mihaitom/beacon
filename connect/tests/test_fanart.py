@@ -242,6 +242,29 @@ async def test_downloads_the_other_backgrounds_in_the_background(key):
     assert fanart.is_image_cached("bg2") and fanart.is_image_cached("bg3")
 
 
+async def test_downloads_the_banners_too_and_first(key):
+    """The list pages' headers only show banners already on disk, so they
+    are fetched along with the backgrounds - before them, being small. The
+    one the Home page shows goes last: it asks for that one itself."""
+    payload = _backgrounds({1: 2, 2: 1})
+    payload["artistbanner"] = [
+        {"id": "7", "url": "banner7", "likes": "5"},
+        {"id": "8", "url": "banner8", "likes": "1"},
+    ]
+    fetch = AsyncMock(return_value=(b"jpeg", "image/jpeg"))
+    with (
+        _with_mbid(),
+        _with_get(_response(200, payload)),
+        patch.object(fanart, "fetch_image", fetch),
+    ):
+        art = await fanart.get_artist_art("Cher")
+        await asyncio.gather(*fanart._prefetching.values())
+
+    fetched = [call.args[0] for call in fetch.await_args_list]
+    other_banner = "banner8" if art["banner"] == "banner7" else "banner7"
+    assert fetched == [other_banner, "bg2", art["banner"]]
+
+
 async def test_a_second_visit_does_not_start_a_second_download_run(key):
     started = asyncio.Event()
     release = asyncio.Event()
@@ -387,7 +410,7 @@ async def test_the_latest_artists_survive_a_long_break(key, monkeypatch):
             "oldest": _entry(
                 {"background": [_URL + "oldest"]}, fetched=last_session, used=last_session - 120
             ),
-            # No backgrounds to show, so no claim on a kept place either.
+            # No images to show, so no claim on a kept place either.
             "bare": _entry(None, fetched=last_session, used=last_session + 60),
         }
     )
@@ -400,6 +423,18 @@ async def test_the_latest_artists_survive_a_long_break(key, monkeypatch):
     assert set(fanart._load_cache()) == {"latest", "earlier", "new"}
     assert fanart.get_cached_image(_URL + "earlier") == b"jpeg"
     assert fanart.get_cached_image(_URL + "oldest") is None
+
+
+async def test_an_artist_with_only_banners_counts_as_one_with_images(key, monkeypatch):
+    monkeypatch.setattr(fanart, "_KEEP_RECENT", 1)
+    last_session = time.time() - 40 * 86400
+    _write_cache({"banners": _entry({"banner": [_URL + "banner"]}, fetched=last_session)})
+    fanart.store_image(_URL + "banner", b"jpeg")
+
+    with _with_mbid("new"), _with_get(_response(200, {})):
+        await fanart.get_artist_art("Someone")
+
+    assert fanart.get_cached_image(_URL + "banner") == b"jpeg"
 
 
 async def test_opening_an_artist_keeps_it_from_being_dropped(key):
@@ -462,32 +497,34 @@ def test_the_image_route_refuses_a_non_fanart_url(client, key):
     assert resp.status_code == 404
 
 
-# ── stored backgrounds ───────────────────────────────────────────────────────
+# ── stored images ───────────────────────────────────────────────────────
 
 
-def _store_artist(mbid: str, backgrounds: list[str], on_disk: list[str]) -> None:
+def _store_artist(
+    mbid: str, backgrounds: list[str], on_disk: list[str], banners: list[str] | None = None
+) -> None:
     cache = fanart._load_cache()
     cache[mbid] = {
         "fetched": time.time(),
         "used": time.time(),
         "version": fanart._CACHE_VERSION,
-        "art": {"background": backgrounds},
+        "art": {"background": backgrounds, "banner": banners or []},
     }
     fanart._save_cache(cache)
     for url in on_disk:
         fanart.store_image(url, b"jpeg")
 
 
-def test_stored_backgrounds_offers_only_what_is_on_disk():
+def test_stored_images_offers_only_what_is_on_disk():
     """Nothing is downloaded for a list page's header - a background whose
     bytes are not stored yet is left out."""
     _store_artist("a", [_URL + "a1", _URL + "a2"], on_disk=[_URL + "a1"])
     _store_artist("b", [_URL + "b1"], on_disk=[_URL + "b1"])
 
-    assert sorted(fanart.stored_backgrounds()) == [_URL + "a1", _URL + "b1"]
+    assert sorted(fanart.stored_images()) == [_URL + "a1", _URL + "b1"]
 
 
-def test_stored_backgrounds_narrows_to_the_named_artists(monkeypatch):
+def test_stored_images_narrows_to_the_named_artists(monkeypatch):
     """A genre's header shows that genre's artists only, found through the
     MBIDs already resolved - a collaboration credit through its first
     performer, as the lookup itself does."""
@@ -496,31 +533,53 @@ def test_stored_backgrounds_narrows_to_the_named_artists(monkeypatch):
     known = {"artist a": "mbid-a", "artist b": "mbid-b"}
     monkeypatch.setattr(fanart, "cached_mbid", lambda name: known.get(name.strip().lower()))
 
-    assert fanart.stored_backgrounds(["Artist A & Someone"]) == [_URL + "a1"]
-    assert fanart.stored_backgrounds(["Nobody"]) == []
+    assert fanart.stored_images(["Artist A & Someone"]) == [_URL + "a1"]
+    assert fanart.stored_images(["Nobody"]) == []
 
 
-def test_stored_backgrounds_never_asks_musicbrainz(monkeypatch):
+def test_stored_images_never_asks_musicbrainz(monkeypatch):
     monkeypatch.setattr(fanart, "resolve_mbid", AsyncMock(side_effect=AssertionError("asked")))
     monkeypatch.setattr(fanart, "cached_mbid", lambda name: None)
 
-    assert fanart.stored_backgrounds(["Unknown Artist"]) == []
+    assert fanart.stored_images(["Unknown Artist"]) == []
 
 
-def test_stored_backgrounds_is_capped(monkeypatch):
+def test_stored_images_is_capped(monkeypatch):
     monkeypatch.setattr(fanart, "_STORED_LIMIT", 3)
     urls = [_URL + f"bg{i}" for i in range(10)]
     _store_artist("a", urls, on_disk=urls)
 
-    backgrounds = fanart.stored_backgrounds()
+    backgrounds = fanart.stored_images()
     assert len(backgrounds) == 3
     assert set(backgrounds) <= set(urls)
 
 
-def test_the_stored_backgrounds_route(client, key):
-    _store_artist("a", [_URL + "a1"], on_disk=[_URL + "a1"])
+def test_stored_images_hands_out_one_kind_at_a_time():
+    """The list pages' headers show banners, which are their shape, and fall
+    back to backgrounds - so the two must never come mixed in one answer."""
+    _store_artist(
+        "a",
+        [_URL + "bg"],
+        on_disk=[_URL + "bg", _URL + "banner"],
+        banners=[_URL + "banner", _URL + "banner-not-on-disk"],
+    )
 
-    resp = client.post("/fanart/stored-backgrounds", json={})
+    assert fanart.stored_images(kind="banner") == [_URL + "banner"]
+    assert fanart.stored_images() == [_URL + "bg"]
+
+
+def test_the_stored_images_route(client, key):
+    _store_artist("a", [_URL + "a1"], on_disk=[_URL + "a1", _URL + "b1"], banners=[_URL + "b1"])
+
+    resp = client.post("/fanart/stored-images", json={})
+    banners = client.post("/fanart/stored-images", json={"kind": "banner"})
 
     assert resp.status_code == 200
-    assert resp.json() == {"backgrounds": [_URL + "a1"]}
+    assert resp.json() == {"images": [_URL + "a1"]}
+    assert banners.json() == {"images": [_URL + "b1"]}
+
+
+def test_the_stored_images_route_refuses_an_unknown_kind(client, key):
+    resp = client.post("/fanart/stored-images", json={"kind": "logo"})
+
+    assert resp.status_code == 422

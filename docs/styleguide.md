@@ -353,14 +353,24 @@ bio slot and gets no reserved gap. The paragraph sits directly on the sharp
 photo, past where the scrim has faded out, so it carries a soft drop-shadow
 to stay readable there (`ArtistBio.vue`).
 
-The list pages' headers (Artists, Albums, Songs, Playlists, Radio, a
-genre) have no picture of their own; with Fanart.tv on, `DetailHeader`'s
-`storedFanart` cycles them through the backgrounds connect has already
-downloaded - a genre's through its own artists' only - every 12 seconds,
-sharp and eased out to the left like the album page's photo, up to 3:1 (and
-62% of the card) - wider would crop a close-up down to a strip of eyes -
-and over a scrim without the amber wash, which would read as a colour cast
-on a photo. Now Playing drops its colour wash over the artist's photo for
+The list pages' headers (Artists, Albums, Songs, Playlists, Radio,
+Favorites, a genre) have no picture of their own, so they show no artwork
+square at all - a square holding only a generic icon took room from the
+title without saying anything. Their text centres vertically in the card
+instead, and the title is larger than elsewhere, `clamp(2.75rem, 3.2vw,
+3.5rem)` - up to the album page's name. With Fanart.tv on, `DetailHeader`'s
+`storedFanart` cycles them through the artist banners connect has already
+downloaded - a genre's through its own artists' only - every 12 seconds;
+until connect has any banners, through the backgrounds. The Home page's
+hero card shows the playing artist's banner, else their background. A
+Fanart.tv picture on either card is never cropped at the top or bottom: it
+is the card's full height, held to the right edge at its own shape (a
+banner's 5.4:1, a background's 16:9) and eased out to the left, with the
+fade laid over the picture itself (`--beacon-banner-fade`,
+`--beacon-photo-fade` in `base.css`) so it starts where the picture does
+on any window width. A banner wider than the card loses its left end
+instead. Either way over a scrim without the amber wash, which would read
+as a colour cast on a photo. Now Playing drops its colour wash over the artist's photo for
 the same reason. No new image is fetched for any of it; a hidden tab and
 reduced motion hold the cycling still.
 

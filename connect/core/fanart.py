@@ -26,8 +26,8 @@ dropped once unused for _UNUSED - bar the _KEEP_RECENT latest, so an
 occasional user still has something to show - so neither grows without
 bound. Only the
 shown image is fetched before the page gets its answer; the other
-backgrounds follow slowly in the background (_prefetch_backgrounds()), for
-the cycle button.
+backgrounds and the banners follow slowly in the background
+(_prefetch_images()), for the cycle button and the list pages' headers.
 
 A failure here is never surfaced to the caller. This only ever enriches an
 artist page that works without it, so "no art" and "Fanart.tv is down" both
@@ -81,7 +81,7 @@ _REFRESH = 30 * 86400.0
 # images with it - the only thing that bounds the image folder by age.
 _UNUSED = 30 * 86400.0
 
-# ...except the most recently opened artists with backgrounds, kept however
+# ...except the most recently opened artists with images, kept however
 # old: pruning runs on the first lookup after a break, so someone who opens
 # the app once a month would otherwise lose every other artist at that
 # moment and find the list pages' headers with next to nothing to show. At
@@ -105,9 +105,10 @@ _KEEP_NEWEST = 3
 # older version is asked for again right away rather than after _REFRESH.
 _CACHE_VERSION = 2
 
-# The background candidates beyond the one shown are downloaded one at a
-# time with this pause between them: they are only needed once someone
-# cycles, and Fanart.tv's CDN does not need a burst of ten 1 MB images.
+# The candidates beyond the one shown are downloaded one at a time with this
+# pause between them: they are only needed once someone cycles or a list
+# page shows them, and Fanart.tv's CDN does not need a burst of ten 1 MB
+# images.
 _PREFETCH_GAP = 2.0
 
 # The in-memory half, filled from disk on a miss and written through on a
@@ -140,19 +141,24 @@ def _urls(art: dict | None) -> set[str]:
     return {url for urls in (art or {}).values() for url in urls or []}
 
 
+def _has_images(entry: dict) -> bool:
+    art = entry.get("art") or {}
+    return bool(art.get("background") or art.get("banner"))
+
+
 def _save_cache(cache: dict) -> None:
     """Writes the whole cache back, dropping the artists unused for _UNUSED
-    (all but the _KEEP_RECENT latest with backgrounds) and every stored
+    (all but the _KEEP_RECENT latest with images) and every stored
     image no remaining artist lists - the only pruning either cache gets,
     and what keeps both bounded."""
     now = time.time()
     entries = {k: v for k, v in cache.items() if isinstance(v, dict)}
-    with_backgrounds = sorted(
-        (k for k, v in entries.items() if (v.get("art") or {}).get("background")),
+    with_images = sorted(
+        (k for k, v in entries.items() if _has_images(v)),
         key=lambda k: entries[k].get("used", 0),
         reverse=True,
     )
-    kept = set(with_backgrounds[:_KEEP_RECENT])
+    kept = set(with_images[:_KEEP_RECENT])
     live = {k: v for k, v in entries.items() if k in kept or now - v.get("used", 0) < _UNUSED}
     try:
         os.makedirs(os.path.dirname(_CACHE_PATH), exist_ok=True)
@@ -251,16 +257,16 @@ def _choose(art: dict | None) -> dict | None:
     }
 
 
-# The background downloads under way, by artist: opening the same artist
+# The image downloads under way, by artist: opening the same artist
 # again mid-way does not start a second run, and holding the task here keeps
 # it from being garbage-collected before it finishes.
 _prefetching: dict[str, asyncio.Task] = {}
 
 
-async def _prefetch_backgrounds(mbid: str, urls: list[str]) -> None:
-    """Downloads the background candidates not on disk yet, so the cycle
-    button finds them there. Best-effort: a failed one is simply fetched on
-    demand later."""
+async def _prefetch_images(mbid: str, urls: list[str]) -> None:
+    """Downloads the candidates not on disk yet, so the cycle button and
+    the list pages' headers (stored_images()) find them there. Best-effort:
+    a failed one is simply fetched on demand later."""
     try:
         for url in urls:
             if is_image_cached(url):
@@ -274,14 +280,21 @@ async def _prefetch_backgrounds(mbid: str, urls: list[str]) -> None:
 
 
 def _answer(mbid: str, art: dict | None) -> dict | None:
-    """_choose(), plus the background download of the candidates it did not
-    pick. The shown one is left to the image route, which the page requests
-    right away - fetching it here too would download it twice."""
+    """_choose(), plus the background download of the other candidates:
+    the banners first, being small and what the list pages' headers show,
+    then the backgrounds. The shown background is left to the image route,
+    which the page requests right away - fetching it here too would download
+    it twice. The chosen banner goes last for the same reason, since the
+    Home page asks for that one; by then it is usually on disk and skipped."""
     chosen = _choose(art)
     if chosen and mbid not in _prefetching:
-        rest = [url for url in chosen["backgrounds"] if url != chosen["background"]]
+        banners = (art or {}).get("banner") or []
+        rest = [url for url in banners if url != chosen["banner"]]
+        rest += [url for url in chosen["backgrounds"] if url != chosen["background"]]
+        if chosen["banner"]:
+            rest.append(chosen["banner"])
         if rest:
-            _prefetching[mbid] = asyncio.create_task(_prefetch_backgrounds(mbid, rest))
+            _prefetching[mbid] = asyncio.create_task(_prefetch_images(mbid, rest))
     return chosen
 
 
@@ -353,18 +366,19 @@ async def get_artist_art(name: str) -> dict | None:
     return _answer(mbid, result)
 
 
-# How many stored backgrounds stored_backgrounds() hands out at most - a
-# header cycling through them every few seconds never gets near this many,
-# and the whole library's worth would be a needlessly long answer.
+# How many stored images stored_images() hands out at most - a header
+# cycling through them every few seconds never gets near this many, and the
+# whole library's worth would be a needlessly long answer.
 _STORED_LIMIT = 60
 
 
-def stored_backgrounds(names: list[str] | None = None) -> list[str]:
-    """Backgrounds whose bytes are already on disk, in random order - for
-    all artists, or for `names` only. Makes no request of anyone: an artist
-    is found only through an MBID already resolved before, and only images
-    already downloaded are offered, so a header can show them without
-    Fanart.tv or MusicBrainz ever hearing of it."""
+def stored_images(names: list[str] | None = None, kind: str = "background") -> list[str]:
+    """Images of one kind ("background" or "banner") whose bytes are already on
+    disk, in random order - for all artists, or for `names` only. Makes no
+    request of anyone: an artist is found only through an MBID already
+    resolved before, and only images already downloaded are offered, so a
+    header can show them without Fanart.tv or MusicBrainz ever hearing of
+    it."""
     cache = _load_cache()
     if names is None:
         entries = list(cache.values())
@@ -380,7 +394,7 @@ def stored_backgrounds(names: list[str] | None = None) -> list[str]:
         url
         for entry in entries
         if isinstance(entry, dict)
-        for url in (entry.get("art") or {}).get("background") or []
+        for url in (entry.get("art") or {}).get(kind) or []
         if is_image_cached(url)
     }
     return random.sample(sorted(urls), min(len(urls), _STORED_LIMIT))

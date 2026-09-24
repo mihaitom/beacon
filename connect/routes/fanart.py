@@ -1,5 +1,5 @@
 """routes/fanart.py — GET /fanart/artist, GET /fanart/image,
-POST /fanart/stored-backgrounds
+POST /fanart/stored-images
 
 Artist images from Fanart.tv (core/fanart.py). Machine-to-machine
 (CONNECT_TOKEN), not session-scoped: like routes/recommendations.py, nothing
@@ -12,6 +12,8 @@ itself (Cache-Control below) instead of fetching the Fanart.tv CDN directly.
 The token may ride in the query (require_token accepts it) because an <img>
 tag cannot send a header.
 """
+
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
@@ -30,17 +32,18 @@ async def artist(name: str = Query(...)) -> dict:
     return {"art": await fanart.get_artist_art(name)}
 
 
-class StoredBackgroundsRequest(BaseModel):
+class StoredImagesRequest(BaseModel):
     # None for every artist; a list (a genre's artists) for those only.
     # A body rather than a query string, since a big genre names hundreds.
     artists: list[str] | None = None
+    kind: Literal["background", "banner"] = "background"
 
 
-@router.post("/stored-backgrounds")
-async def stored_backgrounds(body: StoredBackgroundsRequest) -> dict:
-    """The backgrounds already downloaded, for the list pages' headers to
-    cycle through - see core/fanart.py's stored_backgrounds()."""
-    return {"backgrounds": fanart.stored_backgrounds(body.artists)}
+@router.post("/stored-images")
+async def stored_images(body: StoredImagesRequest) -> dict:
+    """The images of one kind already downloaded, for the list pages'
+    headers to cycle through - see core/fanart.py's stored_images()."""
+    return {"images": fanart.stored_images(body.artists, body.kind)}
 
 
 @router.get("/image")
