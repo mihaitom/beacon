@@ -37,7 +37,11 @@ Wikidata item MusicBrainz links there names the artist's Wikipedia article
 in every language, and Wikipedia's summary endpoint hands back its opening
 paragraph for the artist page.
 
-All five are cached to disk (see _load_cache()/_save_cache(), persisted
+A sixth (get_album_bio()) does the same for an album: MusicBrainz links
+Wikipedia from the release *group* (every edition of an album), so a
+release id from the media server is first walked up to its group.
+
+All six are cached to disk (see _load_cache()/_save_cache(), persisted
 the same CONNECT_DATA_DIR way as delivery/credentials.py/
 core/radio_stations.py) — an artist's MBID never changes, and neither
 similarity, a Deezer artist photo, nor these streaming links shift
@@ -73,6 +77,7 @@ _DATA_DIR = os.environ.get("CONNECT_DATA_DIR") or os.path.dirname(
 _PATH = os.path.join(_DATA_DIR, "recommendations_cache.json")
 
 _MB_SEARCH_URL = "https://musicbrainz.org/ws/2/artist/"
+_MB_BASE_URL = "https://musicbrainz.org/ws/2/"
 _LB_SIMILAR_URL = "https://labs.api.listenbrainz.org/similar-artists/json"
 _DEEZER_SEARCH_URL = "https://api.deezer.com/search/artist"
 _WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php"
@@ -170,6 +175,12 @@ def first_artist(name: str) -> str | None:
     return parts[0]
 
 
+def _phrase(value: str) -> str:
+    """`value` as a quoted phrase in a MusicBrainz (Lucene) search - a quote
+    or backslash in a name would otherwise end the phrase early."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 async def resolve_mbid(name: str) -> str | None:
     """Artist name -> MusicBrainz ID, cache-first (see this module's own
     docstring). Only a *positive* result is cached. A response with no
@@ -201,7 +212,8 @@ async def resolve_mbid(name: str) -> str | None:
             await asyncio.sleep(wait)
         try:
             r = await _client.get(
-                _MB_SEARCH_URL, params={"query": f'artist:"{name}"', "fmt": "json", "limit": "5"}
+                _MB_SEARCH_URL,
+                params={"query": f"artist:{_phrase(name)}", "fmt": "json", "limit": "5"},
             )
             r.raise_for_status()
             data = r.json()
@@ -442,6 +454,18 @@ async def _get_wiki_ref(mbid: str) -> dict | None:
     return refreshed[1] if refreshed else None
 
 
+async def _summary_from_ref(ref: dict, lang: str) -> dict | None:
+    """The opening paragraph of the article a url-rels reference points at
+    (see _wiki_ref_from_urls()), in `lang` where there is one. Raises on a
+    network/HTTP failure, like the lookups it makes."""
+    article = None
+    if ref.get("wikidata"):
+        article = await _wikipedia_title_from_wikidata(ref["wikidata"], lang)
+    if article is None and ref.get("wikipedia"):
+        article = _wikipedia_title_from_url(ref["wikipedia"])
+    return await _fetch_wikipedia_summary(*article) if article else None
+
+
 async def get_artist_bio(name: str, lang: str) -> dict | None:
     """The opening paragraph of `name`'s Wikipedia article, in `lang` where
     that Wikipedia has one and in English otherwise: `{text, url, lang}`,
@@ -466,18 +490,144 @@ async def get_artist_bio(name: str, lang: str) -> dict | None:
     if ref is None:
         return None
     try:
-        article = None
-        if ref.get("wikidata"):
-            article = await _wikipedia_title_from_wikidata(ref["wikidata"], lang)
-        if article is None and ref.get("wikipedia"):
-            article = _wikipedia_title_from_url(ref["wikipedia"])
-        bio = await _fetch_wikipedia_summary(*article) if article else None
+        bio = await _summary_from_ref(ref, lang)
     except (httpx.HTTPError, ValueError) as e:
         logger.warning(f"[recommendations] Wikipedia lookup failed for {name!r}: {e}")
         return None
 
     cache = _load_cache()
     cache.setdefault("bio_by_mbid", {}).setdefault(mbid, {})[lang] = {
+        "fetched_at": time.time(),
+        "bio": bio,
+    }
+    _save_cache(cache)
+    return bio
+
+
+class _MbNotFound(Exception):
+    """MusicBrainz has no such entity - an answer, unlike a failed request."""
+
+
+async def _mb_get(path: str, params: dict[str, str]) -> dict | None:
+    """One MusicBrainz request under the shared rate limit (see
+    resolve_mbid()). None when the request failed; _MbNotFound when
+    MusicBrainz answered that there is no such entity."""
+    global _mb_last_call
+    async with _mb_lock:
+        wait = _MB_MIN_INTERVAL - (time.monotonic() - _mb_last_call)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        try:
+            r = await _client.get(f"{_MB_BASE_URL}{path}", params={**params, "fmt": "json"})
+            if r.status_code in (400, 404):
+                raise _MbNotFound(path)
+            r.raise_for_status()
+            return r.json()
+        except (httpx.HTTPError, ValueError) as e:
+            logger.warning(f"[recommendations] MusicBrainz request failed for {path}: {e}")
+            return None
+        finally:
+            _mb_last_call = time.monotonic()
+
+
+# An album and its title track share a name ("Born This Way" is both), so
+# among exact title matches the kind the media server names wins, and
+# without one the album before the EP before the single.
+_TYPE_ORDER = ("album", "ep", "single")
+
+
+def _type_rank(group: dict, kind: str | None) -> int:
+    primary = (group.get("primary-type") or "").casefold()
+    if kind and primary == kind.casefold():
+        return -1
+    return _TYPE_ORDER.index(primary) if primary in _TYPE_ORDER else len(_TYPE_ORDER)
+
+
+async def _release_group_id(
+    mbid: str | None, artist: str, album: str, kind: str | None = None
+) -> str | None:
+    """The MusicBrainz release group an album belongs to, cache-first.
+
+    From an id where the media server has one: Navidrome and Jellyfin send
+    the release (one edition), Plex may send the group itself, so a release
+    lookup that finds nothing is tried again as a group. Without one, a
+    search by title and artist - taken only on an exact title match, since
+    showing another album's article is worse than showing none, and of
+    several, the one of `kind` (see _TYPE_ORDER). Only a positive result is
+    cached, as with resolve_mbid()."""
+    key = mbid or f"{artist.strip().casefold()}\x1f{album.strip().casefold()}"
+    cached = _load_cache().get("release_group_by_album", {}).get(key)
+    if isinstance(cached, str):
+        return cached
+
+    group: str | None = None
+    try:
+        if mbid:
+            try:
+                release = await _mb_get(f"release/{mbid}", {"inc": "release-groups"})
+                group = ((release or {}).get("release-group") or {}).get("id")
+            except _MbNotFound:
+                group_data = await _mb_get(f"release-group/{mbid}", {})
+                group = (group_data or {}).get("id")
+        else:
+            query = f"releasegroup:{_phrase(album)} AND artist:{_phrase(artist)}"
+            found = await _mb_get("release-group/", {"query": query, "limit": "5"})
+            wanted = album.strip().casefold()
+            exact = [
+                g
+                for g in (found or {}).get("release-groups") or []
+                if (g.get("title") or "").strip().casefold() == wanted
+            ]
+            exact.sort(key=lambda g: _type_rank(g, kind))
+            group = exact[0].get("id") if exact else None
+    except _MbNotFound:
+        group = None
+
+    if group:
+        cache = _load_cache()
+        cache.setdefault("release_group_by_album", {})[key] = group
+        _save_cache(cache)
+    return group
+
+
+async def get_album_bio(
+    mbid: str | None, artist: str, album: str, lang: str, kind: str | None = None
+) -> dict | None:
+    """The opening paragraph of an album's Wikipedia article - the same
+    `{text, url, lang}` as get_artist_bio(), with the same language
+    fallback, caching and failure rules, keyed by release group."""
+    if not _WIKI_LANG_RE.match(lang):
+        lang = _WIKI_FALLBACK_LANG
+    group = await _release_group_id(mbid, artist, album, kind)
+    if not group:
+        return None
+
+    cached = _load_cache().get("album_bio_by_group", {}).get(group, {}).get(lang)
+    if cached and time.time() - cached["fetched_at"] < _BIO_TTL_SECONDS:
+        return cached["bio"]
+
+    ref = _load_cache().get("wiki_by_release_group", {}).get(group)
+    if ref is None:
+        try:
+            data = await _mb_get(f"release-group/{group}", {"inc": "url-rels"})
+        except _MbNotFound:
+            data = {}
+        if data is None:
+            return None
+        urls = [(rel.get("url") or {}).get("resource") for rel in data.get("relations", [])]
+        ref = _wiki_ref_from_urls([url for url in urls if url])
+        cache = _load_cache()
+        cache.setdefault("wiki_by_release_group", {})[group] = ref
+        _save_cache(cache)
+
+    try:
+        bio = await _summary_from_ref(ref, lang)
+    except (httpx.HTTPError, ValueError) as e:
+        logger.warning(f"[recommendations] Wikipedia lookup failed for {album!r}: {e}")
+        return None
+
+    cache = _load_cache()
+    cache.setdefault("album_bio_by_group", {}).setdefault(group, {})[lang] = {
         "fetched_at": time.time(),
         "bio": bio,
     }

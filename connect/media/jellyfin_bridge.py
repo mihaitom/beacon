@@ -280,6 +280,20 @@ def _map_album(item: dict) -> dict:
     genres = item.get("Genres") or []
     if genres:
         album["genre"] = genres[0]
+    # OpenSubsonic's album extras, for the album page's header. Jellyfin
+    # keeps a record label among an album's Studios (rarely filled), and
+    # the MusicBrainz release as the MusicBrainzAlbum provider id - the
+    # same thing Navidrome sends as musicBrainzId.
+    # A tag written as one "Trance;Dance;Pop" string reaches Jellyfin
+    # unsplit on some libraries, which would make one giant genre.
+    split = [g.strip() for genre in genres for g in genre.split(";") if g.strip()]
+    _set(album, "genres", [{"name": g} for g in split])
+    _set(
+        album,
+        "recordLabels",
+        [{"name": s["Name"]} for s in item.get("Studios") or [] if s.get("Name")],
+    )
+    _set(album, "musicBrainzId", (item.get("ProviderIds") or {}).get("MusicBrainzAlbum"))
     if _is_favorite(item):
         album["starred"] = "true"
     return album

@@ -145,3 +145,24 @@ export async function getArtistBio(name: string, lang: string): Promise<ArtistBi
   )
   return data.bio
 }
+
+/** The opening paragraph of the album's Wikipedia article (see
+ * connect/core/recommendations.py's get_album_bio()), in `lang` where
+ * possible - the same shape and terms as getArtistBio(). `mbid` and `type`
+ * are what the media server knows the album as, where it knows them; both
+ * make the right article likelier. */
+export async function getAlbumBio(album: {
+  artist: string
+  name: string
+  musicBrainzId?: string | null
+  releaseTypes?: string[]
+  lang: string
+}): Promise<ArtistBio | null> {
+  const params = new URLSearchParams({ artist: album.artist, album: album.name, lang: album.lang })
+  if (album.musicBrainzId) params.set('mbid', album.musicBrainzId)
+  if (album.releaseTypes?.[0]) params.set('type', album.releaseTypes[0])
+  const data = await fetchConnect<{ bio: ArtistBio | null }>(
+    `/recommendations/album-bio?${params.toString()}`,
+  )
+  return data.bio
+}

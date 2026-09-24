@@ -47,6 +47,8 @@ export function mapSong(raw: RawSong): Song {
 }
 
 export function mapAlbum(raw: RawAlbum): Album {
+  const originalYear = raw.originalReleaseDate?.year ?? null
+  const editionYear = raw.releaseDate?.year ?? null
   return {
     id: raw.id,
     name: raw.name,
@@ -61,6 +63,13 @@ export function mapAlbum(raw: RawAlbum): Album {
     rating: raw.userRating ?? 0,
     sortName: raw.sortName ?? null,
     songs: (raw.song ?? []).map(mapSong),
+    labels: (raw.recordLabels ?? []).map((label) => label.name).filter(Boolean),
+    releaseTypes: (raw.releaseTypes ?? []).map((type) => type.toLowerCase()).filter(Boolean),
+    genres: (raw.genres ?? []).map((genre) => genre.name).filter(Boolean),
+    version: raw.version || null,
+    originalYear,
+    reissueYear: originalYear && editionYear && editionYear !== originalYear ? editionYear : null,
+    musicBrainzId: raw.musicBrainzId || null,
   }
 }
 

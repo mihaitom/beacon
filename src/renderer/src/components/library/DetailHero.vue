@@ -1,6 +1,12 @@
 <template>
-  <section class="detail-hero">
-    <div v-if="rating !== null || starred !== null" class="detail-hero__controls">
+  <section class="detail-hero" :class="{ 'detail-hero--large': large }">
+    <div
+      v-if="rating !== null || starred !== null || $slots.controls"
+      class="detail-hero__controls"
+    >
+      <!-- A page's own controls for its backdrop (the artist page's
+       - background cycle button), ahead of the rating. -->
+      <slot name="controls" />
       <v-rating
         v-if="rating !== null"
         :model-value="rating"
@@ -29,7 +35,7 @@
       <cover-art
         :cover-art-id="coverArtId"
         :image-url="imageUrl"
-        :size="180"
+        :size="coverSize"
         :fallback-icon="fallbackIcon"
         class="detail-hero__cover cover-shadow"
         :class="{ 'detail-hero__cover--zoomable': hasArtwork }"
@@ -51,6 +57,14 @@
         <div v-if="$slots.meta" class="detail-hero__meta">
           <slot name="meta" />
         </div>
+        <!-- Small facts that are not a sentence (the album page's label,
+         - edition, reissue year), under the meta line. -->
+        <div v-if="$slots.tags" class="detail-hero__tags">
+          <slot name="tags" />
+        </div>
+        <!-- The large variant keeps its paragraph in this column, beside
+         - the cover, rather than under the whole hero. -->
+        <slot v-if="large" name="description" />
         <div v-if="$slots.actions" class="detail-hero__actions">
           <slot name="actions" />
         </div>
@@ -59,8 +73,8 @@
 
     <!-- Only when the page actually passes one (the artist page's Wikipedia
      - paragraph). Rendering an empty wrapper for a page with no such slot
-     - (an album) would reserve a paragraph's height for nothing. -->
-    <div v-if="$slots.description" class="detail-hero__bio">
+     - would reserve a paragraph's height for nothing. -->
+    <div v-if="$slots.description && !large" class="detail-hero__bio">
       <slot name="description" />
     </div>
   </section>
@@ -89,6 +103,13 @@ export default {
     /** Fanart.tv's HD clear logo, or null - see the template. */
     logoUrl: { type: String as PropType<string | null>, default: null },
     fallbackIcon: { type: String, default: 'mdi-account-music' },
+    /** The cover's edge: pixels, or a CSS length (the album page sizes it
+     * from the window's height). */
+    coverSize: { type: [Number, String] as PropType<number | string>, default: 180 },
+    /** The album page's header: a cover as tall as the header it sits in,
+     * a display-size name that may take two lines, and no gap below - the
+     * page's own track list starts under it. */
+    large: { type: Boolean, default: false },
     starred: { type: Boolean as PropType<boolean | null>, default: null },
     rating: { type: Number as PropType<number | null>, default: null },
   },
@@ -184,12 +205,58 @@ export default {
   margin-top: 16px;
 }
 
+.detail-hero__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
 /* Roughly the longest bio shown without collapsing (five lines) plus its
  * footer links - see ArtistBio.vue. A page that passes the slot reserves
  * the height, so the hero never shifts when the paragraph loads. */
 .detail-hero__bio {
   min-height: 9rem;
   margin-top: 16px;
+}
+
+/* Fills whatever height the page gives it, so the cover and the text
+ * beside it sit on the header's bottom edge. */
+.detail-hero--large {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.detail-hero--large .detail-hero__main {
+  flex: 1;
+  gap: 36px;
+}
+
+/* Narrow enough that a long name wraps before it reaches the page's photo
+ * backdrop (see DetailPageBackdrop.vue), which starts around the middle of
+ * the page; the header has the height for a third line. */
+.detail-hero--large .detail-hero__info {
+  max-width: 34vw;
+}
+
+.detail-hero--large .detail-hero__name {
+  font-size: clamp(2rem, 3.2vw, 3.5rem);
+  line-height: 1.1;
+  margin-bottom: 10px;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.detail-hero--large .detail-hero__meta {
+  font-size: 0.875rem;
+}
+
+.detail-hero--large .detail-hero__actions {
+  margin-top: 20px;
 }
 
 /* A phone has no room for cover and text side by side. */

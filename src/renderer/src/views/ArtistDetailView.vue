@@ -16,6 +16,16 @@
         @toggle-star="toggleStar"
         @set-rating="setRating"
       >
+        <!-- Only with more than one background to step through - with a
+         - single image the button would do nothing. -->
+        <template v-if="canCycleBackground" #controls>
+          <v-btn
+            icon="mdi-wallpaper"
+            variant="text"
+            :title="$t('nowPlaying.nextBackground')"
+            @click="cycleBackground"
+          />
+        </template>
         <template #meta>
           {{ artist.albumCount }}
           {{ artist.albumCount === 1 ? $t('library.album1') : $t('library.albumsN') }} ·
@@ -150,7 +160,12 @@ import {
   type ArtistBio as ArtistBioData,
 } from '@/services/connect/recommendations'
 import ArtistBio from '@/components/library/ArtistBio.vue'
-import { getArtistArt, type ArtistArt } from '@/services/connect/fanart'
+import {
+  getArtistArt,
+  nextBackground,
+  rememberBackground,
+  type ArtistArt,
+} from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
 import { useFanartStore } from '@/stores/fanart'
 import { toExternalLinkList, type ExternalLinkKey } from '@/components/library/externalArtistLinks'
@@ -264,6 +279,9 @@ export default {
     },
     backdropIsPhoto(): boolean {
       return Boolean(this.artistArt?.background)
+    },
+    canCycleBackground(): boolean {
+      return (this.artistArt?.backgrounds.length ?? 0) > 1
     },
     fanartEnabled(): boolean {
       return useFanartStore().enabled
@@ -440,11 +458,27 @@ export default {
       // Preload before setting them: the backdrop fades in and the logo
       // swaps in, and both only read as a fade if the images are already
       // paintable when they are shown.
-      if (art?.background) await preloadImage(art.background)
-      if (art?.logo) await preloadImage(art.logo)
+      await Promise.all(
+        [art?.background, art?.logo].filter((url): url is string => Boolean(url)).map(preloadImage),
+      )
       if (this.$route.params.id !== id) return
       this.artistArt = art
       this.artResolved = true
+    },
+    /** Steps to the artist's next Fanart.tv background - the hero's cycle
+     * button. Preloaded first, like loadArt(), so the backdrop crossfades
+     * to an image rather than to a blank. */
+    async cycleBackground() {
+      const art = this.artistArt
+      const artist = this.artist
+      if (!art || !artist) return
+      const next = nextBackground(art.backgrounds, art.background)
+      if (!next) return
+      await preloadImage(next)
+      // The page may have moved on to another artist while it loaded.
+      if (this.artistArt !== art) return
+      this.artistArt = { ...art, background: next }
+      rememberBackground(artist.name, next)
     },
     async toggleStar() {
       if (!this.artist) return

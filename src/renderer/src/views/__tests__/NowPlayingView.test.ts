@@ -36,7 +36,10 @@ vi.mock('@/services/connect/logLevel', () => ({ getLogLevel: vi.fn() }))
 
 // The artist background is a per-song network lookup; a real one would fail
 // (or hit the network) in every test that isn't about it.
-vi.mock('@/services/connect/fanart', () => ({ getArtistArt: vi.fn().mockResolvedValue(null) }))
+vi.mock('@/services/connect/fanart', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/connect/fanart')>()),
+  getArtistArt: vi.fn().mockResolvedValue(null),
+}))
 
 // jsdom never fires an image's load event, so the real one would leave the
 // background waiting forever.

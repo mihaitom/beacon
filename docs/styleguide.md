@@ -313,15 +313,30 @@ size, so it stays one cached image rather than a private resolution per
 caller.
 
 One surface deliberately breaks the blur, for a Fanart.tv image that is
-already a large, wide photo: a detail page's full-bleed backdrop
+already a large, wide photo: a detail page's backdrop
 (`DetailPageBackdrop.vue`'s `.detail-page__backdrop--photo`), shown sharp
 with a scrim over its top and masked out towards the bottom so the content
-below sits on the plain surface. Both the artist page and the album page
-(the album artist's background) use it. Blurring a photo that size would
-only turn it into a wash of itself. Without one, the same layer falls back
-to the blurred cover wash, so the page never looks bare. Now Playing does
-the same for the current song's artist background
-(`.now-playing__backdrop--artist`).
+below sits on the plain surface. It takes a 16:9 area at the right edge and
+fades out to the left rather than spanning the page: the header's text
+column then sits on the plain surface instead of on whatever the photo has
+there, and a band wider than 16:9 does not crop the photo's top and bottom.
+Its width follows the band's height, so a taller band shows a larger photo.
+The fade is eased, since a linear ramp shows a seam where it starts.
+On a phone, where the text runs the full width anyway, it is the full band
+again.
+
+The album page uses the `banded` arrangement: a header of 40% of the window
+that stays in view, with the backdrop spanning exactly that header (its
+photo at 2.4:1 rather than 16:9, since a header that shallow would otherwise
+be half empty), and the
+track list scrolling on its own below it. Its `DetailHero` is the `large`
+variant - a cover as tall as the header, the name beside it at display size
+and wrapping (up to three lines) before it reaches the photo. Over the name
+sits the release type ("Single", "Album · Compilation") rather than a plain
+"Album"; under the meta line, label, edition and reissue year as small
+tonal chips, then the album's Wikipedia paragraph (three lines before "Show
+more"), then Play and Shuffle. The header's height is a minimum, so an
+expanded paragraph grows it rather than spilling out.
 
 Both are preloaded (`services/preloadImage.ts`) before the layer swaps: a
 background-image set and activated in the same tick is blank until the bytes

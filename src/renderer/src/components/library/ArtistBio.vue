@@ -6,6 +6,7 @@
     <p
       ref="text"
       :lang="lang"
+      :style="{ '--bio-max-lines': maxLines, '--bio-collapsed-lines': collapsedLines }"
       class="artist-bio__text text-body-medium"
       :class="{
         'artist-bio__text--clamped': !expanded,
@@ -47,12 +48,17 @@ export default {
     text: { type: String, required: true },
     url: { type: String as PropType<string | null>, default: null },
     lang: { type: String, default: '' },
+    /** The most lines shown without asking, and how far a longer one
+     * collapses so "Show more" reveals something. The album page's header
+     * has room for fewer than the artist page. */
+    maxLines: { type: Number, default: 5 },
+    collapsedLines: { type: Number, default: 3 },
   },
   data() {
     return {
       expanded: false,
-      // Whether the paragraph runs past the five-line limit - only then is
-      // there anything for "Show more" to reveal.
+      // Whether the paragraph runs past maxLines - only then is there
+      // anything for "Show more" to reveal.
       overflowing: false,
       resizeObserver: null as ResizeObserver | null,
     }
@@ -80,9 +86,9 @@ export default {
       const lineHeight = parseFloat(getComputedStyle(el).lineHeight)
       if (!lineHeight) return
       // scrollHeight stays the whole paragraph whatever the clamp shows, so
-      // the five-line limit can be compared against directly instead of
-      // against the height the current clamp happens to leave visible.
-      this.overflowing = Math.round(el.scrollHeight / lineHeight) > 5
+      // the limit can be compared against directly instead of against the
+      // height the current clamp happens to leave visible.
+      this.overflowing = Math.round(el.scrollHeight / lineHeight) > this.maxLines
     },
   },
 }
@@ -107,24 +113,24 @@ export default {
   line-height: 1.5;
 }
 
-/* Five lines is the most shown without asking: up to that, nothing is cut,
- * so the "Show more" link only appears from the sixth line on. The clamp
+/* maxLines is the most shown without asking: up to that, nothing is cut,
+ * so the "Show more" link only appears from the line after it. The clamp
  * stays on even when nothing is cut, so the measurement above always has a
  * limit to compare against. */
 .artist-bio__text--clamped {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
-  line-clamp: 5;
+  -webkit-line-clamp: var(--bio-max-lines);
+  line-clamp: var(--bio-max-lines);
   overflow: hidden;
 }
 
-/* Past five lines the paragraph collapses to three instead, so the "Show
- * more" link actually reveals something. Set together with --clamped, so
- * this has to come after it. */
+/* Past maxLines the paragraph collapses to collapsedLines instead, so the
+ * "Show more" link actually reveals something. Set together with
+ * --clamped, so this has to come after it. */
 .artist-bio__text--collapsed {
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
+  -webkit-line-clamp: var(--bio-collapsed-lines);
+  line-clamp: var(--bio-collapsed-lines);
 }
 
 .artist-bio__footer {

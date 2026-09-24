@@ -1,15 +1,21 @@
 <template>
-  <!-- The album's artist background from Fanart.tv, full-bleed across the
-   - top of the page and masked out towards the bottom so the track list
-   - below sits on the plain surface. Without one it falls back to the
-   - blurred album cover wash, so the page never looks bare. -->
-  <detail-page-backdrop :url="backdropUrl" :is-photo="backdropIsPhoto" :show="Boolean(album)" short>
-    <v-container v-if="album" fluid>
+  <!-- A header of fixed height with the album artist's Fanart.tv background
+   - behind it (the blurred album cover wash without one), and the track
+   - list scrolling on its own below, so the header stays in view. -->
+  <detail-page-backdrop
+    :url="backdropUrl"
+    :is-photo="backdropIsPhoto"
+    :show="Boolean(album)"
+    banded
+  >
+    <v-container v-if="album" fluid class="album-header">
       <detail-hero
         :name="album.name"
-        :eyebrow="$t('library.album')"
+        :eyebrow="releaseTypeLabel"
         :cover-art-id="album.coverArtId"
         fallback-icon="mdi-album"
+        cover-size="var(--album-cover-size)"
+        large
         :starred="authStore.capabilities.favorites ? album.starred : null"
         :rating="authStore.capabilities.personalRating ? album.rating : null"
         @toggle-star="toggleStar"
@@ -23,18 +29,46 @@
             {{ album.artist }}
           </router-link>
         </template>
-        <template #meta>
-          {{ album.year ?? '' }} · {{ $t('library.songCount', { count: album.songCount }) }}
+        <template #meta>{{ metaLine }}</template>
+        <template v-if="bio" #description>
+          <artist-bio
+            :text="bio.text"
+            :url="bio.url"
+            :lang="bio.lang"
+            :max-lines="3"
+            :collapsed-lines="3"
+          />
+        </template>
+        <template v-if="tags.length" #tags>
+          <v-chip v-for="tag in tags" :key="tag" size="small" variant="tonal" label>
+            {{ tag }}
+          </v-chip>
+        </template>
+        <template #actions>
+          <div class="album-actions">
+            <v-btn
+              color="primary"
+              rounded="pill"
+              size="large"
+              prepend-icon="mdi-play"
+              :disabled="!album.songs.length"
+              @click="playAll"
+            >
+              {{ $t('library.play') }}
+            </v-btn>
+            <v-btn
+              variant="tonal"
+              rounded="pill"
+              size="large"
+              prepend-icon="mdi-shuffle-variant"
+              :disabled="!album.songs.length"
+              @click="playShuffled"
+            >
+              {{ $t('library.playShuffled') }}
+            </v-btn>
+          </div>
         </template>
       </detail-hero>
-
-      <song-table
-        :songs="album.songs"
-        :default-sort-key="null"
-        group-by-disc
-        :exclude-columns="['cover', 'album']"
-        class="album-tracks"
-      />
     </v-container>
     <v-container v-else>
       <page-loader v-if="libraryStore.loading" />
@@ -42,23 +76,44 @@
         {{ libraryStore.error }}
       </v-alert>
     </v-container>
+
+    <template v-if="album" #below>
+      <v-container fluid class="album-tracks">
+        <song-table
+          :songs="album.songs"
+          :default-sort-key="null"
+          group-by-disc
+          sticky-header
+          :exclude-columns="['cover', 'album']"
+        />
+      </v-container>
+    </template>
   </detail-page-backdrop>
 </template>
 
 <script lang="ts">
+import { formatTotalDuration } from '@/services/totalDuration'
 import { useLibraryStore } from '@/stores/library'
+import type { Album } from '@/types/library'
 import { useAuthStore } from '@/stores/auth'
+import { usePlaybackStore } from '@/stores/playback'
 import DetailHero from '@/components/library/DetailHero.vue'
 import DetailPageBackdrop from '@/components/library/DetailPageBackdrop.vue'
 import SongTable from '@/components/library/SongTable.vue'
 import PageLoader from '@/components/PageLoader.vue'
 import { getArtistArt, type ArtistArt } from '@/services/connect/fanart'
+import { getAlbumBio, type ArtistBio as ArtistBioData } from '@/services/connect/recommendations'
+import ArtistBio from '@/components/library/ArtistBio.vue'
 import { preloadImage } from '@/services/preloadImage'
 import { useFanartStore } from '@/stores/fanart'
 
+// Beyond this many the meta line stops being one line; the first ones are
+// the ones the server ranks first.
+const MAX_GENRES = 3
+
 export default {
   name: 'AlbumDetailView',
-  components: { DetailHero, DetailPageBackdrop, SongTable, PageLoader },
+  components: { DetailHero, DetailPageBackdrop, SongTable, PageLoader, ArtistBio },
   data() {
     return {
       album: null as Awaited<ReturnType<ReturnType<typeof useLibraryStore>['fetchAlbum']>> | null,
@@ -66,6 +121,8 @@ export default {
       // when the installation has Fanart.tv on and the artist has them.
       // Null falls back to the blurred album cover backdrop.
       artistArt: null as ArtistArt | null,
+      // The album's Wikipedia paragraph, when MusicBrainz links an article.
+      bio: null as ArtistBioData | null,
       // Whether the Fanart.tv lookup has finished (either way). The backdrop
       // is held back until it has, so it appears once - the answer or the
       // cover - instead of showing the cover and then swapping.
@@ -85,11 +142,51 @@ export default {
     backdropUrl(): string | null {
       if (!this.artResolved) return null
       if (this.artistArt?.background) return this.artistArt.background
-      if (!this.album) return null
-      if (this.album.coverArtId) {
-        return useLibraryStore().client().coverArtUrl(this.album.coverArtId, 300)
-      }
-      return null
+      if (!this.album?.coverArtId) return null
+      return useLibraryStore().client().coverArtUrl(this.album.coverArtId, 300)
+    },
+    /** Summed from the tracks rather than the album's own duration, which
+     * a bridge may send as 0. */
+    durationLabel(): string {
+      const seconds = this.album?.songs.reduce((total, song) => total + song.duration, 0) ?? 0
+      return formatTotalDuration(seconds, this.$t)
+    },
+    metaLine(): string {
+      if (!this.album) return ''
+      const count = this.$t('library.songCount', { count: this.album.songCount })
+      const genres = this.album.genres?.length ? this.album.genres : [this.album.genre]
+      return [
+        this.album.originalYear ?? this.album.year,
+        count,
+        this.durationLabel,
+        genres.filter(Boolean).slice(0, MAX_GENRES).join(', '),
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    },
+    /** What kind of release this is ("Single", "Album · Compilation"), in
+     * place of a plain "Album" over the name. A type the app has no word
+     * for is shown as the server spells it. */
+    releaseTypeLabel(): string {
+      const types = this.album?.releaseTypes ?? []
+      if (!types.length) return this.$t('library.album')
+      return types
+        .map((type) => {
+          const key = `library.releaseTypes.${type.replace(/-/g, '')}`
+          return this.$te(key) ? this.$t(key) : type.charAt(0).toUpperCase() + type.slice(1)
+        })
+        .join(' · ')
+    },
+    /** Label, edition and reissue year - the facts that are not part of
+     * the meta sentence. */
+    tags(): string[] {
+      if (!this.album) return []
+      const { labels = [], version, reissueYear } = this.album
+      return [
+        ...labels,
+        version ?? '',
+        reissueYear ? this.$t('library.reissued', { year: reissueYear }) : '',
+      ].filter(Boolean)
     },
     backdropIsPhoto(): boolean {
       return Boolean(this.artistArt?.background)
@@ -103,6 +200,10 @@ export default {
   },
   watch: {
     '$route.params.id': 'loadAlbum',
+    // A different Wikipedia, not just different labels around the same text.
+    '$i18n.locale'() {
+      if (this.album) void this.loadBio(this.album, this.album.id)
+    },
     // Turning Fanart.tv off clears the background immediately; turning it
     // back on fetches it again - no reload needed.
     fanartEnabled() {
@@ -115,6 +216,7 @@ export default {
       const id = this.$route.params.id as string
       this.artistArt = null
       this.artResolved = false
+      this.bio = null
       try {
         const album = await this.libraryStore.fetchAlbum(id)
         // A newer navigation may have already resolved and moved the route
@@ -123,10 +225,24 @@ export default {
         if (this.$route.params.id !== id) return
         this.album = album
         void this.loadArt(album.artist, id)
+        void this.loadBio(album, id)
       } catch (error) {
         if (this.$route.params.id !== id) return
         console.error('[album-detail] Failed to load album:', error)
       }
+    },
+    // Fired and forgotten, like loadArt(): a failure just leaves the
+    // paragraph out.
+    async loadBio(album: Album, id: string) {
+      const lang = this.$i18n.locale
+      let bio: ArtistBioData | null = null
+      try {
+        bio = await getAlbumBio({ ...album, lang })
+      } catch (error) {
+        console.error('[album-detail] Album bio lookup failed:', error)
+      }
+      if (this.$route.params.id !== id || this.$i18n.locale !== lang) return
+      this.bio = bio
     },
     // Fired and forgotten: a failure (or no Fanart.tv key, or no images)
     // simply leaves the page on its blurred cover backdrop.
@@ -154,6 +270,19 @@ export default {
       this.artistArt = art
       this.artResolved = true
     },
+    // pinFirst false: the whole album rather than a pick of one track, so
+    // shuffle may reorder the first one too. peek: it replaces the queue
+    // with more than one song - see peekQueueDrawer()'s own comment.
+    async playAll() {
+      if (!this.album?.songs.length) return
+      const songs = this.album.songs
+      await usePlaybackStore().playSongList(songs, 0, false, songs.length > 1)
+    },
+    async playShuffled() {
+      const playback = usePlaybackStore()
+      if (!playback.shuffle) playback.toggleShuffle()
+      await this.playAll()
+    },
     async toggleStar() {
       if (!this.album) return
       await this.libraryStore.toggleStar({ albumId: this.album.id, starred: this.album.starred })
@@ -175,10 +304,33 @@ export default {
 </script>
 
 <style scoped>
-/* Held down off the hero so the Fanart.tv background above it has room to
- * fade out before the rows start (see DetailPageBackdrop.vue's short band). */
+/* 40% of the window below the app bar and above the player bar; the cover
+ * takes its full height less the padding, up to a share of the width so a
+ * narrow window keeps room for the name beside it. */
+.album-header {
+  --album-cover-size: min(
+    calc((100vh - var(--v-layout-top, 0px) - var(--v-layout-bottom, 0px)) * 0.4 - 48px),
+    36vw
+  );
+  /* A minimum rather than a height: an expanded Wikipedia paragraph
+   * grows the header instead of spilling out of it. */
+  min-height: calc((100vh - var(--v-layout-top, 0px) - var(--v-layout-bottom, 0px)) * 0.4);
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+}
+
+.album-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The column labels stick to the top of the list's own scroll area rather
+ * than below the app bar (see SongTable.vue's sticky header). */
 .album-tracks {
-  margin-top: 96px;
+  --beacon-sticky-top: 0px;
+  padding-top: 0;
 }
 
 /* Link styling lives here, on the actual link, not on DetailHero.vue's

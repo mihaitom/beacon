@@ -313,10 +313,26 @@ def _map_album(item: dict) -> dict:
     genres = _tags(item, "Genre")
     if genres:
         album["genre"] = genres[0]
+    # OpenSubsonic's album extras, for the album page's header. Plex keeps
+    # the record label as `studio`, the release type ("Album", "Single",
+    # "EP") as a Format tag, and the MusicBrainz id among the item's Guids.
+    _set(album, "genres", [{"name": g} for g in genres])
+    _set(album, "recordLabels", [{"name": item["studio"]}] if item.get("studio") else [])
+    _set(album, "releaseTypes", [f.lower() for f in _tags(item, "Format")])
+    _set(album, "musicBrainzId", _mbid(item))
     user_rating = _map_user_rating(item)
     if user_rating is not None:
         album["userRating"] = user_rating
     return album
+
+
+def _mbid(item: dict) -> str | None:
+    """The MusicBrainz id among a Plex item's Guids ("mbid://<uuid>")."""
+    for guid in item.get("Guid") or []:
+        value = guid.get("id") or ""
+        if value.startswith("mbid://"):
+            return value.removeprefix("mbid://")
+    return None
 
 
 def _map_artist(item: dict) -> dict:

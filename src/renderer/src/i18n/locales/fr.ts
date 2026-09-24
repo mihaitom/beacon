@@ -132,6 +132,23 @@ export default {
     size: 'Taille',
     lastPlayed: 'Dernière',
     play: 'Lire',
+    playShuffled: 'Aléatoire',
+    // MusicBrainz's release types, as the server sends them (lower-case;
+    // 'dj-mix' looked up as djmix).
+    releaseTypes: {
+      album: 'Album',
+      single: 'Single',
+      ep: 'EP',
+      compilation: 'Compilation',
+      live: 'Live',
+      soundtrack: 'Bande originale',
+      remix: 'Remix',
+      broadcast: 'Émission',
+      mixtape: 'Mixtape',
+      djmix: 'Mix DJ',
+      demo: 'Démo',
+    },
+    reissued: 'Réédition {year}',
     playRandom: 'Lecture aléatoire',
     playFromTopPlayed: 'Aléatoire parmi les plus écoutés',
     playNext: 'Lire ensuite',

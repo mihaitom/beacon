@@ -1,6 +1,7 @@
 """routes/recommendations.py — GET /recommendations/similar-artists,
 GET /recommendations/artist-images, GET /recommendations/artist-links,
-GET /recommendations/artist-links-by-mbid, GET /recommendations/artist-bio
+GET /recommendations/artist-links-by-mbid, GET /recommendations/artist-bio,
+GET /recommendations/album-bio
 
 Machine-to-machine (CONNECT_TOKEN), not session-scoped — none of these
 touch session.media, all are pure MusicBrainz/ListenBrainz/Deezer lookups
@@ -16,13 +17,14 @@ to be open — independent of the toggle there, since a single on-demand
 lookup for the one artist you're actively looking at isn't the kind of
 unasked-for background pass the toggle exists to guard against; see that
 view's own comment. artist-bio is only ever called from that artist page,
-on the same terms.
+on the same terms, and album-bio from the album page.
 """
 
 from fastapi import APIRouter, Depends, Query
 
 from core.auth import require_token
 from core.recommendations import (
+    get_album_bio,
     get_artist_bio,
     get_artist_images,
     get_artist_links,
@@ -60,4 +62,16 @@ async def artist_links_by_mbid(mbid: list[str] = Query(default=[])):
 @router.get("/artist-bio")
 async def artist_bio(name: str, lang: str = "en"):
     bio = await get_artist_bio(name, lang)
+    return {"bio": bio}
+
+
+@router.get("/album-bio")
+async def album_bio(
+    artist: str, album: str, mbid: str | None = None, type: str | None = None, lang: str = "en"
+):
+    """The album page's Wikipedia paragraph, like artist-bio above. `mbid`
+    is the MusicBrainz release (or release group) the media server knows
+    the album as, and `type` its release type ("album", "single"), where
+    the server knows them."""
+    bio = await get_album_bio(mbid or None, artist, album, lang, type or None)
     return {"bio": bio}

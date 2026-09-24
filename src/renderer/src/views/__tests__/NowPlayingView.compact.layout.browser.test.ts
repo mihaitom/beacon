@@ -34,7 +34,10 @@ import { useLyricsStore } from '@/stores/lyrics'
 import { getArtistArt } from '@/services/connect/fanart'
 
 // A network lookup the layout under test does not care about.
-vi.mock('@/services/connect/fanart', () => ({ getArtistArt: vi.fn().mockResolvedValue(null) }))
+vi.mock('@/services/connect/fanart', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/connect/fanart')>()),
+  getArtistArt: vi.fn().mockResolvedValue(null),
+}))
 
 const vuetify = createVuetify({ components, directives })
 const wrappers: VueWrapper[] = []

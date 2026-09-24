@@ -13,10 +13,17 @@ import { useLibraryStore } from '@/stores/library'
 import type { Album } from '@/types/library'
 import { getArtistArt } from '@/services/connect/fanart'
 import { useFanartStore } from '@/stores/fanart'
+import { getAlbumBio } from '@/services/connect/recommendations'
+import { usePlaybackStore } from '@/stores/playback'
+import { makeSong } from '@/stores/__tests__/fixtures'
 import AlbumDetailView from '../AlbumDetailView.vue'
 
 vi.mock('@/services/connect/fanart', () => ({
   getArtistArt: vi.fn().mockResolvedValue(null),
+}))
+
+vi.mock('@/services/connect/recommendations', () => ({
+  getAlbumBio: vi.fn().mockResolvedValue(null),
 }))
 
 // jsdom never fires an image's load event, so the real one would leave the
@@ -30,7 +37,13 @@ interface AlbumVm {
   artistArt: { background: string | null; logo: string | null; banner: string | null } | null
   readonly backdropUrl: string | null
   readonly backdropIsPhoto: boolean
+  readonly metaLine: string
+  readonly releaseTypeLabel: string
+  readonly tags: string[]
+  bio: { text: string } | null
   loadAlbum(): Promise<void>
+  playAll(): Promise<void>
+  playShuffled(): Promise<void>
 }
 
 function makeAlbum(overrides: Partial<Album> = {}): Album {
@@ -209,5 +222,104 @@ describe('AlbumDetailView Fanart.tv backdrop', () => {
     // the new one would attribute it to the wrong artist.
     expect(vm.artistArt).toBeNull()
     expect(vm.backdropUrl).toBe('https://cover/cover1?size=300')
+  })
+})
+
+describe('AlbumDetailView header', () => {
+  const songs = [
+    makeSong('s1', { duration: 1800 }),
+    makeSong('s2', { duration: 1800 }),
+    makeSong('s3', { duration: 1580 }),
+  ]
+
+  it('plays the whole album from its first track', async () => {
+    const { vm } = await mountAlbum(makeAlbum({ songs }))
+    const playback = usePlaybackStore()
+    const play = vi.spyOn(playback, 'playSongList').mockResolvedValue()
+
+    await vm.playAll()
+
+    expect(play).toHaveBeenCalledWith(songs, 0, false, true)
+  })
+
+  it('turns shuffle on for the shuffle button, and leaves it on', async () => {
+    const { vm } = await mountAlbum(makeAlbum({ songs }))
+    const playback = usePlaybackStore()
+    const play = vi.spyOn(playback, 'playSongList').mockResolvedValue()
+    const toggle = vi.spyOn(playback, 'toggleShuffle').mockImplementation(() => {
+      playback.shuffle = !playback.shuffle
+    })
+
+    await vm.playShuffled()
+    await vm.playShuffled()
+
+    expect(playback.shuffle).toBe(true)
+    expect(toggle).toHaveBeenCalledTimes(1)
+    expect(play).toHaveBeenCalledTimes(2)
+  })
+
+  it('sums the running time from the tracks', async () => {
+    // The album's own duration stays 0 here, as a bridge may send it.
+    const { vm } = await mountAlbum(makeAlbum({ songs, genre: 'Pop' }))
+
+    expect(vm.metaLine).toBe('2020 · 3 songs · 1 hr 26 min · Pop')
+  })
+
+  it('names the kind of release over the title, and falls back to "Album"', async () => {
+    const { vm } = await mountAlbum(makeAlbum({ releaseTypes: ['album', 'compilation', 'dj-mix'] }))
+    expect(vm.releaseTypeLabel).toBe('Album · Compilation · DJ mix')
+
+    const plain = await mountAlbum(makeAlbum({ releaseTypes: [] }))
+    expect(plain.vm.releaseTypeLabel).toBe('Album')
+  })
+
+  it('shows a release type it has no word for as the server spells it', async () => {
+    const { vm } = await mountAlbum(makeAlbum({ releaseTypes: ['audiobook'] }))
+    expect(vm.releaseTypeLabel).toBe('Audiobook')
+  })
+
+  it('tags the label, edition and reissue year', async () => {
+    const { vm } = await mountAlbum(
+      makeAlbum({ labels: ['Island'], version: 'Deluxe Edition', reissueYear: 2011 }),
+    )
+    expect(vm.tags).toEqual(['Island', 'Deluxe Edition', 'Reissue 2011'])
+  })
+
+  it('dates the album by its original release and lists its first genres', async () => {
+    const { vm } = await mountAlbum(
+      makeAlbum({
+        songs,
+        year: 2011,
+        originalYear: 2008,
+        genres: ['Pop', 'Dance', 'Electropop', 'Synth-pop'],
+      }),
+    )
+    expect(vm.metaLine).toBe('2008 · 3 songs · 1 hr 26 min · Pop, Dance, Electropop')
+  })
+
+  it("looks the album's Wikipedia paragraph up by what the server knows it as", async () => {
+    vi.mocked(getAlbumBio).mockResolvedValue({ text: 'An album.', url: null, lang: 'en' })
+
+    const { vm } = await mountAlbum(makeAlbum({ musicBrainzId: 'rel-1', releaseTypes: ['album'] }))
+
+    expect(getAlbumBio).toHaveBeenCalledWith(
+      expect.objectContaining({
+        artist: 'Artist One',
+        name: 'Album One',
+        musicBrainzId: 'rel-1',
+        releaseTypes: ['album'],
+        lang: 'en',
+      }),
+    )
+    expect(vm.bio?.text).toBe('An album.')
+  })
+
+  it('leaves the paragraph out when the lookup fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(getAlbumBio).mockRejectedValue(new Error('offline'))
+
+    const { vm } = await mountAlbum(makeAlbum())
+
+    expect(vm.bio).toBeNull()
   })
 })

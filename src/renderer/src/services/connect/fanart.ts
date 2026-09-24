@@ -35,6 +35,13 @@ function proxied(art: ArtistArt): ArtistArt {
   }
 }
 
+// The background and logo each artist was shown with this session, by name.
+// connect picks at random on every lookup, which on its own would give the
+// artist page, the album page and Now Playing three different photos of the
+// same artist; this keeps one until the next launch, or until someone steps
+// to another (rememberBackground).
+const shown = new Map<string, { background: string | null; logo: string | null }>()
+
 /** `null` means there is nothing to show: no Fanart.tv key, an artist
  * MusicBrainz could not resolve, or one Fanart.tv does not have. The URLs
  * come back routed through connect (see fanartImageUrl), so callers use them
@@ -42,5 +49,34 @@ function proxied(art: ArtistArt): ArtistArt {
 export async function getArtistArt(name: string): Promise<ArtistArt | null> {
   const params = new URLSearchParams({ name })
   const data = await fetchConnect<{ art: ArtistArt | null }>(`/fanart/artist?${params.toString()}`)
-  return data.art ? proxied(data.art) : null
+  if (!data.art) return null
+  const art = proxied(data.art)
+  const previous = shown.get(name)
+  if (previous?.background && art.backgrounds.includes(previous.background)) {
+    art.background = previous.background
+  }
+  if (previous?.logo && art.logo) art.logo = previous.logo
+  shown.set(name, { background: art.background, logo: art.logo })
+  return art
+}
+
+/** Records that `name` is now shown with `background` - the cycle buttons'
+ * pick, so the next page for the same artist keeps it. */
+export function rememberBackground(name: string, background: string): void {
+  const previous = shown.get(name)
+  shown.set(name, { background, logo: previous?.logo ?? null })
+}
+
+/** The background after `current` in `backgrounds`, wrapping round - what
+ * a cycle button steps to. Null when there is nothing else to show. */
+export function nextBackground(backgrounds: string[], current: string | null): string | null {
+  if (backgrounds.length < 2) return null
+  const index = current ? backgrounds.indexOf(current) : -1
+  return backgrounds[(index + 1) % backgrounds.length] ?? null
+}
+
+/** Forgets every artist's shown images - for tests, which share this
+ * module across cases. */
+export function forgetShownArt(): void {
+  shown.clear()
 }

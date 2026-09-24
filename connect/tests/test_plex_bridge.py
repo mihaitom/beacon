@@ -207,6 +207,32 @@ def test_map_album_basic_fields():
     assert album["genre"] == "Jazz"
 
 
+def test_map_album_carries_the_album_page_extras():
+    """Plex's record label (`studio`), release type (a Format tag) and
+    MusicBrainz id (an mbid:// Guid), in OpenSubsonic's own shape."""
+    album = plex_bridge._map_album(
+        {
+            "ratingKey": "2001",
+            "title": "A",
+            "studio": "Palm Pictures",
+            "Format": [{"tag": "Single"}],
+            "Genre": [{"tag": "Reggae"}, {"tag": "Dub"}],
+            "Guid": [{"id": "plex://album/5d07"}, {"id": "mbid://23022-abc"}],
+        }
+    )
+    assert album["recordLabels"] == [{"name": "Palm Pictures"}]
+    assert album["releaseTypes"] == ["single"]
+    assert album["genres"] == [{"name": "Reggae"}, {"name": "Dub"}]
+    assert album["musicBrainzId"] == "23022-abc"
+
+
+def test_map_album_omits_the_extras_it_does_not_have():
+    album = plex_bridge._map_album(
+        {"ratingKey": "2001", "title": "A", "Guid": [{"id": "plex://x"}]}
+    )
+    assert not {"genres", "recordLabels", "releaseTypes", "musicBrainzId"} & set(album)
+
+
 def test_map_album_carries_the_sort_name():
     # The key get_album_list2 sorts by, so the A-Z jump bar can file the
     # album where it actually sits.

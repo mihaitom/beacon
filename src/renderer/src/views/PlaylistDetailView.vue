@@ -74,6 +74,7 @@
 </template>
 
 <script lang="ts">
+import { formatTotalDuration } from '@/services/totalDuration'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
@@ -124,13 +125,8 @@ export default {
     // and is stale the moment a row is removed here. The heading has to
     // move with the rows under it rather than a round trip later.
     durationLabel(): string {
-      const seconds = this.playlist?.songs.reduce((total, song) => total + song.duration, 0)
-      if (!seconds) return ''
-      const total = Math.round(seconds)
-      const hours = Math.floor(total / 3600)
-      const minutes = Math.round((total % 3600) / 60)
-      if (hours > 0) return this.$t('playlists.durationHours', { hours, minutes })
-      return this.$t('playlists.durationMinutes', { minutes })
+      const seconds = this.playlist?.songs.reduce((total, song) => total + song.duration, 0) ?? 0
+      return formatTotalDuration(seconds, this.$t)
     },
   },
   created() {

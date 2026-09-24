@@ -70,6 +70,21 @@ export interface Album {
    * album list is ordered by this, not by `name`. */
   sortName?: string | null
   songs: Song[]
+  /** Record labels, where the server knows them. */
+  labels?: string[]
+  /** MusicBrainz's release types, lower-case ("album", "single", "ep",
+   * "compilation", "live", ...) - an album can be several at once. */
+  releaseTypes?: string[]
+  /** Every genre, where `genre` above is only the first. */
+  genres?: string[]
+  /** The edition's own name ("Deluxe Edition", "Remastered"). */
+  version?: string | null
+  /** The year the album first came out, and the year of this edition when
+   * it is a later one (a reissue); null where the server does not say. */
+  originalYear?: number | null
+  reissueYear?: number | null
+  /** The MusicBrainz release this album is, where the server knows it. */
+  musicBrainzId?: string | null
 }
 
 export interface Artist {

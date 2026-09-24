@@ -98,6 +98,16 @@ export interface RawAlbum {
   starred?: string
   userRating?: number
   song?: RawSong[]
+  // OpenSubsonic extensions (Navidrome; the Jellyfin/Plex bridges send what
+  // their servers have). `releaseDate` is this edition's, against the
+  // original's - a reissue is where the two differ.
+  recordLabels?: { name: string }[]
+  releaseTypes?: string[]
+  genres?: { name: string }[]
+  version?: string
+  originalReleaseDate?: { year?: number }
+  releaseDate?: { year?: number }
+  musicBrainzId?: string
 }
 
 export interface RawArtist {

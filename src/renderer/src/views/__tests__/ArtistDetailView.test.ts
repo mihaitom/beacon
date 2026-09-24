@@ -10,7 +10,7 @@ import { useLibraryStore, TOP_SONGS_LIMIT } from '@/stores/library'
 import type { Album, Song } from '@/types/library'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import { getArtistBio, type ArtistBio } from '@/services/connect/recommendations'
-import { getArtistArt } from '@/services/connect/fanart'
+import { getArtistArt, rememberBackground } from '@/services/connect/fanart'
 import { useFanartStore } from '@/stores/fanart'
 import ArtistDetailView from '../ArtistDetailView.vue'
 
@@ -21,8 +21,10 @@ vi.mock('@/services/connect/recommendations', () => ({
   getArtistBio: vi.fn().mockResolvedValue(null),
 }))
 
-vi.mock('@/services/connect/fanart', () => ({
+vi.mock('@/services/connect/fanart', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/connect/fanart')>()),
   getArtistArt: vi.fn().mockResolvedValue(null),
+  rememberBackground: vi.fn(),
 }))
 
 // jsdom never fires an image's load event, so the real one would leave the
@@ -40,7 +42,14 @@ interface ArtistVm {
   allTopSongs: Song[] | null
   allSongsShown: boolean
   bio: ArtistBio | null
-  artistArt: { background: string | null; logo: string | null; banner: string | null } | null
+  artistArt: {
+    background: string | null
+    backgrounds: string[]
+    logo: string | null
+    banner: string | null
+  } | null
+  readonly canCycleBackground: boolean
+  cycleBackground(): Promise<void>
   readonly artistLogo: string | null
   readonly backdropIsPhoto: boolean
   readonly backdropUrl: string | null
@@ -490,5 +499,34 @@ describe('ArtistDetailView Fanart.tv images', () => {
     const { vm } = await mountArtist(makeArtist([album('x', 2000)]))
 
     expect(vm.backdropUrl).toBeNull()
+  })
+
+  it('steps to the next background and remembers it for the artist', async () => {
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background: 'bg1',
+      backgrounds: ['bg1', 'bg2'],
+      logo: null,
+    })
+    const { vm } = await mountArtist(makeArtist([album('x', 2000)]))
+
+    expect(vm.canCycleBackground).toBe(true)
+    await vm.cycleBackground()
+
+    expect(vm.backdropUrl).toBe('bg2')
+    // What the next page for this artist opens with.
+    expect(rememberBackground).toHaveBeenCalledWith('Artist One', 'bg2')
+  })
+
+  it('offers no cycle button with a single background', async () => {
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background: 'bg1',
+      backgrounds: ['bg1'],
+      logo: null,
+    })
+    const { vm } = await mountArtist(makeArtist([album('x', 2000)]))
+
+    expect(vm.canCycleBackground).toBe(false)
   })
 })

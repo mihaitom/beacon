@@ -1,35 +1,44 @@
 <template>
-  <div class="detail-page" :class="{ 'detail-page--short': short }">
-    <!-- The page-wide artwork layer, full-bleed across the top and masked
-     - out towards the bottom so the content below sits on the plain
-     - surface. `url` is held back (null) until the lookup answers, so the
-     - page never shows the fallback and then swaps to a photo. -->
-    <template v-if="show">
-      <div
-        class="detail-page__backdrop"
-        :class="{
-          'detail-page__backdrop--photo': isPhoto,
-          'detail-page__backdrop--shown': Boolean(url),
-        }"
-        :style="url ? { backgroundImage: `url(${url})` } : {}"
-      />
-      <div class="detail-page__scrim" />
-    </template>
-    <div class="detail-page__content">
-      <slot />
+  <div class="detail-page" :class="{ 'detail-page--banded': banded }">
+    <div class="detail-page__band">
+      <!-- The artwork layer, across the top and masked out towards the
+       - bottom so the content below sits on the plain surface. `url` is
+       - held back (null) until the lookup answers, so the page never shows
+       - the fallback and then swaps to a photo. Two layers so a change
+       - fades rather than cuts (see services/crossfadeBackdrop.ts). -->
+      <template v-if="show">
+        <div
+          v-for="(layerUrl, index) in layers.urls"
+          :key="index"
+          class="detail-page__backdrop"
+          :class="{
+            'detail-page__backdrop--photo': layerIsPhoto[index],
+            'detail-page__backdrop--shown': index === layers.active && Boolean(layerUrl),
+          }"
+          :style="layerUrl ? { backgroundImage: `url(${layerUrl})` } : {}"
+        />
+        <div class="detail-page__scrim" />
+      </template>
+      <div class="detail-page__content">
+        <slot />
+      </div>
+    </div>
+    <div v-if="$slots.below" class="detail-page__below">
+      <slot name="below" />
     </div>
   </div>
 </template>
 
 <script lang="ts">
 import type { PropType } from 'vue'
+import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
 
 /**
- * A detail page's full-bleed backdrop: a Fanart.tv photo shown sharp when
- * there is one, the blurred cover wash otherwise, over a scrim that keeps
- * the header text readable. Shared by ArtistDetailView.vue and
- * AlbumDetailView.vue; the page decides which url to hand in and whether it
- * is a photo (see their own backdropUrl/backdropIsPhoto).
+ * A detail page's backdrop: a Fanart.tv photo shown sharp when there is
+ * one, the blurred cover wash otherwise, over a scrim that keeps the header
+ * text readable. Shared by ArtistDetailView.vue and AlbumDetailView.vue; the
+ * page decides which url to hand in and whether it is a photo (see their
+ * own backdropUrl/backdropIsPhoto).
  */
 export default {
   name: 'DetailPageBackdrop',
@@ -42,17 +51,49 @@ export default {
     /** Whether the page's subject has loaded at all - no backdrop is drawn
      * until it has. */
     show: { type: Boolean, default: true },
-    /** A shallower band that fades out above the content (the album page's
-     * track list) rather than running behind it the way the artist page's
-     * bio and album shelf can take. */
-    short: { type: Boolean, default: false },
+    /** The album page's arrangement: the page is exactly the window's
+     * height, the backdrop spans the header (the default slot) and fades out
+     * at its bottom edge, and the #below content (the track list) scrolls
+     * on its own under it, so the header stays in view. Without it the band
+     * is a fixed height behind all of the content, which the artist page's
+     * bio and album shelf can take, and the whole page scrolls. */
+    banded: { type: Boolean, default: false },
+  },
+  data() {
+    return {
+      layers: createBackdropLayers(),
+      // Per layer, since the one fading out may be a photo while the one
+      // fading in is a blurred cover, or the other way round.
+      layerIsPhoto: [false, false],
+    }
+  },
+  watch: {
+    url: {
+      immediate: true,
+      handler(url: string | null) {
+        showBackdrop(this.layers, url)
+        this.layerIsPhoto[this.layers.active] = this.isPhoto
+      },
+    },
   },
 }
 </script>
 
 <style scoped>
-.detail-page {
+.detail-page__band {
   position: relative;
+  /* The photo's fade to the left, eased rather than linear: a straight ramp
+   * starts with a visible step in brightness, which reads as a seam. */
+  --detail-page-photo-fade: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(0, 0, 0, 0.06) 8%,
+    rgba(0, 0, 0, 0.2) 16%,
+    rgba(0, 0, 0, 0.42) 25%,
+    rgba(0, 0, 0, 0.68) 35%,
+    rgba(0, 0, 0, 0.88) 45%,
+    #000 55%
+  );
 }
 
 .detail-page__backdrop,
@@ -80,19 +121,92 @@ export default {
   opacity: 1;
 }
 
-/* The album page's track list begins right under the hero, so its backdrop
- * is a shorter band that has already faded out by the time the rows start -
- * the full-height version would sit behind them and make them unreadable.
- * The album page pushes its track list down (see AlbumDetailView.vue) so
- * this band can still run most of the way past the hero. */
-.detail-page--short .detail-page__backdrop,
-.detail-page--short .detail-page__scrim {
-  height: min(50vh, 440px);
+/* A photo takes a 16:9 area at the right edge rather than the full width,
+ * fading out to the left: the page's text column sits on the plain surface
+ * instead of on whatever the photo has there, and a band wider than 16:9
+ * no longer crops the photo's top and bottom off (heads, mostly). Its width
+ * follows the band's height, so a taller band shows a larger photo; below
+ * 16:9 it is the full band again. */
+.detail-page__backdrop--photo {
+  left: auto;
+  aspect-ratio: 16 / 9;
+  max-width: 100%;
+  background-position: center;
+  -webkit-mask-image:
+    linear-gradient(to bottom, #000 0%, #000 42%, transparent 100%), var(--detail-page-photo-fade);
+  mask-image:
+    linear-gradient(to bottom, #000 0%, #000 42%, transparent 100%), var(--detail-page-photo-fade);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
 }
 
-.detail-page--short .detail-page__backdrop {
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 18%, transparent 72%);
-  mask-image: linear-gradient(to bottom, #000 0%, #000 18%, transparent 72%);
+/* The window below the app bar and above the player bar. */
+.detail-page--banded {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--v-layout-top, 0px) - var(--v-layout-bottom, 0px));
+}
+
+.detail-page--banded .detail-page__band {
+  flex: none;
+}
+
+.detail-page--banded .detail-page__below {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.detail-page--banded .detail-page__backdrop,
+.detail-page--banded .detail-page__scrim {
+  height: auto;
+  bottom: 0;
+}
+
+/* Faded out by the band's own bottom edge, where the track list starts -
+ * the blurred cover already by 90%, since its scale(1.1) below stretches
+ * the fade past that edge, where the list's opaque column labels would cut
+ * it off. */
+.detail-page--banded .detail-page__backdrop {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 90%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 90%);
+}
+
+/* Wider than 16:9 here: the album page's header is shallow enough that a
+ * 16:9 photo covers barely half its width and leaves the rest looking
+ * empty. The crop costs some of the photo's top and bottom, so it is held
+ * towards the top, where the faces usually are. */
+.detail-page--banded .detail-page__backdrop--photo {
+  aspect-ratio: 2.4 / 1;
+  background-position: center 25%;
+  -webkit-mask-image:
+    linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%), var(--detail-page-photo-fade);
+  mask-image:
+    linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%), var(--detail-page-photo-fade);
+}
+
+/* A phone stacks the hero's text under the cover, across the full width,
+ * so there is no text column to keep clear - the photo keeps all of it. It
+ * also has no height to spare for a header that stays put, so the page
+ * scrolls as one there. */
+@media (max-width: 599px) {
+  .detail-page--banded {
+    height: auto;
+  }
+
+  .detail-page--banded .detail-page__below {
+    overflow-y: visible;
+  }
+
+  .detail-page__backdrop--photo {
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 42%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0%, #000 42%, transparent 100%);
+  }
+
+  .detail-page--banded .detail-page__backdrop--photo {
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+  }
 }
 
 /* Without a Fanart.tv background the fallback is the blurred cover wash -
@@ -114,7 +228,8 @@ export default {
   );
 }
 
-.detail-page__content {
+.detail-page__content,
+.detail-page__below {
   position: relative;
   z-index: 1;
 }

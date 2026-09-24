@@ -1374,3 +1374,159 @@ async def test_get_artist_bio_looks_up_the_wikidata_item_for_links_cached_before
             bio = await recommendations.get_artist_bio("Radiohead", "en")
 
     assert bio["text"] == "An English band."
+
+
+# ── get_album_bio ─────────────────────────────────────────────────────────
+
+
+def _fake_album_web(
+    *,
+    releases: dict[str, str] | None = None,
+    groups: dict[str, list[dict]] | None = None,
+    search: list[dict] | None = None,
+    summaries: dict[str, dict] | None = None,
+):
+    """MusicBrainz as the album lookups use it - a release walked up to its
+    group, a group's url-rels, a release-group search - plus Wikidata and
+    Wikipedia. `releases` maps a release id to its group, `groups` a group
+    id to its url-rels; anything else is MusicBrainz's 404."""
+    releases = releases or {}
+    groups = groups or {}
+    calls: list[str] = []
+
+    def fake_get(url, params=None):
+        calls.append(url)
+        if "musicbrainz.org" in url:
+            path = url.split("/ws/2/", 1)[1]
+            if path == "release-group/":
+                return _json_response(url, {"release-groups": search or []})
+            kind, _, entity = path.partition("/")
+            if kind == "release" and entity in releases:
+                return _json_response(url, {"release-group": {"id": releases[entity]}})
+            if kind == "release-group" and entity in groups:
+                return _json_response(url, {"id": entity, "relations": groups[entity]})
+            return _json_response(url, {"error": "Not Found"}, status=404)
+        if "wikidata.org" in url:
+            links = {"enwiki": {"title": "Album"}, "dewiki": {"title": "Album"}}
+            return _json_response(url, {"entities": {params["ids"]: {"sitelinks": links}}})
+        for key, payload in (summaries or {}).items():
+            lang, title = key.split(":", 1)
+            if url.startswith(f"https://{lang}.wikipedia.org/") and url.endswith(f"/{title}"):
+                return _json_response(url, payload)
+        return _json_response(url, {}, status=404)
+
+    fake_get.calls = calls
+    return fake_get
+
+
+_ALBUM_SUMMARIES = {"de:Album": _summary("Album", "de", "Ein Studioalbum.")}
+
+
+async def _album_bio(fake, *args, **kwargs):
+    with tempfile.TemporaryDirectory() as d:
+        with (
+            patch.object(recommendations, "_PATH", _tmp_path(d)),
+            patch.object(recommendations, "_client") as client,
+        ):
+            client.get = AsyncMock(side_effect=fake)
+            return await recommendations.get_album_bio(*args, **kwargs)
+
+
+async def test_get_album_bio_walks_a_release_up_to_its_group():
+    """Navidrome and Jellyfin send the release (one edition); Wikipedia is
+    linked from the release group every edition belongs to."""
+    fake = _fake_album_web(
+        releases={"rel-1": "rg-1"}, groups={"rg-1": [_WIKIDATA_REL]}, summaries=_ALBUM_SUMMARIES
+    )
+    bio = await _album_bio(fake, "rel-1", "Artist", "Album", "de")
+
+    assert bio["text"] == "Ein Studioalbum."
+    assert any("release-group/rg-1" in url for url in fake.calls)
+
+
+async def test_get_album_bio_takes_an_id_that_is_already_a_group():
+    """Plex may send the release group itself, which is no release."""
+    fake = _fake_album_web(groups={"rg-1": [_WIKIDATA_REL]}, summaries=_ALBUM_SUMMARIES)
+
+    bio = await _album_bio(fake, "rg-1", "Artist", "Album", "de")
+
+    assert bio["text"] == "Ein Studioalbum."
+
+
+async def test_get_album_bio_prefers_the_album_over_its_title_track():
+    """ "Born This Way" is an album and a single; without an id, the album's
+    article is the one wanted unless the server says otherwise."""
+    search = [
+        {"id": "rg-single", "title": "Born This Way", "primary-type": "Single"},
+        {"id": "rg-album", "title": "Born This Way", "primary-type": "Album"},
+    ]
+    groups = {"rg-album": [_WIKIDATA_REL], "rg-single": []}
+
+    fake = _fake_album_web(search=search, groups=groups, summaries=_ALBUM_SUMMARIES)
+    assert (await _album_bio(fake, None, "Lady Gaga", "Born This Way", "de"))["text"]
+    assert any("release-group/rg-album" in url for url in fake.calls)
+
+    fake = _fake_album_web(search=search, groups=groups, summaries=_ALBUM_SUMMARIES)
+    await _album_bio(fake, None, "Lady Gaga", "Born This Way", "de", "single")
+    assert any("release-group/rg-single" in url for url in fake.calls)
+
+
+async def test_get_album_bio_shows_nothing_without_an_exact_title_match():
+    """Another album's article is worse than none."""
+    search = [{"id": "rg-other", "title": "Born This Way: The Remix", "primary-type": "Album"}]
+    fake = _fake_album_web(search=search, groups={"rg-other": [_WIKIDATA_REL]})
+
+    assert await _album_bio(fake, None, "Lady Gaga", "Born This Way", "de") is None
+    assert not any("wikipedia.org" in url for url in fake.calls)
+
+
+async def test_get_album_bio_is_none_when_musicbrainz_links_no_article():
+    fake = _fake_album_web(releases={"rel-1": "rg-1"}, groups={"rg-1": []})
+
+    assert await _album_bio(fake, "rel-1", "Artist", "Album", "de") is None
+
+
+async def test_get_album_bio_does_not_remember_a_failed_musicbrainz_call():
+    """A 503 is MusicBrainz being busy, not the album lacking a group."""
+    with tempfile.TemporaryDirectory() as d:
+        with (
+            patch.object(recommendations, "_PATH", _tmp_path(d)),
+            patch.object(recommendations, "_client") as client,
+        ):
+            client.get = AsyncMock(
+                return_value=_json_response("https://musicbrainz.org/ws/2/release/x", {}, 503)
+            )
+            assert await recommendations.get_album_bio("rel-1", "A", "Album", "de") is None
+
+            client.get = AsyncMock(
+                side_effect=_fake_album_web(
+                    releases={"rel-1": "rg-1"},
+                    groups={"rg-1": [_WIKIDATA_REL]},
+                    summaries=_ALBUM_SUMMARIES,
+                )
+            )
+            bio = await recommendations.get_album_bio("rel-1", "A", "Album", "de")
+
+    assert bio["text"] == "Ein Studioalbum."
+
+
+async def test_get_album_bio_serves_a_second_visit_from_the_cache():
+    fake = _fake_album_web(
+        releases={"rel-1": "rg-1"}, groups={"rg-1": [_WIKIDATA_REL]}, summaries=_ALBUM_SUMMARIES
+    )
+    with tempfile.TemporaryDirectory() as d:
+        with (
+            patch.object(recommendations, "_PATH", _tmp_path(d)),
+            patch.object(recommendations, "_client") as client,
+        ):
+            client.get = AsyncMock(side_effect=fake)
+            await recommendations.get_album_bio("rel-1", "A", "Album", "de")
+            calls = len(fake.calls)
+            bio = await recommendations.get_album_bio("rel-1", "A", "Album", "de")
+
+    assert bio["text"] == "Ein Studioalbum."
+    assert len(fake.calls) == calls
+
+
+def test_phrase_escapes_what_would_end_a_search_phrase():
+    assert recommendations._phrase('Say "Hi" \\ now') == '"Say \\"Hi\\" \\\\ now"'

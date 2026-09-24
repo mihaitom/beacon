@@ -188,6 +188,34 @@ def test_map_album_omits_artist_id_year_and_genre_when_absent():
     assert "genre" not in album
 
 
+def test_map_album_carries_the_album_page_extras():
+    """Every genre, the record label (Jellyfin files it among Studios) and
+    the MusicBrainz release - what the album page's header shows, in
+    OpenSubsonic's own shape."""
+    album = jellyfin_bridge._map_album(
+        {
+            "Id": "a1",
+            "Name": "Album",
+            "Genres": ["Electronic", "Ambient"],
+            "Studios": [{"Name": "Armada Music"}],
+            "ProviderIds": {"MusicBrainzAlbum": "rel-1", "MusicBrainzReleaseGroup": "rg-1"},
+        }
+    )
+    assert album["genres"] == [{"name": "Electronic"}, {"name": "Ambient"}]
+    assert album["recordLabels"] == [{"name": "Armada Music"}]
+    assert album["musicBrainzId"] == "rel-1"
+
+
+def test_map_album_splits_a_genre_list_jellyfin_left_as_one_string():
+    album = jellyfin_bridge._map_album({"Id": "a1", "Name": "A", "Genres": ["Trance;Dance; Pop"]})
+    assert album["genres"] == [{"name": "Trance"}, {"name": "Dance"}, {"name": "Pop"}]
+
+
+def test_map_album_omits_the_extras_it_does_not_have():
+    album = jellyfin_bridge._map_album({"Id": "a1", "Name": "Album", "Studios": []})
+    assert not {"genres", "recordLabels", "musicBrainzId"} & set(album)
+
+
 def test_map_album_carries_the_sort_name():
     # The key get_album_list2 sorts by, so the A-Z jump bar can file the
     # album where it actually sits.

@@ -14,7 +14,9 @@ function fakeLines(lines: number) {
 }
 
 // The clamp is measured on mount, so its answer lands one render later.
-async function mountBio(props: { text?: string; url?: string | null; lang?: string } = {}) {
+async function mountBio(
+  props: { text?: string; url?: string | null; lang?: string; maxLines?: number } = {},
+) {
   const wrapper = mount(ArtistBio, {
     props: { text: 'A band.', url: 'https://en.wikipedia.org/wiki/X', lang: 'en', ...props },
     global: { plugins: [i18n] },
@@ -83,5 +85,14 @@ describe('ArtistBio', () => {
   it('marks the paragraph with the language it is actually in', async () => {
     fakeLines(3)
     expect((await mountBio({ lang: 'de' })).find('p').attributes('lang')).toBe('de')
+  })
+
+  it('collapses past a shorter limit where the page asks for one', async () => {
+    // The album page's header has room for three lines, not five.
+    fakeLines(4)
+    const wrapper = await mountBio({ maxLines: 3 })
+
+    expect(toggle(wrapper).exists()).toBe(true)
+    expect(wrapper.find('p').classes()).toContain('artist-bio__text--collapsed')
   })
 })

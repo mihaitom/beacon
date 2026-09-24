@@ -107,7 +107,7 @@ import NowPlayingToolbar from '@/components/now-playing/NowPlayingToolbar.vue'
 import type { NowPlayingPanel } from '@/components/now-playing/types'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import { getLogLevel } from '@/services/connect/logLevel'
-import { getArtistArt } from '@/services/connect/fanart'
+import { getArtistArt, nextBackground, rememberBackground } from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
 import { useFanartStore } from '@/stores/fanart'
 import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
@@ -844,10 +844,7 @@ export default {
      * toolbar's cycle button. Walks the same candidate list the shown one
      * was picked from, so every press lands on a different image. */
     async cycleArtistBackground() {
-      if (this.artistBackgrounds.length < 2) return
-      const current = this.artistBackground
-      const index = current ? this.artistBackgrounds.indexOf(current) : -1
-      const next = this.artistBackgrounds[(index + 1) % this.artistBackgrounds.length]
+      const next = nextBackground(this.artistBackgrounds, this.artistBackground)
       if (!next) return
       const artist = this.backgroundArtist
       // Preloaded before the swap for the same reason as loadArtistBackground:
@@ -856,6 +853,7 @@ export default {
       // The track may have moved on while the image loaded.
       if (this.backgroundArtist !== artist) return
       this.artistBackground = next
+      rememberBackground(artist, next)
       const color = await extractDominantColor(next)
       if (this.artistBackground !== next) return
       this.artistColor = color ? color.join(', ') : null
