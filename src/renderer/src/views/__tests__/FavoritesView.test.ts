@@ -13,6 +13,12 @@ import CardShelf from '@/components/library/CardShelf.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { Album, Artist } from '@/types/library'
 
+// The header's backgrounds - a connect request this view doesn't care about.
+vi.mock('@/services/connect/fanart', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/connect/fanart')>()),
+  getStoredBackgrounds: vi.fn().mockResolvedValue([]),
+}))
+
 const vuetify = createVuetify({ components, directives })
 
 function makeArtist(id: string, name: string): Artist {
@@ -178,5 +184,33 @@ describe('FavoritesView', () => {
     expect(wrapper.text()).toContain('Artists')
     expect(wrapper.text()).toContain('Albums')
     expect(wrapper.text()).toContain('Songs')
+  })
+
+  describe('header', () => {
+    it('counts each kind and leaves out the empty ones', async () => {
+      const { wrapper, library } = await mountFavorites()
+      library.starred.artists = [makeArtist('ar1', 'The Tide')]
+      library.starred.songs = [makeSong('1'), makeSong('2'), makeSong('3')]
+      await wrapper.vm.$nextTick()
+
+      const t = i18n.global.t
+      expect((wrapper.vm as unknown as { summary: string }).summary).toBe(
+        `${t('favorites.countArtists', 1)} · ${t('favorites.countSongs', 3)}`,
+      )
+      // Singular and plural really differ, or the pluralisation isn't wired.
+      expect(t('favorites.countSongs', 1)).not.toBe(t('favorites.countSongs', 2))
+    })
+
+    it('draws backgrounds from every favourite, once per artist', async () => {
+      const { wrapper, library } = await mountFavorites()
+      library.starred.artists = [makeArtist('ar1', 'The Tide')]
+      library.starred.albums = [makeAlbum('a1')]
+      library.starred.songs = [makeSong('1', { artist: 'Other' })]
+      await wrapper.vm.$nextTick()
+
+      const names = (wrapper.vm as unknown as { favoriteArtistNames: string[] }).favoriteArtistNames
+      // makeAlbum's artist is The Tide too.
+      expect(names).toEqual(['Other', 'The Tide'])
+    })
   })
 })

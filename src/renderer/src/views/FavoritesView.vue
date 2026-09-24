@@ -1,6 +1,15 @@
 <template>
   <v-container fluid>
-    <h1 class="page-title">{{ $t('favorites.title') }}</h1>
+    <!-- Backgrounds from the favourites' own artists only, the way a genre
+     - page shows its genre's - this page is the one that is about taste. -->
+    <detail-header
+      fallback-icon="mdi-heart"
+      :eyebrow="$t('favorites.eyebrow')"
+      :title="$t('favorites.title')"
+      :stored-fanart="favoriteArtistNames"
+    >
+      <template v-if="summary" #meta>{{ summary }}</template>
+    </detail-header>
 
     <!-- Scrolling rows by default, same shape as the Home view's shelves:
      - a large favorites collection otherwise pushed the songs table
@@ -55,6 +64,7 @@
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import DetailHeader from '@/components/library/DetailHeader.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
 import ArtistCard from '@/components/library/ArtistCard.vue'
 import CardShelf from '@/components/library/CardShelf.vue'
@@ -73,7 +83,7 @@ const GRID_VIEW_KEY: Record<CardSection, string> = {
 
 export default {
   name: 'FavoritesView',
-  components: { AlbumCard, ArtistCard, CardShelf, SongTable },
+  components: { AlbumCard, ArtistCard, CardShelf, DetailHeader, SongTable },
   data() {
     return {
       gridView: {
@@ -85,6 +95,28 @@ export default {
   computed: {
     libraryStore() {
       return useLibraryStore()
+    },
+    starred() {
+      return this.libraryStore.starred
+    },
+    favoriteArtistNames(): string[] {
+      const names = [
+        ...this.starred.artists.map((artist) => artist.name),
+        ...this.starred.albums.map((album) => album.artist),
+        ...this.starred.songs.map((song) => song.artist),
+      ]
+      return [...new Set(names.filter(Boolean))].sort()
+    },
+    summary(): string {
+      const counts: [string, number][] = [
+        ['favorites.countArtists', this.starred.artists.length],
+        ['favorites.countAlbums', this.starred.albums.length],
+        ['favorites.countSongs', this.starred.songs.length],
+      ]
+      return counts
+        .filter(([, n]) => n > 0)
+        .map(([key, n]) => this.$t(key, n))
+        .join(' · ')
     },
   },
   created() {
@@ -100,10 +132,6 @@ export default {
 </script>
 
 <style scoped>
-.page-title {
-  margin-bottom: 16px;
-}
-
 .section-title {
   margin-bottom: 8px;
 }

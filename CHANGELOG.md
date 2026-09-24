@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The album page shows more about the album: what kind of release it is, its record label, edition and reissue year, all its genres, and the opening of its Wikipedia article
 - An artist keeps the same background across the artist page, album pages and Now Playing for the whole session, and the artist page has a button to switch to another one
 - The Statistics page shows more: how much storage the library takes, how much of it you have ever played, how many songs you heard in the last 30 days, your ratings, and a breakdown into Hi-Res, lossless and lossy audio and the artists with the most songs; the lists now wrap two at a time on narrower windows
+- The Favorites page has a header like the other library pages, showing how many artists, albums and songs you have marked and cycling through backgrounds of your favorite artists
 
 ### Fixed
 

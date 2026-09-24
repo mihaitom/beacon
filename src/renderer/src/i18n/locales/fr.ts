@@ -834,6 +834,10 @@ export default {
     titleLogYesterday: 'Hier',
   },
   favorites: {
+    eyebrow: 'Ta collection',
+    countArtists: '{n} artiste | {n} artistes',
+    countAlbums: '{n} album | {n} albums',
+    countSongs: '{n} titre | {n} titres',
     title: 'Favoris',
     artists: 'Artistes',
     albums: 'Albums',
