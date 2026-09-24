@@ -13,6 +13,7 @@ The token may ride in the query (require_token accepts it) because an <img>
 tag cannot send a header.
 """
 
+import asyncio
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -43,7 +44,11 @@ class StoredImagesRequest(BaseModel):
 async def stored_images(body: StoredImagesRequest) -> dict:
     """The images of one kind already downloaded, for the list pages'
     headers to cycle through - see core/fanart.py's stored_images()."""
-    return {"images": fanart.stored_images(body.artists, body.kind)}
+    # Off the event loop: it reads two cache files and checks every image on
+    # disk, and a genre names hundreds of artists - on the loop, that held up
+    # the audio streams connect is serving at the same time.
+    images = await asyncio.to_thread(fanart.stored_images, body.artists, body.kind)
+    return {"images": images}
 
 
 @router.get("/image")

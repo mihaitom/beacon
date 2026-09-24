@@ -45,7 +45,7 @@ import time
 import httpx
 
 from core import api_keys
-from core.recommendations import cached_mbid, first_artist, resolve_mbid
+from core.recommendations import cached_mbids, first_artist, resolve_mbid
 from lyrics.shared import USER_AGENT
 
 logger = logging.getLogger("connect.fanart")
@@ -387,14 +387,10 @@ def stored_images(names: list[str] | None = None, kind: str = "background") -> l
     if names is None:
         mbids = list(cache)
     else:
-        mbids = list(
-            {
-                mbid
-                for name in names
-                for mbid in (cached_mbid(name), cached_mbid(first_artist(name) or ""))
-                if mbid
-            }
-        )
+        # A collaboration credit through its first performer, as the lookup
+        # itself does (get_artist_art()).
+        candidates = {*names, *(first_artist(name) for name in names)} - {None}
+        mbids = list(set(cached_mbids(candidates).values()))
     per_artist = []
     for mbid in mbids:
         entry = cache.get(mbid)

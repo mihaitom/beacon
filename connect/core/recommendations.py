@@ -63,6 +63,7 @@ import logging
 import os
 import re
 import time
+from collections.abc import Iterable
 from urllib.parse import quote, unquote, urlparse
 
 import httpx
@@ -247,11 +248,19 @@ async def resolve_mbid(name: str) -> str | None:
     return mbid
 
 
-def cached_mbid(name: str) -> str | None:
-    """The MBID resolve_mbid() has already found for `name`, without asking
-    MusicBrainz - for callers that must not cause a lookup per name."""
-    cached = _load_cache().get("mbid_by_name_v2", {}).get(name.strip().lower())
-    return cached if isinstance(cached, str) else None
+def cached_mbids(names: Iterable[str]) -> dict[str, str]:
+    """The MBIDs resolve_mbid() has already found for `names`, by name,
+    without asking MusicBrainz - for callers that must not cause a lookup
+    per name. A name nothing was found for is left out. The cache is read
+    once for all of them: a genre's header asks about hundreds of names, and
+    reading the file per name blocked connect for seconds."""
+    known = _load_cache().get("mbid_by_name_v2", {})
+    found = {}
+    for name in names:
+        mbid = known.get(name.strip().lower())
+        if isinstance(mbid, str):
+            found[name] = mbid
+    return found
 
 
 def _musicbrainz_artist_url(mbid: str) -> str:

@@ -1532,7 +1532,7 @@ def test_phrase_escapes_what_would_end_a_search_phrase():
     assert recommendations._phrase('Say "Hi" \\ now') == '"Say \\"Hi\\" \\\\ now"'
 
 
-def test_cached_mbid_reads_only_a_resolved_name_and_asks_nobody():
+def test_cached_mbids_reads_only_resolved_names_and_asks_nobody():
     with tempfile.TemporaryDirectory() as d:
         with (
             patch.object(recommendations, "_PATH", _tmp_path(d)),
@@ -1543,6 +1543,15 @@ def test_cached_mbid_reads_only_a_resolved_name_and_asks_nobody():
                 {"mbid_by_name_v2": {"radiohead": "mbid-r", "legacy": None}}
             )
 
-            assert recommendations.cached_mbid(" Radiohead ") == "mbid-r"
-            assert recommendations.cached_mbid("legacy") is None
-            assert recommendations.cached_mbid("unknown") is None
+            found = recommendations.cached_mbids([" Radiohead ", "legacy", "unknown"])
+
+            assert found == {" Radiohead ": "mbid-r"}
+
+
+def test_cached_mbids_reads_the_cache_once_for_any_number_of_names():
+    """A genre's header asks about hundreds of artists; one file read per
+    name held connect's event loop for seconds."""
+    with patch.object(recommendations, "_load_cache", return_value={}) as load:
+        recommendations.cached_mbids([f"artist {i}" for i in range(300)])
+
+    assert load.call_count == 1

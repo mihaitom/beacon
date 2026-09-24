@@ -532,7 +532,11 @@ def test_stored_images_narrows_to_the_named_artists(monkeypatch):
     _store_artist("mbid-a", [_URL + "a1"], on_disk=[_URL + "a1"])
     _store_artist("mbid-b", [_URL + "b1"], on_disk=[_URL + "b1"])
     known = {"artist a": "mbid-a", "artist b": "mbid-b"}
-    monkeypatch.setattr(fanart, "cached_mbid", lambda name: known.get(name.strip().lower()))
+    monkeypatch.setattr(
+        fanart,
+        "cached_mbids",
+        lambda names: {n: known[n.lower()] for n in names if n.lower() in known},
+    )
 
     assert fanart.stored_images(["Artist A & Someone"]) == [_URL + "a1"]
     assert fanart.stored_images(["Nobody"]) == []
@@ -540,7 +544,7 @@ def test_stored_images_narrows_to_the_named_artists(monkeypatch):
 
 def test_stored_images_never_asks_musicbrainz(monkeypatch):
     monkeypatch.setattr(fanart, "resolve_mbid", AsyncMock(side_effect=AssertionError("asked")))
-    monkeypatch.setattr(fanart, "cached_mbid", lambda name: None)
+    monkeypatch.setattr(fanart, "cached_mbids", lambda names: {})
 
     assert fanart.stored_images(["Unknown Artist"]) == []
 
@@ -626,6 +630,35 @@ def test_the_stored_images_route(client, key):
     assert resp.status_code == 200
     assert resp.json() == {"images": [_URL + "a1"]}
     assert banners.json() == {"images": [_URL + "b1"]}
+
+
+async def test_the_stored_images_route_leaves_the_event_loop_free(client, key, monkeypatch):
+    """connect serves the audio streams from the same event loop; a slow
+    lookup here once held them up long enough for playback to drop."""
+    from main import app
+
+    def slow_lookup(names, kind):
+        time.sleep(0.3)
+        return []
+
+    monkeypatch.setattr(fanart, "stored_images", slow_lookup)
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        while True:
+            ticks += 1
+            await asyncio.sleep(0.01)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(base_url="http://test", transport=transport) as ac:
+        running = asyncio.create_task(ticker())
+        resp = await ac.post("/fanart/stored-images", headers=client.headers, json={})
+        running.cancel()
+
+    assert resp.status_code == 200
+    # Blocked, the ticker would get one turn in the 0.3 s, not dozens.
+    assert ticks > 10
 
 
 def test_the_stored_images_route_refuses_an_unknown_kind(client, key):
