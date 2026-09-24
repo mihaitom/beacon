@@ -327,10 +327,12 @@ export default {
 }
 
 /* The column labels stick to the top of the list's own scroll area rather
- * than below the app bar (see SongTable.vue's sticky header). */
+ * than below the app bar (see SongTable.vue's sticky header), a little way
+ * below the header so the artist photo has faded out before their opaque
+ * background starts. */
 .album-tracks {
   --beacon-sticky-top: 0px;
-  padding-top: 0;
+  padding-top: 12px;
 }
 
 /* Link styling lives here, on the actual link, not on DetailHero.vue's

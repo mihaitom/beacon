@@ -94,6 +94,18 @@ export default {
     rgba(0, 0, 0, 0.88) 45%,
     #000 55%
   );
+  /* The album page's fade into the track list, eased the same way. */
+  --detail-page-banded-fade: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 35%,
+    rgba(0, 0, 0, 0.82) 50%,
+    rgba(0, 0, 0, 0.58) 63%,
+    rgba(0, 0, 0, 0.34) 75%,
+    rgba(0, 0, 0, 0.15) 86%,
+    rgba(0, 0, 0, 0.04) 94%,
+    transparent 100%
+  );
 }
 
 .detail-page__backdrop,
@@ -163,13 +175,12 @@ export default {
   bottom: 0;
 }
 
-/* Faded out by the band's own bottom edge, where the track list starts -
- * the blurred cover already by 90%, since its scale(1.1) below stretches
- * the fade past that edge, where the list's opaque column labels would cut
- * it off. */
+/* Eased out to nothing by the header's bottom edge, where the track list
+ * starts - a linear fade still showed a band of photo there, which read as
+ * an edge. */
 .detail-page--banded .detail-page__backdrop {
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 90%);
-  mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 90%);
+  -webkit-mask-image: var(--detail-page-banded-fade);
+  mask-image: var(--detail-page-banded-fade);
 }
 
 /* Wider than 16:9 here: the album page's header is shallow enough that a
@@ -179,10 +190,8 @@ export default {
 .detail-page--banded .detail-page__backdrop--photo {
   aspect-ratio: 2.4 / 1;
   background-position: center 25%;
-  -webkit-mask-image:
-    linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%), var(--detail-page-photo-fade);
-  mask-image:
-    linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%), var(--detail-page-photo-fade);
+  -webkit-mask-image: var(--detail-page-banded-fade), var(--detail-page-photo-fade);
+  mask-image: var(--detail-page-banded-fade), var(--detail-page-photo-fade);
 }
 
 /* A phone stacks the hero's text under the cover, across the full width,
@@ -204,8 +213,8 @@ export default {
   }
 
   .detail-page--banded .detail-page__backdrop--photo {
-    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
-    mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+    -webkit-mask-image: var(--detail-page-banded-fade);
+    mask-image: var(--detail-page-banded-fade);
   }
 }
 

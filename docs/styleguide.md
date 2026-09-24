@@ -326,10 +326,10 @@ On a phone, where the text runs the full width anyway, it is the full band
 again.
 
 The album page uses the `banded` arrangement: a header of 40% of the window
-that stays in view, with the backdrop spanning exactly that header (its
-photo at 2.4:1 rather than 16:9, since a header that shallow would otherwise
-be half empty), and the
-track list scrolling on its own below it. Its `DetailHero` is the `large`
+that stays in view, with the backdrop spanning exactly that header and
+eased out to nothing by its edge (its photo at 2.4:1 rather than 16:9,
+since a header that shallow would otherwise be half empty), and the track
+list scrolling on its own below it. Its `DetailHero` is the `large`
 variant - a cover as tall as the header, the name beside it at display size
 and wrapping (up to three lines) before it reaches the photo. Over the name
 sits the release type ("Single", "Album · Compilation") rather than a plain

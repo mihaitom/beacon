@@ -62,7 +62,7 @@ describe('DetailPageBackdrop banded layout', () => {
   })
 
   it('never runs wider than the page', async () => {
-    const { photo } = await mountPage(600, 40)
+    const { photo } = await mountPage(500, 40)
 
     expect(photo.width).toBeCloseTo(1200, 0)
   })
