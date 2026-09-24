@@ -27,16 +27,22 @@ const MEDIA_ERR_NETWORK = 2
 const MAX_RECONNECT_ATTEMPTS = 5
 const MAX_RECONNECT_DELAY_SECONDS = 8
 
-// The same two, for a live stream (playLive() below). Longer on both counts
-// than a song's ladder, which gives up after about 23s: a song that cannot
-// be fetched is one the listener can simply play again from the queue,
-// while a station that drops has nothing else to fall back to, and the
-// listener is being *shown* that a reconnect is in progress (see
-// onReconnectStateChange) rather than left guessing at silence. 1s, 2s, 4s,
-// 8s, 15s, 15s — about 45s of trying before onConnectionLost() below hands
-// the decision to the listener.
-const MAX_LIVE_RECONNECT_ATTEMPTS = 6
-const MAX_LIVE_RECONNECT_DELAY_SECONDS = 15
+// The same ladder for a live stream (playLive() below), which does not end
+// with it. A song that cannot be fetched is one the listener can simply
+// play again from the queue; a station has nothing to fall back to, and
+// the outages it meets away from home - a VPN coming back up, a laptop
+// changing networks - routinely outlast a ladder of 45s. So after these
+// steps it keeps trying every LIVE_RETRY_INTERVAL_SECONDS, shown as
+// reconnecting throughout (see onReconnectStateChange), until
+// LIVE_RECONNECT_WINDOW_SECONDS have passed since the drop.
+//
+// The window is what keeps a retry from being a new start in disguise:
+// sound coming back ten minutes after it went is still the station the
+// listener asked for, an hour later it is the app deciding to play. Past
+// it, onConnectionLost() hands the decision to the listener.
+const LIVE_RECONNECT_DELAYS_SECONDS = [1, 2, 4, 8, 15, 15]
+const LIVE_RETRY_INTERVAL_SECONDS = 30
+const LIVE_RECONNECT_WINDOW_SECONDS = 600
 
 // What made a reconnect happen, as it is reported to the backend — see
 // withReconnectReason(). A closed set rather than free text: connect logs
@@ -78,7 +84,7 @@ const LIVE_STALL_CHECK_MS = 1000
 // handleTickAfterAbsence() for what is asked instead.
 const STALL_CHECK_LATE_MS = 3000
 
-// How long a *held* live stream may stand still before this gives up on it
+// How long a *held* live stream may stand still before this reconnects it
 // — see playLive()'s `holdsConnection`.
 //
 // Reconnecting is the wrong move on a stream Beacon's own backend is
@@ -93,13 +99,21 @@ const STALL_CHECK_LATE_MS = 3000
 // inaudible.
 //
 // So the four-second mark still *reports* a stall (the listener is told
-// something is wrong), and this much longer one is where "wrong" turns
-// into "not coming back". A minute is past what the relay's own upstream
-// backoff takes to recover a station (core/radio_relay.py's
-// _MAX_RECONNECT_DELAY_SECONDS), so a station outage rides through here
-// too — what is left after a minute is this device's own link to Beacon,
-// which retrying will not fix either, and the listener gets the button.
-const LIVE_HOLD_SECONDS = 60
+// something is wrong), and this longer one is where the connection itself
+// is written off. That only pays while the same TCP connection is still
+// alive, and the common way a remote listener loses it does not keep it: a
+// firewall dropping the NAT entry, a network change, a VPN reconnecting -
+// the socket stays open on this side and nothing ever arrives on it again.
+// Observed 2026-09-24 from a work network: the held connection went quiet
+// and the old 60s here ended in the Reconnect button with no reconnect
+// attempted at all.
+//
+// Twenty seconds: past the gaps of up to ~10s that same network produces
+// and recovers from on its own, and short enough that a dead connection
+// costs a pause rather than the station. A reconnect lands on the relay's
+// own burst (core/radio_relay.py's _BURST_SECONDS), so a stall that was
+// about to recover loses little by it.
+const LIVE_HOLD_SECONDS = 20
 
 // The same watchdog, for a transcode from playFrom(). It needs one for the
 // same reason a station does and the plain-file case does not: what is on
@@ -191,6 +205,11 @@ export class AudioEngine {
   private lastKnownPosition = 0
   private reconnectAttempts = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  // What reconnectTimer will run, so the 'online' listener can run it now.
+  private pendingRetry: (() => void) | null = null
+  // When the live stream's current run of attempts began — see
+  // LIVE_RECONNECT_WINDOW_SECONDS. Reset with reconnectAttempts.
+  private dropStartedAt: number | null = null
   // What onReconnectStateChange was last told, so the "delivering again"
   // signal in 'timeupdate' below can be sent once instead of on every
   // event. Cleared by loadSource() (a new source is nobody's reconnect),
@@ -200,7 +219,7 @@ export class AudioEngine {
   private lastStallCheckAt = 0
   // Whether what is loaded is a live stream rather than a file — set by
   // playLive() and cleared by every other load(). Changes three things:
-  // the reconnect ladder used (see MAX_LIVE_RECONNECT_ATTEMPTS), whether a
+  // the reconnect ladder used (see LIVE_RECONNECT_DELAYS_SECONDS), whether a
   // reconnect writes a start position at all (it must not — see
   // reconnectOnDrop()), and whether the stall watchdog below runs.
   private liveStream = false
@@ -416,6 +435,7 @@ export class AudioEngine {
     // exactly the "not reconnecting" state that callback describes too.
     this.audio.addEventListener('playing', () => {
       this.reconnectAttempts = 0
+      this.dropStartedAt = null
       // Not through reportReconnecting(): this one fires whether or not
       // this engine ever reported a reconnect, because the store can be
       // showing that state on its own — reconnectRadio() sets it the
@@ -455,6 +475,10 @@ export class AudioEngine {
     this.audio.addEventListener('seeked', () => {
       this.reportBuffered()
     })
+    // A retry waiting out its backoff is waiting for the network, and this
+    // is the network saying it is back — no reason to sit out the rest of
+    // a 30s step in silence.
+    window.addEventListener('online', () => this.retryNow())
   }
 
   /** Reports the end of whichever buffered range currently contains the
@@ -559,32 +583,30 @@ export class AudioEngine {
   /** Reconnects after a dropped (not merely slow) connection — see
    * MEDIA_ERR_NETWORK's own comment for why only that error code lands
    * here. Retries the same url from the last position timeupdate reported,
-   * with a growing backoff, and gives up after MAX_RECONNECT_ATTEMPTS by
-   * reporting a real error same as before this existed. Deliberately quiet
+   * with a growing backoff, and gives up by reporting a real error same as
+   * before this existed — a song after MAX_RECONNECT_ATTEMPTS, a station
+   * once LIVE_RECONNECT_WINDOW_SECONDS have passed. Deliberately quiet
    * while retrying — no onError call, so a brief tunnel doesn't flip the
    * UI out of "playing" for what is, from the listener's chair, a
    * half-second gap in the sound. */
   private reconnectOnDrop(reason: ReconnectReason): void {
-    const maxAttempts = this.liveStream ? MAX_LIVE_RECONNECT_ATTEMPTS : MAX_RECONNECT_ATTEMPTS
-    const maxDelay = this.liveStream
-      ? MAX_LIVE_RECONNECT_DELAY_SECONDS
-      : MAX_RECONNECT_DELAY_SECONDS
     // A retry is already scheduled. 'ended' and 'error' can both land for
     // the same failed load, and neither handler guards against that the way
     // checkForStall() does — without this the pending timer is overwritten
     // rather than cancelled, so both fire and the element opens two
     // connections a fraction of a second apart.
     if (this.reconnectTimer !== null) return
-    if (this.reconnectAttempts >= maxAttempts) {
+    const delaySeconds = this.nextReconnectDelay()
+    if (delaySeconds === null) {
       this.giveUp('after dropped connection')
       return
     }
     this.reportReconnecting(true)
     this.reconnectAttempts++
     const attempt = this.reconnectAttempts
-    const delaySeconds = Math.min(2 ** (attempt - 1), maxDelay)
-    this.reconnectTimer = setTimeout(() => {
+    const retry = (): void => {
       this.reconnectTimer = null
+      this.pendingRetry = null
       const url = this.reconnectUrl
       if (url === null) return
       this.cancelStartPositionRetry?.()
@@ -621,7 +643,31 @@ export class AudioEngine {
       // as the first attempt did, which re-enters this same method for the
       // next backoff step.
       void this.audio.play().catch(() => {})
-    }, delaySeconds * 1000)
+    }
+    this.pendingRetry = retry
+    this.reconnectTimer = setTimeout(retry, delaySeconds * 1000)
+  }
+
+  /** How long to wait before the next attempt, or null when there should
+   * be none. Called before the attempt is counted. */
+  private nextReconnectDelay(): number | null {
+    const attempt = this.reconnectAttempts + 1
+    if (!this.liveStream) {
+      if (attempt > MAX_RECONNECT_ATTEMPTS) return null
+      return Math.min(2 ** (attempt - 1), MAX_RECONNECT_DELAY_SECONDS)
+    }
+    const now = Date.now()
+    this.dropStartedAt ??= now
+    if (now - this.dropStartedAt >= LIVE_RECONNECT_WINDOW_SECONDS * 1000) return null
+    return LIVE_RECONNECT_DELAYS_SECONDS[attempt - 1] ?? LIVE_RETRY_INTERVAL_SECONDS
+  }
+
+  /** Runs a retry that is waiting out its backoff right away. */
+  private retryNow(): void {
+    const retry = this.pendingRetry
+    if (this.reconnectTimer === null || retry === null) return
+    clearTimeout(this.reconnectTimer)
+    retry()
   }
 
   /** The same relay URL with what caused this attempt attached, so the
@@ -717,12 +763,16 @@ export class AudioEngine {
     }
     // Held: say so, and wait. The connection this element already has open
     // is the one thing that can still recover the missing seconds rather
-    // than skipping them — see LIVE_HOLD_SECONDS.
+    // than skipping them — until it has been quiet long enough to count as
+    // dead. See LIVE_HOLD_SECONDS.
     if (stalledForMs < LIVE_HOLD_SECONDS * 1000) {
       this.reportReconnecting(true)
       return
     }
-    this.giveUp(`after ${LIVE_HOLD_SECONDS}s with nothing arriving`)
+    console.warn(
+      `[audio-engine] ${this.reconnectUrl} held for ${LIVE_HOLD_SECONDS}s with nothing arriving — reconnecting`,
+    )
+    this.reconnectOnDrop('stalled')
   }
 
   /** One tick of the watchdog that arrived long after it was due — see
@@ -780,11 +830,8 @@ export class AudioEngine {
     this.reconnectOnDrop('absence')
   }
 
-  /** Stops trying, by either route into it — the reconnect ladder running
-   * out, or a held connection standing still for too long. Both mean the
-   * same thing to everything downstream: nothing automatic is left to try,
-   * and for a station the listener is offered the decision instead (see
-   * onConnectionLost). */
+  /** Stops trying: nothing automatic is left to try, and for a station
+   * the listener is offered the decision instead (see onConnectionLost). */
   private giveUp(reason: string): void {
     const url = this.reconnectUrl
     this.reconnectUrl = null
@@ -805,6 +852,7 @@ export class AudioEngine {
     if (this.reconnectTimer === null) return
     clearTimeout(this.reconnectTimer)
     this.reconnectTimer = null
+    this.pendingRetry = null
     // Only when a wait/retry was actually cancelled — a plain pause with
     // nothing pending has nothing to clear, and calling this on every
     // pause/stop/load regardless would fire "not reconnecting" far more
@@ -900,16 +948,17 @@ export class AudioEngine {
    * follows from it is not a detail: nothing here may write a start
    * position (there is nowhere to seek to), the stall watchdog runs
    * (LIVE_STALL_SECONDS — a station's characteristic failure produces no
-   * 'error' event at all), the reconnect ladder is the longer one
-   * (MAX_LIVE_RECONNECT_ATTEMPTS), and running out of it is a state the
-   * listener is shown and can act on rather than a silent give-up.
+   * 'error' event at all), reconnecting goes on for a time window rather
+   * than a number of attempts (LIVE_RECONNECT_WINDOW_SECONDS), and running
+   * out of it is a state the listener is shown and can act on rather than
+   * a silent give-up.
    *
    * `holdsConnection` says that whatever is on the other end is fetching
    * the station on this element's behalf and queueing what it produces —
    * Beacon's own relay (connect/routes/stream.py's /stream/radio-local),
    * never a station's own server. That flips what a stall means: not
-   * "reconnect", but "wait, the seconds you are missing are being kept for
-   * you". See LIVE_HOLD_SECONDS. */
+   * "reconnect", but "wait a while, the seconds you are missing are being
+   * kept for you". See LIVE_HOLD_SECONDS. */
   playLive(url: string, options: { holdsConnection?: boolean } = {}): void {
     this.loadSource(url, 0, 1, true)
     this.holdsConnection = options.holdsConnection ?? false
@@ -942,6 +991,7 @@ export class AudioEngine {
     this.positionAtLastEarlyEnd = startPosition
     this.reconnectUrl = url
     this.reconnectAttempts = 0
+    this.dropStartedAt = null
     this.reconnecting = false
     this.lastKnownPosition = startPosition
     this.audio.src = url

@@ -901,7 +901,7 @@ describe('AudioEngine', () => {
         playing(3)
         audio.play.mockClear()
 
-        await vi.advanceTimersByTimeAsync(20_000)
+        await vi.advanceTimersByTimeAsync(15_000)
 
         // The relay is still fetching the station and queueing what this
         // device is missing; tearing the connection down would throw that
@@ -915,7 +915,7 @@ describe('AudioEngine', () => {
         const onReconnectStateChange = vi.fn()
         engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
         playing(3)
-        await vi.advanceTimersByTimeAsync(20_000)
+        await vi.advanceTimersByTimeAsync(15_000)
         engine.onReconnectStateChange = onReconnectStateChange
 
         // The queued seconds arriving at once, then ordinary playback.
@@ -938,7 +938,7 @@ describe('AudioEngine', () => {
         engine.onReconnectStateChange = onReconnectStateChange
         engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
         playing(3)
-        await vi.advanceTimersByTimeAsync(20_000)
+        await vi.advanceTimersByTimeAsync(15_000)
         expect(onReconnectStateChange).toHaveBeenLastCalledWith(true)
 
         playing(9)
@@ -1079,19 +1079,37 @@ describe('AudioEngine', () => {
         })
       })
 
-      it('gives up once waiting has stopped being worth it', async () => {
+      // Holding only pays while the same TCP connection is alive. From a
+      // work network it was not: a dropped NAT entry left the socket open
+      // on this side with nothing ever arriving on it, and the hold ended
+      // in the Reconnect button without a single reconnect attempted.
+      it('reconnects once waiting has stopped being worth it', async () => {
         const onConnectionLost = vi.fn()
         engine.onConnectionLost = onConnectionLost
         engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
         playing(3)
+        audio.play.mockClear()
 
-        await vi.advanceTimersByTimeAsync(59_000)
+        await vi.advanceTimersByTimeAsync(19_000)
+        expect(audio.play).not.toHaveBeenCalled()
+
+        await vi.advanceTimersByTimeAsync(3000)
+
+        expect(audio.play).toHaveBeenCalledOnce()
+        expect(audio.src).toBe('http://beacon/stream/radio-local?reconnect=stalled&attempt=1')
         expect(onConnectionLost).not.toHaveBeenCalled()
+      })
 
-        await vi.advanceTimersByTimeAsync(2000)
+      // A reconnect that is accepted and then delivers nothing either is
+      // the same dead link, and gets the same answer.
+      it('keeps reconnecting while the new connections stay silent too', async () => {
+        engine.playLive('http://beacon/stream/radio-local', { holdsConnection: true })
+        playing(3)
 
-        expect(onConnectionLost).toHaveBeenCalledOnce()
-        expect(vi.getTimerCount()).toBe(0)
+        await vi.advanceTimersByTimeAsync(21_000)
+        await vi.advanceTimersByTimeAsync(23_000)
+
+        expect(audio.src).toContain('attempt=2')
       })
 
       // A connection that actually failed is gone whoever was holding it,
@@ -1120,33 +1138,85 @@ describe('AudioEngine', () => {
       })
     })
 
-    // Six attempts rather than a song's five, and a 15s cap rather than 8s
-    // — see MAX_LIVE_RECONNECT_ATTEMPTS.
-    it('tries for longer than a song does before giving up', async () => {
+    function dropConnection(): void {
+      audio.error = { message: 'network error', code: NETWORK_ERROR_CODE }
+      audio.dispatchEvent(new Event('error'))
+    }
+
+    // Away from home an outage routinely outlasts any short ladder - a VPN
+    // coming back, a laptop changing networks - and a station has nothing
+    // else to fall back to.
+    it('keeps trying well past the point where a song gives up', async () => {
+      const onConnectionLost = vi.fn()
+      engine.onConnectionLost = onConnectionLost
+      engine.playLive('http://station/stream')
+      playing(3)
+
+      // Five minutes of every attempt failing straight away.
+      for (let elapsed = 0; elapsed < 300_000; elapsed += 5000) {
+        dropConnection()
+        await vi.advanceTimersByTimeAsync(5000)
+      }
+
+      expect(onConnectionLost).not.toHaveBeenCalled()
+    })
+
+    it('slows down to one attempt every half minute once the quick ones are used up', async () => {
+      engine.playLive('http://station/stream')
+      playing(3)
+      // The quick steps: 1, 2, 4, 8, 15, 15.
+      for (let i = 0; i < 6; i++) {
+        dropConnection()
+        await vi.advanceTimersByTimeAsync(15_000)
+      }
+      audio.play.mockClear()
+
+      dropConnection()
+      await vi.advanceTimersByTimeAsync(29_000)
+      expect(audio.play).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(audio.play).toHaveBeenCalledOnce()
+    })
+
+    // Sound coming back an hour after it went is the app deciding to play,
+    // not the station the listener asked for.
+    it('hands the decision to the listener once the window has passed', async () => {
       const onConnectionLost = vi.fn()
       const onError = vi.fn()
       engine.onConnectionLost = onConnectionLost
       engine.onError = onError
       engine.playLive('http://station/stream')
+      playing(3)
 
-      function drop(): void {
-        audio.error = { message: 'network error', code: 2 }
-        audio.dispatchEvent(new Event('error'))
+      for (let elapsed = 0; elapsed <= 600_000; elapsed += 30_000) {
+        dropConnection()
+        await vi.advanceTimersByTimeAsync(30_000)
       }
-
-      // Five drops is where a song would already have given up.
-      for (let i = 0; i < 5; i++) {
-        drop()
-        await vi.advanceTimersByTimeAsync(15_000)
-      }
-      drop()
-      await vi.advanceTimersByTimeAsync(15_000)
-      expect(onConnectionLost).not.toHaveBeenCalled()
-
-      drop()
 
       expect(onConnectionLost).toHaveBeenCalledOnce()
       expect(onError).toHaveBeenCalledWith('Playback error: connection lost')
+    })
+
+    // The window is per outage: one that recovered does not count against
+    // the next.
+    it('starts the window again once a reconnect has actually played', async () => {
+      const onConnectionLost = vi.fn()
+      engine.onConnectionLost = onConnectionLost
+      engine.playLive('http://station/stream')
+      playing(3)
+
+      for (let elapsed = 0; elapsed < 540_000; elapsed += 30_000) {
+        dropConnection()
+        await vi.advanceTimersByTimeAsync(30_000)
+      }
+      audio.dispatchEvent(new Event('playing'))
+      for (let elapsed = 0; elapsed < 120_000; elapsed += 30_000) {
+        dropConnection()
+        await vi.advanceTimersByTimeAsync(30_000)
+      }
+
+      expect(onConnectionLost).not.toHaveBeenCalled()
     })
 
     // Nothing is retrying any more, so nothing should still be ticking
@@ -1158,13 +1228,55 @@ describe('AudioEngine', () => {
     it('leaves nothing ticking once it has given up', async () => {
       engine.playLive('http://station/stream')
       playing(3)
-      for (let i = 0; i < 7; i++) {
-        audio.error = { message: 'network error', code: 2 }
-        audio.dispatchEvent(new Event('error'))
-        await vi.advanceTimersByTimeAsync(15_000)
+      for (let elapsed = 0; elapsed <= 600_000; elapsed += 30_000) {
+        dropConnection()
+        await vi.advanceTimersByTimeAsync(30_000)
       }
 
       expect(vi.getTimerCount()).toBe(0)
+    })
+
+    describe('the network coming back', () => {
+      it('runs a retry that is waiting out its backoff right away', async () => {
+        engine.playLive('http://station/stream')
+        playing(3)
+        for (let i = 0; i < 6; i++) {
+          dropConnection()
+          await vi.advanceTimersByTimeAsync(15_000)
+        }
+        dropConnection()
+        audio.play.mockClear()
+
+        await vi.advanceTimersByTimeAsync(2000)
+        window.dispatchEvent(new Event('online'))
+
+        expect(audio.play).toHaveBeenCalledOnce()
+        // And only once: the timer it jumped ahead of is gone.
+        await vi.advanceTimersByTimeAsync(30_000)
+        expect(audio.play).toHaveBeenCalledOnce()
+      })
+
+      it('starts nothing when no retry is waiting', () => {
+        engine.playLive('http://station/stream')
+        playing(3)
+        audio.play.mockClear()
+
+        window.dispatchEvent(new Event('online'))
+
+        expect(audio.play).not.toHaveBeenCalled()
+      })
+
+      it('does not resume a station the listener paused', async () => {
+        engine.playLive('http://station/stream')
+        playing(3)
+        dropConnection()
+        engine.pause()
+        audio.play.mockClear()
+
+        window.dispatchEvent(new Event('online'))
+
+        expect(audio.play).not.toHaveBeenCalled()
+      })
     })
   })
 
