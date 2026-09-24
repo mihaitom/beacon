@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Most played artists on the Statistics page could show a song's full credit with its featured artists instead of the artist's name
 - The Fanart.tv images ranked as most liked were the wrong ones for artists with ten or more likes on an image, so their best backgrounds were never shown
 
 - Radio played through Beacon now reconnects on its own when the connection silently dies, for example after a network or VPN change, instead of going quiet and showing the Reconnect button; it keeps trying for up to ten minutes and picks up right away when the network comes back

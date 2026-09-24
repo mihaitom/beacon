@@ -156,9 +156,12 @@ describe('StatsView artist artwork', () => {
   })
 
   it('falls back to the shortest credit while the artist list is loading', () => {
+    // Credits on both sides of the plain name, so neither first- nor
+    // last-seen picks it by luck.
     const vm = mountStats([
       makeSong('1', { artistId: 'a', artist: 'A, B & C' }),
       makeSong('2', { artistId: 'a', artist: 'A' }),
+      makeSong('3', { artistId: 'a', artist: 'A & D' }),
     ])
 
     expect(vm.largestArtists[0]?.label).toBe('A')
