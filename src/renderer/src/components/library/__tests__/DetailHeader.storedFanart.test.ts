@@ -103,6 +103,41 @@ describe('DetailHeader stored Fanart.tv backgrounds', () => {
     expect(shown(wrapper)!.image).not.toBe(first)
   })
 
+  it("shows connect's order as dealt, first to last", async () => {
+    const wrapper = await mountHeader({ storedFanart: true })
+    const seen = [shown(wrapper)!.image]
+
+    for (let i = 0; i < 2; i++) {
+      await vi.advanceTimersByTimeAsync(12_000)
+      seen.push(shown(wrapper)!.image)
+    }
+
+    // connect already shuffles, one artist at a time; starting anywhere but
+    // the top would put its last and first back to back.
+    expect(seen).toEqual(['a.jpg', 'b.jpg', 'c.jpg'])
+  })
+
+  it('asks connect for a fresh order once a round is through', async () => {
+    const wrapper = await mountHeader({ storedFanart: true })
+    storedImages({ banner: ['x.jpg', 'y.jpg'] })
+
+    // a, b, c - then the fourth tick starts the next round.
+    await vi.advanceTimersByTimeAsync(3 * 12_000)
+
+    expect(getStoredImages).toHaveBeenCalledTimes(1)
+    expect(shown(wrapper)!.image).toBe('x.jpg')
+  })
+
+  it('switches to banners once some have arrived', async () => {
+    storedImages({ background: ['p1.jpg', 'p2.jpg'] })
+    const wrapper = await mountHeader({ storedFanart: true })
+    storedImages({ banner: ['banner.jpg'] })
+
+    await vi.advanceTimersByTimeAsync(2 * 12_000)
+
+    expect(shown(wrapper)).toEqual({ image: 'banner.jpg', kind: 'banner' })
+  })
+
   it('stays put while the tab is hidden', async () => {
     const wrapper = await mountHeader({ storedFanart: true })
     const first = shown(wrapper)!.image

@@ -179,37 +179,54 @@ export default {
         if (!this.backdropUrl) this.show(null, 'cover')
         return
       }
-      // Banners are this card's shape; backgrounds only until connect has
-      // downloaded some banners (it fetches them with every artist lookup).
-      const artists = request.length ? request : undefined
-      let photos: string[] = []
-      let kind: BackdropKind = 'banner'
-      try {
-        photos = await getStoredImages('banner', artists)
-        if (!photos.length) {
-          photos = await getStoredImages('background', artists)
-          kind = 'photo'
-        }
-      } catch (error) {
-        console.error('[detail-header] Stored Fanart.tv images lookup failed:', error)
-      }
+      const stored = await this.fetchStored(request)
       // The page may have moved on, or found a picture of its own, meanwhile.
       if (JSON.stringify(this.storedFanartRequest) !== JSON.stringify(request)) return
-      if (!photos.length) return
-      this.photos = photos
-      this.photoKind = kind
-      this.photoIndex = Math.floor(Math.random() * photos.length)
-      await this.showPhoto(photos[this.photoIndex]!)
+      if (!stored.photos.length) return
+      this.photos = stored.photos
+      this.photoKind = stored.kind
+      // Already shuffled by connect, one artist at a time - see stored_images().
+      this.photoIndex = 0
+      await this.showPhoto(stored.photos[0]!)
       // One picture and no cycling for anyone who has asked for less motion.
-      if (photos.length < 2 || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      if (
+        stored.photos.length < 2 ||
+        window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      ) {
         return
       }
       this.cycleTimer = setInterval(() => void this.nextPhoto(), STORED_FANART_INTERVAL_MS)
     },
+    /** Banners are this card's shape; backgrounds only until connect has
+     * downloaded some banners (it fetches them with every artist lookup). */
+    async fetchStored(request: string[]): Promise<{ photos: string[]; kind: BackdropKind }> {
+      const artists = request.length ? request : undefined
+      try {
+        const banners = await getStoredImages('banner', artists)
+        if (banners.length) return { photos: banners, kind: 'banner' }
+        return { photos: await getStoredImages('background', artists), kind: 'photo' }
+      } catch (error) {
+        console.error('[detail-header] Stored Fanart.tv images lookup failed:', error)
+        return { photos: [], kind: 'banner' }
+      }
+    },
     async nextPhoto(): Promise<void> {
       // Nobody is looking at a hidden tab; the next tick tries again.
       if (document.hidden || !this.photos.length) return
-      this.photoIndex = (this.photoIndex + 1) % this.photos.length
+      this.photoIndex += 1
+      if (this.photoIndex >= this.photos.length) {
+        // A fresh deal from connect for each round, rather than the same
+        // order again - reshuffled here, it would lose connect's one artist
+        // at a time.
+        const request = this.storedFanartRequest
+        const stored = request ? await this.fetchStored(request) : null
+        if (JSON.stringify(this.storedFanartRequest) !== JSON.stringify(request)) return
+        if (stored?.photos.length) {
+          this.photos = stored.photos
+          this.photoKind = stored.kind
+        }
+        this.photoIndex = 0
+      }
       await this.showPhoto(this.photos[this.photoIndex]!)
     },
     /** Preloaded first, so the crossfade has an image to fade to (see

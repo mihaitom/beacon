@@ -1,6 +1,7 @@
 """Tests for core/fanart.py — artist banners/backgrounds from Fanart.tv."""
 
 import asyncio
+import itertools
 import json
 import time
 from unittest.mock import AsyncMock, patch
@@ -542,6 +543,54 @@ def test_stored_images_never_asks_musicbrainz(monkeypatch):
     monkeypatch.setattr(fanart, "cached_mbid", lambda name: None)
 
     assert fanart.stored_images(["Unknown Artist"]) == []
+
+
+def test_stored_images_deals_one_artist_at_a_time():
+    """An artist with many images must not come round more often than one
+    with a single image, nor twice in a row."""
+    owner = {}
+    for artist, count in (("a", 6), ("b", 3), ("c", 1)):
+        urls = [_URL + f"{artist}{i}" for i in range(count)]
+        _store_artist(artist, urls, on_disk=urls)
+        owner.update(dict.fromkeys(urls, artist))
+
+    for _ in range(20):
+        dealt = [owner[url] for url in fanart.stored_images()]
+        # Every artist once before any a second time...
+        assert sorted(dealt[:3]) == ["a", "b", "c"]
+        # ...and never the same one back to back while there is another left.
+        assert all(x != y for x, y in itertools.pairwise(dealt[:6]))
+        assert len(dealt) == 10
+
+
+def test_stored_images_reaches_more_artists_when_capped(monkeypatch):
+    monkeypatch.setattr(fanart, "_STORED_LIMIT", 4)
+    for artist in "abcd":
+        urls = [_URL + f"{artist}{i}" for i in range(5)]
+        _store_artist(artist, urls, on_disk=urls)
+
+    dealt = fanart.stored_images()
+
+    # Four artists with five images each: the four places go to four artists.
+    assert sorted(url[len(_URL)] for url in dealt) == ["a", "b", "c", "d"]
+
+
+def test_stored_images_leads_with_a_different_artist_each_time():
+    for artist in "abcdef":
+        _store_artist(artist, [_URL + artist], on_disk=[_URL + artist])
+
+    firsts = {fanart.stored_images()[0] for _ in range(30)}
+
+    assert len(firsts) > 1
+
+
+def test_stored_images_picks_among_one_artists_images():
+    urls = [_URL + f"a{i}" for i in range(6)]
+    _store_artist("a", urls, on_disk=urls)
+
+    firsts = {fanart.stored_images()[0] for _ in range(30)}
+
+    assert len(firsts) > 1
 
 
 def test_stored_images_is_capped(monkeypatch):

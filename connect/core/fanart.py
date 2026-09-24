@@ -374,30 +374,48 @@ _STORED_LIMIT = 60
 
 def stored_images(names: list[str] | None = None, kind: str = "background") -> list[str]:
     """Images of one kind ("background" or "banner") whose bytes are already on
-    disk, in random order - for all artists, or for `names` only. Makes no
-    request of anyone: an artist is found only through an MBID already
-    resolved before, and only images already downloaded are offered, so a
-    header can show them without Fanart.tv or MusicBrainz ever hearing of
-    it."""
+    disk - for all artists, or for `names` only. Makes no request of anyone:
+    an artist is found only through an MBID already resolved before, and
+    only images already downloaded are offered, so a header can show them
+    without Fanart.tv or MusicBrainz ever hearing of it.
+
+    In random order, but dealt out one artist at a time: every artist once,
+    in a shuffled order, before any of them a second time. Drawn from one
+    pool instead, an artist with ten images would come round ten times as
+    often as one with a single image, and often twice in a row."""
     cache = _load_cache()
     if names is None:
-        entries = list(cache.values())
+        mbids = list(cache)
     else:
-        mbids = {
-            mbid
-            for name in names
-            for mbid in (cached_mbid(name), cached_mbid(first_artist(name) or ""))
-            if mbid
-        }
-        entries = [cache.get(mbid) for mbid in mbids]
-    urls = {
-        url
-        for entry in entries
-        if isinstance(entry, dict)
-        for url in (entry.get("art") or {}).get(kind) or []
-        if is_image_cached(url)
-    }
-    return random.sample(sorted(urls), min(len(urls), _STORED_LIMIT))
+        mbids = list(
+            {
+                mbid
+                for name in names
+                for mbid in (cached_mbid(name), cached_mbid(first_artist(name) or ""))
+                if mbid
+            }
+        )
+    per_artist = []
+    for mbid in mbids:
+        entry = cache.get(mbid)
+        if not isinstance(entry, dict):
+            continue
+        urls = [url for url in (entry.get("art") or {}).get(kind) or [] if is_image_cached(url)]
+        if urls:
+            random.shuffle(urls)
+            per_artist.append(urls)
+    random.shuffle(per_artist)
+
+    dealt: list[str] = []
+    seen: set[str] = set()
+    for round_ in range(max((len(urls) for urls in per_artist), default=0)):
+        for urls in per_artist:
+            if round_ < len(urls) and urls[round_] not in seen:
+                seen.add(urls[round_])
+                dealt.append(urls[round_])
+                if len(dealt) == _STORED_LIMIT:
+                    return dealt
+    return dealt
 
 
 # ── image bytes ──────────────────────────────────────────────────────────────
