@@ -7,10 +7,13 @@
       v-for="(url, i) in backdrop.urls"
       :key="i"
       class="hero-backdrop"
-      :class="{ 'hero-backdrop--active': i === backdrop.active }"
+      :class="{
+        'hero-backdrop--active': i === backdrop.active,
+        'hero-backdrop--photo': layerIsPhoto[i],
+      }"
       :style="url ? { backgroundImage: `url(${url})` } : {}"
     />
-    <div class="hero-scrim" />
+    <div class="hero-scrim" :class="{ 'hero-scrim--photo': layerIsPhoto[backdrop.active] }" />
     <div class="hero-content">
       <div v-if="loading" class="hero-body">
         <v-skeleton-loader type="image" width="132" height="132" class="hero-cover rounded" />
@@ -107,6 +110,16 @@ import CoverArt from '@/components/library/CoverArt.vue'
 import type { RadioFaviconRequest } from '@/services/connect/radio'
 import { useLibraryStore } from '@/stores/library'
 import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
+import { getArtistArt } from '@/services/connect/fanart'
+import { preloadImage } from '@/services/preloadImage'
+import { useFanartStore } from '@/stores/fanart'
+
+/** What the backdrop should show; null while the artist's photo is still
+ * being looked up, which keeps whatever is showing now. */
+interface BackdropTarget {
+  url: string | null
+  photo: boolean
+}
 
 export default {
   name: 'HeroBand',
@@ -159,6 +172,10 @@ export default {
   data() {
     return {
       backdrop: createBackdropLayers(),
+      // Per layer, since a Fanart.tv photo is shown sharp and a cover blurred.
+      layerIsPhoto: [false, false],
+      artistPhoto: null as string | null,
+      artResolved: true,
       // Whatever <cover-art> ended up showing, reported by it. Null until
       // something has actually loaded.
       loadedSrc: null as string | null,
@@ -170,12 +187,44 @@ export default {
     // it. A radio logo is the one that can't: it is resolved in a batch
     // rather than fetched from an address, and there is no URL to blur
     // until <cover-art> reports the one it ended up showing.
-    backdropUrl(): string | null {
+    coverBackdropUrl(): string | null {
       if (this.coverId) return useLibraryStore().client().coverArtUrl(this.coverId, 300)
       return this.imageUrl ?? this.loadedSrc
     },
+    fanartArtist(): string | null {
+      return useFanartStore().enabled && this.hasContent ? this.artistName : null
+    },
+    // The artist's photo when Fanart.tv has one - the same one the artist
+    // page and Now Playing show this session - and the blurred cover when
+    // not. Held until the lookup answers, like the album page, so the
+    // band fades once to the right picture instead of cover-then-photo.
+    backdropTarget(): BackdropTarget | null {
+      if (!this.artResolved) return null
+      if (this.artistPhoto) return { url: this.artistPhoto, photo: true }
+      return { url: this.coverBackdropUrl, photo: false }
+    },
   },
   methods: {
+    async loadArtistPhoto(name: string | null): Promise<void> {
+      if (!name) {
+        this.artistPhoto = null
+        this.artResolved = true
+        return
+      }
+      this.artResolved = false
+      let photo: string | null = null
+      try {
+        photo = (await getArtistArt(name))?.background ?? null
+        // Preloaded, so the crossfade has an image to fade to.
+        if (photo) await preloadImage(photo)
+      } catch (error) {
+        console.error('[hero-band] Fanart.tv lookup failed:', error)
+      }
+      // The hero may have moved on to another song meanwhile.
+      if (this.fanartArtist !== name) return
+      this.artistPhoto = photo
+      this.artResolved = true
+    },
     onCoverClick() {
       if (this.coverTo) this.$router.push(this.coverTo)
       else this.$emit('play')
@@ -184,10 +233,19 @@ export default {
   watch: {
     // immediate — the first hero should fade in from nothing rather than
     // waiting for a *second* one before the backdrop ever appears.
-    backdropUrl: {
+    fanartArtist: {
       immediate: true,
-      handler(url: string | null) {
-        showBackdrop(this.backdrop, url)
+      handler(name: string | null) {
+        void this.loadArtistPhoto(name)
+      },
+    },
+    backdropTarget: {
+      immediate: true,
+      handler(target: BackdropTarget | null, previous: BackdropTarget | null | undefined) {
+        if (!target) return
+        if (previous && target.url === previous.url && target.photo === previous.photo) return
+        showBackdrop(this.backdrop, target.url)
+        this.layerIsPhoto[this.backdrop.active] = target.photo
       },
     },
   },
@@ -233,6 +291,38 @@ export default {
   opacity: 1;
 }
 
+/* The artist's Fanart.tv photo: sharp, at the right edge, eased out to the
+ * left under the title - the same treatment as DetailHeader.vue's, where
+ * the numbers are explained. */
+.hero-backdrop--photo {
+  inset: 0 0 0 auto;
+  aspect-ratio: 3 / 1;
+  max-width: 62%;
+  background-position: center 25%;
+  filter: none;
+  transform: none;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(0, 0, 0, 0.06) 8%,
+    rgba(0, 0, 0, 0.2) 16%,
+    rgba(0, 0, 0, 0.42) 25%,
+    rgba(0, 0, 0, 0.68) 35%,
+    rgba(0, 0, 0, 0.88) 45%,
+    #000 55%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(0, 0, 0, 0.06) 8%,
+    rgba(0, 0, 0, 0.2) 16%,
+    rgba(0, 0, 0, 0.42) 25%,
+    rgba(0, 0, 0, 0.68) 35%,
+    rgba(0, 0, 0, 0.88) 45%,
+    #000 55%
+  );
+}
+
 .hero-scrim {
   position: absolute;
   inset: 0;
@@ -242,6 +332,19 @@ export default {
       rgba(18, 20, 28, 0.94) 0%,
       rgba(18, 20, 28, 0.72) 45%,
       rgba(245, 169, 78, 0.22) 100%
+    ),
+    linear-gradient(to top, rgba(18, 20, 28, 0.6), transparent 60%);
+}
+
+/* Neutral over a sharp photo, where the amber wash would read as a colour
+ * cast - see DetailHeader.vue's identical rule. */
+.hero-scrim--photo {
+  background:
+    linear-gradient(
+      120deg,
+      rgba(18, 20, 28, 0.94) 0%,
+      rgba(18, 20, 28, 0.7) 40%,
+      rgba(18, 20, 28, 0) 75%
     ),
     linear-gradient(to top, rgba(18, 20, 28, 0.6), transparent 60%);
 }

@@ -347,7 +347,9 @@ async def test_a_failed_refresh_keeps_showing_the_stale_list(key):
     assert art["background"] == "bg"
 
 
-async def test_an_artist_unused_for_a_month_is_dropped_with_its_images(key):
+async def test_an_artist_unused_for_a_month_is_dropped_with_its_images(key, monkeypatch):
+    # Only the one latest is spared for its age, and that is "busy" below.
+    monkeypatch.setattr(fanart, "_KEEP_RECENT", 1)
     now = time.time()
     unused = now - fanart._UNUSED - 1
     _write_cache(
@@ -367,6 +369,37 @@ async def test_an_artist_unused_for_a_month_is_dropped_with_its_images(key):
     assert fanart.get_cached_image(_URL + "old") is None
     assert fanart.get_cached_image(_URL + "busy") == b"jpeg"
     assert set(fanart._load_cache()) == {"busy", "new"}
+
+
+async def test_the_latest_artists_survive_a_long_break(key, monkeypatch):
+    """Someone who opens the app once a month: every artist is past _UNUSED
+    by then, and the first lookup prunes. The most recent ones stay, with
+    their images, so the list pages still have backgrounds to show."""
+    monkeypatch.setattr(fanart, "_KEEP_RECENT", 2)
+    now = time.time()
+    last_session = now - 40 * 86400
+    _write_cache(
+        {
+            "latest": _entry({"background": [_URL + "latest"]}, fetched=last_session),
+            "earlier": _entry(
+                {"background": [_URL + "earlier"]}, fetched=last_session, used=last_session - 60
+            ),
+            "oldest": _entry(
+                {"background": [_URL + "oldest"]}, fetched=last_session, used=last_session - 120
+            ),
+            # No backgrounds to show, so no claim on a kept place either.
+            "bare": _entry(None, fetched=last_session, used=last_session + 60),
+        }
+    )
+    for name in ("latest", "earlier", "oldest"):
+        fanart.store_image(_URL + name, b"jpeg")
+
+    with _with_mbid("new"), _with_get(_response(200, {})):
+        await fanart.get_artist_art("Someone")
+
+    assert set(fanart._load_cache()) == {"latest", "earlier", "new"}
+    assert fanart.get_cached_image(_URL + "earlier") == b"jpeg"
+    assert fanart.get_cached_image(_URL + "oldest") is None
 
 
 async def test_opening_an_artist_keeps_it_from_being_dropped(key):

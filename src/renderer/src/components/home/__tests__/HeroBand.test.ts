@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -6,7 +6,17 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
+import { getArtistArt, type ArtistArt } from '@/services/connect/fanart'
+import { useFanartStore } from '@/stores/fanart'
 import HeroBand from '../HeroBand.vue'
+
+vi.mock('@/services/connect/fanart', () => ({ getArtistArt: vi.fn() }))
+// jsdom never fires an image's load event.
+vi.mock('@/services/preloadImage', () => ({ preloadImage: vi.fn().mockResolvedValue(undefined) }))
+
+function art(background: string): ArtistArt {
+  return { banner: null, background, backgrounds: [background], logo: null }
+}
 
 const vuetify = createVuetify({ components, directives })
 
@@ -47,6 +57,7 @@ function radioButton(wrapper: Awaited<ReturnType<typeof mountBand>>) {
 describe('HeroBand', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.mocked(getArtistArt).mockReset().mockResolvedValue(null)
   })
 
   describe('backdrop', () => {
@@ -108,6 +119,79 @@ describe('HeroBand', () => {
       const wrapper = await mountBand({ imageUrl: 'https://art/one.jpg' })
 
       expect(layers(wrapper).some((layer) => layer.active)).toBe(true)
+    })
+  })
+
+  describe('artist photo', () => {
+    function active(wrapper: Awaited<ReturnType<typeof mountBand>>) {
+      const layer = wrapper.find('.hero-backdrop--active')
+      return {
+        image: layer.attributes('style') ?? '',
+        photo: layer.classes().includes('hero-backdrop--photo'),
+      }
+    }
+
+    it("shows the artist's Fanart.tv photo sharp instead of the blurred cover", async () => {
+      vi.mocked(getArtistArt).mockResolvedValue(art('https://fanart/tide.jpg'))
+      const wrapper = await mountBand({ imageUrl: 'https://art/one.jpg', artistName: 'The Tide' })
+      await flushPromises()
+
+      expect(getArtistArt).toHaveBeenCalledWith('The Tide')
+      expect(active(wrapper)).toEqual({
+        image: expect.stringContaining('tide.jpg'),
+        photo: true,
+      })
+    })
+
+    it('keeps the cover back while the photo is looked up, so it fades only once', async () => {
+      vi.mocked(getArtistArt).mockReturnValue(new Promise(() => {}))
+      const wrapper = await mountBand({ imageUrl: 'https://art/one.jpg', artistName: 'The Tide' })
+      await flushPromises()
+
+      const painted = wrapper
+        .findAll('.hero-backdrop')
+        .filter((layer) => (layer.attributes('style') ?? '').includes('url('))
+      expect(painted).toHaveLength(0)
+    })
+
+    it('falls back to the blurred cover when Fanart.tv has nothing', async () => {
+      const wrapper = await mountBand({ imageUrl: 'https://art/one.jpg', artistName: 'Nobody' })
+      await flushPromises()
+
+      expect(active(wrapper)).toEqual({ image: expect.stringContaining('one.jpg'), photo: false })
+    })
+
+    it('falls back to the cover when the lookup fails', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.mocked(getArtistArt).mockRejectedValue(new Error('offline'))
+      const wrapper = await mountBand({ imageUrl: 'https://art/one.jpg', artistName: 'The Tide' })
+      await flushPromises()
+
+      expect(active(wrapper).image).toContain('one.jpg')
+    })
+
+    it('does not ask when Fanart.tv is switched off', async () => {
+      useFanartStore().enabled = false
+      const wrapper = await mountBand({ imageUrl: 'https://art/one.jpg', artistName: 'The Tide' })
+      await flushPromises()
+
+      expect(getArtistArt).not.toHaveBeenCalled()
+      expect(active(wrapper).image).toContain('one.jpg')
+    })
+
+    it("never shows the previous song's artist once the hero has moved on", async () => {
+      let answerFirst: (value: ArtistArt) => void = () => {}
+      vi.mocked(getArtistArt)
+        .mockImplementationOnce(() => new Promise((resolve) => (answerFirst = resolve)))
+        .mockResolvedValueOnce(null)
+      const wrapper = await mountBand({ imageUrl: 'https://art/one.jpg', artistName: 'Slow' })
+
+      await wrapper.setProps({ imageUrl: 'https://art/two.jpg', artistName: 'Fast' })
+      await flushPromises()
+      answerFirst(art('https://fanart/slow.jpg'))
+      await flushPromises()
+
+      expect(active(wrapper)).toEqual({ image: expect.stringContaining('two.jpg'), photo: false })
     })
   })
 

@@ -22,7 +22,9 @@ MusicBrainz) for the same artists again. The metadata (which images an
 artist has, keyed by MBID) is a small JSON file; the image bytes are files
 under fanart_images/. The list is asked for again after _REFRESH; an image
 is deleted only once no cached artist lists it any more, and an artist is
-dropped once unused for _UNUSED, so neither grows without bound. Only the
+dropped once unused for _UNUSED - bar the _KEEP_RECENT latest, so an
+occasional user still has something to show - so neither grows without
+bound. Only the
 shown image is fetched before the page gets its answer; the other
 backgrounds follow slowly in the background (_prefetch_backgrounds()), for
 the cycle button.
@@ -79,6 +81,13 @@ _REFRESH = 30 * 86400.0
 # images with it - the only thing that bounds the image folder by age.
 _UNUSED = 30 * 86400.0
 
+# ...except the most recently opened artists with backgrounds, kept however
+# old: pruning runs on the first lookup after a break, so someone who opens
+# the app once a month would otherwise lose every other artist at that
+# moment and find the list pages' headers with next to nothing to show. At
+# up to ten backgrounds each this is a few hundred MB at most.
+_KEEP_RECENT = 30
+
 # How stale an entry's "used" stamp may get before it is written to disk:
 # precise enough for a month-long _UNUSED, without a file write on every
 # page open.
@@ -133,12 +142,18 @@ def _urls(art: dict | None) -> set[str]:
 
 def _save_cache(cache: dict) -> None:
     """Writes the whole cache back, dropping the artists unused for _UNUSED
-    and every stored image no remaining artist lists - the only pruning
-    either cache gets, and what keeps both bounded."""
+    (all but the _KEEP_RECENT latest with backgrounds) and every stored
+    image no remaining artist lists - the only pruning either cache gets,
+    and what keeps both bounded."""
     now = time.time()
-    live = {
-        k: v for k, v in cache.items() if isinstance(v, dict) and now - v.get("used", 0) < _UNUSED
-    }
+    entries = {k: v for k, v in cache.items() if isinstance(v, dict)}
+    with_backgrounds = sorted(
+        (k for k, v in entries.items() if (v.get("art") or {}).get("background")),
+        key=lambda k: entries[k].get("used", 0),
+        reverse=True,
+    )
+    kept = set(with_backgrounds[:_KEEP_RECENT])
+    live = {k: v for k, v in entries.items() if k in kept or now - v.get("used", 0) < _UNUSED}
     try:
         os.makedirs(os.path.dirname(_CACHE_PATH), exist_ok=True)
         with open(_CACHE_PATH, "w", encoding="utf-8") as f:
