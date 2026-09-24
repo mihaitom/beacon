@@ -6,24 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The album page shows more about the album: what kind of release it is, its record label, edition and reissue year, all its genres, and the opening of its Wikipedia article
+- The Statistics page shows more: storage used, how much of the library you have ever played, songs heard in the last 30 days, your ratings, a Hi-Res/lossless/lossy breakdown and the artists with the most songs
+- The artist page has a button to switch to another Fanart.tv background
+
 ### Changed
 
-- Artist backgrounds from Fanart.tv now draw on up to ten images per artist, mostly the best liked plus a few of the newest uploads; the first one appears as quickly as before and the rest load quietly in the background, so switching to another one is instant
-- On artist and album pages the Fanart.tv photo now sits on the right and fades out behind the header, so text stays readable on bright photos and the photo is shown uncropped; it also fades between pages instead of blinking
-- The album page has a new header: a large cover, the title, running time and Play and Shuffle buttons, with the artist photo beside them; it stays in view while the track list scrolls below it
-- The Artists, Albums, Songs, Playlists, Radio and Favorites pages and every genre page show Fanart.tv artist banners Beacon has already downloaded in their header, changing every few seconds (background photos until the first banners are in); a genre shows only its own artists; the placeholder icon beside the page title is gone, and the title is larger and centred in the header instead
-- The album page shows more about the album: what kind of release it is, its record label, edition and reissue year, all its genres, and the opening of its Wikipedia article
-- An artist keeps the same background across the artist page, album pages and Now Playing for the whole session, and the artist page has a button to switch to another one
-- The Statistics page shows more: how much storage the library takes, how much of it you have ever played, how many songs you heard in the last 30 days, your ratings, and a breakdown into Hi-Res, lossless and lossy audio and the artists with the most songs; the lists now wrap two at a time on narrower windows
-- The Favorites page has a header like the other library pages, showing how many artists, albums and songs you have marked, with your favorite artists' banners behind it
-- The Home page's top card shows the Fanart.tv banner of the artist you are listening to, or their background photo when there is no banner
+- Artist backgrounds from Fanart.tv draw on up to ten images per artist, mostly the best liked plus a few of the newest, and switching between them is instant
+- On artist and album pages the Fanart.tv photo sits on the right, uncropped, and fades out behind the header, so text stays readable; it also fades between pages instead of blinking
+- An artist keeps the same background across the artist page, album pages and Now Playing for the whole session
+- The album page has a new header with a large cover, running time, Play and Shuffle, and the artist photo beside them; it stays in view while the track list scrolls below it
+- The Artists, Albums, Songs, Playlists, Radio and Favorites pages and every genre page show your artists' Fanart.tv banners in their header, changing every few seconds, a genre only its own artists
+- The Favorites page header shows how many artists, albums and songs you have marked
+- The Home page's top card shows the Fanart.tv banner or photo of the artist you are listening to
+- Small layout tweaks: library page titles are larger and no longer have a placeholder icon beside them, and the Statistics lists wrap two at a time on narrower windows
 
 ### Fixed
 
 - After more than a month away from the app, nearly all downloaded Fanart.tv images were deleted the moment an artist was opened; the most recent artists' images are now always kept
 - Most played artists on the Statistics page could show a song's full credit with its featured artists instead of the artist's name
 - The Fanart.tv images ranked as most liked were the wrong ones for artists with ten or more likes on an image, so their best backgrounds were never shown
-
 - Radio played through Beacon now reconnects on its own when the connection silently dies, for example after a network or VPN change, instead of going quiet and showing the Reconnect button; it keeps trying for up to ten minutes and picks up right away when the network comes back
 
 ## [1.4.0] - 2026-09-22
