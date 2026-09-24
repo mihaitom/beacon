@@ -43,7 +43,7 @@ import time
 import httpx
 
 from core import api_keys
-from core.recommendations import first_artist, resolve_mbid
+from core.recommendations import cached_mbid, first_artist, resolve_mbid
 from lyrics.shared import USER_AGENT
 
 logger = logging.getLogger("connect.fanart")
@@ -336,6 +336,39 @@ async def get_artist_art(name: str) -> dict | None:
     cache[mbid] = entry
     _save_cache(cache)
     return _answer(mbid, result)
+
+
+# How many stored backgrounds stored_backgrounds() hands out at most - a
+# header cycling through them every few seconds never gets near this many,
+# and the whole library's worth would be a needlessly long answer.
+_STORED_LIMIT = 60
+
+
+def stored_backgrounds(names: list[str] | None = None) -> list[str]:
+    """Backgrounds whose bytes are already on disk, in random order - for
+    all artists, or for `names` only. Makes no request of anyone: an artist
+    is found only through an MBID already resolved before, and only images
+    already downloaded are offered, so a header can show them without
+    Fanart.tv or MusicBrainz ever hearing of it."""
+    cache = _load_cache()
+    if names is None:
+        entries = list(cache.values())
+    else:
+        mbids = {
+            mbid
+            for name in names
+            for mbid in (cached_mbid(name), cached_mbid(first_artist(name) or ""))
+            if mbid
+        }
+        entries = [cache.get(mbid) for mbid in mbids]
+    urls = {
+        url
+        for entry in entries
+        if isinstance(entry, dict)
+        for url in (entry.get("art") or {}).get("background") or []
+        if is_image_cached(url)
+    }
+    return random.sample(sorted(urls), min(len(urls), _STORED_LIMIT))
 
 
 # ── image bytes ──────────────────────────────────────────────────────────────

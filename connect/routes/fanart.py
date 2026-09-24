@@ -1,4 +1,5 @@
-"""routes/fanart.py — GET /fanart/artist, GET /fanart/image
+"""routes/fanart.py — GET /fanart/artist, GET /fanart/image,
+POST /fanart/stored-backgrounds
 
 Artist images from Fanart.tv (core/fanart.py). Machine-to-machine
 (CONNECT_TOKEN), not session-scoped: like routes/recommendations.py, nothing
@@ -13,6 +14,7 @@ tag cannot send a header.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel
 
 from core import fanart
 from core.auth import require_token
@@ -26,6 +28,19 @@ _CACHE_CONTROL = "public, max-age=2592000"
 @router.get("/artist")
 async def artist(name: str = Query(...)) -> dict:
     return {"art": await fanart.get_artist_art(name)}
+
+
+class StoredBackgroundsRequest(BaseModel):
+    # None for every artist; a list (a genre's artists) for those only.
+    # A body rather than a query string, since a big genre names hundreds.
+    artists: list[str] | None = None
+
+
+@router.post("/stored-backgrounds")
+async def stored_backgrounds(body: StoredBackgroundsRequest) -> dict:
+    """The backgrounds already downloaded, for the list pages' headers to
+    cycle through - see core/fanart.py's stored_backgrounds()."""
+    return {"backgrounds": fanart.stored_backgrounds(body.artists)}
 
 
 @router.get("/image")

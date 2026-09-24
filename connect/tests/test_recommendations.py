@@ -1530,3 +1530,19 @@ async def test_get_album_bio_serves_a_second_visit_from_the_cache():
 
 def test_phrase_escapes_what_would_end_a_search_phrase():
     assert recommendations._phrase('Say "Hi" \\ now') == '"Say \\"Hi\\" \\\\ now"'
+
+
+def test_cached_mbid_reads_only_a_resolved_name_and_asks_nobody():
+    with tempfile.TemporaryDirectory() as d:
+        with (
+            patch.object(recommendations, "_PATH", _tmp_path(d)),
+            patch.object(recommendations, "_client") as client,
+        ):
+            client.get = AsyncMock(side_effect=AssertionError("asked"))
+            recommendations._save_cache(
+                {"mbid_by_name_v2": {"radiohead": "mbid-r", "legacy": None}}
+            )
+
+            assert recommendations.cached_mbid(" Radiohead ") == "mbid-r"
+            assert recommendations.cached_mbid("legacy") is None
+            assert recommendations.cached_mbid("unknown") is None

@@ -427,3 +427,67 @@ def test_the_image_route_serves_and_caches(client, key):
 def test_the_image_route_refuses_a_non_fanart_url(client, key):
     resp = client.get("/fanart/image", params={"url": "https://evil.example.com/a.jpg"})
     assert resp.status_code == 404
+
+
+# ── stored backgrounds ───────────────────────────────────────────────────────
+
+
+def _store_artist(mbid: str, backgrounds: list[str], on_disk: list[str]) -> None:
+    cache = fanart._load_cache()
+    cache[mbid] = {
+        "fetched": time.time(),
+        "used": time.time(),
+        "version": fanart._CACHE_VERSION,
+        "art": {"background": backgrounds},
+    }
+    fanart._save_cache(cache)
+    for url in on_disk:
+        fanart.store_image(url, b"jpeg")
+
+
+def test_stored_backgrounds_offers_only_what_is_on_disk():
+    """Nothing is downloaded for a list page's header - a background whose
+    bytes are not stored yet is left out."""
+    _store_artist("a", [_URL + "a1", _URL + "a2"], on_disk=[_URL + "a1"])
+    _store_artist("b", [_URL + "b1"], on_disk=[_URL + "b1"])
+
+    assert sorted(fanart.stored_backgrounds()) == [_URL + "a1", _URL + "b1"]
+
+
+def test_stored_backgrounds_narrows_to_the_named_artists(monkeypatch):
+    """A genre's header shows that genre's artists only, found through the
+    MBIDs already resolved - a collaboration credit through its first
+    performer, as the lookup itself does."""
+    _store_artist("mbid-a", [_URL + "a1"], on_disk=[_URL + "a1"])
+    _store_artist("mbid-b", [_URL + "b1"], on_disk=[_URL + "b1"])
+    known = {"artist a": "mbid-a", "artist b": "mbid-b"}
+    monkeypatch.setattr(fanart, "cached_mbid", lambda name: known.get(name.strip().lower()))
+
+    assert fanart.stored_backgrounds(["Artist A & Someone"]) == [_URL + "a1"]
+    assert fanart.stored_backgrounds(["Nobody"]) == []
+
+
+def test_stored_backgrounds_never_asks_musicbrainz(monkeypatch):
+    monkeypatch.setattr(fanart, "resolve_mbid", AsyncMock(side_effect=AssertionError("asked")))
+    monkeypatch.setattr(fanart, "cached_mbid", lambda name: None)
+
+    assert fanart.stored_backgrounds(["Unknown Artist"]) == []
+
+
+def test_stored_backgrounds_is_capped(monkeypatch):
+    monkeypatch.setattr(fanart, "_STORED_LIMIT", 3)
+    urls = [_URL + f"bg{i}" for i in range(10)]
+    _store_artist("a", urls, on_disk=urls)
+
+    backgrounds = fanart.stored_backgrounds()
+    assert len(backgrounds) == 3
+    assert set(backgrounds) <= set(urls)
+
+
+def test_the_stored_backgrounds_route(client, key):
+    _store_artist("a", [_URL + "a1"], on_disk=[_URL + "a1"])
+
+    resp = client.post("/fanart/stored-backgrounds", json={})
+
+    assert resp.status_code == 200
+    assert resp.json() == {"backgrounds": [_URL + "a1"]}

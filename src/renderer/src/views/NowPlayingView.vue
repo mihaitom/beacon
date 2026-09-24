@@ -490,6 +490,10 @@ export default {
       // Hiding the artwork is a wish to look at the artist background, so
       // the darkening goes with it.
       if (this.artworkHidden) return { background: 'none' }
+      // Over the artist's photo the darkening stays but the colour does
+      // not: the cover's colour (or the amber fallback) over a sharp photo
+      // reads as a colour cast. The glow behind the artwork keeps the light.
+      if (this.backdropIsArtist) return { background: 'rgba(18, 20, 28, 0.55)' }
       return {
         background: `radial-gradient(ellipse 65% 55% at 50% 32%, rgba(${this.colorTriplet}, 0.35), rgba(18, 20, 28, 0) 70%), rgba(18, 20, 28, 0.55)`,
       }

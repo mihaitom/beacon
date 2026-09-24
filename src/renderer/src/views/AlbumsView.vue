@@ -1,6 +1,6 @@
 <template>
   <v-container fluid>
-    <detail-header :title="$t('library.albums')">
+    <detail-header :title="$t('library.albums')" stored-fanart>
       <template v-if="filteredAlbums.length" #meta>
         {{ filteredAlbums.length }}
         {{ filteredAlbums.length === 1 ? $t('library.album1') : $t('library.albumsN') }}

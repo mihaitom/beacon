@@ -7,10 +7,16 @@
       v-for="(url, i) in backdrop.urls"
       :key="i"
       class="detail-header__backdrop"
-      :class="{ 'detail-header__backdrop--active': i === backdrop.active }"
+      :class="{
+        'detail-header__backdrop--active': i === backdrop.active,
+        'detail-header__backdrop--photo': layerIsPhoto[i],
+      }"
       :style="url ? { backgroundImage: `url(${url})` } : {}"
     />
-    <div class="detail-header__scrim" />
+    <div
+      class="detail-header__scrim"
+      :class="{ 'detail-header__scrim--photo': layerIsPhoto[backdrop.active] }"
+    />
     <div v-if="starred !== null || $slots['top-right']" class="detail-header__top-right">
       <!-- Its own row, separate from the #top-right slot below — rating/
        - heart are icon-sized controls that always belong together on one
@@ -84,6 +90,13 @@ import CoverArt from './CoverArt.vue'
 import { useLibraryStore } from '@/stores/library'
 import { emitter } from '@/emitter'
 import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
+import { getStoredBackgrounds } from '@/services/connect/fanart'
+import { preloadImage } from '@/services/preloadImage'
+import { useFanartStore } from '@/stores/fanart'
+
+// How long each stored Fanart.tv background stays before the next one fades
+// in - slow enough to read as a calm backdrop rather than a slideshow.
+const STORED_FANART_INTERVAL_MS = 12_000
 
 /**
  * Shared "hero" treatment for album/artist/playlist detail pages — a
@@ -114,12 +127,30 @@ export default {
     // null hides the rating widget entirely (e.g. playlists) — 0-5 shows it,
     // 0 meaning "not yet rated" rather than "rated zero stars".
     rating: { type: Number as PropType<number | null>, default: null },
+    /** For a list page with no picture of its own: cycle through the Fanart.tv
+     * backgrounds connect has already stored - every artist's (true), or
+     * only these artists' (a genre's). Nothing new is downloaded for it. */
+    storedFanart: { type: [Boolean, Array] as PropType<boolean | string[]>, default: false },
   },
   emits: ['toggle-star', 'set-rating'],
   data() {
-    return { backdrop: createBackdropLayers() }
+    return {
+      backdrop: createBackdropLayers(),
+      // Per layer, since a stored photo is shown sharp and a cover blurred.
+      layerIsPhoto: [false, false],
+      photos: [] as string[],
+      photoIndex: 0,
+      cycleTimer: null as ReturnType<typeof setInterval> | null,
+    }
   },
   computed: {
+    /** What storedFanart asks for, as one value to watch: null for nothing,
+     * [] for every artist, or the artists' names. */
+    storedFanartRequest(): string[] | null {
+      if (!useFanartStore().enabled || this.backdropUrl) return null
+      if (this.storedFanart === true) return []
+      return Array.isArray(this.storedFanart) && this.storedFanart.length ? this.storedFanart : null
+    },
     backdropUrl(): string | null {
       if (this.coverArtId) return useLibraryStore().client().coverArtUrl(this.coverArtId, 300)
       return this.imageUrl
@@ -129,6 +160,53 @@ export default {
     },
   },
   methods: {
+    show(url: string | null, isPhoto: boolean): void {
+      showBackdrop(this.backdrop, url)
+      this.layerIsPhoto[this.backdrop.active] = isPhoto
+    },
+    async loadStoredFanart(request: string[] | null): Promise<void> {
+      this.stopCycle()
+      this.photos = []
+      if (!request) {
+        if (!this.backdropUrl) this.show(null, false)
+        return
+      }
+      let photos: string[] = []
+      try {
+        photos = await getStoredBackgrounds(request.length ? request : undefined)
+      } catch (error) {
+        console.error('[detail-header] Stored Fanart.tv backgrounds lookup failed:', error)
+      }
+      // The page may have moved on, or found a picture of its own, meanwhile.
+      if (JSON.stringify(this.storedFanartRequest) !== JSON.stringify(request)) return
+      if (!photos.length) return
+      this.photos = photos
+      this.photoIndex = Math.floor(Math.random() * photos.length)
+      await this.showPhoto(photos[this.photoIndex]!)
+      // One picture and no cycling for anyone who has asked for less motion.
+      if (photos.length < 2 || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+        return
+      }
+      this.cycleTimer = setInterval(() => void this.nextPhoto(), STORED_FANART_INTERVAL_MS)
+    },
+    async nextPhoto(): Promise<void> {
+      // Nobody is looking at a hidden tab; the next tick tries again.
+      if (document.hidden || !this.photos.length) return
+      this.photoIndex = (this.photoIndex + 1) % this.photos.length
+      await this.showPhoto(this.photos[this.photoIndex]!)
+    },
+    /** Preloaded first, so the crossfade has an image to fade to (see
+     * services/preloadImage.ts). */
+    async showPhoto(url: string): Promise<void> {
+      const photos = this.photos
+      await preloadImage(url)
+      if (this.photos !== photos) return
+      this.show(url, true)
+    },
+    stopCycle(): void {
+      if (this.cycleTimer) clearInterval(this.cycleTimer)
+      this.cycleTimer = null
+    },
     /** Opens the app-wide viewer (ArtworkLightbox.vue, mounted in App.vue)
      * rather than a dialog of this component's own — this header is on five
      * different pages, and the same picture is also opened from places that
@@ -151,9 +229,22 @@ export default {
     backdropUrl: {
       immediate: true,
       handler(url: string | null) {
-        showBackdrop(this.backdrop, url)
+        if (!url && this.photos.length) return
+        this.show(url, false)
       },
     },
+    storedFanartRequest: {
+      immediate: true,
+      handler(request: string[] | null, previous: string[] | null | undefined) {
+        // A genre's artists arrive as a fresh array on every re-render of
+        // the page; the same names are no reason to start over.
+        if (JSON.stringify(request) === JSON.stringify(previous)) return
+        void this.loadStoredFanart(request)
+      },
+    },
+  },
+  beforeUnmount() {
+    this.stopCycle()
   },
 }
 </script>
@@ -186,6 +277,41 @@ export default {
   opacity: 1;
 }
 
+/* A stored Fanart.tv background (see storedFanart): sharp, at the right
+ * edge, eased out to the left under the title - the album page's header
+ * photo (DetailPageBackdrop.vue). As wide as 3:1 on this shallow card: any
+ * wider and a close-up is cropped down to a strip of eyes, since at least
+ * 60% of a 16:9 photo's height has to stay. The crop there is is held
+ * towards the top, where the faces usually are. */
+.detail-header__backdrop--photo {
+  inset: 0 0 0 auto;
+  aspect-ratio: 3 / 1;
+  max-width: 62%;
+  background-position: center 25%;
+  filter: none;
+  transform: none;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(0, 0, 0, 0.06) 8%,
+    rgba(0, 0, 0, 0.2) 16%,
+    rgba(0, 0, 0, 0.42) 25%,
+    rgba(0, 0, 0, 0.68) 35%,
+    rgba(0, 0, 0, 0.88) 45%,
+    #000 55%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(0, 0, 0, 0.06) 8%,
+    rgba(0, 0, 0, 0.2) 16%,
+    rgba(0, 0, 0, 0.42) 25%,
+    rgba(0, 0, 0, 0.68) 35%,
+    rgba(0, 0, 0, 0.88) 45%,
+    #000 55%
+  );
+}
+
 .detail-header__scrim {
   position: absolute;
   inset: 0;
@@ -195,6 +321,20 @@ export default {
       rgba(18, 20, 28, 0.94) 0%,
       rgba(18, 20, 28, 0.75) 45%,
       rgba(245, 169, 78, 0.2) 100%
+    ),
+    linear-gradient(to top, rgba(18, 20, 28, 0.55), transparent 55%);
+}
+
+/* Over a stored Fanart.tv photo the scrim ends neutral rather than in the
+ * amber wash: tinting a sharp photo reads as a colour cast, where over the
+ * blurred cover it reads as the app's own light. */
+.detail-header__scrim--photo {
+  background:
+    linear-gradient(
+      120deg,
+      rgba(18, 20, 28, 0.94) 0%,
+      rgba(18, 20, 28, 0.7) 40%,
+      rgba(18, 20, 28, 0) 75%
     ),
     linear-gradient(to top, rgba(18, 20, 28, 0.55), transparent 55%);
 }

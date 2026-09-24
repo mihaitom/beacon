@@ -353,6 +353,17 @@ bio slot and gets no reserved gap. The paragraph sits directly on the sharp
 photo, past where the scrim has faded out, so it carries a soft drop-shadow
 to stay readable there (`ArtistBio.vue`).
 
+The list pages' headers (Artists, Albums, Songs, Playlists, Radio, a
+genre) have no picture of their own; with Fanart.tv on, `DetailHeader`'s
+`storedFanart` cycles them through the backgrounds connect has already
+downloaded - a genre's through its own artists' only - every 12 seconds,
+sharp and eased out to the left like the album page's photo, up to 3:1 (and
+62% of the card) - wider would crop a close-up down to a strip of eyes -
+and over a scrim without the amber wash, which would read as a colour cast
+on a photo. Now Playing drops its colour wash over the artist's photo for
+the same reason. No new image is fetched for any of it; a hidden tab and
+reduced motion hold the cycling still.
+
 Where the backdrop can _change_ while the surface stays (navigating from one
 album to the next, the next track starting), it needs two stacked layers and
 `services/crossfadeBackdrop.ts` - `background-image` cannot transition. A

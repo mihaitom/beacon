@@ -9,7 +9,7 @@
      - of art represents "your radio stations" the way an album's own cover
      - does), so this is fallback-icon only, same as PlaylistsView.vue's
      - identical case. -->
-    <detail-header fallback-icon="mdi-radio" :title="$t('radio.title')">
+    <detail-header fallback-icon="mdi-radio" :title="$t('radio.title')" stored-fanart>
       <template v-if="libraryStore.radioStations.length" #meta>
         {{ libraryStore.radioStations.length }}
         {{ libraryStore.radioStations.length === 1 ? $t('radio.station1') : $t('radio.stationsN') }}

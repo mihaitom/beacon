@@ -1,6 +1,6 @@
 <template>
   <v-container fluid>
-    <detail-header fallback-icon="mdi-playlist-music" :title="$t('playlists.title')">
+    <detail-header fallback-icon="mdi-playlist-music" :title="$t('playlists.title')" stored-fanart>
       <template v-if="filteredPlaylists.length" #meta>
         {{ filteredPlaylists.length }}
         {{

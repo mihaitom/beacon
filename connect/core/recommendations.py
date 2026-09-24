@@ -247,6 +247,13 @@ async def resolve_mbid(name: str) -> str | None:
     return mbid
 
 
+def cached_mbid(name: str) -> str | None:
+    """The MBID resolve_mbid() has already found for `name`, without asking
+    MusicBrainz - for callers that must not cause a lookup per name."""
+    cached = _load_cache().get("mbid_by_name_v2", {}).get(name.strip().lower())
+    return cached if isinstance(cached, str) else None
+
+
 def _musicbrainz_artist_url(mbid: str) -> str:
     return f"https://musicbrainz.org/artist/{mbid}"
 

@@ -1,6 +1,11 @@
 <template>
   <v-container fluid>
-    <detail-header fallback-icon="mdi-music-note" :eyebrow="$t('library.genre')" :title="genreName">
+    <detail-header
+      fallback-icon="mdi-music-note"
+      :eyebrow="$t('library.genre')"
+      :title="genreName"
+      :stored-fanart="genreArtists"
+    >
       <template v-if="songs.length" #meta>
         {{ $t('library.albumsAndSongs', { albums: albumCount, songs: songs.length }) }}
       </template>
@@ -108,6 +113,11 @@ export default {
     }
   },
   computed: {
+    /** Who the genre's songs are by - its header cycles through the stored
+     * Fanart.tv backgrounds of these artists only. */
+    genreArtists(): string[] {
+      return [...new Set(this.songs.map((song) => song.artist))].sort()
+    },
     libraryStore() {
       return useLibraryStore()
     },

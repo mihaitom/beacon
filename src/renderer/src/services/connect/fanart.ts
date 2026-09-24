@@ -80,3 +80,15 @@ export function nextBackground(backgrounds: string[], current: string | null): s
 export function forgetShownArt(): void {
   shown.clear()
 }
+
+/** Fanart.tv backgrounds connect has already downloaded - for every artist,
+ * or only for `artists` (a genre's) - routed through connect like every
+ * other Fanart.tv image. Asks nobody but connect: see its
+ * core/fanart.py's stored_backgrounds(). */
+export async function getStoredBackgrounds(artists?: string[]): Promise<string[]> {
+  const data = await fetchConnect<{ backgrounds: string[] }>('/fanart/stored-backgrounds', {
+    method: 'POST',
+    body: { artists: artists ?? null },
+  })
+  return data.backgrounds.map((url) => fanartImageUrl(url))
+}
