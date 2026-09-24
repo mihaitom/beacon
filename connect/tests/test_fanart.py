@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import time
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -265,17 +266,117 @@ async def test_a_second_visit_does_not_start_a_second_download_run(key):
     assert fetch.await_count == 1
 
 
-async def test_metadata_cached_by_an_older_version_is_fetched_again(key):
-    """The old top-five lists were picked with a string sort; they must not
-    linger for the rest of the month."""
+def _write_cache(entries: dict) -> None:
     with open(fanart._CACHE_PATH, "w") as f:
-        json.dump({"abc": {"expires": 2**40, "art": {"background": ["stale"]}}}, f)
+        json.dump(entries, f)
+
+
+def _entry(art: dict | None, *, fetched: float, used: float | None = None, version=None) -> dict:
+    return {
+        "fetched": fetched,
+        "used": fetched if used is None else used,
+        "version": fanart._CACHE_VERSION if version is None else version,
+        "art": art,
+    }
+
+
+_URL = "https://assets.fanart.tv/fanart/"
+
+
+async def test_a_refreshed_list_keeps_the_images_it_still_names(key):
+    """A Fanart.tv image URL never changes content, so asking for the list
+    again must not throw away bytes that are still wanted - only the image
+    the new list dropped goes."""
+    old = time.time() - fanart._REFRESH - 1
+    _write_cache({"abc": _entry({"background": [_URL + "kept", _URL + "gone"]}, fetched=old)})
+    fanart.store_image(_URL + "kept", b"jpeg")
+    fanart.store_image(_URL + "gone", b"jpeg")
+    payload = {"artistbackground": [{"id": "1", "url": _URL + "kept", "likes": "1"}]}
+
+    with _with_mbid(), _with_get(_response(200, payload)) as get:
+        art = await fanart.get_artist_art("Cher")
+
+    get.assert_awaited_once()
+    assert art["background"] == _URL + "kept"
+    assert fanart.get_cached_image(_URL + "kept") == b"jpeg"
+    assert fanart.get_cached_image(_URL + "gone") is None
+
+
+async def test_metadata_cached_by_an_older_version_is_fetched_again(key):
+    """The old top-five lists were picked with a string sort; they are asked
+    for again right away, not after a month."""
+    _write_cache({"abc": _entry({"background": ["stale"]}, fetched=time.time(), version=1)})
 
     with _with_mbid(), _with_get(_response(200, _backgrounds({1: 1}))) as get:
         art = await fanart.get_artist_art("Cher")
 
     get.assert_awaited_once()
     assert art["background"] == "bg1"
+
+
+async def test_an_entry_from_before_the_used_stamp_is_still_read(key):
+    """Entries written before fetched/used existed carry only an expiry."""
+    expires = time.time() + fanart._REFRESH / 2
+    _write_cache(
+        {
+            "abc": {
+                "expires": expires,
+                "version": fanart._CACHE_VERSION,
+                "art": {"background": ["bg"]},
+            }
+        }
+    )
+
+    with _with_mbid(), _with_get(_response(200, {})) as get:
+        art = await fanart.get_artist_art("Cher")
+
+    get.assert_not_awaited()
+    assert art["background"] == "bg"
+
+
+async def test_a_failed_refresh_keeps_showing_the_stale_list(key):
+    """The stale list still names images on disk; Fanart.tv being down is no
+    reason to show nothing."""
+    old = time.time() - fanart._REFRESH - 1
+    _write_cache({"abc": _entry({"background": ["bg"]}, fetched=old)})
+    failed = httpx.Response(500, request=httpx.Request("GET", "https://x"))
+
+    with _with_mbid(), _with_get(failed):
+        art = await fanart.get_artist_art("Cher")
+
+    assert art["background"] == "bg"
+
+
+async def test_an_artist_unused_for_a_month_is_dropped_with_its_images(key):
+    now = time.time()
+    unused = now - fanart._UNUSED - 1
+    _write_cache(
+        {
+            "old": _entry({"background": [_URL + "old"]}, fetched=unused),
+            # Fetched just as long ago, but opened since - it stays.
+            "busy": _entry({"background": [_URL + "busy"]}, fetched=unused, used=now),
+        }
+    )
+    fanart.store_image(_URL + "old", b"jpeg")
+    fanart.store_image(_URL + "busy", b"jpeg")
+
+    # Any write of the cache prunes; a lookup of a third artist is one.
+    with _with_mbid("new"), _with_get(_response(200, {})):
+        await fanart.get_artist_art("Someone")
+
+    assert fanart.get_cached_image(_URL + "old") is None
+    assert fanart.get_cached_image(_URL + "busy") == b"jpeg"
+    assert set(fanart._load_cache()) == {"busy", "new"}
+
+
+async def test_opening_an_artist_keeps_it_from_being_dropped(key):
+    now = time.time()
+    _write_cache({"abc": _entry({"background": ["bg"]}, fetched=now - 5 * 86400)})
+
+    with _with_mbid(), _with_get(_response(200, {})):
+        await fanart.get_artist_art("Cher")
+
+    assert fanart._load_cache()["abc"]["used"] >= now
 
 
 # ── image bytes ──────────────────────────────────────────────────────────────

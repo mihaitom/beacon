@@ -20,10 +20,12 @@ artwork caches: Fanart.tv is a third party on the far side of the internet,
 so an in-memory cache lost on every restart means re-asking it (and
 MusicBrainz) for the same artists again. The metadata (which images an
 artist has, keyed by MBID) is a small JSON file; the image bytes are files
-under fanart_images/. Both are kept for _TTL and pruned as they are
-rewritten, so neither grows without bound. Only the shown image is fetched
-before the page gets its answer; the other backgrounds follow slowly in the
-background (_prefetch_backgrounds()), for the cycle button.
+under fanart_images/. The list is asked for again after _REFRESH; an image
+is deleted only once no cached artist lists it any more, and an artist is
+dropped once unused for _UNUSED, so neither grows without bound. Only the
+shown image is fetched before the page gets its answer; the other
+backgrounds follow slowly in the background (_prefetch_backgrounds()), for
+the cycle button.
 
 A failure here is never surfaced to the caller. This only ever enriches an
 artist page that works without it, so "no art" and "Fanart.tv is down" both
@@ -68,10 +70,19 @@ _IMAGE_DIR = os.path.join(_DATA_DIR, "fanart_images")
 # Which images an artist has barely changes, and a miss (an artist Fanart.tv
 # does not have) is worth remembering too - unlike a MusicBrainz name miss,
 # this is the directory's own answer, not a hiccup. A failed *request* is
-# not cached at all, so it is retried on the next visit. A month matches the
-# app's other artwork caches (see routes/coverart.py's own _CACHE_TTL); an
-# artist's images can change, just not on any timescale worth re-asking for.
-_TTL = 30 * 86400.0
+# not cached at all, so it is retried on the next visit. After a month the
+# list is asked for again, to pick up new uploads; images still on it keep
+# their bytes, since a Fanart.tv image URL never changes content.
+_REFRESH = 30 * 86400.0
+
+# An artist not opened for this long is dropped from the cache, and its
+# images with it - the only thing that bounds the image folder by age.
+_UNUSED = 30 * 86400.0
+
+# How stale an entry's "used" stamp may get before it is written to disk:
+# precise enough for a month-long _UNUSED, without a file write on every
+# page open.
+_USED_RESOLUTION = 86400.0
 
 # How many of an artist's images to keep per kind, and how they are chosen.
 # Fanart.tv's `likes` are few (most images have under ten) and accumulate
@@ -82,7 +93,7 @@ _KEEP_BY_LIKES = 7
 _KEEP_NEWEST = 3
 
 # Bumped whenever _pick() chooses differently, so metadata cached by an
-# older version is re-fetched instead of lingering for the rest of _TTL.
+# older version is asked for again right away rather than after _REFRESH.
 _CACHE_VERSION = 2
 
 # The background candidates beyond the one shown are downloaded one at a
@@ -92,34 +103,73 @@ _PREFETCH_GAP = 2.0
 
 # The in-memory half, filled from disk on a miss and written through on a
 # fetch: it saves the file read on every artist page open within a session.
-# {mbid: (expires_at, art_or_none)}, wall-clock, since it is written to disk.
-_cache: dict[str, tuple[float, dict | None]] = {}
+# {mbid: entry}, the same {fetched, used, version, art} records as on disk;
+# wall-clock, since they are written to disk.
+_cache: dict[str, dict] = {}
 
 
 def _load_cache() -> dict:
     try:
         with open(_CACHE_PATH, encoding="utf-8") as f:
             data = json.load(f)
-        return data if isinstance(data, dict) else {}
     except FileNotFoundError:
         return {}
     except Exception as e:
         logger.warning(f"[fanart] Could not read the metadata cache: {e}")
         return {}
+    if not isinstance(data, dict):
+        return {}
+    for entry in data.values():
+        # Entries written before the fetched/used split carried only an
+        # expiry; they count as fetched, and last used, a _REFRESH earlier.
+        if isinstance(entry, dict) and "fetched" not in entry:
+            entry["fetched"] = entry["used"] = entry.get("expires", 0) - _REFRESH
+    return data
+
+
+def _urls(art: dict | None) -> set[str]:
+    return {url for urls in (art or {}).values() for url in urls or []}
 
 
 def _save_cache(cache: dict) -> None:
-    """Writes the whole cache back, dropping whatever has expired on the way
-    - the only thing that ever prunes it, and enough to keep a JSON file of
-    artist records small."""
+    """Writes the whole cache back, dropping the artists unused for _UNUSED
+    and every stored image no remaining artist lists - the only pruning
+    either cache gets, and what keeps both bounded."""
     now = time.time()
-    live = {k: v for k, v in cache.items() if isinstance(v, dict) and v.get("expires", 0) > now}
+    live = {
+        k: v for k, v in cache.items() if isinstance(v, dict) and now - v.get("used", 0) < _UNUSED
+    }
     try:
         os.makedirs(os.path.dirname(_CACHE_PATH), exist_ok=True)
         with open(_CACHE_PATH, "w", encoding="utf-8") as f:
             json.dump(live, f)
     except Exception as e:
         logger.error(f"[fanart] Could not write the metadata cache: {e}")
+        return
+    wanted = {os.path.basename(_image_path(url)) for v in live.values() for url in _urls(v["art"])}
+    try:
+        for name in os.listdir(_IMAGE_DIR):
+            if name not in wanted:
+                os.unlink(os.path.join(_IMAGE_DIR, name))
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        logger.warning(f"[fanart] Could not prune the image cache: {e}")
+
+
+def _is_fresh(entry: dict, now: float) -> bool:
+    return entry.get("version") == _CACHE_VERSION and now - entry.get("fetched", 0) < _REFRESH
+
+
+def _mark_used(mbid: str, entry: dict, now: float) -> None:
+    """Moves the artist's "used" stamp forward, so _save_cache() keeps it and
+    its images. Written at _USED_RESOLUTION, not on every call."""
+    if now - entry.get("used", 0) < _USED_RESOLUTION:
+        return
+    entry["used"] = now
+    cache = _load_cache()
+    cache[mbid] = entry
+    _save_cache(cache)
 
 
 def _number(value: object) -> int:
@@ -174,7 +224,7 @@ def _choose(art: dict | None) -> dict | None:
     """One image of each kind - what actually gets shown - plus the full
     background candidate list, so a client can offer another one without
     asking Fanart.tv again. Kept out of the cache on purpose: caching the
-    choice would freeze one image for the whole _TTL."""
+    choice would freeze one image for the whole _REFRESH."""
     if not art:
         return None
     backgrounds = art.get("background") or []
@@ -245,20 +295,15 @@ async def get_artist_art(name: str) -> dict | None:
         return None
 
     now = time.time()
-    cached = _cache.get(mbid)
-    if cached and now < cached[0]:
-        return _answer(mbid, cached[1])
-
-    cache = _load_cache()
-    entry = cache.get(mbid)
-    if (
-        isinstance(entry, dict)
-        and entry.get("version") == _CACHE_VERSION
-        and now < entry.get("expires", 0)
-    ):
-        art = entry.get("art")
-        _cache[mbid] = (entry["expires"], art)
-        return _answer(mbid, art)
+    entry = _cache.get(mbid)
+    if entry is None:
+        cache = _load_cache()
+        entry = cache.get(mbid) if isinstance(cache.get(mbid), dict) else None
+        if entry is not None:
+            _cache[mbid] = entry
+    if entry is not None and _is_fresh(entry, now):
+        _mark_used(mbid, entry, now)
+        return _answer(mbid, entry.get("art"))
 
     personal = api_keys.get("fanart")
     try:
@@ -276,11 +321,19 @@ async def get_artist_art(name: str) -> dict | None:
             result = _pick(r.json())
     except (httpx.HTTPError, ValueError) as e:
         logger.warning(f"[fanart] Lookup failed for {name!r} ({mbid}): {e}")
-        return _answer(mbid, cached[1]) if cached else None
+        # A stale list still names images that are on disk; it is asked for
+        # again on the next visit.
+        if entry is None:
+            return None
+        _mark_used(mbid, entry, now)
+        return _answer(mbid, entry.get("art"))
 
-    expires = now + _TTL
-    _cache[mbid] = (expires, result)
-    cache[mbid] = {"expires": expires, "version": _CACHE_VERSION, "art": result}
+    # Images the new list still names keep their bytes; the ones it dropped
+    # are pruned by _save_cache().
+    entry = {"fetched": now, "used": now, "version": _CACHE_VERSION, "art": result}
+    _cache[mbid] = entry
+    cache = _load_cache()
+    cache[mbid] = entry
     _save_cache(cache)
     return _answer(mbid, result)
 
@@ -322,21 +375,15 @@ def content_type_for(url: str) -> str:
 
 
 def is_image_cached(url: str) -> bool:
-    """Whether `url`'s bytes are on disk and still within _TTL."""
-    try:
-        return time.time() - os.path.getmtime(_image_path(url)) <= _TTL
-    except OSError:
-        return False
+    return os.path.exists(_image_path(url))
 
 
 def get_cached_image(url: str) -> bytes | None:
-    """The stored bytes for `url`, or None if it was never fetched or has
-    aged past _TTL."""
-    path = _image_path(url)
+    """The stored bytes for `url`, or None if it was never fetched. They do
+    not age: a Fanart.tv image URL never changes content, so the bytes stay
+    until no artist lists the URL any more (see _save_cache())."""
     try:
-        if time.time() - os.path.getmtime(path) > _TTL:
-            return None
-        with open(path, "rb") as f:
+        with open(_image_path(url), "rb") as f:
             return f.read()
     except FileNotFoundError:
         return None
@@ -346,23 +393,12 @@ def get_cached_image(url: str) -> bytes | None:
 
 
 def store_image(url: str, data: bytes) -> None:
-    """Writes `url`'s bytes, and prunes the expired files beside it - the
-    only place this cache is ever cleaned, so it stays bounded."""
     try:
         os.makedirs(_IMAGE_DIR, exist_ok=True)
         with open(_image_path(url), "wb") as f:
             f.write(data)
     except Exception as e:
         logger.error(f"[fanart] Could not store an image: {e}")
-        return
-    cutoff = time.time() - _TTL
-    try:
-        for name in os.listdir(_IMAGE_DIR):
-            path = os.path.join(_IMAGE_DIR, name)
-            if os.path.getmtime(path) < cutoff:
-                os.unlink(path)
-    except Exception as e:
-        logger.warning(f"[fanart] Could not prune the image cache: {e}")
 
 
 async def fetch_image(url: str) -> tuple[bytes, str] | None:
