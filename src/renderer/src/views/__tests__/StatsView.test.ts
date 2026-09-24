@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
@@ -29,6 +29,13 @@ interface StatsVm {
   readonly topGenres: RankedItem[]
   readonly formatBreakdown: RankedItem[]
   readonly decadeBreakdown: RankedItem[]
+  readonly qualityBreakdown: RankedItem[]
+  readonly largestArtists: RankedItem[]
+  readonly storageBytes: number
+  readonly playedShare: number
+  readonly hasLastPlayed: boolean
+  readonly recentlyPlayedCount: number
+  readonly ratings: { count: number; average: number }
   formatBigDuration(totalSeconds: number): string
 }
 
@@ -137,6 +144,26 @@ describe('StatsView artist artwork', () => {
     expect(vm.topArtists[0]?.coverArtId).toBe('cover-a')
   })
 
+  it('names the artist, not the full credit of a song with features', () => {
+    const songs = [
+      makeSong('1', { artistId: 'a', artist: 'A, B & C', playCount: 2 }),
+      makeSong('2', { artistId: 'a', artist: 'A', playCount: 1 }),
+    ]
+    const vm = mountStats(songs, [artist('a', { name: 'A' })])
+
+    expect(vm.topArtists[0]?.label).toBe('A')
+    expect(vm.largestArtists[0]?.label).toBe('A')
+  })
+
+  it('falls back to the shortest credit while the artist list is loading', () => {
+    const vm = mountStats([
+      makeSong('1', { artistId: 'a', artist: 'A, B & C' }),
+      makeSong('2', { artistId: 'a', artist: 'A' }),
+    ])
+
+    expect(vm.largestArtists[0]?.label).toBe('A')
+  })
+
   it('uses null, not undefined, while the artist list is still loading', () => {
     const vm = mountStats([makeSong('1', { artistId: 'a', artist: 'A', playCount: 2 })], [])
 
@@ -203,6 +230,22 @@ describe('StatsView library composition', () => {
     // A bucket sized by tagging gaps would say nothing about the music.
     expect(vm.decadeBreakdown).toHaveLength(1)
     expect(vm.decadeBreakdown[0]?.id).toBe('1980')
+  })
+
+  it('ranks artists by how many songs they have, played or not', () => {
+    const vm = mountStats([
+      makeSong('1', { artistId: 'a', artist: 'A', playCount: 0 }),
+      makeSong('2', { artistId: 'a', artist: 'A', playCount: 0 }),
+      makeSong('3', { artistId: 'b', artist: 'B', playCount: 50 }),
+      makeSong('4', { artistId: '', artist: '' }),
+    ])
+
+    // Plays don't matter here - that is what the top-artists list is for.
+    expect(vm.largestArtists.map((i) => [i.label, i.value])).toEqual([
+      ['A', 2],
+      ['B', 1],
+    ])
+    expect(vm.largestArtists[0]?.to).toBe('/artists/a')
   })
 
   it('reports percentages against the whole library, not just the ranked rows', () => {
@@ -308,5 +351,102 @@ describe('StatsView duration wording', () => {
 
     expect(vm.formatBigDuration(59)).toContain('0')
     expect(vm.formatBigDuration(119)).toContain('1')
+  })
+})
+
+describe('StatsView audio quality', () => {
+  const quality = (vm: StatsVm) =>
+    Object.fromEntries(vm.qualityBreakdown.map((i) => [i.id, i.value]))
+
+  it('splits lossless into CD and Hi-Res by bit depth and sample rate', () => {
+    const vm = mountStats([
+      makeSong('cd', { format: 'flac', bitDepth: 16, sampleRate: 44100 }),
+      makeSong('deep', { format: 'flac', bitDepth: 24, sampleRate: 44100 }),
+      makeSong('fast', { format: 'flac', bitDepth: 16, sampleRate: 96000 }),
+      // 48 kHz is DVD/studio standard, not Hi-Res on its own.
+      makeSong('dvd', { format: 'flac', bitDepth: 16, sampleRate: 48000 }),
+      makeSong('mp3', { format: 'mp3', bitRate: 320 }),
+    ])
+
+    expect(quality(vm)).toEqual({ lossless: 2, hires: 2, lossy: 1 })
+  })
+
+  it('tells ALAC from AAC inside .m4a by bitrate', () => {
+    const vm = mountStats([
+      makeSong('aac', { format: 'm4a', bitRate: 256 }),
+      makeSong('alac', { format: 'm4a', bitRate: 900 }),
+    ])
+
+    expect(quality(vm)).toEqual({ lossy: 1, lossless: 1 })
+  })
+
+  it('counts DSD as Hi-Res and leaves out songs with no format', () => {
+    const vm = mountStats([makeSong('dsd', { format: 'dsf' }), makeSong('x', { format: null })])
+
+    expect(quality(vm)).toEqual({ hires: 1 })
+  })
+})
+
+describe('StatsView listening facts', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('counts songs last played inside the 30-day window only', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-24T12:00:00Z'))
+    const vm = mountStats([
+      makeSong('1', { lastPlayed: '2026-09-23T10:00:00Z' }),
+      makeSong('2', { lastPlayed: '2026-08-25T13:00:00Z' }),
+      // One hour past the window.
+      makeSong('3', { lastPlayed: '2026-08-25T11:00:00Z' }),
+      makeSong('4', { lastPlayed: null }),
+    ])
+
+    expect(vm.recentlyPlayedCount).toBe(2)
+    expect(vm.hasLastPlayed).toBe(true)
+  })
+
+  it('hides the recent-plays fact on a server that reports no dates', () => {
+    const vm = mountStats([makeSong('1', { playCount: 3 })])
+
+    expect(vm.hasLastPlayed).toBe(false)
+  })
+
+  it('reports how much of the library was ever played', () => {
+    const vm = mountStats([
+      makeSong('1', { playCount: 5 }),
+      makeSong('2', { playCount: 0 }),
+      makeSong('3', { playCount: 0 }),
+      makeSong('4', { playCount: 1 }),
+    ])
+
+    // Songs, not plays: five plays of one song still count once.
+    expect(vm.playedShare).toBe(50)
+  })
+
+  it('averages ratings over rated songs only', () => {
+    const vm = mountStats([
+      makeSong('1', { rating: 5 }),
+      makeSong('2', { rating: 3 }),
+      makeSong('3', { rating: 0 }),
+    ])
+
+    // Unrated songs are 0 in the model; counting them would drag this to 2.7.
+    expect(vm.ratings).toEqual({ count: 2, average: 4 })
+  })
+
+  it('sums file sizes and ignores songs without one', () => {
+    const vm = mountStats([makeSong('1', { size: 1000 }), makeSong('2', { size: null })])
+
+    expect(vm.storageBytes).toBe(1000)
+  })
+
+  it('survives an empty library', () => {
+    const vm = mountStats([])
+
+    expect(vm.playedShare).toBe(0)
+    expect(vm.ratings.count).toBe(0)
+    expect(vm.qualityBreakdown).toEqual([])
   })
 })

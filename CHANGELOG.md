@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The Artists, Albums, Songs, Playlists and Radio pages and every genre page show the artist backgrounds Beacon has already downloaded in their header, changing every few seconds; a genre shows only its own artists
 - The album page shows more about the album: what kind of release it is, its record label, edition and reissue year, all its genres, and the opening of its Wikipedia article
 - An artist keeps the same background across the artist page, album pages and Now Playing for the whole session, and the artist page has a button to switch to another one
+- The Statistics page shows more: how much storage the library takes, how much of it you have ever played, how many songs you heard in the last 30 days, your ratings, and a breakdown into Hi-Res, lossless and lossy audio and the artists with the most songs; the lists now wrap two at a time on narrower windows
 
 ### Fixed
 
