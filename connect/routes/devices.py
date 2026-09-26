@@ -34,7 +34,15 @@ from delivery import (
     SonosDelivery,
 )
 from delivery.sonos import halt_if_possible
-from media import JellyfinClient, PlexClient, SubsonicClient, resolve_account, server_type_name
+from media import (
+    JellyfinClient,
+    PlexClient,
+    ResolvedAccount,
+    SubsonicClient,
+    resolve_account,
+    server_type_name,
+)
+from media.plex import account_username_for_server_token
 from routes.playback import _resync_position_periodically
 
 logger = logging.getLogger("connect.devices")
@@ -89,6 +97,40 @@ class ConfigRequest(BaseModel):
     machine_identifier: str = ""
     # Shown to other sessions as "in use by {username}" for claimed devices.
     username: str = ""
+    # Plex only, and only on the /config right after a PIN login: the
+    # account token, which is what can name the account behind the server
+    # token (see _resolve_plex_name()). Never stored.
+    plex_account_token: str = ""
+
+
+async def _resolve_plex_name(
+    media: PlexClient, account: ResolvedAccount, req: ConfigRequest
+) -> ResolvedAccount:
+    """Fills in the account name Plex's server token cannot give, for cast
+    permissions. Right after a PIN login the frontend sends the account
+    token along; plex.tv confirms the server token belongs to it and names
+    it, and the pair is remembered (core/cast_permissions.py) so a later
+    /config with only the server token - a reload, a restart - still knows.
+    Anything that fails leaves the name empty, which the rules treat as
+    "not listed"."""
+    server_id = account.server_id or (
+        f"plex://{req.machine_identifier}" if req.machine_identifier else ""
+    )
+    name = ""
+    if req.plex_account_token:
+        try:
+            name = await asyncio.to_thread(
+                account_username_for_server_token, req.plex_account_token, media.token
+            )
+        except Exception as e:
+            logger.warning(f"[config] Could not confirm the Plex account at plex.tv: {e}")
+        if name:
+            await asyncio.to_thread(
+                cast_permissions.remember_plex_account, media.token, server_id, name
+            )
+    if not name:
+        name = await asyncio.to_thread(cast_permissions.known_plex_account, media.token, server_id)
+    return account._replace(username=name, verified=bool(name), server_id=server_id)
 
 
 @router.post("/config")
@@ -165,6 +207,8 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
     except Exception as e:
         logger.warning(f"[config] Could not resolve the account for {req.url}: {e}")
         account = None
+    if isinstance(media, PlexClient):
+        account = await _resolve_plex_name(media, account or ResolvedAccount("", False, False), req)
 
     if session.config_seq != seq:
         logger.info(
@@ -176,12 +220,12 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
     session.media = media
     session.authenticated = True
     session.account_server_type = server_type_name(media)
-    session.account_server_url = req.url
+    session.account_server_url = (account.server_id if account else "") or req.url
     session.account_username = account.username if account else ""
     session.account_is_admin = bool(account and account.is_admin)
     # The verified name when there is one, so "in use by" shows the real
     # account; the request body's value stays the fallback for a server
-    # that could not answer (and for Plex, which cannot).
+    # that could not answer (and for Plex, until plex.tv has confirmed it).
     session.display_name = (
         account.username if account and account.username else req.username
     ) or session.session_id

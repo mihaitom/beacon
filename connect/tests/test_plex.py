@@ -452,3 +452,17 @@ def test_connection_url_uses_uri_for_https():
         "uri": "https://10-2-2-11.example.plex.direct:32400",
     }
     assert _connection_url(connection) == "https://10-2-2-11.example.plex.direct:32400"
+
+
+def test_account_username_for_server_token_names_only_the_tokens_owner(monkeypatch):
+    from media import plex
+
+    monkeypatch.setattr(
+        plex,
+        "list_resources",
+        lambda account_token: [{"token": "own-server-token", "machine_identifier": "m"}],
+    )
+    monkeypatch.setattr(plex, "get_account_username", lambda account_token: "alice")
+
+    assert plex.account_username_for_server_token("acct", "own-server-token") == "alice"
+    assert plex.account_username_for_server_token("acct", "someone-elses-token") == ""

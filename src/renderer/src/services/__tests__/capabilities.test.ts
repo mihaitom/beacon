@@ -79,18 +79,16 @@ describe('capabilitiesFor', () => {
     expect(adminRest).toEqual(plainRest)
   })
 
-  it('offers cast permissions on the servers that can list their users', () => {
-    // Subsonic/Navidrome's getUsers.view and Jellyfin's /Users are bridged
-    // or proxied; Plex has no server-side user list at all (see
-    // docs/cast-permissions.md).
+  it('offers cast permissions to an admin on every server type', () => {
     expect(capabilitiesFor('subsonic', true).castPermissions).toBe(true)
     expect(capabilitiesFor('jellyfin', true).castPermissions).toBe(true)
-    expect(capabilitiesFor('plex', true).castPermissions).toBe(false)
+    expect(capabilitiesFor('plex', true).castPermissions).toBe(true)
   })
 
   it('takes cast permissions away from an account that is not an admin', () => {
     expect(capabilitiesFor('subsonic', false).castPermissions).toBe(false)
     expect(capabilitiesFor('jellyfin', false).castPermissions).toBe(false)
+    expect(capabilitiesFor('plex', false).castPermissions).toBe(false)
   })
 
   it('requires a definite admin for cast permissions, unlike the other admin controls', () => {

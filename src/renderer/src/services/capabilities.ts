@@ -173,10 +173,10 @@ const PLEX_CAPABILITIES: ServerCapabilities = {
   // start_scan) — owner-only, which capabilitiesFor()'s isAdmin argument
   // takes care of.
   libraryScan: true,
-  // Plex has no server-side user list, and the bridge cannot resolve the
-  // casting account's name from the server token (see
-  // docs/cast-permissions.md) — the section stays hidden.
-  castPermissions: false,
+  // The account name comes from plex.tv at login (see connect's
+  // routes/devices.py); the picker only offers accounts that have signed in,
+  // since the server keeps no user list of its own.
+  castPermissions: true,
   songRadio: true,
   // Bridged, with one caveat worth knowing: Plex builds a track's lyric
   // stream from a .lrc file next to the audio and ignores lyrics embedded

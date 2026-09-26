@@ -35,11 +35,16 @@ class ResolvedAccount(NamedTuple):
     server could not be asked for a name (Plex, see below) or did not answer
     one; core/cast_permissions.py treats an unverified account as "not
     listed" whenever the server has a restriction, so a lookup failure can
-    never open the door."""
+    never open the door.
+
+    `server_id` names the server for cast-permission rules where its URL
+    cannot: empty for Subsonic and Jellyfin, whose rules are keyed by the
+    login URL."""
 
     username: str
     is_admin: bool
     verified: bool
+    server_id: str = ""
 
 
 async def resolve_account(media: MediaClient, username_hint: str = "") -> ResolvedAccount:
@@ -53,9 +58,12 @@ async def resolve_account(media: MediaClient, username_hint: str = "") -> Resolv
     `username_hint` is only needed for Subsonic, whose getUser.view requires
     a username parameter and only answers about the caller's own account —
     the bridge handlers ignore it and read the token instead. Plex has no
-    way to resolve the name from the server token at all (the user list
-    lives at plex.tv and needs the account token), so it comes back
-    unverified.
+    way to resolve the name from the server token at all (that needs
+    plex.tv and the account token, see routes/devices.py), so it comes back
+    unverified here. What it does get is a `server_id`: every client of one
+    Plex server can be handed a different connection URL (LAN address,
+    plex.direct, relay), so a rule keyed by the admin's URL would not reach
+    a listener connected another way.
     """
     # Imported lazily: media/__init__.py is imported by the bridge modules
     # themselves (apply_image_cache_control), so a module-level import here
@@ -68,7 +76,14 @@ async def resolve_account(media: MediaClient, username_hint: str = "") -> Resolv
         return ResolvedAccount(name, bool(user.get("adminRole")), bool(name))
     if isinstance(media, PlexClient):
         user = (await plex_bridge.get_user({}, media)).get("user", {})
-        return ResolvedAccount("", bool(user.get("adminRole")), False)
+        try:
+            machine_id = await plex_bridge.machine_identifier(media)
+        except Exception:
+            # /config falls back to the identifier the login sent (see
+            # routes/devices.py), which is right unless the client lies.
+            machine_id = ""
+        server_id = f"plex://{machine_id}" if machine_id else ""
+        return ResolvedAccount("", bool(user.get("adminRole")), False, server_id)
     user = await asyncio.to_thread(media.get_user, username_hint)
     name = user.get("username", "")
     return ResolvedAccount(name, bool(user.get("adminRole")), bool(name))

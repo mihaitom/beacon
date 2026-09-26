@@ -23,11 +23,11 @@ from media import jellyfin_bridge
 logger = logging.getLogger("connect.cast_permissions")
 router = APIRouter(prefix="/cast-permissions", dependencies=[Depends(require_token)])
 
-# Only these servers can offer an account list for the admin UI (see
-# docs/cast-permissions.md). Plex has no server-side user list and cannot
-# even resolve the casting account's name, so a rule there would match on
-# something unverified.
-_SUPPORTED_SERVER_TYPES = ("subsonic", "jellyfin")
+# Every server type Beacon speaks to. Plex needed its account names
+# confirmed at plex.tv first (see routes/devices.py's _resolve_plex_name());
+# its picker offers only the accounts that have signed in, since the
+# server itself keeps no user list.
+_SUPPORTED_SERVER_TYPES = ("subsonic", "jellyfin", "plex")
 
 
 def _require_admin(session: SessionState) -> None:

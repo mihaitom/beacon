@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The album page shows more about the album: what kind of release it is, its record label, edition and reissue year, all its genres, and the opening of its Wikipedia article
 - The Statistics page shows more: storage used, how much of the library you have ever played, songs heard in the last 30 days, your ratings, a Hi-Res/lossless/lossy breakdown and the artists with the most songs
 - The artist and album pages have a button to switch to another Fanart.tv background of the artist
+- Who may cast can now be decided on a Plex server too, by its owner; a Plex account already signed in before this version is picked up the next time it signs in
 
 ### Changed
 

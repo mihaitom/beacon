@@ -49,15 +49,33 @@ def test_resolve_account_reads_the_jellyfin_user(monkeypatch):
     assert account == ResolvedAccount("bob", False, True)
 
 
-def test_resolve_account_leaves_plex_unverified(monkeypatch):
-    """Plex cannot resolve the account name from the server token — the user
-    list lives at plex.tv and needs the account token (see
-    docs/cast-permissions.md). The admin flag is still real."""
+def test_resolve_account_leaves_plex_unverified_but_names_the_server(monkeypatch):
+    """Plex cannot resolve the account name from the server token — that is
+    /config's job, with the account token (see routes/devices.py). The admin
+    flag is still real, and the server is named by its own identifier."""
 
     async def fake_get_user(params, media):
         return {"user": {"username": "", "adminRole": True}}
 
+    async def fake_machine_identifier(media):
+        return "machine-abc"
+
     monkeypatch.setattr("media.plex_bridge.get_user", fake_get_user)
+    monkeypatch.setattr("media.plex_bridge.machine_identifier", fake_machine_identifier)
 
     account = asyncio.run(resolve_account(PlexClient("http://plex:32400")))
-    assert account == ResolvedAccount("", True, False)
+    assert account == ResolvedAccount("", True, False, "plex://machine-abc")
+
+
+def test_resolve_account_survives_a_plex_server_that_hides_its_identity(monkeypatch):
+    async def fake_get_user(params, media):
+        return {"user": {"username": "", "adminRole": False}}
+
+    async def failing_machine_identifier(media):
+        raise RuntimeError("no answer")
+
+    monkeypatch.setattr("media.plex_bridge.get_user", fake_get_user)
+    monkeypatch.setattr("media.plex_bridge.machine_identifier", failing_machine_identifier)
+
+    account = asyncio.run(resolve_account(PlexClient("http://plex:32400")))
+    assert account == ResolvedAccount("", False, False, "")

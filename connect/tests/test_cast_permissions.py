@@ -498,15 +498,106 @@ def test_cast_permissions_refuse_a_non_admin(client, default_session):
     assert client.put("/cast-permissions", json={"accounts": ["alice"]}).status_code == 403
 
 
-def test_cast_permissions_refuse_an_unsupported_server_type(client, default_session):
+def test_cast_permissions_are_offered_to_a_plex_owner(client, default_session):
     from media import PlexClient
 
+    record_account("plex", PLEX_SERVER, "alice")
     default_session.media = PlexClient("http://plex:32400")
     default_session.account_server_type = "plex"
-    default_session.account_server_url = "http://plex:32400"
+    default_session.account_server_url = PLEX_SERVER
     default_session.account_is_admin = True
 
-    assert client.get("/cast-permissions").status_code == 403
+    r = client.get("/cast-permissions")
+
+    assert r.status_code == 200
+    assert r.json()["suggested_accounts"] == ["alice"]
+    assert r.json()["lists_users"] is False
+
+
+# ── Plex: naming the account behind a server token ──────────────────────────
+
+PLEX_SERVER = "plex://machine-abc"
+
+
+def test_a_confirmed_plex_account_is_found_again_by_its_server_token():
+    cast_permissions.remember_plex_account("server-token", PLEX_SERVER, "alice")
+
+    assert cast_permissions.known_plex_account("server-token", PLEX_SERVER) == "alice"
+    assert cast_permissions.known_plex_account("other-token", PLEX_SERVER) == ""
+    # The same token presented as another server's is not the same account.
+    assert cast_permissions.known_plex_account("server-token", "plex://elsewhere") == ""
+
+
+def test_the_plex_token_store_holds_no_usable_token():
+    cast_permissions.remember_plex_account("server-token", PLEX_SERVER, "alice")
+
+    with open(cast_permissions._PATH, encoding="utf-8") as f:
+        assert "server-token" not in f.read()
+
+
+def _plex_config(client, monkeypatch, owner_of_token, account_token="account-token"):
+    """/config for a Plex login, with plex.tv and the server stubbed: the
+    account token names `owner_of_token` if the server token is one of its
+    own, nobody otherwise."""
+    from media import ResolvedAccount
+    from routes import devices as devices_mod
+
+    async def fake_resolve(media, hint=""):
+        return ResolvedAccount("", False, False, PLEX_SERVER)
+
+    def fake_confirm(account, server_token):
+        return owner_of_token if server_token == "server-token" else ""
+
+    monkeypatch.setattr(devices_mod, "resolve_account", fake_resolve)
+    monkeypatch.setattr(devices_mod, "account_username_for_server_token", fake_confirm)
+    body = {
+        "url": "http://10.0.0.5:32400",
+        "credential": "server-token",
+        "server_type": "plex",
+        "machine_identifier": "machine-abc",
+        "username": "whoever",
+    }
+    if account_token:
+        body["plex_account_token"] = account_token
+    return client.post("/config", json=body)
+
+
+def test_a_plex_login_names_the_account_and_keys_rules_by_the_server(
+    client, default_session, monkeypatch
+):
+    _plex_config(client, monkeypatch, owner_of_token="alice")
+
+    assert default_session.account_username == "alice"
+    assert default_session.account_server_url == PLEX_SERVER
+    assert known_accounts("plex", PLEX_SERVER) == ["alice"]
+
+
+def test_a_plex_reload_without_the_account_token_keeps_the_name(
+    client, default_session, monkeypatch
+):
+    _plex_config(client, monkeypatch, owner_of_token="alice")
+    default_session.account_username = ""
+
+    _plex_config(client, monkeypatch, owner_of_token="alice", account_token="")
+
+    assert default_session.account_username == "alice"
+
+
+def test_a_plex_account_token_that_does_not_own_the_server_token_names_nobody(
+    client, default_session, monkeypatch
+):
+    _plex_config(client, monkeypatch, owner_of_token="")
+
+    assert default_session.account_username == ""
+    assert known_accounts("plex", PLEX_SERVER) == []
+
+
+def test_an_unconfirmed_plex_listener_lands_on_the_default(client, default_session, monkeypatch):
+    set_policy("plex", PLEX_SERVER, ["alice"], "allowlist", False)
+
+    _plex_config(client, monkeypatch, owner_of_token="", account_token="")
+
+    assert authorize(default_session) is not None
 
 
 # ── Display filtering ───────────────────────────────────────────────────────

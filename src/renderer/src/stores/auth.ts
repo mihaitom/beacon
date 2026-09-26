@@ -122,8 +122,12 @@ export const useAuthStore = defineStore('auth', {
      * same salt/token across app restarts, instead of regenerating a fresh
      * one every time, keeps every cover-art/artist-image URL stable so the
      * browser's own HTTP cache (Navidrome sends far-future max-age) actually
-     * gets used instead of invalidating on every login. */
-    async _authenticate(): Promise<void> {
+     * gets used instead of invalidating on every login.
+     *
+     * `plexAccountToken` is passed only by selectPlexServer(), right after a
+     * PIN login: connect confirms the account name with it once and
+     * remembers it (for cast permissions), so it is never kept here. */
+    async _authenticate(plexAccountToken = ''): Promise<void> {
       // Guards against services/connect/http.ts's 401-retry path firing
       // this before the router guard's restore() has populated serverUrl/
       // credential (e.g. a Remote-Control status poll racing ahead of
@@ -157,6 +161,7 @@ export const useAuthStore = defineStore('auth', {
         user_id: this.userId,
         machine_identifier: this.machineIdentifier,
         username: this.username,
+        ...(plexAccountToken ? { plex_account_token: plexAccountToken } : {}),
       })
 
       this.health = await getHealth()
@@ -335,14 +340,14 @@ export const useAuthStore = defineStore('auth', {
      * server type, same tail as pollJellyfinQuickConnect(). `username`
      * comes from pollPlexAuth()'s best-effort lookup — may be an empty
      * string if that lookup failed, same as Jellyfin already tolerates. */
-    async selectPlexServer(server: PlexServer, username = ''): Promise<void> {
+    async selectPlexServer(server: PlexServer, username = '', accountToken = ''): Promise<void> {
       this.serverUrl = server.url.replace(/\/+$/, '')
       this.credential = server.token
       this.userId = ''
       this.machineIdentifier = server.machine_identifier
       this.username = username
       try {
-        await this._authenticate()
+        await this._authenticate(accountToken)
         await this.persist()
       } catch (error) {
         this.authenticated = false

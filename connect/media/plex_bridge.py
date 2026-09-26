@@ -456,6 +456,16 @@ async def get_user(params: dict, media: PlexClient) -> dict:
     return {"user": {"username": params.get("username", ""), "adminRole": is_admin}}
 
 
+async def machine_identifier(media: PlexClient) -> str:
+    """The server's own clientIdentifier, asked of the server itself rather
+    than taken from the login request. It names the server the same way
+    whichever connection a client was handed (LAN address, plex.direct,
+    relay), which the URL does not - see media/__init__.py's
+    resolve_account()."""
+    data = await _px_get(media, "/identity")
+    return str(data.get("MediaContainer", {}).get("machineIdentifier") or "")
+
+
 # What Plex calls a running library scan in /activities (seen live
 # 2026-08-27 — unlike Jellyfin there is no task list to consult, and the
 # section itself carries no "refreshing" flag in this server version).

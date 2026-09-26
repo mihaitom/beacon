@@ -124,15 +124,9 @@ the list is non-empty.
   as "no usable list". A spec-compliant server that answers with more than
   one user gets `lists_users: true` and its real list.
 - **Plex**: the media server has no user list of its own - that lives at
-  plex.tv (`/api/v2/home/users`, `shared_servers`) and needs the **account
-  token**, which `PlexClient` does not hold and `/config` does not receive
-  today. Worse for the same reason, `plex_bridge.get_user` does not resolve
-  the name at all: it echoes `params["username"]`
-  (`media/plex_bridge.py:437`), so there is no verified username to match a
-  rule against. Plex sessions stay unrestricted and the settings section is
-  not offered for them. Pulling Plex in properly is a separate change to
-  the Plex login path (pass the account token, resolve the name through
-  plex.tv) and is out of scope here.
+  plex.tv and needs the account token - so the picker offers only the
+  accounts that have signed in here (`lists_users: false`). How a Plex
+  account gets a verified name at all is its own section below.
 
 A later change could get Navidrome's real list by logging in to its native
 API with the account password (which the renderer holds for silent restore)
@@ -302,8 +296,8 @@ A Settings section, shown only when all of these hold:
 
 - there is no `window.api` (Docker/web build - same test
   `composables/useIsMobileWeb.ts` uses),
-- the session's server type is Subsonic or Jellyfin (Plex has no user list
-  to populate it, see above), and
+- the session's server type is one Beacon can name the account for (all
+  three, since Plex was added - see below), and
 - `authStore.isAdmin === true` (already resolved through
   `/rest/getUser.view`, see `stores/auth.ts`'s `resolveAdminRole()`).
 
@@ -328,6 +322,34 @@ that only accounts that have signed in here are listed. Saving does a
 
 i18n: new keys in all five locales.
 
+## Plex (added 2026-09-26)
+
+The server token a Plex session runs on cannot name its account:
+`plex_bridge.get_user` only learns owner-or-not from `/:/prefs`, and the
+account lives at plex.tv. What can name it is the **account token** the PIN
+login produces (`routes/plex_auth.py`), which the renderer used to drop
+after listing the servers.
+
+- Right after a PIN login, `/config` carries `plex_account_token` once.
+  `routes/devices.py`'s `_resolve_plex_name()` asks plex.tv for that
+  account's servers and accepts the name only if the submitted server token
+  is one of them - otherwise a client could pair its own server token with
+  somebody else's account token and borrow the name.
+- The confirmed pair is remembered in `cast_permissions.json` under
+  `plex_tokens`, keyed by the SHA-256 of the server token (the file never
+  holds a working credential). A later `/config` with only the server token
+  - a reload, a restart - finds the name there. The account token itself is
+    stored nowhere: it grants the whole Plex account, not one server.
+- A session that logged in before this existed has no entry and counts as
+  "not listed" until its next PIN login. That is the safe direction.
+- **Rules are keyed by the server, not the URL.** `list_resources()` hands
+  each client whichever connection suits it (LAN address, plex.direct,
+  relay), so a listener away from home would reach the same server under a
+  different URL than the admin and slip past a URL-keyed rule. Plex rules
+  use `plex://{machineIdentifier}`, asked of the server's own `/identity`
+  rather than taken from the request; only if that fails does the
+  identifier the login sent stand in.
+
 ## Testing
 
 - `core/cast_permissions.py`: unconfigured means open; allowlist blocks
@@ -343,7 +365,7 @@ i18n: new keys in all five locales.
   server cannot edit another server's rules.
 - `jellyfin_bridge.getUsers.view` maps `/Users` and a non-admin gets the
   server's own refusal through.
-- Frontend: the section is hidden without `window.api`, for Plex and for
+- Frontend: the section is hidden without `window.api` and for
   `isAdmin === false`; each of the four choices maps to the right
   (mode, default_allow) pair on load and on save; a save sends the expected
   payload. Per `CLAUDE.md`, do not pin down copy or element counts.
@@ -354,5 +376,4 @@ i18n: new keys in all five locales.
   policy among cooperative users, as stated at the top.
 - Per-device allow-lists (the matrix). The `accounts` key leaves room for a
   nested `devices` map later.
-- Plex support; it needs the account token in the login path first.
 - Per-user volume limits or scheduling.

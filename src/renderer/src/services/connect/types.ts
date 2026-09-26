@@ -148,6 +148,9 @@ export interface ConfigRequest {
   // below), needed for playlist writes. Ignored for Subsonic/Jellyfin.
   machine_identifier?: string
   username?: string
+  // Plex only, right after a PIN login - lets connect confirm the account
+  // name for cast permissions (see connect/routes/devices.py).
+  plex_account_token?: string
 }
 
 export interface JellyfinLoginRequest {

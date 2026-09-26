@@ -392,6 +392,7 @@ export default {
       // Set once the PIN's approved (see pollPlexLogin()) — carried
       // through to selectPlexServer() once a server's picked.
       plexUsername: '',
+      plexAccountToken: '',
       plexTimer: null as ReturnType<typeof setTimeout> | null,
     }
   },
@@ -705,6 +706,7 @@ export default {
 
       this.plexWaiting = false
       this.plexUsername = approved.username
+      this.plexAccountToken = approved.accountToken
       try {
         const servers = await this.authStore.fetchPlexServers(approved.accountToken)
         if (this.plexPinId !== pinId) return
@@ -728,7 +730,7 @@ export default {
     async choosePlexServer(server: PlexServer) {
       this.submitting = true
       try {
-        await this.authStore.selectPlexServer(server, this.plexUsername)
+        await this.authStore.selectPlexServer(server, this.plexUsername, this.plexAccountToken)
         this.goToRedirect()
       } catch {
         // authStore.loginError already holds the message, shown in the template.
@@ -748,6 +750,7 @@ export default {
       this.plexPickingServer = false
       this.plexServers = []
       this.plexUsername = ''
+      this.plexAccountToken = ''
     },
     // JS transition hooks for the <transition name="login-form"> around the
     // server-type-keyed form content — see that comment for the full

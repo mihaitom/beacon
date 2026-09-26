@@ -195,6 +195,17 @@ def list_resources(account_token: str) -> list[dict]:
     return servers
 
 
+def account_username_for_server_token(account_token: str, server_token: str) -> str:
+    """The account's name, but only if `server_token` is really one of the
+    server tokens plex.tv hands this account - "" otherwise. A client could
+    send any account token alongside its server token; this is what stops a
+    name from being borrowed that way (see routes/devices.py's
+    _resolve_plex_name())."""
+    if not any(server["token"] == server_token for server in list_resources(account_token)):
+        return ""
+    return get_account_username(account_token)
+
+
 class PlexClient:
     def __init__(
         self, url: str, token: str = "", internal_url: str = "", machine_identifier: str = ""

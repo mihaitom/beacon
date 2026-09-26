@@ -452,7 +452,8 @@ describe('ServerLoginView Plex polling', () => {
 
     await vm.pollPlexLogin()
 
-    expect(auth.selectPlexServer).toHaveBeenCalled()
+    // The account token rides along so connect can confirm who this is.
+    expect(auth.selectPlexServer).toHaveBeenCalledWith(expect.anything(), 'someone', 't')
     expect(navigate).toHaveBeenCalled()
     expect(vm.plexPickingServer).toBe(false)
   })

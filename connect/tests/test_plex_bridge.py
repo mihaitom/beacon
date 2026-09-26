@@ -1,5 +1,6 @@
 """Tests for media/plex_bridge.py and routes/proxy.py's dispatch to it."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -1273,6 +1274,16 @@ def test_get_user_reads_admin_from_what_the_server_allows(client, plex_session, 
     r = client.get("/rest/getUser.view?username=thomas")
     assert r.json()["subsonic-response"]["user"] == {"username": "thomas", "adminRole": True}
     assert calls[0][1].endswith("/:/prefs")
+
+
+def test_machine_identifier_is_asked_of_the_server(plex_session, monkeypatch):
+    fake_client, calls = _fake_px_client(
+        {"/identity": {"MediaContainer": {"machineIdentifier": "machine-abc"}}}
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    assert asyncio.run(plex_bridge.machine_identifier(plex_session.media)) == "machine-abc"
+    assert calls[0][1].endswith("/identity")
 
 
 def test_get_user_treats_a_refused_settings_call_as_not_admin(client, plex_session, monkeypatch):

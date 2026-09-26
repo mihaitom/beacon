@@ -127,6 +127,35 @@ describe('auth session handling', () => {
     })
   })
 
+  describe('selectPlexServer', () => {
+    it('hands connect the account token once, and never stores it', async () => {
+      const auth = useAuthStore()
+      stubAdminLookup()
+      const server = {
+        name: 'Plex',
+        machine_identifier: 'machine-abc',
+        url: 'http://10.0.0.5:32400',
+        token: 'server-token',
+      }
+
+      await auth.selectPlexServer(server, 'alice', 'account-token')
+
+      expect(postConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          credential: 'server-token',
+          plex_account_token: 'account-token',
+        }),
+      )
+      expect(localStorage.getItem(STORAGE_KEY)).not.toContain('account-token')
+
+      vi.mocked(postConfig).mockClear()
+      await auth.restore()
+      expect(postConfig).toHaveBeenCalledWith(
+        expect.not.objectContaining({ plex_account_token: expect.anything() }),
+      )
+    })
+  })
+
   describe('_authenticate', () => {
     it('refuses to run before there is anything to authenticate with', async () => {
       // A Remote-Control status poll racing ahead of restore() used to POST

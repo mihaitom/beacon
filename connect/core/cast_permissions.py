@@ -11,7 +11,9 @@ session id is client-asserted and not a secret, so someone who holds the
 token can still act as any session. This file decides what an honest client
 is allowed to do, nothing stronger.
 
-Rules are server-wide and keyed by `server_type|normalized_server_url`.
+Rules are server-wide and keyed by `server_type|normalized_server_url` -
+for Plex `plex://{machineIdentifier}` instead of a URL, since each client
+of one Plex server can be handed a different connection address.
 Each configured server has a `mode` (allowlist: the listed accounts may
 cast; blocklist: the listed accounts may not), a `default_allow` for
 accounts not on the list (which is also what a brand-new account gets), and
@@ -29,6 +31,7 @@ themselves permission there.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -224,6 +227,48 @@ def record_account(server_type: str, server_url: str, username: str) -> None:
         known[key] = names
         document["known"] = known
         _save_document(document)
+
+
+def _token_key(server_token: str) -> str:
+    """Hashed, so the store never holds a credential that would work on the
+    Plex server."""
+    return hashlib.sha256(server_token.encode("utf-8")).hexdigest()
+
+
+def remember_plex_account(server_token: str, server_id: str, username: str) -> None:
+    """Remember which Plex account a server token belongs to, once plex.tv
+    has confirmed it at login (see routes/devices.py). The server token alone
+    cannot name its account, and the account token that can is not kept
+    anywhere, so a later /config with the same server token - a page reload,
+    an app restart - finds the name here.
+
+    Best-effort, like record_account(): an unreadable store is left alone."""
+    if not server_token or not username:
+        return
+    with _lock:
+        document = _read_file()
+        if document is None:
+            return
+        tokens = document.get("plex_tokens")
+        tokens = dict(tokens) if isinstance(tokens, dict) else {}
+        tokens[_token_key(server_token)] = {"username": username, "server": server_id}
+        document["plex_tokens"] = tokens
+        _save_document(document)
+
+
+def known_plex_account(server_token: str, server_id: str) -> str:
+    """The name remember_plex_account() stored for this token on this
+    server, or "" when it was never confirmed."""
+    if not server_token:
+        return ""
+    with _lock:
+        data = _read_file()
+    tokens = data.get("plex_tokens") if data else None
+    entry = tokens.get(_token_key(server_token)) if isinstance(tokens, dict) else None
+    if not isinstance(entry, dict) or entry.get("server") != server_id:
+        return ""
+    username = entry.get("username")
+    return username if isinstance(username, str) else ""
 
 
 def set_policy(
