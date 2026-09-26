@@ -4,7 +4,9 @@ import DetailPageBackdrop from '../DetailPageBackdrop.vue'
 
 function layers(wrapper: ReturnType<typeof mount>, selector = '.detail-page__backdrop') {
   return wrapper.findAll(selector).map((layer) => ({
-    image: (layer.element as HTMLElement).style.backgroundImage.replace(/"/g, ''),
+    image: (layer.element as HTMLElement).style
+      .getPropertyValue('--backdrop-image')
+      .replace(/"/g, ''),
     shown: layer.classes('detail-page__backdrop--shown'),
     photo: layer.classes('detail-page__backdrop--photo'),
   }))

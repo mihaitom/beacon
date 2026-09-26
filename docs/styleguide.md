@@ -316,14 +316,19 @@ One surface deliberately breaks the blur, for a Fanart.tv image that is
 already a large, wide photo: a detail page's backdrop
 (`DetailPageBackdrop.vue`'s `.detail-page__backdrop--photo`), shown sharp
 with a scrim over its top and masked out towards the bottom so the content
-below sits on the plain surface. It takes a 16:9 area at the right edge and
-fades out to the left rather than spanning the page: the header's text
-column then sits on the plain surface instead of on whatever the photo has
-there, and a band wider than 16:9 does not crop the photo's top and bottom.
-Its width follows the band's height, so a taller band shows a larger photo.
-The fade is eased, since a linear ramp shows a seam where it starts.
-On a phone, where the text runs the full width anyway, it is the full band
-again.
+below sits on the plain surface. It takes a 16:9 area at the band's height
+rather than spanning the page, so a band wider than 16:9 does not crop the
+photo's top and bottom; a taller band shows a larger photo. Behind the
+header's text it stays opaque and is shaded instead - the same black,
+eased shade as `DetailHeader`'s banners, up to just past where the text
+ends. It keeps to the right edge. One whose left edge is smooth
+(`services/edgeFill.ts`) has that edge continued to its left, as a banner
+does - only the left edge, as it is, since the rest of the photo's border
+is nowhere near it; one with a busy left edge fades out to the left onto
+the surface instead, since continuing a
+busy edge streaks; that fade is eased, since a linear ramp shows a seam
+where it starts. On a phone, where the text runs the full width anyway,
+there is no shade and it is the full band again.
 
 The album page uses the `banded` arrangement: a header of 40% of the window
 that stays in view, with the backdrop spanning exactly that header and
