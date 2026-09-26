@@ -1,5 +1,5 @@
 <template>
-  <section class="hero-band">
+  <section ref="card" class="hero-band" :style="textEnd ? { '--text-end': `${textEnd}px` } : {}">
     <!-- Two stacked layers, only one visible at a time, so the artwork
      - crossfades when the hero switches to a different song — see
      - services/crossfadeBackdrop.ts for why one element can't do this. -->
@@ -12,13 +12,17 @@
         'hero-backdrop--photo': layerKind[i] === 'photo',
         'hero-backdrop--banner': layerKind[i] === 'banner',
       }"
-      :style="url ? { backgroundImage: `url(${url})` } : {}"
-    />
+      :style="layerStyle(url, i)"
+    >
+      <div v-if="layerKind[i] !== 'cover'" class="hero-backdrop-slot">
+        <div class="hero-backdrop-art" />
+      </div>
+    </div>
     <div
       class="hero-scrim"
       :class="{ 'hero-scrim--photo': layerKind[backdrop.active] !== 'cover' }"
     />
-    <div class="hero-content">
+    <div ref="text" class="hero-content">
       <div v-if="loading" class="hero-body">
         <v-skeleton-loader type="image" width="132" height="132" class="hero-cover rounded" />
         <div class="hero-info min-width-0 hero-skel">
@@ -114,6 +118,8 @@ import CoverArt from '@/components/library/CoverArt.vue'
 import type { RadioFaviconRequest } from '@/services/connect/radio'
 import { useLibraryStore } from '@/stores/library'
 import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
+import { type EdgeGradients, extractEdgeGradients } from '@/services/edgeFill'
+import { textEnd } from '@/services/textExtent'
 import { getArtistArt } from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
 import { useFanartStore } from '@/stores/fanart'
@@ -182,6 +188,12 @@ export default {
       backdrop: createBackdropLayers(),
       // Per layer, since Fanart.tv art is shown sharp and a cover blurred.
       layerKind: ['cover', 'cover'] as BackdropKind[],
+      /** Per layer: its Fanart.tv art's edge colours, continued beside it. */
+      fills: [null, null] as (EdgeGradients | null)[],
+      /** Where the text ends, in px from the left: the art is faded out
+       * up to there (see measureText). */
+      textEnd: 0,
+      textObserver: null as ResizeObserver | null,
       artistArt: null as { url: string; kind: BackdropKind } | null,
       artResolved: true,
       // Whatever <cover-art> ended up showing, reported by it. Null until
@@ -214,6 +226,27 @@ export default {
     },
   },
   methods: {
+    measureText(): void {
+      const card = this.$refs.card as HTMLElement | undefined
+      const text = this.$refs.text as HTMLElement | undefined
+      if (card && text) this.textEnd = Math.round(textEnd(text, card))
+    },
+    /** Paints layer `index`'s edge fill for Fanart.tv art, once its
+     * colours are read - unless the layer has moved on to another picture
+     * meanwhile. */
+    async paintFill(index: number, url: string | null, kind: BackdropKind): Promise<void> {
+      this.fills[index] = null
+      if (!url || kind === 'cover') return
+      const gradients = await extractEdgeGradients(url)
+      if (this.backdrop.urls[index] === url) this.fills[index] = gradients
+    },
+    layerStyle(url: string | null, index: number): Record<string, string> {
+      const fill = this.fills[index]
+      return {
+        ...(url ? { '--backdrop-image': `url(${url})` } : {}),
+        ...(fill ? { '--fill-left': fill.left, '--fill-right': fill.right } : {}),
+      }
+    },
     async loadArtistPhoto(name: string | null): Promise<void> {
       if (!name) {
         this.artistArt = null
@@ -257,8 +290,25 @@ export default {
         if (previous && target.url === previous.url && target.kind === previous.kind) return
         showBackdrop(this.backdrop, target.url)
         this.layerKind[this.backdrop.active] = target.kind
+        void this.paintFill(this.backdrop.active, target.url, target.kind)
       },
     },
+  },
+  mounted() {
+    this.measureText()
+    // The window's width rewraps the text, and a bio or a longer title
+    // arriving changes its size; updated() covers text that changes in
+    // place.
+    if (typeof ResizeObserver === 'undefined') return
+    this.textObserver = new ResizeObserver(() => this.measureText())
+    this.textObserver.observe(this.$refs.card as HTMLElement)
+    this.textObserver.observe(this.$refs.text as HTMLElement)
+  },
+  updated() {
+    this.measureText()
+  },
+  beforeUnmount() {
+    this.textObserver?.disconnect()
   },
 }
 </script>
@@ -274,6 +324,12 @@ export default {
 }
 
 .hero-band {
+  /* Where the scrim behind the text has cleared - and so, wherever there
+   * is room, where Fanart.tv art starts at the earliest. The scrim eases
+   * out over --scrim-fade along a smoothstep curve: a straight ramp, over
+   * a light picture, shows both of its ends as edges. */
+  --scrim-fade: 280px;
+  --text-clearance: calc(var(--text-end, 40%) + var(--scrim-fade));
   position: relative;
   border-radius: 16px;
   overflow: hidden;
@@ -285,6 +341,7 @@ export default {
 .hero-backdrop {
   position: absolute;
   inset: -20px;
+  background-image: var(--backdrop-image);
   background-size: cover;
   background-position: center;
   filter: blur(38px) saturate(1.4) brightness(0.55);
@@ -302,19 +359,81 @@ export default {
   opacity: 1;
 }
 
-/* The artist's Fanart.tv photo, when they have no banner: like the banner
- * below - the band's full height, held to its right edge, eased out to the
- * left - but at its own 16:9, so nothing of it is cropped. */
-.hero-backdrop--photo {
+/* Fanart.tv art (a banner, or a background photo until there is one):
+ * whole, at the band's full height, so a wide window never crops its top
+ * and bottom off. The spacers either side share out whatever width the
+ * picture leaves equally, centring it (the left one is never narrower
+ * than the text, below); where the band is narrower than the picture, both are 0 and its
+ * left end is cut off. The spacers show the picture's own edge colours
+ * (services/edgeFill.ts) out to the edges, opaque behind the text too;
+ * the scrim above darkens it there, up to just past where the text ends
+ * (--text-end, measured).
+ * Kept 1px off the band's edge, with its own rounding: every layer is
+ * clipped to the band's corners separately, and in the anti-aliased edge
+ * pixels the scrim only partly covers art reaching them - a light rim
+ * round the corners. */
+.hero-backdrop--photo,
+.hero-backdrop--banner {
   inset: 1px;
   border-radius: 15px;
-  background-size: auto 100%;
-  background-position: right center;
-  background-repeat: no-repeat;
+  overflow: hidden;
+  display: flex;
+  justify-content: flex-end;
+  background-image: none;
   filter: none;
   transform: none;
-  -webkit-mask: var(--beacon-photo-fade) right center / auto 100% no-repeat;
-  mask: var(--beacon-photo-fade) right center / auto 100% no-repeat;
+  --art-fade: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+}
+
+.hero-backdrop--photo::before,
+.hero-backdrop--banner::before {
+  content: '';
+  flex: 1 0 0;
+  /* At least up to just past the text, so the scrim darkens the edge
+   * colour beside the picture rather than the picture itself - unless the
+   * band is too narrow for both, when the picture keeps its right end and
+   * slides under the text. */
+  min-width: var(--text-clearance);
+  /* Overlapping the picture: where the two meet on a fraction of a pixel,
+   * each only partly covers that column and the dark card shows through
+   * as a hairline. The overlap is under its fully faded end (--art-fade). */
+  margin-right: -2px;
+  background-image: var(--fill-left, none);
+}
+
+.hero-backdrop--photo::after,
+.hero-backdrop--banner::after {
+  content: '';
+  flex: 1 0 0;
+  margin-left: -2px;
+  background-image: var(--fill-right, none);
+}
+
+/* Fanart.tv's fixed sizes: banners 1000x185, backgrounds 1920x1080. */
+.hero-backdrop--banner {
+  --art-ratio: 1000 / 185;
+}
+
+.hero-backdrop--photo {
+  --art-ratio: 16 / 9;
+}
+
+/* Under the picture's ends, which only soften into its edge colours:
+ * each half its own side's. */
+.hero-backdrop-slot {
+  flex: none;
+  height: 100%;
+  aspect-ratio: var(--art-ratio);
+  background:
+    var(--fill-left, none) left / 50% 100% no-repeat,
+    var(--fill-right, none) right / 50% 100% no-repeat;
+}
+
+.hero-backdrop-art {
+  height: 100%;
+  background: var(--backdrop-image) center / cover no-repeat;
+  -webkit-mask: var(--art-fade);
+  mask: var(--art-fade);
 }
 
 .hero-scrim {
@@ -330,37 +449,25 @@ export default {
     linear-gradient(to top, rgba(18, 20, 28, 0.6), transparent 60%);
 }
 
-/* A Fanart.tv banner: always the card's full height and held to its right
- * edge, so a wide window never crops its top and bottom off. Where the card
- * is wider than the banner, it eases out to the left (--beacon-banner-fade
- * in base.css); where it is narrower, its left end is cut off under the
- * scrim. Kept 1px off the card's edge, with its own rounding: every layer
- * is clipped to the card's corners separately, and in the anti-aliased
- * edge pixels the scrim only partly covers a banner reaching them - a
- * light rim round the corners. */
-.hero-backdrop--banner {
-  inset: 1px;
-  border-radius: 15px;
-  background-size: auto 100%;
-  background-position: right center;
-  background-repeat: no-repeat;
-  filter: none;
-  transform: none;
-  -webkit-mask: var(--beacon-banner-fade) right center / auto 100% no-repeat;
-  mask: var(--beacon-banner-fade) right center / auto 100% no-repeat;
-}
-
-/* Neutral over sharp Fanart.tv art, where the amber wash would read as a colour
- * cast - see DetailHeader.vue's identical rule. */
+/* Plain black over sharp Fanart.tv art, strong behind the text and clear
+ * where the art starts - see DetailHeader.vue's identical rule. */
 .hero-scrim--photo {
   background:
     linear-gradient(
-      120deg,
-      rgba(18, 20, 28, 0.94) 0%,
-      rgba(18, 20, 28, 0.7) 40%,
-      rgba(18, 20, 28, 0) 75%
+      to right,
+      rgba(0, 0, 0, 0.85) var(--text-end, 40%),
+      rgba(0, 0, 0, 0.826) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.1),
+      rgba(0, 0, 0, 0.762) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.2),
+      rgba(0, 0, 0, 0.666) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.3),
+      rgba(0, 0, 0, 0.551) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.4),
+      rgba(0, 0, 0, 0.425) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.5),
+      rgba(0, 0, 0, 0.299) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.6),
+      rgba(0, 0, 0, 0.184) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.7),
+      rgba(0, 0, 0, 0.088) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.8),
+      rgba(0, 0, 0, 0.024) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.9),
+      rgba(0, 0, 0, 0) var(--text-clearance)
     ),
-    linear-gradient(to top, rgba(18, 20, 28, 0.6), transparent 60%);
+    linear-gradient(to top, rgba(0, 0, 0, 0.6), transparent 60%);
 }
 
 .hero-content {

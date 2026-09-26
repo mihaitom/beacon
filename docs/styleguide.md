@@ -364,12 +364,16 @@ downloaded - a genre's through its own artists' only - every 12 seconds;
 until connect has any banners, through the backgrounds. The Home page's
 hero card shows the playing artist's banner, else their background. A
 Fanart.tv picture on either card is never cropped at the top or bottom: it
-is the card's full height, held to the right edge at its own shape (a
-banner's 5.4:1, a background's 16:9) and eased out to the left, with the
-fade laid over the picture itself (`--beacon-banner-fade`,
-`--beacon-photo-fade` in `base.css`) so it starts where the picture does
-on any window width. A banner wider than the card loses its left end
-instead. Either way over a scrim without the amber wash, which would read
+is the card's full height at its own shape (a banner's 5.4:1, a
+background's 16:9). Where the card is wider, the free width is shared
+equally either side of it - centring it, but never left of where the text
+ends - and filled with the picture's own
+edge colours (`services/edgeFill.ts`), which its ends soften into - opaque out to the edges, behind the text
+too. Only the scrim darkens it there, from the left edge to just past where
+the text ends (measured, `services/textExtent.ts`), so where there is room
+the darkening falls on that edge colour and the picture itself stays
+untouched. A banner wider than the card is held to the right edge and loses
+its left end instead. Either way over a scrim without the amber wash, which would read
 as a colour cast on a photo. Now Playing drops its colour wash over the artist's photo for
 the same reason. No new image is fetched for any of it; a hidden tab and
 reduced motion hold the cycling still.

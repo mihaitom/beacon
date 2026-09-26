@@ -1,5 +1,10 @@
 <template>
-  <section class="detail-header" :class="{ 'detail-header--text-only': !hasArtwork }">
+  <section
+    ref="card"
+    class="detail-header"
+    :class="{ 'detail-header--text-only': !hasArtwork }"
+    :style="textEnd ? { '--text-end': `${textEnd}px` } : {}"
+  >
     <!-- Two stacked layers so navigating from one album/artist to the next
      - crossfades the artwork behind the header instead of cutting to it —
      - see services/crossfadeBackdrop.ts for why one element can't do this. -->
@@ -12,8 +17,12 @@
         'detail-header__backdrop--photo': layerKind[i] === 'photo',
         'detail-header__backdrop--banner': layerKind[i] === 'banner',
       }"
-      :style="url ? { backgroundImage: `url(${url})` } : {}"
-    />
+      :style="layerStyle(url, i)"
+    >
+      <div v-if="layerKind[i] !== 'cover'" class="detail-header__backdrop-slot">
+        <div class="detail-header__backdrop-art" />
+      </div>
+    </div>
     <div
       class="detail-header__scrim"
       :class="{ 'detail-header__scrim--photo': layerKind[backdrop.active] !== 'cover' }"
@@ -52,7 +61,7 @@
         <slot name="top-right" />
       </div>
     </div>
-    <div class="detail-header__content">
+    <div ref="text" class="detail-header__content">
       <!-- Only when there is a real picture: a list page has none, and a
        - square holding nothing but a generic icon takes room from the
        - title without saying anything. The icon remains for a picture that
@@ -92,6 +101,8 @@ import CoverArt from './CoverArt.vue'
 import { useLibraryStore } from '@/stores/library'
 import { emitter } from '@/emitter'
 import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
+import { type EdgeGradients, extractEdgeGradients } from '@/services/edgeFill'
+import { textEnd } from '@/services/textExtent'
 import { getStoredImages } from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
 import { useFanartStore } from '@/stores/fanart'
@@ -145,6 +156,12 @@ export default {
       backdrop: createBackdropLayers(),
       // Per layer, since Fanart.tv art is shown sharp and a cover blurred.
       layerKind: ['cover', 'cover'] as BackdropKind[],
+      /** Per layer: its Fanart.tv art's edge colours, continued beside it. */
+      fills: [null, null] as (EdgeGradients | null)[],
+      /** Where the text ends, in px from the left: the art is faded out
+       * up to there (see measureText). */
+      textEnd: 0,
+      textObserver: null as ResizeObserver | null,
       photos: [] as string[],
       photoKind: 'banner' as BackdropKind,
       photoIndex: 0,
@@ -168,9 +185,31 @@ export default {
     },
   },
   methods: {
+    measureText(): void {
+      const card = this.$refs.card as HTMLElement | undefined
+      const text = this.$refs.text as HTMLElement | undefined
+      if (card && text) this.textEnd = Math.round(textEnd(text, card))
+    },
     show(url: string | null, kind: BackdropKind): void {
       showBackdrop(this.backdrop, url)
       this.layerKind[this.backdrop.active] = kind
+      void this.paintFill(this.backdrop.active, url, kind)
+    },
+    /** Paints layer `index`'s edge fill for Fanart.tv art, once its
+     * colours are read - unless the layer has moved on to another picture
+     * meanwhile. */
+    async paintFill(index: number, url: string | null, kind: BackdropKind): Promise<void> {
+      this.fills[index] = null
+      if (!url || kind === 'cover') return
+      const gradients = await extractEdgeGradients(url)
+      if (this.backdrop.urls[index] === url) this.fills[index] = gradients
+    },
+    layerStyle(url: string | null, index: number): Record<string, string> {
+      const fill = this.fills[index]
+      return {
+        ...(url ? { '--backdrop-image': `url(${url})` } : {}),
+        ...(fill ? { '--fill-left': fill.left, '--fill-right': fill.right } : {}),
+      }
     },
     async loadStoredFanart(request: string[] | null): Promise<void> {
       this.stopCycle()
@@ -276,7 +315,21 @@ export default {
       },
     },
   },
+  mounted() {
+    this.measureText()
+    // The window's width rewraps the text, and a bio or a longer title
+    // arriving changes its size; updated() covers text that changes in
+    // place.
+    if (typeof ResizeObserver === 'undefined') return
+    this.textObserver = new ResizeObserver(() => this.measureText())
+    this.textObserver.observe(this.$refs.card as HTMLElement)
+    this.textObserver.observe(this.$refs.text as HTMLElement)
+  },
+  updated() {
+    this.measureText()
+  },
   beforeUnmount() {
+    this.textObserver?.disconnect()
     this.stopCycle()
   },
 }
@@ -284,6 +337,12 @@ export default {
 
 <style scoped>
 .detail-header {
+  /* Where the scrim behind the text has cleared - and so, wherever there
+   * is room, where Fanart.tv art starts at the earliest. The scrim eases
+   * out over --scrim-fade along a smoothstep curve: a straight ramp, over
+   * a light picture, shows both of its ends as edges. */
+  --scrim-fade: 280px;
+  --text-clearance: calc(var(--text-end, 40%) + var(--scrim-fade));
   position: relative;
   border-radius: 16px;
   overflow: hidden;
@@ -295,6 +354,7 @@ export default {
 .detail-header__backdrop {
   position: absolute;
   inset: -20px;
+  background-image: var(--backdrop-image);
   background-size: cover;
   background-position: center;
   filter: blur(38px) saturate(1.4) brightness(0.55);
@@ -310,41 +370,81 @@ export default {
   opacity: 1;
 }
 
-/* A stored Fanart.tv background (see storedFanart), until connect has
- * banners: like the banner below - the card's full height, held to its
- * right edge, eased out to the left - but at its own 16:9, so nothing of
- * it is cropped; the card is shallow, so it takes a narrow strip at the
- * right. */
-.detail-header__backdrop--photo {
-  inset: 1px;
-  border-radius: 15px;
-  background-size: auto 100%;
-  background-position: right center;
-  background-repeat: no-repeat;
-  filter: none;
-  transform: none;
-  -webkit-mask: var(--beacon-photo-fade) right center / auto 100% no-repeat;
-  mask: var(--beacon-photo-fade) right center / auto 100% no-repeat;
-}
-
-/* A Fanart.tv banner: always the card's full height and held to its right
- * edge, so a wide window never crops its top and bottom off. Where the card
- * is wider than the banner, it eases out to the left (--beacon-banner-fade
- * in base.css); where it is narrower, its left end is cut off under the
- * scrim. Kept 1px off the card's edge, with its own rounding: every layer
- * is clipped to the card's corners separately, and in the anti-aliased
- * edge pixels the scrim only partly covers a banner reaching them - a
- * light rim round the corners. */
+/* Fanart.tv art (a banner, or a background photo until there is one):
+ * whole, at the card's full height, so a wide window never crops its top
+ * and bottom off. The spacers either side share out whatever width the
+ * picture leaves equally, centring it (the left one is never narrower
+ * than the text, below); where the card is narrower than the picture, both are 0 and its
+ * left end is cut off. The spacers show the picture's own edge colours
+ * (services/edgeFill.ts) out to the edges, opaque behind the text too;
+ * the scrim above darkens it there, up to just past where the text ends
+ * (--text-end, measured).
+ * Kept 1px off the card's edge, with its own rounding: every layer is
+ * clipped to the card's corners separately, and in the anti-aliased edge
+ * pixels the scrim only partly covers art reaching them - a light rim
+ * round the corners. */
+.detail-header__backdrop--photo,
 .detail-header__backdrop--banner {
   inset: 1px;
   border-radius: 15px;
-  background-size: auto 100%;
-  background-position: right center;
-  background-repeat: no-repeat;
+  overflow: hidden;
+  display: flex;
+  justify-content: flex-end;
+  background-image: none;
   filter: none;
   transform: none;
-  -webkit-mask: var(--beacon-banner-fade) right center / auto 100% no-repeat;
-  mask: var(--beacon-banner-fade) right center / auto 100% no-repeat;
+  --art-fade: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+}
+
+.detail-header__backdrop--photo::before,
+.detail-header__backdrop--banner::before {
+  content: '';
+  flex: 1 0 0;
+  /* At least up to just past the text, so the scrim darkens the edge
+   * colour beside the picture rather than the picture itself - unless the
+   * card is too narrow for both, when the picture keeps its right end and
+   * slides under the text. */
+  min-width: var(--text-clearance);
+  /* Overlapping the picture: where the two meet on a fraction of a pixel,
+   * each only partly covers that column and the dark card shows through
+   * as a hairline. The overlap is under its fully faded end (--art-fade). */
+  margin-right: -2px;
+  background-image: var(--fill-left, none);
+}
+
+.detail-header__backdrop--photo::after,
+.detail-header__backdrop--banner::after {
+  content: '';
+  flex: 1 0 0;
+  margin-left: -2px;
+  background-image: var(--fill-right, none);
+}
+
+/* Fanart.tv's fixed sizes: banners 1000x185, backgrounds 1920x1080. */
+.detail-header__backdrop--banner {
+  --art-ratio: 1000 / 185;
+}
+
+.detail-header__backdrop--photo {
+  --art-ratio: 16 / 9;
+}
+
+/* Under the picture's ends, which only soften into its edge colours:
+ * each half its own side's. */
+.detail-header__backdrop-slot {
+  flex: none;
+  height: 100%;
+  aspect-ratio: var(--art-ratio);
+  background:
+    var(--fill-left, none) left / 50% 100% no-repeat,
+    var(--fill-right, none) right / 50% 100% no-repeat;
+}
+
+.detail-header__backdrop-art {
+  height: 100%;
+  background: var(--backdrop-image) center / cover no-repeat;
+  -webkit-mask: var(--art-fade);
+  mask: var(--art-fade);
 }
 
 .detail-header__scrim {
@@ -360,18 +460,28 @@ export default {
     linear-gradient(to top, rgba(18, 20, 28, 0.55), transparent 55%);
 }
 
-/* Over a stored Fanart.tv photo the scrim ends neutral rather than in the
- * amber wash: tinting a sharp photo reads as a colour cast, where over the
- * blurred cover it reads as the app's own light. */
+/* Over Fanart.tv art the scrim is plain black: the amber wash would read
+ * as a colour cast on a sharp photo (over the blurred cover it reads as the
+ * app's own light), and the app's blue-grey as a blue tint. Strong and even
+ * behind the text, the art under it still just visible, then clear where
+ * the art starts (--text-clearance) rather than at a share of the card. */
 .detail-header__scrim--photo {
   background:
     linear-gradient(
-      120deg,
-      rgba(18, 20, 28, 0.94) 0%,
-      rgba(18, 20, 28, 0.7) 40%,
-      rgba(18, 20, 28, 0) 75%
+      to right,
+      rgba(0, 0, 0, 0.85) var(--text-end, 40%),
+      rgba(0, 0, 0, 0.826) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.1),
+      rgba(0, 0, 0, 0.762) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.2),
+      rgba(0, 0, 0, 0.666) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.3),
+      rgba(0, 0, 0, 0.551) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.4),
+      rgba(0, 0, 0, 0.425) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.5),
+      rgba(0, 0, 0, 0.299) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.6),
+      rgba(0, 0, 0, 0.184) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.7),
+      rgba(0, 0, 0, 0.088) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.8),
+      rgba(0, 0, 0, 0.024) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.9),
+      rgba(0, 0, 0, 0) var(--text-clearance)
     ),
-    linear-gradient(to top, rgba(18, 20, 28, 0.55), transparent 55%);
+    linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent 55%);
 }
 
 .detail-header__top-right {
