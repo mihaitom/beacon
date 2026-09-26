@@ -238,6 +238,14 @@ export default {
   opacity: 1;
 }
 
+/* See AlbumCard.vue's identical rule. */
+@media (hover: none) {
+  .song-card-star,
+  .song-card-play-overlay {
+    opacity: 1;
+  }
+}
+
 .song-card-star--visible {
   opacity: 1;
   color: rgb(var(--v-theme-primary)) !important;

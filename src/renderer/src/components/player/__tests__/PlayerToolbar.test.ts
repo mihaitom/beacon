@@ -294,6 +294,42 @@ describe('PlayerToolbar', () => {
       })
     })
 
+    describe('on a touch screen', () => {
+      const originalMatchMedia = window.matchMedia
+
+      beforeEach(() => {
+        window.matchMedia = ((query: string) => ({
+          matches: query === '(pointer: coarse)',
+          addEventListener: () => {},
+          removeEventListener: () => {},
+        })) as unknown as typeof window.matchMedia
+      })
+
+      afterEach(() => {
+        window.matchMedia = originalMatchMedia
+      })
+
+      it('sets the speaker from a native range instead of the VSlider', async () => {
+        vi.useFakeTimers()
+        const wrapper = mountToolbar()
+        const connect = useConnectStore()
+        vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
+        const setVolume = vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
+        connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'chromecast' }] })
+        await wrapper.vm.$nextTick()
+        await vi.runOnlyPendingTimersAsync()
+
+        expect(wrapper.findComponent({ name: 'VSlider' }).exists()).toBe(false)
+        const range = wrapper.get('input[type="range"]')
+        ;(range.element as HTMLInputElement).value = '70'
+        await range.trigger('input')
+        await flushPromises()
+
+        expect(setVolume).toHaveBeenCalledWith('chromecast', 'Kitchen', 70)
+        expect(wrapper.get('.volume-value').text()).toBe('70%')
+      })
+    })
+
     it('sends a wheel adjustment to the device, not the local player', async () => {
       const wrapper = mountToolbar()
       const connect = useConnectStore()

@@ -225,6 +225,13 @@ export default {
   opacity: 1;
 }
 
+/* See AlbumCard.vue's identical rule. */
+@media (hover: none) {
+  .artist-card-star {
+    opacity: 1;
+  }
+}
+
 /* Amber, on nothing — same "amber means this is on" rule the rest of the
  * app follows. Both !importants undo this element's own resting style
  * above: the dark pill behind the icon exists to keep an *unstarred* heart

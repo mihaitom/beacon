@@ -81,7 +81,16 @@
           size="small"
           @click="onToggleMute"
         />
+        <touch-volume-slider
+          v-if="coarsePointer"
+          :model-value="volume ?? 0"
+          :max="100"
+          :disabled="volume == null"
+          :aria-label="$t('player.volume')"
+          @update:model-value="onVolumeChange"
+        />
         <v-slider
+          v-else
           class="volume-slider-touch"
           :model-value="volume ?? 0"
           :max="100"
@@ -118,6 +127,8 @@ import {
 } from '@/services/connect/volumeGuard'
 import { useAuthStore } from '@/stores/auth'
 import AirplayIcon from './AirplayIcon.vue'
+import TouchVolumeSlider from '@/components/mobile/TouchVolumeSlider.vue'
+import { isCoarsePointer } from '@/services/coarsePointer'
 import type { ConnectDeviceRef, DeviceType } from '@/services/connect/types'
 
 // airplay has its own real glyph (AirplayIcon, see the template) — Material
@@ -131,7 +142,7 @@ const TYPE_ICONS: Record<string, string> = {
 
 export default {
   name: 'DeviceListItem',
-  components: { AirplayIcon },
+  components: { AirplayIcon, TouchVolumeSlider },
   props: {
     device: {
       type: Object,
@@ -161,6 +172,8 @@ export default {
       // the device itself/another session" other than asking again. Left
       // null and unused for push-capable types (see pushedVolume).
       volumePollTimer: null as ReturnType<typeof setInterval> | null,
+      // Same reason as PlayerToolbar.vue's: VSlider loses a real finger.
+      coarsePointer: isCoarsePointer(),
     }
   },
   computed: {
@@ -419,6 +432,20 @@ export default {
 .device-row__volume--always {
   max-height: 44px;
   opacity: 1;
+}
+
+/* Without hover the pair button and the volume accordion above would never
+ * open - a tap on the row toggles the device instead. */
+@media (hover: none) {
+  .device-row__hover-btn {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .device-row__volume {
+    max-height: 44px;
+    opacity: 1;
+  }
 }
 
 .device-row__volume-inner {

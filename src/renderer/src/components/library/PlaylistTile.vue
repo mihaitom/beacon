@@ -219,6 +219,14 @@ export default {
   transition: opacity 0.15s ease;
 }
 
+/* Without hover a tap on the cover would start the playlist instead of
+ * opening it, with nothing showing that it would. */
+@media (hover: none) {
+  .playlist-tile__play-overlay {
+    opacity: 1;
+  }
+}
+
 .playlist-tile__info {
   flex: 1 1 auto;
   min-width: 0;

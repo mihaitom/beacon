@@ -261,6 +261,15 @@ export default {
   opacity: 1;
 }
 
+/* Invisible is not inactive: without hover, a tap on the cover's corner
+ * would star the album, and one on the cover would play it, unannounced. */
+@media (hover: none) {
+  .album-card-star,
+  .album-card-play-overlay {
+    opacity: 1;
+  }
+}
+
 /* See ArtistCard.vue's identical rule — amber only for an actually
  * starred album, not merely a hovered one. */
 .album-card-star--visible {

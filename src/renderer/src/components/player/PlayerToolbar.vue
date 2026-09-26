@@ -38,8 +38,17 @@
         :title="$t('player.mute')"
         @click="toggleMute"
       />
+      <touch-volume-slider
+        v-if="singleActiveTarget && coarsePointer"
+        class="volume-slider"
+        :model-value="deviceVolume ?? 0"
+        :max="100"
+        :disabled="deviceVolume == null"
+        :aria-label="$t('player.volume')"
+        @update:model-value="onDeviceVolumeChange"
+      />
       <v-slider
-        v-if="singleActiveTarget"
+        v-else-if="singleActiveTarget"
         class="volume-slider volume-slider-touch"
         :model-value="deviceVolume ?? 0"
         :max="100"
@@ -107,8 +116,17 @@
             :title="$t('player.mute')"
             @click="toggleMute"
           />
+          <touch-volume-slider
+            v-if="singleActiveTarget && coarsePointer"
+            class="volume-slider"
+            :model-value="deviceVolume ?? 0"
+            :max="100"
+            :disabled="deviceVolume == null"
+            :aria-label="$t('player.volume')"
+            @update:model-value="onDeviceVolumeChange"
+          />
           <v-slider
-            v-if="singleActiveTarget"
+            v-else-if="singleActiveTarget"
             class="volume-slider volume-slider-touch"
             :model-value="deviceVolume ?? 0"
             :max="100"
@@ -160,6 +178,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import ConnectButton from '@/components/connect/ConnectButton.vue'
 import RemoteControlButton from '@/components/settings/RemoteControlButton.vue'
+import TouchVolumeSlider from '@/components/mobile/TouchVolumeSlider.vue'
+import { isCoarsePointer } from '@/services/coarsePointer'
 import { volumeAfterWheel } from '@/services/volumeWheel'
 import {
   knownDeviceVolume,
@@ -170,7 +190,7 @@ import type { ConnectDeviceRef } from '@/services/connect/types'
 
 export default {
   name: 'PlayerToolbar',
-  components: { ConnectButton, RemoteControlButton },
+  components: { ConnectButton, RemoteControlButton, TouchVolumeSlider },
   props: {
     // Driven by PlayerBar.vue's own ResizeObserver, off the *whole bar's*
     // real rendered width, not something this element could determine by
@@ -195,6 +215,9 @@ export default {
       // Scroll that hasn't added up to a whole volume step yet — see
       // volumeAfterWheel().
       volumeWheelCarry: 0,
+      // A tablet in landscape gets this bar, and a speaker's VSlider loses
+      // a real finger's drag - see TouchVolumeSlider.vue.
+      coarsePointer: isCoarsePointer(),
     }
   },
   computed: {
