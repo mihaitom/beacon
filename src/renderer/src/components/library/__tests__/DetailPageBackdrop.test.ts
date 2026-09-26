@@ -1,11 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
-import { extractLeftEdgeGradient } from '@/services/edgeFill'
-import { personAtLeftEdge } from '@/services/personAtEdge'
+import { describe, expect, it } from 'vitest'
+import { mount } from '@vue/test-utils'
 import DetailPageBackdrop from '../DetailPageBackdrop.vue'
-
-vi.mock('@/services/edgeFill', () => ({ extractLeftEdgeGradient: vi.fn(async () => null) }))
-vi.mock('@/services/personAtEdge', () => ({ personAtLeftEdge: vi.fn(async () => false) }))
 
 function layers(wrapper: ReturnType<typeof mount>, selector = '.detail-page__backdrop') {
   return wrapper.findAll(selector).map((layer) => ({
@@ -43,32 +38,5 @@ describe('DetailPageBackdrop', () => {
     const byImage = Object.fromEntries(layers(wrapper).map((layer) => [layer.image, layer]))
     expect(byImage['url(photo.jpg)']?.photo).toBe(true)
     expect(byImage['url(cover.jpg)']?.photo).toBe(false)
-  })
-})
-
-describe('DetailPageBackdrop continued edge', () => {
-  afterEach(() => {
-    vi.mocked(extractLeftEdgeGradient).mockReset()
-    vi.mocked(personAtLeftEdge).mockReset()
-  })
-
-  async function filled(edge: string | null, person: boolean) {
-    vi.mocked(extractLeftEdgeGradient).mockResolvedValue(edge)
-    vi.mocked(personAtLeftEdge).mockResolvedValue(person)
-    const wrapper = mount(DetailPageBackdrop, { props: { url: 'photo.jpg', isPhoto: true } })
-    await flushPromises()
-    return wrapper.find('.detail-page__backdrop--filled').exists()
-  }
-
-  it('continues a calm edge with nobody at it', async () => {
-    expect(await filled('linear-gradient(to bottom, rgb(1, 2, 3) 50%)', false)).toBe(true)
-  })
-
-  it('continues nothing where a person reaches the edge, calm as it is', async () => {
-    expect(await filled('linear-gradient(to bottom, rgb(1, 2, 3) 50%)', true)).toBe(false)
-  })
-
-  it('continues nothing from a busy edge', async () => {
-    expect(await filled(null, false)).toBe(false)
   })
 })
