@@ -109,12 +109,10 @@ async function mountArtist(width: number, busy: boolean) {
   wrappers.push(wrapper)
   const band = () => document.querySelector('.detail-page__band') as HTMLElement
   await expect.poll(() => band().style.getPropertyValue('--text-end')).not.toBe('')
-  // The photo's colours are read from a canvas once it has loaded.
-  await new Promise((resolve) => setTimeout(resolve, 300))
   return {
     band: band().getBoundingClientRect(),
     art: document.querySelector('.detail-page__art')!.getBoundingClientRect(),
-    filled: document.querySelector('.detail-page__backdrop--filled') !== null,
+    filled: () => document.querySelector('.detail-page__backdrop--filled') !== null,
   }
 }
 
@@ -127,14 +125,19 @@ describe('DetailPageBackdrop photo beside the header text', () => {
   it('continues a smooth left edge to the left of the photo, which keeps to the right', async () => {
     const { band, art, filled } = await mountArtist(2800, false)
 
-    expect(filled).toBe(true)
+    // Once the colours are read and the segmenter has loaded and found
+    // nobody at the edge.
+    await expect.poll(filled, { timeout: 10000 }).toBe(true)
     expect(art.right).toBeCloseTo(band.right, 0)
   })
 
   it('continues nothing from a busy left edge', async () => {
     const { band, art, filled } = await mountArtist(2800, true)
 
-    expect(filled).toBe(false)
+    // A busy edge is turned down by the colour check alone, well within
+    // this; the segmenter is never asked.
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    expect(filled()).toBe(false)
     expect(art.right).toBeCloseTo(band.right, 0)
   })
 })

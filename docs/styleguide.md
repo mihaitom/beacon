@@ -324,9 +324,11 @@ eased shade as `DetailHeader`'s banners, up to just past where the text
 ends. It keeps to the right edge. One whose left edge is smooth
 (`services/edgeFill.ts`) has that edge continued to its left, as a banner
 does - only the left edge, as it is, since the rest of the photo's border
-is nowhere near it; one with a busy left edge fades out to the left onto
-the surface instead, since continuing a
-busy edge streaks; that fade is eased, since a linear ramp shows a seam
+is nowhere near it, and only where no person reaches it (MediaPipe's
+selfie segmenter, `services/personAtEdge.ts` - a bare arm is as even as
+the background behind it). One with a busy left edge, or someone at it,
+fades out to the left onto the surface instead, since continuing that
+streaks; that fade is eased, since a linear ramp shows a seam
 where it starts. On a phone, where the text runs the full width anyway,
 there is no shade and it is the full band again.
 

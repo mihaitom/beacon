@@ -45,6 +45,7 @@
 import type { PropType } from 'vue'
 import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
 import { type Frame, extractLeftEdgeGradient } from '@/services/edgeFill'
+import { personAtLeftEdge } from '@/services/personAtEdge'
 import { textEnd } from '@/services/textExtent'
 
 /**
@@ -112,11 +113,10 @@ export default {
     async paintFill(index: number, url: string | null, isPhoto: boolean): Promise<void> {
       this.fills[index] = null
       if (!url || !isPhoto) return
-      const gradient = await extractLeftEdgeGradient(
-        url,
-        this.banded ? BANDED_PHOTO_FRAME : PHOTO_FRAME,
-        JUDGED_EXTENT,
-      )
+      const frame = this.banded ? BANDED_PHOTO_FRAME : PHOTO_FRAME
+      const gradient = await extractLeftEdgeGradient(url, frame, JUDGED_EXTENT)
+      // Only an edge that passed the colour checks is worth segmenting.
+      if (!gradient || (await personAtLeftEdge(url, frame, JUDGED_EXTENT))) return
       if (this.layers.urls[index] === url) this.fills[index] = gradient
     },
     /** The header's own text only - DetailHero.vue's cover/name column and

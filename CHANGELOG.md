@@ -15,10 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - Artist backgrounds from Fanart.tv draw on up to ten images per artist, mostly the best liked plus a few of the newest, and switching between them is instant
-- On artist and album pages the Fanart.tv photo sits on the right, uncropped, and fades out behind the header, so text stays readable; it also fades between pages instead of blinking
+- On artist and album pages the Fanart.tv photo sits on the right, uncropped; where its left edge is calm and nobody is standing at it, it carries on across the header, and the header text sits on a darkened area so it stays readable; it also fades between pages instead of blinking
 - An artist keeps the same background across the artist page, album pages and Now Playing for the whole session
 - The album page has a new header with a large cover, running time, Play and Shuffle, and the artist photo beside them; it stays in view while the track list scrolls below it
-- The Artists, Albums, Songs, Playlists, Radio and Favorites pages and every genre page show your artists' Fanart.tv banners in their header, changing every few seconds, a genre only its own artists; clicking a banner opens that artist's page
+- The Artists, Albums, Songs, Playlists, Radio and Favorites pages and every genre page show your artists' Fanart.tv banners in their header, carried on across its full width, changing every few seconds, a genre only its own artists; clicking a banner opens that artist's page
 - The Favorites page header shows how many artists, albums and songs you have marked
 - The Home page's top card shows the Fanart.tv banner or photo of the artist you are listening to
 - Small layout tweaks: library page titles are larger and no longer have a placeholder icon beside them, and the Statistics lists wrap two at a time on narrower windows
