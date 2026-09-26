@@ -1548,6 +1548,19 @@ def test_cached_mbids_reads_only_resolved_names_and_asks_nobody():
             assert found == {" Radiohead ": "mbid-r"}
 
 
+def test_names_by_mbid_groups_every_resolved_name_under_its_mbid():
+    with patch.object(
+        recommendations,
+        "_load_cache",
+        return_value={
+            "mbid_by_name_v2": {"beyonce": "mbid-b", "beyoncé": "mbid-b", "a": "mbid-a", "x": None}
+        },
+    ):
+        found = recommendations.names_by_mbid()
+
+    assert found == {"mbid-b": ["beyonce", "beyoncé"], "mbid-a": ["a"]}
+
+
 def test_cached_mbids_reads_the_cache_once_for_any_number_of_names():
     """A genre's header asks about hundreds of artists; one file read per
     name held connect's event loop for seconds."""

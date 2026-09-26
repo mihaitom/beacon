@@ -81,6 +81,13 @@ export function forgetShownArt(): void {
   shown.clear()
 }
 
+/** One Fanart.tv image connect has already downloaded, with the names its
+ * artist is known by (in whatever case connect stored them). */
+export interface StoredImage {
+  url: string
+  artists: string[]
+}
+
 /** Fanart.tv images of one kind connect has already downloaded - for every
  * artist, or only for `artists` (a genre's) - routed through connect like
  * every other Fanart.tv image. Asks nobody but connect: see its
@@ -88,10 +95,10 @@ export function forgetShownArt(): void {
 export async function getStoredImages(
   kind: 'background' | 'banner',
   artists?: string[],
-): Promise<string[]> {
-  const data = await fetchConnect<{ images: string[] }>('/fanart/stored-images', {
+): Promise<StoredImage[]> {
+  const data = await fetchConnect<{ images: StoredImage[] }>('/fanart/stored-images', {
     method: 'POST',
     body: { artists: artists ?? null, kind },
   })
-  return data.images.map((url) => fanartImageUrl(url))
+  return data.images.map((image) => ({ ...image, url: fanartImageUrl(image.url) }))
 }

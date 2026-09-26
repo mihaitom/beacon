@@ -263,6 +263,18 @@ def cached_mbids(names: Iterable[str]) -> dict[str, str]:
     return found
 
 
+def names_by_mbid() -> dict[str, list[str]]:
+    """The reverse of cached_mbids(): every name resolve_mbid() has found an
+    MBID for, grouped by that MBID - in the lower case they are stored in.
+    Asks nobody."""
+    known = _load_cache().get("mbid_by_name_v2", {})
+    found: dict[str, list[str]] = {}
+    for name, mbid in known.items():
+        if isinstance(mbid, str):
+            found.setdefault(mbid, []).append(name)
+    return found
+
+
 def _musicbrainz_artist_url(mbid: str) -> str:
     return f"https://musicbrainz.org/artist/{mbid}"
 

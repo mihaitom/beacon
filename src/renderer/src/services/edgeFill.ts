@@ -56,6 +56,10 @@ const SMOOTH_COLOUR = 60
  * hard line across the edge - a large but gradual change is exactly what
  * the continued gradient reproduces (the soft lit edge: 106). */
 const SMOOTH_DOWN = 125
+/** Most one band's brightness may step from the next. Light on a picture
+ * shades gently (a folded dress: at most 30), while something reaching the
+ * edge has edges of its own (an arm against a dark background: 64). */
+const SMOOTH_STEP = 40
 /** How far brightness has to move from its last high or low, in however
  * many bands, to count as going that way. The one turn an edge may
  * take is light rising and falling again (a folded dress, a lit edge),
@@ -190,6 +194,9 @@ export function edgeIsSmooth(
     if (colourStray / pixels.length > SMOOTH_COLOUR) return false
     const previous = bands.at(-1)
     if (previous && Math.hypot(...bandMean.map((c, k) => c - previous[k]!)) > SMOOTH_DOWN) {
+      return false
+    }
+    if (previous && Math.abs(brightness(bandMean) - brightness(previous)) > SMOOTH_STEP) {
       return false
     }
     bands.push(bandMean)

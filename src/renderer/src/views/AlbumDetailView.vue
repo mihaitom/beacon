@@ -21,6 +21,16 @@
         @toggle-star="toggleStar"
         @set-rating="setRating"
       >
+        <!-- As on the artist page: only with more than one background to
+         - step through. -->
+        <template v-if="canCycleBackground" #controls>
+          <v-btn
+            icon="mdi-wallpaper"
+            variant="text"
+            :title="$t('nowPlaying.nextBackground')"
+            @click="cycleBackground"
+          />
+        </template>
         <template #subtitle>
           <router-link
             :to="`/artists/${album.artistId}`"
@@ -101,7 +111,12 @@ import DetailHero from '@/components/library/DetailHero.vue'
 import DetailPageBackdrop from '@/components/library/DetailPageBackdrop.vue'
 import SongTable from '@/components/library/SongTable.vue'
 import PageLoader from '@/components/PageLoader.vue'
-import { getArtistArt, type ArtistArt } from '@/services/connect/fanart'
+import {
+  getArtistArt,
+  nextBackground,
+  rememberBackground,
+  type ArtistArt,
+} from '@/services/connect/fanart'
 import { getAlbumBio, type ArtistBio as ArtistBioData } from '@/services/connect/recommendations'
 import ArtistBio from '@/components/library/ArtistBio.vue'
 import { preloadImage } from '@/services/preloadImage'
@@ -191,6 +206,9 @@ export default {
     backdropIsPhoto(): boolean {
       return Boolean(this.artistArt?.background)
     },
+    canCycleBackground(): boolean {
+      return (this.artistArt?.backgrounds.length ?? 0) > 1
+    },
     fanartEnabled(): boolean {
       return useFanartStore().enabled
     },
@@ -269,6 +287,20 @@ export default {
       if (this.$route.params.id !== id) return
       this.artistArt = art
       this.artResolved = true
+    },
+    /** Steps to the album artist's next Fanart.tv background, remembered
+     * for the artist like the artist page's own button. */
+    async cycleBackground() {
+      const art = this.artistArt
+      const album = this.album
+      if (!art || !album) return
+      const next = nextBackground(art.backgrounds, art.background)
+      if (!next) return
+      await preloadImage(next)
+      // The page may have moved on to another album while it loaded.
+      if (this.artistArt !== art) return
+      this.artistArt = { ...art, background: next }
+      rememberBackground(album.artist, next)
     },
     // pinFirst false: the whole album rather than a pick of one track, so
     // shuffle may reorder the first one too. peek: it replaces the queue

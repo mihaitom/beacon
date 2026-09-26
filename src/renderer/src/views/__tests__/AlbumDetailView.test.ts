@@ -11,15 +11,17 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import type { Album } from '@/types/library'
-import { getArtistArt } from '@/services/connect/fanart'
+import { getArtistArt, rememberBackground } from '@/services/connect/fanart'
 import { useFanartStore } from '@/stores/fanart'
 import { getAlbumBio } from '@/services/connect/recommendations'
 import { usePlaybackStore } from '@/stores/playback'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import AlbumDetailView from '../AlbumDetailView.vue'
 
-vi.mock('@/services/connect/fanart', () => ({
+vi.mock('@/services/connect/fanart', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/connect/fanart')>()),
   getArtistArt: vi.fn().mockResolvedValue(null),
+  rememberBackground: vi.fn(),
 }))
 
 vi.mock('@/services/connect/recommendations', () => ({
@@ -37,6 +39,8 @@ interface AlbumVm {
   artistArt: { background: string | null; logo: string | null; banner: string | null } | null
   readonly backdropUrl: string | null
   readonly backdropIsPhoto: boolean
+  readonly canCycleBackground: boolean
+  cycleBackground(): Promise<void>
   readonly metaLine: string
   readonly releaseTypeLabel: string
   readonly tags: string[]
@@ -104,6 +108,35 @@ beforeEach(() => {
 })
 
 describe('AlbumDetailView Fanart.tv backdrop', () => {
+  it('steps to the next background and remembers it for the artist', async () => {
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background: 'bg1',
+      backgrounds: ['bg1', 'bg2'],
+      logo: null,
+    })
+    const { vm } = await mountAlbum(makeAlbum())
+
+    expect(vm.canCycleBackground).toBe(true)
+    await vm.cycleBackground()
+
+    expect(vm.backdropUrl).toBe('bg2')
+    // What the artist page and Now Playing open with next.
+    expect(rememberBackground).toHaveBeenCalledWith('Artist One', 'bg2')
+  })
+
+  it('offers no cycle button with a single background', async () => {
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background: 'bg1',
+      backgrounds: ['bg1'],
+      logo: null,
+    })
+    const { vm } = await mountAlbum(makeAlbum())
+
+    expect(vm.canCycleBackground).toBe(false)
+  })
+
   it("uses the album artist's background when Fanart.tv has one", async () => {
     vi.mocked(getArtistArt).mockResolvedValue({
       banner: null,

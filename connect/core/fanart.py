@@ -45,7 +45,7 @@ import time
 import httpx
 
 from core import api_keys
-from core.recommendations import cached_mbids, first_artist, resolve_mbid
+from core.recommendations import cached_mbids, first_artist, names_by_mbid, resolve_mbid
 from lyrics.shared import USER_AGENT
 
 logger = logging.getLogger("connect.fanart")
@@ -372,12 +372,14 @@ async def get_artist_art(name: str) -> dict | None:
 _STORED_LIMIT = 60
 
 
-def stored_images(names: list[str] | None = None, kind: str = "background") -> list[str]:
+def stored_images(names: list[str] | None = None, kind: str = "background") -> list[dict]:
     """Images of one kind ("background" or "banner") whose bytes are already on
-    disk - for all artists, or for `names` only. Makes no request of anyone:
-    an artist is found only through an MBID already resolved before, and
-    only images already downloaded are offered, so a header can show them
-    without Fanart.tv or MusicBrainz ever hearing of it.
+    disk - for all artists, or for `names` only - each as {url, artists}:
+    the names the artist is known by, so a header can link to their page.
+    Makes no request of anyone: an artist is found only through an MBID
+    already resolved before, and only images already downloaded are offered,
+    so a header can show them without Fanart.tv or MusicBrainz ever hearing
+    of it.
 
     In random order, but dealt out one artist at a time: every artist once,
     in a shuffled order, before any of them a second time. Drawn from one
@@ -385,12 +387,16 @@ def stored_images(names: list[str] | None = None, kind: str = "background") -> l
     often as one with a single image, and often twice in a row."""
     cache = _load_cache()
     if names is None:
+        names_of = names_by_mbid()
         mbids = list(cache)
     else:
         # A collaboration credit through its first performer, as the lookup
         # itself does (get_artist_art()).
         candidates = {*names, *(first_artist(name) for name in names)} - {None}
-        mbids = list(set(cached_mbids(candidates).values()))
+        names_of = {}
+        for name, mbid in cached_mbids(candidates).items():
+            names_of.setdefault(mbid, []).append(name)
+        mbids = list(names_of)
     per_artist = []
     for mbid in mbids:
         entry = cache.get(mbid)
@@ -399,16 +405,17 @@ def stored_images(names: list[str] | None = None, kind: str = "background") -> l
         urls = [url for url in (entry.get("art") or {}).get(kind) or [] if is_image_cached(url)]
         if urls:
             random.shuffle(urls)
-            per_artist.append(urls)
+            artists = sorted(names_of.get(mbid, []))
+            per_artist.append([{"url": url, "artists": artists} for url in urls])
     random.shuffle(per_artist)
 
-    dealt: list[str] = []
+    dealt: list[dict] = []
     seen: set[str] = set()
-    for round_ in range(max((len(urls) for urls in per_artist), default=0)):
-        for urls in per_artist:
-            if round_ < len(urls) and urls[round_] not in seen:
-                seen.add(urls[round_])
-                dealt.append(urls[round_])
+    for round_ in range(max((len(images) for images in per_artist), default=0)):
+        for images in per_artist:
+            if round_ < len(images) and images[round_]["url"] not in seen:
+                seen.add(images[round_]["url"])
+                dealt.append(images[round_])
                 if len(dealt) == _STORED_LIMIT:
                     return dealt
     return dealt

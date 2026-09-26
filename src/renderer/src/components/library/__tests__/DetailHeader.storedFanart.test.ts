@@ -10,6 +10,7 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { getStoredImages } from '@/services/connect/fanart'
 import { useFanartStore } from '@/stores/fanart'
+import { useLibraryStore } from '@/stores/library'
 import DetailHeader from '../DetailHeader.vue'
 
 vi.mock('@/services/connect/fanart', () => ({ getStoredImages: vi.fn() }))
@@ -17,11 +18,16 @@ vi.mock('@/services/connect/fanart', () => ({ getStoredImages: vi.fn() }))
 vi.mock('@/services/preloadImage', () => ({ preloadImage: vi.fn().mockResolvedValue(undefined) }))
 
 const vuetify = createVuetify({ components, directives })
+const push = vi.fn()
 
 async function mountHeader(props: Record<string, unknown> = {}) {
   const wrapper = mount(DetailHeader, {
     props: { title: 'Artists', ...props },
-    global: { plugins: [vuetify, i18n], stubs: { CoverArt: true } },
+    global: {
+      plugins: [vuetify, i18n],
+      stubs: { CoverArt: true },
+      mocks: { $router: { push } },
+    },
   })
   await flushPromises()
   return wrapper
@@ -45,15 +51,21 @@ function reducedMotion(reduce: boolean) {
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: reduce && query.includes('reduce') }))
 }
 
-/** What connect has on disk, per kind; anything not named has nothing. */
+/** What connect has on disk, per kind; anything not named has nothing.
+ * Each picture is of the artist named after it ("a.jpg" is artist "a"). */
 function storedImages(byKind: Partial<Record<'banner' | 'background', string[]>>) {
   vi.mocked(getStoredImages)
     .mockReset()
-    .mockImplementation(async (kind) => byKind[kind] ?? [])
+    .mockImplementation(async (kind) =>
+      (byKind[kind] ?? []).map((url) => ({ url, artists: [url.replace(/\.jpg$/, '')] })),
+    )
 }
 
 beforeEach(() => {
   setActivePinia(createPinia())
+  push.mockReset()
+  // Already loaded, as it usually is by the time a list page opens.
+  vi.spyOn(useLibraryStore(), 'fetchArtists').mockResolvedValue()
   storedImages({ banner: ['a.jpg', 'b.jpg', 'c.jpg'] })
   reducedMotion(false)
   vi.useFakeTimers()
@@ -197,5 +209,46 @@ describe('DetailHeader stored Fanart.tv backgrounds', () => {
     expect(cover.find('.detail-header__scrim').classes()).not.toContain(
       'detail-header__scrim--photo',
     )
+  })
+})
+
+describe('DetailHeader stored Fanart.tv picture as a link', () => {
+  function libraryHas(...names: string[]) {
+    useLibraryStore().artists = names.map((name, i) => ({ id: `id-${i}`, name }) as never)
+  }
+
+  it("opens the pictured artist's page", async () => {
+    storedImages({ banner: ['Radiohead.jpg'] })
+    libraryHas('Other', 'radiohead')
+    const wrapper = await mountHeader({ storedFanart: true })
+
+    await wrapper
+      .find('.detail-header__backdrop--active .detail-header__backdrop-art')
+      .trigger('click')
+
+    expect(push).toHaveBeenCalledWith('/artists/id-1')
+  })
+
+  it('follows the cycle to the artist showing now', async () => {
+    libraryHas('a', 'b')
+    const wrapper = await mountHeader({ storedFanart: true })
+    await vi.advanceTimersByTimeAsync(12_000)
+
+    await wrapper
+      .find('.detail-header__backdrop--active .detail-header__backdrop-art')
+      .trigger('click')
+
+    expect(push).toHaveBeenCalledWith('/artists/id-1')
+  })
+
+  it('leads nowhere for an artist the library does not have', async () => {
+    libraryHas('Someone else')
+    const wrapper = await mountHeader({ storedFanart: true })
+    const art = wrapper.find('.detail-header__backdrop--active .detail-header__backdrop-art')
+
+    await art.trigger('click')
+
+    expect(push).not.toHaveBeenCalled()
+    expect(art.classes()).not.toContain('detail-header__backdrop-art--link')
   })
 })

@@ -30,7 +30,9 @@ function bannerUrl(): string {
 }
 
 vi.mock('@/services/connect/fanart', () => ({
-  getStoredImages: vi.fn(async (kind: string) => (kind === 'banner' ? [bannerUrl()] : [])),
+  getStoredImages: vi.fn(async (kind: string) =>
+    kind === 'banner' ? [{ url: bannerUrl(), artists: [] }] : [],
+  ),
 }))
 vi.mock('@/services/preloadImage', () => ({ preloadImage: vi.fn(async () => {}) }))
 

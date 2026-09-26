@@ -20,7 +20,18 @@
       :style="layerStyle(url, i)"
     >
       <div v-if="layerKind[i] !== 'cover'" class="detail-header__backdrop-slot">
-        <div class="detail-header__backdrop-art" />
+        <!-- A stored picture opens its artist's page, when the library has
+         - them - a shortcut only, so no keyboard stop of its own. -->
+        <div
+          class="detail-header__backdrop-art"
+          :class="{ 'detail-header__backdrop-art--link': i === backdrop.active && activeArtist }"
+          :title="
+            i === backdrop.active && activeArtist
+              ? `${$t('library.goToArtist')}: ${activeArtist.name}`
+              : undefined
+          "
+          @click="openArtist(i)"
+        />
       </div>
     </div>
     <div
@@ -103,9 +114,10 @@ import { emitter } from '@/emitter'
 import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
 import { type EdgeGradients, extractEdgeGradients } from '@/services/edgeFill'
 import { textEnd } from '@/services/textExtent'
-import { getStoredImages } from '@/services/connect/fanart'
+import { getStoredImages, type StoredImage } from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
 import { useFanartStore } from '@/stores/fanart'
+import type { Artist } from '@/types/library'
 
 // How long each stored Fanart.tv background stays before the next one fades
 // in - slow enough to read as a calm backdrop rather than a slideshow.
@@ -158,11 +170,13 @@ export default {
       layerKind: ['cover', 'cover'] as BackdropKind[],
       /** Per layer: its Fanart.tv art's edge colours, continued beside it. */
       fills: [null, null] as (EdgeGradients | null)[],
+      /** Per layer: the names of the artist its stored picture is of. */
+      layerArtists: [[], []] as string[][],
       /** Where the text ends, in px from the left: the art is faded out
        * up to there (see measureText). */
       textEnd: 0,
       textObserver: null as ResizeObserver | null,
-      photos: [] as string[],
+      photos: [] as StoredImage[],
       photoKind: 'banner' as BackdropKind,
       photoIndex: 0,
       cycleTimer: null as ReturnType<typeof setInterval> | null,
@@ -183,6 +197,19 @@ export default {
     hasArtwork(): boolean {
       return Boolean(this.coverArtId || this.imageUrl)
     },
+    /** The library's artist the stored picture showing now is of, if the
+     * library has them. */
+    activeArtist(): Artist | null {
+      const names = this.layerArtists[this.backdrop.active] ?? []
+      if (!names.length) return null
+      const wanted = names.map((name) => name.trim().toLowerCase())
+      const artists = useLibraryStore().artists
+      for (const name of wanted) {
+        const match = artists.find((artist) => artist.name.trim().toLowerCase() === name)
+        if (match) return match
+      }
+      return null
+    },
   },
   methods: {
     measureText(): void {
@@ -190,9 +217,10 @@ export default {
       const text = this.$refs.text as HTMLElement | undefined
       if (card && text) this.textEnd = Math.round(textEnd(text, card))
     },
-    show(url: string | null, kind: BackdropKind): void {
+    show(url: string | null, kind: BackdropKind, artists: string[] = []): void {
       showBackdrop(this.backdrop, url)
       this.layerKind[this.backdrop.active] = kind
+      this.layerArtists[this.backdrop.active] = artists
       void this.paintFill(this.backdrop.active, url, kind)
     },
     /** Paints layer `index`'s edge fill for Fanart.tv art, once its
@@ -222,6 +250,10 @@ export default {
       // The page may have moved on, or found a picture of its own, meanwhile.
       if (JSON.stringify(this.storedFanartRequest) !== JSON.stringify(request)) return
       if (!stored.photos.length) return
+      // To tell whose picture is showing; usually loaded already.
+      useLibraryStore()
+        .fetchArtists()
+        .catch((error) => console.error('[detail-header] Artists lookup failed:', error))
       this.photos = stored.photos
       this.photoKind = stored.kind
       // Already shuffled by connect, one artist at a time - see stored_images().
@@ -238,7 +270,7 @@ export default {
     },
     /** Banners are this card's shape; backgrounds only until connect has
      * downloaded some banners (it fetches them with every artist lookup). */
-    async fetchStored(request: string[]): Promise<{ photos: string[]; kind: BackdropKind }> {
+    async fetchStored(request: string[]): Promise<{ photos: StoredImage[]; kind: BackdropKind }> {
       const artists = request.length ? request : undefined
       try {
         const banners = await getStoredImages('banner', artists)
@@ -270,11 +302,16 @@ export default {
     },
     /** Preloaded first, so the crossfade has an image to fade to (see
      * services/preloadImage.ts). */
-    async showPhoto(url: string): Promise<void> {
+    async showPhoto(photo: StoredImage): Promise<void> {
       const photos = this.photos
-      await preloadImage(url)
+      await preloadImage(photo.url)
       if (this.photos !== photos) return
-      this.show(url, this.photoKind)
+      this.show(photo.url, this.photoKind, photo.artists)
+    },
+    openArtist(layer: number): void {
+      if (layer === this.backdrop.active && this.activeArtist) {
+        this.$router.push(`/artists/${this.activeArtist.id}`)
+      }
     },
     stopCycle(): void {
       if (this.cycleTimer) clearInterval(this.cycleTimer)
@@ -370,6 +407,11 @@ export default {
   opacity: 1;
 }
 
+/* The faded-out layer still lies on top half the time. */
+.detail-header__backdrop:not(.detail-header__backdrop--active) {
+  pointer-events: none;
+}
+
 /* Fanart.tv art (a banner, or a background photo until there is one):
  * whole, at the card's full height, so a wide window never crops its top
  * and bottom off. The spacers either side share out whatever width the
@@ -447,9 +489,16 @@ export default {
   mask: var(--art-fade);
 }
 
+.detail-header__backdrop-art--link {
+  cursor: pointer;
+}
+
 .detail-header__scrim {
   position: absolute;
   inset: 0;
+  /* Lets a click through to the picture (openArtist), as does the content
+   * row below outside its own children. */
+  pointer-events: none;
   background:
     linear-gradient(
       120deg,
@@ -507,6 +556,11 @@ export default {
   align-items: flex-end;
   gap: 28px;
   padding: 48px 32px 32px;
+  pointer-events: none;
+}
+
+.detail-header__content > * {
+  pointer-events: auto;
 }
 
 /* Centred rather than bottom-aligned with the text: once the text column

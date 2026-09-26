@@ -182,6 +182,16 @@ describe('edgeIsSmooth', () => {
     expect(edgeIsSmooth(data, 64, 16, 'left')).toBe(false)
   })
 
+  it('fails a lighter band with edges of its own, like an arm against a dark background', () => {
+    const levels = [84, 86, 104, 168, 192, 144, 90, 50]
+    const data = image(64, 16, (_x, y) => {
+      const v = levels[Math.floor(y / 2)]!
+      return [v, v, v, 255]
+    })
+
+    expect(edgeIsSmooth(data, 64, 16, 'left')).toBe(false)
+  })
+
   it('fails an edge that jumps from one colour to another on the way down', () => {
     const data = image(64, 16, (_x, y) => (y < 8 ? [240, 240, 240, 255] : [20, 20, 20, 255]))
 

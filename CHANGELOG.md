@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - The album page shows more about the album: what kind of release it is, its record label, edition and reissue year, all its genres, and the opening of its Wikipedia article
 - The Statistics page shows more: storage used, how much of the library you have ever played, songs heard in the last 30 days, your ratings, a Hi-Res/lossless/lossy breakdown and the artists with the most songs
-- The artist page has a button to switch to another Fanart.tv background
+- The artist and album pages have a button to switch to another Fanart.tv background of the artist
 
 ### Changed
 
@@ -18,7 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - On artist and album pages the Fanart.tv photo sits on the right, uncropped, and fades out behind the header, so text stays readable; it also fades between pages instead of blinking
 - An artist keeps the same background across the artist page, album pages and Now Playing for the whole session
 - The album page has a new header with a large cover, running time, Play and Shuffle, and the artist photo beside them; it stays in view while the track list scrolls below it
-- The Artists, Albums, Songs, Playlists, Radio and Favorites pages and every genre page show your artists' Fanart.tv banners in their header, changing every few seconds, a genre only its own artists
+- The Artists, Albums, Songs, Playlists, Radio and Favorites pages and every genre page show your artists' Fanart.tv banners in their header, changing every few seconds, a genre only its own artists; clicking a banner opens that artist's page
 - The Favorites page header shows how many artists, albums and songs you have marked
 - The Home page's top card shows the Fanart.tv banner or photo of the artist you are listening to
 - Small layout tweaks: library page titles are larger and no longer have a placeholder icon beside them, and the Statistics lists wrap two at a time on narrower windows

@@ -516,13 +516,17 @@ def _store_artist(
         fanart.store_image(url, b"jpeg")
 
 
+def _stored_urls(*args, **kwargs) -> list[str]:
+    return [image["url"] for image in fanart.stored_images(*args, **kwargs)]
+
+
 def test_stored_images_offers_only_what_is_on_disk():
     """Nothing is downloaded for a list page's header - a background whose
     bytes are not stored yet is left out."""
     _store_artist("a", [_URL + "a1", _URL + "a2"], on_disk=[_URL + "a1"])
     _store_artist("b", [_URL + "b1"], on_disk=[_URL + "b1"])
 
-    assert sorted(fanart.stored_images()) == [_URL + "a1", _URL + "b1"]
+    assert sorted(_stored_urls()) == [_URL + "a1", _URL + "b1"]
 
 
 def test_stored_images_narrows_to_the_named_artists(monkeypatch):
@@ -538,8 +542,27 @@ def test_stored_images_narrows_to_the_named_artists(monkeypatch):
         lambda names: {n: known[n.lower()] for n in names if n.lower() in known},
     )
 
-    assert fanart.stored_images(["Artist A & Someone"]) == [_URL + "a1"]
+    assert fanart.stored_images(["Artist A & Someone"]) == [
+        {"url": _URL + "a1", "artists": ["Artist A"]}
+    ]
     assert fanart.stored_images(["Nobody"]) == []
+
+
+def test_stored_images_name_every_artists_images(monkeypatch):
+    """Each image carries the names its artist is known by, so a header can
+    open that artist's page - for every artist too, where no names were
+    asked for."""
+    _store_artist("mbid-a", [_URL + "a1", _URL + "a2"], on_disk=[_URL + "a1", _URL + "a2"])
+    _store_artist("mbid-b", [_URL + "b1"], on_disk=[_URL + "b1"])
+    monkeypatch.setattr(fanart, "names_by_mbid", lambda: {"mbid-a": ["artist a", "the artist a"]})
+
+    by_url = {image["url"]: image["artists"] for image in fanart.stored_images()}
+
+    assert by_url == {
+        _URL + "a1": ["artist a", "the artist a"],
+        _URL + "a2": ["artist a", "the artist a"],
+        _URL + "b1": [],
+    }
 
 
 def test_stored_images_never_asks_musicbrainz(monkeypatch):
@@ -559,7 +582,7 @@ def test_stored_images_deals_one_artist_at_a_time():
         owner.update(dict.fromkeys(urls, artist))
 
     for _ in range(20):
-        dealt = [owner[url] for url in fanart.stored_images()]
+        dealt = [owner[url] for url in _stored_urls()]
         # Every artist once before any a second time...
         assert sorted(dealt[:3]) == ["a", "b", "c"]
         # ...and never the same one back to back while there is another left.
@@ -573,7 +596,7 @@ def test_stored_images_reaches_more_artists_when_capped(monkeypatch):
         urls = [_URL + f"{artist}{i}" for i in range(5)]
         _store_artist(artist, urls, on_disk=urls)
 
-    dealt = fanart.stored_images()
+    dealt = _stored_urls()
 
     # Four artists with five images each: the four places go to four artists.
     assert sorted(url[len(_URL)] for url in dealt) == ["a", "b", "c", "d"]
@@ -583,7 +606,7 @@ def test_stored_images_leads_with_a_different_artist_each_time():
     for artist in "abcdef":
         _store_artist(artist, [_URL + artist], on_disk=[_URL + artist])
 
-    firsts = {fanart.stored_images()[0] for _ in range(30)}
+    firsts = {_stored_urls()[0] for _ in range(30)}
 
     assert len(firsts) > 1
 
@@ -592,7 +615,7 @@ def test_stored_images_picks_among_one_artists_images():
     urls = [_URL + f"a{i}" for i in range(6)]
     _store_artist("a", urls, on_disk=urls)
 
-    firsts = {fanart.stored_images()[0] for _ in range(30)}
+    firsts = {_stored_urls()[0] for _ in range(30)}
 
     assert len(firsts) > 1
 
@@ -602,7 +625,7 @@ def test_stored_images_is_capped(monkeypatch):
     urls = [_URL + f"bg{i}" for i in range(10)]
     _store_artist("a", urls, on_disk=urls)
 
-    backgrounds = fanart.stored_images()
+    backgrounds = _stored_urls()
     assert len(backgrounds) == 3
     assert set(backgrounds) <= set(urls)
 
@@ -617,8 +640,8 @@ def test_stored_images_hands_out_one_kind_at_a_time():
         banners=[_URL + "banner", _URL + "banner-not-on-disk"],
     )
 
-    assert fanart.stored_images(kind="banner") == [_URL + "banner"]
-    assert fanart.stored_images() == [_URL + "bg"]
+    assert _stored_urls(kind="banner") == [_URL + "banner"]
+    assert _stored_urls() == [_URL + "bg"]
 
 
 def test_the_stored_images_route(client, key):
@@ -628,8 +651,8 @@ def test_the_stored_images_route(client, key):
     banners = client.post("/fanart/stored-images", json={"kind": "banner"})
 
     assert resp.status_code == 200
-    assert resp.json() == {"images": [_URL + "a1"]}
-    assert banners.json() == {"images": [_URL + "b1"]}
+    assert resp.json() == {"images": [{"url": _URL + "a1", "artists": []}]}
+    assert banners.json() == {"images": [{"url": _URL + "b1", "artists": []}]}
 
 
 async def test_the_stored_images_route_leaves_the_event_loop_free(client, key, monkeypatch):
