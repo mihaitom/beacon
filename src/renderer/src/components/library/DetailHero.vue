@@ -141,12 +141,20 @@ export default {
 .detail-hero {
   position: relative;
   margin-bottom: 28px;
+  /* The rating/heart controls get a column of their own rather than lying
+   * over the top right corner: over it, a narrow page (a tablet, or the
+   * queue drawer open) ran the name in under the stars. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .detail-hero__controls {
-  position: absolute;
-  top: 0;
-  right: 0;
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  /* A margin rather than a column gap, so a hero without controls keeps
+   * its full width. */
+  margin-left: 16px;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -154,13 +162,24 @@ export default {
 }
 
 .detail-hero__main {
+  grid-column: 1;
+  grid-row: 1;
   display: flex;
   align-items: flex-end;
   gap: 28px;
 }
 
+.detail-hero__bio {
+  grid-column: 1 / -1;
+}
+
+/* At the top rather than the bottom: where the text beside it is the
+ * taller of the two (a tablet, with the album's paragraph), a bottom-aligned
+ * cover sank a little further with everything that loaded into the text.
+ * Where the cover is the taller one, as on a desktop, it is the same place. */
 .detail-hero__cover {
   flex-shrink: 0;
+  align-self: flex-start;
 }
 
 .detail-hero__cover--zoomable {
@@ -223,14 +242,12 @@ export default {
 /* Fills whatever height the page gives it, so the cover and the text
  * beside it sit on the header's bottom edge. */
 .detail-hero--large {
-  display: flex;
-  flex-direction: column;
   flex: 1;
+  grid-template-rows: 1fr;
   margin-bottom: 0;
 }
 
 .detail-hero--large .detail-hero__main {
-  flex: 1;
   gap: 36px;
 }
 
@@ -259,9 +276,22 @@ export default {
   margin-top: 20px;
 }
 
-/* A phone has no room for cover and text side by side. */
+/* A phone has no room for cover and text side by side, nor for the
+ * controls beside either: they take a row of their own above. */
 @media (max-width: 599px) {
+  .detail-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .detail-hero__controls {
+    grid-column: 1;
+    justify-self: end;
+    margin-left: 0;
+  }
+
   .detail-hero__main {
+    grid-column: 1;
+    grid-row: 2;
     flex-direction: column;
     align-items: flex-start;
     gap: 16px;

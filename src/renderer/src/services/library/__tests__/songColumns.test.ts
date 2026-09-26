@@ -3,6 +3,8 @@ import {
   DEFAULT_SONG_COLUMNS,
   OPTIONAL_SONG_COLUMNS,
   SONG_COLUMNS,
+  fitSongColumns,
+  minimumRowWidth,
   resolveSongColumns,
   songColumn,
   songColumnAvailable,
@@ -183,5 +185,62 @@ describe('songColumns', () => {
         column.key === 'cover' || fieldless.includes(column.key),
       )
     }
+  })
+})
+
+describe('fitSongColumns', () => {
+  // The selection from a real report: twelve columns on an iPad Air.
+  const reported = resolveSongColumns([
+    'cover',
+    'album',
+    'genre',
+    'year',
+    'added',
+    'lastPlayed',
+    'playCount',
+    'format',
+  ])
+
+  it('keeps every column where they all fit', () => {
+    expect(fitSongColumns(reported, minimumRowWidth(reported))).toEqual(reported)
+  })
+
+  it('keeps every column before the table has been measured', () => {
+    expect(fitSongColumns(reported, 0)).toEqual(reported)
+  })
+
+  it("drops the listening columns before the track's own facts", () => {
+    const fitted = keys(fitSongColumns(reported, 900))
+
+    expect(fitted).not.toContain('lastPlayed')
+    expect(fitted).not.toContain('added')
+    expect(fitted).toEqual(expect.arrayContaining(['album', 'genre', 'year']))
+  })
+
+  it('fits what it keeps into the width it was given', () => {
+    for (const width of [600, 750, 900, 1100]) {
+      expect(minimumRowWidth(fitSongColumns(reported, width)), String(width)).toBeLessThanOrEqual(
+        width,
+      )
+    }
+  })
+
+  it('drops only as many as it has to', () => {
+    const fitted = fitSongColumns(reported, 900)
+    const oneMore = reported.filter((column) => !fitted.includes(column)).at(-1)!
+
+    expect(minimumRowWidth([...fitted, oneMore])).toBeGreaterThan(900)
+  })
+
+  it('never drops the columns a song table cannot do without', () => {
+    const everything = resolveSongColumns(OPTIONAL_SONG_COLUMNS.map((column) => column.key))
+
+    expect(keys(fitSongColumns(everything, 1))).toEqual([
+      'index',
+      'cover',
+      'title',
+      'duration',
+      'actions',
+    ])
   })
 })

@@ -21,12 +21,21 @@
    - It still opens and closes: `permanent` decides what the drawer *is*
    - (part of the layout, never floating), `model-value` decides whether it
    - is out — Vuetify's own docs describe permanent drawers as always
-   - visible because that is what they do when nothing is bound to them. -->
+   - visible because that is what they do when nothing is bound to them.
+   -
+   - Except in a narrow window (a tablet), where handing the drawer's 400px
+   - over from the page left too little of it: the page squeezed, and a
+   - header's controls ran into its title. There it floats over the page
+   - instead, and a tap beside it closes it. `disable-resize-watcher` keeps
+   - Vuetify from opening or closing it by itself when the window crosses
+   - that line. -->
   <v-navigation-drawer
     :model-value="modelValue"
     location="right"
     :width="DRAWER_WIDTH"
-    permanent
+    :permanent="!floating"
+    :temporary="floating"
+    disable-resize-watcher
     color="#0B0D13"
     class="beacon-drawer"
     @update:model-value="$emit('update:modelValue', $event)"
@@ -286,6 +295,20 @@ const CLEARING_FADE_MS = 250
 // drawer in.
 const DRAWER_WIDTH = 400
 
+// Below this window width the drawer floats over the page rather than
+// taking its width - see the template. Tablets in landscape go up to 1194px
+// (iPad Pro 11"), while a desktop window from here up keeps the drawer
+// beside the page, with about 740px of page left.
+const FLOATING_BELOW_PX = 1200
+
+function floatingQuery(): MediaQueryList | null {
+  try {
+    return window.matchMedia(`(max-width: ${FLOATING_BELOW_PX - 0.02}px)`)
+  } catch {
+    return null
+  }
+}
+
 export default {
   name: 'QueueDrawer',
   components: { QueueRow },
@@ -338,6 +361,8 @@ export default {
       clearingRowTimers: [] as ReturnType<typeof setTimeout>[],
       createPlaylistDialog: false,
       createPlaylistName: '',
+      floating: floatingQuery()?.matches ?? false,
+      floatingMedia: null as MediaQueryList | null,
     }
   },
   computed: {
@@ -426,13 +451,21 @@ export default {
       immediate: true,
     },
   },
+  mounted() {
+    this.floatingMedia = floatingQuery()
+    this.floatingMedia?.addEventListener('change', this.onFloatingChange)
+  },
   beforeUnmount() {
+    this.floatingMedia?.removeEventListener('change', this.onFloatingChange)
     if (this.revealCleanupTimer) clearTimeout(this.revealCleanupTimer)
     if (this.clearingTimer) clearTimeout(this.clearingTimer)
     this.clearingRowTimers.forEach(clearTimeout)
   },
   methods: {
     queueRowKey,
+    onFloatingChange(event: MediaQueryListEvent) {
+      this.floating = event.matches
+    },
     // revealDelayMap's own per-row lookup, as the :style the template
     // actually binds — undefined (not a 0ms delay) for any row that isn't
     // part of the current reveal at all, so untouched rows never pick up a

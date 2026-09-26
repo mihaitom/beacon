@@ -1,8 +1,8 @@
 <template>
-  <div :class="{ 'song-table--with-alphabet-bar': showAlphabetBar }">
+  <div class="song-table" :class="{ 'song-table--with-alphabet-bar': showAlphabetBar }">
     <song-table-header
       :class="{ 'song-table-header--sticky': stickyHeader }"
-      :columns="resolvedColumns"
+      :columns="fittedColumns"
       :configurable="!columns"
       :sort-key="sortKey"
       :sort-direction="sortDirection"
@@ -20,7 +20,7 @@
          - the row - the artist under it and every other column - is
          - text-body-small at 16px. Getting the second title line wrong
          - made every skeleton row 4px taller than the row replacing it. -->
-        <template v-for="column in resolvedColumns" :key="column.key">
+        <template v-for="column in fittedColumns" :key="column.key">
           <v-skeleton-loader
             v-if="column.cell === 'cover'"
             type="image"
@@ -60,7 +60,7 @@
           :song="row.song"
           :index="row.index"
           :display-number="row.song.trackNumber ?? row.index + 1"
-          :columns="resolvedColumns"
+          :columns="fittedColumns"
           :selection-mode="selectionMode"
           :reorderable="canReorder"
           :removable="removable"
@@ -109,7 +109,7 @@
           :data-song-index="index"
           :song="song"
           :index="index"
-          :columns="resolvedColumns"
+          :columns="fittedColumns"
           :selection-mode="selectionMode"
           :reorderable="canReorder"
           :removable="removable"
@@ -142,7 +142,7 @@
         :data-song-index="index"
         :song="song"
         :index="index"
-        :columns="resolvedColumns"
+        :columns="fittedColumns"
         :selection-mode="selectionMode"
         :reorderable="canReorder"
         :removable="removable"
@@ -203,6 +203,7 @@ import InfiniteScrollTrigger from '@/components/InfiniteScrollTrigger.vue'
 import { useSongColumnsStore } from '@/stores/songColumns'
 import { useAuthStore } from '@/stores/auth'
 import {
+  fitSongColumns,
   resolveSongColumns,
   songColumn,
   type SongColumn,
@@ -317,6 +318,9 @@ export default {
   emits: ['reorder', 'remove'],
   data() {
     return {
+      // The table's own width, for fittedColumns; 0 until mounted.
+      tableWidth: 0,
+      resizeObserver: null as ResizeObserver | null,
       sortKey: this.defaultSortKey as SortKey | null,
       sortDirection: this.defaultSortDirection as 'asc' | 'desc',
       visibleCount: PAGE_SIZE,
@@ -380,6 +384,11 @@ export default {
         // it - see actionsColumnFor().
         auth.capabilities,
       )
+    },
+    /** resolvedColumns, less whatever does not fit the table's measured
+     * width - see fitSongColumns(). */
+    fittedColumns(): SongColumn[] {
+      return fitSongColumns(this.resolvedColumns, this.tableWidth)
     },
     skeletonRowCount(): number {
       return Math.min(this.songs.length || 8, 8)
@@ -510,6 +519,14 @@ export default {
   },
   mounted() {
     window.addEventListener('keydown', this.onKeydown)
+    // Measured here too, not only by the observer: its first report comes
+    // after the first paint, and a page that was too wide for even that one
+    // frame gets zoomed out or cut off by a tablet's browser for good.
+    this.tableWidth = (this.$el as HTMLElement).clientWidth
+    this.resizeObserver = new ResizeObserver(([entry]) => {
+      if (entry) this.tableWidth = entry.contentRect.width
+    })
+    this.resizeObserver.observe(this.$el as HTMLElement)
     this.activeLetterObserver = observeActiveLetter({
       itemSelector: '[data-song-index]',
       readIndex: (item) => {
@@ -524,6 +541,7 @@ export default {
   },
   beforeUnmount() {
     window.removeEventListener('keydown', this.onKeydown)
+    this.resizeObserver?.disconnect()
     this.activeLetterObserver?.stop()
   },
   methods: {
@@ -866,6 +884,14 @@ export default {
 </script>
 
 <style scoped>
+/* The last line of defence behind fittedColumns: a row that still cannot
+ * fit is cut off here rather than widening the page. `clip`, not `hidden`,
+ * so this is no scroll container and the sticky header keeps sticking to
+ * the page. */
+.song-table {
+  overflow-x: clip;
+}
+
 /* Keeps the rightmost column (song-actions) clear of AlphabetIndexBar's own
  * fixed position (right: 6px + its own ~26px width, see its stylesheet) —
  * only applied while the bar actually renders, so every other SongTable

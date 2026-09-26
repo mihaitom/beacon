@@ -355,9 +355,9 @@ describe('QueueDrawer reveal animation layout', () => {
   })
 })
 
-/** The drawer is part of the layout rather than floating over it (see its
- * own template comment): the page beside it has to actually give up the
- * width. Only a real browser can answer that — the layout Vuetify computes
+/** In a desktop window the drawer is part of the layout rather than
+ * floating over it (see its own template comment): the page beside it has
+ * to actually give up the width. Only a real browser can answer that — the layout Vuetify computes
  * here is exactly what jsdom does not have. */
 describe('QueueDrawer taking its space out of the page', () => {
   /** The shell in miniature: a page under <v-main>, the drawer beside it. */
@@ -369,7 +369,10 @@ describe('QueueDrawer taking its space out of the page', () => {
             h(components.VApp, null, {
               default: () => [
                 h(components.VMain, null, { default: () => h('div', { class: 'page' }, 'page') }),
-                h(QueueDrawer, { modelValue: open.value }),
+                h(QueueDrawer, {
+                  modelValue: open.value,
+                  'onUpdate:modelValue': (value: boolean) => (open.value = value),
+                }),
               ],
             }),
         },
@@ -409,12 +412,12 @@ describe('QueueDrawer taking its space out of the page', () => {
     expect(pageWidth()).toBeCloseTo(closedWidth, 0)
   })
 
-  /** A Vuetify drawer turns temporary again by itself below the `mobile`
-   * breakpoint (1280px by default) — which is an ordinary desktop window,
-   * and would mean the page stops making room exactly where it matters
-   * most. */
-  it('still takes its space in a window narrower than the mobile breakpoint', async () => {
-    await page.viewport(1000, 800)
+  /** A tablet in landscape (up to 1194px): handing 400px over from a page
+   * that size squeezed it until a header's controls ran into its title, so
+   * there the drawer floats over the page instead - and a tap beside it
+   * closes it, as a floating panel on a touch screen should. */
+  it('floats over the page in a tablet-sized window, and a tap beside it closes it', async () => {
+    await page.viewport(1024, 800)
     setActivePinia(createPinia())
     usePlaybackStore().setQueue([makeSong('a')], 0)
 
@@ -427,7 +430,13 @@ describe('QueueDrawer taking its space out of the page', () => {
     await wrapper.setProps({})
     await new Promise((resolve) => setTimeout(resolve, 400))
 
-    expect(closedWidth - pageWidth()).toBeGreaterThan(300)
+    expect(pageWidth()).toBeCloseTo(closedWidth, 0)
+    const drawer = (document.querySelector('.beacon-drawer') as HTMLElement).getBoundingClientRect()
+    expect(drawer.left).toBeCloseTo(1024 - 400, 0)
+
+    ;(document.querySelector('.v-navigation-drawer__scrim') as HTMLElement).click()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(open.value).toBe(false)
     await page.viewport(1200, 800)
   })
 

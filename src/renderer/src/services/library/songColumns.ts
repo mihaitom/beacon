@@ -78,8 +78,8 @@ export interface SongColumn {
    * are switched on. Without it, flex-shrink takes the text columns to
    * nothing long before the fixed ones give up a pixel: with every column
    * on, the title column measured 1px wide and every heading sat over its
-   * neighbour. A table too wide for the window now scrolls sideways
-   * instead, which is a thing the reader can see and undo. */
+   * neighbour. A table too narrow for all of its floors drops columns
+   * instead - see fitSongColumns(). */
   minWidth: string
   align: 'start' | 'end'
   /** Offered in the column menu. False for the four structural ones. */
@@ -534,4 +534,63 @@ function actionsColumnFor(column: SongColumn, capabilities: SongActionCapabiliti
  * that does report it. */
 export function songColumnAvailable(column: SongColumn, serverType: ServerType | null): boolean {
   return !serverType || !column.servers || column.servers.includes(serverType)
+}
+
+/**
+ * Which columns give way, first to last, when a table is narrower than its
+ * columns' floors together - a tablet, a narrow window. The file's own
+ * details go first, then what the library knows about listening, and the
+ * track's own facts last. The number, cover, title, running time and the
+ * heart/menu cluster never do.
+ *
+ * Only drawn columns are dropped, never selected ones: the choice stays in
+ * stores/songColumns.ts and comes back as soon as the table is wide enough.
+ * Without this the rows ran past the table's right edge, which made the
+ * whole page wider than the screen - a sideways scrollbar on a desktop, and
+ * on an iPad a page zoomed out on one load and cut off on the next.
+ */
+const NARROW_DROP_ORDER: SongColumnKey[] = [
+  'comment',
+  'path',
+  'bpm',
+  'sampleRate',
+  'trackGain',
+  'albumGain',
+  'size',
+  'disc',
+  'track',
+  'lastPlayed',
+  'added',
+  'playCount',
+  'format',
+  'genre',
+  'rating',
+  'year',
+  'album',
+]
+
+// SongRow.vue's (and SongTableHeader.vue's) row: 8px padding either side
+// and a 12px gap between cells.
+const ROW_PADDING = 16
+const COLUMN_GAP = 12
+
+/** How narrow a row with these columns can get before a cell would have to
+ * go below its floor. */
+export function minimumRowWidth(columns: readonly SongColumn[]): number {
+  const floors = columns.reduce((sum, column) => sum + parseFloat(column.minWidth), 0)
+  return floors + COLUMN_GAP * Math.max(columns.length - 1, 0) + ROW_PADDING
+}
+
+/** The columns that fit into `availableWidth`, dropping them in
+ * NARROW_DROP_ORDER until they do. A width of 0 means "not measured yet"
+ * and keeps every column, so nothing flickers away before the first
+ * layout. */
+export function fitSongColumns(columns: SongColumn[], availableWidth: number): SongColumn[] {
+  if (availableWidth <= 0) return columns
+  let fitted = columns
+  for (const key of NARROW_DROP_ORDER) {
+    if (minimumRowWidth(fitted) <= availableWidth) break
+    fitted = fitted.filter((column) => column.key !== key)
+  }
+  return fitted
 }

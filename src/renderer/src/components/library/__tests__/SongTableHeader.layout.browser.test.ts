@@ -147,8 +147,9 @@ describe('SongTableHeader', () => {
   /** With every column switched on, the flexible ones used to be shrunk to
    * nothing - the title column measured 1px at 1280px wide and every
    * heading sat over its neighbour's column. The floor under each column is
-   * what stops that; a table that no longer fits scrolls sideways instead,
-   * which is a thing the reader can see and undo. */
+   * what stops that; where the floors no longer fit, SongTable drops
+   * columns instead (fitSongColumns(), see SongTable.fit.layout.browser.test.ts).
+   * The header is mounted on its own here, so every column stays. */
   it('never shrinks a column below its floor, however many are on', () => {
     const columns = resolveSongColumns(OPTIONAL_SONG_COLUMNS.map((column) => column.key))
     const frame = document.createElement('div')

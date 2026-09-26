@@ -6,31 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-### Added
-
-- The album page shows more about the album: what kind of release it is, its record label, edition and reissue year, all its genres, and the opening of its Wikipedia article
-- The Statistics page shows more: storage used, how much of the library you have ever played, songs heard in the last 30 days, your ratings, a Hi-Res/lossless/lossy breakdown and the artists with the most songs
-- The artist and album pages have a button to switch to another Fanart.tv background of the artist
-- Who may cast can now be decided on a Plex server too, by its owner; a Plex account already signed in before this version is picked up the next time it signs in
-
 ### Changed
 
-- Artist backgrounds from Fanart.tv draw on up to ten images per artist, mostly the best liked plus a few of the newest, and switching between them is instant
-- On artist and album pages the Fanart.tv photo sits on the right, uncropped; where its left edge is calm, it carries on across the header, and the header text sits on a darkened area so it stays readable; it also fades between pages instead of blinking
+- Artist and album pages have a button to switch between up to ten Fanart.tv backgrounds of the artist, mostly the best liked plus a few of the newest
+- On artist and album pages the Fanart.tv photo sits on the right, uncropped, and where its edge allows it carries on behind the header, which stays readable on a darkened area
 - An artist keeps the same background across the artist page, album pages and Now Playing for the whole session
-- The album page has a new header with a large cover, running time, Play and Shuffle, and the artist photo beside them; it stays in view while the track list scrolls below it
-- The Artists, Albums, Songs, Playlists, Radio and Favorites pages and every genre page show your artists' Fanart.tv banners in their header, carried on across its full width, changing every few seconds, a genre only its own artists; clicking a banner opens that artist's page
+- The album page has a new header with a large cover, running time, Play and Shuffle, and the artist photo beside them, and it stays in view while the track list scrolls
+- The album page shows more about the album: release type, record label, edition and reissue year, all its genres, and the opening of its Wikipedia article
+- The library pages and every genre page show changing Fanart.tv banners of your artists across their header, and clicking one opens that artist
 - The Favorites page header shows how many artists, albums and songs you have marked
 - The Home page's top card shows the Fanart.tv banner or photo of the artist you are listening to
-- Small layout tweaks: library page titles are larger and no longer have a placeholder icon beside them, and the Statistics lists wrap two at a time on narrower windows
+- The Statistics page shows more: storage used, how much of the library you have ever played, songs heard in the last 30 days, your ratings, a Hi-Res/lossless/lossy breakdown and the artists with the most songs
+- Who may cast can now be decided on a Plex server too, by its owner; accounts already signed in join the list at their next sign-in
+- In a window narrower than 1200px, a tablet in landscape for instance, the queue slides in over the page instead of squeezing it, and a tap beside it closes it
+- Small layout tweaks: larger library page titles without the placeholder icon, a lower library page header on tablet-sized windows, backgrounds that fade between pages instead of blinking, and Statistics lists that wrap two at a time on narrower windows
 
 ### Fixed
 
-- After more than a month away from the app, nearly all downloaded Fanart.tv images were deleted the moment an artist was opened; the most recent artists' images are now always kept
-- Most played artists on the Statistics page could show a song's full credit with its featured artists instead of the artist's name
-- The Fanart.tv images ranked as most liked were the wrong ones for artists with ten or more likes on an image, so their best backgrounds were never shown
-- Radio played through Beacon now reconnects on its own when the connection silently dies, for example after a network or VPN change, instead of going quiet and showing the Reconnect button; it keeps trying for up to ten minutes and picks up right away when the network comes back
-- On a tablet in landscape, a speaker's volume slider follows the finger through the whole drag, and the favorite hearts, play buttons on covers, speaker volume and AirPlay pairing button are visible without a mouse to hover
+- After more than a month away, nearly all downloaded Fanart.tv images were deleted as soon as an artist was opened; the latest artists' images are now always kept
+- Most played artists on the Statistics page could show a song's full credit, featured artists included, instead of the artist's name
+- For artists with ten or more likes on an image, the wrong Fanart.tv images were taken as the most liked, so their best backgrounds were never shown
+- Radio played through Beacon now reconnects on its own when the connection silently dies, after a network or VPN change for instance, instead of going quiet
+- On a tablet in landscape, a speaker's volume slider now follows the finger, and controls that used to appear only under a mouse are visible
+- On an artist page in a narrow window, the rating stars no longer run into the artist's name
+- On a tablet, artist and album pages and track lists with many columns could make the page wider than the screen, which cut it off or zoomed it out once the pictures loaded; track list columns that do not fit now step aside until there is room again
 
 ## [1.4.0] - 2026-09-22
 

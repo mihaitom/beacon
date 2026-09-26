@@ -4,6 +4,7 @@
 // neither of which jsdom does.
 import { afterEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
+import { h } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -45,5 +46,48 @@ describe('DetailHero large layout', () => {
     expect(name.height).toBeGreaterThan(lineHeight * 1.5)
     // Stops short of the right half, where the page's photo backdrop is.
     expect(name.right).toBeLessThan(1400 * 0.75)
+  })
+
+  /** A hero inside a frame of `width`, the way a page narrowed by a tablet
+   * or the open queue drawer hands it one. */
+  async function mountInFrame(width: number, slots: Record<string, () => unknown> = {}) {
+    await page.viewport(1400, 900)
+    document.body.style.margin = '0'
+    const frame = document.createElement('div')
+    frame.style.width = `${width}px`
+    document.body.appendChild(frame)
+    const wrapper = mount(DetailHero, {
+      props: {
+        name: 'Koala and a Rather Longer Album Name',
+        coverSize: 200,
+        large: true,
+        rating: 0,
+        starred: false,
+      },
+      slots,
+      attachTo: frame,
+      global: { plugins: [vuetify, i18n] },
+    })
+    wrappers.push(wrapper)
+    const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect()
+    return { rect }
+  }
+
+  it('keeps the name clear of the rating and heart on a narrow page', async () => {
+    const { rect } = await mountInFrame(560)
+
+    expect(rect('.detail-hero__name').right).toBeLessThanOrEqual(
+      rect('.detail-hero__controls').left,
+    )
+  })
+
+  it('keeps the cover by the name when the text beside it is the taller one', async () => {
+    // The album page on a tablet: its paragraph makes the text column taller
+    // than the cover, and each line that loaded used to push the cover down.
+    const { rect } = await mountInFrame(900, {
+      description: () => h('div', { style: { height: '260px' } }),
+    })
+
+    expect(rect('.detail-hero__cover').top).toBeCloseTo(rect('.detail-hero__main').top, 0)
   })
 })

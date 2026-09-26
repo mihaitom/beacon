@@ -61,6 +61,22 @@ describe('DetailPageBackdrop banded layout', () => {
     expect(photo.right).toBeCloseTo(1200, 0)
   })
 
+  it('keeps the scaled cover wash from widening the page', async () => {
+    // The reported bug: scale(1.1) ran the wash 5% past the right edge,
+    // and a tablet's browser laid the whole page out that much wider.
+    await page.viewport(1024, 768)
+    document.body.style.margin = '0'
+    const wrapper = mount(DetailPageBackdrop, {
+      props: { url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', isPhoto: false, show: true },
+      slots: { default: () => h('div', { style: { height: '300px' } }) },
+      attachTo: document.body,
+    })
+    wrappers.push(wrapper)
+
+    expect(document.querySelector('.detail-page__backdrop')).not.toBeNull()
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(1024)
+  })
+
   it('never runs wider than the page', async () => {
     const { photo } = await mountPage(500, 40)
 

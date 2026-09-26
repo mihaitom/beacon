@@ -386,6 +386,9 @@ export default {
   margin-bottom: 32px;
   min-height: 280px;
   isolation: isolate;
+  /* For the text-only band's height below, which follows this card's own
+   * width. */
+  container-type: inline-size;
 }
 
 .detail-header__backdrop {
@@ -583,11 +586,18 @@ export default {
  * the way the cover would, and the title grows to carry the card on its
  * own - up to the album page's name (DetailHero.vue), but always above
  * the usual 2.25rem, which the window-width part alone only passes on a
- * wide window. */
+ * wide window.
+ * Lower on a narrower card (a tablet): the text needs far less than 280px,
+ * and a banner, sized to the card's height, keeps more of itself in view.
+ * From a 1400px card up it is the full 280px. */
+.detail-header--text-only {
+  min-height: 0;
+}
+
 .detail-header--text-only .detail-header__content {
-  min-height: 280px;
+  min-height: clamp(200px, 20cqi, 280px);
   align-items: center;
-  padding: 32px;
+  padding: clamp(20px, 2.3cqi, 32px) 32px;
 }
 
 .detail-header--text-only .detail-header__title {

@@ -162,6 +162,12 @@ export default {
 <style scoped>
 .detail-page__band {
   position: relative;
+  /* The cover wash is scaled past the band's edges (see its own rule), and
+   * anything past the window's right edge makes a tablet's browser lay the
+   * whole page out wider than the screen: the player bar ended up off the
+   * bottom and right. Sideways only - the backdrop may run on below the
+   * band - and `clip`, so this is no scroll container. */
+  overflow-x: clip;
   /* A photo's fade to the left where its edge isn't continued, eased
    * rather than linear: a straight ramp starts with a visible step in
    * brightness, which reads as a seam. Over its first 30%, so most of the
