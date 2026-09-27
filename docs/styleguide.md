@@ -321,12 +321,17 @@ rather than spanning the page, so a band wider than 16:9 does not crop the
 photo's top and bottom; a taller band shows a larger photo. Behind the
 header's text it stays opaque and is shaded instead - the same black,
 eased shade as `DetailHeader`'s banners, up to just past where the text
-ends. It keeps to the right edge. One whose left edge is smooth
-(`services/edgeFill.ts`) has that edge continued to its left, as a banner
-does - only the left edge, as it is, since the rest of the photo's border
-is nowhere near it; one with a busy left edge fades out to the left onto
-the surface instead, since continuing a
-busy edge streaks; that fade is eased, since a linear ramp shows a seam
+ends. It keeps to the right edge, and its left edge is continued to its
+left (`services/edgeFill.ts`), as a banner's is - only the left edge,
+since the rest of the photo's border is nowhere near it. The continuation
+is drawn from the photo's background where it has one, so a sleeve or a
+sign reaching the edge is left out, and its own bands carry for 15% of the
+photo's width before easing into that background (or else the edge's main
+colour, not an average: a blue backdrop with white lettering stays blue).
+Settled into one colour, any edge reads as part of the picture, so no edge
+is judged too busy to continue. Only a photo whose pixels can't be read
+fades out to the left onto the surface instead; that fade is eased, since
+a linear ramp shows a seam
 where it starts. On a phone, where the text runs the full width anyway,
 there is no shade and it is the full band again.
 

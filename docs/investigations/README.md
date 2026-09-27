@@ -69,6 +69,7 @@ Keep entries anonymous: no IPs, no real speaker or room names ("room A",
 
 ## Reference
 
+- [Which photo edges to continue](edge-fill-thresholds.md) - **CLOSED 2026-09-27, question dropped**; the detail-page backdrop used to judge whether a photo's edge was calm enough to continue. Tuning that against 1180 labelled samples hit its limit; continuing every edge into the photo's background (or main) colour made the question unnecessary. Has why sampling must run in Electron (headless Chromium judges a dozen photos differently) and why an average colour was wrong
 - [Instrumentation](instrumentation.md) - what's built into the app and what's scripted on the media host
 - [Method notes](method-notes.md) - things that repeatedly turned out to matter while chasing these
 - [Jellyfin 10.9 next to Jellyfin 12](jellyfin-10.9-vs-12.md) - 2026-09-12; what the two generations answer differently, measured side by side. 10.9.11 is supported and the live suite passes against it, with one narrow gap: it reads lyrics only from a sidecar `.lrc`, never out of the media file's own tags (that came in 10.10). Has the route inventory and what turned out *not* to differ

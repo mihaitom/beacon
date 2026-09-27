@@ -14,8 +14,8 @@
  * with nothing but subject at the edge takes the background itself.
  *
  * A photo shown at the right (DetailPageBackdrop.vue) is continued from its
- * left edge alone, as it is - its other edges are nowhere near what's
- * continued - and only where that edge is smooth enough to extend.
+ * left edge alone - its right edge is nowhere near what's continued - and
+ * settles into a single colour away from it.
  *
  * Null if the image can't be loaded or read (e.g. a CORS-tainted canvas).
  */
@@ -27,8 +27,8 @@ export interface EdgeGradients {
   right: string
 }
 
-const SAMPLE_WIDTH = 64
-const SAMPLE_HEIGHT = 16
+export const SAMPLE_WIDTH = 64
+export const SAMPLE_HEIGHT = 16
 /** ~5% of the width - enough to average out a single odd pixel column,
  * narrow enough to still be the edge. */
 const EDGE_COLUMNS = 3
@@ -38,52 +38,10 @@ const BACKGROUND_MATCH = 48
 /** Share of the border the background has to cover to be one - below
  * that, the edge is picture all the way round and is continued as is. */
 const BACKGROUND_SHARE = 0.4
-/** The strip checked for smoothness: ~9% of the width. */
-const SMOOTH_COLUMNS = 6
-/** How far, on average, a band's pixels may stray from the band's mean -
- * in brightness and in colour apart, since the continued edge is each
- * band's mean: brightness detail in one colour (folds in a white dress)
- * averages out to a calm fill, while different colours (rays, skin against
- * a couch) come out as a stripe. Judged by the worst band, since one arm
- * reaching the edge is a stripe however calm the rest is. Measured on
- * cached Fanart.tv backgrounds: edges that continue well came to at most
- * brightness 34 / colour 38 (a folded dress; a soft lit edge), while an
- * arm, people or dancers at the edge came to brightness 55 and up, and
- * coloured rays to colour 110. */
-const SMOOTH_BRIGHTNESS = 45
-const SMOOTH_COLOUR = 60
-/** Most one band's colour may jump from the next, top to bottom. Only a
- * hard line across the edge - a large but gradual change is exactly what
- * the continued gradient reproduces (the soft lit edge: 106). */
-const SMOOTH_DOWN = 125
-/** Most one band's brightness may step from the next. Light on a picture
- * shades gently (a folded dress: at most 30), while something reaching the
- * edge has edges of its own (an arm against a dark background: 64). */
-const SMOOTH_STEP = 40
-/** How far brightness has to move from its last high or low, in however
- * many bands, to count as going that way. The one turn an edge may
- * take is light rising and falling again (a folded dress, a lit edge),
- * which reads as light on the picture. Anything else comes out as a
- * stripe in the continued edge: light and dark by turns (a window frame,
- * a sign), or a darker band between lighter ones - nearly always
- * something reaching the edge, like a flower in a pattern, a face or a
- * building. */
-const TURN_STEP = 12
-
 type Rgb = [number, number, number]
 
 function distance(data: Uint8ClampedArray, i: number, [r, g, b]: Rgb): number {
   return Math.hypot(data[i]! - r, data[i + 1]! - g, data[i + 2]! - b)
-}
-
-function brightness([r, g, b]: Rgb): number {
-  return 0.299 * r + 0.587 * g + 0.114 * b
-}
-
-/** A colour with its brightness taken out. */
-function tint(colour: Rgb): Rgb {
-  const y = brightness(colour)
-  return [colour[0] - y, colour[1] - y, colour[2] - y]
 }
 
 /** The colour covering most of the picture's border (top and bottom rows,
@@ -102,11 +60,15 @@ export function backgroundFromPixels(
     }
   }
   if (!border.length) return null
+  const { colour, share } = dominantColour(data, border)
+  return share >= BACKGROUND_SHARE ? colour : null
+}
 
-  // The most common coarse colour, then refined to the mean of everything
-  // near it.
+/** The colour most of `pixels` are: the most common coarse colour, refined
+ * to the mean of everything near it, and the share of `pixels` that is. */
+function dominantColour(data: Uint8ClampedArray, pixels: number[]): { colour: Rgb; share: number } {
   const buckets = new Map<number, number[]>()
-  for (const i of border) {
+  for (const i of pixels) {
     const key = ((data[i]! >> 4) << 8) | ((data[i + 1]! >> 4) << 4) | (data[i + 2]! >> 4)
     const bucket = buckets.get(key)
     if (bucket) bucket.push(i)
@@ -114,8 +76,12 @@ export function backgroundFromPixels(
   }
   const largest = [...buckets.values()].reduce((a, b) => (b.length > a.length ? b : a))
   const seed = mean(data, largest)
-  const matching = border.filter((i) => distance(data, i, seed) <= BACKGROUND_MATCH)
-  return matching.length / border.length >= BACKGROUND_SHARE ? mean(data, matching) : null
+  const matching = pixels.filter((i) => distance(data, i, seed) <= BACKGROUND_MATCH)
+  return { colour: mean(data, matching), share: matching.length / pixels.length }
+}
+
+function css([r, g, b]: Rgb): string {
+  return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`
 }
 
 function mean(data: Uint8ClampedArray, pixels: number[]): Rgb {
@@ -161,73 +127,6 @@ export function edgeGradientFromPixels(
   return `linear-gradient(to bottom, ${stops.join(', ')})`
 }
 
-/** Whether an edge is calm enough to continue: even across its strip -
- * in colour especially - and changing only gradually from top to bottom,
- * with no dark band across it and no going light and dark by turns. */
-export function edgeIsSmooth(
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
-  edge: Edge,
-): boolean {
-  const firstColumn = edge === 'left' ? 0 : width - SMOOTH_COLUMNS
-  const rowsPerBand = height / BANDS
-  const bands: Rgb[] = []
-  for (let band = 0; band < BANDS; band++) {
-    const pixels: number[] = []
-    for (let y = Math.floor(band * rowsPerBand); y < Math.floor((band + 1) * rowsPerBand); y++) {
-      for (let x = firstColumn; x < firstColumn + SMOOTH_COLUMNS; x++) {
-        const i = (y * width + x) * 4
-        if (data[i + 3]! >= 128) pixels.push(i)
-      }
-    }
-    if (!pixels.length) return false
-    const bandMean = mean(data, pixels)
-    let brightnessStray = 0
-    let colourStray = 0
-    for (const i of pixels) {
-      const pixel: Rgb = [data[i]!, data[i + 1]!, data[i + 2]!]
-      brightnessStray += Math.abs(brightness(pixel) - brightness(bandMean))
-      colourStray += Math.hypot(...tint(pixel).map((c, k) => c - tint(bandMean)[k]!))
-    }
-    if (brightnessStray / pixels.length > SMOOTH_BRIGHTNESS) return false
-    if (colourStray / pixels.length > SMOOTH_COLOUR) return false
-    const previous = bands.at(-1)
-    if (previous && Math.hypot(...bandMean.map((c, k) => c - previous[k]!)) > SMOOTH_DOWN) {
-      return false
-    }
-    if (previous && Math.abs(brightness(bandMean) - brightness(previous)) > SMOOTH_STEP) {
-      return false
-    }
-    bands.push(bandMean)
-  }
-  return onlyLightRises(bands)
-}
-
-/** Whether the bands' brightness changes direction at most once, top to
- * bottom, and then from rising to falling. A move counts once it has come
- * TURN_STEP from the last high or low, so a dip taken in small steps is
- * still a dip. */
-function onlyLightRises(bands: Rgb[]): boolean {
-  const directions: number[] = []
-  let high = brightness(bands[0]!)
-  let low = high
-  for (const band of bands.slice(1)) {
-    const level = brightness(band)
-    high = Math.max(high, level)
-    low = Math.min(low, level)
-    const now = level - low >= TURN_STEP ? 1 : high - level >= TURN_STEP ? -1 : 0
-    if (now && now !== directions.at(-1)) {
-      directions.push(now)
-      high = level
-      low = level
-    }
-  }
-  // Up to one direction is a plain gradient; two are a single turn, fine
-  // only as a rise then a fall.
-  return directions.length <= 1 || (directions.length === 2 && directions[0] === 1)
-}
-
 /** How a picture is shown: `background-size: cover` into a box of `ratio`
  * (width / height), held at `positionY` (0 top, 1 bottom) where that crops
  * its top and bottom. */
@@ -235,6 +134,16 @@ export interface Frame {
   ratio: number
   positionY: number
 }
+
+/** How DetailPageBackdrop.vue frames a photo - kept in step with its
+ * `--art-ratio` and background-position - on a detail page and on the album
+ * page's shallower band. Here rather than in the component so that
+ * scripts/edge-fill/ samples photos exactly as the page does. */
+export const PHOTO_FRAME: Frame = { ratio: 16 / 9, positionY: 0.5 }
+export const BANDED_PHOTO_FRAME: Frame = { ratio: 2.4, positionY: 0.25 }
+/** How much of the photo, from the top, its edge is read from: below 75%
+ * the band's fade to the page has it under ~40% on both arrangements. */
+export const EDGE_EXTENT = 0.75
 
 /** The part of a `width` x `height` picture a frame shows, as a source
  * rectangle - what is on screen is what has to be continued. */
@@ -250,7 +159,11 @@ export function visibleRect(width: number, height: number, frame?: Frame) {
 
 /** The shown part of the picture (its top `extent` of that), downscaled to
  * the sampling size, or null if it can't be loaded or read. */
-function samplePixels(url: string, frame?: Frame, extent = 1): Promise<Uint8ClampedArray | null> {
+export function samplePixels(
+  url: string,
+  frame?: Frame,
+  extent = 1,
+): Promise<Uint8ClampedArray | null> {
   return new Promise((resolve) => {
     const img = new Image()
     img.crossOrigin = 'anonymous'
@@ -296,16 +209,59 @@ export async function extractEdgeGradients(url: string): Promise<EdgeGradients |
   return left && right ? { left, right } : null
 }
 
-/** A photo's left edge as it is shown in `frame`, or null where it's too
- * busy to continue. Judged over its top `extent` only, where the page fades
- * the rest out anyway - what reaches the edge down there is barely seen,
- * and holding the colour above it keeps it from streaking the fill. */
-export async function extractLeftEdgeGradient(
+/** A photo's continued left edge: the edge itself, top to bottom, and its
+ * main colour, which the page fades it into away from the photo. */
+export interface LeftEdgeFill {
+  gradient: string
+  flat: string
+}
+
+/** The main colour of an edge's continued columns - the one most of them
+ * are, not their average: a blue backdrop with white lettering reaching the
+ * edge is blue, where the average is a grey that is nowhere in the photo. */
+export function edgeColourFromPixels(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  edge: Edge,
+): string {
+  const firstColumn = edge === 'left' ? 0 : width - EDGE_COLUMNS
+  const pixels: number[] = []
+  for (let y = 0; y < height; y++) {
+    for (let x = firstColumn; x < firstColumn + EDGE_COLUMNS; x++) {
+      const i = (y * width + x) * 4
+      if (data[i + 3]! >= 128) pixels.push(i)
+    }
+  }
+  return css(pixels.length ? dominantColour(data, pixels).colour : [0, 0, 0])
+}
+
+/** A photo's left edge, continued: drawn from the photo's background where
+ * it has one, as a banner's is, so a sleeve or a sign reaching the edge is
+ * left out of it - and fading, away from the photo, into that background
+ * or else the edge's main colour. Once it settles into one colour, any edge
+ * reads as part of the picture, so there is nothing left to judge. */
+export function leftEdgeFillFromPixels(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  extent = 1,
+): LeftEdgeFill | null {
+  const background = backgroundFromPixels(data, width, height)
+  const gradient = edgeGradientFromPixels(data, width, height, 'left', background, extent)
+  if (!gradient) return null
+  const flat = background ? css(background) : edgeColourFromPixels(data, width, height, 'left')
+  return { gradient, flat }
+}
+
+/** A photo's continued left edge as it is shown in `frame`, or null if it
+ * can't be read. Read over its top `extent` only, where the page fades the
+ * rest out anyway - what reaches the edge down there is barely seen. */
+export async function extractLeftEdgeFill(
   url: string,
   frame?: Frame,
   extent = 1,
-): Promise<string | null> {
+): Promise<LeftEdgeFill | null> {
   const data = await samplePixels(url, frame, extent)
-  if (!data || !edgeIsSmooth(data, SAMPLE_WIDTH, SAMPLE_HEIGHT, 'left')) return null
-  return edgeGradientFromPixels(data, SAMPLE_WIDTH, SAMPLE_HEIGHT, 'left', null, extent)
+  return data ? leftEdgeFillFromPixels(data, SAMPLE_WIDTH, SAMPLE_HEIGHT, extent) : null
 }

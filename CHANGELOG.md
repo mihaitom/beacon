@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - Artist and album pages have a button to switch between up to ten Fanart.tv backgrounds of the artist, mostly the best liked plus a few of the newest
-- On artist and album pages the Fanart.tv photo sits on the right, uncropped, and where its edge allows it carries on behind the header, which stays readable on a darkened area
+- On artist and album pages the Fanart.tv photo sits on the right, uncropped, and carries on behind the header in its own background colour, while the header stays readable on a darkened area
 - An artist keeps the same background across the artist page, album pages and Now Playing for the whole session
 - The album page has a new header with a large cover, running time, Play and Shuffle, and the artist photo beside them, and it stays in view while the track list scrolls
 - The album page shows more about the album: release type, record label, edition and reissue year, all its genres, and the opening of its Wikipedia article

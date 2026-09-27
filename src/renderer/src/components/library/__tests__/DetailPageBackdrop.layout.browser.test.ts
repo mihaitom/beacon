@@ -147,10 +147,10 @@ describe('DetailPageBackdrop photo beside the header text', () => {
     expect(art.right).toBeCloseTo(band.right, 0)
   })
 
-  it('continues nothing from a busy left edge', async () => {
+  it('continues a busy left edge too, since it settles into one colour', async () => {
     const { band, art, filled } = await mountArtist(2800, true)
 
-    expect(filled).toBe(false)
+    expect(filled).toBe(true)
     expect(art.right).toBeCloseTo(band.right, 0)
   })
 })

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   backgroundFromPixels,
+  edgeColourFromPixels,
   edgeGradientFromPixels,
-  edgeIsSmooth,
+  leftEdgeFillFromPixels,
   visibleRect,
 } from '../edgeFill'
 
@@ -109,102 +110,37 @@ describe('edgeGradientFromPixels on a plain background', () => {
   })
 })
 
-describe('edgeIsSmooth', () => {
-  it('passes an edge that shades gradually from top to bottom', () => {
-    const data = image(64, 16, (_x, y) => [200 - y * 6, 150 - y * 5, 120 - y * 4, 255])
+describe('edgeColourFromPixels', () => {
+  it('takes the colour most of the edge is, not an average with the lettering across it', () => {
+    // A blue backdrop with a band of white lettering reaching the edge; the
+    // picture beside the edge is red.
+    const data = image(64, 16, (x, y) => {
+      if (x >= 3) return [255, 0, 0, 255]
+      return y >= 4 && y < 8 ? [240, 240, 240, 255] : [20, 60, 180, 255]
+    })
 
-    expect(edgeIsSmooth(data, 64, 16, 'left')).toBe(true)
+    expect(edgeColourFromPixels(data, 64, 16, 'left')).toBe('rgb(20, 60, 180)')
   })
+})
 
-  it('fails an edge with detail across it, which would streak', () => {
-    const data = image(64, 16, (x) => (x % 2 ? [240, 240, 240, 255] : [20, 20, 20, 255]))
-
-    expect(edgeIsSmooth(data, 64, 16, 'left')).toBe(false)
-  })
-
-  it('passes an edge busy only in brightness, all one colour, like folds in a dress', () => {
-    const data = image(64, 16, (x) => (x % 2 ? [235, 232, 225, 255] : [185, 182, 175, 255]))
-
-    expect(edgeIsSmooth(data, 64, 16, 'left')).toBe(true)
-  })
-
-  it('fails an edge of different colours side by side, even at one brightness', () => {
-    const data = image(64, 16, (x) => (x % 2 ? [200, 80, 80, 255] : [60, 130, 200, 255]))
-
-    expect(edgeIsSmooth(data, 64, 16, 'left')).toBe(false)
-  })
-
-  it('fails a calm edge with one thing reaching it, like an arm on a couch', () => {
+describe('leftEdgeFillFromPixels', () => {
+  it("continues a photo's background past a sleeve that fills its edge", () => {
+    // A white studio backdrop all round, and a black sleeve covering most
+    // of the left edge - more of the edge than the backdrop does.
     const data = image(64, 16, (x, y) =>
-      y >= 12 && y < 14 && x < 3 ? [200, 150, 120, 255] : [50, 55, 75, 255],
+      x < 8 && y >= 3 && y < 15 ? [10, 10, 10, 255] : [245, 245, 245, 255],
     )
 
-    expect(edgeIsSmooth(data, 64, 16, 'left')).toBe(false)
+    const fill = leftEdgeFillFromPixels(data, 64, 16)
+
+    expect(fill?.flat).toBe('rgb(245, 245, 245)')
+    expect(fill?.gradient).not.toContain('rgb(10, 10, 10)')
   })
 
-  it('passes an edge that brightens and darkens again once, as light falls', () => {
-    const levels = [135, 142, 172, 183, 182, 175, 153, 135]
-    const data = image(64, 16, (_x, y) => {
-      const v = levels[Math.floor(y / 2)]!
-      return [v, v, v, 255]
-    })
+  it("takes the edge's main colour where the photo has no one background", () => {
+    const data = image(64, 16, (x) => (x < 3 ? [20, 60, 180, 255] : [(x * 37) % 256, 90, 40, 255]))
 
-    expect(edgeIsSmooth(data, 64, 16, 'left')).toBe(true)
-  })
-
-  it('fails an edge that goes light and dark by turns, like a window frame', () => {
-    const levels = [35, 38, 38, 58, 41, 24, 30, 59]
-    const data = image(64, 16, (_x, y) => {
-      const v = levels[Math.floor(y / 2)]!
-      return [v, v, v, 255]
-    })
-
-    expect(edgeIsSmooth(data, 64, 16, 'left')).toBe(false)
-  })
-
-  it('fails an edge with a darker band between lighter ones, like a flower reaching it', () => {
-    const levels = [31, 31, 34, 26, 13, 17, 44, 65]
-    const data = image(64, 16, (_x, y) => {
-      const v = levels[Math.floor(y / 2)]!
-      return [v, v, v, 255]
-    })
-
-    expect(edgeIsSmooth(data, 64, 16, 'left')).toBe(false)
-  })
-
-  it('fails a darker band reached in small steps as well', () => {
-    const levels = [28, 31, 33, 22, 14, 42, 59, 64]
-    const data = image(64, 16, (_x, y) => {
-      const v = levels[Math.floor(y / 2)]!
-      return [v, v, v, 255]
-    })
-
-    expect(edgeIsSmooth(data, 64, 16, 'left')).toBe(false)
-  })
-
-  it('fails a lighter band with edges of its own, like an arm against a dark background', () => {
-    const levels = [84, 86, 104, 168, 192, 144, 90, 50]
-    const data = image(64, 16, (_x, y) => {
-      const v = levels[Math.floor(y / 2)]!
-      return [v, v, v, 255]
-    })
-
-    expect(edgeIsSmooth(data, 64, 16, 'left')).toBe(false)
-  })
-
-  it('fails an edge that jumps from one colour to another on the way down', () => {
-    const data = image(64, 16, (_x, y) => (y < 8 ? [240, 240, 240, 255] : [20, 20, 20, 255]))
-
-    expect(edgeIsSmooth(data, 64, 16, 'left')).toBe(false)
-  })
-
-  it('judges the left edge alone, whatever the rest of the border is', () => {
-    // Dark all round except a light, even left edge - a photo lit from
-    // that side.
-    const data = image(64, 16, (x) => (x < 10 ? [230, 190, 170, 255] : [15, 15, 30, 255]))
-
-    expect(edgeIsSmooth(data, 64, 16, 'left')).toBe(true)
-    expect(edgeGradientFromPixels(data, 64, 16, 'left')).toContain('rgb(230, 190, 170)')
+    expect(leftEdgeFillFromPixels(data, 64, 16)?.flat).toBe('rgb(20, 60, 180)')
   })
 })
 

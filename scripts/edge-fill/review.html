@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Edge-fill review</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --surface: #12141c;
+        --panel: #1b1e28;
+        --text: #e8e9ee;
+        --muted: #9a9db0;
+        --accent: #f5a94e;
+        --continue: #4caf7d;
+        --fade: #e0645c;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: var(--surface);
+        color: var(--text);
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 0;
+        background: var(--surface);
+      }
+      h1 {
+        margin: 0;
+        font-size: 18px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr));
+        gap: 16px;
+      }
+      .tile {
+        background: var(--panel);
+        border-radius: 12px;
+        overflow: hidden;
+        outline: 2px solid transparent;
+      }
+      /* As DetailPageBackdrop.vue lays it out: the photo at the band's
+       * height against the right edge, softened into the continued edge
+       * over its first 12%, and the edge easing into its average colour
+       * over 15% of the photo's width to the left of it. */
+      .band {
+        position: relative;
+        height: 170px;
+        background: var(--surface);
+        overflow: hidden;
+        container-type: size;
+        --art-width: min(100cqw, 100cqh * var(--ratio));
+        --art-left: calc(100cqw - var(--art-width));
+        --fill-reach: calc(var(--art-width) * 0.15);
+      }
+      .fill,
+      .fill::before {
+        position: absolute;
+        inset: 0;
+      }
+      .fill {
+        background: var(--flat);
+      }
+      .fill::before {
+        content: '';
+        background: var(--fill) left / calc(var(--art-left) + var(--art-width) / 2) 100% no-repeat;
+        --fill-fade: linear-gradient(
+          to right,
+          transparent calc(var(--art-left) - var(--fill-reach)),
+          rgba(0, 0, 0, 0.1) calc(var(--art-left) - var(--fill-reach) * 0.8),
+          rgba(0, 0, 0, 0.35) calc(var(--art-left) - var(--fill-reach) * 0.6),
+          rgba(0, 0, 0, 0.65) calc(var(--art-left) - var(--fill-reach) * 0.4),
+          rgba(0, 0, 0, 0.9) calc(var(--art-left) - var(--fill-reach) * 0.2),
+          #000 var(--art-left)
+        );
+        -webkit-mask-image: var(--fill-fade);
+        mask-image: var(--fill-fade);
+      }
+      .art {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: var(--art-left);
+        width: var(--art-width);
+        background: var(--img, none) var(--position) / cover no-repeat;
+        -webkit-mask-image: linear-gradient(to right, transparent, #000 12%);
+        mask-image: linear-gradient(to right, transparent, #000 12%);
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+      }
+      .controls .muted {
+        margin-right: auto;
+        font-size: 12px;
+      }
+      button {
+        border: 1px solid #3a3f52;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--text);
+        padding: 4px 12px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button.on[data-label='continue'] {
+        background: var(--continue);
+        border-color: var(--continue);
+        color: #0b0d12;
+      }
+      button.on[data-label='fade'] {
+        background: var(--fade);
+        border-color: var(--fade);
+        color: #0b0d12;
+      }
+      button.on[data-label='unsure'] {
+        background: var(--muted);
+        border-color: var(--muted);
+        color: #0b0d12;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Edge-fill review</h1>
+      <span id="progress" class="muted"></span>
+      <label
+        >show
+        <select id="show">
+          <option value="all">all</option>
+          <option value="continue">labelled continue</option>
+          <option value="fade">labelled fade</option>
+          <option value="unsure">labelled unsure</option>
+        </select>
+      </label>
+    </header>
+    <p class="muted">
+      Each photo's left edge continued as the detail pages continue it. The labels are notes for the
+      next look: <b>Continue</b> if it reads as part of the picture, <b>Fade</b> if it does not.
+    </p>
+    <main id="grid" class="grid"></main>
+    <script>
+      const LABELS = [
+        ['continue', 'Continue'],
+        ['fade', 'Fade'],
+        ['unsure', 'Unsure'],
+      ]
+      const FRAMES = {
+        page: { ratio: '1.7778', position: 'center 50%', name: 'artist page' },
+        banded: { ratio: '2.4', position: 'center 25%', name: 'album page' },
+      }
+      let items = []
+      const grid = document.getElementById('grid')
+      const show = document.getElementById('show')
+      show.value = new URLSearchParams(location.search).get('show') ?? 'all'
+      const shown = (i) => show.value === 'all' || i.label === show.value
+
+      const images = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          entry.target.style.setProperty('--img', `url(/img/${entry.target.dataset.id})`)
+          images.unobserve(entry.target)
+        }
+      })
+
+      async function label(item, value) {
+        const response = await fetch('/api/label', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: item.id, frame: item.frame, label: value }),
+        })
+        if (!response.ok) throw new Error(`save failed: ${response.status}`)
+        item.label = value
+        refresh()
+      }
+
+      function tile(item) {
+        const frame = FRAMES[item.frame]
+        const el = document.createElement('section')
+        el.className = 'tile'
+        el.innerHTML = `
+          <div class="band">
+            <div class="fill"></div>
+            <div class="art" data-id="${item.id}"></div>
+          </div>
+          <div class="controls">
+            <span class="muted">${frame.name}</span>
+            ${LABELS.map(([label, text]) => `<button type="button" data-label="${label}">${text}</button>`).join('')}
+          </div>`
+        const band = el.querySelector('.band')
+        band.style.setProperty('--fill', item.gradient ?? 'none')
+        band.style.setProperty('--flat', item.flat ?? 'transparent')
+        band.style.setProperty('--ratio', frame.ratio)
+        band.style.setProperty('--position', frame.position)
+        images.observe(el.querySelector('.art'))
+        for (const button of el.querySelectorAll('button')) {
+          button.addEventListener('click', () => label(item, button.dataset.label))
+        }
+        item.el = el
+        return el
+      }
+
+      function refresh() {
+        for (const item of items) {
+          if (!item.el) continue
+          for (const button of item.el.querySelectorAll('button')) {
+            button.classList.toggle('on', button.dataset.label === item.label)
+          }
+        }
+        document.getElementById('progress').textContent =
+          `${items.filter(shown).length} of ${items.length} samples shown`
+      }
+
+      function render() {
+        grid.replaceChildren(...items.filter(shown).map(tile))
+        refresh()
+      }
+
+      show.addEventListener('change', render)
+
+      fetch('/api/items')
+        .then((response) => response.json())
+        .then((loaded) => {
+          items = loaded
+          render()
+        })
+    </script>
+  </body>
+</html>

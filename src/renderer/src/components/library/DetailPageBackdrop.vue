@@ -44,7 +44,13 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
-import { type Frame, extractLeftEdgeGradient } from '@/services/edgeFill'
+import {
+  BANDED_PHOTO_FRAME,
+  EDGE_EXTENT,
+  type LeftEdgeFill,
+  PHOTO_FRAME,
+  extractLeftEdgeFill,
+} from '@/services/edgeFill'
 import { textEnd } from '@/services/textExtent'
 
 /**
@@ -55,19 +61,11 @@ import { textEnd } from '@/services/textExtent'
  * own backdropUrl/backdropIsPhoto).
  *
  * A photo stays opaque behind the header text, darkened there instead
- * (measured, services/textExtent.ts). It keeps to the right edge; one whose
- * left edge is smooth has that edge continued to its left
- * (services/edgeFill.ts), as DetailHeader.vue's banners do, and one whose
- * isn't fades out to the left, since continuing a busy edge streaks.
+ * (measured, services/textExtent.ts). It keeps to the right edge, with its
+ * left edge continued to the band's left (services/edgeFill.ts), as
+ * DetailHeader.vue's banners are; only a photo whose pixels can't be read
+ * fades out to the left instead.
  */
-/** How the photo is framed - the `--art-ratio` and background-position in
- * the styles below, which the edge is read to match. */
-const PHOTO_FRAME: Frame = { ratio: 16 / 9, positionY: 0.5 }
-const BANDED_PHOTO_FRAME: Frame = { ratio: 2.4, positionY: 0.25 }
-/** How much of the photo, from the top, its edge is judged by: below 75%
- * the band's fade to the page has it under ~40% on both arrangements. */
-const JUDGED_EXTENT = 0.75
-
 export default {
   name: 'DetailPageBackdrop',
   props: {
@@ -93,9 +91,9 @@ export default {
       // Per layer, since the one fading out may be a photo while the one
       // fading in is a blurred cover, or the other way round.
       layerIsPhoto: [false, false],
-      /** Per layer: the photo's left edge, continued to its left - where
-       * that edge is smooth enough to. */
-      fills: [null, null] as (string | null)[],
+      /** Per layer: the photo's left edge, continued to its left - null
+       * while it is read, or where it can't be. */
+      fills: [null, null] as (LeftEdgeFill | null)[],
       /** Where the header text ends, in px from the band's left. */
       textEnd: 0,
       textObserver: null as ResizeObserver | null,
@@ -106,18 +104,18 @@ export default {
       const fill = this.fills[index]
       return {
         ...(url ? { '--backdrop-image': `url(${url})` } : {}),
-        ...(fill ? { '--fill-left': fill } : {}),
+        ...(fill ? { '--fill-left': fill.gradient, '--fill-flat': fill.flat } : {}),
       }
     },
     async paintFill(index: number, url: string | null, isPhoto: boolean): Promise<void> {
       this.fills[index] = null
       if (!url || !isPhoto) return
-      const gradient = await extractLeftEdgeGradient(
+      const fill = await extractLeftEdgeFill(
         url,
         this.banded ? BANDED_PHOTO_FRAME : PHOTO_FRAME,
-        JUDGED_EXTENT,
+        EDGE_EXTENT,
       )
-      if (this.layers.urls[index] === url) this.fills[index] = gradient
+      if (this.layers.urls[index] === url) this.fills[index] = fill
     },
     /** The header's own text only - DetailHero.vue's cover/name column and
      * bio, not its rating controls, nor the artist page's album shelves
@@ -168,7 +166,7 @@ export default {
    * bottom and right. Sideways only - the backdrop may run on below the
    * band - and `clip`, so this is no scroll container. */
   overflow-x: clip;
-  /* A photo's fade to the left where its edge isn't continued, eased
+  /* A photo's fade to the left where its edge can't be continued, eased
    * rather than linear: a straight ramp starts with a visible step in
    * brightness, which reads as a seam. Over its first 30%, so most of the
    * photo stays whole. */
@@ -248,25 +246,54 @@ export default {
  * and place are worked out here from the layer's size (a size container)
  * so that the shade, which must only darken the photo and not the page
  * beside it, can line up with the text in the band's own coordinates.
- * It keeps to the right edge; with a left edge too busy to continue, it
+ * It keeps to the right edge; where its edge can't be read to continue, it
  * fades out to the left onto the page's surface. */
 .detail-page__backdrop--photo {
   container-type: size;
   background-image: none;
-  /* Kept in step with PHOTO_FRAME in the script. */
+  /* Kept in step with PHOTO_FRAME in services/edgeFill.ts. */
   --art-ratio: 1.7778;
   --art-width: min(100cqw, 100cqh * var(--art-ratio));
   --art-left: calc(100cqw - var(--art-width));
 }
 
-/* A smooth left edge, continued from the band's left edge to under the
- * photo, shaded behind the text like the photo itself. */
-.detail-page__fill {
+/* The photo's left edge, continued from under the photo to the band's left
+ * edge, shaded behind the text like the photo itself. Next to the photo it
+ * is the edge band by band; away from it, it eases into one colour, so
+ * whatever reaches the edge only shows near the picture it came from. */
+.detail-page__fill,
+.detail-page__fill::before,
+.detail-page__fill::after {
   position: absolute;
   inset: 0;
-  background:
-    var(--text-shade),
-    var(--fill-left) left / calc(var(--art-left) + var(--art-width) / 2) 100% no-repeat;
+}
+
+.detail-page__fill {
+  /* How far to the left of the photo the edge's own bands carry. */
+  --fill-reach: calc(var(--art-width) * 0.15);
+  background: var(--fill-flat);
+}
+
+.detail-page__fill::before {
+  content: '';
+  background: var(--fill-left) left / calc(var(--art-left) + var(--art-width) / 2) 100% no-repeat;
+  /* Eased like the photo's own fade: a straight ramp shows where it starts. */
+  --fill-fade: linear-gradient(
+    to right,
+    transparent calc(var(--art-left) - var(--fill-reach)),
+    rgba(0, 0, 0, 0.1) calc(var(--art-left) - var(--fill-reach) * 0.8),
+    rgba(0, 0, 0, 0.35) calc(var(--art-left) - var(--fill-reach) * 0.6),
+    rgba(0, 0, 0, 0.65) calc(var(--art-left) - var(--fill-reach) * 0.4),
+    rgba(0, 0, 0, 0.9) calc(var(--art-left) - var(--fill-reach) * 0.2),
+    #000 var(--art-left)
+  );
+  -webkit-mask-image: var(--fill-fade);
+  mask-image: var(--fill-fade);
+}
+
+.detail-page__fill::after {
+  content: '';
+  background: var(--text-shade);
 }
 
 .detail-page__art {
@@ -335,7 +362,7 @@ export default {
  * empty. The crop costs some of the photo's top and bottom, so it is held
  * towards the top, where the faces usually are. */
 .detail-page--banded .detail-page__backdrop--photo {
-  /* Kept in step with BANDED_PHOTO_FRAME in the script. */
+  /* Kept in step with BANDED_PHOTO_FRAME in services/edgeFill.ts. */
   --art-ratio: 2.4;
 }
 

@@ -77,3 +77,4 @@ __screenshots__/
 *.timestamp-*-*.mjs
 TODO.md
 .opencode/
+scripts/edge-fill/.cache/
