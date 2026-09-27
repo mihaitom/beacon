@@ -56,17 +56,13 @@ X-Remote-Password: <key>
 GET /remote/events?password=<key>
 ```
 
-| Status | Meaning                                                    |
-| ------ | ---------------------------------------------------------- |
-| 401    | Wrong or revoked key, while the phone remote is on         |
-| 404    | Wrong or revoked key, while the phone remote is off        |
-| 502    | The app could not carry out the command                    |
-| 503    | The desktop app is not running. Show the device as offline |
-| 504    | The app did not answer in time                             |
-
-Treat 401 and 404 alike, as a key that is not accepted: which of the two
-comes back depends on whether the phone remote is switched on, which says
-nothing about the key.
+| Status | Meaning                                                       |
+| ------ | ------------------------------------------------------------- |
+| 401    | Wrong or revoked key                                          |
+| 404    | Neither the key nor the phone remote is switched on in Beacon |
+| 502    | The app could not carry out the command                       |
+| 503    | The desktop app is not running. Show the device as offline    |
+| 504    | The app did not answer in time                                |
 
 ## State
 

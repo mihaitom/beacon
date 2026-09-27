@@ -177,7 +177,31 @@ def test_phone_password_is_not_accepted_as_the_key_once_phones_are_off(client, u
     client.post("/remote/disable")
     remote.renderer_connected = True
     resp = unauthed.get("/remote/state", headers={"X-Remote-Password": password})
+    assert resp.status_code == 401
+
+
+# A wrong key gets the same answer whatever the phone remote is doing; only
+# with nothing switched on at all is the API hidden behind a 404.
+@pytest.mark.parametrize("phones_on", [False, True])
+def test_wrong_key_is_401_whether_or_not_phones_are_on(client, unauthed, phones_on):
+    integration_key.generate()
+    if phones_on:
+        client.post("/remote/enable")
+    remote.renderer_connected = True
+    resp = unauthed.get("/remote/state", headers={"X-Remote-Password": "wrong"})
+    assert resp.status_code == 401
+
+
+def test_everything_off_is_404(unauthed):
+    resp = unauthed.get("/remote/state", headers={"X-Remote-Password": "anything"})
     assert resp.status_code == 404
+
+
+def test_non_ascii_password_is_401_not_an_error(client, unauthed):
+    client.post("/remote/enable")
+    # As a query parameter: headers cannot carry it, a URL can.
+    resp = unauthed.get("/remote/state", params={"password": "schl\u00fcssel"})
+    assert resp.status_code == 401
 
 
 async def test_an_integration_stream_is_not_counted_as_a_phone():

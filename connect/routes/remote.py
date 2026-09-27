@@ -83,9 +83,12 @@ def require_remote_password(
     password: str | None = Query(default=None),
 ) -> bool:
     """FastAPI dependency for every phone-facing endpoint below. 404s
-    (not 401) when the feature is off — a disabled feature should be
-    unreachable, not merely unauthenticated. EventSource can't set custom
-    headers, hence the ?password= fallback — same reasoning as
+    (not 401) while both the phone remote and the integration key are off:
+    a disabled feature should be unreachable, not merely unauthenticated.
+    With either on, a wrong credential is a 401 - an integration must not
+    see a different answer for the same wrong key depending on whether the
+    phone remote happens to be switched on. EventSource can't set custom
+    headers, hence the ?password= fallback - same reasoning as
     core/auth.py's require_token ?token= fallback.
 
     The integration key (core/integration_key.py) is accepted in the same
@@ -99,11 +102,17 @@ def require_remote_password(
         if not remote.renderer_connected:
             raise HTTPException(status_code=503, detail="Beacon is not connected")
         return True
-    if not remote.enabled or not remote.password:
+    phones_on = bool(remote.enabled and remote.password)
+    if not phones_on and not integration_key.is_set():
         raise HTTPException(status_code=404)
-    if not provided or not secrets.compare_digest(provided, remote.password):
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    return False
+    # Bytes, not str: compare_digest raises on a non-ASCII str.
+    if (
+        phones_on
+        and provided
+        and secrets.compare_digest(provided.encode(), remote.password.encode())
+    ):
+        return False
+    raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 # ── Control plane (renderer -> connect, CONNECT_TOKEN) ──────────────────────
