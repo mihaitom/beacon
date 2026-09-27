@@ -9,7 +9,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .api import BeaconAuthError, BeaconClient, BeaconError
-from .const import CONF_INSTANCE_ID, CONF_KEY, DOMAIN
+from .const import CONF_ACTIVE, CONF_INSTANCE_ID, CONF_KEY, DOMAIN
 
 
 class BeaconConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -30,6 +30,14 @@ class BeaconConfigFlow(ConfigFlow, domain=DOMAIN):
             return "cannot_connect"
         return None
 
+    async def async_step_import(
+        self, import_data: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """The active Beacon (hub.py), created by the first instance."""
+        await self.async_set_unique_id("active")
+        self._abort_if_unique_id_configured()
+        return self.async_create_entry(title="Beacon (active)", data={CONF_ACTIVE: True})
+
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -41,7 +49,10 @@ class BeaconConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}")
                 self._abort_if_unique_id_configured()
-                return self.async_create_entry(title="Beacon", data=user_input)
+                # Not plain "Beacon": that is the active Beacon's device (hub.py).
+                return self.async_create_entry(
+                    title=f"Beacon on {user_input[CONF_HOST]}", data=user_input
+                )
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(

@@ -15,25 +15,32 @@ to build something of their own.
 - [2. Install the integration](#2-install-the-integration)
 - [3. Connect Home Assistant to Beacon](#3-connect-home-assistant-to-beacon)
 - [4. Add the dashboard](#4-add-the-dashboard)
+- [More than one computer](#more-than-one-computer)
 - [Using it in automations](#using-it-in-automations)
 - [Troubleshooting](#troubleshooting)
 - [Updating and removing](#updating-and-removing)
 
 ## What you get
 
-One device, **Beacon**, with these entities. The ids are the ones a fresh
-install creates; see [Entity ids](#entity-ids) if yours look different.
+A device called **Beacon** with these entities. They always have these ids,
+whatever your computers are called, and follow the Beacon instance that is
+in use (see [More than one computer](#more-than-one-computer)):
 
 | Entity                            | What it does                                                                                                                          |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `media_player.beacon`             | What is playing, with cover, position and volume. Play, pause, skip, seek, shuffle, repeat, volume. The library in the media browser. |
 | `select.beacon_speaker`           | Where Beacon plays: `This computer` or one speaker.                                                                                   |
-| `switch.beacon_cast_<speaker>`    | One per speaker. Turning several on casts to all of them at once.                                                                     |
 | `switch.beacon_autoplay`          | Autoplay: keeps playing similar songs when the queue runs out.                                                                        |
 | `sensor.beacon_now_playing`       | "Artist – Title" as plain text, so the history and logbook list the songs.                                                            |
 | `sensor.beacon_queue`             | How many songs are queued; the next ones are in its `up_next` attribute.                                                              |
 | `button.beacon_resume_cast`       | Picks a cast back up after a speaker dropped out. Only available while that is the case.                                              |
 | `button.beacon_scan_for_speakers` | Looks for speakers on the network again.                                                                                              |
+| `select.beacon_instance`          | Which Beacon instance the above follow: `Automatic`, or one pinned.                                                                   |
+
+Each Beacon instance also gets a device of its own, named after the
+computer ("Beacon on my-pc"), with the same entities for that instance
+alone, plus a switch per speaker (`switch.beacon_on_my_pc_cast_<speaker>`):
+turning several on casts to all of them at once.
 
 In Home Assistant's **media browser** the player offers the queue, your
 playlists, your albums (grouped by letter) and your radio stations, plus a
@@ -121,22 +128,15 @@ playing, speakers, controls, library, up next, history) and
 3. Replace everything in the editor with the contents of `dashboard.yaml`
    and **Save**.
 
-### Entity ids
-
-The dashboard uses the ids from the table above. Home Assistant can create
-different ones, for instance with the area in front
-(`switch.living_room_beacon_autoplay`) when the device was put into an area
-while setting it up. Check under **Settings > Devices & services > Beacon >
-1 device > Beacon**; if the ids differ, use search and replace in the raw
-configuration editor.
-
 ### Your speakers and favourites
 
 Two parts depend on your setup and are left as commented examples in the
 file. Search for `YOUR`:
 
-- **Speakers**: one tile per speaker switch, `switch.beacon_cast_<speaker>`.
-  Home Assistant creates these as soon as Beacon has found your speakers.
+- **Speakers**: one tile per speaker switch of your instance,
+  `switch.beacon_on_<computer>_cast_<speaker>`. Home Assistant creates these
+  as soon as Beacon has found your speakers; they are listed on the
+  instance's device page.
 - **Favourites**: a button that starts a playlist or station by its name, as
   Beacon shows it:
 
@@ -156,6 +156,18 @@ file. Search for `YOUR`:
 
   For a station, use `radio:<station name>` and `media_content_type:
 channel`.
+
+## More than one computer
+
+Beacon on a desktop and a laptop, or a second copy on the same machine:
+each shows up under Discovered and is added the same way, with its own key.
+
+The **Beacon** device then follows whichever is in use: the one that is
+playing, or else the one that is running. So the dashboard and your
+automations keep working whichever computer you use. To tie them to one
+instance instead, set `select.beacon_instance` to it; `Automatic` switches
+back. For an automation about one computer in particular, use that
+instance's own entities.
 
 ## Using it in automations
 

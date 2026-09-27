@@ -468,7 +468,7 @@ export default {
     homeAutomationKeyOnce:
       'Shown only now. Copy it into your integration; if you lose it, create a new one.',
     homeAutomationGenerate: 'Create key',
-    homeAutomationRegenerate: 'Create new key',
+    homeAutomationRegenerate: 'New key',
     homeAutomationRevoke: 'Revoke',
     homeAutomationDocs: 'How it works',
     homeAutomationFailed: 'The key could not be changed',

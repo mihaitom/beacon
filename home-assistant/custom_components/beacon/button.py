@@ -6,23 +6,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import device_id
 from .api import BeaconError
-from .coordinator import BeaconCoordinator
 from .entity import BeaconEntity
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator = entry.runtime_data
-    dev_id = device_id(entry)
-    async_add_entities(
-        [
-            BeaconResumeButton(coordinator, dev_id, entry.title),
-            BeaconRescanButton(coordinator, dev_id, entry.title),
-        ]
-    )
+    source = entry.runtime_data
+    async_add_entities([BeaconResumeButton(source, entry), BeaconRescanButton(source, entry)])
 
 
 class BeaconResumeButton(BeaconEntity, ButtonEntity):
@@ -32,8 +24,10 @@ class BeaconResumeButton(BeaconEntity, ButtonEntity):
     _attr_name = "Resume cast"
     _attr_icon = "mdi:cast-connected"
 
-    def __init__(self, coordinator: BeaconCoordinator, dev_id: str, title: str) -> None:
-        super().__init__(coordinator, dev_id, title, "resume_cast")
+    _key = "resume_cast"
+
+    def __init__(self, source, entry: ConfigEntry) -> None:
+        super().__init__(source, entry, "button")
 
     @property
     def available(self) -> bool:
@@ -50,8 +44,11 @@ class BeaconRescanButton(BeaconEntity, ButtonEntity):
     _attr_name = "Scan for speakers"
     _attr_icon = "mdi:magnify"
 
-    def __init__(self, coordinator: BeaconCoordinator, dev_id: str, title: str) -> None:
-        super().__init__(coordinator, dev_id, title, "rescan")
+    _key = "rescan"
+    _object_id = "scan_for_speakers"
+
+    def __init__(self, source, entry: ConfigEntry) -> None:
+        super().__init__(source, entry, "button")
 
     async def async_press(self) -> None:
         await self.coordinator.refresh_devices(rescan=True)

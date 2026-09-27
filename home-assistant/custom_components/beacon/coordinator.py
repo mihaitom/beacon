@@ -34,6 +34,12 @@ class BeaconCoordinator:
         self._albums: list[dict] = []
         self._albums_at = 0.0
 
+    @property
+    def coordinator(self) -> "BeaconCoordinator":
+        """Entities read through a source: an instance is its own, the
+        active Beacon (hub.py) points at one of them."""
+        return self
+
     def start(self) -> None:
         self._tasks.append(
             self.hass.async_create_background_task(

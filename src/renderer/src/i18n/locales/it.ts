@@ -472,7 +472,7 @@ export default {
     homeAutomationKeyOnce:
       'Mostrata solo ora. Copiala nella tua integrazione; se la perdi, creane una nuova.',
     homeAutomationGenerate: 'Crea chiave',
-    homeAutomationRegenerate: 'Crea nuova chiave',
+    homeAutomationRegenerate: 'Nuova chiave',
     homeAutomationRevoke: 'Revoca',
     homeAutomationDocs: 'Come funziona',
     homeAutomationFailed: 'Impossibile modificare la chiave',

@@ -1,9 +1,10 @@
 # Beacon dashboard for Home Assistant
 #
 # Built from Home Assistant's own cards only - nothing to install besides the
-# Beacon integration (see README.md next to this file). The entity ids below
-# are the ones the integration creates on a fresh install; if yours differ
-# (Settings > Devices & services > Beacon), replace "beacon" accordingly.
+# Beacon integration (see README.md next to this file). It uses the "Beacon"
+# device the integration creates next to your Beacon instances: its entities
+# have the same ids everywhere and follow whichever instance is in use, so
+# this file works as it is.
 #
 # Per-speaker switches and favourites depend on your setup, so they are left
 # as commented examples: search for "YOUR".
@@ -16,6 +17,14 @@ views:
     type: sections
     max_columns: 3
     badges:
+      # Which Beacon the page follows; tap to pin one instead of Automatic.
+      - type: entity
+        entity: select.beacon_instance
+        name: Beacon
+        show_name: true
+        show_state: true
+        show_icon: true
+        state_content: following
       - type: entity
         entity: media_player.beacon
         show_name: false
@@ -117,9 +126,11 @@ views:
                 state_not: unavailable
             grid_options:
               columns: full
-          # One switch per speaker casts to several at once. YOUR speakers:
+          # To cast to several speakers at once, each Beacon instance has a
+          # switch per speaker; the ids start with that instance's name.
+          # YOUR speakers:
           # - type: tile
-          #   entity: switch.beacon_cast_living_room
+          #   entity: switch.beacon_on_my_pc_cast_living_room
           #   name: Living room
           #   icon: mdi:speaker-wireless
           #   color: amber
@@ -435,7 +446,7 @@ views:
               actions:
                 - action: switch.turn_on
                   target:
-                    entity_id: switch.beacon_cast_living_room
+                    entity_id: switch.beacon_on_my_pc_cast_living_room
               ```
           - type: heading
             heading: Now playing on your phone

@@ -473,7 +473,7 @@ export default {
     homeAutomationKeyOnce:
       'Affichée seulement maintenant. Copiez-la dans votre intégration ; si vous la perdez, créez-en une nouvelle.',
     homeAutomationGenerate: 'Créer une clé',
-    homeAutomationRegenerate: 'Créer une nouvelle clé',
+    homeAutomationRegenerate: 'Nouvelle clé',
     homeAutomationRevoke: 'Révoquer',
     homeAutomationDocs: 'Fonctionnement',
     homeAutomationFailed: 'Impossible de modifier la clé',

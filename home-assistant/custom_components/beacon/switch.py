@@ -7,10 +7,9 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import device_id
 from .api import BeaconError
 from .coordinator import BeaconCoordinator
-from .entity import BeaconEntity
+from .entity import BeaconEntity, is_active
 
 _TYPE_LABELS = {"sonos": "Sonos", "airplay": "AirPlay", "chromecast": "Chromecast", "dlna": "DLNA"}
 
@@ -18,11 +17,15 @@ _TYPE_LABELS = {"sonos": "Sonos", "airplay": "AirPlay", "chromecast": "Chromecas
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator: BeaconCoordinator = entry.runtime_data
-    dev_id = device_id(entry)
-    known: set[tuple[str, str]] = set()
+    source = entry.runtime_data
+    async_add_entities([BeaconAutoplaySwitch(source, entry)])
+    # Speakers belong to one computer, so only its own device gets a switch
+    # for each; the active Beacon has select.beacon_speaker instead.
+    if is_active(entry):
+        return
 
-    async_add_entities([BeaconAutoplaySwitch(coordinator, dev_id, entry.title)])
+    coordinator: BeaconCoordinator = source
+    known: set[tuple[str, str]] = set()
 
     @callback
     def add_new_speakers() -> None:
@@ -32,7 +35,7 @@ async def async_setup_entry(
             if ref in known or device.get("needs_pairing"):
                 continue
             known.add(ref)
-            new.append(BeaconSpeakerSwitch(coordinator, dev_id, entry.title, *ref))
+            new.append(BeaconSpeakerSwitch(coordinator, entry, *ref))
         if new:
             async_add_entities(new)
 
@@ -44,9 +47,10 @@ class BeaconSpeakerSwitch(BeaconEntity, SwitchEntity):
     _attr_icon = "mdi:speaker-wireless"
 
     def __init__(
-        self, coordinator: BeaconCoordinator, dev_id: str, title: str, device_type: str, name: str
+        self, coordinator: BeaconCoordinator, entry: ConfigEntry, device_type: str, name: str
     ) -> None:
-        super().__init__(coordinator, dev_id, title, f"cast_{device_type}_{name}")
+        self._key = f"cast_{device_type}_{name}"
+        super().__init__(coordinator, entry, "switch")
         self._type = device_type
         self._name = name
         self._attr_name = f"Cast {name}"
@@ -98,8 +102,10 @@ class BeaconAutoplaySwitch(BeaconEntity, SwitchEntity):
     _attr_name = "Autoplay"
     _attr_icon = "mdi:playlist-plus"
 
-    def __init__(self, coordinator: BeaconCoordinator, dev_id: str, title: str) -> None:
-        super().__init__(coordinator, dev_id, title, "autoplay")
+    _key = "autoplay"
+
+    def __init__(self, source, entry: ConfigEntry) -> None:
+        super().__init__(source, entry, "switch")
 
     @property
     def is_on(self) -> bool:

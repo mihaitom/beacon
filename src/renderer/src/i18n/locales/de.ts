@@ -471,7 +471,7 @@ export default {
     homeAutomationKeyOnce:
       'Wird nur jetzt angezeigt. Kopiere ihn in deine Integration; geht er verloren, erzeuge einen neuen.',
     homeAutomationGenerate: 'Schlüssel erzeugen',
-    homeAutomationRegenerate: 'Neuen Schlüssel erzeugen',
+    homeAutomationRegenerate: 'Neuer Schlüssel',
     homeAutomationRevoke: 'Widerrufen',
     homeAutomationDocs: "So funktioniert's",
     homeAutomationFailed: 'Der Schlüssel konnte nicht geändert werden',

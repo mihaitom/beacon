@@ -7,8 +7,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import device_id
-from .coordinator import BeaconCoordinator
 from .entity import BeaconEntity
 
 # Enough for a dashboard; a long queue would bloat the state machine.
@@ -18,14 +16,8 @@ MAX_LISTED = 50
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator = entry.runtime_data
-    dev_id = device_id(entry)
-    async_add_entities(
-        [
-            BeaconQueueSensor(coordinator, dev_id, entry.title),
-            BeaconNowPlayingSensor(coordinator, dev_id, entry.title),
-        ]
-    )
+    source = entry.runtime_data
+    async_add_entities([BeaconQueueSensor(source, entry), BeaconNowPlayingSensor(source, entry)])
 
 
 class BeaconQueueSensor(BeaconEntity, SensorEntity):
@@ -33,8 +25,10 @@ class BeaconQueueSensor(BeaconEntity, SensorEntity):
     _attr_icon = "mdi:playlist-music"
     _attr_native_unit_of_measurement = "songs"
 
-    def __init__(self, coordinator: BeaconCoordinator, dev_id: str, title: str) -> None:
-        super().__init__(coordinator, dev_id, title, "queue")
+    _key = "queue"
+
+    def __init__(self, source, entry: ConfigEntry) -> None:
+        super().__init__(source, entry, "sensor")
 
     @property
     def native_value(self) -> int:
@@ -55,8 +49,10 @@ class BeaconNowPlayingSensor(BeaconEntity, SensorEntity):
     _attr_name = "Now playing"
     _attr_icon = "mdi:music-note"
 
-    def __init__(self, coordinator: BeaconCoordinator, dev_id: str, title: str) -> None:
-        super().__init__(coordinator, dev_id, title, "now_playing")
+    _key = "now_playing"
+
+    def __init__(self, source, entry: ConfigEntry) -> None:
+        super().__init__(source, entry, "sensor")
 
     @property
     def native_value(self) -> str | None:

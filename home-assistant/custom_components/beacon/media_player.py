@@ -20,9 +20,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from . import device_id
 from .api import BeaconError
-from .coordinator import BeaconCoordinator
 from .entity import BeaconEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -62,7 +60,7 @@ _FEATURES = (
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    async_add_entities([BeaconPlayer(entry.runtime_data, device_id(entry), entry.title)])
+    async_add_entities([BeaconPlayer(entry.runtime_data, entry)])
 
 
 class BeaconPlayer(BeaconEntity, MediaPlayerEntity):
@@ -70,8 +68,8 @@ class BeaconPlayer(BeaconEntity, MediaPlayerEntity):
     _attr_supported_features = _FEATURES
     _attr_media_content_type = MediaType.MUSIC
 
-    def __init__(self, coordinator: BeaconCoordinator, dev_id: str, title: str) -> None:
-        super().__init__(coordinator, dev_id, title, "")
+    def __init__(self, source, entry: ConfigEntry) -> None:
+        super().__init__(source, entry, "media_player")
         self._position_at = dt_util.utcnow()
         self._last_snapshot: dict | None = None
 
