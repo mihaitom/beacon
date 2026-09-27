@@ -235,8 +235,8 @@ function startConnectServer(): void {
       ...process.env,
       CONNECT_TOKEN: packagedConnectToken,
       PORT: String(packagedConnectPort),
-      // Persistent AirPlay pairing credentials (see connect/delivery/
-      // credentials.py) — userData survives app updates, unlike the
+      // Everything connect persists (AirPlay pairings, the Jellyfin/Plex
+      // client ids, settings, caches) — userData survives app updates, unlike the
       // packaged binary's own resources folder, which gets replaced
       // wholesale on every update.
       CONNECT_DATA_DIR: app.getPath('userData'),
