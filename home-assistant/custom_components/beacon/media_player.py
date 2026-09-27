@@ -72,6 +72,7 @@ class BeaconPlayer(BeaconEntity, MediaPlayerEntity):
         super().__init__(source, entry, "media_player")
         self._position_at = dt_util.utcnow()
         self._last_snapshot: dict | None = None
+        self._stations: list[dict] = []
 
     @property
     def _snapshot(self) -> dict:
@@ -142,7 +143,9 @@ class BeaconPlayer(BeaconEntity, MediaPlayerEntity):
         if self._song and self._song.get("cover_art_id"):
             return client.cover_url(self._song["cover_art_id"], self._snapshot.get("session_id"))
         if self._radio:
-            return self._radio.get("favicon_url")
+            return client.favicon_url(
+                self._radio.get("home_page_url"), self._radio.get("favicon_hint")
+            )
         return None
 
     @property
@@ -311,8 +314,6 @@ class BeaconPlayer(BeaconEntity, MediaPlayerEntity):
             return None, None
         return await self._async_fetch_image(url)
 
-    _stations: list[dict] = []
-
     async def _query(self, path: str, params: dict | None = None) -> dict:
         try:
             return await self.coordinator.client.query(path, params)
@@ -467,7 +468,7 @@ class BeaconPlayer(BeaconEntity, MediaPlayerEntity):
 
         if media_content_id == "radios":
             result = await self._query("radio-stations")
-            BeaconPlayer._stations = result.get("items", [])
+            self._stations = result.get("items", [])
             children = [
                 BrowseMedia(
                     media_class=MediaClass.CHANNEL,
@@ -482,7 +483,7 @@ class BeaconPlayer(BeaconEntity, MediaPlayerEntity):
                         s["id"] if (s.get("home_page_url") or s.get("favicon_hint")) else None,
                     ),
                 )
-                for s in BeaconPlayer._stations
+                for s in self._stations
             ]
             return self._folder("Radio", "radios", children)
 

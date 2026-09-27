@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { usePlaybackStore } from '@/stores/playback'
 import { useLibraryStore } from '@/stores/library'
@@ -771,65 +771,40 @@ describe('resolveRemoteQuery', () => {
 })
 
 describe('phone-scoped media URLs (remoteCoverArtUrl / remoteRadioFaviconUrl)', () => {
-  const originalApi = window.api
-
   beforeEach(() => {
     setActivePinia(createPinia())
   })
 
-  afterEach(() => {
-    window.api = originalApi
-  })
-
-  it("toRemoteSong omits cover_art_url until remote control has issued this session's password", () => {
-    const remote = toRemoteSong(makeSong('a', { coverArtId: 'cover1' }))
-    expect(remote.cover_art_url).toBeNull()
-  })
-
-  it('builds a LAN-address URL with id/password/session once Electron remote control is set up', () => {
-    window.api = {} as typeof window.api
-    const remoteControl = useRemoteControlStore()
-    remoteControl.password = 'secret'
-    remoteControl.lanIp = '192.168.1.5'
-    remoteControl.port = 8080
+  // This app's copy of the phone password is gone after every reload, while
+  // the paired phone's stays valid - a URL that needed it went null then,
+  // and every cover on the phone turned into a placeholder.
+  it('builds cover URLs without the phone password, so a reload cannot take them away', () => {
     useAuthStore().sessionId = 'sess-1'
 
     const remote = toRemoteSong(makeSong('a', { coverArtId: 'cover1' }))
 
-    expect(remote.cover_art_url).toBe(
-      'http://192.168.1.5:8080/remote/cover-art?id=cover1&password=secret&session=sess-1',
+    expect(useRemoteControlStore().password).toBeNull()
+    expect(remote.cover_art_url).toBe('/remote/cover-art?id=cover1&session=sess-1')
+  })
+
+  it('never puts the password in a cover URL, even while this app knows it', () => {
+    useRemoteControlStore().password = 'secret'
+
+    expect(toRemoteSong(makeSong('a', { coverArtId: 'cover1' })).cover_art_url).not.toContain(
+      'secret',
     )
   })
 
-  it('stays null in Electron until lanIp/port are known, even with a password already set', () => {
-    window.api = {} as typeof window.api
-    useRemoteControlStore().password = 'secret'
-
-    expect(toRemoteSong(makeSong('a', { coverArtId: 'cover1' })).cover_art_url).toBeNull()
-  })
-
-  it('toRemoteSong carries the bare cover id for an integration, whatever the phone state', () => {
+  it('toRemoteSong carries the bare cover id for an integration', () => {
     expect(toRemoteSong(makeSong('a', { coverArtId: 'cover1' })).cover_art_id).toBe('cover1')
   })
 
-  it("uses this page's own origin instead of lanIp/port on the web build", () => {
-    useRemoteControlStore().password = 'secret'
-
-    const remote = toRemoteSong(makeSong('a', { coverArtId: 'cover1' }))
-
-    expect(remote.cover_art_url).toBe(
-      `${window.location.origin}/remote/cover-art?id=cover1&password=secret`,
-    )
-  })
-
   it('remoteRadioFaviconUrl is null with nothing to resolve from, and only adds min_size when given a positive one', () => {
-    useRemoteControlStore().password = 'secret'
-
     expect(remoteRadioFaviconUrl(null)).toBeNull()
     expect(remoteRadioFaviconUrl('https://station.example')).toBe(
-      `${window.location.origin}/remote/radio-favicon?url=${encodeURIComponent(
+      `/remote/radio-favicon?url=${encodeURIComponent(
         'https://station.example',
-      )}&password=secret&v=${RADIO_FAVICON_CACHE_VERSION}`,
+      )}&v=${RADIO_FAVICON_CACHE_VERSION}`,
     )
     // Rounded up to the shared size step, so the phone reuses the answer the
     // desktop's own list row already had the backend resolve.
@@ -841,8 +816,6 @@ describe('phone-scoped media URLs (remoteCoverArtUrl / remoteRadioFaviconUrl)', 
     // at all, only Radio Browser's own favicon URL — the desktop resolves
     // those from the hint (see radioFaviconRequest) and the phone used to
     // send neither, which is why it showed a fallback icon for them.
-    useRemoteControlStore().password = 'secret'
-
     const fromHintOnly = remoteRadioFaviconUrl(null, 0, 'https://cdn.example/logo.png')
     expect(fromHintOnly).toContain(`hint=${encodeURIComponent('https://cdn.example/logo.png')}`)
     expect(fromHintOnly).toContain('url=&')
