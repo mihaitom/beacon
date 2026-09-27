@@ -157,6 +157,29 @@ describe('HomeAutomationSection', () => {
     expect(button(wrapper, 'settings.fixedPortClear')).toBeUndefined()
   })
 
+  // Home Assistant finds Beacon over mDNS; the address only matters for a
+  // setup by hand, which only lasts with a fixed port.
+  it('shows the address for a setup by hand while a fixed port is in use', async () => {
+    portInfo = { port: 8123, fromEnvironment: false, current: 8123 }
+    useRemoteControlStore().lanIp = '192.0.2.5'
+    const { wrapper } = await mountSection()
+
+    expect(wrapper.text()).toContain(
+      wrapper.vm.$t('settings.fixedPortManual', { address: '192.0.2.5', port: 8123 }),
+    )
+  })
+
+  it.each([
+    ['without a fixed port', { port: null, fromEnvironment: false, current: 51234 }],
+    ['while the fixed port was taken', { port: 8123, fromEnvironment: false, current: 51234 }],
+  ])('shows no address %s', async (_, info) => {
+    portInfo = info
+    useRemoteControlStore().lanIp = '192.0.2.5'
+    const { wrapper } = await mountSection()
+
+    expect(wrapper.text()).not.toContain('192.0.2.5')
+  })
+
   it('offers no port setting in dev, where connect picks its own', async () => {
     portInfo = { port: null, fromEnvironment: false, current: null }
     const { wrapper } = await mountSection()

@@ -473,7 +473,8 @@ export default {
     homeAutomationDocs: 'How it works',
     homeAutomationFailed: 'The key could not be changed',
     fixedPortWhat:
-      'Beacon picks a free port on every start. A fixed port keeps its address the same, for tools that cannot find it on their own. Takes effect after restarting Beacon.',
+      'Home Assistant finds Beacon on its own. A fixed port is only needed where it cannot, for example in another subnet or VLAN, and for other tools. Takes effect after restarting Beacon.',
+    fixedPortManual: 'For setting up by hand: address {address}, port {port}.',
     fixedPort: 'Fixed port',
     fixedPortPlaceholder: 'A free port on every start',
     fixedPortClear: 'Use a free port',

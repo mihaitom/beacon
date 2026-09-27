@@ -477,7 +477,8 @@ export default {
     homeAutomationDocs: 'Come funziona',
     homeAutomationFailed: 'Impossibile modificare la chiave',
     fixedPortWhat:
-      'Beacon sceglie una porta libera a ogni avvio. Una porta fissa mantiene lo stesso indirizzo, per gli strumenti che non sanno trovarlo da soli. Ha effetto dopo il riavvio di Beacon.',
+      "Home Assistant trova Beacon da solo. Una porta fissa serve solo dove non ci riesce, per esempio in un'altra sottorete o VLAN, e per altri strumenti. Ha effetto dopo il riavvio di Beacon.",
+    fixedPortManual: 'Per la configurazione manuale: indirizzo {address}, porta {port}.',
     fixedPort: 'Porta fissa',
     fixedPortPlaceholder: 'Una porta libera a ogni avvio',
     fixedPortClear: 'Usa una porta libera',

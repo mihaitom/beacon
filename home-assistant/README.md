@@ -103,8 +103,9 @@ With Beacon running and a key created:
 2. Click **Add** and paste the key.
 
 That is all. If Beacon does not show up under Discovered, add it by hand:
-**Add integration** > **Beacon**, then enter the computer's address, the
-fixed port from step 1 and the key.
+**Add integration** > **Beacon**, then enter the address and port and the
+key. Beacon shows the address and port under its fixed port setting, once
+one is set and in use.
 
 ## 4. Add the dashboard
 

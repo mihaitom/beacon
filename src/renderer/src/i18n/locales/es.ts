@@ -476,7 +476,8 @@ export default {
     homeAutomationDocs: 'Cómo funciona',
     homeAutomationFailed: 'No se ha podido cambiar la clave',
     fixedPortWhat:
-      'Beacon elige un puerto libre en cada inicio. Un puerto fijo mantiene la misma dirección, para herramientas que no pueden encontrarlo por sí solas. Se aplica tras reiniciar Beacon.',
+      'Home Assistant encuentra Beacon por sí solo. Un puerto fijo solo hace falta donde no puede, por ejemplo en otra subred o VLAN, y para otras herramientas. Se aplica tras reiniciar Beacon.',
+    fixedPortManual: 'Para configurarlo a mano: dirección {address}, puerto {port}.',
     fixedPort: 'Puerto fijo',
     fixedPortPlaceholder: 'Un puerto libre en cada inicio',
     fixedPortClear: 'Usar un puerto libre',

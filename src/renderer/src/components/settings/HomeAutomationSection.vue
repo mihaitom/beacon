@@ -37,19 +37,6 @@
           <p class="setting__hint">{{ $t('settings.homeAutomationKeyOnce') }}</p>
         </template>
 
-        <v-text-field
-          v-if="remoteControlStore.integration && address"
-          :model-value="address"
-          :label="$t('remoteControl.address')"
-          readonly
-          variant="solo-filled"
-          density="compact"
-          append-inner-icon="mdi-content-copy"
-          hide-details
-          class="home-automation__field"
-          @click:append-inner="copy(address)"
-        />
-
         <div class="home-automation__actions">
           <v-btn
             variant="text"
@@ -114,6 +101,10 @@
           </v-btn>
         </div>
         <p class="setting__hint">{{ portStatus }}</p>
+        <!-- Home Assistant finds Beacon by its mDNS announcement and never
+           - needs the address. Only setting it up by hand does, and that
+           - only holds with a fixed port, so the address is shown with one. -->
+        <p v-if="manualSetupHint" class="setting__hint">{{ manualSetupHint }}</p>
       </div>
     </div>
   </section>
@@ -126,7 +117,7 @@ type ConnectPortInfo = Awaited<
   ReturnType<NonNullable<Window['api']>['appConfig']['getConnectPort']>
 >
 
-const DOCS_URL = 'https://github.com/mihaitom/beacon/blob/main/docs/home-automation.md'
+const DOCS_URL = 'https://github.com/mihaitom/beacon/blob/main/home-assistant/README.md'
 // Same range main accepts (main/index.ts): below 1024 needs root on
 // Linux/macOS.
 const MIN_PORT = 1024
@@ -137,7 +128,8 @@ const MAX_PORT = 65535
  * (connect/core/integration_key.py), and the fixed port main starts the
  * backend on, so both survive a restart. A key also turns on the mDNS
  * announcement (connect/core/mdns.py), which is how Home Assistant finds
- * the port when the fixed one was taken.
+ * Beacon at all - the fixed port is for where that announcement does not
+ * reach.
  */
 export default {
   name: 'HomeAutomationSection',
@@ -159,9 +151,11 @@ export default {
     remoteControlStore() {
       return useRemoteControlStore()
     },
-    address(): string {
-      const { lanIp, port } = this.remoteControlStore
-      return lanIp && port ? `http://${lanIp}:${port}` : ''
+    manualSetupHint(): string {
+      const info = this.portInfo
+      const lanIp = this.remoteControlStore.lanIp
+      if (!info || info.port === null || info.port !== info.current || !lanIp) return ''
+      return this.$t('settings.fixedPortManual', { address: lanIp, port: info.port })
     },
     /** null for an empty field, which means "a free port every start". */
     portValue(): number | null {

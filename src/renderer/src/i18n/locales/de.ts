@@ -476,7 +476,8 @@ export default {
     homeAutomationDocs: "So funktioniert's",
     homeAutomationFailed: 'Der Schlüssel konnte nicht geändert werden',
     fixedPortWhat:
-      'Beacon wählt bei jedem Start einen freien Port. Ein fester Port hält die Adresse gleich, für Werkzeuge, die Beacon nicht selbst finden. Gilt nach einem Neustart von Beacon.',
+      'Home Assistant findet Beacon von selbst. Ein fester Port ist nur nötig, wo das nicht klappt, etwa in einem anderen Subnetz oder VLAN, und für andere Werkzeuge. Gilt nach einem Neustart von Beacon.',
+    fixedPortManual: 'Für die Einrichtung von Hand: Adresse {address}, Port {port}.',
     fixedPort: 'Fester Port',
     fixedPortPlaceholder: 'Bei jedem Start ein freier Port',
     fixedPortClear: 'Freien Port verwenden',
