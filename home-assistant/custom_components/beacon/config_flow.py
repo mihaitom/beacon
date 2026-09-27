@@ -3,17 +3,34 @@
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .api import BeaconAuthError, BeaconClient, BeaconError
-from .const import CONF_ACTIVE, CONF_INSTANCE_ID, CONF_KEY, DOMAIN
+from .const import CONF_ACTIVE, CONF_INSTANCE_ID, CONF_KEY, CONF_SHOW_DASHBOARD, DOMAIN
 
 
 class BeaconConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        return BeaconOptionsFlow()
+
+    @classmethod
+    @callback
+    def async_supports_options_flow(cls, config_entry: ConfigEntry) -> bool:
+        # Only the active Beacon has options: whether its dashboard shows.
+        return bool(config_entry.data.get(CONF_ACTIVE))
 
     def __init__(self) -> None:
         self._host: str | None = None
@@ -104,4 +121,22 @@ class BeaconConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({vol.Required(CONF_KEY): str}),
             description_placeholders={"name": self._name, "host": f"{self._host}:{self._port}"},
             errors=errors,
+        )
+
+
+class BeaconOptionsFlow(OptionsFlow):
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        if user_input is not None:
+            # Merged, not replaced: the options also hold the pinned instance.
+            return self.async_create_entry(data={**self.config_entry.options, **user_input})
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_SHOW_DASHBOARD,
+                        default=self.config_entry.options.get(CONF_SHOW_DASHBOARD, True),
+                    ): bool
+                }
+            ),
         )

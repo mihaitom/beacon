@@ -5,12 +5,18 @@
       "user": {
         "title": "Beacon",
         "description": "Create a key in Beacon under Settings > Advanced > Home automation.",
-        "data": { "host": "Host", "port": "Port", "key": "Key" }
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "key": "Key"
+        }
       },
       "zeroconf_confirm": {
         "title": "Beacon found",
         "description": "{name} at {host}. Enter the key from Beacon's Settings > Advanced > Home automation.",
-        "data": { "key": "Key" }
+        "data": {
+          "key": "Key"
+        }
       }
     },
     "error": {
@@ -20,6 +26,19 @@
     "abort": {
       "already_configured": "This Beacon is already set up.",
       "not_supported": "This announcement is missing Beacon's id."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Beacon",
+        "data": {
+          "show_dashboard": "Show the Beacon dashboard in the sidebar"
+        },
+        "data_description": {
+          "show_dashboard": "A ready-made dashboard for the active Beacon. To change it, copy dashboard.yaml into a dashboard of your own."
+        }
+      }
     }
   }
 }

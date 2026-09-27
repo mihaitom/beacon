@@ -1,10 +1,13 @@
 # Beacon dashboard for Home Assistant
 #
-# Built from Home Assistant's own cards only - nothing to install besides the
-# Beacon integration (see README.md next to this file). It uses the "Beacon"
-# device the integration creates next to your Beacon instances: its entities
-# have the same ids everywhere and follow whichever instance is in use, so
-# this file works as it is.
+# Comes with the integration: it shows in the sidebar as "Beacon" (switch it
+# off in the integration's options). To change it, paste this file into a
+# dashboard of your own - the one in the sidebar is read-only.
+#
+# Built from Home Assistant's own cards only. It uses the "Beacon" device the
+# integration creates next to your Beacon instances: its entities have the
+# same ids everywhere and follow whichever instance is in use, so this file
+# works as it is.
 #
 # Per-speaker switches and favourites depend on your setup, so they are left
 # as commented examples: search for "YOUR".

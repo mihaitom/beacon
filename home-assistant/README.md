@@ -114,19 +114,25 @@ That is all. If Beacon does not show up under Discovered, add it by hand:
 key. Beacon shows the address and port under its fixed port setting, once
 one is set and in use.
 
-## 4. Add the dashboard
+## 4. The dashboard
 
-`dashboard.yaml` is a complete dashboard built from Home Assistant's own
-cards; nothing else needs installing. It has two pages: **Beacon** (now
-playing, speakers, controls, library, up next, history) and
-**Automations** (examples to copy).
+The integration brings a ready-made dashboard along: after setting up, a
+**Beacon** entry appears in the sidebar. It has two pages: **Beacon** (now
+playing, speakers, controls, library, up next, history) and **Automations**
+(examples to copy). It is built from Home Assistant's own cards only and
+follows whichever Beacon instance is in use.
+
+To hide it: **Settings > Devices & services > Beacon > Beacon (active) >
+⚙ Configure** and switch off "Show the Beacon dashboard in the sidebar".
+
+The dashboard in the sidebar cannot be edited. To make your own version of
+it, for instance with your speakers and favourite playlists:
 
 1. **Settings > Dashboards > Add dashboard > New dashboard from scratch**.
-   Name it "Beacon", pick an icon such as `mdi:music-circle`, and create it.
-2. Open the new dashboard, click the **pencil** (top right), then **⋮ >
-   Raw configuration editor**.
-3. Replace everything in the editor with the contents of `dashboard.yaml`
-   and **Save**.
+2. Open it, click the **pencil** (top right), then **⋮ > Raw configuration
+   editor**.
+3. Paste in the contents of `custom_components/beacon/dashboard.yaml` and
+   **Save**. You can then hide the built-in one as described above.
 
 ### Your speakers and favourites
 
