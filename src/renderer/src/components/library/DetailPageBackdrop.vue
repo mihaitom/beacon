@@ -47,7 +47,7 @@ import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop
 import {
   BANDED_PHOTO_FRAME,
   EDGE_EXTENT,
-  type LeftEdgeFill,
+  type EdgeFill,
   PHOTO_FRAME,
   extractLeftEdgeFill,
 } from '@/services/edgeFill'
@@ -93,7 +93,7 @@ export default {
       layerIsPhoto: [false, false],
       /** Per layer: the photo's left edge, continued to its left - null
        * while it is read, or where it can't be. */
-      fills: [null, null] as (LeftEdgeFill | null)[],
+      fills: [null, null] as (EdgeFill | null)[],
       /** Where the header text ends, in px from the band's left. */
       textEnd: 0,
       textObserver: null as ResizeObserver | null,

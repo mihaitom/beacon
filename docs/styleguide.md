@@ -379,7 +379,9 @@ background's 16:9). Where the card is wider, the free width is shared
 equally either side of it - centring it, but never left of where the text
 ends - and filled with the picture's own
 edge colours (`services/edgeFill.ts`), which its ends soften into - opaque out to the edges, behind the text
-too. Only the scrim darkens it there, from the left edge to just past where
+too. As on the detail pages, each edge's own bands carry for 15% of the
+picture's width and then settle into one colour, the background or else
+the edge's main colour, so whatever reaches an edge only shows beside it. Only the scrim darkens it there, from the left edge to just past where
 the text ends (measured, `services/textExtent.ts`), so where there is room
 the darkening falls on that edge colour and the picture itself stays
 untouched. A banner wider than the card is held to the right edge and loses

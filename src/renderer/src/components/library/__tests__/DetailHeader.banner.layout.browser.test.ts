@@ -121,4 +121,11 @@ describe('DetailHeader banner placement', () => {
     expect(layer.style.getPropertyValue('--fill-left')).toContain('rgb(200, 200, 200)')
     expect(layer.style.getPropertyValue('--fill-right')).toContain('rgb(200, 200, 200)')
   })
+
+  it('settles the space beside the banner into its background, clear of the red block', async () => {
+    const { layer } = await mountHeader(2000)
+
+    expect(layer.style.getPropertyValue('--fill-left-flat')).toBe('rgb(200, 200, 200)')
+    expect(layer.style.getPropertyValue('--fill-right-flat')).toBe('rgb(200, 200, 200)')
+  })
 })

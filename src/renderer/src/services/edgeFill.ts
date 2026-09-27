@@ -1,6 +1,7 @@
 /**
  * The colours down a picture's left and right edges, each as a
- * top-to-bottom CSS gradient.
+ * top-to-bottom CSS gradient, and the one colour each settles into away
+ * from the picture.
  *
  * Fanart.tv art is shown whole at a hero card's height, and on a wide card
  * most of the card is beside it. Continuing each edge across the space on
@@ -13,18 +14,26 @@
  * a white shirt reaching the edge isn't continued as a grey streak; a band
  * with nothing but subject at the edge takes the background itself.
  *
- * A photo shown at the right (DetailPageBackdrop.vue) is continued from its
- * left edge alone - its right edge is nowhere near what's continued - and
- * settles into a single colour away from it.
+ * Away from the picture, each edge settles into one colour - the
+ * background, or the edge's main colour - so whatever does reach an edge
+ * only shows next to the picture. A photo shown at the right
+ * (DetailPageBackdrop.vue) is continued from its left edge alone.
  *
  * Null if the image can't be loaded or read (e.g. a CORS-tainted canvas).
  */
 
 export type Edge = 'left' | 'right'
 
-export interface EdgeGradients {
-  left: string
-  right: string
+/** An edge, continued: the edge itself, top to bottom, and the one colour
+ * it settles into away from the picture. */
+export interface EdgeFill {
+  gradient: string
+  flat: string
+}
+
+export interface EdgeFills {
+  left: EdgeFill
+  right: EdgeFill
 }
 
 export const SAMPLE_WIDTH = 64
@@ -199,21 +208,15 @@ export function samplePixels(
   })
 }
 
-/** Both edges of a banner, drawn from its background where it has one. */
-export async function extractEdgeGradients(url: string): Promise<EdgeGradients | null> {
+/** Both edges of a banner, continued as a photo's left edge is (see
+ * edgeFillFromPixels). */
+export async function extractEdgeFills(url: string): Promise<EdgeFills | null> {
   const data = await samplePixels(url)
   if (!data) return null
   const background = backgroundFromPixels(data, SAMPLE_WIDTH, SAMPLE_HEIGHT)
-  const left = edgeGradientFromPixels(data, SAMPLE_WIDTH, SAMPLE_HEIGHT, 'left', background)
-  const right = edgeGradientFromPixels(data, SAMPLE_WIDTH, SAMPLE_HEIGHT, 'right', background)
+  const left = edgeFillFromPixels(data, SAMPLE_WIDTH, SAMPLE_HEIGHT, 'left', background)
+  const right = edgeFillFromPixels(data, SAMPLE_WIDTH, SAMPLE_HEIGHT, 'right', background)
   return left && right ? { left, right } : null
-}
-
-/** A photo's continued left edge: the edge itself, top to bottom, and its
- * main colour, which the page fades it into away from the photo. */
-export interface LeftEdgeFill {
-  gradient: string
-  flat: string
 }
 
 /** The main colour of an edge's continued columns - the one most of them
@@ -236,22 +239,34 @@ export function edgeColourFromPixels(
   return css(pixels.length ? dominantColour(data, pixels).colour : [0, 0, 0])
 }
 
-/** A photo's left edge, continued: drawn from the photo's background where
- * it has one, as a banner's is, so a sleeve or a sign reaching the edge is
- * left out of it - and fading, away from the photo, into that background
- * or else the edge's main colour. Once it settles into one colour, any edge
- * reads as part of the picture, so there is nothing left to judge. */
+/** An edge, continued: drawn from the picture's `background` where it has
+ * one, so a sleeve or a sign reaching the edge is left out of it - and
+ * settling, away from the picture, into that background or else the edge's
+ * main colour. Once it settles into one colour, any edge reads as part of
+ * the picture, so there is nothing left to judge. */
+function edgeFillFromPixels(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  edge: Edge,
+  background: Rgb | null,
+  extent = 1,
+): EdgeFill | null {
+  const gradient = edgeGradientFromPixels(data, width, height, edge, background, extent)
+  if (!gradient) return null
+  const flat = background ? css(background) : edgeColourFromPixels(data, width, height, edge)
+  return { gradient, flat }
+}
+
+/** A photo's left edge, continued (see edgeFillFromPixels). */
 export function leftEdgeFillFromPixels(
   data: Uint8ClampedArray,
   width: number,
   height: number,
   extent = 1,
-): LeftEdgeFill | null {
+): EdgeFill | null {
   const background = backgroundFromPixels(data, width, height)
-  const gradient = edgeGradientFromPixels(data, width, height, 'left', background, extent)
-  if (!gradient) return null
-  const flat = background ? css(background) : edgeColourFromPixels(data, width, height, 'left')
-  return { gradient, flat }
+  return edgeFillFromPixels(data, width, height, 'left', background, extent)
 }
 
 /** A photo's continued left edge as it is shown in `frame`, or null if it
@@ -261,7 +276,7 @@ export async function extractLeftEdgeFill(
   url: string,
   frame?: Frame,
   extent = 1,
-): Promise<LeftEdgeFill | null> {
+): Promise<EdgeFill | null> {
   const data = await samplePixels(url, frame, extent)
   return data ? leftEdgeFillFromPixels(data, SAMPLE_WIDTH, SAMPLE_HEIGHT, extent) : null
 }

@@ -118,7 +118,7 @@ import CoverArt from '@/components/library/CoverArt.vue'
 import type { RadioFaviconRequest } from '@/services/connect/radio'
 import { useLibraryStore } from '@/stores/library'
 import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
-import { type EdgeGradients, extractEdgeGradients } from '@/services/edgeFill'
+import { type EdgeFills, extractEdgeFills } from '@/services/edgeFill'
 import { textEnd } from '@/services/textExtent'
 import { getArtistArt } from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
@@ -189,7 +189,7 @@ export default {
       // Per layer, since Fanart.tv art is shown sharp and a cover blurred.
       layerKind: ['cover', 'cover'] as BackdropKind[],
       /** Per layer: its Fanart.tv art's edge colours, continued beside it. */
-      fills: [null, null] as (EdgeGradients | null)[],
+      fills: [null, null] as (EdgeFills | null)[],
       /** Where the text ends, in px from the left: the art is faded out
        * up to there (see measureText). */
       textEnd: 0,
@@ -237,14 +237,21 @@ export default {
     async paintFill(index: number, url: string | null, kind: BackdropKind): Promise<void> {
       this.fills[index] = null
       if (!url || kind === 'cover') return
-      const gradients = await extractEdgeGradients(url)
-      if (this.backdrop.urls[index] === url) this.fills[index] = gradients
+      const fills = await extractEdgeFills(url)
+      if (this.backdrop.urls[index] === url) this.fills[index] = fills
     },
     layerStyle(url: string | null, index: number): Record<string, string> {
       const fill = this.fills[index]
       return {
         ...(url ? { '--backdrop-image': `url(${url})` } : {}),
-        ...(fill ? { '--fill-left': fill.left, '--fill-right': fill.right } : {}),
+        ...(fill
+          ? {
+              '--fill-left': fill.left.gradient,
+              '--fill-left-flat': fill.left.flat,
+              '--fill-right': fill.right.gradient,
+              '--fill-right-flat': fill.right.flat,
+            }
+          : {}),
       }
     },
     async loadArtistPhoto(name: string | null): Promise<void> {
@@ -383,6 +390,11 @@ export default {
   filter: none;
   transform: none;
   --art-fade: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+  /* How far out from the picture its edges' own bands carry before they
+   * settle into one colour - 15% of the picture's width, as on the detail
+   * pages. A size container, so the spacers can work that width out. */
+  container-type: size;
+  --fill-reach: calc(100cqh * var(--art-ratio) * 0.15);
 }
 
 .hero-backdrop--photo::before,
@@ -398,7 +410,19 @@ export default {
    * each only partly covers that column and the dark card shows through
    * as a hairline. The overlap is under its fully faded end (--art-fade). */
   margin-right: -2px;
-  background-image: var(--fill-left, none);
+  /* The edge band by band next to the picture, settling into one colour
+   * away from it, so whatever reaches the edge only shows beside it. */
+  background-image:
+    linear-gradient(
+      to left,
+      transparent 0,
+      color-mix(in srgb, var(--fill-left-flat) 10%, transparent) calc(var(--fill-reach) * 0.2),
+      color-mix(in srgb, var(--fill-left-flat) 35%, transparent) calc(var(--fill-reach) * 0.4),
+      color-mix(in srgb, var(--fill-left-flat) 65%, transparent) calc(var(--fill-reach) * 0.6),
+      color-mix(in srgb, var(--fill-left-flat) 90%, transparent) calc(var(--fill-reach) * 0.8),
+      var(--fill-left-flat) var(--fill-reach)
+    ),
+    var(--fill-left, none);
 }
 
 .hero-backdrop--photo::after,
@@ -406,7 +430,17 @@ export default {
   content: '';
   flex: 1 0 0;
   margin-left: -2px;
-  background-image: var(--fill-right, none);
+  background-image:
+    linear-gradient(
+      to right,
+      transparent 0,
+      color-mix(in srgb, var(--fill-right-flat) 10%, transparent) calc(var(--fill-reach) * 0.2),
+      color-mix(in srgb, var(--fill-right-flat) 35%, transparent) calc(var(--fill-reach) * 0.4),
+      color-mix(in srgb, var(--fill-right-flat) 65%, transparent) calc(var(--fill-reach) * 0.6),
+      color-mix(in srgb, var(--fill-right-flat) 90%, transparent) calc(var(--fill-reach) * 0.8),
+      var(--fill-right-flat) var(--fill-reach)
+    ),
+    var(--fill-right, none);
 }
 
 /* Fanart.tv's fixed sizes: banners 1000x185, backgrounds 1920x1080. */
