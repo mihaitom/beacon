@@ -20,6 +20,8 @@ connect/.env
 connect/.connect-token
 connect/.jellyfin-device-id
 connect/.plex-client-id
+connect/.beacon-instance-id
+connect/integration_key.txt
 connect/radio_stations.json
 connect/airplay_credentials.json
 connect/recommendations_cache.json

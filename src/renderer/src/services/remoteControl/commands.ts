@@ -355,6 +355,7 @@ export async function resolveRemoteQuery(
           artist: a.artist,
           year: a.year,
           cover_art_url: remoteCoverArtUrl(a.coverArtId),
+          cover_art_id: a.coverArtId ?? null,
         })),
         total: filtered.length,
       }
@@ -367,6 +368,7 @@ export async function resolveRemoteQuery(
           name: p.name,
           song_count: p.songCount,
           cover_art_url: remoteCoverArtUrl(p.coverArtId),
+          cover_art_id: p.coverArtId ?? null,
         })),
       }
     }
@@ -377,6 +379,7 @@ export async function resolveRemoteQuery(
           id: playlist.id,
           name: playlist.name,
           cover_art_url: remoteCoverArtUrl(playlist.coverArtId),
+          cover_art_id: playlist.coverArtId ?? null,
         },
         songs: playlist.songs.map(toRemoteSong),
       }
@@ -395,6 +398,10 @@ export async function resolveRemoteQuery(
           // routes/radio.py's own _ICON_RELS comment). Matches RadioView.vue's
           // own faviconUrl(homePageUrl, 32) for this same list-row use.
           favicon_url: remoteRadioFaviconUrl(s.homePageUrl, 32, s.favicon ?? null),
+          // What favicon_url is built from, for an integration to build it
+          // with its own key - see cover_art_id on RemoteSong.
+          home_page_url: s.homePageUrl ?? null,
+          favicon_hint: s.favicon ?? null,
         })),
       }
     }

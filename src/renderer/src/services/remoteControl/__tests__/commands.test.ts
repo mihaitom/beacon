@@ -572,7 +572,7 @@ describe('resolveRemoteQuery', () => {
       expect(fetchSpy).not.toHaveBeenCalled()
     })
 
-    it('sends the phone what a row needs and nothing more', async () => {
+    it('sends what a row needs and nothing more', async () => {
       const library = useLibraryStore()
       library.albums = [makeAlbum('a', { name: 'Harbor Lights', artist: 'The Tide' })] as never
 
@@ -586,6 +586,7 @@ describe('resolveRemoteQuery', () => {
         artist: 'The Tide',
         year: 1999,
         cover_art_url: null,
+        cover_art_id: null,
       })
     })
 
@@ -622,7 +623,7 @@ describe('resolveRemoteQuery', () => {
     const result = await resolveRemoteQuery('playlists-request', {})
 
     expect(result).toEqual({
-      items: [{ id: 'p1', name: 'Chill', song_count: 3, cover_art_url: null }],
+      items: [{ id: 'p1', name: 'Chill', song_count: 3, cover_art_url: null, cover_art_id: null }],
     })
   })
 
@@ -662,7 +663,41 @@ describe('resolveRemoteQuery', () => {
     expect(fetchSpy).toHaveBeenCalledOnce()
     // No homepage and no favicon hint — there is genuinely nothing to
     // resolve a logo from, so the phone draws its fallback icon.
-    expect(result).toEqual({ items: [{ id: 's1', name: 'Chill FM', favicon_url: null }] })
+    expect(result).toEqual({
+      items: [
+        {
+          id: 's1',
+          name: 'Chill FM',
+          favicon_url: null,
+          home_page_url: null,
+          favicon_hint: null,
+        },
+      ],
+    })
+  })
+
+  // An integration cannot use the phone's favicon_url (it carries the phone
+  // password), so it gets what that URL is built from.
+  it('radio-request passes on what a station logo is resolved from', async () => {
+    const library = useLibraryStore()
+    library.radioStations = [
+      {
+        id: 's1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example',
+        homePageUrl: 'https://chill.example',
+        favicon: 'https://chill.example/logo.png',
+      },
+    ]
+
+    const result = (await resolveRemoteQuery('radio-request', {})) as {
+      items: Record<string, unknown>[]
+    }
+
+    expect(result.items[0]).toMatchObject({
+      home_page_url: 'https://chill.example',
+      favicon_hint: 'https://chill.example/logo.png',
+    })
   })
 
   /** Opening the sheet takes the last sweep's result; its rescan button

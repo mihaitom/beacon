@@ -93,25 +93,54 @@ GET /remote/cover-art?id=<cover_art_id>&session=<session_id>&password=<key>
 `POST /remote/command` with `{"type": "...", "payload": {...}}`. It returns
 once the app has carried the command out.
 
-| Type          | Payload                       |
-| ------------- | ----------------------------- |
-| `play`        | none; does nothing if playing |
-| `pause`       | none; does nothing if paused  |
-| `toggle-play` | none                          |
-| `next`        |                               |
-| `previous`    |                               |
-| `seek`        | `position` in seconds         |
-| `volume`      | `volume`, 0 to 1              |
-| `shuffle`     | toggles                       |
-| `repeat`      | cycles off, all, one          |
-| `play-song`   | `songId`                      |
-| `play-album`  | `albumId`                     |
-| `queue-jump`  | `index`                       |
-| `cast-stop`   | stops casting                 |
+| Type                 | Payload                                                                          |
+| -------------------- | -------------------------------------------------------------------------------- |
+| `play`               | none; does nothing if playing                                                    |
+| `pause`              | none; does nothing if paused                                                     |
+| `toggle-play`        | none                                                                             |
+| `next`               |                                                                                  |
+| `previous`           |                                                                                  |
+| `seek`               | `position` in seconds                                                            |
+| `volume`             | `volume`, 0 to 1                                                                 |
+| `shuffle`            | toggles                                                                          |
+| `repeat`             | cycles off, all, one                                                             |
+| `autoplay`           | toggles                                                                          |
+| `play-song`          | `songId`                                                                         |
+| `play-song-radio`    | `songId`                                                                         |
+| `play-album`         | `albumId`                                                                        |
+| `play-playlist`      | `playlistId`, optional `startIndex`                                              |
+| `play-radio-station` | `stationId`                                                                      |
+| `queue-next`         | `songId`, plays it after the current one                                         |
+| `queue-add`          | `songId`, appends it                                                             |
+| `queue-jump`         | `index`                                                                          |
+| `cast-to-many`       | `targets`: the whole set, `[{"deviceType", "name"}]`; `[]` stops casting         |
+| `cast-stop`          | stops casting                                                                    |
+| `resume-interrupted` | picks a cast back up after a speaker dropped out (`interrupted` in the snapshot) |
 
-The phone remote's library browsing (`/remote/songs`, `/remote/albums`,
-`/remote/playlists`, `/remote/radio-stations`, `/remote/devices`) accepts
-the key as well.
+## Library and speakers
+
+These are answered by the app from what it has loaded, so the first call
+after a start can take a moment.
+
+| Request                      | Returns                                                          |
+| ---------------------------- | ---------------------------------------------------------------- |
+| `GET /remote/playlists`      | `items`: `id`, `name`, `song_count`, `cover_art_id`              |
+| `GET /remote/playlists/<id>` | `playlist` (`id`, `name`, `cover_art_id`) and `songs`            |
+| `GET /remote/albums`         | `items`: `id`, `name`, `artist`, `year`, `cover_art_id`; `total` |
+| `GET /remote/songs`          | `items` (songs), `total`                                         |
+| `GET /remote/radio-stations` | `items`: `id`, `name`, `home_page_url`, `favicon_hint`           |
+| `GET /remote/devices`        | `items`: `type`, `name`, `in_use_by_name`, `needs_pairing`       |
+
+`/remote/albums` and `/remote/songs` take `search`, `offset` and `limit`
+(default 50). `/remote/devices?rescan=true` looks for speakers again, which
+takes a few seconds; without it the app answers from its last search. A
+speaker with `needs_pairing` has to be paired in the desktop app first.
+
+A station logo, like a cover, is built with the key:
+
+```
+GET /remote/radio-favicon?url=<home_page_url>&hint=<favicon_hint>&min_size=64&password=<key>
+```
 
 ## Compatibility
 
