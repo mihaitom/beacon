@@ -1,0 +1,456 @@
+# Beacon dashboard for Home Assistant
+#
+# Built from Home Assistant's own cards only - nothing to install besides the
+# Beacon integration (see README.md next to this file). The entity ids below
+# are the ones the integration creates on a fresh install; if yours differ
+# (Settings > Devices & services > Beacon), replace "beacon" accordingly.
+#
+# Per-speaker switches and favourites depend on your setup, so they are left
+# as commented examples: search for "YOUR".
+
+title: Beacon
+views:
+  - title: Beacon
+    path: beacon
+    icon: mdi:music-circle
+    type: sections
+    max_columns: 3
+    badges:
+      - type: entity
+        entity: media_player.beacon
+        show_name: false
+        show_state: true
+        show_icon: true
+        color: amber
+      - type: entity
+        entity: select.beacon_speaker
+        show_name: false
+        show_state: true
+        show_icon: true
+      - type: entity
+        entity: sensor.beacon_queue
+        name: Up next
+        show_name: true
+        show_state: true
+        show_icon: true
+    sections:
+      # ── Now playing ─────────────────────────────────────────────────────
+      - type: grid
+        column_span: 2
+        cards:
+          - type: heading
+            heading: Now playing
+            icon: mdi:music
+            badges:
+              - type: entity
+                entity: switch.beacon_autoplay
+                show_state: true
+                show_icon: true
+                color: amber
+          - type: markdown
+            visibility:
+              - condition: state
+                entity: media_player.beacon
+                state: unavailable
+            content: >-
+              ### Beacon is closed
+
+              The player comes back on its own as soon as the app runs again.
+          - type: media-control
+            entity: media_player.beacon
+            theme: default
+            grid_options:
+              columns: full
+          - type: tile
+            entity: media_player.beacon
+            name: Volume
+            icon: mdi:volume-high
+            color: amber
+            vertical: false
+            features_position: inline
+            features:
+              - type: media-player-volume-slider
+            grid_options:
+              columns: full
+          - type: markdown
+            text_only: true
+            content: >-
+              {% set p = 'media_player.beacon' %}
+              {% set casting = state_attr(p, 'casting_to') or [] %}
+              {% if states(p) in ['playing', 'paused'] %}
+              {% if casting %}<ha-icon icon="mdi:cast-audio"></ha-icon>
+              Playing on **{{ casting | join(' + ') }}**
+              {% else %}<ha-icon icon="mdi:laptop"></ha-icon>
+              Playing on **this computer**{% endif %}
+              {% endif %}
+
+      # ── Speakers ────────────────────────────────────────────────────────
+      - type: grid
+        cards:
+          - type: heading
+            heading: Speakers
+            icon: mdi:speaker-wireless
+          - type: tile
+            entity: select.beacon_speaker
+            name: Play on
+            color: amber
+            vertical: false
+            features_position: bottom
+            features:
+              - type: select-options
+            grid_options:
+              columns: full
+          - type: tile
+            entity: button.beacon_resume_cast
+            name: A speaker dropped out - resume
+            icon: mdi:cast-connected
+            color: red
+            vertical: false
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.beacon_resume_cast
+            visibility:
+              - condition: state
+                entity: button.beacon_resume_cast
+                state_not: unavailable
+            grid_options:
+              columns: full
+          # One switch per speaker casts to several at once. YOUR speakers:
+          # - type: tile
+          #   entity: switch.beacon_cast_living_room
+          #   name: Living room
+          #   icon: mdi:speaker-wireless
+          #   color: amber
+          #   vertical: false
+          - type: tile
+            entity: button.beacon_scan_for_speakers
+            name: Scan for speakers
+            icon: mdi:magnify
+            vertical: false
+            hide_state: true
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.beacon_scan_for_speakers
+            grid_options:
+              columns: full
+
+      # ── Controls ────────────────────────────────────────────────────────
+      - type: grid
+        cards:
+          - type: heading
+            heading: Controls
+            icon: mdi:tune-variant
+          - type: button
+            icon: mdi:skip-previous
+            name: Previous
+            show_name: false
+            grid_options:
+              columns: 4
+              rows: 1
+            tap_action:
+              action: perform-action
+              perform_action: media_player.media_previous_track
+              target:
+                entity_id: media_player.beacon
+          - type: button
+            icon: mdi:play-pause
+            name: Play/pause
+            show_name: false
+            grid_options:
+              columns: 4
+              rows: 1
+            tap_action:
+              action: perform-action
+              perform_action: media_player.media_play_pause
+              target:
+                entity_id: media_player.beacon
+          - type: button
+            icon: mdi:skip-next
+            name: Next
+            show_name: false
+            grid_options:
+              columns: 4
+              rows: 1
+            tap_action:
+              action: perform-action
+              perform_action: media_player.media_next_track
+              target:
+                entity_id: media_player.beacon
+          - type: button
+            icon: mdi:shuffle-variant
+            name: Shuffle
+            grid_options:
+              columns: 3
+              rows: 2
+            tap_action:
+              action: perform-action
+              perform_action: media_player.shuffle_set
+              data:
+                shuffle: true
+              target:
+                entity_id: media_player.beacon
+          - type: button
+            icon: mdi:shuffle-disabled
+            name: In order
+            grid_options:
+              columns: 3
+              rows: 2
+            tap_action:
+              action: perform-action
+              perform_action: media_player.shuffle_set
+              data:
+                shuffle: false
+              target:
+                entity_id: media_player.beacon
+          - type: button
+            icon: mdi:repeat
+            name: Repeat
+            grid_options:
+              columns: 3
+              rows: 2
+            tap_action:
+              action: perform-action
+              perform_action: media_player.repeat_set
+              data:
+                repeat: all
+              target:
+                entity_id: media_player.beacon
+          - type: button
+            icon: mdi:repeat-off
+            name: Repeat off
+            grid_options:
+              columns: 3
+              rows: 2
+            tap_action:
+              action: perform-action
+              perform_action: media_player.repeat_set
+              data:
+                repeat: 'off'
+              target:
+                entity_id: media_player.beacon
+          - type: tile
+            entity: switch.beacon_autoplay
+            name: Autoplay - keeps going with similar songs
+            icon: mdi:playlist-plus
+            color: amber
+            vertical: false
+            grid_options:
+              columns: full
+
+      # ── Library ─────────────────────────────────────────────────────────
+      - type: grid
+        cards:
+          - type: heading
+            heading: Library
+            icon: mdi:bookshelf
+          - type: tile
+            entity: media_player.beacon
+            name: Browse playlists, albums and radio
+            icon: mdi:folder-music
+            color: amber
+            vertical: false
+            hide_state: true
+            tap_action:
+              action: navigate
+              navigation_path: /media-browser/media_player.beacon
+            grid_options:
+              columns: full
+          # Favourites start a playlist or station with one tap. The id is
+          # the part after "playlist:" / "radio:" in the media browser.
+          # - type: button
+          #   name: YOUR playlist
+          #   icon: mdi:playlist-music
+          #   tap_action:
+          #     action: perform-action
+          #     perform_action: media_player.play_media
+          #     target:
+          #       entity_id: media_player.beacon
+          #     data:
+          #       media_content_id: playlist:YOUR_PLAYLIST_ID
+          #       media_content_type: playlist
+
+      # ── Up next ─────────────────────────────────────────────────────────
+      - type: grid
+        cards:
+          - type: heading
+            heading: Up next
+            icon: mdi:playlist-music
+          # "|" keeps the line breaks; ">" would fold the list into one line.
+          - type: markdown
+            content: |
+              {%- set q = 'sensor.beacon_queue' %}
+              {%- set upcoming = state_attr(q, 'up_next') or [] %}
+              {%- if upcoming %}
+              {%- for song in upcoming[:8] %}
+              {{ loop.index }}. {{ song }}
+              {%- endfor %}
+              {%- if upcoming | length > 8 %}
+
+              *… and {{ upcoming | length - 8 }} more*
+              {%- endif %}
+              {%- else %}
+              *Nothing queued after this song.*
+              {%- endif %}
+
+      # ── History ─────────────────────────────────────────────────────────
+      - type: grid
+        cards:
+          - type: heading
+            heading: History
+            icon: mdi:chart-timeline-variant
+          # The now-playing sensor rather than the player: the player's
+          # history is only playing/paused, the sensor's is the songs.
+          - type: history-graph
+            title: Last 24 hours
+            hours_to_show: 24
+            entities:
+              - entity: sensor.beacon_now_playing
+                name: Song
+              - entity: media_player.beacon
+                name: Player
+          - type: logbook
+            title: Recently played
+            hours_to_show: 24
+            target:
+              entity_id: sensor.beacon_now_playing
+
+  - title: Automations
+    path: automations
+    icon: mdi:robot-happy-outline
+    type: sections
+    max_columns: 2
+    sections:
+      - type: grid
+        column_span: 2
+        cards:
+          - type: heading
+            heading: Ideas to copy
+            icon: mdi:lightbulb-on-outline
+          - type: markdown
+            content: >-
+              Everything on the first page works in automations too. Paste
+              one of these into a new automation (⋮ > Edit in YAML) and
+              adjust the entity ids.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Pause when nobody is home
+            heading_style: subtitle
+            icon: mdi:home-export-outline
+          - type: markdown
+            content: |
+              ```yaml
+              triggers:
+                - trigger: state
+                  entity_id: zone.home
+                  to: "0"
+              actions:
+                - action: media_player.media_pause
+                  target:
+                    entity_id: media_player.beacon
+              ```
+          - type: heading
+            heading: Quieter after 10 pm
+            heading_style: subtitle
+            icon: mdi:weather-night
+          - type: markdown
+            content: |
+              ```yaml
+              triggers:
+                - trigger: time
+                  at: "22:00:00"
+              conditions:
+                - condition: state
+                  entity_id: media_player.beacon
+                  state: playing
+              actions:
+                - action: media_player.volume_set
+                  target:
+                    entity_id: media_player.beacon
+                  data:
+                    volume_level: 0.25
+              ```
+          - type: heading
+            heading: Dim the lights when music starts
+            heading_style: subtitle
+            icon: mdi:lightbulb-on-40
+          - type: markdown
+            content: |
+              ```yaml
+              triggers:
+                - trigger: state
+                  entity_id: media_player.beacon
+                  to: playing
+              actions:
+                - action: light.turn_on
+                  target:
+                    area_id: living_room
+                  data:
+                    brightness_pct: 40
+              ```
+      - type: grid
+        cards:
+          - type: heading
+            heading: Radio in the morning
+            heading_style: subtitle
+            icon: mdi:weather-sunset-up
+          - type: markdown
+            content: |
+              ```yaml
+              triggers:
+                - trigger: time
+                  at: "07:00:00"
+              actions:
+                - action: media_player.play_media
+                  target:
+                    entity_id: media_player.beacon
+                  data:
+                    media_content_id: radio:YOUR_STATION_ID
+                    media_content_type: channel
+                - action: select.select_option
+                  target:
+                    entity_id: select.beacon_speaker
+                  data:
+                    option: Living room
+              ```
+          - type: heading
+            heading: Music follows you
+            heading_style: subtitle
+            icon: mdi:walk
+          - type: markdown
+            content: |
+              ```yaml
+              triggers:
+                - trigger: state
+                  entity_id: binary_sensor.living_room_motion
+                  to: "on"
+              conditions:
+                - condition: state
+                  entity_id: media_player.beacon
+                  state: playing
+              actions:
+                - action: switch.turn_on
+                  target:
+                    entity_id: switch.beacon_cast_living_room
+              ```
+          - type: heading
+            heading: Now playing on your phone
+            heading_style: subtitle
+            icon: mdi:cellphone-message
+          - type: markdown
+            content: |
+              ```yaml
+              triggers:
+                - trigger: state
+                  entity_id: media_player.beacon
+                  attribute: media_title
+              actions:
+                - action: notify.notify
+                  data:
+                    title: "{{ state_attr('media_player.beacon', 'media_artist') }}"
+                    message: "{{ state_attr('media_player.beacon', 'media_title') }}"
+              ```

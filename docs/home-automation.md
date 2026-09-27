@@ -4,8 +4,9 @@ Beacon's desktop app can be watched and controlled by Home Assistant or any
 other automation tool, through the same HTTP interface the phone remote
 uses. This page is for whoever writes such an integration.
 
-Beacon ships no Home Assistant integration of its own. What it provides is a
-key that survives restarts, a fixed address, and an mDNS announcement.
+What Beacon provides is a key that survives restarts, a fixed address, and
+an mDNS announcement. A Home Assistant integration built on them, with a
+ready-made dashboard, lives in [home-assistant/](../home-assistant/).
 
 ## Setting it up
 

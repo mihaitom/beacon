@@ -1,0 +1,11 @@
+{
+  "domain": "beacon",
+  "name": "Beacon",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/mihaitom/beacon/blob/main/docs/home-automation.md",
+  "iot_class": "local_push",
+  "requirements": [],
+  "version": "0.1.0",
+  "zeroconf": ["_beacon._tcp.local."]
+}

@@ -1,0 +1,25 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Beacon",
+        "description": "Create a key in Beacon under Settings > Advanced > Home automation.",
+        "data": { "host": "Host", "port": "Port", "key": "Key" }
+      },
+      "zeroconf_confirm": {
+        "title": "Beacon found",
+        "description": "{name} at {host}. Enter the key from Beacon's Settings > Advanced > Home automation.",
+        "data": { "key": "Key" }
+      }
+    },
+    "error": {
+      "cannot_connect": "Beacon is not reachable, or the app is not running.",
+      "invalid_auth": "The key was not accepted."
+    },
+    "abort": {
+      "already_configured": "This Beacon is already set up.",
+      "not_supported": "This announcement is missing Beacon's id."
+    }
+  }
+}
