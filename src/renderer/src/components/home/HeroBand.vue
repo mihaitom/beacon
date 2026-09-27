@@ -476,11 +476,11 @@ export default {
   background:
     linear-gradient(
       120deg,
-      rgba(18, 20, 28, 0.94) 0%,
-      rgba(18, 20, 28, 0.72) 45%,
-      rgba(245, 169, 78, 0.22) 100%
+      rgba(18, 20, 28, 0.82) 0%,
+      rgba(18, 20, 28, 0.55) 45%,
+      rgba(245, 169, 78, 0.18) 100%
     ),
-    linear-gradient(to top, rgba(18, 20, 28, 0.6), transparent 60%);
+    linear-gradient(to top, rgba(18, 20, 28, 0.48), transparent 60%);
 }
 
 /* Plain black over sharp Fanart.tv art, strong behind the text and clear
