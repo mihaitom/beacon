@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - Home Assistant and other automation tools can control the desktop app with a key that survives restarts, and find it on the local network on their own; see docs/home-automation.md (suggested by @coltonfretz, #36)
-- A Home Assistant integration with a dashboard in the sidebar: player, speakers, library, queue and autoplay, following whichever computer runs Beacon; see home-assistant/ (following a request by @coltonfretz, #36)
+- A Home Assistant integration with a dashboard in the sidebar: player, speakers, library, queue and autoplay, following whichever computer runs Beacon; see home-assistant/ (inspired by @coltonfretz, #36)
 - The desktop app can run on a fixed port, set under Settings > Advanced or with `BEACON_PORT` (suggested by @coltonfretz, #36)
 
 ### Changed
