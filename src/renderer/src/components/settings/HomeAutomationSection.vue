@@ -100,7 +100,19 @@
             {{ $t('common.save') }}
           </v-btn>
         </div>
-        <p class="setting__hint">{{ portStatus }}</p>
+        <!-- A warning rather than the hint line: a fixed port that was
+           - taken means anything relying on it cannot reach Beacon until the
+           - port is freed and Beacon restarted. -->
+        <v-alert
+          v-if="portTaken"
+          type="warning"
+          variant="tonal"
+          density="compact"
+          class="settings-progress"
+        >
+          {{ $t('settings.fixedPortTaken', { port: portInfo.port, current: portInfo.current }) }}
+        </v-alert>
+        <p v-else class="setting__hint">{{ portStatus }}</p>
         <!-- Home Assistant finds Beacon by its mDNS announcement and never
            - needs the address. Only setting it up by hand does, and that
            - only holds with a fixed port, so the address is shown with one. -->
@@ -169,6 +181,10 @@ export default {
     portChanged(): boolean {
       return this.portValue !== (this.portInfo?.port ?? null)
     },
+    portTaken(): boolean {
+      const info = this.portInfo
+      return !!info && info.port !== null && info.current !== null && info.port !== info.current
+    },
     portStatus(): string {
       const info = this.portInfo
       if (!info || info.current === null) return ''
@@ -176,9 +192,6 @@ export default {
         return this.$t('settings.fixedPortFromEnvironment', { port: info.port })
       }
       if (info.port === null) return this.$t('settings.fixedPortNone', { current: info.current })
-      if (info.port !== info.current) {
-        return this.$t('settings.fixedPortTaken', { port: info.port, current: info.current })
-      }
       return this.$t('settings.fixedPortActive', { port: info.port })
     },
   },

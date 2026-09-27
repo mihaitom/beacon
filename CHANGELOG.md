@@ -9,8 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - Home Assistant and other automation tools can control the desktop app with a key that survives restarts, and find it on the local network on their own; see docs/home-automation.md (suggested by @coltonfretz, #36)
-- The desktop app can run on a fixed port, set under Settings > Advanced or with `BEACON_PORT`
-- A Home Assistant integration and a ready-made dashboard: player, speakers, library, queue and autoplay; see home-assistant/ (suggested by @coltonfretz, #36)
+- A Home Assistant integration with a dashboard in the sidebar: player, speakers, library, queue and autoplay, following whichever computer runs Beacon; see home-assistant/ (following a request by @coltonfretz, #36)
+- The desktop app can run on a fixed port, set under Settings > Advanced or with `BEACON_PORT` (suggested by @coltonfretz, #36)
 
 ### Changed
 
@@ -25,19 +25,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The Statistics page shows more: storage used, how much of the library you have ever played, songs heard in the last 30 days, your ratings, a Hi-Res/lossless/lossy breakdown and the artists with the most songs
 - Who may cast can now be decided on a Plex server too, by its owner; accounts already signed in join the list at their next sign-in
 - In a window narrower than 1200px, a tablet in landscape for instance, the queue slides in over the page instead of squeezing it, and a tap beside it closes it
+- Remote Control's play and pause commands now do exactly that instead of toggling, so automations can send them safely
 - Small layout tweaks: larger library page titles without the placeholder icon, a lower library page header on tablet-sized windows, backgrounds that fade between pages instead of blinking, and Statistics lists that wrap two at a time on narrower windows
 
 ### Fixed
 
+- When Beacon was installed where it cannot write next to itself (for all users on Windows, or as the AppImage or .deb package on Linux), it opened a new Jellyfin session for every track played, which filled the Jellyfin dashboard with phantom Beacon players; Plex was affected the same way (reported by @coltonfretz, #35)
+- Radio played through Beacon now reconnects on its own when the connection silently dies, after a network or VPN change for instance, instead of going quiet
 - After more than a month away, nearly all downloaded Fanart.tv images were deleted as soon as an artist was opened; the latest artists' images are now always kept
 - Most played artists on the Statistics page could show a song's full credit, featured artists included, instead of the artist's name
 - For artists with ten or more likes on an image, the wrong Fanart.tv images were taken as the most liked, so their best backgrounds were never shown
-- Radio played through Beacon now reconnects on its own when the connection silently dies, after a network or VPN change for instance, instead of going quiet
 - On a tablet in landscape, a speaker's volume slider now follows the finger, and controls that used to appear only under a mouse are visible
-- On Windows, Beacon no longer opens a new Jellyfin session for every track played, which filled the Jellyfin dashboard with phantom Beacon players; Plex was affected the same way (reported by @coltonfretz, #35)
-- Jellyfin now shows Beacon's real version instead of 1.0.0 (reported by @coltonfretz, #35)
 - On an artist page in a narrow window, the rating stars no longer run into the artist's name
 - On a tablet, artist and album pages and track lists with many columns could make the page wider than the screen, which cut it off or zoomed it out once the pictures loaded; track list columns that do not fit now step aside until there is room again
+- Jellyfin now shows Beacon's real version instead of 1.0.0 (reported by @coltonfretz, #35)
 
 ## [1.4.0] - 2026-09-22
 

@@ -140,13 +140,25 @@ describe('HomeAutomationSection', () => {
     expect(setConnectPort).toHaveBeenCalledWith(null)
   })
 
-  it('says so when the fixed port was taken at start', async () => {
-    portInfo = { port: 8123, fromEnvironment: false, current: 51234 }
+  it.each([
+    ['from the settings', false],
+    ['from BEACON_PORT', true],
+  ])('warns when the fixed port %s was taken at start', async (_, fromEnvironment) => {
+    portInfo = { port: 8123, fromEnvironment, current: 51234 }
     const { wrapper } = await mountSection()
 
-    expect(wrapper.text()).toContain(
+    const alert = wrapper.findComponent({ name: 'VAlert' })
+    expect(alert.exists()).toBe(true)
+    expect(alert.text()).toContain(
       wrapper.vm.$t('settings.fixedPortTaken', { port: 8123, current: 51234 }),
     )
+  })
+
+  it('shows no warning while the fixed port is in use', async () => {
+    portInfo = { port: 8123, fromEnvironment: false, current: 8123 }
+    const { wrapper } = await mountSection()
+
+    expect(wrapper.findComponent({ name: 'VAlert' }).exists()).toBe(false)
   })
 
   it('leaves a port set by the environment read-only', async () => {
