@@ -72,25 +72,25 @@ change, with a comment line as heartbeat every 15 seconds.
 
 The fields an integration is likely to need:
 
-| Field                  | Meaning                                                       |
-| ---------------------- | ------------------------------------------------------------- |
-| `playing`              | `true` while playing                                          |
-| `position`             | Seconds into the current track                                |
-| `duration`             | Length of the current track in seconds                        |
-| `volume`               | Local volume, 0 to 1                                          |
-| `device_volume`        | Volume of the one speaker being cast to, 0 to 100, else null  |
-| `shuffle`, `repeat`    | `repeat` is `off`, `all` or `one`                             |
-| `current_song`         | `id`, `title`, `artist`, `album`, `duration`, `cover_art_id`  |
-| `radio`                | `name`, `now_playing` while a station plays, else null        |
-| `queue`                | Songs, same shape as `current_song`; `queue_index` is current |
-| `casting`              | The speakers being cast to, each with `type` and `name`       |
-| `interrupted`          | A speaker dropped out; `resume-interrupted` picks it back up  |
-| `autoplay`             | Whether Autoplay is on                                        |
-| `song_radio_supported` | Whether `play-song-radio` works with this music server        |
-| `session_id`           | Needed for cover art, see below                               |
+| Field                  | Meaning                                                                                 |
+| ---------------------- | --------------------------------------------------------------------------------------- |
+| `playing`              | `true` while playing                                                                    |
+| `position`             | Seconds into the current track                                                          |
+| `duration`             | Length of the current track in seconds                                                  |
+| `volume`               | Local volume, 0 to 1                                                                    |
+| `device_volume`        | Volume of the one speaker being cast to, 0 to 100, else null                            |
+| `shuffle`, `repeat`    | `repeat` is `off`, `all` or `one`                                                       |
+| `current_song`         | `id`, `title`, `artist`, `album`, `duration`, `cover_art_id`                            |
+| `radio`                | `name`, `now_playing`, `home_page_url`, `favicon_hint` while a station plays, else null |
+| `queue`                | Songs, same shape as `current_song`; `queue_index` is current                           |
+| `casting`              | The speakers being cast to, each with `type` and `name`                                 |
+| `interrupted`          | A speaker dropped out; `resume-interrupted` picks it back up                            |
+| `autoplay`             | Whether Autoplay is on                                                                  |
+| `song_radio_supported` | Whether `play-song-radio` works with this music server                                  |
+| `session_id`           | Needed for cover art, see below                                                         |
 
-Ignore `cover_art_url` and `favicon_url`: they carry the phone remote's own
-password and are null while it is off. Build the cover URL from
+Ignore `cover_art_url` and `favicon_url`: they are relative to the phone
+remote's own page and lack a credential. Build the cover URL from
 `cover_art_id` instead:
 
 ```
@@ -147,7 +147,8 @@ after a start can take a moment.
 takes a few seconds; without it the app answers from its last search. A
 speaker with `needs_pairing` has to be paired in the desktop app first.
 
-A station logo, like a cover, is built with the key:
+A station logo, like a cover, is built with the key, from a station's
+`home_page_url` and `favicon_hint`:
 
 ```
 GET /remote/radio-favicon?url=<home_page_url>&hint=<favicon_hint>&min_size=64&password=<key>

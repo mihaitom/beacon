@@ -20,49 +20,32 @@ export interface RemoteSong {
   artist: string
   album: string
   cover_art_url: string | null
-  /** For an integration, which cannot use cover_art_url: that carries the
-   * phone password, and is null while phones are off. It builds the same
-   * /remote/cover-art URL with its own key instead. */
+  /** For an integration, which builds the /remote/cover-art URL itself with
+   * its own key - cover_art_url is relative to the phone app's origin. */
   cover_art_id: string | null
   duration: number
-}
-
-/** Base URL for the phone-facing image endpoints below — same address the
- * pairing QR code itself points at (LAN-reachable in Electron, this page's
- * own origin in the web/Docker build). Returns null while that isn't known
- * yet or the phone password hasn't been generated this session (see
- * stores/remoteControl.ts's needsRegenerate) — callers degrade to "no
- * artwork" rather than build a URL that can't actually authenticate. */
-function remoteMediaBase(): { origin: string; password: string } | null {
-  const remoteControl = useRemoteControlStore()
-  if (!remoteControl.password) return null
-  if (window.api) {
-    if (!remoteControl.lanIp || !remoteControl.port) return null
-    return {
-      origin: `http://${remoteControl.lanIp}:${remoteControl.port}`,
-      password: remoteControl.password,
-    }
-  }
-  return { origin: window.location.origin, password: remoteControl.password }
 }
 
 /** Deliberately NOT SubsonicClient.coverArtUrl() rewritten in place (an
  * earlier version of this did exactly that) — that URL carries the real
  * CONNECT_TOKEN as a query param (unavoidable for an <img src>, see
  * services/subsonic/client.ts), and shipping it to the phone would hand out
- * the same full API access CONNECT_TOKEN gives the trusted desktop process,
- * defeating the entire point of the phone having its own narrower password.
+ * the same full API access CONNECT_TOKEN gives the trusted desktop process.
  * routes/remote.py's /cover-art redirects to a properly-scoped, LAN-reachable
- * URL instead — this only ever needs the coverArtId and this session's
- * connect session id (not a secret, just an identifier), not the token. */
+ * URL instead.
+ *
+ * Without any credential, and relative: the phone is served by connect
+ * itself, so the path resolves against the right origin in every build, and
+ * the phone adds its own password (connect/static/remote/js/art.js). Baking
+ * this app's copy of the password in made every image disappear once the
+ * app had reloaded, because that copy is deliberately not recoverable
+ * (see stores/remoteControl.ts) while the phone's own stays valid. */
 function remoteCoverArtUrl(coverArtId: string | null): string | null {
   if (!coverArtId) return null
-  const base = remoteMediaBase()
-  if (!base) return null
-  const auth = useAuthStore()
-  const params = new URLSearchParams({ id: coverArtId, password: base.password })
-  if (auth.sessionId) params.set('session', auth.sessionId)
-  return `${base.origin}/remote/cover-art?${params.toString()}`
+  const params = new URLSearchParams({ id: coverArtId })
+  const sessionId = useAuthStore().sessionId
+  if (sessionId) params.set('session', sessionId)
+  return `/remote/cover-art?${params.toString()}`
 }
 
 /** Same reasoning as remoteCoverArtUrl() above, for internet radio station
@@ -80,9 +63,7 @@ export function remoteRadioFaviconUrl(
   hint: string | null = null,
 ): string | null {
   if (!homePageUrl && !hint) return null
-  const base = remoteMediaBase()
-  if (!base) return null
-  const params = new URLSearchParams({ url: homePageUrl ?? '', password: base.password })
+  const params = new URLSearchParams({ url: homePageUrl ?? '' })
   if (hint) params.set('hint', hint)
   // Rounded to the same steps the desktop asks for (see faviconSizeStep), so
   // the phone shares the backend's already-resolved answer for a station
@@ -91,7 +72,7 @@ export function remoteRadioFaviconUrl(
   if (step > 0) params.set('min_size', String(step))
   // Same handler, so the same stale-cache problem — see RADIO_FAVICON_CACHE_VERSION.
   params.set('v', RADIO_FAVICON_CACHE_VERSION)
-  return `${base.origin}/remote/radio-favicon?${params.toString()}`
+  return `/remote/radio-favicon?${params.toString()}`
 }
 
 export function toRemoteSong(song: Song): RemoteSong {
@@ -399,7 +380,7 @@ export async function resolveRemoteQuery(
           // own faviconUrl(homePageUrl, 32) for this same list-row use.
           favicon_url: remoteRadioFaviconUrl(s.homePageUrl, 32, s.favicon ?? null),
           // What favicon_url is built from, for an integration to build it
-          // with its own key - see cover_art_id on RemoteSong.
+          // itself - see cover_art_id on RemoteSong.
           home_page_url: s.homePageUrl ?? null,
           favicon_hint: s.favicon ?? null,
         })),
