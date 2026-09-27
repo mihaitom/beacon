@@ -24,20 +24,20 @@
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/home.png" width="800" alt="Home view">
+  <img src="docs/screenshots/home.webp" width="800" alt="Home view">
   <br><em>Home</em>
 </p>
 <p align="center">
-  <img src="docs/screenshots/now-playing.png" width="800" alt="Fullscreen Now Playing view with lyrics and visualizer">
+  <img src="docs/screenshots/now-playing.webp" width="800" alt="Fullscreen Now Playing view with lyrics and visualizer">
   <br><em>Now Playing</em>
 </p>
 <p align="center">
-  <img src="docs/screenshots/artist.png" width="800" alt="Artist page with a Fanart.tv background, the artist's albums and most played songs">
+  <img src="docs/screenshots/artist.webp" width="800" alt="Artist page with a Fanart.tv background, the artist's albums and most played songs">
   <br><em>Artist</em>
 </p>
 <p align="center">
-  <img src="docs/screenshots/remote.png" width="260" alt="Remote Control: controlling Beacon's local playback from a phone">
-  <img src="docs/screenshots/mobile-web.png" width="260" alt="The Docker/web build's responsive mobile UI, open directly on a phone's browser">
+  <img src="docs/screenshots/remote.webp" width="260" alt="Remote Control: controlling Beacon's local playback from a phone">
+  <img src="docs/screenshots/mobile-web.webp" width="260" alt="The Docker/web build's responsive mobile UI, open directly on a phone's browser">
   <br><em>Remote Control (Electron) and the responsive mobile web UI (Docker/web)</em>
 </p>
 
