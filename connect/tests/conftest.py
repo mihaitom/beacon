@@ -1,6 +1,7 @@
 """Shared fixtures for Connect API tests."""
 
 import ipaddress
+import socket
 from typing import ClassVar
 
 import pytest
@@ -30,6 +31,95 @@ def client():
         if auth.TOKEN:
             c.headers.update({"X-Connect-Token": auth.TOKEN})
         yield c
+
+
+def _is_local(host) -> bool:
+    if host in (None, "", "localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+@pytest.fixture(autouse=True)
+def _block_real_network(monkeypatch):
+    """No test opens a connection to the internet or the LAN. A radio test
+    posted http://example.com/stream.mp3 unmocked, and the relay behind
+    /play-url connected to it for real (found 2026-09-27). Refused here
+    straight away instead, with the same exceptions a real failure raises,
+    so such a test behaves the same everywhere and a new leak shows up on
+    the first local run. Multicast discovery is blocked separately, below.
+
+    Loopback stays open (the test client and asyncio use it), and so does
+    UDP: get_local_ip() "connects" a datagram socket only to read which
+    interface the route goes through, which sends nothing."""
+    real_getaddrinfo = socket.getaddrinfo
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+
+    def getaddrinfo(host, *args, **kwargs):
+        if isinstance(host, bytes):
+            host = host.decode()
+        if _is_local(host):
+            return real_getaddrinfo(host, *args, **kwargs)
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            raise socket.gaierror(socket.EAI_NONAME, f"test run: no DNS for {host}") from None
+        return real_getaddrinfo(host, *args, **kwargs)  # a literal address, no lookup
+
+    def _refuse(sock, address) -> bool:
+        return (
+            sock.family in (socket.AF_INET, socket.AF_INET6)
+            and sock.type & socket.SOCK_STREAM
+            and not _is_local(address[0])
+        )
+
+    def connect(sock, address):
+        if _refuse(sock, address):
+            raise ConnectionRefusedError(f"test run: no connection to {address[0]}")
+        return real_connect(sock, address)
+
+    def connect_ex(sock, address):
+        if _refuse(sock, address):
+            return 111  # ECONNREFUSED
+        return real_connect_ex(sock, address)
+
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)
+
+
+class _NoCastBrowser:
+    devices: ClassVar[dict] = {}
+
+
+@pytest.fixture(autouse=True)
+def _block_real_cast_and_dlna_discovery(monkeypatch):
+    """The Chromecast and DLNA counterparts of the soco.discover() block
+    below. A delivery that does not know its device yet goes looking for it
+    on the network - Chromecast over mDNS, waiting at least 3s; DLNA over an
+    SSDP search, 5s - and that includes stop(), which the app's shutdown
+    calls for every session still casting. So a test that merely left a
+    cast "playing" searched the real network for a device of that name while
+    tearing down, and would have stopped it had there been one. Found
+    2026-09-27 behind a CI timeout.
+
+    Tests that exercise discovery patch these same names themselves, which
+    takes precedence."""
+    from delivery import chromecast, manager
+
+    for module in (chromecast, manager):
+        monkeypatch.setattr(
+            module, "_ensure_cast_browser", lambda: (_NoCastBrowser(), None), raising=False
+        )
+        monkeypatch.setattr(module, "_wait_for_discovery", lambda *a, **k: None, raising=False)
+
+    async def no_ssdp_search(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr("async_upnp_client.search.async_search", no_ssdp_search)
 
 
 @pytest.fixture(autouse=True)

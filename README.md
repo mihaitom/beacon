@@ -32,8 +32,8 @@
   <br><em>Now Playing</em>
 </p>
 <p align="center">
-  <img src="docs/screenshots/library.png" width="800" alt="Library browsing view">
-  <br><em>Library</em>
+  <img src="docs/screenshots/artist.png" width="800" alt="Artist page with a Fanart.tv background, the artist's albums and most played songs">
+  <br><em>Artist</em>
 </p>
 <p align="center">
   <img src="docs/screenshots/remote.png" width="260" alt="Remote Control: controlling Beacon's local playback from a phone">
