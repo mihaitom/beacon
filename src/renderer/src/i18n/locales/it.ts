@@ -463,6 +463,31 @@ export default {
     apiKeySaved: 'Chiave salvata',
     apiKeyCleared: 'Chiave rimossa',
     apiKeyFailed: 'Impossibile salvare la chiave',
+    homeAutomationTitle: 'Domotica',
+    homeAutomationWhat:
+      'Permette a Home Assistant o a un altro strumento di automazione di vedere e controllare ciò che Beacon riproduce, tramite la stessa interfaccia del telecomando sul telefono. La chiave resta valida dopo i riavvii finché non la revochi. Finché esiste una chiave, Beacon si annuncia sulla rete locale così che Home Assistant possa trovarlo.',
+    homeAutomationKeyActive: 'Una chiave è attiva',
+    homeAutomationKeyMissing: 'Ancora nessuna chiave',
+    homeAutomationKey: 'Chiave',
+    homeAutomationKeyOnce:
+      'Mostrata solo ora. Copiala nella tua integrazione; se la perdi, creane una nuova.',
+    homeAutomationGenerate: 'Crea chiave',
+    homeAutomationRegenerate: 'Crea nuova chiave',
+    homeAutomationRevoke: 'Revoca',
+    homeAutomationDocs: 'Come funziona',
+    homeAutomationFailed: 'Impossibile modificare la chiave',
+    fixedPortWhat:
+      'Beacon sceglie una porta libera a ogni avvio. Una porta fissa mantiene lo stesso indirizzo, per gli strumenti che non sanno trovarlo da soli. Ha effetto dopo il riavvio di Beacon.',
+    fixedPort: 'Porta fissa',
+    fixedPortPlaceholder: 'Una porta libera a ogni avvio',
+    fixedPortClear: 'Usa una porta libera',
+    fixedPortSaved: 'Salvato. Riavvia Beacon per usarla.',
+    fixedPortFailed: 'Impossibile salvare la porta',
+    fixedPortNone: "Attualmente sulla porta {current}, scelta all'avvio.",
+    fixedPortActive: 'In esecuzione sulla porta {port}.',
+    fixedPortTaken:
+      "La porta {port} era occupata all'avvio, quindi Beacon usa per ora la porta {current}.",
+    fixedPortFromEnvironment: 'Impostata su {port} da BEACON_PORT.',
     advancedTitle: 'Avanzate',
     logLevel: 'Livello di log',
     logLevelHint:

@@ -25,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # or exported manually), never via a plain .env file alone.
 load_dotenv()
 
+from core import mdns
 from core.auth import TOKEN as _CONNECT_TOKEN
 from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED
 from core.device_volume import capture_main_loop
@@ -288,6 +289,7 @@ async def lifespan(_: FastAPI):
     pairing_reaper_task = asyncio.create_task(reap_stale_pairings())
     loop_lag_task = asyncio.create_task(monitor_loop_lag())
     upnp_renewal_task = asyncio.create_task(_renew_upnp_subscriptions())
+    mdns_task = asyncio.create_task(mdns.keep_announced())
     background_tasks = (
         discovery_task,
         reaper_task,
@@ -295,6 +297,7 @@ async def lifespan(_: FastAPI):
         pairing_reaper_task,
         loop_lag_task,
         upnp_renewal_task,
+        mdns_task,
     )
     try:
         yield
@@ -316,6 +319,7 @@ async def lifespan(_: FastAPI):
         # `connect` from a previous launch (the dev flow) never inherits a
         # stale enabled state for the next one.
         remote.disable()
+        await mdns.shutdown()
         await close_proxy_client()
         await jellyfin_bridge.close()
         await plex_bridge.close()

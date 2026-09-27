@@ -66,6 +66,9 @@ class RemoteState:
         self.last_keepalive: float = 0.0
         self.snapshot: dict = {}
         self.event_bus = EventBus()  # -> phone GET /remote/events
+        # How many of event_bus's subscribers are integrations rather than
+        # phones (routes/remote.py's phone_events()).
+        self.integration_streams: int = 0
         self.command_bus = EventBus()  # -> renderer GET /remote/agent-events
         self._pending: dict[str, asyncio.Future] = {}
         # ip -> failed-attempt timestamps within the current/most recent window,
@@ -92,16 +95,23 @@ class RemoteState:
     def disable(self) -> None:
         """Clears credentials/state and wakes every blocked SSE loop and
         pending query Future so they fail fast instead of hanging until
-        their own timeout — see routes/remote.py's generator()/_query()."""
+        their own timeout — see routes/remote.py's generator()/_query().
+
+        Leaves renderer_connected alone: with an integration key the
+        renderer keeps its relay open after the phones are switched off, and
+        when it does close it, agent_events() clears the flag itself."""
         self.enabled = False
         self.password = None
         self.pin = None
         self.snapshot = {}
-        self.renderer_connected = False
         for future in self._pending.values():
             if not future.done():
                 future.cancel()
         self._pending.clear()
+
+    @property
+    def phone_count(self) -> int:
+        return self.event_bus.subscriber_count - self.integration_streams
 
     def touch_keepalive(self) -> None:
         self.last_keepalive = time.time()

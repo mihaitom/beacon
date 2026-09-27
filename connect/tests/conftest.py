@@ -1,6 +1,7 @@
 """Shared fixtures for Connect API tests."""
 
 import ipaddress
+from typing import ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
@@ -74,13 +75,54 @@ def _isolated_client_ids(monkeypatch, tmp_path):
     """media/client_id.py caches the Jellyfin/Plex ids process-wide and saves
     them to disk — point both at this test's own directory so no test writes
     next to the code or sees another test's id."""
-    from media import client_id
+    from core import client_id
 
     monkeypatch.setattr(client_id, "_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setattr(client_id, "_LEGACY_DIR", str(tmp_path / "legacy"))
     client_id.forget_cached_ids()
     yield
     client_id.forget_cached_ids()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_integration_key(monkeypatch, tmp_path):
+    """No integration key unless a test makes one, and never next to the code."""
+    from core import integration_key
+
+    monkeypatch.setattr(integration_key, "_DATA_DIR", str(tmp_path / "data"))
+    integration_key.forget_cached()
+    yield
+    integration_key.forget_cached()
+
+
+class _FakeZeroconf:
+    """Records what core/mdns.py would announce instead of sending it."""
+
+    registered: ClassVar[list] = []
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def async_register_service(self, info, **kwargs):
+        _FakeZeroconf.registered.append(info)
+
+    async def async_unregister_service(self, info):
+        _FakeZeroconf.registered.remove(info)
+
+    async def async_close(self):
+        pass
+
+
+@pytest.fixture(autouse=True)
+def fake_zeroconf(monkeypatch):
+    """A test run must never announce anything on the real network."""
+    from core import mdns
+
+    _FakeZeroconf.registered = []
+    monkeypatch.setattr(mdns, "AsyncZeroconf", _FakeZeroconf)
+    monkeypatch.setattr(mdns, "_zeroconf", None)
+    monkeypatch.setattr(mdns, "_info", None)
+    return _FakeZeroconf
 
 
 @pytest.fixture(autouse=True)
@@ -222,6 +264,7 @@ def reset_state():
         "dlna": 0,
     }
     remote_module.remote.disable()
+    remote_module.remote.renderer_connected = False
     remote_module.remote._attempts.clear()
     remote_module.remote._lockout_until.clear()
     remote_module.remote._lockout_strikes.clear()

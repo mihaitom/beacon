@@ -47,6 +47,7 @@
         <advanced-section />
         <storage-section />
         <api-keys-section />
+        <home-automation-section />
       </v-tabs-window-item>
     </v-tabs-window>
   </v-container>
@@ -63,6 +64,7 @@ import CastPermissionsSection from '@/components/settings/CastPermissionsSection
 import StorageSection from '@/components/settings/StorageSection.vue'
 import LyricsProvidersSection from '@/components/settings/LyricsProvidersSection.vue'
 import ApiKeysSection from '@/components/settings/ApiKeysSection.vue'
+import HomeAutomationSection from '@/components/settings/HomeAutomationSection.vue'
 
 export default {
   name: 'SettingsView',
@@ -76,6 +78,7 @@ export default {
     StorageSection,
     LyricsProvidersSection,
     ApiKeysSection,
+    HomeAutomationSection,
   },
   data() {
     return {
@@ -93,7 +96,8 @@ export default {
       return !window.api && this.authStore.capabilities.castPermissions
     },
     /** The Advanced tab is the installation-wide settings — the log level,
-     * the AirPlay pairings, the API keys and the cache clearing. On the
+     * the AirPlay pairings, the API keys, home automation access and the
+     * cache clearing. On the
      * web/Docker build that makes it a server administrator's, but the
      * desktop app runs its own single-user backend, where there is nobody
      * else to keep it from, so it shows it whatever the media account's own

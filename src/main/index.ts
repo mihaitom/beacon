@@ -181,12 +181,12 @@ ipcMain.handle('secure-storage:delete', (_event, key: string): void => {
 // binary itself instead (see electron-builder.yml's `extraResources`, built
 // by `connect/packaging/build-binary.py`).
 //
-// The port is resolved fresh per launch via findFreePort() below (asking the
-// OS for one, rather than hardcoding 7071) so a second Beacon instance, or
-// anything else already bound to 7071, can't stop this one's bundled backend
-// from starting — nothing outside this process needs the port to be
-// predictable, since readConnectDefaults() is the only way the renderer ever
-// learns it.
+// The port is a free one the OS hands out per launch (findFreePort() below),
+// so a second Beacon instance or anything else on 7071 can't stop this
+// one's backend from starting - unless a fixed port is set (Settings, or
+// BEACON_PORT), which home automation needs to find the backend again after
+// a restart. A fixed port that is taken falls back to a free one rather
+// than leaving the app without a backend; see resolveConnectPort().
 let packagedConnectPort = 7071
 // Generated fresh per launch — unlike connect/.connect-token (used by the
 // dev flow, where the backend runs independently and needs a stable value
@@ -206,6 +206,79 @@ function findFreePort(): Promise<number> {
     })
   })
 }
+
+const CONNECT_PORT_ENV = 'BEACON_PORT'
+// Below 1024 needs root on Linux/macOS.
+const MIN_FIXED_PORT = 1024
+const MAX_PORT = 65535
+
+// Settings main needs before the renderer exists - the port is picked
+// before connect starts, so it can't live in connect. Plain JSON: nothing in
+// it is secret.
+interface AppSettings {
+  connectPort?: number
+}
+
+function appSettingsPath(): string {
+  return join(app.getPath('userData'), 'app-settings.json')
+}
+
+function readAppSettings(): AppSettings {
+  try {
+    return JSON.parse(readFileSync(appSettingsPath(), 'utf-8'))
+  } catch {
+    return {}
+  }
+}
+
+function isValidFixedPort(port: unknown): port is number {
+  return (
+    Number.isInteger(port) && (port as number) >= MIN_FIXED_PORT && (port as number) <= MAX_PORT
+  )
+}
+
+function configuredConnectPort(): { port: number | null; fromEnvironment: boolean } {
+  const fromEnv = Number(process.env[CONNECT_PORT_ENV])
+  if (process.env[CONNECT_PORT_ENV] && isValidFixedPort(fromEnv)) {
+    return { port: fromEnv, fromEnvironment: true }
+  }
+  const stored = readAppSettings().connectPort
+  return { port: isValidFixedPort(stored) ? stored : null, fromEnvironment: false }
+}
+
+// 0.0.0.0, not 127.0.0.1 like findFreePort(): connect binds every interface,
+// and a port taken on the LAN side only would pass a loopback-only check.
+function portIsFree(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const srv = createServer()
+    srv.unref()
+    srv.once('error', () => resolve(false))
+    srv.listen(port, '0.0.0.0', () => srv.close(() => resolve(true)))
+  })
+}
+
+async function resolveConnectPort(): Promise<number> {
+  const { port } = configuredConnectPort()
+  if (port !== null) {
+    if (await portIsFree(port)) return port
+    console.warn(`[connect] Port ${port} is in use, using a free one instead`)
+  }
+  return findFreePort()
+}
+
+ipcMain.handle('app-config:get-connect-port', () => ({
+  ...configuredConnectPort(),
+  // null in dev, where connect runs on its own and its .env decides.
+  current: app.isPackaged ? packagedConnectPort : null,
+}))
+
+ipcMain.handle('app-config:set-connect-port', (_event, port: number | null): void => {
+  if (port !== null && !isValidFixedPort(port)) throw new Error(`Invalid port: ${port}`)
+  const settings = readAppSettings()
+  if (port === null) delete settings.connectPort
+  else settings.connectPort = port
+  writeFileSync(appSettingsPath(), JSON.stringify(settings))
+})
 
 // The ffmpeg shipped alongside the backend (see build/ffmpeg/README.md for
 // what it is and how it's built), or null when this build has none and the
@@ -382,7 +455,7 @@ app.whenReady().then(async () => {
   })
 
   if (app.isPackaged) {
-    packagedConnectPort = await findFreePort()
+    packagedConnectPort = await resolveConnectPort()
     startConnectServer()
     await waitForConnectReady(packagedConnectPort)
   }

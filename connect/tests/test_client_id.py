@@ -3,7 +3,7 @@ import stat
 
 import pytest
 
-from media import client_id
+from core import client_id
 
 
 def _restart():

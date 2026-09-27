@@ -464,6 +464,31 @@ export default {
     apiKeySaved: 'Clé enregistrée',
     apiKeyCleared: 'Clé supprimée',
     apiKeyFailed: "Impossible d'enregistrer la clé",
+    homeAutomationTitle: 'Domotique',
+    homeAutomationWhat:
+      "Permet à Home Assistant ou à un autre outil d'automatisation de voir et de contrôler ce que Beacon joue, via la même interface que la télécommande sur téléphone. La clé reste valable après un redémarrage jusqu'à ce que vous la révoquiez. Tant qu'une clé existe, Beacon s'annonce sur votre réseau local pour que Home Assistant puisse le trouver.",
+    homeAutomationKeyActive: 'Une clé est active',
+    homeAutomationKeyMissing: 'Pas encore de clé',
+    homeAutomationKey: 'Clé',
+    homeAutomationKeyOnce:
+      'Affichée seulement maintenant. Copiez-la dans votre intégration ; si vous la perdez, créez-en une nouvelle.',
+    homeAutomationGenerate: 'Créer une clé',
+    homeAutomationRegenerate: 'Créer une nouvelle clé',
+    homeAutomationRevoke: 'Révoquer',
+    homeAutomationDocs: 'Fonctionnement',
+    homeAutomationFailed: 'Impossible de modifier la clé',
+    fixedPortWhat:
+      'Beacon choisit un port libre à chaque démarrage. Un port fixe garde la même adresse, pour les outils qui ne savent pas le trouver seuls. Pris en compte après le redémarrage de Beacon.',
+    fixedPort: 'Port fixe',
+    fixedPortPlaceholder: 'Un port libre à chaque démarrage',
+    fixedPortClear: 'Utiliser un port libre',
+    fixedPortSaved: "Enregistré. Redémarrez Beacon pour l'utiliser.",
+    fixedPortFailed: "Impossible d'enregistrer le port",
+    fixedPortNone: 'Actuellement sur le port {current}, choisi au démarrage.',
+    fixedPortActive: 'En service sur le port {port}.',
+    fixedPortTaken:
+      "Le port {port} était occupé au démarrage, Beacon utilise donc le port {current} pour l'instant.",
+    fixedPortFromEnvironment: 'Fixé à {port} par BEACON_PORT.',
     advancedTitle: 'Avancé',
     logLevel: 'Niveau de journalisation',
     logLevelHint:

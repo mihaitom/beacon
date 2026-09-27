@@ -20,6 +20,10 @@ export interface RemoteSong {
   artist: string
   album: string
   cover_art_url: string | null
+  /** For an integration, which cannot use cover_art_url: that carries the
+   * phone password, and is null while phones are off. It builds the same
+   * /remote/cover-art URL with its own key instead. */
+  cover_art_id: string | null
   duration: number
 }
 
@@ -97,6 +101,7 @@ export function toRemoteSong(song: Song): RemoteSong {
     artist: song.artist,
     album: song.album,
     cover_art_url: remoteCoverArtUrl(song.coverArtId),
+    cover_art_id: song.coverArtId ?? null,
     duration: song.duration,
   }
 }
@@ -122,8 +127,15 @@ export async function handleRemoteCommand(
   const connect = useConnectStore()
 
   switch (type) {
+    // Directional, unlike toggle-play: an automation sends "pause" without
+    // knowing the current state, and a toggle would start playback that was
+    // already paused. Same guard as services/mediaSession.ts.
     case 'play':
+      if (!playback.isPlaying) await playback.togglePlay()
+      return
     case 'pause':
+      if (playback.isPlaying) await playback.togglePlay()
+      return
     case 'toggle-play':
       await playback.togglePlay()
       return

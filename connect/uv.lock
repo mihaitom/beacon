@@ -194,6 +194,7 @@ dependencies = [
     { name = "pychromecast" },
     { name = "python-dotenv" },
     { name = "soco" },
+    { name = "zeroconf" },
 ]
 
 [package.dev-dependencies]
@@ -219,6 +220,7 @@ requires-dist = [
     { name = "pychromecast", specifier = ">=14.0.0" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "soco", specifier = ">=0.31.0" },
+    { name = "zeroconf", specifier = ">=0.150.0" },
 ]
 
 [package.metadata.requires-dev]

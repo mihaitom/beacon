@@ -3,6 +3,8 @@ import {
   enableRemoteControl,
   disableRemoteControl,
   getRemoteControlStatus,
+  generateIntegrationKey,
+  revokeIntegrationKey,
   sendRemoteKeepalive,
   pushRemoteState,
   respondToRemoteQuery,
@@ -43,6 +45,10 @@ interface RemoteControlState {
    * because the button needs the number anyway, and one source of truth
    * for both is one thing that can be wrong. */
   phoneCount: number
+  /** An integration key exists (connect/core/integration_key.py). Home
+   * automation reaches this app through the same relay as a phone, so the
+   * relay runs while either this or `enabled` is on. */
+  integration: boolean
 }
 
 const KEEPALIVE_INTERVAL_MS = 20_000
@@ -86,6 +92,7 @@ export const useRemoteControlStore = defineStore('remoteControl', {
     port: 0,
     needsRegenerate: false,
     phoneCount: 0,
+    integration: false,
   }),
 
   getters: {
@@ -131,11 +138,38 @@ export const useRemoteControlStore = defineStore('remoteControl', {
         this.pin = null
         this.needsRegenerate = false
         // Nothing can be connected to a feature that is off, and no
-        // further count will arrive to say so: the agent stream this one
-        // would have come down is exactly what stopRelay() closes.
+        // further count may arrive to say so: the agent stream this one
+        // would have come down closes, unless an integration keeps it open.
         this.phoneCount = 0
-        this.stopRelay()
+        this.stopRelayUnlessNeeded()
       }
+    },
+
+    /** The key is returned once, to show it; this store does not keep it. */
+    async generateIntegrationKey(): Promise<string> {
+      const { key, lan_ip, port } = await generateIntegrationKey()
+      this.integration = true
+      this.lanIp = lan_ip
+      this.port = port
+      this.startRelay()
+      return key
+    },
+
+    async revokeIntegrationKey(): Promise<void> {
+      await revokeIntegrationKey()
+      this.integration = false
+      this.stopRelayUnlessNeeded()
+    },
+
+    /** Switching one user of the relay off leaves it running for the other. */
+    stopRelayUnlessNeeded(): void {
+      if (this.enabled || this.integration) {
+        // connect cleared its snapshot along with the phone credentials
+        // (core/remote.py's disable()), so give it the current one again.
+        schedulePushSnapshot?.()
+        return
+      }
+      this.stopRelay()
     },
 
     /** Called once at app startup (App.vue) — reconciles this store's
@@ -157,10 +191,9 @@ export const useRemoteControlStore = defineStore('remoteControl', {
       this.lanIp = status.lan_ip
       this.port = status.port
       this.phoneCount = status.phone_count
-      if (status.enabled) {
-        this.needsRegenerate = !this.password
-        this.startRelay()
-      }
+      this.integration = status.integration
+      if (status.enabled) this.needsRegenerate = !this.password
+      if (status.enabled || status.integration) this.startRelay()
     },
 
     startRelay(): void {
@@ -223,7 +256,12 @@ export const useRemoteControlStore = defineStore('remoteControl', {
     },
 
     startStatePush(): void {
-      if (unsubscribePlayback) return
+      // Already running for the other user of the relay: connect may have
+      // just dropped its snapshot (a fresh enable() does), so send it again.
+      if (unsubscribePlayback) {
+        schedulePushSnapshot?.()
+        return
+      }
       const playback = usePlaybackStore()
       const connect = useConnectStore()
       const autoplay = useAutoplayStore()

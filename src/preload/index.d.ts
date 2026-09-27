@@ -6,8 +6,20 @@ interface SecureStorageApi {
   delete(key: string): Promise<void>
 }
 
+/** The fixed port for the bundled backend, if one is set. `current` is the
+ * port it actually runs on this launch - different when the fixed one was
+ * taken - and null in dev, where connect runs on its own. */
+export interface ConnectPortInfo {
+  port: number | null
+  fromEnvironment: boolean
+  current: number | null
+}
+
 interface AppConfigApi {
   getConnectDefaults(): Promise<{ connectToken: string; connectUrl: string }>
+  getConnectPort(): Promise<ConnectPortInfo>
+  /** Takes effect on the next start. null goes back to a free port. */
+  setConnectPort(port: number | null): Promise<void>
 }
 
 interface AppLifecycleApi {

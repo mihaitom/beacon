@@ -16,6 +16,15 @@ export interface RemoteControlStatus {
    * button is right straight away; after that the agent stream keeps it
    * up to date (see stores/remoteControl.ts). */
   phone_count: number
+  /** Whether an integration key exists — the relay then runs whether or not
+   * phones are switched on (see stores/remoteControl.ts). */
+  integration: boolean
+}
+
+export interface IntegrationKeyResponse {
+  key: string
+  lan_ip: string
+  port: number
 }
 
 /** Thin wrappers over the connect backend's /remote/* control plane — all
@@ -34,6 +43,16 @@ export function disableRemoteControl(): Promise<{ success: boolean }> {
 
 export function getRemoteControlStatus(): Promise<RemoteControlStatus> {
   return fetchConnect<RemoteControlStatus>('/remote/status')
+}
+
+/** Creates the key home automation uses, replacing any earlier one. The
+ * response is the only place it is ever sent. */
+export function generateIntegrationKey(): Promise<IntegrationKeyResponse> {
+  return fetchConnect<IntegrationKeyResponse>('/remote/integration-key', { method: 'POST' })
+}
+
+export function revokeIntegrationKey(): Promise<{ success: boolean }> {
+  return fetchConnect<{ success: boolean }>('/remote/integration-key', { method: 'DELETE' })
 }
 
 export function sendRemoteKeepalive(): Promise<void> {

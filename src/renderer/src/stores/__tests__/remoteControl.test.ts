@@ -15,6 +15,8 @@ vi.mock('@/services/remoteControl/http', async (importOriginal) => {
   return {
     ...actual,
     enableRemoteControl: vi.fn(),
+    generateIntegrationKey: vi.fn(),
+    revokeIntegrationKey: vi.fn(),
     disableRemoteControl: vi.fn(),
     getRemoteControlStatus: vi.fn(),
     sendRemoteKeepalive: vi.fn(),
@@ -71,6 +73,8 @@ describe('remoteControl store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.mocked(remoteHttp.enableRemoteControl).mockReset()
+    vi.mocked(remoteHttp.generateIntegrationKey).mockReset()
+    vi.mocked(remoteHttp.revokeIntegrationKey).mockReset().mockResolvedValue({ success: true })
     vi.mocked(remoteHttp.disableRemoteControl).mockReset()
     vi.mocked(remoteHttp.getRemoteControlStatus).mockReset()
     vi.mocked(remoteHttp.sendRemoteKeepalive).mockReset().mockResolvedValue(undefined)
@@ -168,6 +172,7 @@ describe('remoteControl store', () => {
         lan_ip: '',
         port: 0,
         phone_count: 0,
+        integration: false,
       })
       const store = useRemoteControlStore()
 
@@ -184,6 +189,7 @@ describe('remoteControl store', () => {
         lan_ip: '10.0.0.9',
         port: 9000,
         phone_count: 0,
+        integration: false,
       })
       const store = useRemoteControlStore()
 
@@ -209,11 +215,114 @@ describe('remoteControl store', () => {
         lan_ip: '192.168.1.5',
         port: 8080,
         phone_count: 0,
+        integration: false,
       })
 
       await store.refreshStatus()
 
       expect(store.needsRegenerate).toBe(false)
+    })
+  })
+
+  describe('integration key', () => {
+    const credentials = { password: 'secret', pin: '123456', lan_ip: '192.168.1.5', port: 8080 }
+
+    beforeEach(() => {
+      vi.mocked(remoteHttp.enableRemoteControl).mockResolvedValue(credentials)
+      vi.mocked(remoteHttp.disableRemoteControl).mockResolvedValue({ success: true })
+      vi.mocked(remoteHttp.generateIntegrationKey).mockResolvedValue({
+        key: 'integration-key',
+        lan_ip: '192.168.1.5',
+        port: 8080,
+      })
+    })
+
+    it('generating a key starts the relay and hands the key back without keeping it', async () => {
+      const store = useRemoteControlStore()
+
+      const key = await store.generateIntegrationKey()
+
+      expect(key).toBe('integration-key')
+      expect(store.integration).toBe(true)
+      expect(JSON.stringify(store.$state)).not.toContain('integration-key')
+      expect(FakeAgent.instances).toHaveLength(1)
+      expect(FakeAgent.instances[0]!.started).toBe(true)
+    })
+
+    it('switching phones off keeps the relay running for the integration', async () => {
+      const store = useRemoteControlStore()
+      await store.generateIntegrationKey()
+      await store.enable()
+
+      await store.disable()
+
+      expect(store.enabled).toBe(false)
+      expect(FakeAgent.instances[0]!.stopped).toBe(false)
+    })
+
+    it('sends the snapshot again after phones are switched off, since connect dropped it', async () => {
+      vi.useFakeTimers()
+      const store = useRemoteControlStore()
+      await store.generateIntegrationKey()
+      await store.enable()
+      await vi.advanceTimersByTimeAsync(300)
+      vi.mocked(remoteHttp.pushRemoteState).mockClear()
+
+      await store.disable()
+      await vi.advanceTimersByTimeAsync(300)
+
+      expect(remoteHttp.pushRemoteState).toHaveBeenCalledTimes(1)
+    })
+
+    it('sends the snapshot again when phones are switched on while the relay already runs', async () => {
+      vi.useFakeTimers()
+      const store = useRemoteControlStore()
+      await store.generateIntegrationKey()
+      await vi.advanceTimersByTimeAsync(300)
+      vi.mocked(remoteHttp.pushRemoteState).mockClear()
+
+      await store.enable()
+      await vi.advanceTimersByTimeAsync(300)
+
+      expect(remoteHttp.pushRemoteState).toHaveBeenCalledTimes(1)
+    })
+
+    it('revoking the key keeps the relay running while phones are on', async () => {
+      const store = useRemoteControlStore()
+      await store.generateIntegrationKey()
+      await store.enable()
+
+      await store.revokeIntegrationKey()
+
+      expect(store.integration).toBe(false)
+      expect(FakeAgent.instances[0]!.stopped).toBe(false)
+    })
+
+    it('revoking the key stops the relay once nothing else needs it', async () => {
+      const store = useRemoteControlStore()
+      await store.generateIntegrationKey()
+
+      await store.revokeIntegrationKey()
+
+      expect(FakeAgent.instances[0]!.stopped).toBe(true)
+    })
+
+    it('refreshStatus starts the relay for a key alone, without asking to regenerate phone pairing', async () => {
+      vi.mocked(remoteHttp.getRemoteControlStatus).mockResolvedValue({
+        enabled: false,
+        pin: null,
+        lan_ip: '10.0.0.9',
+        port: 9000,
+        phone_count: 0,
+        integration: true,
+      })
+      const store = useRemoteControlStore()
+
+      await store.refreshStatus()
+
+      expect(store.integration).toBe(true)
+      expect(store.needsRegenerate).toBe(false)
+      expect(FakeAgent.instances).toHaveLength(1)
     })
   })
 

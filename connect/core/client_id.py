@@ -1,9 +1,11 @@
-"""media/client_id.py — stable per-install client ids for Jellyfin and Plex
+"""core/client_id.py — stable per-install ids
 
-Both servers register a new device/session for every client id they have not
-seen before, so the id has to be the same on every request and across
-restarts. It lives under CONNECT_DATA_DIR (see delivery/credentials.py) —
-next to the code is read-only in a Windows install under Program Files.
+The Jellyfin and Plex client ids, and the id this Beacon announces itself
+with over mDNS (core/mdns.py). Jellyfin and Plex register a new
+device/session for every client id they have not seen before, so an id has
+to be the same on every request and across restarts. It lives under
+CONNECT_DATA_DIR (see delivery/credentials.py) — next to the code is
+read-only in a Windows install under Program Files.
 """
 
 import logging

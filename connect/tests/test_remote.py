@@ -402,7 +402,7 @@ async def test_phone_events_tells_the_renderer_how_many_phones_are_on_the_line()
     from routes.remote import phone_events
 
     agent_queue = remote.command_bus.subscribe()
-    resp = await phone_events()
+    resp = await phone_events(is_integration=False)
     gen = resp.body_iterator
     try:
         # Started before the assertion below, not because the message needs
@@ -524,7 +524,7 @@ async def test_phone_events_opens_with_retry_and_the_current_snapshot():
     from routes.remote import phone_events
 
     remote.snapshot = {"playing": True}
-    resp = await phone_events()
+    resp = await phone_events(is_integration=False)
     gen = resp.body_iterator
     try:
         first = await gen.__anext__()
@@ -539,7 +539,7 @@ async def test_phone_events_opens_with_retry_and_the_current_snapshot():
 async def test_phone_events_forwards_a_broadcast_snapshot():
     from routes.remote import phone_events
 
-    resp = await phone_events()
+    resp = await phone_events(is_integration=False)
     gen = resp.body_iterator
     try:
         await gen.__anext__()  # retry
@@ -555,7 +555,7 @@ async def test_phone_events_forwards_a_broadcast_snapshot():
 async def test_phone_events_heartbeats_on_timeout():
     from routes.remote import phone_events
 
-    resp = await phone_events()
+    resp = await phone_events(is_integration=False)
     gen = resp.body_iterator
     try:
         await gen.__anext__()
@@ -571,7 +571,7 @@ async def test_phone_events_heartbeats_on_timeout():
 async def test_phone_events_unsubscribes_on_close():
     from routes.remote import phone_events
 
-    resp = await phone_events()
+    resp = await phone_events(is_integration=False)
     gen = resp.body_iterator
     await gen.__anext__()
     await gen.__anext__()

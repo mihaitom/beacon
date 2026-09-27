@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
+interface ConnectPortInfo {
+  port: number | null
+  fromEnvironment: boolean
+  current: number | null
+}
+
 const api = {
   secureStorage: {
     get: (key: string): Promise<string | null> => ipcRenderer.invoke('secure-storage:get', key),
@@ -11,6 +17,10 @@ const api = {
   appConfig: {
     getConnectDefaults: (): Promise<{ connectToken: string; connectUrl: string }> =>
       ipcRenderer.invoke('app-config:get-connect-defaults'),
+    getConnectPort: (): Promise<ConnectPortInfo> =>
+      ipcRenderer.invoke('app-config:get-connect-port'),
+    setConnectPort: (port: number | null): Promise<void> =>
+      ipcRenderer.invoke('app-config:set-connect-port', port),
   },
   appLifecycle: {
     // Main can't stop an active cast session itself (see main/index.ts —

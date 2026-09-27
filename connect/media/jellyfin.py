@@ -7,11 +7,11 @@ transcoding) — robust for FFmpeg re-streaming to Sonos / AirPlay / Chromecast.
 import logging
 from urllib.parse import quote, urlencode
 
+from core.client_id import stable_id
 from lyrics.shared import CONNECT_VERSION
 
 from . import http_client
 from .base import Track, split_artwork_id
-from .client_id import stable_id
 
 logger = logging.getLogger("connect.jellyfin")
 

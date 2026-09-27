@@ -19,9 +19,10 @@ from urllib.parse import quote
 
 import httpx
 
+from core.client_id import stable_id
+
 from . import http_client
 from .base import Track, split_artwork_id
-from .client_id import stable_id
 
 logger = logging.getLogger("connect.plex")
 

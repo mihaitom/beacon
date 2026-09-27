@@ -462,6 +462,31 @@ export default {
     apiKeySaved: 'Schlüssel gespeichert',
     apiKeyCleared: 'Schlüssel entfernt',
     apiKeyFailed: 'Schlüssel konnte nicht gespeichert werden',
+    homeAutomationTitle: 'Hausautomation',
+    homeAutomationWhat:
+      'Damit können Home Assistant oder andere Automatisierungen sehen und steuern, was Beacon spielt, über dieselbe Schnittstelle wie die Handy-Fernbedienung. Der Schlüssel bleibt über Neustarts gültig, bis du ihn widerrufst. Solange ein Schlüssel besteht, kündigt sich Beacon im lokalen Netzwerk an, damit Home Assistant es findet.',
+    homeAutomationKeyActive: 'Ein Schlüssel ist aktiv',
+    homeAutomationKeyMissing: 'Noch kein Schlüssel',
+    homeAutomationKey: 'Schlüssel',
+    homeAutomationKeyOnce:
+      'Wird nur jetzt angezeigt. Kopiere ihn in deine Integration; geht er verloren, erzeuge einen neuen.',
+    homeAutomationGenerate: 'Schlüssel erzeugen',
+    homeAutomationRegenerate: 'Neuen Schlüssel erzeugen',
+    homeAutomationRevoke: 'Widerrufen',
+    homeAutomationDocs: "So funktioniert's",
+    homeAutomationFailed: 'Der Schlüssel konnte nicht geändert werden',
+    fixedPortWhat:
+      'Beacon wählt bei jedem Start einen freien Port. Ein fester Port hält die Adresse gleich, für Werkzeuge, die Beacon nicht selbst finden. Gilt nach einem Neustart von Beacon.',
+    fixedPort: 'Fester Port',
+    fixedPortPlaceholder: 'Bei jedem Start ein freier Port',
+    fixedPortClear: 'Freien Port verwenden',
+    fixedPortSaved: 'Gespeichert. Starte Beacon neu, um ihn zu verwenden.',
+    fixedPortFailed: 'Der Port konnte nicht gespeichert werden',
+    fixedPortNone: 'Derzeit auf Port {current}, beim Start gewählt.',
+    fixedPortActive: 'Läuft auf Port {port}.',
+    fixedPortTaken:
+      'Port {port} war beim Start belegt, deshalb läuft Beacon vorerst auf Port {current}.',
+    fixedPortFromEnvironment: 'Durch BEACON_PORT auf {port} festgelegt.',
     advancedTitle: 'Erweitert',
     logLevel: 'Log-Level',
     logLevelHint:

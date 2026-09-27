@@ -462,6 +462,31 @@ export default {
     apiKeySaved: 'Clave guardada',
     apiKeyCleared: 'Clave eliminada',
     apiKeyFailed: 'No se ha podido guardar la clave',
+    homeAutomationTitle: 'Domótica',
+    homeAutomationWhat:
+      'Permite que Home Assistant u otra herramienta de automatización vea y controle lo que reproduce Beacon, a través de la misma interfaz que el mando del móvil. La clave sigue siendo válida tras reiniciar hasta que la revoques. Mientras exista una clave, Beacon se anuncia en tu red local para que Home Assistant pueda encontrarlo.',
+    homeAutomationKeyActive: 'Hay una clave activa',
+    homeAutomationKeyMissing: 'Aún no hay clave',
+    homeAutomationKey: 'Clave',
+    homeAutomationKeyOnce:
+      'Solo se muestra ahora. Cópiala en tu integración; si la pierdes, crea una nueva.',
+    homeAutomationGenerate: 'Crear clave',
+    homeAutomationRegenerate: 'Crear clave nueva',
+    homeAutomationRevoke: 'Revocar',
+    homeAutomationDocs: 'Cómo funciona',
+    homeAutomationFailed: 'No se ha podido cambiar la clave',
+    fixedPortWhat:
+      'Beacon elige un puerto libre en cada inicio. Un puerto fijo mantiene la misma dirección, para herramientas que no pueden encontrarlo por sí solas. Se aplica tras reiniciar Beacon.',
+    fixedPort: 'Puerto fijo',
+    fixedPortPlaceholder: 'Un puerto libre en cada inicio',
+    fixedPortClear: 'Usar un puerto libre',
+    fixedPortSaved: 'Guardado. Reinicia Beacon para usarlo.',
+    fixedPortFailed: 'No se ha podido guardar el puerto',
+    fixedPortNone: 'Ahora en el puerto {current}, elegido al iniciar.',
+    fixedPortActive: 'Funcionando en el puerto {port}.',
+    fixedPortTaken:
+      'El puerto {port} estaba ocupado al iniciar, así que Beacon usa el puerto {current} por ahora.',
+    fixedPortFromEnvironment: 'Fijado en {port} por BEACON_PORT.',
     advancedTitle: 'Avanzado',
     logLevel: 'Nivel de registro',
     logLevelHint:

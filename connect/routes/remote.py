@@ -37,6 +37,7 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel
 
+from core import integration_key, mdns
 from core.auth import require_token
 from core.remote import remote
 from core.session import SessionState, get_session
@@ -80,17 +81,29 @@ def _static_dir() -> Path:
 def require_remote_password(
     x_remote_password: str | None = Header(default=None),
     password: str | None = Query(default=None),
-) -> None:
+) -> bool:
     """FastAPI dependency for every phone-facing endpoint below. 404s
     (not 401) when the feature is off — a disabled feature should be
     unreachable, not merely unauthenticated. EventSource can't set custom
     headers, hence the ?password= fallback — same reasoning as
-    core/auth.py's require_token ?token= fallback."""
+    core/auth.py's require_token ?token= fallback.
+
+    The integration key (core/integration_key.py) is accepted in the same
+    place, whether or not the phone feature is on. Without the desktop app
+    behind it there is nothing to answer, so that case is a 503 up front: an
+    integration can show "unavailable" instead of the last state it saw.
+
+    Returns whether the caller is an integration."""
+    provided = x_remote_password or password
+    if integration_key.matches(provided):
+        if not remote.renderer_connected:
+            raise HTTPException(status_code=503, detail="Beacon is not connected")
+        return True
     if not remote.enabled or not remote.password:
         raise HTTPException(status_code=404)
-    provided = x_remote_password or password
     if not provided or not secrets.compare_digest(provided, remote.password):
         raise HTTPException(status_code=401, detail="Unauthorized")
+    return False
 
 
 # ── Control plane (renderer -> connect, CONNECT_TOKEN) ──────────────────────
@@ -121,8 +134,34 @@ async def remote_status():
         "port": PORT,
         # So a renderer that just started knows what to put on its button
         # without waiting for a phone to connect or drop off.
-        "phone_count": remote.event_bus.subscriber_count,
+        "phone_count": remote.phone_count,
+        # The renderer keeps its relay running while this is on, phones or
+        # not — see stores/remoteControl.ts.
+        "integration": integration_key.is_set(),
     }
+
+
+# ── Integration key (renderer -> connect, CONNECT_TOKEN) ────────────────────
+
+
+@router.post("/integration-key", dependencies=[Depends(require_token)])
+async def generate_integration_key():
+    """Creates the key, or replaces it — the only time it is ever sent, the
+    same rule as the phone password in /enable above."""
+    try:
+        key = integration_key.generate()
+    except OSError as e:
+        logger.error(f"[integration-key] Could not save the key: {e}")
+        raise HTTPException(status_code=500, detail="Could not save the key")
+    await mdns.sync()
+    return {"key": key, "lan_ip": get_local_ip(), "port": PORT}
+
+
+@router.delete("/integration-key", dependencies=[Depends(require_token)])
+async def revoke_integration_key():
+    integration_key.revoke()
+    await mdns.sync()
+    return {"success": True}
 
 
 @router.post("/keepalive", dependencies=[Depends(require_token)])
@@ -231,14 +270,16 @@ async def get_state():
 
 async def _broadcast_phone_count() -> None:
     """Tells the renderer how many phones currently hold an event stream."""
-    await remote.command_bus.broadcast(
-        {"kind": "phones", "count": remote.event_bus.subscriber_count}
-    )
+    await remote.command_bus.broadcast({"kind": "phones", "count": remote.phone_count})
 
 
-@router.get("/events", dependencies=[Depends(require_remote_password)])
-async def phone_events():
+@router.get("/events")
+async def phone_events(is_integration: bool = Depends(require_remote_password)):
     queue = remote.event_bus.subscribe()
+    # Home Assistant holding a stream is not a phone: it would put a phone
+    # on the badge and close the pairing dialog below.
+    if is_integration:
+        remote.integration_streams += 1
 
     # How many phones are on the line, told to the desktop as it changes.
     # An open stream is the only sign of a phone this backend has: the QR
@@ -268,6 +309,8 @@ async def phone_events():
                     yield ": heartbeat\n\n"
         finally:
             remote.event_bus.unsubscribe(queue)
+            if is_integration:
+                remote.integration_streams -= 1
             await _broadcast_phone_count()
 
     return StreamingResponse(

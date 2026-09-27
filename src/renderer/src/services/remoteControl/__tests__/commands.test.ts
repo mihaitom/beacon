@@ -32,14 +32,25 @@ describe('handleRemoteCommand', () => {
   })
 
   describe('trivial pass-throughs', () => {
-    it.each(['play', 'pause', 'toggle-play'] as const)(
-      '%s calls playback.togglePlay()',
-      async (type) => {
-        const spy = vi.spyOn(usePlaybackStore(), 'togglePlay').mockResolvedValue()
-        await handleRemoteCommand(type, {})
-        expect(spy).toHaveBeenCalledOnce()
-      },
-    )
+    it('toggle-play calls playback.togglePlay()', async () => {
+      const spy = vi.spyOn(usePlaybackStore(), 'togglePlay').mockResolvedValue()
+      await handleRemoteCommand('toggle-play', {})
+      expect(spy).toHaveBeenCalledOnce()
+    })
+
+    // An automation sends play/pause without knowing the current state.
+    it.each([
+      ['play', false, 1],
+      ['play', true, 0],
+      ['pause', true, 1],
+      ['pause', false, 0],
+    ] as const)('%s while playing=%s toggles %i time(s)', async (type, playing, calls) => {
+      const playback = usePlaybackStore()
+      vi.spyOn(playback, 'isPlaying', 'get').mockReturnValue(playing)
+      const spy = vi.spyOn(playback, 'togglePlay').mockResolvedValue()
+      await handleRemoteCommand(type, {})
+      expect(spy).toHaveBeenCalledTimes(calls)
+    })
 
     it('next calls playback.playNext()', async () => {
       const spy = vi.spyOn(usePlaybackStore(), 'playNext').mockResolvedValue()
@@ -760,6 +771,10 @@ describe('phone-scoped media URLs (remoteCoverArtUrl / remoteRadioFaviconUrl)', 
     useRemoteControlStore().password = 'secret'
 
     expect(toRemoteSong(makeSong('a', { coverArtId: 'cover1' })).cover_art_url).toBeNull()
+  })
+
+  it('toRemoteSong carries the bare cover id for an integration, whatever the phone state', () => {
+    expect(toRemoteSong(makeSong('a', { coverArtId: 'cover1' })).cover_art_id).toBe('cover1')
   })
 
   it("uses this page's own origin instead of lanIp/port on the web build", () => {
