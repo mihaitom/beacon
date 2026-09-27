@@ -64,7 +64,8 @@ class BeaconConfigFlow(ConfigFlow, domain=DOMAIN):
         self._name = discovery_info.name.split("._beacon._tcp")[0]
         await self.async_set_unique_id(instance_id)
         # Already set up: follow a changed port or address, which is the
-        # point of the announcement.
+        # point of the announcement. Home Assistant reloads the entry itself
+        # when this changes its data.
         self._abort_if_unique_id_configured(updates={CONF_HOST: self._host, CONF_PORT: self._port})
         self.context["title_placeholders"] = {"name": self._name}
         return await self.async_step_zeroconf_confirm()
