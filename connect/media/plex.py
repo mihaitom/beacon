@@ -15,40 +15,25 @@ the likeliest place for the docs and the actual payload to disagree.
 """
 
 import logging
-import secrets
-from pathlib import Path
 from urllib.parse import quote
 
 import httpx
 
 from . import http_client
 from .base import Track, split_artwork_id
+from .client_id import stable_id
 
 logger = logging.getLogger("connect.plex")
 
 _PLEX_TV = "https://plex.tv"
-_CLIENT_ID_FILE = Path(__file__).resolve().parent.parent / ".plex-client-id"
 _PRODUCT = "Beacon"
 
 
 def client_identifier() -> str:
     """Stable id Plex requires on every request (PIN linking, resource
     listing, and later the media server itself) to know which "app" is
-    asking — same stability reasoning as media/jellyfin.py's _device_id()
-    (a fresh id per request would register a new device/PIN context each
-    time instead of one persistent one)."""
-    try:
-        existing = _CLIENT_ID_FILE.read_text().strip()
-        if existing:
-            return existing
-    except FileNotFoundError:
-        pass
-    generated = secrets.token_hex(16)
-    try:
-        _CLIENT_ID_FILE.write_text(generated)
-    except OSError:
-        pass  # Falls back to a fresh id next restart — not fatal, just loses stability.
-    return generated
+    asking — a changing one would register a new device each time."""
+    return stable_id(".plex-client-id")
 
 
 def _headers(token: str = "") -> dict:

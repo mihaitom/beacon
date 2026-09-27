@@ -70,6 +70,20 @@ def _clear_sonos_device_cache():
 
 
 @pytest.fixture(autouse=True)
+def _isolated_client_ids(monkeypatch, tmp_path):
+    """media/client_id.py caches the Jellyfin/Plex ids process-wide and saves
+    them to disk — point both at this test's own directory so no test writes
+    next to the code or sees another test's id."""
+    from media import client_id
+
+    monkeypatch.setattr(client_id, "_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(client_id, "_LEGACY_DIR", str(tmp_path / "legacy"))
+    client_id.forget_cached_ids()
+    yield
+    client_id.forget_cached_ids()
+
+
+@pytest.fixture(autouse=True)
 def _stub_media_ping(monkeypatch):
     """/config now calls media.ping() to verify the supplied credential
     actually authenticates before accepting it (see routes/devices.py) — but

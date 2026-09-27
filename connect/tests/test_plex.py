@@ -286,23 +286,8 @@ def test_check_pin_returns_token_once_approved(monkeypatch):
     assert check_pin(42) == "acct-tok"
 
 
-def test_client_identifier_stable_across_calls(monkeypatch, tmp_path):
-    import media.plex as plex_mod
-
-    monkeypatch.setattr(plex_mod, "_CLIENT_ID_FILE", tmp_path / ".plex-client-id")
-    first = client_identifier()
-    second = client_identifier()
-    assert first == second
-
-
-def test_client_identifier_falls_back_gracefully_when_persisting_fails(monkeypatch, tmp_path):
-    import media.plex as plex_mod
-
-    monkeypatch.setattr(plex_mod, "_CLIENT_ID_FILE", tmp_path / "no-such-dir" / "client-id")
-
-    identifier = client_identifier()  # must not raise
-
-    assert len(identifier) == 32  # secrets.token_hex(16)
+def test_client_identifier_stable_across_calls():
+    assert client_identifier() == client_identifier()
 
 
 # ── get_account_username ─────────────────────────────────────────────────────

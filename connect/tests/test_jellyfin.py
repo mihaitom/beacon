@@ -224,19 +224,6 @@ def test_get_similar_songs2_falls_back_to_album_artist(monkeypatch):
     assert tracks[0].artist == "AA"
 
 
-# ── _device_id persistence ───────────────────────────────────────────────────
-
-
-def test_device_id_falls_back_gracefully_when_persisting_fails(monkeypatch, tmp_path):
-    from media import jellyfin as jellyfin_mod
-
-    monkeypatch.setattr(jellyfin_mod, "_DEVICE_ID_FILE", tmp_path / "no-such-dir" / "device-id")
-
-    device_id = jellyfin_mod._device_id()  # must not raise
-
-    assert len(device_id) == 32  # secrets.token_hex(16)
-
-
 # ── ping ──────────────────────────────────────────────────────────────────────
 
 
@@ -303,11 +290,7 @@ def test_authenticate_by_name_raises_on_rejected_credentials(monkeypatch):
         authenticate_by_name("http://jf:8096", "alice", "wrong")
 
 
-def test_authenticate_by_name_device_id_stable_across_calls(monkeypatch, tmp_path):
-    import media.jellyfin as jf_mod
-
-    monkeypatch.setattr(jf_mod, "_DEVICE_ID_FILE", tmp_path / ".jellyfin-device-id")
-
+def test_authenticate_by_name_device_id_stable_across_calls(monkeypatch):
     captured = []
 
     def fake_post(url, json=None, headers=None, timeout=None):

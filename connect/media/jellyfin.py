@@ -5,40 +5,25 @@ transcoding) — robust for FFmpeg re-streaming to Sonos / AirPlay / Chromecast.
 """
 
 import logging
-import secrets
-from pathlib import Path
 from urllib.parse import quote, urlencode
 
 from . import http_client
 from .base import Track, split_artwork_id
+from .client_id import stable_id
 
 logger = logging.getLogger("connect.jellyfin")
 
 # Jellyfin reports RunTimeTicks in units of 100 ns.
 TICKS_PER_SECOND = 10_000_000
 
-_DEVICE_ID_FILE = Path(__file__).resolve().parent.parent / ".jellyfin-device-id"
 _CLIENT_VERSION = "1.0.0"
 
 
 def _device_id() -> str:
-    """Stable device id for the Authorization header below — Jellyfin
-    registers a new "device" per unique DeviceId, so reusing the same one
-    across restarts (same idea as core/auth.py's CONNECT_TOKEN) keeps this
-    backend from piling up a fresh phantom device in the user's Jellyfin
-    admin panel on every login/silent restore."""
-    try:
-        existing = _DEVICE_ID_FILE.read_text().strip()
-        if existing:
-            return existing
-    except FileNotFoundError:
-        pass
-    generated = secrets.token_hex(16)
-    try:
-        _DEVICE_ID_FILE.write_text(generated)
-    except OSError:
-        pass  # Falls back to a fresh id next restart — not fatal, just loses stability.
-    return generated
+    """Jellyfin registers a new session per unique DeviceId, so a changing one
+    piles up phantom "Beacon" sessions in its dashboard (and in anything
+    mirroring them, like Home Assistant)."""
+    return stable_id(".jellyfin-device-id")
 
 
 def _client_auth_header() -> dict:
