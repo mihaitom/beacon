@@ -29,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Radio played through Beacon now reconnects on its own when the connection silently dies, after a network or VPN change for instance, instead of going quiet
 - On a tablet in landscape, a speaker's volume slider now follows the finger, and controls that used to appear only under a mouse are visible
 - On Windows, Beacon no longer opens a new Jellyfin session for every track played, which filled the Jellyfin dashboard with phantom Beacon players; Plex was affected the same way (reported by @coltonfretz, #35)
+- Jellyfin now shows Beacon's real version instead of 1.0.0
 - On an artist page in a narrow window, the rating stars no longer run into the artist's name
 - On a tablet, artist and album pages and track lists with many columns could make the page wider than the screen, which cut it off or zoomed it out once the pictures loaded; track list columns that do not fit now step aside until there is room again
 

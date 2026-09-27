@@ -7,6 +7,8 @@ transcoding) — robust for FFmpeg re-streaming to Sonos / AirPlay / Chromecast.
 import logging
 from urllib.parse import quote, urlencode
 
+from lyrics.shared import CONNECT_VERSION
+
 from . import http_client
 from .base import Track, split_artwork_id
 from .client_id import stable_id
@@ -15,8 +17,6 @@ logger = logging.getLogger("connect.jellyfin")
 
 # Jellyfin reports RunTimeTicks in units of 100 ns.
 TICKS_PER_SECOND = 10_000_000
-
-_CLIENT_VERSION = "1.0.0"
 
 
 def _device_id() -> str:
@@ -30,7 +30,7 @@ def _client_auth_header() -> dict:
     return {
         "Authorization": (
             'MediaBrowser Client="Beacon", Device="Beacon", '
-            f'DeviceId="{_device_id()}", Version="{_CLIENT_VERSION}"'
+            f'DeviceId="{_device_id()}", Version="{CONNECT_VERSION}"'
         )
     }
 
@@ -139,7 +139,7 @@ class JellyfinClient:
         return {
             "Authorization": (
                 'MediaBrowser Client="Beacon", Device="Beacon", '
-                f'DeviceId="{_device_id()}", Version="{_CLIENT_VERSION}", '
+                f'DeviceId="{_device_id()}", Version="{CONNECT_VERSION}", '
                 f'Token="{self.token}"'
             )
         }

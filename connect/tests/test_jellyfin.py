@@ -374,3 +374,10 @@ def test_authenticate_with_quick_connect_raises_when_not_yet_approved(monkeypatc
     monkeypatch.setattr(http_client, "post", fake_post)
     with pytest.raises(httpx.HTTPStatusError):
         authenticate_with_quick_connect("http://jf:8096", "sec-1")
+
+
+def test_auth_header_reports_the_app_version():
+    from lyrics.shared import CONNECT_VERSION
+
+    header = _client(token="tok").auth_headers()["Authorization"]
+    assert f'Version="{CONNECT_VERSION}"' in header
