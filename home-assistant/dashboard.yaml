@@ -259,8 +259,8 @@ views:
               navigation_path: /media-browser/media_player.beacon
             grid_options:
               columns: full
-          # Favourites start a playlist or station with one tap. The id is
-          # the part after "playlist:" / "radio:" in the media browser.
+          # Favourites start a playlist or station with one tap, by its name
+          # as Beacon shows it ("radio:Station name" for a station).
           # - type: button
           #   name: YOUR playlist
           #   icon: mdi:playlist-music
@@ -270,7 +270,7 @@ views:
           #     target:
           #       entity_id: media_player.beacon
           #     data:
-          #       media_content_id: playlist:YOUR_PLAYLIST_ID
+          #       media_content_id: playlist:YOUR PLAYLIST NAME
           #       media_content_type: playlist
 
       # ── Up next ─────────────────────────────────────────────────────────
@@ -409,7 +409,7 @@ views:
                   target:
                     entity_id: media_player.beacon
                   data:
-                    media_content_id: radio:YOUR_STATION_ID
+                    media_content_id: radio:YOUR STATION NAME
                     media_content_type: channel
                 - action: select.select_option
                   target:

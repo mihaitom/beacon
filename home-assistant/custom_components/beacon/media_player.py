@@ -254,18 +254,35 @@ class BeaconPlayer(BeaconEntity, MediaPlayerEntity):
         if kind == "queue":
             await self._send("queue-jump", {"index": int(parts[0])})
         elif kind == "playlist":
-            payload: dict = {"playlistId": parts[0]}
+            payload: dict = {"playlistId": await self._resolve("playlists", parts[0])}
             if len(parts) > 1:
                 payload["startIndex"] = int(parts[1])
             await self._send("play-playlist", payload)
         elif kind == "album":
             await self._send("play-album", {"albumId": rest})
         elif kind == "radio":
-            await self._send("play-radio-station", {"stationId": rest})
+            await self._send(
+                "play-radio-station", {"stationId": await self._resolve("radio-stations", rest)}
+            )
         elif kind == "songradio":
             await self._send("play-song-radio", {"songId": rest})
         else:
             raise HomeAssistantError(f"Unknown media: {media_id}")
+
+    async def _resolve(self, path: str, id_or_name: str) -> str:
+        """Takes a playlist's or station's name as well as its id, so a
+        dashboard button can say "playlist:Classic Rock" instead of an id
+        nobody can see anywhere."""
+        items = (await self._query(path)).get("items", [])
+        if any(item["id"] == id_or_name for item in items):
+            return id_or_name
+        wanted = id_or_name.casefold()
+        match = next((item for item in items if item.get("name", "").casefold() == wanted), None)
+        if match is None:
+            raise HomeAssistantError(
+                f"Beacon has no {path.rstrip('s').replace('-', ' ')} {id_or_name!r}"
+            )
+        return match["id"]
 
     def _thumb(self, content_type: str, content_id: str, cover_id: str | None) -> str | None:
         # Through Home Assistant's image proxy: the direct URL carries the key.
