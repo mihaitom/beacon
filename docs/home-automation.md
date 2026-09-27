@@ -17,18 +17,22 @@ In the desktop app, **Settings > Advanced > Home automation**:
    phone remote is switched on.
 2. **Fixed port** (optional). Without one, the app picks a free port on
    every start. With one, it uses that port, unless something else holds it
-   at start, in which case it falls back to a free port and says so in the
-   same place. The environment variable `BEACON_PORT` sets it too and wins
-   over the setting.
+   at start, in which case it falls back to a free port and shows a warning
+   in the same place. While the fixed port is in use, the settings show the
+   address and port to enter for a setup by hand. The environment variable
+   `BEACON_PORT` sets it too and wins over the setting. The setting only
+   exists in the installed app; run from source, `PORT` in `connect/.env`
+   decides.
 
 Only the desktop app offers this. The web/Docker build has no desktop
 playback to control.
 
 ## Finding Beacon: mDNS
 
-While a key exists, Beacon announces itself as `_beacon._tcp.local.`, with
-its current address and port. The announcement is withdrawn when the key is
-revoked, and follows the machine to a new address.
+While a key exists, Beacon announces itself as `_beacon._tcp.local.`, named
+"Beacon on _computer name_", with its current address and port. The
+announcement is withdrawn when the key is revoked or the app quits, and
+follows the machine to a new address within a minute.
 
 TXT properties:
 
@@ -54,10 +58,15 @@ GET /remote/events?password=<key>
 
 | Status | Meaning                                                    |
 | ------ | ---------------------------------------------------------- |
-| 401    | Wrong key (while the phone remote is on)                   |
-| 404    | Wrong key (while the phone remote is off), or revoked      |
+| 401    | Wrong or revoked key, while the phone remote is on         |
+| 404    | Wrong or revoked key, while the phone remote is off        |
+| 502    | The app could not carry out the command                    |
 | 503    | The desktop app is not running. Show the device as offline |
 | 504    | The app did not answer in time                             |
+
+Treat 401 and 404 alike, as a key that is not accepted: which of the two
+comes back depends on whether the phone remote is switched on, which says
+nothing about the key.
 
 ## State
 
@@ -67,19 +76,22 @@ change, with a comment line as heartbeat every 15 seconds.
 
 The fields an integration is likely to need:
 
-| Field               | Meaning                                                       |
-| ------------------- | ------------------------------------------------------------- |
-| `playing`           | `true` while playing                                          |
-| `position`          | Seconds into the current track                                |
-| `duration`          | Length of the current track in seconds                        |
-| `volume`            | Local volume, 0 to 1                                          |
-| `device_volume`     | Volume of the one speaker being cast to, 0 to 100, else null  |
-| `shuffle`, `repeat` | `repeat` is `off`, `all` or `one`                             |
-| `current_song`      | `id`, `title`, `artist`, `album`, `duration`, `cover_art_id`  |
-| `radio`             | `name`, `now_playing` while a station plays, else null        |
-| `queue`             | Songs, same shape as `current_song`; `queue_index` is current |
-| `casting`           | The speakers being cast to, each with `type` and `name`       |
-| `session_id`        | Needed for cover art, see below                               |
+| Field                  | Meaning                                                       |
+| ---------------------- | ------------------------------------------------------------- |
+| `playing`              | `true` while playing                                          |
+| `position`             | Seconds into the current track                                |
+| `duration`             | Length of the current track in seconds                        |
+| `volume`               | Local volume, 0 to 1                                          |
+| `device_volume`        | Volume of the one speaker being cast to, 0 to 100, else null  |
+| `shuffle`, `repeat`    | `repeat` is `off`, `all` or `one`                             |
+| `current_song`         | `id`, `title`, `artist`, `album`, `duration`, `cover_art_id`  |
+| `radio`                | `name`, `now_playing` while a station plays, else null        |
+| `queue`                | Songs, same shape as `current_song`; `queue_index` is current |
+| `casting`              | The speakers being cast to, each with `type` and `name`       |
+| `interrupted`          | A speaker dropped out; `resume-interrupted` picks it back up  |
+| `autoplay`             | Whether Autoplay is on                                        |
+| `song_radio_supported` | Whether `play-song-radio` works with this music server        |
+| `session_id`           | Needed for cover art, see below                               |
 
 Ignore `cover_art_url` and `favicon_url`: they carry the phone remote's own
 password and are null while it is off. Build the cover URL from
@@ -102,7 +114,8 @@ once the app has carried the command out.
 | `next`               |                                                                                  |
 | `previous`           |                                                                                  |
 | `seek`               | `position` in seconds                                                            |
-| `volume`             | `volume`, 0 to 1                                                                 |
+| `volume`             | `volume`, 0 to 1. Casting to one speaker: that speaker's; to several: ignored    |
+| `set-device-volume`  | `deviceType`, `name`, `volume` 0 to 100: one speaker, casting or not             |
 | `shuffle`            | toggles                                                                          |
 | `repeat`             | cycles off, all, one                                                             |
 | `autoplay`           | toggles                                                                          |
@@ -123,14 +136,15 @@ once the app has carried the command out.
 These are answered by the app from what it has loaded, so the first call
 after a start can take a moment.
 
-| Request                      | Returns                                                          |
-| ---------------------------- | ---------------------------------------------------------------- |
-| `GET /remote/playlists`      | `items`: `id`, `name`, `song_count`, `cover_art_id`              |
-| `GET /remote/playlists/<id>` | `playlist` (`id`, `name`, `cover_art_id`) and `songs`            |
-| `GET /remote/albums`         | `items`: `id`, `name`, `artist`, `year`, `cover_art_id`; `total` |
-| `GET /remote/songs`          | `items` (songs), `total`                                         |
-| `GET /remote/radio-stations` | `items`: `id`, `name`, `home_page_url`, `favicon_hint`           |
-| `GET /remote/devices`        | `items`: `type`, `name`, `in_use_by_name`, `needs_pairing`       |
+| Request                      | Returns                                                                      |
+| ---------------------------- | ---------------------------------------------------------------------------- |
+| `GET /remote/playlists`      | `items`: `id`, `name`, `song_count`, `cover_art_id`                          |
+| `GET /remote/playlists/<id>` | `playlist` (`id`, `name`, `cover_art_id`) and `songs`                        |
+| `GET /remote/albums`         | `items`: `id`, `name`, `artist`, `year`, `cover_art_id`; `total`             |
+| `GET /remote/songs`          | `items` (songs), `total`                                                     |
+| `GET /remote/radio-stations` | `items`: `id`, `name`, `home_page_url`, `favicon_hint`                       |
+| `GET /remote/devices`        | `items`: `type`, `name`, `in_use_by_name`, `needs_pairing`, `volume_capable` |
+| `GET /remote/device-volume`  | `volume` (0 to 100) of the speaker given as `type` and `name`                |
 
 `/remote/albums` and `/remote/songs` take `search`, `offset` and `limit`
 (default 50). `/remote/devices?rescan=true` looks for speakers again, which

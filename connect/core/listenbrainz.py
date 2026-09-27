@@ -23,7 +23,7 @@ CF endpoints are public, and a username is passed as a plain parameter the
 same way Last.fm's user.getTopTracks takes one. A ListenBrainz *user token*
 would be a different thing entirely — it is a write credential (it can
 submit and delete listens), which is why it is deliberately not part of
-this module; see docs/listenbrainz.md.
+this module.
 
 ListenBrainz asks clients for at most one request per second and a real
 User-Agent (lyrics.shared.USER_AGENT). _throttle() enforces the first; the
