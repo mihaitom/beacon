@@ -313,6 +313,8 @@ export default {
         '„{device}“ muss erst gekoppelt werden. Kopple es in der Geräteliste und versuche es dann noch einmal.',
       station_refused:
         'Der Sender selbst hat die Verbindung abgelehnt. Beacon konnte ihn weder an „{device}“ weiterreichen noch umwandeln - die Adresse des Senders stimmt vermutlich nicht mehr',
+      source_failed:
+        'Beacon konnte diesen Titel nicht vom Medienserver laden, „{device}“ hatte deshalb nichts zum Abspielen.',
       unknown: 'Die Wiedergabe auf „{device}“ ist fehlgeschlagen.',
     },
     pairDeviceTitle: '„{name}“ koppeln',

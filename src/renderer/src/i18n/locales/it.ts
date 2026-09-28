@@ -316,6 +316,8 @@ export default {
         "«{device}» deve prima essere associato. Associalo dall'elenco dei dispositivi e riprova.",
       station_refused:
         "L'emittente stessa ha rifiutato la connessione. Beacon non ha potuto né inoltrarla a «{device}» né convertirla: probabilmente il suo indirizzo non è più valido",
+      source_failed:
+        'Beacon non è riuscito a caricare questo brano dal server multimediale, quindi «{device}» non aveva nulla da riprodurre.',
       unknown: 'Riproduzione su «{device}» non riuscita.',
     },
     pairDeviceTitle: 'Associa "{name}"',

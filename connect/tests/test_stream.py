@@ -17,7 +17,7 @@ import pytest
 
 import routes.stream as stream_routes
 from core.session import DEFAULT_SESSION_ID, build_status_dict, mark_interrupted
-from core.streamer import FALLBACK_FORMAT, OutputFormat
+from core.streamer import FALLBACK_FORMAT, OutputFormat, SourceUnavailableError
 from delivery import ChromecastDelivery
 from media import Track
 from routes.stream import (
@@ -708,6 +708,54 @@ async def test_ffmpeg_failure_mid_stream_reports_not_streaming_without_marking_e
     assert default_session.state.track_ended is False
     payload = q.get_nowait()
     assert payload["streaming"] is False
+
+
+async def _source_unavailable(*args, **kwargs):
+    raise SourceUnavailableError("error:0A000086:SSL routines::certificate verify failed")
+    yield b""  # pragma: no cover - makes this an async generator
+
+
+async def test_a_track_beacon_cannot_fetch_is_reported_to_the_listener(client, default_session):
+    """#37: before this, the speaker got an empty stream it called corrupt,
+    and the app showed a track restarting every few seconds with no reason
+    anywhere but the log."""
+    _configure_and_set_track(client, default_session)
+    default_session.state.active_delivery = MagicMock(target="Room A")
+    q = default_session.event_bus.subscribe()
+
+    with patch("routes.stream.stream_tracks", side_effect=_source_unavailable):
+        resp = await audio_stream(session_id=default_session.session_id)
+        chunks = [chunk async for chunk in resp.body_iterator]
+
+    assert chunks == []
+    assert default_session.state.is_streaming is False
+    assert default_session.state.track_ended is False
+    errors = [p["delivery_error"] for p in _drain(q) if p.get("delivery_error")]
+    assert errors == [
+        {
+            "error": "delivery_failed",
+            "reason": "source_failed",
+            "device": "Room A",
+            "detail": "error:0A000086:SSL routines::certificate verify failed",
+        }
+    ]
+
+
+async def test_the_devices_retries_after_a_source_failure_are_not_reported_again(
+    client, default_session
+):
+    """The speaker keeps asking for the stream; each attempt fails the same
+    way, and one message about it is enough."""
+    _configure_and_set_track(client, default_session)
+    default_session.state.active_delivery = MagicMock(target="Room A")
+    q = default_session.event_bus.subscribe()
+
+    with patch("routes.stream.stream_tracks", side_effect=_source_unavailable):
+        for _ in range(3):
+            resp = await audio_stream(session_id=default_session.session_id)
+            [chunk async for chunk in resp.body_iterator]
+
+    assert len([p for p in _drain(q) if p.get("delivery_error")]) == 1
 
 
 async def test_client_disconnect_mid_stream_is_reraised_without_touching_state(

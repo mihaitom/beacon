@@ -122,6 +122,32 @@ _HTTP_RECONNECT_ARGS = [
 ]
 
 
+class SourceUnavailableError(Exception):
+    """ffmpeg gave up on a track before producing any audio - the source
+    could not be fetched or opened (an https certificate it would not
+    accept, a media server that refused the request). The message is
+    ffmpeg's own reason, for the technical line under what the listener
+    is shown."""
+
+
+# The prefix ffmpeg puts on a component's log lines: "[tls @ 0x7f...] ".
+_FFMPEG_LINE_PREFIX = re.compile(r"^\[[^\]]* @ [^\]]*\]\s*")
+_FAILURE_WORDS = re.compile(r"error|failed|invalid|denied|refused|not found", re.IGNORECASE)
+
+
+def failure_reason(stderr: str, returncode: int) -> str:
+    """The first line of ffmpeg's stderr that says what went wrong. The
+    first rather than the last: what follows the cause is ffmpeg's own
+    summary of it ("Error opening input files: I/O error"). Warnings can
+    come before it, which is why a line naming a failure is preferred."""
+    lines = [_FFMPEG_LINE_PREFIX.sub("", line.strip()) for line in stderr.splitlines()]
+    lines = [line for line in lines if line]
+    reason = next((line for line in lines if _FAILURE_WORDS.search(line)), None)
+    if reason is None and lines:
+        reason = lines[0]
+    return reason[:200] if reason else f"ffmpeg exited with code {returncode}"
+
+
 def http_reconnect_args(url: str) -> list[str]:
     """_HTTP_RECONNECT_ARGS for an http(s) `url`, nothing for anything else
     — see that constant for why the distinction is load-bearing."""
@@ -1252,6 +1278,7 @@ async def stream_tracks(
 
         proc = None
         stderr_task: asyncio.Task | None = None
+        failed: str | None = None
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -1290,6 +1317,12 @@ async def stream_tracks(
                     f"[ffmpeg] Track {i + 1} exit {proc.returncode}: "
                     f"{stderr.decode(errors='replace')[:400]}"
                 )
+                # Only when nothing came out at all. A non-zero exit after
+                # audio has flowed can be a source that dropped for good
+                # mid-track, and what was sent still plays out; that stays
+                # the natural end it always was.
+                if bytes_produced == 0:
+                    failed = failure_reason(stderr.decode(errors="replace"), proc.returncode)
             elif stderr:
                 logger.debug(
                     f"[ffmpeg] Track {i + 1} stderr: {stderr.decode(errors='replace')[:200]}"
@@ -1334,5 +1367,10 @@ async def stream_tracks(
                     logger.debug(f"[ffmpeg] kill failed: {e}")
             if stderr_task and not stderr_task.done():
                 stderr_task.cancel()
+
+        # Outside the try, so the generic handler above does not log it a
+        # second time as an unexpected error.
+        if failed is not None:
+            raise SourceUnavailableError(failed)
 
     logger.info("[ffmpeg] All tracks streamed")

@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - On Windows and macOS, casting from a media server reached over https, playing a radio station over https and drawing the seek-bar waveform failed with a certificate error; a Sonos showed this as the track restarting every few seconds (reported by @coltonfretz, #37)
+- When a track cannot be loaded from the media server while casting, the app now says so and stops, instead of leaving the speaker silent while the position kept jumping back to the start
 - A wrong Home Assistant key is now always reported as such; before, the answer depended on whether the phone remote happened to be switched on
 - Remote Control on the phone no longer loses all covers and station logos after the desktop app has been reloaded
 - Home Assistant shows the logo of a playing radio station even while the phone remote is switched off

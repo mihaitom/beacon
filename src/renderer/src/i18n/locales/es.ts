@@ -316,6 +316,8 @@ export default {
         '«{device}» tiene que emparejarse primero. Emparéjalo desde la lista de dispositivos y vuelve a intentarlo.',
       station_refused:
         'La propia emisora rechazó la conexión. Beacon no pudo ni pasarla a «{device}» ni convertirla; probablemente la dirección de la emisora ya no sea válida',
+      source_failed:
+        'Beacon no pudo cargar esta canción desde el servidor multimedia, así que «{device}» no tenía nada que reproducir.',
       unknown: 'Falló la reproducción en «{device}».',
     },
     pairDeviceTitle: 'Emparejar "{name}"',

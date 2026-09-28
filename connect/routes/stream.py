@@ -25,6 +25,7 @@ from core.session import (
     SessionState,
     build_status_dict,
     get_session,
+    mark_delivery_failed,
     mark_interrupted,
     registry,
 )
@@ -38,10 +39,12 @@ from core.state import (
 from core.stream_format import content_type_from_extension
 from core.streamer import (
     FALLBACK_FORMAT,
+    SourceUnavailableError,
     resolve_output_format,
     stream_tracks,
     strip_stream_extension,
 )
+from delivery.errors import source_error_response
 
 from .playback import (
     POSITION_RESYNC_INTERVAL,
@@ -740,7 +743,7 @@ async def radio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
     # retry_radio_via_proxy() in routes/playback.py, the only caller that
     # ever points a device here while in that mode.
     logger.info(f"[stream] Re-encoding radio for {session_id}: {radio_info['url'][:80]}")
-    audio = stream_tracks([radio_info["url"]])
+    audio = _ending_on_source_failure(stream_tracks([radio_info["url"]]))
     if wants_icy:
         audio = _muxed_icy_audio(audio, IcyMuxer(DEVICE_METAINT, current_title, record_injection))
     return StreamingResponse(audio, media_type=FALLBACK_FORMAT.content_type, headers=headers)
@@ -1077,6 +1080,17 @@ async def local_radio_gap(
     return {}
 
 
+async def _ending_on_source_failure(audio: AsyncGenerator[bytes]) -> AsyncGenerator[bytes]:
+    """A station that cannot be fetched ends the device's connection the way
+    it always has; the device reports that on its own event channel (see
+    routes/upnp.py). stream_tracks() has already logged why."""
+    try:
+        async for chunk in audio:
+            yield chunk
+    except SourceUnavailableError:
+        return
+
+
 async def _muxed_icy_audio(audio: AsyncGenerator[bytes], muxer: IcyMuxer) -> AsyncGenerator[bytes]:
     """Splices ICY metadata blocks into `audio` via `muxer` — see that
     class's own docstring. A thin wrapper around whichever audio source
@@ -1337,6 +1351,21 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
                     )
                 )
                 raise
+            except SourceUnavailableError as e:
+                # Nothing to play at all, so the device is left with an
+                # empty stream it will only call corrupt, and keeps asking
+                # for again. Said once, while still streaming: every one of
+                # those reconnects fails the same way.
+                st = session.state
+                if (
+                    st.clock.play_generation == my_generation
+                    and st.is_streaming
+                    and st.active_delivery is not None
+                ):
+                    await mark_delivery_failed(
+                        session, source_error_response(str(e), st.active_delivery)
+                    )
+                return
             except Exception:
                 # ffmpeg itself failed (missing binary, crash, decode error —
                 # already logged by stream_tracks()). Not a natural end either:
