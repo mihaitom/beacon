@@ -1,11 +1,12 @@
 [project]
 name = "beacon-connect"
-version = "1.5.0"
+version = "1.5.1"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "async-upnp-client>=0.47.0",
+    "certifi>=2026.7.22",
     "fastapi[all]>=0.136.1",
     "httpx>=0.28.1",
     "numpy>=2.0.0",

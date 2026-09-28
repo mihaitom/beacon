@@ -313,6 +313,8 @@ export default {
         '“{device}” has to be paired first. Pair it from the device list, then try again.',
       station_refused:
         "The station itself refused the connection. Beacon could neither pass it to “{device}” nor convert it - the station's address is most likely out of date",
+      source_failed:
+        "Beacon couldn't load this track from the media server, so “{device}” had nothing to play.",
       unknown: 'Playback on “{device}” failed.',
     },
     pairDeviceTitle: 'Pair "{name}"',

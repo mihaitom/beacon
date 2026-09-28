@@ -21,7 +21,7 @@ from core.claims import claims
 from core.icy_metadata import ICY_ROUND_TRIP_ENV, IcyDemuxer, strip_pulse
 from core.session import radio_is_buffering
 from core.stream_format import ProbedStream, is_station_refusal
-from core.streamer import REASON_DEVICE_REJECTED_STREAM
+from core.streamer import REASON_DEVICE_REJECTED_STREAM, SourceUnavailableError
 from delivery import ChromecastDelivery, SonosDelivery
 from routes import upnp
 from routes.playback import retry_radio_via_proxy
@@ -240,6 +240,21 @@ class TestRadioStreamRoute:
 
         assert r.status_code == 200
         assert r.headers["content-type"].startswith("audio/mpeg")
+        assert r.content == b"audio"
+
+    def test_a_station_ffmpeg_cannot_open_ends_the_connection_quietly(self, client, radio_playing):
+        """The device reports the empty stream on its own event channel,
+        which is where a station's failure is handled; nothing is raised
+        into the server."""
+
+        async def fake_stream(urls, *args, **kwargs):
+            yield b"audio"
+            raise SourceUnavailableError("HTTP error 404 Not Found")
+
+        with patch("routes.stream.stream_tracks", fake_stream):
+            r = client.get(f"/stream/radio/{radio_playing.session_id}")
+
+        assert r.status_code == 200
         assert r.content == b"audio"
 
     def test_answers_a_head_probe_without_starting_ffmpeg(self, client, radio_playing):

@@ -43,6 +43,11 @@ REASON_NEEDS_PAIRING = "needs_pairing"
 #: opposite things from whoever reads them — one is "check your speaker",
 #: the other is "this station isn't serving us".
 REASON_STATION_REFUSED = "station_refused"
+#: Beacon itself could not fetch the track from the media server, so the
+#: device was handed nothing to play. Neither the speaker's fault nor
+#: something it could report usefully: a Sonos calls the empty stream a
+#: corrupt file.
+REASON_SOURCE_FAILED = "source_failed"
 #: Anything this can't place. Carries `detail` through to the UI, which is
 #: no worse than what every failure used to show.
 REASON_UNKNOWN = "unknown"
@@ -105,6 +110,18 @@ def transport_error_response(problem: str, target: object) -> dict:
         "reason": reason,
         "device": device_label(target),
         "detail": problem,
+    }
+
+
+def source_error_response(detail: str, target: object) -> dict:
+    """The same body again, for a track Beacon could not fetch itself -
+    see REASON_SOURCE_FAILED. `detail` is ffmpeg's own reason."""
+    logger.info(f"[delivery] {target!r} got nothing to play: {detail}")
+    return {
+        "error": "delivery_failed",
+        "reason": REASON_SOURCE_FAILED,
+        "device": device_label(target),
+        "detail": detail,
     }
 
 

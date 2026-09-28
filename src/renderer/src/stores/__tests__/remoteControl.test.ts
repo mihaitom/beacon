@@ -471,12 +471,17 @@ describe('remoteControl store', () => {
       await vi.waitFor(() => expect(remoteHttp.pushRemoteState).toHaveBeenCalled())
 
       const calls = vi.mocked(remoteHttp.pushRemoteState).mock.calls
-      const radio = (calls[calls.length - 1]![0] as { radio: { favicon_url: string } }).radio
+      const radio = (calls[calls.length - 1]![0] as { radio: Record<string, string> }).radio
 
       expect(radio.favicon_url).toContain(encodeURIComponent('https://station.example'))
       expect(radio.favicon_url).toContain(
         `hint=${encodeURIComponent('https://cdn.example/logo.png')}`,
       )
+      // An integration builds the logo URL itself, with its own key.
+      expect(radio).toMatchObject({
+        home_page_url: 'https://station.example',
+        favicon_hint: 'https://cdn.example/logo.png',
+      })
     })
 
     /** The phone renders a station the way this app does — the ICY tag as

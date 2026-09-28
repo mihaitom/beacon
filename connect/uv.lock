@@ -182,10 +182,11 @@ wheels = [
 
 [[package]]
 name = "beacon-connect"
-version = "1.5.0"
+version = "1.5.1"
 source = { virtual = "." }
 dependencies = [
     { name = "async-upnp-client" },
+    { name = "certifi" },
     { name = "fastapi", extra = ["all"] },
     { name = "httpx" },
     { name = "numpy" },
@@ -212,6 +213,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "async-upnp-client", specifier = ">=0.47.0" },
+    { name = "certifi", specifier = ">=2026.7.22" },
     { name = "fastapi", extras = ["all"], specifier = ">=0.136.1" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "numpy", specifier = ">=2.0.0" },

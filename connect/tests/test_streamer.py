@@ -26,7 +26,9 @@ from core.streamer import (
     REASON_REPLAY_GAIN,
     OutputFormat,
     SourceInfo,
+    SourceUnavailableError,
     _probe_source,
+    failure_reason,
     lossless_encode_args,
     lossy_encode_args,
     resolve_output_format,
@@ -1257,7 +1259,10 @@ def test_stream_tracks_yields_the_process_stdout_chunks():
 
 
 def test_stream_tracks_logs_a_warning_on_a_nonzero_ffmpeg_exit(caplog):
-    proc = _ConfigurableFakeProc(stderr=b"unsupported codec", returncode=1)
+    # Some audio first: a failure before any is the case below, which raises.
+    proc = _ConfigurableFakeProc(
+        stdout_chunks=[b"abc", b""], stderr=b"unsupported codec", returncode=1
+    )
 
     async def _fake_exec(*cmd, **kwargs):
         return proc
@@ -1272,6 +1277,56 @@ def test_stream_tracks_logs_a_warning_on_a_nonzero_ffmpeg_exit(caplog):
 
     assert "exit 1" in caplog.text
     assert "unsupported codec" in caplog.text
+
+
+def test_a_source_that_fails_before_any_audio_raises_with_ffmpegs_reason():
+    """#37: an https media server whose certificate ffmpeg would not accept.
+    Ending quietly here is what made the cast look like a finished track to
+    everything above it, with the speaker left holding an empty stream."""
+    stderr = (
+        b"[tls @ 0x7f54884aa680] error:0A000086:SSL routines::certificate verify failed\n"
+        b"[in#0 @ 0x7f54884abc40] Error opening input: I/O error\n"
+        b"Error opening input file https://jellyfin.example/Items/1/File.\n"
+    )
+    proc = _ConfigurableFakeProc(stderr=stderr, returncode=-11)
+
+    async def _fake_exec(*cmd, **kwargs):
+        return proc
+
+    async def _run():
+        with patch("asyncio.create_subprocess_exec", _fake_exec):
+            async for _ in stream_tracks(["https://jellyfin.example/Items/1/File"]):
+                pass
+
+    with pytest.raises(SourceUnavailableError) as raised:
+        asyncio.run(_run())
+    assert str(raised.value) == "error:0A000086:SSL routines::certificate verify failed"
+
+
+def test_a_source_that_fails_mid_track_still_ends_as_a_finished_track():
+    """What was sent still plays out on the device, so this stays the
+    natural end it always was rather than an error over audio that played."""
+    proc = _ConfigurableFakeProc(
+        stdout_chunks=[b"abc", b""], stderr=b"Connection reset by peer", returncode=1
+    )
+
+    async def _fake_exec(*cmd, **kwargs):
+        return proc
+
+    async def _collect():
+        with patch("asyncio.create_subprocess_exec", _fake_exec):
+            return [chunk async for chunk in stream_tracks(["http://nav/stream"])]
+
+    assert asyncio.run(_collect()) == [b"abc"]
+
+
+def test_failure_reason_prefers_the_failing_line_over_an_earlier_warning():
+    stderr = "[mp3 @ 0x1] Estimating duration from bitrate\n[http @ 0x2] HTTP error 403 Forbidden\n"
+    assert failure_reason(stderr, 8) == "HTTP error 403 Forbidden"
+
+
+def test_failure_reason_without_stderr_names_the_exit_code():
+    assert failure_reason("", 8) == "ffmpeg exited with code 8"
 
 
 def test_stream_tracks_logs_stray_stderr_output_at_debug_even_on_success(caplog):
