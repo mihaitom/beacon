@@ -55,6 +55,30 @@ def test_availability_reports_a_configured_path_that_does_not_exist():
         _reload_with_env(None)
 
 
+def test_ffmpeg_is_given_connects_own_ca_bundle():
+    """The bundled Windows/macOS ffmpeg otherwise looks for CAs at a path
+    that only exists on the machine it was built on, and refuses every
+    https media server (#37)."""
+    import os
+
+    import certifi
+
+    with patch.dict("os.environ", {}, clear=False):
+        os.environ.pop("SSL_CERT_FILE", None)
+        core.ffmpeg.trust_what_connect_trusts()
+        assert os.environ["SSL_CERT_FILE"] == certifi.where()
+
+
+def test_an_explicit_ca_bundle_is_left_alone():
+    """Someone running their media server behind a private CA points this
+    at their own bundle; that must not be overwritten."""
+    import os
+
+    with patch.dict("os.environ", {"SSL_CERT_FILE": "/etc/private-ca.pem"}, clear=False):
+        core.ffmpeg.trust_what_connect_trusts()
+        assert os.environ["SSL_CERT_FILE"] == "/etc/private-ca.pem"
+
+
 def test_no_module_shells_out_to_a_hardcoded_ffmpeg():
     """The point of the whole thing: one place to change, and no module left
     naming the executable itself. A call site that hardcodes it keeps working
