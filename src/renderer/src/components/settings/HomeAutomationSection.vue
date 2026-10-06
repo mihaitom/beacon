@@ -40,10 +40,8 @@
         <div class="home-automation__actions">
           <v-btn
             variant="text"
-            :href="DOCS_URL"
-            target="_blank"
-            rel="noopener noreferrer"
-            append-icon="mdi-open-in-new"
+            prepend-icon="mdi-help-circle-outline"
+            @click="$emitter.emit('openHelp', 'home-automation')"
           >
             {{ $t('settings.homeAutomationDocs') }}
           </v-btn>
@@ -129,7 +127,6 @@ type ConnectPortInfo = Awaited<
   ReturnType<NonNullable<Window['api']>['appConfig']['getConnectPort']>
 >
 
-const DOCS_URL = 'https://github.com/mihaitom/beacon/blob/main/home-assistant/README.md'
 // Same range main accepts (main/index.ts): below 1024 needs root on
 // Linux/macOS.
 const MIN_PORT = 1024
@@ -147,7 +144,6 @@ export default {
   name: 'HomeAutomationSection',
   data() {
     return {
-      DOCS_URL,
       busy: false,
       /** Only right after generating: the key is never sent again. */
       newKey: '',

@@ -756,6 +756,13 @@ export default {
     withArtists: 'Mit {artists}',
     withArtistsAndMore: 'Mit {artists} und {count} weiteren',
   },
+  help: {
+    title: 'Hilfe',
+    document: 'Dokument',
+    englishOnly: 'Diese Seiten gibt es nur auf Englisch.',
+    faq: 'Häufige Fragen',
+    conversion: 'Was wann umgewandelt wird',
+  },
   privacy: {
     title: 'Datenschutz',
     intro:

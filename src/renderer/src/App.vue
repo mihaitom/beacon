@@ -6,6 +6,7 @@
   <keyboard-shortcuts-dialog />
   <artwork-lightbox />
   <song-info-dialog />
+  <help-dialog />
 </template>
 
 <script lang="ts">
@@ -18,6 +19,7 @@ import UpdateToast from '@/components/UpdateToast.vue'
 import KeyboardShortcutsDialog from '@/components/KeyboardShortcutsDialog.vue'
 import ArtworkLightbox from '@/components/library/ArtworkLightbox.vue'
 import SongInfoDialog from '@/components/library/SongInfoDialog.vue'
+import HelpDialog from '@/components/HelpDialog.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { useConnectStore } from '@/stores/connect'
@@ -39,6 +41,7 @@ export default {
     KeyboardShortcutsDialog,
     ArtworkLightbox,
     SongInfoDialog,
+    HelpDialog,
   },
   // Composition API escape hatch just for useIsMobileWeb() — everything else
   // here stays Options API, matching the rest of the renderer. Refs returned

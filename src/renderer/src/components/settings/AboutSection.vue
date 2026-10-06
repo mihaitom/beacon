@@ -7,6 +7,13 @@
           <v-btn variant="tonal" prepend-icon="mdi-star-circle-outline" @click="showReleaseNotes">
             {{ $t('settings.whatsNew') }}
           </v-btn>
+          <v-btn
+            variant="tonal"
+            prepend-icon="mdi-help-circle-outline"
+            @click="$emitter.emit('openHelp', 'faq')"
+          >
+            {{ $t('help.faq') }}
+          </v-btn>
           <!-- Sits with the other two rather than in a section of its own:
              - it answers the same kind of question they do — what is this
              - version, what can it do, who does it talk to — and a

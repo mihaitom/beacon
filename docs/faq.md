@@ -140,10 +140,6 @@ Guests on the same Wi-Fi only need the QR code. For guests on mobile data, put t
 
 ## What leaves the deployment
 
-### What does Discover send to Radio Browser?
+### What does Beacon send to outside services?
 
-Searching sends what you type, plus the country filter if you set one. Playing a station you found there reports one listen back to the directory, which is what its "most played" ordering is built on: Beacon uses that ordering, so it contributes to it rather than only taking from it. A station you added by typing its address yourself is never reported, because Beacon has no reason to think the directory knows it. All of this goes out from the Beacon server, not from your browser, so what Radio Browser sees is the deployment's address rather than yours.
-
-### What does the recommendations feature send where?
-
-The Discover/"New to explore" shelves on Home resolve a handful of artist names already in your library against MusicBrainz (to get an artist ID) and ListenBrainz (to get similar artists back) - both free, no-account, no-API-key services from the MetaBrainz project. "New to explore" additionally looks up a photo and a link for artists not in your library via Deezer's public search API (also no API key) - the same source Navidrome itself defaults to for artist images. No listening history, usernames, or anything else leaves the deployment - just a short list of artist names. Turn it off in Settings if you'd rather not: that stops the Home shelves. Opening an artist's own page still looks that one artist up for its photo and links, on or off, since that is a single on-demand lookup for the page you are actually looking at rather than a background pass over artists nobody asked about.
+Settings > About Beacon > **Privacy** lists every outside service Beacon asks - Radio Browser, the lyrics providers, MusicBrainz, ListenBrainz and the rest - with what each one is asked for, what goes out with the request, and which setting turns it off. It is kept there rather than here so that there is one list, and it is the one in the app.

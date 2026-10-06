@@ -750,6 +750,13 @@ export default {
     withArtists: 'With {artists}',
     withArtistsAndMore: 'With {artists} and {count} more',
   },
+  help: {
+    title: 'Help',
+    document: 'Document',
+    englishOnly: 'These pages are only available in English.',
+    faq: 'FAQ',
+    conversion: 'What gets converted, and why',
+  },
   privacy: {
     title: 'Privacy',
     intro:

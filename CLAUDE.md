@@ -103,7 +103,8 @@ the suite stays green, the test does not test.
 reshaping any UI**, and update it when a decision in it changes. Its
 enforceable half lives as shared classes in
 `src/renderer/src/assets/base.css` (`.beacon-panel`, `.panel-title`,
-`.section-title`, `.eyebrow-label`, `.beacon-dialog`, `.mobile-row`);
+`.section-title`, `.eyebrow-label`, `.beacon-dialog`, `.beacon-markdown`,
+`.mobile-row`);
 `docs/styleguide.html` is
 the same thing rendered, for looking at rather than reading.
 

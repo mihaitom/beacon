@@ -757,6 +757,13 @@ export default {
     withArtists: 'Con {artists}',
     withArtistsAndMore: 'Con {artists} e altri {count}',
   },
+  help: {
+    title: 'Guida',
+    document: 'Documento',
+    englishOnly: 'Queste pagine sono disponibili solo in inglese.',
+    faq: 'Domande frequenti',
+    conversion: 'Cosa viene convertito e perché',
+  },
   privacy: {
     title: 'Privacy',
     intro:

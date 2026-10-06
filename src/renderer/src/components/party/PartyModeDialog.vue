@@ -1,7 +1,16 @@
 <template>
   <v-dialog :model-value="modelValue" max-width="460" scrollable @update:model-value="onClose">
     <v-card class="beacon-dialog">
-      <v-card-title>{{ $t('party.title') }}</v-card-title>
+      <v-card-title class="party-title">
+        <span>{{ $t('party.title') }}</span>
+        <v-btn
+          icon="mdi-help-circle-outline"
+          variant="text"
+          density="comfortable"
+          :title="$t('help.title')"
+          @click="$emitter.emit('openHelp', 'party-mode')"
+        />
+      </v-card-title>
       <v-card-text>
         <p class="text-body-medium text-medium-emphasis party-intro">{{ $t('party.hint') }}</p>
 
@@ -272,6 +281,13 @@ export default {
 </script>
 
 <style scoped>
+.party-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .party-intro {
   margin-bottom: 16px;
 }

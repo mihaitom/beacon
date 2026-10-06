@@ -323,8 +323,7 @@ The answers live in [docs/faq.md](docs/faq.md):
 - [My Sonos speaker doesn't appear under AirPlay (or DLNA)](docs/faq.md#my-sonos-speaker-doesnt-appear-under-airplay-or-dlna)
 - [Troubleshooting casting](docs/faq.md#troubleshooting-casting)
 - [How do I let party guests in from outside my network?](docs/faq.md#how-do-i-let-party-guests-in-from-outside-my-network)
-- [What does Discover send to Radio Browser?](docs/faq.md#what-does-discover-send-to-radio-browser)
-- [What does the recommendations feature send where?](docs/faq.md#what-does-the-recommendations-feature-send-where)
+- [What does Beacon send to outside services?](docs/faq.md#what-does-beacon-send-to-outside-services)
 
 ---
 

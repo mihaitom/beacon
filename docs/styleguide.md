@@ -550,6 +550,27 @@ does not scroll, which is what "the cap is clipping" looks like.
 - Close: an `mdi-close` icon button at the top right, and/or a text button in
   `v-card-actions`. A dialog with a picture-backed header uses the icon only,
   since the footer button would sit under a header that already offers one.
+- An exception to "never a second scroll region": inside `.beacon-markdown`
+  (below), a code block or a table scrolls sideways on its own. Neither can
+  wrap, and on a phone one would otherwise widen the whole dialog.
+
+### Rendered markdown
+
+Our own markdown files shown in the app - the release notes, the bundled
+docs in the help dialog - go into a `.beacon-markdown` element:
+
+```html
+<div class="beacon-markdown" v-html="html" />
+```
+
+It carries headings, lists, links, inline code, code blocks, tables and
+quotes, in `base.css` rather than as `:deep()` rules in each dialog, since
+v-html content never gets a component's scope id. A dialog only adds what is
+its own, like the release notes' pill-shaped section headings.
+
+A doc that wants a help entry somewhere in the app goes into
+`services/help/docs.ts` and is opened with `emitter.emit('openHelp', id)`
+from where its question comes up, not from a central help page.
 
 ## Motion
 

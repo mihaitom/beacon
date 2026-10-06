@@ -68,6 +68,12 @@ describe('HomeAutomationSection', () => {
     expect(wrapper.find('section').exists()).toBe(false)
   })
 
+  it('opens its doc in the help dialog', async () => {
+    const { wrapper, emit } = await mountSection()
+    await button(wrapper, 'settings.homeAutomationDocs')!.trigger('click')
+    expect(emit).toHaveBeenCalledWith('openHelp', 'home-automation')
+  })
+
   it('shows a freshly generated key once', async () => {
     const store = useRemoteControlStore()
     vi.spyOn(store, 'generateIntegrationKey').mockResolvedValue('the-key')
