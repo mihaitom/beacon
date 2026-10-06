@@ -317,6 +317,16 @@ def _isolate_radio_title_history(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_radio_station_info_cache(tmp_path, monkeypatch):
+    """core/radio_station_info.py keeps Radio Browser's answers in a file
+    under CONNECT_DATA_DIR, resolved at import time - same reasoning as the
+    two fixtures around this one."""
+    monkeypatch.setattr("core.radio_station_info._PATH", str(tmp_path / "station-info.json"))
+    monkeypatch.setattr("core.radio_station_info._cache", None)
+    monkeypatch.setattr("core.radio_station_info._resolved", {})
+
+
+@pytest.fixture(autouse=True)
 def _isolate_radio_favicon_disk_cache(tmp_path, monkeypatch):
     """routes/radio.py keeps resolved station logos in a directory under
     CONNECT_DATA_DIR so they survive a restart (see its _disk_store()). In

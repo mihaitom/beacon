@@ -532,3 +532,44 @@ class TestListCountries:
             result = await radio_browser.list_countries()
 
         assert result is None
+
+
+class TestStationLookups:
+    @pytest.fixture(autouse=True)
+    def _two_mirrors(self):
+        radio_browser._cached_servers = ["a.api.radio-browser.info", "b.api.radio-browser.info"]
+        radio_browser._cached_servers_at = time.monotonic()
+
+    async def test_asks_for_every_id_in_one_request(self):
+        with patch.object(radio_browser, "_client") as client:
+            client.get = AsyncMock(return_value=_search_response([_raw_station()]))
+            result = await radio_browser.stations_by_uuid(["u1", "u2"])
+
+        url = client.get.await_args.args[0]
+        assert url == "https://a.api.radio-browser.info/json/stations/byuuid"
+        assert client.get.await_args.kwargs["params"] == {"uuids": "u1,u2"}
+        assert result[0]["stationuuid"] == "abc-123"
+
+    async def test_asks_nothing_for_no_ids(self):
+        with patch.object(radio_browser, "_client") as client:
+            client.get = AsyncMock()
+            assert await radio_browser.stations_by_uuid([]) == []
+
+        client.get.assert_not_awaited()
+
+    async def test_moves_on_to_the_next_mirror_when_one_fails(self):
+        failing = httpx.ConnectError("down")
+        with patch.object(radio_browser, "_client") as client:
+            client.get = AsyncMock(side_effect=[failing, _search_response([_raw_station()])])
+            result = await radio_browser.stations_by_url("http://example.com/stream")
+
+        assert [c.args[0] for c in client.get.await_args_list] == [
+            "https://a.api.radio-browser.info/json/stations/byurl",
+            "https://b.api.radio-browser.info/json/stations/byurl",
+        ]
+        assert result[0]["name"] == "Example FM"
+
+    async def test_is_none_when_every_mirror_failed(self):
+        with patch.object(radio_browser, "_client") as client:
+            client.get = AsyncMock(side_effect=httpx.ConnectError("down"))
+            assert await radio_browser.stations_by_url("http://example.com/stream") is None

@@ -62,23 +62,19 @@
     </sticky-filter>
 
     <!-- See PlaylistsView.vue's identical block: placeholders shaped like
-     - the tiles, in the grid's own place, instead of a spinner that shifted
+     - the rows, in the list's own place, instead of a spinner that shifted
      - everything below it. -->
-    <div v-if="showSkeletons" class="radio-view__grid radio-view__grid--loading">
-      <tile-skeleton v-for="n in SKELETON_TILES" :key="n" :cover-size="72" />
+    <div v-if="showSkeletons" class="beacon-panel beacon-panel--flush radio-view__list">
+      <row-skeleton v-for="n in SKELETON_ROWS" :key="n" :cover-size="88" />
     </div>
 
-    <!-- A wrapping grid of RadioStationCard's own horizontal tiles, not the
-     - plain single-column list this used to be, and not AlbumsView.vue/
-     - ArtistsView.vue's own big-cover-on-top card either — see that
-     - component's own comment for why it deliberately looks like neither.
-     - Batching still applies exactly as before: CoverArt.vue's own
-     - request-batching is what keeps a whole screen of these to one
-     - favicon round trip rather than one per card (see
-     - radioFaviconBatch.ts) — the layout didn't change that, only how each
-     - station looks. -->
-    <div v-if="filteredStations.length" class="radio-view__grid">
-      <radio-station-card
+    <!-- The same list of rows as the Playlists page (see
+     - docs/styleguide.md's Lists section). CoverArt.vue's request batching
+     - still keeps a whole screen of logos to one round trip (see
+     - radioFaviconBatch.ts), and the rows' extras arrive in one request
+     - for the whole list too (stores/radioStationInfo.ts). -->
+    <div v-if="filteredStations.length" class="beacon-panel beacon-panel--flush radio-view__list">
+      <radio-station-row
         v-for="station in filteredStations"
         :key="station.id"
         :station="station"
@@ -179,8 +175,9 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import RadioDiscoverDialog from '@/components/radio/RadioDiscoverDialog.vue'
-import RadioStationCard from '@/components/library/RadioStationCard.vue'
-import TileSkeleton from '@/components/library/TileSkeleton.vue'
+import RadioStationRow from '@/components/library/RadioStationRow.vue'
+import RowSkeleton from '@/components/library/RowSkeleton.vue'
+import { useRadioStationInfoStore } from '@/stores/radioStationInfo'
 import StickyFilter from '@/components/StickyFilter.vue'
 import { matchesAllTerms } from '@/services/textSearch'
 import type { RadioStation } from '@/types/library'
@@ -192,20 +189,20 @@ import type { RadioStation } from '@/types/library'
 let filterDebounceTimer: ReturnType<typeof setTimeout> | undefined
 
 // See PlaylistsView.vue's own SKELETON_TILES — same number, same reasoning.
-const SKELETON_TILES = 8
+const SKELETON_ROWS = 5
 
 export default {
   name: 'RadioView',
   components: {
     DetailHeader,
     RadioDiscoverDialog,
-    RadioStationCard,
-    TileSkeleton,
+    RadioStationRow,
+    RowSkeleton,
     StickyFilter,
   },
   data() {
     return {
-      SKELETON_TILES,
+      SKELETON_ROWS,
       createDialog: false,
       editDialog: false,
       editingId: null as string | null,
@@ -250,6 +247,14 @@ export default {
     this.libraryStore.fetchRadioStations()
   },
   watch: {
+    // Asked again whenever the list changes (a station added or edited),
+    // and on every visit - the last title heard changes with listening.
+    'libraryStore.radioStations': {
+      handler(stations: RadioStation[]) {
+        void useRadioStationInfoStore().load(stations)
+      },
+      immediate: true,
+    },
     filterQuery(value: string | null) {
       clearTimeout(filterDebounceTimer)
       filterDebounceTimer = setTimeout(() => {
@@ -315,20 +320,8 @@ export default {
   gap: 8px;
 }
 
-.radio-view__grid {
-  display: flex;
-  flex-wrap: wrap;
-  /* Tighter than AlbumsView.vue's own .album-grid/ArtistsView.vue's
-   * .artist-grid (20px) — RadioStationCard.vue is a compact horizontal
-   * tile, not a big square cover, and 20px between tiles that short read
-   * as gappy rather than airy. */
-  gap: 14px;
-}
-
-/* The placeholder grid keeps the gap the real one has under it, so
- * nothing shifts when the stations arrive. */
-.radio-view__grid--loading {
-  margin-bottom: 16px;
+.radio-view__list {
+  margin-bottom: 24px;
 }
 
 /* The add/edit station form: three URL-shaped fields in a column. */

@@ -104,12 +104,12 @@ import ContextMenuSection from './ContextMenuSection.vue'
 import { useAuthStore } from '@/stores/auth'
 import { usePlaylistSummariesStore } from '@/stores/playlistSummaries'
 import {
-  changedAgo,
   leadingArtists,
   summaryKey,
   type PlaylistSummary,
 } from '@/services/library/playlistSummary'
 import { formatTotalDuration } from '@/services/totalDuration'
+import { timeAgo } from '@/services/relativeTime'
 import { getLocale } from '@/i18n'
 import { emitter } from '@/emitter'
 import type { Playlist } from '@/types/library'
@@ -174,7 +174,7 @@ export default {
     },
     meta(): string {
       const ago = this.playlist.changed
-        ? changedAgo(this.playlist.changed, Date.now(), getLocale())
+        ? timeAgo(Date.parse(this.playlist.changed), Date.now(), getLocale())
         : ''
       const parts = [
         this.$t('playlists.songCount', { count: this.playlist.songCount }),

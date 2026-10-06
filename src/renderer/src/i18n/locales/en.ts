@@ -927,6 +927,10 @@ export default {
     titleLogFilterEmpty: "Nothing in this station's log matches “{query}”.",
     titleLogSearch: 'Search your library',
     titleLogYesterday: 'Yesterday',
+    playing: 'Playing',
+    nowPlayingLine: 'Now playing: {title}',
+    lastHeard: 'Last heard: {title} · {ago}',
+    bitrate: '{bitrate} kbit/s',
   },
   favorites: {
     eyebrow: 'Your collection',

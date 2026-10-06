@@ -72,6 +72,7 @@ from core.radio_browser import (
     search_stations,
     vote_for_station,
 )
+from core.radio_station_info import station_info
 from core.session import SessionState, require_authenticated_session
 
 logger = logging.getLogger("connect.radio")
@@ -1455,3 +1456,27 @@ async def get_radio_title_history(
             before=before, limit=max(1, min(limit, _HISTORY_MAX_PAGE)), query=q, exact=exact
         ),
     }
+
+
+class StationInfoRequestEntry(BaseModel):
+    url: str
+    # Radio Browser's id, where the frontend knows it (see
+    # core/radio_station_info.py).
+    uuid: str | None = None
+
+
+class StationInfoRequest(BaseModel):
+    stations: list[StationInfoRequestEntry] = Field(max_length=500)
+
+
+@router.post("/radio-station-info")
+async def radio_station_info(
+    request: StationInfoRequest,
+    session: SessionState = Depends(require_authenticated_session),
+) -> dict:
+    """Per saved station: Radio Browser's tags, country, codec and bitrate,
+    and the last title this session heard on it - what RadioView.vue's rows
+    show under a station's name. One request for the whole list, like the
+    favicon batch above. See core/radio_station_info.py."""
+    pairs = [(s.url, s.uuid or None) for s in request.stations if s.url]
+    return {"stations": await station_info(session.session_id, pairs)}

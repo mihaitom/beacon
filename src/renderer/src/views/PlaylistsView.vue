@@ -65,14 +65,7 @@
      - placeholders because of one of those would be worse than the jump it
      - replaced. -->
     <div v-if="showSkeletons" class="beacon-panel beacon-panel--flush playlists-view__list">
-      <div v-for="n in SKELETON_ROWS" :key="n" class="playlists-view__skeleton">
-        <v-skeleton-loader type="image" width="112" height="112" class="rounded" />
-        <div class="playlists-view__skeleton-text">
-          <v-skeleton-loader type="text" width="40%" height="24" />
-          <v-skeleton-loader type="text" width="30%" height="16" />
-          <v-skeleton-loader type="text" width="55%" height="20" />
-        </div>
-      </div>
+      <row-skeleton v-for="n in SKELETON_ROWS" :key="n" :cover-size="112" />
     </div>
 
     <template v-if="personalPlaylists.length">
@@ -154,6 +147,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import PlaylistRow from '@/components/library/PlaylistRow.vue'
+import RowSkeleton from '@/components/library/RowSkeleton.vue'
 import PlaylistEditDialog from '@/components/library/PlaylistEditDialog.vue'
 import LastfmPlaylistDialog from '@/components/library/LastfmPlaylistDialog.vue'
 import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
@@ -180,6 +174,7 @@ export default {
   components: {
     DetailHeader,
     PlaylistRow,
+    RowSkeleton,
     PlaylistEditDialog,
     LastfmPlaylistDialog,
     PlaylistDeleteDialog,
@@ -306,28 +301,6 @@ export default {
 </script>
 
 <style scoped>
-.playlists-view__skeleton {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 14px;
-}
-
-.playlists-view__skeleton + .playlists-view__skeleton {
-  border-top: 1px solid var(--beacon-hairline);
-}
-
-.playlists-view__skeleton-text {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.playlists-view__skeleton :deep(.v-skeleton-loader) {
-  background: transparent;
-}
-
 /* A heading sits close to the list it names; the lists themselves are
  * further apart, so "Personal" and "Shared" read as two blocks. */
 .section-title {

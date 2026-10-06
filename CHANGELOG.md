@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - The Playlists page is now a list: each playlist shows artwork from its own albums (cycling through them on hover), its main artists, genres and when it was last edited, with Play and Shuffle buttons on the right
+- The Radio page is now a list in the same style: each station shows its country, format and genre tags from Radio Browser, and the last title you heard on it (or what is playing right now)
 
 ### Fixed
 

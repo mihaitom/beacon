@@ -934,6 +934,10 @@ export default {
     titleLogFilterEmpty: 'Im Verlauf dieses Senders passt nichts zu „{query}“.',
     titleLogSearch: 'In der Bibliothek suchen',
     titleLogYesterday: 'Gestern',
+    playing: 'Läuft',
+    nowPlayingLine: 'Läuft gerade: {title}',
+    lastHeard: 'Zuletzt gehört: {title} · {ago}',
+    bitrate: '{bitrate} kbit/s',
   },
   favorites: {
     eyebrow: 'Deine Sammlung',

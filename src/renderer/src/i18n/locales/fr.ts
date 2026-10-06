@@ -937,6 +937,10 @@ export default {
     titleLogFilterEmpty: 'Rien dans l’historique de cette station ne correspond à « {query} ».',
     titleLogSearch: 'Rechercher dans votre bibliothèque',
     titleLogYesterday: 'Hier',
+    playing: 'En cours',
+    nowPlayingLine: 'En cours : {title}',
+    lastHeard: 'Dernière écoute : {title} · {ago}',
+    bitrate: '{bitrate} kbit/s',
   },
   favorites: {
     eyebrow: 'Ta collection',

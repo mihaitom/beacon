@@ -47,25 +47,3 @@ export function summaryKey(playlist: Playlist): string {
 export function leadingArtists(artists: string[]): string[] {
   return artists.slice(0, LEADING_ARTISTS)
 }
-
-const RELATIVE_STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ['year', 365 * 24 * 3600],
-  ['month', 30 * 24 * 3600],
-  ['week', 7 * 24 * 3600],
-  ['day', 24 * 3600],
-  ['hour', 3600],
-  ['minute', 60],
-]
-
-/** "3 days ago", "yesterday", "just now" - in the largest unit that has
- * at least one whole step in it. Empty for a date that cannot be read. */
-export function changedAgo(changed: string, now: number, locale: string): string {
-  const time = Date.parse(changed)
-  if (Number.isNaN(time)) return ''
-  const seconds = (now - time) / 1000
-  const format = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
-  for (const [unit, size] of RELATIVE_STEPS) {
-    if (seconds >= size) return format.format(-Math.floor(seconds / size), unit)
-  }
-  return format.format(0, 'minute')
-}

@@ -934,6 +934,10 @@ export default {
     titleLogFilterEmpty: 'Nada en el historial de esta emisora coincide con «{query}».',
     titleLogSearch: 'Buscar en tu biblioteca',
     titleLogYesterday: 'Ayer',
+    playing: 'Sonando',
+    nowPlayingLine: 'Sonando ahora: {title}',
+    lastHeard: 'Escuchado por última vez: {title} · {ago}',
+    bitrate: '{bitrate} kbit/s',
   },
   favorites: {
     eyebrow: 'Tu colección',

@@ -217,3 +217,28 @@ function looksLikePlaylist(url: string): boolean {
   const path = url.split(/[?#]/)[0]?.toLowerCase() ?? ''
   return ['.m3u', '.pls', '.asx', '.xspf'].some((extension) => path.endsWith(extension))
 }
+
+/** What connect knows about a saved station beyond its own fields - see
+ * connect/core/radio_station_info.py. Every field but `lastTitle` is
+ * missing for a station Radio Browser does not list. */
+export interface RadioStationInfo {
+  tags?: string[]
+  country?: string
+  codec?: string
+  bitrate?: number | null
+  /** The last title this session heard on the station; `at` in seconds. */
+  lastTitle: { title: string; at: number } | null
+}
+
+/** One request for a whole list of stations, keyed by stream URL. `uuid`
+ * is Radio Browser's id where it is known, which lets connect ask the
+ * directory for all of those at once. */
+export async function fetchRadioStationInfo(
+  stations: { url: string; uuid: string | null }[],
+): Promise<Record<string, RadioStationInfo>> {
+  const result = await fetchConnect<{ stations: Record<string, RadioStationInfo> }>(
+    '/radio-station-info',
+    { method: 'POST', body: { stations } },
+  )
+  return result.stations
+}

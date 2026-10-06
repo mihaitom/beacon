@@ -935,6 +935,10 @@ export default {
     titleLogFilterEmpty: 'Niente nella cronologia di questa emittente corrisponde a «{query}».',
     titleLogSearch: 'Cerca nella tua libreria',
     titleLogYesterday: 'Ieri',
+    playing: 'In riproduzione',
+    nowPlayingLine: 'In riproduzione: {title}',
+    lastHeard: 'Ultimo ascolto: {title} · {ago}',
+    bitrate: '{bitrate} kbit/s',
   },
   favorites: {
     eyebrow: 'La tua collezione',

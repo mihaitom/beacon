@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  changedAgo,
-  MAX_COVERS,
-  MAX_GENRES,
-  summarizePlaylist,
-  summaryKey,
-} from '../playlistSummary'
+import { MAX_COVERS, MAX_GENRES, summarizePlaylist, summaryKey } from '../playlistSummary'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { Playlist } from '@/types/library'
 
@@ -91,28 +85,5 @@ describe('summaryKey', () => {
     expect(summaryKey({ ...base, songCount: 4 })).not.toBe(summaryKey(base))
     expect(summaryKey({ ...base, duration: 601 })).not.toBe(summaryKey(base))
     expect(summaryKey({ ...base, name: 'Renamed' })).toBe(summaryKey(base))
-  })
-})
-
-describe('changedAgo', () => {
-  const now = Date.parse('2026-10-06T12:00:00Z')
-
-  it('says it in the largest whole unit', () => {
-    expect(changedAgo('2026-10-03T11:00:00Z', now, 'en')).toBe('3 days ago')
-    expect(changedAgo('2026-10-06T09:00:00Z', now, 'en')).toBe('3 hours ago')
-    expect(changedAgo('2026-09-01T12:00:00Z', now, 'en')).toBe('last month')
-  })
-
-  it('reads a moment ago, or a clock slightly ahead, as now', () => {
-    expect(changedAgo('2026-10-06T11:59:40Z', now, 'en')).toBe('this minute')
-    expect(changedAgo('2026-10-06T12:05:00Z', now, 'en')).toBe('this minute')
-  })
-
-  it('follows the language', () => {
-    expect(changedAgo('2026-10-05T12:00:00Z', now, 'de')).toBe('gestern')
-  })
-
-  it('is empty for a date it cannot read', () => {
-    expect(changedAgo('garbage', now, 'en')).toBe('')
   })
 })
