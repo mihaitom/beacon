@@ -796,9 +796,10 @@ export default {
       },
       radioBrowser: {
         name: 'Radio Browser',
-        purpose: 'Das Senderverzeichnis hinter „Sender entdecken“.',
+        purpose:
+          'Das Senderverzeichnis hinter „Sender entdecken“. Außerdem Tags, Land und Format deiner gespeicherten Sender auf der Radio-Seite.',
         sends:
-          'Deinen Suchbegriff und das gewählte Land. Wird ein hier gefundener Sender abgespielt, meldet Beacon dessen Kennung als Klick zurück; das verlangen die Nutzungsregeln des Verzeichnisses, damit beliebte Sender erkennbar bleiben. Ein von dir selbst per Adresse eingetragener Sender wird nie gemeldet. Stimmst du für einen Sender ab, geht dessen Kennung ebenfalls raus - nur dann, wenn du den Knopf selbst drückst.',
+          'Deinen Suchbegriff und das gewählte Land. Wird ein hier gefundener Sender abgespielt, meldet Beacon dessen Kennung als Klick zurück; das verlangen die Nutzungsregeln des Verzeichnisses, damit beliebte Sender erkennbar bleiben. Ein von dir selbst per Adresse eingetragener Sender wird nie gemeldet. Stimmst du für einen Sender ab, geht dessen Kennung ebenfalls raus - nur dann, wenn du den Knopf selbst drückst. Für die Radio-Seite fragt der Beacon-Server nach deinen gespeicherten Sendern: per Kennung, wo bekannt, sonst per Stream-Adresse, auch bei selbst eingetragenen. Das ist kein Klick und wird frühestens nach einigen Tagen wiederholt.',
       },
       stationSite: {
         name: 'Die Webseiten der Radiosender',

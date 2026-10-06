@@ -407,12 +407,15 @@ does not.
 Desktop rows get their hover from `--beacon-hover`; a plain `v-list` opts in
 with `.beacon-list` on its container.
 
-The desktop Playlists page is a list of large rows in one
-`.beacon-panel--flush` rather than a grid of covers (`PlaylistRow.vue`): the
-artwork is made from the playlist's own albums and only cycles while the row
-is hovered, the text carries the main artists and genres, and Play/Shuffle
-sit as plain buttons, not pills, centred on the right. No backdrop - a page
-of rows each with its own moving picture is too much at once.
+The desktop Playlists and Radio pages are lists of large rows in one
+`.beacon-panel--flush` rather than grids of tiles (`PlaylistRow.vue`,
+`RadioStationRow.vue`, placeholders from `RowSkeleton.vue`): artwork on the
+left, a name at 1.15rem/600 (Inter - the serif is never for a row), a
+quiet meta line, one line saying what is in it (a playlist's main artists,
+the last title heard on a station) and tonal genre chips; the actions sit as
+plain buttons, not pills, centred on the right. A playlist's artwork is made
+from its own albums and only cycles while the row is hovered. No backdrop -
+a page of rows each with its own moving picture is too much at once.
 
 `.mobile-row__text` clips both of its lines itself - a row is a fixed 60px,
 so a long title has nowhere to wrap to. No list component says

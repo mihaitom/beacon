@@ -795,9 +795,10 @@ export default {
       },
       radioBrowser: {
         name: 'Radio Browser',
-        purpose: 'El directorio de emisoras detrás de «Descubrir emisoras».',
+        purpose:
+          'El directorio de emisoras detrás de «Descubrir emisoras». También las etiquetas, el país y el formato de tus emisoras guardadas en la página de Radio.',
         sends:
-          'Tu término de búsqueda y el país elegido. Al reproducir una emisora encontrada aquí, Beacon informa de su identificador como clic; lo piden las propias reglas del directorio, para que las emisoras populares sigan siendo reconocibles. Una emisora que hayas añadido escribiendo su dirección nunca se informa. Al votar por una emisora también se envía su identificador, solo cuando pulsas tú ese botón.',
+          'Tu término de búsqueda y el país elegido. Al reproducir una emisora encontrada aquí, Beacon informa de su identificador como clic; lo piden las propias reglas del directorio, para que las emisoras populares sigan siendo reconocibles. Una emisora que hayas añadido escribiendo su dirección nunca se informa. Al votar por una emisora también se envía su identificador, solo cuando pulsas tú ese botón. Para la página de Radio, el servidor de Beacon consulta tus emisoras guardadas: por identificador si se conoce, si no por dirección del stream, también las que añadiste tú. Eso no cuenta como clic y se repite como pronto al cabo de varios días.',
       },
       stationSite: {
         name: 'Los sitios web de las emisoras',

@@ -35,7 +35,7 @@ export const useRadioStationInfoStore = defineStore('radioStationInfo', {
           urls.map((url) => ({ url, uuid: radioBrowserIdFor(url) })),
         )
         if (startedIn !== generation) return
-        this.byUrl = { ...this.byUrl, ...info }
+        this.byUrl = info
       } catch (error) {
         console.warn('[radio] Could not load station details', error)
       } finally {

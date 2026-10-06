@@ -798,9 +798,10 @@ export default {
       },
       radioBrowser: {
         name: 'Radio Browser',
-        purpose: "L'annuaire de stations derrière « Découvrir des stations ».",
+        purpose:
+          "L'annuaire de stations derrière « Découvrir des stations ». Ainsi que les tags, le pays et le format de tes stations enregistrées sur la page Radio.",
         sends:
-          "Votre terme de recherche et le pays choisi. Lorsqu'une station trouvée ici est lue, Beacon renvoie son identifiant sous forme de clic ; les règles du répertoire le demandent, afin que les stations populaires restent identifiables. Une station que vous avez ajoutée en saisissant son adresse n'est jamais signalée. Voter pour une station envoie également son identifiant, uniquement lorsque vous appuyez vous-même sur ce bouton.",
+          "Votre terme de recherche et le pays choisi. Lorsqu'une station trouvée ici est lue, Beacon renvoie son identifiant sous forme de clic ; les règles du répertoire le demandent, afin que les stations populaires restent identifiables. Une station que vous avez ajoutée en saisissant son adresse n'est jamais signalée. Voter pour une station envoie également son identifiant, uniquement lorsque vous appuyez vous-même sur ce bouton. Pour la page Radio, le serveur Beacon recherche tes stations enregistrées : par identifiant s'il est connu, sinon par adresse du flux, y compris celles que tu as ajoutées toi-même. Ce n'est pas un clic, et ce n'est répété qu'après plusieurs jours.",
       },
       stationSite: {
         name: 'Les sites des stations de radio',

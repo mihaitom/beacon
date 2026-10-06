@@ -790,9 +790,10 @@ export default {
       },
       radioBrowser: {
         name: 'Radio Browser',
-        purpose: 'The station directory behind "Discover stations".',
+        purpose:
+          'The station directory behind "Discover stations". Also the tags, country and format of your saved stations on the Radio page.',
         sends:
-          "Your search term and the country you picked. Playing a station you found here reports its id back as a click, which the directory's own rules ask for so that popular stations stay recognisable. A station you added by typing its address yourself is never reported. Voting for a station sends its id as well, only when you press that button yourself.",
+          "Your search term and the country you picked. Playing a station you found here reports its id back as a click, which the directory's own rules ask for so that popular stations stay recognisable. A station you added by typing its address yourself is never reported. Voting for a station sends its id as well, only when you press that button yourself. For the Radio page, the Beacon server looks up your saved stations: by id where known, otherwise by stream address, including ones you added yourself. That is not a click, and it is repeated after several days at the earliest.",
       },
       stationSite: {
         name: "Radio stations' own websites",
