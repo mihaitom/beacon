@@ -82,11 +82,35 @@ proxy open `/party/` to the outside without opening anything else.
 - **Names.** A guest's name is trimmed to 24 characters with control and
   text-direction characters removed, and is only ever displayed as text.
 
-## Behind a reverse proxy (Traefik + Authentik)
+## Over the internet
 
-To let guests in without an Authentik account, give `/party` its own router
-without the Authentik middleware and a higher priority than the protected
-one:
+Guests on the venue's Wi-Fi need nothing more than the QR code. For guests
+on mobile data, put Beacon (the Docker image, `WEB_PORT` 7070 by default)
+behind your reverse proxy. Whichever proxy it is:
+
+- **`/party` and `/party/` have to get past the login in front of Beacon.**
+  If Beacon sits behind Authentik or another forward-auth, give that path a
+  route of its own without it - the examples below do exactly that. Without a
+  forward-auth, an ordinary proxy host is enough and nothing else changes:
+  `/party/` is the only part a guest can use without Beacon's own login.
+- **The `Host` header goes through unchanged.** Changing requests are
+  checked against it (see "Browser hardening" above). All three proxies
+  below do that by default.
+- **No response buffering.** The page's live updates are a long-running
+  event stream. Beacon sends `X-Accel-Buffering: no`, which nginx (Nginx
+  Proxy Manager too) honours, and Caddy and Traefik pass such a stream
+  through as it comes.
+- **Start the party with Beacon open under the public address**
+  (`https://beacon.example.com`), not under its LAN address: the QR code
+  points at the address the party was started from.
+
+Then set `PARTY_TRUSTED_PROXIES` as described under
+[Client addresses](#client-addresses).
+
+### Traefik + Authentik
+
+Give `/party` its own router without the Authentik middleware and a higher
+priority than the protected one:
 
 ```yaml
 labels:
@@ -102,20 +126,89 @@ labels:
 Use `PathPrefix(`/party/`)` with the trailing slash. Without it, Traefik also
 matches any other path that happens to start with `/party`.
 
-The QR code points at the address the party was started from. Start it with
-Beacon open under the public address (`https://beacon.example.com`), not
-under its LAN address, and the guests get that one.
+### Nginx Proxy Manager + Authentik
+
+The proxy host points at Beacon as usual (Details tab: `http`, Beacon's
+address, port `7070`). Authentik's own guide for Nginx Proxy Manager puts a
+`location /` block with `auth_request` into the Advanced tab. Add these two
+locations next to it, in the same Advanced tab - they are matched ahead of
+`/` and carry no `auth_request`:
+
+```nginx
+# Party guests, past Authentik
+location = /party {
+    proxy_pass $forward_scheme://$server:$port;
+    proxy_set_header Host $host;
+}
+
+location /party/ {
+    proxy_pass $forward_scheme://$server:$port;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+`$forward_scheme`, `$server` and `$port` are what the Details tab says, so
+the address only lives in one place. Locations added in the Advanced tab
+don't get the headers Nginx Proxy Manager adds on its own, which is why
+they are set here.
+
+Without Authentik, none of this is needed: an ordinary proxy host with an SSL
+certificate is all.
+
+### Caddy + Authentik
+
+A named matcher for the party path, handled before the protected rest:
+
+```caddy
+beacon.example.com {
+	@party path /party /party/*
+
+	# Party guests, past Authentik
+	handle @party {
+		reverse_proxy 192.168.1.10:7070
+	}
+
+	# Everything else, as in Authentik's guide for Caddy
+	handle {
+		route {
+			reverse_proxy /outpost.goauthentik.io/* http://authentik-server:9000
+			forward_auth http://authentik-server:9000 {
+				uri /outpost.goauthentik.io/auth/caddy
+				copy_headers X-Authentik-Username X-Authentik-Groups X-Authentik-Email X-Authentik-Name X-Authentik-Uid
+				trusted_proxies private_ranges
+			}
+			reverse_proxy 192.168.1.10:7070
+		}
+	}
+}
+```
+
+`path /party /party/*` rather than `/party*`, which would also match any
+other path starting with `/party`. Caddy keeps the `Host` header and sets
+`X-Forwarded-For` and `X-Forwarded-Proto` on its own. Without Authentik,
+`reverse_proxy 192.168.1.10:7070` alone is the whole site block.
 
 ### Client addresses
 
 The rate limits work per client address. Beacon only trusts an
 `X-Forwarded-For` header from a proxy listed in `PARTY_TRUSTED_PROXIES`
 (comma-separated addresses or networks, default `127.0.0.1/32,::1/128`, which
-is the nginx inside the container). Behind Traefik, add Traefik's network,
-for example `PARTY_TRUSTED_PROXIES=127.0.0.1/32,::1/128,172.16.0.0/12`.
-Otherwise every guest counts as Traefik's address and they share one set of
-limits. The same list decides whether `X-Forwarded-Proto: https` is believed
-when the cookie is marked `Secure`.
+is the nginx inside the container). Add the address your proxy reaches Beacon
+from, or every guest counts as the proxy and they all share one set of
+limits:
+
+| Proxy                                                         | Add, for example                       |
+| ------------------------------------------------------------- | -------------------------------------- |
+| In a Docker network on the same host (Traefik, NPM, Caddy)    | `172.16.0.0/12`, Docker's networks     |
+| On another machine                                            | That machine's address, `192.168.1.5`  |
+| On the same host, outside Docker or with `network_mode: host` | Nothing, `127.0.0.1` is already listed |
+
+For example `PARTY_TRUSTED_PROXIES=127.0.0.1/32,::1/128,172.16.0.0/12`. The
+same list decides whether `X-Forwarded-Proto: https` is believed when the
+cookie is marked `Secure`.
 
 ## How the page is built
 
