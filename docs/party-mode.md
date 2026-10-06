@@ -102,9 +102,9 @@ labels:
 Use `PathPrefix(`/party/`)` with the trailing slash. Without it, Traefik also
 matches any other path that happens to start with `/party`.
 
-Enter the public address (`https://beacon.example.com`) as "Public address" in
-the party dialog, so the QR code points there rather than at the address
-Beacon sees itself under.
+The QR code points at the address the party was started from. Start it with
+Beacon open under the public address (`https://beacon.example.com`), not
+under its LAN address, and the guests get that one.
 
 ### Client addresses
 

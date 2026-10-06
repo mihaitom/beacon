@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { PartyRefusal, usePartyStore, wishInsertIndex } from '../party'
 import { usePlaybackStore } from '../playback'
@@ -196,5 +196,45 @@ describe('wishInsertIndex', () => {
 describe('PartyRefusal', () => {
   it('reads as its bare code, which is what the relay hands connect', () => {
     expect(String(new PartyRefusal('limit'))).toBe('limit')
+  })
+})
+
+describe('inviteUrl', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    delete (window as { api?: unknown }).api
+  })
+
+  function startedParty() {
+    const party = usePartyStore()
+    party.inviteToken = 'tok'
+    party.lanIp = '192.168.1.20'
+    party.port = 9181
+    return party
+  }
+
+  it('points the web build at the address the host has it open under', () => {
+    expect(startedParty().inviteUrl).toBe(`${window.location.origin}/party/#t=tok`)
+  })
+
+  it("points the desktop app at this machine's LAN address", () => {
+    ;(window as { api?: unknown }).api = {}
+    expect(startedParty().inviteUrl).toBe('http://192.168.1.20:9181/party/#t=tok')
+  })
+
+  it('a stale address saved by an older version changes nothing', () => {
+    localStorage.setItem(
+      'beacon_party_settings',
+      JSON.stringify({ publicUrl: 'https://x.example' }),
+    )
+    expect(startedParty().inviteUrl).toBe(`${window.location.origin}/party/#t=tok`)
+  })
+
+  it('has no link before the party has a token', () => {
+    expect(usePartyStore().inviteUrl).toBeNull()
   })
 })

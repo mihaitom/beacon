@@ -79,8 +79,7 @@
             :model-value="store.settings.maxPendingPerGuest"
             :items="limitOptions"
             :label="$t('party.limit')"
-            variant="outlined"
-            density="compact"
+            variant="solo-filled"
             hide-details
             @update:model-value="(v: number) => store.saveSettings({ maxPendingPerGuest: v })"
           />
@@ -88,32 +87,19 @@
             :model-value="store.settings.skipRatio"
             :items="skipOptions"
             :label="$t('party.skip')"
-            variant="outlined"
-            density="compact"
+            variant="solo-filled"
             hide-details
             @update:model-value="(v: number) => store.saveSettings({ skipRatio: v })"
           />
-          <template v-if="!store.enabled">
-            <v-select
-              :model-value="store.settings.durationHours"
-              :items="durationOptions"
-              :label="$t('party.duration')"
-              variant="outlined"
-              density="compact"
-              hide-details
-              @update:model-value="(v: number) => store.saveSettings({ durationHours: v })"
-            />
-            <v-text-field
-              :model-value="store.settings.publicUrl"
-              :label="$t('party.publicUrl')"
-              :hint="$t('party.publicUrlHint')"
-              persistent-hint
-              placeholder="https://beacon.example.com"
-              variant="outlined"
-              density="compact"
-              @update:model-value="(v: string) => store.saveSettings({ publicUrl: v })"
-            />
-          </template>
+          <v-select
+            v-if="!store.enabled"
+            :model-value="store.settings.durationHours"
+            :items="durationOptions"
+            :label="$t('party.duration')"
+            variant="solo-filled"
+            hide-details
+            @update:model-value="(v: number) => store.saveSettings({ durationHours: v })"
+          />
         </div>
       </v-card-text>
 

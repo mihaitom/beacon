@@ -392,9 +392,6 @@ export default {
     skipShare: '{share} der Gäste',
     duration: 'Endet nach',
     hours: '{count} Stunden',
-    publicUrl: 'Öffentliche Adresse (optional)',
-    publicUrlHint:
-      'Wo Gäste dieses Beacon erreichen, z. B. hinter deinem Reverse Proxy. Leer nimmt die Adresse, die Beacon kennt.',
     end: 'Party beenden',
     renewLink: 'Link erneuern',
     takeOver: 'Übernehmen',

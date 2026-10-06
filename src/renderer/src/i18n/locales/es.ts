@@ -395,9 +395,6 @@ export default {
     skipShare: '{share} de los invitados',
     duration: 'Termina tras',
     hours: '{count} horas',
-    publicUrl: 'Dirección pública (opcional)',
-    publicUrlHint:
-      'Donde los invitados llegan a este Beacon, p. ej. tras tu proxy inverso. Vacío usa la dirección que Beacon conoce.',
     end: 'Terminar fiesta',
     renewLink: 'Renovar enlace',
     takeOver: 'Tomar el control',

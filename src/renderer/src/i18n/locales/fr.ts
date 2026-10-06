@@ -395,9 +395,6 @@ export default {
     skipShare: '{share} des invités',
     duration: 'Se termine après',
     hours: '{count} heures',
-    publicUrl: 'Adresse publique (facultatif)',
-    publicUrlHint:
-      "Là où les invités joignent ce Beacon, p. ex. derrière ton reverse proxy. Vide utilise l'adresse connue de Beacon.",
     end: 'Terminer la fête',
     renewLink: 'Renouveler le lien',
     takeOver: 'Reprendre',

@@ -35,7 +35,6 @@ export interface PartySettings {
   durationHours: number
   /** Where guests reach this Beacon from outside, e.g. behind a reverse
    * proxy. Empty means the address this app already knows. */
-  publicUrl: string
 }
 
 /** A refusal the guest should see as such, not as a failure. Its string
@@ -78,7 +77,6 @@ const DEFAULT_SETTINGS: PartySettings = {
   maxPendingPerGuest: 3,
   skipRatio: 0.5,
   durationHours: 12,
-  publicUrl: '',
 }
 
 function markHost(on: boolean): void {
@@ -165,9 +163,9 @@ export const usePartyStore = defineStore('party', {
   getters: {
     inviteUrl(state): string | null {
       if (!state.inviteToken) return null
-      const base =
-        state.settings.publicUrl.trim().replace(/\/+$/, '') ||
-        (window.api ? `http://${state.lanIp}:${state.port}` : window.location.origin)
+      // The web build is reached under the address the host has open,
+      // reverse proxy included; the desktop app only on this machine's LAN.
+      const base = window.api ? `http://${state.lanIp}:${state.port}` : window.location.origin
       return `${base}/party/#t=${state.inviteToken}`
     },
 
