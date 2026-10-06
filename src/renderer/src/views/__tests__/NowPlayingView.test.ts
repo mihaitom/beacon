@@ -13,6 +13,7 @@ import { useLyricsStore } from '@/stores/lyrics'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import NowPlayingView from '../NowPlayingView.vue'
+import NowPlayingPresentation from '@/components/now-playing/NowPlayingPresentation.vue'
 import { getAudioEngine } from '@/services/audioEngine'
 import { getLogLevel, type LogLevel } from '@/services/connect/logLevel'
 import { getArtistArt } from '@/services/connect/fanart'
@@ -507,8 +508,17 @@ describe('NowPlayingView', () => {
     /** Autoplay's button is fullscreen-only here: the ordinary desktop
      * window has PlayerBar.vue's own copy, and the phone has one in its
      * transport row (MobileTransportControls.vue). */
+    // Fullscreen is the presentation's own concern, so its state lives
+    // there (see NowPlayingPresentation.vue) rather than on the host view.
+    function presentation(wrapper: VueWrapper) {
+      return wrapper.findComponent(NowPlayingPresentation).vm as unknown as {
+        isFullscreen: boolean
+        toggleFullscreen(): Promise<void>
+      }
+    }
+
     async function enterFullscreen(wrapper: VueWrapper): Promise<void> {
-      ;(wrapper.vm as unknown as { isFullscreen: boolean }).isFullscreen = true
+      presentation(wrapper).isFullscreen = true
       await wrapper.vm.$nextTick()
     }
 
@@ -622,10 +632,9 @@ describe('NowPlayingView', () => {
 
     it('colors the fullscreen button while fullscreen, and still swaps its icon', async () => {
       const { wrapper } = await mountToolbar()
-      const vm = wrapper.vm as unknown as { isFullscreen: boolean }
       expect(isAmber(wrapper, 'mdi-fullscreen')).toBe(false)
 
-      vm.isFullscreen = true
+      presentation(wrapper).isFullscreen = true
       await wrapper.vm.$nextTick()
 
       // The icon swap stays: unlike the others, it describes what clicking
@@ -662,7 +671,7 @@ describe('NowPlayingView', () => {
       })
       rootEl.requestFullscreen = requestFullscreen as unknown as typeof rootEl.requestFullscreen
 
-      const vm = wrapper.vm as unknown as {
+      const vm = wrapper.findComponent(NowPlayingPresentation).vm as unknown as {
         toggleFullscreen(): Promise<void>
         isFullscreen: boolean
       }

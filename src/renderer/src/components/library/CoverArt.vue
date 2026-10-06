@@ -216,6 +216,10 @@ interface Candidate {
   url: string
   coverArtId: string | null
   favicon: RadioFaviconRequest | null
+  /** A URL to fetch directly, exactly as given, whatever host it is on -
+   * for callers outside the app (the party guest page) whose covers carry
+   * no app token and must not go through the batch. */
+  raw?: boolean
 }
 
 /** A failed cover fetch, carrying the status it failed with — `undefined`
@@ -278,6 +282,15 @@ export default {
      * resolved by the backend in a batch, same as everything else here; see
      * fetchCandidate. */
     imageUrl: {
+      type: String as PropType<string | null>,
+      default: null,
+    },
+    /** A ready image URL to fetch and show exactly as given — no batching,
+     * no app token, no proxy handling. For callers outside the app (the
+     * party guest page), whose covers are same-origin URLs connect serves
+     * and whose requests must not carry the app's credentials. Tried first
+     * when given. */
+    src: {
       type: String as PropType<string | null>,
       default: null,
     },
@@ -435,6 +448,7 @@ export default {
         ? useLibraryStore().client().coverArtUrl(this.coverArtId, this.fetchSize)
         : null
       const entries: Array<Candidate | null> = [
+        this.src ? { url: this.src, coverArtId: null, favicon: null, raw: true } : null,
         this.radioFavicon ? { url: '', coverArtId: null, favicon: this.radioFavicon } : null,
         this.imageUrl ? { url: this.imageUrl, coverArtId: null, favicon: null } : null,
         coverArtUrl ? { url: coverArtUrl, coverArtId: this.coverArtId, favicon: null } : null,
@@ -636,6 +650,9 @@ export default {
      * cover art already being the least urgent thing the app asks for is
      * what the settle delay and the slot queue above are for instead. */
     async fetchCandidate(candidate: Candidate, signal: AbortSignal): Promise<Blob> {
+      if (candidate.raw) {
+        return fetchDirect(candidate.url, signal)
+      }
       if (candidate.favicon) {
         const favicon = await fetchRadioFaviconBatched(candidate.favicon, signal)
         this.$emit('transparency', favicon.transparent)

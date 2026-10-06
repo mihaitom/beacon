@@ -74,3 +74,42 @@ describe('PartyGuestApp while a radio station plays', () => {
     expect(wrapper.text()).toContain(i18n.global.t('partyGuest.radioText'))
   })
 })
+
+describe('PartyGuestApp with the shared Now Playing', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    window.innerWidth = DESKTOP_WIDTH
+  })
+
+  it('offers the skip vote but none of the host lyrics tools', async () => {
+    window.innerWidth = DESKTOP_WIDTH
+    const store = usePartyGuestStore()
+    vi.spyOn(store, 'start').mockResolvedValue()
+    store.phase = 'app'
+    store.snapshot = {
+      ...snapshot(null),
+      current_song: {
+        id: 's1',
+        title: 'Harbor Lights',
+        artist: 'The Tide',
+        album: 'Low Water',
+        duration: 200,
+        cover: null,
+      },
+      skip: { enabled: true, votes: 1, needed: 2, mine: false },
+    }
+    const vuetify = createVuetify({ components, directives })
+    const wrapper = mount(PartyGuestApp, { global: { plugins: [vuetify, i18n] } })
+    await wrapper.vm.$nextTick()
+
+    // The guest's own control sits in the toolbar.
+    expect(wrapper.find('.guest-skip').exists()).toBe(true)
+    // Lyrics are showing (the default preference), but read-only.
+    expect(wrapper.find('.lyrics-panel').exists()).toBe(true)
+    expect(wrapper.find('.lyrics-panel__toolbar').exists()).toBe(false)
+  })
+})

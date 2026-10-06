@@ -1,23 +1,92 @@
 # Plan: one Now Playing for the app and the party guests
 
-Status: planned, not started. Branch `partymode` (party mode itself is done
-and uncommitted at the time of writing; see `docs/party-mode.md`).
+Status: implemented 2026-10-07 (steps 1-3); step 4 (browser and real
+hardware) outstanding. Supersedes the 2026-10-06 draft, which was written
+before party mode moved into connect (`docs/plans/party-mode-server-side.md`,
+done) and before the lyrics requirement was settled.
+
+Done:
+
+- `components/now-playing/source.ts` (the interface + injection key),
+  `hostSource.ts` (the view's data through it) and `useSource.ts` (the
+  Options-API mixin).
+- `NowPlayingPresentation.vue`: the shared backdrop, toolbar, stages,
+  visualizer, debug overlay, flip/slide mechanics, fullscreen and accent.
+- Every presentation component reads the source; none imports a host store.
+  `views/NowPlayingView.vue` is the host shell around the presentation.
+- `party/guestSource.ts` builds the same source from `party/store.ts`;
+  `PartyGuestApp` renders the presentation with a `GuestSkipButton` in the
+  toolbar slot. `GuestNowPlaying.vue` and its tests are gone.
+
+Still open:
+
+- **Cover art isolation.** `NowPlayingArtwork` / `NowPlayingTrackPanels`
+  still render `CoverArt`, which imports the library store for its
+  `coverArtId`/radio-favicon routes. A guest only ever passes the new `src`
+  (a ready URL), but the import still pulls the library store into the
+  party bundle. The plan's final check
+  (`grep -c getSimilarSongs2 connect/static/party/assets/*.js` = 0) is not
+  met until that is split out - e.g. an async `CoverArt` or a raw-image leaf
+  for the `src` path.
+- The real-device check (`pnpm test:layout` is green, a phone is not yet).
 
 ## Why
 
 The party guest page (`src/renderer/src/party/`) has its own Now Playing,
-`party/components/GuestNowPlaying.vue`, rebuilt from the app's pieces. Every
-round of testing found another place where the copy had drifted from the
-app: lyrics that did not scroll, colours that stayed amber, no flip on a
-narrow window, a different corner card. A copy keeps drifting.
+`party/components/GuestNowPlaying.vue` (838 lines), rebuilt from the app's
+pieces. Every round of testing found another place where the copy had drifted
+from the app. A comparison of the two on 2026-10-07 turned up, besides the
+lyrics width that prompted it:
 
-The goal is that guests see the app's own Now Playing:
+- **Lyrics width.** Both use `width: min(38cqw, 560px)`, but the app measures
+  it against the unpadded, full-width `.now-playing__stage`
+  (`NowPlayingStageDesktop.vue:254`, `NowPlayingView.vue:968`), the guest
+  against `.guest-np__stage`, which carries 32px padding (`GuestNowPlaying.vue:491`)
+  and lives in the left column of a grid whose right column takes up to 440px
+  (`PartyGuestApp.vue:243`). On a 1440px window that is roughly 356px of
+  lyrics for a guest against 547px in the app. The gap drifts too: guest
+  `clamp(24px, 4cqw, 80px)` (`:504`) against the app's
+  `clamp(40px, 6cqw, 120px)` plus `width: 96cqw; max-width: 1800px`
+  (`:194-198`).
+- **Large artwork** `clamp(180px, min(70cqh, 50cqw), 900px)`
+  (`NowPlayingStageDesktop.vue:155`) against the guest's
+  `min(52cqh, 50cqw, 520px)` (`:529`), with its own title size
+  (`:628`) against the app's shared clamp (`NowPlayingTrackPanels.vue:377`).
+- **Corner card**: the guest caps it at `min(46cqw, 640px)` (`:581`), the app
+  caps only the text (`NowPlayingTrackPanels.vue:351`) and lets the panels
+  grow and shrink (`:521`).
+- **Mini cover**: the app measures it to the text block's height
+  (`NowPlayingTrackPanels.vue:159-162`), the guest pins it to 72px/56px
+  (`:596-608`). Its compact type is hardcoded (`:631-641`) against the app's
+  clamps (`NowPlayingTrackPanels.vue:311,324,330`).
+- **Title wrapping**: the guest `overflow-wrap: anywhere` with no clamp
+  (`:620-625`), the app `break-word` with a three-line clamp
+  (`NowPlayingTrackPanels.vue:376-395`), a single ellipsised line in the
+  corner (`:489-504`).
+- **Visualizer row**: the guest a fixed 96px/56px (`:676-684`), the app
+  128px/64px with a height transition and a 400ms hide delay
+  (`NowPlayingVisualizer.vue:108-124`), which is also what resizes the
+  artwork smoothly.
+- **Compact toolbar** stays a row in the guest (`:474`), stacks in the app
+  (`NowPlayingToolbar.vue:274`).
+- **Missing entirely**: the next-up panels and chevrons near the end of a
+  track (`NowPlayingView.vue:293-352`), fullscreen, autoplay.
 
-- `GuestNowPlaying` (desktop) is `NowPlayingView` plus a skip-vote button.
-- On a phone it is the same view in its compact form (`NowPlayingStageMobile`),
-  as `MobileNowPlayingView` uses it.
-- The only other difference: the guest's lyrics have no editing tools
-  (calibrate, sync offset, pick another match, click a line to seek).
+A copy keeps drifting. The goal is that guests see the app's own Now Playing.
+
+## What changes with the server-side party mode
+
+Since `docs/plans/party-mode-server-side.md` (done), connect answers guests
+itself while the host casts: the snapshot, wishes, search, skip votes, and
+`rebuild`-time fallbacks for lyrics and the artist background. A sleeping or
+closed host window no longer changes what a guest gets.
+
+That does not touch this plan's shape: the guest page still consumes all of
+it through `party/store.ts` (`snapshot`, `currentLyrics`, the visualizer SSE,
+the backdrop/cover URLs), whether connect or a live window answered. The
+guest source below wraps that same store. If anything the change helps: the
+guest data is now one snapshot from one place, so the source has less to
+reconcile.
 
 ## Why it was not done that way to begin with
 
@@ -66,11 +135,10 @@ What it carries (reactive):
 - `backdrop`: the artist background URL, the list to step through, the
   current index
 - `visualizer`: available or not, and a `sample(): number[] | null`
-- `capabilities`: `seek`, `calibrateLyrics`, `pickLyricsMatch`,
-  `autoplay`, `fullscreen`, `artistLinks`, `titleLog`, `debug`
-- actions: `seek(t)`, `nextBackground()`, `setLyricsOffset(o)`,
-  `loadLyricsCandidates()`, `toggleAutoplay()`, ... (no-ops or absent where
-  the capability is off)
+- `capabilities`: `seek`, `fullscreen`, `artistLinks`, `titleLog`, `debug`,
+  `lyricsTools` (see "Lyrics" below)
+- actions: `seek(t)`, `nextBackground()`, `toggleFullscreen()`, ... (no-ops
+  or absent where the capability is off)
 
 View state that is a preference and not data (lyrics open, visualizer on,
 artwork hidden) stays with the view. The host keeps it where it is today
@@ -102,10 +170,9 @@ presentation in the view.
 - `CoverArt`: a `src` prop for a URL that is used as is (no batching, no
   app token). `imageUrl` exists but goes through connect's batch with the
   token, so it is not that.
-- `LyricsPanel`: reads lyrics and position from the source; its toolbar
-  shows calibrate/offset/picker only with the matching capability, line
-  clicks seek only with `seek`. `LyricsCandidateList` stays host-only
-  (only mounted when `pickLyricsMatch`).
+- `LyricsPanel`: reads lyrics and position from the source. **The host's
+  tools (calibrate, offset, picker, line-click seek) render only when
+  `capabilities.lyricsTools` is on** - see the next section.
 - `NowPlayingVisualizer` / `AudioVisualizer`: draw from `source.visualizer`.
   `AudioVisualizer`'s local/cast data sources move into the host source;
   what is left is `VisualizerBars`.
@@ -119,10 +186,11 @@ returns nothing, and the party bundle contains none of the host's stores
 ### 4. The guest source
 
 `party/guestSource.ts`: builds the same interface from the party store
-(`party/store.ts`): the snapshot, the extrapolated position, the host's
-lyrics, `/party/api/backdrop?index=`, `/party/api/cover`, and the
-`/party/api/visualizer` SSE fed into `sample()`. Capabilities all off
-except `fullscreen` (harmless, and useful on a TV), no radio title log.
+(`party/store.ts`): the snapshot, the extrapolated position, the host's (or
+connect's fallback) lyrics, `/party/api/backdrop?index=`,
+`/party/api/cover`, and the `/party/api/visualizer` SSE fed into `sample()`.
+Capabilities all off except `fullscreen` (harmless, and useful on a TV), no
+radio title log, and `lyricsTools` off.
 
 The guest page then renders `NowPlayingView` with `compact` on a phone
 (`$vuetify.display.smAndDown`, the app's 960px) and passes the skip button
@@ -130,12 +198,36 @@ into the toolbar slot. `GuestNowPlaying.vue`, its layout test and its
 copies of the corner/flip CSS are deleted; the guest-specific bits that
 remain are the skip button and the source.
 
-### Out of scope
+## Lyrics: read-only for guests, with no toolbar at all
 
-- Radio for guests: the guest snapshot only carries the station name. Keep
-  showing that; the title log stays host-only (`capabilities.titleLog`).
+This is the correction to the 2026-10-06 draft, which treated the missing
+tools as one capability among many. It is a hard rule now:
+
+- A guest's lyrics are **lines only**. No toolbar, no calibrate, no sync
+  offset, no match picker, no click-to-seek. The only control that stays is
+  the existing **resume-autoscroll** button (`GuestNowPlaying.vue:145-154`),
+  which appears only after the guest has scrolled by hand and means nothing
+  to the host.
+- With `capabilities.lyricsTools` off, `LyricsPanel` must render no toolbar
+  markup at all (not a hidden/disabled one), so the guest bundle carries
+  none of that code path. If that is cleaner as a separate read-only
+  variant of the panel than as conditional branches inside it, take that;
+  the presentation still shares `LyricsLines`, the scroll/mask behaviour
+  and the toolbar-less layout string from one place.
+- The guest keeps using whatever match and offset the host (or connect's
+  auto-match) is playing - it just cannot change them.
+
+## Out of scope
+
+- Radio for guests: the guest snapshot only carries the station name and
+  its ICY tag. Keep showing that; the title log stays host-only
+  (`capabilities.titleLog`).
 - The host's queue drawer, transport controls, `MobileTransportControls`:
   guests have their own queue and wish tabs.
+- The guest desktop's side panel (`PartyGuestApp.vue`). The narrowed stage
+  that comes with it is a layout of the guest page, not of Now Playing; the
+  lyrics-width fix above follows from sharing the view and its container,
+  not from removing the panel.
 
 ## Order of work
 
@@ -172,8 +264,8 @@ New tests:
 
 - guest source (jsdom): snapshot to source mapping, capabilities off,
   position extrapolation, backdrop index
-- the guest page renders `NowPlayingView` with the skip button and without
-  lyrics editing tools (jsdom, behaviour only)
+- the guest page renders `NowPlayingView` with the skip button, **and with
+  no lyrics toolbar** (assert the toolbar is absent, not merely disabled)
 - move the guest lyrics scroll test into the shared view's tests, if it is
   not already covered there
 

@@ -8,6 +8,7 @@ import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
 import { useLyricsStore } from '@/stores/lyrics'
 import LyricsPanel from '../LyricsPanel.vue'
+import { provideLyricsSource } from './sourceFixture'
 import { makeSong } from '@/stores/__tests__/fixtures'
 
 const vuetify = createVuetify({ components, directives })
@@ -30,7 +31,9 @@ describe('LyricsPanel autoscroll pausing', () => {
   })
 
   function mountPanel() {
-    return mount(LyricsPanel, { global: { plugins: [vuetify, i18n] } })
+    return mount(LyricsPanel, {
+      global: { plugins: [vuetify, i18n], provide: provideLyricsSource() },
+    })
   }
 
   function resumeButton(wrapper: ReturnType<typeof mountPanel>) {

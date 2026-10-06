@@ -10,6 +10,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useLyricsStore } from '@/stores/lyrics'
 import LyricsPanel from '../LyricsPanel.vue'
 import LyricsCandidateList from '../LyricsCandidateList.vue'
+import { provideLyricsSource } from './sourceFixture'
 import { makeSong } from '@/stores/__tests__/fixtures'
 
 const vuetify = createVuetify({ components, directives })
@@ -30,7 +31,7 @@ describe('LyricsPanel match picker', () => {
   function mountPanel(mobile: boolean) {
     return mount(LyricsPanel, {
       props: { variant: 'compact', mobile },
-      global: { plugins: [vuetify, i18n] },
+      global: { plugins: [vuetify, i18n], provide: provideLyricsSource() },
     })
   }
 

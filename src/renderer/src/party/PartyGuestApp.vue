@@ -48,7 +48,11 @@
         <span class="text-body-small text-medium-emphasis guest-app__me">{{ meName }}</span>
       </header>
       <main class="guest-app__page" :class="{ 'guest-app__page--flush': tab === 'now' }">
-        <guest-now-playing v-if="tab === 'now'" compact @notify="notify" />
+        <now-playing-presentation v-if="tab === 'now'" compact>
+          <template #toolbar-actions>
+            <guest-skip-button @notify="notify" />
+          </template>
+        </now-playing-presentation>
         <guest-radio-hint v-else-if="radio" />
         <guest-queue v-else-if="tab === 'queue'" @notify="notify" />
         <guest-wish v-else @notify="notify" />
@@ -69,7 +73,11 @@
     <!-- A larger screen: Now Playing as the stage, what's next and the
      - search beside it. -->
     <div v-else class="guest-app__desktop">
-      <guest-now-playing class="guest-app__stage" @notify="notify" />
+      <now-playing-presentation class="guest-app__stage">
+        <template #toolbar-actions>
+          <guest-skip-button @notify="notify" />
+        </template>
+      </now-playing-presentation>
       <aside class="guest-app__side">
         <header class="guest-app__side-head">
           <v-icon icon="mdi-lighthouse-on" color="primary" />
@@ -102,16 +110,27 @@
 import { usePartyGuestStore } from './store'
 import { PartyApiError } from './api'
 import { guestErrorKey } from './errors'
-import GuestNowPlaying from './components/GuestNowPlaying.vue'
+import { useGuestNowPlayingSource } from './guestSource'
+import { nowPlayingSourceKey } from '@/components/now-playing/source'
+import NowPlayingPresentation from '@/components/now-playing/NowPlayingPresentation.vue'
+import GuestSkipButton from './components/GuestSkipButton.vue'
 import GuestQueue from './components/GuestQueue.vue'
 import GuestRadioHint from './components/GuestRadioHint.vue'
 import GuestWish from './components/GuestWish.vue'
 
 export default {
   name: 'PartyGuestApp',
-  components: { GuestNowPlaying, GuestQueue, GuestRadioHint, GuestWish },
+  components: { NowPlayingPresentation, GuestSkipButton, GuestQueue, GuestRadioHint, GuestWish },
+  provide() {
+    // The shared Now Playing presentation reads this instead of any store,
+    // so guests and the host render the same components.
+    return { [nowPlayingSourceKey]: this.guestNp.source }
+  },
   data() {
     return {
+      // The guest's own Now Playing source, and everything behind it (view
+      // preferences, colour extraction, the visualizer feed).
+      guestNp: useGuestNowPlayingSource(),
       name: usePartyGuestStore().savedName,
       joining: false,
       joinError: '',
@@ -141,6 +160,7 @@ export default {
   },
   beforeUnmount() {
     this.store.stop()
+    this.guestNp.dispose()
   },
   methods: {
     async join() {

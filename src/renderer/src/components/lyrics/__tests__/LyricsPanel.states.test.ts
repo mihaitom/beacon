@@ -8,6 +8,7 @@ import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
 import { FILE_SOURCE, useLyricsStore } from '@/stores/lyrics'
 import LyricsPanel from '../LyricsPanel.vue'
+import { provideLyricsSource } from './sourceFixture'
 import { makeSong } from '@/stores/__tests__/fixtures'
 
 const vuetify = createVuetify({ components, directives })
@@ -26,7 +27,10 @@ describe('LyricsPanel without lyrics', () => {
   })
 
   function mountPanel(variant: 'compact' | 'immersive' = 'compact') {
-    return mount(LyricsPanel, { props: { variant }, global: { plugins: [vuetify, i18n] } })
+    return mount(LyricsPanel, {
+      props: { variant },
+      global: { plugins: [vuetify, i18n], provide: provideLyricsSource() },
+    })
   }
 
   it('says it is looking while the lookup runs', () => {
@@ -121,7 +125,7 @@ describe('LyricsPanel source link', () => {
   function mountPanel() {
     return mount(LyricsPanel, {
       props: { variant: 'compact' },
-      global: { plugins: [vuetify, i18n] },
+      global: { plugins: [vuetify, i18n], provide: provideLyricsSource() },
     })
   }
 

@@ -1,95 +1,5 @@
 <template>
-  <div
-    ref="root"
-    class="now-playing"
-    :class="{ 'now-playing--compact': compact, 'now-playing--artwork-hidden': artworkHidden }"
-  >
-    <now-playing-backdrop
-      :source="backdropSource"
-      :is-artist="backdropIsArtist"
-      :scrim-style="ambientStyle"
-    />
-
-    <now-playing-toolbar
-      :compact="compact"
-      :is-fullscreen="isFullscreen"
-      :show-visualizer="showVisualizer"
-      :visualizer-available="visualizerAvailable"
-      :artist-background="artistBackground"
-      :can-cycle-background="canCycleBackground"
-      :artwork-hidden="artworkHidden"
-      :debug-enabled="debugEnabled"
-      @toggle-visualizer="showVisualizer = !showVisualizer"
-      @toggle-artwork="hideArtwork = !hideArtwork"
-      @cycle-background="cycleArtistBackground"
-      @toggle-fullscreen="toggleFullscreen"
-      @add-debug-title="addDebugTitle"
-    />
-
-    <!-- The container-query host — see the stage components' own artSize
-     - comments. .now-playing's own grid (see <style>, grid-template-rows:
-     - minmax(0, 1fr) auto) is what makes this take up exactly whatever's left
-     - after the visualizer row, and container-type: size is what lets
-     - artSize/.now-playing__content--split etc. measure *that* real,
-     - instead of the raw viewport (vh/vw), which had no idea how much of
-     - itself the app-bar/PlayerBar/visualizer row had already taken.
-     - A separate element from .now-playing__content on purpose — an
-     - element can't size *itself* using its own cqh/cqw units (circular,
-     - the browser just ignores it), so this one only ever gets plain flex
-     - sizing, and .now-playing__content (and everything inside it)
-     - measures against this ancestor instead. -->
-    <div ref="stage" class="now-playing__stage">
-      <!-- Each mode's stage is its own component (see
-       - NowPlayingStageMobile.vue / NowPlayingStageDesktop.vue): their
-       - layouts share almost nothing. `compact` is fixed per route (the
-       - mobile shell hardcodes it), so this never swaps on a mounted view —
-       - no live remount. -->
-      <now-playing-stage-mobile
-        v-if="compact"
-        :artwork-hidden="artworkHidden"
-        :glow-color="glowColor"
-        :visualizer-color="visualizerColor"
-        :radio-favicon="radioFavicon"
-        :panels="cornerPanels"
-        :title-log-entries="titleLogEntries"
-        @search="searchTitleLog"
-      />
-      <now-playing-stage-desktop
-        v-else
-        :artwork-hidden="artworkHidden"
-        :glow-color="glowColor"
-        :visualizer-color="visualizerColor"
-        :radio-favicon="radioFavicon"
-        :panels="cornerPanels"
-        :title-log-entries="titleLogEntries"
-        @search="searchTitleLog"
-      />
-    </div>
-
-    <!-- Real audio-reactive either way: a local Web Audio analyser during
-     - local playback, or the backend's own real-time analysis (see
-     - connect/core/audio_analysis.py) while casting to a target it can
-     - actually run against — see visualizerAvailable for which can't. The
-     - row itself lives in NowPlayingVisualizer.vue (its own height
-     - transition, mount/hide delay and compact height). -->
-    <now-playing-visualizer
-      :active="visualizerActive"
-      :color="visualizerColor"
-      :compact="compact"
-      @debug-frame="visualizerDebug = $event"
-    />
-
-    <!-- Positioned in .now-playing's own layout (which is already
-     - `position: relative`, see its own CSS), not inside <audio-visualizer>
-     - or .now-playing__visualizer-row above — see VisualizerDebugOverlay's
-     - own comment for why living inside AudioVisualizer either covered the
-     - bars or compressed them, reported live 2026-09-05 both times. This
-     - way it can never do either: it takes no layout space from the
-     - visualizer row at all, floating over whatever's underneath instead
-     - (the artwork/backdrop area, not the bars themselves, for the
-     - top-left corner this actually renders in). -->
-    <visualizer-debug-overlay :debug="visualizerDebug" class="now-playing__visualizer-debug" />
-  </div>
+  <now-playing-presentation :compact="compact" />
 </template>
 
 <script lang="ts">
@@ -98,31 +8,41 @@ import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import { useConnectStore } from '@/stores/connect'
 import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
+import { useAutoplayStore } from '@/stores/autoplay'
 import { useLyricsStore } from '@/stores/lyrics'
-import NowPlayingStageMobile from '@/components/now-playing/NowPlayingStageMobile.vue'
-import NowPlayingStageDesktop from '@/components/now-playing/NowPlayingStageDesktop.vue'
-import NowPlayingBackdrop from '@/components/now-playing/NowPlayingBackdrop.vue'
-import NowPlayingVisualizer from '@/components/now-playing/NowPlayingVisualizer.vue'
-import NowPlayingToolbar from '@/components/now-playing/NowPlayingToolbar.vue'
-import type { NowPlayingPanel } from '@/components/now-playing/types'
+import { nowPlayingSourceKey } from '@/components/now-playing/source'
+import {
+  hostNowPlayingSource,
+  toNowPlayingSong,
+  type HostNowPlayingApi,
+} from '@/components/now-playing/hostSource'
+import NowPlayingPresentation from '@/components/now-playing/NowPlayingPresentation.vue'
+import type { NowPlayingPanel } from '@/components/now-playing/source'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import { getLogLevel } from '@/services/connect/logLevel'
 import { getArtistArt, nextBackground, rememberBackground } from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
 import { useFanartStore } from '@/stores/fanart'
 import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
-import VisualizerDebugOverlay from '@/components/player/VisualizerDebugOverlay.vue'
-import type { VisualizerFrame } from '@/services/connect/types'
+import { useAuthStore } from '@/stores/auth'
 import { getAudioEngine } from '@/services/audioEngine'
+import { VisualizerEventSource } from '@/services/connect/visualizer'
+import type { VisualizerFrame } from '@/services/connect/types'
+import { BAR_COUNT, MAX_FREQ_HZ, MIN_FREQ_HZ, resampleBands } from '@/services/visualizerBands'
 import { extractDominantColor } from '@/services/colorExtractor'
 import { visualizerBarColor } from '@/services/visualizerColor'
-import { appAccent } from '@/services/appAccent'
 import { accountScopedKey } from '@/services/accountKey'
 import type { Song } from '@/types/library'
 
+// See AudioVisualizer's old comment: local analysis updates every frame,
+// the backend's cast frames roughly every 23ms.
+const SMOOTHING_LOCAL = 0.3
+const SMOOTHING_CAST = 0.3
+
 // Warm amber — the same signal color the app is named after (see main.ts's
 // 'beacon' theme) — used whenever there's nothing to extract a color from
-// yet (radio has no artwork, or extraction is still in flight/failed).
+// yet (radio has no artwork, or extraction is still in flight/failed). The
+// presentation falls back to the same value when the accent goes away.
 const FALLBACK_COLOR = '245, 169, 78'
 
 // Persisted across restarts — a one-off UI preference, not session state,
@@ -180,14 +100,7 @@ let titleLogSearchTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'NowPlayingView',
-  components: {
-    VisualizerDebugOverlay,
-    NowPlayingStageMobile,
-    NowPlayingStageDesktop,
-    NowPlayingBackdrop,
-    NowPlayingVisualizer,
-    NowPlayingToolbar,
-  },
+  components: { NowPlayingPresentation },
   props: {
     // Set by MobileNowPlayingView.vue — which of the two stage components
     // renders, the view's own height, and the toolbar's compact layout all
@@ -201,14 +114,17 @@ export default {
       default: false,
     },
   },
+  provide() {
+    // The presentation (stages, toolbar, lyrics, visualizer) reads this
+    // instead of the stores, so the guest page can hand it its own. Built
+    // around this view, which keeps owning the stores and the host-only
+    // lookups.
+    return {
+      [nowPlayingSourceKey]: hostNowPlayingSource(this as unknown as HostNowPlayingApi),
+    }
+  },
   data() {
     return {
-      // The flip-boundary slide — see onStageResized(). Unread by the
-      // template, so writing them costs no re-render.
-      stageObserver: null as ResizeObserver | null,
-      wasFlipped: null as boolean | null,
-      splitOffset: 0,
-      endSlide: null as (() => void) | null,
       // Both belong to the debug button in the toolbar — see its own
       // comment. Off, and empty, for everyone who is not chasing something.
       debugEnabled: false,
@@ -216,10 +132,13 @@ export default {
       // "r, g, b" — kept as a CSS-ready string so the two computed styles
       // below don't each redo the same join().
       extractedColor: null as string | null,
-      // <audio-visualizer>'s own 'debug-frame' event, forwarded straight
-      // through to <visualizer-debug-overlay> — see that component's own
-      // comment for why it's rendered here instead of inside
-      // <audio-visualizer> itself.
+      // The visualizer's own data source (moved out of AudioVisualizer so
+      // the guest page can share the bars without the audio engine): a
+      // Web Audio analyser during local playback, the backend's frames
+      // while casting.
+      frequencyData: null as Uint8Array<ArrayBuffer> | null,
+      visualizerEvents: null as VisualizerEventSource | null,
+      castBands: null as number[] | null,
       visualizerDebug: null as VisualizerFrame['debug'] | null,
       // The current song's artist background from Fanart.tv, when the
       // installation has a key and the artist has one. Shown crisp behind
@@ -247,11 +166,6 @@ export default {
       // The user's wish to hide the artwork; only honored while there is a
       // Fanart.tv background to reveal (see artworkHidden).
       hideArtwork: readHideArtwork(),
-      // Tracks the real DOM state (via the fullscreenchange listener below),
-      // not just "did we ask for it" — the browser/OS can exit fullscreen
-      // on its own (Esc key, an OS-level shortcut), and the button's
-      // icon/title need to reflect that either way.
-      isFullscreen: false,
     }
   },
   computed: {
@@ -264,8 +178,49 @@ export default {
     drawersStore() {
       return useDrawersStore()
     },
+    autoplayStore() {
+      return useAutoplayStore()
+    },
+    authStore() {
+      return useAuthStore()
+    },
+    lyricsStore() {
+      return useLyricsStore()
+    },
     currentSong() {
       return this.playbackStore.currentSong
+    },
+    radioStation() {
+      return this.playbackStore.radioStation
+    },
+    isPlaying(): boolean {
+      return this.playbackStore.isPlaying
+    },
+    localPosition(): number {
+      return this.playbackStore.localPosition
+    },
+    duration(): number {
+      return this.playbackStore.duration
+    },
+    autoplayEnabled(): boolean {
+      return this.autoplayStore.enabled
+    },
+    // The radio snapshot fields the source hands the log panel, lifted here
+    // so hostSource reads them the same way it reads everything else.
+    radioNowPlaying(): string | null {
+      return this.radioMeta.nowPlaying
+    },
+    radioTitleLogComplete(): boolean {
+      return this.radioMeta.titleLogComplete
+    },
+    radioSearchQuery(): string {
+      return this.radioMeta.searchQuery
+    },
+    radioSearchPending(): boolean {
+      return this.radioMeta.searchPending
+    },
+    radioHasActiveSearch(): boolean {
+      return this.radioMeta.hasActiveSearch
     },
     currentArtist(): string {
       return this.currentSong?.artist ?? ''
@@ -310,7 +265,7 @@ export default {
         panels.push({
           key: this.currentSong.id,
           kind: 'song',
-          song: this.currentSong,
+          song: toNowPlayingSong(this.currentSong),
           eyebrow: this.eyebrow,
           title: this.currentSong.title,
           radioTag: null,
@@ -343,7 +298,7 @@ export default {
         panels.push({
           key: this.nextSong.id,
           kind: 'song',
-          song: this.nextSong,
+          song: toNowPlayingSong(this.nextSong),
           eyebrow: this.$t('home.nextUp'),
           title: this.nextSong.title,
           radioTag: null,
@@ -421,6 +376,16 @@ export default {
     },
     visualizerActive() {
       return this.hasPlayable && this.showVisualizer && this.visualizerAvailable
+    },
+    /** 'local' has a real <audio> element to tap, 'cast' gets real data from
+     * the backend instead — see AudioVisualizer's old comment. */
+    visualizerMode(): 'local' | 'cast' | 'idle' {
+      if (!this.visualizerActive) return 'idle'
+      if (!this.playbackStore.isPlaying) return 'idle'
+      return this.playbackStore.isCasting ? 'cast' : 'local'
+    },
+    visualizerSmoothing(): number {
+      return this.visualizerMode === 'cast' ? SMOOTHING_CAST : SMOOTHING_LOCAL
     },
     eyebrow() {
       if (this.currentSong)
@@ -568,16 +533,6 @@ export default {
         void this.preloadNext(song)
       },
     },
-    // Not expected in practice (the web/Docker build is the only place
-    // `compact` can even change live, by resizing the window across
-    // MobileLayout's breakpoint — Electron never shows the mobile layout at
-    // all) — but if it ever does happen mid-fullscreen, the button that
-    // would let the user back out is the exact thing compact mode just hid.
-    compact(isCompact: boolean) {
-      if (isCompact && document.fullscreenElement === this.$refs.root) {
-        void document.exitFullscreen()
-      }
-    },
     showVisualizer(value: boolean) {
       try {
         localStorage.setItem(accountScopedKey(SHOW_VISUALIZER_KEY), String(value))
@@ -594,29 +549,18 @@ export default {
         // next launch.
       }
     },
-    // The whole app's accent follows the bars for as long as this view is on
-    // screen: the artist background's own colour (see visualizerColor) takes
-    // over the theme's primary, so buttons, the player bar and everything
-    // else tint along with the picture. Reset on the way out (beforeUnmount) -
-    // the colour belongs to Now Playing, not to the rest of the app.
-    visualizerColor: {
+    visualizerMode: {
       immediate: true,
-      handler(color: string) {
-        this.applyPrimary(color)
+      handler(mode: 'local' | 'cast' | 'idle') {
+        if (mode === 'cast') this.startVisualizerEvents()
+        else this.stopVisualizerEvents()
       },
     },
   },
+  beforeUnmount() {
+    this.stopVisualizerEvents()
+  },
   mounted() {
-    document.addEventListener('fullscreenchange', this.onFullscreenChange)
-    // Watches the stage rather than the window: the container query that
-    // decides the flip is answered by this box, not by the viewport (a
-    // sidebar opening changes one without the other).
-    const stage = this.$refs.stage as HTMLElement | undefined
-    if (stage) {
-      this.stageObserver = new ResizeObserver(() => this.onStageResized())
-      this.stageObserver.observe(stage)
-    }
-
     // Best-effort, exactly as VisualizerDebugOverlay.vue does it: a failed
     // call just leaves the debug button away, which is the right outcome
     // for anyone who was not looking for it.
@@ -626,30 +570,7 @@ export default {
       })
       .catch(() => {})
   },
-  beforeUnmount() {
-    this.stageObserver?.disconnect()
-    this.endSlide?.()
-    document.removeEventListener('fullscreenchange', this.onFullscreenChange)
-    // The borrowed accent goes back with the view - see the visualizerColor
-    // watcher.
-    this.applyPrimary(FALLBACK_COLOR)
-    // Leaving the view (route change, logout, ...) shouldn't strand the
-    // whole window in fullscreen with nothing controlling it anymore.
-    if (document.fullscreenElement === this.$refs.root) void document.exitFullscreen()
-  },
   methods: {
-    /** Puts `color` - an "r, g, b" triplet, as visualizerColor returns it -
-     * into the theme's primary slot, and mirrors it for the canvas
-     * components that cannot read a CSS variable (the waveform). Going
-     * through the theme object rather than the --v-theme-primary variable
-     * directly is what lets Vuetify re-derive `on-primary` for it, so text
-     * on a primary surface keeps its contrast. */
-    applyPrimary(color: string): void {
-      appAccent.value = color
-      const theme = this.$vuetify.theme
-      const colors = theme.themes[theme.name]?.colors
-      if (colors) colors.primary = `rgb(${color})`
-    },
     /** Hands a keystroke to the store, 200ms after the last one — the same
      * delay every other search box in the app waits (SongsView.vue). This
      * one reaches the backend rather than a local array, so the wait is
@@ -667,80 +588,35 @@ export default {
         void this.radioMeta.search(query)
       }, TITLE_LOG_SEARCH_DEBOUNCE_MS)
     },
-    /** Slides the artwork column across the flip boundary instead of
-     * letting it jump. `position` is not animatable, so the lyrics panel
-     * enters the flex row at its full width in one frame and the centered
-     * column lands ~80px away; this puts it back where it was and
-     * transitions that away, the way TransitionGroup animates a move.
-     *
-     * The flip state is read off the card's computed `display` so the
-     * container query in <style> stays the only place the boundary is
-     * defined. */
-    onStageResized(): void {
-      // The card lives in whichever stage component is rendered, so it is
-      // reached through the stage box rather than a template ref — see
-      // .now-playing__stage below.
-      const stage = this.$refs.stage as HTMLElement | undefined
-      const card = stage?.querySelector<HTMLElement>('.now-playing__flip-card')
-      const primary = stage?.querySelector<HTMLElement>('.now-playing__primary')
-      if (!card || !primary) {
-        this.wasFlipped = null
-        this.splitOffset = 0
-        return
-      }
-      const flipped = getComputedStyle(card).display !== 'contents'
-      const crossed = this.wasFlipped !== null && flipped !== this.wasFlipped
-      this.wasFlipped = flipped
-      if (!flipped) this.splitOffset = this.measureSplitOffset(primary)
-      if (!crossed || this.splitOffset <= 0) return
-      // Only a crossing cancels a running slide. A drag keeps firing this
-      // while one runs, and cancelling there is what made a fast drag snap:
-      // the transform was cleared a frame after it went on.
-      this.endSlide?.()
-      this.slidePrimaryFrom(primary, ((flipped ? -1 : 1) * this.splitOffset) / 2, flipped)
+    // The source's actions. Thin, because the view keeps owning the
+    // underlying stores; they exist so the shared presentation can call
+    // them without importing one.
+    setLyricsOpen(open: boolean): void {
+      this.showLyrics = open
     },
-    /** How much room the lyrics panel takes out of the centred row: its own
-     * width plus the gap before it. Half of that is how far the artwork
-     * column moves when the panel enters or leaves the flow, which is the
-     * jump the slide compensates.
-     *
-     * Measured rather than derived from the previous frame's position: a
-     * fast drag moves the window a long way between two resize callbacks,
-     * and the column's own travel over that distance would then be
-     * mistaken for the crossing. It is read while the row is split and
-     * kept for the crossing back, which cannot measure it - the panel is
-     * out of the flow by then. */
-    measureSplitOffset(primary: HTMLElement): number {
-      const panel = (this.$refs.stage as HTMLElement).querySelector('.now-playing__lyrics')
-      if (!panel) return 0
-      return panel.getBoundingClientRect().right - primary.getBoundingClientRect().right
+    toggleVisualizer(): void {
+      this.showVisualizer = !this.showVisualizer
     },
-    /** Inside the container query .now-playing__primary carries an explicit
-     * rotateY(0deg) (see that rule for Chromium's backface check), and an
-     * inline transform replaces the whole value, rotation included. */
-    primaryTransform(flipped: boolean, dx = 0): string {
-      const parts = [dx ? `translateX(${dx}px)` : '', flipped ? 'rotateY(0deg)' : '']
-      return parts.filter(Boolean).join(' ') || 'none'
+    toggleArtwork(): void {
+      this.hideArtwork = !this.hideArtwork
     },
-    slidePrimaryFrom(primary: HTMLElement, dx: number, flipped: boolean): void {
-      if (Math.abs(dx) < 2) return
-      primary.style.transition = 'none'
-      primary.style.transform = this.primaryTransform(flipped, dx)
-      // Takes the start state before the transition is armed; without it
-      // both writes land in the same frame with nothing to animate from.
-      void primary.offsetWidth
-      primary.style.transition = 'transform 0.45s ease'
-      primary.style.transform = this.primaryTransform(flipped)
-      const done = (): void => {
-        primary.removeEventListener('transitionend', done)
-        primary.style.transition = ''
-        primary.style.transform = ''
-        this.endSlide = null
-      }
-      // Also called by the next crossing and by beforeUnmount, so a slide
-      // never outlives what it was measured against.
-      this.endSlide = done
-      primary.addEventListener('transitionend', done)
+    loadOlderTitles(): void {
+      void this.radioMeta.loadOlder()
+    },
+    setLyricsOffset(offset: number): void {
+      this.lyricsStore.setOffset(offset)
+    },
+    loadLyricsCandidates(): void {
+      if (this.currentSong) void this.lyricsStore.loadCandidates(this.currentSong)
+    },
+    clearLyricsCandidates(): void {
+      this.lyricsStore.clearCandidates()
+    },
+    seek(seconds: number): void {
+      void this.playbackStore.seek(seconds)
+    },
+    toggleAutoplay(): void {
+      this.playbackStore.setAutoplayEnabled(!this.autoplayStore.enabled)
     },
     /** One made-up title, handed to the log the way a real one arrives —
      * see the debug button in the toolbar. The counter goes in the title
@@ -754,29 +630,64 @@ export default {
         ...this.debugTitles,
       ]
     },
-    // Requests fullscreen on this view's own root element, not
-    // document.documentElement — the point is hiding the rest of the app
-    // chrome (app-bar, sidebar, PlayerBar) around it, not just the
-    // OS/browser window frame a document-level fullscreen would leave
-    // everything else still visible underneath.
-    async toggleFullscreen() {
-      try {
-        if (document.fullscreenElement) {
-          await document.exitFullscreen()
-        } else {
-          await (this.$refs.root as HTMLElement).requestFullscreen()
-        }
-      } catch (error) {
-        // Rare in practice (this only ever runs from a direct click, which
-        // is exactly the user-gesture context the Fullscreen API requires)
-        // — a platform/permissions-policy refusal shouldn't be a silent
-        // unhandled rejection, but isn't worth surfacing to the user over
-        // either; the button's icon just won't have changed.
-        console.error('[now-playing] Fullscreen request failed:', error)
+    /** Starts the backend's real-time frames while casting. */
+    startVisualizerEvents() {
+      if (this.visualizerEvents) return
+      const auth = this.authStore
+      this.visualizerEvents = new VisualizerEventSource(
+        auth.apiUrl,
+        auth.connectToken,
+        auth.sessionId,
+      )
+      this.visualizerEvents.onFrame = (frame: VisualizerFrame) => {
+        this.castBands = frame.bands
+        this.visualizerDebug = frame.debug ?? null
       }
+      this.visualizerEvents.start()
     },
-    onFullscreenChange() {
-      this.isFullscreen = document.fullscreenElement === this.$refs.root
+    stopVisualizerEvents() {
+      this.visualizerEvents?.stop()
+      this.visualizerEvents = null
+      this.castBands = null
+      this.visualizerDebug = null
+    },
+    /** What VisualizerBars reads every frame. */
+    visualizerSample(): number[] | null {
+      return this.visualizerMode === 'local'
+        ? this.sampleFrequencies()
+        : resampleBands(this.castBands)
+    },
+    // Raw FFT bins are linearly spaced in frequency, but pitch/perceived
+    // "spread" of musical content is logarithmic — each bar instead covers
+    // its own logarithmically-spaced slice (MIN_FREQ_HZ..MAX_FREQ_HZ),
+    // matching connect/core/audio_analysis.py's analyze_pcm() for 'cast'
+    // mode so both read the same.
+    sampleFrequencies(): number[] | null {
+      let analyser: AnalyserNode
+      try {
+        analyser = getAudioEngine().getAnalyser()
+      } catch (error) {
+        console.error('[now-playing] Web Audio analyser unavailable:', error)
+        return null
+      }
+      if (!this.frequencyData || this.frequencyData.length !== analyser.frequencyBinCount) {
+        this.frequencyData = new Uint8Array(analyser.frequencyBinCount)
+      }
+      analyser.getByteFrequencyData(this.frequencyData)
+      const binHz = analyser.context.sampleRate / analyser.fftSize
+      const bins = this.frequencyData
+      const ratio = MAX_FREQ_HZ / MIN_FREQ_HZ
+      const heights = Array.from<number>({ length: BAR_COUNT })
+      for (let i = 0; i < BAR_COUNT; i++) {
+        const loFreq = MIN_FREQ_HZ * ratio ** (i / BAR_COUNT)
+        const hiFreq = MIN_FREQ_HZ * ratio ** ((i + 1) / BAR_COUNT)
+        const loBin = Math.max(0, Math.floor(loFreq / binHz))
+        const hiBin = Math.min(bins.length, Math.max(loBin + 1, Math.ceil(hiFreq / binHz)))
+        let sum = 0
+        for (let bin = loBin; bin < hiBin; bin++) sum += bins[bin] ?? 0
+        heights[i] = sum / (hiBin - loBin) / 255
+      }
+      return heights
     },
     async loadColor(url: string) {
       const color = await extractDominantColor(url)
@@ -881,137 +792,3 @@ export default {
   },
 }
 </script>
-
-<style scoped>
-.now-playing {
-  width: 100%;
-  /* NOT height: 100% — Vuetify's own .v-main is `flex: 1 0 auto` (flex-
-   * shrink: 0) inside .v-application__wrap, which itself is only
-   * `min-height: 100dvh`, never a hard max. Nothing between here and the
-   * actual <html> ever caps router-view's height against the viewport —
-   * "100%" of an ancestor chain that's really "auto, whatever my own
-   * content needs" isn't a cap at all, just height: auto by another name.
-   * Computed directly from the real viewport instead, the same pattern
-   * Vuetify's own docs use for "fill the space between the app-bar and
-   * whatever's docked at the bottom" — --v-layout-top/--v-layout-bottom
-   * are the exact live pixel heights Vuetify's layout system already
-   * songs for every registered app-bar/footer (see composables/layout.js),
-   * set as inherited CSS custom properties, not something this file has to
-   * duplicate or guess. */
-  /* svh, not dvh, plus a plain-vh line under it for engines that know
-   * neither.
-   *
-   * `dvh` is only right if the browser subtracts its own chrome, and not
-   * every one does: Orion on iOS reports 100dvh as though its bottom bar
-   * (address field plus button row, some 200px) were not there, so this
-   * box came out that much taller than the visible area and the page
-   * scrolled by exactly that - artwork out of the top, a black band above
-   * the tab bar. Safari made the same mistake, small enough to shrug at.
-   *
-   * `svh` is the smallest viewport height, the one with every dynamic
-   * toolbar shown, so it cannot overflow: where a toolbar later hides, a
-   * strip of unused space is left rather than the page growing past the
-   * screen. That fixed Safari. Orion is unchanged by it - it gets svh
-   * wrong the same way - and is deliberately left there: chasing it needs
-   * the real height measured through visualViewport in JS, which is a lot
-   * of machinery for one uncommon browser. On a desktop window nothing is
-   * dynamic and all three units are the same number.
-   *
-   * Two declarations because an engine that knows neither drops the line
-   * entirely and falls back to `auto`, which nothing in the chain above
-   * caps - the page then grows to whatever the content needs. */
-  height: calc(100vh - var(--v-layout-top, 0px) - var(--v-layout-bottom, 0px));
-  height: calc(100svh - var(--v-layout-top, 0px) - var(--v-layout-bottom, 0px));
-  position: relative;
-  /* Grid, not flex — two rows, .now-playing__stage and
-   * .now-playing__visualizer-row, sharing this element's (now definite,
-   * see height above) height. minmax(0, 1fr) is grid's own "take whatever's
-   * left, but you're allowed to shrink below your content's natural size"
-   * — the exact thing flex needed a separate min-height: 0 escape hatch
-   * for, here it's just how 1fr already behaves. auto for the visualizer
-   * row sizes it to the visualizer's own content (128px when mounted,
-   * collapses to 0 on its own when it isn't — no manual toggling needed).
-   * justify-items: center centers both rows horizontally. */
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  justify-items: center;
-  overflow: hidden;
-  /* Opaque fallback behind the two layers below — matters for radio, where
-   * the backdrop has no image to show. */
-  background: #12141c;
-}
-
-/* Mirrors the toolbar's own corner placement (opposite side, so
- * the two never collide) — see VisualizerDebugOverlay's own comment for
- * why this lives here rather than inside <audio-visualizer>/the visualizer
- * row: this way it takes no layout space from the bars at all, in a corner
- * they don't reach into either. Applied straight to
- * <visualizer-debug-overlay>'s own root (class fallthrough) — that root is
- * itself v-if'd (nothing rendered, not just hidden, while there's no debug
- * frame to show), so there's no empty positioned element left over to
- * worry about eating clicks the rest of the time. */
-.now-playing__visualizer-debug {
-  position: absolute;
-  bottom: 370px;
-  left: 32px;
-  z-index: 2;
-}
-
-/* Row 1 of .now-playing's grid (minmax(0, 1fr), see above) — takes up
- * exactly "whatever's left" after the visualizer row has taken its share,
- * shrinkable below its own content's natural size like any minmax(0, ...)
- * grid song. width/height: 100% is what turns this into the measurement
- * basis for the stage components' artSize cqh/cqw units via container-type:
- * size — a *real* available-space measurement, unlike vh/vw which had no
- * idea how much of the raw viewport the app-bar/PlayerBar/visualizer row had
- * already taken. */
-.now-playing__stage {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  container-type: size;
-  container-name: now-playing-stage;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-/* Mobile (see the `compact` prop) — same view, much less room to work with:
- * squeezed under MobileTransportControls.vue and the tab bar instead of the
- * near-full-viewport height this gets on desktop. Everything not overridden
- * here (backdrop, glow, lyrics-split, visualizer positioning) stays as-is.
- *
- * .now-playing.now-playing--compact (compound, not just the modifier class
- * alone) is deliberate — needs to outrank the base .now-playing rule's own
- * height regardless of source order, same reasoning as
- * .sheet-title-row button.btn-sheet-action elsewhere in this app. */
-.now-playing.now-playing--compact {
-  /* NOT the base rule's calc(100svh - ...) — that's the right height for
-   * .now-playing when it's the *entire* routed view (desktop), but here
-   * it's nested inside MobileNowPlayingView.vue's own grid, sharing that
-   * same total viewport height with MobileTransportControls.vue below it.
-   * Claiming the full viewport-minus-chrome amount for itself *too* made
-   * it overflow its own grid cell there (.mobile-now-playing__art, sized
-   * by minmax(0, 1fr) to *already* exclude the transport controls' own
-   * share) — the excess got clipped by that cell's overflow: hidden, and
-   * since this element's own internal grid lays out top-to-bottom (art
-   * stage, then the visualizer row), the clipped part was the bottom: the
-   * visualizer, pushed below the visible area entirely. 100% instead just
-   * fills whatever height that already-correctly-sized grid cell gives it. */
-  height: 100%;
-}
-
-.now-playing--compact .now-playing__visualizer-debug {
-  /* bottom: auto is load-bearing, not tidying: the desktop rule above sets
-   * bottom: 180px, and an absolutely positioned box with height: auto and
-   * *both* offsets given gets stretched to span between them. Adding top
-   * alone turned this small badge into a tall dark column of its own
-   * translucent background, straight down the artwork. */
-  top: 8px;
-  bottom: auto;
-  left: 8px;
-}
-</style>

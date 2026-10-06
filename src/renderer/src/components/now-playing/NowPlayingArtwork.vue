@@ -1,7 +1,13 @@
 <template>
   <div class="now-playing__art-wrap" :class="{ 'now-playing__art-wrap--compact': compact }">
-    <div class="now-playing__art-glow" :style="{ background: glowColor }" />
-    <cover-art v-if="song" :cover-art-id="song.coverArtId" :size="artSize" class="cover-shadow" />
+    <div class="now-playing__art-glow" :style="{ background: source.glowColor }" />
+    <cover-art
+      v-if="source.song"
+      :cover-art-id="source.song.coverArtId"
+      :src="source.song.coverUrl"
+      :size="artSize"
+      class="cover-shadow"
+    />
     <!-- No cover-shadow/card background for a transparent icon (see
      - radioIconIsTransparent) — a real card treatment around a logo that's
      - just floating on transparency looks like a broken image rather than a
@@ -9,7 +15,8 @@
     <cover-art
       v-else
       contain
-      :radio-favicon="radioFavicon"
+      :radio-favicon="source.radio?.favicon ?? null"
+      :src="source.radio?.logoUrl ?? null"
       :size="artSize"
       fallback-icon="mdi-radio"
       :class="radioIconIsTransparent ? 'radio-cover-art--transparent' : 'cover-shadow'"
@@ -20,29 +27,16 @@
 
 <script lang="ts">
 import CoverArt from '@/components/library/CoverArt.vue'
-import type { RadioFaviconRequest } from '@/services/connect/radio'
-import type { Song } from '@/types/library'
+import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
 
 export default {
   name: 'NowPlayingArtwork',
   components: { CoverArt },
+  mixins: [nowPlayingSourceMixin],
   props: {
-    /** The current song, or null for radio (which shows the station logo). */
-    song: {
-      type: Object as () => Song | null,
-      default: null,
-    },
-    radioFavicon: {
-      type: Object as () => RadioFaviconRequest | null,
-      default: null,
-    },
     /** A CSS size string from the parent's own artSize — a plain CSS value
      * cannot read a component's computed prop, so it is passed down. */
     artSize: {
-      type: String,
-      required: true,
-    },
-    glowColor: {
       type: String,
       required: true,
     },
@@ -64,7 +58,7 @@ export default {
     // A different station's logo is a different shape — drop the previous
     // one's treatment the moment the station changes, rather than carrying
     // it until the new logo arrives and <cover-art> reports its own.
-    radioFavicon() {
+    'source.radio'() {
       this.radioIconIsTransparent = false
     },
   },

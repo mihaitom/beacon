@@ -20,20 +20,37 @@
      - disagreeing; a line of text works in both. -->
     <lyrics-lines
       v-model:autoscroll-paused="autoscrollPaused"
-      :lines="lyricsStore.lines"
-      :synced="lyricsStore.synced"
-      :position="playbackStore.localPosition - lyricsStore.offset"
-      :status="statusMessage"
+      :lines="source.lyrics.lines"
+      :synced="source.lyrics.synced"
+      :position="source.position - source.lyrics.offset"
+      :status="source.lyrics.status"
       :variant="variant"
       :calibrating="calibrating"
-      :song-key="lyricsStore.songId"
-      interactive
+      :song-key="source.lyrics.songKey"
+      :interactive="source.capabilities.lyricsTools"
       @line-click="onLineClick"
     />
 
-    <!-- Shown whenever there's a result to act on — including "not found",
-     - where picking a different match is the most useful thing to offer. -->
-    <div v-if="!lyricsStore.loading" class="lyrics-panel__toolbar">
+    <!-- A party guest has no tools, but keeps the one control that is theirs:
+     * handing the list back after scrolling it by hand. Floated where the
+     * guest always showed it. -->
+    <v-btn
+      v-if="!source.capabilities.lyricsTools && autoscrollPaused"
+      icon="mdi-format-vertical-align-center"
+      size="small"
+      variant="text"
+      color="primary"
+      class="lyrics-panel__resume-float"
+      :title="$t('lyrics.resumeAutoscroll')"
+      @click="resumeAutoscroll"
+    />
+
+    <!-- The host's tools. Not rendered at all for a guest, so none of this
+     - markup or behaviour reaches the guest page. -->
+    <div
+      v-if="source.capabilities.lyricsTools && !source.lyrics.loading"
+      class="lyrics-panel__toolbar"
+    >
       <div v-if="calibrating" class="lyrics-panel__calibrate-hint">
         {{ $t('lyrics.calibrateHint') }}
       </div>
@@ -41,7 +58,7 @@
       <!-- The matched lyrics are often a slightly different edit/version
        - than this exact audio file — this is the escape hatch for "close
        - but consistently early/late", not something most songs need. -->
-      <div v-if="lyricsStore.synced" class="lyrics-panel__sync">
+      <div v-if="source.lyrics.synced" class="lyrics-panel__sync">
         <!-- Only while autoscroll is off, which is exactly when it means
          - anything: scrolling by hand hands the list to the reader and
          - keeps it there (see onManualScroll), and this is how it goes
@@ -73,13 +90,13 @@
           variant="text"
           :density="mobile ? 'comfortable' : 'compact'"
           :title="$t('lyrics.syncEarlier')"
-          @click="lyricsStore.adjustOffset(-0.1)"
+          @click="source.setLyricsOffset(source.lyrics.offset - 0.1)"
         />
         <span
           class="lyrics-panel__sync-label"
-          :class="{ 'lyrics-panel__sync-label--resettable': lyricsStore.offset !== 0 }"
-          :title="lyricsStore.offset !== 0 ? $t('lyrics.syncReset') : undefined"
-          @click="lyricsStore.offset !== 0 && lyricsStore.adjustOffset(-lyricsStore.offset)"
+          :class="{ 'lyrics-panel__sync-label--resettable': source.lyrics.offset !== 0 }"
+          :title="source.lyrics.offset !== 0 ? $t('lyrics.syncReset') : undefined"
+          @click="source.lyrics.offset !== 0 && source.resetLyricsOffset(source.lyrics.offset)"
         >
           {{ offsetLabel }}
         </span>
@@ -89,7 +106,7 @@
           variant="text"
           :density="mobile ? 'comfortable' : 'compact'"
           :title="$t('lyrics.syncLater')"
-          @click="lyricsStore.adjustOffset(0.1)"
+          @click="source.setLyricsOffset(source.lyrics.offset + 0.1)"
         />
       </div>
 
@@ -101,20 +118,23 @@
          - plays rather than thrown away. -->
         <div class="lyrics-panel__attribution">
           <a
-            v-if="sourceUrl"
-            :href="sourceUrl"
+            v-if="source.lyrics.sourceUrl"
+            :href="source.lyrics.sourceUrl"
             target="_blank"
             rel="noopener"
             class="lyrics-panel__source lyrics-panel__source--link"
-            :title="$t('library.viewOnService', { service: sourceLabel })"
-            >{{ $t('lyrics.source', { source: sourceLabel }) }}</a
+            :title="$t('library.viewOnService', { service: source.lyrics.sourceLabel })"
+            >{{ $t('lyrics.source', { source: source.lyrics.sourceLabel }) }}</a
           >
-          <span v-else-if="sourceLabel" class="lyrics-panel__source">{{
-            $t('lyrics.source', { source: sourceLabel })
+          <span v-else-if="source.lyrics.sourceLabel" class="lyrics-panel__source">{{
+            $t('lyrics.source', { source: source.lyrics.sourceLabel })
           }}</span>
-          <span v-for="credit in lyricsStore.credits" :key="credit" class="lyrics-panel__credit">{{
-            credit
-          }}</span>
+          <span
+            v-for="credit in source.lyrics.credits"
+            :key="credit"
+            class="lyrics-panel__credit"
+            >{{ credit }}</span
+          >
         </div>
         <!-- The auto-matched lyrics can be for the wrong edit of a song
          - entirely (not just mistimed) — this is the escape hatch for that,
@@ -181,16 +201,15 @@
 
 <script lang="ts">
 import type { PropType } from 'vue'
-import { usePlaybackStore } from '@/stores/playback'
-import { FILE_SOURCE, useLyricsStore } from '@/stores/lyrics'
 import type { LyricLine } from '@/services/lyrics/parseLrc'
-import { lyricsPageUrl } from '@/services/lyrics/providerUrl'
 import LyricsCandidateList from '@/components/lyrics/LyricsCandidateList.vue'
 import LyricsLines from '@/components/lyrics/LyricsLines.vue'
+import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
 
 export default {
   name: 'LyricsPanel',
   components: { LyricsCandidateList, LyricsLines },
+  mixins: [nowPlayingSourceMixin],
   props: {
     variant: {
       type: String as PropType<'compact' | 'immersive'>,
@@ -221,65 +240,24 @@ export default {
     }
   },
   computed: {
-    playbackStore() {
-      return usePlaybackStore()
-    },
-    lyricsStore() {
-      return useLyricsStore()
-    },
-    /** What to say when there are no lines to show, or null when there
-     * are.
-     *
-     * "Looking" covers two cases, not one: a lookup that is running, and a
-     * song the store has no answer about at all yet — which is what a panel
-     * sees for the beat between being shown and whoever showed it asking
-     * for the lyrics. Reporting "none found" in that gap would be claiming
-     * an outcome nobody has looked for, and it is the state a freshly
-     * opened lyrics drawer starts in. */
-    statusMessage(): string | null {
-      if (this.lyricsStore.loading) return this.$t('lyrics.searching')
-      // Lines win over any of this: whatever is in the store is real
-      // lyrics, and a message that hid them would be worse than one that
-      // is a moment out of date.
-      if (!this.lyricsStore.error && this.lyricsStore.lines.length > 0) return null
-      // Nothing to show, and nobody has asked about *this* song yet — the
-      // beat between a panel appearing and whoever showed it starting the
-      // lookup, which is where a freshly opened lyrics drawer begins.
-      const playing = this.currentSong?.id ?? null
-      if (playing !== null && this.lyricsStore.songId !== playing) {
-        return this.$t('lyrics.searching')
-      }
-      return this.$t('lyrics.notFound')
-    },
     // Spelled out as "later"/"earlier" rather than a +/- sign — the sign
     // requires remembering which direction it maps to (does + mean the
     // lyrics or the audio moves?); the word doesn't.
     offsetLabel() {
-      const offset = this.lyricsStore.offset
+      const offset = this.source.lyrics.offset
       if (offset === 0) return this.$t('lyrics.sync')
       const seconds = Math.abs(offset).toFixed(1)
       return offset > 0
         ? this.$t('lyrics.laterBy', { seconds })
         : this.$t('lyrics.earlierBy', { seconds })
     },
-    currentSong() {
-      return this.playbackStore.currentSong
-    },
-    sourceLabel() {
-      const source = this.lyricsStore.source
-      if (!source) return null
-      return source === FILE_SOURCE ? this.$t('lyrics.sourceFile') : source
-    },
-    sourceUrl() {
-      return lyricsPageUrl(this.lyricsStore.source, this.lyricsStore.remoteId)
-    },
   },
   watch: {
     // A new song: calibration and the held match candidates belong to
     // the old one. LyricsLines resets its own scroll.
-    'lyricsStore.songId'() {
+    'source.lyrics.songKey'() {
       this.calibrating = false
-      this.lyricsStore.clearCandidates()
+      this.source.clearLyricsCandidates()
     },
     // Freeze autoscroll for the duration of calibration — the list
     // creeping along while the user is trying to click a specific line
@@ -302,14 +280,14 @@ export default {
     onLineClick(line: LyricLine) {
       if (this.calibrating) {
         // Solve for the offset that makes *this* line the active one right
-        // now: activeIndex compares (localPosition - offset) against
-        // line.time, so the offset that makes those equal is their
-        // difference at this exact instant.
-        this.lyricsStore.setOffset(this.playbackStore.localPosition - line.time)
+        // now: activeIndex compares (position - offset) against line.time,
+        // so the offset that makes those equal is their difference at this
+        // exact instant.
+        this.source.setLyricsOffset(this.source.position - line.time)
         this.calibrating = false
         return
       }
-      void this.playbackStore.seek(line.time + this.lyricsStore.offset)
+      this.source.seek(line.time + this.source.lyrics.offset)
     },
     // Candidates are fetched on open (not eagerly) — same reasoning as
     // ensureLoaded() itself not being eager: don't hit three third-party
@@ -320,7 +298,7 @@ export default {
     // back, so every open after the first is instant. The song-change
     // watcher above is what drops them.
     onPickerToggle(open: boolean) {
-      if (open && this.currentSong) void this.lyricsStore.loadCandidates(this.currentSong)
+      if (open) this.source.loadLyricsCandidates()
     },
     // v-bottom-sheet only emits update:model-value for state changes it
     // initiates itself (backdrop click, swipe-down) — setting its v-model
@@ -351,6 +329,7 @@ export default {
 
 <style scoped>
 .lyrics-panel {
+  position: relative;
   height: 100%;
   min-height: 0;
   display: flex;
@@ -403,6 +382,15 @@ export default {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+}
+
+/* Where the guest's one control sits, with no toolbar to hold it: the
+ * bottom-right corner of the panel, as the guest page always showed it. */
+.lyrics-panel__resume-float {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 1;
 }
 
 .lyrics-panel__meta {
