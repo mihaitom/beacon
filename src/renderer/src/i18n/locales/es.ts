@@ -457,6 +457,8 @@ export default {
     pairHint:
       'Escanea este código con la cámara de tu teléfono, o abre la dirección de abajo e introduce el PIN.',
     address: 'Dirección',
+    copyAddress: 'Copiar dirección',
+    copied: 'Copiado',
     turnOff: 'Desactivar',
     regenerate: 'Regenerar código',
     needsRegenerate:
@@ -544,6 +546,8 @@ export default {
     homeAutomationKeyActive: 'Hay una clave activa',
     homeAutomationKeyMissing: 'Aún no hay clave',
     homeAutomationKey: 'Clave',
+    homeAutomationCopyKey: 'Copiar clave',
+    homeAutomationKeyCopied: 'Copiado',
     homeAutomationKeyOnce:
       'Solo se muestra ahora. Cópiala en tu integración; si la pierdes, crea una nueva.',
     homeAutomationGenerate: 'Crear clave',

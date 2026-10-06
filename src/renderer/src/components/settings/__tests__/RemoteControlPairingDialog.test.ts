@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
@@ -48,6 +48,38 @@ function closeRequests(wrapper: ReturnType<typeof mountDialog>['wrapper']) {
 describe('RemoteControlPairingDialog', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  /** The address is opened on another device, so it has to be copyable, and
+   * the copy button should say that it worked. */
+  it('puts the address on the clipboard and confirms it did', async () => {
+    const { wrapper, store } = mountDialog()
+    await open(wrapper)
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+
+    await (wrapper.vm as unknown as { copyAddress(): Promise<void> }).copyAddress()
+
+    expect(writeText).toHaveBeenCalledWith(store.lanUrl)
+    // What turns the icon into a checkmark.
+    expect((wrapper.vm as unknown as { addressCopied: boolean }).addressCopied).toBe(true)
+  })
+
+  it('does not claim success when the clipboard refuses', async () => {
+    const { wrapper } = mountDialog()
+    await open(wrapper)
+    vi.stubGlobal('navigator', {
+      clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+    })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await (wrapper.vm as unknown as { copyAddress(): Promise<void> }).copyAddress()
+
+    expect((wrapper.vm as unknown as { addressCopied: boolean }).addressCopied).toBe(false)
   })
 
   /** By the time the code has been scanned the user is holding a phone,

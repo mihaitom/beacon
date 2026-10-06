@@ -29,11 +29,24 @@
             variant="solo-filled"
             density="compact"
             spellcheck="false"
-            append-inner-icon="mdi-content-copy"
             hide-details
             class="home-automation__field"
-            @click:append-inner="copy(newKey)"
-          />
+          >
+            <!-- The checkmark for a moment, like the other copy buttons in
+             - the app - a toast is too much for something this small. -->
+            <template #append-inner>
+              <v-icon
+                :icon="keyCopied ? 'mdi-check' : 'mdi-content-copy'"
+                :color="keyCopied ? 'success' : undefined"
+                :title="
+                  keyCopied
+                    ? $t('settings.homeAutomationKeyCopied')
+                    : $t('settings.homeAutomationCopyKey')
+                "
+                @click="copy(newKey)"
+              />
+            </template>
+          </v-text-field>
           <p class="setting__hint">{{ $t('settings.homeAutomationKeyOnce') }}</p>
         </template>
 
@@ -147,6 +160,8 @@ export default {
       busy: false,
       /** Only right after generating: the key is never sent again. */
       newKey: '',
+      keyCopied: false,
+      keyCopiedTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       portInfo: null as ConnectPortInfo | null,
       portInput: '' as string | number,
       portBusy: false,
@@ -193,6 +208,9 @@ export default {
   },
   created() {
     if (this.isElectron) void this.loadPort()
+  },
+  beforeUnmount() {
+    clearTimeout(this.keyCopiedTimer)
   },
   methods: {
     async loadPort() {
@@ -257,7 +275,13 @@ export default {
         await navigator.clipboard.writeText(text)
       } catch (error) {
         console.error('[settings] Failed to copy:', error)
+        return
       }
+      clearTimeout(this.keyCopiedTimer)
+      this.keyCopied = true
+      this.keyCopiedTimer = setTimeout(() => {
+        this.keyCopied = false
+      }, 2000)
     },
     toastError(error: unknown) {
       this.$emitter.emit('toast', {

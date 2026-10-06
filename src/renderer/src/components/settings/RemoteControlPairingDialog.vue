@@ -35,10 +35,23 @@
             readonly
             variant="solo-filled"
             density="compact"
-            append-inner-icon="mdi-content-copy"
+            :hint="addressCopied ? $t('remoteControl.copied') : undefined"
+            :persistent-hint="addressCopied"
             @focus="touched = true"
-            @click:append-inner="copyAddress"
-          />
+          >
+            <!-- The checkmark for a moment, as the party link and the Quick
+             - Connect code do - a toast is too much for something this small. -->
+            <template #append-inner>
+              <v-icon
+                :icon="addressCopied ? 'mdi-check' : 'mdi-content-copy'"
+                :color="addressCopied ? 'success' : undefined"
+                :title="
+                  addressCopied ? $t('remoteControl.copied') : $t('remoteControl.copyAddress')
+                "
+                @click="copyAddress"
+              />
+            </template>
+          </v-text-field>
         </template>
       </v-card-text>
       <!-- Switching the feature off lives here rather than on the button
@@ -78,6 +91,8 @@ export default {
     return {
       regenerating: false,
       disabling: false,
+      addressCopied: false,
+      addressCopiedTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       // Whether this dialog has been used for anything other than holding
       // the QR code up — see the phoneConnectedSeq watcher below, which
       // leaves it alone once it has.
@@ -136,6 +151,9 @@ export default {
       this.onClose(false)
     },
   },
+  beforeUnmount() {
+    clearTimeout(this.addressCopiedTimer)
+  },
   methods: {
     async renderQr() {
       if (this.store.needsRegenerate || !this.store.password) return
@@ -187,7 +205,13 @@ export default {
         await navigator.clipboard.writeText(this.store.lanUrl)
       } catch (error) {
         console.error('[remoteControl] Failed to copy address:', error)
+        return
       }
+      clearTimeout(this.addressCopiedTimer)
+      this.addressCopied = true
+      this.addressCopiedTimer = setTimeout(() => {
+        this.addressCopied = false
+      }, 2000)
     },
     onClose(value: boolean) {
       this.$emit('update:modelValue', value)

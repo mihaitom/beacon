@@ -60,6 +60,7 @@ describe('HomeAutomationSection', () => {
 
   afterEach(() => {
     delete (window as unknown as { api?: unknown }).api
+    vi.unstubAllGlobals()
   })
 
   it('renders nothing in the web build', async () => {
@@ -114,6 +115,32 @@ describe('HomeAutomationSection', () => {
     await flushPromises()
 
     expect(emit).toHaveBeenCalledWith('toast', expect.objectContaining({ level: 'error' }))
+  })
+
+  /** The key is only shown once, so copying it out is the main way to get
+   * it anywhere - and the copy button should say that it worked. */
+  it('puts the key on the clipboard and confirms it did', async () => {
+    const { wrapper } = await mountSection()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+
+    await (wrapper.vm as unknown as { copy(text: string): Promise<void> }).copy('the-key')
+
+    expect(writeText).toHaveBeenCalledWith('the-key')
+    // What turns the icon into a checkmark.
+    expect((wrapper.vm as unknown as { keyCopied: boolean }).keyCopied).toBe(true)
+  })
+
+  it('does not claim success when the clipboard refuses', async () => {
+    const { wrapper } = await mountSection()
+    vi.stubGlobal('navigator', {
+      clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+    })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await (wrapper.vm as unknown as { copy(text: string): Promise<void> }).copy('the-key')
+
+    expect((wrapper.vm as unknown as { keyCopied: boolean }).keyCopied).toBe(false)
   })
 
   it('stores a valid port', async () => {

@@ -453,6 +453,8 @@ export default {
     pairHint:
       "Scan this code with your phone's camera, or open the address below and enter the PIN.",
     address: 'Address',
+    copyAddress: 'Copy address',
+    copied: 'Copied',
     turnOff: 'Turn off',
     regenerate: 'Regenerate code',
     needsRegenerate:
@@ -540,6 +542,8 @@ export default {
     homeAutomationKeyActive: 'A key is active',
     homeAutomationKeyMissing: 'No key yet',
     homeAutomationKey: 'Key',
+    homeAutomationCopyKey: 'Copy key',
+    homeAutomationKeyCopied: 'Copied',
     homeAutomationKeyOnce:
       'Shown only now. Copy it into your integration; if you lose it, create a new one.',
     homeAutomationGenerate: 'Create key',
