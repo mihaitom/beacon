@@ -423,8 +423,6 @@ export default {
     offlineTitle: 'Fête injoignable',
     offlineText: 'Beacon ne répond pas pour le moment. Réessaie dans un instant.',
     nothingPlaying: 'Rien ne joue en ce moment.',
-    nowPlaying: 'En cours',
-    onAir: 'En direct',
     radioTitle: 'La radio est en cours',
     radioText: 'Les demandes ne fonctionnent que pendant la lecture de musique de la bibliothèque.',
     voteSkip: 'Voter pour passer',

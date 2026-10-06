@@ -84,7 +84,7 @@
           <div v-if="artworkLarge" class="guest-np__primary">
             <div class="guest-np__art-wrap">
               <div class="guest-np__art-glow" :style="{ background: glowColor }" />
-              <img v-if="coverUrl" :src="coverUrl" alt="" class="guest-np__art cover-shadow" />
+              <img v-if="coverUrl" :src="coverUrl" alt="" class="guest-np__art" :class="artClass" />
               <div v-else class="guest-np__art guest-np__art--empty">
                 <v-icon :icon="radio ? 'mdi-radio' : 'mdi-album'" size="64" />
               </div>
@@ -93,6 +93,9 @@
             <h1 class="detail-title guest-np__title">{{ title }}</h1>
             <div v-if="subtitle" class="text-title-large text-medium-emphasis">
               {{ subtitle }}
+            </div>
+            <div v-if="song?.album" class="text-body-medium text-medium-emphasis">
+              {{ song.album }}
             </div>
             <v-chip
               v-if="song?.wished_by"
@@ -118,6 +121,9 @@
               <h1 class="detail-title guest-np__title">{{ title }}</h1>
               <div v-if="subtitle" class="text-title-large text-medium-emphasis guest-np__artist">
                 {{ subtitle }}
+              </div>
+              <div v-if="song?.album" class="text-body-medium text-medium-emphasis guest-np__album">
+                {{ song.album }}
               </div>
               <div v-if="song?.wished_by" class="text-body-small guest-np__wish">
                 <v-icon icon="mdi-party-popper" size="14" />
@@ -219,6 +225,8 @@ export default {
       // the host's.
       backdropIndex: null as number | null,
       bands: null as number[] | null,
+      // Until connect's reading arrives, the logo gets the normal card.
+      logoTransparent: false,
       visualizerEvents: null as EventSource | null,
     }
   },
@@ -249,7 +257,8 @@ export default {
       return this.largeArtwork || !this.snapshot?.backdrop
     },
     eyebrow(): string {
-      return this.radio ? this.$t('partyGuest.onAir') : this.$t('partyGuest.nowPlaying')
+      if (this.radio) return this.$t('home.radioEyebrow')
+      return this.snapshot?.playing ? this.$t('home.nowPlaying') : this.$t('home.paused')
     },
     /** On radio as in the app (SongInfo.vue): the ICY title on top, the
      * station under it - or the station alone while it sends none. */
@@ -266,6 +275,16 @@ export default {
     },
     coverUrl(): string | null {
       return this.song?.cover ?? this.radio?.logo ?? null
+    },
+    /** NowPlayingArtwork's treatment: a station logo is fitted rather than
+     * cropped, and one that floats on transparency gets no card around it. */
+    artClass(): Record<string, boolean> {
+      const logo = !this.song && Boolean(this.radio?.logo)
+      return {
+        'guest-np__art--logo': logo,
+        'guest-np__art--transparent': logo && this.logoTransparent,
+        'cover-shadow': !(logo && this.logoTransparent),
+      }
     },
     backdropSource(): string | null {
       if (this.snapshot?.backdrop && this.song) {
@@ -305,11 +324,20 @@ export default {
     },
   },
   watch: {
-    coverUrl: {
+    // The song's cover only: the app keeps its amber for a station, which
+    // is also what keeps a dark logo readable against the glow.
+    'song.cover': {
       immediate: true,
-      handler(url: string | null) {
+      handler(url: string | null | undefined) {
         this.coverColor = null
         if (url) void this.loadColor(url, 'coverColor')
+      },
+    },
+    'radio.logo': {
+      immediate: true,
+      handler(url: string | null | undefined) {
+        this.logoTransparent = false
+        if (url) void this.loadLogoTransparency(url)
       },
     },
     // immediate: the picture already there when the page opens needs its
@@ -359,9 +387,21 @@ export default {
     async loadColor(url: string, target: 'coverColor' | 'backdropColor') {
       const rgb = await extractDominantColor(url)
       // The song or the picture may have changed while this loaded.
-      const current = target === 'coverColor' ? this.coverUrl : this.backdropSource
+      const current = target === 'coverColor' ? this.song?.cover : this.backdropSource
       if (url !== current) return
       this[target] = rgb ? rgb.join(', ') : null
+    },
+    /** connect measures the logo (routes/radio.py's _has_transparency) and
+     * says so in a header an <img> cannot read; the image itself then comes
+     * out of the browser's cache. */
+    async loadLogoTransparency(url: string) {
+      try {
+        const response = await fetch(url, { credentials: 'same-origin' })
+        if (url !== this.radio?.logo) return
+        this.logoTransparent = response.headers.get('X-Has-Transparency') === 'true'
+      } catch {
+        // Shown with a card, as before its reading arrives.
+      }
     },
     /** NowPlayingView's applyPrimary: through the theme object, so Vuetify
      * re-derives on-primary for the new colour. */
@@ -514,6 +554,15 @@ export default {
   border-radius: 4px;
 }
 
+.guest-np__art--logo {
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.guest-np__art--transparent {
+  background: transparent;
+}
+
 .guest-np__art--empty {
   display: flex;
   align-items: center;
@@ -585,6 +634,10 @@ export default {
 
 .guest-np--compact .guest-np__artist {
   font-size: 0.95rem !important;
+}
+
+.guest-np--compact .guest-np__album {
+  font-size: 0.8rem !important;
 }
 
 .guest-np__wish {

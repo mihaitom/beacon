@@ -423,8 +423,6 @@ export default {
     offlineTitle: 'No se puede llegar a la fiesta',
     offlineText: 'Beacon no responde ahora mismo. Inténtalo de nuevo en un momento.',
     nothingPlaying: 'No suena nada ahora mismo.',
-    nowPlaying: 'Sonando ahora',
-    onAir: 'En directo',
     radioTitle: 'Está sonando la radio',
     radioText: 'Solo se pueden pedir canciones mientras suena música de la biblioteca.',
     voteSkip: 'Votar para saltar',

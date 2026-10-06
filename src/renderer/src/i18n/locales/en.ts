@@ -420,8 +420,6 @@ export default {
     offlineTitle: "Can't reach the party",
     offlineText: "Beacon isn't answering right now. Try again in a moment.",
     nothingPlaying: 'Nothing is playing right now.',
-    nowPlaying: 'Now playing',
-    onAir: 'On air',
     radioTitle: 'Radio is playing',
     radioText: 'Wishes only work while music from the library is playing.',
     voteSkip: 'Vote to skip',

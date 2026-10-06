@@ -420,8 +420,6 @@ export default {
     offlineTitle: 'Party nicht erreichbar',
     offlineText: 'Beacon antwortet gerade nicht. Versuch es gleich nochmal.',
     nothingPlaying: 'Gerade läuft nichts.',
-    nowPlaying: 'Läuft gerade',
-    onAir: 'Live',
     radioTitle: 'Gerade läuft Radio',
     radioText: 'Wünschen geht nur, während Musik aus der Bibliothek läuft.',
     voteSkip: 'Für Überspringen stimmen',

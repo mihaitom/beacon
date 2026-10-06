@@ -423,8 +423,6 @@ export default {
     offlineTitle: 'Festa non raggiungibile',
     offlineText: 'Beacon non risponde al momento. Riprova tra poco.',
     nothingPlaying: 'Al momento non suona niente.',
-    nowPlaying: 'In riproduzione',
-    onAir: 'In diretta',
     radioTitle: 'È in onda la radio',
     radioText: 'Le richieste funzionano solo mentre suona musica dalla libreria.',
     voteSkip: 'Vota per saltare',
