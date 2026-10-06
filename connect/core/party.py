@@ -41,12 +41,19 @@ UPCOMING_LIMIT = 100
 # Cover ids handed to guests, remembered so /party/api/cover only answers for
 # artwork a guest has actually been shown.
 COVER_MEMORY = 5000
+# Songs the host's queue has shown, by id: while the host casts, the queue
+# connect follows is song ids only, and this is where their titles come from
+# (see _cast_playback). A few parties' worth of queue.
+SONG_MEMORY = 5000
 # The renderer pushes a snapshot several times a second while a song plays,
 # mostly because the position moved. Guests work the position out
 # themselves from the last one they got, so a push only goes out to them
 # when something else changed or the position stopped matching that guess
 # (a seek) by more than this.
 POSITION_DRIFT_SECONDS = 1.5
+# How often the cast follower looks again for the host's session when it has
+# none, or has heard nothing from it (see _follow_cast).
+CAST_RECHECK_SECONDS = 5.0
 # What the host may hand over as lyrics: a long song's worth, not a book.
 LYRICS_MAX_LINES = 2000
 # Fanart.tv's own per-artist count is far below this; it only bounds what
@@ -146,6 +153,11 @@ class PartyState:
         # Guests watching the visualizer, and the task feeding them.
         self.visualizer_queues: list[asyncio.Queue] = []
         self._visualizer_task: asyncio.Task | None = None
+        # The host's last snapshot as it came, and the songs it named.
+        self.tab_snapshot: dict = {}
+        self.songs: dict[str, dict] = {}  # insertion-ordered, see SONG_MEMORY
+        # Follows the host's cast session (see _follow_cast).
+        self._cast_task: asyncio.Task | None = None
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -183,6 +195,11 @@ class PartyState:
         self.backdrop_urls = []
         self.radio_logo = None
         self.lyrics = None
+        self.tab_snapshot = {}
+        self.songs.clear()
+        if self._cast_task is not None:
+            self._cast_task.cancel()
+            self._cast_task = None
 
     def is_active(self) -> bool:
         if self.enabled and time.time() >= self.expires_at:
@@ -190,7 +207,14 @@ class PartyState:
         return self.enabled
 
     def is_stale(self) -> bool:
-        return self.enabled and time.time() - remote.last_keepalive > KEEPALIVE_TIMEOUT
+        """The host's window has gone quiet and nothing else carries the
+        party. While the host casts, connect plays the queue on its own, so
+        a window that sleeps - a locked phone - does not end it."""
+        return (
+            self.enabled
+            and time.time() - remote.last_keepalive > KEEPALIVE_TIMEOUT
+            and self._host_cast() is None
+        )
 
     # ── Guests ───────────────────────────────────────────────────────────
 
@@ -298,25 +322,118 @@ class PartyState:
             "logo": logo,
         }
 
+    def remember_song(self, song: dict | None) -> None:
+        song_id = song.get("id") if isinstance(song, dict) else None
+        if not song_id:
+            return
+        self.songs.pop(song_id, None)
+        self.songs[song_id] = {
+            key: song.get(key)
+            for key in ("id", "title", "artist", "album", "duration", "cover_art_id")
+        }
+        while len(self.songs) > SONG_MEMORY:
+            self.songs.pop(next(iter(self.songs)))
+
+    def _host_cast(self):
+        """The host's cast session while it plays a queue to a device, else
+        None. A station is left to the host's window (nothing to wish for
+        there, and connect does not know its name)."""
+        from .session import registry
+
+        session = registry.get(self.host_session_id) if self.host_session_id else None
+        if session is None:
+            return None
+        st = session.state
+        if not st.active_delivery or st.radio_info or st.current_track is None:
+            return None
+        return session
+
+    def _tab_playback(self, raw: dict) -> dict:
+        return {
+            "current": raw.get("current_song"),
+            "queue": raw.get("queue") or [],
+            "index": raw.get("queue_index", -1),
+            "playing": bool(raw.get("playing")),
+            "position": float(raw.get("position") or 0),
+            "duration": float(raw.get("duration") or 0),
+            "casting": bool(raw.get("casting")),
+            "radio": raw.get("radio") if isinstance(raw.get("radio"), dict) else None,
+        }
+
+    def _cast_playback(self, session) -> dict:
+        """What is playing according to the cast session itself, which keeps
+        going while the host's window sleeps. Its queue is song ids; the
+        titles come from what the host's window has shown (self.songs), so
+        a song it never saw - an autoplay top-up made while it slept - is
+        left out for now."""
+        from .session import compute_position
+
+        st = session.state
+        track = st.current_track
+        current = {
+            "id": track.id,
+            "title": track.title,
+            "artist": track.artist,
+            "album": track.album,
+            "duration": track.duration,
+            "cover_art_id": track.cover_art_id,
+        }
+        self.remember_song(current)
+        return {
+            "current": current,
+            "queue": [self.songs.get(song_id) for song_id in st.queue],
+            "index": st.queue_index,
+            "playing": st.is_streaming and not st.clock.is_paused,
+            "position": compute_position(session),
+            "duration": float(track.duration or 0),
+            "casting": True,
+            "radio": None,
+        }
+
     def update_snapshot(self, raw: dict) -> None:
-        """Reduces the renderer's full Remote Control snapshot to what a
-        guest may see. Nothing about devices, volume, sessions or other
-        guests' ids survives; requests keep only the wisher's name, plus an
-        owner id that personalise() strips again before anything is sent."""
+        """The host's window pushed a snapshot (see receive_snapshot)."""
         self.host_session_id = raw.get("session_id") or self.host_session_id
-        current = raw.get("current_song")
+        self.tab_snapshot = raw
+        self.remember_song(raw.get("current_song"))
+        for song in raw.get("queue") or []:
+            self.remember_song(song)
+        self.rebuild()
+
+    def rebuild(self) -> None:
+        """Reduces what is playing to what a guest may see. Nothing about
+        devices, volume, sessions or other guests' ids survives; requests
+        keep only the wisher's name, plus an owner id that personalise()
+        strips again before anything is sent.
+
+        While the host casts, what plays comes from the cast session, so
+        guests keep up while the host's window sleeps. What only that window
+        knows - who wished for what, the artist background, the lyrics key -
+        is taken from its last snapshot where that still describes the same
+        queue and song."""
+        raw = self.tab_snapshot
+        session = self._host_cast()
+        playback = self._cast_playback(session) if session else self._tab_playback(raw)
+        tab = self._tab_playback(raw)
+
+        current = playback["current"]
         current_id = current.get("id") if current else None
         if current_id != self.current_song_id:
             self.current_song_id = current_id
             self.skip_votes.clear()
+        same_song = bool(current_id) and current_id == ((tab["current"] or {}).get("id"))
+        same_queue = session is None or [(song or {}).get("id") for song in tab["queue"]] == list(
+            session.state.queue
+        )
 
-        queue = raw.get("queue") or []
-        index = raw.get("queue_index", -1)
-        requests = raw.get("party_requests") or {}
+        queue = playback["queue"]
+        index = playback["index"]
+        requests = (raw.get("party_requests") or {}) if same_queue else {}
         upcoming = []
         start = index + 1 if isinstance(index, int) and index >= 0 else 0
-        for position, song in enumerate(queue[start : start + UPCOMING_LIMIT], start=start):
-            entry = self.guest_song(song)
+        for position in range(start, min(start + UPCOMING_LIMIT, len(queue))):
+            entry = self.guest_song(queue[position])
+            if entry is None:
+                continue
             request = requests.get(str(position))
             if request:
                 entry["request"] = {
@@ -326,13 +443,15 @@ class PartyState:
                 }
             upcoming.append(entry)
 
-        current_song = self.guest_song(current) if not raw.get("radio") else None
+        radio = playback["radio"]
+        current_song = self.guest_song(current) if not radio else None
         current_request = requests.get(str(index)) if current_song else None
         if current_request:
             current_song["wished_by"] = current_request.get("guest_name")
+        extras = current_song is not None and same_song
         backdrop = raw.get("party_backdrop")
-        self.backdrop_url = backdrop if isinstance(backdrop, str) and current_song else None
-        backdrops = raw.get("party_backdrops") if current_song else None
+        self.backdrop_url = backdrop if isinstance(backdrop, str) and extras else None
+        backdrops = raw.get("party_backdrops") if extras else None
         self.backdrop_urls = [
             url
             for url in (backdrops if isinstance(backdrops, list) else [])
@@ -340,18 +459,17 @@ class PartyState:
         ][:MAX_BACKDROPS]
         if self.backdrop_url and self.backdrop_url not in self.backdrop_urls:
             self.backdrop_urls.insert(0, self.backdrop_url)
-        radio = raw.get("radio") if isinstance(raw.get("radio"), dict) else None
         if radio is None:
             self.radio_logo = None
         self.snapshot = {
-            "playing": bool(raw.get("playing")),
+            "playing": playback["playing"],
             # Seconds, as of position_at (this server's clock, which the
             # page lines its own clock up with).
-            "position": float(raw.get("position") or 0),
-            "duration": float(raw.get("duration") or 0),
+            "position": playback["position"],
+            "duration": playback["duration"],
             "position_at": time.time(),
             # Only whether - which speakers is none of a guest's business.
-            "casting": bool(raw.get("casting")),
+            "casting": playback["casting"],
             "backdrop": self.backdrop_url is not None,
             # Which of them the host shows, and how many there are to step
             # through (GET /party/api/backdrop?index=).
@@ -359,7 +477,7 @@ class PartyState:
                 self.backdrop_urls.index(self.backdrop_url) if self.backdrop_url else 0
             ),
             "backdrop_count": len(self.backdrop_urls),
-            "lyrics_key": raw.get("party_lyrics_key") if current_song else None,
+            "lyrics_key": raw.get("party_lyrics_key") if extras else None,
             "current_song": current_song,
             "radio": self.guest_radio(radio) if radio else None,
             "upcoming": upcoming,
@@ -419,8 +537,44 @@ class PartyState:
             return
         previous = self.snapshot
         self.update_snapshot(raw)
+        if self._cast_task is None or self._cast_task.done():
+            self._cast_task = asyncio.create_task(self._follow_cast())
         if self._worth_telling(previous, self.snapshot):
             await self.broadcast()
+
+    async def _follow_cast(self) -> None:
+        """For as long as the party runs: listens to the host's cast session
+        and tells guests about what it does on its own - the next track, a
+        pause from the speaker - which the host's window may be asleep for.
+        Re-subscribes when the host's session changes."""
+        from .session import registry
+
+        session = None
+        queue: asyncio.Queue | None = None
+        try:
+            while self.enabled:
+                wanted = registry.get(self.host_session_id) if self.host_session_id else None
+                if wanted is not session:
+                    if session is not None and queue is not None:
+                        session.event_bus.unsubscribe(queue)
+                    session = wanted
+                    queue = session.event_bus.subscribe() if session is not None else None
+                if queue is None:
+                    await asyncio.sleep(CAST_RECHECK_SECONDS)
+                    continue
+                try:
+                    await asyncio.wait_for(queue.get(), timeout=CAST_RECHECK_SECONDS)
+                except TimeoutError:
+                    continue
+                if self._host_cast() is None:
+                    continue
+                previous = self.snapshot
+                self.rebuild()
+                if self._worth_telling(previous, self.snapshot):
+                    await self.broadcast()
+        finally:
+            if session is not None and queue is not None:
+                session.event_bus.unsubscribe(queue)
 
     @staticmethod
     def _worth_telling(before: dict, after: dict) -> bool:

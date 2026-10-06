@@ -19,9 +19,11 @@ import routes.coverart as coverart_module
 import routes.party as party_routes
 from core import integration_key
 from core.party import Settings, clean_name, party
-from core.remote import remote
+from core.remote import KEEPALIVE_TIMEOUT, remote
+from delivery.chromecast import ChromecastDelivery
 from main import app
 from media import SubsonicClient
+from media.base import Track
 
 ORIGIN = "http://testserver"
 
@@ -853,6 +855,134 @@ def test_no_backdrop_without_one_from_the_host(client, guest_client):
     party.update_snapshot(_snapshot(["a"]))
     _join(guest_client, token)
     assert guest_client.get("/party/api/backdrop").status_code == 404
+
+
+# ── While the host casts ────────────────────────────────────────────────────
+
+
+def _cast(session, queue_ids, index=0):
+    """The host's session casting `queue_ids` at `index`, as connect holds it
+    after a /play: ids only, the current track with its metadata."""
+    st = session.state
+    st.active_delivery = ChromecastDelivery("TV")
+    st.queue = list(queue_ids)
+    st.queue_index = index
+    song_id = queue_ids[index]
+    st.current_track = Track(
+        id=song_id, title=f"Title {song_id}", artist="Artist", duration=200, album="Album"
+    )
+    st.is_streaming = True
+
+
+def _titles(state: dict) -> tuple[str | None, list[str]]:
+    current = state["current_song"]
+    return (current["title"] if current else None, [s["title"] for s in state["upcoming"]])
+
+
+def test_the_party_outlives_a_sleeping_window_while_the_host_casts(client, default_session):
+    _start(client)
+    party.update_snapshot(_snapshot(["a", "b"], session_id=default_session.session_id))
+    _cast(default_session, ["a", "b"])
+    remote.last_keepalive = time.time() - KEEPALIVE_TIMEOUT - 1
+    assert party.is_stale() is False
+    # The cast ends while the window still sleeps: nobody is left to answer.
+    default_session.state.active_delivery = None
+    assert party.is_stale() is True
+
+
+def test_a_station_cast_still_needs_the_window(client, default_session):
+    _start(client)
+    party.update_snapshot(_snapshot(["a"], session_id=default_session.session_id))
+    _cast(default_session, ["a"])
+    default_session.state.radio_info = {"url": "http://station.example/live"}
+    remote.last_keepalive = time.time() - KEEPALIVE_TIMEOUT - 1
+    assert party.is_stale() is True
+
+
+def test_guests_follow_the_cast_while_the_window_sleeps(client, guest_client, default_session):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a", "b", "c"], session_id=default_session.session_id))
+    _join(guest_client, token)
+    # The speaker moved on to b on its own; the window never said so.
+    _cast(default_session, ["a", "b", "c"], index=1)
+    party.rebuild()
+    body = guest_client.get("/party/api/state").json()
+    assert _titles(body) == ("Title b", ["Title c"])
+    assert body["casting"] is True
+
+
+def test_a_pause_at_the_speaker_reaches_the_guests(client, default_session):
+    _start(client)
+    party.update_snapshot(_snapshot(["a", "b"], session_id=default_session.session_id))
+    _cast(default_session, ["a", "b"])
+    default_session.state.clock.pause(42.0)
+    party.rebuild()
+    assert party.snapshot["playing"] is False
+
+
+def test_a_song_the_window_never_showed_is_left_out(client, default_session):
+    _start(client)
+    party.update_snapshot(_snapshot(["a", "b"], session_id=default_session.session_id))
+    # An autoplay top-up made while the window slept: only its id is known.
+    _cast(default_session, ["a", "b", "z"])
+    party.rebuild()
+    assert _titles(party.snapshot) == ("Title a", ["Title b"])
+
+
+def test_wishes_keep_their_names_while_the_queue_is_the_windows(client, default_session):
+    _start(client)
+    requests = {"2": {"id": "r1", "guest_id": "g1", "guest_name": "Anna"}}
+    snapshot = _snapshot(["a", "b", "c"], requests=requests, session_id=default_session.session_id)
+    party.update_snapshot(snapshot)
+    _cast(default_session, ["a", "b", "c"], index=1)
+    party.rebuild()
+    assert party.snapshot["upcoming"][0]["request"]["name"] == "Anna"
+    # Someone else changed the cast queue: position 2 is another song now,
+    # which must not inherit Anna's name.
+    default_session.state.queue = ["a", "b", "a", "c"]
+    party.rebuild()
+    assert all("request" not in entry for entry in party.snapshot["upcoming"])
+
+
+def test_background_and_lyrics_only_for_the_song_the_window_knew(client, default_session):
+    _start(client)
+    snapshot = _snapshot(["a", "b"], session_id=default_session.session_id)
+    snapshot["party_backdrop"] = "https://assets.fanart.tv/a.jpg"
+    snapshot["party_lyrics_key"] = "a:lrclib"
+    party.update_snapshot(snapshot)
+    _cast(default_session, ["a", "b"])
+    party.rebuild()
+    assert party.snapshot["backdrop"] is True
+    assert party.snapshot["lyrics_key"] == "a:lrclib"
+    # Next song, window asleep: its artist's picture and lyrics are unknown.
+    _cast(default_session, ["a", "b"], index=1)
+    party.rebuild()
+    assert party.snapshot["backdrop"] is False
+    assert party.snapshot["lyrics_key"] is None
+
+
+def test_local_playback_still_comes_from_the_window(client, default_session):
+    _start(client)
+    party.update_snapshot(
+        _snapshot(["a", "b", "c"], index=1, session_id=default_session.session_id)
+    )
+    assert _titles(party.snapshot) == ("Title b", ["Title c"])
+
+
+async def test_guests_hear_of_the_next_track_without_the_window(default_session):
+    party.enable()
+    await party.receive_snapshot(_snapshot(["a", "b", "c"], session_id=default_session.session_id))
+    _cast(default_session, ["a", "b", "c"])
+    guest_updates = party.event_bus.subscribe()
+    await asyncio.sleep(0.05)
+    _cast(default_session, ["a", "b", "c"], index=1)
+    await default_session.event_bus.broadcast({"current_song_index": 1})
+    update = await asyncio.wait_for(guest_updates.get(), timeout=1)
+    assert update == {"kind": "update"}
+    assert _titles(party.snapshot)[0] == "Title b"
+    party.disable()
+    await asyncio.sleep(0)
+    assert default_session.event_bus.subscriber_count == 0
 
 
 # ── Visualizer ──────────────────────────────────────────────────────────────
