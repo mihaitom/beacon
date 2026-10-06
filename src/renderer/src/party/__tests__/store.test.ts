@@ -90,6 +90,22 @@ describe('party guest store', () => {
     expect(store.currentLyrics).toBeNull()
   })
 
+  it('does not ask again for lyrics it has when their key flickers', async () => {
+    const store = usePartyGuestStore()
+    const lyrics = vi
+      .spyOn(partyApi, 'lyrics')
+      .mockResolvedValue({ song_id: 'a', synced: true, offset: 0, lines: [{ time: 0, text: 'x' }] })
+    store.applySnapshot(snapshot({ lyrics_key: 'a:1' }))
+    await vi.waitFor(() => expect(store.lyrics).not.toBeNull())
+    store.applySnapshot(snapshot({ lyrics_key: null }))
+    store.applySnapshot(snapshot({ lyrics_key: 'a:1' }))
+    store.applySnapshot(snapshot({ lyrics_key: null }))
+    store.applySnapshot(snapshot({ lyrics_key: 'a:1' }))
+    await Promise.resolve()
+    expect(lyrics).toHaveBeenCalledTimes(1)
+    expect(store.currentLyrics?.song_id).toBe('a')
+  })
+
   it('takes the invite token out of the address and asks for a name', async () => {
     history.replaceState(null, '', '/party/#t=abc_DEF-1')
     vi.spyOn(partyApi, 'state').mockRejectedValue(new PartyApiError(401, 'Not joined'))

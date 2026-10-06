@@ -537,8 +537,12 @@ class PartyState:
 
     async def receive_snapshot(self, raw: dict) -> None:
         """Every snapshot the renderer pushes to /remote/state comes
-        through here as well."""
+        through here as well - but only the host window's count. Another
+        window on the same account pushes its own, and guests would flip
+        between the two (its song, its lyrics) with every push."""
         if not self.enabled:
+            return
+        if self.host_tab and raw.get("party_tab") != self.host_tab:
             return
         previous = self.snapshot
         self.update_snapshot(raw)

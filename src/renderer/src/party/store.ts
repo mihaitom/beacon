@@ -45,6 +45,8 @@ interface GuestState {
 
 let events: EventSource | null = null
 let clockTimer: ReturnType<typeof setInterval> | null = null
+// The lyrics_key `lyrics` was loaded for (see loadLyrics).
+let loadedLyricsKey: string | null = null
 
 function readName(): string {
   try {
@@ -202,14 +204,18 @@ export const usePartyGuestStore = defineStore('partyGuest', {
     },
 
     async loadLyrics(): Promise<void> {
-      if (!this.lyricsKey) {
-        this.lyrics = null
-        return
-      }
+      const key = this.lyricsKey
+      if (!key) return
+      // Already here: a key that went away and came back (the host's
+      // window waking, a song change seen twice) is no reason to ask again,
+      // and asking on every flip runs into the rate limit.
+      if (key === loadedLyricsKey && this.lyrics) return
       try {
         this.lyrics = await partyApi.lyrics()
+        loadedLyricsKey = key
       } catch {
         this.lyrics = null
+        loadedLyricsKey = null
       }
     },
 

@@ -23,7 +23,7 @@ import { useConnectStore } from './connect'
 import { isBackingOff } from '@/services/connect/pollGate'
 import { useAuthStore } from './auth'
 import { useAutoplayStore } from './autoplay'
-import { usePartyStore } from './party'
+import { tabId as partyTabId, usePartyStore } from './party'
 import { castTargetLabel, sourceLine } from '@/services/connect/streamInfoLabels'
 
 interface RemoteControlState {
@@ -324,6 +324,9 @@ export const useRemoteControlStore = defineStore('remoteControl', {
           party_backdrop: usePartyStore().backdropSource(),
           party_backdrops: usePartyStore().backdropSources(),
           party_lyrics_key: usePartyStore().lyricsKey(),
+          // Which window this is, so connect hands guests only the host's
+          // view of things (core/party.py's receive_snapshot).
+          party_tab: usePartyStore().hostedHere ? partyTabId() : null,
           casting: connect.activeTargets,
           // A cast device dropped out on its own and playback can be picked
           // back up. State rather than an event, because this channel only

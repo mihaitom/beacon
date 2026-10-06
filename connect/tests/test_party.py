@@ -241,6 +241,18 @@ def test_the_window_that_starts_the_party_hosts_it(client):
     assert client.get("/party-host/status").json()["host_tab"] == "tab-desktop"
 
 
+async def test_only_the_host_windows_snapshots_reach_the_guests(client):
+    _start(client, tab_id="tab-phone")
+    host = _snapshot(["a"])
+    host["party_tab"] = "tab-phone"
+    await party.receive_snapshot(host)
+    # The same account open on the desktop, pushing its own view.
+    other = _snapshot(["z"])
+    other["party_tab"] = None
+    await party.receive_snapshot(other)
+    assert party.snapshot["current_song"]["title"] == "Title a"
+
+
 def test_another_window_can_take_the_party_over(client):
     token = _start(client, tab_id="tab-desktop")
     resp = client.post("/party-host/claim", json={"tab_id": "tab-phone"})
