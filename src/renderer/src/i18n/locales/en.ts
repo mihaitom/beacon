@@ -749,6 +749,9 @@ export default {
     byOwner: 'by {owner}',
     deleteTitle: 'Delete playlist?',
     deleteConfirm: 'Delete "{name}"? This cannot be undone.',
+    editedAgo: 'edited {ago}',
+    withArtists: 'With {artists}',
+    withArtistsAndMore: 'With {artists} and {count} more',
   },
   privacy: {
     title: 'Privacy',

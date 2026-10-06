@@ -158,10 +158,9 @@ export default {
  * cover-plus-caption, deliberately: this grid sits right next to those in
  * the app's mental model (another browse-your-library screen) and needed
  * to *not* read as a smaller, blurrier version of the same card. */
-/* Width kept in step with PlaylistTile.vue's own .playlist-tile — see its
- * comment for why both grew. The cover stays smaller than that one's: a
- * station's favicon is rarely artwork worth an album cover's room (see the
- * template comment), it just stopped being *tiny* along with the tile. */
+/* 360px: the name sits *beside* the logo, so width is what buys a longer
+ * station name before it truncates. The logo stays small - a favicon is
+ * rarely artwork worth an album cover's room (see the template comment). */
 .radio-tile {
   display: flex;
   align-items: center;

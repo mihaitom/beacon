@@ -217,3 +217,8 @@ an entry. Keep those docs anonymous: no IPs, no real speaker or room names
   (`Artist/Album/01-03 - Title.mp3`), not the real one, unless that player
   has "Report Real Path" enabled. Beacon shows what the server sent; that is
   not a bug in the path row.
+- **Party guests have their own copy of Now Playing:**
+  `party/components/GuestNowPlaying.vue` is a copy of Now Playing. A change
+  to `NowPlayingView` or its components does not reach party guests; before
+  a larger one, do `docs/plans/now-playing-shared-with-party.md` first
+  instead of changing both.

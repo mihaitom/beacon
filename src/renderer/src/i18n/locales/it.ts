@@ -756,6 +756,9 @@ export default {
     byOwner: 'di {owner}',
     deleteTitle: 'Eliminare la playlist?',
     deleteConfirm: 'Eliminare "{name}"? Questa azione non può essere annullata.',
+    editedAgo: 'modificata {ago}',
+    withArtists: 'Con {artists}',
+    withArtistsAndMore: 'Con {artists} e altri {count}',
   },
   privacy: {
     title: 'Privacy',

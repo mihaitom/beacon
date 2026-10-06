@@ -317,7 +317,7 @@ def _map_playlist(item: dict) -> dict:
     # left at safe defaults (private, no owner shown) rather than guessing;
     # renaming/visibility changes are correspondingly not bridged either
     # (see update_playlist below).
-    return {
+    playlist = {
         "id": item["Id"],
         "name": item.get("Name", "Unknown"),
         "songCount": item.get("ChildCount") or 0,
@@ -325,6 +325,12 @@ def _map_playlist(item: dict) -> dict:
         "coverArt": _cover_art_id(item),
         "public": False,
     }
+    # Jellyfin has no "modified" date for a playlist; the last time a song
+    # was added is the closest. Both are ISO with the same 7-digit
+    # fraction, so the later one is also the larger string.
+    dates = [d for d in (item.get("DateLastMediaAdded"), item.get("DateCreated")) if d]
+    _set(playlist, "changed", max(dates) if dates else None)
+    return playlist
 
 
 def _map_all(mapper: Callable[[dict], dict], items: list[dict]) -> list[dict]:
@@ -642,7 +648,12 @@ async def unstar(params: dict, media: JellyfinClient) -> dict:
 
 
 async def get_playlists(_params: dict, media: JellyfinClient) -> dict:
-    data = await _jf_get_items(media, IncludeItemTypes="Playlist", Recursive="true")
+    data = await _jf_get_items(
+        media,
+        IncludeItemTypes="Playlist",
+        Recursive="true",
+        Fields="DateCreated,DateLastMediaAdded",
+    )
     return {"playlists": {"playlist": _map_all(_map_playlist, data.get("Items", []))}}
 
 

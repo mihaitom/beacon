@@ -695,6 +695,37 @@ def test_get_playlists_maps_items(client, jellyfin_session, monkeypatch):
     ]
 
 
+def test_get_playlists_reports_the_later_of_created_and_last_added(
+    client, jellyfin_session, monkeypatch
+):
+    fake_client, calls = _fake_jf_client(
+        {
+            "/Items": {
+                "Items": [
+                    {
+                        "Id": "p1",
+                        "Name": "Grown",
+                        "DateCreated": "2026-01-01T10:00:00.0000000Z",
+                        "DateLastMediaAdded": "2026-03-05T08:30:00.0000000Z",
+                    },
+                    {"Id": "p2", "Name": "Fresh", "DateCreated": "2026-02-01T10:00:00.0000000Z"},
+                    {"Id": "p3", "Name": "Undated"},
+                ]
+            }
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getPlaylists.view")
+    playlists = r.json()["subsonic-response"]["playlists"]["playlist"]
+    assert [p.get("changed") for p in playlists] == [
+        "2026-03-05T08:30:00.0000000Z",
+        "2026-02-01T10:00:00.0000000Z",
+        None,
+    ]
+    assert "DateLastMediaAdded" in calls[0][2]["Fields"]
+
+
 def test_get_playlist_includes_entries(client, jellyfin_session, monkeypatch):
     fake_client, _calls = _fake_jf_client(
         {

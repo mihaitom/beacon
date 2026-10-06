@@ -755,6 +755,9 @@ export default {
     byOwner: 'von {owner}',
     deleteTitle: 'Playlist löschen?',
     deleteConfirm: '"{name}" löschen? Das kann nicht rückgängig gemacht werden.',
+    editedAgo: 'bearbeitet {ago}',
+    withArtists: 'Mit {artists}',
+    withArtistsAndMore: 'Mit {artists} und {count} weiteren',
   },
   privacy: {
     title: 'Datenschutz',

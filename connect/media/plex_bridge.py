@@ -799,7 +799,7 @@ async def scrobble(params: dict, media: PlexClient) -> dict:
 
 
 def _map_playlist(item: dict) -> dict:
-    return {
+    playlist = {
         "id": str(item["ratingKey"]),
         "name": item.get("title", "Unknown"),
         "songCount": item.get("leafCount") or 0,
@@ -807,6 +807,8 @@ def _map_playlist(item: dict) -> dict:
         "coverArt": _cover_art_id(item, item["ratingKey"]),
         "public": False,
     }
+    _set(playlist, "changed", _epoch_to_iso(item.get("updatedAt") or item.get("addedAt")))
+    return playlist
 
 
 async def get_playlists(_params: dict, media: PlexClient) -> dict:

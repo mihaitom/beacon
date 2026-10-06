@@ -25,6 +25,7 @@ function makePlaylist(overrides: Partial<Playlist> = {}): Playlist {
     coverArtId: null,
     public: false,
     owner: 'thomas',
+    changed: null,
     songs: [],
     ...overrides,
   }

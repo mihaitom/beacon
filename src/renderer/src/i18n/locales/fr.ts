@@ -757,6 +757,9 @@ export default {
     byOwner: 'par {owner}',
     deleteTitle: 'Supprimer la playlist ?',
     deleteConfirm: 'Supprimer "{name}" ? Cette action est irréversible.',
+    editedAgo: 'modifiée {ago}',
+    withArtists: 'Avec {artists}',
+    withArtistsAndMore: 'Avec {artists} et {count} autres',
   },
   privacy: {
     title: 'Confidentialité',

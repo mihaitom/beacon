@@ -42,6 +42,7 @@ import {
 } from '@/stores/lyricsProviders'
 import { useAutoplayStore } from '@/stores/autoplay'
 import { useSongColumnsStore } from '@/stores/songColumns'
+import { usePlaylistSummariesStore } from '@/stores/playlistSummaries'
 import { OPTIONAL_SONG_COLUMNS, type SongColumnKey } from '@/services/library/songColumns'
 import { parseLocale } from '@/i18n'
 import { adoptLocale, reloadLocaleForAccount } from '@/services/localeSetting'
@@ -129,6 +130,7 @@ export function initAccountScopedStores(): void {
     // this account is about to ask for must not be answered out of the
     // previous one's cache.
     clearCoverArtCache()
+    usePlaylistSummariesStore().reset()
     useUpdateStore().reload()
     usePlaybackStore().reloadAccountScoped()
     reloadLyricsCacheForAccount()

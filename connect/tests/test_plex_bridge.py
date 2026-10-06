@@ -732,6 +732,31 @@ def test_get_playlists_returns_mapped_list(client, plex_session, monkeypatch):
     assert playlist["songCount"] == 10
 
 
+def test_get_playlists_reports_when_a_playlist_last_changed(client, plex_session, monkeypatch):
+    fake_client, _calls = _fake_px_client(
+        {
+            "/playlists": {
+                "MediaContainer": {
+                    "Metadata": [
+                        {"ratingKey": "1", "title": "Edited", "addedAt": 100, "updatedAt": 86400},
+                        {"ratingKey": "2", "title": "Untouched", "addedAt": 3600},
+                        {"ratingKey": "3", "title": "Undated"},
+                    ]
+                }
+            }
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getPlaylists.view")
+    playlists = r.json()["subsonic-response"]["playlists"]["playlist"]
+    assert [p.get("changed") for p in playlists] == [
+        "1970-01-02T00:00:00+00:00",
+        "1970-01-01T01:00:00+00:00",
+        None,
+    ]
+
+
 def test_get_playlist_includes_entries(client, plex_session, monkeypatch):
     fake_client, _calls = _fake_px_client(
         {

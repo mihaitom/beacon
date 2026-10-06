@@ -287,6 +287,7 @@ describe('handleRemoteCommand', () => {
       coverArtId: null,
       public: false,
       owner: 'me',
+      changed: null,
       songs: [makeSong('a'), makeSong('b')],
     }
     const fetchSpy = vi.spyOn(library, 'fetchPlaylist').mockResolvedValue(playlist)
@@ -654,6 +655,7 @@ describe('resolveRemoteQuery', () => {
         coverArtId: null,
         public: false,
         owner: 'me',
+        changed: null,
         songs: [],
       },
     ]
@@ -676,6 +678,7 @@ describe('resolveRemoteQuery', () => {
       coverArtId: null,
       public: false,
       owner: 'me',
+      changed: null,
       songs: [makeSong('a')],
     }
     vi.spyOn(library, 'fetchPlaylist').mockResolvedValue(playlist)

@@ -754,6 +754,9 @@ export default {
     byOwner: 'de {owner}',
     deleteTitle: '¿Eliminar lista de reproducción?',
     deleteConfirm: '¿Eliminar "{name}"? Esto no se puede deshacer.',
+    editedAgo: 'editada {ago}',
+    withArtists: 'Con {artists}',
+    withArtistsAndMore: 'Con {artists} y {count} más',
   },
   privacy: {
     title: 'Privacidad',

@@ -121,6 +121,8 @@ export interface Playlist {
   coverArtId: string | null
   public: boolean
   owner: string
+  /** ISO 8601. Null where the server does not say. */
+  changed: string | null
   songs: Song[]
 }
 

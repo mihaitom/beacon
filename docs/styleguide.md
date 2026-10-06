@@ -407,6 +407,13 @@ does not.
 Desktop rows get their hover from `--beacon-hover`; a plain `v-list` opts in
 with `.beacon-list` on its container.
 
+The desktop Playlists page is a list of large rows in one
+`.beacon-panel--flush` rather than a grid of covers (`PlaylistRow.vue`): the
+artwork is made from the playlist's own albums and only cycles while the row
+is hovered, the text carries the main artists and genres, and Play/Shuffle
+sit as plain buttons, not pills, centred on the right. No backdrop - a page
+of rows each with its own moving picture is too much at once.
+
 `.mobile-row__text` clips both of its lines itself - a row is a fixed 60px,
 so a long title has nowhere to wrap to. No list component says
 `text-truncate` on its own lines.

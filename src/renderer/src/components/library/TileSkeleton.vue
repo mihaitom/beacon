@@ -15,8 +15,8 @@
 
 <script lang="ts">
 /**
- * The placeholder for one horizontal library tile (PlaylistTile.vue,
- * RadioStationCard.vue) while its list is still loading.
+ * The placeholder for one horizontal library tile (RadioStationCard.vue)
+ * while its list is still loading.
  *
  * Same box, same width, same padding as the real tile, so the grid it fills
  * is exactly the grid that replaces it — a spinner used to sit above the
@@ -29,17 +29,16 @@
 export default {
   name: 'TileSkeleton',
   props: {
-    /** Matches whichever tile this stands in for — 88 for a playlist, 72
-     * for a radio station. */
-    coverSize: { type: Number, default: 88 },
+    /** Matches the cover of the tile this stands in for. */
+    coverSize: { type: Number, default: 72 },
   },
 }
 </script>
 
 <style scoped>
-/* Deliberately duplicates the two tiles' own chrome rather than importing
+/* Deliberately duplicates the tile's own chrome rather than importing
  * it: the placeholder has to look like the tile even while the tile itself
- * is nowhere on screen, and a shared class would tie three components'
+ * is nowhere on screen, and a shared class would tie two components'
  * scoped styles together for a box that is six declarations long. */
 .tile-skeleton {
   display: flex;

@@ -57,25 +57,33 @@
     <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
       {{ libraryStore.error }}
     </v-alert>
-    <!-- Placeholders in the grid's own place, not a spinner above it: a
+    <!-- Placeholders in the list's own place, not a spinner above it: a
      - spinner in the flow pushed everything below it down while it was
      - there. Only while there is genuinely nothing to show yet — the flag
      - is the library store's own, so any background fetch (a tile menu
-     - loading a playlist's songs) sets it too, and swapping a full grid for
+     - loading a playlist's songs) sets it too, and swapping a full list for
      - placeholders because of one of those would be worse than the jump it
      - replaced. -->
-    <div v-if="showSkeletons" class="playlists-view__grid">
-      <tile-skeleton v-for="n in SKELETON_TILES" :key="n" />
+    <div v-if="showSkeletons" class="beacon-panel beacon-panel--flush playlists-view__list">
+      <div v-for="n in SKELETON_ROWS" :key="n" class="playlists-view__skeleton">
+        <v-skeleton-loader type="image" width="112" height="112" class="rounded" />
+        <div class="playlists-view__skeleton-text">
+          <v-skeleton-loader type="text" width="40%" height="24" />
+          <v-skeleton-loader type="text" width="30%" height="16" />
+          <v-skeleton-loader type="text" width="55%" height="20" />
+        </div>
+      </div>
     </div>
 
     <template v-if="personalPlaylists.length">
       <h2 class="section-title">{{ $t('playlists.personal') }}</h2>
-      <div class="playlists-view__grid">
-        <playlist-tile
+      <div class="beacon-panel beacon-panel--flush playlists-view__list">
+        <playlist-row
           v-for="playlist in personalPlaylists"
           :key="playlist.id"
           :playlist="playlist"
           @play="playPlaylist"
+          @shuffle="shufflePlaylist"
           @play-next="queuePlaylist($event, 'next')"
           @add-to-queue="queuePlaylist($event, 'end')"
           @rename="openRename"
@@ -86,13 +94,14 @@
 
     <template v-if="globalPlaylists.length">
       <h2 class="section-title">{{ $t('playlists.global') }}</h2>
-      <div class="playlists-view__grid">
-        <playlist-tile
+      <div class="beacon-panel beacon-panel--flush playlists-view__list">
+        <playlist-row
           v-for="playlist in globalPlaylists"
           :key="playlist.id"
           :playlist="playlist"
           show-owner
           @play="playPlaylist"
+          @shuffle="shufflePlaylist"
           @play-next="queuePlaylist($event, 'next')"
           @add-to-queue="queuePlaylist($event, 'end')"
         />
@@ -144,19 +153,17 @@ import { useLastfmStore } from '@/stores/lastfm'
 import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
-import PlaylistTile from '@/components/library/PlaylistTile.vue'
-import TileSkeleton from '@/components/library/TileSkeleton.vue'
+import PlaylistRow from '@/components/library/PlaylistRow.vue'
 import PlaylistEditDialog from '@/components/library/PlaylistEditDialog.vue'
 import LastfmPlaylistDialog from '@/components/library/LastfmPlaylistDialog.vue'
 import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
 import type { Playlist } from '@/types/library'
 
-// Enough placeholder tiles to read as a grid rather than as one stray box.
+// Enough placeholder rows to read as a list rather than as one stray box.
 // No real count to key off yet — the list they stand in for is exactly what
-// hasn't arrived — so this is a plain number, unlike the shelves, which
-// measure how many fit across (see cardRowFit.ts) because theirs scroll.
-const SKELETON_TILES = 8
+// hasn't arrived — so this is a plain number.
+const SKELETON_ROWS = 5
 
 // The services' own marks, relative rather than absolute for the reason
 // externalArtistLinks.ts spells out: public/ assets are copied next to
@@ -172,8 +179,7 @@ export default {
   name: 'PlaylistsView',
   components: {
     DetailHeader,
-    PlaylistTile,
-    TileSkeleton,
+    PlaylistRow,
     PlaylistEditDialog,
     LastfmPlaylistDialog,
     PlaylistDeleteDialog,
@@ -181,7 +187,7 @@ export default {
   },
   data() {
     return {
-      SKELETON_TILES,
+      SKELETON_ROWS,
       lastfmIcon: LASTFM_ICON,
       listenbrainzIcon: LISTENBRAINZ_ICON,
       createDialog: false,
@@ -258,6 +264,11 @@ export default {
       // peekQueueDrawer()'s own comment for the rule.
       await usePlaybackStore().playSongList(full.songs, 0, false, full.songs.length > 1)
     },
+    async shufflePlaylist(playlist: Playlist) {
+      const playback = usePlaybackStore()
+      if (!playback.shuffle) playback.toggleShuffle()
+      await this.playPlaylist(playlist)
+    },
     /** Queueing a playlist needs its songs, which the list this view
      * renders doesn't carry — same fetch playPlaylist() above makes. */
     async queuePlaylist(playlist: Playlist, where: 'next' | 'end') {
@@ -295,22 +306,35 @@ export default {
 </script>
 
 <style scoped>
-/* Same wrapping-tile-grid rhythm as RadioView.vue's own .radio-view__grid
- * — one shared "grid of bordered tiles" look for both, in place of the
- * plain single-column list this used to be. */
-.playlists-view__grid {
+.playlists-view__skeleton {
   display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
+  align-items: center;
+  gap: 20px;
+  padding: 14px;
 }
 
-/* A heading sits close to the grid it names; the grids themselves are
+.playlists-view__skeleton + .playlists-view__skeleton {
+  border-top: 1px solid var(--beacon-hairline);
+}
+
+.playlists-view__skeleton-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.playlists-view__skeleton :deep(.v-skeleton-loader) {
+  background: transparent;
+}
+
+/* A heading sits close to the list it names; the lists themselves are
  * further apart, so "Personal" and "Shared" read as two blocks. */
 .section-title {
   margin-bottom: 8px;
 }
 
-.playlists-view__grid {
+.playlists-view__list {
   margin-bottom: 24px;
 }
 
