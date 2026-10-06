@@ -103,15 +103,34 @@ describe('party wishes', () => {
     expect(refusal(() => party.wish(makeSong('x'), 'ben', 'Ben', 3))).toBe('duplicate')
   })
 
-  it('makes a wish its own queue entry even for a song queued already', () => {
-    const { playback, party } = setup(['now', 'x'])
-    const sameObject = playback.queue[1]!
-    party.wish(sameObject, 'anna', 'Anna', 3)
-    expect(ids(playback)).toEqual(['now', 'x', 'x'])
+  it('moves a song already coming up forward instead of queueing it twice', () => {
+    const { playback, party } = setup(['now', 'host1', 'host2', 'x'])
+    party.wish(makeSong('x'), 'anna', 'Anna', 3)
+    expect(ids(playback)).toEqual(['now', 'x', 'host1', 'host2'])
     expect(party.requestAt(1)?.guestName).toBe('Anna')
-    expect(party.requestAt(2)).toBeNull()
   })
 
+  it('leaves a song where it is when it comes sooner than the wish would', () => {
+    const { playback, party } = setup(['now', 'host'])
+    party.wish(makeSong('a1'), 'anna', 'Anna', 5)
+    party.wish(makeSong('b1'), 'ben', 'Ben', 5)
+    party.wish(makeSong('a2'), 'anna', 'Anna', 5)
+    playback.insertAt(2, [makeSong('x')])
+    expect(ids(playback)).toEqual(['now', 'a1', 'x', 'b1', 'a2', 'host'])
+    // Anna's third wish would go after a2; x is already well ahead of that.
+    party.wish(makeSong('x'), 'anna', 'Anna', 5)
+    expect(ids(playback)).toEqual(['now', 'a1', 'x', 'b1', 'a2', 'host'])
+    expect(party.requestAt(2)?.guestName).toBe('Anna')
+  })
+
+  it('queues a song that already played again, as its own entry', () => {
+    const { playback, party } = setup(['x', 'now'], 1)
+    const played = playback.queue[0]!
+    party.wish(played, 'anna', 'Anna', 3)
+    expect(ids(playback)).toEqual(['x', 'now', 'x'])
+    expect(party.requestAt(2)?.guestName).toBe('Anna')
+    expect(party.requestAt(0)).toBeNull()
+  })
   it('appends when nothing is playing', () => {
     const { playback, party } = setup([], -1)
     party.wish(makeSong('a1'), 'anna', 'Anna', 3)

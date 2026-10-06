@@ -30,7 +30,9 @@ alike.
 Wishes go into a block right after the current song, taking turns between
 guests: three wishes from Anna and then one from Ben play as Anna, Ben, Anna,
 Anna. Each guest has a limit of open wishes (default 3), and a song already
-waiting can't be wished for twice. A skip needs the chosen share of the
+wished for can't be wished for twice. A song that is coming up anyway is moved
+forward to where the wish would go instead of being queued a second time, and
+stays put if it comes sooner than that. A skip needs the chosen share of the
 guests who have the page open (default half), rounded up: with a third and a
 single guest, that guest's vote is enough. The host skips with the app's own
 controls.

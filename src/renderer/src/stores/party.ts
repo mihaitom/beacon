@@ -428,18 +428,35 @@ export const usePartyStore = defineStore('party', {
         playback.currentIndex < 0
           ? playback.queue.length
           : wishInsertIndex(pending, guestId, playback.currentIndex)
-      // What went in, not `song`: insertAt() hands back a copy when that
-      // very object is queued already, and the request has to point at its
-      // own entry.
-      const [inserted] = playback.insertAt(index, [song])
-      if (!inserted) return
+      const entry = this.wishEntry(song, index)
+      if (!entry) return
       this.requests.push({
         id: crypto.randomUUID(),
-        song: inserted,
+        song: entry,
         guestId,
         guestName,
         requestedAt: Date.now(),
       })
+    },
+
+    /** The queue entry a wish for `song` becomes, `index` being where the
+     * turn order puts it. A song already coming up - not as anyone's wish,
+     * those were refused as duplicates - is moved forward to there rather
+     * than queued a second time, and left alone if it comes sooner anyway.
+     * One already played is queued again. */
+    wishEntry(song: Song, index: number): Song | undefined {
+      const playback = usePlaybackStore()
+      const queued = playback.queue.findIndex(
+        (entry, position) => position > playback.currentIndex && entry.id === song.id,
+      )
+      if (queued < 0) {
+        // What went in, not `song`: insertAt() hands back a copy when that
+        // very object is queued already, and the request has to point at
+        // its own entry.
+        return playback.insertAt(index, [song])[0]
+      }
+      if (queued > index) playback.reorderQueue(queued, index)
+      return playback.queue[Math.min(queued, index)]
     },
 
     withdraw(requestId: string, guestId: string): void {
