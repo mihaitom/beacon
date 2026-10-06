@@ -47,6 +47,7 @@ let events: EventSource | null = null
 let clockTimer: ReturnType<typeof setInterval> | null = null
 // The lyrics_key `lyrics` was loaded for (see loadLyrics).
 let loadedLyricsKey: string | null = null
+let hashWatcher: (() => void) | null = null
 
 function readName(): string {
   try {
@@ -64,6 +65,18 @@ function takeInviteToken(): string | null {
   if (!match) return null
   history.replaceState(null, '', window.location.pathname)
   return match[1] ?? null
+}
+
+/** This page outlives the party: pasting a fresh invitation onto it changes
+ * only the fragment, so the browser fires hashchange instead of reloading.
+ * Watching for it - once, for the life of the page - is what lets a new link
+ * join without a manual reload, from an ended page or anywhere else. */
+function watchForInvite(): void {
+  if (hashWatcher) return
+  hashWatcher = () => {
+    if (window.location.hash.startsWith('#t=')) void usePartyGuestStore().start()
+  }
+  window.addEventListener('hashchange', hashWatcher)
 }
 
 export const usePartyGuestStore = defineStore('partyGuest', {
@@ -107,6 +120,7 @@ export const usePartyGuestStore = defineStore('partyGuest', {
 
   actions: {
     async start(): Promise<void> {
+      watchForInvite()
       this.inviteToken = takeInviteToken()
       try {
         this.applySnapshot(await partyApi.state())

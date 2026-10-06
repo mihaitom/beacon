@@ -131,6 +131,20 @@ describe('party guest store', () => {
     expect(store.message).toBe('ended')
   })
 
+  it('picks up a fresh invitation pasted onto a page that already showed the end', async () => {
+    const store = usePartyGuestStore()
+    vi.spyOn(partyApi, 'state').mockRejectedValueOnce(new PartyApiError(404, ''))
+    await store.start()
+    expect(store.message).toBe('ended')
+    // Only the fragment changes, so the browser does not reload the page.
+    vi.spyOn(partyApi, 'state').mockRejectedValue(new PartyApiError(401, 'Not joined'))
+    history.replaceState(null, '', '/party/#t=new_TOKEN-1')
+    window.dispatchEvent(new Event('hashchange'))
+    await vi.waitFor(() => expect(store.phase).toBe('join'))
+    expect(store.inviteToken).toBe('new_TOKEN-1')
+    expect(window.location.hash).toBe('')
+  })
+
   it('goes straight in for a guest who joined before', async () => {
     history.replaceState(null, '', '/party/#t=abc')
     vi.spyOn(partyApi, 'state').mockResolvedValue(snapshot())
