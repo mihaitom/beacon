@@ -422,6 +422,8 @@ export default {
     nothingPlaying: 'Nothing is playing right now.',
     nowPlaying: 'Now playing',
     onAir: 'On air',
+    radioTitle: 'Radio is playing',
+    radioText: 'Wishes only work while music from the library is playing.',
     voteSkip: 'Vote to skip',
     voted: 'Voted to skip',
     queueEmpty: 'Nothing queued yet - be the first to wish for a song.',

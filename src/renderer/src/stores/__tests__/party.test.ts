@@ -77,6 +77,18 @@ describe('party wishes', () => {
     expect(refusal(() => party.wish(makeSong('a3'), 'anna', 'Anna', 2))).toBeNull()
   })
 
+  it('refuses while a radio station plays, leaving the queue alone', () => {
+    const { playback, party } = setup(['now'])
+    playback.radioStation = {
+      id: 'r1',
+      name: 'Chill FM',
+      streamUrl: 'https://s.example',
+      homePageUrl: null,
+    }
+    expect(refusal(() => party.wish(makeSong('a1'), 'anna', 'Anna', 3))).toBe('radio')
+    expect(ids(playback)).toEqual(['now'])
+  })
+
   it('refuses a song that is already wished for', () => {
     const { party } = setup(['now'])
     party.wish(makeSong('x'), 'anna', 'Anna', 3)

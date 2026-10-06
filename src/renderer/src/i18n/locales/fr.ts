@@ -425,6 +425,8 @@ export default {
     nothingPlaying: 'Rien ne joue en ce moment.',
     nowPlaying: 'En cours',
     onAir: 'En direct',
+    radioTitle: 'La radio est en cours',
+    radioText: 'Les demandes ne fonctionnent que pendant la lecture de musique de la bibliothèque.',
     voteSkip: 'Voter pour passer',
     voted: 'Vote pour passer enregistré',
     queueEmpty: "Rien dans la file pour l'instant - sois le premier à demander un morceau.",

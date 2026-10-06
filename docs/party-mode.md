@@ -35,6 +35,10 @@ guests who have the page open (default half), rounded up: with a third and a
 single guest, that guest's vote is enough. The host skips with the app's own
 controls.
 
+While a radio station plays there is no queue to wish into: what's next and
+the search make way for a note saying so, and a wish that arrives anyway is
+refused.
+
 ## Security model
 
 Everything a guest touches is under `/party/`, and nothing else is: the page,

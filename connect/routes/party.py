@@ -75,7 +75,13 @@ PAGE_MAX = 50
 
 # Relay errors the renderer raises on purpose (see stores/party.ts), and
 # what a guest should see for each.
-_REFUSALS = {"limit": 409, "duplicate": 409, "not-found": 404, "forbidden": 403}
+_REFUSALS = {
+    "limit": 409,
+    "duplicate": 409,
+    "not-found": 404,
+    "forbidden": 403,
+    "radio": 409,
+}
 
 SECURITY_HEADERS = {
     "Content-Security-Policy": (

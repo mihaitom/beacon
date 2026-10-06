@@ -12,5 +12,6 @@ export function guestErrorKey(error: unknown): string {
   if (error.message === 'limit') return 'partyGuest.errLimit'
   if (error.message === 'duplicate') return 'partyGuest.errDuplicate'
   if (error.message === 'not-found') return 'partyGuest.errNotFound'
+  if (error.message === 'radio') return 'partyGuest.radioText'
   return 'partyGuest.errGeneric'
 }

@@ -344,6 +344,9 @@ def test_renderer_refusals_reach_the_guest_as_such(client, guest_client, relay):
     _join(guest_client, token)
     relay["answers"]["party-wish"] = "limit"
     assert guest_client.post("/party/api/wishes", json={"song_id": "s1"}).status_code == 409
+    relay["answers"]["party-wish"] = "radio"
+    resp = guest_client.post("/party/api/wishes", json={"song_id": "s1"})
+    assert (resp.status_code, resp.json()["detail"]) == (409, "radio")
     relay["answers"]["party-withdraw"] = "forbidden"
     assert guest_client.delete("/party/api/wishes/r1").status_code == 403
 

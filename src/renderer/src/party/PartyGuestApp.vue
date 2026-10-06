@@ -49,6 +49,7 @@
       </header>
       <main class="guest-app__page" :class="{ 'guest-app__page--flush': tab === 'now' }">
         <guest-now-playing v-if="tab === 'now'" compact @notify="notify" />
+        <guest-radio-hint v-else-if="radio" />
         <guest-queue v-else-if="tab === 'queue'" @notify="notify" />
         <guest-wish v-else @notify="notify" />
       </main>
@@ -75,12 +76,19 @@
           <span class="guest-app__brand">Beacon</span>
           <span class="text-body-small text-medium-emphasis guest-app__me">{{ meName }}</span>
         </header>
-        <v-tabs v-model="sideTab" color="primary" grow class="guest-app__side-tabs">
+        <v-tabs
+          v-model="sideTab"
+          color="primary"
+          grow
+          :disabled="radio"
+          class="guest-app__side-tabs"
+        >
           <v-tab value="queue">{{ $t('partyGuest.tabQueue') }}</v-tab>
           <v-tab value="wish">{{ $t('partyGuest.tabWish') }}</v-tab>
         </v-tabs>
         <div class="guest-app__side-body">
-          <guest-queue v-if="sideTab === 'queue'" @notify="notify" />
+          <guest-radio-hint v-if="radio" />
+          <guest-queue v-else-if="sideTab === 'queue'" @notify="notify" />
           <guest-wish v-else @notify="notify" />
         </div>
       </aside>
@@ -96,11 +104,12 @@ import { PartyApiError } from './api'
 import { guestErrorKey } from './errors'
 import GuestNowPlaying from './components/GuestNowPlaying.vue'
 import GuestQueue from './components/GuestQueue.vue'
+import GuestRadioHint from './components/GuestRadioHint.vue'
 import GuestWish from './components/GuestWish.vue'
 
 export default {
   name: 'PartyGuestApp',
-  components: { GuestNowPlaying, GuestQueue, GuestWish },
+  components: { GuestNowPlaying, GuestQueue, GuestRadioHint, GuestWish },
   data() {
     return {
       name: usePartyGuestStore().savedName,
@@ -119,6 +128,9 @@ export default {
     /** The app's own phone breakpoint (useIsMobileWeb's). */
     compact(): boolean {
       return this.$vuetify.display.smAndDown
+    },
+    radio(): boolean {
+      return Boolean(this.store.snapshot?.radio)
     },
     meName(): string {
       return this.store.snapshot?.me.name ?? ''

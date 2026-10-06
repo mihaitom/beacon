@@ -43,7 +43,7 @@ export interface PartySettings {
  * to connect (stores/remoteControl.ts's onCommand), and connect maps the
  * code to a status (routes/party.py's _REFUSALS). */
 export class PartyRefusal extends Error {
-  constructor(public readonly code: 'limit' | 'duplicate' | 'not-found' | 'forbidden') {
+  constructor(public readonly code: 'limit' | 'duplicate' | 'not-found' | 'forbidden' | 'radio') {
     super(code)
   }
 
@@ -402,6 +402,8 @@ export const usePartyStore = defineStore('party', {
     /** A guest's wish, relayed from connect (routes/party.py). */
     wish(song: Song, guestId: string, guestName: string, maxPending: number): void {
       const playback = usePlaybackStore()
+      // A station has no queue a wish would play from.
+      if (playback.radioStation) throw new PartyRefusal('radio')
       const pending = this.activeRequests.filter((r) => r.position > playback.currentIndex)
       if (pending.filter((r) => r.guestId === guestId).length >= maxPending) {
         throw new PartyRefusal('limit')

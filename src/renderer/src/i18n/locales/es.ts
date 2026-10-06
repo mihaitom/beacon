@@ -425,6 +425,8 @@ export default {
     nothingPlaying: 'No suena nada ahora mismo.',
     nowPlaying: 'Sonando ahora',
     onAir: 'En directo',
+    radioTitle: 'Está sonando la radio',
+    radioText: 'Solo se pueden pedir canciones mientras suena música de la biblioteca.',
     voteSkip: 'Votar para saltar',
     voted: 'Has votado saltar',
     queueEmpty: 'Aún no hay nada en la cola: sé el primero en pedir una canción.',

@@ -422,6 +422,8 @@ export default {
     nothingPlaying: 'Gerade läuft nichts.',
     nowPlaying: 'Läuft gerade',
     onAir: 'Live',
+    radioTitle: 'Gerade läuft Radio',
+    radioText: 'Wünschen geht nur, während Musik aus der Bibliothek läuft.',
     voteSkip: 'Für Überspringen stimmen',
     voted: 'Für Überspringen gestimmt',
     queueEmpty: 'Noch nichts in der Warteschlange - wünsch dir als Erste:r einen Song.',
