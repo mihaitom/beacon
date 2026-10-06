@@ -17,6 +17,7 @@ services:
             # - LOG_LEVEL=debug
             # - COVER_CACHE_MB=128
             # - LASTFM_API_KEY=
+            # - TRUSTED_PROXIES=127.0.0.1/32,::1/128,172.16.0.0/12
         # Keeps AirPlay 2 pairings and (Jellyfin/Plex only) internet radio
         # stations across container recreations/updates.
         volumes:

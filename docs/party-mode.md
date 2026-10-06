@@ -104,7 +104,7 @@ behind your reverse proxy. Whichever proxy it is:
   (`https://beacon.example.com`), not under its LAN address: the QR code
   points at the address the party was started from.
 
-Then set `PARTY_TRUSTED_PROXIES` as described under
+Then set `TRUSTED_PROXIES` as described under
 [Client addresses](#client-addresses).
 
 ### Traefik + Authentik
@@ -194,7 +194,7 @@ other path starting with `/party`. Caddy keeps the `Host` header and sets
 ### Client addresses
 
 The rate limits work per client address. Beacon only trusts an
-`X-Forwarded-For` header from a proxy listed in `PARTY_TRUSTED_PROXIES`
+`X-Forwarded-For` header from a proxy listed in `TRUSTED_PROXIES`
 (comma-separated addresses or networks, default `127.0.0.1/32,::1/128`, which
 is the nginx inside the container). Add the address your proxy reaches Beacon
 from, or every guest counts as the proxy and they all share one set of
@@ -206,7 +206,7 @@ limits:
 | On another machine                                            | That machine's address, `192.168.1.5`  |
 | On the same host, outside Docker or with `network_mode: host` | Nothing, `127.0.0.1` is already listed |
 
-For example `PARTY_TRUSTED_PROXIES=127.0.0.1/32,::1/128,172.16.0.0/12`. The
+For example `TRUSTED_PROXIES=127.0.0.1/32,::1/128,172.16.0.0/12`. The
 same list decides whether `X-Forwarded-Proto: https` is believed when the
 cookie is marked `Secure`.
 

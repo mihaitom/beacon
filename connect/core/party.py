@@ -16,9 +16,7 @@ queue is the one Beacon window, whatever account is logged in.
 
 import asyncio
 import hashlib
-import ipaddress
 import math
-import os
 import re
 import secrets
 import time
@@ -119,43 +117,6 @@ class RateLimiter:
         for key in list(self._hits):
             if not self._window(key, window):
                 del self._hits[key]
-
-
-def _trusted_proxies() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
-    raw = os.getenv("PARTY_TRUSTED_PROXIES", "127.0.0.1/32,::1/128")
-    networks = []
-    for part in raw.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        try:
-            networks.append(ipaddress.ip_network(part, strict=False))
-        except ValueError:
-            continue
-    return networks
-
-
-TRUSTED_PROXIES = _trusted_proxies()
-
-
-def is_trusted_proxy(ip: str) -> bool:
-    try:
-        address = ipaddress.ip_address(ip)
-    except ValueError:
-        return False
-    return any(address in network for network in TRUSTED_PROXIES)
-
-
-def client_ip(peer: str, forwarded_for: str | None) -> str:
-    """The guest's address for rate limiting. X-Forwarded-For is only
-    believed from a proxy we trust, and read from the right: the rightmost
-    entry no trusted proxy added is the one a client can't have forged."""
-    if not forwarded_for or not is_trusted_proxy(peer):
-        return peer
-    for hop in reversed([h.strip() for h in forwarded_for.split(",") if h.strip()]):
-        if not is_trusted_proxy(hop):
-            return hop
-    return peer
 
 
 class PartyState:

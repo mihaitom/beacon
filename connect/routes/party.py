@@ -41,12 +41,11 @@ from core.party import (
     MAX_STREAMS_TOTAL,
     Guest,
     clean_name,
-    client_ip,
-    is_trusted_proxy,
     party,
 )
 from core.session import registry
 from core.state import PORT, get_local_ip
+from core.trusted_proxies import client_ip, is_trusted_proxy
 from routes.coverart import cover_image
 from routes.radio import radio_favicon
 from routes.remote import app_file_response, relay_command, relay_query, static_dir

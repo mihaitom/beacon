@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 import routes.coverart as coverart_module
 import routes.party as party_routes
 from core import integration_key
-from core.party import Settings, clean_name, client_ip, party
+from core.party import Settings, clean_name, party
 from core.remote import remote
 from main import app
 from media import SubsonicClient
@@ -261,15 +261,6 @@ def test_wishes_are_rate_limited(client, guest_client, relay):
     for _ in range(limit):
         assert guest_client.post("/party/api/wishes", json={"song_id": "s1"}).status_code == 200
     assert guest_client.post("/party/api/wishes", json={"song_id": "s1"}).status_code == 429
-
-
-def test_forwarded_for_is_only_believed_from_a_trusted_proxy():
-    assert client_ip("203.0.113.9", "198.51.100.1") == "203.0.113.9"
-    assert client_ip("127.0.0.1", "198.51.100.1") == "198.51.100.1"
-    # A client prepending its own entry doesn't get to choose: the rightmost
-    # untrusted hop is what the proxy itself saw.
-    assert client_ip("127.0.0.1", "1.1.1.1, 198.51.100.1") == "198.51.100.1"
-    assert client_ip("127.0.0.1", "198.51.100.1, 127.0.0.1") == "198.51.100.1"
 
 
 # ── Input ───────────────────────────────────────────────────────────────────
