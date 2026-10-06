@@ -1098,6 +1098,16 @@ async def _handle_binary(
 # ── Entry point ────────────────────────────────────────────────────────────
 
 
+async def call(endpoint: str, params: dict, media: PlexClient) -> dict:
+    """One Subsonic endpoint answered from inside connect rather than for a
+    request - core/party_library.py asks this while the party's host
+    window sleeps. Same answer handle() wraps in the Subsonic envelope."""
+    handler = _HANDLERS.get(endpoint)
+    if handler is None:
+        raise ValueError(f"{endpoint} is not bridged")
+    return await handler(params, media)
+
+
 async def handle(
     path: str, request: Request, media: PlexClient
 ) -> JSONResponse | StreamingResponse:

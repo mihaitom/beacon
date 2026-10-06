@@ -1,6 +1,6 @@
 # Plan: party mode that survives a locked phone
 
-Status: step 1 done (2026-10-06), the rest planned.
+Status: steps 1 to 3 done (2026-10-07), the rest planned.
 
 ## Why
 
@@ -127,8 +127,15 @@ cover goes through the existing `remember_cover()` / `/party/api/cover`.
    snapshot from it (`rebuild`); song titles come from what the tab has
    shown so far (`songs`), so a song it never saw is left out until step 2.
    Not yet measured on a phone.
-2. **connect: song metadata lookup** with its cache, used by 1.
-3. **connect: search and album lookup** from the media server.
+2. **connect: song metadata lookup** with its cache, used by 1. _Done:_ a
+   queue song nothing has named is looked up with the media client's
+   `get_track` (`PartyState._look_up`); one the server cannot find is not
+   asked about again.
+3. **connect: search and album lookup** from the media server. _Done:_
+   `core/party_library.py`, Navidrome directly and Jellyfin/Plex through
+   the bridges' new `call()`; `routes/party.py` uses it while the host
+   casts and relays to the window otherwise. Songs a guest finds are
+   remembered, so they have titles once wished for.
 4. **connect: wishes, withdrawals and skip votes** on the cast queue, with
    `play_seq` and the request ids in `/queue` and the status.
 5. **App: mirror connect's requests while casting**, hand them over when the

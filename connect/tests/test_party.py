@@ -1029,6 +1029,114 @@ async def test_guests_hear_of_the_next_track_without_the_window(default_session)
     assert default_session.event_bus.subscriber_count == 0
 
 
+@pytest.fixture
+def server_library(default_session, monkeypatch):
+    """The host's media server answering search3/getAlbum/getSong."""
+    found = {
+        "id": "s9",
+        "title": "Found",
+        "artist": "Artist",
+        "album": "Album",
+        "duration": 180,
+        "coverArt": "cov-s9",
+    }
+
+    def fake_get(endpoint, **params):
+        if endpoint == "getAlbum.view":
+            return {"album": {"id": "al9", "name": "Album", "artist": "Artist", "song": [found]}}
+        return {"searchResult3": {"song": [found], "album": [{"id": "al9", "name": "Album"}]}}
+
+    monkeypatch.setattr(default_session.media, "_get", fake_get)
+    return default_session
+
+
+def test_search_works_with_the_window_asleep_while_casting(client, guest_client, server_library):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a", "b"], session_id=server_library.session_id))
+    _join(guest_client, token)
+    _cast(server_library, ["a", "b"])
+    remote.renderer_connected = False  # the host's phone is locked
+    resp = guest_client.get("/party/api/songs?search=found")
+    assert resp.status_code == 200
+    assert [s["title"] for s in resp.json()["items"]] == ["Found"]
+    assert guest_client.get("/party/api/albums?search=album").status_code == 200
+    album = guest_client.get("/party/api/albums/al9").json()
+    assert [s["title"] for s in album["songs"]] == ["Found"]
+
+
+def test_without_a_cast_search_still_asks_the_window(client, guest_client, server_library):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a"], session_id=server_library.session_id))
+    _join(guest_client, token)
+    remote.renderer_connected = False
+    assert guest_client.get("/party/api/songs?search=found").status_code == 503
+
+
+def test_a_music_server_that_fails_is_reported_as_such(
+    client, guest_client, default_session, monkeypatch
+):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a"], session_id=default_session.session_id))
+    _join(guest_client, token)
+    _cast(default_session, ["a"])
+
+    def failing(endpoint, **params):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(default_session.media, "_get", failing)
+    resp = guest_client.get("/party/api/songs?search=x")
+    assert resp.status_code == 503
+    assert "connection refused" not in resp.text
+
+
+def test_a_song_found_by_a_guest_is_known_once_it_is_queued(client, guest_client, server_library):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a"], session_id=server_library.session_id))
+    _join(guest_client, token)
+    _cast(server_library, ["a"])
+    guest_client.get("/party/api/songs?search=found")
+    server_library.state.queue = ["a", "s9"]
+    party.rebuild()
+    assert _titles(party.snapshot)[1] == ["Found"]
+
+
+async def test_a_queue_song_nobody_named_is_looked_up(default_session, monkeypatch):
+    asked = []
+
+    def get_track(song_id):
+        asked.append(song_id)
+        return Track(id=song_id, title=f"Looked up {song_id}", artist="Artist", duration=100)
+
+    monkeypatch.setattr(default_session.media, "get_track", get_track)
+    party.enable()
+    party.update_snapshot(_snapshot(["a", "b"], session_id=default_session.session_id))
+    # An autoplay top-up made while the window slept.
+    _cast(default_session, ["a", "b", "z"])
+    guest_updates = party.event_bus.subscribe()
+    party.rebuild()
+    await asyncio.wait_for(guest_updates.get(), timeout=1)
+    assert _titles(party.snapshot)[1] == ["Title b", "Looked up z"]
+    assert asked == ["z"]
+
+
+async def test_a_song_the_server_cannot_find_is_not_asked_for_again(default_session, monkeypatch):
+    asked = []
+
+    def get_track(song_id):
+        asked.append(song_id)
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(default_session.media, "get_track", get_track)
+    party.enable()
+    party.update_snapshot(_snapshot(["a"], session_id=default_session.session_id))
+    _cast(default_session, ["a", "gone"])
+    for _ in range(3):
+        party.rebuild()
+        await asyncio.sleep(0.05)
+    assert asked == ["gone"]
+    assert _titles(party.snapshot)[1] == []
+
+
 # ── Visualizer ──────────────────────────────────────────────────────────────
 
 

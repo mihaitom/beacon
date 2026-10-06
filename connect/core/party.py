@@ -16,6 +16,7 @@ queue is the one Beacon window, whatever account is logged in.
 
 import asyncio
 import hashlib
+import logging
 import math
 import re
 import secrets
@@ -27,6 +28,8 @@ from urllib.parse import quote
 
 from .remote import KEEPALIVE_TIMEOUT, REAP_INTERVAL, remote
 from .state import EventBus
+
+logger = logging.getLogger("connect.party")
 
 DEFAULT_DURATION_HOURS = 12
 MAX_DURATION_HOURS = 48
@@ -162,6 +165,10 @@ class PartyState:
         # makes up for itself. Another tab taking the party over replaces
         # it, and the one that had it sees so in /party-host/status.
         self.host_tab: str | None = None
+        # Queue songs being looked up on the media server, and ones it could
+        # not find - not asked about again on every status tick.
+        self._fetching: set[str] = set()
+        self._unfetchable: set[str] = set()
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -201,6 +208,8 @@ class PartyState:
         self.lyrics = None
         self.tab_snapshot = {}
         self.songs.clear()
+        self._fetching.clear()
+        self._unfetchable.clear()
         self.host_tab = None
         if self._cast_task is not None:
             self._cast_task.cancel()
@@ -218,7 +227,7 @@ class PartyState:
         return (
             self.enabled
             and time.time() - remote.last_keepalive > KEEPALIVE_TIMEOUT
-            and self._host_cast() is None
+            and self.host_cast() is None
         )
 
     # ── Guests ───────────────────────────────────────────────────────────
@@ -339,7 +348,7 @@ class PartyState:
         while len(self.songs) > SONG_MEMORY:
             self.songs.pop(next(iter(self.songs)))
 
-    def _host_cast(self):
+    def host_cast(self):
         """The host's cast session while it plays a queue to a device, else
         None. A station is left to the host's window (nothing to wish for
         there, and connect does not know its name)."""
@@ -368,9 +377,10 @@ class PartyState:
     def _cast_playback(self, session) -> dict:
         """What is playing according to the cast session itself, which keeps
         going while the host's window sleeps. Its queue is song ids; the
-        titles come from what the host's window has shown (self.songs), so
+        titles come from what the host's window has shown (self.songs), and
         a song it never saw - an autoplay top-up made while it slept - is
-        left out for now."""
+        looked up on the media server (see _look_up) and left out until
+        then."""
         from .session import compute_position
 
         st = session.state
@@ -395,6 +405,45 @@ class PartyState:
             "radio": None,
         }
 
+    def _look_up(self, session, song_ids: list[str]) -> None:
+        """Starts looking up the queue songs guests would see that nothing
+        has named yet. Only from inside the event loop - rebuild() is also
+        called where there is none, and then nothing is looked up."""
+        missing = [
+            song_id
+            for song_id in dict.fromkeys(song_ids)
+            if song_id not in self.songs
+            and song_id not in self._fetching
+            and song_id not in self._unfetchable
+        ]
+        if not missing:
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._fetching.update(missing)
+        asyncio.create_task(self._fetch_songs(session, missing))
+
+    async def _fetch_songs(self, session, song_ids: list[str]) -> None:
+        from .party_library import get_song
+
+        try:
+            for song_id in song_ids:
+                try:
+                    self.remember_song(await get_song(session.media, song_id))
+                except Exception as e:
+                    logger.info(f"[party] Could not look up queue song {song_id}: {e}")
+                    self._unfetchable.add(song_id)
+        finally:
+            self._fetching.difference_update(song_ids)
+        if not self.enabled:
+            return
+        previous = self.snapshot
+        self.rebuild()
+        if self._worth_telling(previous, self.snapshot):
+            await self.broadcast()
+
     def update_snapshot(self, raw: dict) -> None:
         """The host's window pushed a snapshot (see receive_snapshot)."""
         self.host_session_id = raw.get("session_id") or self.host_session_id
@@ -416,7 +465,7 @@ class PartyState:
         is taken from its last snapshot where that still describes the same
         queue and song."""
         raw = self.tab_snapshot
-        session = self._host_cast()
+        session = self.host_cast()
         playback = self._cast_playback(session) if session else self._tab_playback(raw)
         tab = self._tab_playback(raw)
 
@@ -435,6 +484,8 @@ class PartyState:
         requests = (raw.get("party_requests") or {}) if same_queue else {}
         upcoming = []
         start = index + 1 if isinstance(index, int) and index >= 0 else 0
+        if session is not None:
+            self._look_up(session, session.state.queue[start : start + UPCOMING_LIMIT])
         for position in range(start, min(start + UPCOMING_LIMIT, len(queue))):
             entry = self.guest_song(queue[position])
             if entry is None:
@@ -575,7 +626,7 @@ class PartyState:
                     await asyncio.wait_for(queue.get(), timeout=CAST_RECHECK_SECONDS)
                 except TimeoutError:
                     continue
-                if self._host_cast() is None:
+                if self.host_cast() is None:
                     continue
                 previous = self.snapshot
                 self.rebuild()

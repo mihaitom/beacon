@@ -33,7 +33,7 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel
 
-from core import fanart
+from core import fanart, party_library
 from core.auth import require_token
 from core.party import (
     DEFAULT_DURATION_HOURS,
@@ -405,12 +405,39 @@ def _search_params(search: str, offset: int, limit: int) -> dict:
     }
 
 
+async def _library(query: str, params: dict, from_server) -> dict:
+    """A guest's library lookup: answered by the media server while the host
+    casts, so it works while the host's window sleeps, and by that window
+    otherwise (see core/party_library.py)."""
+    session = party.host_cast()
+    if session is None:
+        return await relay_query(query, params)
+    try:
+        result = await from_server(session.media)
+    except Exception as e:
+        logger.warning(f"[party] {query} from the media server failed: {e}")
+        raise HTTPException(status_code=503, detail="The music server is not answering") from e
+    # Songs a guest may wish for next: their titles are known from here on
+    # when they turn up in the cast queue (see PartyState.songs).
+    songs = result.get("items", []) if query == "songs-request" else result.get("songs", [])
+    for song in songs:
+        party.remember_song(song)
+    return result
+
+
 @router.get("/api/songs")
 async def search_songs(
     search: str = "", offset: int = 0, limit: int = 30, guest: Guest = Depends(require_guest)
 ):
     _limit(f"search:{guest.guest_id}", SEARCHES)
-    result = await relay_query("songs-request", _search_params(search, offset, limit))
+    params = _search_params(search, offset, limit)
+    result = await _library(
+        "songs-request",
+        params,
+        lambda media: party_library.search_songs(
+            media, params["search"], params["offset"], params["limit"]
+        ),
+    )
     return {
         "items": [party.guest_song(s) for s in result.get("items", [])],
         "total": result.get("total", 0),
@@ -422,7 +449,14 @@ async def search_albums(
     search: str = "", offset: int = 0, limit: int = 30, guest: Guest = Depends(require_guest)
 ):
     _limit(f"search:{guest.guest_id}", SEARCHES)
-    result = await relay_query("albums-request", _search_params(search, offset, limit))
+    params = _search_params(search, offset, limit)
+    result = await _library(
+        "albums-request",
+        params,
+        lambda media: party_library.search_albums(
+            media, params["search"], params["offset"], params["limit"]
+        ),
+    )
     return {
         "items": [party.guest_album(a) for a in result.get("items", [])],
         "total": result.get("total", 0),
@@ -432,7 +466,12 @@ async def search_albums(
 @router.get("/api/albums/{album_id}")
 async def get_album(album_id: str, guest: Guest = Depends(require_guest)):
     _limit(f"search:{guest.guest_id}", SEARCHES)
-    result = await relay_query("album-request", {"albumId": _check_id(album_id)})
+    album_id = _check_id(album_id)
+    result = await _library(
+        "album-request",
+        {"albumId": album_id},
+        lambda media: party_library.get_album(media, album_id),
+    )
     album = result.get("album")
     if not album:
         raise HTTPException(status_code=404)

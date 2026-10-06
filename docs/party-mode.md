@@ -232,14 +232,15 @@ and guests see no bars.
 
 - The party runs in the window that started it. In the web build, another
   browser tab can take it over from the party dialog, and only one tab answers
-  guests at a time: the one that gave it up lets go within about ten seconds. When that window goes quiet - closed, or asleep - the
-  party ends after about a minute and a half, unless the host is casting. Then
-  the Beacon server keeps the party going and shows guests what plays while
-  that window sleeps (a locked phone) or, in the web build, after the tab is
-  closed. Quitting the desktop app stops its Beacon server, and the party with
-  it. Wishing, searching and skipping still need the window for now; while it
-  sleeps, guests are told Beacon isn't answering. See
-  `docs/plans/party-mode-server-side.md`.
+  guests at a time: the one that gave it up lets go within about ten seconds.
+  When that window goes quiet - closed, or asleep - the party ends after about
+  a minute and a half, unless the host is casting. Then the Beacon server
+  keeps the party going and shows guests what plays while that window sleeps
+  (a locked phone) or, in the web build, after the tab is closed. Searching
+  works then too, answered by the music server itself; wishing and skipping
+  still need the window for now, and while it sleeps guests are told Beacon
+  isn't answering. Quitting the desktop app stops its Beacon server, and the
+  party with it. See `docs/plans/party-mode-server-side.md`.
 - Taking a party over, or reloading the window that hosts it, keeps the link:
   the window gets it back from the Beacon server, and guests already there
   stay in. Only "Renew link" makes a new one and signs everyone out.
