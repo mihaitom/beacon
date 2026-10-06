@@ -1,4 +1,13 @@
-import { computed, reactive, ref, watch, type ComputedRef, type WatchStopHandle } from 'vue'
+import {
+  computed,
+  markRaw,
+  reactive,
+  ref,
+  watch,
+  type ComputedRef,
+  type WatchStopHandle,
+} from 'vue'
+import GuestCover from './components/GuestCover.vue'
 import { i18n } from '@/i18n'
 import { extractDominantColor } from '@/services/colorExtractor'
 import { resampleBands } from '@/services/visualizerBands'
@@ -284,6 +293,12 @@ export function useGuestNowPlayingSource(): {
       debug: false,
       lyricsTools: false,
     }),
+    // Store-free, so the shared presentation never pulls the app's library
+    // store (CoverArt's own imports) into the guest bundle.
+    cover: markRaw(GuestCover),
+    titleLogComponent: null,
+    lyricsCandidateComponent: null,
+    debugOverlayComponent: null,
     ui: reactive({
       lyricsOpen: computed({
         get: () => showLyrics.value,

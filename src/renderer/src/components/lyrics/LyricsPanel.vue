@@ -167,7 +167,7 @@
               {{ $t('lyrics.pickMatch') }}
             </v-btn>
           </template>
-          <lyrics-candidate-list @select="closePicker" />
+          <component :is="source.lyricsCandidateComponent" @select="closePicker" />
         </v-menu>
         <v-btn
           v-else
@@ -193,7 +193,7 @@
         <div class="lyrics-panel__mobile-sheet-header">
           <span class="text-body-large">{{ $t('lyrics.pickMatch') }}</span>
         </div>
-        <lyrics-candidate-list @select="closePicker" />
+        <component :is="source.lyricsCandidateComponent" @select="closePicker" />
       </v-card>
     </v-bottom-sheet>
   </div>
@@ -202,13 +202,12 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import type { LyricLine } from '@/services/lyrics/parseLrc'
-import LyricsCandidateList from '@/components/lyrics/LyricsCandidateList.vue'
 import LyricsLines from '@/components/lyrics/LyricsLines.vue'
 import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
 
 export default {
   name: 'LyricsPanel',
-  components: { LyricsCandidateList, LyricsLines },
+  components: { LyricsLines },
   mixins: [nowPlayingSourceMixin],
   props: {
     variant: {

@@ -18,16 +18,18 @@ Done:
   `PartyGuestApp` renders the presentation with a `GuestSkipButton` in the
   toolbar slot. `GuestNowPlaying.vue` and its tests are gone.
 
+Store isolation: the presentation no longer *imports* the host's
+store-reading leaves. It gets the component itself through the source
+(`cover`, `titleLogComponent`, `lyricsCandidateComponent`,
+`debugOverlayComponent`): `hostSource.ts` hands it `CoverArt`,
+`RadioTitleLog`, `LyricsCandidateList` and `VisualizerDebugOverlay`, the
+guest source hands it `GuestCover` (a plain, store-free image) and nulls.
+The final check now passes: after `pnpm build:party`,
+`grep -c getSimilarSongs2 connect/static/party/assets/*.js` is 0 and the one
+JS chunk is ~590 kB (down from ~680).
+
 Still open:
 
-- **Cover art isolation.** `NowPlayingArtwork` / `NowPlayingTrackPanels`
-  still render `CoverArt`, which imports the library store for its
-  `coverArtId`/radio-favicon routes. A guest only ever passes the new `src`
-  (a ready URL), but the import still pulls the library store into the
-  party bundle. The plan's final check
-  (`grep -c getSimilarSongs2 connect/static/party/assets/*.js` = 0) is not
-  met until that is split out - e.g. an async `CoverArt` or a raw-image leaf
-  for the `src` path.
 - The real-device check (`pnpm test:layout` is green, a phone is not yet).
 
 ## Why

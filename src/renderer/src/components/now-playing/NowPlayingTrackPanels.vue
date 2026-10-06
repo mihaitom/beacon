@@ -29,7 +29,8 @@
         />
       </template>
       <template v-else>
-        <cover-art
+        <component
+          :is="source.cover"
           v-if="source.ui.artworkHidden && panel.song"
           :cover-art-id="panel.song.coverArtId"
           :src="panel.song.coverUrl"
@@ -96,12 +97,10 @@
 </template>
 
 <script lang="ts">
-import CoverArt from '@/components/library/CoverArt.vue'
 import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
 
 export default {
   name: 'NowPlayingTrackPanels',
-  components: { CoverArt },
   mixins: [nowPlayingSourceMixin],
   props: {
     compact: {

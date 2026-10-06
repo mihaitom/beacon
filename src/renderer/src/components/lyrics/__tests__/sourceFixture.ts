@@ -1,6 +1,7 @@
-import { computed, reactive } from 'vue'
+import { computed, markRaw, reactive } from 'vue'
 import { useLyricsStore } from '@/stores/lyrics'
 import { usePlaybackStore } from '@/stores/playback'
+import LyricsCandidateList from '@/components/lyrics/LyricsCandidateList.vue'
 import {
   lyricsSourceLabel,
   lyricsSourceUrl,
@@ -28,6 +29,11 @@ export function lyricsSourceFixture(): NowPlayingSource {
       credits: computed(() => lyrics.credits),
     }),
     position: computed(() => playback.localPosition),
+    // The host-only leaves a real host source would carry (see
+    // hostSource.ts); the picker tests reach for this one.
+    cover: markRaw({ template: '<div />' }),
+    titleLogComponent: null,
+    lyricsCandidateComponent: markRaw(LyricsCandidateList),
     capabilities: reactive({ lyricsTools: true }),
     setLyricsOffset: (offset: number) => lyrics.setOffset(offset),
     resetLyricsOffset: (offset: number) => lyrics.setOffset(0 - offset),

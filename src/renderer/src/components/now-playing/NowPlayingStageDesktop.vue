@@ -37,7 +37,8 @@
             <!-- Radio takes the same half of the split (and the same back
                - face of the portrait flip card): no lyrics to show, but the
                - station's own title log to read instead. -->
-            <radio-title-log
+            <component
+              :is="source.titleLogComponent"
               v-else-if="source.ui.lyricsOpen && source.radio && source.capabilities.titleLog"
               variant="immersive"
               :entries="source.radio.titleLog"
@@ -60,7 +61,6 @@
 
 <script lang="ts">
 import LyricsPanel from '@/components/lyrics/LyricsPanel.vue'
-import RadioTitleLog from '@/components/radio/RadioTitleLog.vue'
 import NowPlayingArtwork from '@/components/now-playing/NowPlayingArtwork.vue'
 import NowPlayingTrackPanels from '@/components/now-playing/NowPlayingTrackPanels.vue'
 import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
@@ -76,7 +76,6 @@ export default {
   name: 'NowPlayingStageDesktop',
   components: {
     LyricsPanel,
-    RadioTitleLog,
     NowPlayingArtwork,
     NowPlayingTrackPanels,
   },

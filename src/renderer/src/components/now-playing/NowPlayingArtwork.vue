@@ -1,7 +1,8 @@
 <template>
   <div class="now-playing__art-wrap" :class="{ 'now-playing__art-wrap--compact': compact }">
     <div class="now-playing__art-glow" :style="{ background: source.glowColor }" />
-    <cover-art
+    <component
+      :is="source.cover"
       v-if="source.song"
       :cover-art-id="source.song.coverArtId"
       :src="source.song.coverUrl"
@@ -12,13 +13,15 @@
      - radioIconIsTransparent) — a real card treatment around a logo that's
      - just floating on transparency looks like a broken image rather than a
      - clean logo. -->
-    <cover-art
+    <component
+      :is="source.cover"
       v-else
       contain
       :radio-favicon="source.radio?.favicon ?? null"
       :src="source.radio?.logoUrl ?? null"
       :size="artSize"
       fallback-icon="mdi-radio"
+      :transparency="true"
       :class="radioIconIsTransparent ? 'radio-cover-art--transparent' : 'cover-shadow'"
       @transparency="radioIconIsTransparent = $event"
     />
@@ -26,12 +29,10 @@
 </template>
 
 <script lang="ts">
-import CoverArt from '@/components/library/CoverArt.vue'
 import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
 
 export default {
   name: 'NowPlayingArtwork',
-  components: { CoverArt },
   mixins: [nowPlayingSourceMixin],
   props: {
     /** A CSS size string from the parent's own artSize — a plain CSS value

@@ -1,4 +1,4 @@
-import type { InjectionKey } from 'vue'
+import type { Component, InjectionKey } from 'vue'
 import type { RadioFaviconRequest } from '@/services/connect/radio'
 import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
 import type { VisualizerFrame } from '@/services/connect/types'
@@ -135,6 +135,23 @@ export interface NowPlayingSource {
   lyrics: NowPlayingLyrics
   visualizer: NowPlayingVisualizer
   capabilities: NowPlayingCapabilities
+  /** The component the artwork and the corner panel render for a cover.
+   * The app's batched CoverArt (which imports the library store, so it must
+   * not reach the guest bundle), or the guest page's own store-free image.
+   * Both take the same props: `src`, `coverArtId`, `radioFavicon`, `size`,
+   * `contain`, `fallbackIcon`, and emit `transparency`/`loaded`. */
+  cover: Component
+  /** The app's title log (host only). Like `cover`, injected rather than
+   * imported: it reads the library store, which must not reach the guest
+   * bundle. Null for a guest, and only ever rendered where
+   * `capabilities.titleLog` is on. */
+  titleLogComponent: Component | null
+  /** The lyrics match picker's list (host only), for the same reason. */
+  lyricsCandidateComponent: Component | null
+  /** The visualizer debug overlay (host only): it reaches the log-level
+   * endpoint through the app's authenticated client, and a guest is never
+   * chasing sync anyway. */
+  debugOverlayComponent: Component | null
   ui: NowPlayingUi
   /** The corner stack: the current song, then the next one near the end of
    * a track. */

@@ -1,4 +1,8 @@
-import { computed, reactive } from 'vue'
+import { computed, markRaw, reactive } from 'vue'
+import CoverArt from '@/components/library/CoverArt.vue'
+import RadioTitleLog from '@/components/radio/RadioTitleLog.vue'
+import LyricsCandidateList from '@/components/lyrics/LyricsCandidateList.vue'
+import VisualizerDebugOverlay from '@/components/player/VisualizerDebugOverlay.vue'
 import type { Song, RadioStation } from '@/types/library'
 import type { RadioFaviconRequest } from '@/services/connect/radio'
 import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
@@ -166,6 +170,14 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
       debug: computed(() => api.debugEnabled),
       lyricsTools: true,
     }),
+    // The app's batched cover component. Kept out of the shared
+    // presentation's imports on purpose - it pulls in the library store.
+    cover: markRaw(CoverArt),
+    // Likewise the title log and the lyrics picker: store-reading, host-only
+    // leaves the guest page never renders.
+    titleLogComponent: markRaw(RadioTitleLog),
+    lyricsCandidateComponent: markRaw(LyricsCandidateList),
+    debugOverlayComponent: markRaw(VisualizerDebugOverlay),
     ui: reactive({
       lyricsOpen: computed({
         get: () => api.showLyrics,

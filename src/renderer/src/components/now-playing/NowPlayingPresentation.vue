@@ -61,7 +61,9 @@
      - visualizer row at all, floating over whatever's underneath instead
      - (the artwork/backdrop area, not the bars themselves, for the
      - top-left corner this actually renders in). -->
-    <visualizer-debug-overlay
+    <component
+      :is="source.debugOverlayComponent"
+      v-if="source.debugOverlayComponent"
       :debug="source.visualizer.debug"
       class="now-playing__visualizer-debug"
     />
@@ -75,7 +77,6 @@ import NowPlayingBackdrop from '@/components/now-playing/NowPlayingBackdrop.vue'
 import NowPlayingVisualizer from '@/components/now-playing/NowPlayingVisualizer.vue'
 import NowPlayingToolbar from '@/components/now-playing/NowPlayingToolbar.vue'
 import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
-import VisualizerDebugOverlay from '@/components/player/VisualizerDebugOverlay.vue'
 import { appAccent } from '@/services/appAccent'
 
 // Warm amber — the same signal color the app is named after (see main.ts's
@@ -97,7 +98,6 @@ export default {
     NowPlayingBackdrop,
     NowPlayingVisualizer,
     NowPlayingToolbar,
-    VisualizerDebugOverlay,
   },
   mixins: [nowPlayingSourceMixin],
   props: {
