@@ -20,7 +20,8 @@ import routes.party as party_routes
 from core import integration_key
 from core.party import Settings, clean_name, party
 from core.remote import KEEPALIVE_TIMEOUT, remote
-from delivery.chromecast import ChromecastDelivery
+from core.session import build_status_dict
+from delivery.base import BaseDelivery
 from main import app
 from media import SubsonicClient
 from media.base import Track
@@ -904,11 +905,23 @@ def test_no_backdrop_without_one_from_the_host(client, guest_client):
 # ── While the host casts ────────────────────────────────────────────────────
 
 
+class _Speaker(BaseDelivery):
+    """A cast target that is never reached for: the app shutting down at the
+    end of a test stops whatever is still casting, and a real Chromecast
+    would go looking for a device on the network."""
+
+    async def play(self, *args, **kwargs) -> None:
+        pass
+
+    async def stop(self) -> None:
+        pass
+
+
 def _cast(session, queue_ids, index=0):
     """The host's session casting `queue_ids` at `index`, as connect holds it
     after a /play: ids only, the current track with its metadata."""
     st = session.state
-    st.active_delivery = ChromecastDelivery("TV")
+    st.active_delivery = _Speaker("TV")
     st.queue = list(queue_ids)
     st.queue_index = index
     song_id = queue_ids[index]
@@ -973,7 +986,7 @@ def test_a_song_the_window_never_showed_is_left_out(client, default_session):
     assert _titles(party.snapshot) == ("Title a", ["Title b"])
 
 
-def test_wishes_keep_their_names_while_the_queue_is_the_windows(client, default_session):
+def test_a_wish_follows_its_song_when_the_cast_queue_changes(client, default_session):
     _start(client)
     requests = {"2": {"id": "r1", "guest_id": "g1", "guest_name": "Anna"}}
     snapshot = _snapshot(["a", "b", "c"], requests=requests, session_id=default_session.session_id)
@@ -981,11 +994,14 @@ def test_wishes_keep_their_names_while_the_queue_is_the_windows(client, default_
     _cast(default_session, ["a", "b", "c"], index=1)
     party.rebuild()
     assert party.snapshot["upcoming"][0]["request"]["name"] == "Anna"
-    # Someone else changed the cast queue: position 2 is another song now,
-    # which must not inherit Anna's name.
+    # The host moved things around in the app: Anna's wish is still c, and
+    # the song now at its old place is nobody's.
     default_session.state.queue = ["a", "b", "a", "c"]
     party.rebuild()
-    assert all("request" not in entry for entry in party.snapshot["upcoming"])
+    upcoming = party.snapshot["upcoming"]
+    assert [entry["title"] for entry in upcoming] == ["Title a", "Title c"]
+    assert "request" not in upcoming[0]
+    assert upcoming[1]["request"]["name"] == "Anna"
 
 
 def test_background_and_lyrics_only_for_the_song_the_window_knew(client, default_session):
@@ -1135,6 +1151,211 @@ async def test_a_song_the_server_cannot_find_is_not_asked_for_again(default_sess
         await asyncio.sleep(0.05)
     assert asked == ["gone"]
     assert _titles(party.snapshot)[1] == []
+
+
+# ── Wishes while the host casts ─────────────────────────────────────────────
+
+
+@pytest.fixture
+def casting_party(client, default_session):
+    """A party whose host casts ['now', 'h1', 'h2'] and whose window sleeps."""
+    token = _start(client)
+    party.update_snapshot(_snapshot(["now", "h1", "h2"], session_id=default_session.session_id))
+    _cast(default_session, ["now", "h1", "h2"])
+    default_session.state.original_queue = ["now", "h1", "h2"]
+    remote.renderer_connected = False
+    return token, default_session
+
+
+def _wish(guest, song_id):
+    # Found in a search first, as on the guest page - which is how connect
+    # knows its title (see routes/party.py's _library).
+    party.remember_song({"id": song_id, "title": f"Title {song_id}", "artist": "Artist"})
+    return guest.post("/party/api/wishes", json={"song_id": song_id})
+
+
+def _queue(session) -> list[str]:
+    return list(session.state.queue)
+
+
+def test_wishes_take_turns_on_the_cast_queue(casting_party):
+    token, session = casting_party
+    anna, ben = _guests(token, ["Anna", "Ben"])
+    for song_id in ("a1", "a2", "a3"):
+        assert _wish(anna, song_id).status_code == 200
+    assert _wish(ben, "b1").status_code == 200
+    assert _queue(session) == ["now", "a1", "b1", "a2", "a3", "h1", "h2"]
+    # The unshuffled order keeps up, so turning shuffle off loses nothing.
+    assert session.state.original_queue == ["now", "a1", "b1", "a2", "a3", "h1", "h2"]
+    names = [e.get("request", {}).get("name") for e in party.snapshot["upcoming"]]
+    assert names[:4] == ["Anna", "Ben", "Anna", "Anna"]
+
+
+def test_a_wish_reaches_the_hosts_window_in_the_status(casting_party):
+    token, session = casting_party
+    (anna,) = _guests(token, ["Anna"])
+    _wish(anna, "a1")
+    status = build_status_dict(session)
+    assert status["queue"][1] == "a1"
+    assert [(r["position"], r["guest_name"]) for r in status["party_requests"]] == [(1, "Anna")]
+
+
+def test_the_limit_and_duplicates_are_refused_on_the_cast(casting_party):
+    token, _ = casting_party
+    party.settings.max_pending_per_guest = 1
+    anna, ben = _guests(token, ["Anna", "Ben"])
+    assert _wish(anna, "a1").status_code == 200
+    resp = _wish(anna, "a2")
+    assert (resp.status_code, resp.json()["detail"]) == (409, "limit")
+    resp = _wish(ben, "a1")
+    assert (resp.status_code, resp.json()["detail"]) == (409, "duplicate")
+
+
+def test_a_song_coming_up_moves_forward_on_the_cast(casting_party):
+    token, session = casting_party
+    (anna,) = _guests(token, ["Anna"])
+    assert _wish(anna, "h2").status_code == 200
+    assert _queue(session) == ["now", "h2", "h1"]
+
+
+def test_a_song_already_played_is_queued_again_on_the_cast(casting_party):
+    token, session = casting_party
+    session.state.queue = ["old", "now", "h1"]
+    session.state.queue_index = 1
+    (anna,) = _guests(token, ["Anna"])
+    _wish(anna, "old")
+    assert _queue(session) == ["old", "now", "old", "h1"]
+
+
+def test_a_guest_withdraws_their_own_wish_on_the_cast(casting_party):
+    token, session = casting_party
+    anna, ben = _guests(token, ["Anna", "Ben"])
+    _wish(anna, "a1")
+    _wish(ben, "b1")
+    request_id = party.cast_requests[0].id
+    assert ben.delete(f"/party/api/wishes/{request_id}").status_code == 403
+    assert anna.delete(f"/party/api/wishes/{request_id}").status_code == 200
+    assert _queue(session) == ["now", "b1", "h1", "h2"]
+    assert "a1" not in session.state.original_queue
+    assert [(r.song_id, r.position) for r in party.cast_requests] == [("b1", 1)]
+
+
+def test_a_wish_that_is_playing_cannot_be_withdrawn(casting_party):
+    token, session = casting_party
+    (anna,) = _guests(token, ["Anna"])
+    _wish(anna, "a1")
+    session.state.queue_index = 1
+    request_id = party.cast_requests[0].id
+    assert anna.delete(f"/party/api/wishes/{request_id}").status_code == 404
+
+
+def test_a_window_waking_with_an_old_queue_cannot_undo_a_wish(client, casting_party):
+    token, session = casting_party
+    stale_seq = int(time.time() * 1000) - 5_000  # built before it slept
+    (anna,) = _guests(token, ["Anna"])
+    _wish(anna, "a1")
+    resp = client.post(
+        "/queue",
+        json={"song_ids": ["now", "h1", "h2"], "queue_index": 0, "seq": stale_seq},
+    )
+    assert resp.json()["status"] == "superseded"
+    assert _queue(session) == ["now", "a1", "h1", "h2"]
+
+
+def test_wishes_follow_a_queue_the_host_edits(casting_party):
+    token, session = casting_party
+    (anna,) = _guests(token, ["Anna"])
+    _wish(anna, "a1")
+    # The host, awake again, drags a1 to the end and removes h1.
+    session.state.queue = ["now", "h2", "a1"]
+    party.rebuild()
+    assert [(r.song_id, r.position) for r in party.cast_requests] == [("a1", 2)]
+    # ...and then removes the wish itself.
+    session.state.queue = ["now", "h2"]
+    party.rebuild()
+    assert party.cast_requests == []
+
+
+def test_a_wish_stays_with_its_own_copy_when_the_host_adds_the_song_again(casting_party):
+    token, session = casting_party
+    anna, ben = _guests(token, ["Anna", "Ben"])
+    _wish(anna, "a1")
+    _wish(ben, "b1")
+    _wish(anna, "x")
+    assert _queue(session) == ["now", "a1", "b1", "x", "h1", "h2"]
+    # The host queues x once more, right after the current song.
+    session.state.queue = ["now", "x", "a1", "b1", "x", "h1", "h2"]
+    party.rebuild()
+    wish = next(r for r in party.cast_requests if r.song_id == "x")
+    assert wish.position == 4
+
+
+def test_a_wish_is_let_go_once_it_has_played(casting_party):
+    token, session = casting_party
+    (anna,) = _guests(token, ["Anna"])
+    _wish(anna, "a1")
+    session.state.queue_index = 2
+    party.rebuild()
+    assert party.cast_requests == []
+
+
+def test_wishes_taken_before_the_cast_carry_over(client, default_session):
+    _start(client)
+    requests = {"1": {"id": "r1", "guest_id": "g1", "guest_name": "Anna"}}
+    party.update_snapshot(
+        _snapshot(["now", "a1", "h1"], requests=requests, session_id=default_session.session_id)
+    )
+    _cast(default_session, ["now", "a1", "h1"])
+    party.rebuild()
+    assert [(r.id, r.position, r.guest_name) for r in party.cast_requests] == [("r1", 1, "Anna")]
+
+
+def test_the_window_gets_the_wishes_back_when_the_cast_ends(casting_party):
+    token, session = casting_party
+    (anna,) = _guests(token, ["Anna"])
+    _wish(anna, "a1")
+    assert "party_requests" in build_status_dict(session)
+    session.state.active_delivery = None
+    party.rebuild()
+    assert "party_requests" not in build_status_dict(session)
+    assert party.cast_owned is False
+
+
+def test_a_skip_vote_skips_the_cast_itself(casting_party, monkeypatch):
+    token, session = casting_party
+    party.settings.skip_ratio = 0.5
+    skipped = []
+
+    async def fake_advance(s):
+        skipped.append(s)
+        return True
+
+    monkeypatch.setattr(party_routes, "advance_now", fake_advance)
+    (anna,) = _guests(token, ["Anna"])
+    _connect(anna)
+    assert anna.post("/party/api/skip").status_code == 200
+    assert skipped == [session]
+
+
+async def test_advance_now_moves_the_cast_on(default_session, monkeypatch):
+    from routes import stream
+
+    _cast(default_session, ["a", "b"])
+
+    async def resolve(session, track_id, context):
+        return Track(id=track_id, title=f"Title {track_id}", artist="Artist", duration=200)
+
+    async def dispatch(session, target, track, gain):
+        session.state.current_track = track
+        return True
+
+    monkeypatch.setattr(stream, "_resolve_track", resolve)
+    monkeypatch.setattr(stream, "_dispatch_queued_track", dispatch)
+    assert await stream.advance_now(default_session) is True
+    assert default_session.state.queue_index == 1
+    assert default_session.play_seq > 0
+    # Nothing after b, and no autoplay to find more.
+    assert await stream.advance_now(default_session) is False
 
 
 # ── Visualizer ──────────────────────────────────────────────────────────────

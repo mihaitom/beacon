@@ -307,6 +307,17 @@ export interface ConnectStreamInfo {
   loop_lag: number
 }
 
+/** A guest's wish while the host casts, kept by connect rather than by
+ * this window (connect/core/party_queue.py) - by its place in the cast
+ * queue, which this window's queue mirrors. */
+export interface CastPartyRequest {
+  id: string
+  position: number
+  guest_id: string
+  guest_name: string
+  requested_at: number
+}
+
 export interface ConnectStatus {
   current_song: StatusSong | null
   stream_info: ConnectStreamInfo
@@ -360,6 +371,9 @@ export interface ConnectStatus {
    * error body of whatever call caused it. Same shape as
    * DeliveryFailedError so it reads the same way. */
   delivery_error: DeliveryFailedError | null
+  /** Only in the party host's cast session, while connect holds the
+   * wishes (see stores/party.ts's castRequests). */
+  party_requests?: CastPartyRequest[]
   // True only on the single status tick fired when a cast device dropped its
   // connection and never came back — see connect/routes/stream.py's
   // _mark_disconnected_if_not_reconnected(). Distinct from `displaced`: this

@@ -1,6 +1,6 @@
 # Plan: party mode that survives a locked phone
 
-Status: steps 1 to 3 done (2026-10-07), the rest planned.
+Status: steps 1 to 5 done (2026-10-07), 6 and 7 planned.
 
 ## Why
 
@@ -136,10 +136,21 @@ cover goes through the existing `remember_cover()` / `/party/api/cover`.
    the bridges' new `call()`; `routes/party.py` uses it while the host
    casts and relays to the window otherwise. Songs a guest finds are
    remembered, so they have titles once wished for.
-4. **connect: wishes, withdrawals and skip votes** on the cast queue, with
-   `play_seq` and the request ids in `/queue` and the status.
+4. **connect: wishes, withdrawals and skip votes** on the cast queue.
+   _Done:_ `core/party_queue.py` (wishes and withdrawals under
+   `session.play_lock`, `play_seq` bumped after each) and
+   `routes/stream.py`'s `advance_now()` for a skip. One change from the plan
+   above: `/queue` does not carry request ids. When the window replaces the
+   queue, `sync_requests()` moves each wish to the nearest place its song
+   still holds, and drops it once its song is gone - simpler for the
+   window, and a song wished for is no longer queued twice (see
+   `wishEntry()`), which is what made matching by id ambiguous.
 5. **App: mirror connect's requests while casting**, hand them over when the
-   path switches.
+   path switches. _Done:_ the cast session's status carries them
+   (`party_requests`, added through `core/session.py`'s `STATUS_EXTRAS`);
+   `stores/party.ts`'s `castRequests` shows them and takes them back when
+   the cast ends. connect takes the window's over when the cast begins
+   (`PartyState.own_cast_requests`).
 6. **Lyrics and backdrop fallbacks** for a sleeping tab.
 7. **Host UI** and `docs/party-mode.md`.
 

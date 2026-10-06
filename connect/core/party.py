@@ -165,6 +165,12 @@ class PartyState:
         # makes up for itself. Another tab taking the party over replaces
         # it, and the one that had it sees so in /party-host/status.
         self.host_tab: str | None = None
+        # Wishes while the host casts, kept here rather than by the host's
+        # window (core/party_queue.py): whether connect holds them right
+        # now, and the cast queue their positions describe.
+        self.cast_requests: list = []
+        self.cast_owned = False
+        self.cast_queue_seen: list[str] | None = None
         # Queue songs being looked up on the media server, and ones it could
         # not find - not asked about again on every status tick.
         self._fetching: set[str] = set()
@@ -210,6 +216,9 @@ class PartyState:
         self.songs.clear()
         self._fetching.clear()
         self._unfetchable.clear()
+        self.cast_requests = []
+        self.cast_owned = False
+        self.cast_queue_seen = None
         self.host_tab = None
         if self._cast_task is not None:
             self._cast_task.cancel()
@@ -444,6 +453,42 @@ class PartyState:
         if self._worth_telling(previous, self.snapshot):
             await self.broadcast()
 
+    def _requests(self, session, raw: dict) -> dict:
+        """Who wished for what, by queue position. While the host casts,
+        connect holds the wishes (core/party_queue.py) - the ones the
+        window took before the cast began are taken over when it does.
+        Otherwise they are the window's."""
+        from . import party_queue
+
+        if session is None:
+            if self.cast_owned:
+                # The cast ended: the window takes them back from the last
+                # status that carried them (stores/party.ts).
+                self.cast_owned = False
+                self.cast_requests = []
+                self.cast_queue_seen = None
+            return raw.get("party_requests") or {}
+        self.own_cast_requests(session)
+        party_queue.sync_requests(self, session.state)
+        return party_queue.requests_by_position(self)
+
+    def own_cast_requests(self, session) -> None:
+        """connect takes the wishes over from the host's window as the cast
+        begins - before the first one it takes itself, which the window's
+        snapshot does not know about yet."""
+        from . import party_queue
+
+        if self.cast_owned:
+            return
+        raw = self.tab_snapshot
+        tab_queue = [(song or {}).get("id") for song in raw.get("queue") or []]
+        if tab_queue == list(session.state.queue):
+            party_queue.adopt_from_window(self, raw)
+        else:
+            self.cast_requests = []
+        self.cast_queue_seen = list(session.state.queue)
+        self.cast_owned = True
+
     def update_snapshot(self, raw: dict) -> None:
         """The host's window pushed a snapshot (see receive_snapshot)."""
         self.host_session_id = raw.get("session_id") or self.host_session_id
@@ -475,13 +520,10 @@ class PartyState:
             self.current_song_id = current_id
             self.skip_votes.clear()
         same_song = bool(current_id) and current_id == ((tab["current"] or {}).get("id"))
-        same_queue = session is None or [(song or {}).get("id") for song in tab["queue"]] == list(
-            session.state.queue
-        )
 
         queue = playback["queue"]
         index = playback["index"]
-        requests = (raw.get("party_requests") or {}) if same_queue else {}
+        requests = self._requests(session, raw)
         upcoming = []
         start = index + 1 if isinstance(index, int) and index >= 0 else 0
         if session is not None:

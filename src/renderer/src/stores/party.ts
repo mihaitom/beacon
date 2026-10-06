@@ -12,10 +12,12 @@ import {
   type PartyStatus,
 } from '@/services/party/http'
 import type { Song } from '@/types/library'
+import type { CastPartyRequest } from '@/services/connect/types'
 import { usePlaybackStore } from './playback'
 import { useRemoteControlStore } from './remoteControl'
 import { useLyricsStore } from './lyrics'
 import { useFanartStore } from './fanart'
+import { useConnectStore } from './connect'
 import { fanartSource, getArtistArt, shownBackgroundSource } from '@/services/connect/fanart'
 import { pushPartyLyrics } from '@/services/party/http'
 
@@ -34,8 +36,17 @@ export interface PartySettings {
   /** Share of connected guests needed to skip; 0 switches skipping off. */
   skipRatio: number
   durationHours: number
-  /** Where guests reach this Beacon from outside, e.g. behind a reverse
-   * proxy. Empty means the address this app already knows. */
+}
+
+function fromCast(request: CastPartyRequest, song: Song): PartyRequest & { position: number } {
+  return {
+    id: request.id,
+    song,
+    guestId: request.guest_id,
+    guestName: request.guest_name,
+    requestedAt: request.requested_at * 1000,
+    position: request.position,
+  }
 }
 
 /** A refusal the guest should see as such, not as a failure. Its string
@@ -67,6 +78,10 @@ interface PartyState {
   port: number
   guests: PartyGuest[]
   requests: PartyRequest[]
+  /** While the host casts, connect holds the wishes and this window only
+   * shows them (from the cast session's status); null otherwise, when
+   * `requests` are the ones that count. */
+  castRequests: CastPartyRequest[] | null
   settings: PartySettings
 }
 
@@ -112,6 +127,7 @@ function loadSettings(): PartySettings {
 let statusTimer: ReturnType<typeof setInterval> | null = null
 let unsubscribePlayback: (() => void) | null = null
 let unsubscribeLyrics: (() => void) | null = null
+let unsubscribeCast: (() => void) | null = null
 // What the guests were last sent, so lyrics go out once per change rather
 // than with every snapshot.
 let sentLyricsKey: string | null = null
@@ -161,6 +177,7 @@ export const usePartyStore = defineStore('party', {
     port: 0,
     guests: [],
     requests: [],
+    castRequests: null,
     settings: loadSettings(),
   }),
 
@@ -176,6 +193,13 @@ export const usePartyStore = defineStore('party', {
     /** Requests still ahead in the queue, or playing right now. */
     activeRequests(state): (PartyRequest & { position: number })[] {
       const playback = usePlaybackStore()
+      if (state.castRequests) {
+        return state.castRequests.flatMap((r) => {
+          const song = playback.queue[r.position]
+          if (!song || r.position < playback.currentIndex) return []
+          return [fromCast(r, song)]
+        })
+      }
       return state.requests
         .map((r) => ({ ...r, position: queuePosition(playback.queue, r.song) }))
         .filter((r) => r.position >= 0 && r.position >= playback.currentIndex)
@@ -303,6 +327,14 @@ export const usePartyStore = defineStore('party', {
         )
         this.followSong()
       }
+      if (!unsubscribeCast) {
+        const connect = useConnectStore()
+        unsubscribeCast = connect.$subscribe(
+          () => this.applyCastRequests(connect.status?.party_requests),
+          { detached: true },
+        )
+        this.applyCastRequests(connect.status?.party_requests)
+      }
       if (!unsubscribeLyrics) {
         unsubscribeLyrics = useLyricsStore().$subscribe(() => this.shareLyrics(), {
           detached: true,
@@ -399,10 +431,33 @@ export const usePartyStore = defineStore('party', {
       unsubscribePlayback = null
       unsubscribeLyrics?.()
       unsubscribeLyrics = null
+      unsubscribeCast?.()
+      unsubscribeCast = null
+      this.castRequests = null
       sentLyricsKey = null
       lyricsSongId = null
       artistBackdrops = null
       useRemoteControlStore().stopRelayUnlessNeeded()
+    },
+
+    /** Follows the cast session's status: while it carries the wishes,
+     * connect holds them and this window shows them; when it stops - the
+     * cast has ended - this window takes them back, at the places they
+     * were (its queue is the one the cast played). */
+    applyCastRequests(list: CastPartyRequest[] | undefined): void {
+      if (list) {
+        // connect took over the ones this window had when the cast began.
+        if (!this.castRequests) this.requests = []
+        this.castRequests = list
+        return
+      }
+      if (!this.castRequests) return
+      const queue = usePlaybackStore().queue
+      this.requests = this.castRequests.flatMap((r) => {
+        const song = queue[r.position]
+        return song ? [fromCast(r, song)] : []
+      })
+      this.castRequests = null
     },
 
     /** Drops requests that have been played or that the host removed. */

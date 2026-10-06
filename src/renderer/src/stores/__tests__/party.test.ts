@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { PartyRefusal, tabId, usePartyStore, wishInsertIndex } from '../party'
 import { useRemoteControlStore } from '../remoteControl'
+import { useConnectStore } from '../connect'
 import {
   claimPartyHost,
   enableParty,
@@ -339,5 +340,76 @@ describe('which window hosts the party', () => {
     expect(party.hostedHere).toBe(false)
     expect(party.enabled).toBe(true)
     expect(useRemoteControlStore().stopRelayUnlessNeeded).toHaveBeenCalled()
+  })
+})
+
+describe('wishes while the host casts', () => {
+  function cast(position: number, name: string, id = `r-${position}`) {
+    return { id, position, guest_id: name.toLowerCase(), guest_name: name, requested_at: 1 }
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    sessionStorage.clear()
+    vi.spyOn(useRemoteControlStore(), 'startRelay').mockImplementation(() => {})
+    vi.spyOn(useRemoteControlStore(), 'stopRelayUnlessNeeded').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    usePartyStore().stopped()
+    vi.restoreAllMocks()
+  })
+
+  it("shows connect's wishes in this window's queue", () => {
+    const { party } = setup(['now', 'a1', 'h1'])
+    party.applyCastRequests([cast(1, 'Anna')])
+    expect(party.requestAt(1)?.guestName).toBe('Anna')
+    expect(party.requestAt(2)).toBeNull()
+  })
+
+  it('hands the wishes it had to connect when the cast begins', () => {
+    const { party } = setup(['now', 'h1'])
+    party.wish(makeSong('a1'), 'anna', 'Anna', 3)
+    party.applyCastRequests([cast(1, 'Anna', 'from-connect')])
+    expect(party.requests).toEqual([])
+    expect(party.requestAt(1)?.id).toBe('from-connect')
+  })
+
+  it('takes the wishes back when the cast ends', () => {
+    const { playback, party } = setup(['now', 'a1', 'h1'])
+    party.applyCastRequests([cast(1, 'Anna')])
+    party.applyCastRequests(undefined)
+    expect(party.castRequests).toBeNull()
+    expect(party.requests.map((r) => r.song)).toEqual([playback.queue[1]])
+    // Its own again: the next local edit carries it along.
+    playback.reorderQueue(1, 2)
+    expect(party.requestAt(2)?.guestName).toBe('Anna')
+  })
+
+  it('leaves out a wish that has played', () => {
+    const { playback, party } = setup(['now', 'a1', 'h1'])
+    party.applyCastRequests([cast(1, 'Anna')])
+    playback.currentIndex = 2
+    expect(party.activeRequests).toEqual([])
+  })
+
+  it("follows the cast session's status while hosting", async () => {
+    setup(['now', 'a1', 'h1'])
+    vi.mocked(enableParty).mockResolvedValue({
+      enabled: true,
+      expires_at: Date.now() / 1000 + 3600,
+      lan_ip: '',
+      port: 0,
+      guests: [],
+      max_pending_per_guest: 3,
+      skip_ratio: 0.5,
+      host_tab: tabId(),
+      token: 'tok',
+    })
+    const party = usePartyStore()
+    await party.enable()
+    useConnectStore().status = { party_requests: [cast(1, 'Anna')] } as never
+    await vi.waitFor(() => expect(party.requestAt(1)?.guestName).toBe('Anna'))
   })
 })

@@ -33,7 +33,7 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel
 
-from core import fanart, party_library
+from core import fanart, party_library, party_queue
 from core.auth import require_token
 from core.party import (
     DEFAULT_DURATION_HOURS,
@@ -49,6 +49,7 @@ from core.trusted_proxies import client_ip, is_trusted_proxy
 from routes.coverart import cover_image
 from routes.radio import radio_favicon
 from routes.remote import app_file_response, relay_command, relay_query, static_dir
+from routes.stream import advance_now
 
 logger = logging.getLogger("connect.party")
 
@@ -481,6 +482,17 @@ async def get_album(album_id: str, guest: Guest = Depends(require_guest)):
     }
 
 
+async def _on_cast(edit) -> None:
+    """A wish or withdrawal applied to the host's cast queue by connect
+    itself (core/party_queue.py), told to the guests straight away."""
+    try:
+        await edit
+    except party_queue.Refusal as e:
+        raise HTTPException(status_code=_REFUSALS[e.code], detail=e.code) from e
+    party.rebuild()
+    await party.broadcast()
+
+
 async def _relay_guest_command(command_type: str, payload: dict) -> None:
     try:
         await relay_command(command_type, payload)
@@ -498,6 +510,19 @@ class WishRequest(BaseModel):
 @router.post("/api/wishes", dependencies=[Depends(require_same_origin)])
 async def wish(req: WishRequest, guest: Guest = Depends(require_guest)):
     _limit(f"wish:{guest.guest_id}", WISHES)
+    session = party.host_cast()
+    if session is not None:
+        await _on_cast(
+            party_queue.wish(
+                party,
+                session,
+                _check_id(req.song_id),
+                guest.guest_id,
+                guest.name,
+                secrets.token_urlsafe(12),
+            )
+        )
+        return {"success": True}
     await _relay_guest_command(
         "party-wish",
         {
@@ -513,6 +538,10 @@ async def wish(req: WishRequest, guest: Guest = Depends(require_guest)):
 @router.delete("/api/wishes/{request_id}", dependencies=[Depends(require_same_origin)])
 async def withdraw(request_id: str, guest: Guest = Depends(require_guest)):
     _limit(f"withdraw:{guest.guest_id}", WITHDRAWALS)
+    session = party.host_cast()
+    if session is not None:
+        await _on_cast(party_queue.withdraw(party, session, _check_id(request_id), guest.guest_id))
+        return {"success": True}
     await _relay_guest_command(
         "party-withdraw", {"requestId": _check_id(request_id), "guestId": guest.guest_id}
     )
@@ -525,9 +554,14 @@ async def vote_skip(guest: Guest = Depends(require_guest)):
     if not party.can_skip():
         raise HTTPException(status_code=409, detail="Skipping is not available right now")
     if party.vote(guest.guest_id):
-        # The command goes out before the broadcast so nobody sees the
-        # counter reset for a song that is still playing.
-        await relay_command("next", {})
+        # The skip happens before the broadcast so nobody sees the counter
+        # reset for a song that is still playing. While the host casts,
+        # connect skips itself - the host's window may be asleep.
+        session = party.host_cast()
+        if session is not None:
+            await advance_now(session)
+        else:
+            await relay_command("next", {})
     await party.broadcast()
     return {"success": True}
 

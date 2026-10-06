@@ -320,6 +320,35 @@ async def _advance_or_end(session: SessionState, my_generation: int) -> None:
     await session.event_bus.broadcast(build_status_dict(session))
 
 
+async def advance_now(session: SessionState) -> bool:
+    """Skips the cast to the next queued track from inside connect - what a
+    party's skip vote does while the host's window may be asleep. The same
+    steps as _advance_or_end()'s, without waiting for the track to end;
+    False when there is nothing to skip to."""
+    async with session.play_lock:
+        st = session.state
+        if not st.active_delivery or not st.is_streaming:
+            return False
+        next_index = st.queue_index + 1
+        if next_index >= len(st.queue):
+            await _maybe_autoplay_topup(session)
+        if next_index >= len(st.queue):
+            return False
+        track = await _resolve_track(session, st.queue[next_index], "Party skip")
+        if track is None:
+            return False
+        if not await _dispatch_queued_track(
+            session, st.active_delivery, track, st.current_track_gain
+        ):
+            return False
+        st.queue_index = next_index
+        # A window that slept through this must not put the old track back.
+        session.play_seq = max(session.play_seq, int(time.time() * 1000))
+        await session.event_bus.broadcast(build_status_dict(session))
+        logger.info(f"[stream] Party skip to {track.artist} — {track.title}")
+        return True
+
+
 # How long to wait, after a device closes its GET /stream connection mid-
 # track, for a fresh connection to pick the same track back up before
 # concluding it isn't going to — see
